@@ -92,14 +92,13 @@ private struct RoutineItemRow: View {
                 .font(BodyFlowTypography.headline)
                 .foregroundStyle(BodyFlowColor.primaryText)
             ForEach(item.schedules, id: \.id) { schedule in
-                HStack(spacing: BodyFlowSpacing.xs) {
-                    Image(systemName: "clock")
-                        .accessibilityHidden(true)
-                    Text(schedule.localTime)
+                HStack(spacing: BodyFlowSpacing.sm) {
+                    Label(verbatim: schedule.localTime, symbol: .clock)
                     if let status = schedule.occurrence?.status {
-                        Text("·")
-                            .accessibilityHidden(true)
-                        Text(RoutineCopy.status(status, language: language))
+                        Label(
+                            verbatim: RoutineCopy.status(status, language: language),
+                            symbol: .routineStatus(status)
+                        )
                     }
                 }
                 .font(BodyFlowTypography.callout)

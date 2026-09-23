@@ -45,64 +45,67 @@ struct Block7700DetailView: View {
                         : fullScreenState.accessibilityIdentifier
                 )
         } else if let descriptor = presentation.descriptor {
-            FeatureStateContentStack(
-                showsStaleBanner: presentation.showsStaleBanner,
-                retryAction: presentation.showsRetry ? retry : nil
-            ) {
+            // The bar carries the title; the card holds only the received
+            // figures. Stale recovery scrolls with the content.
+            ScrollView {
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                    ScrollView {
-                        BodyFlowCard(surface: .card) {
-                            VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                                Text(copy("progress.block.title"))
-                                    .font(BodyFlowTypography.title)
-                                    .fontWeight(.semibold)
-                                FixtureMetricRow(
-                                    title: copy("progress.block.target"),
-                                    value: TodayValueFormatter.optionalKcal(
-                                        descriptor.targetKcal,
-                                        language: language
-                                    )
-                                )
-                                Divider()
-                                FixtureMetricRow(
-                                    title: copy("progress.block.current"),
-                                    value: TodayValueFormatter.optionalKcal(
-                                        descriptor.currentKcal,
-                                        language: language
-                                    )
-                                )
-                                optionalRow(
-                                    copy("progress.block.percentage"),
-                                    descriptor.percentage.map { "\($0)%" }
-                                )
-                                optionalRow(
-                                    copy("progress.block.completed"),
-                                    descriptor.completedBlocks.map {
-                                        TodayValueFormatter.integer($0, language: language)
-                                    }
-                                )
-                                optionalRow(
-                                    copy("progress.block.credited"),
-                                    descriptor.totalCreditedKcal.map {
-                                        TodayValueFormatter.kcal($0, language: language)
-                                    }
-                                )
-                                FixtureMetricRow(
-                                    title: copy("progress.block.availability"),
-                                    value: descriptor.availability
-                                )
-                                FixtureMetricRow(
-                                    title: copy("progress.block.source"),
-                                    value: descriptor.source
-                                )
-                            }
-                        }
-                        .accessibilityIdentifier("block7700.summary")
-                        .padding(BodyFlowSpacing.md)
+                    if presentation.showsStaleBanner {
+                        FeatureStaleRecovery(retry: staleRetry(presentation))
                     }
-                    .accessibilityIdentifier("block7700.today-snapshot")
+
+                    BodyFlowCard(surface: .card) {
+                        VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+                            FixtureMetricRow(
+                                title: copy("progress.block.target"),
+                                value: TodayValueFormatter.optionalKcal(
+                                    descriptor.targetKcal,
+                                    language: language
+                                )
+                            )
+                            Divider()
+                            FixtureMetricRow(
+                                title: copy("progress.block.current"),
+                                value: TodayValueFormatter.optionalKcal(
+                                    descriptor.currentKcal,
+                                    language: language
+                                )
+                            )
+                            optionalRow(
+                                copy("progress.block.percentage"),
+                                descriptor.percentage.map { "\($0)%" }
+                            )
+                            optionalRow(
+                                copy("progress.block.completed"),
+                                descriptor.completedBlocks.map {
+                                    TodayValueFormatter.integer($0, language: language)
+                                }
+                            )
+                            optionalRow(
+                                copy("progress.block.credited"),
+                                descriptor.totalCreditedKcal.map {
+                                    TodayValueFormatter.kcal($0, language: language)
+                                }
+                            )
+                            Divider()
+                            FixtureMetricRow(
+                                title: copy("progress.block.availability"),
+                                value: descriptor.availability
+                            )
+                            Divider()
+                            FixtureMetricRow(
+                                title: copy("progress.block.source"),
+                                value: descriptor.source
+                            )
+                        }
+                    }
+                    .accessibilityIdentifier("block7700.summary")
                 }
+                .padding(BodyFlowSpacing.md)
             }
+            .refreshable {
+                await model.retry()
+            }
+            .accessibilityIdentifier("block7700.today-snapshot")
         }
     }
 
@@ -119,6 +122,13 @@ struct Block7700DetailView: View {
 
     private func retry() {
         Task { await model.retry() }
+    }
+
+    private func staleRetry(
+        _ presentation: Block7700DetailPresentation
+    ) -> (@MainActor () -> Void)? {
+        guard presentation.showsRetry else { return nil }
+        return { retry() }
     }
 
     private var language: SupportedAppLanguage {

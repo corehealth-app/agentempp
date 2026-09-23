@@ -64,8 +64,7 @@ struct RoutineDetailView: View {
             BodyFlowColor.background.ignoresSafeArea()
             content
         }
-        .navigationTitle(copy("routine.detail.title"))
-        .navigationBarTitleDisplayMode(.inline)
+        .bodyFlowScreenChrome(title: copy("routine.detail.title"))
         .sheet(item: $selectedAction, onDismiss: {
             configureActionModel()
         }) { item in
@@ -100,17 +99,23 @@ struct RoutineDetailView: View {
                     BodyFlowCard {
                         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
                             Text(item.name)
-                                .font(BodyFlowTypography.title)
-                                .fontWeight(.semibold)
+                                .font(BodyFlowTypography.screenTitle)
+                                .foregroundStyle(BodyFlowColor.primaryText)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityAddTraits(.isHeader)
                             ForEach(item.schedules, id: \.id) { schedule in
                                 VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
-                                    Text(schedule.localTime)
+                                    Label(verbatim: schedule.localTime, symbol: .clock)
+                                        .foregroundStyle(BodyFlowColor.primaryText)
                                     if let occurrence = schedule.occurrence {
-                                        Text(RoutineCopy.status(
-                                            occurrence.status,
-                                            language: language
-                                        ))
-                                            .foregroundStyle(BodyFlowColor.secondaryText)
+                                        Label(
+                                            verbatim: RoutineCopy.status(
+                                                occurrence.status,
+                                                language: language
+                                            ),
+                                            symbol: .routineStatus(occurrence.status)
+                                        )
+                                        .foregroundStyle(BodyFlowColor.secondaryText)
                                     }
                                 }
                                 .font(BodyFlowTypography.body)
@@ -127,13 +132,25 @@ struct RoutineDetailView: View {
                         itemID: model.itemID,
                         destination: .history
                     ))) {
-                        Label(
-                            copy("routine.history.title"),
-                            systemImage: "clock.arrow.circlepath"
-                        )
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        BodyFlowCard {
+                            HStack(spacing: BodyFlowSpacing.sm) {
+                                Label(verbatim: copy("routine.history.title"), symbol: .history)
+                                    .font(BodyFlowTypography.headline)
+                                    .foregroundStyle(BodyFlowColor.primaryText)
+                                Spacer(minLength: BodyFlowSpacing.xs)
+                                Image(symbol: .chevron)
+                                    .font(BodyFlowTypography.caption)
+                                    .foregroundStyle(BodyFlowColor.secondaryText)
+                                    .accessibilityHidden(true)
+                            }
+                            .frame(
+                                maxWidth: .infinity,
+                                minHeight: BodyFlowSpacing.minimumTapTarget,
+                                alignment: .leading
+                            )
+                        }
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.bodyFlowRow)
                     .accessibilityIdentifier("routine.history")
 
                     if let actionModel {
@@ -153,21 +170,26 @@ struct RoutineDetailView: View {
         }
     }
 
+    // Taken is the expected outcome (primary); snoozing keeps the item alive
+    // (secondary); skipping is the quiet exit (tertiary).
     private var actionButtons: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
             Text(copy("routine.actions.title"))
-                .font(BodyFlowTypography.headline)
-            VStack(alignment: .leading) {
-                actionButton(.taken, title: copy("routine.action.taken"))
-                actionButton(.snoozed, title: copy("routine.action.snooze"))
-                actionButton(.skipped, title: copy("routine.action.skip"))
+                .font(BodyFlowTypography.cardTitle)
+                .foregroundStyle(BodyFlowColor.primaryText)
+                .accessibilityAddTraits(.isHeader)
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+                actionButton(.taken, title: copy("routine.action.taken"), role: .primary)
+                actionButton(.snoozed, title: copy("routine.action.snooze"), role: .secondary)
+                actionButton(.skipped, title: copy("routine.action.skip"), role: .tertiary)
             }
         }
     }
 
     private func actionButton(
         _ status: RoutineActionStatus,
-        title: String
+        title: String,
+        role: BodyFlowButtonRole
     ) -> some View {
         Button {
             guard let actionModel else { return }
@@ -179,9 +201,8 @@ struct RoutineDetailView: View {
         } label: {
             Text(title)
                 .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
-                .contentShape(Rectangle())
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(BodyFlowButtonStyle(role: role))
         .accessibilityIdentifier("routine.action.\(status.rawValue)")
         .disabled(actionModel?.isSubmitting ?? true)
     }

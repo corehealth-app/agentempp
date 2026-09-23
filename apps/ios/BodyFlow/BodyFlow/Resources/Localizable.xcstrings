@@ -2839,6 +2839,26 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Not available" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não disponível" } }
     } },
+    "progress.section.achievements" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Achievements" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Conquistas" } }
+    } },
+    "progress.section.consistency" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Consistency" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Consistência" } }
+    } },
+    "progress.section.dates" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Reference dates" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Datas de referência" } }
+    } },
+    "progress.section.measurements" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Measurements" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Medidas" } }
+    } },
+    "progress.section.summary" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Summary" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Resumo" } }
+    } },
     "progress.streak.restart-action" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Resume in Today" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Retomar em Hoje" } }

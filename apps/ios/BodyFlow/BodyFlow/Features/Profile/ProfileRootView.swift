@@ -67,21 +67,12 @@ struct ProfileRootView: View {
     private var loadedContent: some View {
         List {
             Section {
-                VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-                    Label(fixture.title, systemImage: "person.crop.circle")
-                        .font(BodyFlowTypography.headline)
-                        .foregroundStyle(BodyFlowColor.primaryText)
-
-                    Text(copy("profile.fixture.disclosure"))
-                        .font(BodyFlowTypography.callout)
-                        .foregroundStyle(BodyFlowColor.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(
-                    maxWidth: .infinity,
-                    minHeight: BodyFlowSpacing.minimumTapTarget,
-                    alignment: .leading
-                )
+                identityRow
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: BodyFlowSpacing.minimumTapTarget,
+                        alignment: .leading
+                    )
             } header: {
                 Text(copy("profile.identity.section"))
                     .foregroundStyle(BodyFlowColor.primaryText)
@@ -106,10 +97,10 @@ struct ProfileRootView: View {
                     FeatureActionLabel(
                         title: copy("profile.persona.title"),
                         detail: personaDisplayName,
-                        systemImage: "bubble.left.and.bubble.right"
+                        systemImage: BodyFlowSymbol.flow.systemName
                     )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.bodyFlowRow)
                 .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                 .accessibilityIdentifier("profile.coach-persona")
 
@@ -128,7 +119,7 @@ struct ProfileRootView: View {
                     FeatureActionLabel(
                         title: copy("profile.preferences.action"),
                         detail: copy("profile.preferences.demo-detail"),
-                        systemImage: "slider.horizontal.3",
+                        systemImage: BodyFlowSymbol.preferences.systemName,
                         showsDisclosureIndicator: false
                     )
                 }
@@ -140,6 +131,29 @@ struct ProfileRootView: View {
             .bodyFlowListRow()
         }
         .bodyFlowList()
+    }
+
+    /// Identity as one row: the person glyph inline with the title, the
+    /// provenance line under it. One structure for every Dynamic Type size
+    /// (the automated audit reads the title across sizes, and a layout
+    /// switch at the accessibility boundary registers as a font-size
+    /// discontinuity) and the same width the section had before, so the
+    /// persona row below stays within tap reach at AXXXL.
+    private var identityRow: some View {
+        VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+            Label(verbatim: fixture.title, symbol: .person)
+                .font(BodyFlowTypography.headline)
+                .foregroundStyle(BodyFlowColor.primaryText)
+
+            identityDisclosure
+        }
+    }
+
+    private var identityDisclosure: some View {
+        Text(copy("profile.fixture.disclosure"))
+            .font(BodyFlowTypography.callout)
+            .foregroundStyle(BodyFlowColor.secondaryText)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var personaDisplayName: String {

@@ -525,7 +525,7 @@ private struct ContentCoverPlaceholder: View {
         case .neutral:
             ZStack {
                 BodyFlowColor.accent.opacity(BodyFlowOpacity.tintWash)
-                Image(systemName: "book.closed")
+                Image(symbol: .article)
                     .font(BodyFlowTypography.largeTitle)
                     .foregroundStyle(BodyFlowColor.accent)
             }

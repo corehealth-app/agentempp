@@ -657,6 +657,9 @@ struct PublishedContentDetailView: View {
         .background(BodyFlowColor.background)
         .navigationTitle(copy("content.navigation.title"))
         .navigationBarTitleDisplayMode(.inline)
+        // Result feedback for the patient's own save/complete; the status
+        // line below the actions stays the primary channel.
+        .bodyFlowResultFeedback(Self.feedback, trigger: model.contentMutationPresentation)
         .task(id: detailLoadIdentity) {
             let revision = detailRevision
             await performDetailLoad(revision: revision, isRetry: false)
@@ -792,13 +795,11 @@ struct PublishedContentDetailView: View {
 
                 if case let .failed(error) = model.openedEventState,
                    error != .contentVersionChanged {
-                    Label(
+                    BodyFlowStatusLine(
                         copy("content.opened.error"),
-                        systemImage: "exclamationmark.triangle"
+                        kind: .error,
+                        font: BodyFlowTypography.callout
                     )
-                    .font(BodyFlowTypography.callout)
-                    .foregroundStyle(BodyFlowColor.primaryText)
-                    .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if let presentation = model.contentMutationPresentation {
@@ -841,15 +842,14 @@ struct PublishedContentDetailView: View {
             Task { await model.toggleSaved() }
         } label: {
             Label(
-                detail.saved
+                verbatim: detail.saved
                     ? copy("content.action.unsave")
                     : copy("content.action.save"),
-                systemImage: detail.saved ? "bookmark.slash" : "bookmark"
+                symbol: detail.saved ? .unsave : .save
             )
             .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(BodyFlowButtonStyle(role: .secondary))
         .disabled(!model.canToggleSaved)
         .accessibilityIdentifier("content-detail.save")
     }
@@ -858,11 +858,10 @@ struct PublishedContentDetailView: View {
         Button {
             Task { await model.complete() }
         } label: {
-            Label(copy("content.action.complete"), systemImage: "checkmark.circle")
+            Label(verbatim: copy("content.action.complete"), symbol: .success)
                 .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
-                .contentShape(Rectangle())
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(BodyFlowButtonStyle(role: .primary))
         .disabled(!model.canComplete)
         .accessibilityIdentifier("content-detail.complete")
     }
@@ -870,10 +869,11 @@ struct PublishedContentDetailView: View {
     private func mutationSummary(
         _ presentation: ContentMutationPresentation
     ) -> some View {
-        VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-            Label(
+        VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+            BodyFlowStatusLine(
                 localizedMutationMessage(presentation),
-                systemImage: presentation.systemImage
+                kind: Self.statusKind(for: presentation),
+                font: BodyFlowTypography.callout
             )
             if presentation.allowsRetry {
                 Button {
@@ -881,13 +881,11 @@ struct PublishedContentDetailView: View {
                 } label: {
                     Text(copy("state.retry"))
                         .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
-                        .contentShape(Rectangle())
                 }
+                .buttonStyle(BodyFlowButtonStyle(role: .secondary))
                 .accessibilityIdentifier("content-detail.mutation.retry")
             }
         }
-        .font(BodyFlowTypography.callout)
-        .foregroundStyle(BodyFlowColor.primaryText)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("content-detail.mutation.summary")
         .accessibilityFocused(
@@ -899,7 +897,7 @@ struct PublishedContentDetailView: View {
     private func categoryMetadata(
         _ detail: RenderablePublishedContentDetail
     ) -> some View {
-        Label(localizedCategoryLabel(detail.categoryLabel), systemImage: "books.vertical")
+        Label(verbatim: localizedCategoryLabel(detail.categoryLabel), symbol: .library)
             .font(BodyFlowTypography.callout)
             .foregroundStyle(BodyFlowColor.secondaryText)
             .accessibilityIdentifier("content-detail.category")
@@ -908,7 +906,7 @@ struct PublishedContentDetailView: View {
     private func readingTimeMetadata(
         _ detail: RenderablePublishedContentDetail
     ) -> some View {
-        Label(localizedReadingTimeLabel(detail.readingTimeLabel), systemImage: "clock")
+        Label(verbatim: localizedReadingTimeLabel(detail.readingTimeLabel), symbol: .clock)
             .font(BodyFlowTypography.callout)
             .foregroundStyle(BodyFlowColor.secondaryText)
             .accessibilityIdentifier("content-detail.reading-time")
@@ -934,10 +932,18 @@ struct PublishedContentDetailView: View {
         _ detail: RenderablePublishedContentDetail
     ) -> some View {
         if detail.saved {
-            Label(copy("library.status.saved"), systemImage: "bookmark.fill")
+            LibraryStatusLabel(
+                copy("library.status.saved"),
+                symbol: .saved,
+                tint: BodyFlowColor.accent
+            )
         }
         if detail.completed {
-            Label(copy("library.status.completed"), systemImage: "checkmark.circle.fill")
+            LibraryStatusLabel(
+                copy("library.status.completed"),
+                symbol: .success,
+                tint: BodyFlowColor.color(.feedbackPositive)
+            )
         }
     }
 
@@ -971,7 +977,7 @@ struct PublishedContentDetailView: View {
         GeometryReader { geometry in
             ScrollView {
                 VStack(spacing: BodyFlowSpacing.lg) {
-                    Image(systemName: "book.closed")
+                    Image(symbol: .article)
                         .font(BodyFlowTypography.largeTitle)
                         .foregroundStyle(BodyFlowColor.accent)
                         .accessibilityHidden(true)
@@ -997,12 +1003,12 @@ struct PublishedContentDetailView: View {
         }
     }
 
+    // Back is the primary way out of a bounded article; the Library is the
+    // secondary one.
     private func boundedAction(
         _ action: ContentDetailBoundedAction
     ) -> some View {
-        Button(copy(
-            action == .back ? "content.action.back" : "content.action.library"
-        )) {
+        Button {
             switch action {
             case .back:
                 dismiss()
@@ -1013,10 +1019,40 @@ struct PublishedContentDetailView: View {
                     in: .today
                 )
             }
+        } label: {
+            Text(copy(
+                action == .back ? "content.action.back" : "content.action.library"
+            ))
+            .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
         }
-        .font(BodyFlowTypography.headline)
-        .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
-        .contentShape(Rectangle())
+        .buttonStyle(BodyFlowButtonStyle(role: action == .back ? .primary : .secondary))
+    }
+
+    /// The model's glyph names the outcome; the status line renders the
+    /// matching kind. The model itself is untouched.
+    static func statusKind(
+        for presentation: ContentMutationPresentation
+    ) -> BodyFlowStatusLine.Kind {
+        switch presentation.systemImage {
+        case "bookmark.fill", "bookmark.slash", "checkmark.circle.fill": .success
+        case "exclamationmark.triangle": .error
+        case "exclamationmark.circle": .unavailable
+        case "arrow.triangle.2.circlepath", "arrow.clockwise": .pending
+        default: .info
+        }
+    }
+
+    /// Only a completed save/complete or a failed one speaks; updating,
+    /// reloading and unavailable stay silent.
+    private static func feedback(
+        for presentation: ContentMutationPresentation?
+    ) -> BodyFlowHaptics.Result? {
+        guard let presentation else { return nil }
+        switch statusKind(for: presentation) {
+        case .success: return .success
+        case .error: return .failure
+        case .info, .warning, .pending, .empty, .unavailable: return nil
+        }
     }
 
     private func localizedMutationMessage(

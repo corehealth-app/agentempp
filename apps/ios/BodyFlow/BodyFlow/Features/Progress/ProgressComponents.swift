@@ -246,6 +246,10 @@ enum ProgressCopy {
     }
 }
 
+/// The progress screen: one heading, the patient's body and consistency
+/// figures in one card, the official summary in its own card, achievements
+/// (restart, medals, missions) in a third, and the reference dates as a quiet
+/// provenance block. Every value is the server's; nothing is derived here.
 @MainActor
 struct ProgressContentView: View {
     let presentation: ProgressPresentation
@@ -254,48 +258,104 @@ struct ProgressContentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
-            VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                Text(copy("progress.eyebrow"))
-                    .font(BodyFlowTypography.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(BodyFlowColor.accent)
-                Text(copy("progress.title"))
-                    .font(BodyFlowTypography.largeTitle)
-                    .fontWeight(.bold)
-                    .foregroundStyle(BodyFlowColor.primaryText)
+            BodyFlowSectionHeader(copy("progress.title"))
+
+            bodyCard
+
+            if presentation.gamificationSections.contains(where: { $0.kind == .officialSummary }) {
+                summaryCard
             }
 
-            measurementsCard
-            consistencyCard
-            ForEach(presentation.gamificationSections) { section in
-                gamificationSection(section)
+            if !achievementSections.isEmpty {
+                achievementsCard(achievementSections)
             }
-            datesCard
+
+            datesBlock
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("progress.received-values")
     }
 
-    private var progressCard: some View {
+    /// The official sections that are not the summary itself, in the
+    /// presentation's order: restart (when the streak is zero), medals,
+    /// missions.
+    private var achievementSections: [ProgressGamificationSection] {
+        presentation.gamificationSections.filter { $0.kind != .officialSummary }
+    }
+
+    // MARK: Card A — measurements and consistency
+
+    private var bodyCard: some View {
         BodyFlowCard(surface: .card) {
-            VStack(spacing: BodyFlowSpacing.sm) {
-                FixtureMetricRow(title: copy("progress.metric.xp-total"), value: presentation.xpText, systemImage: "sparkles")
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
+                metricGroup(copy("progress.section.measurements")) {
+                    metricRow(
+                        copy("progress.metric.current-weight"),
+                        presentation.weightText,
+                        symbol: .weight
+                    )
+                    Divider()
+                    metricRow(
+                        copy("progress.metric.body-fat"),
+                        presentation.bodyFatText,
+                        symbol: .bodyComposition
+                    )
+                }
+                .accessibilityIdentifier("progress.measurements")
+
+                Divider()
+
+                metricGroup(copy("progress.section.consistency")) {
+                    metricRow(
+                        copy("progress.metric.current-streak"),
+                        presentation.currentStreakText,
+                        symbol: .streak
+                    )
+                    Divider()
+                    metricRow(
+                        copy("progress.metric.longest-streak"),
+                        presentation.longestStreakText,
+                        symbol: .longestStreak
+                    )
+                }
+                .accessibilityIdentifier("progress.consistency")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("progress.body")
+    }
+
+    // MARK: Card B — official summary
+
+    private var summaryCard: some View {
+        BodyFlowCard(surface: .card) {
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+                groupHeading(copy("progress.section.summary"))
+                metricRow(copy("progress.metric.xp-total"), presentation.xpText, symbol: .xp)
                 Divider()
                 Label {
                     Text(presentation.levelText)
                         .font(BodyFlowTypography.body)
                         .fixedSize(horizontal: false, vertical: true)
                 } icon: {
-                    Image(systemName: "medal")
+                    Image(symbol: .level)
                         .foregroundStyle(BodyFlowColor.accent)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(presentation.levelText)
                 Divider()
-                FixtureMetricRow(title: copy("progress.metric.completed-blocks"), value: presentation.completedBlocksText, systemImage: "checkmark.seal")
+                metricRow(
+                    copy("progress.metric.completed-blocks"),
+                    presentation.completedBlocksText,
+                    symbol: .completedBlocks
+                )
                 Divider()
-                FixtureMetricRow(title: copy("progress.metric.reported-deficit"), value: presentation.deficitBlockText, systemImage: "arrow.down.circle")
+                metricRow(
+                    copy("progress.metric.reported-deficit"),
+                    presentation.deficitBlockText,
+                    symbol: .deficit
+                )
             }
         }
         .accessibilityElement(children: .contain)
@@ -303,127 +363,163 @@ struct ProgressContentView: View {
         .accessibilityIdentifier("progress.summary")
     }
 
+    // MARK: Card C — achievements
+
+    private func achievementsCard(
+        _ sections: [ProgressGamificationSection]
+    ) -> some View {
+        BodyFlowCard(surface: .card) {
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
+                groupHeading(copy("progress.section.achievements"))
+                ForEach(Array(sections.enumerated()), id: \.element.id) { offset, section in
+                    if offset > 0 {
+                        Divider()
+                    }
+                    achievementSection(section)
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("progress.achievements")
+    }
+
     @ViewBuilder
-    private func gamificationSection(_ section: ProgressGamificationSection) -> some View {
+    private func achievementSection(_ section: ProgressGamificationSection) -> some View {
         switch section {
         case .officialSummary:
-            progressCard
+            EmptyView()
         case let .streakRestart(message, actionTitle, action, appearance):
-            streakRestartCard(
+            streakRestartBlock(
                 message: message,
                 actionTitle: actionTitle,
                 action: action,
                 appearance: appearance
             )
         case let .earnedMedals(rows, emptyMessage):
-            medalsCard(rows: rows, emptyMessage: emptyMessage)
+            medalsBlock(rows: rows, emptyMessage: emptyMessage)
         case let .missionsUnavailable(text):
-            missionsUnavailableCard(text: text)
+            BodyFlowStatusLine(text, kind: .unavailable, font: BodyFlowTypography.body)
+                .accessibilityIdentifier("progress.missions.unavailable")
         }
     }
 
-    private func streakRestartCard(
+    private func streakRestartBlock(
         message: String,
         actionTitle: String,
         action: ProgressTabSelectionAction,
         appearance: ProgressActionAppearance
     ) -> some View {
-        BodyFlowCard(surface: .card) {
-            VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-                Text(message)
-                    .font(BodyFlowTypography.body)
-                    .foregroundStyle(BodyFlowColor.primaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button {
-                    action.perform(on: $selectedTab)
-                } label: {
-                    Text(actionTitle)
-                        .frame(maxWidth: .infinity, minHeight: BodyFlowSpacing.minimumTapTarget)
-                        .foregroundStyle(appearance.foreground.color)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(appearance.background.color)
-                .accessibilityIdentifier("progress.streak.resume-today")
+        VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+            Text(message)
+                .font(BodyFlowTypography.body)
+                .foregroundStyle(BodyFlowColor.primaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                action.perform(on: $selectedTab)
+            } label: {
+                Text(actionTitle)
+                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
             }
+            .buttonStyle(BodyFlowButtonStyle(role: Self.role(for: appearance)))
+            .accessibilityIdentifier("progress.streak.resume-today")
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("progress.streak.restart")
     }
 
-    private func medalsCard(rows: [ProgressMedalRow], emptyMessage: String?) -> some View {
-        BodyFlowCard(surface: .card) {
-            VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-                Text(copy("progress.medals.title"))
-                    .font(BodyFlowTypography.headline)
-                    .accessibilityAddTraits(.isHeader)
-                if let emptyMessage {
-                    Text(emptyMessage)
+    /// The presentation keeps naming the restart's colors; the button role
+    /// that carries exactly that pair renders it.
+    static func role(for appearance: ProgressActionAppearance) -> BodyFlowButtonRole {
+        appearance.background == .brandPrimary && appearance.foreground == .onPrimary
+            ? .primary
+            : .secondary
+    }
+
+    private func medalsBlock(rows: [ProgressMedalRow], emptyMessage: String?) -> some View {
+        VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+            Text(copy("progress.medals.title"))
+                .font(BodyFlowTypography.supporting)
+                .foregroundStyle(BodyFlowColor.secondaryText)
+                .accessibilityAddTraits(.isHeader)
+            if let emptyMessage {
+                Text(emptyMessage)
+                    .font(BodyFlowTypography.body)
+                    .foregroundStyle(BodyFlowColor.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(rows) { medal in
+                Label {
+                    Text(medal.text)
                         .font(BodyFlowTypography.body)
-                        .foregroundStyle(BodyFlowColor.secondaryText)
+                        .foregroundStyle(BodyFlowColor.primaryText)
                         .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(symbol: .medal)
+                        .foregroundStyle(BodyFlowColor.achievement)
+                        .accessibilityHidden(true)
                 }
-                ForEach(rows) { medal in
-                    HStack(alignment: .firstTextBaseline, spacing: BodyFlowSpacing.sm) {
-                        Image(systemName: "medal")
-                            .foregroundStyle(BodyFlowColor.achievement)
-                            .accessibilityHidden(true)
-                        Text(medal.text)
-                            .font(BodyFlowTypography.body)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel(medal.text)
-                    .accessibilityIdentifier("progress.medal.\(medal.id.offset)")
-                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(medal.text)
+                .accessibilityIdentifier("progress.medal.\(medal.id.offset)")
             }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("progress.badges")
     }
 
-    private func missionsUnavailableCard(text: String) -> some View {
-        BodyFlowCard(surface: .card) {
-            Text(text)
-                .font(BodyFlowTypography.body)
-                .foregroundStyle(BodyFlowColor.primaryText)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .accessibilityIdentifier("progress.missions.unavailable")
-    }
+    // MARK: Provenance
 
-    private var measurementsCard: some View {
-        BodyFlowCard(surface: .card) {
-            VStack(spacing: BodyFlowSpacing.sm) {
-                FixtureMetricRow(title: copy("progress.metric.current-weight"), value: presentation.weightText, systemImage: "scalemass")
-                Divider()
-                FixtureMetricRow(title: copy("progress.metric.body-fat"), value: presentation.bodyFatText, systemImage: "figure")
-            }
+    private var datesBlock: some View {
+        VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+            Text(copy("progress.section.dates"))
+                .font(BodyFlowTypography.caption)
+                .foregroundStyle(BodyFlowColor.secondaryText)
+                .accessibilityAddTraits(.isHeader)
+            ProgressProvenanceRow(
+                title: copy("progress.metric.last-activity"),
+                value: presentation.lastActiveDateText
+            )
+            ProgressProvenanceRow(
+                title: copy("progress.metric.next-reevaluation"),
+                value: presentation.nextReevaluationText
+            )
+            ProgressProvenanceRow(
+                title: copy("progress.metric.updated-at"),
+                value: presentation.updatedAtText
+            )
         }
-        .accessibilityIdentifier("progress.measurements")
-    }
-
-    private var consistencyCard: some View {
-        BodyFlowCard(surface: .card) {
-            VStack(spacing: BodyFlowSpacing.sm) {
-                FixtureMetricRow(title: copy("progress.metric.current-streak"), value: presentation.currentStreakText, systemImage: "flame")
-                Divider()
-                FixtureMetricRow(title: copy("progress.metric.longest-streak"), value: presentation.longestStreakText, systemImage: "trophy")
-            }
-        }
-        .accessibilityIdentifier("progress.consistency")
-    }
-
-    private var datesCard: some View {
-        BodyFlowCard(surface: .card) {
-            VStack(spacing: BodyFlowSpacing.sm) {
-                FixtureMetricRow(title: copy("progress.metric.last-activity"), value: presentation.lastActiveDateText)
-                Divider()
-                FixtureMetricRow(title: copy("progress.metric.next-reevaluation"), value: presentation.nextReevaluationText)
-                Divider()
-                FixtureMetricRow(title: copy("progress.metric.updated-at"), value: presentation.updatedAtText)
-            }
-        }
+        .padding(.horizontal, BodyFlowSpacing.xs)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("progress.dates")
+    }
+
+    // MARK: Building blocks
+
+    private func metricGroup<Content: View>(
+        _ title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+            groupHeading(title)
+            content()
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func groupHeading(_ title: String) -> some View {
+        Text(verbatim: title)
+            .font(BodyFlowTypography.cardTitle)
+            .foregroundStyle(BodyFlowColor.primaryText)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private func metricRow(
+        _ title: String,
+        _ value: String,
+        symbol: BodyFlowSymbol
+    ) -> some View {
+        FixtureMetricRow(title: title, value: value, systemImage: symbol.systemName)
     }
 
     private var language: SupportedAppLanguage {
@@ -432,5 +528,50 @@ struct ProgressContentView: View {
 
     private func copy(_ key: String.LocalizationValue) -> String {
         ProgressCopy.string(key, language: language)
+    }
+}
+
+/// A reference date: label and received value in the supporting style, so
+/// the block reads as provenance under the cards rather than as a fourth
+/// card of figures.
+@MainActor
+private struct ProgressProvenanceRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    let title: String
+    let value: String
+
+    var body: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
+                    titleText
+                    valueText
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: BodyFlowSpacing.sm) {
+                    titleText
+                    Spacer(minLength: BodyFlowSpacing.sm)
+                    valueText
+                        .multilineTextAlignment(.trailing)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var titleText: some View {
+        Text(verbatim: title)
+            .font(BodyFlowTypography.supporting)
+            .foregroundStyle(BodyFlowColor.secondaryText)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var valueText: some View {
+        Text(verbatim: value)
+            .font(BodyFlowTypography.supporting)
+            .foregroundStyle(BodyFlowColor.primaryText)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }

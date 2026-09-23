@@ -14,8 +14,18 @@ struct BodyFlowListStyle: ViewModifier {
 }
 
 struct BodyFlowListRowStyle: ViewModifier {
+    /// A selected/emphasized row sits on the elevated surface so the choice
+    /// is visible beyond its glyph; every other row keeps the secondary one.
+    var isEmphasized: Bool = false
+
+    static func backgroundRole(isEmphasized: Bool) -> BodyFlowColor.Role {
+        isEmphasized ? .surfaceElevated : .backgroundSecondary
+    }
+
     func body(content: Content) -> some View {
-        content.listRowBackground(BodyFlowColor.color(.backgroundSecondary))
+        content.listRowBackground(
+            BodyFlowColor.color(Self.backgroundRole(isEmphasized: isEmphasized))
+        )
     }
 }
 
@@ -24,7 +34,7 @@ extension View {
         modifier(BodyFlowListStyle())
     }
 
-    func bodyFlowListRow() -> some View {
-        modifier(BodyFlowListRowStyle())
+    func bodyFlowListRow(isEmphasized: Bool = false) -> some View {
+        modifier(BodyFlowListRowStyle(isEmphasized: isEmphasized))
     }
 }

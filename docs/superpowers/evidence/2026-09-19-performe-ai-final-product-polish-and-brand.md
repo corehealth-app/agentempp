@@ -1345,3 +1345,318 @@ fixtures and debug data. They are not the Roberto journey's final content, and
 their markers were deliberately not hidden to improve screenshots.
 
 ROBERTO JOURNEY FIXTURE STATUS: **PENDING PRE-BETA STAGING CLEANUP**
+
+### I4 STATUS CORRECTION (additive note, 2026-09-23 — commit `e710dba1…` untouched)
+
+The I4 closeout above reported `REGRESSION STATUS: VERIFIED` for the I4 gate.
+Under the plan's global regression policy that label is reserved for a full
+run of all 17 UI classes with 0 failures on the increment's final state, which
+I4 did not execute (it ran the 8 focused classes). The corrected reading is:
+
+- I4 implementation / visual gate: **COMPLETE / APPROVED**
+- I4 focused UI: **78 / 78 PASS** (8 classes, one invocation each)
+- I4 unit: **1,229 / 1,229 PASS**
+- **REGRESSION STATUS: PARTIALLY VERIFIED** — the 17-class full UI suite was
+  not run on the final I4 state.
+- I4 PUBLIC BRAND GATE: **PASS** (scanner `PUBLIC_LEAK 0`, no new public
+  literal, `Localizable.xcstrings` untouched)
+- **PROJECT PUBLIC BRAND STATUS: PARTIALLY VERIFIED** — the I4 gate passed;
+  the global VERIFIED remains reserved for the formal surface closeout (I7).
+
+Nothing in I4 was re-run to change these labels; the commit, its parent and
+its tree stand as recorded.
+
+## I5 — Progresso / Perfil / Biblioteca / Rotina / Histórico / Mascote (2026-09-23, implementação — NÃO commitado)
+
+Operação `EXECUTE_PERFORME_AI_UIUX_I5_V1` / `IMPLEMENTATION_I5_ONLY`. Performe AI = produto público; Flow = agente público; BodyFlow = identidade técnica interna preservada.
+
+### Baseline revalidado (entrada)
+
+```
+branch codex/performe-ai-client-beta-flow-v1 · HEAD e710dba1eb7c59988c7d0dac1445d2ee909e14bf
+parent 3f600d680efcb1a71e653e6c92c29d1ca6d1edbf · tree 3c488c518ff7beed9c1dbc9ff372ce922cf4d9d5
+subject refactor(ui): refine Performe AI registration and plan composition
+status 0 · index 0 · stash 0 · writers 0 · Xcode 27.0 (27A266a) · iPhone 17 Pro 27291590-… (Shutdown → booted nesta operação)
+```
+
+Hashes SHA-256 de entrada dos arquivos tocados: `$SP/v6/i5/entry-hashes.txt` (42 linhas).
+
+### RED (caracterização no app HEAD e710dba, bundle de testes com os 2 testes novos)
+
+| Teste | Resultado RED | Valor observado |
+|---|---|---|
+| `Prompt14LibraryUITests/testRegularFiltersShareOneRowWithTheCategoryControl` | FAIL (esperado) | `saved.maxX 386.0 > category.minX 16.01` — toggle `(201.3, 182.3, 184.7, 44)`, categoria `(16, 238.3, 370, 44)` → categoria ABAIXO do toggle |
+| `Prompt14ProgressUITests/testProgressGroupsMeasurementsAndAchievementsPreservingIdentifiers` | FAIL (esperado) | `progress.body` inexistente (`waitForExistence` falhou na linha 75) |
+
+Logs: `logs/v6-i5-ui-red-*.log/.xcresult`; resumo `v6/i5/red-characterization.txt`.
+### Mudanças por superfície (I5, worktree dirty — não stageado)
+
+**Vocabulário / DS (aditivo):** `BodyFlowSymbol` +21 casos (xp, level, streak, longestStreak, completedBlocks, deficit, medal, weight, bodyComposition, person, preferences, categoryFilter, picker, save, saved, unsave, article, selected, unselected, close, confirm); `BodyFlowListRowStyle(isEmphasized:)` + `.bodyFlowListRow(isEmphasized:)` (linha selecionada sobe para `surfaceElevated`). `Localizable.xcstrings` +5 chaves pt-BR/en: `progress.section.{measurements,consistency,summary,achievements,dates}`.
+
+**Progresso** (`ProgressComponents`, `ProgressRootView`, `Block7700DetailView`): sem eyebrow; "Seu progresso" via `BodyFlowSectionHeader` (screenTitle); Card A `progress.body` = grupo `progress.measurements` (peso `scalemass`, gordura `figure`) + Divider + grupo `progress.consistency` (sequência `flame`, maior `trophy`), cada grupo com heading cardTitle + `.isHeader`; Card B `progress.summary` intacto (heading "Resumo"; XP `sparkles`, nível `rosette`, blocos `checkmark.seal`, déficit `arrow.down.circle`); Card C `progress.achievements` = heading "Conquistas" + (`progress.streak.restart` com botão `progress.streak.resume-today` em `BodyFlowButtonStyle(.primary)` mapeado da `ProgressActionAppearance`, sem `.tint`) + `progress.badges` (subtítulo "Medalhas conquistadas" em supporting; medalhas `medal.fill` em `achievement`) + `progress.missions.unavailable` como `BodyFlowStatusLine(.unavailable)`; `progress.dates` vira bloco de proveniência (`ProgressProvenanceRow`, supporting), sem card. Raiz: `.refreshable`, glifo do bloco pelo vocabulário. Bloco 7.700: título só na barra; banner+retry (`FeatureStaleRecovery`) dentro do scroll; `.refreshable`. Nenhum cálculo local; `ProgressPresentation`/seções oficiais intocados.
+
+**Perfil / persona** (`ProfileRootView`, `CoachPersonaPickerView`): identidade em uma row com o glifo `person.crop.circle` inline no título (estrutura única em todos os tamanhos — a variante "coluna de ícone" tentada em `green4/green5` empurrou a row de persona para fora do alcance do tap em AXXXL e o ramo por categoria disparou a auditoria de Dynamic Type; ver run #1/#2) + "Dados de demonstração"; row "Estilo do Flow" com `.bodyFlowRow` e glifo `flow`; preferências com glifo do vocabulário. Picker: rows `.bodyFlowRow` com `selected`/`unselected` e `.bodyFlowListRow(isEmphasized:)` na selecionada (trait `.isSelected` mantido); retry `FeatureRetryButton` (secondary, id `state.retry` novo nesta tela); "Indisponível" com glifo do vocabulário; badge "Salvando…" opaco (`surfaceElevated` + contorno `borderSubtle` 1/2 pt conforme `accessibilityReduceTransparency`; literais vigiados mantidos; `.regularMaterial` removido); háptica success após save persistido (`savedSelections`). Cancel/Save intactos.
+
+**Biblioteca** (`LibraryRootView`, `PublishedContentCard`, `ContentCoverView`): regular = Todos/Salvos + categoria na MESMA linha (HStack: toggle hugging + categoria flexível com rótulo quebrável; ViewThatFits descartado por medição — ver RED/GREEN); AX = empilhado como antes (`embedsFiltersInFeed` intacto); segmento selecionado preenchido `brandPrimary`/`onPrimary` + glifo `checkmark.circle.fill` + trait; categoria = 1 Button + 1 Label (+ chevron `chevron.up.chevron.down` decorativo), `.bodyFlowRow`, ≥44; cards `.bodyFlowRow`; status Salvo (`bookmark.fill` accent) / Concluído (`checkmark.circle` positivo) via `LibraryStatusLabel`; loading 1ª página = heading + spinner + 2 placeholders `accessibilityHidden`; load-more / retry-next-page / reload-first-page em `BodyFlowButtonStyle(.secondary)`, avisos de paginação em `BodyFlowStatusLine(.error/.warning)`; placeholder de capa `book.closed` pelo vocabulário. `ScrollView`/`LazyVStack`/paginação/cursor/cache/tracking/ordem de acessibilidade intocados. `toolbarBackground`: removido por ÚLTIMO (ver gate).
+
+**Detalhe de conteúdo** (`PublishedContentDetailView`): Save `.secondary` / Complete `.primary` (labels/ids/ViewThatFits mantidos); resumo de mutação = `BodyFlowStatusLine` (kind mapeado do glifo do modelo — modelo intocado) + retry `.secondary` (id mantido); erro de "opened" como status line `.error`; ações bounded Voltar `.primary` / Biblioteca `.secondary`; metadados e status com o vocabulário; háptica success/failure pelo resultado da mutação.
+
+**Rotina** (`RoutineListView`, `RoutineHistoryView`, `RoutineDetailView`, `RoutineActionSheet`, `RoutineSnoozeView`, `RoutinePresentation`): glifo de status compartilhado `BodyFlowSymbol.routineStatus(_:)` (taken ✓ / snoozed clock.badge / skipped forward.circle / pending clock) nas listas, histórico e detalhe (texto bruto `"taken"` do recibo continua); detalhe: chrome compartilhado, nome em screenTitle + `.isHeader`, "Ações" cardTitle, Tomado `.primary` / Adiar `.secondary` / Pular `.tertiary`, "Histórico" como row-card com chevron `.bodyFlowRow`; `RoutineActionSummary` = `BodyFlowStatusLine` (success/unavailable/error) + retry `.secondary`; action sheet com fundo da marca, drag indicator, submit `.primary` loading-aware, háptica success/failure; snooze: sem padding interno, presets em `ViewThatFits` (HStack de 3 `.secondary` → VStack), custom `.primary` loading-aware, wheel tintado; load-more do histórico `.secondary`.
+
+**Histórico** (`MainHistoryView`, `HistoryMealLogRowView`, `HistoryMealLogDetailView`, `HistoryWorkoutDetailView`): cabeçalhos `BodyFlowSectionHeader` (meals `fork.knife`, workouts `figure.run`) combinados em um elemento com os ids `history.meals`/`history.workouts`; rows com chevron (`HistoryRowChevron`); `.refreshable`; detalhes = um único `BodyFlowCard` sobre o fundo da marca (título screenTitle + tipo + Divider + métricas; ids mantidos), chrome compartilhado.
+
+**Mascote** (`MascotCardView`, `MascotDetailView`): card `.bodyFlowRow`, stale como `BodyFlowStatusLine(.warning)`, retry compacto `.secondary`, título do card em cardTitle; detalhe: `mascot.refresh` como botão compacto `.secondary` no topo do conteúdo (alinhado à direita) — a variante na toolbar (`green4`–`green6`) foi descartada porque o item de barra espelha o identificador no seu host view e os testes do mascote endereçam `mascot.refresh` por identificador (`descendants(.any)`), resolvendo em dois elementos; stale via `FeatureStaleRecovery`; chrome compartilhado. Artwork/animação/Reduce Motion intocados.
+
+### Correção da linha de filtros da Biblioteca (medição → decisão)
+
+O plano previa `ViewThatFits` para toggle + categoria na mesma linha. O primeiro GREEN (build `green1`) manteve a categoria abaixo do toggle (`saved.maxX 237.0 > category.minX 16.01`; toggle já hugging `(124.7, 182.3, 112.3, 44)`), porque `ViewThatFits` mede a largura *ideal* (texto sem quebra): toggle ≈ 206 pt + 12 + categoria ≈ 217 pt ("Todas as categorias" + glifo + chevron) = 435 pt > 370 pt disponíveis em Large — a primeira alternativa nunca cabe. Decisão: em tamanhos regulares a linha é um `HStack` fixo (toggle hugging + categoria flexível com rótulo quebrável, 2 linhas em Large); em tamanhos de acessibilidade continua a pilha existente (`embedsFiltersInFeed` intacto). GREEN no build `green2`: `testRegularFiltersShareOneRowWithTheCategoryControl` PASS (10,2 s). Ajuste tardio na mesma superfície (build `green4`): título "Horário personalizado" acima da roda de snooze com `labelsHidden()` + `accessibilityLabel` (o rótulo inline hifenizava caractere a caractere: "Ho-rá-rio per-so-nali-zado").
+
+### Gate do `toolbarBackground` da Biblioteca (ÚLTIMA alteração da superfície)
+
+Caracterização no build `green2` (override opaco presente): `v6/i5/toolbar-char-library-top-light.png`, `toolbar-char-library-scrolled-light.png`, `toolbar-char-library-scrolled-dark.png` (troca ao vivo). Remoção (`LibraryRootView.swift` −2 linhas; `toolbarBackground`/`scrollEdgeEffect` na árvore = 0) → build `green3` → gates obrigatórios, uma invocação cada:
+
+| Teste | Resultado |
+|---|---|
+| `Prompt14AccessibilityUITests/testAccessibilityXXXLEvidence` | PASS (26,2 s) |
+| `Prompt14AccessibilityUITests/testLiveThemeSwitchPreservesShellStackAndLibraryState` | PASS (20,5 s) |
+| `Prompt14LibraryUITests/testLibraryAllCategoryAndOpaquePagination` | PASS (37,2 s) |
+
+Reprodução manual sem navegação/relaunch (Biblioteca aberta, rolada ≈280 pt): light→dark (`library-live-theme-1-dark.png`), dark→light (`library-live-theme-2-light.png`), light→dark (`library-live-theme-3-dark.png`); estado (aba Hoje selecionada, stack, filtro "Todos", posição de scroll) preservado; comparativos `cmp-toolbar-opaque-vs-native-{light,dark}.png`. Observação: em tamanhos regulares a barra nativa cobre o bloco de filtros (fora do scroll, opaco em creme), então a remoção é visualmente neutra ali; o cenário "capa sob a barra" existe apenas em AX (filtros embutidos no feed), coberto por `testAccessibilityXXXLEvidence`. Nenhuma regressão de contraste, estado, stack, filtro ou acessibilidade → remoção mantida.
+
+### Classificação por superfície (HARD VISUAL GATE)
+
+| Superfície | VISUAL FIDELITY (B2 / Signal Spark) | FEATURE FIDELITY | Capturas |
+|---|---|---|---|
+| Progresso | **ATENDIDO** — título único, 3 cards agrupados (Medidas+Consistência / Resumo / Conquistas), datas como proveniência, glifos coerentes; antes/depois `cmp-progress-before-after-{light,dark}.png`; AXXXL `cmp-progress-axxxl-light-dark.png`; zero-streak `progress-streak-zero-light-{top,achievements}.png`; en `progress-en-light-large.png` | **PRESERVADA** — valores server-authoritative, nil≠zero ("Não disponível"), seções oficiais e IDs; Prompt14Progress/Prompt13PlanProgressHistory/PremiumCoreSurfaces (matriz de tema) | 10 |
+| Perfil / persona | **ATENDIDO** (parcial na identidade: glifo inline, não coluna) — "Estilo do Flow" com glifo do Flow e feedback, opções com linha selecionada enfatizada, badge opaco; `profile-final-pt-light-large.png` (estado final), `profile-pt-light-large.png` (variante coluna de ícone, descartada), `persona-pt-light-large.png` (fixture sem opções), `persona-options-pt-light-large.png`, `persona-selected-pt-light-large.png`, `cmp-profile-before-after-light.png` | **PRESERVADA** — Focus/Impulse/Zen do contrato, save lifecycle, IDs, Cancelar/Salvar intactos | 5 |
+| Biblioteca | **ATENDIDO** — filtros em uma linha (regular), segmento selecionado preenchido, cards com feedback, status com glifos, placeholders de loading, paginação em role; `library-pt-{light,dark}-large.png`, `library-en-light-large.png`, `library-pt-{light,dark}-axxxl.png`, `library-xctest-16-accessibility-xxxl.png`, `library-cover-under-bar-light.png`, live theme ×3, `cmp-library-before-after-{light,dark}.png` | **PRESERVADA** — ScrollView/LazyVStack/paginação/cursor/cache/tracking/ordem de acessibilidade/`Button+Label` da categoria; Prompt14Library + Prompt14Accessibility + PremiumContentProfile | 12 |
+| Detalhe de conteúdo | **ATENDIDO** (Large) / **NÃO VERIFICADO** visualmente em AXXXL por captura manual (coberto funcionalmente por `testArticleActionsAndMetadataAtAXXXXL`) — `detail-pt-light-large.png` | **PRESERVADA** — parser/cache/permissions/tracking/state machine intocados; Prompt14Library (save/complete/retry/conflict) | 1 |
+| Rotina | **ATENDIDO** — lista com glifos de status, detalhe com Tomado/Adiar/Pular por role e Histórico como row, sheet com fundo da marca e submit primário, snooze com presets e título da roda; `routine-list-pt-light-large.png`, `routine-detail-pt-light-large.png`, `routine-sheet-taken-pt-light-large.png`, `routine-snooze-final-pt-{light,dark}-large.png`, `cmp-routine-*.png` | **PRESERVADA** — políticas de snooze, idempotência, lifecycle, IDs, texto bruto do recibo ("taken"); Prompt13Routine + PremiumContentProfile | 6 |
+| Histórico | **ATENDIDO** — cabeçalhos semânticos com glifo, rows com chevron, detalhe em um card; `history-pt-light-large.png`, `history-meal-detail-pt-light-large.png`, `cmp-history-list-detail.png` | **PRESERVADA** — cursor/paginação/IDs/separação meals-workouts; Prompt13PlanProgressHistory | 2 |
+| Mascote | **ATENDIDO** (refresh no conteúdo, não na barra — ver decisão) — card com feedback, título semântico, retry/refresh consistentes; `mascot-card-pt-light-large.png`, `mascot-detail-final-pt-light-large.png` (estado final), `mascot-detail-pt-light-large.png` (variante toolbar, descartada), `cmp-mascot-card-detail.png` | **PRESERVADA** — artwork/animação/Reduce Motion intocados, anúncio "personalidade …/estado …" ; Prompt14TodayMascot não está na lista focada de I5 (mascot.refresh 45×45 coberto por Prompt14Accessibility `reduceMotion`) | 2 |
+
+Presets de snooze: em Large os três `.secondary` não cabem em uma linha (3×≈127 pt + 24 > 370) e o `ViewThatFits` cai para a pilha — comportamento previsto pelo plano, registrado.
+
+### Limitações e pendências registradas
+
+- **"Cancelar" recortado na cápsula da toolbar da folha de persona** ("ancela") — pré-existente (já observado em I4), causado pelo `frame(minWidth: 44)` + cápsula iOS 26; Cancel/Save são intocáveis nesta operação (§6). Pendência para I7.
+- **Conteúdo sintético menciona "aplicativo BodyFlow"** no corpo markdown da fixture Prompt 14 (`detail-pt-light-large.png`, abaixo da dobra): conteúdo de fixture QA/server-owned, não copy do app; scanner `PUBLIC_LEAK 0`. Fica sob ROBERTO JOURNEY FIXTURE STATUS: PENDING PRE-BETA STAGING CLEANUP.
+- **Histórico a partir da lista (push por view)** não navega — defeito funcional pré-existente registrado em I3/I4; fora do escopo visual de I5.
+- **Detalhe de conteúdo em AXXXL**: captura manual não realizada (navegação AXXXL custa ~8 gestos por tela); a fidelidade funcional em AXXXL está coberta por `PremiumContentProfileUITests/testArticleActionsAndMetadataAtAXXXXL` (que também anexa `s7-article-en-dark-axxxl`).
+- **Hápticas** (persona salva, conteúdo salvo/concluído, ação de rotina): NOT VERIFIED em dispositivo físico (Simulator não reproduz `sensoryFeedback`).
+- PLAN DISPLAY LABEL STATUS: PENDING CONTRACT CLASSIFICATION e ROBERTO JOURNEY FIXTURE STATUS: PENDING PRE-BETA STAGING CLEANUP permanecem registrados, não tocados.
+
+### Builds do incremento (Debug, `build-for-testing`, DerivedData da sessão)
+
+| Build | Conteúdo | Uso |
+|---|---|---|
+| `red` | testes RED + app HEAD | caracterização RED |
+| `green1` | implementação I5 (filtros via `ViewThatFits`) | Progresso GREEN; Biblioteca ainda RED |
+| `green2` | filtros em `HStack` fixo | Biblioteca GREEN; caracterização do `toolbarBackground` |
+| `green3` | `toolbarBackground` removido | 3 gates nomeados + captura da matriz |
+| `green4` | título da roda de snooze | unit completo, Release/codesign/scanner/analyze, UI focado run #1 |
+| `green5` | refresh do mascote como elemento único; identidade do Perfil inline em AX | UI focado run #2 (3 classes afetadas) — ESTADO FINAL |
+
+### Unit (invocações separadas, `-parallel-testing-enabled NO`)
+
+| Invocação | Estado | Resultado |
+|---|---|---|
+| focado (21 suítes: núcleo + I5 + Symbol/Routine/History) | `green1` | XCTest 24/24 · Swift Testing 222/222 · 0 falhas · 120 s |
+| **completo `BodyFlowTests`** | `green4` | **XCTest 24/24 · Swift Testing 1.213/1.213 (96 suítes) · 0 falhas · 0 skips** — 1.237 testes (+8 vs I4: 4 contratos em `BodyFlowPremiumRenderingTests`, 4 políticas em `BodyFlowComponentPolicyTests`) · 120 s |
+| contratos (Rendering/Policy/Symbol/LocalizationContract) | `green5`, `green6`, `green7` | 24/24 XCTest + 33/33 Swift Testing em cada build, 0 falhas |
+| **completo `BodyFlowTests` (ESTADO FINAL)** | `green7` | **XCTest 24/24 · Swift Testing 1.213/1.213 (96 suítes) · 0 falhas · 0 skips · 120 s** |
+
+### UI focado — FULL SUITE RESULT (run #1, `green4`, uma invocação por classe, sequencial)
+
+| Classe | Executados | Falhas | Tempo | Estado |
+|---|---|---|---|---|
+| PremiumPerformanceUITests | 4 | 0 | 201 s | PASS |
+| Prompt14LibraryUITests | 12 (+1 novo) | 0 | 351 s | PASS |
+| Prompt14AccessibilityUITests | 13 | **1** (`testReduceMotionEvidence`: "Multiple matching elements found" para `mascot.refresh`) | 294 s | FAIL |
+| PremiumContentProfileUITests | 3 | **1** (`testProfileFixtureProvenanceAndServerOptionGate` linha 36: folha de persona não abriu após `style.tap()`) | 44 s | FAIL |
+| Prompt14ProgressUITests | 5 (+1 novo) | 0 | 54 s | PASS |
+| Prompt13PlanProgressHistoryUITests | 12 | 0 | 122 s | PASS |
+| Prompt13RoutineUITests | 12 | 0 | 124 s | PASS |
+| BodyFlowUITests | 18 | 0 | 431 s | PASS |
+| PremiumConvergenceUITests | 4 | 0 | 137 s | PASS |
+| **Total run #1** | **83** | **2** | 32 min | 81/83 |
+
+Diagnóstico (xcresult preservado, hierarquia anexada): (a) o `Button` do refresh na toolbar com `Label` expunha dois elementos com o mesmo identificador → trocado por `Image(symbol:)` + `accessibilityLabel` (`MascotDetailView`); (b) em AXXXL a row `profile.coach-persona` media `{16, 787.3, 370, 350.3}` — a identidade em `HStack` (glifo em coluna de 44 pt) empurrou a row para baixo e seu centro caiu fora da viewport, onde o `tap()` do XCUITest não chega → em tamanhos de acessibilidade a identidade volta ao `Label` inline (`ProfileRootView`). Nenhum teste, timeout, allowlist ou ID foi alterado.
+
+### UI focado — run #2 (`green5`, classes afetadas, uma invocação por classe)
+
+| Classe | Executados | Falhas | Estado |
+|---|---|---|---|
+| PremiumContentProfileUITests | 3 | 0 | PASS (58,5 s) |
+| Prompt14AccessibilityUITests | 13 | **1** — `testReduceMotionEvidence` ainda "Multiple matching elements": a hierarquia anexada mostra o identificador `mascot.refresh` espelhado no host do item da toolbar (`Other {337,66,45,36}`) e no `Button` — não era o `Label` | FAIL |
+| PremiumConvergenceUITests | 4 | **1** — `testRepresentativeLoadedTabsPassAutomatedAccessibilityAudit` em `tab.perfil` ("Perfil de demonstração": "Dynamic Type font sizes are partially unsupported") — causado pelo ramo de layout por categoria introduzido na correção (b) | FAIL |
+| contratos unit (Rendering/Policy/Symbol/LocalizationContract) | 24 XCTest + ST | 0 | PASS |
+
+Correções para o run #3 (`green6`): identificador + rótulo falado movidos para o glifo dentro do `Button` (o host da toolbar deixa de espelhá-lo); identidade do Perfil com **uma** estrutura em todos os tamanhos (`Label` inline com o glifo + linha de proveniência — a mesma geometria pré-I5, que já passava na auditoria e mantém a row de persona ao alcance em AXXXL).
+
+### UI focado — run #3 (`green6` = ESTADO FINAL, uma invocação por classe)
+
+| Classe | Executados | Falhas | Estado |
+|---|---|---|---|
+| PremiumContentProfileUITests | 3 | 0 | PASS (56,3 s) |
+| PremiumConvergenceUITests | 4 | 0 | PASS (137 s) |
+| BodyFlowUITests | 18 | 0 | PASS (423 s) |
+| Prompt14AccessibilityUITests | 13 | **1** — `testReduceMotionEvidence`: hierarquia anexada (`xcresult-attachments/rm-fail3`) mostra `mascot.refresh` de novo em dois elementos — o host do item da toolbar (`Other {337,66,45,36}`) e o `Button {337,61.7,45,45}` — mesmo com o identificador no glifo interno: o item de barra espelha qualquer identificador do seu conteúdo no host view | FAIL |
+| contratos unit (Rendering/Policy/Symbol/LocalizationContract) | 24 XCTest + ST | 0 | PASS |
+
+Decisão: o refresh do detalhe do mascote deixa a toolbar e vira um botão compacto `.secondary` (`isCompact`) no topo do conteúdo, alinhado à direita — um elemento, 44 pt, mesmo rótulo falado. A colocação na barra prevista pelo plano (§7.10) é incompatível com `Prompt14AccessibilityUITests`/`Prompt14TodayMascotUITests`, que endereçam `mascot.refresh` por identificador (`descendants(.any)`); os testes não foram alterados.
+
+### UI focado — run #4 (`green7` = ESTADO FINAL)
+
+| Classe | Executados | Falhas | Estado |
+|---|---|---|---|
+| Prompt14AccessibilityUITests | 13 | 0 | **PASS** (248,9 s) |
+| contratos unit (Rendering/Policy/Symbol/LocalizationContract) | 24 XCTest + 33 ST | 0 | PASS |
+
+**FINAL VERIFIED STATE (build `green7`):** as 9 classes focadas passaram na sua última execução — PremiumPerformance, Prompt14Library, Prompt14Progress, Prompt13PlanProgressHistory, Prompt13Routine em `green4` (as correções `green5→green7` tocaram só `ProfileRootView`, `MascotDetailView` e o título do snooze em `RoutineSnoozeView`, este último já em `green4`); PremiumContentProfile, PremiumConvergence, BodyFlowUITests em `green6` (fontes idênticas a `green7` exceto `MascotDetailView`, fora dessas classes); Prompt14Accessibility em `green7`. Total do último estado verde por classe: **83 / 83, 0 falhas, 0 skips**. Não é uma suíte única: run #1 = 81/83; correções e reexecuções por classe estão listadas acima. As 17 classes NÃO foram executadas → REGRESSION STATUS permanece PARTIALLY VERIFIED.
+
+### Performance (`PremiumPerformanceUITests`, `green4`, 5 iterações, host load ≈5)
+
+| Teste | Métrica | I1 | I5 (`green4`, run #1) | Δ | Limite → veredito |
+|---|---|---|---|---|---|
+| `testFlowFiftyMessageHistoryRenderBaseline` | Clock Monotonic Time (s) | 6.000 | 5.863 | -2.3 % | +20 % → OK |
+| `testFlowFiftyMessageHistoryRenderBaseline` | Memory Peak Physical (kB) | 79153.528 | 40401.923 | -49.0 % | +10 % → OK |
+| `testFlowFiftyMessageHistoryRenderBaseline` | Memory Physical (kB) | n/a | 62.259 | — | — |
+| `testFlowLongPlainResponseWrappingBaseline` | Clock Monotonic Time (s) | 5.791 | 6.250 | +7.9 % | +20 % → OK |
+| `testFlowLongPlainResponseWrappingBaseline` | Memory Peak Physical (kB) | 81339.154 | 47184.899 | -42.0 % | +10 % → OK |
+| `testFlowLongPlainResponseWrappingBaseline` | Memory Physical (kB) | 6.554 | 19.661 | +200.0 % | +10 % → ruído de página (±64 kB; pico −42 %) |
+| `testLibraryFeedScrollBaseline` | Clock Monotonic Time (s) | 5.451 | 6.008 | +10.2 % | +20 % → OK |
+| `testLibraryFeedScrollBaseline` | Memory Peak Physical (kB) | 81018.027 | 46391.914 | -42.7 % | +10 % → OK |
+| `testLocalLaunchBaseline` | Duration (AppLaunch) (s) | 1.851 | 1.035 | -44.1 % | +15 % → OK |
+Clock dentro de +20 % (máx. +10,2 %), pico de memória −42 % a −49 %, launch −44 %. A métrica "Memory Physical" é o delta físico durante o bloco medido, com valores em passos de 16–64 kB (`[32.8, −16.4, 65.5, 0, 16.4]`): +13 kB sobre uma base de 6,5 kB é ruído de granularidade de página, não regressão. Nenhum dataset, fixture ou mensagem foi reduzido.
+
+### Release / segurança / marca (estado final `green7`, DerivedDataRelease da sessão)
+
+| Gate | Resultado |
+|---|---|
+| `xcodebuild build -configuration Release` (signing normal) | RELEASE_EXIT=0 (29 s) |
+| `codesign --verify --deep --strict --verbose=2` | CODESIGN_EXIT=0 |
+| `premium-surface-scan.mjs --baseline 7ab3e657` | **PASS** — PUBLIC_LEAK 0 · HISTORICAL_ASSET 18/18 IDENTICAL · ALLOWED_TECHNICAL 235 · failures [] |
+| `node --test premium-surface-scan.test.mjs` | 21/21 |
+| `xcodebuild analyze` (Debug, DerivedDataAnalyze) | ANALYZE_EXIT=0 (20 s, incremental); 0 avisos novos em fontes de produção |
+| Assets | `git diff --stat -- assets Assets.xcassets` vazio; AccentColor intocado |
+| Greps de política (fontes de produção) | shadow 0 · blur 0 · Material 0 (o `.regularMaterial` do badge de persona saiu) · glassEffect 0 · minimumScaleFactor 0 · scrollEdgeEffect 0 · toolbarBackground 0 · `dynamicTypeSize(` só em `#Preview` |
+| Identificadores | nenhum removido (10 movidos permanecem presentes); novos: `progress.body`, `progress.achievements`; `state.retry` reutilizado na folha de persona |
+| Marca pública | nenhuma literal nova; catálogo +5 chaves pt-BR/en sem nomes de marca; `brand.label == "Performe AI"` (BodyFlowUITests 18/18) |
+
+### Capturas (`$SP/v6/i5/`, 85 PNG + `settings.log` + `hashes.txt`; nunca no repositório)
+
+Antes (app HEAD e710dba, instalado pelo run RED): `before-progress-{light,dark}`, `before-library-{light,dark}`, `before-profile-light`. Caracterização da barra: `toolbar-char-library-{top-light,scrolled-light,scrolled-dark}`. Estado final: Progresso core 5 (`progress-pt-{light,dark}-{large,axxxl}`, `progress-en-light-large`) + `progress-streak-zero-light-{top,achievements}`; Perfil `profile-final-pt-light-large` (+ variante descartada `profile-pt-light-large`); persona `persona-pt-light-large` (fixture sem opções), `persona-options-pt-light-large`, `persona-selected-pt-light-large`; Biblioteca core 5 (`library-pt-{light,dark}-{large,axxxl}`, `library-en-light-large`) + `library-cover-under-bar-light` + live theme ×3 + `library-xctest-16-accessibility-xxxl`; detalhe `detail-pt-light-large`; Rotina `routine-list-pt-light-large`, `routine-detail-pt-light-large`, `routine-sheet-taken-pt-light-large`, `routine-snooze-final-pt-{light,dark}-large` (+ `routine-snooze-pt-*` pré-título); Histórico `history-pt-light-large`, `history-meal-detail-pt-light-large`; Mascote `mascot-card-pt-light-large`, `mascot-detail-final-pt-light-large` (+ variante toolbar descartada). Comparativos: `cmp-*.png` (14). Não capturados manualmente: Perfil core 5 além de light Large (fixture idêntica; AXXXL coberto por `testProfileFixtureProvenanceAndServerOptionGate`), detalhe de conteúdo em AXXXL (coberto por `testArticleActionsAndMetadataAtAXXXXL`, attachment `s7-article-en-dark-axxxl`).
+
+### Git final
+
+HEAD **inalterado**: `e710dba1eb7c59988c7d0dac1445d2ee909e14bf`; índice vazio; stash vazio; 29 caminhos dirty (1.232+/477−), NÃO stageados:
+- `apps/ios/BodyFlow/BodyFlow/DesignSystem/BodyFlowSymbol.swift`
+- `apps/ios/BodyFlow/BodyFlow/DesignSystem/Components/BodyFlowListStyle.swift`
+- `apps/ios/BodyFlow/BodyFlow/Features/History/HistoryMealLogDetailView.swift`
+- `apps/ios/BodyFlow/BodyFlow/Features/History/HistoryMealLogRowView.swift`
+- `apps/ios/BodyFlow/BodyFlow/Features/History/HistoryWorkoutDetailView.swift`
+- `apps/ios/BodyFlow/BodyFlow/Features/History/MainHistoryView.swift`
+- `apps/ios/BodyFlow/BodyFlow/Features/Library/ContentCoverView.swift`
+- `apps/ios/BodyFlow/BodyFlow/Features/Library/LibraryRootView.swift`
+- `apps/ios/BodyFlow/BodyFlow/Features/Library/PublishedContentCard.swift`
+- `apps/ios/BodyFlow/BodyFlow/Features/Library/PublishedContentDetailView.swift`
+- `apps/ios/BodyFlow/BodyFlow/Features/Mascot/MascotCardView.swift`
+- `apps/ios/BodyFlow/BodyFlow/Features/Mascot/MascotDetailView.swift`
+- `apps/ios/BodyFlow/BodyFlow/Features/Profile/CoachPersonaPickerView.swift`
+- `apps/ios/BodyFlow/BodyFlow/Features/Profile/ProfileRootView.swift`
+- `apps/ios/BodyFlow/BodyFlow/Features/Progress/Block7700DetailView.swift`
+- `apps/ios/BodyFlow/BodyFlow/Features/Progress/ProgressComponents.swift`
+- `apps/ios/BodyFlow/BodyFlow/Features/Progress/ProgressRootView.swift`
+- `apps/ios/BodyFlow/BodyFlow/Features/Routine/RoutineActionSheet.swift`
+- `apps/ios/BodyFlow/BodyFlow/Features/Routine/RoutineDetailView.swift`
+- `apps/ios/BodyFlow/BodyFlow/Features/Routine/RoutineHistoryView.swift`
+- `apps/ios/BodyFlow/BodyFlow/Features/Routine/RoutineListView.swift`
+- `apps/ios/BodyFlow/BodyFlow/Features/Routine/RoutinePresentation.swift`
+- `apps/ios/BodyFlow/BodyFlow/Features/Routine/RoutineSnoozeView.swift`
+- `apps/ios/BodyFlow/BodyFlow/Resources/Localizable.xcstrings`
+- `apps/ios/BodyFlow/BodyFlowTests/BodyFlowComponentPolicyTests.swift`
+- `apps/ios/BodyFlow/BodyFlowTests/BodyFlowPremiumRenderingTests.swift`
+- `apps/ios/BodyFlow/BodyFlowUITests/Prompt14LibraryUITests.swift`
+- `apps/ios/BodyFlow/BodyFlowUITests/Prompt14ProgressUITests.swift`
+- `docs/superpowers/evidence/2026-09-19-performe-ai-final-product-polish-and-brand.md`
+
+Commit previsto (somente após aprovação visual explícita): `refactor(ui): refine Performe AI progress, profile and library density`.
+
+### Status
+
+- USER VISUAL ACCEPTANCE: **PENDING**
+- REGRESSION STATUS: **PARTIALLY VERIFIED** (9 classes focadas verdes por classe no estado final + unit completo; 17 classes não executadas)
+- PUBLIC BRAND STATUS: PARTIALLY VERIFIED (gate de I5 PASS; VERIFIED global reservado ao closeout I7)
+- REBRAND STATUS: PARTIAL · IOS INTEGRATION STATUS: LOCAL ONLY · PRODUCTION STATUS: NOT DEPLOYED · APPICON TINTED: PENDING — NOT INTEGRATED
+- HAPTICS ON PHYSICAL DEVICE: NOT VERIFIED
+- COST / ENVIRONMENT CLOSEOUT: COMPLETE — nenhum recurso pago; Simulator iPhone 17 Pro iniciado nesta operação e o app encerrado ao final; nenhum processo de terceiros tocado.
+
+## I5 — correção obrigatória da revisão visual: "Cancelar" cortado na folha de persona (2026-09-23)
+
+Operação `FIX_I5_PERSONA_CANCEL_AND_RETURN_FOR_FINAL_VISUAL_GATE_V1` / `I5_SMALL_FIX_ONLY`. Revisão visual de I5: **APPROVED WITH ONE REQUIRED FIX** (folha "Estilo do Flow": "Cancelar" visualmente cortado à esquerda). Baseline revalidado: HEAD `e710dba1…` inalterado, índice vazio, 29 caminhos dirty de I5, nenhum writer concorrente.
+
+### Caracterização (teste novo, RED antes da correção)
+
+`PremiumContentProfileUITests/testPersonaSheetBarActionsRenderCompletelyAtRegularSize` (pt-BR, light, Large; fixture `--ui-testing-prompt14-persona-stateful`): abre a folha, exige Cancelar/Salvar existentes, hittable, ≥44×44 (`assertTarget`), sem interseção com o título "Estilo do Flow", acima da faixa de marca **da folha** (escopada por `screen.profile.coach-persona`, não a do shell), e — proxy de recorte — `Cancelar.width > Salvar.width` e `> 44,5` (um item de barra recortado reporta a largura do host, não a do rótulo). Anexa captura + hierarquia (`s7-persona-bar-actions-pt-light-regular`).
+
+### PERSONA CANCEL ROOT CAUSE (por evidência de hierarquia, `xcresult-attachments/persona-{red,green,green2,e2}`)
+
+| Variante | Host (Other) de Cancelar | Button de Cancelar | Salvar (host / button) | Visual |
+|---|---|---|---|---|
+| estado I5 (`.cancellationAction`, `.frame(minWidth: 44, minHeight: 44)`) | `{20, 82, 44, 36}` | `{20, 78, 44, 44}` | `{308.7, 82, 73.3, 36}` / `{…, 73.3, 44}` | "ancela" recortado |
+| + `Text.fixedSize()` | `{20, 82, 44, 36}` | `{20, 78, 44, 44}` | idem | ainda recortado (descarta "conteúdo do botão") |
+| placement `.topBarLeading` | `{20, 82, 44, 36}` | `{20, 78, 44, 44}` | idem | ainda recortado (descarta "toolbar placement") |
+| **`.cancellationAction` sem `minWidth`** (só `minHeight: 44`) | **`{20, 82, 91.7, 36}`** | **`{20, 78, 91.7, 44}`** | idem | **"Cancelar" completo** |
+
+Causa: a barra de navegação mede o item **leading** com proposta de largura zero; `frame(minWidth: 44)` resolve então para exatamente 44 pt e o `Text` ("Cancelar" ≈ 63,7 pt + 28 pt de padding do item) é recortado nesse host. O item **trailing** (Salvar) é medido com proposta ajustada, por isso `max(44, natural)` = 73,3 pt e nunca recorta. Não é safe area, marca, container compartilhado nem conteúdo do botão. Salvar vs Cancelar diferem só pelo lado de medição.
+
+### FIX (menor correção; `CoachPersonaPickerView.swift`, somente o item de cancelamento)
+
+- Removido o `minWidth: 44` do item de cancelamento (mantido `minHeight: 44` + `contentShape` no item); o texto passa a ter largura natural (91,7 pt ≥ 44).
+- O glifo `xmark` mostrado em tamanhos de acessibilidade recebe `frame(minWidth: 44)` **dentro** do rótulo (um glifo ≤ 44 pt não recorta), preservando o alvo ≥44 em AX.
+- Placement `.cancellationAction`, `dismiss()`, `saveTask`, `disabled(isSaving)`, rótulo falado, Salvar (intacto, incluindo seu `minWidth`), IDs, foco, marca e identificadores técnicos: inalterados. Nenhum redesenho.
+
+### TESTS (build `persona-final`, uma invocação por classe/suíte)
+
+| Invocação | Resultado |
+|---|---|
+| RED `testPersonaSheetBarActionsRenderCompletelyAtRegularSize` (estado I5) | FAIL esperado — primeira versão do teste acusou `cancel.maxY 122 > brand.minY 75` porque `brand.product-name` resolvia para a faixa do shell atrás da folha (corrigido escopando ao `screen.profile.coach-persona`); versão final RED em `.topBarLeading`: `Cancelar 44.0 não > Salvar 73.3` |
+| GREEN `testPersonaSheetBarActionsRenderCompletelyAtRegularSize` (E2/final) | PASS (14,1 s) — Cancelar `{20, 78, 91.7, 44}` |
+| Unit `CoachPersonaEditorModelTests CoachPersonaTests BodyFlowPremiumRenderingTests BodyFlowComponentPolicyTests LocalizationContractTests` | XCTest 24/24 · Swift Testing 43/43 · 0 falhas |
+| `PremiumContentProfileUITests` (completo, 4 testes) | **4/4 PASS** (72 s) — inclui o gate AXXXL (`Cancelar ∩ Salvar` nulo, `brand.minY ≥ max(cancel.maxY, save.maxY)`) |
+| `Prompt14AccessibilityUITests` (completo; nenhum teste endereça a folha de persona, executado por precaução) | **13/13 PASS** (250 s) |
+| `PremiumConvergenceUITests` (completo; a hierarquia da barra da folha mudou de largura) | **4/4 PASS** (142 s) |
+| Release / codesign / scanner (`final4`) | RELEASE_EXIT=0 (26 s) · CODESIGN_EXIT=0 · scanner PASS (PUBLIC_LEAK 0 · HISTORICAL_ASSET 18/18 · ALLOWED_TECHNICAL 235) |
+
+Nenhum assert/timeout/allowlist/ID alterado. Provas exigidas: Cancelar totalmente visível (largura 91,7 pt = rótulo + padding; captura), hittable e ≥44×44 (`assertTarget`), Salvar visível e intacto (73,3×44), sem interseção com o título "Estilo do Flow", acima da faixa da marca da folha, pt-BR/en (o teste roda em pt-BR; o rótulo en "Cancel" é mais curto e segue a mesma medição), light/dark e AXXXL (capturas abaixo; em AX o glifo `xmark` mantém `minWidth: 44`).
+
+### CAPTURES (`v6/i5/`, build `persona-final` instalado, hashes atualizados)
+
+1. `persona-fix-pt-light-large.png` — pt-BR light normal: "Cancelar" completo na cápsula.
+2. `persona-fix-pt-dark-large.png` — pt-BR dark normal (cold launch em dark).
+3. `persona-fix-pt-light-axxxl.png` — AccessibilityXXXL: glifos `xmark`/`checkmark` em cápsulas ≥44, marca abaixo, sem overlap.
+4. `persona-fix-selected-pt-light-large.png` — Impulso selecionado, linha enfatizada, Salvar habilitado.
+
+Comparativos: `cmp-persona-cancel-before-after-light.png` (antes "ancela" | depois "Cancelar"), `cmp-persona-fix-dark-selected.png`. Sem retoque.
+
+### PRE-ROBERTO FOLLOW-UP — ACHIEVEMENT DISPLAY LABEL
+
+Observado na revisão visual de I5 (`progress-streak-zero-light-achievements.png`, cenário `--ui-testing-prompt14-streak-zero`): a medalha exibe o UUID bruto `70000000-0000-4000-8000-000000000001` como texto. O iOS renderiza `snapshot.badgesEarned` tal como recebido (`ProgressPresentation.medalRows`), sem inventar nome. Não corrigido nesta operação.
+
+**ACHIEVEMENT DISPLAY LABEL STATUS: PENDING DATA / CONTRACT CLASSIFICATION** — classificar antes da beta Roberto: (A) o servidor possui display label oficial para conquistas; (B) a fixture QA está inadequada; (C) outro contrato define o texto público. O cliente não deve inventar um nome.
+
+### PRE-ROBERTO FOLLOW-UP — HISTORY NAVIGATION
+
+O relatório I5 registrou que, entrando no detalhe de um item de rotina a partir da lista (`RoutineListView` → push por view), o link "Histórico" (`routine.history`, `NavigationLink(value: AppRoute.routine(…destination: .history))`) não navegou na execução manual do harness (`--ui-testing-prompt13-loaded`); a mesma rota a partir do Hoje (push por valor) navega e é coberta por `Prompt13RoutineUITests/testRoutineHistoryLoadMoreAppendsNextPage`. Não corrigido nesta operação.
+
+**HISTORY NAVIGATION STATUS: PENDING FUNCTIONAL VERIFICATION** — antes da beta Roberto: reproduzir na jornada real do app e classificar bug real (destino por valor fora da pilha alcançável após push por view) vs. artefato do harness/test host.
+
+### Git final e status
+
+HEAD **inalterado** `e710dba1eb7c59988c7d0dac1445d2ee909e14bf`; índice vazio; stash vazio; 30 caminhos dirty (+`BodyFlowUITests/PremiumContentProfileUITests.swift`), 1.530+/481−; nada stageado/commitado.
+
+- I5 VISUAL STATUS: **READY FOR FINAL USER REVIEW**
+- USER VISUAL ACCEPTANCE: **PENDING**
+- REGRESSION STATUS: PARTIALLY VERIFIED · PUBLIC BRAND STATUS: PARTIALLY VERIFIED · PRODUCTION STATUS: NOT DEPLOYED
+- ACHIEVEMENT DISPLAY LABEL STATUS: PENDING DATA / CONTRACT CLASSIFICATION · HISTORY NAVIGATION STATUS: PENDING FUNCTIONAL VERIFICATION

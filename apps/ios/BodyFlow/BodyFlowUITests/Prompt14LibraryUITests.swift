@@ -107,6 +107,54 @@ final class Prompt14LibraryUITests: XCTestCase {
         support.captureEvidence(.libraryCategoryPagination, of: app)
     }
 
+    /// Regular Dynamic Type sizes keep the Todos/Salvos toggle and the
+    /// category control on one row, in that accessibility order; stacking
+    /// is reserved for accessibility sizes (`testAccessibilityXXXLEvidence`).
+    @MainActor
+    func testRegularFiltersShareOneRowWithTheCategoryControl() {
+        let support = Prompt14UITestSupport(testCase: self)
+        let app = support.launch(scenario: .loaded)
+
+        support.openLibrary(in: app)
+        let all = support.element("library.selection.all", in: app)
+        let saved = support.element("library.selection.saved", in: app)
+        let category = support.element("library.category", in: app)
+        XCTAssertTrue(all.waitForExistence(timeout: 5))
+        XCTAssertTrue(saved.exists)
+        XCTAssertTrue(category.exists)
+        for control in [all, saved, category] {
+            support.assertMinimumTapTarget(control)
+        }
+        XCTAssertLessThanOrEqual(
+            all.frame.maxX,
+            saved.frame.minX + 0.01,
+            "Todos precedes Salvos on the row"
+        )
+        XCTAssertLessThanOrEqual(
+            saved.frame.maxX,
+            category.frame.minX + 0.01,
+            "The category control follows the toggle on the same row: "
+                + "toggle \(saved.frame), category \(category.frame)"
+        )
+        XCTAssertLessThan(
+            category.frame.minY,
+            all.frame.maxY,
+            "The category control must share the toggle's row, not sit below it: "
+                + "toggle \(all.frame), category \(category.frame)"
+        )
+        XCTAssertGreaterThan(category.frame.maxY, all.frame.minY)
+        XCTAssertEqual(
+            category.descendants(matching: .button).count,
+            0,
+            "The category control must not expose a nested interactive action"
+        )
+        XCTAssertEqual(
+            category.descendants(matching: .staticText).count,
+            1,
+            "The category control must expose one visible text label"
+        )
+    }
+
     @MainActor
     func testLibraryNeutralEmptyStatesForAllSavedAndCategory() {
         let support = Prompt14UITestSupport(testCase: self)

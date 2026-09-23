@@ -18,14 +18,17 @@ struct RoutineActionSheet: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
-                    actionContent
-                    RoutineActionSummary(model: model, allowsRetry: allowsRetry) {
-                        Task { await model.retry() }
+            ZStack {
+                BodyFlowColor.background.ignoresSafeArea()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
+                        actionContent
+                        RoutineActionSummary(model: model, allowsRetry: allowsRetry) {
+                            Task { await model.retry() }
+                        }
                     }
+                    .padding(BodyFlowSpacing.md)
                 }
-                .padding(BodyFlowSpacing.lg)
             }
             .navigationTitle(copy("routine.confirmation.title"))
             .navigationBarTitleDisplayMode(.inline)
@@ -35,6 +38,13 @@ struct RoutineActionSheet: View {
                 }
             }
         }
+        .presentationDragIndicator(.visible)
+        // Result feedback for the patient's own action; the summary line is
+        // always the primary channel.
+        .bodyFlowResultFeedback(
+            RoutineActionSummary.feedback,
+            trigger: RoutineActionSummary.kind(for: model.mutationState)
+        )
     }
 
     @ViewBuilder
@@ -57,9 +67,8 @@ struct RoutineActionSheet: View {
                 } label: {
                     Text(copy("routine.action.confirm"))
                         .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
-                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(BodyFlowButtonStyle(role: .primary, isLoading: model.isSubmitting))
                 .disabled(model.isSubmitting)
                 .accessibilityIdentifier("routine.action.submit")
             }
@@ -87,26 +96,42 @@ struct RoutineActionSummary: View {
 
     var body: some View {
         Group {
-            if let message {
-                VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                    Text(message)
+            if let message, let kind = Self.kind(for: model.mutationState) {
+                VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+                    BodyFlowStatusLine(message, kind: kind, font: BodyFlowTypography.callout)
                     if case .failed = model.mutationState, allowsRetry {
                         Button(action: retry) {
                             Text(copy("app.retry"))
-                                .frame(
-                                    minHeight: BodyFlowSpacing.minimumTapTarget
-                                )
-                                .contentShape(Rectangle())
+                                .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                         }
+                        .buttonStyle(BodyFlowButtonStyle(role: .secondary))
                         .accessibilityIdentifier("routine.mutation.retry")
                     }
                 }
-                .font(BodyFlowTypography.callout)
-                .foregroundStyle(BodyFlowColor.secondaryText)
             }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("routine.operation.summary")
+    }
+
+    /// The status line kind for a mutation outcome; idle and submitting
+    /// show nothing.
+    static func kind(for state: RoutineMutationState) -> BodyFlowStatusLine.Kind? {
+        switch state {
+        case .succeeded: .success
+        case .unavailable: .unavailable
+        case .failed: .error
+        case .idle, .submitting: nil
+        }
+    }
+
+    /// Only the two terminal outcomes speak; unavailable stays silent.
+    static func feedback(for kind: BodyFlowStatusLine.Kind?) -> BodyFlowHaptics.Result? {
+        switch kind {
+        case .success: .success
+        case .error: .failure
+        case .info, .warning, .pending, .empty, .unavailable, nil: nil
+        }
     }
 
     private var message: String? {

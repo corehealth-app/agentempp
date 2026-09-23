@@ -22,8 +22,7 @@ struct MascotDetailView: View {
             BodyFlowColor.background.ignoresSafeArea()
             stateContent
         }
-        .navigationTitle(copy("mascot.title"))
-        .navigationBarTitleDisplayMode(.inline)
+        .bodyFlowScreenChrome(title: copy("mascot.title"))
         .accessibilityIdentifier("screen.mascot.detail")
         .task(id: invalidationCenter.revision(for: .coachExperience)) {
             await model.load(
@@ -59,21 +58,23 @@ struct MascotDetailView: View {
         return ScrollView {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
                 if showsStaleBanner {
-                    StaleDataBanner()
+                    FeatureStaleRecovery(retry: retry)
                 }
 
-                Button(action: retry) {
-                    Label(copy("mascot.action.refresh"), systemImage: "arrow.clockwise")
-                        .font(BodyFlowTypography.headline)
-                        .foregroundStyle(BodyFlowColor.accent)
-                        .frame(
-                            maxWidth: .infinity,
-                            minHeight: BodyFlowSpacing.minimumTapTarget
-                        )
-                        .contentShape(Rectangle())
+                // Refresh as a compact secondary action at the top of the
+                // content rather than a bar item: a bar item mirrors its
+                // identifier onto the item's host view, so `mascot.refresh`
+                // would resolve to two elements (hierarchy evidence in the
+                // I5 record), and the mascot tests address it by identifier
+                // alone.
+                HStack {
+                    Spacer(minLength: 0)
+                    Button(action: retry) {
+                        Label(verbatim: copy("mascot.action.refresh"), symbol: .refresh)
+                    }
+                    .buttonStyle(BodyFlowButtonStyle(role: .secondary, isCompact: true))
+                    .accessibilityIdentifier("mascot.refresh")
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("mascot.refresh")
 
                 BodyFlowCard {
                     MascotSemanticContent(descriptor: descriptor)
@@ -82,7 +83,7 @@ struct MascotDetailView: View {
                 BodyFlowCard {
                     VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
                         Text(copy("mascot.about.title"))
-                            .font(BodyFlowTypography.headline)
+                            .font(BodyFlowTypography.cardTitle)
                             .foregroundStyle(BodyFlowColor.primaryText)
                             .accessibilityAddTraits(.isHeader)
                         Text(descriptor.stateText)

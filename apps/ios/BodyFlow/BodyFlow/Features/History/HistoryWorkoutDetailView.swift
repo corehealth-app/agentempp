@@ -5,37 +5,38 @@ struct HistoryWorkoutDetailView: View {
     let row: HistoryWorkoutLogRow?
 
     var body: some View {
-        Group {
+        ZStack {
+            BodyFlowColor.background.ignoresSafeArea()
             if let row {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
-                        BodyFlowCard {
+                    // One card: the workout's name, then its figures.
+                    BodyFlowCard {
+                        VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
                             Text(row.workoutType ?? copy("history.workout.fallback"))
-                                .font(BodyFlowTypography.title)
+                                .font(BodyFlowTypography.screenTitle)
                                 .foregroundStyle(BodyFlowColor.primaryText)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        BodyFlowCard {
-                            VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-                                if let duration = values.duration(row.durationMin) {
-                                    metric(duration, identifier: "history.workout.duration")
-                                }
-                                if let energy = values.estimatedEnergy(row.estimatedKcal) {
-                                    metric(energy, identifier: "history.workout.energy")
-                                }
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityAddTraits(.isHeader)
+                            if values.duration(row.durationMin) != nil
+                                || values.estimatedEnergy(row.estimatedKcal) != nil {
+                                Divider()
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            if let duration = values.duration(row.durationMin) {
+                                metric(duration, identifier: "history.workout.duration")
+                            }
+                            if let energy = values.estimatedEnergy(row.estimatedKcal) {
+                                metric(energy, identifier: "history.workout.energy")
+                            }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(BodyFlowSpacing.md)
                 }
             } else {
                 ScreenStateView(state: .unavailable, retryAction: {})
             }
         }
-        .navigationTitle(copy("history.workout.navigation.title"))
-        .navigationBarTitleDisplayMode(.inline)
+        .bodyFlowScreenChrome(title: copy("history.workout.navigation.title"))
         .accessibilityIdentifier("screen.history.workout-detail")
     }
 

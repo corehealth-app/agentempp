@@ -11,6 +11,8 @@ struct CoachPersonaPickerView: View {
     let model: CoachPersonaEditorModel
 
     @State private var saveTask: Task<Void, Never>?
+    /// Counts persisted saves so the success feedback plays once per save.
+    @State private var savedSelections = 0
 
     var body: some View {
         NavigationStack {
@@ -25,20 +27,27 @@ struct CoachPersonaPickerView: View {
             .navigationTitle(copy("profile.persona.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                // No width floor on the whole cancellation item: the bar
+                // measures its leading item with a zero-width proposal, so a
+                // `frame(minWidth: 44)` resolved to exactly 44 pt and clipped
+                // "Cancelar" to "ancela" (hierarchy: host `{20,82,44,36}`,
+                // button `{20,78,44,44}`; the trailing Save, measured with a
+                // fitting proposal, came out at its natural 73 pt). The text
+                // now sizes naturally (91.7 pt); only the glyph shown at
+                // accessibility sizes keeps the 44 pt width floor, and the
+                // 44 pt height floor stays on the item.
                 ToolbarItem(placement: .cancellationAction) {
                     Button {
                         dismiss()
                     } label: {
                         if dynamicTypeSize.isAccessibilitySize {
-                            Image(systemName: "xmark")
+                            Image(symbol: .close)
+                                .frame(minWidth: BodyFlowSpacing.minimumTapTarget)
                         } else {
                             Text(copy("profile.persona.cancel"))
                         }
                     }
-                    .frame(
-                        minWidth: BodyFlowSpacing.minimumTapTarget,
-                        minHeight: BodyFlowSpacing.minimumTapTarget
-                    )
+                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                     .contentShape(Rectangle())
                     .disabled(isSaving)
                     .accessibilityLabel(copy("profile.persona.cancel"))
@@ -49,7 +58,7 @@ struct CoachPersonaPickerView: View {
                         saveSelection()
                     } label: {
                         if dynamicTypeSize.isAccessibilitySize {
-                            Image(systemName: "checkmark")
+                            Image(symbol: .confirm)
                         } else {
                             Text(copy("profile.persona.save"))
                         }
@@ -67,6 +76,9 @@ struct CoachPersonaPickerView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("screen.profile.coach-persona")
+        // The saved state is shown in the row and in the Profile; the
+        // feedback only confirms the patient's own save.
+        .bodyFlowResultFeedback({ $0 > 0 ? .success : nil }, trigger: savedSelections)
         .interactiveDismissDisabled(isSaving)
         .task {
             guard model.operationState == .loading else { return }
@@ -110,7 +122,7 @@ struct CoachPersonaPickerView: View {
                     AuthFieldMessage(error: error)
 
                     if model.persisted == nil {
-                        Button(copy("state.retry")) {
+                        FeatureRetryButton {
                             Task { await model.load() }
                         }
                     }
@@ -126,44 +138,50 @@ struct CoachPersonaPickerView: View {
                 } else {
                     ContentUnavailableView(
                         copy("profile.persona.unavailable"),
-                        systemImage: "nosign"
+                        systemImage: BodyFlowSymbol.unavailable.systemName
                     )
                     .accessibilityIdentifier("persona.options.unavailable")
+                    .bodyFlowListRow()
                 }
             }
-            .bodyFlowListRow()
         }
         .bodyFlowList()
         .overlay {
             if isSaving {
                 ProgressView(copy("profile.persona.saving"))
                     .padding(BodyFlowSpacing.md)
-                    .background(
-                        savingSurface,
-                        in: RoundedRectangle(
-                            cornerRadius: BodyFlowRadius.field,
-                            style: .continuous
+                    .background(savingSurface, in: savingShape)
+                    .overlay {
+                        savingShape.strokeBorder(
+                            BodyFlowColor.color(.borderSubtle),
+                            lineWidth: reduceTransparency ? 2 : 1
                         )
-                    )
+                    }
             }
         }
     }
 
-    private var savingSurface: AnyShapeStyle {
-        reduceTransparency
-            ? AnyShapeStyle(BodyFlowColor.color(.surfaceElevated))
-            : AnyShapeStyle(.regularMaterial)
+    /// Opaque in both settings (no material behind the list), with a
+    /// heavier outline under Reduce Transparency so the badge still stands
+    /// apart from the rows without relying on translucency.
+    private var savingSurface: Color {
+        BodyFlowColor.color(.surfaceElevated)
+    }
+
+    private var savingShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: BodyFlowRadius.field, style: .continuous)
     }
 
     private func personaRow(
         _ option: CoachPersonaPickerOption
     ) -> some View {
         let persona = option.persona
+        let isSelected = model.selected == persona
         return Button {
             model.select(persona)
         } label: {
             HStack(alignment: .top, spacing: BodyFlowSpacing.sm) {
-                Image(systemName: model.selected == persona ? "checkmark.circle.fill" : "circle")
+                Image(symbol: isSelected ? .selected : .unselected)
                     .foregroundStyle(BodyFlowColor.accent)
                     .accessibilityHidden(true)
 
@@ -190,10 +208,11 @@ struct CoachPersonaPickerView: View {
             .frame(maxWidth: .infinity, minHeight: BodyFlowSpacing.minimumTapTarget, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.bodyFlowRow)
         .disabled(isSaving || isUnresolvedLoadFailure)
-        .accessibilityAddTraits(model.selected == persona ? .isSelected : [])
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityIdentifier("persona.\(option.id)")
+        .bodyFlowListRow(isEmphasized: isSelected)
     }
 
     private var isSaving: Bool {
@@ -225,6 +244,7 @@ struct CoachPersonaPickerView: View {
             }
             saveTask = nil
             if shouldDismiss {
+                savedSelections += 1
                 dismiss()
             }
         }

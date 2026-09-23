@@ -656,8 +656,6 @@ struct LibraryRootView: View {
         .background(BodyFlowColor.background)
         .navigationTitle(copy("library.navigation.title"))
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(BodyFlowColor.background, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("screen.library")
         .task(id: taskKey) {
@@ -721,93 +719,132 @@ struct LibraryRootView: View {
                 .foregroundStyle(BodyFlowColor.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Group {
-                if dynamicTypeSize.isAccessibilitySize {
-                    VStack(spacing: 0) {
-                        selectionButton(.all)
-
-                        Divider()
-
-                        selectionButton(.saved)
-                    }
-                } else {
-                    HStack(spacing: 0) {
-                        selectionButton(.all)
-
-                        Divider()
-
-                        selectionButton(.saved)
-                    }
+            if dynamicTypeSize.isAccessibilitySize {
+                // Accessibility sizes stack every control (the XXXL
+                // evidence test locks this order).
+                VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+                    selectionToggle
+                    categoryControl
                 }
-            }
-            // The vertical Divider() between the two buttons has no bounded
-            // ideal height of its own, so it (and transitively this Group)
-            // happily accepts whatever height an ambient flexible ancestor
-            // proposes — competing with the feed's ScrollView for leftover
-            // vertical space instead of staying compact. Pinning the whole
-            // toggle to its own content-driven ideal height fixes that while
-            // still growing naturally for larger Dynamic Type sizes (each
-            // button's minHeight-44 floor is preserved).
-            .fixedSize(horizontal: false, vertical: true)
-            .background(BodyFlowColor.surface)
-            .clipShape(
-                RoundedRectangle(cornerRadius: BodyFlowRadius.small)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: BodyFlowRadius.small)
-                    .stroke(
-                        BodyFlowColor.color(.borderSubtle),
-                        lineWidth: 1
-                    )
-            }
-            .accessibilityElement(children: .contain)
-
-            Button {
-                isCategorySelectorPresented = true
-            } label: {
-                Label(
-                    category?.libraryDisplayName(for: language)
-                        ?? copy("library.category.all"),
-                    systemImage: "line.3.horizontal.decrease.circle"
-                )
-                .font(BodyFlowTypography.headline)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(
-                    maxWidth: .infinity,
-                    minHeight: BodyFlowSpacing.minimumTapTarget,
-                    alignment: .leading
-                )
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(BodyFlowColor.accent)
-            .accessibilityLabel(
-                category?.libraryDisplayName(for: language)
-                    ?? copy("library.category.all")
-            )
-            .accessibilityIdentifier("library.category")
-            .confirmationDialog(
-                copy("library.category.select"),
-                isPresented: $isCategorySelectorPresented,
-                titleVisibility: .visible
-            ) {
-                categoryDialogButton(
-                    title: copy("library.category.all"),
-                    option: nil
-                )
-
-                ForEach(ContentCategory.allCases, id: \.self) { option in
-                    categoryDialogButton(
-                        title: option.libraryDisplayName(for: language),
-                        option: option
-                    )
+            } else {
+                // Regular sizes keep the toggle and the category on one row:
+                // the toggle hugs its two labels and the category takes the
+                // rest, wrapping its name when the width runs out. (Measured
+                // by ideal width the pair never "fits" a 370 pt row —
+                // "Todas as categorias" alone needs ~200 pt — so a
+                // ViewThatFits would always stack them.)
+                HStack(alignment: .center, spacing: BodyFlowSpacing.sm) {
+                    selectionToggle
+                    categoryControl
                 }
-
-                Button(copy("library.action.cancel"), role: .cancel) {}
             }
         }
         .padding(.horizontal, BodyFlowSpacing.md)
         .padding(.vertical, BodyFlowSpacing.sm)
+    }
+
+    /// Todos / Salvos as one segmented control: the selected segment is
+    /// filled with the brand color and marked by its glyph and the
+    /// selected trait, so the choice never depends on color alone.
+    private var selectionToggle: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: 0) {
+                    selectionButton(.all)
+
+                    Divider()
+
+                    selectionButton(.saved)
+                }
+            } else {
+                HStack(spacing: 0) {
+                    selectionButton(.all)
+
+                    Divider()
+
+                    selectionButton(.saved)
+                }
+                // Hug the two labels so the category control beside the
+                // toggle keeps the rest of the row.
+                .fixedSize(horizontal: true, vertical: false)
+            }
+        }
+        // The vertical Divider() between the two buttons has no bounded
+        // ideal height of its own, so it (and transitively this Group)
+        // happily accepts whatever height an ambient flexible ancestor
+        // proposes — competing with the feed's ScrollView for leftover
+        // vertical space instead of staying compact. Pinning the whole
+        // toggle to its own content-driven ideal height fixes that while
+        // still growing naturally for larger Dynamic Type sizes (each
+        // button's minHeight-44 floor is preserved).
+        .fixedSize(horizontal: false, vertical: true)
+        .background(BodyFlowColor.surface)
+        .clipShape(
+            RoundedRectangle(cornerRadius: BodyFlowRadius.small)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: BodyFlowRadius.small)
+                .stroke(
+                    BodyFlowColor.color(.borderSubtle),
+                    lineWidth: 1
+                )
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    /// One button, one visible label (plus decorative glyphs): the
+    /// accessibility evidence test locks 0 nested buttons / 1 text.
+    private var categoryControl: some View {
+        Button {
+            isCategorySelectorPresented = true
+        } label: {
+            HStack(spacing: BodyFlowSpacing.xs) {
+                Label(
+                    verbatim: category?.libraryDisplayName(for: language)
+                        ?? copy("library.category.all"),
+                    symbol: .categoryFilter
+                )
+                .font(BodyFlowTypography.headline)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: BodyFlowSpacing.xs)
+                Image(symbol: .picker)
+                    .font(BodyFlowTypography.caption)
+                    .accessibilityHidden(true)
+            }
+            .frame(
+                maxWidth: .infinity,
+                minHeight: BodyFlowSpacing.minimumTapTarget,
+                alignment: .leading
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.bodyFlowRow)
+        .foregroundStyle(BodyFlowColor.accent)
+        .accessibilityLabel(
+            category?.libraryDisplayName(for: language)
+                ?? copy("library.category.all")
+        )
+        .accessibilityIdentifier("library.category")
+        .confirmationDialog(
+            copy("library.category.select"),
+            isPresented: $isCategorySelectorPresented,
+            titleVisibility: .visible
+        ) {
+            categoryDialogButton(
+                title: copy("library.category.all"),
+                option: nil
+            )
+
+            ForEach(ContentCategory.allCases, id: \.self) { option in
+                categoryDialogButton(
+                    title: option.libraryDisplayName(for: language),
+                    option: option
+                )
+            }
+
+            Button(copy("library.action.cancel"), role: .cancel) {}
+        }
     }
 
     @ViewBuilder
@@ -885,6 +922,10 @@ struct LibraryRootView: View {
                     }
 
                     recoveryControl(for: recoveryAction)
+
+                    if state == .loading {
+                        loadingPlaceholders
+                    }
                 }
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, BodyFlowSpacing.lg)
@@ -898,6 +939,32 @@ struct LibraryRootView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(BodyFlowColor.background)
         .accessibilityIdentifier(state.accessibilityIdentifier)
+    }
+
+    /// Two card-shaped placeholders under the first-page spinner: the feed's
+    /// shape without any fabricated title, count or reading time. Hidden
+    /// from assistive technologies; the loading state announces itself.
+    private var loadingPlaceholders: some View {
+        VStack(spacing: BodyFlowSpacing.md) {
+            ForEach(0..<2, id: \.self) { _ in
+                BodyFlowCard {
+                    VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+                        RoundedRectangle(cornerRadius: BodyFlowRadius.field, style: .continuous)
+                            .fill(BodyFlowColor.color(.surfaceElevated))
+                            .frame(height: BodyFlowSpacing.xl * 3)
+                        RoundedRectangle(cornerRadius: BodyFlowRadius.small, style: .continuous)
+                            .fill(BodyFlowColor.color(.surfaceElevated))
+                            .frame(width: BodyFlowSpacing.xl * 5, height: BodyFlowSpacing.md)
+                        RoundedRectangle(cornerRadius: BodyFlowRadius.small, style: .continuous)
+                            .fill(BodyFlowColor.color(.surfaceElevated))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: BodyFlowSpacing.sm)
+                    }
+                }
+            }
+        }
+        .padding(.top, BodyFlowSpacing.md)
+        .accessibilityHidden(true)
     }
 
     @ViewBuilder
@@ -1041,31 +1108,25 @@ struct LibraryRootView: View {
                     requestAction(.loadNextPage)
                 } label: {
                     Text(copy("library.paging.load-more"))
-                        .font(BodyFlowTypography.headline)
-                        .frame(
-                            maxWidth: .infinity,
-                            minHeight: BodyFlowSpacing.minimumTapTarget
-                        )
-                        .contentShape(Rectangle())
+                        .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                 }
+                .buttonStyle(BodyFlowButtonStyle(role: .secondary))
                 .accessibilityIdentifier("library.load-more")
             case .retryNextPage:
-                VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                    Label(
+                VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+                    BodyFlowStatusLine(
                         copy("library.paging.error"),
-                        systemImage: "exclamationmark.triangle"
+                        kind: .error,
+                        font: BodyFlowTypography.callout
                     )
-                    .font(BodyFlowTypography.callout)
-                    .foregroundStyle(BodyFlowColor.primaryText)
 
                     Button {
                         requestAction(.retryNextPage)
                     } label: {
                         Text(copy("state.retry"))
-                            .font(BodyFlowTypography.headline)
                             .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
-                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(BodyFlowButtonStyle(role: .secondary))
                     .accessibilityIdentifier("state.retry-next-page")
                     .accessibilityFocused(
                         $accessibilityFocus,
@@ -1073,19 +1134,20 @@ struct LibraryRootView: View {
                     )
                 }
             case .reloadFirstPage:
-                VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                    Text(copy("library.paging.expired"))
-                        .font(BodyFlowTypography.callout)
-                        .foregroundStyle(BodyFlowColor.primaryText)
+                VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+                    BodyFlowStatusLine(
+                        copy("library.paging.expired"),
+                        kind: .warning,
+                        font: BodyFlowTypography.callout
+                    )
 
                     Button {
                         requestAction(.reloadFirstPage)
                     } label: {
                         Text(copy("library.paging.reload"))
-                            .font(BodyFlowTypography.headline)
                             .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
-                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(BodyFlowButtonStyle(role: .secondary))
                     .accessibilityIdentifier("state.reload-first-page")
                     .accessibilityFocused(
                         $accessibilityFocus,
@@ -1120,10 +1182,9 @@ struct LibraryRootView: View {
                 requestAction(.reloadFirstPage)
             } label: {
                 Text(copy("library.paging.reload"))
-                    .font(BodyFlowTypography.headline)
                     .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
-                    .contentShape(Rectangle())
             }
+            .buttonStyle(BodyFlowButtonStyle(role: .secondary))
             .accessibilityIdentifier("state.reload-first-page")
             .accessibilityFocused(
                 $accessibilityFocus,
@@ -1172,12 +1233,11 @@ struct LibraryRootView: View {
             selection = option
         } label: {
             Label(
-                option.title(for: language),
-                systemImage: selection == option
-                    ? "checkmark.circle.fill"
-                    : "circle"
+                verbatim: option.title(for: language),
+                symbol: selection == option ? .selected : .unselected
             )
             .font(BodyFlowTypography.headline)
+            .padding(.horizontal, BodyFlowSpacing.sm)
             .frame(
                 maxWidth: .infinity,
                 minHeight: BodyFlowSpacing.minimumTapTarget
@@ -1189,12 +1249,17 @@ struct LibraryRootView: View {
             // height (still never below the 44pt floor above) so it stays
             // compact instead of competing for layout space.
             .fixedSize(horizontal: false, vertical: true)
+            .background(
+                selection == option
+                    ? BodyFlowColor.accent
+                    : BodyFlowColor.surface
+            )
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.bodyFlowRow)
         .foregroundStyle(
             selection == option
-                ? BodyFlowColor.accent
+                ? BodyFlowColor.color(.onPrimary)
                 : BodyFlowColor.primaryText
         )
         .accessibilityIdentifier(option.accessibilityIdentifier)

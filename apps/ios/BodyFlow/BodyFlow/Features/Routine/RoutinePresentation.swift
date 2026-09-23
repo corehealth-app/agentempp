@@ -112,3 +112,16 @@ enum RoutineCopy {
         return string(key, language: language)
     }
 }
+
+extension BodyFlowSymbol {
+    /// The glyph for a server routine status; unknown statuses keep the
+    /// pending clock rather than inventing a state.
+    static func routineStatus(_ rawStatus: String) -> BodyFlowSymbol {
+        switch rawStatus {
+        case "taken": .success
+        case "skipped": .skipped
+        case "snoozed": .snoozed
+        default: .clock
+        }
+    }
+}

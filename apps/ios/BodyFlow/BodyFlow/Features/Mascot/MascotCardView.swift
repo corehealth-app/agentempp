@@ -150,9 +150,7 @@ struct MascotCardView: View {
             BodyFlowCard {
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
                     if showsStaleBanner {
-                        Text(copy("mascot.stale"))
-                            .font(BodyFlowTypography.callout)
-                            .foregroundStyle(BodyFlowColor.secondaryText)
+                        BodyFlowStatusLine(copy("mascot.stale"), kind: .warning)
                     }
 
                     MascotSemanticContent(descriptor: descriptor)
@@ -162,7 +160,8 @@ struct MascotCardView: View {
                             .font(BodyFlowTypography.headline)
                             .foregroundStyle(BodyFlowColor.accent)
                         Spacer(minLength: 0)
-                        Image(systemName: "chevron.right")
+                        Image(symbol: .chevron)
+                            .font(BodyFlowTypography.caption)
                             .foregroundStyle(BodyFlowColor.accent)
                             .accessibilityHidden(true)
                     }
@@ -170,7 +169,7 @@ struct MascotCardView: View {
                 }
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.bodyFlowRow)
         .accessibilityIdentifier("today.mascot")
     }
 
@@ -193,7 +192,7 @@ struct MascotCardView: View {
                         Button(copy("state.retry")) {
                             Task { await model.retry() }
                         }
-                        .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                        .buttonStyle(BodyFlowButtonStyle(role: .secondary, isCompact: true))
                     }
                 }
             }
@@ -229,8 +228,7 @@ struct MascotSemanticContent: View {
 
             VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
                 Text(descriptor.title)
-                    .font(BodyFlowTypography.title)
-                    .fontWeight(.semibold)
+                    .font(BodyFlowTypography.cardTitle)
                     .foregroundStyle(BodyFlowColor.primaryText)
                 Text(descriptor.personaText)
                     .font(BodyFlowTypography.body)

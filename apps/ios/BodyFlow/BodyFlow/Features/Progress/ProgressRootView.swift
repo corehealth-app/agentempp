@@ -28,7 +28,7 @@ struct ProgressRootView: View {
                                 FeatureActionLabel(
                                     title: copy("progress.block.title"),
                                     detail: copy("progress.block.action.detail"),
-                                    systemImage: "circle.hexagongrid"
+                                    systemImage: BodyFlowSymbol.block.systemName
                                 )
                             }
                         }
@@ -36,6 +36,9 @@ struct ProgressRootView: View {
                         .accessibilityIdentifier("progress.block.detail")
                     }
                     .padding(BodyFlowSpacing.md)
+                }
+                .refreshable {
+                    await model.retry()
                 }
             }
         }

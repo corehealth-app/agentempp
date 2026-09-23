@@ -211,7 +211,7 @@ struct PublishedContentCard: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.bodyFlowRow)
         .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
@@ -226,7 +226,7 @@ struct PublishedContentCard: View {
                         Text(copy("library.card.open"))
                             .font(BodyFlowTypography.headline)
                         Spacer(minLength: BodyFlowSpacing.sm)
-                        Image(systemName: "chevron.right")
+                        Image(symbol: .chevron)
                             .accessibilityHidden(true)
                     }
                     .foregroundStyle(BodyFlowColor.accent)
@@ -237,7 +237,7 @@ struct PublishedContentCard: View {
                     )
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.bodyFlowRow)
                 .accessibilityLabel(String(
                     format: copy("library.card.open-format"),
                     locale: language.formattingLocale,
@@ -302,13 +302,13 @@ struct PublishedContentCard: View {
     }
 
     private var categoryMetadata: some View {
-        Label(presentation.categoryLabel, systemImage: "books.vertical")
+        Label(verbatim: presentation.categoryLabel, symbol: .library)
             .font(BodyFlowTypography.callout)
             .foregroundStyle(BodyFlowColor.secondaryText)
     }
 
     private var readingTimeMetadata: some View {
-        Label(presentation.readingTimeLabel, systemImage: "clock")
+        Label(verbatim: presentation.readingTimeLabel, symbol: .clock)
             .font(BodyFlowTypography.callout)
             .foregroundStyle(BodyFlowColor.secondaryText)
     }
@@ -326,13 +326,23 @@ struct PublishedContentCard: View {
         .foregroundStyle(BodyFlowColor.primaryText)
     }
 
+    // Saved carries the brand color, completed the positive one; the text
+    // names the state so the color is never the only channel.
     @ViewBuilder
     private var statusLabels: some View {
         if presentation.saved {
-            Label(copy("library.status.saved"), systemImage: "bookmark.fill")
+            LibraryStatusLabel(
+                copy("library.status.saved"),
+                symbol: .saved,
+                tint: BodyFlowColor.accent
+            )
         }
         if presentation.completed {
-            Label(copy("library.status.completed"), systemImage: "checkmark.circle.fill")
+            LibraryStatusLabel(
+                copy("library.status.completed"),
+                symbol: .success,
+                tint: BodyFlowColor.color(.feedbackPositive)
+            )
         }
     }
 
@@ -342,5 +352,28 @@ struct PublishedContentCard: View {
 
     private func copy(_ key: String.LocalizationValue) -> String {
         LibraryCopy.string(key, language: language)
+    }
+}
+
+/// Saved / completed marker shared by the library card and the article:
+/// resolved text with a tinted vocabulary glyph.
+struct LibraryStatusLabel: View {
+    private let title: String
+    private let symbol: BodyFlowSymbol
+    private let tint: Color
+
+    init(_ title: String, symbol: BodyFlowSymbol, tint: Color) {
+        self.title = title
+        self.symbol = symbol
+        self.tint = tint
+    }
+
+    var body: some View {
+        Label {
+            Text(verbatim: title)
+        } icon: {
+            Image(symbol: symbol)
+                .foregroundStyle(tint)
+        }
     }
 }

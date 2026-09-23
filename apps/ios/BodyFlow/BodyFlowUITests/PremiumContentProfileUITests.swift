@@ -74,6 +74,67 @@ final class PremiumContentProfileUITests: XCTestCase {
         support.capture("s7-profile-en-dark-unavailable", app: gated)
     }
 
+    /// The persona sheet's bar actions render their whole labels at regular
+    /// sizes: both keep the 44 pt target, neither overlaps the title, the
+    /// brand band stays below, and the longer Cancel label comes out wider
+    /// than Save (a bar item clipped to its host collapses to 44 pt).
+    @MainActor
+    func testPersonaSheetBarActionsRenderCompletelyAtRegularSize() {
+        let support = PremiumUIUXUITestSupport(testCase: self)
+        let app = support.launch(
+            arguments: [
+                "--ui-testing",
+                "--ui-testing-prompt14-persona-stateful",
+            ],
+            language: "pt-BR",
+            dark: false
+        )
+
+        openProfile(in: app)
+        let style = support.element("profile.coach-persona", app: app)
+        XCTAssertTrue(style.waitForExistence(timeout: 5))
+        style.tap()
+
+        let editor = support.element("screen.profile.coach-persona", app: app)
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        let bar = app.navigationBars["Estilo do Flow"]
+        XCTAssertTrue(bar.waitForExistence(timeout: 5))
+        let title = bar.staticTexts["Estilo do Flow"]
+        XCTAssertTrue(title.exists)
+        // The sheet's own brand band, not the shell's behind it.
+        let brand = editor.descendants(matching: .any)
+            .matching(identifier: "brand.product-name").firstMatch
+        XCTAssertTrue(brand.waitForExistence(timeout: 5))
+        support.capture("s7-persona-bar-actions-pt-light-regular", app: app)
+
+        for label in ["Cancelar", "Salvar"] {
+            let button = app.buttons[label]
+            XCTAssertTrue(button.exists, label)
+            XCTAssertTrue(button.isHittable, label)
+            support.assertTarget(button)
+            XCTAssertTrue(
+                button.frame.intersection(title.frame).isNull,
+                "\(label) \(button.frame) must not overlap the title \(title.frame)"
+            )
+            XCTAssertLessThanOrEqual(
+                button.frame.maxY,
+                brand.frame.minY,
+                "\(label) must sit above the brand band"
+            )
+        }
+        // A clipped bar item reports the host's width, not the label's: the
+        // longer "Cancelar" must come out wider than "Salvar", and neither
+        // may collapse to the bare 44 pt floor that clipped it.
+        let cancel = app.buttons["Cancelar"]
+        let save = app.buttons["Salvar"]
+        XCTAssertGreaterThan(
+            cancel.frame.width,
+            save.frame.width,
+            "Cancelar \(cancel.frame) must render wider than Salvar \(save.frame)"
+        )
+        XCTAssertGreaterThan(cancel.frame.width, 44.5, "Cancelar is clipped to the 44 pt floor")
+    }
+
     @MainActor
     func testArticleActionsAndMetadataAtAXXXXL() {
         let support = PremiumUIUXUITestSupport(testCase: self)

@@ -111,6 +111,43 @@ struct BodyFlowComponentPolicyTests {
         }
     }
 
+    @Test func emphasizedListRowsLiftToTheElevatedSurface() {
+        #expect(BodyFlowListRowStyle.backgroundRole(isEmphasized: false) == .backgroundSecondary)
+        #expect(BodyFlowListRowStyle.backgroundRole(isEmphasized: true) == .surfaceElevated)
+    }
+
+    @MainActor @Test func progressRestartAppearanceRendersAsThePrimaryRole() {
+        #expect(ProgressContentView.role(for: .streakRestart) == .primary)
+        let other = ProgressActionAppearance(background: .achievement, foreground: .onAchievement)
+        #expect(ProgressContentView.role(for: other) == .secondary)
+    }
+
+    @MainActor @Test func routineOutcomesMapToStatusKindsAndResultFeedback() {
+        #expect(RoutineActionSummary.kind(for: .idle) == nil)
+        #expect(RoutineActionSummary.kind(for: .unavailable) == .unavailable)
+        #expect(RoutineActionSummary.feedback(for: .success) == .success)
+        #expect(RoutineActionSummary.feedback(for: .error) == .failure)
+        #expect(RoutineActionSummary.feedback(for: .unavailable) == nil)
+        #expect(RoutineActionSummary.feedback(for: nil) == nil)
+    }
+
+    @MainActor @Test func contentMutationGlyphsMapToStatusKinds() {
+        func kind(_ image: String) -> BodyFlowStatusLine.Kind {
+            PublishedContentDetailView.statusKind(for: ContentMutationPresentation(
+                message: "",
+                systemImage: image,
+                allowsRetry: false
+            ))
+        }
+        #expect(kind("bookmark.fill") == .success)
+        #expect(kind("bookmark.slash") == .success)
+        #expect(kind("checkmark.circle.fill") == .success)
+        #expect(kind("exclamationmark.triangle") == .error)
+        #expect(kind("exclamationmark.circle") == .unavailable)
+        #expect(kind("arrow.triangle.2.circlepath") == .pending)
+        #expect(kind("arrow.clockwise") == .pending)
+    }
+
     @MainActor @Test func reviewedDefaultCardUsesSemanticSurfaceAndKeepsRollbackRole() {
         let grouped = BodyFlowCard { Text("Received value") }
         let legacy = BodyFlowCard(surface: .legacy) { Text("Received value") }

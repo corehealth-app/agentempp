@@ -437,6 +437,7 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
             "BodyFlow/Features/History/MainHistoryView.swift",
             "BodyFlow/Features/Progress/Block7700DetailView.swift",
             "BodyFlow/Features/Library/LibraryRootView.swift",
+            "BodyFlow/Features/Mascot/MascotDetailView.swift",
             "BodyFlow/Features/Shared/FeatureComponents.swift",
         ]
         var offenders: [String] = []
@@ -483,7 +484,11 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
             "BodyFlow/Features/Plan/PlanDetailView.swift",
             "BodyFlow/Features/Routine/RoutineListView.swift",
             "BodyFlow/Features/Routine/RoutineHistoryView.swift",
+            "BodyFlow/Features/Routine/RoutineDetailView.swift",
             "BodyFlow/Features/History/MainHistoryView.swift",
+            "BodyFlow/Features/History/HistoryMealLogDetailView.swift",
+            "BodyFlow/Features/History/HistoryWorkoutDetailView.swift",
+            "BodyFlow/Features/Mascot/MascotDetailView.swift",
         ]
         var offenders: [String] = []
         for path in reviewedSources {
@@ -502,6 +507,11 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
             ("BodyFlow/Features/Progress/ProgressRootView.swift", 0),
             ("BodyFlow/Features/History/MainHistoryView.swift", 0),
             ("BodyFlow/Features/Today/TodayRootView.swift", 1),
+            ("BodyFlow/Features/Library/PublishedContentCard.swift", 0),
+            ("BodyFlow/Features/Mascot/MascotCardView.swift", 0),
+            ("BodyFlow/Features/Profile/ProfileRootView.swift", 0),
+            ("BodyFlow/Features/Profile/CoachPersonaPickerView.swift", 0),
+            ("BodyFlow/Features/Routine/RoutineDetailView.swift", 0),
         ]
         var offenders: [String] = []
         for review in reviewedSources {
@@ -546,6 +556,13 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
             "BodyFlow/Features/Today/TodayBlockCard.swift",
             "BodyFlow/Features/FlowChat/FlowChatView.swift",
             "BodyFlow/DesignSystem/Components/BodyFlowSectionHeader.swift",
+            "BodyFlow/Features/Library/PublishedContentCard.swift",
+            "BodyFlow/Features/Library/PublishedContentDetailView.swift",
+            "BodyFlow/Features/Library/LibraryRootView.swift",
+            "BodyFlow/Features/Routine/RoutineListView.swift",
+            "BodyFlow/Features/Routine/RoutineHistoryView.swift",
+            "BodyFlow/Features/Routine/RoutineDetailView.swift",
+            "BodyFlow/Features/Mascot/MascotDetailView.swift",
         ]
         // `verbatim: "today.something"`: a dotted, space-free literal is a key.
         let pattern = try NSRegularExpression(
@@ -627,6 +644,104 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
             offenders.append("FlowChatView: composer action still forced to a 44 pt frame")
         }
         XCTAssertTrue(offenders.isEmpty, "Shared components missing: \(offenders)")
+    }
+
+    /// The I5 surfaces (Progress, Profile, Library card/article, Routine,
+    /// History, Mascot) name their glyphs through the shared vocabulary; raw
+    /// SF Symbol literals belong to `BodyFlowSymbol` only.
+    func testReviewedI5SourcesUseTheSymbolVocabulary() throws {
+        let reviewedSources = [
+            "BodyFlow/Features/Progress/ProgressComponents.swift",
+            "BodyFlow/Features/Progress/ProgressRootView.swift",
+            "BodyFlow/Features/Progress/Block7700DetailView.swift",
+            "BodyFlow/Features/Profile/ProfileRootView.swift",
+            "BodyFlow/Features/Profile/CoachPersonaPickerView.swift",
+            "BodyFlow/Features/Library/PublishedContentCard.swift",
+            "BodyFlow/Features/Library/PublishedContentDetailView.swift",
+            "BodyFlow/Features/Library/ContentCoverView.swift",
+            "BodyFlow/Features/Routine/RoutineListView.swift",
+            "BodyFlow/Features/Routine/RoutineHistoryView.swift",
+            "BodyFlow/Features/Routine/RoutineDetailView.swift",
+            "BodyFlow/Features/Routine/RoutineActionSheet.swift",
+            "BodyFlow/Features/Routine/RoutineSnoozeView.swift",
+            "BodyFlow/Features/History/MainHistoryView.swift",
+            "BodyFlow/Features/History/HistoryMealLogRowView.swift",
+            "BodyFlow/Features/History/HistoryMealLogDetailView.swift",
+            "BodyFlow/Features/History/HistoryWorkoutDetailView.swift",
+            "BodyFlow/Features/Mascot/MascotCardView.swift",
+            "BodyFlow/Features/Mascot/MascotDetailView.swift",
+        ]
+        var offenders: [String] = []
+        for path in reviewedSources {
+            let source = try reviewedSource(path)
+            let literals = occurrences(of: "systemName: \"", in: source)
+                + occurrences(of: "systemImage: \"", in: source)
+            if literals > 0 { offenders.append("\(path): \(literals) raw symbol literals") }
+        }
+        XCTAssertTrue(offenders.isEmpty, "Raw SF Symbol names outside the vocabulary: \(offenders)")
+    }
+
+    /// Actions on the I5 surfaces take a `BodyFlowButtonStyle` role; the
+    /// system bordered styles (and their dark-mode accent) are gone.
+    func testReviewedI5ActionsUseTheRoleButtonStyles() throws {
+        let reviewedSources = [
+            "BodyFlow/Features/Progress/ProgressComponents.swift",
+            "BodyFlow/Features/Library/PublishedContentDetailView.swift",
+            "BodyFlow/Features/Library/LibraryRootView.swift",
+            "BodyFlow/Features/Routine/RoutineDetailView.swift",
+            "BodyFlow/Features/Routine/RoutineActionSheet.swift",
+            "BodyFlow/Features/Routine/RoutineSnoozeView.swift",
+            "BodyFlow/Features/Routine/RoutineHistoryView.swift",
+        ]
+        var offenders: [String] = []
+        for path in reviewedSources {
+            let source = try reviewedSource(path)
+            for literal in [".buttonStyle(.bordered)", ".buttonStyle(.borderedProminent)"]
+                where source.contains(literal) {
+                offenders.append("\(path) \(literal)")
+            }
+            if !source.contains("BodyFlowButtonStyle(role:") { offenders.append("\(path): no role button") }
+        }
+        XCTAssertTrue(offenders.isEmpty, "Actions outside the role styles: \(offenders)")
+    }
+
+    /// Operation outcomes and stale/paging notices on the I5 surfaces go
+    /// through the shared status line.
+    func testReviewedI5SourcesUseTheSharedStatusLine() throws {
+        let reviewedSources = [
+            "BodyFlow/Features/Progress/ProgressComponents.swift",
+            "BodyFlow/Features/Library/PublishedContentDetailView.swift",
+            "BodyFlow/Features/Library/LibraryRootView.swift",
+            "BodyFlow/Features/Routine/RoutineActionSheet.swift",
+            "BodyFlow/Features/Mascot/MascotCardView.swift",
+        ]
+        var offenders: [String] = []
+        for path in reviewedSources where try !reviewedSource(path).contains("BodyFlowStatusLine(") {
+            offenders.append("\(path): no BodyFlowStatusLine")
+        }
+        XCTAssertTrue(offenders.isEmpty, "Status outside the shared component: \(offenders)")
+    }
+
+    /// The Progress screen keeps its heading through the shared section
+    /// header and groups the received figures into the three approved
+    /// cards; the reference dates stay a quiet block, not a fourth card.
+    func testProgressCompositionUsesTheSharedHeadingAndThreeGroupedCards() throws {
+        let source = try reviewedSource("BodyFlow/Features/Progress/ProgressComponents.swift")
+        XCTAssertTrue(source.contains("BodyFlowSectionHeader(copy(\"progress.title\"))"))
+        XCTAssertFalse(source.contains("progress.eyebrow"), "The eyebrow is gone")
+        XCTAssertEqual(occurrences(of: "BodyFlowCard(surface: .card)", in: source), 3)
+        for identifier in [
+            "progress.body", "progress.measurements", "progress.consistency",
+            "progress.summary", "progress.achievements", "progress.streak.restart",
+            "progress.streak.resume-today", "progress.badges",
+            "progress.missions.unavailable", "progress.dates", "progress.received-values",
+        ] {
+            XCTAssertTrue(
+                source.contains(".accessibilityIdentifier(\"\(identifier)\")"),
+                "\(identifier) must keep a real container"
+            )
+        }
+        XCTAssertTrue(source.contains(".accessibilityIdentifier(\"progress.medal.\\(medal.id.offset)\")"))
     }
 
     /// Decorative tint washes share one opacity token; ad-hoc alphas drift

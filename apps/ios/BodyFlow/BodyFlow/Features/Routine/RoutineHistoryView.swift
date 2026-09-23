@@ -59,8 +59,12 @@ struct RoutineHistoryView: View {
                         language: language
                     )
                     VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
-                        Text(presentation.statusLabel)
-                            .font(BodyFlowTypography.headline)
+                        Label(
+                            verbatim: presentation.statusLabel,
+                            symbol: .routineStatus(presentation.rawStatus)
+                        )
+                        .font(BodyFlowTypography.headline)
+                        .foregroundStyle(BodyFlowColor.primaryText)
                         Text(
                             presentation.scheduledForLabel
                                 ?? copy("routine.history.time-unavailable")
@@ -68,16 +72,20 @@ struct RoutineHistoryView: View {
                             .font(BodyFlowTypography.callout)
                             .foregroundStyle(BodyFlowColor.secondaryText)
                     }
+                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("routine.history.row.\(row.id)")
                     .bodyFlowListRow()
                 }
                 if model.nextCursor != nil {
-                    Button(copy("routine.history.load-more")) {
+                    Button {
                         Task { await model.loadMore() }
+                    } label: {
+                        Text(copy("routine.history.load-more"))
+                            .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                     }
+                    .buttonStyle(BodyFlowButtonStyle(role: .secondary))
                     .accessibilityIdentifier("routine.history.load-more")
-                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                     .bodyFlowListRow()
                 }
             }

@@ -50,16 +50,16 @@ struct MainHistoryView: View {
                     }
                     .padding(BodyFlowSpacing.md)
                 }
+                .refreshable {
+                    await model.retry()
+                }
             }
         }
     }
 
     private func mealSection(_ rows: [HistoryMealLogRow]) -> some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-            Text(copy("history.meals.title"))
-                .font(BodyFlowTypography.title)
-                .foregroundStyle(BodyFlowColor.primaryText)
-                .accessibilityAddTraits(.isHeader)
+            sectionHeader(copy("history.meals.title"), symbol: .meals)
                 .accessibilityIdentifier("history.meals")
             ForEach(rows, id: \.id) { row in
                 NavigationLink(value: AppRoute.historyMealLog(rowID: row.id)) {
@@ -73,23 +73,24 @@ struct MainHistoryView: View {
 
     private func workoutSection(_ rows: [HistoryWorkoutLogRow]) -> some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-            Text(copy("history.workouts.title"))
-                .font(BodyFlowTypography.title)
-                .foregroundStyle(BodyFlowColor.primaryText)
-                .accessibilityAddTraits(.isHeader)
+            sectionHeader(copy("history.workouts.title"), symbol: .workouts)
                 .accessibilityIdentifier("history.workouts")
             ForEach(rows, id: \.id) { row in
                 NavigationLink(value: AppRoute.historyWorkout(logID: row.id)) {
                     BodyFlowCard {
-                        VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                            Text(row.workoutType ?? copy("history.workout.fallback"))
-                                .font(BodyFlowTypography.headline)
-                                .foregroundStyle(BodyFlowColor.primaryText)
-                            if let duration = values.duration(row.durationMin) {
-                                Text(duration)
-                                    .font(BodyFlowTypography.callout)
-                                    .foregroundStyle(BodyFlowColor.secondaryText)
+                        HStack(alignment: .center, spacing: BodyFlowSpacing.sm) {
+                            VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+                                Text(row.workoutType ?? copy("history.workout.fallback"))
+                                    .font(BodyFlowTypography.headline)
+                                    .foregroundStyle(BodyFlowColor.primaryText)
+                                if let duration = values.duration(row.durationMin) {
+                                    Text(duration)
+                                        .font(BodyFlowTypography.callout)
+                                        .foregroundStyle(BodyFlowColor.secondaryText)
+                                }
                             }
+                            Spacer(minLength: BodyFlowSpacing.xs)
+                            HistoryRowChevron()
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -98,6 +99,14 @@ struct MainHistoryView: View {
                 .accessibilityIdentifier("history.workout.\(row.id)")
             }
         }
+    }
+
+    /// Section heading with its domain glyph, read as one header element so
+    /// the section identifier lands on the heading itself.
+    private func sectionHeader(_ title: String, symbol: BodyFlowSymbol) -> some View {
+        BodyFlowSectionHeader(title, symbol: symbol)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
     }
 
     private func retry() {

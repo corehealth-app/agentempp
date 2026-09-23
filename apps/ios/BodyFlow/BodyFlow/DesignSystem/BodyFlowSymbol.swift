@@ -43,6 +43,31 @@ enum BodyFlowSymbol: String, CaseIterable, Sendable {
     case protocolDocument = "doc.text"
     case netBalance = "plusminus"
 
+    // Progress and achievements
+    case xp = "sparkles"
+    case level = "rosette"
+    case streak = "flame"
+    case longestStreak = "trophy"
+    case completedBlocks = "checkmark.seal"
+    case deficit = "arrow.down.circle"
+    case medal = "medal.fill"
+    case weight = "scalemass"
+    case bodyComposition = "figure"
+
+    // Profile, library and selection
+    case person = "person.crop.circle"
+    case preferences = "slider.horizontal.3"
+    case categoryFilter = "line.3.horizontal.decrease.circle"
+    case picker = "chevron.up.chevron.down"
+    case save = "bookmark"
+    case saved = "bookmark.fill"
+    case unsave = "bookmark.slash"
+    case article = "book.closed"
+    case selected = "checkmark.circle.fill"
+    case unselected = "circle"
+    case close = "xmark"
+    case confirm = "checkmark"
+
     var systemName: String { rawValue }
 }
 

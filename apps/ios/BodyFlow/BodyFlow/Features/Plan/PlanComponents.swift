@@ -135,8 +135,9 @@ private struct PlanMetadataCard: View {
         BodyFlowCard(surface: .card) {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
                 Text(title)
-                    .font(BodyFlowTypography.headline)
+                    .font(BodyFlowTypography.cardTitle)
                     .foregroundStyle(BodyFlowColor.primaryText)
+                    .accessibilityAddTraits(.isHeader)
 
                 ForEach(primaryFields) { field in
                     FixtureMetricRow(title: field.title, value: field.value)
@@ -144,6 +145,9 @@ private struct PlanMetadataCard: View {
                     if field.id != primaryFields.last?.id { Divider() }
                 }
 
+                // Provenance (generated / valid until / version) is real plan
+                // data but not what the patient reads first: it keeps its own
+                // heading and a quieter row, still fully expanded.
                 if !secondaryFields.isEmpty {
                     Divider()
                     Text(PlanCopy.string("plan.metadata.title", language: language))
@@ -154,9 +158,8 @@ private struct PlanMetadataCard: View {
                         .accessibilityIdentifier("plan.metadata")
 
                     ForEach(secondaryFields) { field in
-                        FixtureMetricRow(title: field.title, value: field.value)
+                        PlanProvenanceRow(title: field.title, value: field.value)
                             .accessibilityIdentifier(field.id)
-                        if field.id != secondaryFields.last?.id { Divider() }
                     }
                 }
             }
@@ -180,6 +183,49 @@ private struct PlanMetadataCard: View {
         field.id.hasSuffix(".generated")
             || field.id.hasSuffix(".valid-until")
             || field.id.hasSuffix(".version")
+    }
+}
+
+/// A provenance row: same received values, one step quieter than the plan's
+/// own fields, and read as a single element.
+@MainActor
+private struct PlanProvenanceRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    let title: String
+    let value: String
+
+    var body: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
+                    titleText
+                    valueText
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: BodyFlowSpacing.sm) {
+                    titleText
+                    Spacer(minLength: BodyFlowSpacing.sm)
+                    valueText
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var titleText: some View {
+        Text(verbatim: title)
+            .font(BodyFlowTypography.callout)
+            .foregroundStyle(BodyFlowColor.secondaryText)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var valueText: some View {
+        Text(verbatim: value)
+            .font(BodyFlowTypography.callout)
+            .foregroundStyle(BodyFlowColor.primaryText)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

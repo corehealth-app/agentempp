@@ -8,6 +8,9 @@ enum RegistrationOperationAction: Equatable, Sendable {
 struct RegistrationOperationSummaryDescriptor: Equatable {
     let message: String?
     let action: RegistrationOperationAction?
+    /// How the message reads: a confirmed operation, a recoverable failure,
+    /// or a capability this build does not offer.
+    let kind: BodyFlowStatusLine.Kind
 
     init(
         state: RegistrationMutationState,
@@ -18,19 +21,24 @@ struct RegistrationOperationSummaryDescriptor: Equatable {
         case .unavailable:
             message = Self.copy("state.unavailable.title", language: language)
             action = nil
+            kind = .unavailable
         case let .failed(_, error):
             message = Self.message(for: error, language: language)
             action = Self.action(for: error)
+            kind = error == .operationUnavailable ? .unavailable : .error
         case let .succeeded(receipt):
             message = Self.successMessage(for: receipt, language: language)
             action = nil
+            kind = .success
         case .idle, .submitting:
             if let captureError {
                 message = Self.message(for: captureError, language: language)
                 action = Self.action(for: captureError)
+                kind = captureError == .operationUnavailable ? .unavailable : .error
             } else {
                 message = nil
                 action = nil
+                kind = .info
             }
         }
     }
@@ -92,7 +100,7 @@ struct RegistrationOperationSummary: View {
         Group {
             if let message = descriptor.message {
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                    Text(message)
+                    BodyFlowStatusLine(message, kind: descriptor.kind)
                     if let action = descriptor.action {
                         Button {
                             perform(action)
@@ -102,12 +110,10 @@ struct RegistrationOperationSummary: View {
                                     ? copy("registration.operation.new-proposal")
                                     : copy("state.retry")
                             )
-                            .frame(
-                                minHeight: BodyFlowSpacing.minimumTapTarget
-                            )
+                            .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(BodyFlowButtonStyle(role: .secondary))
                         .accessibilityIdentifier(
                             action == .newProposal
                                 ? "registration.mutation.new-proposal"
@@ -117,10 +123,23 @@ struct RegistrationOperationSummary: View {
                 }
             }
         }
-        .font(BodyFlowTypography.callout)
-        .foregroundStyle(BodyFlowColor.secondaryText)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("registration.operation.summary")
+        // Result feedback for the patient's own submit; the message above is
+        // always the primary channel.
+        .bodyFlowResultFeedback(Self.feedback, trigger: descriptor.kind)
+    }
+
+    /// Only the two terminal outcomes of a submit speak; idle and
+    /// unavailable stay silent.
+    private static func feedback(
+        for kind: BodyFlowStatusLine.Kind
+    ) -> BodyFlowHaptics.Result? {
+        switch kind {
+        case .success: .success
+        case .error: .failure
+        case .info, .warning, .pending, .empty, .unavailable: nil
+        }
     }
 
     private var language: SupportedAppLanguage {

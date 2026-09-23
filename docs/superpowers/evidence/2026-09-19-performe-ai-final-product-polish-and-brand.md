@@ -1204,3 +1204,144 @@ incomplete}.png`, directions in `v6/variants/`, before/after in
 Next, once accepted: carry the same principle (one hero figure per screen,
 support values ranked below it) into Progress and Plan in I5, and re-run the
 full focused set.
+
+## I4 — Registrar / Plano — 2026-09-23 (STOP for visual acceptance)
+
+Plan V2 increment I4 on `3f600d6` (I3 commit; index empty at entry). 9 dirty
+paths at exit (8 modified + `BodyFlowHaptics.swift`). No copy key, asset, API
+or identifier change.
+
+### Registrar
+
+The root asks one question and answers it with one action: the eyebrow that
+repeated the tab name is gone, the question takes `screenTitle` with the
+header trait, "Refeição" stays the primary button, the demonstration notice
+becomes a `BodyFlowStatusLine(.info)`, and Treino/Peso/Hidratação move from
+three separate cards into **one panel of three divided rows** with the domain
+glyph, a chevron and press feedback — the same principle the user chose for
+the day summary.
+
+The meal sheet now leads with the real capture path: **Texto** as the primary
+button, the local-sample notice under it, then Foto and Áudio as secondary
+samples (labels "Foto — amostra local" / "Áudio — amostra local" unchanged).
+`RegistrationOperationSummary` renders through `BodyFlowStatusLine` with the
+role its state deserves (success / error / unavailable) and a secondary retry.
+
+`BodyFlowHaptics` (new) plays result feedback only on the two terminal
+outcomes of a submit the patient triggered — never on navigation, refresh or
+arriving content — and never as the only channel: the status line always says
+the same thing.
+
+### Plano
+
+Provenance rows (generated / valid until / version) keep every received value
+but drop one step to `callout` under their existing "Detalhes do plano"
+heading, so the plan's own fields lead. The root gained pull-to-refresh.
+
+### Two regressions I introduced, found by the gates and fixed
+
+- **PROBLEMA:** the automated accessibility audit failed on the Registrar tab
+  — "Dynamic Type font sizes are partially unsupported" on the static text
+  "Outros registros". Cause: `BodyFlowSectionHeader` wrapped even the
+  accessory-less case in `ViewThatFits`, and the audit read the lone text as
+  non-scalable. Fix: with no accessory the heading renders directly.
+  This is the **same family as the I1 brand regression** — a layout wrapper
+  making scalable text look unscalable to the audit. Second occurrence;
+  worth an explicit check in every increment that touches a shared heading.
+- **PROBLEMA:** `registration.mutation.retry` measured 42.57 pt (< 44).
+  Cause: my `BodyFlowButtonStyle(role: .secondary)` sits exactly on the 44 pt
+  floor, and the sheet's bottom edge clipped 1.4 pt; the previous `.bordered`
+  button carried system padding on top of a 44 pt label and had slack. Fix:
+  the label keeps its own `minimumTapTarget` floor inside the styled button.
+
+Both failed, were fixed in the code, and pass again. No test, timeout, retry
+or assertion was relaxed.
+
+### Gates
+
+Full `BodyFlowTests` serial, single invocation: **1,229/1,229, 0 failed**.
+UI, one invocation per class, after the fix: PremiumRegistration 3/3,
+Prompt13Registration 21/21, Prompt13Accessibility 5/5, PremiumConvergence 4/4
+(automated audit), Prompt13PlanProgressHistory 12/12, PremiumCoreSurfaces 9/9,
+Prompt13Today 11/11, Prompt14Accessibility 13/13 — **78 cases, 0 failures**.
+(The first run of the set, before the fix, is preserved as
+`v6-i3-ui-i4run1-*` with its 3 failures.)
+
+Captures: `v6/i4/registrar-{light,dark}.png`, `sheet-refeicao-light.png`,
+`plano-light.png`; before/after in `v6/compare/registrar-antes-depois-dark.png`
+and `plano-antes-depois.png`.
+
+Status: I4 code and test gates satisfied; Release/codesign/analyze/scanner not
+yet run for this increment. USER VISUAL ACCEPTANCE: PENDING — nothing is
+committed and I5 does not start until the user accepts.
+
+### I4 closeout — user visual acceptance and final gates (2026-09-23)
+
+USER VISUAL ACCEPTANCE — I4: **APPROVED** by the user for the composition
+presented of Registrar, the meal sheet and Plano. The approval covers that
+composition only; it is not approval of the Roberto/staging journey and not a
+production-readiness statement. No further visual change was made in this
+closeout.
+
+Baseline revalidated before touching anything: branch
+`codex/performe-ai-client-beta-flow-v1`, HEAD
+`3f600d680efcb1a71e653e6c92c29d1ca6d1edbf` (the I3 commit), tree
+`1089fa742414c771441eae9a05169e76936198e8`, empty index, 10 dirty paths all
+belonging to I4 (8 sources + `BodyFlowHaptics.swift` + this evidence), no
+stash entries, no concurrent build or test writer, no `index.lock`.
+
+Final gates, run on the approved state:
+
+- **Release build** (Simulator, normal signing, never `CODE_SIGNING_ALLOWED=NO`
+  — 0 occurrences in the log): `** BUILD SUCCEEDED **`, identifier
+  `com.bodyflow.app`, ad hoc signature.
+- **codesign** `--verify --deep --strict`: valid on disk, satisfies its
+  Designated Requirement.
+- **analyze**: `** ANALYZE SUCCEEDED **`, no analyzer findings. The only
+  warning in the log is the pre-existing
+  `appintentsmetadataprocessor: Metadata extraction skipped, no
+  AppIntents.framework dependency found` — pre-existing, not a new finding.
+- **premium-surface-scan** on the compiled Release app, baseline `7ab3e657`:
+  `status PASS`, `failures 0`, `PUBLIC_LEAK 0`, `HISTORICAL_ASSET 18/18` all
+  `IDENTICAL`, `ALLOWED_TECHNICAL 235`, `DEBUG_ONLY 0` (no Debug success path
+  exposed in Release), brand asset approval gate
+  `APPROVED_FOR_LISTED_RC1_FILES`. Observed counts unchanged from I3:
+  `expectedNamedAssets 16` / `compiledNamedAssets 15`.
+- **Scanner unit tests** (`node --test`): 21/21 pass.
+- **Public brand gate** on the eight touched Swift files: every `BodyFlow*`
+  match is an internal technical symbol (`BodyFlowSpacing`, `BodyFlowColor`,
+  `BodyFlowSymbol`, `BodyFlowTypography`, `BodyFlowStatusLine`,
+  `BodyFlowHaptics`, …); zero occurrences of `Body Flow`, `Better Ahead`,
+  `MPP` or `Dr. Roberto`; zero new public string literals; no change to
+  `Localizable.xcstrings`.
+- **Asset preservation**: `git status` and `git diff` over `assets/` and
+  `Assets.xcassets` are both empty — no RC1 or historical asset touched, no
+  asset regenerated. The runtime `AppIcon.appiconset` is unchanged and still
+  carries its default, dark and legacy tinted entries; the Performe AI tinted
+  candidate (`exports/appicon-tinted-1024.png`) remains
+  `PENDING_SUPPORT_AND_SEPARATE_APPROVAL` with `imported: false`.
+
+HAPTICS ON PHYSICAL DEVICE: **NOT VERIFIED.** The result feedback added in I4
+cannot be exercised by the Simulator. Implementation and the applicable tests
+are green; nothing here claims device verification.
+
+### PRE-ROBERTO FOLLOW-UP 1 — plan display values
+
+The Plan surface currently shows the received values `strength` and
+`macro_targets` verbatim. Before the connected beta these must be classified
+as either (A) a known, stable API enum with an authorized display mapping, or
+(B) opaque server-owned strings that must receive their display label from the
+server. Nothing was translated, mapped, substituted or interpreted in this
+operation.
+
+PLAN DISPLAY LABEL STATUS: **PENDING CONTRACT CLASSIFICATION**
+
+### PRE-ROBERTO FOLLOW-UP 2 — synthetic / demo content
+
+Explicitly synthetic or demonstration strings are acceptable in the current
+local QA and were left exactly as they are — among them "Plano sintético para
+demonstração", "Payload opaco sintético", and the other clearly marked
+fixtures and debug data. They are not the Roberto journey's final content, and
+their markers were deliberately not hidden to improve screenshots.
+
+ROBERTO JOURNEY FIXTURE STATUS: **PENDING PRE-BETA STAGING CLEANUP**

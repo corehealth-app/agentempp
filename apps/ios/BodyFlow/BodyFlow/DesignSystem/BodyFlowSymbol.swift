@@ -14,6 +14,9 @@ enum BodyFlowSymbol: String, CaseIterable, Sendable {
     case send = "arrow.up"
     case stop = "stop.fill"
     case summary = "doc.text.magnifyingglass"
+    case compose = "text.alignleft"
+    case photo = "photo"
+    case audio = "waveform"
 
     // Status
     case info = "info.circle"

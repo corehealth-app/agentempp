@@ -38,20 +38,20 @@ struct RegisterRootView: View {
     private var loadedContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
+                // The screen asks one question and answers it with one
+                // primary action; the eyebrow that repeated the tab name is
+                // gone.
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                    Text(copy("registration.root.eyebrow"))
-                        .font(BodyFlowTypography.caption)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(BodyFlowColor.accent)
-
                     Text(copy("registration.root.title"))
-                        .font(BodyFlowTypography.title)
-                        .fontWeight(.bold)
+                        .font(BodyFlowTypography.screenTitle)
                         .foregroundStyle(BodyFlowColor.primaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.isHeader)
 
                     Text(copy("registration.root.detail"))
                         .font(BodyFlowTypography.body)
                         .foregroundStyle(BodyFlowColor.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if let mealCommand = fixture.commands.first(where: {
@@ -60,34 +60,40 @@ struct RegisterRootView: View {
                     commandButton(mealCommand, role: .primary)
                 }
 
+                BodyFlowStatusLine(
+                    copy("registration.root.demo-notice"),
+                    kind: .info
+                )
+
+                // The remaining kinds share one panel of rows instead of one
+                // card each, so the primary action keeps its weight.
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-                    Text(copy("registration.root.other-actions"))
-                        .font(BodyFlowTypography.headline)
-                        .foregroundStyle(BodyFlowColor.primaryText)
-                    ForEach(fixture.commands.filter {
-                        RegistrationKind(rawValue: $0.kindID) != .meal
-                    }) { command in
-                        Button {
-                            present(command)
-                        } label: {
-                            BodyFlowCard {
-                                FeatureActionLabel(
-                                    title: commandTitle(for: command),
-                                    detail: copy("registration.root.open-demo"),
-                                    systemImage: command.systemImage
-                                )
+                    BodyFlowSectionHeader(copy("registration.root.other-actions"))
+
+                    BodyFlowCard {
+                        VStack(alignment: .leading, spacing: 0) {
+                            let commands = fixture.commands.filter {
+                                RegistrationKind(rawValue: $0.kindID) != .meal
+                            }
+                            ForEach(Array(commands.enumerated()), id: \.element.id) { index, command in
+                                if index > 0 { Divider() }
+                                Button {
+                                    present(command)
+                                } label: {
+                                    FeatureActionLabel(
+                                        title: commandTitle(for: command),
+                                        detail: copy("registration.root.open-demo"),
+                                        systemImage: command.systemImage
+                                    )
+                                    .padding(.vertical, BodyFlowSpacing.xs)
+                                }
+                                .buttonStyle(.bodyFlowRow)
+                                .disabled(RegistrationKind(rawValue: command.kindID) == nil)
+                                .accessibilityIdentifier(identifier(for: command))
                             }
                         }
-                        .buttonStyle(.plain)
-                        .disabled(RegistrationKind(rawValue: command.kindID) == nil)
-                        .accessibilityIdentifier(identifier(for: command))
                     }
                 }
-
-                Label(copy("registration.root.demo-notice"), systemImage: "info.circle")
-                    .font(BodyFlowTypography.callout)
-                    .foregroundStyle(BodyFlowColor.secondaryText)
-                    .padding(.horizontal, BodyFlowSpacing.xs)
             }
             .padding(BodyFlowSpacing.md)
         }

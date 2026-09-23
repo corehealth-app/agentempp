@@ -13,6 +13,7 @@ struct BodyFlowSectionHeader<Accessory: View>: View {
     private let title: String
     private let symbol: BodyFlowSymbol?
     private let accessory: Accessory
+    private let hasAccessory: Bool
 
     init(
         _ title: String,
@@ -22,18 +23,37 @@ struct BodyFlowSectionHeader<Accessory: View>: View {
         self.title = title
         self.symbol = symbol
         self.accessory = accessory()
+        hasAccessory = true
+    }
+
+    fileprivate init(
+        title: String,
+        symbol: BodyFlowSymbol?,
+        accessory: Accessory,
+        hasAccessory: Bool
+    ) {
+        self.title = title
+        self.symbol = symbol
+        self.accessory = accessory
+        self.hasAccessory = hasAccessory
     }
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .firstTextBaseline, spacing: BodyFlowSpacing.sm) {
+        Group {
+            if hasAccessory {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline, spacing: BodyFlowSpacing.sm) {
+                        heading
+                        Spacer(minLength: BodyFlowSpacing.sm)
+                        accessory
+                    }
+                    VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+                        heading
+                        accessory
+                    }
+                }
+            } else {
                 heading
-                Spacer(minLength: BodyFlowSpacing.sm)
-                accessory
-            }
-            VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                heading
-                accessory
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -56,6 +76,11 @@ struct BodyFlowSectionHeader<Accessory: View>: View {
 
 extension BodyFlowSectionHeader where Accessory == EmptyView {
     init(_ title: String, symbol: BodyFlowSymbol? = nil) {
-        self.init(title, symbol: symbol) { EmptyView() }
+        self.init(
+            title: title,
+            symbol: symbol,
+            accessory: EmptyView(),
+            hasAccessory: false
+        )
     }
 }

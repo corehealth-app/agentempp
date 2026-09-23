@@ -6,7 +6,7 @@ import SwiftUI
 /// channel because the glyph and the text carry the meaning too.
 @MainActor
 struct BodyFlowStatusLine: View {
-    enum Kind: Sendable {
+    enum Kind: Equatable, Sendable {
         case info, success, warning, error, pending, empty, unavailable
 
         var symbol: BodyFlowSymbol {

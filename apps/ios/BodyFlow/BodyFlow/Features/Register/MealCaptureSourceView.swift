@@ -50,57 +50,62 @@ struct MealCaptureSourceView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
             Text(copy("registration.capture.title"))
-                .font(BodyFlowTypography.headline)
+                .font(BodyFlowTypography.cardTitle)
                 .foregroundStyle(BodyFlowColor.primaryText)
+                .accessibilityAddTraits(.isHeader)
+
+            // Text is the real capture path and leads; the two local samples
+            // follow, under the notice that says what they are.
+            sourceButton(
+                copy("registration.capture.text"),
+                symbol: .compose,
+                role: .primary,
+                identifier: "registration.meal.source.text"
+            ) { select(.text) }
+
+            BodyFlowStatusLine(copy("registration.capture.demo-notice"), kind: .info)
 
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .top, spacing: BodyFlowSpacing.sm) {
-                    sourceButtons
+                    sampleButtons
                 }
                 VStack(spacing: BodyFlowSpacing.sm) {
-                    sourceButtons
+                    sampleButtons
                 }
             }
-
-            Label(copy("registration.capture.demo-notice"), systemImage: "info.circle")
-                .font(BodyFlowTypography.callout)
-                .foregroundStyle(BodyFlowColor.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     @ViewBuilder
-    private var sourceButtons: some View {
+    private var sampleButtons: some View {
         sourceButton(
             copy("registration.capture.photo-sample"),
-            systemImage: "photo",
+            symbol: .photo,
+            role: .secondary,
             identifier: "registration.meal.source.photo"
         ) { select(.photo) }
         sourceButton(
             copy("registration.capture.audio-sample"),
-            systemImage: "waveform",
+            symbol: .audio,
+            role: .secondary,
             identifier: "registration.meal.source.audio"
         ) { select(.audio) }
-        sourceButton(
-            copy("registration.capture.text"),
-            systemImage: "text.alignleft",
-            identifier: "registration.meal.source.text"
-        ) { select(.text) }
     }
 
     private func sourceButton(
         _ title: String,
-        systemImage: String,
+        symbol: BodyFlowSymbol,
+        role: BodyFlowButtonRole,
         identifier: String,
         action: @escaping @MainActor () -> Void
     ) -> some View {
         Button(action: action) {
-            Label(title, systemImage: systemImage)
+            Label(verbatim: title, symbol: symbol)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(minHeight: BodyFlowSpacing.minimumTapTarget + 1)
         }
-        .buttonStyle(BodyFlowButtonStyle(role: .secondary))
+        .buttonStyle(BodyFlowButtonStyle(role: role))
         .accessibilityIdentifier(identifier)
     }
 

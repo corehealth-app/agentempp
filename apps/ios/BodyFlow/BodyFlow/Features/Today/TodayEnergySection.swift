@@ -187,7 +187,7 @@ struct TodaySummaryPanel: View {
     private var proteinCell: some View {
         TodaySummaryCell(
             title: copy("today.protein.title"),
-            value: TodayValueFormatter.grams(protein.consumedG),
+            value: TodayValueFormatter.grams(protein.consumedG, language: language),
             caption: copy("metric.consumed"),
             prominence: .supporting
         )

@@ -6,6 +6,9 @@ struct ProfileRootView: View {
     @Environment(\.locale) private var locale
 
     let userID: String
+    /// The signed-in account on a real backend; nil keeps the fixture
+    /// identity of the local demonstration.
+    let accountEmail: String?
     let fixture: ProfileFixture
     let state: ScreenContentState
     private let coachExperienceProvider: (any CoachExperienceProviding)?
@@ -20,6 +23,7 @@ struct ProfileRootView: View {
 
     init(
         userID: String = "fixture-user",
+        accountEmail: String? = nil,
         fixture: ProfileFixture = AppFixtures.profile,
         state: ScreenContentState = .loaded,
         coachExperienceProvider: (any CoachExperienceProviding)? = nil,
@@ -27,6 +31,7 @@ struct ProfileRootView: View {
         retryAction: @escaping @MainActor () -> Void = {}
     ) {
         self.userID = userID
+        self.accountEmail = accountEmail
         self.fixture = fixture
         self.state = state
         self.coachExperienceProvider = coachExperienceProvider
@@ -104,26 +109,30 @@ struct ProfileRootView: View {
                 .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                 .accessibilityIdentifier("profile.coach-persona")
 
-                FixtureMetricRow(
-                    title: copy("profile.fixture.notifications"),
-                    value: fixture.notifications
-                )
-                .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                // Demonstration-only rows: a real account has no local
+                // notification fixture or demo preferences destination.
+                if accountEmail == nil {
+                    FixtureMetricRow(
+                        title: copy("profile.fixture.notifications"),
+                        value: fixture.notifications
+                    )
+                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
 
-                NavigationLink(
-                    value: AppRoute.detail(
-                        tab: .profile,
-                        id: "profile-preferences"
-                    )
-                ) {
-                    FeatureActionLabel(
-                        title: copy("profile.preferences.action"),
-                        detail: copy("profile.preferences.demo-detail"),
-                        systemImage: BodyFlowSymbol.preferences.systemName,
-                        showsDisclosureIndicator: false
-                    )
+                    NavigationLink(
+                        value: AppRoute.detail(
+                            tab: .profile,
+                            id: "profile-preferences"
+                        )
+                    ) {
+                        FeatureActionLabel(
+                            title: copy("profile.preferences.action"),
+                            detail: copy("profile.preferences.demo-detail"),
+                            systemImage: BodyFlowSymbol.preferences.systemName,
+                            showsDisclosureIndicator: false
+                        )
+                    }
+                    .accessibilityIdentifier("profile.detail")
                 }
-                .accessibilityIdentifier("profile.detail")
             } header: {
                 Text(copy("profile.preferences.section"))
                     .foregroundStyle(BodyFlowColor.primaryText)
@@ -141,7 +150,7 @@ struct ProfileRootView: View {
     /// persona row below stays within tap reach at AXXXL.
     private var identityRow: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-            Label(verbatim: fixture.title, symbol: .person)
+            Label(verbatim: accountEmail ?? fixture.title, symbol: .person)
                 .font(BodyFlowTypography.headline)
                 .foregroundStyle(BodyFlowColor.primaryText)
 
@@ -150,7 +159,9 @@ struct ProfileRootView: View {
     }
 
     private var identityDisclosure: some View {
-        Text(copy("profile.fixture.disclosure"))
+        Text(copy(accountEmail == nil
+            ? "profile.fixture.disclosure"
+            : "profile.identity.account-disclosure"))
             .font(BodyFlowTypography.callout)
             .foregroundStyle(BodyFlowColor.secondaryText)
             .fixedSize(horizontal: false, vertical: true)

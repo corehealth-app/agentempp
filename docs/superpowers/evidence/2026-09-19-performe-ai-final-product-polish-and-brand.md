@@ -1773,3 +1773,77 @@ ACHIEVEMENT DISPLAY LABEL STATUS: PENDING DATA / CONTRACT CLASSIFICATION · HIST
 ### Status ao fechar a operação I6
 
 I6 STATUS: IMPLEMENTED — GATES GREEN · REGRESSION STATUS: PARTIALLY VERIFIED · PUBLIC BRAND STATUS: PARTIALLY VERIFIED (global) · REBRAND STATUS: PARTIAL · IOS INTEGRATION STATUS: LOCAL ONLY · PRODUCTION STATUS: NOT DEPLOYED · APPICON TINTED: PENDING — NOT INTEGRATED · I6 VISUAL STATUS: READY FOR USER REVIEW · USER VISUAL ACCEPTANCE: PENDING → reclassificado como DEFERRED TO FINAL REVIEW por instrução explícita do usuário (`PERFORME_AI_ROBERTO_BETA_AUTONOMOUS_CLOSURE_V1`, §0/§8), que autoriza o commit local após os gates.
+
+## I7 + pré-Roberto + staging — `PERFORME_AI_ROBERTO_BETA_AUTONOMOUS_CLOSURE_V1` (2026-09-26)
+
+Operação autônoma delimitada (substitui apenas os STOPs intermediários de aceite visual de I6/I7). Performe AI = produto público; Flow = agente público; BodyFlow = identidade técnica interna preservada. Ledger de execução (fora do produto): `$SP/roberto-beta/ledger.md`.
+
+### Autoridade e baseline
+
+Cadeia documental revalidada por blob (dossiê pinado `b4c09e80…:docs/handoffs/2026-08-20-…` blob `d396bbd7…` sha256 `f0dc6dcd…`; specs/plans 08-11, addendum/spec 09-14, spec 09-17, spec 09-19, manifesto Signal Spark `9ca2587a…`, scanner `7986173f…`) — todos idênticos ao FINAL AUTHORITY AMENDMENT §B. AUTHORITY STATUS: VERIFIED. Baseline de entrada: HEAD `5e0552dd…` com o I6 pronto e não commitado (a operação foi sequenciada pelo usuário após o fechamento do I6); commit I6 = `f24e666e2e9748fa4125cfcf90af4c58358c2c97`.
+
+### I7 — revisão "primeira vez" (build `f24e666` Debug, Simulator real; capturas em `$SP/v6/final/`, `settings.log`)
+
+Matriz capturada: Hoje (pt L/D Large, L/D AXXXL, en), Registrar (L/D, AXXXL), Plano (L/D, AXXXL), Progresso (L/D, AXXXL, escuro rolado), Perfil (L/D, AXXXL), Flow (L/D), Biblioteca (família indisponível L/D — a combinação prompt13+prompt14 seleciona o fixture prompt13), estados do Hoje (indisponível, offline-stale, loading, erro, vazio). Auth/Onboarding/Splash: matriz do I6 (`$SP/v6/i6/`).
+
+| # | Achado | Classe | Decisão |
+|---|---|---|---|
+| F-01 | Hoje: proteína "90.5 g" sem locale (hidratação "1.250 ml") | Important / P1 | CORRIGIDO — `TodayValueFormatter.grams(_:language:)` com o locale do idioma (pt-BR "90,5 g") |
+| F-02 | Hoje: "Protocolo: recomposicao" valor bruto | Minor | DEFER — string travada por `Prompt13TodayUITests` ("Protocolo: recomposicao"); valor oficial server-owned |
+| F-03 | Plano: enums brutos `strength`/`macro_targets` + notas "sintético" | Important (§10-A) | CORRIGIDO na camada de apresentação para os enums FECHADOS do banco (`split/full_body/custom`, `diet/shopping_list/combined`), pt-BR/en; valores fora do enum continuam brutos (dados oficiais). Os valores dos fixtures Debug (`strength`, `macro_targets`) NÃO existem no contrato — permanecem como prova do fallback bruto |
+| F-04 | Progresso: medalhas `first_week`/UUID | Important (§10-B) | CORRIGIDO nos fixtures Debug (o servidor já envia nomes humanos em `badges_earned`) |
+| F-05 | Registrar: copy "Demonstração local… em Release" alcança o Release | Important (§10-D) | CORRIGIDO — `AppDependencies.isRegistrationAvailable`; sem capacidade de registro o tab renderiza o estado indisponível honesto |
+| F-06 | Perfil: "Perfil de demonstração" alcança o Release | Important (§10-D) | CORRIGIDO — `presentsRealAccountIdentity` + `accountEmail` (conta conectada como identidade; linhas de demonstração ocultas); Debug/demo inalterado (strings travadas) |
+| F-07 | Histórico de rotina não empurra a tela | Real bug / P2 | DEFER_AFTER_ROBERTO — reproduzido na jornada real (captura `routine-history-nav-bug-pt-light-large.png`); rotina indisponível no Release |
+
+Critical: 0. Important: 5 corrigidos (F-01, F-03, F-04, F-05, F-06). Minor/deferred: F-02, F-07.
+
+### Integração Release (Hoje real)
+
+Descoberta: o Release ligava só Auth/Onboarding/Flow ao BFF; Hoje/Histórico/Plano/Progresso eram `Unavailable*`. Correção: `MobileBodyFlowRepository` (Core/Networking) sobre `MobileAPITransport.executeEnvelope` (preserva `meta.request_id` real) para `GET /api/mobile/v1/today|history|plan|progress`; erros de transporte mapeados para `BodyFlowCapabilityError` (`network/timeout → offline`, `unavailableConfiguration → operationUnavailable`, HTTP 402 → `subscriptionRequired`, demais → `serviceUnavailable`). Registro/hidratação/peso/rotina/biblioteca/mascote permanecem indisponíveis nesta fase (RULING R2).
+
+### RED → GREEN
+
+RED (build `red1`, run `red1`): 14 issues, exatamente nos 6 testes novos/alterados (`TodayPresentationTests.gramValuesFollowTheLanguageLocale`, `PlanPresentationTests.closedEnumsRenderDisplayLabels`, expectativas de medalhas em `DemoPrompt14RepositoryTests`/`AppDependenciesTests`, `AppDependenciesTests.validOriginAndSessionInstallTransport` [today/history/plan/progress ≠ Unavailable], `BodyFlowPremiumRenderingTests.testShellPassesCapabilityTruthToRegisterAndProfile`). GREEN (build `green4`): suítes tocadas + `LocalizationContractTests` 0 falhas; unit completo 32 XCTest + 1215 Swift Testing = 1247/0/0; UI `Prompt14ProgressUITests` 5/0, `Prompt13TodayUITests` 11/0, `PremiumContentProfileUITests` 4/0, `PremiumCoreSurfacesUITests` 9/0 (uma invocação cada). Duas iterações intermediárias (`green2`/`green3`) falharam só em `closedEnumsRenderDisplayLabels` por construção da chave de localização via interpolação (`%@.%@`); corrigido com chave `String` + `init(stringLiteral:)`.
+
+### Staging (branch Supabase `xitugspwfxkcluxvrdeg`; produção `xuxehkhdvjivitduarvb` nunca endereçada)
+
+- Vercel MCP: 403 para o escopo `gestao-9664s-projects` → nenhum deploy/env do BFF nesta operação; o Preview gravado no xcconfig privado (16/09) está vivo (401 `missing_access_token` com `request_id`).
+- Escritas (todas reversíveis, sem DELETE): 4 documentos sintéticos pt-BR `qa-e2e-v1` publicados + requirement set `qa-e2e-v1` publicado (contrato de `docs/legal/performe-ai/synthetic-staging-e2e-readiness.md`); evento de entitlement manual/sandbox (`bodyflow_full`, trial, ativo até 2026-10-26T18:10Z, reason `qa_roberto_beta_candidate`) para a identidade sintética CI-3 (não onboarded, não banida); senha da conta redefinida (hash bcrypt gerado localmente; só o hash transitou SQL).
+- FLOW REAL PROVIDER SMOKE: BLOCKED_BY_PAID_PROVIDER_AUTHORIZATION (chave revogada em 17/09; sem escopo Vercel e sem autorização de gasto).
+
+### Build candidata (Release + xcconfig privado)
+
+`xcodebuild build -configuration Release -sdk iphonesimulator -xcconfig <privado>` → BUILD SUCCEEDED (134 s), `codesign --verify --deep --strict` OK, `Info.plist` com `PERFORME_MOBILE_API_ORIGIN`/`PERFORME_SUPABASE_URL`/`PERFORME_SUPABASE_PUBLISHABLE_KEY` expandidas (valores não impressos). Instalada no iPhone 17 Pro; cold launch → Sign-in real (`e2e-01-cold-launch-first-screen.png`).
+
+### STAGING E2E — BLOQUEADO na entrada da credencial
+
+A digitação da senha da conta QA no campo de senha foi negada pela política de segurança (o app aponta para um host remoto de staging; a exceção de "testar o próprio app" cobre só hosts locais). Não houve contorno. Passos 2–15 do §13 NÃO EXECUTADOS nesta sessão. Estado deixado: candidata instalada no simulador primário, tela de login com o e-mail sintético digitado; senha no arquivo local 0600 `~/.local/share/performe-ai/roberto-beta/qa-user-a.env`.
+
+### Regressão final — primeira tentativa (caracterização) e correção de causa raiz
+
+A primeira execução completa (dispositivo secundário, `run all`) falhou logo na 1ª classe: `BodyFlowUITests.testRegistrationSheetExplainsNothingWasSaved` — regressão REAL introduzida por F-05: no modo demo Debug sem cenário prompt13/14, `registration` é `Unavailable*` por construção e a aba Registrar é uma demonstração local por design; o gate por capacidade escondeu a demonstração. Causa raiz corrigida em `AppDependencies.isRegistrationAvailable` (= `!presentsRealAccountIdentity || capacidade presente`): RED unitário `registerAvailabilityFollowsCapabilityTruth` (demo → true FAIL; release+Supabase → false PASS) → GREEN; `BodyFlowUITests` focado 18/0 (481 s, uma invocação). A cadeia foi interrompida deliberadamente após 2 classes (fontes mudaram): `FlowChatUITests` 12 executados / 1 falha (`testLocalSceneAndAccessibilityPresentationMatrixDark`, valor de aparência "light" ≠ "dark") registrada como CARACTERIZAÇÃO sob carga concorrente de build; classificada pela execução final limpa.
+
+### Regressão final (fontes finais, build Debug `final`; uma invocação por classe; nenhuma reexecução somada)
+
+**Tentativa 2 — dispositivo secundário iPhone 17 (`EF1AACEB…`), limpa:** unit completo 32 XCTest + 1216 Swift Testing = **1248 / 0 / 0**. UI: 13 classes 0 falhas; `BodyFlowUITests` 18/1 (`testFreshUserCompletesOnboardingAndReachesToday`, espera de entrada no campo seguro — flake documentado no próprio teste para iOS 26.5), `FlowChatUITests` 12/2, `Prompt13AccessibilityUITests` 5/1, `Prompt14AccessibilityUITests` 13/2 — todas as falhas de "dark" com o app reportando `light`. **Sonda após a cadeia:** `simctl ui … appearance` = dark e o app renderizou claro (`v6/e2e/probe-dev2-dark.png`) → o dispositivo secundário não aplica a aparência ao app; falhas ambientais e específicas do dispositivo (RULING R10).
+
+**Tentativa 3 — dispositivo primário designado iPhone 17 Pro (`27291590…`), limpa:** unit completo **1248 / 0 / 0**; UI **16 classes com 0 falhas** (`FlowChatUITests` 12/0, `Prompt13AccessibilityUITests` 5/0, `Prompt14AccessibilityUITests` 13/0, `Prompt13RegistrationUITests` 21/0, `Prompt14LibraryUITests` 12/0, …); `BodyFlowUITests` 18/1 — `testProfilePersonaChangeIsReflected` (`BodyFlowUITests.swift:491`: a folha de persona demo demorou mais de 3 s para fechar após Salvar; passou em 4 invocações únicas nas mesmas fontes: green4, all, fix2-focado, final2). Nenhuma mudança de produto derivada; nenhuma 4ª tentativa (seria "rerun até passar").
+
+FULL SUITE RESULT: unit 0 fail; UI 1 fail em 1 de 17 classes (tentativa 3) · ISOLATED CHARACTERIZATION: flakes de timing (entrada em campo seguro; fechamento da folha de persona) e dispositivo secundário sem aparência · FINAL VERIFIED STATE: **REGRESSION STATUS: PARTIALLY VERIFIED** (todas as 17 classes têm pelo menos uma invocação única com 0 falhas nas fontes finais; não houve uma única execução completa com 0 falhas).
+
+### Gates de Release (fontes finais, DerivedDataRelease sem xcconfig)
+
+BUILD SUCCEEDED (26 s, "Sign to Run Locally", 0 erros) · `codesign --verify --deep --strict` OK · `xcodebuild analyze` ANALYZE SUCCEEDED · scanner `--baseline 7ab3e657`: PASS, `PUBLIC_LEAK 0`, `HISTORICAL_ASSET 18/18`, `ALLOWED_TECHNICAL 236` (+1 = novo tipo técnico `MobileBodyFlowRepository`), `displayName Performe AI`, `com.bodyflow.app` · scanner tests 21/21 · greps de política 0 (shadow/blur/glass/minimumScaleFactor/scrollEdge/material), `dynamicTypeSize(` só em previews · identifiers 190 → 190 · asset diff 0 · `git diff --check` limpo.
+
+### Capturas I7 (`$SP/v6/final/`, `settings.log`, `hashes.txt`)
+
+Hoje L/D/AXXXL/en + famílias de estado; Registrar, Plano, Progresso, Perfil L/D/AXXXL; Flow L/D; Biblioteca (família indisponível) L/D; evidência do bug de navegação do Histórico; "after" dos fixes: `today-after-fix-grams-pt-light-large.png` ("90,5 g"), `progress-after-fix-badges-pt-light-large.png` (nomes de medalha). Registrar/Perfil em Release com conta real: NÃO CAPTURADOS (dependem do sign-in bloqueado) — cobertos por testes unitários e de contrato.
+
+### Build candidata
+
+`$SP/DerivedDataStaging/Build/Products/Release-iphonesimulator/BodyFlow.app` (23 MB, versão 1.0 (1), executável sha256 `c534a942…`), Release + xcconfig privado, "Sign to Run Locally", instalada no iPhone 17 Pro na tela de login. Sem archive de distribuição (signing de distribuição/TestFlight são gates humanos posteriores).
+
+### Status ao fechar a operação
+
+ROBERTO BETA CANDIDATE STATUS: **BLOCKED** — menor gate restante: entrada da credencial QA no sign-in (ação humana) e execução dos passos 2–15 do E2E de staging (§13) · REGRESSION STATUS: PARTIALLY VERIFIED · PUBLIC BRAND STATUS: PARTIALLY VERIFIED (scanner PASS; superfícies Release com conta real não inspecionadas) · REBRAND STATUS: PARTIAL · IOS INTEGRATION STATUS: PARTIAL (auth/onboarding/Flow/Hoje/Histórico/Plano/Progresso ligados ao BFF; E2E não executado nesta sessão) · PRODUCTION STATUS: NOT DEPLOYED · USER VISUAL ACCEPTANCE: PENDING FINAL REVIEW · APPICON TINTED: PENDING — NOT INTEGRATED · VOICEOVER MANUAL: NOT EXECUTED · HAPTICS ON PHYSICAL DEVICE: NOT VERIFIED · FLOW REAL PROVIDER SMOKE: BLOCKED_BY_PAID_PROVIDER_AUTHORIZATION · COST / ENVIRONMENT CLOSEOUT: COMPLETE (nenhum recurso pago; staging KEPT) · HISTORY NAVIGATION STATUS: REAL BUG — DEFER_AFTER_ROBERTO · PLAN DISPLAY LABEL STATUS: RESOLVED (enums fechados) · ACHIEVEMENT DISPLAY LABEL STATUS: RESOLVED (fixture) · ROBERTO JOURNEY FIXTURE STATUS: RESOLVED no cliente (Registrar/Perfil); documentos de consentimento sintéticos em staging por design.

@@ -306,12 +306,12 @@ struct DemoPrompt14RepositoryTests {
         #expect(complete.data?.level == 7)
         #expect(complete.data?.currentStreak == 12)
         #expect(complete.data?.deficitBlock == 735)
+        // Badges arrive as the server's human-readable names, never as
+        // identifiers the client would have to translate.
         #expect(
-            complete.data?.badgesEarned == [
-                "70000000-0000-4000-8000-000000000001",
-                "70000000-0000-4000-8000-000000000002",
-            ]
+            complete.data?.badgesEarned == ["Primeira Semana", "Mês de Ferro"]
         )
+        #expect(zero.data?.badgesEarned == ["Primeira Semana"])
         #expect(minimum.data?.xpTotal == 0)
         #expect(minimum.data?.level == 1)
         #expect(minimum.data?.deficitBlock == 0)

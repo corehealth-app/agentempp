@@ -5,6 +5,14 @@ import Testing
 
 @Suite("Today Presentation")
 struct TodayPresentationTests {
+    @Test("gram values format with the requested language locale")
+    func gramValuesFollowTheLanguageLocale() throws {
+        let value = try #require(Decimal(string: "90.5"))
+        #expect(TodayValueFormatter.optionalGrams(value, language: .portugueseBrazil) == "90,5 g")
+        #expect(TodayValueFormatter.optionalGrams(value, language: .englishUnitedStates) == "90.5 g")
+        #expect(TodayValueFormatter.optionalGrams(nil, language: .portugueseBrazil) == "Indisponível")
+    }
+
     @Test("official descriptor fields remain independent response literals")
     func officialFieldsRemainLiteral() throws {
         let snapshot = try BodyFlowTestFixtures.decodeInconsistentToday().data

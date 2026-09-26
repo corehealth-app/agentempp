@@ -18,15 +18,18 @@ struct AppShellView: View {
     let userID: String
     let dependencies: AppDependencies
     let sessionOwner: Prompt14SessionOwner
+    let accountEmail: String?
 
     init(
         userID: String,
         dependencies: AppDependencies,
-        sessionOwner: Prompt14SessionOwner
+        sessionOwner: Prompt14SessionOwner,
+        accountEmail: String? = nil
     ) {
         self.userID = userID
         self.dependencies = dependencies
         self.sessionOwner = sessionOwner
+        self.accountEmail = accountEmail
         let invalidationCenter = FeatureInvalidationCenter()
         _invalidationCenter = State(initialValue: invalidationCenter)
         _todayViewModel = State(
@@ -165,7 +168,9 @@ struct AppShellView: View {
                 invalidationCenter: invalidationCenter
             )
         case .register:
-            RegisterRootView()
+            RegisterRootView(
+                state: dependencies.isRegistrationAvailable ? .loaded : .unavailable
+            )
         case .plan:
             PlanRootView(
                 model: planViewModel,
@@ -179,6 +184,7 @@ struct AppShellView: View {
         case .profile:
             ProfileRootView(
                 userID: userID,
+                accountEmail: accountEmail,
                 coachExperienceProvider: sessionOwner.coachExperience,
                 invalidationCenter: invalidationCenter
             )

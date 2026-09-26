@@ -860,6 +860,23 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
         )
     }
 
+    /// The authenticated shell hands the Register tab its real availability
+    /// and the Profile tab the signed-in account, so a build on a real
+    /// backend never shows the local demonstration copy.
+    func testShellPassesCapabilityTruthToRegisterAndProfile() throws {
+        var offenders: [String] = []
+        let shell = try reviewedSource("BodyFlow/App/AppShellView.swift")
+        if shell.contains("RegisterRootView()") { offenders.append("AppShellView: RegisterRootView() without a state") }
+        if !shell.contains("isRegistrationAvailable") { offenders.append("AppShellView: registration availability not read") }
+        if !shell.contains("accountEmail:") { offenders.append("AppShellView: account e-mail not handed to Profile") }
+        let profile = try reviewedSource("BodyFlow/Features/Profile/ProfileRootView.swift")
+        if !profile.contains("accountEmail") { offenders.append("ProfileRootView: no accountEmail") }
+        let dependencies = try reviewedSource("BodyFlow/App/AppDependencies.swift")
+        if !dependencies.contains("var isRegistrationAvailable") { offenders.append("AppDependencies: no isRegistrationAvailable") }
+        if !dependencies.contains("var presentsRealAccountIdentity") { offenders.append("AppDependencies: no presentsRealAccountIdentity") }
+        XCTAssertTrue(offenders.isEmpty, "Capability truth not threaded: \(offenders)")
+    }
+
     /// The root and the onboarding container each key their own motion to
     /// the state that actually changed — the root to the screen it shows,
     /// the container to the current step — instead of one fade covering

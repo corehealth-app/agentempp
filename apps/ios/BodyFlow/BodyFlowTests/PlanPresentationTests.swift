@@ -5,6 +5,51 @@ import Testing
 
 @Suite("Plan Presentation")
 struct PlanPresentationTests {
+    @Test("closed server enums render display labels while unknown values stay raw")
+    func closedEnumsRenderDisplayLabels() {
+        let generated = APITimestamp(value: Date(timeIntervalSince1970: 1_784_589_300))
+        func snapshot(planType: String, prescriptionType: String) -> PlanSnapshot {
+            PlanSnapshot(
+                training: TrainingPlanSnapshot(
+                    id: "training-1", planType: planType, daysPerWeek: 3,
+                    equipmentSummary: nil, generatedAt: generated,
+                    validUntil: nil, version: nil, notes: nil
+                ),
+                nutrition: [NutritionPrescriptionSnapshot(
+                    id: "nutrition-1", type: prescriptionType, payload: nil,
+                    generatedAt: generated, validUntil: nil, version: nil, notes: nil
+                )]
+            )
+        }
+
+        let portuguese = PlanPresentation(
+            snapshot: snapshot(planType: "full_body", prescriptionType: "shopping_list")
+        )
+        #expect(portuguese.trainingFields.first?.value == "Corpo inteiro")
+        #expect(portuguese.nutritionSections.first?.fields.first?.value == "Lista de compras")
+
+        let english = PlanPresentation(
+            snapshot: snapshot(planType: "split", prescriptionType: "combined"),
+            language: .englishUnitedStates
+        )
+        #expect(english.trainingFields.first?.value == "Split routine")
+        #expect(english.nutritionSections.first?.fields.first?.value == "Diet and shopping list")
+
+        let custom = PlanPresentation(
+            snapshot: snapshot(planType: "custom", prescriptionType: "diet")
+        )
+        #expect(custom.trainingFields.first?.value == "Personalizado")
+        #expect(custom.nutritionSections.first?.fields.first?.value == "Dieta")
+
+        // Values outside the documented enums are official server data and
+        // stay visible as received.
+        let unknown = PlanPresentation(
+            snapshot: snapshot(planType: "strength", prescriptionType: "macro_targets")
+        )
+        #expect(unknown.trainingFields.first?.value == "strength")
+        #expect(unknown.nutritionSections.first?.fields.first?.value == "macro_targets")
+    }
+
     @Test("presentation contains each approved training and nutrition metadata field")
     func stableFields() {
         let presentation = PlanPresentation(snapshot: snapshot())

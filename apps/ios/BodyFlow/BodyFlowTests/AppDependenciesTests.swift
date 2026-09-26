@@ -37,6 +37,14 @@ struct AppDependenciesTests {
         #expect(try dependencies.idempotencyKeyProvider.nextKey().value.count >= 8)
         #expect(dependencies.flowChat is MobileFlowChatRepository)
         #expect(dependencies.onboarding is MobileOnboardingRepository)
+        // The read surfaces the BFF already serves ride the same transport;
+        // mutations that this phase does not support stay unavailable.
+        #expect(!(dependencies.today is UnavailableBodyFlowCapabilities))
+        #expect(!(dependencies.history is UnavailableBodyFlowCapabilities))
+        #expect(!(dependencies.plan is UnavailableBodyFlowCapabilities))
+        #expect(!(dependencies.progress is UnavailableBodyFlowCapabilities))
+        #expect(dependencies.registration is UnavailableBodyFlowCapabilities)
+        #expect(dependencies.routine is UnavailableBodyFlowCapabilities)
     }
 
     @Test("Missing mobile origin keeps the API client unavailable")
@@ -104,6 +112,37 @@ struct AppDependenciesTests {
         )
 
         #expect(dependencies.authentication is SupabaseAuthenticationService)
+    }
+
+    @Test("Register tab availability follows capability truth, not the demo journey")
+    func registerAvailabilityFollowsCapabilityTruth() throws {
+        // The local demonstration (demo authentication, no registration
+        // capability) keeps its Register tab; only a real account without
+        // the capability sees the unavailable state.
+        let demo = AppDependencies.scaffold()
+        #expect(demo.registration is UnavailableBodyFlowCapabilities)
+        #expect(!demo.presentsRealAccountIdentity)
+        #expect(demo.isRegistrationAvailable)
+
+        let release = AppDependencies.make(
+            configuration: .resolve(arguments: [], buildFlavor: .release),
+            mobileAPIConfigurationProvider: StaticMobileAPIConfigurationProvider(
+                configuration: try MobileAPIConfiguration(
+                    originString: "https://mobile.example.test"
+                )
+            ),
+            supabaseAuthConfiguration: try SupabaseAuthConfiguration(
+                originString: "https://project.example.test",
+                key: "sb_publishable_synthetic"
+            ),
+            authenticationSessionStore: AuthenticationSessionStore(
+                secureStore: InMemorySecureStore()
+            ),
+            supabaseAuthFetch: { _ in throw URLError(.notConnectedToInternet) }
+        )
+        #expect(release.presentsRealAccountIdentity)
+        #expect(release.registration is UnavailableBodyFlowCapabilities)
+        #expect(!release.isRegistrationAvailable)
     }
 
     @Test("Release auth and Mobile API share one lifecycle instance")
@@ -689,12 +728,7 @@ struct AppDependenciesTests {
         #expect(snapshot.level == 7)
         #expect(snapshot.currentStreak == 12)
         #expect(snapshot.blocksCompleted == 2)
-        #expect(
-            snapshot.badgesEarned == [
-                "70000000-0000-4000-8000-000000000001",
-                "70000000-0000-4000-8000-000000000001",
-            ]
-        )
+        #expect(snapshot.badgesEarned == ["Primeira Semana", "Primeira Semana"])
     }
 
     @Test("Added cover and coach states create fresh session-local products")

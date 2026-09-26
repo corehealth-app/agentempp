@@ -25,6 +25,21 @@ struct AppDependencies: Sendable {
     let patientTimeZone: PatientTimeZoneContext
     let flowChat: any FlowChatProviding
 
+    /// The Register tab keeps its local demonstration while the app runs on
+    /// the demo authentication; on a real account it shows its actions only
+    /// while a registration capability exists, and otherwise renders the
+    /// honest unavailable state instead of the demonstration copy.
+    var isRegistrationAvailable: Bool {
+        !presentsRealAccountIdentity
+            || !(registration is UnavailableBodyFlowCapabilities)
+    }
+
+    /// A real Supabase session identifies the account on the Profile tab;
+    /// the demo service keeps the fixture identity the tests lock.
+    var presentsRealAccountIdentity: Bool {
+        authentication is SupabaseAuthenticationService
+    }
+
     static func scaffold() -> AppDependencies {
         make(configuration: AppLaunchConfiguration(
             mode: .demo,
@@ -265,10 +280,18 @@ struct AppDependencies: Sendable {
             patientTimeZone = PatientTimeZoneContext(
                 documentedIANAIdentifier: nil
             )
-            today = unavailable
-            history = unavailable
-            plan = unavailable
-            progress = unavailable
+            if let transport = apiClient as? MobileAPITransport {
+                let reads = MobileBodyFlowRepository(transport: transport)
+                today = reads
+                history = reads
+                plan = reads
+                progress = reads
+            } else {
+                today = unavailable
+                history = unavailable
+                plan = unavailable
+                progress = unavailable
+            }
             mealDetection = unavailable
             registration = unavailable
             hydration = unavailable
@@ -284,10 +307,14 @@ struct AppDependencies: Sendable {
         let patientTimeZone = PatientTimeZoneContext(
             documentedIANAIdentifier: nil
         )
-        let today: any TodayProviding = unavailable
-        let history: any HistoryProviding = unavailable
-        let plan: any PlanProviding = unavailable
-        let progress: any ProgressProviding = unavailable
+        // The read surfaces the BFF serves ride the same transport as
+        // onboarding and Flow; mutations stay unavailable in this phase.
+        let reads = (apiClient as? MobileAPITransport)
+            .map { MobileBodyFlowRepository(transport: $0) }
+        let today: any TodayProviding = reads ?? unavailable
+        let history: any HistoryProviding = reads ?? unavailable
+        let plan: any PlanProviding = reads ?? unavailable
+        let progress: any ProgressProviding = reads ?? unavailable
         let mealDetection: any MealDetectionProviding = unavailable
         let registration: any RegistrationProviding = unavailable
         let hydration: any HydrationRecording = unavailable

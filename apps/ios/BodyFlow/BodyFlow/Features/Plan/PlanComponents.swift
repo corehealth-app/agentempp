@@ -38,7 +38,11 @@ struct PlanPresentation: Equatable, Sendable {
         language: SupportedAppLanguage
     ) -> [PlanField] {
         [
-            PlanField(id: "plan.training.type", title: copy("plan.training.type", language), value: training.planType),
+            PlanField(
+                id: "plan.training.type",
+                title: copy("plan.training.type", language),
+                value: label(for: training.planType, among: Self.trainingPlanTypes, prefix: "plan.training.type", language: language)
+            ),
             PlanField(id: "plan.training.days", title: copy("plan.training.days", language), value: "\(training.daysPerWeek)"),
             optionalField("plan.training.equipment", copy("plan.training.equipment", language), training.equipmentSummary),
             PlanField(id: "plan.training.generated", title: copy("plan.generated", language), value: date(training.generatedAt, language: language)),
@@ -56,7 +60,11 @@ struct PlanPresentation: Equatable, Sendable {
             id: prescription.id,
             title: copy("plan.nutrition.title", language),
             fields: [
-                PlanField(id: "plan.nutrition.\(prescription.id).type", title: copy("plan.nutrition.type", language), value: prescription.type),
+                PlanField(
+                    id: "plan.nutrition.\(prescription.id).type",
+                    title: copy("plan.nutrition.type", language),
+                    value: label(for: prescription.type, among: Self.prescriptionTypes, prefix: "plan.nutrition.type", language: language)
+                ),
                 PlanField(id: "plan.nutrition.\(prescription.id).generated", title: copy("plan.generated", language), value: date(prescription.generatedAt, language: language)),
                 optionalField("plan.nutrition.\(prescription.id).valid-until", copy("plan.valid-until", language), prescription.validUntil.map { date($0, language: language) }),
                 optionalField("plan.nutrition.\(prescription.id).version", copy("plan.version", language), prescription.version.map(String.init)),
@@ -90,6 +98,25 @@ struct PlanPresentation: Equatable, Sendable {
         _ language: SupportedAppLanguage
     ) -> String {
         (try? AppLocalization.string(key, for: language)) ?? String(localized: key)
+    }
+
+    /// The closed enums the database enforces (`training_plans.plan_type`
+    /// and `prescriptions.type` CHECK constraints). Only these get a display
+    /// label; anything else is official server data and stays as received.
+    private static let trainingPlanTypes: Set<String> = ["split", "full_body", "custom"]
+    private static let prescriptionTypes: Set<String> = ["diet", "shopping_list", "combined"]
+
+    private static func label(
+        for value: String,
+        among known: Set<String>,
+        prefix: String,
+        language: SupportedAppLanguage
+    ) -> String {
+        guard known.contains(value) else { return value }
+        // Build the key as a plain string first: interpolating straight into
+        // a LocalizationValue turns the pieces into format arguments.
+        let key = prefix + "." + value
+        return copy(String.LocalizationValue(stringLiteral: key), language)
     }
 }
 

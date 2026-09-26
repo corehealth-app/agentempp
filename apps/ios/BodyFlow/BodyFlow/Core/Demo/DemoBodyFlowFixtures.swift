@@ -838,7 +838,7 @@ enum DemoBodyFlowFixtures {
             deficitBlock: 6_999,
             currentWeight: 78.4,
             currentBodyFatPercent: 18.2,
-            badgesEarned: ["first_week", "consistency"],
+            badgesEarned: ["Primeira Semana", "Mês de Ferro"],
             lastActiveDate: "2026-07-20",
             nextReevaluation: "2026-07-29",
             updatedAt: timestamp

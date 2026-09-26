@@ -117,7 +117,9 @@ struct AppRootView: View {
                     AppShellView(
                         userID: userID,
                         dependencies: dependencies,
-                        sessionOwner: owner
+                        sessionOwner: owner,
+                        accountEmail: dependencies.presentsRealAccountIdentity
+                            ? model.currentSession?.email : nil
                     )
                     .id(userID)
                 } else {

@@ -43,7 +43,16 @@ enum TodayValueFormatter {
     }
 
     static func grams(_ value: Decimal) -> String {
-        "\(NSDecimalNumber(decimal: value).stringValue) g"
+        grams(value, language: .portugueseBrazil)
+    }
+
+    // Grams follow the same locale as every other figure on the card, so
+    // pt-BR reads "90,5 g" next to "1.250 ml" instead of a raw "90.5 g".
+    static func grams(
+        _ value: Decimal,
+        language: SupportedAppLanguage
+    ) -> String {
+        "\(value.formatted(.number.locale(language.formattingLocale))) g"
     }
 
     static func optionalGrams(_ value: Decimal?) -> String {
@@ -54,7 +63,7 @@ enum TodayValueFormatter {
         _ value: Decimal?,
         language: SupportedAppLanguage
     ) -> String {
-        value.map(grams)
+        value.map { grams($0, language: language) }
             ?? TodayCopy.string("common.not-available", language: language)
     }
 

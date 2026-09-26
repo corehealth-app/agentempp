@@ -69,6 +69,21 @@ struct MobileAPITransport: Sendable {
     func execute<Response: Decodable & Sendable>(
         _ request: MobileAPIRequest<Response>
     ) async throws -> Response {
+        try await executeSuccessEnvelope(request).data
+    }
+
+    /// Same path as `execute`, keeping the envelope so read surfaces that
+    /// show the server's request ID carry the real one.
+    func executeEnvelope<Response: Codable & Sendable>(
+        _ request: MobileAPIRequest<Response>
+    ) async throws -> MobileResponse<Response> {
+        let envelope = try await executeSuccessEnvelope(request)
+        return MobileResponse(data: envelope.data, meta: envelope.meta)
+    }
+
+    private func executeSuccessEnvelope<Response: Decodable & Sendable>(
+        _ request: MobileAPIRequest<Response>
+    ) async throws -> MobileAPISuccessEnvelope<Response> {
         guard let configuration else {
             throw MobileAPITransportError.unavailableConfiguration
         }
@@ -134,7 +149,7 @@ struct MobileAPITransport: Sendable {
         _ type: Response.Type,
         result: NetworkResult,
         lease: SessionLease
-    ) async throws -> Response {
+    ) async throws -> MobileAPISuccessEnvelope<Response> {
         do {
             try await sessionLifecycle.validate(lease)
         } catch is CancellationError {
@@ -313,7 +328,7 @@ struct MobileAPITransport: Sendable {
         _ type: Response.Type,
         data: Data,
         response: HTTPURLResponse
-    ) throws -> Response {
+    ) throws -> MobileAPISuccessEnvelope<Response> {
         let decoder = JSONDecoder()
         if (200...299).contains(response.statusCode) {
             do {
@@ -326,7 +341,7 @@ struct MobileAPITransport: Sendable {
                 else {
                     throw MobileAPITransportError.invalidResponse
                 }
-                return envelope.data
+                return envelope
             } catch let error as MobileAPITransportError {
                 throw error
             } catch {

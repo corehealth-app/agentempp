@@ -2703,6 +2703,18 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Prescription type" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Tipo de prescrição" } }
     } },
+    "plan.nutrition.type.combined" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Diet and shopping list" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Dieta e lista de compras" } }
+    } },
+    "plan.nutrition.type.diet" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Diet" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Dieta" } }
+    } },
+    "plan.nutrition.type.shopping_list" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Shopping list" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Lista de compras" } }
+    } },
     "plan.training.days" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Days per week" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Dias por semana" } }
@@ -2718,6 +2730,18 @@
     "plan.training.type" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Training type" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Tipo de treino" } }
+    } },
+    "plan.training.type.custom" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Custom" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Personalizado" } }
+    } },
+    "plan.training.type.full_body" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Full body" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Corpo inteiro" } }
+    } },
+    "plan.training.type.split" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Split routine" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Treino dividido" } }
     } },
     "plan.valid-until" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Valid until" } },
@@ -3128,6 +3152,10 @@
     "profile.fixture.notifications" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Demo notifications" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Notificações da demonstração" } }
+    } },
+    "profile.identity.account-disclosure" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Signed-in account." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Conta conectada." } }
     } },
     "profile.identity.section" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Identity" } },

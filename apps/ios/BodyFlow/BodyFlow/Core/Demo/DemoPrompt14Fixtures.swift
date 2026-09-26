@@ -468,10 +468,8 @@ enum DemoPrompt14Fixtures {
             deficitBlock: 735,
             currentWeight: Decimal(string: "78.4"),
             currentBodyFatPercent: Decimal(string: "18.6"),
-            badgesEarned: [
-                "70000000-0000-4000-8000-000000000001",
-                "70000000-0000-4000-8000-000000000002",
-            ],
+            // badges_earned carries the server's human-readable names.
+            badgesEarned: ["Primeira Semana", "Mês de Ferro"],
             lastActiveDate: "2026-07-20",
             nextReevaluation: "2026-07-29",
             updatedAt: timestamp(1_784_589_300)
@@ -521,7 +519,7 @@ enum DemoPrompt14Fixtures {
             deficitBlock: 210,
             currentWeight: Decimal(string: "81.2"),
             currentBodyFatPercent: nil,
-            badgesEarned: ["70000000-0000-4000-8000-000000000001"],
+            badgesEarned: ["Primeira Semana"],
             lastActiveDate: "2026-07-12",
             nextReevaluation: "2026-08-01",
             updatedAt: timestamp(1_784_589_300)
@@ -542,10 +540,7 @@ enum DemoPrompt14Fixtures {
             deficitBlock: 735,
             currentWeight: Decimal(string: "78.4"),
             currentBodyFatPercent: Decimal(string: "18.6"),
-            badgesEarned: [
-                "70000000-0000-4000-8000-000000000001",
-                "70000000-0000-4000-8000-000000000001",
-            ],
+            badgesEarned: ["Primeira Semana", "Primeira Semana"],
             lastActiveDate: "2026-07-20",
             nextReevaluation: "2026-07-29",
             updatedAt: timestamp(1_784_589_300)

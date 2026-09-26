@@ -68,6 +68,15 @@ enum BodyFlowSymbol: String, CaseIterable, Sendable {
     case close = "xmark"
     case confirm = "checkmark"
 
+    // Consent / checkbox selection (distinct from the radio-style
+    // selected/unselected pair: a document action is checked, not chosen
+    // from a set of alternatives)
+    case checkboxOn = "checkmark.square.fill"
+    case checkboxOff = "square"
+
+    // Auth / onboarding assurance copy
+    case privacy = "lock.shield"
+
     var systemName: String { rawValue }
 }
 

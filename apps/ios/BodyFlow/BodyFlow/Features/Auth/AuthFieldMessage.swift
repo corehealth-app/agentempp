@@ -143,11 +143,7 @@ struct AuthFieldMessage: View {
     }
 
     var body: some View {
-        Label(message, systemImage: "exclamationmark.circle.fill")
-            .font(BodyFlowTypography.callout)
-            .foregroundStyle(BodyFlowColor.color(.feedbackDestructive))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityElement(children: .combine)
+        BodyFlowStatusLine(message, kind: .error, font: BodyFlowTypography.callout)
     }
 
     private var message: String {
@@ -169,6 +165,7 @@ struct AuthScreenLayout<Content: View>: View {
     let compact: Bool
     @ViewBuilder let content: Content
     @Environment(\.locale) private var locale
+    @Environment(\.bodyFlowReduceMotion) private var reduceMotion
 
     init(
         titleKey: String.LocalizationValue,
@@ -201,6 +198,7 @@ struct AuthScreenLayout<Content: View>: View {
                         if !compact {
                             BodyFlowBrandIdentityView()
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                                .transition(BodyFlowMotion.stateTransition(reduceMotion: reduceMotion))
                         }
 
                         Text(PremiumPresentationCopy.string(
@@ -223,8 +221,13 @@ struct AuthScreenLayout<Content: View>: View {
                                 .font(BodyFlowTypography.body)
                                 .foregroundStyle(BodyFlowColor.secondaryText)
                                 .accessibilityIdentifier("auth.supporting-copy")
+                                .transition(BodyFlowMotion.stateTransition(reduceMotion: reduceMotion))
                         }
                     }
+                    .animation(
+                        BodyFlowMotion.animation(.content, reduceMotion: reduceMotion),
+                        value: compact
+                    )
 
                     content
                 }

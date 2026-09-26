@@ -83,17 +83,18 @@ struct OnboardingCompletionView: View {
                 }
             }
             .padding(BodyFlowSpacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 BodyFlowColor.surface,
                 in: RoundedRectangle(cornerRadius: BodyFlowRadius.card)
             )
 
             Label(
-                copy(
+                verbatim: copy(
                     "onboarding.completion.notice",
                     fallback: "Seu perfil só será concluído depois que todas as escolhas forem salvas com sucesso."
                 ),
-                systemImage: "lock.shield"
+                symbol: .privacy
             )
             .font(BodyFlowTypography.callout)
             .foregroundStyle(BodyFlowColor.secondaryText)

@@ -1660,3 +1660,116 @@ HEAD **inalterado** `e710dba1eb7c59988c7d0dac1445d2ee909e14bf`; índice vazio; s
 - USER VISUAL ACCEPTANCE: **PENDING**
 - REGRESSION STATUS: PARTIALLY VERIFIED · PUBLIC BRAND STATUS: PARTIALLY VERIFIED · PRODUCTION STATUS: NOT DEPLOYED
 - ACHIEVEMENT DISPLAY LABEL STATUS: PENDING DATA / CONTRACT CLASSIFICATION · HISTORY NAVIGATION STATUS: PENDING FUNCTIONAL VERIFICATION
+
+## I6 — Auth / Onboarding / Splash / raiz (2026-09-25/26, implementação — commit sob a operação seguinte)
+
+Operação `EXECUTE_PERFORME_AI_UIUX_I6_V1` / `IMPLEMENTATION_I6_ONLY`. Performe AI = produto público; Flow = agente público; BodyFlow = identidade técnica interna preservada.
+
+### Baseline revalidado (entrada)
+
+```
+branch codex/performe-ai-client-beta-flow-v1 · HEAD 5e0552ddb4b01c9a5405a3385fc084e3658d3673
+parent e710dba1eb7c59988c7d0dac1445d2ee909e14bf · tree e44cc88692b56fc82739154aa9c67e915289aad3
+subject refactor(ui): refine Performe AI progress, profile and library density
+status 0 · index 0 · index.lock ausente · Xcode 27.0 (27A266a) · iPhone 17 Pro 27291590-… iOS 26.5
+```
+
+Hashes SHA-256 de entrada: `$SP/v6/i6/entry-hashes.txt` (21 linhas); de saída: `exit-hashes.txt` (16 linhas).
+
+### RED (contratos de fonte em `BodyFlowPremiumRenderingTests`, cada um rodado contra a fonte intocada)
+
+| Build | Teste novo | Resultado RED (valor observado) |
+|---|---|---|
+| `red2` | `testReviewedAuthOnboardingSourcesUseTheSymbolVocabulary` | FAIL — literais SF Symbol crus em AuthFieldMessage, PasswordRecoveryView, OnboardingViewSupport, OnboardingContainerView, Welcome/Objective/Persona/Consent/Completion, AppRootView |
+| `red2` | `testReviewedOnboardingSelectionControlsUseTheRowButtonStyle` | FAIL — `.buttonStyle(.plain)` ×2 Welcome, ×1 Objective, ×1 Persona, ×2 Consent; nenhum `.bodyFlowRow` |
+| `red2` | `testReviewedAuthOnboardingSourcesUseSharedStatusLineAndField` | FAIL — sem `BodyFlowStatusLine` em AuthFieldMessage/OnboardingViewSupport/OnboardingContainerView; `textFieldStyle(.roundedBorder)` em Welcome/BodyData |
+| `red2` | `testRootAndOnboardingContainerKeyMotionToTheirOwnState` | FAIL — AppRootView sem `stateTransition`/`animation(.content)`; container sem `value: model.step` |
+| `red3` | `testOnboardingDecimalFieldsOfferAKeyboardDoneAndScrollDismissal` | FAIL — BodyData sem toolbar de teclado/`keyboard.done`/`@FocusState`; container sem `scrollDismissesKeyboard`; catálogo sem `keyboard.done` (motivação: captura `onboarding-bodydata-keyboard-pt-dark-large.png` — decimal pad sem tecla de retorno cobrindo o CTA) |
+| `red4` | `testOnboardingStepChangeReturnsTheScrollToTheTop` | FAIL — sem `ScrollViewReader`/`onChange(of: model.step)`/`scrollTo` (motivação: passo 7 abria rolado após o consentimento longo; título cortado sob a status bar) |
+| `red5` | `testOnboardingSummaryCardFillsTheColumn` | FAIL — cartão de revisão sem `.frame(maxWidth: .infinity, alignment: .leading)` antes do fundo (cartão terminava em x≈749/920 enquanto o CTA ia a 864) |
+
+`red2`: 28 executados / 4 falhas (24 pré-existentes passam). `red3`: 29/1. `red4`: 30/1. `red5`: 31/1. Logs `logs/v6-i6-unit-red{2,3,4,5}.log/.xcresult`.
+
+### Mudanças por superfície (worktree dirty ao fechar a operação — commit sob `PERFORME_AI_ROBERTO_BETA_AUTONOMOUS_CLOSURE_V1`)
+
+**Vocabulário (aditivo):** `BodyFlowSymbol` +`checkboxOn` (`checkmark.square.fill`), `checkboxOff` (`square`), `privacy` (`lock.shield`). `Localizable.xcstrings` +`keyboard.done` (pt-BR "Concluído" / en "Done"), inserido textualmente no formato bruto do catálogo (545 chaves).
+
+**Auth** (`AuthFieldMessage`, `PasswordRecoveryView`): mensagem de campo = `BodyFlowStatusLine(.error, callout)` (glifo `exclamationmark.circle` do vocabulário); confirmação de recuperação = `BodyFlowStatusLine(.success, body)` + `padding(md)` + `.bodyFlowWash(.brandPrimary)` (id `auth.recovery.confirmation` mantido); `AuthScreenLayout` lê `\.bodyFlowReduceMotion`, marca + supporting copy com `stateTransition` e o VStack de título com `animation(.content, value: compact)` (SignUpView já passa `compact: focusedField != nil`). `SignInView`, `SignUpView`, `EmailConfirmationView`: intocados (botões loading-aware/`.bodyFlowField()` já entregues em I2A/I2B). Cadeias de foco, `submitLabel`, `textContentType`: intocados.
+
+**Raiz** (`AppRootView`): `RootPresentationKey` (neutralLoading/launching/signIn/signUp/passwordRecovery/awaitingEmailConfirmation/onboardingLoading/onboardingReady/onboardingError/authenticatedLoading/authenticatedReady) derivada do coordinator — a chave é a TELA, não o passo do onboarding — com `rootContent.transition(stateTransition).animation(.content, value: rootPresentationKey)`; glifo do erro de carga do onboarding pelo vocabulário. Splash: `SplashView` NÃO tocado (já usa `PerformeAISymbolNegativeV1` + "Performe AI" + `ProgressView` `onPrimary` sobre `brandPrimary`, `@ScaledMetric`); o único motion é o fade de raiz acima.
+
+**Onboarding** (`OnboardingContainerView`, `OnboardingViewSupport`, 7 steps): `stepContent` com `stateTransition` + `animation(.content, value: model.step)`; `ScrollViewReader` + `.id(OnboardingScrollAnchor.top)` + `onChange(of: model.step) { proxy.scrollTo(.top) }`; `.scrollDismissesKeyboard(.interactively)`; `OnboardingOperationMessage` = `BodyFlowStatusLine(.error)` + `bodyFlowWash(.feedbackDestructive)` (id `onboarding.error`); documentos indisponíveis com glifo `.unavailable`; `OnboardingFieldIssue` = `BodyFlowStatusLine(.error, callout)` (propaga a todos os passos). Welcome: campo de nome `.bodyFlowField()`; rows país/fuso `.bodyFlowRow` + chevron do vocabulário; pickers com `Image(symbol: .confirm)` + trait `.isSelected`; `caption.weight(.semibold)` → `BodyFlowTypography.caption`; `.secondary` → `secondaryText`. BodyData: 3 campos decimais `.bodyFlowField()` + `@FocusState<Field>` + `.focused` + toolbar `ToolbarItemGroup(placement: .keyboard) { Spacer(); Button(copy("keyboard.done")) { focusedField = nil } }`; botão de data fallback `.secondary`. Routine: 4 botões fallback `.secondary`. Objective/Persona: glifos `selected/unselected` + `.bodyFlowRow` (traits/IDs intocados). Consent: `checkboxOn/Off` + `.bodyFlowRow` nos dois tipos de ação (IDs `onboarding.legal-action.<key>`, `consent.terms`, `consent.privacy` e trait `.isSelected` intocados; contrato legal intocado). Completion: aviso `Label(verbatim:symbol: .privacy)`; cartão de revisão `.frame(maxWidth: .infinity, alignment: .leading)` antes do fundo.
+
+**Não tocado:** Core, repositórios, DTOs, API, auth service, sessão, Keychain, Supabase, consentimento (contrato/fail-closed), ownership server do onboarding, chaves persistidas, bundle, signing, entitlements, assets (diff `assets`/`Assets.xcassets` = 0 linhas), Picker/DatePicker/Stepper/Toggle nativos.
+
+### GREEN e testes (uma invocação por classe; nunca somando reexecuções)
+
+| Estado | Invocação | Resultado |
+|---|---|---|
+| `green1` | unit `BodyFlowPremiumRenderingTests` | 28/28 |
+| `green2` | unit `BodyFlowPremiumRenderingTests` | 29/29 |
+| `green2` | unit FULL `BodyFlowTests` | 1242 passed / 0 failed / 0 skipped (XCTest 29 + Swift Testing) |
+| `green2` | UI `PremiumAuthOnboardingUITests` / `BodyFlowUITests` / `PremiumConvergenceUITests` / `PremiumCoreSurfacesUITests` | 3/0 · 18/0 · 4/0 · 9/0 |
+| `green3` | unit `BodyFlowPremiumRenderingTests` | 30/30 |
+| `green3` | unit FULL | 1243 / 0 / 0 |
+| `green3` | UI (as 4 classes) | 3/0 · 18/0 · 4/0 · 9/0 |
+| **`green4` (FINAL)** | unit FULL `BodyFlowTests` | **1244 passed / 0 failed / 0 skipped** (`BodyFlowPremiumRenderingTests` 31/31) |
+| **`green4` (FINAL)** | UI `PremiumAuthOnboardingUITests` | **3 / 0 / 0** (240 s) |
+| **`green4` (FINAL)** | UI `BodyFlowUITests` | **18 / 0 / 0** (480 s) |
+| **`green4` (FINAL)** | UI `PremiumConvergenceUITests` | **4 / 0 / 0** (151 s) |
+| **`green4` (FINAL)** | UI `PremiumCoreSurfacesUITests` | **9 / 0 / 0** (180 s) |
+
+Logs/xcresult: `logs/v6-i6-unit-green4-full.*`, `logs/v6-i6-ui-green4-<Classe>.*`, monitor `logs/v6-i6-ui-green4-monitor.log`. Watchdog não disparou. As 13 classes UI restantes NÃO foram executadas nesta operação → REGRESSION PARTIALLY VERIFIED.
+
+### Release e gates (estado final `green4`, `logs/v6-i6-*-final2.*`)
+
+- Release: `** BUILD SUCCEEDED **`, `Signing Identity: "Sign to Run Locally"`, `CFBundleIdentifier com.bodyflow.app`, `CFBundleDisplayName Performe AI`; único warning pré-existente `SessionLifecycleCoordinator.swift:210` (`#UnnecessaryEffectMarker`), 0 erros.
+- `codesign --verify --deep --strict --verbose=2`: `valid on disk` · `satisfies its Designated Requirement` · exit 0.
+- `xcodebuild analyze` (Debug, `DDA`): `** ANALYZE SUCCEEDED **`, exit 0, nenhum diagnóstico novo.
+- `premium-surface-scan --baseline 7ab3e657`: `status PASS`, `brandAssetApprovalGate APPROVED_FOR_LISTED_RC1_FILES`, `PUBLIC_LEAK 0`, `ALLOWED_TECHNICAL 235`, `HISTORICAL_ASSET 18` (18/18 IDENTICAL), `DEBUG_ONLY 0`, `failures 0`, catálogo 545 chaves / 1090 valores (pt-BR + en), compilado `displayName Performe AI`.
+- Scanner tests: 21 / 21 pass / 0 fail.
+- Policy greps na árvore da app: `.shadow(` 0 · `.blur(` 0 · `glassEffect` 0 · `minimumScaleFactor` 0 · `scrollEdgeEffect` 0 · materiais 0 · `dynamicTypeSize(` só em previews (`Prompt13PreviewSupport`, previews dos steps do onboarding) · novos hex no diff 0.
+- Inventário de identifiers: HEAD 190 → worktree 190, removidos 0, adicionados 0.
+- `git diff --check`: limpo. Asset diff: 0.
+
+### Capturas (`$SP/v6/i6/`, 92 PNG, `settings.log`, `hashes.txt`; Simulator real iPhone 17 Pro iOS 26.5, 402×874 pt @3x)
+
+Linhagem de builds: `green1` (convergência Auth/Onboarding) → `green2` (+Done no teclado/scroll-dismiss) → `green3` (+reset de rolagem por passo) → `green4` (+cartão de revisão na largura da coluna) = FINAL. As fontes de Auth/Splash não mudaram após `green1`, logo as capturas `green1` de Auth representam a UI final.
+
+- **Auth:** `signin-pt-light-large` · `signin-pt-dark-large`/`final-signin-pt-dark-large` · `signin-pt-light-axxxl` · `final-signin-pt-dark-axxxl` · `signin-error-pt-light-large` (serviceUnavailable via `--ui-testing-auth-error`) · `signup-pt-{light,dark}-large` · `final-signup-pt-{light-axxxl,dark-large}` · `signup-focus-compact-pt-light-large` (layout compacto animado) · `signup-validation-pt-{light,dark}-large` · `signup-mismatch-pt-light-large` · `recovery-pt-{light,dark}-large` · `recovery-confirmation-pt-{light,dark}-large` (status line .success) · `email-confirmation-pt-light-large` · `final-email-confirmation-pt-dark-large`.
+- **Onboarding:** Welcome `final-…-welcome-pt-{light,dark}-large`, `-light-axxxl`, `onboarding-welcome-pt-dark-axxxl`, `final-…-welcome-focus-pt-{light,dark}-large`, `onboarding-welcome-validation-pt-light-large`; Body data `final-…-bodydata-pt-{light,dark}-large`, `final-…-bodydata-keyboard-done-pt-{light,dark}-large` (decimal pad + "Concluído"), `final-…-bodydata-after-done-pt-light-large`; Objective `final-…-objective(-selected)-pt-{light,dark}-large`; Routine `final-…-routine-pt-{light,dark}-large`, `-scrolled-pt-light-large`, `final-…-routine-pt-light-axxxl` (cold launch); Persona `final-…-persona-pt-{light,dark}-large`; Consent `final-…-consent-{unselected,selected}-pt-{light,dark}-large`, `final-…-consent-continue-{disabled,enabled}-pt-{light,dark}-large`; Completion `final-…-completion-pt-{light,dark}-large` (topo, após reset de rolagem), `final-…-completion-bottom-pt-dark-large`.
+- **Splash:** `splash-native-render-{pt-BR,en-US}-light-large` = **render nativo da view** (`BodyFlowPremiumRenderingTests.testSplashNativeRenderForDocumentaryReview`, 393 pt) — **não é captura temporal do launch**; a primeira tela pós-launch capturada a frio é `final-signin-pt-dark-large`/`signin-pt-light-large`.
+- **Before/after** (HEAD 5e0552d compilado de `git archive` em DerivedData isolado): `cmp-{signin-error,welcome,bodydata,objective-selected,consent-selected}-before-after-light`, `cmp-bodydata-keyboard-before-after-dark`, `cmp-{welcome,consent-selected}-before-after-final-light`.
+- Supersedidas (mantidas como evidência, rotuladas no `settings.log`): `superseded-live-switch-onboarding-routine-pt-light-axxxl` (troca ao vivo de content size deixou o DatePicker com layout compacto obsoleto → recapturada a frio), `superseded-mislabeled-consent-third-checked-continue-still-disabled-pt-dark-large` (o painel do Simulator repinta com 1–3 s de atraso após o toque; a captura foi tirada antes do repaint).
+
+### VISUAL FIDELITY vs FEATURE FIDELITY (vs. B2 — Warm Performance / Signal Spark; nunca "igual à referência")
+
+| Superfície | VISUAL FIDELITY | FEATURE FIDELITY |
+|---|---|---|
+| Sign-in | ATENDIDO — identidade compacta, campos nativos elevados, CTA primário/secundário, link terciário; idle pixel-idêntico ao HEAD (primitives já eram de I2A/B) | PRESERVADA (3/3 `PremiumAuthOnboardingUITests`, 18/18 `BodyFlowUITests`) |
+| Sign-up | ATENDIDO — layout compacto animado ao focar (≤200 ms, `stateTransition`), validação em status line | PRESERVADA (`submitLabel`, `textContentType`, foco intocados) |
+| Recovery | ATENDIDO — confirmação como status line .success sobre wash da marca (era Label solto) | PRESERVADA (string en/pt travada) |
+| Confirmação de e-mail | ATENDIDO (sem mudança de fonte; botão "Continuar no ambiente de teste" é fixture de demo — ver pendência QA) | PRESERVADA |
+| Welcome | ATENDIDO — campo `.bodyFlowField()`, rows país/fuso com feedback de toque | PRESERVADA (`onboarding.display-name/country/timezone`, contrato de país/fuso) |
+| Body data | ATENDIDO — campos consistentes com Auth; teclado decimal fechável ("Concluído"), CTA nunca escondido | PRESERVADA (DTO/validações intocados) |
+| Objective / Persona | ATENDIDO — glifo selected/unselected + press feedback | PRESERVADA (`.isSelected`, IDs) |
+| Routine | ATENDIDO (botões fallback por role); controles nativos tintados desde I2A | PRESERVADA |
+| Consent | ATENDIDO — checkbox glifo + row feedback; sem mudança legal | PRESERVADA (fail-closed, IDs `onboarding.legal-action.*`) |
+| Completion | ATENDIDO — abre no topo após passo longo; cartão na coluna | PRESERVADA (`onboarding.go-to-today`) |
+| Splash | NÃO VERIFICADO temporalmente (render nativo apenas); composição inalterada | PRESERVADA |
+
+### Limitações
+
+- Estado *loading* do Sign-in não capturado: não há launch argument de autenticação atrasada; a UI loading-aware foi verificada por `BodyFlowPremiumRenderingTests` (matriz `isLoading`).
+- Sign-up AXXXL, Welcome dark AXXXL: via `simctl ui content_size` ao vivo (sem cold launch); Recovery AXXXL não capturado (opcional).
+- Ferramenta de input do Simulator: descarta às vezes o primeiro caractere em campo seguro e descartou o último de "Ana" → "An" no resumo (artefato de ferramenta, anotado no `settings.log`).
+- VoiceOver manual: NOT EXECUTED. Hápticas em dispositivo físico: NOT VERIFIED.
+- 13 classes UI não executadas nesta operação (regressão parcial por desenho da operação).
+
+### Pendências preservadas (não tocadas)
+
+ACHIEVEMENT DISPLAY LABEL STATUS: PENDING DATA / CONTRACT CLASSIFICATION · HISTORY NAVIGATION STATUS: PENDING FUNCTIONAL VERIFICATION · ROBERTO JOURNEY FIXTURE STATUS: PENDING PRE-BETA STAGING CLEANUP · PLAN DISPLAY LABEL STATUS: PENDING CONTRACT CLASSIFICATION · HAPTICS ON PHYSICAL DEVICE: NOT VERIFIED · APPICON TINTED: PENDING — NOT INTEGRATED.
+
+### Status ao fechar a operação I6
+
+I6 STATUS: IMPLEMENTED — GATES GREEN · REGRESSION STATUS: PARTIALLY VERIFIED · PUBLIC BRAND STATUS: PARTIALLY VERIFIED (global) · REBRAND STATUS: PARTIAL · IOS INTEGRATION STATUS: LOCAL ONLY · PRODUCTION STATUS: NOT DEPLOYED · APPICON TINTED: PENDING — NOT INTEGRATED · I6 VISUAL STATUS: READY FOR USER REVIEW · USER VISUAL ACCEPTANCE: PENDING → reclassificado como DEFERRED TO FINAL REVIEW por instrução explícita do usuário (`PERFORME_AI_ROBERTO_BETA_AUTONOMOUS_CLOSURE_V1`, §0/§8), que autoriza o commit local após os gates.

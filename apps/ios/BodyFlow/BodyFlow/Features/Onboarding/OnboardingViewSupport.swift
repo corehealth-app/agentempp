@@ -61,16 +61,11 @@ struct OnboardingFieldIssue: View {
 
     var body: some View {
         if let issue = candidates.first(where: model.validationIssues.contains) {
-            Label(
-                issue.message(
-                    for: BodyFlowPresentationLanguage.resolve(locale)
-                ),
-                systemImage: "exclamationmark.circle.fill"
+            BodyFlowStatusLine(
+                issue.message(for: BodyFlowPresentationLanguage.resolve(locale)),
+                kind: .error,
+                font: BodyFlowTypography.callout
             )
-                .font(BodyFlowTypography.callout)
-                .foregroundStyle(BodyFlowColor.color(.feedbackDestructive))
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityElement(children: .combine)
         }
     }
 }

@@ -31,7 +31,12 @@ struct AppRootView: View {
     var body: some View {
         Group {
             rootContent
+                .transition(BodyFlowMotion.stateTransition(reduceMotion: effectiveReduceMotion))
         }
+        .animation(
+            BodyFlowMotion.animation(.content, reduceMotion: effectiveReduceMotion),
+            value: rootPresentationKey
+        )
         .installAppDependencies(dependencies)
         // Appearance only: the catalog AccentColor is a historical asset (its
         // dark value is the achievement gold), so every SwiftUI control that
@@ -126,6 +131,57 @@ struct AppRootView: View {
         rootLoading("app.session.loading", fallback: "Carregando sessão")
     }
 
+    /// The screen the root shows, not the state's own payload: switching
+    /// sign-in ↔ sign-up ↔ recovery, or entering/leaving onboarding, fades;
+    /// an onboarding step change does not retrigger this fade (the
+    /// container animates that on its own, keyed to `model.step`).
+    private enum RootPresentationKey: Equatable {
+        case neutralLoading
+        case launching
+        case signIn, signUp, passwordRecovery
+        case awaitingEmailConfirmation
+        case onboardingLoading, onboardingReady, onboardingError
+        case authenticatedLoading, authenticatedReady
+    }
+
+    private var rootPresentationKey: RootPresentationKey {
+        if authenticatedShellCoordinator.requiresNeutralRoot(
+            for: requestedAuthenticatedUserID
+        ) {
+            return .neutralLoading
+        }
+        switch model.state {
+        case .launching: return .launching
+        case .signedOut(.signIn): return .signIn
+        case .signedOut(.signUp): return .signUp
+        case .signedOut(.passwordRecovery): return .passwordRecovery
+        case .awaitingEmailConfirmation: return .awaitingEmailConfirmation
+        case .onboarding(let userID, _):
+            if let onboardingFlowModel = onboardingCoordinator.flowModel,
+               OnboardingRootLoadState.canRender(
+                   modelUserID: onboardingFlowModel.userID,
+                   activeUserID: userID
+               ) {
+                return .onboardingReady
+            } else if onboardingCoordinator.flowModel == nil,
+                      onboardingCoordinator.loadFailed {
+                return .onboardingError
+            }
+            return .onboardingLoading
+        case .authenticated(let userID):
+            return authenticatedShellCoordinator.renderableOwner(for: userID) != nil
+                ? .authenticatedReady
+                : .authenticatedLoading
+        }
+    }
+
+    private var effectiveReduceMotion: Bool {
+        BodyFlowReduceMotionPolicy.effectiveValue(
+            systemValue: systemReduceMotion,
+            override: configuration.accessibilityReduceMotionOverride
+        )
+    }
+
     private var requestedAuthenticatedUserID: String? {
         guard case let .authenticated(userID) = model.state else { return nil }
         return userID
@@ -147,7 +203,7 @@ struct AppRootView: View {
         ContentUnavailableView {
             Label(
                 rootCopy("app.onboarding.error.title", fallback: "Não foi possível carregar"),
-                systemImage: "exclamationmark.triangle"
+                systemImage: BodyFlowSymbol.warning.systemName
             )
         } description: {
             Text(rootCopy(

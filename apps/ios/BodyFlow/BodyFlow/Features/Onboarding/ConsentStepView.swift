@@ -117,7 +117,7 @@ struct ConsentStepView: View {
             model.updateDocumentAction(action, selected: !isSelected)
         } label: {
             HStack(alignment: .top, spacing: BodyFlowSpacing.sm) {
-                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                Image(symbol: isSelected ? .checkboxOn : .checkboxOff)
                     .accessibilityHidden(true)
                 Text(actionLabel(document.action))
                     .font(BodyFlowTypography.headline)
@@ -130,7 +130,7 @@ struct ConsentStepView: View {
                 alignment: .leading
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.bodyFlowRow)
         .frame(
             maxWidth: .infinity,
             minHeight: BodyFlowSpacing.minimumTapTarget,
@@ -166,11 +166,7 @@ struct ConsentStepView: View {
             acceptance.wrappedValue.toggle()
         } label: {
             HStack(alignment: .top, spacing: BodyFlowSpacing.sm) {
-                Image(
-                    systemName: isAccepted
-                        ? "checkmark.square.fill"
-                        : "square"
-                )
+                Image(symbol: isAccepted ? .checkboxOn : .checkboxOff)
                 .accessibilityHidden(true)
 
                 VStack(
@@ -199,7 +195,7 @@ struct ConsentStepView: View {
                 in: RoundedRectangle(cornerRadius: BodyFlowRadius.card)
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.bodyFlowRow)
         .accessibilityAddTraits(isAccepted ? .isSelected : [])
         .accessibilityHint(
             model.accessibilityHint(for: [.consentRequired])

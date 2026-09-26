@@ -22,14 +22,12 @@ struct PasswordRecoveryView: View {
                 AuthValidationSummary(issues: validationIssues)
 
                 if model.authOperationState == .recoveryConfirmation {
-                    Label(
+                    BodyFlowStatusLine(
                         copy("auth.recovery.confirmation", fallback: "Se houver uma conta para este e-mail, enviaremos as instruções de recuperação."),
-                        systemImage: "checkmark.circle.fill"
+                        kind: .success,
+                        font: BodyFlowTypography.body
                     )
-                    .font(BodyFlowTypography.body)
-                    .foregroundStyle(BodyFlowColor.primaryText)
                     .padding(BodyFlowSpacing.md)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                     .bodyFlowWash(.brandPrimary)
                     .accessibilityIdentifier("auth.recovery.confirmation")
                 } else {

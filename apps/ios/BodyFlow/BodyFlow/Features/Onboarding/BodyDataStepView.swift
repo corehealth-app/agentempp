@@ -2,8 +2,15 @@ import SwiftUI
 
 @MainActor
 struct BodyDataStepView: View {
+    private enum Field: Hashable {
+        case height
+        case weight
+        case bodyFat
+    }
+
     let model: OnboardingFlowModel
     @Environment(\.locale) private var locale
+    @FocusState private var focusedField: Field?
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
@@ -67,6 +74,7 @@ struct BodyDataStepView: View {
                             )
                             .contentShape(Rectangle())
                     }
+                    .buttonStyle(BodyFlowButtonStyle(role: .secondary))
                     .accessibilityHint(
                         model.accessibilityHint(
                             for: [.birthDateRequired, .birthDateInFuture]
@@ -82,24 +90,37 @@ struct BodyDataStepView: View {
             decimalField(
                 descriptor: .height(language: language),
                 value: height,
+                field: .height,
                 identifier: "onboarding.height",
                 issues: [.heightOutOfRange]
             )
             decimalField(
                 descriptor: .weight(language: language),
                 value: weight,
+                field: .weight,
                 identifier: "onboarding.weight",
                 issues: [.weightOutOfRange]
             )
             decimalField(
                 descriptor: .bodyFat(language: language),
                 value: bodyFat,
+                field: .bodyFat,
                 identifier: "onboarding.body-fat",
                 issues: [.bodyFatOutOfRange]
             )
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("screen.onboarding.body-data")
+        // The decimal pad has no return key: give it a way to close so the
+        // keyboard never has to cover the step's Continue action.
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button(copy("keyboard.done")) {
+                    focusedField = nil
+                }
+            }
+        }
     }
 
     private var biologicalSex: Binding<BiologicalSex?> {
@@ -140,6 +161,7 @@ struct BodyDataStepView: View {
     private func decimalField(
         descriptor: OnboardingDecimalFieldDescriptor,
         value: Binding<Double?>,
+        field: Field,
         identifier: String,
         issues: [OnboardingValidationIssue]
     ) -> some View {
@@ -153,7 +175,8 @@ struct BodyDataStepView: View {
                     prompt: Text(descriptor.prompt)
                 )
                     .keyboardType(.decimalPad)
-                    .textFieldStyle(.roundedBorder)
+                    .focused($focusedField, equals: field)
+                    .bodyFlowField()
                     .accessibilityLabel(descriptor.accessibilityLabel)
                     .accessibilityValue(descriptor.accessibilityValue(
                         for: value.wrappedValue,

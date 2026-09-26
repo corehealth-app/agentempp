@@ -20,7 +20,7 @@ struct WelcomeStepView: View {
                 TextField(copy("onboarding.welcome.display-name.placeholder"), text: displayName)
                     .textContentType(.name)
                     .submitLabel(.done)
-                    .textFieldStyle(.roundedBorder)
+                    .bodyFlowField()
                     .accessibilityLabel(copy("onboarding.welcome.display-name.title"))
                     .accessibilityHint(
                         model.accessibilityHint(for: [.displayNameRequired])
@@ -53,7 +53,7 @@ struct WelcomeStepView: View {
                 } label: {
                     selectionRow(countryName, detail: model.draft.countryCode)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.bodyFlowRow)
                 .accessibilityHint(
                     model.accessibilityHint(for: [.countryInvalid])
                 )
@@ -74,7 +74,7 @@ struct WelcomeStepView: View {
                 } label: {
                     selectionRow(model.draft.timeZoneIdentifier, detail: "IANA")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.bodyFlowRow)
                 .accessibilityHint(
                     model.accessibilityHint(for: [.timeZoneInvalid])
                 )
@@ -111,8 +111,8 @@ struct WelcomeStepView: View {
             Text(title).foregroundStyle(BodyFlowColor.primaryText)
             Spacer(minLength: BodyFlowSpacing.sm)
             Text(detail).foregroundStyle(BodyFlowColor.secondaryText)
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
+            Image(symbol: .chevron)
+                .font(BodyFlowTypography.caption)
                 .foregroundStyle(BodyFlowColor.secondaryText)
         }
         .padding(BodyFlowSpacing.md)
@@ -141,14 +141,15 @@ private struct CountrySelectionView: View {
                 HStack {
                     Text(name(for: region.identifier))
                     Spacer()
-                    Text(region.identifier).foregroundStyle(.secondary)
+                    Text(region.identifier).foregroundStyle(BodyFlowColor.secondaryText)
                     if region.identifier == selectedCode {
-                        Image(systemName: "checkmark")
+                        Image(symbol: .confirm)
                             .accessibilityLabel(copy("onboarding.selection.selected"))
                     }
                 }
             }
             .foregroundStyle(BodyFlowColor.primaryText)
+            .accessibilityAddTraits(region.identifier == selectedCode ? .isSelected : [])
             .bodyFlowListRow()
         }
         .bodyFlowList()
@@ -197,12 +198,13 @@ private struct TimeZoneSelectionView: View {
                     Text(identifier)
                     Spacer()
                     if identifier == selectedIdentifier {
-                        Image(systemName: "checkmark")
+                        Image(symbol: .confirm)
                             .accessibilityLabel(copy("onboarding.selection.selected"))
                     }
                 }
             }
             .foregroundStyle(BodyFlowColor.primaryText)
+            .accessibilityAddTraits(identifier == selectedIdentifier ? .isSelected : [])
             .bodyFlowListRow()
         }
         .bodyFlowList()

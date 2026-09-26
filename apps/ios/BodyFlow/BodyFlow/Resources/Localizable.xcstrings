@@ -2913,6 +2913,10 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not update. Try again." } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não foi possível atualizar. Tente novamente." } }
     } },
+    "keyboard.done" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Done" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Concluído" } }
+    } },
     "library.action.cancel" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Cancelar" } }

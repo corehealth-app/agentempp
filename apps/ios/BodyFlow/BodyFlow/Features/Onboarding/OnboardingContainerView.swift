@@ -1,31 +1,50 @@
 import SwiftUI
 import UIKit
 
+private enum OnboardingScrollAnchor: Hashable {
+    case top
+}
+
 @MainActor
 struct OnboardingContainerView: View {
     let model: OnboardingFlowModel
     @State private var submissionTask: Task<Void, Never>?
     @Environment(\.locale) private var locale
+    @Environment(\.bodyFlowReduceMotion) private var reduceMotion
 
     var body: some View {
         NavigationStack {
             ZStack {
                 BodyFlowColor.background.ignoresSafeArea()
-                ScrollView {
-                    VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
-                        BodyFlowBrandIdentityView()
-                        progress
-                        OnboardingOperationMessage(state: model.operationState)
-                        OnboardingValidationSummary(issues: model.validationIssues)
-                        stepContent
-                        commands
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
+                            BodyFlowBrandIdentityView()
+                            progress
+                            OnboardingOperationMessage(state: model.operationState)
+                            OnboardingValidationSummary(issues: model.validationIssues)
+                            stepContent
+                                .transition(BodyFlowMotion.stateTransition(reduceMotion: reduceMotion))
+                                .animation(
+                                    BodyFlowMotion.animation(.content, reduceMotion: reduceMotion),
+                                    value: model.step
+                                )
+                            commands
+                        }
+                        .padding(.horizontal, BodyFlowSpacing.lg)
+                        .padding(.vertical, BodyFlowSpacing.lg)
+                        .frame(maxWidth: 620)
+                        .frame(maxWidth: .infinity)
+                        .id(OnboardingScrollAnchor.top)
                     }
-                    .padding(.horizontal, BodyFlowSpacing.lg)
-                    .padding(.vertical, BodyFlowSpacing.lg)
-                    .frame(maxWidth: 620)
-                    .frame(maxWidth: .infinity)
+                    .scrollBounceBehavior(.basedOnSize)
+                    .scrollDismissesKeyboard(.interactively)
+                    // One ScrollView serves every step: without this, the offset
+                    // a long step leaves behind carries into the next one.
+                    .onChange(of: model.step) {
+                        proxy.scrollTo(OnboardingScrollAnchor.top, anchor: .top)
+                    }
                 }
-                .scrollBounceBehavior(.basedOnSize)
             }
         }
         .onDisappear(perform: cancelSubmission)
@@ -226,7 +245,7 @@ private struct OnboardingDocumentsUnavailableView: View {
             Label(copy(
                 "onboarding.documents-unavailable.title",
                 fallback: "Documentos indisponíveis"
-            ), systemImage: "lock.fill")
+            ), systemImage: BodyFlowSymbol.unavailable.systemName)
         } description: {
             Text(copy(
                 "onboarding.documents-unavailable.message",
@@ -248,16 +267,12 @@ private struct OnboardingOperationMessage: View {
 
     var body: some View {
         if case .failed(let error) = state {
-            Label(
-                error.authMessage(
-                    for: BodyFlowPresentationLanguage.resolve(locale)
-                ),
-                systemImage: "exclamationmark.circle.fill"
+            BodyFlowStatusLine(
+                error.authMessage(for: BodyFlowPresentationLanguage.resolve(locale)),
+                kind: .error,
+                font: BodyFlowTypography.callout
             )
-                .font(BodyFlowTypography.callout)
-                .foregroundStyle(BodyFlowColor.color(.feedbackDestructive))
                 .padding(BodyFlowSpacing.md)
-                .frame(maxWidth: .infinity, alignment: .leading)
                 .bodyFlowWash(.feedbackDestructive)
                 .accessibilityIdentifier("onboarding.error")
         }

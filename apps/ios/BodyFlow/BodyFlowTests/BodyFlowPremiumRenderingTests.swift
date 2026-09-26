@@ -744,6 +744,143 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
         XCTAssertTrue(source.contains(".accessibilityIdentifier(\"progress.medal.\\(medal.id.offset)\")"))
     }
 
+    /// I6 (Auth, Onboarding, AppRootView) names its glyphs through the
+    /// shared vocabulary; raw SF Symbol literals belong to `BodyFlowSymbol`
+    /// only.
+    func testReviewedAuthOnboardingSourcesUseTheSymbolVocabulary() throws {
+        let reviewedSources = [
+            "BodyFlow/Features/Auth/AuthFieldMessage.swift",
+            "BodyFlow/Features/Auth/PasswordRecoveryView.swift",
+            "BodyFlow/Features/Onboarding/OnboardingViewSupport.swift",
+            "BodyFlow/Features/Onboarding/OnboardingContainerView.swift",
+            "BodyFlow/Features/Onboarding/WelcomeStepView.swift",
+            "BodyFlow/Features/Onboarding/ObjectiveStepView.swift",
+            "BodyFlow/Features/Onboarding/PersonaStepView.swift",
+            "BodyFlow/Features/Onboarding/ConsentStepView.swift",
+            "BodyFlow/Features/Onboarding/OnboardingCompletionView.swift",
+            "BodyFlow/App/AppRootView.swift",
+        ]
+        var offenders: [String] = []
+        for path in reviewedSources {
+            let source = try reviewedSource(path)
+            let literals = occurrences(of: "systemName: \"", in: source)
+                + occurrences(of: "systemImage: \"", in: source)
+            if literals > 0 { offenders.append("\(path): \(literals) raw symbol literals") }
+        }
+        XCTAssertTrue(offenders.isEmpty, "Raw SF Symbol names outside the vocabulary: \(offenders)")
+    }
+
+    /// Onboarding's radio-style selection rows (objective, persona) and
+    /// checkbox-style consent actions give press feedback like every other
+    /// reviewed card link; `.plain` is gone from these sources.
+    func testReviewedOnboardingSelectionControlsUseTheRowButtonStyle() throws {
+        let reviewedSources = [
+            "BodyFlow/Features/Onboarding/WelcomeStepView.swift",
+            "BodyFlow/Features/Onboarding/ObjectiveStepView.swift",
+            "BodyFlow/Features/Onboarding/PersonaStepView.swift",
+            "BodyFlow/Features/Onboarding/ConsentStepView.swift",
+        ]
+        var offenders: [String] = []
+        for path in reviewedSources {
+            let source = try reviewedSource(path)
+            let plain = occurrences(of: ".buttonStyle(.plain)", in: source)
+            if plain > 0 { offenders.append("\(path): \(plain) .plain") }
+            if !source.contains(".buttonStyle(.bodyFlowRow)") { offenders.append("\(path): no .bodyFlowRow") }
+        }
+        XCTAssertTrue(offenders.isEmpty, "Selection controls without press feedback: \(offenders)")
+    }
+
+    /// Field-level and operation-wide errors across Auth and Onboarding go
+    /// through the one shared status line; onboarding's free-standing text
+    /// fields take the same field surface Auth already uses.
+    func testReviewedAuthOnboardingSourcesUseSharedStatusLineAndField() throws {
+        let statusLineSources = [
+            "BodyFlow/Features/Auth/AuthFieldMessage.swift",
+            "BodyFlow/Features/Onboarding/OnboardingViewSupport.swift",
+            "BodyFlow/Features/Onboarding/OnboardingContainerView.swift",
+        ]
+        var offenders: [String] = []
+        for path in statusLineSources where try !reviewedSource(path).contains("BodyFlowStatusLine(") {
+            offenders.append("\(path): no BodyFlowStatusLine")
+        }
+        let fieldSources = [
+            "BodyFlow/Features/Onboarding/WelcomeStepView.swift",
+            "BodyFlow/Features/Onboarding/BodyDataStepView.swift",
+        ]
+        for path in fieldSources {
+            let source = try reviewedSource(path)
+            if source.contains("textFieldStyle(.roundedBorder)") {
+                offenders.append("\(path): still uses the native rounded border style")
+            }
+            if !source.contains(".bodyFlowField()") { offenders.append("\(path): no .bodyFlowField()") }
+        }
+        XCTAssertTrue(offenders.isEmpty, "Shared components missing: \(offenders)")
+    }
+
+    /// The decimal pad has no return key, so the body-data fields offer a
+    /// keyboard "Done" action (and the onboarding scroll dismisses the
+    /// keyboard on drag): the keyboard can always be closed and never has to
+    /// hide the step's Continue action.
+    func testOnboardingDecimalFieldsOfferAKeyboardDoneAndScrollDismissal() throws {
+        var offenders: [String] = []
+        let bodyData = try reviewedSource("BodyFlow/Features/Onboarding/BodyDataStepView.swift")
+        if !bodyData.contains("placement: .keyboard") { offenders.append("BodyDataStepView: no keyboard toolbar") }
+        if !bodyData.contains("keyboard.done") { offenders.append("BodyDataStepView: no keyboard.done copy") }
+        if !bodyData.contains("@FocusState") { offenders.append("BodyDataStepView: no focus state") }
+        let container = try reviewedSource("BodyFlow/Features/Onboarding/OnboardingContainerView.swift")
+        if !container.contains(".scrollDismissesKeyboard(.interactively)") {
+            offenders.append("OnboardingContainerView: scroll does not dismiss the keyboard")
+        }
+        let catalog = try reviewedSource("BodyFlow/Resources/Localizable.xcstrings")
+        if !catalog.contains("\"keyboard.done\"") { offenders.append("Localizable: no keyboard.done key") }
+        XCTAssertTrue(offenders.isEmpty, "Keyboard dismissal missing: \(offenders)")
+    }
+
+    /// Every onboarding step lives in one shared ScrollView, so the offset a
+    /// long step (the documents) leaves behind would otherwise carry into the
+    /// next, shorter one and crop its title. A step change starts at the top.
+    func testOnboardingStepChangeReturnsTheScrollToTheTop() throws {
+        var offenders: [String] = []
+        let container = try reviewedSource("BodyFlow/Features/Onboarding/OnboardingContainerView.swift")
+        if !container.contains("ScrollViewReader") { offenders.append("no ScrollViewReader") }
+        if !container.contains(".onChange(of: model.step)") { offenders.append("no step-change observer") }
+        if !container.contains("scrollTo(") { offenders.append("no scroll reset") }
+        XCTAssertTrue(offenders.isEmpty, "Step change does not reset the scroll: \(offenders)")
+    }
+
+    /// The review card on the last onboarding step hugged its widest row, so
+    /// it stopped short of the column the notice and the CTA below it fill.
+    func testOnboardingSummaryCardFillsTheColumn() throws {
+        let completion = try reviewedSource("BodyFlow/Features/Onboarding/OnboardingCompletionView.swift")
+        let surface = try XCTUnwrap(completion.range(of: "BodyFlowColor.surface"))
+        let beforeBackground = String(completion[..<surface.lowerBound].suffix(160))
+        XCTAssertTrue(
+            beforeBackground.contains(".frame(maxWidth: .infinity, alignment: .leading)"),
+            "The onboarding review card is not stretched to the column width before its background."
+        )
+    }
+
+    /// The root and the onboarding container each key their own motion to
+    /// the state that actually changed — the root to the screen it shows,
+    /// the container to the current step — instead of one fade covering
+    /// both, and both go through the shared token so Reduce Motion collapses
+    /// them.
+    func testRootAndOnboardingContainerKeyMotionToTheirOwnState() throws {
+        var offenders: [String] = []
+        let root = try reviewedSource("BodyFlow/App/AppRootView.swift")
+        if !root.contains("BodyFlowMotion.stateTransition(reduceMotion:") {
+            offenders.append("AppRootView: no root state transition")
+        }
+        if !root.contains("BodyFlowMotion.animation(.content, reduceMotion:") {
+            offenders.append("AppRootView: no content-motion animation")
+        }
+        let container = try reviewedSource("BodyFlow/Features/Onboarding/OnboardingContainerView.swift")
+        if !container.contains("value: model.step") {
+            offenders.append("OnboardingContainerView: step transition not keyed to model.step")
+        }
+        XCTAssertTrue(offenders.isEmpty, "Motion not keyed as expected: \(offenders)")
+    }
+
     /// Decorative tint washes share one opacity token; ad-hoc alphas drift
     /// between 0.08 / 0.10 / 0.12 / 0.25 for the same intent.
     func testReviewedTintWashesUseTheSharedOpacityToken() throws {

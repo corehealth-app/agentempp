@@ -20,7 +20,7 @@ struct PersonaStepView: View {
                         model.updatePersona(value)
                     } label: {
                         HStack(alignment: .top, spacing: BodyFlowSpacing.sm) {
-                            Image(systemName: model.draft.persona == value ? "checkmark.circle.fill" : "circle")
+                            Image(symbol: model.draft.persona == value ? .selected : .unselected)
                                 .accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
                                 Text(title(for: value)).fontWeight(.semibold)
@@ -45,7 +45,7 @@ struct PersonaStepView: View {
                             in: RoundedRectangle(cornerRadius: BodyFlowRadius.card)
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.bodyFlowRow)
                     .accessibilityAddTraits(model.draft.persona == value ? .isSelected : [])
                     .accessibilityHint(
                         model.accessibilityHint(for: [.personaRequired])

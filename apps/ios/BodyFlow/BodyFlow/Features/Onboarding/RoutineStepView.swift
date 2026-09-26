@@ -56,6 +56,7 @@ struct RoutineStepView: View {
                             )
                             .contentShape(Rectangle())
                     }
+                    .buttonStyle(BodyFlowButtonStyle(role: .secondary))
                     .accessibilityHint(
                         model.accessibilityHint(
                             for: [.trainingFrequencyOutOfRange]
@@ -139,6 +140,7 @@ struct RoutineStepView: View {
                             )
                             .contentShape(Rectangle())
                     }
+                    .buttonStyle(BodyFlowButtonStyle(role: .secondary))
                     .accessibilityHint(
                         model.accessibilityHint(
                             for: [.foodOrganizationRequired]
@@ -235,6 +237,7 @@ struct RoutineStepView: View {
                         )
                         .contentShape(Rectangle())
                 }
+                .buttonStyle(BodyFlowButtonStyle(role: .secondary))
                 .accessibilityHint(model.accessibilityHint(for: issues))
             }
         }

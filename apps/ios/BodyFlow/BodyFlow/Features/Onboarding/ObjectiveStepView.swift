@@ -20,11 +20,7 @@ struct ObjectiveStepView: View {
                         model.updateObjective(value)
                     } label: {
                         HStack(alignment: .top, spacing: BodyFlowSpacing.sm) {
-                            Image(
-                                systemName: model.draft.objective == value
-                                    ? "checkmark.circle.fill"
-                                    : "circle"
-                            )
+                            Image(symbol: model.draft.objective == value ? .selected : .unselected)
                             .accessibilityHidden(true)
 
                             VStack(
@@ -51,7 +47,7 @@ struct ObjectiveStepView: View {
                             in: RoundedRectangle(cornerRadius: BodyFlowRadius.card)
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.bodyFlowRow)
                     .accessibilityAddTraits(
                         model.draft.objective == value ? .isSelected : []
                     )

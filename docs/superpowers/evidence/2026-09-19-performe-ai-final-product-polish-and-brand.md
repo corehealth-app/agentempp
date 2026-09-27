@@ -1990,3 +1990,61 @@ FULL SUITE RESULT: backend 0 falhas; iOS unit 1311/0; UI do editor 22/0 e 3/0; `
 **Pendências registradas:** retry de entrada `failed` fora do limite de 10/min; `[BTN:]`/`[LIST:]` vazios no mobile; entrada presa em `processing` se o processo morrer em `maxDuration`; textos de prompt citando ferramentas que o mobile recusa; S3 (identidade nos geradores, só pelo canal mobile); harness A/B autenticado local indisponível nesta máquina.
 
 ROBERTO BETA CANDIDATE STATUS: **BLOCKED** · PRODUCTION STATUS: **NOT DEPLOYED** · custo desta operação US$ 0.
+
+## Lembretes locais (C2) e lacunas de runtime do Flow — `IMPLEMENT_LOCAL_REMINDERS_AND_CLOSE_FLOW_RUNTIME_GAPS_V1` (2026-09-27)
+
+**Entrada:** HEAD `51f999afcb1254b3de97c5877100d26c688f9a39` (pai `026e6c2e`, tree `062223a7`), índice vazio, único caminho sujo o desenho C1–C5 v1.1 não rastreado (sha256 `d6f0deb7…`). Autoridade revalidada por blob; sem `AGENTS.md`. Evidências da comparação anterior preservadas (`$SP/flowfix/ab-a11y-*`, `baseline-a11y.*`, `DD-baseline`, logs `char-a11y`/`meal2`); a worktree temporária da linha de base já tinha sido removida na operação anterior e não foi recriada. Nenhuma chamada paga, migration, deploy, leitura ou configuração remota, dado real, conta CI-3 ou TestFlight (US$ 0).
+
+### Flow — lacunas de runtime (sem liberar capacidade nova)
+
+| Item | Estado | Prova |
+|---|---|---|
+| 3.1 Limite nas retentativas | **RESOLVIDO** | Toda execução que pode chegar ao provider conta: primeira tentativa, retentativa de turno falho e continuação de turno que morreu antes do provider. Replay de resposta gravada não conta nem chama o provider. Recontagem depois do registro: numa rajada concorrente de chaves diferentes, nunca mais que 10 por minuto chegam ao provider (pode recusar a mais). Limite vigente inalterado (10/min). |
+| 3.2 Tags `[BTN:]`/`[LIST:]` | **RESOLVIDO** | No canal mobile o texto é mantido, rótulos de opções viram linhas simples, tag malformada sai; sem payload interativo. Resposta sem texto visível → 502 `flow_provider_failed` tipado, turno `failed`, nenhuma linha de assistente. WhatsApp inalterado. Histórico esconde respostas vazias gravadas antes. |
+| 3.3 Processamento interrompido | **RESOLVIDO sem schema** | Reuso do lease do ledger (10 min > `maxDuration` 300 s, travado em teste). Marcador `provider_started_at` antes do provider. Morreu antes do provider → continua uma vez, contado. Provider pode ter rodado (ou linha antiga sem marcadores) → não reexecuta; turno `failed` (`flow_turn_interrupted`) + 502; só uma retentativa explícita executa. Resposta já gravada → replay. CAS amarrado à tentativa (`attempt_started_at`/`request_id`). Erro ao gravar o marcador → turno `failed`, nunca preso. Queda abrupta modelada por promessas que nunca resolvem nos três pontos (antes do provider, depois do provider e antes da persistência, depois da persistência e antes do HTTP). |
+| 3.4 S3 identidade dos geradores | **RESOLVIDO (caminho dormente)** | `assistantIdentity` só vem do canal `mobile_flow` decidido no servidor; prompts legados byte a byte iguais (sha256 travado); `gera_*` continuam recusados no mobile; nenhuma `propoe_plano_*`; nenhuma confirmação pelo LLM. |
+
+- **RED → GREEN:** `$SP/rt/flow-red.log` (17 falhas: retentativa no limite executa; 12 retentativas = 12 chamadas; 2 retentativas concorrentes = 2 chamadas; resposta vazia = 201; turno interrompido reexecutado), `$SP/rt/agent-red.log` (9 falhas: tag válida = resposta vazia; malformada vaza; geradores ignoram o canal). Depois da revisão: `$SP/rt/flow-red2.log`, `$SP/rt/agent-red2.log`.
+- **Teste existente alterado de propósito:** "reuses a failed inbound…" afirmava que a retentativa **não** passava pelo limite (codificava o defeito).
+- **Revisão adversarial** (subagente isolado, mesma família de modelo — não é revisão humana): rodada 1 sem caminho de chamada sem contagem/duplicada em produção; 1 MEDIUM (limite não atômico entre chaves) e LOWs corrigidos nesta mesma operação. Rodada 2 (depois das correções): nenhum caminho para chamada sem contagem, acima de 10/min ou duplicada; LOWs corrigidos (erro de storage no pós-count/insert/claim/marcador devolve o turno como `failed`; regex tolerante a espaços e quebras, exigindo `=`, sem mexer em texto sem tag; replay de resposta vazia antiga → 502; contagem nula = erro). Conhecido e não corrigido: a recontagem é conservadora numa rajada concorrente (uma contagem atômica exige RPC nova — contrato mínimo no pacote de implantação); o ledger ainda repete, por 24 h, um 201 gravado com resposta vazia. Os testes da rodada 2 foram escritos junto com as correções (sem RED observado antes — declarado).
+- **Limitação:** o adaptador Supabase (filtros `raw_payload->>…`) é coberto por teste de construção de query, não contra PostgREST real; A/B autenticado continua pendente (sem Supabase local).
+
+### C2 — lembretes locais reais
+
+- **Fontes (contratos existentes, só leitura):** `/supplements` e `/medications` (horários oficiais e ocorrência do dia), `/reminders` (regras do paciente; categorias suplemento/medicamento ignoradas), `/notification-preferences` (`push_enabled`, silêncio, limite diário, modo de preview), `/progress` (`next_reevaluation`, só para regra de reavaliação), fuso de `/me` por sessão. Nada é inventado: sem horário, frequência, item ou dose fora dessas fontes.
+- **Planejador determinístico** (`Core/Reminders/LocalReminderPlanner.swift`): ocorrências individuais no fuso documentado do paciente; dia 0 = domingo; horário do buraco do horário de verão descartado; horário repetido resolve para o deslocamento depois da transição (como o PostgreSQL); `taken`/`skipped` do dia não lembra, `snoozed` lembra uma vez ao fim do adiamento; silêncio (início inclusivo, fim exclusivo, cruza meia-noite); limite diário por prioridade (medicamento > suplemento > refeição > hidratação > treino > reavaliação); orçamento de 60 com a renovação dentro (59 + 1), renovação 1 min após o último lembrete, fora do silêncio.
+- **Agendamento** (`LocalReminderScheduler`, `SystemLocalNotificationCenter`): `UNCalendarNotificationTrigger` com componentes UTC completos (instante absoluto; imune a mudança de fuso do aparelho e à ambiguidade da volta do horário de verão — desvio consciente do "componentes no fuso do paciente" do desenho); diferença por identificador; relê as pendentes e só reporta como agendado o que o sistema guarda.
+- **Isolamento:** identificador `pai.<8 hex de sha256(userID)>.<categoria>.<id do servidor>.<minuto>`; `userInfo` só com dono, tipo e id. Época síncrona capturada na criação do modelo da sessão; o limpador do ciclo de vida (composto com o do fuso) invalida a época e remove pendentes e entregues, confirmando por releitura; resposta tardia de sessão encerrada vira `superseded` e remove o que tinha adicionado; o fim do shell remove só os do próprio dono. Toque: só abre o destino para o dono da sessão (senão descarta sem abrir), nunca muta.
+- **Permissão:** pedida só em "Ativar"; negada → estado explícito com atalho para Ajustes; sem provisional, time-sensitive ou crítico. **Privacidade:** padrão genérico na tela bloqueada; nome/dose só nos modos escolhidos pelo paciente; regras nunca mostram números de saúde; título ≤ 60, corpo ≤ 180, sem palavras bloqueadas (testado pt-BR/en).
+- **UI mínima:** linha "Lembretes neste iPhone" no Perfil (só onde há fonte: conta real, ou cenário de teste) e uma tela com estado, cobertura ("até …"), não agendados por motivo, aviso de abrir o app, privacidade, e o aviso de que silenciar localmente não muda a rotina. Sem redesign de Perfil/Rotina.
+- **Sincronização:** início da sessão (após `/me`), volta ao primeiro plano, mutações de rotina (invalidação), ação "Atualizar agora". Sem APNs, sem background, sem serviço remoto novo, sem entitlement ou chave de Info.plist.
+- **Sem RED pré-implementação:** C2 é código novo, escrito junto com os testes (declarado).
+
+- **Revisão adversarial do C2** (subagente isolado, mesma família — não humana): nenhum caminho para uma resposta tardia reagendar lembretes de sessão encerrada. Corrigidos: **HIGH** texto antigo nunca atualizado (agora todo lembrete planejado é reincluído e substitui o conteúdo); **HIGH** abrir o app sem rede apagava tudo (agora "fuso ainda não respondido" ≠ "sem fuso": mantém o agendado; a volta ao primeiro plano relê `/me` e ressincroniza, o que também segue mudança de fuso); **MEDIUM** limpeza não durável (marcador persistente, raiz sem sessão limpa tudo, início de sessão limpa outros donos mesmo sem ativação); LOWs de limpeza por época, estado após `superseded`, coalescência, permissão invisível = desligada, contagens no período coberto, data impossível, validade do toque (10 min), testes de DST de 30 min (Lord Howe) e à meia-noite (Santiago). Documentados, não corrigidos: renovação fora do limite diário; fontes lidas pelo lease atual (não pelo gate da sessão) — a época torna isso inofensivo.
+- **Compilador:** `MobileContentCoverByteStreamTests.swift:226` passou a falhar ("sending closure captures self") só porque os testes novos mudaram a composição dos lotes de compilação (provado: sem os arquivos novos compila; o mesmo arquivo compilou no build anterior). Ajuste mecânico no teste (a `Task` captura uma caixa `Sendable`; corpo movido para `load()`), sem mudança de comportamento.
+
+### Resultados finais
+
+| Gate | Resultado |
+|---|---|
+| Agent / admin / mobile-bff | 1096/0, 697/0, 26/0; `tsc` limpo nos três |
+| iOS unit completo (fontes finais) | 34 XCTest + 1329 Swift Testing (110 suítes) = **1363/0** |
+| iOS UI pertinente (uma invocação por classe) | LocalReminders 4/0, PremiumContentProfile 4/0, Prompt14Accessibility 13/0, PremiumConvergence 4/0, BodyFlowUITests 18/0 |
+| Release + `codesign --strict` + analyze + scanner | OK / OK / OK / PASS (`PUBLIC_LEAK 0`, `HISTORICAL_ASSET 18`, `ALLOWED_TECHNICAL 246`, assets idênticos); testes do scanner OK |
+| Segredos/PII, `diff --check`, assets/Info.plist/projeto | 0 / limpo / sem diff |
+
+- **Execuções falhas registradas (não somadas):** `LocalRemindersUITests` rodada 1 3/1 — o helper não rolava até uma linha de lista preguiçosa em AXXXL (defeito do teste, corrigido); cadeia anterior às correções da revisão 3/1 — a tela de lembretes não apareceu 5 s depois do toque na linha do Perfil sob carga 12–22, com o `.xcresult` incompleto porque o runner travou no teardown (encerrado por PID); essa cadeia foi interrompida por mim para recompilar. Na cadeia final, a classe rodou 4/0; o helper agora imprime a hierarquia se falhar. Sem caracterização isolada adicional.
+- **Evidência de runtime:** no Simulator (iPhone 17 Pro, iOS 26.5), o centro de notificações real aceitou e devolveu na releitura 59 lembretes + a renovação. **iPhone físico: não executado** — `devicectl` não lista nenhum aparelho conectado; entrega real, conteúdo na tela bloqueada, persistência após reinício e mudança de fuso continuam pendentes. Simulator e protocolo falso não provam entrega no aparelho.
+- **Cobertura:** focada; as 17 classes de UI não foram rodadas → **REGRESSION STATUS: PARTIALLY VERIFIED**.
+
+### Commits desta operação
+
+| Bloco | Commit | Pai | Tree |
+|---|---|---|---|
+| Flow runtime | `63241c3837eb2a44a23f5d4863c602824045f6df` | `51f999afcb1254b3de97c5877100d26c688f9a39` | `d729e10edf0ab12bee75abdc69d7d6b1a5922ced` |
+| C2 lembretes | `18aacc8c9fbe5a81a804e01c4f707c1fa624f649` | `63241c3837eb2a44a23f5d4863c602824045f6df` | `7ee0feb1ae536f4c3dc3ecfc870b7c62af7ce816` |
+| Documentação | este commit (evidência, pacote de implantação, desenho C1–C5 v1.1 byte a byte, sha256 `d6f0deb7…`) | | |
+
+Registrar o desenho v1.1 no histórico **não** aprova M1, M2, M3 nem a dependência de PDF. Pacote do próximo gate: `docs/superpowers/plans/2026-09-27-performe-ai-deployment-gate-package.md`.
+
+USER VISUAL ACCEPTANCE: PENDING FINAL REVIEW · REGRESSION STATUS: PARTIALLY VERIFIED · ROBERTO BETA CANDIDATE STATUS: **BLOCKED** · PRODUCTION STATUS: **NOT DEPLOYED** · custo desta operação US$ 0.

@@ -96,6 +96,46 @@ final class Prompt13RegistrationUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Refeição textual de demonstração"].exists)
     }
 
+    /// The editor shows the server's calories apart from the optional
+    /// override, refuses an ambiguous entry, and leaving with Back sends no
+    /// edit: the proposal keeps its server values.
+    @MainActor
+    func testMealEditorKeepsServerCaloriesAndBackSavesNothing() {
+        let app = reachTextProposal(scenario: .loaded)
+        XCTAssertTrue(app.staticTexts["389 kcal"].exists)
+
+        let edit = app.buttons["registration.proposal.edit"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 3))
+        edit.tap()
+        XCTAssertTrue(
+            element("registration.proposal.editor", in: app)
+                .waitForExistence(timeout: 3)
+        )
+
+        let manual = app.textFields["registration.proposal.edit.user-kcal"]
+        XCTAssertTrue(manual.exists)
+        manual.tap()
+        manual.typeText("25000")
+        XCTAssertTrue(
+            element("registration.proposal.edit.user-kcal.invalid", in: app)
+                .waitForExistence(timeout: 3)
+        )
+        XCTAssertFalse(app.buttons["registration.proposal.edit.save"].isEnabled)
+
+        let serverValue = element("registration.proposal.edit.official-kcal", in: app)
+        for _ in 0..<4 where !serverValue.exists {
+            app.swipeUp()
+        }
+        XCTAssertTrue(serverValue.exists)
+
+        app.navigationBars["Editar proposta"].buttons.element(boundBy: 0).tap()
+
+        XCTAssertTrue(element("registration.proposal", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["389 kcal"].exists)
+        XCTAssertFalse(app.staticTexts["512 kcal"].exists)
+        XCTAssertFalse(app.staticTexts["Substituição completa predefinida"].exists)
+    }
+
     @MainActor
     func testMealProposalActionsHaveMinimumTapTargets() {
         let support = BodyFlowUITestSupport(testCase: self)

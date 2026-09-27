@@ -214,6 +214,53 @@ struct RegistrationContractTests {
         #expect(response.data == expected)
     }
 
+    @Test("pending meal items decode calorie provenance and tell it apart from its absence")
+    func decodesMealItemCalorieProvenance() throws {
+        let response = try decode(
+            RegistrationProposalResponse.self,
+            from: """
+            {
+              "data": {
+                "id": "registration-meal-2",
+                "status": "pending",
+                "created_at": "2026-07-20T12:00:00.000Z",
+                "expires_at": "2026-07-21T12:00:00.000Z",
+                "resolved_at": null,
+                "proposal": {
+                  "kind": "meal",
+                  "meal_type": "almoco",
+                  "items": [
+                    {"name": "wrap", "quantity_g": 43, "kcal": 70, "protein_g": 2, "carbs_g": 12, "fat_g": 1.5,
+                     "user_kcal": 70, "nutrition_source": "user_kcal"},
+                    {"name": "arroz", "quantity_g": 100, "kcal": 130, "protein_g": 2.5, "carbs_g": 28, "fat_g": 0.3,
+                     "user_kcal": null, "nutrition_source": "canonical_exact"},
+                    {"name": "queijo", "quantity_g": 30, "kcal": 96, "protein_g": 7, "carbs_g": 0.3, "fat_g": 7.5,
+                     "user_kcal": 900, "nutrition_source": "canonical_fuzzy"},
+                    {"name": "feijão", "quantity_g": 80, "kcal": 61, "protein_g": 4, "carbs_g": 11, "fat_g": 0.4}
+                  ],
+                  "totals": null,
+                  "warnings": []
+                }
+              },
+              "meta": {"api_version": "v1", "request_id": "request-registration-meal-2"}
+            }
+            """
+        )
+
+        guard case let .meal(meal) = response.data.proposal else {
+            Issue.record("expected a meal proposal")
+            return
+        }
+        #expect(meal.items.map(\.kcalOrigin) == [.patientReported(70), .official, .official, .unknown])
+        #expect(meal.items[2].userKcal == 900)
+        #expect(meal.items[2].nutritionSource == "canonical_fuzzy")
+
+        let encoded = try encodedObject(meal.items[1])
+        #expect(encoded["user_kcal"] is NSNull)
+        #expect(encoded["nutrition_source"] as? String == "canonical_exact")
+        #expect(try encodedObject(meal.items[3])["user_kcal"] == nil)
+    }
+
     @Test("complete pending workout remains semantically distinct from a meal")
     func decodesPendingWorkoutResponse() throws {
         let response = try decode(
@@ -729,7 +776,9 @@ private func mealRegistrationSnapshot(
                         kcal: 154,
                         proteinG: 3,
                         carbsG: 33.6,
-                        fatG: 0.2
+                        fatG: 0.2,
+                        // These fixtures are the pre-provenance response shape.
+                        kcalOriginReported: false
                     )
                 ],
                 totals: MealProposalTotalsSnapshot(
@@ -780,7 +829,9 @@ private var proposalSnapshot: RegistrationProposalSnapshot {
                     kcal: 154,
                     proteinG: 3,
                     carbsG: 33.6,
-                    fatG: 0.2
+                    fatG: 0.2,
+                    // Compared with a response decoded from the pre-provenance fixture.
+                    kcalOriginReported: false
                 )
             ],
             totals: MealProposalTotalsSnapshot(

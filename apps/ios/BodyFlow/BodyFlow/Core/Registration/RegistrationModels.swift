@@ -217,6 +217,16 @@ struct MealProposalSnapshot: Codable, Hashable, Sendable {
     }
 }
 
+/// Where an item's calories in a pending proposal came from.
+enum MealItemKcalOrigin: Hashable, Sendable {
+    /// The server calculated them (no patient value, or one it refused).
+    case official
+    /// The patient reported this value and the server applied it.
+    case patientReported(Decimal)
+    /// The response predates the provenance fields; nothing can be assumed.
+    case unknown
+}
+
 struct MealProposalItemSnapshot: Codable, Hashable, Sendable {
     let name: String
     let quantityG: Decimal
@@ -224,6 +234,46 @@ struct MealProposalItemSnapshot: Codable, Hashable, Sendable {
     let proteinG: Decimal?
     let carbsG: Decimal?
     let fatG: Decimal?
+    /// `user_kcal`: the patient's value for this item as the server stored it.
+    let userKcal: Decimal?
+    /// `nutrition_source`: the source the server applied; "user_kcal" means
+    /// `kcal` is the patient's value.
+    let nutritionSource: String?
+    /// False when the response carried neither provenance key (an earlier
+    /// server): the origin is unknown, never "calculated" by default.
+    let kcalOriginReported: Bool
+
+    private static let patientSource = "user_kcal"
+
+    init(
+        name: String,
+        quantityG: Decimal,
+        kcal: Decimal?,
+        proteinG: Decimal?,
+        carbsG: Decimal?,
+        fatG: Decimal?,
+        userKcal: Decimal? = nil,
+        nutritionSource: String? = nil,
+        kcalOriginReported: Bool = true
+    ) {
+        self.name = name
+        self.quantityG = quantityG
+        self.kcal = kcal
+        self.proteinG = proteinG
+        self.carbsG = carbsG
+        self.fatG = fatG
+        self.userKcal = userKcal
+        self.nutritionSource = nutritionSource
+        self.kcalOriginReported = kcalOriginReported
+    }
+
+    var kcalOrigin: MealItemKcalOrigin {
+        guard kcalOriginReported else { return .unknown }
+        if nutritionSource == Self.patientSource, let userKcal {
+            return .patientReported(userKcal)
+        }
+        return .official
+    }
 
     private enum CodingKeys: String, CodingKey {
         case name
@@ -232,6 +282,36 @@ struct MealProposalItemSnapshot: Codable, Hashable, Sendable {
         case proteinG = "protein_g"
         case carbsG = "carbs_g"
         case fatG = "fat_g"
+        case userKcal = "user_kcal"
+        case nutritionSource = "nutrition_source"
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        quantityG = try container.decode(Decimal.self, forKey: .quantityG)
+        kcal = try container.decodeIfPresent(Decimal.self, forKey: .kcal)
+        proteinG = try container.decodeIfPresent(Decimal.self, forKey: .proteinG)
+        carbsG = try container.decodeIfPresent(Decimal.self, forKey: .carbsG)
+        fatG = try container.decodeIfPresent(Decimal.self, forKey: .fatG)
+        userKcal = try container.decodeIfPresent(Decimal.self, forKey: .userKcal)
+        nutritionSource = try container.decodeIfPresent(String.self, forKey: .nutritionSource)
+        kcalOriginReported = container.contains(.userKcal)
+            && container.contains(.nutritionSource)
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(name, forKey: .name)
+        try container.encode(quantityG, forKey: .quantityG)
+        try container.encodeIfPresent(kcal, forKey: .kcal)
+        try container.encodeIfPresent(proteinG, forKey: .proteinG)
+        try container.encodeIfPresent(carbsG, forKey: .carbsG)
+        try container.encodeIfPresent(fatG, forKey: .fatG)
+        if kcalOriginReported {
+            try container.encode(userKcal, forKey: .userKcal)
+            try container.encode(nutritionSource, forKey: .nutritionSource)
+        }
     }
 }
 

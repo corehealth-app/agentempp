@@ -2403,13 +2403,37 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Food" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Alimento" } }
     } },
+    "registration.editor.kcal.calculated" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Calories calculated by the server" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Calorias calculadas pelo servidor" } }
+    } },
+    "registration.editor.kcal.reported" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Calories reported by you" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Calorias informadas por você" } }
+    } },
     "registration.editor.meal" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Meal" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Refeição" } }
     } },
+    "registration.editor.origin-unknown" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The server did not confirm where this proposal's calories came from, so editing is paused to avoid losing a value you reported. You can still confirm or cancel the proposal." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O servidor não confirmou a origem das calorias desta proposta, então a edição está pausada para não perder um valor informado por você. Você ainda pode confirmar ou cancelar a proposta." } }
+    } },
+    "registration.editor.official-kcal" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Calories in the proposal" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Calorias na proposta" } }
+    } },
+    "registration.editor.official-kcal.unavailable" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "No server value" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sem valor do servidor" } }
+    } },
     "registration.editor.quantity" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Quantity (g)" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Quantidade (g)" } }
+    } },
+    "registration.editor.quantity.invalid" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Enter grams above 0 and up to 9,999, using only the decimal separator." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Informe os gramas, acima de 0 e até 9.999, usando só o separador decimal." } }
     } },
     "registration.editor.save" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Save" } },
@@ -2423,9 +2447,29 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Edit proposal" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Editar proposta" } }
     } },
+    "registration.editor.use-server-calculation" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Use server calculation" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Usar cálculo do servidor" } }
+    } },
     "registration.editor.user-kcal" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Reported calories" } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Calorias informadas" } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Calories you report (optional)" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Calorias informadas por você (opcional)" } }
+    } },
+    "registration.editor.user-kcal.check-quantity" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "You changed the quantity; check whether the calories you reported still apply." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Você mudou a quantidade; confira se as calorias informadas ainda valem." } }
+    } },
+    "registration.editor.user-kcal.cleared" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "To go back to the server calculation, tap “Use server calculation”." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Para voltar ao cálculo do servidor, toque em “Usar cálculo do servidor”." } }
+    } },
+    "registration.editor.user-kcal.footer" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "A value typed here replaces the server calculation and is recorded as reported by you. With no value typed, the server calculates." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Um valor digitado aqui substitui o cálculo do servidor e fica registrado como informado por você. Sem valor digitado, o servidor calcula." } }
+    } },
+    "registration.editor.user-kcal.invalid" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Enter calories from 0 to 20,000 using only the decimal separator, no thousands separator." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Informe calorias de 0 a 20.000 usando só o separador decimal, sem separador de milhar." } }
     } },
     "registration.field.date-time" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Date and time" } },

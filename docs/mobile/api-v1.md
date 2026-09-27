@@ -1428,6 +1428,21 @@ O servidor calcula os itens via base nutricional, cria um pending de 24 horas e
 retorna apenas o DTO necessário para confirmação. Texto bruto, IDs de provider,
 evidência de replace, audit warnings e referências internas não são expostos.
 
+Cada item do pending de refeição traz também a proveniência das calorias já
+armazenada no pending (campos sempre presentes, possivelmente `null`):
+
+- `user_kcal`: kcal informada pelo paciente para o item, como recebida; `null`
+  quando nenhuma foi informada;
+- `nutrition_source`: fonte que o servidor efetivamente aplicou. Somente
+  `"user_kcal"` significa que `kcal` é o valor do paciente; qualquer outro valor
+  (ou `user_kcal` presente com outra fonte, quando o valor informado foi
+  recusado por densidade impossível) significa cálculo do servidor.
+
+Para manter uma kcal informada ao editar (`PATCH`), o cliente reenvia o mesmo
+`user_kcal`; omiti-lo volta ao cálculo do servidor. `null` não é aceito na
+entrada. Um cliente que receba um item sem essas duas chaves (servidor anterior)
+não deve presumir que não havia valor informado.
+
 ## Mídia privada
 
 O app nunca recebe `service_role` e não possui policy para listar, inserir,

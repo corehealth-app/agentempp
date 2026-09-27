@@ -1896,3 +1896,97 @@ FULL SUITE RESULT: unit 0 fail; UI 1 fail em 1 de 17 classes · ISOLATED CHARACT
 ### Status ao fechar a operação V2
 
 ROBERTO BETA CANDIDATE STATUS: **BLOCKED** (gates D: credencial QA/E2E, provedor do Flow, Apple/TestFlight, documentos legais, conteúdo da Biblioteca) · REGRESSION STATUS: PARTIALLY VERIFIED · PUBLIC BRAND STATUS: PARTIALLY VERIFIED (scanner PASS; superfícies Release com conta real não inspecionadas) · IOS INTEGRATION STATUS: PARTIAL — auth/onboarding/Flow(texto)/Hoje/Histórico/Plano/Progresso/registro por texto/hidratação/rotina/fuso/Biblioteca/capas/persona/mascote/sair da conta ligados ao BFF; foto/áudio, lembretes, importação de plano, plano via Flow e peso fora (C); E2E não executado · PRODUCTION STATUS: NOT DEPLOYED · USER VISUAL ACCEPTANCE: DEFERRED TO FINAL REVIEW · FLOW REAL PROVIDER SMOKE: BLOCKED_BY_PAID_PROVIDER_AUTHORIZATION · COST / ENVIRONMENT CLOSEOUT: COMPLETE (US$ 0 nesta operação; staging KEPT; nenhum recurso pago).
+
+## Origem das calorias no editor de refeição — `RESOLVE_BETA_DESIGN_CHOICES_AND_FIX_KCAL_PROVENANCE_V1` (2026-09-27, não commitado)
+
+Base `3e796f1560a0d6d01ae2129060a280bceb1fb55f`, worktree limpa e índice vazio na entrada; autoridade revalidada por blob (dossiê `d396bbd7…`/sha256 `f0dc6dcd…`, addendum `ef97a7be`, specs `edc15330`/`427243d6`/`09d76d65`, manifesto `9ca2587a`, scanner `7986173f`).
+
+**Contrato lido antes de editar:** a entrada `user_kcal` é `z.number().nonnegative().max(20_000).optional()` (`apps/admin/src/lib/mobile-api/contracts.ts:133`) — ausente = o servidor calcula; `null` é recusado; presente = valor informado pelo paciente, que sobrepõe o cálculo e reescala P/C/F com `source: 'user_kcal'` (`packages/agent/src/meal-pipeline.ts:1501-1590`). O pending guarda `user_kcal`/`nutrition_source` (`registration-service.ts:71-112`), mas o DTO mobile só devolve `name, quantity_g, kcal, protein_g, carbs_g, fat_g` (`read-model.ts:39-54`).
+
+**Defeito:** `MealProposalEditorSeed` preenchia o campo "Calorias informadas" com o `kcal` do servidor e o editor o reenviava como `user_kcal`; abrir e salvar sem tocar nas calorias transformava o cálculo oficial em valor "informado pelo paciente". `Decimal(string:)` também lia "180,5" como 180 e texto em branco como 0 (experimento executado: `Decimal(string: "180,5") -> 180`).
+
+**RED** (build `kcal-red`, `MealProposalEditorDraftTests`, lógica extraída sem mudar comportamento para `MealProposalEditorDraft`): falharam exatamente os casos do defeito — salvar sem tocar (`user_kcal` 155,4), mudar outro campo, "180,5", branco → 0, entradas inválidas aceitas ou descartadas em silêncio (`abc`, `-5`, `20001`, `20000,5`, `1.234`, `1.234,5`, `12,3,4`, `,`, `1e3`, `12,25`) e JSON com `user_kcal`. "Proposta sem valor do servidor" já passava. **GREEN** (`kcal-green`, repetido em `kcal-final` nas fontes finais): 34 XCTest + 71 Swift Testing em 5 suítes (`MealProposalEditorDraftTests`, `RegistrationPresentationTests`, `MealRegistrationModelTests`, `RegistrationContractTests`, `LocalizationContractTests`) com 0 falhas.
+
+**Correção** (`MealProposalEditorView.swift`, catálogo, testes): valor do servidor em linha somente leitura separada (`registration.proposal.edit.official-kcal`); campo "Calorias informadas por você (opcional)" vazio por padrão; `user_kcal` omitido (nunca `null`) quando vazio; aceita dígitos com um único separador (`,` ou `.`) e até uma casa decimal, 0…20 000; entrada inválida mostra erro (`registration.proposal.edit.user-kcal.invalid`) e desabilita Salvar; Voltar não grava. Cinco chaves novas/alteradas pt-BR/en.
+
+**UI (uma invocação por classe, iPhone 17 Pro):** primeira rodada — o layout inicial (valor do servidor + rodapé dentro da primeira seção) empurrou o seletor de tipo de refeição para fora da área visível e quebrou duas asserções travadas (`Prompt13RegistrationUITests.testPendingMealEditReplacesProposal:86`, `PremiumRegistrationUITests.testProposalPrimaryConfirmAndLongTotalsAX:60`). Causa: a minha mudança. Correção: as duas primeiras seções voltaram à altura original e o valor do servidor foi para uma terceira seção; só o teste novo passou a rolar até ela (testes travados intocados). Rodada final: `Prompt13RegistrationUITests` 22/0 (inclui `testMealEditorKeepsServerCaloriesAndBackSavesNothing`), `PremiumRegistrationUITests` 3/0, `Prompt13AccessibilityUITests` 5/0.
+
+**Gates nas fontes finais:** Release BUILD SUCCEEDED, `codesign --verify --deep --strict` OK, `xcodebuild analyze` OK, scanner PASS (`PUBLIC_LEAK 0`, `HISTORICAL_ASSET 18`, `ALLOWED_TECHNICAL 237`), testes do scanner OK; identifiers 170 → 172; greps de política 0; diff de assets vazio; `git diff --check` limpo.
+
+**Limitação registrada (não coberta):** como o DTO pendente não expõe `user_kcal`/`nutrition_source`, um valor manual anterior não é reconhecido ao reabrir o editor; salvar sem redigitá-lo volta ao cálculo oficial, o que a copy do editor declara. A correção definitiva exige expor esses campos no DTO (proposta no desenho `docs/superpowers/specs/2026-09-27-performe-ai-functional-beta-c1-c5-design.md`, §1.3 e §6). Achados relacionados não corrigidos: a edição envia só o primeiro item e apaga os demais; o campo de quantidade ainda trunca "140,5" para 140.
+
+## Autorização das ferramentas, identidade das mensagens do Flow e integridade da refeição — `FIX_FLOW_AUTHORIZATION_AND_MEAL_INTEGRITY_V1` (2026-09-27)
+
+**Entrada:** HEAD `3e796f1560a0d6d01ae2129060a280bceb1fb55f`, índice vazio. Lista exata do dirty na entrada (conferida, não inferida): 4 modificados (`MealProposalEditorView.swift`, `Localizable.xcstrings`, `Prompt13RegistrationUITests.swift`, esta evidência) e 2 não rastreados (`MealProposalEditorDraftTests.swift`, desenho C1–C5 com sha256 `3853984b…`). Hashes de entrada em `$SP/flowfix/entry-hashes.txt`. Nenhuma chamada paga, migration, deploy, configuração remota, dado real, conta CI-3 ou TestFlight nesta operação (US$ 0).
+
+### S1 — autorização das ferramentas na execução (commit `026e6c2e`)
+
+- **Defeito reproduzido** com respostas de provider roteirizadas (sem LLM): no canal `mobile_flow`, a allowlist de leitura só filtrava os schemas mostrados ao modelo; o laço de execução resolvia a chamada no registro completo. RED: `gera_treino` executou 3 vezes em iterações seguidas, `registra_refeicao` chegou a criar pending, uma ferramenta retirada pela configuração executou, e no WhatsApp uma ferramenta fora da lista configurada executou.
+- **Correção:** `authorizeToolCall(name, filteredTools)` antes de qualquer efeito (parse de argumentos, pending adiado, `execute`, auditoria). Conjunto = canal ∩ configuração; o registro completo só distingue `tool_unknown` de `tool_not_authorized`. Recusa: resumo sem argumentos, nome saneado (`invalid_tool_name` fora de `[A-Za-z0-9_]{1,64}`), evento `pipeline.tool_call_denied` com `{tool, reason, channel}`, `retry_tool:false`. Afirmação falsa de gravação num canal sem ferramenta de escrita → retry de **retratação** (texto do mobile aponta o fluxo de confirmação do app; outros canais não citam app). Nudge de falsa duplicação só diz "registre TODOS" onde registrar é autorizado. Sem mudança de prompt como correção, sem `gera_*` na allowlist mobile, sem `propoe_plano_*`.
+- **Testes:** `packages/agent/src/pipeline-tool-authorization.test.ts` (15) — recusa de `gera_treino`/`gera_dieta`/`registra_refeicao` com zero escritas, ferramenta autorizada executa, retirada pela configuração não executa, nome desconhecido/caixa alterada (`GERA_TREINO`)/`delete_user` controlados em chamadas repetidas e multi-iteração, telemetria sem argumentos, WhatsApp com lista, WhatsApp sem lista (semântica "todas" preservada), retratação por canal, nudge.
+- **Revisão adversarial:** duas rodadas por subagente isolado (mesma família de modelo — **não** é revisão humana). Nenhum caminho de execução fora do conjunto autorizado. Achados corrigidos: MEDIUM de S2 (colisão `:assistant`), LOWs de nome cru no resumo, falta de retratação no mobile e retratação citando "app" em canal não-app.
+- **Risco de implantação:** no WhatsApp, `allowed_tools` não vazio passa a limitar também a execução. Antes de qualquer deploy: ler (somente leitura) a configuração de produção; o formulário de admin não lista `reclassifica_refeicao`.
+
+### S2 — identidade e idempotência das mensagens do Flow mobile (commit `026e6c2e`)
+
+- **Defeito:** `messages(provider, provider_message_id)` é único para todos os usuários, e a `Idempotency-Key` só é única por usuário. Um segundo usuário com a mesma chave recebia 500; conflito de texto devolvia a resposta antiga.
+- **Correção sem migration:** linhas novas usam `mobile_flow/<user_id>/<key>` e a resposta `…/assistant` (`/` está fora do charset da chave), com `user_id` do contexto autenticado. A `Idempotency-Key` pública não mudou; linhas legadas (chave pura, resposta `<key>:assistant`) são achadas só para o mesmo usuário e nunca reescritas. Mesma chave com texto diferente → 409 `idempotency_key_conflict`; entrada concorrente → 409 `idempotency_request_in_progress` sem chamar o Flow; resposta já gravada → replay; outra falha → turno `failed`.
+- **Testes:** `flow-chat-service.test.ts` com tabela falsa que impõe o índice único global real (9 novos): A/B mesma chave, replay, conflito, concorrência, legado, `providerMessageId` passado ao agente, 23505 → `FlowMessageAlreadyStoredError`, colisão `abcdefgh:assistant` nas duas ordens, resposta de turno legado sob id com escopo. **Limitação:** isto é modelo unitário da tabela, não integração A/B autenticada — sem stack Supabase local nesta máquina (sem CLI; os containers em execução são de outro projeto).
+- **Pendências S2 (não corrigidas):** o retry de uma entrada `failed` não passa pelo limite de 10/min; tags `[BTN:]`/`[LIST:]` geram resposta vazia no mobile; morte do processo em `maxDuration` deixa a entrada em `processing`; outros textos de prompt ainda citam ferramentas que o mobile não executa (são recusadas); em configuração parcial do WhatsApp o retry de fake-write pode citar ferramenta não autorizada (LOW).
+
+### Integridade da refeição — proveniência de `user_kcal`, itens 2…N e quantidade
+
+**DTO (aditivo, sem migration):** `safePendingItem` expõe `user_kcal` (entrada do paciente) e `nutrition_source` (fonte aplicada) de cada item, `null` quando ausentes (`apps/admin/src/lib/mobile-api/read-model.ts`; `docs/mobile/api-v1.md`). O contrato de mídia/source de C1 não foi adicionado.
+
+**iOS:** `MealProposalItemSnapshot` decodifica os dois campos e distingue "chaves ausentes" (resposta antiga → origem `unknown`) de "chaves presentes com `null`" (cálculo oficial). O rascunho `MealProposalEditorDraft` concentra a regra; o parser `MealProposalNumberParser` lê por idioma.
+
+| # | Cenário | Comportamento | Teste |
+|---|---|---|---|
+| 1 | Item calculado, salvar sem tocar | `user_kcal` omitido | `a calculated item saved untouched stays calculated` |
+| 2 | Valor informado e aplicado (`nutrition_source = user_kcal`), salvar sem tocar | mesmo `user_kcal` reenviado | `a value the patient reported and the server applied is kept…` |
+| 2b | Valor informado recusado pelo servidor (densidade) | não é reenviado como override | `a patient value the server refused is not re-sent…` |
+| 3 | Mudar outro campo | origem do item preservada | `changing another field keeps the calorie origin…` |
+| 4 | Valor digitado, com fração | `user_kcal` exato (pt-BR `180,5`/`12,25`, en `12.25`) | `a value the patient types is sent…` (10 casos) |
+| 4b | Entrada inválida/ambígua/fora de faixa | erro explícito, Salvar desabilitado | `an unreadable, ambiguous or out-of-range calorie entry…` (12 casos) |
+| 5 | Apagar um valor informado | bloqueia ("valor apagado"); volta ao cálculo só pela ação explícita "Usar cálculo do servidor" | `erasing a reported value does not silently return…`, `the explicit server-calculation action omits user_kcal…` |
+| 5b | Mudar a quantidade mantendo valor informado | aviso para conferir | `keeping a reported value while changing the quantity…` |
+| 6 | Resposta antiga sem proveniência | edição bloqueada com aviso; nada é presumido | `a response without calorie provenance blocks editing…`, `decodesMealItemCalorieProvenance` |
+| I | Proposta com 3 itens, editar o primeiro | itens 2…N reenviados na ordem, quantidade exata e só o `user_kcal` aplicado | `editing the first item keeps every other item…` |
+| Q | Quantidade `140,5` pt-BR / `140.5` en | 140,5 exato, nunca truncado; agrupada/ambígua/0/>9999/vazia recusada | `a quantity is read by the app language…` (6), `an ambiguous, grouped, empty or out-of-range quantity…` (7) |
+| Q2 | Quantidade não tocada | enviada exatamente como veio do servidor, exibida no idioma | `an untouched quantity is shown…` |
+| DTO | Proveniência de 3 itens / ausência | valores exatos / `null` | `read-model.test.ts`: `exposes each item calorie origin exactly as stored…`, `reports an absent origin as null…` |
+
+A UI continua editando só o primeiro item (não ampliada). O aviso "deixe em branco" não autoriza apagar um valor anterior: apagar bloqueia o Salvar.
+
+**RED → GREEN:** DTO (`$SP/flowfix/dto-red.log`): 3 falhas — o teste existente, que passa a esperar os dois campos, e os 2 novos. Editor (`$SP/flowfix/meal-red-unit.log`, 58 testes em 4 suítes): falharam itens 2…N perdidos (nomes, quantidades e `user_kcal` do teste de 3 itens), valor aplicado não preservado, apagar valor, mudar outro campo, quantidade truncada ou ambígua aceita, exibição por idioma e resposta sem proveniência. Já passavam no RED (declarado): item calculado sem tocar, valor recusado não reenviado, ação explícita de cálculo, casos de kcal inválida (fix da operação anterior) e a decodificação da proveniência (tipo escrito antes do teste). O teste do aviso ao mudar a quantidade entrou depois, direto no GREEN. GREEN nas fontes finais.
+
+**Incidente de UI:** uma copy mais longa do aviso de primeiro item quebrou `PremiumRegistrationUITests:60` (seletor de tipo de refeição em AXXXL) — causa minha; copy revertida ao texto original, classe 3/0.
+
+### Resultados nas fontes finais
+
+- **Backend (worktree principal):** `@mpp/agent` 1083/1083, `@mpp/admin` 667/667, `@mpp/mobile-bff` 26/26, `tsc` limpo nos três. **Árvore exata do commit S1/S2 isolada:** agent 1083/1083, admin 665/665 (sem os 2 testes do DTO), mobile-bff 24/26 (os 2 testes de superfície de fonte falham só porque o `node_modules` da árvore isolada era symlink para fora da raiz — artefato do setup; worktree temporária removida).
+- **iOS unit:** focado nas fontes finais (build 13:44) 34 XCTest + 81 Swift Testing (5 suítes) = 0 falhas. **Completo nas fontes finais** (depois da reversão da copy): 34 XCTest + 1277 Swift Testing (105 suítes) = **1311/0** (`$SP/logs/v6-v3-unit-flowfix-final-full.log`).
+- **iOS UI (uma invocação por classe, iPhone 17 Pro):** `Prompt13RegistrationUITests` 22/0, `PremiumRegistrationUITests` 3/0, `Prompt13AccessibilityUITests` 4/1 — `testAccessibilityXXXLKeepsLabelsAndControlsReachable` (`:197`, `today.next-action`: frame fora do viewport na asserção logo após a revelação). Caracterização, que **não** conta como PASS da suíte:
+  - invocação isolada da classe nas fontes finais, sob carga ≈ 6–18: falhou no mesmo teste em outro ponto (`:427`, o primeiro gesto não rolou nada — frame de `today.library` idêntico antes e depois);
+  - linha de base com as fontes iOS de `026e6c2` (worktree temporária em DerivedData próprio, removida depois): classe 5/0;
+  - A/B pré-declarado (só esse teste, 3 execuções por lado, intercaladas atual/base, todas reportadas), carga ≈ 3–7: **atual 3/3 PASS, base 3/3 PASS** (`$SP/flowfix/ab-a11y-summary.log`).
+  - O diff não toca a tela Hoje: o catálogo só ganhou chaves `registration.editor.*` e mudou o valor de `registration.editor.user-kcal`; Hoje não usa `MealProposalItemSnapshot`.
+  - Leitura: teste sensível a tempo sob carga externa, sem evidência de relação com este diff. A execução da classe na cadeia continua registrada como 4/1.
+- **Release** BUILD SUCCEEDED (45 s), `codesign --verify --deep --strict` OK, `xcodebuild analyze` OK, scanner `--baseline 7ab3e657` **PASS** (`PUBLIC_LEAK 0`, `HISTORICAL_ASSET 18`, `ALLOWED_TECHNICAL 237`, `displayName Performe AI`, `com.bodyflow.app`), testes do scanner OK; diff de assets vazio; `git diff --check` limpo; scan de segredos/PII no dirty: 0 ocorrências.
+- **Ambiente:** carga externa alta (load 1 min entre 4 e 36, processos de outros projetos, não tocados). Um `xcodebuild` travou no teardown depois do resumo e foi encerrado pelo watchdog por PID.
+
+### Status ao fechar a operação
+
+FULL SUITE RESULT: backend 0 falhas; iOS unit 1311/0; UI do editor 22/0 e 3/0; `Prompt13AccessibilityUITests` 4/1 na cadeia. As 17 classes de UI **não** foram rodadas nesta operação. · ISOLATED CHARACTERIZATION: acima; não converte a falha. · FINAL VERIFIED STATE: **REGRESSION STATUS: PARTIALLY VERIFIED**.
+
+**Consequência de implantação:** até o BFF com o DTO aditivo ser implantado, o app recebe itens sem proveniência e **bloqueia a edição** de propostas de refeição (comportamento seguro escolhido; confirmar e cancelar continuam). S1/S2 também só valem após deploy, que exige autorização explícita e leitura prévia da configuração de produção de `allowed_tools`.
+
+**Contratos e migrations pendentes (nenhum aprovado ou implantado):**
+- Contratos: `POST /meal-drafts`; `source` opcional em `propose`/`PATCH`; `source` no DTO pendente (`user_kcal`/`nutrition_source` feitos nesta operação); `POST /weight`; `GET /plan-drafts`, `GET/PATCH/DELETE /plan-drafts/:id`, `POST /plan-drafts/:id/confirm`; `POST /plan-imports`; `draft` opcional em `POST /flow/chat`; `POST /media` com `plan_document`/PDF e `duration_ms`.
+- Migrations: M1 (`weight_measured_at` + `private.apply_weight_measurement` para todos os escritores); M2 (`plan_drafts` + RLS + RPCs + `private.replace_active_training_plan` + `prescriptions.source_request_key` + chaves estrangeiras compostas); M3 (`media_assets.kind` + bucket `plan-documents` + retenção proposta).
+- Dependências: extração de texto de PDF no servidor; leitura de duração do contêiner de áudio antes do STT.
+- S1/S2: sem migration.
+
+**Pendências registradas:** retry de entrada `failed` fora do limite de 10/min; `[BTN:]`/`[LIST:]` vazios no mobile; entrada presa em `processing` se o processo morrer em `maxDuration`; textos de prompt citando ferramentas que o mobile recusa; S3 (identidade nos geradores, só pelo canal mobile); harness A/B autenticado local indisponível nesta máquina.
+
+ROBERTO BETA CANDIDATE STATUS: **BLOCKED** · PRODUCTION STATUS: **NOT DEPLOYED** · custo desta operação US$ 0.

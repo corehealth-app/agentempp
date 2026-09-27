@@ -50,6 +50,12 @@ function safePendingItem(value: Json): Record<string, string | number | null> | 
     protein_g: finiteNumber(item.protein_g),
     carbs_g: finiteNumber(item.carbs_g),
     fat_g: finiteNumber(item.fat_g),
+    // Calorie provenance already stored with the item: the patient's value as
+    // received (null when none) and the source the server applied
+    // ("user_kcal" only when that value was used). Always present, so a
+    // client can tell "no override" from a response that lacks the fields.
+    user_kcal: finiteNumber(item.user_kcal),
+    nutrition_source: stringValue(item.nutrition_source),
   }
 }
 

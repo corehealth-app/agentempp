@@ -2,9 +2,11 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   createSupabaseFlowChatStore,
   type FlowAgent,
+  FlowMessageAlreadyStoredError,
   type FlowChatStore,
   loadFlowHistory,
   type StoredFlowMessage,
+  scopedFlowProviderMessageId,
   sendFlowMessage,
 } from './flow-chat-service'
 import { MobileApiError } from './http'
@@ -141,7 +143,7 @@ describe('Flow chat service', () => {
     expect(deps.store.insertInbound).not.toHaveBeenCalled()
     expect(deps.store.retryInbound).toHaveBeenCalledWith(
       userId,
-      'mobile-flow-0002',
+      scopedFlowProviderMessageId(userId, 'mobile-flow-0002'),
       'request-flow-0002-retry',
     )
     expect(deps.agent.reply).toHaveBeenCalledOnce()
@@ -179,6 +181,329 @@ describe('Flow chat service', () => {
     expect(result.message.content).toBe('Resposta estável')
     expect(deps.store.insertInbound).not.toHaveBeenCalled()
     expect(deps.agent.reply).not.toHaveBeenCalled()
-    expect(deps.store.completeInbound).toHaveBeenCalledWith(userId, 'mobile-flow-0004')
+    expect(deps.store.completeInbound).toHaveBeenCalledWith(
+      userId,
+      scopedFlowProviderMessageId(userId, 'mobile-flow-0004'),
+    )
+  })
+})
+
+// ── Per-user message identity (S2) ────────────────────────────────────────
+// A fake `messages` table that enforces the real global unique index
+// `uniq_messages_provider_message_id_all (provider, provider_message_id)`
+// across ALL users, with the adapter's user/provider/direction filters.
+// This is a unit-level model of the table, not an authenticated A/B test
+// against a database.
+
+interface FakeRow {
+  id: string
+  userId: string
+  provider: 'mobile_flow'
+  direction: 'in' | 'out'
+  providerMessageId: string
+  content: string
+  state: StoredFlowMessage['state']
+  requestId: string
+  createdAt: string
+}
+
+class FakeMessagesTable implements FlowChatStore {
+  readonly rows: FakeRow[] = []
+  private sequence = 0
+
+  seed(row: Omit<FakeRow, 'id' | 'provider'>) {
+    this.rows.push({ ...row, id: `seed-${++this.sequence}`, provider: 'mobile_flow' })
+  }
+
+  private toStored(row: FakeRow): StoredFlowMessage {
+    return {
+      id: row.id,
+      role: row.direction === 'in' ? 'user' : 'assistant',
+      content: row.content,
+      state: row.state,
+      requestId: row.requestId,
+      createdAt: row.createdAt,
+    }
+  }
+
+  private async find(userId: string, providerMessageId: string, direction: 'in' | 'out') {
+    await Promise.resolve()
+    const row = this.rows.find(
+      (candidate) =>
+        candidate.userId === userId &&
+        candidate.provider === 'mobile_flow' &&
+        candidate.providerMessageId === providerMessageId &&
+        candidate.direction === direction,
+    )
+    return row ? this.toStored(row) : null
+  }
+
+  private async insert(
+    input: Parameters<FlowChatStore['insertInbound']>[0],
+    direction: 'in' | 'out',
+  ) {
+    await Promise.resolve()
+    if (this.rows.some((row) => row.provider === 'mobile_flow' && row.providerMessageId === input.providerMessageId)) {
+      // What the Supabase adapter surfaces for 23505 on this index.
+      throw new FlowMessageAlreadyStoredError()
+    }
+    const row: FakeRow = {
+      id: `row-${++this.sequence}`,
+      userId: input.userId,
+      provider: 'mobile_flow',
+      direction,
+      providerMessageId: input.providerMessageId,
+      content: input.content,
+      state: input.state,
+      requestId: input.requestId,
+      createdAt: input.createdAt,
+    }
+    this.rows.push(row)
+    return this.toStored(row)
+  }
+
+  private update(userId: string, providerMessageId: string, state: StoredFlowMessage['state']) {
+    for (const row of this.rows) {
+      if (row.userId === userId && row.providerMessageId === providerMessageId && row.direction === 'in') {
+        row.state = state
+      }
+    }
+  }
+
+  loadHistory = async (user: string) =>
+    this.rows.filter((row) => row.userId === user).map((row) => this.toStored(row))
+  countRecentInbound = async (user: string) =>
+    this.rows.filter((row) => row.userId === user && row.direction === 'in').length
+  findInbound = (user: string, id: string) => this.find(user, id, 'in')
+  findAssistant = (user: string, id: string) => this.find(user, id, 'out')
+  insertInbound = (input: Parameters<FlowChatStore['insertInbound']>[0]) => this.insert(input, 'in')
+  insertAssistant = (input: Parameters<FlowChatStore['insertAssistant']>[0]) => this.insert(input, 'out')
+  retryInbound = async (user: string, id: string) => this.update(user, id, 'processing')
+  completeInbound = async (user: string, id: string) => this.update(user, id, 'completed')
+  failInbound = async (user: string, id: string) => this.update(user, id, 'failed')
+}
+
+const userA = '00000000-0000-4000-8000-00000000000a'
+const userB = '00000000-0000-4000-8000-00000000000b'
+
+function flowAgent(prefix: string) {
+  const reply = vi.fn(async (input: { userId: string; text: string }) => ({
+    text: `${prefix}:${input.userId}:${input.text}`,
+    metadata: {},
+  }))
+  return { reply }
+}
+
+describe('Flow chat message identity per user', () => {
+  it('two users can use the same Idempotency-Key independently, without a 500', async () => {
+    const store = new FakeMessagesTable()
+    const agent = flowAgent('reply')
+    const deps = { store, agent }
+
+    const fromA = await sendFlowMessage(deps, {
+      userId: userA, text: 'Olá A', idempotencyKey: 'shared-key-0001', requestId: 'req-a', now,
+    })
+    const fromB = await sendFlowMessage(deps, {
+      userId: userB, text: 'Olá B', idempotencyKey: 'shared-key-0001', requestId: 'req-b', now,
+    })
+
+    expect(fromA.message.content).toBe(`reply:${userA}:Olá A`)
+    expect(fromB.message.content).toBe(`reply:${userB}:Olá B`)
+    expect(store.rows.filter((row) => row.userId === userA)).toHaveLength(2)
+    expect(store.rows.filter((row) => row.userId === userB)).toHaveLength(2)
+    expect(new Set(store.rows.map((row) => row.providerMessageId)).size).toBe(4)
+  })
+
+  it('replays the same user, key and text without calling Flow or duplicating rows', async () => {
+    const store = new FakeMessagesTable()
+    const agent = flowAgent('reply')
+    const deps = { store, agent }
+    const input = { userId: userA, text: 'Olá', idempotencyKey: 'replay-key-0001', requestId: 'req-1', now }
+
+    const first = await sendFlowMessage(deps, input)
+    const replay = await sendFlowMessage(deps, { ...input, requestId: 'req-2' })
+
+    expect(replay.message).toEqual(first.message)
+    expect(agent.reply).toHaveBeenCalledOnce()
+    expect(store.rows).toHaveLength(2)
+  })
+
+  it('refuses the same user and key with a different text as a key conflict', async () => {
+    const store = new FakeMessagesTable()
+    const agent = flowAgent('reply')
+    const deps = { store, agent }
+    await sendFlowMessage(deps, {
+      userId: userA, text: 'Primeira pergunta', idempotencyKey: 'conflict-key-01', requestId: 'req-1', now,
+    })
+
+    await expect(
+      sendFlowMessage(deps, {
+        userId: userA, text: 'Outra pergunta', idempotencyKey: 'conflict-key-01', requestId: 'req-2', now,
+      }),
+    ).rejects.toMatchObject({ status: 409, code: 'idempotency_key_conflict' })
+    expect(agent.reply).toHaveBeenCalledOnce()
+    expect(store.rows).toHaveLength(2)
+  })
+
+  it('concurrent first sends of the same user and key create one message and call Flow once', async () => {
+    const store = new FakeMessagesTable()
+    const agent = flowAgent('reply')
+    const deps = { store, agent }
+    const input = { userId: userA, text: 'Olá', idempotencyKey: 'race-key-00001', now }
+
+    const results = await Promise.allSettled([
+      sendFlowMessage(deps, { ...input, requestId: 'req-1' }),
+      sendFlowMessage(deps, { ...input, requestId: 'req-2' }),
+    ])
+
+    const fulfilled = results.filter((result) => result.status === 'fulfilled')
+    const rejected = results.filter((result) => result.status === 'rejected')
+    expect(fulfilled).toHaveLength(1)
+    expect(rejected).toHaveLength(1)
+    expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({
+      status: 409,
+      code: 'idempotency_request_in_progress',
+    })
+    expect(agent.reply).toHaveBeenCalledOnce()
+    expect(store.rows.filter((row) => row.direction === 'in')).toHaveLength(1)
+  })
+
+  it('replays a legacy (pre-scoping) conversation of the same user and leaves other users unaffected', async () => {
+    const store = new FakeMessagesTable()
+    store.seed({
+      userId: userA, direction: 'in', providerMessageId: 'legacy-key-0001', content: 'Olá antigo',
+      state: 'completed', requestId: 'req-old', createdAt: '2026-09-20T10:00:00.000Z',
+    })
+    store.seed({
+      userId: userA, direction: 'out', providerMessageId: 'legacy-key-0001:assistant', content: 'Resposta antiga',
+      state: 'completed', requestId: 'req-old', createdAt: '2026-09-20T10:00:01.000Z',
+    })
+    const agent = flowAgent('reply')
+    const deps = { store, agent }
+
+    const replay = await sendFlowMessage(deps, {
+      userId: userA, text: 'Olá antigo', idempotencyKey: 'legacy-key-0001', requestId: 'req-new', now,
+    })
+    const other = await sendFlowMessage(deps, {
+      userId: userB, text: 'Olá B', idempotencyKey: 'legacy-key-0001', requestId: 'req-b', now,
+    })
+
+    expect(replay.message.content).toBe('Resposta antiga')
+    expect(other.message.content).toBe(`reply:${userB}:Olá B`)
+    expect(agent.reply).toHaveBeenCalledOnce()
+    expect(store.rows.filter((row) => row.userId === userA)).toHaveLength(2)
+    const history = await loadFlowHistory({ store, agent }, userA, 20)
+    expect(history.messages.map((item) => item.content)).toEqual(['Olá antigo', 'Resposta antiga'])
+  })
+
+  it('hands Flow the stored message id, so the current turn is excluded from its own history', async () => {
+    const store = new FakeMessagesTable()
+    const agent = flowAgent('reply')
+
+    await sendFlowMessage({ store, agent }, {
+      userId: userA, text: 'Olá', idempotencyKey: 'context-key-001', requestId: 'req-1', now,
+    })
+
+    const inbound = store.rows.find((row) => row.direction === 'in')
+    expect(inbound).toBeDefined()
+    expect(agent.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ providerMessageId: inbound?.providerMessageId }),
+    )
+    expect(inbound?.providerMessageId).not.toBe('context-key-001')
+  })
+
+  it('reports a unique violation on the messages table as an already-stored row, not a 500', async () => {
+    const query = {
+      insert: () => query,
+      select: () => query,
+      single: async () => ({ data: null, error: { code: '23505', message: 'duplicate key value' } }),
+    }
+    const supabase = { from: () => query } as unknown as import('@mpp/db').ServiceClient
+    const store = createSupabaseFlowChatStore(supabase)
+    const input = {
+      userId: userA, content: 'Olá', providerMessageId: 'x', requestId: 'req', state: 'processing' as const,
+      createdAt: now.toISOString(),
+    }
+
+    await expect(store.insertInbound(input)).rejects.toBeInstanceOf(FlowMessageAlreadyStoredError)
+    await expect(store.insertAssistant({ ...input, state: 'completed' })).rejects.toBeInstanceOf(
+      FlowMessageAlreadyStoredError,
+    )
+  })
+})
+
+describe('Flow chat reply identity cannot collide with another key of the same user', () => {
+  it.each([
+    ['abcdefgh:assistant', 'abcdefgh'],
+    ['abcdefgh', 'abcdefgh:assistant'],
+  ])('keys %s then %s are two independent turns', async (firstKey, secondKey) => {
+    const store = new FakeMessagesTable()
+    const agent = flowAgent('reply')
+    const deps = { store, agent }
+
+    const first = await sendFlowMessage(deps, {
+      userId: userA, text: 'Primeira', idempotencyKey: firstKey, requestId: 'req-1', now,
+    })
+    const second = await sendFlowMessage(deps, {
+      userId: userA, text: 'Segunda', idempotencyKey: secondKey, requestId: 'req-2', now,
+    })
+
+    expect(first.message.content).toBe(`reply:${userA}:Primeira`)
+    expect(second.message.content).toBe(`reply:${userA}:Segunda`)
+    expect(agent.reply).toHaveBeenCalledTimes(2)
+    expect(store.rows.filter((row) => row.state === 'processing')).toEqual([])
+    expect(new Set(store.rows.map((row) => row.providerMessageId)).size).toBe(4)
+  })
+
+  it('a reply already stored for this turn is replayed, never reported as in progress', async () => {
+    const store = new FakeMessagesTable()
+    const agent = flowAgent('reply')
+    const deps = { store, agent }
+    const turn = { userId: userA, text: 'Olá', idempotencyKey: 'stored-reply-01', now }
+    // A reply row for this very turn lands between the replay check and the insert.
+    const originalInsert = store.insertAssistant
+    store.insertAssistant = async (input) => {
+      await originalInsert({ ...input, content: 'Resposta gravada antes' })
+      return originalInsert(input)
+    }
+
+    const result = await sendFlowMessage(deps, { ...turn, requestId: 'req-1' })
+
+    expect(result.message.content).toBe('Resposta gravada antes')
+    expect(store.rows.filter((row) => row.state === 'processing')).toEqual([])
+  })
+})
+
+describe('Flow chat legacy turns never write a reply id another row can hold', () => {
+  it('retrying a legacy turn stores its reply under the scoped id, even when a legacy row owns "<key>:assistant"', async () => {
+    const store = new FakeMessagesTable()
+    // User B's pre-fix inbound whose bare key happens to be "legacykey:assistant".
+    store.seed({
+      userId: userB, direction: 'in', providerMessageId: 'legacykey:assistant', content: 'Olá B',
+      state: 'completed', requestId: 'req-b-old', createdAt: '2026-09-20T09:00:00.000Z',
+    })
+    // User A's pre-fix inbound "legacykey" that failed without a reply.
+    store.seed({
+      userId: userA, direction: 'in', providerMessageId: 'legacykey', content: 'Olá A',
+      state: 'failed', requestId: 'req-a-old', createdAt: '2026-09-20T09:00:01.000Z',
+    })
+    const agent = flowAgent('reply')
+
+    const result = await sendFlowMessage({ store, agent }, {
+      userId: userA, text: 'Olá A', idempotencyKey: 'legacykey', requestId: 'req-a-new', now,
+    })
+
+    expect(result.message.content).toBe(`reply:${userA}:Olá A`)
+    expect(agent.reply).toHaveBeenCalledOnce()
+    const reply = store.rows.find((row) => row.userId === userA && row.direction === 'out')
+    expect(reply?.providerMessageId).toBe(`${scopedFlowProviderMessageId(userA, 'legacykey')}/assistant`)
+    expect(store.rows.find((row) => row.providerMessageId === 'legacykey')?.state).toBe('completed')
+
+    // A replay of the same legacy turn now finds that reply without calling Flow.
+    const replay = await sendFlowMessage({ store, agent }, {
+      userId: userA, text: 'Olá A', idempotencyKey: 'legacykey', requestId: 'req-a-replay', now,
+    })
+    expect(replay.message.content).toBe(`reply:${userA}:Olá A`)
+    expect(agent.reply).toHaveBeenCalledOnce()
   })
 })

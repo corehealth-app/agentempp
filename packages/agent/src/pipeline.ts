@@ -172,6 +172,67 @@ export function selectPipelineTools(
   )
 }
 
+export type ToolCallAuthorization =
+  | { status: 'authorized'; tool: ToolDefinition }
+  | { status: 'not_authorized' | 'unknown' }
+
+/**
+ * Dispatch boundary. A model tool call runs only when the tool is in the set
+ * this request exposed (channel policy ∩ configured tools). The full registry
+ * is consulted only to tell a withheld tool from a name that does not exist;
+ * it never authorizes a call.
+ */
+export function authorizeToolCall(
+  name: string,
+  authorizedTools: readonly ToolDefinition[],
+): ToolCallAuthorization {
+  const tool = authorizedTools.find((candidate) => candidate.name === name)
+  if (tool) return { status: 'authorized', tool }
+  return { status: getToolByName(name) ? 'not_authorized' : 'unknown' }
+}
+
+/** Telemetry keeps a model-supplied tool name only when it looks like one. */
+function telemetryToolName(name: string): string {
+  return /^[A-Za-z0-9_]{1,64}$/.test(name) ? name : 'invalid_tool_name'
+}
+
+/**
+ * The tools a fake-write retry would ask the model to call. The retry is
+ * skipped when none of them is authorized for this request, so a channel
+ * is never told to call a tool it cannot run.
+ */
+const FAKE_WRITE_RETRY_TOOLS: Record<
+  'registration' | 'correction' | 'diet_fake' | 'training_fake' | 'skip',
+  readonly string[]
+> = {
+  registration: ['registra_refeicao', 'registra_treino'],
+  correction: ['registra_refeicao', 'registra_treino'],
+  diet_fake: ['gera_dieta'],
+  training_fake: ['gera_treino'],
+  skip: ['marca_refeicao_pulada'],
+}
+
+/**
+ * Retry for a claimed write the request cannot perform (e.g. the read-only
+ * mobile Flow): take the claim back instead of asking for a tool.
+ */
+export const CHAT_WRITE_RETRACTION =
+  'SISTEMA (não é o paciente): neste canal nada é registrado, corrigido ou gerado pelo chat, e nenhuma ferramenta de gravação foi chamada neste turno. Sua resposta afirmou ter registrado, corrigido ou gerado algo que NÃO foi salvo. Reescreva sem afirmar registro, correção, cardápio ou plano salvos e oriente o paciente a usar o fluxo de confirmação do app.'
+
+/** The same retraction for any other channel: it never points to an app. */
+export const TURN_WRITE_RETRACTION =
+  'SISTEMA (não é o paciente): nenhuma ferramenta de gravação foi chamada neste turno. Sua resposta afirmou ter registrado, corrigido ou gerado algo que NÃO foi salvo. Reescreva sem afirmar registro, correção, cardápio ou plano salvos.'
+
+export function fakeWriteRetryAllowed(
+  kind: keyof typeof FAKE_WRITE_RETRY_TOOLS | null | undefined,
+  authorizedTools: readonly ToolDefinition[],
+): boolean {
+  if (!kind) return false
+  return FAKE_WRITE_RETRY_TOOLS[kind].some(
+    (name) => authorizeToolCall(name, authorizedTools).status === 'authorized',
+  )
+}
+
 interface ResolvedPipelineOptions {
   historyProvider?: string
   toolNames?: readonly string[]
@@ -576,8 +637,11 @@ async function processResolvedMessage(
           },
         })
         messages.push({ role: 'assistant', content })
-        const retryMsg =
-          fake.kind === 'skip'
+        const retryMsg = !fakeWriteRetryAllowed(fake.kind, filteredTools)
+          ? options.historyProvider === 'mobile_flow'
+            ? CHAT_WRITE_RETRACTION
+            : TURN_WRITE_RETRACTION
+          : fake.kind === 'skip'
             ? `SISTEMA (não é o paciente): o paciente confirmou que PULOU uma refeição. Você respondeu como se tivesse anotado/registrado MAS não chamou a tool \`marca_refeicao_pulada\`. Chame \`marca_refeicao_pulada(meal_type=${fake.inferredMealType ?? '<inferir do contexto>'})\` AGORA. NÃO chame \`registra_refeicao\` — não há refeição pra registrar. NÃO copie items do histórico — o paciente disse pulei, então a refeição NÃO existe.`
             : fake.kind === 'correction'
               ? 'SISTEMA (não é o paciente): você afirmou ter CORRIGIDO a refeição/treino MAS não chamou a tool. A correção NÃO foi salva — o banco ainda tem a versão antiga. Chame `registra_refeicao` com `replace=true` + `meal_type` (ou `registra_treino` pra exercício) AGORA com os itens corretos. NÃO responda ao paciente sem antes chamar a tool.'
@@ -643,7 +707,7 @@ async function processResolvedMessage(
         messages.push({ role: 'assistant', content })
         messages.push({
           role: 'user',
-          content: `SISTEMA (não é o paciente): o paciente NÃO mandou mensagem duplicada. O texto original recebido foi: "${input.text}". Processe COMO VEIO, SEM acusar duplicação. Se há múltiplos itens conectados (ex: "X e Y", "X, Y, Z" ou em linhas separadas), são itens DISTINTOS — registre TODOS. Refaça a resposta agora.`,
+          content: `SISTEMA (não é o paciente): o paciente NÃO mandou mensagem duplicada. O texto original recebido foi: "${input.text}". Processe COMO VEIO, SEM acusar duplicação. Se há múltiplos itens conectados (ex: "X e Y", "X, Y, Z" ou em linhas separadas), são itens DISTINTOS — ${authorizeToolCall('registra_refeicao', filteredTools).status === 'authorized' ? 'registre TODOS' : 'trate TODOS como itens distintos, sem afirmar que foram registrados'}. Refaça a resposta agora.`,
         })
         continue
       }
@@ -733,13 +797,30 @@ async function processResolvedMessage(
       recentUserMessages: semanticPatientText.trim() ? [semanticPatientText] : [],
     }
     for (const tc of result.toolCalls) {
-      const tool = getToolByName(tc.name)
-      if (!tool) {
-        const err = `Tool '${tc.name}' não encontrada`
-        toolCallsSummary.push({ name: tc.name, arguments: {}, error: err })
-        messages.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify({ error: err }) })
+      // Authorization comes first: nothing below (argument parsing, the
+      // deferred-pending path, execute, audit) runs for a withheld tool.
+      const authorization = authorizeToolCall(tc.name, filteredTools)
+      if (authorization.status !== 'authorized') {
+        const error = authorization.status === 'unknown' ? 'tool_unknown' : 'tool_not_authorized'
+        // The model's arguments are never kept for a refused call.
+        toolCallsSummary.push({ name: telemetryToolName(tc.name), arguments: {}, error })
+        messages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: JSON.stringify({ success: false, error, retry_tool: false }),
+        })
+        await deps.supabase.from('product_events').insert({
+          user_id: userId,
+          event: 'pipeline.tool_call_denied',
+          properties: {
+            tool: telemetryToolName(tc.name),
+            reason: error,
+            channel: options.historyProvider ?? 'whatsapp',
+          },
+        })
         continue
       }
+      const tool = authorization.tool
       let parsed: unknown
       try {
         parsed = JSON.parse(tc.arguments)

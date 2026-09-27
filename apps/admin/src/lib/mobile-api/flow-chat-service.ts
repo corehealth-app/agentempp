@@ -94,20 +94,74 @@ export async function loadFlowHistory(
   }
 }
 
+/**
+ * `messages(provider, provider_message_id)` is unique across ALL users, while
+ * an Idempotency-Key is only unique per user. The stored id therefore carries
+ * the authenticated user (never a payload value). "/" is not allowed in an
+ * Idempotency-Key, so a scoped id can never equal a legacy row's bare key.
+ */
+export function scopedFlowProviderMessageId(userId: string, idempotencyKey: string): string {
+  return `mobile_flow/${userId}/${idempotencyKey}`
+}
+
+/**
+ * Every reply is written as "<scoped inbound>/assistant" ("/" is also outside
+ * the key charset), so no key — e.g. "x:assistant", or another user's legacy
+ * row — can ever name it. A legacy turn's earlier reply, if any, is still read
+ * from its original "<key>:assistant".
+ */
+function scopedReplyProviderMessageId(userId: string, idempotencyKey: string): string {
+  return `${scopedFlowProviderMessageId(userId, idempotencyKey)}/assistant`
+}
+
+/** The row being inserted already exists (unique index on the provider id). */
+export class FlowMessageAlreadyStoredError extends Error {
+  constructor() {
+    super('Flow message already stored')
+    this.name = 'FlowMessageAlreadyStoredError'
+  }
+}
+
 export async function sendFlowMessage(
   dependencies: FlowChatDependencies,
   input: SendFlowMessageInput,
 ) {
-  const assistantProviderId = `${input.idempotencyKey}:assistant`
-  const existing = await dependencies.store.findAssistant(input.userId, assistantProviderId)
+  // The inbound this key already created: a scoped row, or a legacy
+  // (pre-scoping) row that used the bare key. Both lookups are pinned to the
+  // authenticated user, so another user's rows are never read.
+  let inboundProviderId = scopedFlowProviderMessageId(input.userId, input.idempotencyKey)
+  let legacyTurn = false
+  let existingInbound = await dependencies.store.findInbound(input.userId, inboundProviderId)
+  if (!existingInbound) {
+    const legacyInbound = await dependencies.store.findInbound(input.userId, input.idempotencyKey)
+    if (legacyInbound) {
+      existingInbound = legacyInbound
+      inboundProviderId = input.idempotencyKey
+      legacyTurn = true
+    }
+  }
+  // Same key, different text: a new request under a used key, never a replay.
+  if (existingInbound && existingInbound.content !== input.text) {
+    throw new MobileApiError(
+      409,
+      'idempotency_key_conflict',
+      'Idempotency-Key was already used with a different message',
+    )
+  }
+
+  const assistantProviderId = scopedReplyProviderMessageId(input.userId, input.idempotencyKey)
+  const existing =
+    (await dependencies.store.findAssistant(input.userId, assistantProviderId)) ??
+    (legacyTurn
+      ? await dependencies.store.findAssistant(input.userId, `${input.idempotencyKey}:assistant`)
+      : null)
   if (existing) {
-    await dependencies.store.completeInbound(input.userId, input.idempotencyKey)
+    await dependencies.store.completeInbound(input.userId, inboundProviderId)
     return { conversation_id: 'flow' as const, message: dto(existing) }
   }
 
-  const existingInbound = await dependencies.store.findInbound(input.userId, input.idempotencyKey)
   if (existingInbound) {
-    await dependencies.store.retryInbound(input.userId, input.idempotencyKey, input.requestId)
+    await dependencies.store.retryInbound(input.userId, inboundProviderId, input.requestId)
   } else {
     const since = new Date(input.now.getTime() - 60_000).toISOString()
     if ((await dependencies.store.countRecentInbound(input.userId, since)) >= 10) {
@@ -115,24 +169,49 @@ export async function sendFlowMessage(
     }
 
     const createdAt = input.now.toISOString()
-    await dependencies.store.insertInbound({
-      userId: input.userId,
-      content: input.text,
-      providerMessageId: input.idempotencyKey,
-      requestId: input.requestId,
-      state: 'processing',
-      createdAt,
-    })
+    try {
+      await dependencies.store.insertInbound({
+        userId: input.userId,
+        content: input.text,
+        providerMessageId: inboundProviderId,
+        requestId: input.requestId,
+        state: 'processing',
+        createdAt,
+      })
+    } catch (error) {
+      // The same turn was stored by a concurrent request; Flow is not called.
+      if (error instanceof FlowMessageAlreadyStoredError) {
+        throw new MobileApiError(
+          409,
+          'idempotency_request_in_progress',
+          'The same request is already being processed',
+        )
+      }
+      throw error
+    }
   }
 
+  const failTurn = async () => {
+    await dependencies.store.failInbound(input.userId, inboundProviderId).catch(() => undefined)
+    return new MobileApiError(502, 'flow_provider_failed', 'Flow is temporarily unavailable')
+  }
+
+  let reply: Awaited<ReturnType<FlowAgent['reply']>>
   try {
-    const reply = await dependencies.agent.reply({
+    reply = await dependencies.agent.reply({
       userId: input.userId,
-      providerMessageId: input.idempotencyKey,
+      // The stored id, so the agent excludes this turn from its own history.
+      providerMessageId: inboundProviderId,
       text: input.text,
       timestamp: input.now,
     })
-    const assistant = await dependencies.store.insertAssistant({
+  } catch {
+    throw await failTurn()
+  }
+
+  let assistant: StoredFlowMessage
+  try {
+    assistant = await dependencies.store.insertAssistant({
       userId: input.userId,
       content: reply.text,
       providerMessageId: assistantProviderId,
@@ -141,12 +220,33 @@ export async function sendFlowMessage(
       createdAt: new Date().toISOString(),
       metadata: reply.metadata,
     })
-    await dependencies.store.completeInbound(input.userId, input.idempotencyKey)
-    return { conversation_id: 'flow' as const, message: dto(assistant) }
-  } catch {
-    await dependencies.store.failInbound(input.userId, input.idempotencyKey).catch(() => undefined)
-    throw new MobileApiError(502, 'flow_provider_failed', 'Flow is temporarily unavailable')
+  } catch (error) {
+    // This turn's reply is already stored: replay it. Anything else fails the
+    // turn, so the inbound never stays "processing".
+    if (error instanceof FlowMessageAlreadyStoredError) {
+      const stored = await dependencies.store
+        .findAssistant(input.userId, assistantProviderId)
+        .catch(() => null)
+      if (stored) {
+        await dependencies.store.completeInbound(input.userId, inboundProviderId)
+        return { conversation_id: 'flow' as const, message: dto(stored) }
+      }
+    }
+    throw await failTurn()
   }
+
+  try {
+    await dependencies.store.completeInbound(input.userId, inboundProviderId)
+  } catch {
+    throw await failTurn()
+  }
+  return { conversation_id: 'flow' as const, message: dto(assistant) }
+}
+
+/** 23505 on the messages unique index: this exact provider id is stored. */
+function persistError(error: { code?: string } | null, message: string): Error {
+  if (error?.code === '23505') return new FlowMessageAlreadyStoredError()
+  return new Error(message)
 }
 
 type MessageRow = {
@@ -243,7 +343,7 @@ export function createSupabaseFlowChatStore(supabase: ServiceClient): FlowChatSt
         })
         .select(columns)
         .single()
-      if (error || !data) throw new Error('Unable to persist Flow input')
+      if (error || !data) throw persistError(error, 'Unable to persist Flow input')
       return mapRow(data as MessageRow)
     },
     async insertAssistant(input) {
@@ -274,7 +374,7 @@ export function createSupabaseFlowChatStore(supabase: ServiceClient): FlowChatSt
         })
         .select(columns)
         .single()
-      if (error || !data) throw new Error('Unable to persist Flow output')
+      if (error || !data) throw persistError(error, 'Unable to persist Flow output')
       return mapRow(data as MessageRow)
     },
     async retryInbound(userId, providerMessageId, requestId) {

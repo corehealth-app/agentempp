@@ -15,6 +15,8 @@ struct BodyFlowApp: App {
     @State private var model: AppFlowModel
 
     init() {
+        // Before any scene: a tap on a local reminder must reach the app.
+        LocalReminderNotificationDelegate.shared.install()
         let configuration = AppLaunchConfiguration.current()
         let runtime = PerformeRuntimeConfiguration.load(
             from: Bundle.main.infoDictionary

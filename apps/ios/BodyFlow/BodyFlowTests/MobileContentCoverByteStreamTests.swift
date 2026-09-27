@@ -223,39 +223,49 @@ private final class CoverURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func startLoading() {
-        loadingTask = Task {
-            guard let handler = await Self.registry.current() else { return }
-            let request = self.request
-            switch handler(request) {
-            case let .response(status, headers, body):
-                let response = HTTPURLResponse(
-                    url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers
-                )!
-                client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-                client?.urlProtocol(self, didLoad: body)
-                client?.urlProtocolDidFinishLoading(self)
-            case let .redirect(location):
-                let response = HTTPURLResponse(
-                    url: request.url!, statusCode: 302, httpVersion: "HTTP/1.1",
-                    headerFields: ["Location": location.absoluteString]
-                )!
-                var redirected = request
-                redirected.url = location
-                client?.urlProtocol(self, wasRedirectedTo: redirected, redirectResponse: response)
-            case let .stalled(status, headers):
-                let response = HTTPURLResponse(
-                    url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers
-                )!
-                client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-                client?.urlProtocol(self, didLoad: Data([0x89]))
-                // Never finishes: the session's cancel must end it.
-            }
+        // The Task captures a Sendable box, not `self`: whether the compiler
+        // accepts capturing this @unchecked Sendable URLProtocol directly
+        // depends on which files share its compile batch.
+        let box = CoverURLProtocolBox(instance: self)
+        loadingTask = Task { await box.instance.load() }
+    }
+
+    private func load() async {
+        guard let handler = await Self.registry.current() else { return }
+        let request = self.request
+        switch handler(request) {
+        case let .response(status, headers, body):
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers
+            )!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: body)
+            client?.urlProtocolDidFinishLoading(self)
+        case let .redirect(location):
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 302, httpVersion: "HTTP/1.1",
+                headerFields: ["Location": location.absoluteString]
+            )!
+            var redirected = request
+            redirected.url = location
+            client?.urlProtocol(self, wasRedirectedTo: redirected, redirectResponse: response)
+        case let .stalled(status, headers):
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers
+            )!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data([0x89]))
+            // Never finishes: the session's cancel must end it.
         }
     }
 
     override func stopLoading() {
         loadingTask?.cancel()
     }
+}
+
+private struct CoverURLProtocolBox: @unchecked Sendable {
+    let instance: CoverURLProtocol
 }
 
 private actor CoverHandlerRegistry {

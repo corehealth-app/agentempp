@@ -57,6 +57,7 @@ enum BodyFlowSymbol: String, CaseIterable, Sendable {
     // Profile, library and selection
     case person = "person.crop.circle"
     case preferences = "slider.horizontal.3"
+    case reminders = "bell"
     case categoryFilter = "line.3.horizontal.decrease.circle"
     case picker = "chevron.up.chevron.down"
     case save = "bookmark"

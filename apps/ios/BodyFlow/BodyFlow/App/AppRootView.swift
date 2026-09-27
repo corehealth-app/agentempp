@@ -66,10 +66,22 @@ struct AppRootView: View {
                 to: requestedAuthenticatedUserID
             )
         }
+        .task(id: isSignedOut) {
+            // No local reminder survives without a signed-in account: this
+            // also finishes a clean-up that a sign-out could not complete
+            // (for example, the app ended right after the sign-out marker).
+            guard isSignedOut else { return }
+            await (dependencies.localReminders?.scheduler ?? LocalReminderScheduler.system).clearAll()
+        }
         .onDisappear {
             onboardingRetryTask?.cancel()
             onboardingRetryTask = nil
         }
+    }
+
+    private var isSignedOut: Bool {
+        if case .signedOut = model.state { return true }
+        return false
     }
 
     @ViewBuilder

@@ -14,7 +14,9 @@ struct AppShellView: View {
     @State private var todayMascotViewModel: MascotExperienceViewModel
     @State private var flowChatModel: FlowChatModel
     @State private var contentCoverEnvironment: ContentCoverEnvironment
+    @State private var localReminders: LocalReminderModel?
     @Environment(\.locale) private var locale
+    @Environment(\.scenePhase) private var scenePhase
     let userID: String
     let dependencies: AppDependencies
     let sessionOwner: Prompt14SessionOwner
@@ -80,6 +82,20 @@ struct AppShellView: View {
                 invalidationCenter: invalidationCenter
             )
         )
+        let timeZoneStore = dependencies.patientTimeZoneStore
+        _localReminders = State(initialValue: dependencies.localReminders.map { capability in
+            LocalReminderModel(
+                userID: userID,
+                sources: capability.sources,
+                scheduler: capability.scheduler,
+                optIn: capability.optIn,
+                timeZone: { timeZoneStore.current },
+                timeZoneSettled: { timeZoneStore.isSettled },
+                // Reminders follow the real clock, never a fixture clock.
+                now: { Date() },
+                language: BodyFlowPresentationLanguage.resolve(.current)
+            )
+        })
     }
 
     var body: some View {
@@ -134,9 +150,54 @@ struct AppShellView: View {
             )
                 .environment(router)
         }
+        .task {
+            routePendingReminderTap()
+            guard let localReminders else { return }
+            // Session start: after `/me` settles the documented time zone.
+            await sessionOwner.awaitPatientTimeZoneResolution()
+            await localReminders.refresh()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            routePendingReminderTap()
+            guard let localReminders else { return }
+            Task {
+                // Settles a zone `/me` could not answer offline and follows a
+                // change of the documented zone, then re-syncs.
+                await sessionOwner.refreshPatientTimeZone()
+                await localReminders.refresh()
+            }
+        }
+        .onChange(of: invalidationCenter.revision(for: .routineList(kind: .supplement))) {
+            Task { await localReminders?.refresh() }
+        }
+        .onChange(of: invalidationCenter.revision(for: .routineList(kind: .medication))) {
+            Task { await localReminders?.refresh() }
+        }
+        .onChange(of: LocalReminderRouteInbox.shared.pending) {
+            routePendingReminderTap()
+        }
         .onDisappear {
             flowChatModel.invalidate()
             sessionOwner.invalidateSynchronously()
+            localReminders?.endSession()
+        }
+    }
+
+    /// Opens a tapped reminder only for this session's owner; a tap of
+    /// another account is discarded unopened, and nothing is recorded.
+    private func routePendingReminderTap() {
+        guard !sessionOwner.isInvalidated,
+              let tap = LocalReminderRouteInbox.shared.take(
+                  ownerKey: LocalReminderPlanner.ownerKey(for: userID)
+              ) else { return }
+        selectedTab = .today
+        router.popToRoot(in: .today)
+        if case let .routineItem(kind, itemID) = tap.destination {
+            router.navigate(
+                to: .routine(RoutineRoute(kind: kind, itemID: itemID, destination: .detail)),
+                in: .today
+            )
         }
     }
 
@@ -193,6 +254,7 @@ struct AppShellView: View {
                 accountEmail: accountEmail,
                 coachExperienceProvider: sessionOwner.coachExperience,
                 invalidationCenter: invalidationCenter,
+                localReminders: localReminders,
                 signOut: signOut
             )
         }
@@ -270,6 +332,12 @@ struct AppShellView: View {
             )
         case .flowChat:
             FlowChatView(model: flowChatModel)
+        case .localReminders:
+            if let localReminders {
+                LocalRemindersView(model: localReminders)
+            } else {
+                ScreenStateView(state: .unavailable, retryAction: {})
+            }
         }
     }
 }

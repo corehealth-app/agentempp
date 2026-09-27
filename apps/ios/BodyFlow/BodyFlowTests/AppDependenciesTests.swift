@@ -13,6 +13,8 @@ struct AppDependenciesTests {
 
         #expect(try dependencies.idempotencyKeyProvider.nextKey().value.count >= 8)
         #expect(dependencies.flowChat is DemoFlowChatRepository)
+        // The plain demonstration has no reminder source and no entry for it.
+        #expect(dependencies.localReminders == nil)
         let session = try #require(await dependencies.authentication.restoreSession())
         let state = try await dependencies.onboarding.loadState(for: session.userID)
         #expect(state.requirements.available)
@@ -59,6 +61,13 @@ struct AppDependenciesTests {
         #expect(dependencies.contentCoverSessions is MobileContentCoverSessionFactory)
         #expect(dependencies.coachPersona is MobileCoachPersonaRepository)
         #expect(dependencies.patientTimeZone.documentedIANAIdentifier == nil)
+        // Local reminders read the existing contracts over the same transport
+        // and schedule through the one real notification center.
+        let reminders = try #require(dependencies.localReminders)
+        #expect(reminders.sources.reminders is MobileReminderRepository)
+        #expect(reminders.sources.routine is MobileRoutineRepository)
+        #expect(reminders.scheduler === LocalReminderScheduler.system)
+        #expect(reminders.optIn is UserDefaultsLocalReminderOptInStore)
     }
 
     @Test("Without a transport the account row, Library, persona and covers stay unavailable")
@@ -75,6 +84,7 @@ struct AppDependenciesTests {
         #expect(dependencies.coachExperienceSessions is UnavailableCoachExperienceSessionFactory)
         #expect(dependencies.contentCoverSessions is UnavailableContentCoverSessionFactory)
         #expect(!(dependencies.coachPersona is MobileCoachPersonaRepository))
+        #expect(dependencies.localReminders == nil)
     }
 
     @Test("Missing mobile origin keeps the API client unavailable")

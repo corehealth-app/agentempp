@@ -27,6 +27,9 @@ struct AppDependencies: Sendable {
     /// `GET /me` on a real account and resets it when that session ends.
     let patientTimeZoneStore: PatientTimeZoneStore
     let flowChat: any FlowChatProviding
+    /// Local reminders on this iPhone; nil where no reminder source exists
+    /// (a plain demonstration shows no reminders entry).
+    var localReminders: LocalReminderCapability? = nil
 
     var patientTimeZone: PatientTimeZoneContext {
         patientTimeZoneStore.current
@@ -127,7 +130,12 @@ struct AppDependencies: Sendable {
                 SessionLifecycleCoordinator(
                     store: releaseSessionStore,
                     remote: releaseAuthRemote,
-                    sensitiveStateClearer: patientTimeZoneStore,
+                    // Sign-out and user switch: the time zone goes back to the
+                    // seed, and no local reminder of the ended session survives.
+                    sensitiveStateClearer: CompositeSensitiveStateClearer(clearers: [
+                        patientTimeZoneStore,
+                        LocalReminderSessionClearer(scheduler: .system),
+                    ]),
                     refreshPolicy: sessionRefreshPolicy
                 )
             } else {
@@ -425,6 +433,54 @@ struct AppDependencies: Sendable {
         }
         #endif
 
+        let localReminders: LocalReminderCapability?
+        #if DEBUG
+        if configuration.mode == .demo {
+            if configuration.prompt13Scenario != nil,
+               let permitted = DemoLocalReminderScenario.resolve(
+                   arguments: ProcessInfo.processInfo.arguments
+               ) {
+                localReminders = LocalReminderCapability(
+                    sources: LocalReminderSources(
+                        reminders: DemoReminderProvider(),
+                        routine: routine,
+                        progress: progress
+                    ),
+                    scheduler: permitted
+                        ? .system
+                        : LocalReminderScheduler(center: DeniedLocalNotificationCenter()),
+                    optIn: InMemoryLocalReminderOptInStore()
+                )
+            } else {
+                localReminders = nil
+            }
+        } else if let transport = apiClient as? MobileAPITransport {
+            localReminders = LocalReminderCapability(
+                sources: LocalReminderSources(
+                    reminders: MobileReminderRepository(transport: transport),
+                    routine: routine,
+                    progress: progress
+                ),
+                scheduler: .system,
+                optIn: UserDefaultsLocalReminderOptInStore()
+            )
+        } else {
+            localReminders = nil
+        }
+        #else
+        localReminders = (apiClient as? MobileAPITransport).map { transport in
+            LocalReminderCapability(
+                sources: LocalReminderSources(
+                    reminders: MobileReminderRepository(transport: transport),
+                    routine: routine,
+                    progress: progress
+                ),
+                scheduler: .system,
+                optIn: UserDefaultsLocalReminderOptInStore()
+            )
+        }
+        #endif
+
         let onboarding: any OnboardingRepository
         #if DEBUG
         if configuration.mode == .demo {
@@ -474,7 +530,8 @@ struct AppDependencies: Sendable {
             timeProvider: timeProvider,
             idempotencyKeyProvider: idempotencyKeyProvider,
             patientTimeZoneStore: patientTimeZoneStore,
-            flowChat: flowChat
+            flowChat: flowChat,
+            localReminders: localReminders
         )
     }
 }

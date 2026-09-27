@@ -1957,6 +1957,178 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Enviar mensagem" } }
       }
     },
+    "reminders.action.activate" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Turn on reminders on this iPhone" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ativar lembretes neste iPhone" } }
+    } },
+    "reminders.action.deactivate" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Turn off on this iPhone" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Desativar neste iPhone" } }
+    } },
+    "reminders.action.open-settings" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Open Settings" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Abrir Ajustes" } }
+    } },
+    "reminders.action.refresh" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Update now" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Atualizar agora" } }
+    } },
+    "reminders.coverage.sync-note" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Reminders follow the app's last sync; nothing is sent by the server in this version. Focus modes and iPhone settings can silence or delay them." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Os lembretes seguem a última sincronização do app; nada é enviado pelo servidor nesta versão. Modos de Foco e ajustes do iPhone podem silenciá-los ou atrasá-los." } }
+    } },
+    "reminders.coverage.until" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Covered until %@. Open the app before then to keep receiving reminders." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Cobertura até %@. Abra o app antes disso para continuar recebendo lembretes." } }
+    } },
+    "reminders.notification.category.content" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Content reminder" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Lembrete de conteúdo" } }
+    } },
+    "reminders.notification.category.hydration" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Hydration reminder" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Lembrete de hidratação" } }
+    } },
+    "reminders.notification.category.meal" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Meal reminder" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Lembrete de refeição" } }
+    } },
+    "reminders.notification.category.reengagement" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Performe AI reminder" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Lembrete do Performe AI" } }
+    } },
+    "reminders.notification.category.reevaluation" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Reassessment reminder" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Lembrete de reavaliação" } }
+    } },
+    "reminders.notification.category.workout" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Workout reminder" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Lembrete de treino" } }
+    } },
+    "reminders.notification.generic.body" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Tap to see what's scheduled." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Toque para ver o que está programado." } }
+    } },
+    "reminders.notification.generic.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Routine reminder" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Lembrete da rotina" } }
+    } },
+    "reminders.notification.name.body" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Tap to see it in your routine." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Toque para ver na sua rotina." } }
+    } },
+    "reminders.notification.renewal.body" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Open the app to keep receiving reminders." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Abra o app para continuar recebendo lembretes." } }
+    } },
+    "reminders.notification.renewal.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Performe AI reminders" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Lembretes do Performe AI" } }
+    } },
+    "reminders.privacy.name" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Lock screen: the name you entered." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Tela bloqueada: o nome que você informou." } }
+    } },
+    "reminders.privacy.name_and_dose" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Lock screen: the name and dose you entered." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Tela bloqueada: o nome e a dose que você informou." } }
+    } },
+    "reminders.privacy.private" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Lock screen: a generic reminder, with no name or dose." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Tela bloqueada: um lembrete genérico, sem nome nem dose." } }
+    } },
+    "reminders.screen.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Reminders" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Lembretes" } }
+    } },
+    "reminders.silenced.note" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "A reminder that isn't sent here doesn't change your routine: the item stays as it is in Today and Routine." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Um lembrete que não é enviado aqui não muda a sua rotina: o item continua como está em Hoje e na Rotina." } }
+    } },
+    "reminders.skipped.beyond_budget" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "After the last covered time (scheduled at a later sync)" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Depois do último horário coberto (agendados numa próxima sincronização)" } }
+    } },
+    "reminders.skipped.daily_limit" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Above your daily limit" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Acima do seu limite diário" } }
+    } },
+    "reminders.skipped.no_reevaluation_date" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Reassessment without a scheduled date" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Reavaliação sem data marcada" } }
+    } },
+    "reminders.skipped.nonexistent_local_time" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Time skipped by a daylight-saving change" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Horário pulado por mudança de horário de verão" } }
+    } },
+    "reminders.skipped.not_accepted" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Not accepted by the iPhone" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não aceitos pelo iPhone" } }
+    } },
+    "reminders.skipped.quiet_hours" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "During your quiet hours" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "No seu horário de silêncio" } }
+    } },
+    "reminders.skipped.section" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Not scheduled" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não agendados" } }
+    } },
+    "reminders.status.loading" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Checking reminders…" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Conferindo os lembretes…" } }
+    } },
+    "reminders.status.none" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "No routine time or active reminder to schedule." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Nenhum horário da rotina ou lembrete ativo para agendar." } }
+    } },
+    "reminders.status.not-enabled" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Reminders are off on this iPhone." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Os lembretes estão desativados neste iPhone." } }
+    } },
+    "reminders.status.permission-denied" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Notifications for Performe AI are off in iPhone Settings. Nothing is scheduled." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "As notificações do Performe AI estão desativadas nos Ajustes do iPhone. Nada foi agendado." } }
+    } },
+    "reminders.status.preferences-off" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Your notification preferences are off. Nothing is scheduled." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Suas preferências de notificação estão desativadas. Nada foi agendado." } }
+    } },
+    "reminders.status.scheduled" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Reminders scheduled on this iPhone: %lld" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Lembretes agendados neste iPhone: %lld" } }
+    } },
+    "reminders.status.time-zone-missing" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Your time zone isn't set yet. Nothing is scheduled." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Seu fuso horário ainda não foi definido. Nada foi agendado." } }
+    } },
+    "reminders.status.unavailable" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Couldn't update reminders right now. Anything scheduled before stays as it was." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não foi possível atualizar os lembretes agora. O que já estava agendado continua como estava." } }
+    } },
+    "reminders.summary.attention" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Needs attention" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Precisa de atenção" } }
+    } },
+    "reminders.summary.checking" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Checking…" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Conferindo…" } }
+    } },
+    "reminders.summary.denied" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Blocked in Settings" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Bloqueados nos Ajustes" } }
+    } },
+    "reminders.summary.none" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Nothing to schedule" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Nada para agendar" } }
+    } },
+    "reminders.summary.off" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Off" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Desativados" } }
+    } },
+    "reminders.summary.on" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "On" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ativados" } }
+    } },
     "state.loading.title" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading" } },
@@ -3304,6 +3476,10 @@
     "profile.preferences.detail-title" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Details" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Detalhes" } }
+    } },
+    "profile.reminders.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Reminders on this iPhone" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Lembretes neste iPhone" } }
     } },
     "profile.preferences.section" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Preferences" } },

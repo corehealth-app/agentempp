@@ -17,6 +17,8 @@ struct ProfileRootView: View {
     /// Leaves the signed-in account; only a real account offers it, so the
     /// locked demonstration never shows an account section.
     private let signOut: (@MainActor () async -> Void)?
+    /// This session's local reminders; nil where no reminder source exists.
+    private let localReminders: LocalReminderModel?
 
     @State private var selectedPersona: CoachPersona?
     @State private var personaEditor: CoachPersonaEditorModel?
@@ -34,6 +36,7 @@ struct ProfileRootView: View {
         coachExperienceProvider: (any CoachExperienceProviding)? = nil,
         invalidationCenter: FeatureInvalidationCenter? = nil,
         retryAction: @escaping @MainActor () -> Void = {},
+        localReminders: LocalReminderModel? = nil,
         signOut: (@MainActor () async -> Void)? = nil
     ) {
         self.userID = userID
@@ -44,6 +47,7 @@ struct ProfileRootView: View {
         self.invalidationCenter = invalidationCenter ?? FeatureInvalidationCenter()
         self.retryAction = retryAction
         self.signOut = signOut
+        self.localReminders = localReminders
         _selectedPersona = State(initialValue: nil)
         _personaEditor = State(initialValue: nil)
     }
@@ -115,6 +119,22 @@ struct ProfileRootView: View {
                 .buttonStyle(.bodyFlowRow)
                 .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                 .accessibilityIdentifier("profile.coach-persona")
+
+                if let localReminders {
+                    NavigationLink(value: AppRoute.localReminders) {
+                        FeatureActionLabel(
+                            title: copy("profile.reminders.title"),
+                            detail: LocalReminderPresentation.summary(
+                                localReminders.status,
+                                language: BodyFlowPresentationLanguage.resolve(locale)
+                            ),
+                            systemImage: BodyFlowSymbol.reminders.systemName
+                        )
+                    }
+                    .buttonStyle(.bodyFlowRow)
+                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                    .accessibilityIdentifier("profile.reminders")
+                }
 
                 // Demonstration-only rows: a real account has no local
                 // notification fixture or demo preferences destination.

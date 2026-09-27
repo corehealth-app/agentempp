@@ -118,6 +118,26 @@ final class Prompt14SessionOwner {
         await timeZoneResolution?.value
     }
 
+    /// Reads `/me` again through the same gate (back in the foreground): a
+    /// zone that could not be read offline gets settled, and a change of the
+    /// documented zone is followed. A closed session never writes it.
+    func refreshPatientTimeZone() async {
+        await timeZoneResolution?.value
+        guard !ended, !gate.isClosed else { return }
+        let meReference = meReference
+        let gate = gate
+        let response = try? await gate.perform {
+            guard let me = meReference.current() else {
+                throw CancellationError()
+            }
+            return try await me.me()
+        }
+        guard let response, !gate.isClosed else { return }
+        patientTimeZoneStore.resolve(
+            documentedIANAIdentifier: response.data.timezone
+        )
+    }
+
     func invalidateSynchronously() {
         gate.close()
     }

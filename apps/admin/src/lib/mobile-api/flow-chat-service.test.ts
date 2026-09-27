@@ -29,11 +29,11 @@ function message(overrides: Partial<StoredFlowMessage> = {}): StoredFlowMessage 
 function dependencies(overrides: Partial<FlowChatStore> = {}) {
   const store: FlowChatStore = {
     loadHistory: vi.fn(async () => []),
-    countRecentInbound: vi.fn(async () => 0),
+    countRecentExecutions: vi.fn(async () => 0),
     findInbound: vi.fn(async () => null),
     findAssistant: vi.fn(async () => null),
     insertInbound: vi.fn(async () => message({ state: 'processing' })),
-    retryInbound: vi.fn(async () => undefined),
+    transitionInbound: vi.fn(async () => true),
     insertAssistant: vi.fn(async () =>
       message({ role: 'assistant', content: 'Oi!', id: 'assistant-1' }),
     ),
@@ -127,7 +127,7 @@ describe('Flow chat service', () => {
     expect(deps.store.insertAssistant).not.toHaveBeenCalled()
   })
 
-  it('reuses a failed inbound when retrying the same idempotency key', async () => {
+  it('reuses a failed inbound when retrying the same idempotency key, as a counted execution', async () => {
     const failedInbound = message({ state: 'failed', content: 'Olá' })
     const deps = dependencies({ findInbound: vi.fn(async () => failedInbound) })
 
@@ -139,19 +139,22 @@ describe('Flow chat service', () => {
       now,
     })
 
-    expect(deps.store.countRecentInbound).not.toHaveBeenCalled()
+    // A retry can reach the provider, so it runs through the per-minute limit
+    // (before this change it skipped it): checked before, and confirmed after
+    // the execution is recorded.
+    expect(deps.store.countRecentExecutions).toHaveBeenCalledTimes(2)
     expect(deps.store.insertInbound).not.toHaveBeenCalled()
-    expect(deps.store.retryInbound).toHaveBeenCalledWith(
+    expect(deps.store.transitionInbound).toHaveBeenCalledWith(
       userId,
       scopedFlowProviderMessageId(userId, 'mobile-flow-0002'),
-      'request-flow-0002-retry',
+      expect.objectContaining({ from: 'failed', to: 'processing', requestId: 'request-flow-0002-retry' }),
     )
     expect(deps.agent.reply).toHaveBeenCalledOnce()
     expect(result.message.role).toBe('assistant')
   })
 
   it('rate limits per authenticated patient before persistence or provider use', async () => {
-    const deps = dependencies({ countRecentInbound: vi.fn(async () => 10) })
+    const deps = dependencies({ countRecentExecutions: vi.fn(async () => 10) })
 
     await expect(
       sendFlowMessage(deps, {
@@ -205,6 +208,7 @@ interface FakeRow {
   state: StoredFlowMessage['state']
   requestId: string
   createdAt: string
+  attempt?: StoredFlowMessage['attempt']
 }
 
 class FakeMessagesTable implements FlowChatStore {
@@ -223,6 +227,7 @@ class FakeMessagesTable implements FlowChatStore {
       state: row.state,
       requestId: row.requestId,
       createdAt: row.createdAt,
+      attempt: row.attempt ?? null,
     }
   }
 
@@ -257,6 +262,7 @@ class FakeMessagesTable implements FlowChatStore {
       state: input.state,
       requestId: input.requestId,
       createdAt: input.createdAt,
+      attempt: input.attempt ?? null,
     }
     this.rows.push(row)
     return this.toStored(row)
@@ -272,13 +278,38 @@ class FakeMessagesTable implements FlowChatStore {
 
   loadHistory = async (user: string) =>
     this.rows.filter((row) => row.userId === user).map((row) => this.toStored(row))
-  countRecentInbound = async (user: string) =>
-    this.rows.filter((row) => row.userId === user && row.direction === 'in').length
+  countRecentExecutions = async (user: string, since: string) =>
+    this.rows
+      .filter((row) => row.userId === user && row.direction === 'in')
+      .reduce(
+        (total, row) =>
+          total +
+          (row.createdAt >= since ? 1 : 0) +
+          (row.attempt?.retryStartedAt ?? []).filter((time) => time >= since).length,
+        0,
+      )
   findInbound = (user: string, id: string) => this.find(user, id, 'in')
   findAssistant = (user: string, id: string) => this.find(user, id, 'out')
   insertInbound = (input: Parameters<FlowChatStore['insertInbound']>[0]) => this.insert(input, 'in')
   insertAssistant = (input: Parameters<FlowChatStore['insertAssistant']>[0]) => this.insert(input, 'out')
-  retryInbound = async (user: string, id: string) => this.update(user, id, 'processing')
+  transitionInbound = async (
+    user: string,
+    id: string,
+    change: Parameters<FlowChatStore['transitionInbound']>[2],
+  ) => {
+    await Promise.resolve()
+    const row = this.rows.find(
+      (candidate) => candidate.userId === user && candidate.providerMessageId === id && candidate.direction === 'in',
+    )
+    if (!row || row.state !== change.from) return false
+    // The same attempt binding as the adapter's conditional update.
+    if ((row.attempt?.startedAt ?? null) !== change.expectedAttemptStartedAt) return false
+    if (change.expectedRequestId !== undefined && row.requestId !== change.expectedRequestId) return false
+    row.state = change.to
+    row.requestId = change.requestId
+    row.attempt = change.attempt
+    return true
+  }
   completeInbound = async (user: string, id: string) => this.update(user, id, 'completed')
   failInbound = async (user: string, id: string) => this.update(user, id, 'failed')
 }

@@ -58,7 +58,7 @@ import { dedupeMealItems } from './meal-item-dedup.js'
 // (registraRefeicao → arquivo dedicado na próxima sprint). Re-exportados aqui
 // pra preservar API pública dos 6 importadores externos.
 import type { ToolDefinition } from './tools/types.js'
-export type { ToolContext, ToolDefinition } from './tools/types.js'
+export type { GeneratorIdentity, ToolContext, ToolDefinition } from './tools/types.js'
 
 // ----------------------------------------------------------------------------
 // cadastra_dados_iniciais — popula user_profiles durante onboarding
@@ -3308,6 +3308,7 @@ export const geraDieta: ToolDefinition = {
     }
     const plan = await generateDietPlan(llm, ctx.supabase, {
       userId: ctx.userId,
+      identity: ctx.assistantIdentity ?? 'legacy',
       profile: {
         name: u?.name ?? null,
         sex: (p?.sex as 'masculino' | 'feminino' | null) ?? null,
@@ -3478,6 +3479,7 @@ export const geraTreino: ToolDefinition = {
     }
     const plan = await generateTrainingPlan(llm, ctx.supabase, {
       userId: ctx.userId,
+      identity: ctx.assistantIdentity ?? 'legacy',
       profile: {
         name: u?.name ?? null,
         sex: (p?.sex as 'masculino' | 'feminino' | null) ?? null,

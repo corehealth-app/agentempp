@@ -58,6 +58,7 @@ import {
 } from './pipeline-state-store.js'
 import {
   makeOnboardingButtonId,
+  flattenLegacyTagsForApp,
   parseOnboardingButtonTag,
   parseOnboardingListTag,
 } from './onboarding-button.js'
@@ -712,6 +713,15 @@ async function processResolvedMessage(
         continue
       }
 
+      // The mobile Flow has no WhatsApp buttons/lists: legacy tags become
+      // plain text there (see flattenLegacyTagsForApp), never an interactive
+      // payload the app would drop, leaving an empty reply.
+      if (options.historyProvider === 'mobile_flow') {
+        finalText = flattenLegacyTagsForApp(content)
+        messages.push({ role: 'assistant', content })
+        break
+      }
+
       // Roberto 2026-06-01: botões no onboarding. Se o LLM emitiu tag
       // [BTN:field:opt1=val1|opt2=val2] no texto, transforma em interactive.
       // Só pra fields enum suportados (sex, hunger_level, water_intake,
@@ -795,6 +805,10 @@ async function processResolvedMessage(
       // historico em guardas semanticas: uma mencao antiga de "jantar" ou
       // "corrige" nao pode autorizar a gravacao atual.
       recentUserMessages: semanticPatientText.trim() ? [semanticPatientText] : [],
+      // Set only here, from the server-side channel (never from a payload):
+      // plan generators speak as Flow on the mobile channel, and keep the
+      // current identity everywhere else.
+      ...(options.historyProvider === 'mobile_flow' ? { assistantIdentity: 'flow' as const } : {}),
     }
     for (const tc of result.toolCalls) {
       // Authorization comes first: nothing below (argument parsing, the

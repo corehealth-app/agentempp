@@ -4,6 +4,29 @@ import { MobileApiError } from './http'
 export type FlowMessageRole = 'user' | 'assistant'
 export type FlowMessageState = 'processing' | 'completed' | 'failed'
 
+/** Executions (first attempts and retries) a patient may start per rolling minute. */
+export const FLOW_EXECUTIONS_PER_MINUTE = 10
+
+/**
+ * How long an execution attempt owns its turn. It mirrors the in-progress
+ * window of `claim_mobile_api_request` (10 minutes) and outlives the route's
+ * `maxDuration` (300 s), so a `processing` turn older than this belongs to an
+ * invocation that has provably ended — it is never "possibly still running".
+ */
+export const FLOW_EXECUTION_LEASE_MS = 10 * 60_000
+
+/**
+ * The current execution attempt of an inbound turn, kept in its raw_payload.
+ * `providerStartedAt` is written right before Flow (and so the paid provider)
+ * is called: when an attempt died without it, nothing effective happened.
+ */
+export interface FlowInboundAttempt {
+  startedAt: string
+  providerStartedAt: string | null
+  /** Start time of every retry execution of this turn (newest last, bounded). */
+  retryStartedAt: string[]
+}
+
 export interface StoredFlowMessage {
   id: string
   role: FlowMessageRole
@@ -11,6 +34,8 @@ export interface StoredFlowMessage {
   state: FlowMessageState
   requestId: string
   createdAt: string
+  /** Inbound turns only; null for rows written before attempts were recorded. */
+  attempt?: FlowInboundAttempt | null
 }
 
 interface NewFlowMessage {
@@ -21,18 +46,39 @@ interface NewFlowMessage {
   state: FlowMessageState
   createdAt: string
   metadata?: Record<string, unknown>
+  attempt?: FlowInboundAttempt
+}
+
+export interface FlowInboundTransition {
+  /** The change only applies while the turn is still in this state… */
+  from: FlowMessageState
+  to: FlowMessageState
+  requestId: string
+  attempt: FlowInboundAttempt
+  /** …and still in the attempt this request observed (null: a row written
+   * before attempts were recorded), so a stale view never wins. */
+  expectedAttemptStartedAt: string | null
+  /** When set, the attempt must also still belong to this request. */
+  expectedRequestId?: string
+  errorCode?: string
 }
 
 export interface FlowChatStore {
   loadHistory(userId: string, limit: number): Promise<StoredFlowMessage[]>
-  countRecentInbound(userId: string, since: string): Promise<number>
+  /** First attempts created since `since`, plus every retry started since then. */
+  countRecentExecutions(userId: string, since: string): Promise<number>
   findInbound(userId: string, providerMessageId: string): Promise<StoredFlowMessage | null>
   findAssistant(userId: string, providerMessageId: string): Promise<StoredFlowMessage | null>
   insertInbound(input: NewFlowMessage): Promise<StoredFlowMessage>
-  retryInbound(userId: string, providerMessageId: string, requestId: string): Promise<void>
+  /** Compare-and-set on the turn's state; false when another request changed it first. */
+  transitionInbound(
+    userId: string,
+    providerMessageId: string,
+    change: FlowInboundTransition,
+  ): Promise<boolean>
   insertAssistant(input: NewFlowMessage): Promise<StoredFlowMessage>
   completeInbound(userId: string, providerMessageId: string): Promise<void>
-  failInbound(userId: string, providerMessageId: string): Promise<void>
+  failInbound(userId: string, providerMessageId: string, code?: string): Promise<void>
 }
 
 export interface FlowAgent {
@@ -88,7 +134,8 @@ export async function loadFlowHistory(
   return {
     conversation_id: 'flow' as const,
     messages: rows
-      .slice()
+      // A reply stored empty before tags were flattened is not a message.
+      .filter((row) => row.role !== 'assistant' || row.content.trim().length > 0)
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
       .map(dto),
   }
@@ -120,6 +167,155 @@ export class FlowMessageAlreadyStoredError extends Error {
     super('Flow message already stored')
     this.name = 'FlowMessageAlreadyStoredError'
   }
+}
+
+const MAX_RECORDED_RETRIES = 20
+
+function inProgress(): MobileApiError {
+  return new MobileApiError(
+    409,
+    'idempotency_request_in_progress',
+    'The same request is already being processed',
+  )
+}
+
+function providerFailed(): MobileApiError {
+  return new MobileApiError(502, 'flow_provider_failed', 'Flow is temporarily unavailable')
+}
+
+/**
+ * Every execution that can reach the provider or a tool — a first attempt, a
+ * retry of a failed turn, or the continuation of a turn whose invocation died
+ * before the provider — is counted here. A replay of a stored reply is not.
+ */
+async function assertExecutionBudget(dependencies: FlowChatDependencies, input: SendFlowMessageInput) {
+  const since = new Date(input.now.getTime() - 60_000).toISOString()
+  const executions = await dependencies.store.countRecentExecutions(input.userId, since)
+  if (executions >= FLOW_EXECUTIONS_PER_MINUTE) {
+    throw new MobileApiError(429, 'flow_rate_limited', 'Please wait before sending again')
+  }
+}
+
+function retryAttempt(previous: FlowInboundAttempt | null | undefined, now: string): FlowInboundAttempt {
+  return {
+    startedAt: now,
+    providerStartedAt: null,
+    retryStartedAt: [...(previous?.retryStartedAt ?? []), now].slice(-MAX_RECORDED_RETRIES),
+  }
+}
+
+/**
+ * Decides what an existing inbound turn (no stored reply) may do now, and
+ * claims it for this request. Returns the attempt this request now owns.
+ */
+async function resumeTurn(
+  dependencies: FlowChatDependencies,
+  input: SendFlowMessageInput,
+  providerMessageId: string,
+  inbound: StoredFlowMessage,
+): Promise<FlowInboundAttempt> {
+  const store = dependencies.store
+  const nowIso = input.now.toISOString()
+
+  if (inbound.state === 'processing') {
+    const startedAt = inbound.attempt?.startedAt ?? inbound.createdAt
+    // The attempt may still be running: never execute it a second time.
+    if (input.now.getTime() - new Date(startedAt).getTime() < FLOW_EXECUTION_LEASE_MS) {
+      throw inProgress()
+    }
+    // Its invocation has ended. Close it first, so only one request recovers
+    // it — and only the attempt this request saw.
+    const closed = await store.transitionInbound(input.userId, providerMessageId, {
+      from: 'processing',
+      to: 'failed',
+      requestId: inbound.requestId,
+      attempt: inbound.attempt ?? { startedAt, providerStartedAt: null, retryStartedAt: [] },
+      expectedAttemptStartedAt: inbound.attempt?.startedAt ?? null,
+      errorCode: 'flow_turn_interrupted',
+    })
+    if (!closed) throw inProgress()
+    // The provider may have been called (and charged) and its effects are
+    // unknown — or, for a row without markers, cannot be known. The turn is
+    // failed; only a later explicit retry runs it again.
+    if (!inbound.attempt || inbound.attempt.providerStartedAt !== null) {
+      throw providerFailed()
+    }
+    // It died before the provider: nothing effective happened; continue below
+    // as a new execution of a failed turn.
+  }
+
+  // A failed turn (or, defensively, a completed one whose reply is missing)
+  // runs again only as a new, counted execution.
+  await assertExecutionBudget(dependencies, input)
+  const attempt = retryAttempt(inbound.attempt, nowIso)
+  let claimed: boolean
+  try {
+    claimed = await store.transitionInbound(input.userId, providerMessageId, {
+      from: inbound.state === 'completed' ? 'completed' : 'failed',
+      to: 'processing',
+      requestId: input.requestId,
+      attempt,
+      expectedAttemptStartedAt: inbound.attempt?.startedAt ?? null,
+    })
+  } catch {
+    // The claim may or may not have been written.
+    await releaseTurn(dependencies, input, providerMessageId, attempt, 'flow_provider_failed')
+    throw providerFailed()
+  }
+  if (!claimed) throw inProgress()
+  return attempt
+}
+
+/**
+ * Best effort: a turn this request recorded as `processing` goes back to
+ * `failed` (only if it is still this request's attempt), so a storage error
+ * never leaves it "in progress" for the whole lease. The provider was not
+ * called on any path that uses it.
+ */
+async function releaseTurn(
+  dependencies: FlowChatDependencies,
+  input: SendFlowMessageInput,
+  providerMessageId: string,
+  attempt: FlowInboundAttempt,
+  errorCode: string,
+) {
+  await dependencies.store
+    .transitionInbound(input.userId, providerMessageId, {
+      from: 'processing',
+      to: 'failed',
+      requestId: input.requestId,
+      attempt,
+      expectedAttemptStartedAt: attempt.startedAt,
+      expectedRequestId: input.requestId,
+      errorCode,
+    })
+    .catch(() => false)
+}
+
+/**
+ * The count-then-record above is not atomic across different keys, so the
+ * execution is checked again once recorded: counting itself, a request that
+ * finds more than the limit gives its turn back (failed, never deleted) and
+ * is refused. Concurrent bursts can refuse more than strictly needed; they
+ * can never let more than the limit reach the provider.
+ */
+async function confirmExecutionBudget(
+  dependencies: FlowChatDependencies,
+  input: SendFlowMessageInput,
+  providerMessageId: string,
+  attempt: FlowInboundAttempt,
+) {
+  const since = new Date(input.now.getTime() - 60_000).toISOString()
+  let executions: number
+  try {
+    executions = await dependencies.store.countRecentExecutions(input.userId, since)
+  } catch {
+    await releaseTurn(dependencies, input, providerMessageId, attempt, 'flow_provider_failed')
+    throw providerFailed()
+  }
+  if (executions <= FLOW_EXECUTIONS_PER_MINUTE) return
+  await releaseTurn(dependencies, input, providerMessageId, attempt, 'flow_rate_limited')
+  throw new MobileApiError(429, 'flow_rate_limited', 'Please wait before sending again')
 }
 
 export async function sendFlowMessage(
@@ -156,19 +352,21 @@ export async function sendFlowMessage(
       ? await dependencies.store.findAssistant(input.userId, `${input.idempotencyKey}:assistant`)
       : null)
   if (existing) {
+    // A reply stored empty before tags were flattened is never replayed as a
+    // successful turn (and is not re-executed: the patient sends it again).
+    if (existing.content.trim().length === 0) throw providerFailed()
     await dependencies.store.completeInbound(input.userId, inboundProviderId)
     return { conversation_id: 'flow' as const, message: dto(existing) }
   }
 
+  let attempt: FlowInboundAttempt
   if (existingInbound) {
-    await dependencies.store.retryInbound(input.userId, inboundProviderId, input.requestId)
+    attempt = await resumeTurn(dependencies, input, inboundProviderId, existingInbound)
   } else {
-    const since = new Date(input.now.getTime() - 60_000).toISOString()
-    if ((await dependencies.store.countRecentInbound(input.userId, since)) >= 10) {
-      throw new MobileApiError(429, 'flow_rate_limited', 'Please wait before sending again')
-    }
+    await assertExecutionBudget(dependencies, input)
 
     const createdAt = input.now.toISOString()
+    attempt = { startedAt: createdAt, providerStartedAt: null, retryStartedAt: [] }
     try {
       await dependencies.store.insertInbound({
         userId: input.userId,
@@ -177,24 +375,46 @@ export async function sendFlowMessage(
         requestId: input.requestId,
         state: 'processing',
         createdAt,
+        attempt,
       })
     } catch (error) {
       // The same turn was stored by a concurrent request; Flow is not called.
-      if (error instanceof FlowMessageAlreadyStoredError) {
-        throw new MobileApiError(
-          409,
-          'idempotency_request_in_progress',
-          'The same request is already being processed',
-        )
-      }
-      throw error
+      if (error instanceof FlowMessageAlreadyStoredError) throw inProgress()
+      // Any other error may still have written the row.
+      await releaseTurn(dependencies, input, inboundProviderId, attempt, 'flow_provider_failed')
+      throw providerFailed()
     }
   }
 
   const failTurn = async () => {
-    await dependencies.store.failInbound(input.userId, inboundProviderId).catch(() => undefined)
-    return new MobileApiError(502, 'flow_provider_failed', 'Flow is temporarily unavailable')
+    await dependencies.store
+      .failInbound(input.userId, inboundProviderId, 'flow_provider_failed')
+      .catch(() => undefined)
+    return providerFailed()
   }
+
+  await confirmExecutionBudget(dependencies, input, inboundProviderId, attempt)
+
+  // Recorded before the provider is called: if this invocation dies from here
+  // on, the next one knows the provider may have run and does not repeat it.
+  const providerAttempt: FlowInboundAttempt = { ...attempt, providerStartedAt: input.now.toISOString() }
+  let owned: boolean
+  try {
+    owned = await dependencies.store.transitionInbound(input.userId, inboundProviderId, {
+      from: 'processing',
+      to: 'processing',
+      requestId: input.requestId,
+      attempt: providerAttempt,
+      expectedAttemptStartedAt: attempt.startedAt,
+      expectedRequestId: input.requestId,
+    })
+  } catch {
+    // The provider was not called: give the turn back as failed so a retry
+    // can run it, instead of leaving it "processing" for the whole lease.
+    await releaseTurn(dependencies, input, inboundProviderId, attempt, 'flow_provider_failed')
+    throw providerFailed()
+  }
+  if (!owned) throw inProgress()
 
   let reply: Awaited<ReturnType<FlowAgent['reply']>>
   try {
@@ -206,6 +426,11 @@ export async function sendFlowMessage(
       timestamp: input.now,
     })
   } catch {
+    throw await failTurn()
+  }
+  // A reply with no visible text is not a completed turn (nothing is shown to
+  // the patient); it fails with the typed 502 and no assistant row is stored.
+  if (reply.text.trim().length === 0) {
     throw await failTurn()
   }
 
@@ -258,11 +483,43 @@ type MessageRow = {
   created_at: string
 }
 
+function rawRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {}
+}
+
+function isoList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : []
+}
+
+function attemptFromRaw(raw: Record<string, unknown>): FlowInboundAttempt | null {
+  if (typeof raw.attempt_started_at !== 'string') return null
+  return {
+    startedAt: raw.attempt_started_at,
+    providerStartedAt: typeof raw.provider_started_at === 'string' ? raw.provider_started_at : null,
+    retryStartedAt: isoList(raw.retry_started_at),
+  }
+}
+
+function inboundPayload(
+  requestId: string,
+  attempt: FlowInboundAttempt,
+): { [key: string]: string | string[] | null } {
+  const lastRetry = attempt.retryStartedAt.at(-1)
+  return {
+    request_id: requestId,
+    conversation_id: 'flow',
+    attempt_started_at: attempt.startedAt,
+    provider_started_at: attempt.providerStartedAt,
+    retry_started_at: attempt.retryStartedAt,
+    // Top-level so the per-minute count can filter on it.
+    ...(lastRetry ? { last_retry_at: lastRetry } : {}),
+  }
+}
+
 function mapRow(row: MessageRow): StoredFlowMessage {
-  const raw =
-    row.raw_payload && typeof row.raw_payload === 'object'
-      ? (row.raw_payload as Record<string, unknown>)
-      : {}
+  const raw = rawRecord(row.raw_payload)
   const state =
     row.delivery_status === 'processing' || row.delivery_status === 'failed'
       ? row.delivery_status
@@ -274,6 +531,7 @@ function mapRow(row: MessageRow): StoredFlowMessage {
     state,
     requestId: typeof raw.request_id === 'string' ? raw.request_id : 'request-unavailable',
     createdAt: row.created_at,
+    ...(row.direction === 'in' ? { attempt: attemptFromRaw(raw) } : {}),
   }
 }
 
@@ -291,7 +549,7 @@ export function createSupabaseFlowChatStore(supabase: ServiceClient): FlowChatSt
       if (error) throw new Error('Unable to load Flow history')
       return ((data ?? []) as MessageRow[]).map(mapRow)
     },
-    async countRecentInbound(userId, since) {
+    async countRecentExecutions(userId, since) {
       const { count, error } = await supabase
         .from('messages')
         .select('id', { count: 'exact', head: true })
@@ -300,7 +558,25 @@ export function createSupabaseFlowChatStore(supabase: ServiceClient): FlowChatSt
         .eq('direction', 'in')
         .gte('created_at', since)
       if (error) throw new Error('Unable to enforce Flow rate limit')
-      return count ?? 0
+      // Retries do not create rows: every retry start is recorded on its turn,
+      // and turns retried inside the window carry a recent `last_retry_at`.
+      const { data: retried, error: retryError } = await supabase
+        .from('messages')
+        .select('raw_payload')
+        .eq('user_id', userId)
+        .eq('provider', 'mobile_flow')
+        .eq('direction', 'in')
+        .gte('raw_payload->>last_retry_at', since)
+        .limit(50)
+      if (retryError) throw new Error('Unable to enforce Flow rate limit')
+      const retries = ((retried ?? []) as Array<{ raw_payload: unknown }>).reduce(
+        (total, row) =>
+          total + isoList(rawRecord(row.raw_payload).retry_started_at).filter((time) => time >= since).length,
+        0,
+      )
+      // A count that did not come back is not zero: fail closed.
+      if (count == null) throw new Error('Unable to enforce Flow rate limit')
+      return count + retries
     },
     async findAssistant(userId, providerMessageId) {
       const { data, error } = await supabase
@@ -337,7 +613,9 @@ export function createSupabaseFlowChatStore(supabase: ServiceClient): FlowChatSt
           content: input.content,
           provider: 'mobile_flow',
           provider_message_id: input.providerMessageId,
-          raw_payload: { request_id: input.requestId, conversation_id: 'flow' },
+          raw_payload: input.attempt
+            ? inboundPayload(input.requestId, input.attempt)
+            : { request_id: input.requestId, conversation_id: 'flow' },
           delivery_status: input.state,
           created_at: input.createdAt,
         })
@@ -377,34 +655,45 @@ export function createSupabaseFlowChatStore(supabase: ServiceClient): FlowChatSt
       if (error || !data) throw persistError(error, 'Unable to persist Flow output')
       return mapRow(data as MessageRow)
     },
-    async retryInbound(userId, providerMessageId, requestId) {
-      const { error } = await supabase
+    async transitionInbound(userId, providerMessageId, change) {
+      const query = supabase
         .from('messages')
         .update({
-          delivery_status: 'processing',
-          delivery_error: null,
-          raw_payload: { request_id: requestId, conversation_id: 'flow' },
+          delivery_status: change.to,
+          delivery_error: change.errorCode ? { code: change.errorCode } : null,
+          raw_payload: inboundPayload(change.requestId, change.attempt),
         })
         .eq('user_id', userId)
         .eq('provider', 'mobile_flow')
         .eq('provider_message_id', providerMessageId)
         .eq('direction', 'in')
-      if (error) throw new Error('Unable to retry Flow input')
+        .eq('delivery_status', change.from)
+      const sameAttempt =
+        change.expectedAttemptStartedAt === null
+          ? query.is('raw_payload->>attempt_started_at', null)
+          : query.eq('raw_payload->>attempt_started_at', change.expectedAttemptStartedAt)
+      const scoped =
+        change.expectedRequestId === undefined
+          ? sameAttempt
+          : sameAttempt.eq('raw_payload->>request_id', change.expectedRequestId)
+      const { data, error } = await scoped.select('id')
+      if (error) throw new Error('Unable to update Flow input')
+      return (data ?? []).length > 0
     },
     async completeInbound(userId, providerMessageId) {
       const { error } = await supabase
         .from('messages')
-        .update({ delivery_status: 'completed' })
+        .update({ delivery_status: 'completed', delivery_error: null })
         .eq('user_id', userId)
         .eq('provider', 'mobile_flow')
         .eq('provider_message_id', providerMessageId)
         .eq('direction', 'in')
       if (error) throw new Error('Unable to complete Flow input')
     },
-    async failInbound(userId, providerMessageId) {
+    async failInbound(userId, providerMessageId, code = 'flow_provider_failed') {
       const { error } = await supabase
         .from('messages')
-        .update({ delivery_status: 'failed', delivery_error: { code: 'flow_provider_failed' } })
+        .update({ delivery_status: 'failed', delivery_error: { code } })
         .eq('user_id', userId)
         .eq('provider', 'mobile_flow')
         .eq('provider_message_id', providerMessageId)

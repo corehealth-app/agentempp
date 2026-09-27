@@ -172,3 +172,39 @@ export function parseOnboardingListTag(text: string): OnboardingListProposal | n
 
   return { body, field, buttonText: 'Escolher', options }
 }
+
+/** A terminated legacy tag: `[BTN:field:Label=value|…]` / `[LIST:…]`, with
+ * spaces or line breaks inside and malformed options. It always carries an
+ * `=`, so prose like "[List: arroz, feijão]" is not a tag. */
+const LEGACY_TAG_TERMINATED = /\[\s*(?:BTN|LIST)\s*:\s*[a-z_]+\s*:[^[\]]{0,600}=[^[\]]{0,600}\]/gi
+/** A tag cut off before its `]`: removed up to the end of its line only. */
+const LEGACY_TAG_UNTERMINATED = /\[\s*(?:BTN|LIST)\s*:\s*[a-z_]+\s*:[^\]\n]*$/gim
+const CUT = '\u0000'
+
+/**
+ * The app renders no WhatsApp buttons or lists, so on the mobile Flow the
+ * legacy `[BTN:…]`/`[LIST:…]` syntax never reaches the patient:
+ * - the text around the tag is kept (before and after it), untouched
+ *   except for the spaces at the cut;
+ * - a valid tag's option labels become plain lines — the patient answers by
+ *   typing; nothing is executed, saved or confirmed by this;
+ * - a malformed tag is dropped.
+ * Returns '' when no visible text remains; the caller must then treat the
+ * turn as failed, never as an empty success.
+ */
+export function flattenLegacyTagsForApp(content: string): string {
+  const proposal = parseOnboardingButtonTag(content) ?? parseOnboardingListTag(content)
+  const cut = content.replace(LEGACY_TAG_TERMINATED, CUT).replace(LEGACY_TAG_UNTERMINATED, CUT)
+  // No tag: the reply is returned exactly as written.
+  if (!cut.includes(CUT)) return content.trim().length === 0 ? '' : content
+  const visible = cut
+    // At a line end the cut takes its spaces with it; inside a line it
+    // leaves one space.
+    .replace(/[ \t]*\u0000+[ \t]*(?=\n|$)/g, '')
+    .replace(/[ \t]*\u0000+[ \t]*/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+  if (!visible) return ''
+  if (!proposal) return visible
+  return `${visible}\n\n${proposal.options.map((option) => `• ${option.label}`).join('\n')}`
+}

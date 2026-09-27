@@ -6,6 +6,9 @@
 import type { ServiceClient } from '@mpp/db'
 import type { z } from 'zod'
 
+/** Who a plan generator speaks as. 'legacy' is the current WhatsApp identity. */
+export type GeneratorIdentity = 'legacy' | 'flow'
+
 export interface ToolContext {
   supabase: ServiceClient
   userId: string
@@ -44,6 +47,9 @@ export interface ToolContext {
    * paciente clicou 2h47min depois (localHour=15) → autocorrect virava pra
    * 'lanche' silenciosamente, divergindo do card "Café registrado". */
   trustMealType?: boolean
+  /** Set by the pipeline from the server-side channel only ('flow' on the
+   * mobile Flow). Absent = the legacy identity. Never read from a payload. */
+  assistantIdentity?: GeneratorIdentity
 }
 
 export interface ToolDefinition<T extends z.ZodTypeAny = z.ZodTypeAny> {

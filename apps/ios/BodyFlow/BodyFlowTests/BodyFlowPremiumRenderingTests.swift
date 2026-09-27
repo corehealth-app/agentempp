@@ -877,6 +877,65 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
         XCTAssertTrue(offenders.isEmpty, "Capability truth not threaded: \(offenders)")
     }
 
+    /// On a real account the Register surfaces drop every "local
+    /// demonstration" copy and sample source, and say plainly which capture
+    /// paths are not available yet.
+    func testRegisterSurfacesSeparateLiveModeFromTheLocalDemonstration() throws {
+        var offenders: [String] = []
+        for file in [
+            "BodyFlow/Features/Register/RegisterRootView.swift",
+            "BodyFlow/Features/Register/RegistrationSheet.swift",
+            "BodyFlow/Features/Register/MealCaptureSourceView.swift",
+        ] {
+            let source = try reviewedSource(file)
+            if !source.contains("presentsLocalDemonstration") {
+                offenders.append("\(file): no live/demonstration switch")
+            }
+        }
+        let catalog = try reviewedSource("BodyFlow/Resources/Localizable.xcstrings")
+        for key in [
+            "registration.root.detail.live",
+            "registration.root.open",
+            "registration.sheet.title.live",
+            "registration.sheet.live-notice",
+            "registration.text.placeholder.live",
+            "registration.capture.media-unavailable",
+        ] where !catalog.contains("\"\(key)\"") {
+            offenders.append("Localizable: no \(key)")
+        }
+        XCTAssertTrue(offenders.isEmpty, "Live Register mode not separated: \(offenders)")
+    }
+
+    /// A real account can leave the app from Profile: the shell hands the
+    /// root's sign-out down, and Profile shows the action only when it has
+    /// one, so the locked demonstration never grows a sign-out row.
+    func testProfileOffersSignOutOnlyOnARealAccount() throws {
+        var offenders: [String] = []
+        let profile = try reviewedSource("BodyFlow/Features/Profile/ProfileRootView.swift")
+        for marker in ["signOut", "profile.account.sign-out", "profile.account.section"]
+        where !profile.contains(marker) {
+            offenders.append("ProfileRootView: no \(marker)")
+        }
+        let shell = try reviewedSource("BodyFlow/App/AppShellView.swift")
+        if !shell.contains("signOut:") {
+            offenders.append("AppShellView: does not hand sign-out to Profile")
+        }
+        let root = try reviewedSource("BodyFlow/App/AppRootView.swift")
+        if !root.contains("model.signOut()") {
+            offenders.append("AppRootView: sign-out never reaches AppFlowModel.signOut()")
+        }
+        let catalog = try reviewedSource("BodyFlow/Resources/Localizable.xcstrings")
+        for key in [
+            "profile.account.section",
+            "profile.account.sign-out",
+            "profile.account.sign-out.confirm",
+            "mascot.changed-at.unavailable",
+        ] where !catalog.contains("\"\(key)\"") {
+            offenders.append("Localizable: no \(key)")
+        }
+        XCTAssertTrue(offenders.isEmpty, "Sign-out not wired for real accounts: \(offenders)")
+    }
+
     /// The root and the onboarding container each key their own motion to
     /// the state that actually changed — the root to the screen it shows,
     /// the container to the current step — instead of one fade covering

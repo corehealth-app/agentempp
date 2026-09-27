@@ -14,12 +14,17 @@ struct ProfileRootView: View {
     private let coachExperienceProvider: (any CoachExperienceProviding)?
     private let invalidationCenter: FeatureInvalidationCenter
     private let retryAction: @MainActor () -> Void
+    /// Leaves the signed-in account; only a real account offers it, so the
+    /// locked demonstration never shows an account section.
+    private let signOut: (@MainActor () async -> Void)?
 
     @State private var selectedPersona: CoachPersona?
     @State private var personaEditor: CoachPersonaEditorModel?
     @State private var serverOptions: [CoachPersonaOption]?
     @State private var hasLoadedPersona = false
     @State private var loadController = ProfilePersonaLoadController()
+    @State private var isConfirmingSignOut = false
+    @State private var isSigningOut = false
 
     init(
         userID: String = "fixture-user",
@@ -28,7 +33,8 @@ struct ProfileRootView: View {
         state: ScreenContentState = .loaded,
         coachExperienceProvider: (any CoachExperienceProviding)? = nil,
         invalidationCenter: FeatureInvalidationCenter? = nil,
-        retryAction: @escaping @MainActor () -> Void = {}
+        retryAction: @escaping @MainActor () -> Void = {},
+        signOut: (@MainActor () async -> Void)? = nil
     ) {
         self.userID = userID
         self.accountEmail = accountEmail
@@ -37,6 +43,7 @@ struct ProfileRootView: View {
         self.coachExperienceProvider = coachExperienceProvider
         self.invalidationCenter = invalidationCenter ?? FeatureInvalidationCenter()
         self.retryAction = retryAction
+        self.signOut = signOut
         _selectedPersona = State(initialValue: nil)
         _personaEditor = State(initialValue: nil)
     }
@@ -138,6 +145,37 @@ struct ProfileRootView: View {
                     .foregroundStyle(BodyFlowColor.primaryText)
             }
             .bodyFlowListRow()
+
+            if accountEmail != nil, let signOut {
+                Section {
+                    Button(role: .destructive) {
+                        isConfirmingSignOut = true
+                    } label: {
+                        Text(copy("profile.account.sign-out"))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(BodyFlowButtonStyle(role: .destructive))
+                    .disabled(isSigningOut)
+                    .accessibilityIdentifier("profile.account.sign-out")
+                    .confirmationDialog(
+                        copy("profile.account.sign-out.confirm"),
+                        isPresented: $isConfirmingSignOut,
+                        titleVisibility: .visible
+                    ) {
+                        Button(copy("profile.account.sign-out"), role: .destructive) {
+                            isSigningOut = true
+                            Task {
+                                await signOut()
+                                isSigningOut = false
+                            }
+                        }
+                    }
+                } header: {
+                    Text(copy("profile.account.section"))
+                        .foregroundStyle(BodyFlowColor.primaryText)
+                }
+                .bodyFlowListRow()
+            }
         }
         .bodyFlowList()
     }

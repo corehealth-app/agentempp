@@ -155,10 +155,13 @@ enum MascotPresentation {
     }
 
     static func changedAt(
-        _ timestamp: APITimestamp,
+        _ timestamp: APITimestamp?,
         language: SupportedAppLanguage = .portugueseBrazil
     ) -> String {
-        timestamp.value.formatted(
+        guard let timestamp else {
+            return MascotCopy.string("mascot.changed-at.unavailable", language: language)
+        }
+        return timestamp.value.formatted(
             Date.FormatStyle(
                 date: .numeric,
                 time: .shortened,

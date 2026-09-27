@@ -17,13 +17,20 @@ struct AppDependencies: Sendable {
     let hydration: any HydrationRecording
     let weight: any WeightRecording
     let routine: any RoutineProviding
+    let me: any MeProviding
     let publishedContentSessions: any PublishedContentSessionCreating
     let coachExperienceSessions: any CoachExperienceSessionCreating
     let contentCoverSessions: any ContentCoverSessionCreating
     let timeProvider: any TimeProviding
     let idempotencyKeyProvider: any IdempotencyKeyProviding
-    let patientTimeZone: PatientTimeZoneContext
+    /// Seeded per launch; the authenticated session owner resolves it from
+    /// `GET /me` on a real account and resets it when that session ends.
+    let patientTimeZoneStore: PatientTimeZoneStore
     let flowChat: any FlowChatProviding
+
+    var patientTimeZone: PatientTimeZoneContext {
+        patientTimeZoneStore.current
+    }
 
     /// The Register tab keeps its local demonstration while the app runs on
     /// the demo authentication; on a real account it shows its actions only
@@ -75,6 +82,22 @@ struct AppDependencies: Sendable {
             )
         }
         let stateStore = DemoStateStore(secureStore: secureStore)
+        // The patient's documented time zone: the Prompt 13 demo seeds it from
+        // the launch arguments; everything else starts undocumented and a real
+        // account resolves it from `/me` per session. The store also clears on
+        // sign-out through the lifecycle's sensitive-state hook.
+        let patientTimeZoneSeed: PatientTimeZoneContext
+        #if DEBUG
+        if configuration.mode == .demo, configuration.prompt13Scenario != nil {
+            patientTimeZoneSeed = configuration.patientTimeZoneForPrompt13
+                ?? PatientTimeZoneContext(documentedIANAIdentifier: nil)
+        } else {
+            patientTimeZoneSeed = PatientTimeZoneContext(documentedIANAIdentifier: nil)
+        }
+        #else
+        patientTimeZoneSeed = PatientTimeZoneContext(documentedIANAIdentifier: nil)
+        #endif
+        let patientTimeZoneStore = PatientTimeZoneStore(seed: patientTimeZoneSeed)
         let releaseSessionStore: AuthenticationSessionStore? =
             if configuration.mode == .releaseUnavailable,
                supabaseAuthConfiguration != nil {
@@ -104,6 +127,7 @@ struct AppDependencies: Sendable {
                 SessionLifecycleCoordinator(
                     store: releaseSessionStore,
                     remote: releaseAuthRemote,
+                    sensitiveStateClearer: patientTimeZoneStore,
                     refreshPolicy: sessionRefreshPolicy
                 )
             } else {
@@ -181,7 +205,6 @@ struct AppDependencies: Sendable {
         #if DEBUG
         let timeProvider: any TimeProviding
         let idempotencyKeyProvider: any IdempotencyKeyProviding
-        let patientTimeZone: PatientTimeZoneContext
         let today: any TodayProviding
         let history: any HistoryProviding
         let plan: any PlanProviding
@@ -191,6 +214,7 @@ struct AppDependencies: Sendable {
         let hydration: any HydrationRecording
         let weight: any WeightRecording
         let routine: any RoutineProviding
+        let me: any MeProviding
         if configuration.mode == .demo,
            let scenario = configuration.prompt13Scenario {
             let repository = DemoBodyFlowRepository(scenario: scenario)
@@ -201,8 +225,6 @@ struct AppDependencies: Sendable {
             idempotencyKeyProvider = DeterministicIdempotencyKeyProvider(
                 prefix: "prompt13-key"
             )
-            patientTimeZone = configuration.patientTimeZoneForPrompt13
-                ?? PatientTimeZoneContext(documentedIANAIdentifier: nil)
             today = repository
             history = repository
             plan = repository
@@ -212,6 +234,7 @@ struct AppDependencies: Sendable {
             hydration = repository
             weight = repository
             routine = repository
+            me = unavailable
         } else if configuration.mode == .demo,
                   let scenario = configuration.prompt14ScenarioSelection {
             let repository = DemoBodyFlowRepository(scenario: .loaded)
@@ -221,9 +244,6 @@ struct AppDependencies: Sendable {
             timeProvider = prompt14TimeProvider
             idempotencyKeyProvider = DeterministicIdempotencyKeyProvider(
                 prefix: "prompt14-key"
-            )
-            patientTimeZone = PatientTimeZoneContext(
-                documentedIANAIdentifier: nil
             )
             today = repository
             history = repository
@@ -253,6 +273,7 @@ struct AppDependencies: Sendable {
             hydration = repository
             weight = repository
             routine = repository
+            me = unavailable
             publishedContentSessions = DemoPrompt14PublishedContentSessionFactory(
                 selection: scenario
             )
@@ -277,26 +298,43 @@ struct AppDependencies: Sendable {
             idempotencyKeyProvider = configuration.mode == .demo || apiClient is MobileAPITransport
                 ? RandomIdempotencyKeyProvider()
                 : UnavailableIdempotencyKeyProvider()
-            patientTimeZone = PatientTimeZoneContext(
-                documentedIANAIdentifier: nil
-            )
             if let transport = apiClient as? MobileAPITransport {
                 let reads = MobileBodyFlowRepository(transport: transport)
+                let mutations = MobileRegistrationRepository(transport: transport)
+                let clock = timeProvider
                 today = reads
                 history = reads
                 plan = reads
                 progress = reads
+                me = reads
+                mealDetection = TextMealDetector(now: { clock.now })
+                registration = mutations
+                hydration = mutations
+                routine = MobileRoutineRepository(transport: transport)
+                coachPersona = MobileCoachPersonaRepository(transport: transport)
+                publishedContentSessions = MobilePublishedContentSessionFactory(
+                    transport: transport
+                )
+                coachExperienceSessions = MobileCoachExperienceSessionFactory(
+                    transport: transport
+                )
+                contentCoverSessions = MobileContentCoverSessionFactory(
+                    transport: transport,
+                    timeProvider: timeProvider
+                )
             } else {
                 today = unavailable
                 history = unavailable
                 plan = unavailable
                 progress = unavailable
+                me = unavailable
+                mealDetection = unavailable
+                registration = unavailable
+                hydration = unavailable
+                routine = unavailable
             }
-            mealDetection = unavailable
-            registration = unavailable
-            hydration = unavailable
+            // No mobile contract records weight.
             weight = unavailable
-            routine = unavailable
         }
         #else
         let timeProvider: any TimeProviding = SystemTimeProvider()
@@ -304,22 +342,38 @@ struct AppDependencies: Sendable {
             apiClient is MobileAPITransport
                 ? RandomIdempotencyKeyProvider()
                 : UnavailableIdempotencyKeyProvider()
-        let patientTimeZone = PatientTimeZoneContext(
-            documentedIANAIdentifier: nil
-        )
-        // The read surfaces the BFF serves ride the same transport as
-        // onboarding and Flow; mutations stay unavailable in this phase.
-        let reads = (apiClient as? MobileAPITransport)
-            .map { MobileBodyFlowRepository(transport: $0) }
+        // Every surface the BFF serves rides the same transport as
+        // onboarding and Flow; without a transport they stay unavailable.
+        let transport = apiClient as? MobileAPITransport
+        let reads = transport.map { MobileBodyFlowRepository(transport: $0) }
+        let mutations = transport.map { MobileRegistrationRepository(transport: $0) }
+        let clock = timeProvider
         let today: any TodayProviding = reads ?? unavailable
         let history: any HistoryProviding = reads ?? unavailable
         let plan: any PlanProviding = reads ?? unavailable
         let progress: any ProgressProviding = reads ?? unavailable
-        let mealDetection: any MealDetectionProviding = unavailable
-        let registration: any RegistrationProviding = unavailable
-        let hydration: any HydrationRecording = unavailable
+        let me: any MeProviding = reads ?? unavailable
+        let mealDetection: any MealDetectionProviding = transport == nil
+            ? unavailable : TextMealDetector(now: { clock.now })
+        let registration: any RegistrationProviding = mutations ?? unavailable
+        let hydration: any HydrationRecording = mutations ?? unavailable
+        let routine: any RoutineProviding = transport
+            .map { MobileRoutineRepository(transport: $0) } ?? unavailable
+        // No mobile contract records weight.
         let weight: any WeightRecording = unavailable
-        let routine: any RoutineProviding = unavailable
+        if let transport {
+            coachPersona = MobileCoachPersonaRepository(transport: transport)
+            publishedContentSessions = MobilePublishedContentSessionFactory(
+                transport: transport
+            )
+            coachExperienceSessions = MobileCoachExperienceSessionFactory(
+                transport: transport
+            )
+            contentCoverSessions = MobileContentCoverSessionFactory(
+                transport: transport,
+                timeProvider: timeProvider
+            )
+        }
         #endif
 
         let authentication: any AuthenticationService
@@ -413,12 +467,13 @@ struct AppDependencies: Sendable {
             hydration: hydration,
             weight: weight,
             routine: routine,
+            me: me,
             publishedContentSessions: publishedContentSessions,
             coachExperienceSessions: coachExperienceSessions,
             contentCoverSessions: contentCoverSessions,
             timeProvider: timeProvider,
             idempotencyKeyProvider: idempotencyKeyProvider,
-            patientTimeZone: patientTimeZone,
+            patientTimeZoneStore: patientTimeZoneStore,
             flowChat: flowChat
         )
     }

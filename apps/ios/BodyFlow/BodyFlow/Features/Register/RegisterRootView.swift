@@ -7,15 +7,20 @@ struct RegisterRootView: View {
 
     let fixture: RegistrationFixture
     let state: ScreenContentState
+    /// True for the local demonstration (demo authentication); false on a
+    /// real account, where the copy describes the real server-backed flow.
+    let presentsLocalDemonstration: Bool
     private let retryAction: @MainActor () -> Void
 
     init(
         fixture: RegistrationFixture = AppFixtures.registration,
         state: ScreenContentState = .loaded,
+        presentsLocalDemonstration: Bool = true,
         retryAction: @escaping @MainActor () -> Void = {}
     ) {
         self.fixture = fixture
         self.state = state
+        self.presentsLocalDemonstration = presentsLocalDemonstration
         self.retryAction = retryAction
     }
 
@@ -48,7 +53,9 @@ struct RegisterRootView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityAddTraits(.isHeader)
 
-                    Text(copy("registration.root.detail"))
+                    Text(copy(presentsLocalDemonstration
+                        ? "registration.root.detail"
+                        : "registration.root.detail.live"))
                         .font(BodyFlowTypography.body)
                         .foregroundStyle(BodyFlowColor.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
@@ -60,10 +67,12 @@ struct RegisterRootView: View {
                     commandButton(mealCommand, role: .primary)
                 }
 
-                BodyFlowStatusLine(
-                    copy("registration.root.demo-notice"),
-                    kind: .info
-                )
+                if presentsLocalDemonstration {
+                    BodyFlowStatusLine(
+                        copy("registration.root.demo-notice"),
+                        kind: .info
+                    )
+                }
 
                 // The remaining kinds share one panel of rows instead of one
                 // card each, so the primary action keeps its weight.
@@ -72,8 +81,12 @@ struct RegisterRootView: View {
 
                     BodyFlowCard {
                         VStack(alignment: .leading, spacing: 0) {
+                            // Weight has no mobile contract yet, so a real
+                            // account is not offered a row that cannot work.
                             let commands = fixture.commands.filter {
-                                RegistrationKind(rawValue: $0.kindID) != .meal
+                                let kind = RegistrationKind(rawValue: $0.kindID)
+                                return kind != .meal
+                                    && (presentsLocalDemonstration || kind != .weight)
                             }
                             ForEach(Array(commands.enumerated()), id: \.element.id) { index, command in
                                 if index > 0 { Divider() }
@@ -82,7 +95,9 @@ struct RegisterRootView: View {
                                 } label: {
                                     FeatureActionLabel(
                                         title: commandTitle(for: command),
-                                        detail: copy("registration.root.open-demo"),
+                                        detail: copy(presentsLocalDemonstration
+                                            ? "registration.root.open-demo"
+                                            : "registration.root.open"),
                                         systemImage: command.systemImage
                                     )
                                     .padding(.vertical, BodyFlowSpacing.xs)

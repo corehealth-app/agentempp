@@ -11,14 +11,18 @@ protocol MobileAPIEnvelopeExecuting: Sendable {
 extension MobileAPITransport: MobileAPIEnvelopeExecuting {}
 
 /// The read surfaces the mobile BFF already serves (`/today`, `/history`,
-/// `/plan`, `/progress`), over the same transport as onboarding and Flow.
-/// Nothing is computed here: the response is the official state.
+/// `/plan`, `/progress`, `/me`), over the same transport as onboarding and
+/// Flow. Nothing is computed here: the response is the official state.
 struct MobileBodyFlowRepository: TodayProviding, HistoryProviding,
-    PlanProviding, ProgressProviding {
+    PlanProviding, ProgressProviding, MeProviding {
     let transport: any MobileAPIEnvelopeExecuting
 
     func today() async throws -> TodayResponse {
         try await read("/api/mobile/v1/today")
+    }
+
+    func me() async throws -> MeResponse {
+        try await read("/api/mobile/v1/me")
     }
 
     func plan() async throws -> PlanResponse {
@@ -67,15 +71,6 @@ struct MobileBodyFlowRepository: TodayProviding, HistoryProviding,
     static func capabilityError(
         for error: MobileAPITransportError
     ) -> BodyFlowCapabilityError {
-        switch error {
-        case .network, .timeout:
-            .offline
-        case .unavailableConfiguration:
-            .operationUnavailable
-        case .http(let status, _, _) where status == 402:
-            .subscriptionRequired
-        default:
-            .serviceUnavailable
-        }
+        error.capabilityError
     }
 }

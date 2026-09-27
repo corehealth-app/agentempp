@@ -58,6 +58,12 @@ struct RegistrationSheet: View {
         }
     }
 
+    /// The local demonstration keeps its fixture copy; a real account sees
+    /// the server-backed flow described as such.
+    private var presentsLocalDemonstration: Bool {
+        !dependencies.presentsRealAccountIdentity
+    }
+
     private static var demonstrationTextLimit: ClosedRange<Int>? {
         #if DEBUG
         1...1_000
@@ -173,7 +179,9 @@ struct RegistrationSheet: View {
                                     .fontWeight(.semibold)
                                     .foregroundStyle(BodyFlowColor.primaryText)
 
-                                Text(AppFixtures.registration.disclaimer)
+                                Text(presentsLocalDemonstration
+                                    ? AppFixtures.registration.disclaimer
+                                    : copy("registration.sheet.live-notice"))
                                     .font(BodyFlowTypography.body)
                                     .foregroundStyle(BodyFlowColor.secondaryText)
                                     .multilineTextAlignment(.center)
@@ -190,7 +198,9 @@ struct RegistrationSheet: View {
                     }
                 }
             }
-            .navigationTitle(copy("registration.sheet.title"))
+            .navigationTitle(copy(presentsLocalDemonstration
+                ? "registration.sheet.title"
+                : "registration.sheet.title.live"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -585,10 +595,33 @@ private struct MealRegistrationContent: View {
     let saveEdit: @MainActor (MealProposalRequest) -> Void
     let confirm: @MainActor () -> Void
     let cancel: @MainActor () -> Void
+    let presentsLocalDemonstration: Bool
     @State private var choice: MealCaptureChoice?
-    @State private var textDraft = "Refeição de demonstração"
+    @State private var textDraft: String
     @State private var showingEditor = false
     @AccessibilityFocusState private var operationFocus: RegistrationAccessibilityFocusTarget?
+
+    init(
+        model: MealRegistrationModel,
+        submit: @escaping @MainActor (MealCaptureSource) -> Void,
+        operationAction: @escaping @MainActor (RegistrationOperationAction) -> Void,
+        saveEdit: @escaping @MainActor (MealProposalRequest) -> Void,
+        confirm: @escaping @MainActor () -> Void,
+        cancel: @escaping @MainActor () -> Void,
+        presentsLocalDemonstration: Bool = true
+    ) {
+        self.model = model
+        self.submit = submit
+        self.operationAction = operationAction
+        self.saveEdit = saveEdit
+        self.confirm = confirm
+        self.cancel = cancel
+        self.presentsLocalDemonstration = presentsLocalDemonstration
+        // The demonstration pre-fills its sample text; a real account starts
+        // empty and types the meal.
+        _textDraft = State(initialValue: presentsLocalDemonstration
+            ? "Refeição de demonstração" : "")
+    }
 
     var body: some View {
         ScrollView {
@@ -654,7 +687,8 @@ private struct MealRegistrationContent: View {
             case .text:
                 MealTextDraftView(
                     draft: $textDraft,
-                    isSubmitting: model.isSubmitting
+                    isSubmitting: model.isSubmitting,
+                    presentsLocalDemonstration: presentsLocalDemonstration
                 ) {
                     submit(.text(textDraft))
                 }

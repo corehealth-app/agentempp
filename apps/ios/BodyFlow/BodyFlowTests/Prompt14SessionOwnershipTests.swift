@@ -6,6 +6,71 @@ import Testing
 @MainActor
 @Suite("Prompt 14 authenticated session ownership")
 struct Prompt14SessionOwnershipTests {
+    // The suspended fixture keeps content/cover lifetimes open on purpose, so
+    // these two use the plain demo dependencies (their lifetimes end at once)
+    // and swap only the account row.
+    @Test("a real account's documented time zone comes from /me and leaves with the session")
+    func timeZoneFollowsTheSession() async throws {
+        let dependencies = Self.scaffoldDependencies(
+            me: Prompt14StubMe(timezone: "America/Sao_Paulo")
+        )
+        let coordinator = Prompt14AuthenticatedShellCoordinator(dependencies: dependencies)
+        #expect(dependencies.patientTimeZone.documentedIANAIdentifier == nil)
+
+        await coordinator.transition(to: "user-a")
+        let owner = try #require(coordinator.renderableOwner)
+        await owner.awaitPatientTimeZoneResolution()
+
+        #expect(dependencies.patientTimeZone.documentedIANAIdentifier == "America/Sao_Paulo")
+        #expect(try dependencies.patientTimeZone.requireTimeZone().identifier == "America/Sao_Paulo")
+
+        await coordinator.transition(to: nil)
+
+        #expect(coordinator.renderableOwner == nil)
+        #expect(dependencies.patientTimeZone.documentedIANAIdentifier == nil)
+    }
+
+    @Test("without an account row the seeded time zone is left alone")
+    func unavailableMeKeepsTheSeed() async throws {
+        let dependencies = Self.scaffoldDependencies(me: UnavailableBodyFlowCapabilities())
+        let coordinator = Prompt14AuthenticatedShellCoordinator(dependencies: dependencies)
+        await coordinator.transition(to: "user-a")
+        let owner = try #require(coordinator.renderableOwner)
+        await owner.awaitPatientTimeZoneResolution()
+        #expect(dependencies.patientTimeZone.documentedIANAIdentifier == nil)
+        await coordinator.transition(to: nil)
+        #expect(coordinator.renderableOwner == nil)
+    }
+
+    private static func scaffoldDependencies(me: any MeProviding) -> AppDependencies {
+        let base = AppDependencies.scaffold()
+        return AppDependencies(
+            apiClient: base.apiClient,
+            authentication: base.authentication,
+            onboarding: base.onboarding,
+            coachPersona: base.coachPersona,
+            secureStore: base.secureStore,
+            telemetry: base.telemetry,
+            today: base.today,
+            history: base.history,
+            plan: base.plan,
+            progress: base.progress,
+            mealDetection: base.mealDetection,
+            registration: base.registration,
+            hydration: base.hydration,
+            weight: base.weight,
+            routine: base.routine,
+            me: me,
+            publishedContentSessions: base.publishedContentSessions,
+            coachExperienceSessions: base.coachExperienceSessions,
+            contentCoverSessions: base.contentCoverSessions,
+            timeProvider: base.timeProvider,
+            idempotencyKeyProvider: base.idempotencyKeyProvider,
+            patientTimeZoneStore: base.patientTimeZoneStore,
+            flowChat: base.flowChat
+        )
+    }
+
     @Test("switching users closes A before suspension and suppresses every late A publication")
     func switchingUsersSuppressesLatePublicationsAndFinishesBothLifetimes() async throws {
         let fixture = Prompt14SessionFixture()
@@ -680,12 +745,13 @@ private struct Prompt14SessionFixture {
             hydration: base.hydration,
             weight: base.weight,
             routine: base.routine,
+            me: base.me,
             publishedContentSessions: Prompt14ContentFactory(recorder: factories),
             coachExperienceSessions: Prompt14CoachFactory(recorder: factories),
             contentCoverSessions: Prompt14CoverFactory(recorder: factories),
             timeProvider: base.timeProvider,
             idempotencyKeyProvider: base.idempotencyKeyProvider,
-            patientTimeZone: base.patientTimeZone,
+            patientTimeZoneStore: base.patientTimeZoneStore,
             flowChat: base.flowChat
         )
     }
@@ -1122,5 +1188,19 @@ private final class Prompt14MainActorSignal {
             (continuation: CheckedContinuation<Void, Never>) in
             waiters.append(continuation)
         }
+    }
+}
+
+private struct Prompt14StubMe: MeProviding {
+    let timezone: String?
+
+    func me() async throws -> MeResponse {
+        MeResponse(
+            data: MeSnapshot(
+                id: "user-a", email: nil, name: nil, locale: "pt-BR", timezone: timezone,
+                country: nil, countryConfirmed: nil, status: nil, emailConfirmed: nil
+            ),
+            meta: DemoPrompt14Fixtures.contentStateMetadata
+        )
     }
 }

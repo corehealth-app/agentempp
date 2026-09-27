@@ -41,7 +41,9 @@ struct CoachExperienceSnapshot: Codable, Equatable, Sendable {
 
 struct MascotSnapshot: Codable, Equatable, Sendable {
     let state: MascotWireState
-    let changedAt: APITimestamp
+    /// Null on the wire until the account has a mascot row (the BFF returns
+    /// `changed_at: null` for a new patient), so a fresh account decodes.
+    let changedAt: APITimestamp?
 
     private enum CodingKeys: String, CodingKey {
         case state

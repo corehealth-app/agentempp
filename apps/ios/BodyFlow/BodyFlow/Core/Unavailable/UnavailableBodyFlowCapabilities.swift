@@ -12,9 +12,14 @@ struct UnavailableBodyFlowCapabilities:
     PublishedContentDetailProviding,
     PublishedContentStateRecording,
     PublishedContentSessionLifetime,
-    CoachExperienceProviding
+    CoachExperienceProviding,
+    MeProviding
 {
     func today() async throws -> TodayResponse {
+        throw BodyFlowCapabilityError.operationUnavailable
+    }
+
+    func me() async throws -> MeResponse {
         throw BodyFlowCapabilityError.operationUnavailable
     }
 

@@ -123,6 +123,15 @@ struct MascotPresentationTests {
         )
     }
 
+    @Test("a mascot without a recorded change renders the honest unavailable text")
+    func changedAtMissingRendersUnavailableText() {
+        #expect(MascotPresentation.changedAt(nil) == "Sem alteração registrada")
+        #expect(
+            MascotPresentation.changedAt(nil, language: .englishUnitedStates)
+                == "No change recorded"
+        )
+    }
+
     @Test("state is orthogonal to effective personality")
     func stateDoesNotChangePersonality() {
         let states: [MascotWireState] = [

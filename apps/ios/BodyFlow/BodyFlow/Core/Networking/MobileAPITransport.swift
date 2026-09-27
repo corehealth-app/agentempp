@@ -552,3 +552,21 @@ private final class MobileAPIRedirectDelegate: NSObject,
         completionHandler(request)
     }
 }
+
+extension MobileAPITransport {
+    /// The cover proxy shares this transport's origin, session lifecycle and
+    /// URL session, so a bearer only ever travels where JSON requests go.
+    /// Nil while the transport itself has no configuration.
+    func makeContentCoverByteStream() -> (any ContentCoverByteStreaming)? {
+        guard let configuration else { return nil }
+        return MobileContentCoverByteStream(
+            configuration: configuration,
+            sessionLifecycle: sessionLifecycle,
+            session: session
+        )
+    }
+
+    var contentCoverTrustedOrigin: ContentCoverTrustedOrigin? {
+        configuration.flatMap { try? ContentCoverTrustedOrigin(validating: $0.origin) }
+    }
+}

@@ -121,6 +121,26 @@ struct CoachExperienceContractTests {
         #expect(try await provider.coachExperience() == expected)
     }
 
+    @Test("a new account without a mascot row decodes with a null changed_at")
+    func decodesNullMascotChangedAt() throws {
+        let json = String(decoding: Self.coachExperienceJSON, as: UTF8.self)
+            .replacingOccurrences(
+                of: "\"changed_at\": \"2026-07-29T22:15:16.123Z\"",
+                with: "\"changed_at\": null"
+            )
+        let response = try JSONDecoder().decode(
+            CoachExperienceResponse.self,
+            from: Data(json.utf8)
+        )
+
+        #expect(response.data.mascot.state == .evolving)
+        #expect(response.data.mascot.changedAt == nil)
+        #expect(
+            CoachExperienceV1PresentationContract.validatedSnapshot(from: response)
+                == response.data
+        )
+    }
+
     private func timestamp(_ value: String) -> APITimestamp {
         try! JSONDecoder().decode(
             APITimestamp.self,

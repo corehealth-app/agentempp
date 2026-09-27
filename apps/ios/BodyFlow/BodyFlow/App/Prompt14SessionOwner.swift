@@ -17,8 +17,11 @@ final class Prompt14SessionOwner {
     private let stateReference: Prompt14CapabilityReference<any PublishedContentStateRecording>
     private let coachReference: Prompt14CapabilityReference<any CoachExperienceProviding>
     private let progressReference: Prompt14CapabilityReference<any ProgressProviding>
+    private let meReference: Prompt14CapabilityReference<any MeProviding>
     private let lifetimeEndpoint: Prompt14JoinableEndpoint<any PublishedContentSessionLifetime>
     private let coverEndpoint: Prompt14JoinableEndpoint<any ContentCoverLoading>
+    private let patientTimeZoneStore: PatientTimeZoneStore
+    private var timeZoneResolution: Task<Void, Never>?
     private var endTask: Task<Void, Never>?
     private var ended = false
 
@@ -38,8 +41,10 @@ final class Prompt14SessionOwner {
         let stateReference = Prompt14CapabilityReference(contentSession.state)
         let coachReference = Prompt14CapabilityReference(coach)
         let progressReference = Prompt14CapabilityReference(dependencies.progress)
+        let meReference = Prompt14CapabilityReference(dependencies.me)
         let lifetimeEndpoint = Prompt14JoinableEndpoint(contentSession.lifetime)
         let coverEndpoint = Prompt14JoinableEndpoint(cover)
+        let patientTimeZoneStore = dependencies.patientTimeZoneStore
 
         self.gate = gate
         self.listingReference = listingReference
@@ -47,8 +52,25 @@ final class Prompt14SessionOwner {
         self.stateReference = stateReference
         self.coachReference = coachReference
         self.progressReference = progressReference
+        self.meReference = meReference
         self.lifetimeEndpoint = lifetimeEndpoint
         self.coverEndpoint = coverEndpoint
+        self.patientTimeZoneStore = patientTimeZoneStore
+        // The documented time zone belongs to this session: it is read from
+        // `/me` through the same gate as every other capability, so a closed
+        // session never writes it, and `endSession` puts the seed back.
+        timeZoneResolution = Task {
+            let response = try? await gate.perform {
+                guard let me = meReference.current() else {
+                    throw CancellationError()
+                }
+                return try await me.me()
+            }
+            guard let response, !gate.isClosed else { return }
+            patientTimeZoneStore.resolve(
+                documentedIANAIdentifier: response.data.timezone
+            )
+        }
         contentListing = Prompt14ContentListingCapability(
             gate: gate,
             reference: listingReference
@@ -85,8 +107,15 @@ final class Prompt14SessionOwner {
             || stateReference.hasValue
             || coachReference.hasValue
             || progressReference.hasValue
+            || meReference.hasValue
             || lifetimeEndpoint.hasValue
             || coverEndpoint.hasValue
+    }
+
+    /// Lets a caller wait for the `/me` resolution to settle (tests and
+    /// diagnostics); the screens simply read the store when they render.
+    func awaitPatientTimeZoneResolution() async {
+        await timeZoneResolution?.value
     }
 
     func invalidateSynchronously() {
@@ -102,6 +131,7 @@ final class Prompt14SessionOwner {
             task = endTask
         } else {
             task = Task {
+                timeZoneResolution?.cancel()
                 await gate.drain()
 
                 async let contentEnd: Void = lifetimeEndpoint.end { lifetime in
@@ -117,8 +147,10 @@ final class Prompt14SessionOwner {
                 stateReference.release()
                 coachReference.release()
                 progressReference.release()
+                meReference.release()
                 lifetimeEndpoint.release()
                 coverEndpoint.release()
+                patientTimeZoneStore.reset()
             }
             endTask = task
         }

@@ -2359,6 +2359,10 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Detect meal" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Detectar refeição" } }
     } },
+    "registration.capture.media-unavailable" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Photo and audio are not available in this version yet." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Foto e áudio ainda não estão disponíveis nesta versão." } }
+    } },
     "registration.capture.photo-sample" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Photo — local sample" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Foto — amostra local" } }
@@ -2575,6 +2579,10 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Local demonstration. Availability does not imply Release synchronization." } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Demonstração local. Disponibilidade não implica sincronização em Release." } }
     } },
+    "registration.root.detail.live" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Log meals, workouts and hydration. Every figure is computed by the server." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Registre refeições, treinos e hidratação. Os valores são calculados no servidor." } }
+    } },
     "registration.root.detail" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Choose an option to open the local demonstration." } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Escolha uma opção para abrir a demonstração local." } }
@@ -2586,6 +2594,10 @@
     "registration.root.navigation-title" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Register" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Registrar" } }
+    } },
+    "registration.root.open" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Open" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Abrir" } }
     } },
     "registration.root.open-demo" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Open demonstration" } },
@@ -2603,6 +2615,14 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Close" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Fechar" } }
     } },
+    "registration.sheet.live-notice" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Review the proposal before confirming. Nothing is saved without your confirmation." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Revise a proposta antes de confirmar. Nada é gravado sem a sua confirmação." } }
+    } },
+    "registration.sheet.title.live" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Log" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Registrar" } }
+    } },
     "registration.sheet.title" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Demonstration" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Demonstração" } }
@@ -2610,6 +2630,10 @@
     "registration.text.placeholder" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "E.g. rice, beans and chicken" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ex.: arroz, feijão e frango" } }
+    } },
+    "registration.text.placeholder.live" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "One food per line with its quantity in grams. E.g. rice 120 g" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Um alimento por linha, com a quantidade em gramas. Ex.: arroz 120 g" } }
     } },
     "registration.text.title" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Describe the meal" } },
@@ -3101,6 +3125,10 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "View mascot" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ver mascote" } }
     } },
+    "mascot.changed-at.unavailable" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "No change recorded" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sem alteração registrada" } }
+    } },
     "mascot.loading" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading mascot…" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Carregando mascote…" } }
@@ -3144,6 +3172,18 @@
     "mascot.updated-format" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Updated %@" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Atualizado em %@" } }
+    } },
+    "profile.account.section" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Account" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Conta" } }
+    } },
+    "profile.account.sign-out" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Sign out" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sair da conta" } }
+    } },
+    "profile.account.sign-out.confirm" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Sign out of this account on this iPhone? Your data stays on the server." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sair desta conta neste iPhone? Seus dados continuam no servidor." } }
     } },
     "profile.fixture.disclosure" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Demo data" } },

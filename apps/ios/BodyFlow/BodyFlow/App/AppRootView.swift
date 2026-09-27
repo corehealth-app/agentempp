@@ -119,7 +119,8 @@ struct AppRootView: View {
                         dependencies: dependencies,
                         sessionOwner: owner,
                         accountEmail: dependencies.presentsRealAccountIdentity
-                            ? model.currentSession?.email : nil
+                            ? model.currentSession?.email : nil,
+                        signOut: accountSignOut
                     )
                     .id(userID)
                 } else {
@@ -131,6 +132,14 @@ struct AppRootView: View {
 
     private var authenticatedSessionLoading: some View {
         rootLoading("app.session.loading", fallback: "Carregando sessão")
+    }
+
+    /// Only a real account can leave from Profile; the demo keeps its
+    /// fixture identity without an account action.
+    private var accountSignOut: (@MainActor () async -> Void)? {
+        guard dependencies.presentsRealAccountIdentity else { return nil }
+        let model = model
+        return { await model.signOut() }
     }
 
     /// The screen the root shows, not the state's own payload: switching

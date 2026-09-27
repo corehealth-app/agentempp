@@ -43,8 +43,38 @@ struct AppDependenciesTests {
         #expect(!(dependencies.history is UnavailableBodyFlowCapabilities))
         #expect(!(dependencies.plan is UnavailableBodyFlowCapabilities))
         #expect(!(dependencies.progress is UnavailableBodyFlowCapabilities))
-        #expect(dependencies.registration is UnavailableBodyFlowCapabilities)
+        // Meal/workout proposals, hydration and the routine ride the
+        // transport too; weight has no mobile contract.
+        #expect(!(dependencies.registration is UnavailableBodyFlowCapabilities))
+        #expect(!(dependencies.hydration is UnavailableBodyFlowCapabilities))
+        #expect(!(dependencies.mealDetection is UnavailableBodyFlowCapabilities))
+        #expect(!(dependencies.routine is UnavailableBodyFlowCapabilities))
+        #expect(dependencies.weight is UnavailableBodyFlowCapabilities)
+        // The account row, the Library, the Flow persona and the covers ride
+        // the same transport; the patient time zone starts undocumented and
+        // is resolved per session from `/me`.
+        #expect(!(dependencies.me is UnavailableBodyFlowCapabilities))
+        #expect(dependencies.publishedContentSessions is MobilePublishedContentSessionFactory)
+        #expect(dependencies.coachExperienceSessions is MobileCoachExperienceSessionFactory)
+        #expect(dependencies.contentCoverSessions is MobileContentCoverSessionFactory)
+        #expect(dependencies.coachPersona is MobileCoachPersonaRepository)
+        #expect(dependencies.patientTimeZone.documentedIANAIdentifier == nil)
+    }
+
+    @Test("Without a transport the account row, Library, persona and covers stay unavailable")
+    func missingTransportKeepsSessionCapabilitiesUnavailable() {
+        let dependencies = AppDependencies.make(
+            configuration: .resolve(arguments: [], buildFlavor: .release),
+            mobileAPIConfigurationProvider: nil,
+            sessionTokenProvider: DependencyTokenProvider(token: "session-test-value")
+        )
+
+        #expect(dependencies.me is UnavailableBodyFlowCapabilities)
         #expect(dependencies.routine is UnavailableBodyFlowCapabilities)
+        #expect(dependencies.publishedContentSessions is UnavailablePublishedContentSessionFactory)
+        #expect(dependencies.coachExperienceSessions is UnavailableCoachExperienceSessionFactory)
+        #expect(dependencies.contentCoverSessions is UnavailableContentCoverSessionFactory)
+        #expect(!(dependencies.coachPersona is MobileCoachPersonaRepository))
     }
 
     @Test("Missing mobile origin keeps the API client unavailable")
@@ -141,8 +171,25 @@ struct AppDependenciesTests {
             supabaseAuthFetch: { _ in throw URLError(.notConnectedToInternet) }
         )
         #expect(release.presentsRealAccountIdentity)
-        #expect(release.registration is UnavailableBodyFlowCapabilities)
-        #expect(!release.isRegistrationAvailable)
+        #expect(!(release.registration is UnavailableBodyFlowCapabilities))
+        #expect(release.isRegistrationAvailable)
+
+        // A real account without a mobile origin has no registration
+        // capability and therefore no Register actions.
+        let releaseWithoutOrigin = AppDependencies.make(
+            configuration: .resolve(arguments: [], buildFlavor: .release),
+            supabaseAuthConfiguration: try SupabaseAuthConfiguration(
+                originString: "https://project.example.test",
+                key: "sb_publishable_synthetic"
+            ),
+            authenticationSessionStore: AuthenticationSessionStore(
+                secureStore: InMemorySecureStore()
+            ),
+            supabaseAuthFetch: { _ in throw URLError(.notConnectedToInternet) }
+        )
+        #expect(releaseWithoutOrigin.presentsRealAccountIdentity)
+        #expect(releaseWithoutOrigin.registration is UnavailableBodyFlowCapabilities)
+        #expect(!releaseWithoutOrigin.isRegistrationAvailable)
     }
 
     @Test("Release auth and Mobile API share one lifecycle instance")

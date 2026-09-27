@@ -19,17 +19,22 @@ struct AppShellView: View {
     let dependencies: AppDependencies
     let sessionOwner: Prompt14SessionOwner
     let accountEmail: String?
+    /// The root's sign-out for a real account; nil keeps the demonstration
+    /// without an account action.
+    let signOut: (@MainActor () async -> Void)?
 
     init(
         userID: String,
         dependencies: AppDependencies,
         sessionOwner: Prompt14SessionOwner,
-        accountEmail: String? = nil
+        accountEmail: String? = nil,
+        signOut: (@MainActor () async -> Void)? = nil
     ) {
         self.userID = userID
         self.dependencies = dependencies
         self.sessionOwner = sessionOwner
         self.accountEmail = accountEmail
+        self.signOut = signOut
         let invalidationCenter = FeatureInvalidationCenter()
         _invalidationCenter = State(initialValue: invalidationCenter)
         _todayViewModel = State(
@@ -169,7 +174,8 @@ struct AppShellView: View {
             )
         case .register:
             RegisterRootView(
-                state: dependencies.isRegistrationAvailable ? .loaded : .unavailable
+                state: dependencies.isRegistrationAvailable ? .loaded : .unavailable,
+                presentsLocalDemonstration: !dependencies.presentsRealAccountIdentity
             )
         case .plan:
             PlanRootView(
@@ -186,7 +192,8 @@ struct AppShellView: View {
                 userID: userID,
                 accountEmail: accountEmail,
                 coachExperienceProvider: sessionOwner.coachExperience,
-                invalidationCenter: invalidationCenter
+                invalidationCenter: invalidationCenter,
+                signOut: signOut
             )
         }
     }

@@ -3,6 +3,7 @@ import SwiftUI
 struct MealTextDraftView: View {
     @Binding var draft: String
     let isSubmitting: Bool
+    var presentsLocalDemonstration: Bool = true
     let detect: @MainActor () -> Void
     @Environment(\.locale) private var locale
 

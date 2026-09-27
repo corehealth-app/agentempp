@@ -44,6 +44,9 @@ enum MealCaptureChoice: Equatable {
 }
 
 struct MealCaptureSourceView: View {
+    /// The local demonstration offers its photo/audio samples; a real
+    /// account says plainly that those captures are not available yet.
+    var presentsLocalDemonstration: Bool = true
     let select: @MainActor (MealCaptureChoice) -> Void
     @Environment(\.locale) private var locale
 

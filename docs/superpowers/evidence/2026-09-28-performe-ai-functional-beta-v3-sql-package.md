@@ -1,5 +1,10 @@
 # Performe AI — pacote consolidado de SQL (M1 + M2 + M3)
 
+> **SUBSTITUÍDO** em 2026-09-28 por `2026-09-28-performe-ai-sql-package-v2.md`.
+> O hash da M1 abaixo não é mais o do arquivo, a M4 não está aqui e a seção 7
+> descreve a reversão como "só de estrutura", o que está errado. Não usar
+> este documento para aprovar nada.
+
 Operação: `PERFORME_AI_COMPLETE_FUNCTIONAL_BETA_EXECUTION_V3`.
 Data: 2026-09-28.
 

@@ -2474,3 +2474,90 @@ describe('calcMealMacros — subtipos de laticínios fermentados', () => {
     expect(second.items[0]).toMatchObject(first.items[0] ?? {})
   })
 })
+
+describe('calcMealMacros — "X de Y" é o alimento X (device gate 2026-09-27)', () => {
+  const row = (id: number, name_pt: string, similarity: number, kcal: number): MockRow => ({
+    id,
+    name_pt,
+    category: 'Laticínios',
+    country_code: 'BR',
+    similarity,
+    kcal_per_100g: kcal,
+    protein_g: 3,
+    carbs_g: 5,
+    fat_g: 3,
+    fiber_g: 0,
+  })
+
+  it('"mandioca" não herda "Farinha, de mandioca, torrada" mesmo com trigram maior', async () => {
+    // Janela sintética (só farinha × mandioca cozida): isola a regra "X de Y".
+    // Com a janela real, "mandioca" sem preparo pede o preparo (crua × frita).
+    const mock = makeMock({
+      mandioca: [
+        row(5, 'Farinha, de mandioca, torrada', 0.5, 365),
+        row(6, 'Mandioca, cozida', 0.4, 125.36),
+      ],
+    })
+    const r = await calcMealMacros(mock, [{ food_name: 'mandioca', quantity_g: 100 }], 'BR')
+    expect(r.items[0]).toMatchObject({ matched_taco_id: 6, kcal: 125.4 })
+  })
+
+  it('"queijo" não herda "Pão, de queijo, assado"', async () => {
+    const mock = makeMock({
+      queijo: [row(3, 'Pão, de queijo, assado', 0.45, 363), row(4, 'Queijo, minas, frescal', 0.4, 264)],
+    })
+    const r = await calcMealMacros(mock, [{ food_name: 'queijo', quantity_g: 30 }], 'BR')
+    expect(r.items[0]?.matched_taco_id).toBe(4)
+  })
+
+  it('o próprio "doce de leite" continua casando quando o paciente o nomeia', async () => {
+    const mock = makeMock({ 'doce de leite': [row(1, 'Doce, de leite, cremoso', 0.9, 306)] })
+    const r = await calcMealMacros(mock, [{ food_name: 'doce de leite', quantity_g: 20 }], 'BR')
+    expect(r.items[0]?.matched_taco_id).toBe(1)
+  })
+})
+
+describe('calcMealMacros — preparo ambíguo em partes de composto (device gate 2026-09-27)', () => {
+  const grain = (id: number, name_pt: string, similarity: number, kcal: number): MockRow => ({
+    id,
+    name_pt,
+    category: 'Leguminosas e derivados',
+    country_code: 'BR',
+    similarity,
+    kcal_per_100g: kcal,
+    protein_g: 5,
+    carbs_g: 14,
+    fat_g: 0.5,
+    fiber_g: 8,
+  })
+
+  it('variação entre linhas do MESMO preparo (BR × US) não vira pergunta', async () => {
+    const mock = makeMock({
+      lentilha: [
+        { ...grain(1, 'Lentilha, cozida', 0.7, 93), country_code: 'BR' },
+        { ...grain(2, 'Lentilha, cozida', 0.7, 150), country_code: 'US' },
+        { ...grain(3, 'Lentilha, grelhada', 0.4, 110), country_code: 'BR' },
+      ],
+    })
+    // Médias por preparo: cozida 121,5 × grelhada 110 (< 50%), apesar de
+    // 93 × 150 entre países.
+    const r = await calcMealMacros(mock, [{ food_name: 'lentilha', quantity_g: 100 }], 'BR')
+    expect(r.items[0]?.source).not.toBe('no_match')
+    expect(r.items[0]?.matched_taco_id).toBe(1)
+    expect(r.user_warnings).toEqual([])
+  })
+
+  it('"arroz com feijão" não usa o valor cru de nenhuma das partes', async () => {
+    const mock = makeMock({
+      arroz: [grain(161, 'Arroz, tipo 1, cru', 0.6, 357.79), grain(160, 'Arroz, tipo 1, cozido', 0.5, 128.26)],
+      feijão: [
+        grain(704, 'Feijão, carioca, cru', 0.6, 329.03),
+        grain(703, 'Feijão, carioca, cozido', 0.5, 76.42),
+      ],
+    })
+    const r = await calcMealMacros(mock, [{ food_name: 'arroz com feijão', quantity_g: 200 }], 'BR')
+    expect(r.items[0]?.kcal).toBe(0)
+    expect(r.items[0]?.matched_taco_name ?? '').not.toMatch(/cru/i)
+    expect(r.user_warnings.length).toBeGreaterThan(0)
+  })
+})

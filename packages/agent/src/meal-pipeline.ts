@@ -868,6 +868,209 @@ function hasNutritionModifierConflict(currentFoodName: string, matchedFoodName: 
   )
 }
 
+const COMPLEMENT_LINKS = new Set(['de', 'do', 'da', 'dos', 'das'])
+
+// Partes/cortes continuam sendo o alimento do complemento: "peito de frango"
+// é frango, "filé de tilápia" é tilápia. (Gema/clara não entram: têm nutrição
+// própria, diferente do ovo inteiro.)
+const FOOD_PART_HEADS = new Set([
+  'peito',
+  'coxa',
+  'sobrecoxa',
+  'asa',
+  'file',
+  'lombo',
+  'posta',
+  'bisteca',
+  'costela',
+  'pernil',
+  'paleta',
+  'carne',
+  'polpa',
+])
+
+function foodNameTokens(foodName: string): string[] {
+  return normalizeFoodText(foodName)
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+}
+
+// Plurais em "-ães"/"-ões" ("pães", "feijões") voltam ao singular "-ão"; os
+// demais só perdem o "s" final na comparação abaixo.
+function singularFoodToken(token: string): string {
+  return /(?:aes|oes)$/.test(token) ? `${token.slice(0, -3)}ao` : token
+}
+
+function sameFoodToken(left: string, right: string): boolean {
+  const l = singularFoodToken(left)
+  const r = singularFoodToken(right)
+  return l === r || l === `${r}s` || r === `${l}s`
+}
+
+/**
+ * "X de Y" é o alimento X, não o Y: "bolinho de arroz" é bolinho, "doce de
+ * leite" é doce, "farinha de arroz" é farinha. Um candidato que começa por
+ * outro alimento e só cita o pedido no complemento não é o alimento pedido —
+ * a menos que o paciente tenha nomeado esse alimento ("bolinho de arroz") ou
+ * que X seja uma parte/corte do próprio Y ("peito de frango").
+ *
+ * Caso real (device gate 2026-09-27): "Arroz branco" casou "Bolinho de arroz"
+ * (sim 0.30, âncora "arroz" presente no complemento) e virou 410 kcal.
+ */
+function namesAnotherFoodWithRequestedAsComplement(
+  requestedName: string,
+  candidateName: string,
+): boolean {
+  const candidate = foodNameTokens(candidateName)
+  const [head, link] = candidate
+  if (candidate.length < 3 || head == null || link == null || !COMPLEMENT_LINKS.has(link)) {
+    return false
+  }
+  if ([...FOOD_PART_HEADS].some((part) => sameFoodToken(part, head))) return false
+  if (foodNameTokens(requestedName).some((token) => sameFoodToken(token, head))) return false
+  const anchor = extractAnchor(requestedName)
+  if (anchor == null) return false
+  return candidate.slice(2).some((token) => sameFoodToken(token, anchor))
+}
+
+/**
+ * Decisão de produto (Eduardo, 2026-09-28): sem preparo informado, o sistema
+ * pergunta quando a energia do MESMO alimento muda 50% ou mais entre os
+ * preparos do catálogo (feijão cru 329 × cozido 76 kcal/100 g). Abaixo disso
+ * (cenoura 34 × 30, peito de frango 119 × 163) segue o match normal.
+ */
+const PREPARATION_AMBIGUITY_MIN_RATIO = 1.5
+
+const PREPARATION_STATE_WORDS =
+  /\b(?:cru|crua|crus|cruas|in natura|cozid[oa]s?|fervid[oa]s?|poche|grelhad[oa]s?|chapa|assad[oa]s?|forno|frit[oa]s?|refogad[oa]s?|saltead[oa]s?|air\s*fryer|airfryer)\b/g
+
+const PREPARATION_STATE_ORDER: PreparationState[] = [
+  'raw',
+  'cooked',
+  'grilled',
+  'roasted',
+  'sauteed',
+  'fried',
+  'air_fried',
+]
+
+const PREPARATION_STATE_LABEL_PT: Record<PreparationState, string> = {
+  raw: 'cru',
+  cooked: 'cozido',
+  grilled: 'grelhado',
+  roasted: 'assado',
+  sauteed: 'refogado',
+  fried: 'frito',
+  air_fried: 'na air fryer',
+  unspecified: '',
+}
+
+interface PreparationAmbiguity {
+  states: PreparationState[]
+  min_kcal_per_100g: number
+  max_kcal_per_100g: number
+}
+
+const REQUEST_LINK_WORDS = new Set(['de', 'do', 'da', 'dos', 'das', 'com', 'e', 'em', 'no', 'na', 'ao'])
+const SINGLE_PREPARATION_WORD = new RegExp(`^(?:${PREPARATION_STATE_WORDS.source})$`)
+function isNameQualifier(token: string): boolean {
+  return [...PREPARATION_QUALIFIERS].some((qualifier) => normalizeFoodText(qualifier) === token)
+}
+
+function preparationBaseTokens(foodName: string): string[] {
+  return foodNameTokens(foodName).filter((token) => !SINGLE_PREPARATION_WORD.test(token))
+}
+
+/**
+ * Núcleo do pedido: o primeiro alimento nomeado ("feijão" em "feijão
+ * carioca"; "frango" em "peito de frango", porque peito é parte) e as demais
+ * palavras que distinguem a variedade ("carioca").
+ */
+function requestFoodIdentity(
+  requestedName: string,
+): { head: string; distinguishing: string[] } | null {
+  const tokens = preparationBaseTokens(requestedName).filter((token) => !REQUEST_LINK_WORDS.has(token))
+  if (tokens.length === 0) return null
+  const headIndex =
+    tokens.length > 1 && [...FOOD_PART_HEADS].some((part) => sameFoodToken(part, tokens[0]!)) ? 1 : 0
+  return {
+    head: tokens[headIndex]!,
+    distinguishing: tokens.filter((_, index) => index !== headIndex),
+  }
+}
+
+/**
+ * Sem preparo no pedido, procura no conjunto de candidatos o PRÓPRIO alimento
+ * pedido — mesmo núcleo e mesmas palavras de variedade, com o nome sem as
+ * palavras de preparo — listado em preparos diferentes. Se a energia média de
+ * um preparo é >= PREPARATION_AMBIGUITY_MIN_RATIO vezes a de outro, a escolha
+ * pelo trigram seria arbitrária (o nome mais curto — "cru" — vence) e o pedido
+ * é ambíguo. Outros alimentos da janela ("couve manteiga" para "manteiga",
+ * "feijão preto" para "chá preto") não entram.
+ */
+function detectPreparationAmbiguity(
+  requestedName: string,
+  rows: ReadonlyArray<{ name_pt: string | null; kcal_per_100g: number | string | null }>,
+): PreparationAmbiguity | null {
+  if (inferPreparationState(requestedName) !== 'unspecified') return null
+  const identity = requestFoodIdentity(requestedName)
+  if (identity == null) return null
+
+  const groups = new Map<string, { tokens: string[]; byState: Map<PreparationState, number[]> }>()
+  for (const row of rows) {
+    if (row.name_pt == null || row.kcal_per_100g == null) continue
+    const kcal = Number(row.kcal_per_100g)
+    if (!Number.isFinite(kcal) || kcal <= 0) continue
+    const state = inferPreparationState(row.name_pt)
+    if (state === 'unspecified') continue
+    const tokens = preparationBaseTokens(row.name_pt)
+    const key = tokens.join(' ')
+    const group = groups.get(key) ?? { tokens, byState: new Map<PreparationState, number[]>() }
+    group.byState.set(state, [...(group.byState.get(state) ?? []), kcal])
+    groups.set(key, group)
+  }
+
+  const sameFoodGroups = (distinguishing: string[]) =>
+    [...groups.values()].filter(
+      ({ tokens }) =>
+        tokens[0] != null &&
+        sameFoodToken(tokens[0], identity.head) &&
+        distinguishing.every((word) => tokens.some((token) => sameFoodToken(token, word))),
+    )
+  // "arroz branco": "branco" é qualificador e não aparece em "Arroz, tipo 1";
+  // sem grupo com todas as palavras, ignora só os qualificadores.
+  let candidates = sameFoodGroups(identity.distinguishing)
+  if (candidates.length === 0) {
+    candidates = sameFoodGroups(
+      identity.distinguishing.filter((word) => !isNameQualifier(word)),
+    )
+  }
+
+  let widest: { min: number; max: number } | null = null
+  const states = new Set<PreparationState>()
+  for (const { byState } of candidates) {
+    for (const state of byState.keys()) states.add(state)
+    if (byState.size < 2) continue
+    // Média por preparo: variação entre linhas do MESMO preparo (BR × US)
+    // não conta como preparo.
+    const means = [...byState.values()].map(
+      (kcals) => kcals.reduce((sum, kcal) => sum + kcal, 0) / kcals.length,
+    )
+    const min = Math.min(...means)
+    const max = Math.max(...means)
+    if (max / min < PREPARATION_AMBIGUITY_MIN_RATIO) continue
+    if (widest && max / min <= widest.max / widest.min) continue
+    widest = { min, max }
+  }
+  if (widest == null) return null
+  return {
+    states: PREPARATION_STATE_ORDER.filter((state) => states.has(state)),
+    min_kcal_per_100g: +widest.min.toFixed(2),
+    max_kcal_per_100g: +widest.max.toFixed(2),
+  }
+}
+
 const PROTEIN_FOOD_PATTERN =
   /\b(frango|sobrecoxa|coxa|asa|peito|carne|bife|porco|lombo|bisteca|peixe|atum|salmao|tilapia|peru|cordeiro|costela|ovo|hamburguer)\b/
 
@@ -1078,6 +1281,7 @@ async function matchFood(
   carbs_g: number | null
   fat_g: number | null
   fiber_g: number | null
+  preparation_ambiguity: PreparationAmbiguity | null
 }> {
   // Pede uma janela maior de candidatos pra fazer tie-break determinístico em código.
   // Com o catálogo oficial completo, top-5 pode ser ocupado por descrições muito
@@ -1108,6 +1312,7 @@ async function matchFood(
     carbs_g: null,
     fat_g: null,
     fiber_g: null,
+    preparation_ambiguity: null,
   }
 
   type Row = {
@@ -1154,13 +1359,17 @@ async function matchFood(
     )
   })
   if (compatibleRows.length === 0) return empty
+  const sameFoodRows = compatibleRows.filter(
+    (row) => row.name_pt == null || !namesAnotherFoodWithRequestedAsComplement(name, row.name_pt),
+  )
+  if (sameFoodRows.length === 0) return empty
 
   // O trigram pode ranquear um derivado acima do alimento simples ("goiaba"
   // -> "goiaba, doce, cascão" antes de "goiaba, crua"). Se o conjunto contém
   // uma fruta fresca compatível, descarte os doces antes do desempate. Quando
   // só há derivados, preserve o melhor candidato para o guard posterior gerar
   // o aviso explícito e cair no fallback de fruta.
-  let candidateRows = compatibleRows
+  let candidateRows = sameFoodRows
   if (hasProductCodeIdentifier(name)) {
     const identifiers = productCodeIdentifiers(name)
     const sameCountryRows = candidateRows.filter((row) => {
@@ -1190,6 +1399,7 @@ async function matchFood(
     (row) => row.name_pt == null || !hasNutritionModifierConflict(name, row.name_pt),
   )
   if (modifierCompatibleRows.length > 0) candidateRows = modifierCompatibleRows
+  const preparationAmbiguity = detectPreparationAmbiguity(name, candidateRows)
 
   // Tie-break determinístico: similarity DESC, país do paciente, id ASC.
   // Empate de similarity (até 0.001 de diferença, abaixo do ruído de cast
@@ -1220,6 +1430,7 @@ async function matchFood(
     carbs_g: top.carbs_g != null ? Number(top.carbs_g) : null,
     fat_g: top.fat_g != null ? Number(top.fat_g) : null,
     fiber_g: top.fiber_g != null ? Number(top.fiber_g) : null,
+    preparation_ambiguity: preparationAmbiguity,
   }
 }
 
@@ -1710,6 +1921,36 @@ export async function calcMealMacros(
       prefetchedMatch.kcal_per_100g != null &&
       normalizeFoodText(prefetchedMatch.name_pt ?? '') === normalizeFoodText(it.food_name)
 
+    // ── PREPARO AMBÍGUO (device gate 2026-09-27; decisão Eduardo 2026-09-28) ─
+    // Sem preparo no pedido e com o mesmo alimento em preparos de energia muito
+    // diferente, nenhuma linha é escolhida — nem pelo trigram ("cru" vence por
+    // ter nome mais curto) nem pelo histórico, que pode ter herdado essa mesma
+    // escolha arbitrária. O paciente informa o preparo e o item é recalculado.
+    const ambiguity = prefetchedMatch.preparation_ambiguity
+    if (ambiguity && !hasExactCanonicalMatch) {
+      const labels = ambiguity.states.map((state) => PREPARATION_STATE_LABEL_PT[state])
+      userWarnings.push(
+        `Não sei se "${it.food_name}" era ${labels.join(' ou ')} — as calorias mudam muito conforme o preparo. Informe o preparo no nome do item para eu calcular. Não calculei as calorias desse item ainda.`,
+      )
+      auditWarnings.push(
+        `"${it.food_name}" tem preparo ambíguo (${ambiguity.states.join('/')}: ${ambiguity.min_kcal_per_100g}–${ambiguity.max_kcal_per_100g} kcal/100g) — nenhum alimento escolhido automaticamente.`,
+      )
+      matched.push({
+        food_name: it.food_name,
+        matched_taco_name: '',
+        matched_taco_id: null,
+        quantity_g: it.quantity_g,
+        kcal: 0,
+        protein_g: 0,
+        carbs_g: 0,
+        fat_g: 0,
+        fiber_g: 0,
+        similarity: 0,
+        source: 'no_match',
+      })
+      continue
+    }
+
     // ── PRIORIDADE 0: HISTÓRICO DO PACIENTE (Roberto 2026-05-13) ────────────
     // Antes do trigram, checa se o paciente já registrou esse alimento antes.
     // Se sim, usa esses macros — evita "leite com whey" virar achocolatado
@@ -1790,13 +2031,49 @@ export async function calcMealMacros(
               .filter((w) => w.length >= 3 && !/^(de|do|da|dos|das|com|e|ou|na|no|à|ao)$/i.test(w))
             for (const w of [...words].reverse()) {
               const m2 = await matchFood(supabase, w, country)
-              if (m2.similarity >= 0.55 && m2.kcal_per_100g != null) {
+              if (
+                m2.similarity >= 0.55 &&
+                m2.kcal_per_100g != null &&
+                m2.preparation_ambiguity == null
+              ) {
                 pm = m2
                 break
               }
             }
           }
           partMatches.push({ name: p, m: pm })
+        }
+        // Parte com preparo ambíguo: nem escolhe cru/cozido pelo trigram, nem
+        // descarta a parte (o agregado parcial daria os gramas dela às outras).
+        // O item inteiro pede o preparo, como o item simples.
+        const ambiguousParts = partMatches.filter((pm) => pm.m.preparation_ambiguity != null)
+        if (ambiguousParts.length > 0) {
+          const states = new Set(
+            ambiguousParts.flatMap((pm) => pm.m.preparation_ambiguity?.states ?? []),
+          )
+          const labels = PREPARATION_STATE_ORDER.filter((state) => states.has(state)).map(
+            (state) => PREPARATION_STATE_LABEL_PT[state],
+          )
+          userWarnings.push(
+            `Não sei o preparo de ${ambiguousParts.map((pm) => `"${pm.name}"`).join(' e ')} em "${it.food_name}" (${labels.join(' ou ')}) — as calorias mudam muito conforme o preparo. Informe o preparo de cada alimento para eu calcular. Não calculei as calorias desse item ainda.`,
+          )
+          auditWarnings.push(
+            `"${it.food_name}" tem parte(s) com preparo ambíguo (${ambiguousParts.map((pm) => pm.name).join(', ')}) — nenhum alimento escolhido automaticamente.`,
+          )
+          matched.push({
+            food_name: it.food_name,
+            matched_taco_name: '',
+            matched_taco_id: null,
+            quantity_g: it.quantity_g,
+            kcal: 0,
+            protein_g: 0,
+            carbs_g: 0,
+            fat_g: 0,
+            fiber_g: 0,
+            similarity: 0,
+            source: 'no_match',
+          })
+          continue
         }
         // Conta partes BOAS (sim>=0.45 + kcal valido). Estratégia em camadas:
         //  - 100% boas: agrega tudo (caminho original)

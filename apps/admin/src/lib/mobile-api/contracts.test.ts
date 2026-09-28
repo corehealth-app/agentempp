@@ -135,6 +135,26 @@ describe('mobile API v1 contracts', () => {
     })
   })
 
+  it('keeps decimal quantities, a patient kcal and a legitimate zero exactly as sent', () => {
+    // Incident matrix 2026-09-28: decimal quantities were once truncated, and a
+    // 0 kcal item was once treated as a missing calculation.
+    const parsed = registrationProposalInputSchema.parse({
+      kind: 'meal',
+      meal_type: 'almoco',
+      items: [
+        { food_name: 'arroz branco cozido', quantity_g: 150.5 },
+        { food_name: 'feijão carioca cozido', quantity_g: 86.5, user_kcal: 66.1 },
+        { food_name: 'café sem açúcar', quantity_g: 50, user_kcal: 0 },
+      ],
+    })
+
+    expect(parsed.kind === 'meal' && parsed.items).toEqual([
+      { food_name: 'arroz branco cozido', quantity_g: 150.5 },
+      { food_name: 'feijão carioca cozido', quantity_g: 86.5, user_kcal: 66.1 },
+      { food_name: 'café sem açúcar', quantity_g: 50, user_kcal: 0 },
+    ])
+  })
+
   it('rejects nutrition totals supplied by the mobile client', () => {
     expect(() =>
       registrationProposalInputSchema.parse({

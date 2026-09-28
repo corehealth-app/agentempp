@@ -254,4 +254,61 @@ BEGIN
 END;
 $test$;
 
+-- Incident matrix 2026-09-28: a decimal quantity or kcal is stored as sent,
+-- a legitimate 0 kcal item is a row (not a missing calculation), and the
+-- patient-reported origin survives the write. The day total keeps the
+-- existing integer rounding of calories_consumed.
+DO $test$
+DECLARE
+  v_user_id uuid := '00000000-0000-0000-0000-000000000112';
+  v_result jsonb;
+  v_rows jsonb;
+BEGIN
+  INSERT INTO public.users (id, wpp, name)
+  VALUES (v_user_id, '19999999998', 'atomic-decimal-test')
+  ON CONFLICT (id) DO NOTHING;
+
+  v_result := public.register_meal_atomic(
+    p_user_id => v_user_id,
+    p_date => DATE '2026-09-27',
+    p_meal_type => 'almoco'::public.meal_type_enum,
+    p_items => '[
+      {"food_name":"Arroz branco cozido","quantity_g":150.5,"kcal":192.4,"protein_g":3.8,"carbs_g":42.1,"fat_g":0.3,"source":"taco","confidence":1},
+      {"food_name":"Feijão carioca cozido","quantity_g":86.5,"kcal":66.1,"protein_g":4.1,"carbs_g":11.8,"fat_g":0.4,"source":"user_kcal","confidence":1},
+      {"food_name":"Café sem açúcar","quantity_g":50,"kcal":0,"protein_g":0,"carbs_g":0,"fat_g":0,"source":"taco","confidence":1}
+    ]'::jsonb,
+    p_provider_message_id => 'provider-atomic-decimal-1'
+  );
+
+  IF (v_result->>'inserted_count')::integer <> 3 THEN
+    RAISE EXCEPTION 'decimal/zero insert count mismatch: %', v_result;
+  END IF;
+
+  SELECT jsonb_object_agg(meal.food_name, jsonb_build_object(
+           'quantity_g', meal.quantity_g, 'kcal', meal.kcal, 'source', meal.source))
+  INTO v_rows
+  FROM public.meal_logs AS meal
+  WHERE meal.user_id = v_user_id;
+
+  IF (v_rows->'Arroz branco cozido'->>'quantity_g')::numeric <> 150.5
+    OR (v_rows->'Arroz branco cozido'->>'kcal')::numeric <> 192.4
+    OR (v_rows->'Feijão carioca cozido'->>'quantity_g')::numeric <> 86.5 THEN
+    RAISE EXCEPTION 'decimal quantity or kcal was not stored as sent: %', v_rows;
+  END IF;
+
+  IF NOT (v_rows ? 'Café sem açúcar')
+    OR (v_rows->'Café sem açúcar'->>'kcal')::numeric <> 0 THEN
+    RAISE EXCEPTION 'legitimate zero kcal item was not stored as a zero row: %', v_rows;
+  END IF;
+
+  IF v_rows->'Feijão carioca cozido'->>'source' <> 'user_kcal' THEN
+    RAISE EXCEPTION 'patient-reported kcal origin was not preserved: %', v_rows;
+  END IF;
+
+  IF (v_result->>'calories_consumed')::integer <> 259 THEN
+    RAISE EXCEPTION 'day total must be round(192.4 + 66.1 + 0) = 259: %', v_result;
+  END IF;
+END;
+$test$;
+
 ROLLBACK;

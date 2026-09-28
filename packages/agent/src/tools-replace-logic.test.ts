@@ -776,6 +776,8 @@ describe('registra_refeicao — decisão de replace (bug Paulo + esposa Roberto)
     expect(Number(mealInserts[0]?.kcal)).toBe(95)
     const atomicCall = rpcCalls.find((c) => c.fn === 'register_meal_atomic')
     expect((atomicCall?.params.p_items as Array<{ kcal: number }>)[0]?.kcal).toBe(95)
+    // Incident matrix 2026-09-28: the origin is persisted with the value.
+    expect((atomicCall?.params.p_items as Array<{ source: string }>)[0]?.source).toBe('user_kcal')
   })
 
   it('propaga food_db_id aprovado no pending até register_meal_atomic', async () => {

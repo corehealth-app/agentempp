@@ -614,15 +614,17 @@ final class BodyFlowUITests: XCTestCase {
     ) {
         XCTAssertTrue(field.waitForExistence(timeout: 3))
         field.tap()
-        XCTAssertTrue(waitForKeyboardFocus(field))
 
         // iOS 26.5 retains only the final character when XCUI bulk-types
         // into the first new-password field. Dismiss its system strong-password
         // sheet before using a keyboard paste on the real focused field.
+        // The sheet holds keyboard focus while it is up (recorded 2026-09-28:
+        // "Usar Senha Forte?" over the field, hasKeyboardFocus false for 3 s),
+        // so focus is asserted only after the sheet is dismissed.
         if field.identifier == "auth.password" {
             field.typeKey(XCUIKeyboardKey.escape, modifierFlags: [])
-            XCTAssertTrue(waitForKeyboardFocus(field))
         }
+        XCTAssertTrue(waitForKeyboardFocus(field))
 
         UIPasteboard.general.string = text
         defer { UIPasteboard.general.string = nil }
@@ -637,7 +639,14 @@ final class BodyFlowUITests: XCTestCase {
                 field.typeText(String(character))
             }
         }
-        XCTAssertTrue(waitForSecureEntry(field, characterCount: text.count))
+        let entered = waitForSecureEntry(field, characterCount: text.count)
+        // A secure field exposes masked bullets, so the observed value is safe
+        // to report and tells a dropped keystroke apart from a stale value.
+        let observed = field.value as? String ?? "<no value>"
+        XCTAssertTrue(
+            entered,
+            "\(field.identifier): observed \(observed.count) chars «\(observed)», expected \(text.count)"
+        )
     }
 
     @MainActor

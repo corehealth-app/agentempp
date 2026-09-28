@@ -331,4 +331,106 @@ struct MealProposalEditorDraftTests {
         let request = try #require(MealProposalEditorDraft(seed: seed).request(language: Self.pt))
         #expect(request.items.map(\.userKcal) == [nil])
     }
+
+    // MARK: - Items the server has not calculated (device gate 2026-09-27)
+
+    private static let unresolvedBeans = MealProposalItemSnapshot(
+        name: "Feijão carioca",
+        quantityG: decimal("86.5"),
+        kcal: 0,
+        proteinG: 0,
+        carbsG: 0,
+        fatG: 0,
+        userKcal: nil,
+        nutritionSource: "no_match",
+        resolution: "needs_clarification",
+        preparationOptions: ["cru", "cozido"]
+    )
+
+    @Test("the pending item decodes its resolution and preparation options; an earlier server has none")
+    func decodesResolution() throws {
+        let json = """
+            {"name":"Feijão carioca","quantity_g":86.5,"kcal":0,"protein_g":0,"carbs_g":0,
+             "fat_g":0,"user_kcal":null,"nutrition_source":"no_match",
+             "resolution":"needs_clarification","preparation_options":["cru","cozido"]}
+            """
+        let item = try JSONDecoder().decode(MealProposalItemSnapshot.self, from: Data(json.utf8))
+        #expect(item.needsClarification)
+        #expect(item.preparationOptions == ["cru", "cozido"])
+
+        let legacy = """
+            {"name":"Água","quantity_g":250,"kcal":0,"protein_g":0,"carbs_g":0,"fat_g":0,
+             "user_kcal":null,"nutrition_source":"rule_based"}
+            """
+        let water = try JSONDecoder().decode(MealProposalItemSnapshot.self, from: Data(legacy.utf8))
+        #expect(!water.needsClarification)
+        #expect(water.preparationOptions == nil)
+    }
+
+    @Test("an item without calculation blocks the confirmation; a legitimate zero does not")
+    func unresolvedItemBlocksConfirmation() {
+        let water = Self.item("Água", quantity: "250", kcal: "0", source: "rule_based")
+        let blocked = MealProposalPresentation(
+            registration: Self.registration([Self.calculated, Self.unresolvedBeans])
+        )
+        #expect(blocked.hasUnresolvedItems)
+        #expect(!blocked.allowsConfirm)
+        #expect(blocked.allowsEdit)
+        #expect(blocked.items.map(\.needsClarification) == [false, true])
+
+        let allowed = MealProposalPresentation(
+            registration: Self.registration([Self.calculated, water])
+        )
+        #expect(!allowed.hasUnresolvedItems)
+        #expect(allowed.allowsConfirm)
+    }
+
+    @Test("fixing the second item sends every item in order and only renames that one")
+    func editsAnyItemKeepingTheOthers() throws {
+        var draft = MealProposalEditorDraft(seed: MealProposalEditorSeed(
+            registration: Self.registration([Self.reported, Self.unresolvedBeans, Self.calculated]),
+            initialConsumedAt: Self.consumedAt,
+            editedIndex: 1
+        ))
+        #expect(draft.foodName == "Feijão carioca")
+        #expect(draft.preparationOptions == ["cru", "cozido"])
+
+        draft.choosePreparation("cru")
+        draft.choosePreparation("cozido")
+        #expect(draft.foodName == "Feijão carioca cozido")
+
+        let request = try #require(draft.request(language: Self.pt))
+        let items = try Self.itemsJSON(request)
+        #expect(items.map { $0["food_name"] as? String } == [
+            "Wrap", "Feijão carioca cozido", "Arroz integral",
+        ])
+        #expect((items[1]["quantity_g"] as? NSNumber)?.decimalValue == Self.decimal("86.5"))
+        // The unresolved item never carries a calorie from the device.
+        #expect(items[1]["user_kcal"] == nil)
+        // The patient's value on another item is kept; a calculated one is not sent.
+        #expect((items[0]["user_kcal"] as? NSNumber)?.decimalValue == 200)
+        #expect(items[2]["user_kcal"] == nil)
+    }
+
+    @Test("an out-of-range index edits the first item; a resolved item offers no preparation")
+    func editorIndexIsBounded() {
+        let draft = MealProposalEditorDraft(seed: MealProposalEditorSeed(
+            registration: Self.registration([Self.calculated, Self.unresolvedBeans]),
+            initialConsumedAt: Self.consumedAt,
+            editedIndex: 9
+        ))
+        #expect(draft.editedIndex == 0)
+        #expect(draft.foodName == "Arroz integral")
+        #expect(draft.preparationOptions.isEmpty)
+    }
+
+    @Test("the editor shows no server value for an item that was not calculated")
+    func unresolvedItemHasNoServerValue() {
+        let seed = MealProposalEditorSeed(
+            registration: Self.registration([Self.calculated, Self.unresolvedBeans]),
+            initialConsumedAt: Self.consumedAt,
+            editedIndex: 1
+        )
+        #expect(seed.officialKcal == nil)
+    }
 }

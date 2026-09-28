@@ -8,6 +8,9 @@ struct MealProposalItemPresentation: Equatable, Sendable {
     let proteinG: Decimal?
     let carbsG: Decimal?
     let fatG: Decimal?
+    /// The server has not calculated this item; it must be fixed before the
+    /// meal can be confirmed.
+    var needsClarification = false
 }
 
 struct MealProposalTotalsPresentation: Equatable, Sendable {
@@ -27,7 +30,10 @@ struct MealProposalPresentation: Equatable, Sendable {
     let expiresAt: APITimestamp
 
     var allowsEdit: Bool { status == "pending" }
-    var allowsConfirm: Bool { status == "pending" }
+    /// An item the server has not calculated blocks the confirmation (the
+    /// server refuses it too).
+    var hasUnresolvedItems: Bool { items.contains(where: \.needsClarification) }
+    var allowsConfirm: Bool { status == "pending" && !hasUnresolvedItems }
     var allowsCancel: Bool { status == "pending" }
 
     var visibleText: String {
@@ -62,7 +68,8 @@ struct MealProposalPresentation: Equatable, Sendable {
                     kcal: $0.kcal,
                     proteinG: $0.proteinG,
                     carbsG: $0.carbsG,
-                    fatG: $0.fatG
+                    fatG: $0.fatG,
+                    needsClarification: $0.needsClarification
                 )
             }
             totals = proposal.totals.map {
@@ -109,6 +116,7 @@ struct MealProposalView: View {
     let proposal: MealProposalPresentation
     let isSubmitting: Bool
     let edit: @MainActor () -> Void
+    var editItem: @MainActor (Int) -> Void = { _ in }
     let confirm: @MainActor () -> Void
     let cancel: @MainActor () -> Void
     @Environment(\.locale) private var locale
@@ -119,12 +127,15 @@ struct MealProposalView: View {
                 .font(BodyFlowTypography.title)
                 .fontWeight(.semibold)
 
-            ForEach(Array(proposal.items.enumerated()), id: \.offset) { _, item in
+            ForEach(Array(proposal.items.enumerated()), id: \.offset) { index, item in
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
                     Text(item.name)
                         .font(BodyFlowTypography.headline)
                     Text("\(decimalText(item.quantityG)) g")
                         .foregroundStyle(BodyFlowColor.secondaryText)
+                    if item.needsClarification {
+                        unresolvedItemActions(index: index)
+                    } else {
                     nutrientText(
                         copy("registration.metric.energy"),
                         value: item.kcal,
@@ -145,6 +156,7 @@ struct MealProposalView: View {
                         value: item.fatG,
                         unit: .grams
                     )
+                    }
                 }
                 .padding(.vertical, BodyFlowSpacing.xs)
             }
@@ -191,6 +203,10 @@ struct MealProposalView: View {
                 .font(BodyFlowTypography.caption)
                 .foregroundStyle(BodyFlowColor.secondaryText)
 
+            if proposal.status == "pending", proposal.hasUnresolvedItems {
+                BodyFlowStatusLine(copy("registration.proposal.confirm.blocked"), kind: .warning)
+                    .accessibilityIdentifier("registration.proposal.confirm.blocked")
+            }
             if proposal.allowsConfirm {
                 Button(action: confirm) {
                     Text(copy("registration.proposal.confirm"))
@@ -224,6 +240,26 @@ struct MealProposalView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("registration.proposal")
+    }
+
+    /// An item without calculation shows why and how to fix it instead of
+    /// zeros that would read as a result.
+    @ViewBuilder
+    private func unresolvedItemActions(index: Int) -> some View {
+        BodyFlowStatusLine(copy("registration.proposal.item.needs-clarification"), kind: .warning)
+            .accessibilityIdentifier("registration.proposal.item.\(index).needs-clarification")
+        if proposal.allowsEdit {
+            Button {
+                editItem(index)
+            } label: {
+                Text(copy("registration.proposal.item.resolve"))
+                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget + 1)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(BodyFlowButtonStyle(role: .secondary))
+            .disabled(isSubmitting)
+            .accessibilityIdentifier("registration.proposal.item.\(index).resolve")
+        }
     }
 
     @ViewBuilder

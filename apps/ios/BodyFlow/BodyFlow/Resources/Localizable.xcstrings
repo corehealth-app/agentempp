@@ -2763,6 +2763,30 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Edit" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Editar" } }
     } },
+    "registration.editor.item-number" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Item %lld" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Item %lld" } }
+    } },
+    "registration.editor.other-items-kept" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The other items stay as they are." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Os outros itens ficam como estão." } }
+    } },
+    "registration.editor.preparation" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "How was it prepared?" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Como foi preparado?" } }
+    } },
+    "registration.proposal.confirm.blocked" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Fix the marked items to confirm this meal." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Corrija os itens marcados para confirmar esta refeição." } }
+    } },
+    "registration.proposal.item.needs-clarification" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Not calculated yet: more information is needed." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ainda não calculado: falta uma informação." } }
+    } },
+    "registration.proposal.item.resolve" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Fix this item" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Corrigir este item" } }
+    } },
     "registration.proposal.edit-first-item" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Edit first item" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Editar primeiro item" } }

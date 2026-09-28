@@ -242,8 +242,17 @@ struct MealProposalItemSnapshot: Codable, Hashable, Sendable {
     /// False when the response carried neither provenance key (an earlier
     /// server): the origin is unknown, never "calculated" by default.
     let kcalOriginReported: Bool
+    /// `resolution`: "needs_clarification" when the server has not calculated
+    /// this item yet (it is not a legitimate zero); nil from an earlier server.
+    let resolution: String?
+    /// `preparation_options`: the preparations to choose from, when that is
+    /// the missing information.
+    let preparationOptions: [String]?
 
     private static let patientSource = "user_kcal"
+    private static let needsClarificationValue = "needs_clarification"
+
+    var needsClarification: Bool { resolution == Self.needsClarificationValue }
 
     init(
         name: String,
@@ -254,7 +263,9 @@ struct MealProposalItemSnapshot: Codable, Hashable, Sendable {
         fatG: Decimal?,
         userKcal: Decimal? = nil,
         nutritionSource: String? = nil,
-        kcalOriginReported: Bool = true
+        kcalOriginReported: Bool = true,
+        resolution: String? = nil,
+        preparationOptions: [String]? = nil
     ) {
         self.name = name
         self.quantityG = quantityG
@@ -265,6 +276,8 @@ struct MealProposalItemSnapshot: Codable, Hashable, Sendable {
         self.userKcal = userKcal
         self.nutritionSource = nutritionSource
         self.kcalOriginReported = kcalOriginReported
+        self.resolution = resolution
+        self.preparationOptions = preparationOptions
     }
 
     var kcalOrigin: MealItemKcalOrigin {
@@ -284,6 +297,8 @@ struct MealProposalItemSnapshot: Codable, Hashable, Sendable {
         case fatG = "fat_g"
         case userKcal = "user_kcal"
         case nutritionSource = "nutrition_source"
+        case resolution
+        case preparationOptions = "preparation_options"
     }
 
     init(from decoder: any Decoder) throws {
@@ -298,6 +313,11 @@ struct MealProposalItemSnapshot: Codable, Hashable, Sendable {
         nutritionSource = try container.decodeIfPresent(String.self, forKey: .nutritionSource)
         kcalOriginReported = container.contains(.userKcal)
             && container.contains(.nutritionSource)
+        resolution = try container.decodeIfPresent(String.self, forKey: .resolution)
+        preparationOptions = try container.decodeIfPresent(
+            [String].self,
+            forKey: .preparationOptions
+        )
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -312,6 +332,8 @@ struct MealProposalItemSnapshot: Codable, Hashable, Sendable {
             try container.encode(userKcal, forKey: .userKcal)
             try container.encode(nutritionSource, forKey: .nutritionSource)
         }
+        try container.encodeIfPresent(resolution, forKey: .resolution)
+        try container.encodeIfPresent(preparationOptions, forKey: .preparationOptions)
     }
 }
 

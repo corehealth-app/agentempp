@@ -599,6 +599,7 @@ private struct MealRegistrationContent: View {
     @State private var choice: MealCaptureChoice?
     @State private var textDraft: String
     @State private var showingEditor = false
+    @State private var editedItemIndex = 0
     @AccessibilityFocusState private var operationFocus: RegistrationAccessibilityFocusTarget?
 
     init(
@@ -642,7 +643,8 @@ private struct MealRegistrationContent: View {
                 MealProposalEditorView(
                     registration: proposal,
                     initialConsumedAt: model.initialConsumedAt,
-                    isSubmitting: model.isSubmitting
+                    isSubmitting: model.isSubmitting,
+                    editedIndex: editedItemIndex
                 ) { edit in
                     showingEditor = false
                     saveEdit(edit)
@@ -662,7 +664,14 @@ private struct MealRegistrationContent: View {
             MealProposalView(
                 proposal: MealProposalPresentation(registration: proposal),
                 isSubmitting: model.isSubmitting,
-                edit: { showingEditor = true },
+                edit: {
+                    editedItemIndex = 0
+                    showingEditor = true
+                },
+                editItem: { index in
+                    editedItemIndex = index
+                    showingEditor = true
+                },
                 confirm: confirm,
                 cancel: cancel
             )

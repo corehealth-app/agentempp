@@ -5,8 +5,10 @@ struct MealProposalEditorSeed {
     /// Every item of the pending proposal, in the server's order.
     let items: [MealProposalItemSnapshot]
     let consumedAt: Date
+    /// The item being edited; every other item is sent back as it came.
+    let editedIndex: Int
 
-    init(registration: RegistrationSnapshot, initialConsumedAt: Date) {
+    init(registration: RegistrationSnapshot, initialConsumedAt: Date, editedIndex: Int = 0) {
         let proposal: MealProposalSnapshot
         switch registration.proposal {
         case let .meal(value): proposal = value
@@ -21,13 +23,21 @@ struct MealProposalEditorSeed {
         mealType = MealType(rawValue: proposal.mealType) ?? .other
         items = proposal.items
         consumedAt = initialConsumedAt
+        self.editedIndex = proposal.items.indices.contains(editedIndex) ? editedIndex : 0
     }
 
-    var foodName: String { items.first?.name ?? "" }
-    var quantityG: Decimal? { items.first?.quantityG }
-    /// The server's current value for the first item, shown read-only.
-    var officialKcal: Decimal? { items.first?.kcal }
-    var firstItemKcalOrigin: MealItemKcalOrigin { items.first?.kcalOrigin ?? .official }
+    var editedItem: MealProposalItemSnapshot? {
+        items.indices.contains(editedIndex) ? items[editedIndex] : nil
+    }
+
+    var foodName: String { editedItem?.name ?? "" }
+    var quantityG: Decimal? { editedItem?.quantityG }
+    /// The server's current value for the edited item, shown read-only; an
+    /// item without calculation has none.
+    var officialKcal: Decimal? {
+        editedItem?.needsClarification == true ? nil : editedItem?.kcal
+    }
+    var firstItemKcalOrigin: MealItemKcalOrigin { editedItem?.kcalOrigin ?? .official }
     /// True when any item came without its calorie provenance.
     var hasUnknownKcalOrigin: Bool { items.contains { $0.kcalOrigin == .unknown } }
 }
@@ -104,10 +114,12 @@ enum MealProposalNumberParser {
 }
 
 /// The editor's working copy and the only place its edit request is built.
-/// Only the first item is editable; every other item is sent back as it came,
-/// with a patient-reported calorie kept and a calculated one left to the server.
+/// One item is editable at a time (the first by default); every other item is
+/// sent back as it came, in the server's order, with a patient-reported calorie
+/// kept and a calculated one left to the server.
 struct MealProposalEditorDraft: Equatable, Sendable {
     let items: [MealProposalItemSnapshot]
+    let editedIndex: Int
     let hasUnknownKcalOrigin: Bool
     var mealType: MealType
     var foodName: String
@@ -125,14 +137,36 @@ struct MealProposalEditorDraft: Equatable, Sendable {
 
     init(seed: MealProposalEditorSeed) {
         items = seed.items
+        editedIndex = seed.editedIndex
         hasUnknownKcalOrigin = seed.hasUnknownKcalOrigin
         mealType = seed.mealType
         foodName = seed.foodName
         consumedAt = seed.consumedAt
     }
 
+    private var editedItem: MealProposalItemSnapshot? {
+        items.indices.contains(editedIndex) ? items[editedIndex] : nil
+    }
+
     private var firstItemOrigin: MealItemKcalOrigin {
-        items.first?.kcalOrigin ?? .official
+        editedItem?.kcalOrigin ?? .official
+    }
+
+    /// Preparations the server asked the patient to choose from.
+    var preparationOptions: [String] {
+        editedItem?.needsClarification == true ? (editedItem?.preparationOptions ?? []) : []
+    }
+
+    /// Writes the chosen preparation into the name the server will read
+    /// ("Feijão carioca" -> "Feijão carioca cozido"); choosing another one
+    /// replaces the previous choice. The calculation stays on the server.
+    mutating func choosePreparation(_ option: String) {
+        var words = foodName.split(separator: " ").map(String.init)
+        if let last = words.last, preparationOptions.contains(last) {
+            words.removeLast()
+        }
+        words.append(option)
+        foodName = words.joined(separator: " ")
     }
 
     private var keptReportedKcal: Decimal? {
@@ -156,7 +190,7 @@ struct MealProposalEditorDraft: Equatable, Sendable {
 
     func quantityDisplay(language: SupportedAppLanguage) -> String {
         if let quantityText { return quantityText }
-        return items.first.map {
+        return editedItem.map {
             MealProposalNumberParser.format($0.quantityG, language: language)
         } ?? ""
     }
@@ -169,7 +203,7 @@ struct MealProposalEditorDraft: Equatable, Sendable {
     }
 
     func quantityValue(language: SupportedAppLanguage) -> Decimal? {
-        guard let quantityText else { return items.first?.quantityG }
+        guard let quantityText else { return editedItem?.quantityG }
         guard let value = MealProposalNumberParser.parse(quantityText, language: language),
               value > 0, value <= Self.maximumQuantityG
         else {
@@ -200,7 +234,7 @@ struct MealProposalEditorDraft: Equatable, Sendable {
         else {
             return false
         }
-        return quantity != items.first?.quantityG
+        return quantity != editedItem?.quantityG
     }
 
     func blocker(language: SupportedAppLanguage) -> MealProposalEditorBlocker? {
@@ -225,20 +259,22 @@ struct MealProposalEditorDraft: Equatable, Sendable {
         } else {
             nil
         }
-        let untouchedItems = items.dropFirst().map { item in
-            MealProposalItemRequest(
-                foodName: item.name,
-                quantityG: item.quantityG,
-                userKcal: Self.keptKcal(of: item)
-            )
+        let requestItems = items.enumerated().map { index, item in
+            index == editedIndex
+                ? MealProposalItemRequest(
+                    foodName: foodName,
+                    quantityG: quantity,
+                    userKcal: firstItemKcal
+                )
+                : MealProposalItemRequest(
+                    foodName: item.name,
+                    quantityG: item.quantityG,
+                    userKcal: Self.keptKcal(of: item)
+                )
         }
         return MealProposalRequest(
             mealType: mealType,
-            items: [MealProposalItemRequest(
-                foodName: foodName,
-                quantityG: quantity,
-                userKcal: firstItemKcal
-            )] + untouchedItems,
+            items: requestItems,
             consumedAt: APITimestamp(value: consumedAt)
         )
     }
@@ -284,11 +320,13 @@ struct MealProposalEditorView: View {
         registration: RegistrationSnapshot,
         initialConsumedAt: Date,
         isSubmitting: Bool,
+        editedIndex: Int = 0,
         save: @escaping @MainActor (MealProposalRequest) -> Void
     ) {
         let seed = MealProposalEditorSeed(
             registration: registration,
-            initialConsumedAt: initialConsumedAt
+            initialConsumedAt: initialConsumedAt,
+            editedIndex: editedIndex
         )
         _draft = State(initialValue: MealProposalEditorDraft(seed: seed))
         officialKcal = seed.officialKcal
@@ -304,11 +342,27 @@ struct MealProposalEditorView: View {
                     BodyFlowStatusLine(copy("registration.editor.origin-unknown"), kind: .warning)
                         .accessibilityIdentifier("registration.proposal.edit.origin-unknown")
                 }
-                Text(copy("registration.proposal.first-item-notice"))
+                Text(copy(
+                    draft.editedIndex == 0
+                        ? "registration.proposal.first-item-notice"
+                        : "registration.editor.other-items-kept"
+                ))
                     .font(BodyFlowTypography.callout)
                     .foregroundStyle(BodyFlowColor.secondaryText)
                 TextField(copy("registration.editor.food"), text: $draft.foodName)
                     .accessibilityIdentifier("registration.proposal.edit.food-name")
+                if !draft.preparationOptions.isEmpty {
+                    Text(copy("registration.editor.preparation"))
+                        .font(BodyFlowTypography.callout)
+                        .foregroundStyle(BodyFlowColor.secondaryText)
+                    ForEach(draft.preparationOptions, id: \.self) { option in
+                        Button(option) { draft.choosePreparation(option) }
+                            .buttonStyle(BodyFlowButtonStyle(role: .secondary))
+                            .accessibilityIdentifier(
+                                "registration.proposal.edit.preparation.\(option)"
+                            )
+                    }
+                }
                 TextField(copy("registration.editor.quantity"), text: quantityBinding)
                     .keyboardType(.decimalPad)
                     .accessibilityIdentifier("registration.proposal.edit.quantity")
@@ -341,7 +395,7 @@ struct MealProposalEditorView: View {
                     .accessibilityIdentifier("registration.proposal.edit.use-server-calculation")
                 }
             } header: {
-                Text(copy("registration.editor.first-item"))
+                Text(itemHeader)
             }
             .bodyFlowListRow()
             Section(copy("registration.editor.meal")) {
@@ -386,6 +440,15 @@ struct MealProposalEditorView: View {
                     .accessibilityIdentifier("registration.proposal.edit.save")
             }
         }
+    }
+
+    private var itemHeader: String {
+        guard draft.editedIndex > 0 else { return copy("registration.editor.first-item") }
+        return String(
+            format: copy("registration.editor.item-number"),
+            locale: language.formattingLocale,
+            draft.editedIndex + 1
+        )
     }
 
     private func saveProposal() {

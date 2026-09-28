@@ -52,17 +52,14 @@ struct RoutineListView: View {
             ) } }
         } else if let snapshot = presentation.value {
             List(snapshot.items, id: \.id) { item in
-                NavigationLink {
-                    RoutineDetailView(
-                        entry: RoutineDetailEntry(
-                            kind: kind,
-                            itemID: item.id,
-                            listModel: model
-                        ),
-                        dependencies: dependencies,
-                        invalidationCenter: invalidationCenter
-                    )
-                } label: {
+                // Pushed by value, like every other screen of the stack: a
+                // detail pushed by view leaves the path behind, and the
+                // links inside it (History) then go nowhere.
+                NavigationLink(value: AppRoute.routine(RoutineRoute(
+                    kind: kind,
+                    itemID: item.id,
+                    destination: .detail
+                ))) {
                     RoutineItemRow(item: item, language: language)
                 }
                 .accessibilityIdentifier("routine.\(item.id)")

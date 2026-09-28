@@ -59,6 +59,41 @@ final class Prompt13RoutineUITests: XCTestCase {
         XCTAssertFalse(app.buttons["routine.history.load-more"].exists)
     }
 
+    /// F-07: the detail opened from the list (not from Today) must open its
+    /// History too, and come back through the same screens.
+    @MainActor
+    func testHistoryOpensFromTheDetailReachedThroughTheList() {
+        let app = launchRoutine()
+        for (list, item, title) in [
+            ("routine.list.supplement", "routine.supplement-1", "Suplementos"),
+            ("routine.list.medication", "routine.medication-1", "Medicamentos"),
+        ] {
+            let listButton = app.buttons[list]
+            XCTAssertTrue(listButton.waitForExistence(timeout: 5))
+            listButton.tap()
+            XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 3))
+            let row = app.buttons[item]
+            XCTAssertTrue(row.waitForExistence(timeout: 3))
+            row.tap()
+
+            let history = app.buttons["routine.history"]
+            XCTAssertTrue(history.waitForExistence(timeout: 3))
+            history.tap()
+            XCTAssertTrue(
+                app.navigationBars["Histórico"].waitForExistence(timeout: 5),
+                "History did not open from the \(title) list detail"
+            )
+            XCTAssertFalse(app.buttons["routine.action.taken"].exists)
+
+            // History -> detail -> list -> Today.
+            app.navigationBars.buttons.element(boundBy: 0).tap()
+            XCTAssertTrue(app.buttons["routine.action.taken"].waitForExistence(timeout: 3))
+            app.navigationBars.buttons.element(boundBy: 0).tap()
+            XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 3))
+            app.navigationBars.buttons.element(boundBy: 0).tap()
+        }
+    }
+
     @MainActor
     func testUnavailableRoutineActionShowsNoSuccess() {
         let app = BodyFlowUITestSupport(testCase: self).launch(

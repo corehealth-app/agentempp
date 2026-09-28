@@ -1,4 +1,4 @@
-import { allFunctions, inngest } from '@mpp/inngest-functions'
+import { functionsForSet, inngest } from '@mpp/inngest-functions'
 import { serve } from 'inngest/next'
 
 /**
@@ -12,7 +12,9 @@ import { serve } from 'inngest/next'
  */
 export const { GET, POST, PUT } = serve({
   client: inngest,
-  functions: allFunctions,
+  // INNGEST_FUNCTION_SET unset: every function (production). 'media-staging':
+  // only media processing, for the isolated staging worker.
+  functions: [...functionsForSet(process.env.INNGEST_FUNCTION_SET)],
   // streaming desativado para Edge Runtime do Vercel
   streaming: 'allow',
 })

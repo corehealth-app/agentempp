@@ -54,6 +54,24 @@ export const allFunctions = [
   coachContentPackActivationFn,
 ]
 
+/**
+ * The functions an Inngest endpoint serves. With no set named, every
+ * function (production). `media-staging` is the staging worker for the
+ * mobile app: only media processing (photos, audio, plan documents), with no
+ * cron, no WhatsApp and no reminder function. An unknown name is refused so a
+ * typo never widens the set.
+ */
+const FUNCTION_SETS = {
+  'media-staging': [mediaAssetProcessingFn],
+} as const
+
+export function functionsForSet(name: string | undefined): readonly (typeof allFunctions)[number][] {
+  if (name === undefined || name === '') return allFunctions
+  const selected = (FUNCTION_SETS as Record<string, readonly (typeof allFunctions)[number][]>)[name]
+  if (!selected) throw new Error(`unknown Inngest function set: ${name}`)
+  return selected
+}
+
 export {
   bufferListenerFn,
   coachContentPackActivationFn,

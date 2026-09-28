@@ -21,7 +21,11 @@ INSERT INTO public.media_assets (
   ('00000000-0000-0000-0000-00000000b521', '00000000-0000-0000-0000-00000000b511',
    'meal_photo', 'meal-photos',
    '00000000-0000-0000-0000-00000000b511/00000000-0000-0000-0000-00000000b521.jpg',
-   'image/jpeg', 1024, 'pending_upload', repeat('d', 64), now() + interval '30 days');
+   'image/jpeg', 1024, 'pending_upload', repeat('d', 64), now() + interval '30 days'),
+  ('00000000-0000-0000-0000-00000000b522', '00000000-0000-0000-0000-00000000b511',
+   'meal_photo', 'meal-photos',
+   '00000000-0000-0000-0000-00000000b511/00000000-0000-0000-0000-00000000b522.jpg',
+   'image/jpeg', 1024, 'pending_upload', repeat('e', 64), now() + interval '30 days');
 
 INSERT INTO public.messages (id, user_id, direction, role, content_type, content, provider)
 VALUES
@@ -36,6 +40,7 @@ DECLARE
   v_b uuid := '00000000-0000-0000-0000-00000000b512';
   v_blocked uuid := '00000000-0000-0000-0000-00000000b513';
   v_media uuid := '00000000-0000-0000-0000-00000000b521';
+  v_media_2 uuid := '00000000-0000-0000-0000-00000000b522';
   v_message uuid := '00000000-0000-0000-0000-00000000b531';
   v_training jsonb := '{"plan_type":"split","equipment_summary":"halteres","notes":"nota","weekly_schedule":[{"day":"seg","focus":"inferiores","duration_min":60,"exercises":[{"name":"agachamento","muscle_group":"pernas","sets":3,"reps_range":"8-12","rest_seconds":90}]},{"day":"qua","focus":"superiores","duration_min":50,"exercises":[{"name":"supino","muscle_group":"peito","sets":3,"reps_range":"8-12","rest_seconds":90}]}]}'::jsonb;
   v_nutrition jsonb := '{"mode":"referencia","horizon":"daily","daily_meals":[{"meal_type":"almoco","items":[{"food_name":"arroz","quantity_g":120}]}],"shopping_list":[]}'::jsonb;
@@ -246,7 +251,8 @@ BEGIN
     OR (v_result->>'already_confirmed')::boolean
     OR NOT v_row.active
     OR v_row.user_id <> v_a
-    OR v_row.generated_by <> 'flow_draft'
+    -- The patient changed the content twice before confirming.
+    OR v_row.generated_by <> 'flow_draft_edited'
     OR v_row.source_request_key <> 'plan-draft:' || v_draft::text
     OR v_row.plan_type <> 'split'
     OR v_row.days_per_week <> 2
@@ -283,6 +289,80 @@ BEGIN
     OR (SELECT status FROM public.plan_drafts WHERE id = v_second) <> 'ready_for_review' THEN
     RAISE EXCEPTION 'draft over a replaced plan was confirmed';
   END IF;
+
+  -- The message that anchored the draft is deleted (conversation reset):
+  -- the draft and the record of what was confirmed stay, without the anchor.
+  DELETE FROM public.messages WHERE id = v_message;
+  SELECT * INTO v_row FROM public.plan_drafts WHERE id = v_draft;
+  IF NOT FOUND
+    OR v_row.source_message_id IS NOT NULL
+    OR v_row.status <> 'confirmed'
+    OR v_row.confirmed_plan_id <> v_plan
+    OR v_row.payload_version <> 3 THEN
+    RAISE EXCEPTION 'deleting the message damaged the confirmed draft: %', v_row;
+  END IF;
+  v_result := public.confirm_plan_draft_atomic(
+    v_a, v_draft, 3, now() + interval '42 days', 'confirm-key-a-0003');
+  IF (v_result->>'confirmed_plan_id')::uuid <> v_plan THEN
+    RAISE EXCEPTION 'confirmation replay lost after the message was deleted';
+  END IF;
+
+  -- A draft is never marked confirmed from outside its confirmation, and
+  -- its version never goes back.
+  v_failed := false;
+  BEGIN
+    UPDATE public.plan_drafts
+    SET status = 'confirmed', confirmed_plan_id = v_plan,
+        confirmation_key = 'forged-key-0001', resolved_at = now()
+    WHERE id = v_second;
+  EXCEPTION WHEN check_violation THEN
+    v_failed := true;
+  END;
+  IF NOT v_failed THEN RAISE EXCEPTION 'draft confirmed by a direct write'; END IF;
+
+  v_failed := false;
+  BEGIN
+    -- From version 2 back to 1 (a valid number): only the rule refuses it.
+    PERFORM public.update_plan_draft_atomic(v_a, v_second, 1, v_training, NULL, true);
+    UPDATE public.plan_drafts SET payload_version = 1 WHERE id = v_second;
+  EXCEPTION WHEN check_violation THEN
+    v_failed := true;
+  END;
+  IF NOT v_failed
+    OR (SELECT payload_version FROM public.plan_drafts WHERE id = v_second) <> 1 THEN
+    -- The refused block rolled back its own edit too: the draft is at 1.
+    RAISE EXCEPTION 'draft version went back';
+  END IF;
+
+  v_failed := false;
+  BEGIN
+    UPDATE public.plan_drafts SET user_id = v_b WHERE id = v_second;
+  EXCEPTION WHEN check_violation OR foreign_key_violation THEN
+    v_failed := true;
+  END;
+  IF NOT v_failed THEN RAISE EXCEPTION 'draft moved to another patient'; END IF;
+
+  -- A document is imported once.
+  v_failed := false;
+  BEGIN
+    PERFORM public.create_plan_draft_atomic(
+      v_a, 'nutrition', 'imported_photo', 'extracting', NULL, NULL,
+      NULL, NULL, v_media, NULL, NULL, 'plan-import:a-0009');
+  EXCEPTION WHEN unique_violation THEN
+    v_failed := true;
+  END;
+  IF NOT v_failed THEN RAISE EXCEPTION 'the same document produced two drafts'; END IF;
+
+  -- Content arrives with the outcome of the work, never before it.
+  v_failed := false;
+  BEGIN
+    PERFORM public.create_plan_draft_atomic(
+      v_a, 'training', 'imported_photo', 'extracting', v_training, NULL,
+      NULL, NULL, v_media_2, NULL, NULL, 'plan-import:a-0010');
+  EXCEPTION WHEN invalid_parameter_value THEN
+    v_failed := true;
+  END;
+  IF NOT v_failed THEN RAISE EXCEPTION 'draft in extraction accepted content'; END IF;
 
   -- A resolved draft is a record.
   v_failed := false;
@@ -413,7 +493,11 @@ BEGIN
   VALUES (v_a, 'combined', '{"daily_meals":[]}'::jsonb, now() - interval '1 hour', now() + interval '1 day');
   v_nutrition_draft := (public.create_plan_draft_atomic(
     v_a, 'nutrition', 'imported_pdf', 'ready_for_review', v_nutrition, NULL,
-    NULL, '["Medicamento X 10 mg"]'::jsonb, v_media, NULL, NULL, 'plan-import:a-0002')->>'id')::uuid;
+    NULL, '["Medicamento X 10 mg"]'::jsonb, v_media_2, NULL, NULL, 'plan-import:a-0002')->>'id')::uuid;
+  -- The prescription the draft was written against merely expires during
+  -- the review: that is not a change of plan.
+  UPDATE public.prescriptions SET valid_until = now() - interval '1 minute'
+  WHERE user_id = v_a;
   v_second := (public.create_plan_draft_atomic(
     v_a, 'nutrition', 'flow_generated', 'ready_for_review', v_nutrition, NULL,
     NULL, NULL, NULL, NULL, NULL, 'mobile_flow/a/key-0005:propoe_plano_dieta')->>'id')::uuid;
@@ -441,6 +525,24 @@ BEGIN
   END;
   IF NOT v_failed OR (SELECT count(*) FROM public.prescriptions WHERE user_id = v_a) <> 2 THEN
     RAISE EXCEPTION 'second nutrition draft confirmed over a newer prescription';
+  END IF;
+
+  -- A prescription made by a professional, still valid, is not overtaken
+  -- by a draft.
+  UPDATE public.prescriptions
+  SET generated_by = 'professional', valid_until = now() + interval '7 days'
+  WHERE id = (v_result->>'confirmed_plan_id')::uuid;
+  v_second := (public.create_plan_draft_atomic(
+    v_a, 'nutrition', 'flow_generated', 'ready_for_review', v_nutrition, NULL,
+    NULL, NULL, NULL, NULL, NULL, 'mobile_flow/a/key-0006:propoe_plano_dieta')->>'id')::uuid;
+  v_failed := false;
+  BEGIN
+    PERFORM public.confirm_plan_draft_atomic(v_a, v_second, 1, NULL, 'confirm-key-a-0013');
+  EXCEPTION WHEN SQLSTATE 'PD423' THEN
+    v_failed := true;
+  END;
+  IF NOT v_failed OR (SELECT count(*) FROM public.prescriptions WHERE user_id = v_a) <> 2 THEN
+    RAISE EXCEPTION 'prescribed nutrition plan was overtaken by a draft';
   END IF;
 
   -- No draft writes a routine item, a supplement or a medication.
@@ -495,6 +597,76 @@ BEGIN
   IF NOT v_failed THEN RAISE EXCEPTION 'open draft limit not enforced'; END IF;
 END;
 $test$;
+
+-- 15a. The guard itself: with every privilege but without the trusted
+--      backend's claim, every entry point refuses.
+SELECT set_config('request.jwt.claims', '{"role":"authenticated"}', true);
+DO $test$
+DECLARE
+  v_a uuid := '00000000-0000-0000-0000-00000000b511';
+  v_draft uuid;
+  v_call text;
+  v_failed boolean;
+BEGIN
+  SELECT id INTO v_draft FROM public.plan_drafts WHERE user_id = v_a LIMIT 1;
+  FOREACH v_call IN ARRAY ARRAY[
+    format($q$SELECT public.create_plan_draft_atomic(%L, 'training', 'flow_generated', 'ready_for_review', '{"weekly_schedule":[]}'::jsonb, NULL, NULL, NULL, NULL, NULL, NULL, 'guard-key-0001')$q$, v_a),
+    format($q$SELECT public.resolve_plan_draft_work_atomic(%L, %L, 'failed', NULL, NULL, NULL, NULL, NULL, 'guard_test')$q$, v_a, v_draft),
+    format($q$SELECT public.update_plan_draft_atomic(%L, %L, 1, '{}'::jsonb, NULL, true)$q$, v_a, v_draft),
+    format($q$SELECT public.discard_plan_draft_atomic(%L, %L)$q$, v_a, v_draft),
+    format($q$SELECT public.confirm_plan_draft_atomic(%L, %L, 1, NULL, 'guard-key-0002')$q$, v_a, v_draft)
+  ] LOOP
+    v_failed := false;
+    BEGIN
+      EXECUTE v_call;
+    EXCEPTION WHEN insufficient_privilege THEN
+      v_failed := true;
+    END;
+    IF NOT v_failed THEN
+      RAISE EXCEPTION 'ran without the trusted backend: %', v_call;
+    END IF;
+  END LOOP;
+END;
+$test$;
+
+-- 15b. As the backend's own role (not a superuser) the WhatsApp save still
+--      replaces the plan, and a draft can be created and discarded.
+SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claims', '{"role":"service_role"}', true);
+DO $test$
+DECLARE
+  v_b uuid := '00000000-0000-0000-0000-00000000b512';
+  v_result jsonb;
+  v_draft uuid;
+BEGIN
+  v_result := public.save_training_plan_atomic(
+    v_b, 'full_body', 1, NULL,
+    '[{"day":"seg","focus":"full body","duration_min":30,"exercises":[]}]'::jsonb,
+    'agent', now(), NULL, 1, NULL, 'provider-training-role-test');
+  IF NOT (v_result->>'inserted')::boolean
+    OR NOT (SELECT (metadata->>'training_reminders')::boolean FROM public.users WHERE id = v_b)
+    OR (SELECT count(*) FROM public.training_plans WHERE user_id = v_b AND active) <> 1 THEN
+    RAISE EXCEPTION 'service_role could not save a training plan: %', v_result;
+  END IF;
+
+  UPDATE public.plan_drafts SET status = 'discarded', resolved_at = now()
+  WHERE user_id = v_b AND id = (
+    SELECT id FROM public.plan_drafts WHERE user_id = v_b ORDER BY created_at LIMIT 1
+  );
+  v_result := public.create_plan_draft_atomic(
+    v_b, 'training', 'flow_generated', 'ready_for_review',
+    '{"plan_type":"custom","weekly_schedule":[{"day":"seg","focus":"a","duration_min":30,"exercises":[]}]}'::jsonb,
+    NULL, NULL, NULL, NULL, NULL, NULL, 'mobile_flow/b/role-0001');
+  v_draft := (v_result->>'id')::uuid;
+  v_result := public.confirm_plan_draft_atomic(v_b, v_draft, 1, NULL, 'confirm-key-b-role-1');
+  IF v_result->>'status' <> 'confirmed'
+    OR (SELECT generated_by FROM public.training_plans WHERE user_id = v_b AND active)
+      <> 'flow_draft' THEN
+    RAISE EXCEPTION 'service_role could not confirm a draft: %', v_result;
+  END IF;
+END;
+$test$;
+RESET ROLE;
 
 -- 15. The patient sees that own drafts exist, never their content, and
 --     never another patient's; and executes none of the RPCs.

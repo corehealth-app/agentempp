@@ -141,6 +141,21 @@ BEGIN
     RAISE EXCEPTION 'unrelated update changed the weight instant';
   END IF;
 
+  -- 9b. A legacy write never moves the instant backwards: the app recorded a
+  --     measurement a few minutes ahead of this clock, and the write that
+  --     follows is still the newest.
+  v_at := date_trunc('second', clock_timestamp() + interval '4 minutes');
+  v_result := public.record_weight_atomic(v_legacy, 84, 'kg', v_at, 'weight-key-0009');
+  UPDATE public.user_profiles SET weight_kg = 85 WHERE user_id = v_legacy;
+  IF (SELECT weight_measured_at FROM public.user_profiles WHERE user_id = v_legacy) <= v_at THEN
+    RAISE EXCEPTION 'legacy write moved the instant backwards';
+  END IF;
+  v_result := public.record_weight_atomic(v_legacy, 84, 'kg', v_at, 'weight-key-0009');
+  IF (v_result->>'applied')::boolean
+    OR (SELECT weight_kg FROM public.user_profiles WHERE user_id = v_legacy) <> 85 THEN
+    RAISE EXCEPTION 'replay was applied over a newer legacy write: %', v_result;
+  END IF;
+
   -- 10. Invalid payloads are refused and change nothing.
   FOR v_result IN
     SELECT * FROM jsonb_array_elements('[
@@ -198,6 +213,42 @@ BEGIN
   END IF;
 END;
 $test$;
+
+-- 12a. The guard itself: with every privilege but without the trusted
+--      backend's claim, the function refuses.
+SELECT set_config('request.jwt.claims', '{"role":"authenticated"}', true);
+DO $test$
+DECLARE
+  v_failed boolean := false;
+BEGIN
+  BEGIN
+    PERFORM public.record_weight_atomic(
+      '00000000-0000-0000-0000-00000000a501', 70, 'kg', clock_timestamp(), 'weight-key-0013');
+  EXCEPTION WHEN insufficient_privilege THEN
+    v_failed := true;
+  END;
+  IF NOT v_failed THEN
+    RAISE EXCEPTION 'record_weight_atomic ran without the trusted backend';
+  END IF;
+END;
+$test$;
+
+-- 12b. As the backend's own role the entry point works.
+SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claims', '{"role":"service_role"}', true);
+DO $test$
+DECLARE
+  v_result jsonb;
+BEGIN
+  v_result := public.record_weight_atomic(
+    '00000000-0000-0000-0000-00000000a502', 171, 'lb',
+    date_trunc('second', clock_timestamp()), 'weight-key-0014');
+  IF NOT (v_result->>'applied')::boolean THEN
+    RAISE EXCEPTION 'service_role could not record a weight: %', v_result;
+  END IF;
+END;
+$test$;
+RESET ROLE;
 
 -- 12. Without the trusted backend the entry point refuses.
 SET LOCAL ROLE authenticated;

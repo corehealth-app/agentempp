@@ -41,6 +41,23 @@ BEGIN
      v_user::text || '/00000000-0000-0000-0000-00000000d522.jpg',
      'image/jpeg', 1024, 'pending_upload', repeat('2', 64), NULL);
 
+  -- A plan document never carries a retention date: the retention job
+  -- removes whatever is past its date.
+  v_failed := false;
+  BEGIN
+    INSERT INTO public.media_assets (
+      id, user_id, kind, bucket_id, object_path, mime_type, declared_size_bytes,
+      status, source_request_hash, retention_until
+    ) VALUES (
+      '00000000-0000-0000-0000-00000000d528', v_user, 'plan_document', 'plan-documents',
+      v_user::text || '/00000000-0000-0000-0000-00000000d528.pdf',
+      'application/pdf', 1024, 'pending_upload', repeat('8', 64), now() + interval '90 days'
+    );
+  EXCEPTION WHEN check_violation THEN
+    v_failed := true;
+  END;
+  IF NOT v_failed THEN RAISE EXCEPTION 'plan document accepted a retention date'; END IF;
+
   -- Everything else about a plan document is refused.
   FOR v_case IN
     SELECT * FROM (VALUES
@@ -60,7 +77,10 @@ BEGIN
       ) VALUES (
         '00000000-0000-0000-0000-00000000d529', v_user, v_case.kind, v_case.bucket,
         v_user::text || '/00000000-0000-0000-0000-00000000d529.' || v_case.ext,
-        v_case.mime, v_case.size, 'pending_upload', repeat('9', 64), now() + interval '30 days'
+        v_case.mime, v_case.size, 'pending_upload', repeat('9', 64),
+        -- Each kind with the retention its own rule asks for, so the refusal
+        -- comes from the rule under test.
+        CASE WHEN v_case.kind = 'plan_document' THEN NULL ELSE now() + interval '30 days' END
       );
     EXCEPTION WHEN check_violation THEN
       v_failed := true;

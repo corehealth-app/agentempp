@@ -14,8 +14,13 @@
 
 -- Composite targets so a draft can only point at media and messages of its
 -- own patient (the foreign keys below carry user_id).
-ALTER TABLE public.media_assets
-  ADD CONSTRAINT media_assets_id_user_unique UNIQUE (id, user_id);
+--
+-- Both are plain unique indexes created only when missing, so on a database
+-- with many rows they can be built beforehand, one statement at a time and
+-- outside a transaction, with CREATE UNIQUE INDEX CONCURRENTLY under the
+-- same names; this file then finds them in place and takes no long lock.
+CREATE UNIQUE INDEX IF NOT EXISTS media_assets_id_user_unique
+  ON public.media_assets (id, user_id);
 
 CREATE UNIQUE INDEX IF NOT EXISTS messages_id_user_unique
   ON public.messages (id, user_id);
@@ -115,9 +120,11 @@ CREATE TABLE public.plan_drafts (
   CONSTRAINT plan_drafts_media_owner_fk
     FOREIGN KEY (source_media_asset_id, user_id)
     REFERENCES public.media_assets (id, user_id) ON DELETE RESTRICT,
+  -- A deleted message (conversation reset) only takes the anchor away: the
+  -- draft, and the record of what was confirmed, stay.
   CONSTRAINT plan_drafts_message_owner_fk
     FOREIGN KEY (source_message_id, user_id)
-    REFERENCES public.messages (id, user_id) ON DELETE CASCADE
+    REFERENCES public.messages (id, user_id) ON DELETE SET NULL (source_message_id)
 );
 
 COMMENT ON TABLE public.plan_drafts IS
@@ -126,6 +133,12 @@ COMMENT ON TABLE public.plan_drafts IS
 CREATE INDEX plan_drafts_user_open_idx
   ON public.plan_drafts (user_id, created_at DESC)
   WHERE status IN ('extracting', 'generating', 'needs_completion', 'ready_for_review');
+-- A document is imported once: one draft per document, unless the earlier
+-- one failed, expired or was discarded.
+CREATE UNIQUE INDEX plan_drafts_one_per_document
+  ON public.plan_drafts (source_media_asset_id)
+  WHERE source_media_asset_id IS NOT NULL
+    AND status IN ('extracting', 'needs_completion', 'ready_for_review', 'confirmed');
 CREATE INDEX plan_drafts_media_idx
   ON public.plan_drafts (source_media_asset_id)
   WHERE source_media_asset_id IS NOT NULL;
@@ -140,6 +153,14 @@ SECURITY INVOKER
 SET search_path = pg_catalog, public, private, pg_temp
 AS $$
 BEGIN
+  -- The only change a deleted message causes: its anchor is cleared, in any
+  -- state of the draft, and nothing else moves.
+  IF OLD.source_message_id IS NOT NULL
+    AND NEW.source_message_id IS NULL
+    AND (to_jsonb(NEW) - 'source_message_id') = (to_jsonb(OLD) - 'source_message_id') THEN
+    RETURN NEW;
+  END IF;
+
   IF NEW.id <> OLD.id
     OR NEW.user_id <> OLD.user_id
     OR NEW.domain <> OLD.domain
@@ -173,10 +194,23 @@ BEGIN
       USING ERRCODE = '23514';
   END IF;
 
+  IF NEW.payload_version < OLD.payload_version THEN
+    RAISE EXCEPTION 'plan draft version cannot go back' USING ERRCODE = '23514';
+  END IF;
+
   IF NEW.payload IS DISTINCT FROM OLD.payload
     AND OLD.payload IS NOT NULL
     AND NEW.payload_version <= OLD.payload_version THEN
     RAISE EXCEPTION 'plan draft payload changed without a new version' USING ERRCODE = '23514';
+  END IF;
+
+  -- A draft is marked confirmed only by the confirmation itself, which
+  -- announces the draft it is confirming for the length of its transaction.
+  IF NEW.status = 'confirmed'
+    AND OLD.status <> 'confirmed'
+    AND current_setting('bodyflow.confirming_plan_draft', true) IS DISTINCT FROM NEW.id::text THEN
+    RAISE EXCEPTION 'plan draft can only be confirmed by its confirmation'
+      USING ERRCODE = '23514';
   END IF;
 
   NEW.updated_at := clock_timestamp();
@@ -400,7 +434,11 @@ BEGIN
     OR p_status IS NULL
     OR p_status NOT IN ('extracting', 'generating', 'needs_completion', 'ready_for_review')
     OR p_request_key IS NULL
-    OR p_request_key !~ '^[A-Za-z0-9._:/-]{8,200}$' THEN
+    OR p_request_key !~ '^[A-Za-z0-9._:/-]{8,200}$'
+    -- Content arrives with the outcome of the work, not before it.
+    OR (p_status IN ('extracting', 'generating') AND p_payload IS NOT NULL)
+    OR (p_status IN ('needs_completion', 'ready_for_review')
+        AND (p_payload IS NULL OR jsonb_typeof(p_payload) <> 'object')) THEN
     RAISE EXCEPTION 'invalid plan draft' USING ERRCODE = '22023';
   END IF;
 
@@ -458,10 +496,11 @@ BEGIN
     FROM public.training_plans
     WHERE user_id = p_user_id AND active = true;
   ELSE
+    -- The latest prescription, valid or not: one that merely expires during
+    -- the review is not a change of plan.
     SELECT id INTO v_base_prescription
     FROM public.prescriptions
     WHERE user_id = p_user_id
-      AND (valid_until IS NULL OR valid_until >= clock_timestamp())
     ORDER BY generated_at DESC, id DESC
     LIMIT 1;
   END IF;
@@ -656,6 +695,7 @@ DECLARE
   v_current_plan uuid;
   v_current_generated_by text;
   v_current_prescription uuid;
+  v_active boolean;
   v_plan_id uuid;
   v_generated_by text;
   v_schedule jsonb;
@@ -688,10 +728,25 @@ BEGIN
     0
   ));
 
+  -- The patient's row comes before the draft's: the same order the
+  -- conversation reset uses, and it makes every writer of this patient's
+  -- plans that does not take the advisory lock (a direct insert of a
+  -- prescription holds a key-share lock on this row) wait for its turn.
+  SELECT status = 'active' INTO v_active
+  FROM public.users
+  WHERE id = p_user_id
+  FOR UPDATE;
+  IF v_active IS NOT TRUE THEN
+    RAISE EXCEPTION 'plan_draft_not_found' USING ERRCODE = 'PD404';
+  END IF;
+
   SELECT * INTO v_draft
   FROM public.plan_drafts
   WHERE id = p_draft_id AND user_id = p_user_id
   FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'plan_draft_not_found' USING ERRCODE = 'PD404';
+  END IF;
 
   IF v_draft.status = 'confirmed' THEN
     -- The same confirmation again returns the same plan; nothing is written.
@@ -707,8 +762,11 @@ BEGIN
     RAISE EXCEPTION 'plan_draft_changed' USING ERRCODE = 'PD409';
   END IF;
 
+  -- The origin, and whether the patient changed the content before
+  -- confirming it.
   v_generated_by := CASE v_draft.origin
-    WHEN 'flow_generated' THEN 'flow_draft' ELSE 'patient_import' END;
+    WHEN 'flow_generated' THEN 'flow_draft' ELSE 'patient_import' END
+    || CASE WHEN v_draft.payload_version > 1 THEN '_edited' ELSE '' END;
 
   IF v_draft.domain = 'training' THEN
     SELECT id, generated_by INTO v_current_plan, v_current_generated_by
@@ -747,13 +805,20 @@ BEGIN
       false
     ) ->> 'plan_id')::uuid;
   ELSE
-    SELECT id INTO v_current_prescription
+    SELECT id, generated_by INTO v_current_prescription, v_current_generated_by
     FROM public.prescriptions
     WHERE user_id = p_user_id
-      AND (valid_until IS NULL OR valid_until >= v_now)
     ORDER BY generated_at DESC, id DESC
     LIMIT 1;
 
+    IF v_current_generated_by = 'professional'
+      AND EXISTS (
+        SELECT 1 FROM public.prescriptions
+        WHERE id = v_current_prescription
+          AND (valid_until IS NULL OR valid_until >= v_now)
+      ) THEN
+      RAISE EXCEPTION 'prescribed_plan_protected' USING ERRCODE = 'PD423';
+    END IF;
     IF v_current_prescription IS DISTINCT FROM v_draft.base_latest_prescription_id THEN
       RAISE EXCEPTION 'plan_changed_during_review' USING ERRCODE = 'PD412';
     END IF;
@@ -784,6 +849,7 @@ BEGIN
     RETURNING id INTO v_plan_id;
   END IF;
 
+  PERFORM set_config('bodyflow.confirming_plan_draft', p_draft_id::text, true);
   UPDATE public.plan_drafts
   SET status = 'confirmed',
       confirmed_plan_id = v_plan_id,
@@ -791,6 +857,7 @@ BEGIN
       resolved_at = v_now
   WHERE id = p_draft_id
   RETURNING * INTO v_draft;
+  PERFORM set_config('bodyflow.confirming_plan_draft', '', true);
 
   RETURN private.plan_draft_dto(v_draft) || jsonb_build_object('already_confirmed', false);
 END;

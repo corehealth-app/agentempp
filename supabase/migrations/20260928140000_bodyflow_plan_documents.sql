@@ -95,6 +95,10 @@ ALTER TABLE public.media_assets
     )
     AND (actual_size_bytes IS NULL OR actual_size_bytes = declared_size_bytes)
   ),
+  -- A plan document never carries a retention date, so the retention job
+  -- (which removes whatever is past its date) can never reach one.
   ADD CONSTRAINT media_assets_retention_check CHECK (
-    kind IN ('content_cover', 'plan_document') OR retention_until IS NOT NULL
+    (kind = 'plan_document' AND retention_until IS NULL)
+    OR kind = 'content_cover'
+    OR (kind <> 'plan_document' AND retention_until IS NOT NULL)
   );

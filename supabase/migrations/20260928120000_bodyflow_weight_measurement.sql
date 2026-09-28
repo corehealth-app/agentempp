@@ -34,7 +34,12 @@ BEGIN
     END IF;
   ELSIF NEW.weight_kg IS DISTINCT FROM OLD.weight_kg
     AND NEW.weight_measured_at IS NOT DISTINCT FROM OLD.weight_measured_at THEN
-    NEW.weight_measured_at := clock_timestamp();
+    -- Dated at the write, and never before the instant already stored (the
+    -- app may have recorded one a few minutes ahead of this clock).
+    NEW.weight_measured_at := GREATEST(
+      clock_timestamp(),
+      COALESCE(OLD.weight_measured_at + interval '1 microsecond', clock_timestamp())
+    );
   END IF;
   RETURN NEW;
 END;
@@ -47,6 +52,11 @@ CREATE TRIGGER user_profiles_sync_weight_measured_at
   FOR EACH ROW
   EXECUTE FUNCTION private.sync_weight_measured_at();
 
+-- Known limits of the legacy writers, which this migration does not change:
+-- they always count as the newest measurement (they carry no instant of
+-- their own), and a legacy write of the SAME value does not renew the
+-- instant, so a measurement taken between the two can still be applied.
+--
 -- The one ordered path. Caller holds the per-user lock.
 --   no current instant (legacy)            -> applied
 --   newer than the current instant         -> applied

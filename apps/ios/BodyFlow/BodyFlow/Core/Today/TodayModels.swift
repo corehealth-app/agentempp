@@ -7,10 +7,11 @@ struct TodaySnapshot: Codable, Equatable, Sendable {
     let protocolName: String?
     let targets: TodayTargets
     let consumed: TodayConsumed
-    let remainingFoodKcal: Int
-    let foodExcessKcal: Int
+    /// Null when the day has no calorie target (contract); never shown as 0.
+    let remainingFoodKcal: Int?
+    let foodExcessKcal: Int?
     let exerciseKcal: Int
-    let dailyBalanceKcal: Int
+    let dailyBalanceKcal: Int?
     let dailyBalanceStatus: String
     let proteinStatus: TodayProteinStatus
     let meals: [TodayMeal]
@@ -130,12 +131,15 @@ struct TodayMeal: Codable, Equatable, Sendable {
     }
 }
 
+/// One confirmed `workout_logs` row (`DailyStateWorkout`): type, duration,
+/// energy and intensity may be null (e.g. a workout logged without intensity).
+/// Nothing is inferred for an absent value.
 struct TodayWorkout: Codable, Equatable, Sendable {
     let id: String
-    let workoutType: String
-    let durationMin: Int
-    let estimatedKcal: Int
-    let intensity: String
+    let workoutType: String?
+    let durationMin: Int?
+    let estimatedKcal: Int?
+    let intensity: String?
     let performedAt: APITimestamp
 
     private enum CodingKeys: String, CodingKey {

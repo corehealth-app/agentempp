@@ -3,10 +3,10 @@ import SwiftUI
 struct TodayEnergyDescriptor: Equatable, Sendable {
     let targetKcal: Int?
     let consumedKcal: Int
-    let remainingFoodKcal: Int
-    let foodExcessKcal: Int
+    let remainingFoodKcal: Int?
+    let foodExcessKcal: Int?
     let exerciseKcal: Int
-    let dailyBalanceKcal: Int
+    let dailyBalanceKcal: Int?
     let dailyBalanceStatus: String
 
     var targetText: String {
@@ -18,11 +18,11 @@ struct TodayEnergyDescriptor: Equatable, Sendable {
     }
 
     var remainingFoodText: String {
-        TodayValueFormatter.kcal(remainingFoodKcal)
+        TodayValueFormatter.optionalKcal(remainingFoodKcal)
     }
 
     var foodExcessText: String {
-        TodayValueFormatter.kcal(foodExcessKcal)
+        TodayValueFormatter.optionalKcal(foodExcessKcal)
     }
 
     var exerciseText: String {
@@ -30,7 +30,7 @@ struct TodayEnergyDescriptor: Equatable, Sendable {
     }
 
     var netBalanceText: String {
-        TodayValueFormatter.kcal(dailyBalanceKcal)
+        TodayValueFormatter.optionalKcal(dailyBalanceKcal)
     }
 
     var remainingFoodAccessibilityValue: String {
@@ -44,6 +44,9 @@ struct TodayEnergyDescriptor: Equatable, Sendable {
     func remainingFoodAccessibilityValue(
         for language: SupportedAppLanguage
     ) -> String {
+        guard let remainingFoodKcal else {
+            return TodayCopy.string("common.not-available", language: language)
+        }
         let format = TodayCopy.string(
             "today.energy.food-remaining.accessibility",
             language: language
@@ -58,6 +61,9 @@ struct TodayEnergyDescriptor: Equatable, Sendable {
     func netBalanceAccessibilityValue(
         for language: SupportedAppLanguage
     ) -> String {
+        guard let dailyBalanceKcal else {
+            return TodayCopy.string("common.not-available", language: language)
+        }
         let formatted = TodayValueFormatter.integer(
             dailyBalanceKcal,
             language: language
@@ -159,7 +165,7 @@ struct TodaySummaryPanel: View {
     private var remainingFoodCell: some View {
         TodaySummaryCell(
             title: copy("today.energy.food-remaining"),
-            value: TodayValueFormatter.kcal(
+            value: TodayValueFormatter.optionalKcal(
                 energy.remainingFoodKcal,
                 language: language
             ),
@@ -173,7 +179,7 @@ struct TodaySummaryPanel: View {
     private var netBalanceCell: some View {
         TodaySummaryCell(
             title: copy("today.energy.net-balance"),
-            value: TodayValueFormatter.kcal(
+            value: TodayValueFormatter.optionalKcal(
                 energy.dailyBalanceKcal,
                 language: language
             ),
@@ -251,7 +257,7 @@ struct TodaySummaryPanel: View {
             Divider()
             FixtureMetricRow(
                 title: copy("today.energy.food-excess"),
-                value: TodayValueFormatter.kcal(
+                value: TodayValueFormatter.optionalKcal(
                     energy.foodExcessKcal,
                     language: language
                 )

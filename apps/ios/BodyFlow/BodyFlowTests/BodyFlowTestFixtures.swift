@@ -290,6 +290,23 @@ enum BodyFlowTestFixtures {
         ]
         """
 
+    /// Today after `edit` changed the decoded JSON object (NSNull = JSON null).
+    static func decodeToday(
+        editing edit: (inout [String: Any]) throws -> Void
+    ) throws -> TodayResponse {
+        var object = try #require(
+            JSONSerialization.jsonObject(with: inconsistentTodayData)
+                as? [String: Any]
+        )
+        var data = try #require(object["data"] as? [String: Any])
+        try edit(&data)
+        object["data"] = data
+        return try JSONDecoder().decode(
+            TodayResponse.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+    }
+
     static func decodeTodayWithoutCalorieTarget() throws -> TodayResponse {
         var object = try #require(
             JSONSerialization.jsonObject(with: inconsistentTodayData)

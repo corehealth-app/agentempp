@@ -141,6 +141,63 @@ struct TodayContractTests {
         }
     }
 
+    @Test("a workout logged without intensity, type, duration or energy still decodes")
+    func decodesWorkoutWithAbsentValues() throws {
+        // The WhatsApp tool stores `intensity: null` when the patient did not
+        // say it; the contract (DailyStateWorkout) allows null in all four.
+        let response = try BodyFlowTestFixtures.decodeToday { data in
+            data["workouts"] = [
+                [
+                    "id": "workout-without-intensity",
+                    "workout_type": "caminhada",
+                    "duration_min": 30,
+                    "estimated_kcal": 120,
+                    "intensity": NSNull(),
+                    "performed_at": "2026-07-20T07:30:00.000Z",
+                ],
+                [
+                    "id": "workout-without-values",
+                    "workout_type": NSNull(),
+                    "duration_min": NSNull(),
+                    "estimated_kcal": NSNull(),
+                    "intensity": NSNull(),
+                    "performed_at": "2026-07-20T08:30:00.000Z",
+                ],
+            ]
+        }
+
+        let first = response.data.workouts[0]
+        #expect(first.intensity == nil)
+        #expect(first.durationMin == 30)
+        #expect(first.estimatedKcal == 120)
+        let second = response.data.workouts[1]
+        #expect(second.workoutType == nil)
+        #expect(second.durationMin == nil)
+        #expect(second.estimatedKcal == nil)
+        #expect(second.intensity == nil)
+    }
+
+    @Test("without a calorie target the food and net balances are absent, not zero")
+    func decodesAbsentBalancesWithoutCalorieTarget() throws {
+        // packages/core daily-state: no calorie target -> the three balances
+        // are null; exercise stays a number.
+        let response = try BodyFlowTestFixtures.decodeToday { data in
+            var targets = try #require(data["targets"] as? [String: Any])
+            targets["calories_kcal"] = NSNull()
+            targets["calories_source"] = "unavailable"
+            data["targets"] = targets
+            data["remaining_food_kcal"] = NSNull()
+            data["food_excess_kcal"] = NSNull()
+            data["daily_balance_kcal"] = NSNull()
+        }
+
+        #expect(response.data.targets.caloriesKcal == nil)
+        #expect(response.data.remainingFoodKcal == nil)
+        #expect(response.data.foodExcessKcal == nil)
+        #expect(response.data.dailyBalanceKcal == nil)
+        #expect(response.data.exerciseKcal == 419)
+    }
+
     @Test("nullable calorie target and source remain absent")
     func preservesNullableCalorieTargetAndSource() throws {
         let response = try BodyFlowTestFixtures

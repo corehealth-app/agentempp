@@ -41,11 +41,23 @@ struct TodayMealDescriptor: Equatable, Sendable, Identifiable {
 
 struct TodayWorkoutDescriptor: Equatable, Sendable, Identifiable {
     let id: String
-    let workoutType: String
-    let durationMin: Int
-    let estimatedKcal: Int
-    let intensity: String
+    let workoutType: String?
+    let durationMin: Int?
+    let estimatedKcal: Int?
+    let intensity: String?
     let performedAt: APITimestamp
+
+    /// Duration and intensity as received; an absent part is left out and
+    /// nothing is shown in its place.
+    func detailText(language: SupportedAppLanguage) -> String {
+        let parts = [
+            durationMin.map { "\(TodayValueFormatter.integer($0, language: language)) min" },
+            intensity,
+        ].compactMap { $0 }
+        return parts.isEmpty
+            ? TodayCopy.string("common.not-available", language: language)
+            : parts.joined(separator: " · ")
+    }
 }
 
 @MainActor
@@ -111,12 +123,15 @@ struct TodayRecordsSection: View {
                 ForEach(workouts) { workout in
                     BodyFlowCard {
                         VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                            Text(workout.workoutType)
+                            Text(workout.workoutType ?? copy("history.workout.fallback"))
                                 .font(BodyFlowTypography.headline)
                                 .foregroundStyle(BodyFlowColor.primaryText)
                             recordLine(
-                                detail: "\(workout.durationMin) min · \(workout.intensity)",
-                                value: TodayValueFormatter.kcal(workout.estimatedKcal, language: language)
+                                detail: workout.detailText(language: language),
+                                value: TodayValueFormatter.optionalKcal(
+                                    workout.estimatedKcal,
+                                    language: language
+                                )
                             )
                         }
                     }

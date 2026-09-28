@@ -323,6 +323,41 @@ struct TodayPresentationTests {
         #expect(TodayValueFormatter.mealKcal(nil, language: .englishUnitedStates) == "Not available")
     }
 
+    @Test("absent workout values and balances read as not available, never as zero")
+    func absentWorkoutValuesAndBalancesAreNotAvailable() throws {
+        let response = try BodyFlowTestFixtures.decodeToday { data in
+            data["remaining_food_kcal"] = NSNull()
+            data["food_excess_kcal"] = NSNull()
+            data["daily_balance_kcal"] = NSNull()
+            data["workouts"] = [
+                [
+                    "id": "workout-without-intensity",
+                    "workout_type": "caminhada",
+                    "duration_min": 30,
+                    "estimated_kcal": NSNull(),
+                    "intensity": NSNull(),
+                    "performed_at": "2026-07-20T07:30:00.000Z",
+                ],
+            ]
+        }
+        let presentation = TodayPresentation(snapshot: response.data)
+
+        #expect(presentation.energy.remainingFoodText == "Indisponível")
+        #expect(presentation.energy.foodExcessText == "Indisponível")
+        #expect(presentation.energy.netBalanceText == "Indisponível")
+        #expect(presentation.energy.remainingFoodAccessibilityValue == "Indisponível")
+        #expect(presentation.energy.netBalanceAccessibilityValue == "Indisponível")
+        #expect(presentation.energy.exerciseText == "419 kcal")
+        let workout = try #require(presentation.workouts.first)
+        #expect(workout.intensity == nil)
+        #expect(workout.estimatedKcal == nil)
+        #expect(workout.detailText(language: .portugueseBrazil) == "30 min")
+        #expect(
+            TodayValueFormatter.optionalKcal(workout.estimatedKcal, language: .englishUnitedStates)
+                == "Not available"
+        )
+    }
+
     @Test("confirmed meal rows preserve response order and individual ids")
     func mealRowsStayIndividualAndOrdered() throws {
         let presentation = TodayPresentation(

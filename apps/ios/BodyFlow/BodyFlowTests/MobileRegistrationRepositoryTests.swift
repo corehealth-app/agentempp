@@ -139,6 +139,65 @@ struct MobileRegistrationRepositoryTests {
         #expect(receipt.data.inserted)
     }
 
+    @Test("weight posts value, unit and instant; the receipt carries what the server has in force")
+    func weightSendsMeasurement() async throws {
+        let spy = RegistrationTransportSpy(responseJSON: Data("""
+        {"data":{"applied":false,"reason":"older_than_current","weight_kg":77.9,
+          "measured_at":"2026-09-27T11:30:00+00:00"},
+         "meta":{"api_version":"v1","request_id":"req-weight-1"}}
+        """.utf8))
+        let repository = MobileRegistrationRepository(transport: spy)
+        let receipt = try await repository.record(MutationAttempt(
+            operation: .weight, key: try key("mobile-test-weight-1"),
+            payload: try WeightCommand(
+                weightKG: 78.4,
+                recordedAt: Date(timeIntervalSince1970: 1_784_589_300)
+            ),
+            createdAt: Date()
+        ))
+
+        let request = try #require(await spy.requests.first)
+        #expect(request.method == .post)
+        #expect(request.path == "/api/mobile/v1/weight")
+        #expect(request.idempotency == .required(try key("mobile-test-weight-1")))
+        let body = try #require(request.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] })
+        #expect(Set(body.keys) == ["value", "unit", "measured_at"])
+        #expect(body["value"] as? Double == 78.4)
+        #expect(body["unit"] as? String == "kg")
+        #expect((body["measured_at"] as? String)?.hasPrefix("2026-07-20T23:15:00") == true)
+
+        #expect(receipt.isServerRecord)
+        #expect(receipt.outcome == .olderThanCurrent)
+        #expect(receipt.weightKG == 77.9)
+        #expect(
+            WeightReceiptPresentation.message(for: receipt, language: .portugueseBrazil)
+                .hasPrefix("Já existe um peso mais recente, que foi mantido: 77,9 kg")
+        )
+    }
+
+    @Test("an applied weight and an outcome this build does not know read truthfully")
+    func weightReceiptMessages() {
+        let at = Date(timeIntervalSince1970: 1_784_589_300)
+        let applied = WeightDemoReceipt(
+            weightKG: 78.46, recordedAt: at, label: "", outcome: .applied, isServerRecord: true
+        )
+        #expect(
+            WeightReceiptPresentation.message(for: applied, language: .portugueseBrazil)
+                .hasPrefix("Peso registrado: 78,46 kg")
+        )
+        #expect(
+            WeightReceiptPresentation.message(for: applied, language: .englishUnitedStates)
+                .hasPrefix("Weight recorded: 78.46 kg")
+        )
+        let unknown = WeightDemoReceipt(
+            weightKG: 78, recordedAt: at, label: "", outcome: nil, isServerRecord: true
+        )
+        #expect(
+            WeightReceiptPresentation.message(for: unknown, language: .portugueseBrazil)
+                .hasPrefix("Pedido aceito. Peso atual: 78 kg")
+        )
+    }
+
     @Test("transport failures land on the registration capability states")
     func transportFailuresMap() async throws {
         let cases: [(MobileAPITransportError, BodyFlowCapabilityError)] = [

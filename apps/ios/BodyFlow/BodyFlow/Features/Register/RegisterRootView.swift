@@ -81,12 +81,8 @@ struct RegisterRootView: View {
 
                     BodyFlowCard {
                         VStack(alignment: .leading, spacing: 0) {
-                            // Weight has no mobile contract yet, so a real
-                            // account is not offered a row that cannot work.
                             let commands = fixture.commands.filter {
-                                let kind = RegistrationKind(rawValue: $0.kindID)
-                                return kind != .meal
-                                    && (presentsLocalDemonstration || kind != .weight)
+                                RegistrationKind(rawValue: $0.kindID) != .meal
                             }
                             ForEach(Array(commands.enumerated()), id: \.element.id) { index, command in
                                 if index > 0 { Divider() }

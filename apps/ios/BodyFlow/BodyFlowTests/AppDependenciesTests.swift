@@ -45,13 +45,13 @@ struct AppDependenciesTests {
         #expect(!(dependencies.history is UnavailableBodyFlowCapabilities))
         #expect(!(dependencies.plan is UnavailableBodyFlowCapabilities))
         #expect(!(dependencies.progress is UnavailableBodyFlowCapabilities))
-        // Meal/workout proposals, hydration and the routine ride the
-        // transport too; weight has no mobile contract.
+        // Meal/workout proposals, hydration, weight (POST /weight, C5) and
+        // the routine ride the transport too.
         #expect(!(dependencies.registration is UnavailableBodyFlowCapabilities))
         #expect(!(dependencies.hydration is UnavailableBodyFlowCapabilities))
         #expect(!(dependencies.mealDetection is UnavailableBodyFlowCapabilities))
         #expect(!(dependencies.routine is UnavailableBodyFlowCapabilities))
-        #expect(dependencies.weight is UnavailableBodyFlowCapabilities)
+        #expect(dependencies.weight is MobileRegistrationRepository)
         // The account row, the Library, the Flow persona and the covers ride
         // the same transport; the patient time zone starts undocumented and
         // is resolved per session from `/me`.

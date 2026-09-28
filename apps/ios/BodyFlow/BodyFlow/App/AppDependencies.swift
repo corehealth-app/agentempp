@@ -318,6 +318,7 @@ struct AppDependencies: Sendable {
                 mealDetection = TextMealDetector(now: { clock.now })
                 registration = mutations
                 hydration = mutations
+                weight = mutations
                 routine = MobileRoutineRepository(transport: transport)
                 coachPersona = MobileCoachPersonaRepository(transport: transport)
                 publishedContentSessions = MobilePublishedContentSessionFactory(
@@ -340,9 +341,8 @@ struct AppDependencies: Sendable {
                 registration = unavailable
                 hydration = unavailable
                 routine = unavailable
+                weight = unavailable
             }
-            // No mobile contract records weight.
-            weight = unavailable
         }
         #else
         let timeProvider: any TimeProviding = SystemTimeProvider()
@@ -367,8 +367,7 @@ struct AppDependencies: Sendable {
         let hydration: any HydrationRecording = mutations ?? unavailable
         let routine: any RoutineProviding = transport
             .map { MobileRoutineRepository(transport: $0) } ?? unavailable
-        // No mobile contract records weight.
-        let weight: any WeightRecording = unavailable
+        let weight: any WeightRecording = mutations ?? unavailable
         if let transport {
             coachPersona = MobileCoachPersonaRepository(transport: transport)
             publishedContentSessions = MobilePublishedContentSessionFactory(

@@ -2879,9 +2879,25 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Describe the meal" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Descreva a refeição" } }
     } },
+    "registration.weight.already-recorded" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This measurement was already recorded. Current weight: %1$@ kg (%2$@)." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Esta medição já estava registrada. Peso atual: %1$@ kg (%2$@)." } }
+    } },
+    "registration.weight.older-kept" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "A more recent weight already exists, so it was kept: %1$@ kg (%2$@)." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Já existe um peso mais recente, que foi mantido: %1$@ kg (%2$@)." } }
+    } },
     "registration.weight.placeholder" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Weight in kg" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Peso em kg" } }
+    } },
+    "registration.weight.recorded" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Weight recorded: %1$@ kg (%2$@)." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Peso registrado: %1$@ kg (%2$@)." } }
+    } },
+    "registration.weight.recorded-unknown" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Request accepted. Current weight: %1$@ kg (%2$@)." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Pedido aceito. Peso atual: %1$@ kg (%2$@)." } }
     } },
     "registration.weight.submit" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Record weight" } },

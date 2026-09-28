@@ -382,11 +382,21 @@ private struct OperationResultSummary<Attempt: Equatable & Sendable, Receipt: Eq
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier(demoReceipt == nil ? "registration.operation.summary" : "registration.weight.demo-receipt")
+        .accessibilityIdentifier(
+            demoReceipt.map { $0.isServerRecord ? "registration.weight.receipt" : "registration.weight.demo-receipt" }
+                ?? "registration.operation.summary"
+        )
     }
 
     private var message: String? {
-        if let demoReceipt { return demoReceipt.label }
+        if let demoReceipt {
+            return demoReceipt.isServerRecord
+                ? WeightReceiptPresentation.message(
+                    for: demoReceipt,
+                    language: BodyFlowPresentationLanguage.resolve(locale)
+                )
+                : demoReceipt.label
+        }
         if captureError == .invalidInput { return validationMessage }
         switch state {
         case .unavailable: return copy("state.unavailable.title")
@@ -404,6 +414,35 @@ private struct OperationResultSummary<Attempt: Equatable & Sendable, Receipt: Eq
         RegistrationCopy.string(
             key,
             language: BodyFlowPresentationLanguage.resolve(locale)
+        )
+    }
+}
+
+/// What a server weight record says to the patient: the value in force and
+/// whether the submitted measurement became it.
+enum WeightReceiptPresentation {
+    static func message(
+        for receipt: WeightDemoReceipt,
+        language: SupportedAppLanguage
+    ) -> String {
+        let key: String.LocalizationValue = switch receipt.outcome {
+        case .applied: "registration.weight.recorded"
+        case .sameMeasurement: "registration.weight.already-recorded"
+        case .olderThanCurrent: "registration.weight.older-kept"
+        case nil: "registration.weight.recorded-unknown"
+        }
+        let weight = Decimal(receipt.weightKG)
+            .formatted(.number.precision(.fractionLength(0...2)).locale(language.formattingLocale))
+        let date = receipt.recordedAt.formatted(Date.FormatStyle(
+            date: .abbreviated,
+            time: .shortened,
+            locale: language.formattingLocale
+        ))
+        return String(
+            format: RegistrationCopy.string(key, language: language),
+            locale: language.formattingLocale,
+            weight,
+            date
         )
     }
 }

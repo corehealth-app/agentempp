@@ -4,7 +4,7 @@ import Foundation
 /// prices every item and owns the pending lifecycle; the client carries
 /// only the patient's input and the attempt's idempotency key, so a retry
 /// replays the same request instead of duplicating it.
-struct MobileRegistrationRepository: RegistrationProviding, HydrationRecording {
+struct MobileRegistrationRepository: RegistrationProviding, HydrationRecording, WeightRecording {
     let transport: any MobileAPIEnvelopeExecuting
 
     func propose(
@@ -59,6 +59,24 @@ struct MobileRegistrationRepository: RegistrationProviding, HydrationRecording {
             path: "/api/mobile/v1/routine/hydration",
             body: try encode(attempt.payload),
             key: attempt.key
+        )
+    }
+
+    func record(
+        _ attempt: MutationAttempt<WeightCommand>
+    ) async throws -> WeightDemoReceipt {
+        let response: WeightRecordResponse = try await send(
+            .post,
+            path: "/api/mobile/v1/weight",
+            body: try encode(WeightRecordRequest(command: attempt.payload)),
+            key: attempt.key
+        )
+        return WeightDemoReceipt(
+            weightKG: NSDecimalNumber(decimal: response.data.weightKG).doubleValue,
+            recordedAt: response.data.measuredAt.value,
+            label: "",
+            outcome: WeightRecordOutcome(rawValue: response.data.reason),
+            isServerRecord: true
         )
     }
 

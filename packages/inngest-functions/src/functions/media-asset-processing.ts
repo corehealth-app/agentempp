@@ -4,8 +4,20 @@ import { z } from 'zod'
 import { inngest } from '../client.js'
 import { createWorkerSupabase } from '../lib/env.js'
 import { loadVisionConfig } from '../lib/runtime-config.js'
+import {
+  createDefaultPlanDocumentDependencies,
+  type PlanDocumentDependencies,
+  processPlanDocument,
+} from './plan-document-processing.js'
 
-export type ProcessableMediaKind = 'meal_photo' | 'body_checkin_photo' | 'gym_photo' | 'audio_note'
+export type ProcessableMediaKind =
+  | 'meal_photo'
+  | 'body_checkin_photo'
+  | 'gym_photo'
+  | 'audio_note'
+  | 'plan_document'
+
+type AnalyzableImageKind = Exclude<ProcessableMediaKind, 'audio_note' | 'plan_document'>
 
 export interface ProcessableMediaAsset {
   id: string
@@ -44,7 +56,7 @@ export interface MediaProcessingDependencies {
       bytes: Uint8Array
       mimeType: string
       contextText: string | null
-      kind: Exclude<ProcessableMediaKind, 'audio_note'>
+      kind: AnalyzableImageKind
     }): Promise<unknown>
     transcribeAudio(input: { bytes: Uint8Array; mimeType: string }): Promise<unknown>
   }
@@ -53,6 +65,8 @@ export interface MediaProcessingDependencies {
    * cannot be read. Runs before any paid transcription.
    */
   measureAudioDuration?(input: { bytes: Uint8Array; mimeType: string }): Promise<number | null>
+  /** Reading of plan documents into drafts. Absent = the kind is refused. */
+  planDocuments?: PlanDocumentDependencies
 }
 
 /** Same limit the app enforces while recording or importing. */
@@ -79,7 +93,7 @@ export async function measureAudioDurationFromContainer(input: {
 const claimedMediaSchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
-  kind: z.enum(['meal_photo', 'body_checkin_photo', 'gym_photo', 'audio_note']),
+  kind: z.enum(['meal_photo', 'body_checkin_photo', 'gym_photo', 'audio_note', 'plan_document']),
   bucket_id: z.string().min(1),
   object_path: z.string().min(1),
   mime_type: z.string().min(1),
@@ -101,6 +115,7 @@ function isIsoBaseMedia(bytes: Uint8Array): boolean {
 }
 
 export function mediaSignatureMatches(bytes: Uint8Array, mimeType: string): boolean {
+  if (mimeType === 'application/pdf') return ascii(bytes, 0, 5) === '%PDF-'
   if (mimeType === 'image/jpeg') return hasPrefix(bytes, [0xff, 0xd8, 0xff])
   if (mimeType === 'image/png') {
     return hasPrefix(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
@@ -136,7 +151,11 @@ export async function processMediaAsset(
   | { status: 'processed' }
   | {
       status: 'failed'
-      reason: 'invalid_file_signature' | 'audio_too_long' | 'audio_duration_unreadable'
+      reason:
+        | 'invalid_file_signature'
+        | 'audio_too_long'
+        | 'audio_duration_unreadable'
+        | 'plan_document_unsupported'
     }
   | { status: 'skipped' }
 > {
@@ -183,6 +202,29 @@ export async function processMediaAsset(
       await deps.repository.markFailed(asset.id, asset.user_id, input.requestId, reason)
       return { status: 'failed', reason }
     }
+  }
+
+  if (asset.kind === 'plan_document') {
+    if (!deps.planDocuments) {
+      await deps.repository.markFailed(
+        asset.id,
+        asset.user_id,
+        input.requestId,
+        'plan_document_unsupported',
+      )
+      return { status: 'failed', reason: 'plan_document_unsupported' }
+    }
+    // Each draft waiting for this document gets its own outcome (content to
+    // review, or the reason it could not be read). The asset keeps only a
+    // count and the method — never the document's text.
+    const summary = await processPlanDocument(deps.planDocuments, {
+      assetId: asset.id,
+      userId: asset.user_id,
+      mimeType: asset.mime_type,
+      bytes,
+    })
+    await deps.repository.markProcessed(asset.id, asset.user_id, input.requestId, summary)
+    return { status: 'processed' }
   }
 
   try {
@@ -255,7 +297,7 @@ function createProcessingRepository(
 }
 
 function imageHint(
-  kind: Exclude<ProcessableMediaKind, 'audio_note'>,
+  kind: AnalyzableImageKind,
 ): 'meal' | 'body' | 'equipment' {
   if (kind === 'body_checkin_photo') return 'body'
   if (kind === 'gym_photo') return 'equipment'
@@ -286,6 +328,7 @@ async function createDefaultMediaProcessingDependencies(): Promise<MediaProcessi
         return new Uint8Array(await data.arrayBuffer())
       },
     },
+    planDocuments: createDefaultPlanDocumentDependencies(supabase),
     providers: {
       async analyzeImage(input) {
         const apiKey = process.env.OPENROUTER_API_KEY

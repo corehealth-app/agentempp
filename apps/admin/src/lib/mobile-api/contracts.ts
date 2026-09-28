@@ -269,10 +269,58 @@ const mediaAudioUploadSchema = mediaUploadBaseSchema
   })
   .strict()
 
+// The photo or PDF of a plan the patient already has. It becomes a draft for
+// review, never a plan by itself.
+const mediaPlanDocumentUploadSchema = mediaUploadBaseSchema
+  .extend({
+    kind: z.literal('plan_document'),
+    mime_type: z.enum([
+      'application/pdf',
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'image/heic',
+      'image/heif',
+    ]),
+    size_bytes: z
+      .number()
+      .int()
+      .positive()
+      .max(20 * 1024 * 1024),
+  })
+  .strict()
+
 export const mediaUploadInputSchema = z.discriminatedUnion('kind', [
   mediaPhotoUploadSchema,
   mediaAudioUploadSchema,
+  mediaPlanDocumentUploadSchema,
 ])
+
+export const planDraftListQuerySchema = z
+  .object({
+    status: z.enum(['open', 'ready_for_review', 'needs_completion']).default('open'),
+  })
+  .strict()
+
+// The content is assessed by the domain rules, not here: an incomplete edit
+// is accepted and kept as incomplete. Only its size and shape are bounded.
+export const planDraftPatchSchema = z
+  .object({
+    payload_version: z.number().int().min(1),
+    payload: z.record(z.unknown()),
+  })
+  .strict()
+
+export const planDraftConfirmSchema = z
+  .object({ payload_version: z.number().int().min(1) })
+  .strict()
+
+export const planImportInputSchema = z
+  .object({
+    media_asset_id: resourceIdSchema,
+    domain: z.enum(['training', 'nutrition']),
+  })
+  .strict()
 
 export const mobileDeviceInputSchema = z
   .object({
@@ -397,6 +445,10 @@ export type CreateReminderInput = z.infer<typeof createReminderInputSchema>
 export type PatchReminderInput = z.infer<typeof patchReminderInputSchema>
 export type HydrationInput = z.infer<typeof hydrationInputSchema>
 export type MealDraftInput = z.infer<typeof mealDraftInputSchema>
+export type PlanDraftPatchInput = z.infer<typeof planDraftPatchSchema>
+export type PlanDraftConfirmInput = z.infer<typeof planDraftConfirmSchema>
+export type PlanImportInput = z.infer<typeof planImportInputSchema>
+export type PlanDraftListQuery = z.infer<typeof planDraftListQuerySchema>
 export type WeightInput = z.infer<typeof weightInputSchema>
 export type MarkRoutineTakenInput = z.infer<typeof markRoutineTakenInputSchema>
 

@@ -8,6 +8,7 @@ export type MediaAssetKind =
   | 'gym_photo'
   | 'audio_note'
   | 'content_cover'
+  | 'plan_document'
 
 export type MediaAssetStatus =
   | 'pending_upload'
@@ -49,7 +50,8 @@ interface CreateMediaAssetRecord {
   declaredSizeBytes: number
   contextText: string | null
   sourceRequestHash: string
-  retentionUntil: string
+  /** null = no automatic retention date (plan documents). */
+  retentionUntil: string | null
 }
 
 export interface MediaAssetRepository {
@@ -98,6 +100,9 @@ const mediaPolicy = {
   },
   gym_photo: { bucketId: 'gym-photos', retentionDays: 90, downloadTtl: 300 },
   audio_note: { bucketId: 'audio-notes', retentionDays: 30, downloadTtl: 300 },
+  // How long plan documents are kept is an open data-policy decision: no
+  // date is set and nothing removes them on a timer; the patient deletes them.
+  plan_document: { bucketId: 'plan-documents', retentionDays: null, downloadTtl: 300 },
 } as const
 
 const extensionByMimeType: Record<string, string> = {
@@ -113,6 +118,7 @@ const extensionByMimeType: Record<string, string> = {
   'audio/wav': 'wav',
   'audio/x-wav': 'wav',
   'audio/ogg': 'ogg',
+  'application/pdf': 'pdf',
 }
 
 const SIGNED_UPLOAD_TTL_SECONDS = 2 * 60 * 60
@@ -206,7 +212,7 @@ export async function createMediaAsset(
     declaredSizeBytes: input.size_bytes,
     contextText: input.context_text ?? null,
     sourceRequestHash,
-    retentionUntil: addDays(now, policy.retentionDays),
+    retentionUntil: policy.retentionDays === null ? null : addDays(now, policy.retentionDays),
   })
 
   return {

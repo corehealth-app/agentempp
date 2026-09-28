@@ -12,7 +12,14 @@ import type {
 const mediaAssetRowSchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
-  kind: z.enum(['meal_photo', 'body_checkin_photo', 'gym_photo', 'audio_note', 'content_cover']),
+  kind: z.enum([
+    'meal_photo',
+    'body_checkin_photo',
+    'gym_photo',
+    'audio_note',
+    'content_cover',
+    'plan_document',
+  ]),
   bucket_id: z.string().min(1),
   object_path: z.string().min(1),
   mime_type: z.string().min(1),

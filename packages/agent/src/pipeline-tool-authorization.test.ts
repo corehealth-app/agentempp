@@ -14,6 +14,7 @@ import {
   deleteUser,
   geraDieta,
   geraTreino,
+  propoePlanoTreino,
   registraRefeicao,
 } from './tools.js'
 
@@ -208,6 +209,77 @@ describe('tool authorization at the dispatch boundary', () => {
       { name: 'gera_treino', arguments: {}, error: 'tool_not_authorized' },
       { name: 'gera_dieta', arguments: {}, error: 'tool_not_authorized' },
     ])
+  })
+
+  it('mobile Flow runs the proposal tool and still refuses gera_treino in the same turn', async () => {
+    const spies = spyExecutes()
+    const propose = vi
+      .spyOn(propoePlanoTreino, 'execute')
+      .mockImplementation(async () => ({ success: true, draft_id: 'draft-1', domain: 'training' }))
+    const recorded: Recorded = { inserts: [], rpcs: [] }
+    const deps = makeDeps(
+      [
+        {
+          toolCalls: [
+            toolCall('call-1', 'propoe_plano_treino', trainingArguments),
+            toolCall('call-2', 'gera_treino', trainingArguments),
+          ],
+        },
+        { toolCalls: [], content: 'Sua proposta está pronta para revisão no app.' },
+      ],
+      null,
+      recorded,
+    )
+
+    const output = await mobileMessage(deps)
+
+    expect(propose).toHaveBeenCalledTimes(1)
+    expect(propose.mock.calls[0]?.[1]).toMatchObject({
+      userId: 'fixture-user',
+      providerMessageId: 'mobile_flow/fixture-user/key-0001',
+      assistantIdentity: 'flow',
+    })
+    expect(spies.geraTreino).not.toHaveBeenCalled()
+    expect(recorded.rpcs).not.toContain('save_training_plan_atomic')
+    expect(recorded.rpcs.filter((name) => /confirm/i.test(name))).toEqual([])
+    expect(output.toolCalls).toContainEqual({
+      name: 'gera_treino',
+      arguments: {},
+      error: 'tool_not_authorized',
+    })
+    expect(output.text).toBe('Sua proposta está pronta para revisão no app.')
+  })
+
+  it('WhatsApp refuses the proposal tools by name', async () => {
+    const propose = vi
+      .spyOn(propoePlanoTreino, 'execute')
+      .mockImplementation(async () => ({ success: true }))
+    const recorded: Recorded = { inserts: [], rpcs: [] }
+    const deps = makeDeps(
+      [
+        { toolCalls: [toolCall('call-1', 'propoe_plano_treino', trainingArguments)] },
+        { toolCalls: [], content: 'Certo.' },
+      ],
+      null,
+      recorded,
+    )
+
+    const output = await processMessage(deps, {
+      from: '5511999990000',
+      providerMessageId: 'wamid.fixture-1',
+      text: 'Monte meu treino.',
+      contentType: 'text',
+      provider: 'whatsapp_cloud',
+      timestamp: new Date('2026-09-27T12:00:00.000Z'),
+    })
+
+    expect(propose).not.toHaveBeenCalled()
+    expect(recorded.rpcs).not.toContain('create_plan_draft_atomic')
+    expect(output.toolCalls).toContainEqual({
+      name: 'propoe_plano_treino',
+      arguments: {},
+      error: 'tool_not_authorized',
+    })
   })
 
   it('mobile Flow refuses a write tool before the deferred-pending path can run', async () => {

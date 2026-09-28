@@ -121,6 +121,29 @@ describe('mobile media service', () => {
     expect(result.upload).not.toHaveProperty('token')
   })
 
+  it('stores a plan document in its own bucket, as PDF, with no automatic retention date', async () => {
+    const deps = makeDeps()
+
+    await createMediaAsset(
+      deps,
+      USER_ID,
+      { kind: 'plan_document', mime_type: 'application/pdf', size_bytes: 20 * 1024 * 1024 },
+      'mobile-media-request-0010',
+      new Date('2026-07-20T12:00:00.000Z'),
+      ASSET_ID,
+    )
+
+    expect(deps.repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'plan_document',
+        bucketId: 'plan-documents',
+        objectPath: `${USER_ID}/${ASSET_ID}.pdf`,
+        mimeType: 'application/pdf',
+        retentionUntil: null,
+      }),
+    )
+  })
+
   it('refuses an audio declared longer than 180 seconds before creating anything', async () => {
     const deps = makeDeps()
     const audio = { kind: 'audio_note' as const, mime_type: 'audio/mp4' as const, size_bytes: 1200 }

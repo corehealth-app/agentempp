@@ -59,6 +59,7 @@ function dependencies(): FlowChatRouteDependencies {
         request_id: 'request-flow-0511',
         created_at: '2026-09-14T20:00:00.000Z',
       },
+      draft: null,
     })),
     executeIdempotent: vi.fn(async (_context, _payload, operation) => operation('flow-key-0001')),
     now: () => new Date('2026-09-14T20:00:00.000Z'),

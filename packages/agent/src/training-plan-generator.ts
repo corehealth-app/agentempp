@@ -34,7 +34,7 @@ const TrainingExerciseSchema = z.object({
   common_mistakes: z.array(z.string().max(300)).max(10).optional(),
 })
 
-const TrainingDaySchema = z.object({
+export const TrainingDaySchema = z.object({
   day: z.string().min(1).max(20),
   focus: z.string().min(1).max(80),
   duration_min: z.number().int().min(10).max(180),

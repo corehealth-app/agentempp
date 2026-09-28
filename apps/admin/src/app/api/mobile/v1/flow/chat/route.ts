@@ -2,6 +2,7 @@ import { processAuthenticatedMessage } from '@mpp/agent'
 import { OpenRouterLLM } from '@mpp/providers'
 import {
   createSupabaseFlowChatStore,
+  createSupabaseFlowDraftLookup,
   loadFlowHistory,
   sendFlowMessage,
 } from '@/lib/mobile-api/flow-chat-service'
@@ -16,6 +17,7 @@ const dependencies: FlowChatRouteDependencies = {
   createChatDependencies(context) {
     return {
       store: createSupabaseFlowChatStore(context.supabase),
+      drafts: createSupabaseFlowDraftLookup(context.supabase),
       agent: {
         async reply(input) {
           const apiKey = process.env.OPENROUTER_API_KEY

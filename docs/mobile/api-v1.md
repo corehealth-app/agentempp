@@ -1685,6 +1685,120 @@ Enquanto o ativo está em `processing`, nenhum outro evento toma o claim ativo.
 - Fotos corporais são tratadas como mídia sensível: bucket separado, TTL de 60
   segundos e nenhuma URL pública permanente.
 
+## Rascunhos de plano (treino e plano alimentar)
+
+Um plano proposto pelo Flow ou lido de um documento é um **rascunho**. Ele só
+vira o plano do paciente quando o paciente revisa e confirma no app. Nenhuma
+ferramenta do agente confirma; a confirmação do paciente nunca é apresentada
+como revisão de um profissional.
+
+| Rota | Efeito |
+|---|---|
+| `GET /api/mobile/v1/plan-drafts?status=open` | lista os rascunhos abertos do paciente (`open`, `ready_for_review` ou `needs_completion`) |
+| `GET /api/mobile/v1/plan-drafts/:id` | conteúdo para revisão |
+| `PATCH /api/mobile/v1/plan-drafts/:id` | edição do paciente → nova `payload_version` |
+| `POST /api/mobile/v1/plan-drafts/:id/confirm` | **único caminho** de rascunho para plano |
+| `DELETE /api/mobile/v1/plan-drafts/:id` | descarta |
+| `POST /api/mobile/v1/plan-imports` | começa a leitura de um documento (202) |
+
+Todas exigem bearer e entitlement; as mutações exigem `Idempotency-Key`.
+Rascunho de outro paciente responde `404 plan_draft_not_found` em todas.
+
+### Conteúdo
+
+```json
+{
+  "id": "<uuid>", "domain": "training", "origin": "imported_pdf",
+  "status": "needs_completion", "payload_version": 1,
+  "payload": { "weekly_schedule": [ { "day": "Treino A", "focus": "Inferiores",
+    "duration_min": 60, "exercises": [ { "name": "Leg press", "sets": 3,
+    "reps_range": "10", "rest_seconds": null } ] } ] },
+  "uncertain_fields": [
+    { "pointer": "/weekly_schedule/0/exercises/0/rest_seconds", "reason": "missing" }
+  ],
+  "unrecognized_segments": ["Tomar creatina 5 g após o treino."],
+  "replaces_current_plan": true, "can_confirm": false,
+  "notices": ["not_professionally_reviewed", "medications_not_imported"],
+  "source_media_asset_id": "<uuid>", "confirmed_plan_id": null,
+  "failure_code": null, "created_at": "…", "updated_at": "…",
+  "expires_at": "…", "resolved_at": null
+}
+```
+
+- `status`: `extracting`, `generating`, `needs_completion`, `ready_for_review`,
+  `confirmed`, `discarded`, `expired`, `failed`. Um rascunho aberto com
+  `expires_at` vencido (30 dias) é lido como `expired`.
+- `origin`: `flow_generated`, `imported_photo`, `imported_pdf`.
+- `uncertain_fields[].reason`: `missing`, `out_of_range`, `invalid`,
+  `not_in_document` (o número não está escrito no documento). Valor ausente ou
+  fora da faixa fica `null`; nada é ajustado, estimado ou calculado.
+- Plano alimentar: alimento e quantidade são obrigatórios; calorias e macros
+  são opcionais e só existem quando o documento (ou o gerador) os trouxe.
+- `unrecognized_segments`: trechos do documento que não viraram campo, como
+  vieram. Medicamento, suplemento e dose nunca viram campo; quando aparecem,
+  `notices` traz `medications_not_imported`.
+- `notices` sempre traz `not_professionally_reviewed`.
+- `failure_code` (com `status: failed`): `document_without_text` (PDF
+  digitalizado — o app pede fotos das páginas), `document_too_long` (mais de
+  20 páginas ou 60 000 caracteres), `document_unreadable`,
+  `nothing_recognized`, `extraction_failed`.
+
+### Edição
+
+`PATCH` com `{ "payload_version": 1, "payload": { … } }` (corpo até 256 KiB).
+Só os campos conhecidos do formato são guardados. Edição incompleta é aceita
+e deixa o rascunho em `needs_completion`; completa, `ready_for_review`.
+Erros: `409 draft_changed` (a versão não é a atual),
+`409 plan_draft_not_reviewable`, `410 plan_draft_expired`.
+
+### Confirmação
+
+`POST …/confirm` com `{ "payload_version": 3 }`.
+
+- exige `ready_for_review`, a versão que o paciente revisou e o conteúdo
+  passando inteiro na validação do formato (`422 plan_draft_incomplete`);
+- treino: substitui o plano ativo, na mesma transação e sob a mesma trava das
+  outras trocas de plano; **não** liga a entrega diária pelo WhatsApp;
+- plano alimentar: só insere uma prescrição; as anteriores ficam como estão;
+- `409 plan_changed_during_review`: o plano em vigor mudou desde que o
+  rascunho nasceu — o paciente revisa de novo (novo rascunho);
+- `409 prescribed_plan_protected`: o plano em vigor foi prescrito por um
+  profissional e não é substituído por rascunho;
+- repetir a mesma confirmação devolve o mesmo plano (`already_confirmed: true`);
+- validade: os gerados seguem a regra dos geradores (treino 6 semanas; plano
+  alimentar 1 ou 7 dias); um plano importado não recebe validade.
+
+### Importação de documento
+
+1. `POST /media` com `kind: "plan_document"` (`application/pdf` ou imagem,
+   até 20 MiB), upload assinado e `POST /media/:id/complete` como nas outras
+   mídias. O documento não tem data automática de exclusão; o paciente o
+   apaga com `DELETE /media/:id`.
+2. `POST /plan-imports` com `{ "media_asset_id": "<uuid>", "domain":
+   "training" | "nutrition" }` → `202 { "draft_id", "status": "extracting" }`.
+3. O app consulta `GET /plan-drafts/:id` até sair de `extracting`.
+
+Um documento é importado uma vez: pedir de novo devolve o rascunho que ele já
+gerou (`409 plan_document_already_imported` se for pedido como outro tipo de
+plano; `409 plan_document_already_read` se a leitura anterior não deixou
+rascunho aberto — o paciente envia o documento de novo). Mídia de outro
+paciente: `404 media_asset_not_found`.
+
+O texto do documento é dado: o modelo que o organiza não tem ferramentas, só
+os campos conhecidos são aceitos e todo número precisa estar escrito no
+documento. Essa conferência garante que o número existe no documento, não que
+pertence àquele campo — por isso todo rascunho importado passa pela revisão
+do paciente.
+
+### Proposta pelo Flow
+
+`POST /flow/chat` responde com `draft: { "id", "domain" } | null`: o rascunho
+que aquele turno criou (lido do banco, preso ao paciente e ao turno). O Flow
+só tem as ferramentas `propoe_plano_treino` e `propoe_plano_dieta`, com os
+mesmos limites dos geradores (treino 1 por 24 h; plano alimentar 2 por 2 h,
+somando gerações e propostas). `gera_treino`/`gera_dieta` continuam recusadas
+no app, e as propostas não existem no WhatsApp.
+
 ## Proposta de treino
 
 ```json

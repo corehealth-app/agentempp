@@ -128,6 +128,27 @@ export const MOBILE_FLOW_READ_ONLY_TOOLS = [
   'consulta_reavaliacao_protocolo',
 ] as const
 
+/**
+ * What the mobile Flow may write: drafts of plans, and nothing else. A draft
+ * is not a plan — it becomes one only when the patient confirms it in the
+ * app. No tool confirms, and `gera_*` never runs on this channel.
+ */
+export const MOBILE_FLOW_DRAFT_TOOLS = ['propoe_plano_treino', 'propoe_plano_dieta'] as const
+
+export const MOBILE_FLOW_TOOLS = [
+  ...MOBILE_FLOW_READ_ONLY_TOOLS,
+  ...MOBILE_FLOW_DRAFT_TOOLS,
+] as const
+
+const MOBILE_ONLY_TOOLS = new Set<string>(MOBILE_FLOW_DRAFT_TOOLS)
+
+/** Tools that produce a plan or a proposal of one (saved or drafted). */
+const PRESCRIPTION_TOOLS = new Set<string>([
+  'gera_dieta',
+  'gera_treino',
+  ...MOBILE_FLOW_DRAFT_TOOLS,
+])
+
 export const MOBILE_FLOW_TELEMETRY_INCLUDES_CONTENT = false
 
 const LEGACY_PERSONA_NAME_PATTERN = /\bDr\.?\s+Robert(?:o)?(?:\s+Menescal)?\b/gi
@@ -149,8 +170,13 @@ MPP é uma referência interna: não o apresente espontaneamente como método, m
 Responda em texto simples, sem Markdown decorativo, inclusive na apresentação curta.
 Não envolva nomes ou dados em asteriscos, underscores, headings ou crases de formatação.
 Uma mensagem enviada no chat não autoriza alteração de dados de saúde.
-Este canal só pode consultar dados oficiais. Para qualquer mutação sensível,
-explique que é necessária confirmação explícita no fluxo estruturado do app.
+Este canal consulta dados oficiais e pode criar PROPOSTAS de plano de treino
+ou de cardápio (rascunhos). Uma proposta nunca é o plano do paciente: ela só
+passa a valer depois que ele revisa e confirma no app. Você não confirma,
+não ativa e não substitui plano nenhum, e a confirmação do paciente não é
+revisão de um profissional. Não proponha medicamentos, suplementos ou doses.
+Para qualquer outra mutação sensível, explique que é necessária confirmação
+explícita no fluxo estruturado do app.
 Não diagnostique, não prometa cura, não substitua profissional e não afirme
 que uma ação foi concluída sem confirmação determinística do servidor.`
 
@@ -170,7 +196,11 @@ export function selectPipelineTools(
   const configured = configuredToolNames?.length ? new Set(configuredToolNames) : null
   const channel = channelToolNames ? new Set(channelToolNames) : null
   return ALL_TOOLS.filter(
-    (tool) => (!configured || configured.has(tool.name)) && (!channel || channel.has(tool.name)),
+    (tool) =>
+      (!configured || configured.has(tool.name)) &&
+      // Draft tools exist for the app alone: a channel gets them only by
+      // naming them in its own set, never through "all tools".
+      (channel ? channel.has(tool.name) : !MOBILE_ONLY_TOOLS.has(tool.name)),
   )
 }
 
@@ -209,8 +239,8 @@ const FAKE_WRITE_RETRY_TOOLS: Record<
 > = {
   registration: ['registra_refeicao', 'registra_treino'],
   correction: ['registra_refeicao', 'registra_treino'],
-  diet_fake: ['gera_dieta'],
-  training_fake: ['gera_treino'],
+  diet_fake: ['gera_dieta', 'propoe_plano_dieta'],
+  training_fake: ['gera_treino', 'propoe_plano_treino'],
   skip: ['marca_refeicao_pulada'],
 }
 
@@ -224,6 +254,31 @@ export const CHAT_WRITE_RETRACTION =
 /** The same retraction for any other channel: it never points to an app. */
 export const TURN_WRITE_RETRACTION =
   'SISTEMA (não é o paciente): nenhuma ferramenta de gravação foi chamada neste turno. Sua resposta afirmou ter registrado, corrigido ou gerado algo que NÃO foi salvo. Reescreva sem afirmar registro, correção, cardápio ou plano salvos.'
+
+/**
+ * Where plans are only proposed (the mobile Flow), an invented plan in the
+ * reply is answered by pointing to the proposal tool, never to `gera_*`.
+ */
+export function draftRetryMessage(
+  kind: keyof typeof FAKE_WRITE_RETRY_TOOLS | null | undefined,
+  authorizedTools: readonly ToolDefinition[],
+): string | null {
+  const tool =
+    kind === 'diet_fake'
+      ? 'propoe_plano_dieta'
+      : kind === 'training_fake'
+        ? 'propoe_plano_treino'
+        : null
+  if (!tool || authorizeToolCall(tool, authorizedTools).status !== 'authorized') return null
+  const legacy = kind === 'diet_fake' ? 'gera_dieta' : 'gera_treino'
+  if (authorizeToolCall(legacy, authorizedTools).status === 'authorized') return null
+  return (
+    `SISTEMA (não é o paciente): você apresentou um plano no texto sem chamar \`${tool}\`. ` +
+    'Nada foi criado. Se o paciente pediu explicitamente e você já tem os dados necessários, chame ' +
+    `\`${tool}\` AGORA para criar a PROPOSTA que ele vai revisar no app. Se faltar algum dado, ` +
+    'pergunte e NÃO mostre plano nenhum. Se ele só tirava uma dúvida, responda sem plano.'
+  )
+}
 
 export function fakeWriteRetryAllowed(
   kind: keyof typeof FAKE_WRITE_RETRY_TOOLS | null | undefined,
@@ -383,7 +438,7 @@ export function processAuthenticatedMessage(
     input.userId,
     {
       historyProvider: 'mobile_flow',
-      toolNames: MOBILE_FLOW_READ_ONLY_TOOLS,
+      toolNames: MOBILE_FLOW_TOOLS,
       systemPolicy: mobileFlowSystemPolicy,
       includeSensitiveTelemetry: MOBILE_FLOW_TELEMETRY_INCLUDES_CONTENT,
     },
@@ -605,7 +660,7 @@ async function processResolvedMessage(
           (tc.name === 'registra_refeicao' || tc.name === 'registra_treino') && !tc.error,
       )
       const prescriptionToolCalled = toolCallsSummary.some(
-        (tc) => (tc.name === 'gera_dieta' || tc.name === 'gera_treino') && !tc.error,
+        (tc) => PRESCRIPTION_TOOLS.has(tc.name) && !tc.error,
       )
       const skipToolCalled = toolCallsSummary.some(
         (tc) => tc.name === 'marca_refeicao_pulada' && !tc.error,
@@ -647,7 +702,9 @@ async function processResolvedMessage(
             ? `SISTEMA (não é o paciente): o paciente confirmou que PULOU uma refeição. Você respondeu como se tivesse anotado/registrado MAS não chamou a tool \`marca_refeicao_pulada\`. Chame \`marca_refeicao_pulada(meal_type=${fake.inferredMealType ?? '<inferir do contexto>'})\` AGORA. NÃO chame \`registra_refeicao\` — não há refeição pra registrar. NÃO copie items do histórico — o paciente disse pulei, então a refeição NÃO existe.`
             : fake.kind === 'correction'
               ? 'SISTEMA (não é o paciente): você afirmou ter CORRIGIDO a refeição/treino MAS não chamou a tool. A correção NÃO foi salva — o banco ainda tem a versão antiga. Chame `registra_refeicao` com `replace=true` + `meal_type` (ou `registra_treino` pra exercício) AGORA com os itens corretos. NÃO responda ao paciente sem antes chamar a tool.'
-              : fake.kind === 'diet_fake'
+              : draftRetryMessage(fake.kind, filteredTools)
+                ? (draftRetryMessage(fake.kind, filteredTools) as string)
+                : fake.kind === 'diet_fake'
                 ? 'SISTEMA (não é o paciente): você apresentou um CARDÁPIO INVENTADO (com refeições + lista de compras) sem chamar `gera_dieta`. Nada foi salvo, os macros NÃO foram validados, e o paciente vai seguir uma dieta fantasma. Se o paciente PEDIU explicitamente um cardápio, chame `gera_dieta` AGORA. Se o paciente só estava perguntando teoria, responda SEM o cardápio — pergunte se quer que você gere de verdade.'
                 : fake.kind === 'training_fake'
                   ? 'SISTEMA (não é o paciente): você apresentou um PLANO DE TREINO INVENTADO (com dias + exercícios + séries) sem chamar `gera_treino`. Nada foi salvo, cron diário não vai entregar nada, e paciente vai treinar com plano fantasma. Se o paciente JÁ confirmou equipamentos + dias/semana + nível, chame `gera_treino` AGORA. Se faltar algum dos 3, PERGUNTE e NÃO mostre o plano.'
@@ -2037,7 +2094,7 @@ async function processResolvedMessage(
     // ou o card veio por caminho não-terminal → o texto final ainda afirma
     // registro/correção sem tool = escrita NÃO persistiu. Sinal crítico.
     const prescriptionToolCalled = toolCallsSummary.some(
-      (tc) => (tc.name === 'gera_dieta' || tc.name === 'gera_treino') && !tc.error,
+      (tc) => PRESCRIPTION_TOOLS.has(tc.name) && !tc.error,
     )
     const skipToolCalled = toolCallsSummary.some(
       (tc) => tc.name === 'marca_refeicao_pulada' && !tc.error,

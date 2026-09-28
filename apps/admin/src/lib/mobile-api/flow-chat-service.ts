@@ -90,9 +90,39 @@ export interface FlowAgent {
   }): Promise<{ text: string; metadata: Record<string, unknown> }>
 }
 
+/** The plan proposal a turn produced, for the app to open its review. */
+export interface FlowTurnDraft {
+  id: string
+  domain: 'training' | 'nutrition'
+}
+
+export interface FlowDraftLookup {
+  /** The draft created by this turn of this patient, if any. */
+  findForTurn(userId: string, turnProviderMessageId: string): Promise<FlowTurnDraft | null>
+}
+
 export interface FlowChatDependencies {
   store: FlowChatStore
   agent: FlowAgent
+  /** Absent where plan drafts do not exist; the reply then carries none. */
+  drafts?: FlowDraftLookup
+}
+
+/**
+ * The reply plus the proposal its turn created. The draft comes from the
+ * database (bound to the patient and to the turn), never from the model's
+ * text, and a failed lookup only leaves the reply without the shortcut.
+ */
+async function turnResponse(
+  dependencies: FlowChatDependencies,
+  userId: string,
+  turnProviderMessageId: string,
+  message: StoredFlowMessage,
+) {
+  const draft = dependencies.drafts
+    ? await dependencies.drafts.findForTurn(userId, turnProviderMessageId).catch(() => null)
+    : null
+  return { conversation_id: 'flow' as const, message: dto(message), draft }
 }
 
 export interface SendFlowMessageInput {
@@ -356,7 +386,7 @@ export async function sendFlowMessage(
     // successful turn (and is not re-executed: the patient sends it again).
     if (existing.content.trim().length === 0) throw providerFailed()
     await dependencies.store.completeInbound(input.userId, inboundProviderId)
-    return { conversation_id: 'flow' as const, message: dto(existing) }
+    return turnResponse(dependencies, input.userId, inboundProviderId, existing)
   }
 
   let attempt: FlowInboundAttempt
@@ -454,7 +484,7 @@ export async function sendFlowMessage(
         .catch(() => null)
       if (stored) {
         await dependencies.store.completeInbound(input.userId, inboundProviderId)
-        return { conversation_id: 'flow' as const, message: dto(stored) }
+        return turnResponse(dependencies, input.userId, inboundProviderId, stored)
       }
     }
     throw await failTurn()
@@ -465,7 +495,7 @@ export async function sendFlowMessage(
   } catch {
     throw await failTurn()
   }
-  return { conversation_id: 'flow' as const, message: dto(assistant) }
+  return turnResponse(dependencies, input.userId, inboundProviderId, assistant)
 }
 
 /** 23505 on the messages unique index: this exact provider id is stored. */
@@ -532,6 +562,45 @@ function mapRow(row: MessageRow): StoredFlowMessage {
     requestId: typeof raw.request_id === 'string' ? raw.request_id : 'request-unavailable',
     createdAt: row.created_at,
     ...(row.direction === 'in' ? { attempt: attemptFromRaw(raw) } : {}),
+  }
+}
+
+export function createSupabaseFlowDraftLookup(supabase: ServiceClient): FlowDraftLookup {
+  return {
+    async findForTurn(userId, turnProviderMessageId) {
+      const { data, error } = await (
+        supabase.from('plan_drafts' as never) as unknown as {
+          select(columns: string): {
+            eq(column: string, value: string): {
+              in(column: string, values: string[]): {
+                in(column: string, values: string[]): {
+                  order(column: string, options: { ascending: boolean }): {
+                    limit(count: number): PromiseLike<{
+                      data: Array<{ id: string; domain: string }> | null
+                      error: { message: string } | null
+                    }>
+                  }
+                }
+              }
+            }
+          }
+        }
+      )
+        .select('id, domain')
+        .eq('user_id', userId)
+        .in('request_key', [
+          `${turnProviderMessageId}:propoe_plano_treino`,
+          `${turnProviderMessageId}:propoe_plano_dieta`,
+        ])
+        .in('status', ['needs_completion', 'ready_for_review'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+      if (error) throw new Error('Unable to load the turn draft')
+      const row = data?.[0]
+      return row && (row.domain === 'training' || row.domain === 'nutrition')
+        ? { id: row.id, domain: row.domain }
+        : null
+    },
   }
 }
 

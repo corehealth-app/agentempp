@@ -5,6 +5,7 @@
  *
  * Formato compatível com OpenAI tool calling.
  */
+import { createPlanProposalTools } from './tools/plan-proposal-tools.js'
 import {
   computeMaintenanceAdjustment,
   computeMetrics,
@@ -3579,6 +3580,12 @@ export const geraTreino: ToolDefinition = {
   },
 }
 
+// Propostas do Flow: mesmos parâmetros dos geradores, gravação só em rascunho.
+export const [propoePlanoTreino, propoePlanoDieta] = createPlanProposalTools({
+  training: geraTreino.parameters,
+  diet: geraDieta.parameters,
+})
+
 export const ALL_TOOLS: ToolDefinition[] = [
   cadastraDadosIniciais,
   defineProtocolo,
@@ -3600,6 +3607,8 @@ export const ALL_TOOLS: ToolDefinition[] = [
   confirmaPaisResidencia,
   geraDieta,
   geraTreino,
+  propoePlanoTreino,
+  propoePlanoDieta,
 ]
 
 export function getToolByName(name: string): ToolDefinition | undefined {

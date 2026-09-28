@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   createSupabaseFlowChatStore,
+  createSupabaseFlowDraftLookup,
   type FlowAgent,
   FlowMessageAlreadyStoredError,
   type FlowChatStore,
@@ -104,6 +105,129 @@ describe('Flow chat service', () => {
     )
     expect(deps.store.completeInbound).toHaveBeenCalledOnce()
     expect(result.message.role).toBe('assistant')
+  })
+
+  it('carries the proposal its turn created, looked up by patient and turn', async () => {
+    const deps = dependencies()
+    const drafts = {
+      findForTurn: vi.fn(async () => ({
+        id: '11111111-1111-4111-8111-111111111111',
+        domain: 'training' as const,
+      })),
+    }
+
+    const result = await sendFlowMessage(
+      { ...deps, drafts },
+      {
+        userId,
+        text: 'Monte meu treino',
+        idempotencyKey: 'mobile-flow-0002',
+        requestId: 'request-flow-0002',
+        now,
+      },
+    )
+
+    expect(drafts.findForTurn).toHaveBeenCalledWith(
+      userId,
+      scopedFlowProviderMessageId(userId, 'mobile-flow-0002'),
+    )
+    expect(result.draft).toEqual({
+      id: '11111111-1111-4111-8111-111111111111',
+      domain: 'training',
+    })
+    expect(result.message.content).toBe('Oi!')
+  })
+
+  it('a reply without proposal, without drafts or with a failed lookup carries none', async () => {
+    const input = {
+      userId,
+      text: 'Olá',
+      idempotencyKey: 'mobile-flow-0003',
+      requestId: 'request-flow-0003',
+      now,
+    }
+    expect((await sendFlowMessage(dependencies(), input)).draft).toBeNull()
+    expect(
+      (await sendFlowMessage(
+        { ...dependencies(), drafts: { findForTurn: vi.fn(async () => null) } },
+        input,
+      )).draft,
+    ).toBeNull()
+    const failing = await sendFlowMessage(
+      {
+        ...dependencies(),
+        drafts: {
+          findForTurn: vi.fn(async () => {
+            throw new Error('database down')
+          }),
+        },
+      },
+      input,
+    )
+    expect(failing.draft).toBeNull()
+    expect(failing.message.role).toBe('assistant')
+  })
+
+  it('the replay of a turn carries the same proposal', async () => {
+    const deps = dependencies({
+      findInbound: vi.fn(async () => message({ content: 'Monte meu treino' })),
+      findAssistant: vi.fn(async () => message({ role: 'assistant', content: 'Pronto.' })),
+    })
+    const drafts = {
+      findForTurn: vi.fn(async () => ({ id: 'draft-1', domain: 'nutrition' as const })),
+    }
+
+    const result = await sendFlowMessage(
+      { ...deps, drafts },
+      {
+        userId,
+        text: 'Monte meu treino',
+        idempotencyKey: 'mobile-flow-0004',
+        requestId: 'request-flow-0004',
+        now,
+      },
+    )
+
+    expect(deps.agent.reply).not.toHaveBeenCalled()
+    expect(result.draft).toEqual({ id: 'draft-1', domain: 'nutrition' })
+  })
+
+  it('the proposal lookup is pinned to the patient, to the turn and to open drafts', async () => {
+    const filters: Array<[string, string, unknown]> = []
+    const query = {
+      select: () => query,
+      eq: (column: string, value: unknown) => {
+        filters.push(['eq', column, value])
+        return query
+      },
+      in: (column: string, value: unknown) => {
+        filters.push(['in', column, value])
+        return query
+      },
+      order: () => query,
+      limit: async () => ({
+        data: [{ id: 'draft-1', domain: 'training', payload: { secret: true } }],
+        error: null,
+      }),
+    }
+    const tables: string[] = []
+    const supabase = {
+      from: (table: string) => {
+        tables.push(table)
+        return query
+      },
+    } as unknown as import('@mpp/db').ServiceClient
+
+    const turn = scopedFlowProviderMessageId(userId, 'mobile-flow-0005')
+    const draft = await createSupabaseFlowDraftLookup(supabase).findForTurn(userId, turn)
+
+    expect(tables).toEqual(['plan_drafts'])
+    expect(filters).toEqual([
+      ['eq', 'user_id', userId],
+      ['in', 'request_key', [`${turn}:propoe_plano_treino`, `${turn}:propoe_plano_dieta`]],
+      ['in', 'status', ['needs_completion', 'ready_for_review']],
+    ])
+    expect(draft).toEqual({ id: 'draft-1', domain: 'training' })
   })
 
   it('marks the inbound failed and never fabricates an assistant on provider failure', async () => {

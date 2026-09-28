@@ -91,7 +91,7 @@ const DietMealSchema = z.object({
   notes: z.string().max(300).optional(),
 })
 
-const ShoppingItemSchema = z.object({
+export const ShoppingItemSchema = z.object({
   category: z.enum([
     'proteínas',
     'carboidratos',

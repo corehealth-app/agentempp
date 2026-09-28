@@ -10,6 +10,9 @@ final class FlowChatModel {
     var isLoading = false
     var isSending = false
     var errorMessage: String?
+    /// The proposal the last turn created, until the patient opens it or
+    /// sends another message.
+    private(set) var turnDraft: FlowTurnDraft?
 
     private let provider: any FlowChatProviding
     private let keyProvider: any IdempotencyKeyProviding
@@ -80,8 +83,13 @@ final class FlowChatModel {
         composer = ""
         errorMessage = nil
         retryAttempt = nil
+        turnDraft = nil
         isLoading = false
         isSending = false
+    }
+
+    func consumeTurnDraft() {
+        turnDraft = nil
     }
 
     private func performSend(text: String, key: IdempotencyKey) async throws {
@@ -90,15 +98,20 @@ final class FlowChatModel {
         errorMessage = nil
         retryAttempt = (text, key)
         let provider = self.provider
+        turnDraft = nil
+        let proposal = FlowTurnDraftBox()
         let task = Task {
-            _ = try await provider.send(text: text, idempotencyKey: key)
+            let sent = try await provider.send(text: text, idempotencyKey: key)
+            await proposal.set(sent.draft)
             return try await provider.history(limit: 50)
         }
         operation = task
         do {
             let history = try await task.value
+            let draft = await proposal.value
             guard generation == expectedGeneration else { return }
             messages = history.messages
+            turnDraft = draft
             composer = ""
             retryAttempt = nil
             isSending = false
@@ -127,5 +140,13 @@ final class FlowChatModel {
             return String(localized: "flow.error.forbidden")
         }
         return String(localized: "flow.error.generic")
+    }
+}
+
+private actor FlowTurnDraftBox {
+    private(set) var value: FlowTurnDraft?
+
+    func set(_ value: FlowTurnDraft?) {
+        self.value = value
     }
 }

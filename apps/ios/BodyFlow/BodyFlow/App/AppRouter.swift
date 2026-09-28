@@ -13,6 +13,8 @@ enum AppRoute: Hashable, Sendable {
     case mascot(MascotRoute)
     case flowChat
     case localReminders
+    case planDraft(PlanDraftRoute)
+    case planImport
 
     var tab: AppTab {
         switch self {
@@ -30,6 +32,10 @@ enum AppRoute: Hashable, Sendable {
             .today
         case .localReminders:
             .profile
+        case let .planDraft(route):
+            route.origin == .flow ? .today : .plan
+        case .planImport:
+            .plan
         }
     }
 
@@ -39,6 +45,12 @@ enum AppRoute: Hashable, Sendable {
         }
         if case .localReminders = self {
             return "screen.local-reminders"
+        }
+        if case .planDraft = self {
+            return "screen.plan.draft"
+        }
+        if case .planImport = self {
+            return "screen.plan.import"
         }
         return switch tab {
         case .today: "route.hoje.detalhe"
@@ -69,6 +81,18 @@ enum ContentRoute: Hashable, Sendable {
 
 enum MascotRoute: Hashable, Sendable {
     case detail
+}
+
+/// A draft is addressed by its identity alone; the review reloads it. The
+/// origin says which tab's stack shows it (Flow lives in Today).
+struct PlanDraftRoute: Hashable, Sendable {
+    enum Origin: Hashable, Sendable {
+        case flow
+        case plan
+    }
+
+    let draftID: String
+    let origin: Origin
 }
 
 /// Plan navigation intentionally carries no mutable plan snapshot. The

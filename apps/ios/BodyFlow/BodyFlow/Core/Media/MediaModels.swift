@@ -9,11 +9,13 @@ enum MealMediaLimits {
     static let maximumPhotoPixelSize = 2_048
     static let photoCompressionQuality = 0.8
     static let maximumTextLength = 2_000
+    static let maximumPlanDocumentBytes = 20 * 1_024 * 1_024
 }
 
 enum MediaUploadKind: String, Codable, Hashable, Sendable {
     case mealPhoto = "meal_photo"
     case audioNote = "audio_note"
+    case planDocument = "plan_document"
 }
 
 struct MediaUploadRequest: Codable, Hashable, Sendable {

@@ -78,12 +78,37 @@ struct FlowHistoryResponse: Codable, Equatable, Sendable {
     }
 }
 
+/// The plan proposal a turn created, for the app to open its review. It is
+/// a draft: nothing is the patient's plan until they confirm it.
+struct FlowTurnDraft: Codable, Hashable, Sendable {
+    let id: String
+    let domain: PlanDraftDomain
+}
+
 struct FlowSendResponse: Codable, Equatable, Sendable {
     let conversationID: String
     let message: FlowMessage
+    /// Absent from a server that does not propose plans.
+    let draft: FlowTurnDraft?
+
+    init(conversationID: String, message: FlowMessage, draft: FlowTurnDraft? = nil) {
+        self.conversationID = conversationID
+        self.message = message
+        self.draft = draft
+    }
 
     private enum CodingKeys: String, CodingKey {
         case conversationID = "conversation_id"
         case message
+        case draft
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        conversationID = try container.decode(String.self, forKey: .conversationID)
+        message = try container.decode(FlowMessage.self, forKey: .message)
+        // A draft the app cannot read (unknown domain) is only a missing
+        // shortcut, never a failed reply.
+        draft = (try? container.decodeIfPresent(FlowTurnDraft.self, forKey: .draft)) ?? nil
     }
 }

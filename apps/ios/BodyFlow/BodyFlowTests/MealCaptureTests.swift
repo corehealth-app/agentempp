@@ -387,6 +387,9 @@ struct MealAudioLimitTests {
     @MainActor
     func recorderSettings() {
         #expect(MealMediaLimits.maximumAudioDuration == 180)
+        // The recorder stops just before the limit, so a recording that ran
+        // to the end is never refused as too long.
+        #expect(MealAudioRecorder.recordingLimit == 179.5)
         #expect(MealAudioRecorder.settings[AVFormatIDKeyName] as? Int == 1_633_772_320)
         #expect(MealAudioRecorder.settings[AVNumberOfChannelsKeyName] as? Int == 1)
     }
@@ -746,6 +749,82 @@ struct MealDraftReviewTests {
         #expect(request.items.map(\.usesNutritionLabel) == [false])
         review.setUsesNutritionLabel(true, for: "unknown")
         #expect(!review.usesNutritionLabel("unknown"))
+    }
+
+    @Test("A quantity on a basis the app does not know needs confirmation and travels without basis")
+    func unknownBasisFailsClosed() throws {
+        let draft = MealDraftSnapshot(
+            source: "text", mediaAssetID: nil, transcript: nil, contextNote: nil,
+            items: [CaptureFixtures.candidate(
+                "c1-dddddddd", "arroz", grams: 120, basis: "model_guess"
+            )],
+            nutritionLabel: nil
+        )
+        var review = try review(draft)
+
+        #expect(review.blocker(language: .portugueseBrazil) == .unconfirmed(id: "c1-dddddddd"))
+        review.items[0].isConfirmed = true
+        let request = try #require(review.request(language: .portugueseBrazil))
+        #expect(request.items[0].quantityBasis == nil)
+    }
+
+    @Test("Typing and erasing, or typing the same figure, is not a statement of the patient")
+    func untouchedQuantityStaysApproximate() throws {
+        var review = try review()
+        let language = SupportedAppLanguage.portugueseBrazil
+
+        review.items[0].setQuantityText("1", language: language)
+        #expect(review.items[0].hasTypedQuantity)
+        review.items[0].setQuantityText("100", language: language)
+
+        #expect(!review.items[0].hasTypedQuantity)
+        #expect(review.items[0].requiresConfirmation)
+        #expect(review.items[0].basis == .portionReference)
+        #expect(review.blocker(language: language) == .unconfirmed(id: "c1-0a1b2c3d"))
+
+        // Erased: the field is empty and the quantity is missing, not zero.
+        review.items[0].setQuantityText("", language: language)
+        #expect(review.blocker(language: language) == .invalidQuantity(id: "c1-0a1b2c3d"))
+    }
+
+    @Test("A quantity from the server outside the accepted range is treated as missing")
+    func serverQuantityIsValidated() throws {
+        for grams in [Decimal(0), -5, 10_000] {
+            let draft = MealDraftSnapshot(
+                source: "text", mediaAssetID: nil, transcript: nil, contextNote: nil,
+                items: [CaptureFixtures.candidate("c1-eeeeeeee", "arroz", grams: grams, basis: "stated")],
+                nutritionLabel: nil
+            )
+            let review = try review(draft)
+            #expect(review.blocker(language: .portugueseBrazil)
+                == .missingQuantity(id: "c1-eeeeeeee"), "\(grams)")
+            #expect(review.request(language: .portugueseBrazil) == nil)
+        }
+    }
+
+    @Test("The server asking for a second look is honoured even on a stated quantity")
+    func needsReviewIsHonoured() throws {
+        let draft = MealDraftSnapshot(
+            source: "text", mediaAssetID: nil, transcript: nil, contextNote: nil,
+            items: [CaptureFixtures.candidate(
+                "c1-ffffffff", "arroz", grams: 120, basis: "stated", reason: "future_reason"
+            )],
+            nutritionLabel: nil
+        )
+        var review = try review(draft)
+        #expect(review.blocker(language: .portugueseBrazil) == .unconfirmed(id: "c1-ffffffff"))
+        review.items[0].setQuantityText("130", language: .portugueseBrazil)
+        #expect(review.blocker(language: .portugueseBrazil) == nil)
+    }
+
+    @Test("A repeated candidate becomes one row")
+    func duplicatedCandidates() throws {
+        let item = CaptureFixtures.candidate("c1-aaaaaaaa", "arroz", grams: 120, basis: "stated")
+        let review = try review(MealDraftSnapshot(
+            source: "text", mediaAssetID: nil, transcript: nil, contextNote: nil,
+            items: [item, item], nutritionLabel: nil
+        ))
+        #expect(review.items.count == 1)
     }
 
     @Test("A label read from audio or text is never offered")

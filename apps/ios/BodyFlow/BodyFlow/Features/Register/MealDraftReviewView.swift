@@ -105,7 +105,7 @@ struct MealDraftReviewView: View {
                     copy("registration.review.item.quantity"),
                     text: Binding(
                         get: { value.quantityDisplay(language: language) },
-                        set: { item.wrappedValue.quantityText = $0 }
+                        set: { item.wrappedValue.setQuantityText($0, language: language) }
                     )
                 )
                 .keyboardType(.decimalPad)
@@ -127,6 +127,9 @@ struct MealDraftReviewView: View {
                             .font(BodyFlowTypography.callout)
                     }
                     .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                    .accessibilityLabel(
+                        copy("registration.review.confirm-item") + ": " + value.trimmedName
+                    )
                     .accessibilityIdentifier("registration.review.item.\(value.id).confirm")
                 }
 
@@ -158,6 +161,7 @@ struct MealDraftReviewView: View {
                 }
                 .buttonStyle(BodyFlowButtonStyle(role: .tertiary))
                 .disabled(isSubmitting)
+                .accessibilityLabel(copy("registration.review.remove") + ": " + value.trimmedName)
                 .accessibilityIdentifier("registration.review.item.\(value.id).remove")
             }
         }

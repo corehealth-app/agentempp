@@ -260,12 +260,65 @@ struct MealDraftModelTests {
         #expect(harness.model.reviewedRequest(language: .portugueseBrazil) == nil)
         harness.model.review?.items[0].isConfirmed = true
         let request = try #require(harness.model.reviewedRequest(language: .portugueseBrazil))
+        harness.model.proposalCreated()
         harness.model.discardSheet()
         try await Task.sleep(for: .milliseconds(30))
 
         #expect(request.source?.mediaAssetID == Self.assetID)
         #expect(request.items.first?.candidateID == "c1-0a1b2c3d")
         #expect(!(await harness.server.calls.contains(.delete)))
+    }
+
+    @Test("A reviewed meal whose proposal was never created does not keep its media")
+    func failedProposalDoesNotKeepMedia() async throws {
+        let harness = makeHarness()
+        defer { try? FileManager.default.removeItem(at: harness.base) }
+        await harness.model.submitMedia(try harness.stagedPhoto())
+        harness.model.review?.items[0].isConfirmed = true
+        // The request was handed over, and the proposal failed.
+        _ = try #require(harness.model.reviewedRequest(language: .portugueseBrazil))
+
+        harness.model.startOver()
+        try await harness.server.waitForDelete()
+
+        #expect(await harness.server.calls.last == .delete)
+    }
+
+    @Test("A capture that finishes preparing after the sheet was closed is not sent")
+    func lateSubmitAfterClose() async throws {
+        let harness = makeHarness()
+        defer { try? FileManager.default.removeItem(at: harness.base) }
+        let staged = try harness.stagedPhoto()
+
+        harness.model.discardSheet()
+        await harness.model.submitMedia(staged)
+        await harness.model.submitText("2 ovos")
+
+        #expect(await harness.server.calls.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: staged.fileURL.path))
+        #expect(harness.model.review == nil)
+    }
+
+    @Test("The server's copy is deleted only after the upload has stopped")
+    func deleteWaitsForUpload() async throws {
+        let harness = makeHarness()
+        defer { try? FileManager.default.removeItem(at: harness.base) }
+        let staged = try harness.stagedPhoto()
+        await harness.server.suspendUploads()
+
+        let task = Task { await harness.model.submitMedia(staged) }
+        try await harness.server.waitForUploadStart()
+        harness.model.startOver()
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(await harness.server.calls == [.create, .upload])
+
+        await harness.server.resumeUploads()
+        await task.value
+        try await harness.server.waitForDelete()
+
+        #expect(await harness.server.calls == [.create, .upload, .delete])
+        #expect(!FileManager.default.fileExists(atPath: staged.fileURL.path))
+        #expect(harness.model.phase == .idle)
     }
 
     @Test("Closing the sheet in the middle of an upload leaves nothing behind")

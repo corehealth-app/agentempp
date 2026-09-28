@@ -47,7 +47,17 @@ actor DemoFlowChatRepository: FlowChatProviding {
             createdAt: now
         )
         messages.append(contentsOf: [user, assistant])
-        return FlowSendResponse(conversationID: "flow", message: assistant)
+        // With the plan draft scenario, a request for a workout answers with
+        // the synthetic proposal of that scenario.
+        let proposes = DemoPlanDraftScenario.isEnabled(
+            arguments: ProcessInfo.processInfo.arguments
+        ) && text.localizedCaseInsensitiveContains("treino")
+        return FlowSendResponse(
+            conversationID: "flow",
+            message: assistant,
+            draft: proposes
+                ? FlowTurnDraft(id: DemoPlanDraftScenario.draftID, domain: .training) : nil
+        )
     }
 }
 #endif

@@ -33,6 +33,9 @@ struct AppDependencies: Sendable {
     /// Meal capture from free text, photo and audio; nil where no server
     /// reads them (the demonstration keeps its local samples).
     var mealCapture: MealCaptureCapability? = nil
+    /// Plan drafts (Flow proposals and imported documents); nil where no
+    /// server keeps them.
+    var planDrafts: PlanDraftCapability? = nil
 
     var patientTimeZone: PatientTimeZoneContext {
         patientTimeZoneStore.current
@@ -316,7 +319,9 @@ struct AppDependencies: Sendable {
                 let clock = timeProvider
                 today = reads
                 history = reads
-                plan = reads
+                plan = MobileBodyFlowRepository(transport: transport.withResponseBodyLimit(
+                    MobileAPITransport.planResponseBodyLimit
+                ))
                 progress = reads
                 me = reads
                 mealDetection = TextMealDetector(now: { clock.now })
@@ -362,7 +367,11 @@ struct AppDependencies: Sendable {
         let clock = timeProvider
         let today: any TodayProviding = reads ?? unavailable
         let history: any HistoryProviding = reads ?? unavailable
-        let plan: any PlanProviding = reads ?? unavailable
+        let plan: any PlanProviding = transport.map {
+            MobileBodyFlowRepository(transport: $0.withResponseBodyLimit(
+                MobileAPITransport.planResponseBodyLimit
+            ))
+        } ?? unavailable
         let progress: any ProgressProviding = reads ?? unavailable
         let me: any MeProviding = reads ?? unavailable
         let mealDetection: any MealDetectionProviding = transport == nil
@@ -510,6 +519,32 @@ struct AppDependencies: Sendable {
         }
         #endif
 
+        var planDrafts: PlanDraftCapability? =
+            (apiClient as? MobileAPITransport).map { transport in
+                PlanDraftCapability(
+                    drafts: MobilePlanDraftRepository(
+                        transport: transport.withResponseBodyLimit(
+                            MobileAPITransport.planResponseBodyLimit
+                        )
+                    ),
+                    media: mealCapture?.media,
+                    uploader: mealCapture?.uploader,
+                    staging: mealCapture?.staging ?? MediaStagingStore()
+                )
+            }
+
+        #if DEBUG
+        if configuration.mode == .demo,
+           DemoPlanDraftScenario.isEnabled(arguments: ProcessInfo.processInfo.arguments) {
+            planDrafts = PlanDraftCapability(
+                drafts: DemoPlanDraftProvider(),
+                media: nil,
+                uploader: nil,
+                staging: MediaStagingStore()
+            )
+        }
+        #endif
+
         let onboarding: any OnboardingRepository
         #if DEBUG
         if configuration.mode == .demo {
@@ -561,7 +596,8 @@ struct AppDependencies: Sendable {
             patientTimeZoneStore: patientTimeZoneStore,
             flowChat: flowChat,
             localReminders: localReminders,
-            mealCapture: mealCapture
+            mealCapture: mealCapture,
+            planDrafts: planDrafts
         )
     }
 }

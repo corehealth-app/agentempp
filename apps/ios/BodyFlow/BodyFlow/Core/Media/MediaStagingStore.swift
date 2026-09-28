@@ -17,7 +17,7 @@ struct MediaStagingStore: Sendable {
 
     /// A fresh, protected folder for one capture and the file address in it.
     func makeFileURL(fileExtension: String) throws -> URL {
-        let allowed = ["jpg", "m4a", "mp3", "wav", "aac", "ogg"]
+        let allowed = ["jpg", "m4a", "mp3", "wav", "aac", "ogg", "pdf"]
         guard allowed.contains(fileExtension) else {
             throw MealCaptureFailure.unsupportedFile
         }

@@ -4,21 +4,36 @@ import SwiftUI
 struct PlanRootView: View {
     let model: PlanViewModel
     @Binding var selectedTab: AppTab
+    var drafts: PlanDraftsModel? = nil
+    var supportsImport = false
     @Environment(\.locale) private var locale
 
     var body: some View {
         ZStack {
             BodyFlowColor.background.ignoresSafeArea()
-            PlanReadContent(model: model, showsDetailLink: true)
+            if let drafts, !drafts.drafts.isEmpty || supportsImport {
+                // Drafts and the import stay reachable when there is no plan
+                // yet (the plan area then shows its own empty state).
+                VStack(spacing: 0) {
+                    PlanDraftsSection(model: drafts, supportsImport: supportsImport)
+                    PlanReadContent(model: model, showsDetailLink: true)
+                }
+            } else {
+                PlanReadContent(model: model, showsDetailLink: true)
+            }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AppTab.plan.rootAccessibilityIdentifier)
-        .refreshable { await model.retry() }
+        .refreshable {
+            await model.retry()
+            await drafts?.load()
+        }
         .navigationTitle(copy("plan.navigation.title"))
         .navigationBarTitleDisplayMode(.inline)
         .task(id: selectedTab) {
             guard selectedTab == .plan else { return }
             await model.load()
+            await drafts?.load()
         }
     }
 

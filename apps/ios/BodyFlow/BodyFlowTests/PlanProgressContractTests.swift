@@ -29,7 +29,10 @@ struct PlanProgressContractTests {
         assertContract(response)
     }
 
-    @Test("plan tolerates additive fields without exposing unstable training JSON")
+    // The weekly schedule is read since the C1–C5 design v1.1 (§3.5): only
+    // its known fields, each of them optional. Everything else in it stays
+    // outside the app.
+    @Test("plan reads the known fields of the weekly schedule and nothing else of the training JSON")
     func ignoresAdditiveAndUnstablePlanFields() throws {
         let response = try decodePlan()
         let encoded = try JSONEncoder().encode(response.data)
@@ -45,9 +48,15 @@ struct PlanProgressContractTests {
                 "equipment_summary",
                 "generated_at",
                 "version",
+                "weekly_schedule",
             ]
         )
-        #expect(training["weekly_schedule"] == nil)
+        let schedule = try #require(training["weekly_schedule"] as? [[String: Any]])
+        #expect(schedule.count == 1)
+        #expect(Set(schedule[0].keys) == ["day", "exercises"])
+        #expect(schedule[0]["day"] as? String == "segunda")
+        #expect(schedule[0]["planned_sessions"] == nil)
+        #expect(schedule[0]["unknown"] == nil)
         #expect(training["planned_sessions"] == nil)
         #expect(training["completed_sessions"] == nil)
     }

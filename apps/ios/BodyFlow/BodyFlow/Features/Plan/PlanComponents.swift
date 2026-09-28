@@ -13,8 +13,17 @@ struct NutritionPlanSection: Equatable, Sendable, Identifiable {
     let fields: [PlanField]
 }
 
+/// One day of the training plan, as the server stored it. Nothing here is
+/// computed: a value the plan does not carry is simply not shown.
+struct PlanTrainingDay: Equatable, Sendable, Identifiable {
+    let id: String
+    let title: String
+    let exercises: [PlanField]
+}
+
 struct PlanPresentation: Equatable, Sendable {
     let trainingFields: [PlanField]
+    let trainingDays: [PlanTrainingDay]
     let nutritionSections: [NutritionPlanSection]
 
     init(
@@ -24,6 +33,10 @@ struct PlanPresentation: Equatable, Sendable {
         trainingFields = snapshot.training.map {
             Self.trainingFields($0, language: language)
         } ?? []
+        trainingDays = Self.trainingDays(
+            snapshot.training?.weeklySchedule ?? [],
+            language: language
+        )
         nutritionSections = snapshot.nutrition.map {
             Self.nutritionSection($0, language: language)
         }
@@ -50,6 +63,49 @@ struct PlanPresentation: Equatable, Sendable {
             optionalField("plan.training.version", copy("plan.version", language), training.version.map(String.init)),
             optionalField("plan.training.notes", copy("plan.notes", language), training.notes),
         ].compactMap { $0 }
+    }
+
+    private static func trainingDays(
+        _ schedule: [TrainingDaySnapshot],
+        language: SupportedAppLanguage
+    ) -> [PlanTrainingDay] {
+        schedule.enumerated().compactMap { index, day in
+            let heading = [
+                day.day,
+                day.focus,
+                day.durationMin.map {
+                    "\(number($0, language)) \(copy("plan.training.schedule.minutes", language))"
+                },
+            ].compactMap { value in
+                value.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
+            }
+            let exercises = day.exercises.enumerated().compactMap { position, exercise -> PlanField? in
+                guard let name = exercise.name, !name.isEmpty else { return nil }
+                let volume = [exercise.sets.map { number($0, language) }, exercise.repsRange]
+                    .compactMap { $0 }
+                    .joined(separator: " × ")
+                let rest = exercise.restSeconds.map {
+                    "\(copy("plan.training.schedule.rest", language)) \(number($0, language)) s"
+                }
+                return PlanField(
+                    id: "plan.training.day.\(index).exercise.\(position)",
+                    title: name,
+                    value: [volume.isEmpty ? nil : volume, rest]
+                        .compactMap { $0 }
+                        .joined(separator: " · ")
+                )
+            }
+            guard !heading.isEmpty || !exercises.isEmpty else { return nil }
+            return PlanTrainingDay(
+                id: "plan.training.day.\(index)",
+                title: heading.joined(separator: " · "),
+                exercises: exercises
+            )
+        }
+    }
+
+    private static func number(_ value: Decimal, _ language: SupportedAppLanguage) -> String {
+        MealProposalNumberParser.format(value, language: language)
     }
 
     private static func nutritionSection(
@@ -133,6 +189,24 @@ struct PlanContentView: View {
                     fields: presentation.trainingFields,
                     accessibilityIdentifier: "plan.training"
                 )
+            }
+
+            ForEach(presentation.trainingDays) { day in
+                BodyFlowCard(surface: .card) {
+                    VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+                        Text(verbatim: day.title)
+                            .font(BodyFlowTypography.cardTitle)
+                            .foregroundStyle(BodyFlowColor.primaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityAddTraits(.isHeader)
+                        ForEach(day.exercises) { exercise in
+                            FixtureMetricRow(title: exercise.title, value: exercise.value)
+                                .accessibilityIdentifier(exercise.id)
+                        }
+                    }
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier(day.id)
             }
 
             ForEach(presentation.nutritionSections) { section in

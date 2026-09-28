@@ -15,6 +15,7 @@ struct AppShellView: View {
     @State private var flowChatModel: FlowChatModel
     @State private var contentCoverEnvironment: ContentCoverEnvironment
     @State private var localReminders: LocalReminderModel?
+    @State private var planDraftsModel: PlanDraftsModel?
     @Environment(\.locale) private var locale
     @Environment(\.scenePhase) private var scenePhase
     let userID: String
@@ -82,6 +83,9 @@ struct AppShellView: View {
                 invalidationCenter: invalidationCenter
             )
         )
+        _planDraftsModel = State(initialValue: dependencies.planDrafts.map {
+            PlanDraftsModel(provider: $0.drafts)
+        })
         let timeZoneStore = dependencies.patientTimeZoneStore
         _localReminders = State(initialValue: dependencies.localReminders.map { capability in
             LocalReminderModel(
@@ -179,6 +183,7 @@ struct AppShellView: View {
         }
         .onDisappear {
             flowChatModel.invalidate()
+            planDraftsModel?.invalidate()
             sessionOwner.invalidateSynchronously()
             localReminders?.endSession()
         }
@@ -241,7 +246,9 @@ struct AppShellView: View {
         case .plan:
             PlanRootView(
                 model: planViewModel,
-                selectedTab: $selectedTab
+                selectedTab: $selectedTab,
+                drafts: planDraftsModel,
+                supportsImport: dependencies.planDrafts?.supportsImport == true
             )
         case .progress:
             ProgressRootView(
@@ -332,6 +339,45 @@ struct AppShellView: View {
             )
         case .flowChat:
             FlowChatView(model: flowChatModel)
+        case let .planDraft(route):
+            if let capability = dependencies.planDrafts {
+                PlanDraftReviewView(model: PlanDraftReviewModel(
+                    draftID: route.draftID,
+                    provider: capability.drafts,
+                    timeProvider: dependencies.timeProvider,
+                    keyProvider: dependencies.idempotencyKeyProvider,
+                    planChanged: {
+                        flowChatModel.consumeTurnDraft()
+                        Task {
+                            await planViewModel.retry()
+                            await planDraftsModel?.load()
+                        }
+                    }
+                ))
+            } else {
+                ScreenStateView(state: .unavailable, retryAction: {})
+            }
+        case .planImport:
+            if let capability = dependencies.planDrafts {
+                PlanImportView(
+                    model: PlanImportModel(
+                        capability: capability,
+                        timeProvider: dependencies.timeProvider,
+                        keyProvider: dependencies.idempotencyKeyProvider
+                    ),
+                    stager: MealMediaStager(staging: capability.staging),
+                    openDraft: { draftID in
+                        // The import screen gives its place to the review.
+                        router.popToRoot(in: .plan)
+                        router.navigate(
+                            to: .planDraft(PlanDraftRoute(draftID: draftID, origin: .plan)),
+                            in: .plan
+                        )
+                    }
+                )
+            } else {
+                ScreenStateView(state: .unavailable, retryAction: {})
+            }
         case .localReminders:
             if let localReminders {
                 LocalRemindersView(model: localReminders)

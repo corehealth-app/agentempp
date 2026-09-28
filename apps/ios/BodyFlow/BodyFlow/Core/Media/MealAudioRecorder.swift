@@ -20,6 +20,12 @@ final class MealAudioRecorder: NSObject, AVAudioRecorderDelegate {
 
     private(set) var state = State.idle
     private(set) var elapsed: TimeInterval = 0
+    private var isStarting = false
+
+    /// The recorder stops a little before the limit: the file measures a few
+    /// milliseconds more than was asked, and a recording that ran to the end
+    /// must not be refused as too long.
+    static let recordingLimit = MealMediaLimits.maximumAudioDuration - 0.5
 
     init(staging: MediaStagingStore) {
         self.staging = staging
@@ -34,7 +40,9 @@ final class MealAudioRecorder: NSObject, AVAudioRecorderDelegate {
     ]
 
     func start() async {
-        guard state != .recording else { return }
+        guard state != .recording, !isStarting else { return }
+        isStarting = true
+        defer { isStarting = false }
         discard()
         guard await AVAudioApplication.requestRecordPermission() else {
             state = .failed(.permissionDenied)
@@ -47,7 +55,7 @@ final class MealAudioRecorder: NSObject, AVAudioRecorderDelegate {
             let url = try staging.makeFileURL(fileExtension: "m4a")
             let recorder = try AVAudioRecorder(url: url, settings: Self.settings)
             recorder.delegate = self
-            guard recorder.record(forDuration: MealMediaLimits.maximumAudioDuration) else {
+            guard recorder.record(forDuration: Self.recordingLimit) else {
                 staging.remove(url)
                 throw MealCaptureFailure.captureUnavailable
             }

@@ -554,6 +554,23 @@ private final class MobileAPIRedirectDelegate: NSObject,
 }
 
 extension MobileAPITransport {
+    /// Plans and plan drafts carry whole weekly schedules; everything else
+    /// keeps the default limit.
+    static let planResponseBodyLimit = 1_024 * 1_024
+
+    /// The same origin, session lifecycle and rules, accepting a larger
+    /// response. Nothing else about the transport changes.
+    func withResponseBodyLimit(_ limit: Int) -> MobileAPITransport {
+        MobileAPITransport(
+            configuration: configuration,
+            sessionLifecycle: sessionLifecycle,
+            session: session,
+            clock: clock,
+            timeout: timeout,
+            responseBodyLimit: max(limit, responseBodyLimit)
+        )
+    }
+
     /// The cover proxy shares this transport's origin, session lifecycle and
     /// URL session, so a bearer only ever travels where JSON requests go.
     /// Nil while the transport itself has no configuration.

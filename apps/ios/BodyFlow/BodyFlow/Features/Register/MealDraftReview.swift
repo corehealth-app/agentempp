@@ -30,12 +30,29 @@ struct MealDraftReview: Equatable, Sendable {
             quantityText != nil
         }
 
-        /// An approximate portion (reference or visual estimate) the patient
-        /// has not replaced by their own figure.
+        /// The server's quantity, when it is one a proposal can carry.
+        var serverQuantity: Decimal? {
+            guard let quantity = candidate.quantityG,
+                  quantity > 0, quantity <= MealDraftReview.maximumQuantityG
+            else {
+                return nil
+            }
+            return quantity
+        }
+
+        /// A quantity the patient did not state and has not replaced by
+        /// their own figure: a reference portion, a visual estimate, or any
+        /// basis this app does not know.
         var hasApproximateQuantity: Bool {
-            guard !hasTypedQuantity, candidate.quantityG != nil else { return false }
-            return candidate.requestBasis == .portionReference
-                || candidate.requestBasis == .visualEstimate
+            guard !hasTypedQuantity, serverQuantity != nil else { return false }
+            return candidate.requestBasis != .stated
+        }
+
+        /// The server asked for a second look and the patient changed
+        /// nothing yet.
+        private var isFlaggedAndUntouched: Bool {
+            candidate.needsReview && !hasTypedQuantity && trimmedName == candidate.name
+                && serverQuantity != nil
         }
 
         /// A name the server read with doubt and the patient has not changed.
@@ -46,11 +63,20 @@ struct MealDraftReview: Equatable, Sendable {
         }
 
         var requiresConfirmation: Bool {
-            hasApproximateQuantity || hasDoubtfulName
+            hasApproximateQuantity || hasDoubtfulName || isFlaggedAndUntouched
+        }
+
+        /// What the patient typed; typing the server's own figure back (or
+        /// erasing what was typed) is not a statement of theirs.
+        mutating func setQuantityText(_ text: String, language: SupportedAppLanguage) {
+            let server = serverQuantity.map {
+                MealProposalNumberParser.format($0, language: language)
+            } ?? ""
+            quantityText = text == server ? nil : text
         }
 
         func quantity(language: SupportedAppLanguage) -> Decimal? {
-            guard let quantityText else { return candidate.quantityG }
+            guard let quantityText else { return serverQuantity }
             guard let value = MealProposalNumberParser.parse(quantityText, language: language),
                   value > 0, value <= MealDraftReview.maximumQuantityG
             else {
@@ -61,7 +87,7 @@ struct MealDraftReview: Equatable, Sendable {
 
         func quantityDisplay(language: SupportedAppLanguage) -> String {
             if let quantityText { return quantityText }
-            return candidate.quantityG.map {
+            return serverQuantity.map {
                 MealProposalNumberParser.format($0, language: language)
             } ?? ""
         }
@@ -95,7 +121,13 @@ struct MealDraftReview: Equatable, Sendable {
     private(set) var labelledItemID: String?
 
     init(draft: MealDraftSnapshot, source: MealProposalSource, mealType: MealType) {
-        items = draft.items.prefix(Self.maximumItems).map(Item.init(candidate:))
+        // One row per candidate: a repeated identity would make two rows
+        // answer as one.
+        var seen = Set<String>()
+        items = draft.items
+            .filter { seen.insert($0.candidateID).inserted }
+            .prefix(Self.maximumItems)
+            .map(Item.init(candidate:))
         self.mealType = mealType
         self.source = source
         transcript = draft.transcript

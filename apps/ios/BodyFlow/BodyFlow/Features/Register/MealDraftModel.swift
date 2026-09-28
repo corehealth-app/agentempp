@@ -30,7 +30,6 @@ final class MealDraftModel {
         let input: Input
         var createAttempt: MutationAttempt<MediaUploadRequest>?
         var assetID: String?
-        var ticket: MediaUploadTicket?
         var isUploaded = false
         var completeAttempt: MutationAttempt<MediaAssetCommand>?
         var isCompleted = false
@@ -53,6 +52,12 @@ final class MealDraftModel {
     private var pipeline: Pipeline?
     private var sequence = 0
     private var handedToProposal = false
+    /// The work in hand. Dropping a capture cancels it, and the server's
+    /// copy is only deleted after it has stopped (a delete sent while the
+    /// upload is still travelling would leave the file behind).
+    private var work: Task<Void, Never>?
+    /// The sheet is gone: nothing that arrives late is sent.
+    private var isClosed = false
 
     private(set) var phase = MealDraftPhase.idle
     private(set) var channel: MealSourceChannel?
@@ -110,7 +115,7 @@ final class MealDraftModel {
 
     func submitText(_ text: String) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !isWorking else { return }
+        guard !isWorking, !isClosed else { return }
         guard !trimmed.isEmpty, trimmed.count <= MealMediaLimits.maximumTextLength else {
             fail(.invalidInput)
             return
@@ -118,11 +123,13 @@ final class MealDraftModel {
         dropPipeline(deletingAsset: true)
         channel = .text
         pipeline = Pipeline(input: .text(trimmed))
-        await run()
+        await start()
     }
 
     func submitMedia(_ staged: StagedMedia) async {
-        guard !isWorking else {
+        // A capture that finished preparing after the sheet was closed, or
+        // while another one is on its way, is dropped where it is.
+        guard !isWorking, !isClosed else {
             staging.remove(staged.fileURL)
             return
         }
@@ -139,20 +146,31 @@ final class MealDraftModel {
             return
         }
         pipeline = Pipeline(input: .media(staged))
-        await run()
+        await start()
     }
 
     /// Reports a capture that never produced a file (permission, camera,
     /// unreadable pick), so the screen says why.
     func reportCaptureFailure(_ failure: MealCaptureFailure) {
-        guard !isWorking else { return }
+        guard !isWorking, !isClosed else { return }
         dropPipeline(deletingAsset: true)
         fail(failure)
     }
 
     func retry() async {
-        guard canRetry else { return }
-        await run()
+        guard canRetry, !isClosed else { return }
+        await start()
+    }
+
+    private func start() async {
+        let task = Task { await run() }
+        work = task
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        if work == task { work = nil }
     }
 
     /// Back to the choice of source; whatever was captured is dropped.
@@ -165,17 +183,24 @@ final class MealDraftModel {
         phase = .idle
     }
 
-    /// The reviewed request, once; from here the proposal owns the meal and
-    /// its media stays on the server with it.
+    /// The reviewed request. Nothing changes hands yet: the media belongs to
+    /// the proposal only once the proposal exists (`proposalCreated`).
     func reviewedRequest(language: SupportedAppLanguage) -> MealProposalRequest? {
-        guard phase == .review, let request = review?.request(language: language) else {
+        guard phase == .review, !isClosed,
+              let request = review?.request(language: language)
+        else {
             return nil
         }
-        handedToProposal = true
         return request
     }
 
+    /// The server created the proposal: its media stays there with it.
+    func proposalCreated() {
+        handedToProposal = true
+    }
+
     func discardSheet() {
+        isClosed = true
         sequence += 1
         dropPipeline(deletingAsset: !handedToProposal)
         if isWorking { phase = .idle }
@@ -187,6 +212,9 @@ final class MealDraftModel {
         case .mealPhoto:
             guard staged.channel.isPhoto else { return .invalidInput }
             return staged.sizeBytes > MealMediaLimits.maximumPhotoBytes ? .fileTooLarge : nil
+        case .planDocument:
+            // Plan documents travel through the plan import, never as a meal.
+            return .invalidInput
         case .audioNote:
             guard staged.channel.isAudio else { return .invalidInput }
             guard let duration = staged.duration, duration > 0 else { return .unreadableMedia }
@@ -264,9 +292,10 @@ final class MealDraftModel {
                 // Asking again with the same key returns the same asset and a
                 // fresh ticket while the upload is still pending.
                 let created = try await media.create(createAttempt)
-                try ensureCurrent(current)
+                // The identity is kept even when this run was dropped
+                // meanwhile, so the drop can delete what was created.
                 pipeline?.assetID = created.asset.id
-                pipeline?.ticket = created.upload
+                try ensureCurrent(current)
                 switch created.asset.state {
                 case .pendingUpload:
                     guard let ticket = created.upload else {
@@ -279,7 +308,6 @@ final class MealDraftModel {
                 case .failed, .deleted, .unknown:
                     throw MealCaptureFailure.uploadRejected
                 }
-                pipeline?.ticket = nil
                 pipeline?.isUploaded = true
             }
             guard let assetID = pipeline?.assetID else { throw MealCaptureFailure.unavailable }
@@ -371,19 +399,46 @@ final class MealDraftModel {
     /// Drops the capture in hand: the staged file always, and the server's
     /// copy when no proposal depends on it.
     private func dropPipeline(deletingAsset: Bool) {
+        let running = work
+        work = nil
+        running?.cancel()
         guard let dropped = pipeline else { return }
         pipeline = nil
-        if case let .media(staged) = dropped.input {
+        let staging = staging
+        let media = media
+        let deletion = deletingAsset
+            ? try? attempt(.mediaDelete, payload: MediaAssetCommand(assetID: ""))
+            : nil
+        let knownAssetID = dropped.assetID
+        let createAttempt = dropped.createAttempt
+        Task {
+            // Only after the work has stopped: the upload is no longer
+            // travelling and the asset, if one was created, is known.
+            await running?.value
+            if case let .media(staged) = dropped.input {
+                staging.remove(staged.fileURL)
+            }
+            guard let deletion, let media else { return }
+            var assetID = knownAssetID
+            if assetID == nil, let createAttempt {
+                // The creation may have reached the server without its
+                // answer reaching the app: the same request names the asset.
+                assetID = try? await media.create(createAttempt).asset.id
+            }
+            guard let assetID else { return }
+            let attempt = MutationAttempt(
+                operation: deletion.operation,
+                key: deletion.key,
+                payload: MediaAssetCommand(assetID: assetID),
+                createdAt: deletion.createdAt
+            )
+            for delay in [0, 2, 8] {
+                if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
+                if (try? await media.delete(attempt)) != nil { return }
+            }
+        }
+        if case let .media(staged) = dropped.input, running == nil {
             staging.remove(staged.fileURL)
         }
-        guard deletingAsset, let assetID = dropped.assetID, let media,
-              let attempt = try? attempt(
-                  .mediaDelete,
-                  payload: MediaAssetCommand(assetID: assetID)
-              )
-        else {
-            return
-        }
-        Task { try? await media.delete(attempt) }
     }
 }

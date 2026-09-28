@@ -280,6 +280,10 @@ struct RegistrationSheet: View {
             propose: { request in
                 perform(.reviewedProposal(request)) {
                     await mealModel.propose(reviewed: request)
+                    // Only a proposal that exists owns the media it came from.
+                    if mealModel.currentProposal != nil {
+                        mealDraftModel.proposalCreated()
+                    }
                 }
             }
         )

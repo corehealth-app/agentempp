@@ -105,9 +105,17 @@ final class MealRegistrationModel {
     /// Proposes a meal the patient already reviewed item by item (the
     /// candidates of a text, photo or recording). The request goes as it is.
     func propose(reviewed request: MealProposalRequest) async {
-        guard !isSubmitting, phase == .capture, currentProposal == nil else { return }
+        guard !isSubmitting, currentProposal == nil, phase != .confirmed else { return }
+        // After a cancelled proposal the same sheet proposes again.
+        if phase == .cancelled { startNewProposal() }
         let draft = RegistrationProposalRequest.meal(request)
         detectedDraft = draft
+        // The same meal sent again after a failure is the same request: the
+        // first one may have reached the server.
+        if case let .failed(.propose(attempt), _) = mutationState, attempt.payload == draft {
+            await runMutation(.propose(attempt))
+            return
+        }
         do {
             await runMutation(.propose(try attemptCoordinator.propose(draft)))
         } catch {

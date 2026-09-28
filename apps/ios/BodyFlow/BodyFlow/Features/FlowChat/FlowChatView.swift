@@ -21,6 +21,12 @@ struct FlowChatView: View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
                 conversation(gutter: BodyFlowSpacing.screenGutter(usableWidth: geometry.size.width))
+                if let draft = model.turnDraft {
+                    proposalCard(
+                        draft,
+                        gutter: BodyFlowSpacing.screenGutter(usableWidth: geometry.size.width)
+                    )
+                }
                 Divider().overlay(BodyFlowColor.color(.borderSubtle))
                 composer(text: $model.composer,
                          gutter: BodyFlowSpacing.screenGutter(usableWidth: geometry.size.width))
@@ -42,6 +48,33 @@ struct FlowChatView: View {
             initiatedSend = false
             model.cancel()
         }
+    }
+
+    /// The proposal this turn created. It opens the review; nothing is
+    /// confirmed from the chat.
+    private func proposalCard(_ draft: FlowTurnDraft, gutter: CGFloat) -> some View {
+        NavigationLink(value: AppRoute.planDraft(PlanDraftRoute(
+            draftID: draft.id, origin: .flow
+        ))) {
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
+                Label(verbatim: proposalCopy("flow.proposal.review"), symbol: .summary)
+                    .font(BodyFlowTypography.button)
+                Text(proposalCopy(draft.domain == .training
+                    ? "flow.proposal.detail.training" : "flow.proposal.detail.nutrition"))
+                    .font(BodyFlowTypography.caption)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minHeight: BodyFlowSpacing.minimumTapTarget + 1)
+        }
+        .buttonStyle(BodyFlowButtonStyle(role: .secondary))
+        .padding(.horizontal, gutter)
+        .padding(.vertical, BodyFlowSpacing.xs)
+        .accessibilityIdentifier("flow.proposal.review")
+    }
+
+    private func proposalCopy(_ key: String.LocalizationValue) -> String {
+        PlanCopy.string(key, language: BodyFlowPresentationLanguage.resolve(locale))
     }
 
     @ViewBuilder

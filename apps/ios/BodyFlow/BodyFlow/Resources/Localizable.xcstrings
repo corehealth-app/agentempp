@@ -1957,6 +1957,478 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Enviar mensagem" } }
       }
     },
+    "flow.proposal.detail.nutrition" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Meal plan proposal created as a draft. It only counts after you confirm it." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Proposta de cardápio criada como rascunho. Ela só vale depois que você confirmar." } }
+    } },
+    "flow.proposal.detail.training" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Workout proposal created as a draft. It only counts after you confirm it." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Proposta de treino criada como rascunho. Ela só vale depois que você confirmar." } }
+    } },
+    "flow.proposal.review" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Review proposal" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Revisar proposta" } }
+    } },
+    "plan.draft.blocker.incomplete" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Fill in or remove what is missing to be able to confirm." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Preencha ou remova o que está faltando para poder confirmar." } }
+    } },
+    "plan.draft.blocker.invalid" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Fix the invalid fields to save." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Corrija os campos inválidos para salvar." } }
+    } },
+    "plan.draft.blocker.unreadable" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This proposal has a value the app cannot show. It cannot be confirmed." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Esta proposta tem um valor que o app não consegue mostrar. Ela não pode ser confirmada." } }
+    } },
+    "plan.draft.blocker.unsaved" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Save the changes before confirming." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Salve as alterações antes de confirmar." } }
+    } },
+    "plan.draft.close" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Close" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Fechar" } }
+    } },
+    "plan.draft.confirm" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Confirm plan" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Confirmar plano" } }
+    } },
+    "plan.draft.confirm.add.action" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Confirm" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Confirmar" } }
+    } },
+    "plan.draft.confirm.add.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Confirm this plan?" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Confirmar este plano?" } }
+    } },
+    "plan.draft.confirm.cancel" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Back" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Voltar" } }
+    } },
+    "plan.draft.confirm.replace.action" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Replace and confirm" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Substituir e confirmar" } }
+    } },
+    "plan.draft.confirm.replace.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Replace the current plan?" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Substituir o plano atual?" } }
+    } },
+    "plan.draft.confirmed.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Plan confirmed" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Plano confirmado" } }
+    } },
+    "plan.draft.detail.carbs" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Carbohydrate (g)" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Carboidrato (g)" } }
+    } },
+    "plan.draft.detail.day-of-week" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Day of the week (1 = Monday)" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Dia da semana (1 = segunda)" } }
+    } },
+    "plan.draft.detail.equipment" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Equipment" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Equipamentos" } }
+    } },
+    "plan.draft.detail.execution" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Execution" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Execução" } }
+    } },
+    "plan.draft.detail.fat" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Fat (g)" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Gordura (g)" } }
+    } },
+    "plan.draft.detail.horizon" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Period" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Período" } }
+    } },
+    "plan.draft.detail.kcal" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Calories (kcal)" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Calorias (kcal)" } }
+    } },
+    "plan.draft.detail.meta-kcal" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Calorie target (kcal)" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Meta de calorias (kcal)" } }
+    } },
+    "plan.draft.detail.meta-protein" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Protein target (g)" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Meta de proteína (g)" } }
+    } },
+    "plan.draft.detail.mistakes" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Common mistakes" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Erros comuns" } }
+    } },
+    "plan.draft.detail.mode" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Mode" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Modo" } }
+    } },
+    "plan.draft.detail.notes" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Notes" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Observações" } }
+    } },
+    "plan.draft.detail.plan-type" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Plan type" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Tipo de plano" } }
+    } },
+    "plan.draft.detail.progression" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Progression" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Progressão" } }
+    } },
+    "plan.draft.detail.protein" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Protein (g)" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Proteína (g)" } }
+    } },
+    "plan.draft.detail.rpe" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Target effort" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Esforço alvo" } }
+    } },
+    "plan.draft.detail.total-kcal" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Meal total (kcal)" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Total da refeição (kcal)" } }
+    } },
+    "plan.draft.detail.total-protein" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Meal protein (g)" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Proteína da refeição (g)" } }
+    } },
+    "plan.draft.details.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Plan data" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Dados do plano" } }
+    } },
+    "plan.draft.discard" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Discard proposal" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Descartar proposta" } }
+    } },
+    "plan.draft.discard.action" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Discard" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Descartar" } }
+    } },
+    "plan.draft.discard.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Discard this proposal?" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Descartar esta proposta?" } }
+    } },
+    "plan.draft.discarded.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Proposal discarded" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Proposta descartada" } }
+    } },
+    "plan.draft.domain.nutrition" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Meal plan" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Plano alimentar" } }
+    } },
+    "plan.draft.domain.training" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Workout plan" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Plano de treino" } }
+    } },
+    "plan.draft.failure.changed" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The proposal changed since you opened it. Review the current version." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "A proposta mudou desde que você abriu. Revise a versão atual." } }
+    } },
+    "plan.draft.failure.expired" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This proposal has expired." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Esta proposta expirou." } }
+    } },
+    "plan.draft.failure.incomplete" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Information is still missing to confirm." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ainda faltam informações para confirmar." } }
+    } },
+    "plan.draft.failure.not-found" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This proposal no longer exists." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Esta proposta não existe mais." } }
+    } },
+    "plan.draft.failure.not-reviewable" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This proposal can no longer be changed." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Esta proposta não pode mais ser alterada." } }
+    } },
+    "plan.draft.failure.plan-changed" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Your current plan changed while you were reviewing. This proposal can no longer be confirmed; ask for or import a new one." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O seu plano atual mudou enquanto você revisava. Esta proposta não pode mais ser confirmada; peça ou importe uma nova." } }
+    } },
+    "plan.draft.failure.prescribed" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Your current plan was prescribed by a professional and cannot be replaced by a proposal." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O seu plano atual foi prescrito por um profissional e não pode ser substituído por uma proposta." } }
+    } },
+    "plan.draft.failure.too-many" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "There are too many open proposals. Confirm or discard one before creating another." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Há propostas demais em aberto. Confirme ou descarte alguma antes de criar outra." } }
+    } },
+    "plan.draft.field.day" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Day or workout" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Dia ou treino" } }
+    } },
+    "plan.draft.field.duration" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Duration in minutes (10 to 180)" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Duração em minutos (10 a 180)" } }
+    } },
+    "plan.draft.field.exercise" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Exercise" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Exercício" } }
+    } },
+    "plan.draft.field.focus" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Focus" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Foco" } }
+    } },
+    "plan.draft.field.food" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Food" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Alimento" } }
+    } },
+    "plan.draft.field.meal" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Meal" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Refeição" } }
+    } },
+    "plan.draft.field.muscle-group" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Muscle group" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Grupo muscular" } }
+    } },
+    "plan.draft.field.other" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Field" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Campo" } }
+    } },
+    "plan.draft.field.quantity" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Quantity in grams (up to 2,000)" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Quantidade em gramas (até 2.000)" } }
+    } },
+    "plan.draft.field.reps" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Repetitions" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Repetições" } }
+    } },
+    "plan.draft.field.rest" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Rest in seconds (0 to 600)" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Descanso em segundos (0 a 600)" } }
+    } },
+    "plan.draft.field.sets" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Sets (1 to 15)" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Séries (1 a 15)" } }
+    } },
+    "plan.draft.field.time" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Suggested time" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Horário sugerido" } }
+    } },
+    "plan.draft.in-progress.generating" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Preparing the proposal…" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Preparando a proposta…" } }
+    } },
+    "plan.draft.in-progress.reading" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Reading the document…" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Lendo o documento…" } }
+    } },
+    "plan.draft.loading" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading the proposal…" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Carregando a proposta…" } }
+    } },
+    "plan.draft.meal.almoco" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Lunch" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Almoço" } }
+    } },
+    "plan.draft.meal.cafe" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Breakfast" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Café da manhã" } }
+    } },
+    "plan.draft.meal.ceia" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Supper" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ceia" } }
+    } },
+    "plan.draft.meal.jantar" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Dinner" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Jantar" } }
+    } },
+    "plan.draft.meal.lanche-manha" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Morning snack" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Lanche da manhã" } }
+    } },
+    "plan.draft.meal.lanche-tarde" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Afternoon snack" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Lanche da tarde" } }
+    } },
+    "plan.draft.meal.unknown" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Choose the meal" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Escolha a refeição" } }
+    } },
+    "plan.draft.navigation.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Review proposal" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Revisar proposta" } }
+    } },
+    "plan.draft.notice.confirmed" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "You confirmed this plan. It was not reviewed by a professional." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Você confirmou este plano. Ele não foi revisado por um profissional." } }
+    } },
+    "plan.draft.notice.draft" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This is a draft. It only becomes your plan after you confirm it." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Isto é um rascunho. Ele só vira o seu plano depois que você confirmar." } }
+    } },
+    "plan.draft.notice.edits-dropped" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The proposal changed on the server and what you had typed was not applied. Review the current version." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "A proposta mudou no servidor e o que você tinha digitado não foi aplicado. Revise a versão atual." } }
+    } },
+    "plan.draft.notice.medications" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Medications, supplements and doses are not imported. Talk to your professional." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Medicamentos, suplementos e doses não são importados. Converse com o seu profissional." } }
+    } },
+    "plan.draft.notice.not-reviewed" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The confirmation is yours. This plan was not reviewed by a professional." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "A confirmação é sua. Este plano não foi revisado por um profissional." } }
+    } },
+    "plan.draft.notice.replaces" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "When confirmed, this plan replaces your current workout plan." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ao confirmar, este plano substitui o seu plano de treino atual." } }
+    } },
+    "plan.draft.origin.flow" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Proposed by Flow" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Proposto pelo Flow" } }
+    } },
+    "plan.draft.origin.imported" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Read from the document you sent" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Lido do documento que você enviou" } }
+    } },
+    "plan.draft.portion.note" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "In the document:" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "No documento:" } }
+    } },
+    "plan.draft.remove.action" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Remove" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Remover" } }
+    } },
+    "plan.draft.remove.message" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The removal is saved in the proposal, together with what you have already typed." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "A remoção é salva na proposta, junto com o que você já digitou." } }
+    } },
+    "plan.draft.remove.row" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Remove item" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Remover item" } }
+    } },
+    "plan.draft.remove.section" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Remove this block" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Remover este bloco" } }
+    } },
+    "plan.draft.remove.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Remove from the proposal?" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Remover da proposta?" } }
+    } },
+    "plan.draft.save" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Save changes" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Salvar alterações" } }
+    } },
+    "plan.draft.shopping.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Shopping list" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Lista de compras" } }
+    } },
+    "plan.draft.uncertain.invalid" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Invalid value for this field." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Valor inválido para este campo." } }
+    } },
+    "plan.draft.uncertain.missing" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Not given. Fill it in to be able to confirm." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não informado. Preencha para poder confirmar." } }
+    } },
+    "plan.draft.uncertain.not-in-document" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This value was not written in the document and was removed. Enter the value." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Este valor não estava escrito no documento e foi retirado. Informe o valor." } }
+    } },
+    "plan.draft.uncertain.out-of-range" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The value read was out of range and was removed. Enter the value." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O valor lido estava fora do limite e foi retirado. Informe o valor." } }
+    } },
+    "plan.draft.unrecognized.detail" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "They were in the document and did not become a field of the plan. They stay here as they came." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Estavam no documento e não viraram campo do plano. Ficam aqui como vieram." } }
+    } },
+    "plan.draft.unrecognized.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Parts not imported" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Trechos não importados" } }
+    } },
+    "plan.drafts.state.in-progress" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Being read" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Em leitura" } }
+    } },
+    "plan.drafts.state.needs-completion" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Information is missing" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Faltam informações" } }
+    } },
+    "plan.drafts.state.ready" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Ready to review" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Pronta para revisar" } }
+    } },
+    "plan.drafts.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Proposals to review" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Propostas para revisar" } }
+    } },
+    "plan.import.action.detail" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Send the photo or PDF of a plan you already have." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Envie a foto ou o PDF de um plano que você já tem." } }
+    } },
+    "plan.import.action.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Import plan" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Importar plano" } }
+    } },
+    "plan.import.closed.failed" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The reading did not finish. Send the document again." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "A leitura não foi concluída. Envie o documento de novo." } }
+    } },
+    "plan.import.closed.nothing-recognized" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "No plan was identified in the document." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Nenhum plano foi identificado no documento." } }
+    } },
+    "plan.import.closed.too-long" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The document is too long. Send only the pages of the plan." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O documento é longo demais. Envie só as páginas do plano." } }
+    } },
+    "plan.import.closed.unreadable" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The document could not be opened." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não foi possível abrir o documento." } }
+    } },
+    "plan.import.closed.without-text" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This PDF has no text to read. Send photos of the pages." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Este PDF não tem texto para ler. Envie fotos das páginas." } }
+    } },
+    "plan.import.domain" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Kind of plan" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Tipo de plano" } }
+    } },
+    "plan.import.failure.already-imported" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This document was already imported as another kind of plan." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Este documento já foi importado como outro tipo de plano." } }
+    } },
+    "plan.import.failure.already-read" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This document was already read. Send the file again to import it." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Este documento já foi lido. Envie o arquivo de novo para importar." } }
+    } },
+    "plan.import.navigation.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Import plan" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Importar plano" } }
+    } },
+    "plan.import.notice.draft" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The document becomes a draft for you to review. Nothing counts before you confirm." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O documento vira um rascunho para você revisar. Nada passa a valer antes da sua confirmação." } }
+    } },
+    "plan.import.notice.scanned" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "A scanned PDF (image only) is not read. In that case, send photos of the pages." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "PDF digitalizado (só imagem) não é lido. Nesse caso, envie fotos das páginas." } }
+    } },
+    "plan.import.phase.starting" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Starting the reading…" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Iniciando a leitura…" } }
+    } },
+    "plan.import.source.camera" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Photograph the plan" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Fotografar o plano" } }
+    } },
+    "plan.import.source.gallery" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Choose photo" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Escolher foto" } }
+    } },
+    "plan.import.source.pdf" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Choose PDF" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Escolher PDF" } }
+    } },
+    "plan.import.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Which plan do you want to import?" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Qual plano você quer importar?" } }
+    } },
+    "plan.training.schedule.minutes" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "min" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "min" } }
+    } },
+    "plan.training.schedule.rest" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "rest" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "descanso" } }
+    } },
     "registration.live.back" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Back" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Voltar" } }

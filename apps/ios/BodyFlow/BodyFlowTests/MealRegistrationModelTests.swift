@@ -1070,3 +1070,48 @@ extension MealRegistrationModelTests {
         #expect(harness.model.confirmedRegistration == nil)
     }
 }
+
+extension MealRegistrationModelTests {
+    private static var reviewedMeal: MealProposalRequest {
+        MealProposalRequest(
+            mealType: .lunch,
+            items: [MealProposalItemRequest(
+                foodName: "arroz", quantityG: 120, userKcal: nil, quantityBasis: .stated
+            )],
+            consumedAt: nil,
+            source: MealProposalSource(channel: .text, mediaAssetID: nil)
+        )
+    }
+
+    @Test("After a cancelled proposal the same sheet proposes the reviewed meal again")
+    func reviewedMealAfterCancelledProposal() async throws {
+        let harness = try Self.makeHarness(
+            proposeOutcomes: [.success(Self.pendingResponse), .success(Self.pendingResponse)],
+            cancelOutcomes: [.success(Self.pendingResponse)]
+        )
+        await harness.model.propose(reviewed: Self.reviewedMeal)
+        await harness.model.cancel()
+        #expect(harness.model.phase == .cancelled)
+
+        await harness.model.propose(reviewed: Self.reviewedMeal)
+
+        #expect(await harness.service.calls == [.propose, .cancel, .propose])
+        #expect(harness.model.phase == .proposal)
+    }
+
+    @Test("The same reviewed meal sent again after a failure is the same request")
+    func reviewedMealResentKeepsItsKey() async throws {
+        let harness = try Self.makeHarness(
+            proposeOutcomes: [.failure(.offline), .success(Self.pendingResponse)]
+        )
+        await harness.model.propose(reviewed: Self.reviewedMeal)
+        #expect(harness.model.phase == .capture)
+
+        await harness.model.propose(reviewed: Self.reviewedMeal)
+
+        let keys = await harness.service.proposeAttempts.map(\.key)
+        #expect(keys.count == 2)
+        #expect(Set(keys).count == 1)
+        #expect(harness.model.phase == .proposal)
+    }
+}

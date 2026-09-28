@@ -10,7 +10,7 @@ A leitura por texto funciona melhor com frases no formato alimento e quantidade,
 
 - **Os alimentos certos.** Veja se cada item corresponde ao que você comeu. Arroz, feijão e café, por exemplo, têm versões bem diferentes.
 - **As quantidades.** Números com casas decimais são mantidos como você informou. Ajuste o que estiver fora.
-- **Porções aproximadas.** Quando a quantidade foi estimada, o item aparece marcado como aproximado. Confirme ou corrija.
+- **Quantidades estimadas.** Cada item mostra de onde veio a quantidade: informada por você, estimada pela foto ou tirada de uma porção de referência. Quando ela foi estimada, confirme ou corrija.
 - **Itens sem cálculo.** Se o app não conseguiu calcular um item, ele não deixa confirmar a refeição. Corrija o item ou remova-o.
 - **Zero também é valor.** Água ou café sem açúcar podem ter 0 kcal. Isso é um valor válido, não um erro.
 

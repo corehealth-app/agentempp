@@ -10,7 +10,7 @@ Text works best with phrases made of a food and an amount, such as **150 g of ri
 
 - **The right foods.** Make sure each item matches what you ate. Rice, beans and coffee, for example, come in very different versions.
 - **The amounts.** Decimal amounts are kept exactly as you entered them. Fix anything that is off.
-- **Approximate portions.** When an amount was estimated, the item is marked as approximate. Confirm or correct it.
+- **Estimated amounts.** Each item shows where its amount came from: stated by you, estimated from the photo or taken from a reference portion. When it was estimated, confirm or correct it.
 - **Items without a calculation.** If the app could not calculate an item, it will not let you confirm the meal. Fix the item or remove it.
 - **Zero is a value too.** Water or unsweetened coffee can have 0 kcal. That is a valid value, not an error.
 

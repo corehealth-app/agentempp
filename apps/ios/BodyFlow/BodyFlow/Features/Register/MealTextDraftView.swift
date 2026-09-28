@@ -11,7 +11,13 @@ struct MealTextDraftView: View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
             Text(copy("registration.text.title"))
                 .font(BodyFlowTypography.headline)
-            TextField(copy("registration.text.placeholder"), text: $draft, axis: .vertical)
+            TextField(
+                copy(presentsLocalDemonstration
+                    ? "registration.text.placeholder"
+                    : "registration.text.placeholder.live"),
+                text: $draft,
+                axis: .vertical
+            )
                 .lineLimit(3...6)
                 .textInputAutocapitalization(.sentences)
                 .accessibilityIdentifier("registration.meal.text")

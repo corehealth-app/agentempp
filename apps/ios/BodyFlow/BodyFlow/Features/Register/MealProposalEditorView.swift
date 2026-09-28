@@ -7,6 +7,8 @@ struct MealProposalEditorSeed {
     let consumedAt: Date
     /// The item being edited; every other item is sent back as it came.
     let editedIndex: Int
+    /// The meal's origin, sent back with every edit so it is never lost.
+    let source: MealProposalSource?
 
     init(registration: RegistrationSnapshot, initialConsumedAt: Date, editedIndex: Int = 0) {
         let proposal: MealProposalSnapshot
@@ -23,6 +25,7 @@ struct MealProposalEditorSeed {
         mealType = MealType(rawValue: proposal.mealType) ?? .other
         items = proposal.items
         consumedAt = initialConsumedAt
+        source = proposal.source?.requestSource
         self.editedIndex = proposal.items.indices.contains(editedIndex) ? editedIndex : 0
     }
 
@@ -121,6 +124,7 @@ struct MealProposalEditorDraft: Equatable, Sendable {
     let items: [MealProposalItemSnapshot]
     let editedIndex: Int
     let hasUnknownKcalOrigin: Bool
+    let source: MealProposalSource?
     var mealType: MealType
     var foodName: String
     var consumedAt: Date
@@ -139,6 +143,7 @@ struct MealProposalEditorDraft: Equatable, Sendable {
         items = seed.items
         editedIndex = seed.editedIndex
         hasUnknownKcalOrigin = seed.hasUnknownKcalOrigin
+        source = seed.source
         mealType = seed.mealType
         foodName = seed.foodName
         consumedAt = seed.consumedAt
@@ -264,19 +269,38 @@ struct MealProposalEditorDraft: Equatable, Sendable {
                 ? MealProposalItemRequest(
                     foodName: foodName,
                     quantityG: quantity,
-                    userKcal: firstItemKcal
+                    userKcal: firstItemKcal,
+                    // A quantity the patient typed is theirs from then on.
+                    quantityBasis: quantity == item.quantityG
+                        ? Self.keptBasis(of: item) : .stated,
+                    usesNutritionLabel: firstItemKcal == nil
+                        && foodName == item.name
+                        && keepsNutritionLabel(of: item)
                 )
                 : MealProposalItemRequest(
                     foodName: item.name,
                     quantityG: item.quantityG,
-                    userKcal: Self.keptKcal(of: item)
+                    userKcal: Self.keptKcal(of: item),
+                    quantityBasis: Self.keptBasis(of: item),
+                    usesNutritionLabel: keepsNutritionLabel(of: item)
                 )
         }
         return MealProposalRequest(
             mealType: mealType,
             items: requestItems,
-            consumedAt: APITimestamp(value: consumedAt)
+            consumedAt: APITimestamp(value: consumedAt),
+            source: source
         )
+    }
+
+    private static func keptBasis(of item: MealProposalItemSnapshot) -> MealQuantityBasis? {
+        item.quantityBasis.flatMap(MealQuantityBasis.init(rawValue:))
+    }
+
+    /// An item the server priced from the photographed label keeps that
+    /// choice; the server reads the label again from the same photo.
+    private func keepsNutritionLabel(of item: MealProposalItemSnapshot) -> Bool {
+        item.nutritionSource == "product_label" && source?.channel.isPhoto == true
     }
 
     /// A calorie the server applied from the patient is re-sent; a calculated

@@ -1043,3 +1043,30 @@ private actor SuspendingMealRegistrationService: RegistrationProviding {
         throw BodyFlowCapabilityError.invalidInput
     }
 }
+
+extension MealRegistrationModelTests {
+    @Test("A reviewed meal is proposed as it is, without detection, and is not confirmed")
+    func reviewedMealIsProposedWithoutDetection() async throws {
+        let harness = try Self.makeHarness()
+        let reviewed = MealProposalRequest(
+            mealType: .snack,
+            items: [MealProposalItemRequest(
+                foodName: "iogurte natural", quantityG: 170, userKcal: nil,
+                quantityBasis: .visualEstimate, candidateID: "c1-0a1b2c3d"
+            )],
+            consumedAt: nil,
+            source: MealProposalSource(
+                channel: .gallery,
+                mediaAssetID: "0a0a0a0a-1111-4222-8333-444455556666"
+            )
+        )
+
+        await harness.model.propose(reviewed: reviewed)
+
+        #expect(await harness.service.calls == [.propose])
+        #expect(harness.model.detectedDraft == .meal(reviewed))
+        #expect(harness.model.currentProposal?.status == "pending")
+        #expect(harness.model.phase == .proposal)
+        #expect(harness.model.confirmedRegistration == nil)
+    }
+}

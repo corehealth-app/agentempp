@@ -17,6 +17,10 @@ enum BodyFlowSymbol: String, CaseIterable, Sendable {
     case compose = "text.alignleft"
     case photo = "photo"
     case audio = "waveform"
+    case camera = "camera"
+    case microphone = "mic"
+    case importFile = "square.and.arrow.down"
+    case remove = "trash"
 
     // Status
     case info = "info.circle"

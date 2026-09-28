@@ -49,6 +49,11 @@ enum MutationOperation: Hashable, Sendable {
     case routineAction
     case contentRead
     case contentSave
+    case mediaCreate
+    case mediaComplete
+    case mediaProcess
+    case mediaDelete
+    case mealDraft
 }
 
 struct MutationAttempt<Payload: Hashable & Sendable>: Hashable, Sendable {

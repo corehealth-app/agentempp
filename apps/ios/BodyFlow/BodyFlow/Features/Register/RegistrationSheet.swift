@@ -10,6 +10,8 @@ struct RegistrationSheet: View {
     let dependencies: AppDependencies
     let invalidationCenter: FeatureInvalidationCenter
     @State private var mealModel: MealRegistrationModel
+    @State private var mealDraftModel: MealDraftModel
+    @State private var mealRecorder: MealAudioRecorder
     @State private var workoutModel: WorkoutRegistrationModel
     @State private var hydrationModel: HydrationRegistrationModel
     @State private var weightModel: WeightRegistrationModel
@@ -31,6 +33,16 @@ struct RegistrationSheet: View {
             invalidationCenter: invalidationCenter,
             demonstrationTextLimit: Self.demonstrationTextLimit
         ))
+        let staging = dependencies.mealCapture?.staging ?? MediaStagingStore()
+        _mealDraftModel = State(initialValue: MealDraftModel(
+            media: dependencies.mealCapture?.media,
+            drafts: dependencies.mealCapture?.drafts,
+            uploader: dependencies.mealCapture?.uploader,
+            staging: staging,
+            timeProvider: dependencies.timeProvider,
+            keyProvider: dependencies.idempotencyKeyProvider
+        ))
+        _mealRecorder = State(initialValue: MealAudioRecorder(staging: staging))
         _workoutModel = State(initialValue: WorkoutRegistrationModel(
             registration: dependencies.registration,
             timeProvider: dependencies.timeProvider,
@@ -100,7 +112,9 @@ struct RegistrationSheet: View {
                         },
                         cancel: {
                             perform(.cancel) { await mealModel.cancel() }
-                        }
+                        },
+                        presentsLocalDemonstration: presentsLocalDemonstration,
+                        liveCapture: liveCapture
                     )
                         .accessibilityIdentifier(sheet.id)
                 } else if kind == .training {
@@ -244,8 +258,37 @@ struct RegistrationSheet: View {
         dismiss()
     }
 
+    /// Where something reads text and media the capture goes through it (a
+    /// real account); the plain demonstration keeps its local samples.
+    private var liveCapture: MealLiveCapture? {
+        guard dependencies.mealCapture != nil, mealDraftModel.isAvailable else { return nil }
+        return MealLiveCapture(
+            model: mealDraftModel,
+            stager: MealMediaStager(
+                staging: dependencies.mealCapture?.staging ?? MediaStagingStore()
+            ),
+            recorder: mealRecorder,
+            submitText: { text in
+                perform(.draftText(text)) { await mealDraftModel.submitText(text) }
+            },
+            submitMedia: { staged in
+                perform(.draftMedia(staged)) { await mealDraftModel.submitMedia(staged) }
+            },
+            retry: {
+                perform(.draftRetry) { await mealDraftModel.retry() }
+            },
+            propose: { request in
+                perform(.reviewedProposal(request)) {
+                    await mealModel.propose(reviewed: request)
+                }
+            }
+        )
+    }
+
     private func discardOperation() {
         taskCoordinator.discard()
+        mealRecorder.discard()
+        mealDraftModel.discardSheet()
         mealModel.discardSheet()
         workoutModel.discardSheet()
         hydrationModel.discardSheet()
@@ -626,6 +669,18 @@ private struct WorkoutRegistrationContent: View {
     )
 }
 
+/// What the sheet hands to the live meal capture.
+@MainActor
+struct MealLiveCapture {
+    let model: MealDraftModel
+    let stager: MealMediaStager
+    let recorder: MealAudioRecorder
+    let submitText: @MainActor (String) -> Void
+    let submitMedia: @MainActor (StagedMedia) -> Void
+    let retry: @MainActor () -> Void
+    let propose: @MainActor (MealProposalRequest) -> Void
+}
+
 @MainActor
 private struct MealRegistrationContent: View {
     let model: MealRegistrationModel
@@ -635,6 +690,7 @@ private struct MealRegistrationContent: View {
     let confirm: @MainActor () -> Void
     let cancel: @MainActor () -> Void
     let presentsLocalDemonstration: Bool
+    let liveCapture: MealLiveCapture?
     @State private var choice: MealCaptureChoice?
     @State private var textDraft: String
     @State private var showingEditor = false
@@ -648,7 +704,8 @@ private struct MealRegistrationContent: View {
         saveEdit: @escaping @MainActor (MealProposalRequest) -> Void,
         confirm: @escaping @MainActor () -> Void,
         cancel: @escaping @MainActor () -> Void,
-        presentsLocalDemonstration: Bool = true
+        presentsLocalDemonstration: Bool = true,
+        liveCapture: MealLiveCapture? = nil
     ) {
         self.model = model
         self.submit = submit
@@ -657,6 +714,7 @@ private struct MealRegistrationContent: View {
         self.confirm = confirm
         self.cancel = cancel
         self.presentsLocalDemonstration = presentsLocalDemonstration
+        self.liveCapture = liveCapture
         // The demonstration pre-fills its sample text; a real account starts
         // empty and types the meal.
         _textDraft = State(initialValue: presentsLocalDemonstration
@@ -730,7 +788,18 @@ private struct MealRegistrationContent: View {
 
     @ViewBuilder
     private var captureContent: some View {
-        if let choice {
+        if let liveCapture {
+            MealLiveCaptureView(
+                model: liveCapture.model,
+                stager: liveCapture.stager,
+                recorder: liveCapture.recorder,
+                isProposing: model.isSubmitting,
+                submitText: liveCapture.submitText,
+                submitMedia: liveCapture.submitMedia,
+                retry: liveCapture.retry,
+                propose: liveCapture.propose
+            )
+        } else if let choice {
             switch choice {
             case .text:
                 MealTextDraftView(
@@ -760,7 +829,9 @@ private struct MealRegistrationContent: View {
                 }
             }
         } else {
-            MealCaptureSourceView { selected in
+            MealCaptureSourceView(
+                presentsLocalDemonstration: presentsLocalDemonstration
+            ) { selected in
                 choice = selected
             }
         }

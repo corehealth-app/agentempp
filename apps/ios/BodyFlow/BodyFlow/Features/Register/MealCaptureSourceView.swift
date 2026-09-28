@@ -66,15 +66,23 @@ struct MealCaptureSourceView: View {
                 identifier: "registration.meal.source.text"
             ) { select(.text) }
 
-            BodyFlowStatusLine(copy("registration.capture.demo-notice"), kind: .info)
+            if presentsLocalDemonstration {
+                BodyFlowStatusLine(copy("registration.capture.demo-notice"), kind: .info)
 
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: BodyFlowSpacing.sm) {
-                    sampleButtons
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: BodyFlowSpacing.sm) {
+                        sampleButtons
+                    }
+                    VStack(spacing: BodyFlowSpacing.sm) {
+                        sampleButtons
+                    }
                 }
-                VStack(spacing: BodyFlowSpacing.sm) {
-                    sampleButtons
-                }
+            } else {
+                BodyFlowStatusLine(
+                    copy("registration.capture.media-unavailable"),
+                    kind: .unavailable
+                )
+                .accessibilityIdentifier("registration.meal.source.media-unavailable")
             }
         }
     }

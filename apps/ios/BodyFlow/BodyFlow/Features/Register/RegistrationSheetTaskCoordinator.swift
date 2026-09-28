@@ -4,6 +4,10 @@ enum RegistrationSheetOperationIntent: Equatable, Sendable {
     case capture(MealCaptureSource)
     case operationAction(RegistrationOperationAction)
     case edit(MealProposalRequest)
+    case draftText(String)
+    case draftMedia(StagedMedia)
+    case draftRetry
+    case reviewedProposal(MealProposalRequest)
     case confirm
     case cancel
     case workoutProposal(WorkoutProposalRequest)

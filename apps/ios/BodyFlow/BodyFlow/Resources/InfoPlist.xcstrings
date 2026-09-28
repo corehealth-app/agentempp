@@ -32,6 +32,38 @@
           }
         }
       }
+    },
+    "NSCameraUsageDescription" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Performe AI uses the camera to photograph the meal you want to log."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Performe AI usa a câmera para fotografar a refeição que você quer registrar."
+          }
+        }
+      }
+    },
+    "NSMicrophoneUsageDescription" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Performe AI uses the microphone to record the description of the meal you want to log."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Performe AI usa o microfone para gravar a descrição da refeição que você quer registrar."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

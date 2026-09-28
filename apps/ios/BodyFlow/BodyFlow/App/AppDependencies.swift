@@ -30,6 +30,9 @@ struct AppDependencies: Sendable {
     /// Local reminders on this iPhone; nil where no reminder source exists
     /// (a plain demonstration shows no reminders entry).
     var localReminders: LocalReminderCapability? = nil
+    /// Meal capture from free text, photo and audio; nil where no server
+    /// reads them (the demonstration keeps its local samples).
+    var mealCapture: MealCaptureCapability? = nil
 
     var patientTimeZone: PatientTimeZoneContext {
         patientTimeZoneStore.current
@@ -135,6 +138,7 @@ struct AppDependencies: Sendable {
                     sensitiveStateClearer: CompositeSensitiveStateClearer(clearers: [
                         patientTimeZoneStore,
                         LocalReminderSessionClearer(scheduler: .system),
+                        MediaStagingSessionClearer(staging: MediaStagingStore()),
                     ]),
                     refreshPolicy: sessionRefreshPolicy
                 )
@@ -480,6 +484,32 @@ struct AppDependencies: Sendable {
         }
         #endif
 
+        // A capture left behind by a previous run never survives a launch.
+        var mealCapture: MealCaptureCapability? =
+            (apiClient as? MobileAPITransport).map { transport in
+                let staging = MediaStagingStore()
+                staging.purge()
+                return MealCaptureCapability(
+                    media: MobileMediaRepository(transport: transport),
+                    drafts: MobileMealDraftRepository(transport: transport),
+                    uploader: supabaseAuthConfiguration.map {
+                        StorageUploadTransport(storageOrigin: $0.origin)
+                    },
+                    staging: staging
+                )
+            }
+        #if DEBUG
+        if configuration.mode == .demo,
+           DemoMealCaptureScenario.isEnabled(arguments: ProcessInfo.processInfo.arguments) {
+            mealCapture = MealCaptureCapability(
+                media: nil,
+                drafts: DemoMealDraftProvider(),
+                uploader: nil,
+                staging: MediaStagingStore()
+            )
+        }
+        #endif
+
         let onboarding: any OnboardingRepository
         #if DEBUG
         if configuration.mode == .demo {
@@ -530,7 +560,8 @@ struct AppDependencies: Sendable {
             idempotencyKeyProvider: idempotencyKeyProvider,
             patientTimeZoneStore: patientTimeZoneStore,
             flowChat: flowChat,
-            localReminders: localReminders
+            localReminders: localReminders,
+            mealCapture: mealCapture
         )
     }
 }

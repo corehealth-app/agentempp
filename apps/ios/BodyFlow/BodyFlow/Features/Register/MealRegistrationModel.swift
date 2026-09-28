@@ -102,6 +102,19 @@ final class MealRegistrationModel {
         finishCancelledOperationIfNeeded(operation)
     }
 
+    /// Proposes a meal the patient already reviewed item by item (the
+    /// candidates of a text, photo or recording). The request goes as it is.
+    func propose(reviewed request: MealProposalRequest) async {
+        guard !isSubmitting, phase == .capture, currentProposal == nil else { return }
+        let draft = RegistrationProposalRequest.meal(request)
+        detectedDraft = draft
+        do {
+            await runMutation(.propose(try attemptCoordinator.propose(draft)))
+        } catch {
+            publishAttemptConstructionFailure(error)
+        }
+    }
+
     func saveEdit(_ edit: MealProposalRequest) async {
         guard !isSubmitting, let currentProposal,
               currentProposal.status == "pending" else { return }

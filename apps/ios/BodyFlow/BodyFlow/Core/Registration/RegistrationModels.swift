@@ -19,15 +19,126 @@ enum WorkoutIntensity: String, Codable, CaseIterable, Hashable, Sendable {
     case high = "alta"
 }
 
+/// How the quantity the patient reviewed was obtained. A candidate without a
+/// quantity never becomes a request, so "missing" has no case here.
+enum MealQuantityBasis: String, Codable, Hashable, Sendable {
+    case stated
+    case visualEstimate = "visual_estimate"
+    case portionReference = "portion_reference"
+}
+
+/// Where the meal came from. Media channels carry the asset the patient
+/// reviewed; text never does.
+enum MealSourceChannel: String, Codable, Hashable, Sendable {
+    case text
+    case camera
+    case gallery
+    case audioRecording = "audio_recording"
+    case audioImport = "audio_import"
+
+    var isPhoto: Bool { self == .camera || self == .gallery }
+    var isAudio: Bool { self == .audioRecording || self == .audioImport }
+}
+
+struct MealProposalSource: Codable, Hashable, Sendable {
+    let channel: MealSourceChannel
+    let mediaAssetID: String?
+
+    /// Fails closed on the pairing the server enforces: a media channel needs
+    /// its asset and text must not carry one.
+    init?(channel: MealSourceChannel, mediaAssetID: String?) {
+        guard (channel == .text) == (mediaAssetID == nil) else { return nil }
+        self.channel = channel
+        self.mediaAssetID = mediaAssetID
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case channel
+        case mediaAssetID = "media_asset_id"
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let channel = try container.decode(MealSourceChannel.self, forKey: .channel)
+        let mediaAssetID = try container.decodeIfPresent(String.self, forKey: .mediaAssetID)
+        guard let source = MealProposalSource(channel: channel, mediaAssetID: mediaAssetID) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .mediaAssetID,
+                in: container,
+                debugDescription: "channel and media asset do not match"
+            )
+        }
+        self = source
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(channel, forKey: .channel)
+        try container.encodeIfPresent(mediaAssetID, forKey: .mediaAssetID)
+    }
+}
+
 struct MealProposalItemRequest: Codable, Hashable, Sendable {
     let foodName: String
     let quantityG: Decimal
     let userKcal: Decimal?
+    let quantityBasis: MealQuantityBasis?
+    let candidateID: String?
+    /// The patient tied the photographed nutrition label to this item. Only
+    /// the choice travels; the server reads the label again by itself.
+    let usesNutritionLabel: Bool
+
+    init(
+        foodName: String,
+        quantityG: Decimal,
+        userKcal: Decimal?,
+        quantityBasis: MealQuantityBasis? = nil,
+        candidateID: String? = nil,
+        usesNutritionLabel: Bool = false
+    ) {
+        self.foodName = foodName
+        self.quantityG = quantityG
+        self.userKcal = userKcal
+        self.quantityBasis = quantityBasis
+        self.candidateID = candidateID
+        self.usesNutritionLabel = usesNutritionLabel
+    }
 
     private enum CodingKeys: String, CodingKey {
         case foodName = "food_name"
         case quantityG = "quantity_g"
         case userKcal = "user_kcal"
+        case quantityBasis = "quantity_basis"
+        case candidateID = "candidate_id"
+        case usesNutritionLabel = "use_nutrition_label"
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        foodName = try container.decode(String.self, forKey: .foodName)
+        quantityG = try container.decode(Decimal.self, forKey: .quantityG)
+        userKcal = try container.decodeIfPresent(Decimal.self, forKey: .userKcal)
+        quantityBasis = try container.decodeIfPresent(
+            MealQuantityBasis.self,
+            forKey: .quantityBasis
+        )
+        candidateID = try container.decodeIfPresent(String.self, forKey: .candidateID)
+        usesNutritionLabel = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .usesNutritionLabel
+        ) ?? false
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(foodName, forKey: .foodName)
+        try container.encode(quantityG, forKey: .quantityG)
+        try container.encodeIfPresent(userKcal, forKey: .userKcal)
+        try container.encodeIfPresent(quantityBasis, forKey: .quantityBasis)
+        try container.encodeIfPresent(candidateID, forKey: .candidateID)
+        if usesNutritionLabel {
+            try container.encode(true, forKey: .usesNutritionLabel)
+        }
     }
 }
 
@@ -35,11 +146,25 @@ struct MealProposalRequest: Codable, Hashable, Sendable {
     let mealType: MealType
     let items: [MealProposalItemRequest]
     let consumedAt: APITimestamp?
+    let source: MealProposalSource?
+
+    init(
+        mealType: MealType,
+        items: [MealProposalItemRequest],
+        consumedAt: APITimestamp?,
+        source: MealProposalSource? = nil
+    ) {
+        self.mealType = mealType
+        self.items = items
+        self.consumedAt = consumedAt
+        self.source = source
+    }
 
     private enum CodingKeys: String, CodingKey {
         case mealType = "meal_type"
         case items
         case consumedAt = "consumed_at"
+        case source
     }
 }
 
@@ -66,6 +191,7 @@ enum RegistrationProposalRequest: Codable, Hashable, Sendable {
         case mealType = "meal_type"
         case items
         case consumedAt = "consumed_at"
+        case source
         case workoutType = "workout_type"
         case durationMin = "duration_min"
         case intensity
@@ -92,6 +218,10 @@ enum RegistrationProposalRequest: Codable, Hashable, Sendable {
                     consumedAt: try container.decodeIfPresent(
                         APITimestamp.self,
                         forKey: .consumedAt
+                    ),
+                    source: try container.decodeIfPresent(
+                        MealProposalSource.self,
+                        forKey: .source
                     )
                 )
             )
@@ -122,6 +252,7 @@ enum RegistrationProposalRequest: Codable, Hashable, Sendable {
             try container.encode(request.mealType, forKey: .mealType)
             try container.encode(request.items, forKey: .items)
             try container.encodeIfPresent(request.consumedAt, forKey: .consumedAt)
+            try container.encodeIfPresent(request.source, forKey: .source)
         case let .workout(request):
             try container.encode(Kind.workout, forKey: .kind)
             try container.encode(request.workoutType, forKey: .workoutType)
@@ -203,17 +334,53 @@ enum RegistrationProposalSnapshot: Codable, Hashable, Sendable {
     }
 }
 
+/// Origin the server stored with the proposal. The channel stays a string:
+/// proposals created elsewhere carry channels the app never sends.
+struct MealProposalSourceSnapshot: Codable, Hashable, Sendable {
+    let channel: String
+    let mediaAssetID: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case channel
+        case mediaAssetID = "media_asset_id"
+    }
+
+    /// The origin as a request can carry it again; nil when the stored
+    /// channel is not one the app sends.
+    var requestSource: MealProposalSource? {
+        MealSourceChannel(rawValue: channel).flatMap {
+            MealProposalSource(channel: $0, mediaAssetID: mediaAssetID)
+        }
+    }
+}
+
 struct MealProposalSnapshot: Codable, Hashable, Sendable {
     let mealType: String
     let items: [MealProposalItemSnapshot]
     let totals: MealProposalTotalsSnapshot?
     let warnings: [String]
+    let source: MealProposalSourceSnapshot?
+
+    init(
+        mealType: String,
+        items: [MealProposalItemSnapshot],
+        totals: MealProposalTotalsSnapshot?,
+        warnings: [String],
+        source: MealProposalSourceSnapshot? = nil
+    ) {
+        self.mealType = mealType
+        self.items = items
+        self.totals = totals
+        self.warnings = warnings
+        self.source = source
+    }
 
     private enum CodingKeys: String, CodingKey {
         case mealType = "meal_type"
         case items
         case totals
         case warnings
+        case source
     }
 }
 
@@ -248,6 +415,9 @@ struct MealProposalItemSnapshot: Codable, Hashable, Sendable {
     /// `preparation_options`: the preparations to choose from, when that is
     /// the missing information.
     let preparationOptions: [String]?
+    /// `quantity_basis`: how the quantity was obtained, when the proposal
+    /// recorded it.
+    let quantityBasis: String?
 
     private static let patientSource = "user_kcal"
     private static let needsClarificationValue = "needs_clarification"
@@ -265,7 +435,8 @@ struct MealProposalItemSnapshot: Codable, Hashable, Sendable {
         nutritionSource: String? = nil,
         kcalOriginReported: Bool = true,
         resolution: String? = nil,
-        preparationOptions: [String]? = nil
+        preparationOptions: [String]? = nil,
+        quantityBasis: String? = nil
     ) {
         self.name = name
         self.quantityG = quantityG
@@ -278,6 +449,7 @@ struct MealProposalItemSnapshot: Codable, Hashable, Sendable {
         self.kcalOriginReported = kcalOriginReported
         self.resolution = resolution
         self.preparationOptions = preparationOptions
+        self.quantityBasis = quantityBasis
     }
 
     var kcalOrigin: MealItemKcalOrigin {
@@ -299,6 +471,7 @@ struct MealProposalItemSnapshot: Codable, Hashable, Sendable {
         case nutritionSource = "nutrition_source"
         case resolution
         case preparationOptions = "preparation_options"
+        case quantityBasis = "quantity_basis"
     }
 
     init(from decoder: any Decoder) throws {
@@ -318,6 +491,7 @@ struct MealProposalItemSnapshot: Codable, Hashable, Sendable {
             [String].self,
             forKey: .preparationOptions
         )
+        quantityBasis = try container.decodeIfPresent(String.self, forKey: .quantityBasis)
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -334,6 +508,7 @@ struct MealProposalItemSnapshot: Codable, Hashable, Sendable {
         }
         try container.encodeIfPresent(resolution, forKey: .resolution)
         try container.encodeIfPresent(preparationOptions, forKey: .preparationOptions)
+        try container.encodeIfPresent(quantityBasis, forKey: .quantityBasis)
     }
 }
 

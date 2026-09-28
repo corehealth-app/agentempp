@@ -1957,6 +1957,246 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Enviar mensagem" } }
       }
     },
+    "registration.live.back" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Back" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Voltar" } }
+    } },
+    "registration.live.cancel" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Cancelar" } }
+    } },
+    "registration.live.capture.camera" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Take photo" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Tirar foto" } }
+    } },
+    "registration.live.capture.gallery" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Choose photo" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Escolher foto" } }
+    } },
+    "registration.live.capture.import-audio" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Import audio" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Importar áudio" } }
+    } },
+    "registration.live.capture.notice" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "You review the foods and quantities before anything is calculated." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Você revisa os alimentos e as quantidades antes de qualquer cálculo." } }
+    } },
+    "registration.live.capture.record" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Record audio" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Gravar áudio" } }
+    } },
+    "registration.live.capture.text" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Write" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Escrever" } }
+    } },
+    "registration.live.failure.audio-too-long" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The audio is longer than 3 minutes. Send a shorter one." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O áudio passa de 3 minutos. Envie um áudio mais curto." } }
+    } },
+    "registration.live.failure.capture-unavailable" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This kind of capture is not available now." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Este tipo de captura não está disponível agora." } }
+    } },
+    "registration.live.failure.file-too-large" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The file is too large to send." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O arquivo é grande demais para enviar." } }
+    } },
+    "registration.live.failure.invalid-input" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "What was sent could not be read. Review it and try again." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não foi possível ler o que foi enviado. Revise e tente de novo." } }
+    } },
+    "registration.live.failure.nothing-recognized" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "No food was identified. Try describing it another way." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Nenhum alimento foi identificado. Tente descrever de outra forma." } }
+    } },
+    "registration.live.failure.offline" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "No connection. Check the internet and try again." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sem conexão. Verifique a internet e tente novamente." } }
+    } },
+    "registration.live.failure.permission" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Permission denied. Allow access in the iPhone Settings." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Permissão negada. Autorize o acesso nos Ajustes do iPhone." } }
+    } },
+    "registration.live.failure.processing" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The analysis did not finish. Try again." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "A análise não foi concluída. Tente novamente." } }
+    } },
+    "registration.live.failure.processing-timeout" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The analysis is taking longer than expected. Try again." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "A análise está demorando mais que o esperado. Tente novamente." } }
+    } },
+    "registration.live.failure.subscription" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Your access does not include this feature at the moment." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Seu acesso não inclui este recurso no momento." } }
+    } },
+    "registration.live.failure.unavailable" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This could not be completed now. Try again." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não foi possível concluir agora. Tente novamente." } }
+    } },
+    "registration.live.failure.unreadable" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The file could not be opened." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não foi possível abrir o arquivo." } }
+    } },
+    "registration.live.failure.unsupported-file" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This type of file is not accepted." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Este tipo de arquivo não é aceito." } }
+    } },
+    "registration.live.failure.upload" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The upload was not accepted. Try again." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O envio não foi aceito. Tente novamente." } }
+    } },
+    "registration.live.phase.analyzing" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Analyzing the photo…" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Analisando a foto…" } }
+    } },
+    "registration.live.phase.preparing" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Preparing the file…" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Preparando o arquivo…" } }
+    } },
+    "registration.live.phase.reading" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Reading the foods…" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Lendo os alimentos…" } }
+    } },
+    "registration.live.phase.transcribing" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Transcribing the audio…" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Transcrevendo o áudio…" } }
+    } },
+    "registration.live.phase.uploading" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Uploading…" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Enviando…" } }
+    } },
+    "registration.live.record.hint" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Say what you ate and how much. The limit is 3 minutes." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Diga o que comeu e as quantidades. O limite é de 3 minutos." } }
+    } },
+    "registration.live.record.redo" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Record again" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Gravar de novo" } }
+    } },
+    "registration.live.record.start" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Start recording" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Começar gravação" } }
+    } },
+    "registration.live.record.stop" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Stop" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Parar" } }
+    } },
+    "registration.live.record.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Record audio" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Gravar áudio" } }
+    } },
+    "registration.live.record.use" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Use recording" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Usar gravação" } }
+    } },
+    "registration.live.start-over" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Start over" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Começar de novo" } }
+    } },
+    "registration.live.text.placeholder" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "E.g. 2 scrambled eggs, 1 bread roll and 200 ml of coffee with milk" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ex.: 2 ovos mexidos, 1 pão francês e 200 ml de café com leite" } }
+    } },
+    "registration.live.text.submit" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Read foods" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ler alimentos" } }
+    } },
+    "registration.live.text.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Describe the meal" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Descreva a refeição" } }
+    } },
+    "registration.review.basis.missing" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Enter the quantity in grams" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Informe a quantidade em gramas" } }
+    } },
+    "registration.review.basis.reference" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Quantity from a reference portion" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Quantidade por porção de referência" } }
+    } },
+    "registration.review.basis.stated" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Quantity stated by you" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Quantidade informada por você" } }
+    } },
+    "registration.review.basis.visual" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Quantity estimated from the photo" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Quantidade estimada pela foto" } }
+    } },
+    "registration.review.blocker.name" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Review the food names." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Revise o nome dos alimentos." } }
+    } },
+    "registration.review.blocker.no-items" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "No food in the list." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Nenhum alimento na lista." } }
+    } },
+    "registration.review.blocker.quantity" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Enter the quantity of every food, up to 9,999 g." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Informe a quantidade de todos os alimentos, até 9.999 g." } }
+    } },
+    "registration.review.blocker.unconfirmed" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Confirm the items with an approximate quantity or a doubtful name." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Confirme os itens com quantidade aproximada ou nome em dúvida." } }
+    } },
+    "registration.review.confirm-item" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "I confirm this item" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Confirmo este item" } }
+    } },
+    "registration.review.context" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "What was seen" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O que foi visto" } }
+    } },
+    "registration.review.item.name" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Food" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Alimento" } }
+    } },
+    "registration.review.item.quantity" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Quantity in grams" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Quantidade em gramas" } }
+    } },
+    "registration.review.label.found" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Nutrition label found in the photo" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Rótulo nutricional encontrado na foto" } }
+    } },
+    "registration.review.label.suggested" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Suggested for this item" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sugerido para este item" } }
+    } },
+    "registration.review.label.use" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Use the photographed label for this item" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Usar o rótulo fotografado neste item" } }
+    } },
+    "registration.review.meal-type" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Meal" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Refeição" } }
+    } },
+    "registration.review.reason.ambiguous" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This could not be read with certainty. Check the name." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não foi possível ler com certeza. Confira o nome." } }
+    } },
+    "registration.review.reason.low-confidence" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Identified with low certainty. Check the name." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Identificação com pouca certeza. Confira o nome." } }
+    } },
+    "registration.review.remove" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Remove" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Remover" } }
+    } },
+    "registration.review.submit" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Calculate meal" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Calcular refeição" } }
+    } },
+    "registration.review.subtitle" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Nothing is calculated before you send this list." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Nada é calculado antes de você enviar esta lista." } }
+    } },
+    "registration.review.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Review the foods" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Revise os alimentos" } }
+    } },
+    "registration.review.transcript" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "What was heard" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O que foi ouvido" } }
+    } },
     "reminders.action.activate" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Turn on reminders on this iPhone" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ativar lembretes neste iPhone" } }

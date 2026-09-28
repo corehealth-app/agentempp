@@ -72,6 +72,9 @@ function safePendingItem(
     preparation_options: Array.isArray(item.preparation_options)
       ? item.preparation_options.filter((option): option is string => typeof option === 'string')
       : null,
+    // How the patient's quantity was obtained ("stated", "visual_estimate",
+    // "portion_reference"); null when the proposal did not record it.
+    quantity_basis: stringValue(item.quantity_basis),
   }
 }
 
@@ -101,6 +104,12 @@ export function sanitizePendingProposal(value: Json) {
       meal_type: stringValue(proposal?.mealType) ?? stringValue(proposal?.meal_type) ?? 'outro',
       items,
       totals: safeTotals(proposal?.totals),
+      // Origin of the meal: the channel and, for media, the asset the patient
+      // reviewed. Provider ids and raw text stay in the backend.
+      source: {
+        channel: stringValue(proposal?.sourceContentType) ?? 'mobile',
+        media_asset_id: stringValue(proposal?.source_media_asset_id),
+      },
       warnings: Array.isArray(proposal?.userWarnings)
         ? proposal.userWarnings.filter((warning): warning is string => typeof warning === 'string')
         : [],

@@ -48,6 +48,32 @@ export interface MediaProcessingDependencies {
     }): Promise<unknown>
     transcribeAudio(input: { bytes: Uint8Array; mimeType: string }): Promise<unknown>
   }
+  /**
+   * Duration read from the file container, in seconds, or null when it
+   * cannot be read. Runs before any paid transcription.
+   */
+  measureAudioDuration?(input: { bytes: Uint8Array; mimeType: string }): Promise<number | null>
+}
+
+/** Same limit the app enforces while recording or importing. */
+export const MAX_AUDIO_DURATION_SECONDS = 180
+
+export async function measureAudioDurationFromContainer(input: {
+  bytes: Uint8Array
+  mimeType: string
+}): Promise<number | null> {
+  try {
+    const { parseBuffer } = await import('music-metadata')
+    const metadata = await parseBuffer(
+      input.bytes,
+      { mimeType: input.mimeType },
+      { duration: true, skipCovers: true },
+    )
+    const seconds = metadata.format.duration
+    return typeof seconds === 'number' && Number.isFinite(seconds) && seconds > 0 ? seconds : null
+  } catch {
+    return null
+  }
 }
 
 const claimedMediaSchema = z.object({
@@ -108,7 +134,10 @@ export async function processMediaAsset(
   input: MediaProcessingInput,
 ): Promise<
   | { status: 'processed' }
-  | { status: 'failed'; reason: 'invalid_file_signature' }
+  | {
+      status: 'failed'
+      reason: 'invalid_file_signature' | 'audio_too_long' | 'audio_duration_unreadable'
+    }
   | { status: 'skipped' }
 > {
   const asset = await deps.repository.claim(input)
@@ -135,6 +164,25 @@ export async function processMediaAsset(
       'invalid_file_signature',
     )
     return { status: 'failed', reason: 'invalid_file_signature' }
+  }
+
+  if (asset.kind === 'audio_note') {
+    // Measured from the file itself, before the paid transcription. A file
+    // whose length cannot be read is refused rather than sent blind.
+    const seconds = await (deps.measureAudioDuration ?? measureAudioDurationFromContainer)({
+      bytes,
+      mimeType: asset.mime_type,
+    })
+    const reason =
+      seconds == null
+        ? ('audio_duration_unreadable' as const)
+        : seconds > MAX_AUDIO_DURATION_SECONDS
+          ? ('audio_too_long' as const)
+          : null
+    if (reason) {
+      await deps.repository.markFailed(asset.id, asset.user_id, input.requestId, reason)
+      return { status: 'failed', reason }
+    }
   }
 
   try {

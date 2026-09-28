@@ -5,14 +5,18 @@ import {
   getLocalDateString,
   isUnresolvedNutritionSource,
   type MealCalcResult,
+  type MealItemInput,
   registraRefeicao,
   registraTreino,
+  resolveTrustedNutritionLabel,
 } from '@mpp/agent'
 import type { Json, ServiceClient } from '@mpp/db'
 import { z } from 'zod'
 import type { MobileAuthContext } from './auth'
 import type { RegistrationProposalInput } from './contracts'
 import { MobileApiError } from './http'
+import { DEFAULT_MEAL_CONFIDENCE_THRESHOLD } from './meal-draft-service'
+import { createSupabaseMediaDependencies } from './supabase-media'
 import { sanitizePendingProposal } from './read-model'
 
 interface ProposalTiming {
@@ -83,7 +87,7 @@ export function buildMealPendingProposal(
   return {
     kind: 'meal' as const,
     mealType: input.meal_type,
-    items: calculation.items.map((item) => ({
+    items: calculation.items.map((item, index) => ({
       name: item.food_name,
       food_db_id: item.matched_taco_id,
       nutrition_source: item.source,
@@ -92,6 +96,13 @@ export function buildMealPendingProposal(
       display_unit: item.display_unit ?? null,
       user_kcal: overrides.get(normalizeFoodName(item.food_name)) ?? null,
       ...(item.preparation_options ? { preparation_options: item.preparation_options } : {}),
+      // Each input item yields exactly one calculated item, in order.
+      ...(input.items[index]?.quantity_basis
+        ? { quantity_basis: input.items[index]?.quantity_basis }
+        : {}),
+      ...(input.items[index]?.candidate_id
+        ? { candidate_id: input.items[index]?.candidate_id }
+        : {}),
       kcal: item.kcal,
       protein_g: item.protein_g,
       carbs_g: item.carbs_g,
@@ -104,7 +115,10 @@ export function buildMealPendingProposal(
       fat_g: calculation.totals.fat_g,
     },
     userWarnings: calculation.user_warnings,
-    sourceContentType: 'mobile',
+    sourceContentType: input.source?.channel ?? 'mobile',
+    ...(input.source?.media_asset_id
+      ? { source_media_asset_id: input.source.media_asset_id }
+      : {}),
     source_provider_message_id: timing.requestKey,
     source_timestamp: timing.timestamp,
     source_timezone: timing.timezone,
@@ -144,6 +158,112 @@ function proposalTimestamp(input: RegistrationProposalInput, now: Date): Date {
   return supplied ? new Date(supplied) : now
 }
 
+function finite(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
+}
+
+function labelValues(value: unknown) {
+  const source = typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {}
+  return {
+    kcal: finite(source.kcal),
+    protein_g: finite(source.protein_g),
+    carbs_g: finite(source.carbs_g),
+    fat_g: finite(source.fat_g),
+  }
+}
+
+async function labelConfidenceThreshold(supabase: ServiceClient): Promise<number> {
+  const { data } = await supabase
+    .from('global_config')
+    .select('value')
+    .eq('key', 'vision.meal.confidence_threshold')
+    .maybeSingle()
+  const value = Number((data as { value?: unknown } | null)?.value)
+  return Number.isFinite(value) && value > 0 && value <= 1
+    ? value
+    : DEFAULT_MEAL_CONFIDENCE_THRESHOLD
+}
+
+/**
+ * Items as the calculation receives them. The origin media must belong to the
+ * patient, match the channel and be processed. A nutrition label is applied
+ * only to the one item the patient tied it to, read again from the processed
+ * media; a label that cannot be trusted refuses the proposal instead of being
+ * ignored in silence.
+ */
+export async function mealItemsForCalculation(
+  supabase: ServiceClient,
+  userId: string,
+  input: MealProposalInput,
+): Promise<MealItemInput[]> {
+  const items: MealItemInput[] = input.items.map((item) => ({
+    food_name: item.food_name,
+    quantity_g: item.quantity_g,
+    ...(item.user_kcal !== undefined ? { user_kcal: item.user_kcal } : {}),
+  }))
+  const mediaId = input.source?.media_asset_id
+  if (!mediaId) return items
+
+  const asset = await createSupabaseMediaDependencies(supabase).repository.findOwned(
+    userId,
+    mediaId,
+  )
+  if (!asset || asset.status === 'deleted') {
+    throw new MobileApiError(404, 'media_asset_not_found', 'Media asset was not found')
+  }
+  const photoChannel = input.source?.channel === 'camera' || input.source?.channel === 'gallery'
+  if (asset.kind !== (photoChannel ? 'meal_photo' : 'audio_note')) {
+    throw new MobileApiError(422, 'media_kind_not_supported', 'Media does not match the channel')
+  }
+  if (asset.status !== 'processed') {
+    throw new MobileApiError(409, 'media_not_processed', 'Media asset is not processed yet')
+  }
+
+  const labelledIndex = input.items.findIndex((item) => item.use_nutrition_label)
+  if (labelledIndex < 0) return items
+  const labelled = items[labelledIndex]
+  const result =
+    typeof asset.processing_result === 'object' && asset.processing_result !== null
+      ? (asset.processing_result as Record<string, unknown>)
+      : {}
+  const label =
+    typeof result.nutrition_label === 'object' && result.nutrition_label !== null
+      ? (result.nutrition_label as Record<string, unknown>)
+      : null
+  const resolved = label
+    ? resolveTrustedNutritionLabel(
+        {
+          productName: typeof label.product_name === 'string' ? label.product_name : null,
+          confidence: finite(label.confidence) ?? 0,
+          servingSizeG: finite(label.serving_size_g),
+          perServing: labelValues(label.per_serving),
+          per100g: labelValues(label.per_100g),
+        },
+        await labelConfidenceThreshold(supabase),
+      )
+    : null
+  if (!labelled || !resolved?.trusted || labelled.user_kcal != null) {
+    throw new MobileApiError(
+      422,
+      'nutrition_label_not_applicable',
+      'The nutrition label cannot be used for this item',
+    )
+  }
+  const factor = labelled.quantity_g / 100
+  const scale = (value: number) => Math.round(value * factor * 100) / 100
+  items[labelledIndex] = {
+    ...labelled,
+    approved_nutrition: {
+      source: 'product_label',
+      kcal: scale(resolved.trusted.per100g.kcal),
+      protein_g: scale(resolved.trusted.per100g.protein_g),
+      carbs_g: scale(resolved.trusted.per100g.carbs_g),
+      fat_g: scale(resolved.trusted.per100g.fat_g),
+    },
+  }
+  return items
+}
+
 async function buildProposal(
   supabase: ServiceClient,
   auth: MobileAuthContext,
@@ -170,7 +290,7 @@ async function buildProposal(
     }
     const calculation = await calcMealMacros(
       supabase,
-      input.items,
+      await mealItemsForCalculation(supabase, auth.userId, input),
       auth.patient.country,
       auth.userId,
     )

@@ -132,15 +132,15 @@ function withSyntheticBuild<T>(
 }
 
 describe('authoritative Mobile API source surface', () => {
-  test('keeps the frozen 42-route path and named-export manifest', () => {
+  test('keeps the frozen 43-route path and named-export manifest', () => {
     const records = sourceRecords()
     const hash = hashRecords(records)
 
     console.info(`SOURCE_ROUTE_EXPORT_COUNT=${records.length}`)
     console.info(`SOURCE_ROUTE_EXPORT_STREAM_SHA256=${hash}`)
 
-    expect(records).toHaveLength(42)
-    expect(hash).toBe('be96dc5d79b9dc147282e9e4edf0410815bb6b61ee40c03efbe46a0b693cea3b')
+    expect(records).toHaveLength(43)
+    expect(hash).toBe('5151edd1e2c8cfcdfc7eb3601c8f07793bd43284a63f73f789398363e67e92a8')
   })
 
   test('contains no export outside the Next Route Handler allowlist', () => {
@@ -193,7 +193,7 @@ describe('authoritative Mobile API source surface', () => {
     expect(hasServerActionDirective(inlineServerAction)).toBe(true)
   })
 
-  test('keeps the structured Next build surface limited to the 42 Mobile API routes', () => {
+  test('keeps the structured Next build surface limited to the 43 Mobile API routes', () => {
     const surface = inspectBuildSurface(buildRoot)
 
     console.info(`BUILD_ROUTE_PATH_COUNT=${surface.routePaths.length}`)
@@ -208,9 +208,9 @@ describe('authoritative Mobile API source surface', () => {
     console.info(`BUILD_MIDDLEWARE_COUNT=${surface.middlewareEntries.length}`)
     console.info(`BUILD_SERVER_ACTION_REFERENCE_COUNT=${surface.serverActionReferences.length}`)
 
-    expect(surface.routePaths).toHaveLength(42)
+    expect(surface.routePaths).toHaveLength(43)
     expect(surface.routePathHash).toBe(
-      'b853c0a97bb4f3a45fba86d0461deed51b1523dc673188a385a75ad03dcdab60',
+      '76e5d2967c87e48cba189d723ef9ac3878ed36748a60aa3546b9868d90141145',
     )
     expect(surface.routesOutsideMobilePrefix).toEqual([])
     expect(surface.forbiddenAdminRoutes).toEqual([])
@@ -256,14 +256,14 @@ describe('authoritative Mobile API source surface', () => {
       mutate: (appPaths: Record<string, string>) => ({ ...appPaths }),
       omittedTargets: ['app/api/mobile/v1/today/route.js'],
     },
-  ])('rejects $name while the same 42 URL keys remain', ({
+  ])('rejects $name while the same 43 URL keys remain', ({
     expectedError,
     mutate,
     omittedTargets,
   }) => {
     const appPaths = mutate(currentAppPathsManifest())
 
-    expect(Object.keys(appPaths)).toHaveLength(42)
+    expect(Object.keys(appPaths)).toHaveLength(43)
     expect(() => withSyntheticBuild(appPaths, inspectBuildSurface, omittedTargets)).toThrow(
       expectedError,
     )
@@ -332,9 +332,9 @@ describe('authoritative Mobile API source surface', () => {
     expect(surface.forbiddenWorkerTraceReferences).toEqual([])
     expect(surface.forbiddenAdministrativeBundleReferences).toEqual([])
     expect(surface.forbiddenAdministrativeTraceReferences).toEqual([])
-    expect(surface.nftReferenceCount).toBe(4405)
-    expect(surface.nftUniqueTargetCount).toBe(157)
-    expect(surface.nftRegularFileTargetCount).toBe(155)
+    expect(surface.nftReferenceCount).toBe(4546)
+    expect(surface.nftUniqueTargetCount).toBe(158)
+    expect(surface.nftRegularFileTargetCount).toBe(156)
     expect(surface.nftDirectoryTargetCount).toBe(2)
   })
 

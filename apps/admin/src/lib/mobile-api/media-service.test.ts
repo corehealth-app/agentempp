@@ -121,6 +121,35 @@ describe('mobile media service', () => {
     expect(result.upload).not.toHaveProperty('token')
   })
 
+  it('refuses an audio declared longer than 180 seconds before creating anything', async () => {
+    const deps = makeDeps()
+    const audio = { kind: 'audio_note' as const, mime_type: 'audio/mp4' as const, size_bytes: 1200 }
+
+    await expect(
+      createMediaAsset(
+        deps,
+        USER_ID,
+        { ...audio, duration_ms: 180_001 },
+        'mobile-media-request-0002',
+        new Date('2026-07-20T12:00:00.000Z'),
+        ASSET_ID,
+      ),
+    ).rejects.toMatchObject({ status: 422, code: 'audio_too_long' })
+    expect(deps.repository.create).not.toHaveBeenCalled()
+    expect(deps.storage.createSignedUpload).not.toHaveBeenCalled()
+
+    await expect(
+      createMediaAsset(
+        deps,
+        USER_ID,
+        { ...audio, duration_ms: 180_000 },
+        'mobile-media-request-0003',
+        new Date('2026-07-20T12:00:00.000Z'),
+        ASSET_ID,
+      ),
+    ).resolves.toMatchObject({ replayed: false })
+  })
+
   it('reuses the asset for a repeated source request without inserting a duplicate', async () => {
     const existing = asset({ kind: 'meal_photo', bucket_id: 'meal-photos' })
     const deps = makeDeps(existing)

@@ -163,6 +163,9 @@ function requireOwnedAsset(asset: MediaAssetRecord | null): MediaAssetRecord {
   return asset
 }
 
+/** Same limit the app and the worker enforce. */
+export const MAX_AUDIO_DURATION_MS = 180_000
+
 export async function createMediaAsset(
   deps: MediaServiceDependencies,
   userId: string,
@@ -171,6 +174,13 @@ export async function createMediaAsset(
   now = new Date(),
   assetId = randomUUID(),
 ) {
+  if (
+    input.kind === 'audio_note' &&
+    input.duration_ms != null &&
+    input.duration_ms > MAX_AUDIO_DURATION_MS
+  ) {
+    throw new MobileApiError(422, 'audio_too_long', 'Audio must be at most 180 seconds long')
+  }
   const sourceRequestHash = sha256(requestKey)
   const existing = await deps.repository.findByRequestHash(userId, sourceRequestHash)
   if (existing) {

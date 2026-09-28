@@ -1475,6 +1475,80 @@ Identificação do alimento (mesmo cálculo do WhatsApp):
   continua editável. Zero legítimo (água, bebida zero, `user_kcal` 0) é
   `resolved` e pode ser confirmado.
 
+## Rascunho de refeição (candidatos)
+
+`POST /api/mobile/v1/meal-drafts` (exige `Idempotency-Key` e entitlement; sem
+tabela nova: a resposta fica no ledger de idempotência por 24 h).
+
+```json
+{ "source": "text", "text": "2 ovos mexidos e 1 pão francês" }
+{ "source": "media", "media_asset_id": "<uuid de meal_photo ou audio_note processado>" }
+```
+
+Devolve CANDIDATOS para revisão, nunca nutrição:
+
+```json
+{
+  "source": "text",
+  "media_asset_id": null,
+  "transcript": null,
+  "context_note": null,
+  "items": [
+    { "candidate_id": "c1-0a1b2c3d", "name": "ovos mexidos", "quantity_g": 100,
+      "quantity_basis": "portion_reference", "count": 2, "unit_label": "unidade",
+      "confidence": null, "needs_review": true, "review_reason": "estimated_quantity" }
+  ],
+  "nutrition_label": null,
+  "extraction": { "method": "deterministic", "model": null }
+}
+```
+
+- `quantity_basis`: `stated` (o paciente disse as gramas), `visual_estimate`
+  (estimativa do Vision), `portion_reference` (contagem × peso unitário que o
+  servidor já usa: ovo 50 g, pão francês 50 g, pão de queijo 30 g, fatia 15 g,
+  banana 100 g, maçã 150 g; ml de líquido ≈ g) ou `missing`. Nenhuma grama é
+  inventada: sem referência, `quantity_g` é `null` e o app exige a quantidade
+  antes de propor. Porção de referência e estimativa visual pedem confirmação.
+- Texto: "alimento + gramas" é lido sem provedor. O restante vai a um extrator
+  sem ferramentas (quando há chave configurada), cuja saída é tratada como dado
+  não confiável — gramas e contagens só valem se estiverem no texto do
+  paciente. Sem extrator, o mesmo trecho é lido palavra a palavra; o que não
+  puder ser lido volta como item `ambiguous` para o paciente corrigir.
+- Áudio: `transcript` mostra o que foi ouvido; os candidatos saem dele.
+- Foto: mapeia o resultado do Vision; `nutrition_label.applies_to_candidate_id`
+  só vem preenchido quando a associação é inequívoca.
+- Erros: `404 media_asset_not_found` (inclui mídia de outro paciente),
+  `409 media_not_processed`, `422 media_kind_not_supported`,
+  `422 meal_draft_empty`, `502 meal_extraction_failed`.
+
+### Origem na proposta
+
+`POST /registrations/propose` e `PATCH /registrations/:id` aceitam, de forma
+opcional e compatível:
+
+```json
+{
+  "kind": "meal", "meal_type": "lanche",
+  "source": { "channel": "gallery", "media_asset_id": "<uuid>" },
+  "items": [
+    { "food_name": "iogurte natural", "quantity_g": 170,
+      "quantity_basis": "visual_estimate", "candidate_id": "c1-0a1b2c3d",
+      "use_nutrition_label": true }
+  ]
+}
+```
+
+- `channel`: `text`, `camera`, `gallery`, `audio_recording`, `audio_import`.
+  Canais de mídia exigem `media_asset_id`; `text` não aceita.
+- A mídia precisa ser do paciente, do tipo do canal e estar processada.
+- `use_nutrition_label: true` em no máximo um item, só com foto. O servidor
+  relê o rótulo do resultado processado e o aplica somente a esse item
+  (`nutrition_source: "product_label"`). Rótulo ausente, de baixa confiança ou
+  incompleto recusa a proposta com `422 nutrition_label_not_applicable` — não
+  há cálculo silencioso no lugar. O cliente nunca envia macros.
+- O pending devolve `source: { channel, media_asset_id }` e, por item,
+  `quantity_basis`.
+
 ## Peso
 
 `POST /api/mobile/v1/weight` (exige `Idempotency-Key` e entitlement). Depende da
@@ -1520,6 +1594,12 @@ O app nunca recebe `service_role` e não possui policy para listar, inserir,
 alterar ou excluir diretamente em `storage.objects`. Todo acesso nasce no BFF,
 depois da resolução do paciente autenticado. O catálogo `media_assets` é a fonte
 canônica de ownership; `storage.objects.owner_id` não é usado como autorização.
+
+Áudio: `POST /media` aceita `duration_ms` (declarado pelo app, pré-filtro) e
+recusa acima de 180 000 com `422 audio_too_long`. O worker mede a duração real
+pelo contêiner do arquivo antes de qualquer transcrição: acima de 180 s falha
+com `audio_too_long`; duração ilegível falha com `audio_duration_unreadable`.
+Nos dois casos a transcrição não é chamada.
 
 Tipos aceitos pelo paciente:
 

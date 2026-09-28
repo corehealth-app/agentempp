@@ -40,9 +40,11 @@ describe('mobile read model', () => {
           nutrition_source: null,
           resolution: 'resolved',
           preparation_options: null,
+          quantity_basis: null,
         },
       ],
       totals: { kcal: 130, protein_g: 2.5, carbs_g: 28, fat_g: 0.3 },
+      source: { channel: 'mobile', media_asset_id: null },
       warnings: ['Confirme o preparo antes de registrar.'],
     })
   })
@@ -63,6 +65,7 @@ describe('mobile read model', () => {
           nutrition_source: 'user_kcal',
           resolution: 'resolved',
           preparation_options: null,
+          quantity_basis: null,
           food_db_id: 7,
         },
         {
@@ -76,6 +79,7 @@ describe('mobile read model', () => {
           nutrition_source: 'canonical_exact',
           resolution: 'resolved',
           preparation_options: null,
+          quantity_basis: null,
         },
         {
           name: 'queijo',

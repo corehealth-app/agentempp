@@ -131,6 +131,23 @@ const mealItemInputSchema = z
     food_name: z.string().trim().min(1).max(160),
     quantity_g: z.number().positive().max(9999),
     user_kcal: z.number().nonnegative().max(20_000).optional(),
+    // Where the quantity came from, as the patient reviewed it.
+    quantity_basis: z.enum(['stated', 'visual_estimate', 'portion_reference']).optional(),
+    candidate_id: z
+      .string()
+      .regex(/^c\d{1,2}-[0-9a-f]{8}$/)
+      .optional(),
+    // The patient tied the photographed nutrition label to this item. The
+    // server reads the label again from the processed media; the client never
+    // sends macros.
+    use_nutrition_label: z.literal(true).optional(),
+  })
+  .strict()
+
+const mealSourceSchema = z
+  .object({
+    channel: z.enum(['text', 'camera', 'gallery', 'audio_recording', 'audio_import']),
+    media_asset_id: z.string().uuid().optional(),
   })
   .strict()
 
@@ -140,6 +157,7 @@ const mealProposalInputSchema = z
     meal_type: z.enum(['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro']),
     items: z.array(mealItemInputSchema).min(1).max(30),
     consumed_at: z.string().datetime({ offset: true }).optional(),
+    source: mealSourceSchema.optional(),
   })
   .strict()
 
@@ -153,10 +171,37 @@ const workoutProposalInputSchema = z
   })
   .strict()
 
-export const registrationProposalInputSchema = z.discriminatedUnion('kind', [
-  mealProposalInputSchema,
-  workoutProposalInputSchema,
-])
+export const registrationProposalInputSchema = z
+  .discriminatedUnion('kind', [mealProposalInputSchema, workoutProposalInputSchema])
+  .superRefine((value, context) => {
+    if (value.kind !== 'meal') return
+    const hasMedia = value.source?.media_asset_id != null
+    if (value.source && (value.source.channel === 'text') === hasMedia) {
+      context.addIssue({
+        code: 'custom',
+        path: ['source', 'media_asset_id'],
+        message: 'media_asset_id is required for media channels and not allowed for text',
+      })
+    }
+    const labelled = value.items.filter((item) => item.use_nutrition_label)
+    if (labelled.length > 1) {
+      context.addIssue({
+        code: 'custom',
+        path: ['items'],
+        message: 'Only one item may use the nutrition label',
+      })
+    }
+    if (
+      labelled.length === 1 &&
+      !(hasMedia && (value.source?.channel === 'camera' || value.source?.channel === 'gallery'))
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['source'],
+        message: 'A nutrition label needs the photo it came from',
+      })
+    }
+  })
 
 export const historyQuerySchema = z
   .object({
@@ -166,6 +211,11 @@ export const historyQuerySchema = z
   .strict()
 
 export const resourceIdSchema = z.string().uuid()
+
+export const mealDraftInputSchema = z.discriminatedUnion('source', [
+  z.object({ source: z.literal('text'), text: z.string().trim().min(1).max(2000) }).strict(),
+  z.object({ source: z.literal('media'), media_asset_id: resourceIdSchema }).strict(),
+])
 
 export const personaInputSchema = z.object({ persona: selectableCoachPersonalitySchema }).strict()
 
@@ -206,6 +256,9 @@ const mediaPhotoUploadSchema = mediaUploadBaseSchema
 
 const mediaAudioUploadSchema = mediaUploadBaseSchema
   .extend({
+    // Declared by the app before the upload; only a pre-filter. The worker
+    // measures the real length from the file before any transcription.
+    duration_ms: z.number().int().positive().max(86_400_000).optional(),
     kind: z.literal('audio_note'),
     mime_type: patientAudioMimeSchema,
     size_bytes: z
@@ -343,6 +396,7 @@ export type NotificationPreferencesPatch = z.infer<typeof notificationPreference
 export type CreateReminderInput = z.infer<typeof createReminderInputSchema>
 export type PatchReminderInput = z.infer<typeof patchReminderInputSchema>
 export type HydrationInput = z.infer<typeof hydrationInputSchema>
+export type MealDraftInput = z.infer<typeof mealDraftInputSchema>
 export type WeightInput = z.infer<typeof weightInputSchema>
 export type MarkRoutineTakenInput = z.infer<typeof markRoutineTakenInputSchema>
 

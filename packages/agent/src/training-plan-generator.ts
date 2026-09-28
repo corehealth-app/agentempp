@@ -307,6 +307,18 @@ export async function saveTrainingPlan(
  *
  * Usado em `meal-gap-reminder`-style cron matinal.
  */
+/**
+ * Planos confirmados pelo paciente no app (proposta do Flow ou documento
+ * importado). A entrega diária pelo WhatsApp não os envia: ela fala com a
+ * persona do canal e nasceu para os planos gerados ali.
+ */
+export function isAppConfirmedTrainingPlan(generatedBy: unknown): boolean {
+  return (
+    typeof generatedBy === 'string' &&
+    /^(flow_draft|patient_import)(_edited)?$/.test(generatedBy)
+  )
+}
+
 export async function getTodayTraining(
   supabase: ServiceClient,
   userId: string,
@@ -317,7 +329,7 @@ export async function getTodayTraining(
   const sp = supabase as any
   const { data, error } = await sp
     .from('training_plans')
-    .select('id, weekly_schedule')
+    .select('id, weekly_schedule, generated_by')
     .eq('user_id', userId)
     .eq('active', true)
     .order('generated_at', { ascending: false })
@@ -325,6 +337,7 @@ export async function getTodayTraining(
     .maybeSingle()
   if (error) throw new Error(error.message ?? 'active training plan lookup failed')
   if (!data) return null
+  if (isAppConfirmedTrainingPlan(data.generated_by)) return null
   const schedule = data.weekly_schedule as TrainingDay[] | null
   if (!Array.isArray(schedule)) return null
   const today = schedule.find((d) => d.day === todayLabel)

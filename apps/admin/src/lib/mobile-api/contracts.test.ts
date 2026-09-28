@@ -23,6 +23,32 @@ import {
   resourceIdSchema,
 } from './contracts'
 
+describe('plan document upload', () => {
+  it('accepts what the document reader handles and nothing else', () => {
+    for (const mime of ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']) {
+      expect(
+        mediaUploadInputSchema.safeParse({ kind: 'plan_document', mime_type: mime, size_bytes: 1024 })
+          .success,
+        mime,
+      ).toBe(true)
+    }
+    for (const mime of ['image/heic', 'image/heif', 'text/html', 'audio/mp4']) {
+      expect(
+        mediaUploadInputSchema.safeParse({ kind: 'plan_document', mime_type: mime, size_bytes: 1024 })
+          .success,
+        mime,
+      ).toBe(false)
+    }
+    expect(
+      mediaUploadInputSchema.safeParse({
+        kind: 'plan_document',
+        mime_type: 'application/pdf',
+        size_bytes: 20 * 1024 * 1024 + 1,
+      }).success,
+    ).toBe(false)
+  })
+})
+
 describe('mobile API v1 contracts', () => {
   it('reserves strict educational content query, mutation, and resource contracts', () => {
     expect(contentListQuerySchema.parse({})).toEqual({ surface: 'library', limit: 20 })

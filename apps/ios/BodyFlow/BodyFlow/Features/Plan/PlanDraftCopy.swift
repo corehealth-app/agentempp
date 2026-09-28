@@ -83,6 +83,9 @@ enum PlanDraftCopy {
         case "missing": "plan.draft.uncertain.missing"
         case "out_of_range": "plan.draft.uncertain.out-of-range"
         case "not_in_document": "plan.draft.uncertain.not-in-document"
+        case "outside_domain": "plan.draft.uncertain.outside-domain"
+        case "supplement": "plan.draft.uncertain.supplement"
+        case "supplement_imported": "plan.draft.uncertain.supplement-imported"
         default: "plan.draft.uncertain.invalid"
         }
     }

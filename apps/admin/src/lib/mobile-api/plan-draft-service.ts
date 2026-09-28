@@ -2,6 +2,7 @@ import {
   assessPlanDraftPayload,
   confirmablePlanDraftPayload,
   mentionsMedication,
+  planDraftAuthor,
   type PlanDraftDomain,
   type PlanDraftOrigin,
   type PlanDraftUncertainField,
@@ -133,7 +134,9 @@ function uncertainFields(value: unknown): PlanDraftUncertainField[] {
       (reason === 'missing' ||
         reason === 'out_of_range' ||
         reason === 'invalid' ||
-        reason === 'not_in_document')
+        reason === 'not_in_document' ||
+        reason === 'outside_domain' ||
+        reason === 'supplement')
       ? [{ pointer: pointer.slice(0, 300), reason }]
       : []
   })
@@ -174,7 +177,12 @@ export function planDraftDto(draft: PlanDraftRecord, now = new Date()) {
     notices: [
       // The patient's confirmation is never presented as a clinical review.
       'not_professionally_reviewed',
-      ...(segments.some(mentionsMedication) ? ['medications_not_imported'] : []),
+      ...(segments.some(mentionsMedication) ||
+      uncertainFields(draft.uncertain_fields).some(
+        (field) => field.reason === 'outside_domain' || field.reason === 'supplement',
+      )
+        ? ['medications_not_imported']
+        : []),
     ],
   }
 }
@@ -235,7 +243,11 @@ export async function updatePlanDraft(
   if (draft.payload_version !== input.payload_version) {
     throw new MobileApiError(409, 'draft_changed', 'Plan draft changed since it was read')
   }
-  const assessment = assessPlanDraftPayload(draft.domain, input.payload)
+  const assessment = assessPlanDraftPayload(
+    draft.domain,
+    input.payload,
+    planDraftAuthor(draft.origin),
+  )
   await deps.repository.update({
     userId,
     draftId,
@@ -272,7 +284,7 @@ export async function confirmPlanDraft(
     }
     // The stored content is checked again by the strict rules right before
     // the confirmation, whatever its status says.
-    if (!confirmablePlanDraftPayload(draft.domain, draft.payload)) {
+    if (!confirmablePlanDraftPayload(draft.domain, draft.payload, planDraftAuthor(draft.origin))) {
       throw new MobileApiError(422, 'plan_draft_incomplete', 'Plan draft has missing fields')
     }
   }

@@ -151,13 +151,20 @@ export async function flagMessageAction(messageId: string, flag: ReviewFlag | nu
 }
 
 /**
- * Reseta em uma transação todo o estado conversacional, nutricional e de
- * treino. Mantém identidade, subscriptions, subscription_events e audit_log;
- * zera integralmente perfil/progresso para refazer o onboarding do zero.
+ * Reseta em uma transação o estado conversacional e nutricional e zera
+ * perfil/progresso para refazer o onboarding do zero. Mantém identidade,
+ * subscriptions, subscription_events, audit_log e mídias.
+ *
+ * Planos confirmados (treino e prescrições) e rascunhos de plano ficam, a
+ * menos que `keepPlans` seja `false` — uma escolha explícita no diálogo.
  *
  * Útil pra testar fluxo de onboarding sem precisar criar paciente novo.
  */
-export async function resetUserConversationAction(userId: string) {
+export async function resetUserConversationAction(
+  userId: string,
+  options: { keepPlans?: boolean } = {},
+) {
+  const keepPlans = options.keepPlans !== false
   const ctx = await requireAdmin(OPERATIONS_ADMIN_ROLES)
   if ('error' in ctx) return { error: ctx.error }
 
@@ -169,10 +176,12 @@ export async function resetUserConversationAction(userId: string) {
   if (userError) return { error: userError.message }
   if (!u) return { error: 'user não encontrado' }
 
-  const { data: resetResult, error: resetError } = await ctx.svc.rpc(
-    'reset_user_conversation_atomic',
-    { p_user_id: userId },
-  )
+  const { data: resetResult, error: resetError } = await (
+    ctx.svc.rpc as unknown as (
+      name: string,
+      params: Record<string, unknown>,
+    ) => Promise<{ data: unknown; error: { message: string } | null }>
+  )('reset_user_conversation_atomic', { p_user_id: userId, p_keep_plans: keepPlans })
   if (resetError) return { error: resetError.message }
 
   await ctx.svc.from('audit_log').insert({
@@ -181,13 +190,13 @@ export async function resetUserConversationAction(userId: string) {
     action: 'user.reset_conversation',
     entity: 'users',
     entity_id: userId,
-    before: { name: u.name, wpp: u.wpp },
+    before: { name: u.name, wpp: u.wpp, kept_plans: keepPlans },
   })
 
   await ctx.svc.from('product_events').insert({
     user_id: userId,
     event: 'user.conversation_reset',
-    properties: { actor: ctx.user.email, wpp: u.wpp },
+    properties: { actor: ctx.user.email, wpp: u.wpp, kept_plans: keepPlans },
   })
 
   revalidatePath('/messages')

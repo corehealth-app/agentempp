@@ -129,7 +129,7 @@ async function createDraft(
   key: string,
   detail: Record<string, unknown>,
 ): Promise<DraftOutcome | null> {
-  const assessment = assessPlanDraftPayload(domain, candidate)
+  const assessment = assessPlanDraftPayload(domain, candidate, 'flow')
   const { data, error } = await (ctx.supabase as Untyped).rpc('create_plan_draft_atomic', {
     p_user_id: ctx.userId,
     p_domain: domain,

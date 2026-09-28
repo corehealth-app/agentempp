@@ -468,6 +468,32 @@ struct PlanDraftReviewModelTests {
         }
     }
 
+    @Test("An item flagged as medication or supplement keeps its name and says why")
+    func itemFlags() async throws {
+        let json = """
+        {"daily_meals":[{"meal_type":"lanche_tarde","items":[
+          {"food_name":"Banana","quantity_g":100},
+          {"food_name":"Creatina","quantity_g":5}
+        ]}]}
+        """
+        let provider = PlanDraftProviderFake(try DraftFixtures.snapshot(
+            domain: .nutrition, json: json, status: "needs_completion",
+            uncertain: [PlanDraftUncertainField(pointer: "/daily_meals/0/items/1", reason: "supplement")]
+        ))
+        let model = makeModel(provider)
+        await model.load()
+        let rows = try #require(model.document).sections[0].rows
+
+        #expect(rows[1].title == "Creatina")
+        #expect(model.text(of: rows[1].fields[0], language: language) == "Creatina")
+        #expect(model.uncertainty(ofRow: rows[1]) == "supplement")
+        #expect(model.uncertainty(ofRow: rows[0]) == nil)
+        #expect(!model.canConfirm)
+        #expect(PlanDraftCopy.uncertaintyKey("outside_domain") == "plan.draft.uncertain.outside-domain")
+        #expect(PlanDraftCopy.uncertaintyKey("supplement_imported")
+            == "plan.draft.uncertain.supplement-imported")
+    }
+
     @Test("A confirmation that failed is repeated as the same request")
     func confirmRetryKeepsKey() async throws {
         let provider = PlanDraftProviderFake(

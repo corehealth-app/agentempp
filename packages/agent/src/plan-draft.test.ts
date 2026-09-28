@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   assessPlanDraftPayload,
+  classifyHealthProduct,
   confirmablePlanDraftPayload,
   mentionsMedication,
   planDraftValidUntil,
@@ -234,8 +235,8 @@ describe('assessPlanDraftPayload — dieta', () => {
   })
 })
 
-describe('medicamento, suplemento e dose nunca viram campo', () => {
-  it('na edição do paciente e na proposta do Flow, o texto sai e o campo obrigatório fica vazio', () => {
+describe('medicamento, suplemento e dose: nunca orientação, nunca nome apagado', () => {
+  it('texto livre que fala de dose sai do campo e volta como veio', () => {
     const result = assessPlanDraftPayload('training', {
       ...training,
       notes: 'Tomar 2 comprimidos de X antes do treino',
@@ -250,28 +251,108 @@ describe('medicamento, suplemento e dose nunca viram campo', () => {
               notes: 'creatina 5 g',
               execution_steps: ['descer devagar', 'tomar suplemento antes'],
             },
-            { ...exercise, name: 'Whey pós-treino' },
           ],
         },
       ],
     })
 
-    expect(JSON.stringify(result.payload)).not.toMatch(/comprimido|creatina|suplemento|whey/i)
+    expect(JSON.stringify(result.payload)).not.toMatch(/comprimido|creatina|suplemento/i)
     expect([...result.removed_segments].sort()).toEqual([
       'Tomar 2 comprimidos de X antes do treino',
-      'Whey pós-treino',
       'creatina 5 g',
       'tomar suplemento antes',
-    ])
-    expect(result.complete).toBe(false)
-    expect(result.uncertain_fields).toEqual([
-      { pointer: '/weekly_schedule/0/exercises/1/name', reason: 'not_allowed' },
     ])
     const exercises = (result.payload.weekly_schedule as Array<Record<string, unknown>>)[0]
       ?.exercises as Array<Record<string, unknown>>
     expect(exercises[0]?.execution_steps).toEqual(['descer devagar'])
     expect(exercises[0]).not.toHaveProperty('notes')
-    expect(exercises[1]?.name).toBeNull()
+    // Only free text was touched: the plan itself is complete.
+    expect(result.complete).toBe(true)
+  })
+
+  it('medicamento como item fica com o nome, identificado, e impede a confirmação', () => {
+    const result = assessPlanDraftPayload(
+      'nutrition',
+      {
+        daily_meals: [
+          {
+            meal_type: 'cafe',
+            items: [
+              { food_name: 'Pão integral', quantity_g: 50 },
+              { food_name: 'Losartana 50 mg', quantity_g: 1 },
+            ],
+          },
+        ],
+      },
+      'document',
+    )
+    const items = (result.payload.daily_meals as Array<Record<string, unknown>>)[0]
+      ?.items as Array<Record<string, unknown>>
+    expect(items[1]?.food_name).toBe('Losartana 50 mg')
+    expect(result.uncertain_fields).toEqual([
+      { pointer: '/daily_meals/0/items/1', reason: 'outside_domain' },
+    ])
+    expect(result.complete).toBe(false)
+    expect(confirmablePlanDraftPayload('nutrition', result.payload, 'document')).toBeNull()
+  })
+
+  it('suplemento num documento importado fica como veio, com aviso, e pode ser confirmado', () => {
+    const payload = {
+      daily_meals: [
+        {
+          meal_type: 'lanche_tarde',
+          items: [
+            { food_name: 'Banana', quantity_g: 100 },
+            { food_name: 'Whey protein', quantity_g: 30 },
+          ],
+        },
+      ],
+    }
+    const result = assessPlanDraftPayload('nutrition', payload, 'document')
+    const items = (result.payload.daily_meals as Array<Record<string, unknown>>)[0]
+      ?.items as Array<Record<string, unknown>>
+    expect(items[1]).toEqual({ food_name: 'Whey protein', quantity_g: 30 })
+    expect(result.uncertain_fields).toEqual([
+      { pointer: '/daily_meals/0/items/1', reason: 'supplement' },
+    ])
+    expect(result.complete).toBe(true)
+    expect(confirmablePlanDraftPayload('nutrition', payload, 'document')).not.toBeNull()
+  })
+
+  it('suplemento proposto pelo Flow fica visível e impede a confirmação (o Flow não sugere dose)', () => {
+    const payload = {
+      daily_meals: [
+        { meal_type: 'lanche_tarde', items: [{ food_name: 'Creatina', quantity_g: 5 }] },
+      ],
+    }
+    const result = assessPlanDraftPayload('nutrition', payload, 'flow')
+    const items = (result.payload.daily_meals as Array<Record<string, unknown>>)[0]
+      ?.items as Array<Record<string, unknown>>
+    expect(items[0]).toEqual({ food_name: 'Creatina', quantity_g: 5 })
+    expect(result.uncertain_fields).toEqual([
+      { pointer: '/daily_meals/0/items/0', reason: 'supplement' },
+    ])
+    expect(result.complete).toBe(false)
+    expect(confirmablePlanDraftPayload('nutrition', payload, 'flow')).toBeNull()
+  })
+
+  it('vitamina de fruta é bebida, não suplemento', () => {
+    const payload = {
+      daily_meals: [
+        {
+          meal_type: 'cafe',
+          items: [
+            { food_name: 'Vitamina de banana', quantity_g: 300 },
+            { food_name: 'Vitamina com leite e aveia', quantity_g: 250 },
+          ],
+        },
+      ],
+    }
+    for (const author of ['flow', 'document'] as const) {
+      const result = assessPlanDraftPayload('nutrition', payload, author)
+      expect(result.uncertain_fields).toEqual([])
+      expect(result.complete).toBe(true)
+    }
   })
 
   it('texto opcional retirado não impede a confirmação do resto', () => {
@@ -284,7 +365,7 @@ describe('medicamento, suplemento e dose nunca viram campo', () => {
     expect(result.removed_segments).toEqual(['Vitamina D 2000 UI'])
   })
 
-  it('opcional vazio ou null é o mesmo que ausente', () => {
+  it('opcional vazio ou null é o mesmo que ausente, e nada é acrescentado', () => {
     const result = assessPlanDraftPayload('nutrition', {
       horizon: null,
       notes: '  ',
@@ -301,6 +382,13 @@ describe('medicamento, suplemento e dose nunca viram campo', () => {
     })
     expect(result.complete).toBe(true)
     expect(result.uncertain_fields).toEqual([])
+    // No default is written into the plan: what is stored is what was written.
+    expect(result.payload).not.toHaveProperty('horizon')
+    expect(result.payload).not.toHaveProperty('shopping_list')
+    const trainingResult = assessPlanDraftPayload('training', {
+      weekly_schedule: training.weekly_schedule,
+    })
+    expect(trainingResult.payload).not.toHaveProperty('plan_type')
   })
 })
 
@@ -319,18 +407,30 @@ describe('apoios', () => {
     expect(sanitizeUnrecognizedSegments(Array.from({ length: 80 }, (_, i) => `t${i}`))).toHaveLength(40)
   })
 
-  it('reconhece menção a medicamento, suplemento ou dose', () => {
-    for (const text of [
-      'Tomar 1 comprimido de X',
-      'Creatina 5 g ao dia',
-      'Vitamina D 2000 UI',
-      'Remédio para pressão',
-      'Losartana 50 mg',
-    ]) {
-      expect(mentionsMedication(text), text).toBe(true)
-    }
-    for (const text of ['Beber 2 litros de água', 'Treinar em jejum', 'Observação do treinador']) {
-      expect(mentionsMedication(text), text).toBe(false)
+  it('classifica pelo contexto, não por uma palavra isolada', () => {
+    const cases: Array<[string, 'medication' | 'supplement' | null]> = [
+      ['Tomar 1 comprimido de X', 'medication'],
+      ['Losartana 50 mg', 'medication'],
+      ['Vitamina D 2000 UI', 'medication'],
+      ['Remédio para pressão', 'medication'],
+      ['Injeção semanal', 'medication'],
+      ['Creatina 5 g ao dia', 'supplement'],
+      ['Whey protein', 'supplement'],
+      ['Vitamina D', 'supplement'],
+      ['vitamina B12', 'supplement'],
+      ['Ômega 3', 'supplement'],
+      ['Pré-treino', 'supplement'],
+      ['Vitamina de banana', null],
+      ['Vitamina com leite', null],
+      ['Uma vitamina no lanche', null],
+      ['Beber 2 litros de água', null],
+      ['Treinar em jejum', null],
+      ['Frango grelhado 150 g', null],
+      ['Observação do treinador', null],
+    ]
+    for (const [text, kind] of cases) {
+      expect(classifyHealthProduct(text), text).toBe(kind)
+      expect(mentionsMedication(text), text).toBe(kind !== null)
     }
   })
 

@@ -675,10 +675,18 @@ describe('3.2 an empty reply stored before this change is not shown as a message
 
 describe('the lease is tied to the route and to the idempotency ledger', () => {
   it('outlives the route maxDuration and equals the ledger in-progress window', async () => {
-    const { maxDuration } = await import('../../app/api/mobile/v1/flow/chat/route')
-    expect(FLOW_EXECUTION_LEASE_MS).toBeGreaterThan(maxDuration * 1_000)
     const { readFileSync } = await import('node:fs')
     const { resolve } = await import('node:path')
+    // Read from the route's source, as the ledger window below is read from
+    // the SQL: importing the route would load the whole agent and providers
+    // only to compare two constants.
+    const route = readFileSync(
+      resolve(process.cwd(), 'src/app/api/mobile/v1/flow/chat/route.ts'),
+      'utf8',
+    )
+    const maxDuration = Number(route.match(/^export const maxDuration = (\d+)$/m)?.[1])
+    expect(maxDuration).toBeGreaterThan(0)
+    expect(FLOW_EXECUTION_LEASE_MS).toBeGreaterThan(maxDuration * 1_000)
     const sql = readFileSync(
       resolve(process.cwd(), '../../supabase/migrations/20260720130537_mobile_api_idempotency.sql'),
       'utf8',

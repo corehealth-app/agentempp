@@ -54,12 +54,13 @@ function ResetDialog({
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [confirm, setConfirm] = useState('')
+  const [deletePlans, setDeletePlans] = useState(false)
   const [pending, startTransition] = useTransition()
 
   function execute() {
     if (confirm.trim().toUpperCase() !== 'RESETAR') return
     startTransition(async () => {
-      const r = await resetUserConversationAction(userId)
+      const r = await resetUserConversationAction(userId, { keepPlans: !deletePlans })
       if (r.error) {
         toast.error(r.error)
       } else {
@@ -68,6 +69,7 @@ function ResetDialog({
         )
         setOpen(false)
         setConfirm('')
+        setDeletePlans(false)
         router.push('/messages')
       }
     })
@@ -89,8 +91,12 @@ function ResetDialog({
         <DialogHeader>
           <DialogTitle>Resetar conversa de {userName ?? userWpp ?? 'usuario app'}?</DialogTitle>
           <DialogDescription>
-            Apaga TODAS as mensagens, refeições, treinos, progresso, snapshots, embeddings. Mantém o
-            paciente cadastrado mas zera o onboarding (nome, perfil clínico, badges).
+            <strong>Apaga:</strong> mensagens, refeições registradas, treinos registrados, progresso,
+            snapshots, embeddings e pendências; zera o onboarding (nome, perfil clínico, badges).
+            <br />
+            <strong>Mantém:</strong> o paciente cadastrado, assinaturas, auditoria, fotos, áudios e
+            documentos enviados
+            {deletePlans ? '.' : ', e também o plano de treino, as prescrições e os rascunhos de plano.'}
             <br />
             <strong>Útil pra testar o fluxo do zero sem precisar criar paciente novo.</strong>
             <br />
@@ -99,6 +105,18 @@ function ResetDialog({
             confirmar:
           </DialogDescription>
         </DialogHeader>
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={deletePlans}
+            onChange={(event) => setDeletePlans(event.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            Apagar também o plano de treino, as prescrições e os rascunhos de plano (não pode ser
+            desfeito).
+          </span>
+        </label>
         <Input
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}

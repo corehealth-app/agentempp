@@ -119,6 +119,12 @@ final class PlanDraftReviewModel {
         return snapshot?.uncertainFields.first { $0.pointer == field.pointer }?.reason
     }
 
+    /// Why the server flagged a whole item (a medication, a dose or a
+    /// supplement): the item keeps its name and says why it was flagged.
+    func uncertainty(ofRow row: PlanDraftDocument.Row) -> String? {
+        snapshot?.uncertainFields.first { $0.pointer == row.id }?.reason
+    }
+
     func isInvalid(_ field: PlanDraftDocument.Field, language: SupportedAppLanguage) -> Bool {
         guard let text = edits[field.pointer] else { return false }
         return PlanDraftDocument.value(for: text, of: field, language: language) == nil

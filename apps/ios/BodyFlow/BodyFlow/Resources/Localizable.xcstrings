@@ -2325,6 +2325,18 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "The value read was out of range and was removed. Enter the value." } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O valor lido estava fora do limite e foi retirado. Informe o valor." } }
     } },
+    "plan.draft.uncertain.outside-domain" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This item is a medication or a dose. Performe AI does not include medications in the plan: remove the item and follow your professional's guidance." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Este item é um medicamento ou uma dose. O Performe AI não inclui medicamentos no plano: remova o item e siga a orientação do seu profissional." } }
+    } },
+    "plan.draft.uncertain.supplement" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This item is a supplement. Flow does not suggest supplements or doses: remove the item to confirm and talk to your professional." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Este item é um suplemento. O Flow não sugere suplementos nem doses: remova o item para confirmar e converse com seu profissional." } }
+    } },
+    "plan.draft.uncertain.supplement-imported" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This item is a supplement and was kept as it was in your document. Check it with your professional." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Este item é um suplemento e foi mantido como estava no seu documento. Confira com seu profissional." } }
+    } },
     "plan.draft.unrecognized.detail" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "They were in the document and did not become a field of the plan. They stay here as they came." } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Estavam no documento e não viraram campo do plano. Ficam aqui como vieram." } }

@@ -274,14 +274,10 @@ const mediaAudioUploadSchema = mediaUploadBaseSchema
 const mediaPlanDocumentUploadSchema = mediaUploadBaseSchema
   .extend({
     kind: z.literal('plan_document'),
-    mime_type: z.enum([
-      'application/pdf',
-      'image/jpeg',
-      'image/png',
-      'image/webp',
-      'image/heic',
-      'image/heif',
-    ]),
+    // Only what the document reader handles: the text layer of a PDF, or a
+    // photo in a format the transcription model accepts. The app sends PDF
+    // or JPEG; a HEIC photo is converted on the phone before it leaves.
+    mime_type: z.enum(['application/pdf', 'image/jpeg', 'image/png', 'image/webp']),
     size_bytes: z
       .number()
       .int()

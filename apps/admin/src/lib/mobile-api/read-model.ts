@@ -149,7 +149,9 @@ export async function loadProfile(supabase: ServiceClient, userId: string) {
     (supabase.from('user_profiles') as unknown as { select: ProfileQuery }).select(columns)
   // weight_measured_at exists only after the weight migration. A database
   // without it (42703) still answers, with the instant reported as unknown.
-  const dated = await select(`${PROFILE_COLUMNS}, weight_measured_at`)
+  // weight_instant_source says whether that instant is the measurement's
+  // ('measured') or only the time the value was written ('recorded').
+  const dated = await select(`${PROFILE_COLUMNS}, weight_measured_at, weight_instant_source`)
     .eq('user_id', userId)
     .maybeSingle()
   if (dated.error?.code !== '42703') {
@@ -158,7 +160,9 @@ export async function loadProfile(supabase: ServiceClient, userId: string) {
   }
   const legacy = await select(PROFILE_COLUMNS).eq('user_id', userId).maybeSingle()
   throwQueryError(legacy.error as never, 'Profile lookup')
-  return legacy.data ? { ...legacy.data, weight_measured_at: null } : legacy.data
+  return legacy.data
+    ? { ...legacy.data, weight_measured_at: null, weight_instant_source: null }
+    : legacy.data
 }
 
 export async function loadToday(

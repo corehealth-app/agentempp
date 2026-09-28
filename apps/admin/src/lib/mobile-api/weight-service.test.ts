@@ -161,7 +161,10 @@ describe('profile read with the weight instant', () => {
                     data: {
                       weight_kg: 78.46,
                       ...(columns.includes('weight_measured_at')
-                        ? { weight_measured_at: '2026-09-28T11:30:00+00:00' }
+                        ? {
+                            weight_measured_at: '2026-09-28T11:30:00+00:00',
+                            weight_instant_source: 'recorded',
+                          }
                         : {}),
                     },
                     error: null,
@@ -175,12 +178,14 @@ describe('profile read with the weight instant', () => {
     }
   }
 
-  it('returns the instant when the database has it', async () => {
-    const { client } = supabase(true)
+  it('returns the instant and says what it is (a write is not a measurement)', async () => {
+    const { client, selections } = supabase(true)
     await expect(loadProfile(client, 'patient-1')).resolves.toMatchObject({
       weight_kg: 78.46,
       weight_measured_at: '2026-09-28T11:30:00+00:00',
+      weight_instant_source: 'recorded',
     })
+    expect(selections[0]).toContain('weight_instant_source')
   })
 
   it('still answers on a database without the column, with the instant unknown', async () => {
@@ -188,6 +193,7 @@ describe('profile read with the weight instant', () => {
     await expect(loadProfile(client, 'patient-1')).resolves.toEqual({
       weight_kg: 78.46,
       weight_measured_at: null,
+      weight_instant_source: null,
     })
     expect(selections).toHaveLength(2)
   })

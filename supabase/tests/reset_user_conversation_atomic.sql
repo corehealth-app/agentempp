@@ -170,7 +170,8 @@ BEGIN
     'evt_reset_test'
   );
 
-  v_result := public.reset_user_conversation_atomic(v_user_id);
+  -- Everything, plans included, as the explicit full reset does.
+  v_result := public.reset_user_conversation_atomic(v_user_id, false);
   IF NOT (v_result->>'reset')::boolean THEN
     RAISE EXCEPTION 'reset did not report success: %', v_result;
   END IF;

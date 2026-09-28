@@ -49,6 +49,10 @@ BEGIN
     RAISE EXCEPTION 'first measurement not applied with 2-decimal rounding: % / % / %',
       v_result, v_weight, v_at;
   END IF;
+  IF (SELECT weight_instant_source FROM public.user_profiles WHERE user_id = v_user_a)
+    IS DISTINCT FROM 'measured' THEN
+    RAISE EXCEPTION 'an informed measurement was not recorded as measured';
+  END IF;
 
   -- 2. Replay of the same measurement (any time later): no effect.
   v_result := public.record_weight_atomic(v_user_a, 78.456, 'kg', v_t1, 'weight-key-0002');
@@ -128,9 +132,15 @@ BEGIN
   IF v_weight <> 83 OR v_at IS NULL OR v_at < v_now THEN
     RAISE EXCEPTION 'legacy write did not date the weight: % / %', v_weight, v_at;
   END IF;
+  -- The instant of a legacy write is the time of the write, and says so.
+  IF (SELECT weight_instant_source FROM public.user_profiles WHERE user_id = v_legacy)
+    IS DISTINCT FROM 'recorded' THEN
+    RAISE EXCEPTION 'a legacy write was presented as a measurement instant';
+  END IF;
   UPDATE public.user_profiles SET weight_kg = NULL WHERE user_id = v_legacy;
   SELECT weight_measured_at INTO v_at FROM public.user_profiles WHERE user_id = v_legacy;
-  IF v_at IS NOT NULL THEN
+  IF v_at IS NOT NULL
+    OR (SELECT weight_instant_source FROM public.user_profiles WHERE user_id = v_legacy) IS NOT NULL THEN
     RAISE EXCEPTION 'cleared weight kept an instant';
   END IF;
   -- An unrelated profile update does not touch the instant.

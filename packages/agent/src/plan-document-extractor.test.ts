@@ -261,7 +261,7 @@ describe('extractPlanDocument — plano alimentar', () => {
 })
 
 describe('revisão adversarial 2026-09-28', () => {
-  it('dose que o modelo pôs num campo sai do campo e volta como texto não importado', async () => {
+  it('dose num texto sai do campo e volta como veio; item de suplemento fica com o nome', async () => {
     const result = await extractPlanDocument(
       structurer({
         payload: {
@@ -288,22 +288,20 @@ describe('revisão adversarial 2026-09-28', () => {
       },
     )
 
-    const stored = JSON.stringify([result.payload, result.extraction_payload])
-    expect(stored).not.toMatch(/creatina|whey|losartana/i)
+    // Free text with a dose or supplement is not an instruction of the plan.
+    expect(JSON.stringify(result.payload)).not.toMatch(/whey|losartana/i)
     expect(result.unrecognized_segments).toEqual(
-      expect.arrayContaining([
-        'Tomar losartana 50 mg pela manhã',
-        'Whey 30 g depois do treino',
-        'Creatina',
-      ]),
+      expect.arrayContaining(['Tomar losartana 50 mg pela manhã', 'Whey 30 g depois do treino']),
     )
-    // O item fica sem nome até o paciente decidir; nada é confirmado assim.
-    expect(result.complete).toBe(false)
+    // The item keeps its name and quantity as the document wrote them.
+    const items = (result.payload.daily_meals as Array<Record<string, unknown>>)[0]
+      ?.items as Array<Record<string, unknown>>
+    expect(items[1]).toEqual({ food_name: 'Creatina', quantity_g: 5 })
     expect(result.uncertain_fields).toEqual(
-      expect.arrayContaining([
-        { pointer: '/daily_meals/0/items/1/food_name', reason: 'not_allowed' },
-      ]),
+      expect.arrayContaining([{ pointer: '/daily_meals/0/items/1', reason: 'supplement' }]),
     )
+    // Written by the patient's own document: an informational flag.
+    expect(result.complete).toBe(true)
   })
 
   it('resposta no formato exato do prompt (null nos opcionais) não fica incompleta por isso', async () => {

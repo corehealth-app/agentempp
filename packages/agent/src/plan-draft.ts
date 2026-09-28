@@ -23,14 +23,19 @@ export type PlanDraftOrigin = 'flow_generated' | 'imported_photo' | 'imported_pd
 /**
  * `not_in_document`: o número veio da leitura de um documento, mas não está
  * escrito nele — fica vazio até o paciente informar.
+ * `outside_domain`: o item é um medicamento ou uma dose; o nome fica como
+ * veio, e o rascunho só é confirmado depois que o paciente o remove.
+ * `supplement`: o item é um suplemento; o nome e a quantidade ficam como
+ * vieram. Numa proposta do Flow ele impede a confirmação (o Flow não sugere
+ * suplemento nem dose); num documento importado é só um aviso.
  */
 export type PlanDraftUncertainReason =
   | 'missing'
   | 'out_of_range'
   | 'invalid'
   | 'not_in_document'
-  /** O texto falava de medicamento, suplemento ou dose e foi retirado. */
-  | 'not_allowed'
+  | 'outside_domain'
+  | 'supplement'
 
 export interface PlanDraftUncertainField {
   /** Ponteiro JSON (RFC 6901) dentro do conteúdo do rascunho. */
@@ -47,7 +52,7 @@ const optionalText = (max: number) => z.string().trim().min(1).max(max).optional
 /** Treino pronto para confirmar: os mesmos limites do gerador. */
 export const trainingDraftPayloadSchema = z
   .object({
-    plan_type: z.enum(['split', 'full_body', 'custom']).default('custom'),
+    plan_type: z.enum(['split', 'full_body', 'custom']).optional(),
     equipment_summary: optionalText(500),
     weekly_schedule: z.array(TrainingDaySchema).min(1).max(7),
     progression_rule: optionalText(500),
@@ -65,7 +70,7 @@ const macro = (max: number) => z.number().min(0).max(max).nullable().optional()
 export const nutritionDraftPayloadSchema = z
   .object({
     mode: z.enum(['rigida', 'referencia']).optional(),
-    horizon: z.enum(['daily', 'weekly']).default('daily'),
+    horizon: z.enum(['daily', 'weekly']).optional(),
     meta_kcal: macro(10_000),
     meta_protein_g: macro(1_000),
     daily_meals: z
@@ -100,7 +105,7 @@ export const nutritionDraftPayloadSchema = z
       )
       .min(1)
       .max(42),
-    shopping_list: z.array(ShoppingItemSchema).max(120).default([]),
+    shopping_list: z.array(ShoppingItemSchema).max(120).optional(),
     notes: optionalText(500),
   })
   .strip()
@@ -219,33 +224,53 @@ const OPTIONAL_KEYS = new Set([
   'total_protein_g',
 ])
 
+// O nome que identifica um exercício, um alimento ou um item da lista de
+// compras. Ele nunca é apagado nem trocado.
+const IDENTITY_KEYS = new Set(['name', 'food_name'])
+
+interface ItemFlag {
+  path: Array<string | number>
+  reason: 'outside_domain' | 'supplement'
+}
+
 interface Projection {
-  /** Textos retirados por falarem de medicamento, suplemento ou dose. */
+  /** Textos livres retirados de um campo por falarem de medicamento, suplemento ou dose. */
   removed: string[]
-  /** Campos obrigatórios esvaziados pelo mesmo motivo. */
-  notAllowed: Array<Array<string | number>>
+  /** Itens identificados como medicamento, dose ou suplemento (nome preservado). */
+  flags: ItemFlag[]
 }
 
 /**
- * Medicamento, suplemento e dose não entram em campo nenhum, venha de onde
- * vier (modelo, documento ou edição). O texto sai do campo e é devolvido à
- * parte; num campo obrigatório, o campo fica vazio para o paciente decidir.
+ * Medicamento, suplemento e dose não viram orientação do plano, venha o texto
+ * de onde vier (modelo, documento ou edição):
+ *
+ * - num texto livre (observações, passos, horário…), o trecho sai do campo e
+ *   é devolvido como veio, para aparecer como "não importado";
+ * - no nome de um item, o nome fica como veio e o item é sinalizado — nunca
+ *   um nome vazio.
  */
-function withoutMedication(
+function screenHealthProducts(
   key: string,
   value: unknown,
   path: Array<string | number>,
   projection: Projection,
 ): unknown {
   if (typeof value === 'string') {
-    if (!mentionsMedication(value)) return value
+    const kind = classifyHealthProduct(value)
+    if (!kind) return value
+    if (IDENTITY_KEYS.has(key)) {
+      projection.flags.push({
+        path: path.slice(0, -1),
+        reason: kind === 'supplement' ? 'supplement' : 'outside_domain',
+      })
+      return value
+    }
     projection.removed.push(value)
-    if (!OPTIONAL_KEYS.has(key)) projection.notAllowed.push(path)
     return null
   }
   if (Array.isArray(value)) {
     return value.filter((entry) => {
-      if (typeof entry !== 'string' || !mentionsMedication(entry)) return true
+      if (typeof entry !== 'string' || !classifyHealthProduct(entry)) return true
       projection.removed.push(entry)
       return false
     })
@@ -265,7 +290,7 @@ function project(
     if (!Object.hasOwn(source, key) || source[key] === undefined) continue
     const current = source[key]
     if (inner === true) {
-      const cleaned = withoutMedication(key, leaf(current), [...path, key], projection)
+      const cleaned = screenHealthProducts(key, leaf(current), [...path, key], projection)
       const empty =
         cleaned === null ||
         (typeof cleaned === 'string' && cleaned.trim() === '') ||
@@ -328,8 +353,23 @@ export interface PlanDraftAssessment {
   uncertain_fields: PlanDraftUncertainField[]
   /** `true` só quando o conteúdo passa inteiro na validação de confirmação. */
   complete: boolean
-  /** Textos retirados dos campos por falarem de medicamento, suplemento ou dose. */
+  /** Textos livres retirados dos campos por falarem de medicamento, suplemento ou dose. */
   removed_segments: string[]
+}
+
+/**
+ * Quem escreveu o conteúdo. Um suplemento proposto pelo Flow impede a
+ * confirmação; lido de um documento do paciente, é só um aviso.
+ */
+export type PlanDraftAuthor = 'flow' | 'document'
+
+function isBlocking(flag: ItemFlag, author: PlanDraftAuthor): boolean {
+  return flag.reason === 'outside_domain' || author === 'flow'
+}
+
+/** O autor pela origem registrada do rascunho. */
+export function planDraftAuthor(origin: PlanDraftOrigin): PlanDraftAuthor {
+  return origin === 'flow_generated' ? 'flow' : 'document'
 }
 
 /**
@@ -339,28 +379,30 @@ export interface PlanDraftAssessment {
 export function assessPlanDraftPayload(
   domain: PlanDraftDomain,
   candidate: unknown,
+  author: PlanDraftAuthor = 'flow',
 ): PlanDraftAssessment {
   if (!isRecord(candidate)) throw new TypeError('plan draft payload must be an object')
-  const projection: Projection = { removed: [], notAllowed: [] }
+  const projection: Projection = { removed: [], flags: [] }
   const payload = project(candidate, SHAPES[domain], projection)
   const removed = sanitizeUnrecognizedSegments(projection.removed)
+  const flagged: PlanDraftUncertainField[] = projection.flags.map((flag) => ({
+    pointer: pointerOf(flag.path),
+    reason: flag.reason,
+  }))
+  const blocked = projection.flags.some((flag) => isBlocking(flag, author))
   const parsed = STRICT_SCHEMAS[domain].safeParse(payload)
   if (parsed.success) {
     return {
+      // Parsed without defaults: what is stored is what was written.
       payload: parsed.data as Record<string, unknown>,
-      uncertain_fields: [],
-      complete: true,
+      uncertain_fields: flagged.slice(0, PLAN_DRAFT_MAX_UNCERTAIN_FIELDS),
+      complete: !blocked,
       removed_segments: removed,
     }
   }
 
-  const seen = new Set<string>()
-  const uncertain: PlanDraftUncertainField[] = []
-  for (const path of projection.notAllowed) {
-    const pointer = pointerOf(path)
-    seen.add(pointer)
-    uncertain.push({ pointer, reason: 'not_allowed' })
-  }
+  const seen = new Set<string>(flagged.map((field) => field.pointer))
+  const uncertain: PlanDraftUncertainField[] = [...flagged]
   for (const issue of parsed.error.issues) {
     const pointer = pointerOf(issue.path)
     if (seen.has(pointer)) continue
@@ -382,9 +424,10 @@ export function assessPlanDraftPayload(
 export function confirmablePlanDraftPayload(
   domain: PlanDraftDomain,
   payload: unknown,
+  author: PlanDraftAuthor = 'flow',
 ): TrainingDraftPayload | NutritionDraftPayload | null {
   if (!isRecord(payload)) return null
-  const assessment = assessPlanDraftPayload(domain, payload)
+  const assessment = assessPlanDraftPayload(domain, payload, author)
   return assessment.complete
     ? (assessment.payload as TrainingDraftPayload | NutritionDraftPayload)
     : null
@@ -404,12 +447,71 @@ export function sanitizeUnrecognizedSegments(value: unknown): string[] {
   return segments
 }
 
-const MEDICATION_HINT =
-  /\b(medicament\w*|rem[eé]dio\w*|comprimid\w*|c[aá]psula\w*|\d+\s?(mg|mcg|ui)\b|suplement\w*|creatina|whey|vitamina\w*|[oô]mega|horm[oô]ni\w*|anaboliz\w*|injet[aá]ve\w*|dose\w*|posologia)/i
+// Fronteiras de palavra que entendem acentos (o `\b` do JavaScript não
+// entende: "ômega" não teria início de palavra).
+const B = '(?<![\\p{L}\\d])'
+const E = '(?![\\p{L}\\d])'
+const words = (...terms: string[]) => new RegExp(`${B}(?:${terms.join('|')})${E}`, 'iu')
+
+const MEDICATION_TERMS = words(
+  'medicamentos?',
+  'rem[eé]dios?',
+  'comprimidos?',
+  'c[aá]psulas?',
+  'dr[aá]geas?',
+  'inje[cç](?:[aã]o|[oõ]es)',
+  'injet[aá]ve(?:l|is)',
+  'ampolas?',
+  'insulina',
+  'horm[oô]nios?',
+  'anabolizantes?',
+  'posologia',
+  'antibi[oó]ticos?',
+  'anti-?inflamat[oó]rios?',
+  'medication',
+  'pills?',
+  'tablets?',
+)
+// Uma dose farmacológica escrita: número com mg, mcg, µg ou UI.
+const DOSE = new RegExp(`${B}\\d+(?:[.,]\\d+)?\\s?(?:mg|mcg|µg|ui|iu)${E}`, 'iu')
+const SUPPLEMENT_TERMS = words(
+  'suplementos?',
+  'suplementa[cç][aã]o',
+  'whey',
+  'creatina',
+  'bcaa',
+  'glutamina',
+  'col[aá]geno',
+  'multivitam[ií]nicos?',
+  'polivitam[ií]nicos?',
+  '[oô]mega[ -]?3',
+  'termog[eê]nicos?',
+  'pr[eé]-?treino',
+  'albumina',
+  'prote[ií]na em p[oó]',
+  'supplements?',
+  'creatine',
+  'protein powder',
+)
+// "Vitamina D", "vitamina B12": suplemento. "Vitamina de banana", "vitamina
+// com leite": bebida. Uma palavra isolada não decide.
+const VITAMIN_SUPPLEMENT = new RegExp(`${B}vitaminas?\\s+(?!de${E}|com${E})[a-z]\\d{0,2}${E}`, 'iu')
+
+export type HealthProductKind = 'medication' | 'supplement'
+
+/**
+ * O que um texto do plano diz sobre medicamento, dose ou suplemento, pelo
+ * contexto e não por uma palavra isolada. `null` quando não diz nada disso.
+ */
+export function classifyHealthProduct(text: string): HealthProductKind | null {
+  if (MEDICATION_TERMS.test(text) || DOSE.test(text)) return 'medication'
+  if (SUPPLEMENT_TERMS.test(text) || VITAMIN_SUPPLEMENT.test(text)) return 'supplement'
+  return null
+}
 
 /** O trecho fala de medicamento, suplemento ou dose (o app avisa que não importa). */
 export function mentionsMedication(segment: string): boolean {
-  return MEDICATION_HINT.test(segment)
+  return classifyHealthProduct(segment) !== null
 }
 
 /**

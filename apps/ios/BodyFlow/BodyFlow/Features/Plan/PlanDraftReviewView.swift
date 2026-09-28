@@ -274,6 +274,16 @@ struct PlanDraftReviewView: View {
                             )
                         }
                         detailRows(row.details)
+                        if let reason = model.uncertainty(ofRow: row) {
+                            BodyFlowStatusLine(
+                                copy(PlanDraftCopy.uncertaintyKey(
+                                    reason == "supplement" && model.snapshot?.isImported == true
+                                        ? "supplement_imported" : reason
+                                )),
+                                kind: .warning
+                            )
+                            .accessibilityIdentifier("plan.draft.uncertain\(row.id)")
+                        }
                         removeButton("plan.draft.remove.row", path: row.path, name: row.title)
                     }
                 }

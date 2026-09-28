@@ -10,10 +10,19 @@
 -- without an instant stays without one (its age cannot be proven).
 
 ALTER TABLE public.user_profiles
-  ADD COLUMN IF NOT EXISTS weight_measured_at timestamptz;
+  ADD COLUMN IF NOT EXISTS weight_measured_at timestamptz,
+  ADD COLUMN IF NOT EXISTS weight_instant_source text;
+
+ALTER TABLE public.user_profiles
+  ADD CONSTRAINT user_profiles_weight_instant_source_check CHECK (
+    weight_instant_source IS NULL
+    OR weight_instant_source IN ('measured', 'recorded')
+  );
 
 COMMENT ON COLUMN public.user_profiles.weight_measured_at IS
-  'Instant of the measurement stored in weight_kg. NULL = legacy value written before this column existed (age unknown).';
+  'Instant that orders the weight stored in weight_kg. See weight_instant_source for what it is. NULL = legacy value written before this column existed (age unknown).';
+COMMENT ON COLUMN public.user_profiles.weight_instant_source IS
+  'measured = the instant of the measurement, informed with it; recorded = only the instant the value was written (writers that do not know when it was measured). NULL with a NULL instant.';
 
 -- Legacy writers (WhatsApp profile tool, onboarding completion, conversation
 -- reset) update weight_kg directly and know nothing about the instant. This
@@ -26,11 +35,19 @@ LANGUAGE plpgsql
 SET search_path = pg_catalog, public, pg_temp
 AS $$
 BEGIN
+  -- A writer that sets the instant says what it is (the ordered path sets
+  -- 'measured'); a writer that does not is dated at the write, and that
+  -- instant is recorded as what it is: the time of the write, not of the
+  -- measurement.
   IF NEW.weight_kg IS NULL THEN
     NEW.weight_measured_at := NULL;
+    NEW.weight_instant_source := NULL;
   ELSIF TG_OP = 'INSERT' THEN
     IF NEW.weight_measured_at IS NULL THEN
       NEW.weight_measured_at := clock_timestamp();
+      NEW.weight_instant_source := 'recorded';
+    ELSIF NEW.weight_instant_source IS NULL THEN
+      NEW.weight_instant_source := 'recorded';
     END IF;
   ELSIF NEW.weight_kg IS DISTINCT FROM OLD.weight_kg
     AND NEW.weight_measured_at IS NOT DISTINCT FROM OLD.weight_measured_at THEN
@@ -40,6 +57,10 @@ BEGIN
       clock_timestamp(),
       COALESCE(OLD.weight_measured_at + interval '1 microsecond', clock_timestamp())
     );
+    NEW.weight_instant_source := 'recorded';
+  ELSIF NEW.weight_measured_at IS DISTINCT FROM OLD.weight_measured_at
+    AND NEW.weight_instant_source IS NOT DISTINCT FROM OLD.weight_instant_source THEN
+    NEW.weight_instant_source := 'recorded';
   END IF;
   RETURN NEW;
 END;
@@ -47,7 +68,7 @@ $$;
 
 DROP TRIGGER IF EXISTS user_profiles_sync_weight_measured_at ON public.user_profiles;
 CREATE TRIGGER user_profiles_sync_weight_measured_at
-  BEFORE INSERT OR UPDATE OF weight_kg, weight_measured_at
+  BEFORE INSERT OR UPDATE OF weight_kg, weight_measured_at, weight_instant_source
   ON public.user_profiles
   FOR EACH ROW
   EXECUTE FUNCTION private.sync_weight_measured_at();
@@ -99,8 +120,9 @@ BEGIN
   FOR UPDATE;
 
   IF v_found IS NOT TRUE THEN
-    INSERT INTO public.user_profiles (user_id, weight_kg, weight_measured_at)
-    VALUES (p_user_id, v_weight, p_measured_at);
+    INSERT INTO public.user_profiles (
+      user_id, weight_kg, weight_measured_at, weight_instant_source
+    ) VALUES (p_user_id, v_weight, p_measured_at, 'measured');
     RETURN jsonb_build_object(
       'applied', true, 'reason', 'applied',
       'weight_kg', v_weight, 'measured_at', p_measured_at
@@ -128,6 +150,7 @@ BEGIN
   UPDATE public.user_profiles
   SET weight_kg = v_weight,
       weight_measured_at = p_measured_at,
+      weight_instant_source = 'measured',
       updated_at = clock_timestamp()
   WHERE user_id = p_user_id;
 

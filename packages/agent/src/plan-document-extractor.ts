@@ -217,11 +217,11 @@ export async function extractPlanDocument(
   if (!isRecord(answer.payload)) throw new PlanDocumentNothingRecognizedError()
 
   // 1) só os campos conhecidos; 2) só números escritos; 3) regras do formato.
-  const read = assessPlanDraftPayload(input.domain, answer.payload)
+  const read = assessPlanDraftPayload(input.domain, answer.payload, 'document')
   const extraction = read.payload
   const extractionPayload = structuredClone(extraction)
   const notWritten = removeNumbersNotInDocument(extraction, document)
-  const assessment = assessPlanDraftPayload(input.domain, extraction)
+  const assessment = assessPlanDraftPayload(input.domain, extraction, 'document')
 
   const list = input.domain === 'training' ? 'weekly_schedule' : 'daily_meals'
   const entries = assessment.payload[list]
@@ -232,7 +232,9 @@ export async function extractPlanDocument(
   // O motivo mais específico fica: retirado por regra, depois não escrito
   // no documento, depois o que a validação do formato apontar.
   const specific = [
-    ...read.uncertain_fields.filter((field) => field.reason === 'not_allowed'),
+    ...read.uncertain_fields.filter(
+      (field) => field.reason === 'outside_domain' || field.reason === 'supplement',
+    ),
     ...notWritten,
   ]
   const flagged = new Set(specific.map((field) => field.pointer))

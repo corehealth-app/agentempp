@@ -52,7 +52,7 @@ import {
   selectValidatedWriteItems,
   shouldBlockEffectiveReplace,
 } from './pending-meal-confirmation.js'
-import { decidePendingMealItems } from './pending-meal-item-policy.js'
+import { preparationQuestionFor, decidePendingMealItems } from './pending-meal-item-policy.js'
 import { transitionPendingStatus } from './pending-status-transition.js'
 import { requireSuccessfulMealToolResult } from './tool-result-policy.js'
 
@@ -640,8 +640,12 @@ export const interactiveButtonHandlerFn = inngest.createFunction(
               itemDecision.suspiciousItems.length === 1
                 ? `Não consegui calcular ${namesList} direito (deu 0 kcal).`
                 : `Não consegui calcular estes itens direito: ${namesList}.`
-            const askText =
-              itemDecision.validItems.length > 0
+            const preparationQuestion = preparationQuestionFor(itemDecision.suspiciousItems)
+            const askText = preparationQuestion
+              ? itemDecision.validItems.length > 0
+                ? `${invalidText} ${preparationQuestion} Ou responda "registra mesmo assim" para eu registrar somente os outros itens calculados.`
+                : `${invalidText} ${preparationQuestion}`
+              : itemDecision.validItems.length > 0
                 ? `${invalidText} Me diga os valores ou responda "registra mesmo assim" para eu registrar somente os outros itens calculados.`
                 : `${invalidText} Me diga o alimento mais próximo ou uma estimativa de kcal e proteína; sem isso eu não consigo registrar com segurança.`
             await sendTextTracked(askText, 'zero_kcal_block')

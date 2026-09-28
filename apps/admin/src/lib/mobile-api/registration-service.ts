@@ -3,6 +3,7 @@ import {
   calcMealMacros,
   createPendingRegistration,
   getLocalDateString,
+  isUnresolvedNutritionSource,
   type MealCalcResult,
   registraRefeicao,
   registraTreino,
@@ -36,6 +37,7 @@ const pendingMealItemSchema = z.object({
   protein_g: z.number().nonnegative(),
   carbs_g: z.number().nonnegative(),
   fat_g: z.number().nonnegative(),
+  preparation_options: z.array(z.string()).nullable().optional(),
 })
 
 const pendingMealProposalSchema = z.object({
@@ -89,6 +91,7 @@ export function buildMealPendingProposal(
       display_qty: item.display_qty ?? null,
       display_unit: item.display_unit ?? null,
       user_kcal: overrides.get(normalizeFoodName(item.food_name)) ?? null,
+      ...(item.preparation_options ? { preparation_options: item.preparation_options } : {}),
       kcal: item.kcal,
       protein_g: item.protein_g,
       carbs_g: item.carbs_g,
@@ -354,6 +357,16 @@ export async function confirmRegistration(
       )
     }
     const proposal = parsedProposal.data
+    // An item the server has not calculated (it asked the patient for the
+    // preparation, the composition, ...) is not a meal to persist. This holds
+    // for any client: the confirm is refused and the pending stays editable.
+    if (proposal.items.some((item) => isUnresolvedNutritionSource(item.nutrition_source))) {
+      throw new MobileApiError(
+        422,
+        'registration_unresolved_items',
+        'Registration has items that need clarification',
+      )
+    }
     const result = await registraRefeicao.execute(
       buildConfirmedMealArgs(
         { mealType: proposal.mealType, items: proposal.items },

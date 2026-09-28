@@ -620,3 +620,39 @@ describe('embedEduComment — invariante das 3 bolhas (audit 2026-06-14)', () =>
     expect(parts.comment).toBe(multiLine)
   })
 })
+
+describe('pergunta de preparo na proposta (device gate 2026-09-27)', () => {
+  const beans: MealItem = {
+    name: 'Feijão carioca',
+    quantity_g: 86.5,
+    kcal: 0,
+    protein_g: 0,
+    carbs_g: 0,
+    fat_g: 0,
+    nutrition_source: 'no_match',
+    preparation_options: ['cru', 'cozido'],
+  }
+
+  it('pergunta o preparo do item não calculado', async () => {
+    const { buildPendingPreparationQuestions } = await import('./post-registration-message.js')
+    expect(buildPendingPreparationQuestions([beans, item({})])).toEqual([
+      'Não calculei Feijão carioca: me diga o preparo (cru ou cozido) para eu calcular.',
+    ])
+    expect(buildPendingPreparationQuestions([item({})])).toEqual([])
+  })
+
+  it('a proposta mostra a pergunta e mantém os botões', async () => {
+    const { buildPendingPreparationQuestions } = await import('./post-registration-message.js')
+    const items = [beans, item({})]
+    const message = composePendingProposal('pending-1', {
+      mealType: 'jantar',
+      items,
+      totals: { kcal: 130, protein_g: 2.5, carbs_g: 28, fat_g: 0.3 },
+      confirmationNotes: buildPendingPreparationQuestions(items),
+    } as never)
+    const text = JSON.stringify(message)
+    expect(text).toContain('me diga o preparo (cru ou cozido)')
+    expect(text).toContain('confirm_pending-1')
+    expect(text).toContain('edit_pending-1')
+  })
+})

@@ -17,6 +17,7 @@ import type { Json, TablesUpdate } from '@mpp/db'
 import { z } from 'zod'
 import {
   calcMealMacros,
+  isUnresolvedNutritionSource,
   mentionsFoodItem,
   parseUserKcalOverridesFromMessages,
   type MealItemInput,
@@ -1631,6 +1632,30 @@ export const registraRefeicao: ToolDefinition = {
       })
     }
 
+    // Item não resolvido (preparo ambíguo, composto rejeitado, match incoerente)
+    // nunca é gravado como se fosse 0 kcal calculado. Os demais itens seguem; o
+    // resultado diz o que falta para o agente perguntar. Numa correção
+    // (replace) ou quando nada foi resolvido, nada é gravado nem apagado.
+    const unresolvedItems = calc.items.filter((item) => isUnresolvedNutritionSource(item.source))
+    if (
+      unresolvedItems.length > 0 &&
+      (args.replace === true || unresolvedItems.length === calc.items.length)
+    ) {
+      return {
+        success: false,
+        status: 'needs_clarification',
+        unresolved_items: unresolvedItems.map((item) => ({
+          name: item.food_name,
+          quantity_g: item.quantity_g,
+          reason: item.source,
+          preparation_options: item.preparation_options ?? null,
+        })),
+        warnings: calc.user_warnings,
+        message:
+          'Nada foi registrado. Pergunte ao paciente o que falta (veja warnings) e registre de novo com a informação.',
+      }
+    }
+
     // Loga aplicação do mapa de correções (Roberto 2026-05-14) — observabilidade
     // pra ver no /audit se o mapa está ajudando ou poluindo.
     const correctionApplied = calc.audit_warnings.filter((w) =>
@@ -1675,7 +1700,7 @@ export const registraRefeicao: ToolDefinition = {
     // Importante: filtra ANTES do snapshot_add_meal, então o snapshot recebe só
     // os itens que sobraram — senão o snapshot inflaria mesmo sem o meal_log
     // duplicado.
-    let itemsToInsert = calc.items
+    let itemsToInsert = calc.items.filter((item) => !isUnresolvedNutritionSource(item.source))
     const explicitAdditionTrigger = detectAdditionInRecentMessages(
       (ctx.recentUserMessages ?? []).map((content) => ({ role: 'user' as const, content })),
       4,
@@ -1966,6 +1991,17 @@ export const registraRefeicao: ToolDefinition = {
       day_totals: updated,
       warnings: calc.user_warnings,
       replaced: replacedSummary,
+      // Itens que NÃO foram registrados porque faltou informação do paciente.
+      ...(unresolvedItems.length > 0
+        ? {
+            unresolved_items: unresolvedItems.map((item) => ({
+              name: item.food_name,
+              quantity_g: item.quantity_g,
+              reason: item.source,
+              preparation_options: item.preparation_options ?? null,
+            })),
+          }
+        : {}),
     }
   },
 }

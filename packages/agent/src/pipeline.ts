@@ -31,6 +31,7 @@ import { buildPendingTiming, burstCrossesLocalDate } from './registration-time.j
 import { isMultiTimezoneCountry } from './location-timezone.js'
 import {
   buildPendingNutritionConfirmationNotes,
+  buildPendingPreparationQuestions,
   composePendingProposal,
   composePostRegistrationMessage,
   composeReevalResultMessage,
@@ -1231,6 +1232,7 @@ async function processResolvedMessage(
               protein_g: m.protein_g ?? 0,
               carbs_g: m.carbs_g ?? 0,
               fat_g: m.fat_g ?? 0,
+              ...(m.preparation_options ? { preparation_options: m.preparation_options } : {}),
             }))
             let proposalTotals = {
               kcal: resolved.totals.kcal,
@@ -1306,6 +1308,7 @@ async function processResolvedMessage(
                   )
                 : []
             const confirmationNotes = [
+              ...buildPendingPreparationQuestions(proposalItems),
               ...nutritionConfirmationNotes,
               ...preparationConfirmationNotes,
             ].slice(0, 2)

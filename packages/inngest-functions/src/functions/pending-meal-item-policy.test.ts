@@ -67,3 +67,24 @@ describe('decidePendingMealItems', () => {
     expect(decision.validItems).toEqual([])
   })
 })
+
+describe('preparationQuestionFor', () => {
+  it('asks the preparation only for items that carry options', async () => {
+    const { preparationQuestionFor } = await import('./pending-meal-item-policy.js')
+    const beans = {
+      name: 'Feijão carioca',
+      quantity_g: 86.5,
+      kcal: 0,
+      protein_g: 0,
+      carbs_g: 0,
+      fat_g: 0,
+      nutrition_source: 'no_match',
+      preparation_options: ['cru', 'cozido'],
+    }
+    const unknown = { name: 'prato', quantity_g: 100, kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 }
+    expect(preparationQuestionFor([beans, unknown])).toBe(
+      'Me diga o preparo de "Feijão carioca" (cru ou cozido) para eu calcular.',
+    )
+    expect(preparationQuestionFor([unknown])).toBe('')
+  })
+})

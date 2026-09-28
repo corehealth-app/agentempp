@@ -38,6 +38,8 @@ describe('mobile read model', () => {
           fat_g: 0.3,
           user_kcal: null,
           nutrition_source: null,
+          resolution: 'resolved',
+          preparation_options: null,
         },
       ],
       totals: { kcal: 130, protein_g: 2.5, carbs_g: 28, fat_g: 0.3 },
@@ -59,6 +61,8 @@ describe('mobile read model', () => {
           fat_g: 1.5,
           user_kcal: 70,
           nutrition_source: 'user_kcal',
+          resolution: 'resolved',
+          preparation_options: null,
           food_db_id: 7,
         },
         {
@@ -70,6 +74,8 @@ describe('mobile read model', () => {
           fat_g: 0.3,
           user_kcal: null,
           nutrition_source: 'canonical_exact',
+          resolution: 'resolved',
+          preparation_options: null,
         },
         {
           name: 'queijo',

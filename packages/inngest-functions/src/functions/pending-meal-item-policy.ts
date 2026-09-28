@@ -58,3 +58,19 @@ export function decidePendingMealItems(
   }
   return { action: 'reject_all', validItems, suspiciousItems }
 }
+
+/**
+ * Pergunta de preparo para os itens bloqueados que só dependem dessa
+ * informação (o cálculo guardou as opções no item). Vazio quando nenhum item
+ * bloqueado tem opções de preparo.
+ */
+export function preparationQuestionFor(items: MealItem[]): string {
+  const questions = items
+    .filter((item) => Array.isArray(item.preparation_options) && item.preparation_options.length > 1)
+    .map(
+      (item) =>
+        `"${item.name}" (${(item.preparation_options ?? []).join(' ou ')})`,
+    )
+  if (questions.length === 0) return ''
+  return `Me diga o preparo de ${questions.join(' e ')} para eu calcular.`
+}

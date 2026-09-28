@@ -50,6 +50,8 @@ export interface MealItem {
   protein_g: number
   carbs_g: number
   fat_g: number
+  /** Preparos possíveis de um item ainda não calculado (pergunta ao paciente). */
+  preparation_options?: string[] | null
 }
 export interface MealTotals {
   kcal: number
@@ -407,6 +409,25 @@ const ESTIMATED_NUTRITION_SOURCES = new Set([
   'protein_mismatch',
   'composite_rejected',
 ])
+
+/**
+ * Pergunta de preparo para itens que o cálculo deixou sem resolver: vai no
+ * texto da proposta (os botões continuam) e o paciente responde com o preparo.
+ */
+export function buildPendingPreparationQuestions(items: MealItem[]): string[] {
+  return items
+    .filter(
+      (item) =>
+        item.nutrition_source === 'no_match' &&
+        Array.isArray(item.preparation_options) &&
+        item.preparation_options.length > 1,
+    )
+    .slice(0, 2)
+    .map(
+      (item) =>
+        `Não calculei ${item.name.trim()}: me diga o preparo (${(item.preparation_options ?? []).join(' ou ')}) para eu calcular.`,
+    )
+}
 
 export function buildPendingNutritionConfirmationNotes(items: MealItem[]): string[] {
   const estimatedNames = [

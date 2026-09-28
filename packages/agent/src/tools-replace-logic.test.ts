@@ -1407,3 +1407,118 @@ describe('registra_refeicao — aprendizado de correções não corrompe o fluxo
     expect(rpcCalls.some((call) => call.fn.startsWith('register_meal_atomic'))).toBe(true)
   })
 })
+
+describe('registra_refeicao — item não resolvido nunca é gravado (device gate 2026-09-27)', () => {
+  const unresolved = (name: string, quantity: number) => ({
+    food_name: name,
+    quantity_g: quantity,
+    approved_nutrition: {
+      source: 'no_match',
+      food_db_id: null,
+      kcal: 0,
+      protein_g: 0,
+      carbs_g: 0,
+      fat_g: 0,
+    },
+  })
+  const resolved = {
+    food_name: 'Frango grelhado',
+    quantity_g: 120,
+    approved_nutrition: {
+      source: 'canonical_exact',
+      food_db_id: 7,
+      kcal: 191,
+      protein_g: 38.44,
+      carbs_g: 0,
+      fat_g: 2.98,
+    },
+  }
+
+  it('grava só os itens calculados e devolve o que falta esclarecer', async () => {
+    const { ctx, mealInserts } = makeContextAndSupabase({})
+    const result = (await registraRefeicao.execute(
+      {
+        meal_type: 'jantar',
+        items: [unresolved('Arroz branco', 150), unresolved('Feijão carioca', 86.5), resolved],
+      } as never,
+      ctx as never,
+    )) as { success: boolean; unresolved_items?: Array<{ name: string; reason: string }> }
+
+    expect(result.success).toBe(true)
+    expect(mealInserts.map((row) => row.food_name)).toEqual(['Frango grelhado'])
+    expect(result.unresolved_items?.map((item) => item.name)).toEqual([
+      'Arroz branco',
+      'Feijão carioca',
+    ])
+  })
+
+  it('não grava nada quando nenhum item foi calculado', async () => {
+    const { ctx, mealInserts, rpcCalls } = makeContextAndSupabase({})
+    const result = (await registraRefeicao.execute(
+      { meal_type: 'jantar', items: [unresolved('Feijão carioca', 86.5)] } as never,
+      ctx as never,
+    )) as { success: boolean; status?: string }
+
+    expect(result).toMatchObject({ success: false, status: 'needs_clarification' })
+    expect(mealInserts).toEqual([])
+    expect(rpcCalls.some((call) => call.fn.startsWith('register_meal_atomic'))).toBe(false)
+  })
+
+  it('numa correção (replace) com item não calculado, nada é apagado nem gravado', async () => {
+    const { ctx, mealInserts, rpcCalls } = makeContextAndSupabase({
+      recentLogs: [{ food_name: 'Feijão carioca', quantity_g: 86.5, meal_type: 'jantar' }],
+      currentUserText: 'corrige o feijão',
+      recentUserMessages: ['corrige o feijão'],
+      llmSentReplace: true,
+    })
+    const result = (await registraRefeicao.execute(
+      {
+        meal_type: 'jantar',
+        replace: true,
+        items: [unresolved('Feijão carioca', 100), resolved],
+      } as never,
+      ctx as never,
+    )) as { success: boolean; status?: string }
+
+    expect(result).toMatchObject({ success: false, status: 'needs_clarification' })
+    expect(mealInserts).toEqual([])
+    expect(rpcCalls.some((call) => call.fn.startsWith('register_meal_atomic'))).toBe(false)
+  })
+
+  it('zero legítimo continua sendo gravado (água, kcal 0 informada)', async () => {
+    const { ctx, mealInserts } = makeContextAndSupabase({})
+    await registraRefeicao.execute(
+      {
+        meal_type: 'lanche',
+        items: [
+          {
+            food_name: 'Água',
+            quantity_g: 250,
+            approved_nutrition: {
+              source: 'rule_based',
+              food_db_id: null,
+              kcal: 0,
+              protein_g: 0,
+              carbs_g: 0,
+              fat_g: 0,
+            },
+          },
+          {
+            food_name: 'Chá de camomila',
+            quantity_g: 200,
+            approved_nutrition: {
+              source: 'user_kcal',
+              food_db_id: null,
+              kcal: 0,
+              protein_g: 0,
+              carbs_g: 0,
+              fat_g: 0,
+            },
+          },
+        ],
+      } as never,
+      ctx as never,
+    )
+    expect(mealInserts.map((row) => row.food_name)).toEqual(['Água', 'Chá de camomila'])
+  })
+})

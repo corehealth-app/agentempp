@@ -1464,8 +1464,16 @@ Identificação do alimento (mesmo cálculo do WhatsApp):
   recalcula pela base. Abaixo de 50% (cenoura, peito de frango) não há
   pergunta; outros alimentos que só compartilham uma palavra ("couve manteiga"
   para "manteiga") não contam.
-- a confirmação ainda aceita um item com `kcal` 0 vindo dessa pergunta; o app
-  mostra o aviso, mas não bloqueia (pendência registrada em 2026-09-28).
+- o alimento que o paciente nomeou precisa aparecer no candidato: adjetivo ou
+  variedade em comum não identifica ("café preto" não é "Feijão, preto");
+- cada item do pending traz `resolution` (`"resolved"` ou
+  `"needs_clarification"`) e `preparation_options` (lista ou `null`). Um item
+  `needs_clarification` — fontes `no_match`, `composite_rejected`,
+  `category_mismatch`, `protein_mismatch`, sempre com `kcal` 0 — ainda não foi
+  calculado. `POST /registrations/:id/confirm` recusa com `422
+  registration_unresolved_items` enquanto houver um; nada é gravado e o pending
+  continua editável. Zero legítimo (água, bebida zero, `user_kcal` 0) é
+  `resolved` e pode ser confirmado.
 
 ## Mídia privada
 

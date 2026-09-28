@@ -328,6 +328,23 @@ export type MealNutritionSource =
   | 'category_mismatch'
   | 'protein_mismatch'
 
+/**
+ * Fontes que significam "ainda não calculei este item" (sempre 0 kcal): o item
+ * precisa de esclarecimento do paciente e NÃO pode ser gravado nem confirmado
+ * como se estivesse resolvido. Zero legítimo (água, bebida zero, kcal 0
+ * informada pelo paciente) tem outra fonte e continua permitido.
+ */
+export const UNRESOLVED_NUTRITION_SOURCES = [
+  'no_match',
+  'composite_rejected',
+  'category_mismatch',
+  'protein_mismatch',
+] as const
+
+export function isUnresolvedNutritionSource(source: string | null | undefined): boolean {
+  return (UNRESOLVED_NUTRITION_SOURCES as readonly string[]).includes(source ?? '')
+}
+
 export interface MealItemMatched {
   food_name: string
   matched_taco_name: string
@@ -344,6 +361,8 @@ export interface MealItemMatched {
   display_qty?: number
   /** Unidade natural pra exibição: 'g' (default), 'ml', 'unidade', 'unidades', 'pão', 'pães'. */
   display_unit?: string
+  /** Preparos entre os quais o paciente precisa escolher (item não resolvido). */
+  preparation_options?: string[]
 }
 
 /**
@@ -1970,6 +1989,7 @@ export async function calcMealMacros(
         fiber_g: 0,
         similarity: 0,
         source: 'no_match',
+        preparation_options: labels,
       })
       continue
     }
@@ -2095,6 +2115,7 @@ export async function calcMealMacros(
             fiber_g: 0,
             similarity: 0,
             source: 'no_match',
+            preparation_options: labels,
           })
           continue
         }

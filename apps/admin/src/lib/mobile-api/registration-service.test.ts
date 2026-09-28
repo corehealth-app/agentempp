@@ -6,6 +6,7 @@ import {
   confirmRegistration,
   proposeRegistration,
 } from './registration-service'
+import { sanitizePendingProposal } from './read-model'
 
 describe('mobile registration service', () => {
   it('rejects meal calculation until the patient confirms their country', async () => {
@@ -165,6 +166,163 @@ describe('mobile registration service', () => {
       id: 'registration-1',
       status: 'confirmed',
       already_confirmed: true,
+    })
+  })
+})
+
+describe('mobile confirm — unresolved items (device gate 2026-09-27)', () => {
+  function supabaseWithPending(items: unknown[]) {
+    const writes: string[] = []
+    const builder = {
+      select() {
+        return this
+      },
+      eq() {
+        return this
+      },
+      update() {
+        writes.push('update')
+        return this
+      },
+      insert() {
+        writes.push('insert')
+        return this
+      },
+      async maybeSingle() {
+        return {
+          data: {
+            id: 'registration-1',
+            proposal: {
+              kind: 'meal',
+              mealType: 'jantar',
+              items,
+              source_provider_message_id: 'key-12345678',
+              source_timestamp: '2026-09-28T00:49:47.884Z',
+              source_timezone: 'America/Sao_Paulo',
+              source_local_date: '2026-09-27',
+            },
+            status: 'pending',
+            created_at: '2026-09-28T00:50:19Z',
+            expires_at: '2999-01-01T00:00:00Z',
+            resolved_at: null,
+          },
+          error: null,
+        }
+      },
+    }
+    return {
+      writes,
+      client: {
+        from: () => builder,
+        rpc: async (fn: string) => {
+          writes.push(`rpc:${fn}`)
+          return { data: null, error: null }
+        },
+      },
+    }
+  }
+
+  it('refuses to confirm a proposal with an item the server has not calculated', async () => {
+    const { client, writes } = supabaseWithPending([
+      {
+        name: 'Feijão carioca',
+        nutrition_source: 'no_match',
+        quantity_g: 86.5,
+        kcal: 0,
+        protein_g: 0,
+        carbs_g: 0,
+        fat_g: 0,
+        preparation_options: ['cru', 'cozido'],
+      },
+      {
+        name: 'Frango grelhado',
+        nutrition_source: 'canonical_exact',
+        food_db_id: 7,
+        quantity_g: 120,
+        kcal: 191,
+        protein_g: 38.44,
+        carbs_g: 0,
+        fat_g: 2.98,
+      },
+    ])
+
+    await expect(
+      confirmRegistration(
+        client as never,
+        { userId: 'patient-1', patient: { country: 'BR', timezone: 'America/Sao_Paulo' } } as never,
+        'registration-1',
+      ),
+    ).rejects.toMatchObject({ status: 422, code: 'registration_unresolved_items' })
+    expect(writes).toEqual([])
+  })
+
+  it('exposes the resolution and the preparation options of each pending item', () => {
+    const proposal = buildMealPendingProposal(
+      {
+        kind: 'meal',
+        meal_type: 'jantar',
+        items: [
+          { food_name: 'Feijão carioca', quantity_g: 86.5 },
+          { food_name: 'Água', quantity_g: 250 },
+        ],
+      },
+      {
+        items: [
+          {
+            food_name: 'Feijão carioca',
+            matched_taco_name: '',
+            matched_taco_id: null,
+            quantity_g: 86.5,
+            kcal: 0,
+            protein_g: 0,
+            carbs_g: 0,
+            fat_g: 0,
+            fiber_g: 0,
+            similarity: 0,
+            source: 'no_match',
+            preparation_options: ['cru', 'cozido'],
+          },
+          {
+            food_name: 'Água',
+            matched_taco_name: '[bebida zero]',
+            matched_taco_id: null,
+            quantity_g: 250,
+            kcal: 0,
+            protein_g: 0,
+            carbs_g: 0,
+            fat_g: 0,
+            fiber_g: 0,
+            similarity: 1,
+            source: 'rule_based',
+          },
+        ],
+        totals: { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 },
+        warnings: [],
+        user_warnings: ['Não sei se "Feijão carioca" era cru ou cozido'],
+        audit_warnings: [],
+      } as MealCalcResult,
+      {
+        requestKey: 'key-12345678',
+        timestamp: '2026-09-28T00:49:47.884Z',
+        timezone: 'America/Sao_Paulo',
+        localDate: '2026-09-27',
+      },
+    )
+    const dto = sanitizePendingProposal(proposal as never) as {
+      items: Array<Record<string, unknown>>
+    }
+    expect(dto.items[0]).toMatchObject({
+      name: 'Feijão carioca',
+      kcal: 0,
+      resolution: 'needs_clarification',
+      preparation_options: ['cru', 'cozido'],
+    })
+    // A legitimate zero is resolved.
+    expect(dto.items[1]).toMatchObject({
+      name: 'Água',
+      kcal: 0,
+      resolution: 'resolved',
+      preparation_options: null,
     })
   })
 })

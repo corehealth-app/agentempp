@@ -1,4 +1,8 @@
-import { DailyStateLoadError, loadOfficialDailyState } from '@mpp/agent'
+import {
+  DailyStateLoadError,
+  isUnresolvedNutritionSource,
+  loadOfficialDailyState,
+} from '@mpp/agent'
 import type { Json, ServiceClient } from '@mpp/db'
 import type { MobileAuthContext } from './auth'
 import type { HistoryQuery } from './contracts'
@@ -36,7 +40,9 @@ export function meDto(auth: MobileAuthContext) {
   }
 }
 
-function safePendingItem(value: Json): Record<string, string | number | null> | null {
+function safePendingItem(
+  value: Json,
+): Record<string, string | number | string[] | null> | null {
   const item = record(value)
   if (!item) return null
   const name = stringValue(item.name) ?? stringValue(item.food_name)
@@ -56,6 +62,16 @@ function safePendingItem(value: Json): Record<string, string | number | null> | 
     // client can tell "no override" from a response that lacks the fields.
     user_kcal: finiteNumber(item.user_kcal),
     nutrition_source: stringValue(item.nutrition_source),
+    // "needs_clarification": the server has not calculated this item yet (it
+    // is not a legitimate zero) and the registration cannot be confirmed until
+    // the patient edits it. preparation_options lists the preparations to
+    // choose from when that is the missing information.
+    resolution: isUnresolvedNutritionSource(stringValue(item.nutrition_source))
+      ? 'needs_clarification'
+      : 'resolved',
+    preparation_options: Array.isArray(item.preparation_options)
+      ? item.preparation_options.filter((option): option is string => typeof option === 'string')
+      : null,
   }
 }
 

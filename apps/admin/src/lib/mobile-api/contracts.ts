@@ -319,6 +319,14 @@ export const hydrationInputSchema = z
   })
   .strict()
 
+export const weightInputSchema = z
+  .object({
+    value: z.number().finite().positive().max(700),
+    unit: z.enum(['kg', 'lb']),
+    measured_at: z.string().datetime({ offset: true }),
+  })
+  .strict()
+
 export const markRoutineTakenInputSchema = z
   .object({ occurred_at: z.string().datetime({ offset: true }) })
   .strict()
@@ -335,6 +343,7 @@ export type NotificationPreferencesPatch = z.infer<typeof notificationPreference
 export type CreateReminderInput = z.infer<typeof createReminderInputSchema>
 export type PatchReminderInput = z.infer<typeof patchReminderInputSchema>
 export type HydrationInput = z.infer<typeof hydrationInputSchema>
+export type WeightInput = z.infer<typeof weightInputSchema>
 export type MarkRoutineTakenInput = z.infer<typeof markRoutineTakenInputSchema>
 
 export { localeSchema, timezoneSchema }

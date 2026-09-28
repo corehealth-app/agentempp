@@ -1475,6 +1475,45 @@ Identificação do alimento (mesmo cálculo do WhatsApp):
   continua editável. Zero legítimo (água, bebida zero, `user_kcal` 0) é
   `resolved` e pode ser confirmado.
 
+## Peso
+
+`POST /api/mobile/v1/weight` (exige `Idempotency-Key` e entitlement). Depende da
+migration `20260928120000_bodyflow_weight_measurement.sql` (M1).
+
+```json
+{ "value": 78.4, "unit": "kg", "measured_at": "2026-09-28T08:30:00-03:00" }
+```
+
+- `unit`: `kg` ou `lb`. A conversão (× 0,45359237), o arredondamento para duas
+  casas e a comparação acontecem no banco; o cliente não envia quilogramas
+  calculados nem `user_id`.
+- Faixa: 30–300 kg depois da conversão → senão `422 weight_out_of_range`.
+- `measured_at`: de 7 dias atrás a 5 minutos no futuro → senão
+  `422 measured_at_out_of_range`.
+
+Resposta `201`:
+
+```json
+{ "applied": true, "reason": "applied", "weight_kg": 78.4, "measured_at": "2026-09-28T11:30:00+00:00" }
+```
+
+O peso oficial continua em `user_profiles.weight_kg` (sem histórico paralelo).
+A medição só substitui a atual quando é mais recente:
+
+| Situação | Resultado |
+|---|---|
+| peso atual sem instante (legado) ou medição mais recente | `applied: true` |
+| mesmo instante e mesmo valor (replay, a qualquer tempo) | `applied: false`, `reason: "same_measurement"` |
+| mesmo instante e valor diferente | `409 weight_measurement_conflict` |
+| medição mais antiga que a atual | `applied: false`, `reason: "older_than_current"` |
+
+`weight_kg` e `measured_at` da resposta são sempre os valores vigentes. Nada é
+escrito em `daily_snapshots`, `user_progress` ou no bloco 7.700; metas seguem
+os cálculos e jobs existentes. `GET /profile` passa a trazer
+`weight_measured_at` (`null` quando o peso é legado ou o banco ainda não tem a
+coluna). Escritas legadas (WhatsApp, conclusão do onboarding) passam a datar o
+peso no momento da escrita, por trigger, sem mudança de código.
+
 ## Mídia privada
 
 O app nunca recebe `service_role` e não possui policy para listar, inserir,

@@ -120,16 +120,36 @@ export function sanitizePendingProposal(value: Json) {
   return { kind: 'unknown' as const }
 }
 
+const PROFILE_COLUMNS =
+  'sex, birth_date, height_cm, weight_kg, body_fat_percent, activity_level, training_frequency, water_intake, hunger_level, wake_time, bedtime, current_protocol, goal_type, goal_value, deficit_level, food_organization, onboarding_completed, onboarding_step, updated_at'
+
+type ProfileQuery = (columns: string) => {
+  eq(
+    column: string,
+    value: string,
+  ): {
+    maybeSingle(): PromiseLike<{
+      data: Record<string, unknown> | null
+      error: { code?: string; message: string } | null
+    }>
+  }
+}
+
 export async function loadProfile(supabase: ServiceClient, userId: string) {
-  const { data, error } = await supabase
-    .from('user_profiles')
-    .select(
-      'sex, birth_date, height_cm, weight_kg, body_fat_percent, activity_level, training_frequency, water_intake, hunger_level, wake_time, bedtime, current_protocol, goal_type, goal_value, deficit_level, food_organization, onboarding_completed, onboarding_step, updated_at',
-    )
+  const select: ProfileQuery = (columns) =>
+    (supabase.from('user_profiles') as unknown as { select: ProfileQuery }).select(columns)
+  // weight_measured_at exists only after the weight migration. A database
+  // without it (42703) still answers, with the instant reported as unknown.
+  const dated = await select(`${PROFILE_COLUMNS}, weight_measured_at`)
     .eq('user_id', userId)
     .maybeSingle()
-  throwQueryError(error, 'Profile lookup')
-  return data
+  if (dated.error?.code !== '42703') {
+    throwQueryError(dated.error as never, 'Profile lookup')
+    return dated.data
+  }
+  const legacy = await select(PROFILE_COLUMNS).eq('user_id', userId).maybeSingle()
+  throwQueryError(legacy.error as never, 'Profile lookup')
+  return legacy.data ? { ...legacy.data, weight_measured_at: null } : legacy.data
 }
 
 export async function loadToday(

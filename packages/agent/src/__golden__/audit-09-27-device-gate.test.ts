@@ -188,6 +188,22 @@ const STAGING_WINDOWS: Record<string, Row[]> = {
     r(256, 'Biscoito, polvilho doce', VERDURAS, 0.2143, 437.55, 1.29, 80.54, 12.25, 1.16),
     r(356, 'Goiaba, doce, cascão', 'Frutas e derivados', 0.2, 285.59, 0.41, 78.7, 0.1, 4.37),
   ],
+  // Adjective-only coincidence (review scan; full staging windows, 2026-09-28).
+  'café preto': [
+    r(710, 'Feijão, preto, cru', LEGUMINOSAS, 0.3333, 323.57, 21.34, 58.75, 1.24, 21.83),
+    r(622, 'Chá, preto, infusão 5%', 'Bebidas (alcoólicas e não alcoólicas)', 0.2917, 2.25, 0, 0.63, 0, null),
+    r(709, 'Feijão, preto, cozido', LEGUMINOSAS, 0.2917, 77.03, 4.48, 14.01, 0.54, 8.4),
+    r(656, 'Café, pó, torrado', 'Miscelâneas', 0.2857, 418.62, 14.7, 65.75, 11.95, 51.23),
+    r(617, 'Café, infusão 10%', 'Bebidas (alcoólicas e não alcoólicas)', 0.2273, 9.07, 0.71, 1.48, 0.07, null),
+  ],
+  'pão preto': [
+    r(710, 'Feijão, preto, cru', LEGUMINOSAS, 0.3684, 323.57, 21.34, 58.75, 1.24, 21.83),
+    r(622, 'Chá, preto, infusão 5%', 'Bebidas (alcoólicas e não alcoólicas)', 0.3182, 2.25, 0, 0.63, 0, null),
+    r(709, 'Feijão, preto, cozido', LEGUMINOSAS, 0.3182, 77.03, 4.48, 14.01, 0.54, 8.4),
+    r(206, 'Pão, de soja', CEREAIS, 0.2353, 308.73, 11.34, 56.51, 3.58, 5.71),
+    r(2291, 'Pretzels, soft', 'Snacks', 0.2105, 338, 8.2, 69.39, 3.1, 1.7, 'US'),
+    r(353, 'Fruta-pão, crua', 'Frutas e derivados', 0.2, 67.05, 1.08, 17.17, 0.19, 5.55),
+  ],
   // Neighbours: the patient's answer after the question, and foods that must
   // keep their current behaviour.
   'feijão carioca cozido': [
@@ -400,5 +416,25 @@ describe('audit 2026-09-27 — device gate meal proposal (QA A)', () => {
     expect(
       result.user_warnings.some((w) => w.includes('"batata doce"') && /cru/.test(w) && /cozido/.test(w)),
     ).toBe(true)
+  })
+
+  it('never answers "Café preto" or "Pão preto" with beans or tea that only share the adjective', async () => {
+    const result = await calcMealMacros(
+      stagingMock(),
+      [
+        { food_name: 'Café preto', quantity_g: 100 },
+        { food_name: 'Pão preto', quantity_g: 50 },
+      ],
+      'BR',
+    )
+    for (const item of result.items) {
+      expect([710, 709, 622]).not.toContain(item.matched_taco_id)
+      expect(item.matched_taco_name).not.toMatch(/Feij|Chá/)
+    }
+    // No catalog row of the named food reaches the threshold: the existing
+    // category estimate applies (constants unchanged: black coffee ~1 kcal/100 g,
+    // bread 270 kcal/100 g) and is labelled as an estimate.
+    expect(result.items[0]).toMatchObject({ source: 'llm_estimate', kcal: 1 })
+    expect(result.items[1]).toMatchObject({ source: 'llm_estimate', kcal: 135 })
   })
 })

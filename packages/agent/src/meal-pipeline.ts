@@ -990,7 +990,9 @@ function preparationBaseTokens(foodName: string): string[] {
 function requestFoodIdentity(
   requestedName: string,
 ): { head: string; distinguishing: string[] } | null {
-  const tokens = preparationBaseTokens(requestedName).filter((token) => !REQUEST_LINK_WORDS.has(token))
+  const tokens = preparationBaseTokens(requestedName).filter(
+    (token) => !REQUEST_LINK_WORDS.has(token) && !/\d/.test(token),
+  )
   if (tokens.length === 0) return null
   const headIndex =
     tokens.length > 1 && [...FOOD_PART_HEADS].some((part) => sameFoodToken(part, tokens[0]!)) ? 1 : 0
@@ -998,6 +1000,20 @@ function requestFoodIdentity(
     head: tokens[headIndex]!,
     distinguishing: tokens.filter((_, index) => index !== headIndex),
   }
+}
+
+/**
+ * O alimento nomeado pelo paciente ("café" em "café preto") precisa aparecer
+ * como palavra no candidato. Coincidência só de adjetivo ou variedade
+ * ("Feijão, preto" / "Chá, preto") não identifica o alimento.
+ *
+ * Caso real (varredura da revisão, 2026-09-28): "Café preto" casou "Feijão,
+ * preto, cru" (sim 0.33) porque a âncora era a palavra mais longa, "preto".
+ */
+function candidateNamesRequestedFood(requestedName: string, candidateName: string): boolean {
+  const head = requestFoodIdentity(requestedName)?.head
+  if (head == null || head.length < 3 || isNameQualifier(head)) return true
+  return foodNameTokens(candidateName).some((token) => sameFoodToken(token, head))
 }
 
 /**
@@ -1395,6 +1411,13 @@ async function matchFood(
   // A mesma regra vale para preparo e composição: se há uma alternativa
   // compatível no top-N, não escolha primeiro a versão frita/com pele/integral
   // errada para só depois rejeitá-la.
+  // Entre os candidatos, os que nomeiam o alimento pedido vêm primeiro; os que
+  // só compartilham adjetivo ficam para o guard do cálculo rejeitar.
+  const namedFoodRows = candidateRows.filter(
+    (row) => row.name_pt != null && candidateNamesRequestedFood(name, row.name_pt),
+  )
+  if (namedFoodRows.length > 0) candidateRows = namedFoodRows
+
   const modifierCompatibleRows = candidateRows.filter(
     (row) => row.name_pt == null || !hasNutritionModifierConflict(name, row.name_pt),
   )
@@ -2216,7 +2239,9 @@ export async function calcMealMacros(
     // Se a âncora não aparece, força fallback pra estimativa por categoria.
     const anchor = extractAnchor(it.food_name)
     const matchedNameLower = normalizeFoodText(m.name_pt ?? '')
-    const anchorMatches = anchor == null || matchedNameLower.includes(anchor)
+    const anchorMatches =
+      (anchor == null || matchedNameLower.includes(anchor)) &&
+      (m.name_pt == null || candidateNamesRequestedFood(it.food_name, m.name_pt))
     const fruitSweetMismatch = isSweetDerivedFruitMismatch(it.food_name, m.name_pt, m.category)
     const nutritionModifierMismatch =
       m.name_pt != null && hasNutritionModifierConflict(it.food_name, m.name_pt)

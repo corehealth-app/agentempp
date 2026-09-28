@@ -535,8 +535,12 @@ BEGIN
   SET daily_push_limit = 8
   WHERE user_id = v_reminder_user_id;
 
-  INSERT INTO public.routine_items (user_id, item_type, name, active)
-  VALUES (v_reminder_user_id, 'medication', 'Synthetic catalog test item', true)
+  -- A medication occurrence exists only from the moment its item and rule
+  -- existed (and never before the occurrence model, 2026-07-23 13:13:21):
+  -- the fixture creates them at that instant, and the claim happens after.
+  INSERT INTO public.routine_items (user_id, item_type, name, active, created_at)
+  VALUES (v_reminder_user_id, 'medication', 'Synthetic catalog test item', true,
+          timestamptz '2026-07-23 13:13:21+00')
   RETURNING id INTO v_routine_item_id;
 
   UPDATE public.coach_message_template_versions version
@@ -554,24 +558,27 @@ BEGIN
     routine_item_id,
     category,
     local_time,
-    weekdays
+    weekdays,
+    created_at
   ) VALUES (
     v_reminder_user_id,
     v_routine_item_id,
     'medication',
     time '11:00',
-    ARRAY[0, 1, 2, 3, 4, 5, 6]
+    ARRAY[0, 1, 2, 3, 4, 5, 6],
+    timestamptz '2026-07-23 13:13:21+00'
   ) RETURNING id INTO v_missing_reminder_rule_id;
 
+  -- 11:00 in New York on 2026-07-24 (the first day the rule existed).
   v_reminder_missing := public.claim_reminder_event(
     v_missing_reminder_rule_id,
-    timestamptz '2026-07-20 15:00:00+00',
-    timestamptz '2026-07-20 15:00:00+00'
+    timestamptz '2026-07-24 15:00:00+00',
+    timestamptz '2026-07-24 15:00:00+00'
   );
   v_reminder_retry := public.claim_reminder_event(
     v_missing_reminder_rule_id,
-    timestamptz '2026-07-20 15:00:00+00',
-    timestamptz '2026-07-20 15:01:00+00'
+    timestamptz '2026-07-24 15:00:00+00',
+    timestamptz '2026-07-24 15:01:00+00'
   );
 
   SELECT count(*)

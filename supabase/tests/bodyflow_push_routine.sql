@@ -916,20 +916,25 @@ BEGIN
   SET routine_preview_mode = 'name_and_dose'
   WHERE user_id = v_user_id;
 
+  -- An occurrence exists only from the moment its item and rule existed
+  -- (and never before the occurrence model, 2026-07-23 13:13:21): the
+  -- fixture creates them at that instant, before the 2026-07-24 occurrences.
   INSERT INTO public.routine_items (
     user_id,
     item_type,
     name,
     dose_text,
     active,
-    reminders_enabled
+    reminders_enabled,
+    created_at
   ) VALUES (
     v_user_id,
     'medication',
     'Private exact medication',
     '91 mg private',
     true,
-    true
+    true,
+    timestamptz '2026-07-23 13:13:21+00'
   ) RETURNING id INTO v_exact_item_id;
 
   INSERT INTO public.reminder_rules (
@@ -937,21 +942,24 @@ BEGIN
     routine_item_id,
     category,
     local_time,
-    weekdays
+    weekdays,
+    created_at
   ) VALUES
     (
       v_user_id,
       v_exact_item_id,
       'medication',
       time '08:00',
-      ARRAY[0, 1, 2, 3, 4, 5, 6]
+      ARRAY[0, 1, 2, 3, 4, 5, 6],
+      timestamptz '2026-07-23 13:13:21+00'
     ),
     (
       v_user_id,
       v_exact_item_id,
       'medication',
       time '20:00',
-      ARRAY[0, 1, 2, 3, 4, 5, 6]
+      ARRAY[0, 1, 2, 3, 4, 5, 6],
+      timestamptz '2026-07-23 13:13:21+00'
     );
 
   SELECT id INTO v_routine_rule_id
@@ -1121,13 +1129,15 @@ BEGIN
     item_type,
     name,
     active,
-    reminders_enabled
+    reminders_enabled,
+    created_at
   ) VALUES (
     v_user_id,
     'supplement',
     'Private snoozed supplement',
     true,
-    true
+    true,
+    timestamptz '2026-07-23 13:13:21+00'
   ) RETURNING id INTO v_snooze_item_id;
 
   INSERT INTO public.reminder_rules (
@@ -1135,21 +1145,24 @@ BEGIN
     routine_item_id,
     category,
     local_time,
-    weekdays
+    weekdays,
+    created_at
   ) VALUES
     (
       v_user_id,
       v_snooze_item_id,
       'supplement',
       time '08:00',
-      ARRAY[0, 1, 2, 3, 4, 5, 6]
+      ARRAY[0, 1, 2, 3, 4, 5, 6],
+      timestamptz '2026-07-23 13:13:21+00'
     ),
     (
       v_user_id,
       v_snooze_item_id,
       'supplement',
       time '20:00',
-      ARRAY[0, 1, 2, 3, 4, 5, 6]
+      ARRAY[0, 1, 2, 3, 4, 5, 6],
+      timestamptz '2026-07-23 13:13:21+00'
     );
 
   SELECT id INTO v_snooze_rule_id

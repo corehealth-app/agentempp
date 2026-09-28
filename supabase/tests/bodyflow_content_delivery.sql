@@ -407,6 +407,19 @@ END;
 $test$;
 RESET ROLE;
 
+-- Instant used by the duplicate-subscription scenarios. It was the literal
+-- 2026-08-01, but publish_content_version only accepts "now" or a future
+-- publish_at, so a fixed past instant stops seeing the fixture publications once
+-- the wall clock passes it. The anchor keeps the same geometry (monthly period
+-- started 17 days earlier, annual period 365 days earlier) relative to tomorrow.
+CREATE FUNCTION pg_temp.task3_subscription_anchor()
+RETURNS timestamptz
+LANGUAGE sql
+STABLE
+AS $anchor$ SELECT date_trunc('day', now()) + interval '1 day' $anchor$;
+
+GRANT EXECUTE ON FUNCTION pg_temp.task3_subscription_anchor() TO service_role;
+
 DO $test$
 DECLARE
   v_editor_id constant uuid := '00000000-0000-0000-0000-000000002001';
@@ -478,11 +491,11 @@ BEGIN
   ) VALUES
     ('00000000-0000-0000-0000-000000002201', '00000000-0000-0000-0000-000000002101', 'mensal', 'active', clock_timestamp() - interval '1 day', clock_timestamp() + interval '30 days', NULL, clock_timestamp() - interval '1 day', clock_timestamp()),
     ('00000000-0000-0000-0000-000000002202', '00000000-0000-0000-0000-000000002104', 'mensal', 'active', clock_timestamp() - interval '30 days', clock_timestamp() - interval '1 second', NULL, clock_timestamp() - interval '30 days', clock_timestamp()),
-    ('00000000-0000-0000-0000-000000002203', '00000000-0000-0000-0000-000000002107', 'mensal', 'active', '2026-07-15 00:00:00+00', '2026-08-15 00:00:00+00', NULL, '2026-07-15 00:00:00+00', '2026-07-20 00:00:00+00'),
-    ('00000000-0000-0000-0000-000000002204', '00000000-0000-0000-0000-000000002107', 'anual', 'active', '2025-08-01 00:00:00+00', '2026-10-01 00:00:00+00', NULL, '2025-08-01 00:00:00+00', '2026-07-01 00:00:00+00'),
+    ('00000000-0000-0000-0000-000000002203', '00000000-0000-0000-0000-000000002107', 'mensal', 'active', pg_temp.task3_subscription_anchor() - interval '17 days', pg_temp.task3_subscription_anchor() + interval '14 days', NULL, pg_temp.task3_subscription_anchor() - interval '17 days', pg_temp.task3_subscription_anchor() - interval '12 days'),
+    ('00000000-0000-0000-0000-000000002204', '00000000-0000-0000-0000-000000002107', 'anual', 'active', pg_temp.task3_subscription_anchor() - interval '365 days', pg_temp.task3_subscription_anchor() + interval '61 days', NULL, pg_temp.task3_subscription_anchor() - interval '365 days', pg_temp.task3_subscription_anchor() - interval '31 days'),
     ('00000000-0000-0000-0000-000000002205', '00000000-0000-0000-0000-000000002108', 'trial', 'trial', clock_timestamp() - interval '7 days', clock_timestamp() + interval '7 days', clock_timestamp() - interval '1 second', clock_timestamp() - interval '7 days', clock_timestamp()),
-    ('00000000-0000-0000-0000-000000002206', '00000000-0000-0000-0000-000000002109', 'mensal', 'active', '2026-07-15 00:00:00+00', '2026-08-15 00:00:00+00', NULL, '2026-07-15 00:00:00+00', '2026-07-20 00:00:00+00'),
-    ('00000000-0000-0000-0000-000000002207', '00000000-0000-0000-0000-000000002109', 'anual', 'active', NULL, '2026-10-01 00:00:00+00', NULL, '2025-08-01 00:00:00+00', '2026-07-21 00:00:00+00');
+    ('00000000-0000-0000-0000-000000002206', '00000000-0000-0000-0000-000000002109', 'mensal', 'active', pg_temp.task3_subscription_anchor() - interval '17 days', pg_temp.task3_subscription_anchor() + interval '14 days', NULL, pg_temp.task3_subscription_anchor() - interval '17 days', pg_temp.task3_subscription_anchor() - interval '12 days'),
+    ('00000000-0000-0000-0000-000000002207', '00000000-0000-0000-0000-000000002109', 'anual', 'active', NULL, pg_temp.task3_subscription_anchor() + interval '61 days', NULL, pg_temp.task3_subscription_anchor() - interval '365 days', pg_temp.task3_subscription_anchor() - interval '11 days');
 END;
 $test$;
 
@@ -1041,7 +1054,7 @@ BEGIN
   END IF;
 
   v_list := public.list_mobile_content(
-    v_duplicate_sub_user_id, 'library', 'weight_loss', 50, NULL, NULL, '2026-08-01 00:00:00+00'
+    v_duplicate_sub_user_id, 'library', 'weight_loss', 50, NULL, NULL, pg_temp.task3_subscription_anchor()
   );
   IF v_list->'items' @> jsonb_build_array(jsonb_build_object('publicationId', v_duplicate_annual_id))
     OR NOT (v_list->'items' @> jsonb_build_array(jsonb_build_object('publicationId', v_duplicate_monthly_id))) THEN
@@ -1049,12 +1062,12 @@ BEGIN
   END IF;
 
   v_detail := public.get_mobile_content(
-    v_duplicate_sub_user_id, v_duplicate_monthly_id, '2026-08-01 00:00:00+00'
+    v_duplicate_sub_user_id, v_duplicate_monthly_id, pg_temp.task3_subscription_anchor()
   );
   IF v_detail IS NULL
     OR (v_detail->>'publicationId')::uuid <> v_duplicate_monthly_id
     OR public.get_mobile_content(
-      v_duplicate_sub_user_id, v_duplicate_annual_id, '2026-08-01 00:00:00+00'
+      v_duplicate_sub_user_id, v_duplicate_annual_id, pg_temp.task3_subscription_anchor()
     ) IS NOT NULL THEN
     RAISE EXCEPTION 'detail did not resolve the most recent eligible subscription period';
   END IF;
@@ -1066,7 +1079,7 @@ BEGIN
     'opened',
     'library',
     'task3-recency-event-key',
-    '2026-08-01 00:00:00+00'
+    pg_temp.task3_subscription_anchor()
   );
   IF (v_result->>'publicationId')::uuid <> v_duplicate_monthly_id THEN
     RAISE EXCEPTION 'event did not resolve the most recent eligible subscription period';
@@ -1079,7 +1092,7 @@ BEGIN
     true,
     'library',
     'task3-recency-save-key',
-    '2026-08-01 00:00:00+00'
+    pg_temp.task3_subscription_anchor()
   );
   IF (v_result->>'publicationId')::uuid <> v_duplicate_monthly_id
     OR NOT (v_result->>'saved')::boolean THEN
@@ -1087,7 +1100,7 @@ BEGIN
   END IF;
 
   v_list := public.list_mobile_content(
-    v_null_start_user_id, 'library', 'weight_loss', 50, NULL, NULL, '2026-08-01 00:00:00+00'
+    v_null_start_user_id, 'library', 'weight_loss', 50, NULL, NULL, pg_temp.task3_subscription_anchor()
   );
   IF v_list->'items' @> jsonb_build_array(jsonb_build_object('publicationId', v_duplicate_annual_id))
     OR NOT (v_list->'items' @> jsonb_build_array(jsonb_build_object('publicationId', v_duplicate_monthly_id))) THEN
@@ -1095,12 +1108,12 @@ BEGIN
   END IF;
 
   v_detail := public.get_mobile_content(
-    v_null_start_user_id, v_duplicate_monthly_id, '2026-08-01 00:00:00+00'
+    v_null_start_user_id, v_duplicate_monthly_id, pg_temp.task3_subscription_anchor()
   );
   IF v_detail IS NULL
     OR (v_detail->>'publicationId')::uuid <> v_duplicate_monthly_id
     OR public.get_mobile_content(
-      v_null_start_user_id, v_duplicate_annual_id, '2026-08-01 00:00:00+00'
+      v_null_start_user_id, v_duplicate_annual_id, pg_temp.task3_subscription_anchor()
     ) IS NOT NULL THEN
     RAISE EXCEPTION 'detail selected an eligible subscription with a null period start';
   END IF;
@@ -1112,7 +1125,7 @@ BEGIN
     'opened',
     'library',
     'task3-null-start-event-key',
-    '2026-08-01 00:00:00+00'
+    pg_temp.task3_subscription_anchor()
   );
   IF (v_result->>'publicationId')::uuid <> v_duplicate_monthly_id THEN
     RAISE EXCEPTION 'event selected an eligible subscription with a null period start';
@@ -1125,7 +1138,7 @@ BEGIN
     true,
     'library',
     'task3-null-start-save-key',
-    '2026-08-01 00:00:00+00'
+    pg_temp.task3_subscription_anchor()
   );
   IF (v_result->>'publicationId')::uuid <> v_duplicate_monthly_id
     OR NOT (v_result->>'saved')::boolean THEN

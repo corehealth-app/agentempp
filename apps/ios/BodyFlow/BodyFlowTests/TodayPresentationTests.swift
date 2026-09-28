@@ -301,6 +301,28 @@ struct TodayPresentationTests {
         #expect(withoutBlock.block.currentText == "Indisponível")
     }
 
+    @Test("device gate meal energy keeps its fraction and reads in the app language")
+    func fractionalMealEnergyIsShownAsReceived() throws {
+        let presentation = TodayPresentation(
+            snapshot: try BodyFlowTestFixtures.decodeToday(
+                mealsJSON: BodyFlowTestFixtures.deviceGateMealsJSON
+            ).data
+        )
+
+        #expect(presentation.meals.map(\.kcal) == [
+            Decimal(string: "200"),
+            Decimal(string: "284.6"),
+            Decimal(string: "191"),
+        ])
+        let beans = try #require(presentation.meals.first { $0.id == "device-gate-meal-beans" })
+        #expect(TodayValueFormatter.mealKcal(beans.kcal, language: .portugueseBrazil) == "284,6 kcal")
+        #expect(TodayValueFormatter.mealKcal(beans.kcal, language: .englishUnitedStates) == "284.6 kcal")
+        #expect(TodayValueFormatter.mealKcal(Decimal(string: "1200.5"), language: .portugueseBrazil) == "1.200,5 kcal")
+        #expect(TodayValueFormatter.mealKcal(0, language: .portugueseBrazil) == "0 kcal")
+        #expect(TodayValueFormatter.mealKcal(nil, language: .portugueseBrazil) == "Indisponível")
+        #expect(TodayValueFormatter.mealKcal(nil, language: .englishUnitedStates) == "Not available")
+    }
+
     @Test("confirmed meal rows preserve response order and individual ids")
     func mealRowsStayIndividualAndOrdered() throws {
         let presentation = TodayPresentation(

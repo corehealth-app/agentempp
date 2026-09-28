@@ -233,6 +233,63 @@ enum BodyFlowTestFixtures {
         )
     }
 
+    /// Today with its `meals` array replaced by `mealsJSON`, spliced as text so
+    /// every number keeps the exact digits the server sent.
+    static func decodeToday(mealsJSON: String) throws -> TodayResponse {
+        let text = try #require(String(data: inconsistentTodayData, encoding: .utf8))
+        let start = try #require(text.range(of: "\"meals\": ["))
+        let end = try #require(text.range(of: "\"workouts\": [", range: start.upperBound..<text.endIndex))
+        let spliced = text.replacingCharacters(
+            in: start.lowerBound..<end.lowerBound,
+            with: "\"meals\": \(mealsJSON),\n    "
+        )
+        return try JSONDecoder().decode(TodayResponse.self, from: Data(spliced.utf8))
+    }
+
+    /// The three confirmed meal_logs of QA account A in the staging device gate
+    /// of 2026-09-27 (ids sanitized), as GET /today returned them: the beans row
+    /// carries a fractional official energy (284.6), which made Today fail.
+    static let deviceGateMealsJSON = """
+        [
+          {
+            "id": "device-gate-meal-rice",
+            "meal_type": "jantar",
+            "food_name": "Arroz branco",
+            "quantity_g": 150,
+            "kcal": 200,
+            "protein_g": 3.85,
+            "carbs_g": 43.08,
+            "fat_g": 0.46,
+            "consumed_at": "2026-09-28T00:49:47.884+00:00",
+            "nutrition_source": "user_kcal"
+          },
+          {
+            "id": "device-gate-meal-beans",
+            "meal_type": "jantar",
+            "food_name": "Feijão carioca",
+            "quantity_g": 86.5,
+            "kcal": 284.6,
+            "protein_g": 17.28,
+            "carbs_g": 52.96,
+            "fat_g": 1.09,
+            "consumed_at": "2026-09-28T00:49:47.884+00:00",
+            "nutrition_source": "canonical_fuzzy"
+          },
+          {
+            "id": "device-gate-meal-chicken",
+            "meal_type": "jantar",
+            "food_name": "Frango grelhado",
+            "quantity_g": 120,
+            "kcal": 191,
+            "protein_g": 38.44,
+            "carbs_g": 0,
+            "fat_g": 2.98,
+            "consumed_at": "2026-09-28T00:49:47.884+00:00",
+            "nutrition_source": "canonical_exact"
+          }
+        ]
+        """
+
     static func decodeTodayWithoutCalorieTarget() throws -> TodayResponse {
         var object = try #require(
             JSONSerialization.jsonObject(with: inconsistentTodayData)

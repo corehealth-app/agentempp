@@ -100,15 +100,19 @@ struct TodayProteinStatus: Codable, Equatable, Sendable {
     }
 }
 
+/// One confirmed `meal_logs` row as the server sends it (`DailyStateMeal`):
+/// energy, quantity and macros are numbers with up to two decimals and may be
+/// null, like in History. They are shown as received, never rounded or
+/// replaced by zero here.
 struct TodayMeal: Codable, Equatable, Sendable {
     let id: String
-    let mealType: String
+    let mealType: String?
     let foodName: String
-    let quantityG: Decimal
-    let kcal: Int
-    let proteinG: Decimal
-    let carbsG: Decimal
-    let fatG: Decimal
+    let quantityG: Decimal?
+    let kcal: Decimal?
+    let proteinG: Decimal?
+    let carbsG: Decimal?
+    let fatG: Decimal?
     let consumedAt: APITimestamp
     let nutritionSource: String?
 

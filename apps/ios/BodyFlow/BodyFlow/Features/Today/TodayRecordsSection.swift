@@ -28,13 +28,13 @@ enum TodayNutritionProvenance {
 
 struct TodayMealDescriptor: Equatable, Sendable, Identifiable {
     let id: String
-    let mealType: String
+    let mealType: String?
     let foodName: String
-    let quantityG: Decimal
-    let kcal: Int
-    let proteinG: Decimal
-    let carbsG: Decimal
-    let fatG: Decimal
+    let quantityG: Decimal?
+    let kcal: Decimal?
+    let proteinG: Decimal?
+    let carbsG: Decimal?
+    let fatG: Decimal?
     let consumedAt: APITimestamp
     let provenance: String
 }
@@ -79,8 +79,9 @@ struct TodayRecordsSection: View {
                             // Received type and energy on one line while
                             // they fit; stacked at accessibility sizes.
                             recordLine(
-                                detail: meal.mealType,
-                                value: TodayValueFormatter.kcal(meal.kcal, language: language)
+                                detail: meal.mealType
+                                    ?? TodayCopy.string("common.not-available", language: language),
+                                value: TodayValueFormatter.mealKcal(meal.kcal, language: language)
                             )
                             BodyFlowStatusLine(
                                 meal.provenance,

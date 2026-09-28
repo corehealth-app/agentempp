@@ -45,6 +45,102 @@ struct TodayContractTests {
         #expect(response.data.hydration.status == "tracked_without_target")
     }
 
+    @Test("device gate meals with a fractional official energy decode (2026-09-27)")
+    func decodesDeviceGateFractionalMealEnergy() throws {
+        let response = try BodyFlowTestFixtures.decodeToday(
+            mealsJSON: BodyFlowTestFixtures.deviceGateMealsJSON
+        )
+
+        #expect(response.data.meals.map(\.id) == [
+            "device-gate-meal-rice",
+            "device-gate-meal-beans",
+            "device-gate-meal-chicken",
+        ])
+        #expect(response.data.meals.map(\.kcal) == [
+            Decimal(string: "200"),
+            Decimal(string: "284.6"),
+            Decimal(string: "191"),
+        ])
+        let beans = response.data.meals[1]
+        #expect(beans.quantityG == Decimal(string: "86.5"))
+        #expect(beans.proteinG == Decimal(string: "17.28"))
+        #expect(beans.carbsG == Decimal(string: "52.96"))
+        #expect(beans.fatG == Decimal(string: "1.09"))
+        #expect(beans.nutritionSource == "canonical_fuzzy")
+        #expect(response.data.meals[0].nutritionSource == "user_kcal")
+        // The official day totals stay the server's integers.
+        #expect(response.data.remainingFoodKcal == 731)
+    }
+
+    @Test("absent meal values stay absent instead of becoming zero")
+    func keepsAbsentMealValuesAbsent() throws {
+        let response = try BodyFlowTestFixtures.decodeToday(mealsJSON: """
+            [
+              {
+                "id": "meal-without-values",
+                "meal_type": null,
+                "food_name": "Item sem cálculo",
+                "quantity_g": null,
+                "kcal": null,
+                "protein_g": null,
+                "carbs_g": null,
+                "fat_g": null,
+                "consumed_at": "2026-07-20T20:15:00.000Z",
+                "nutrition_source": "no_match"
+              },
+              {
+                "id": "meal-zero",
+                "meal_type": "lanche",
+                "food_name": "Água",
+                "quantity_g": 250,
+                "kcal": 0,
+                "protein_g": 0,
+                "carbs_g": 0,
+                "fat_g": 0,
+                "consumed_at": "2026-07-20T21:15:00.000Z",
+                "nutrition_source": "rule_based"
+              }
+            ]
+            """)
+
+        let absent = response.data.meals[0]
+        #expect(absent.mealType == nil)
+        #expect(absent.quantityG == nil)
+        #expect(absent.kcal == nil)
+        #expect(absent.proteinG == nil)
+        #expect(absent.carbsG == nil)
+        #expect(absent.fatG == nil)
+        #expect(response.data.meals[1].kcal == 0)
+    }
+
+    @Test("malformed meal energy is rejected, not coerced", arguments: [
+        "\"284,6\"",
+        "\"abc\"",
+        "true",
+    ])
+    func rejectsMalformedMealEnergy(rawKcal: String) {
+        let meal = """
+            [
+              {
+                "id": "meal-malformed",
+                "meal_type": "jantar",
+                "food_name": "Item",
+                "quantity_g": 100,
+                "kcal": \(rawKcal),
+                "protein_g": 1,
+                "carbs_g": 1,
+                "fat_g": 1,
+                "consumed_at": "2026-07-20T20:15:00.000Z",
+                "nutrition_source": null
+              }
+            ]
+            """
+
+        #expect(throws: DecodingError.self) {
+            try BodyFlowTestFixtures.decodeToday(mealsJSON: meal)
+        }
+    }
+
     @Test("nullable calorie target and source remain absent")
     func preservesNullableCalorieTargetAndSource() throws {
         let response = try BodyFlowTestFixtures

@@ -42,6 +42,19 @@ enum TodayValueFormatter {
             ?? TodayCopy.string("common.not-available", language: language)
     }
 
+    /// Energy of one confirmed meal as the server stored it (up to two
+    /// decimals): pt-BR "284,6 kcal", en "284.6 kcal"; never rounded here, and
+    /// an absent value reads "not available", never "0 kcal".
+    static func mealKcal(
+        _ value: Decimal?,
+        language: SupportedAppLanguage
+    ) -> String {
+        guard let value else {
+            return TodayCopy.string("common.not-available", language: language)
+        }
+        return "\(value.formatted(.number.locale(language.formattingLocale))) kcal"
+    }
+
     static func grams(_ value: Decimal) -> String {
         grams(value, language: .portugueseBrazil)
     }

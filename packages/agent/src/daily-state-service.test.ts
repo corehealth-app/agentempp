@@ -571,6 +571,94 @@ describe('loadOfficialDailyState', () => {
     expect(state.updated_at).toBe('2026-07-20T14:03:00.000Z')
   })
 
+  it('passes the device gate fractional meal energy through unchanged (2026-09-27)', async () => {
+    // QA account A, staging, confirmed meal of 2026-09-28 01:19Z (ids sanitized).
+    const consumedAt = '2026-09-28T00:49:47.884+00:00'
+    const db = fakeSupabase({
+      user_profiles: { single: null },
+      daily_snapshots: {
+        single: {
+          id: 'device-gate-snapshot',
+          calories_consumed: 676,
+          calories_target: 3_355,
+          protein_g: 59.57,
+          protein_target: 185.4,
+          carbs_g: 96.04,
+          fat_g: 4.53,
+          exercise_calories: 0,
+          water_consumed_ml: 0,
+          current_protocol: null,
+          day_closed: false,
+          day_status: 'complete',
+          updated_at: '2026-09-28T01:19:58.825686+00:00',
+          meal_logs: [
+            {
+              id: 'device-gate-meal-rice',
+              meal_type: 'jantar',
+              food_name: 'Arroz branco',
+              quantity_g: 150,
+              kcal: 200,
+              protein_g: 3.85,
+              carbs_g: 43.08,
+              fat_g: 0.46,
+              consumed_at: consumedAt,
+              source: 'user_kcal',
+            },
+            {
+              id: 'device-gate-meal-beans',
+              meal_type: 'jantar',
+              food_name: 'Feijão carioca',
+              quantity_g: 86.5,
+              kcal: 284.6,
+              protein_g: 17.28,
+              carbs_g: 52.96,
+              fat_g: 1.09,
+              consumed_at: consumedAt,
+              source: 'canonical_fuzzy',
+            },
+            {
+              id: 'device-gate-meal-chicken',
+              meal_type: 'jantar',
+              food_name: 'Frango grelhado',
+              quantity_g: 120,
+              kcal: 191,
+              protein_g: 38.44,
+              carbs_g: 0,
+              fat_g: 2.98,
+              consumed_at: consumedAt,
+              source: 'canonical_exact',
+            },
+          ],
+          workout_logs: [],
+        },
+      },
+      user_progress: { single: null },
+      pending_registrations: { rows: [] },
+    })
+
+    const state = await loadOfficialDailyState(
+      db.client as never,
+      'device-gate-user',
+      // The fake routine reader answers for this local day; the meal rows are
+      // the incident's.
+      'America/New_York',
+      new Date('2026-07-20T15:00:00.000Z'),
+      dependencies,
+    )
+
+    expect(state.meals).toEqual([
+      expect.objectContaining({ id: 'device-gate-meal-beans', quantity_g: 86.5, kcal: 284.6 }),
+      expect.objectContaining({ id: 'device-gate-meal-chicken', quantity_g: 120, kcal: 191 }),
+      expect.objectContaining({
+        id: 'device-gate-meal-rice',
+        kcal: 200,
+        nutrition_source: 'user_kcal',
+      }),
+    ])
+    expect(state.consumed.calories_kcal).toBe(676)
+    expect(state.remaining_food_kcal).toBe(2_679)
+  })
+
   it('does not query item logs when no snapshot exists', async () => {
     const db = fakeSupabase({
       user_profiles: { single: null },

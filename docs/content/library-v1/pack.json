@@ -1,0 +1,71 @@
+{
+  "pack": "performe-ai-library-v1",
+  "status": "DRAFT — PENDING PROFESSIONAL AND EDITORIAL REVIEW; NOT PUBLISHED",
+  "notes": [
+    "Original texts written for the Performe AI evaluation. No third-party text is reproduced.",
+    "Publishing requires the CMS review step: the reviewer must be a different admin from the author (content_versions_review_pair_check).",
+    "Remote publication is gated: nothing here has been sent to staging or production.",
+    "Articles in category using_bodyflow describe app behavior verified in code on 2026-09-28; they have no external source by design."
+  ],
+  "verifiedSources": [
+    { "url": "https://www.gov.br/anvisa/pt-br/assuntos/alimentos/rotulagem/rotulagem-nutricional", "publisher": "Anvisa", "accessed": "2026-09-28", "checked": "RDC 429/2020 and IN 75/2020; front magnifier for added sugars, saturated fat and sodium; table per 100 g/ml and per portion" },
+    { "url": "https://www.fda.gov/food/nutrition-facts-label/how-understand-and-use-nutrition-facts-label", "publisher": "U.S. FDA", "accessed": "2026-09-28", "checked": "values refer to one serving; multiply for more servings" },
+    { "url": "https://www.gov.br/saude/pt-br/composicao/saps/promocao-da-saude/guias-alimentares", "publisher": "Ministério da Saúde", "accessed": "2026-09-28", "checked": "base the diet on in natura or minimally processed foods; avoid ultra-processed" },
+    { "url": "https://www.who.int/news-room/fact-sheets/detail/healthy-diet", "publisher": "WHO", "accessed": "2026-09-28", "checked": "free sugars below 10% of energy (page updated 2026-01-26)" },
+    { "url": "https://www.who.int/news-room/fact-sheets/detail/salt-reduction", "publisher": "WHO", "accessed": "2026-09-28", "checked": "less than 5 g salt per day, just under a teaspoon (page dated 2026-05-11)" },
+    { "url": "https://doi.org/10.1002/ejsp.674", "publisher": "European Journal of Social Psychology (Wiley)", "accessed": "2026-09-28", "checked": "DOI resolves to the article; full text not fetched (publisher returned 403); numbers cross-checked with the BPS summary" },
+    { "url": "https://www.bps.org.uk/research-digest/how-form-habit", "publisher": "British Psychological Society", "accessed": "2026-09-28", "checked": "66 days average, 18 to 254 days range, a single missed day had little impact" },
+    { "url": "https://support.apple.com/pt-br/guide/iphone/iph7c3d96bab/ios", "publisher": "Apple", "accessed": "2026-09-28", "checked": "iPhone notification settings, pt-BR" },
+    { "url": "https://support.apple.com/guide/iphone/change-notification-settings-iph7c3d96bab/ios", "publisher": "Apple", "accessed": "2026-09-28", "checked": "iPhone notification settings, English" }
+  ],
+  "articles": [
+    {
+      "slug": "revisar-registro-antes-de-confirmar",
+      "category": "using_bodyflow",
+      "locales": {
+        "pt-BR": { "file": "pt-BR/revisar-registro-antes-de-confirmar.md", "title": "Revise o registro antes de confirmar", "excerpt": "O que conferir numa refeição proposta pelo app antes de ela entrar no seu dia: alimentos, quantidades, porções aproximadas e itens sem cálculo." },
+        "en-US": { "file": "en-US/revisar-registro-antes-de-confirmar.md", "title": "Review a log before you confirm it", "excerpt": "What to check in a meal the app proposes before it counts toward your day: foods, amounts, approximate portions and items without a calculation." }
+      }
+    },
+    {
+      "slug": "como-ler-rotulo-nutricional",
+      "category": "nutrition",
+      "locales": {
+        "pt-BR": { "file": "pt-BR/como-ler-rotulo-nutricional.md", "title": "Como ler o rótulo nutricional", "excerpt": "A tabela por 100 g e por porção, a lupa na frente da embalagem e como usar essas informações ao registrar uma refeição." },
+        "en-US": { "file": "en-US/como-ler-rotulo-nutricional.md", "title": "How to read a nutrition label", "excerpt": "The per 100 g and per serving table, the magnifier on the front of the package and how to use them when you log a meal." }
+      }
+    },
+    {
+      "slug": "organizar-a-alimentacao-do-dia",
+      "category": "nutrition",
+      "locales": {
+        "pt-BR": { "file": "pt-BR/organizar-a-alimentacao-do-dia.md", "title": "Organize a alimentação do dia", "excerpt": "Princípios simples do Guia Alimentar e da OMS para planejar refeições, montar o prato e ficar de olho em açúcar e sal." },
+        "en-US": { "file": "en-US/organizar-a-alimentacao-do-dia.md", "title": "Organize your daily eating", "excerpt": "Simple principles from the Brazilian dietary guidelines and the WHO for planning meals, building your plate and watching sugar and salt." }
+      }
+    },
+    {
+      "slug": "habitos-que-se-sustentam",
+      "category": "habit_formation",
+      "locales": {
+        "pt-BR": { "file": "pt-BR/habitos-que-se-sustentam.md", "title": "Hábitos que se sustentam", "excerpt": "Quanto tempo um hábito leva para se formar, por que um dia perdido não apaga o progresso e como começar pequeno." },
+        "en-US": { "file": "en-US/habitos-que-se-sustentam.md", "title": "Habits that last", "excerpt": "How long a habit takes to form, why one missed day does not erase progress and how to start small." }
+      }
+    },
+    {
+      "slug": "rotina-e-lembretes",
+      "category": "using_bodyflow",
+      "locales": {
+        "pt-BR": { "file": "pt-BR/rotina-e-lembretes.md", "title": "Rotina e lembretes no app", "excerpt": "Como os lembretes da rotina são agendados no iPhone, o que aparece na tela bloqueada e como registrar, adiar ou pular um item." },
+        "en-US": { "file": "en-US/rotina-e-lembretes.md", "title": "Routine and reminders in the app", "excerpt": "How routine reminders are scheduled on your iPhone, what shows on the lock screen and how to record, snooze or skip an item." }
+      }
+    },
+    {
+      "slug": "o-que-o-flow-faz",
+      "category": "using_bodyflow",
+      "locales": {
+        "pt-BR": { "file": "pt-BR/o-que-o-flow-faz.md", "title": "O que o Flow faz e o que não faz", "excerpt": "O Flow consulta seus dados e propõe planos, mas não confirma nada por você, não indica doses e não substitui um profissional." },
+        "en-US": { "file": "en-US/o-que-o-flow-faz.md", "title": "What Flow does and does not do", "excerpt": "Flow reads your data and proposes plans, but it never confirms anything for you, never suggests doses and does not replace a professional." }
+      }
+    }
+  ]
+}

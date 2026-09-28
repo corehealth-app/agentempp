@@ -255,8 +255,102 @@ describe('extractPlanDocument — plano alimentar', () => {
     const read = (result.payload.daily_meals as Array<Record<string, unknown>>)[0]
       ?.items as Array<Record<string, unknown>>
     expect(read.map((item) => item.quantity_g)).toEqual([120, 150, null, null])
-    expect(read[0]?.kcal).toBeNull()
+    expect(read[0]?.kcal ?? null).toBeNull()
     expect(read[1]?.kcal).toBe(240)
+  })
+})
+
+describe('revisão adversarial 2026-09-28', () => {
+  it('dose que o modelo pôs num campo sai do campo e volta como texto não importado', async () => {
+    const result = await extractPlanDocument(
+      structurer({
+        payload: {
+          horizon: 'daily',
+          notes: 'Tomar losartana 50 mg pela manhã',
+          daily_meals: [
+            {
+              meal_type: 'lanche_tarde',
+              notes: 'Whey 30 g depois do treino',
+              items: [
+                { food_name: 'Banana', quantity_g: 100 },
+                { food_name: 'Creatina', quantity_g: 5 },
+              ],
+            },
+          ],
+        },
+        unrecognized_segments: [],
+      }),
+      {
+        domain: 'nutrition',
+        document:
+          'Lanche: banana 100 g, creatina 5 g. Whey 30 g depois do treino. Tomar losartana 50 mg pela manhã',
+        userId: 'user-1',
+      },
+    )
+
+    const stored = JSON.stringify([result.payload, result.extraction_payload])
+    expect(stored).not.toMatch(/creatina|whey|losartana/i)
+    expect(result.unrecognized_segments).toEqual(
+      expect.arrayContaining([
+        'Tomar losartana 50 mg pela manhã',
+        'Whey 30 g depois do treino',
+        'Creatina',
+      ]),
+    )
+    // O item fica sem nome até o paciente decidir; nada é confirmado assim.
+    expect(result.complete).toBe(false)
+    expect(result.uncertain_fields).toEqual(
+      expect.arrayContaining([
+        { pointer: '/daily_meals/0/items/1/food_name', reason: 'not_allowed' },
+      ]),
+    )
+  })
+
+  it('resposta no formato exato do prompt (null nos opcionais) não fica incompleta por isso', async () => {
+    const result = await extractPlanDocument(
+      structurer({
+        payload: {
+          plan_type: null,
+          equipment_summary: null,
+          notes: null,
+          weekly_schedule: [
+            {
+              day: 'Treino A',
+              focus: 'Inferiores',
+              duration_min: 60,
+              exercises: [
+                {
+                  name: 'Agachamento livre',
+                  muscle_group: 'pernas',
+                  sets: 4,
+                  reps_range: '8-12',
+                  rest_seconds: 90,
+                  notes: null,
+                },
+              ],
+            },
+          ],
+        },
+        unrecognized_segments: [],
+      }),
+      { domain: 'training', document: trainingDocument, userId: 'user-1' },
+    )
+    expect(result.uncertain_fields).toEqual([])
+    expect(result.complete).toBe(true)
+    expect(result.payload).not.toHaveProperty('notes')
+  })
+
+  it('minuto só vira segundo quando a unidade está escrita junto do número', () => {
+    const payload = { a: [{ rest_seconds: 120, duration_min: 60, sets: 2 }] }
+    // "2" existe (2 séries), mas não como minutos nem como hora.
+    expect(removeNumbersNotInDocument(payload, 'Fazer 2 séries de 1 exercício')).toEqual([
+      { pointer: '/a/0/rest_seconds', reason: 'not_in_document' },
+      { pointer: '/a/0/duration_min', reason: 'not_in_document' },
+    ])
+    const written = { a: [{ rest_seconds: 120, duration_min: 60, kcal: 1500 }] }
+    expect(
+      removeNumbersNotInDocument(written, 'descanso 2 min; treino de 1 h; total 1.500 kcal'),
+    ).toEqual([])
   })
 })
 

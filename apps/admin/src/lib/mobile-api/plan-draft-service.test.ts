@@ -416,6 +416,72 @@ describe('importing the same document again', () => {
     expect(deps.events.sendProcessingRequested).not.toHaveBeenCalled()
   })
 
+  it('a draft still waiting for its reading asks for it again (the first event may be lost)', async () => {
+    const waiting = { ...imported, status: 'extracting' as const, payload: null }
+    const { deps, repository } = harness(draft(), asset({ status: 'uploaded' }), waiting)
+
+    const first = await createPlanImport(
+      deps, USER_A, { media_asset_id: ASSET, domain: 'nutrition' }, 'import-key-0012',
+    )
+    const second = await createPlanImport(
+      deps, USER_A, { media_asset_id: ASSET, domain: 'nutrition' }, 'import-key-0012',
+    )
+
+    expect(first).toEqual({ draft_id: DRAFT, status: 'extracting' })
+    expect(second).toEqual(first)
+    expect(repository.createImport).not.toHaveBeenCalled()
+    const sent = vi.mocked(deps.events.sendProcessingRequested).mock.calls.map(([event]) => event)
+    expect(sent).toHaveLength(2)
+    // The same event both times: a reading under way is not repeated.
+    expect(sent[0]).toEqual(sent[1])
+    expect(sent[0]).toMatchObject({ assetId: ASSET, userId: USER_A })
+  })
+
+  it('the event that failed to be sent fails the request, so the app asks again', async () => {
+    const { deps } = harness()
+    vi.mocked(deps.events.sendProcessingRequested).mockRejectedValueOnce(new Error('queue down'))
+    await expect(
+      createPlanImport(
+        deps, USER_A, { media_asset_id: ASSET, domain: 'training' }, 'import-key-0013',
+      ),
+    ).rejects.toThrow('queue down')
+  })
+
+  it('two requests at once for one document answer with the same draft', async () => {
+    const { deps, repository } = harness()
+    repository.createImport.mockRejectedValueOnce(
+      new MobileApiError(409, 'idempotency_key_conflict', 'Request key was already used'),
+    )
+    repository.findImportOfMedia
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ ...imported, status: 'extracting', domain: 'training' })
+
+    const result = await createPlanImport(
+      deps, USER_A, { media_asset_id: ASSET, domain: 'training' }, 'import-key-0014',
+    )
+
+    expect(result).toEqual({ draft_id: DRAFT, status: 'extracting' })
+    expect(deps.events.sendProcessingRequested).toHaveBeenCalledOnce()
+  })
+
+  it('and refuse the one that asked for another kind of plan', async () => {
+    const { deps, repository } = harness()
+    repository.createImport.mockRejectedValueOnce(
+      new MobileApiError(409, 'idempotency_key_conflict', 'Request key was already used'),
+    )
+    repository.findImportOfMedia
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ ...imported, status: 'extracting', domain: 'nutrition' })
+
+    const error = await failure(
+      createPlanImport(
+        deps, USER_A, { media_asset_id: ASSET, domain: 'training' }, 'import-key-0015',
+      ),
+    )
+    expect([error.status, error.code]).toEqual([409, 'plan_document_already_imported'])
+    expect(deps.events.sendProcessingRequested).not.toHaveBeenCalled()
+  })
+
   it('refuses to import it as another kind of plan', async () => {
     const { deps, repository } = harness(draft(), asset({ status: 'processed' }), imported)
     const error = await failure(

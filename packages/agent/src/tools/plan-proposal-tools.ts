@@ -48,6 +48,17 @@ async function existingDraft(
   return data ?? null
 }
 
+/** A draft of this turn the patient can no longer review is said as such. */
+function closedDraft(draft: { status: string }): Record<string, unknown> | null {
+  if (draft.status === 'needs_completion' || draft.status === 'ready_for_review') return null
+  return {
+    success: false,
+    retry_tool: false,
+    error:
+      'A proposta criada neste turno não está mais disponível para revisão. Explique isso ao paciente e ofereça criar outra em uma nova mensagem. Não apresente um plano.',
+  }
+}
+
 async function turnMessageId(ctx: ToolContext): Promise<string | null> {
   if (!ctx.providerMessageId) return null
   const { data } = await (ctx.supabase as Untyped)
@@ -70,6 +81,45 @@ async function recentEvents(ctx: ToolContext, events: string[], hours: number): 
     .gte('occurred_at', since)
   if (error) throw new Error('plan proposal cooldown lookup failed')
   return (data ?? []).length
+}
+
+const OPEN_DRAFT_LIMIT = 20
+const FAILED_PROPOSALS_PER_HOUR = 3
+
+/**
+ * Checked BEFORE the paid generation: a proposal that could not be stored
+ * (too many open drafts, repeated failures) is not generated at all.
+ */
+async function generationBlocked(ctx: ToolContext, failureEvent: string): Promise<boolean> {
+  if ((await recentEvents(ctx, [failureEvent], 1)) >= FAILED_PROPOSALS_PER_HOUR) return true
+  const { data, error } = await (ctx.supabase as Untyped)
+    .from('plan_drafts')
+    .select('id')
+    .eq('user_id', ctx.userId)
+    .in('status', ['extracting', 'generating', 'needs_completion', 'ready_for_review'])
+    .gte('expires_at', new Date().toISOString())
+    .limit(OPEN_DRAFT_LIMIT)
+  if (error) throw new Error('plan draft lookup failed')
+  return (data ?? []).length >= OPEN_DRAFT_LIMIT
+}
+
+const BLOCKED = {
+  success: false,
+  retry_tool: false,
+  error:
+    'Não é possível criar outra proposta agora. Explique ao paciente que ele pode revisar, confirmar ou descartar as propostas que já existem no app, e tentar de novo mais tarde. Não chame a ferramenta de novo e não apresente um plano.',
+}
+
+async function record(
+  ctx: ToolContext,
+  event: string,
+  properties: Record<string, unknown>,
+): Promise<void> {
+  const { error } = await ctx.supabase
+    .from('product_events')
+    .insert({ user_id: ctx.userId, event, properties: properties as never })
+  // The event is what the limits count: losing it silently would lift them.
+  if (error) throw new Error('plan proposal event was not stored')
 }
 
 async function createDraft(
@@ -148,7 +198,7 @@ export function createPlanProposalTools<
       const key = requestKey(ctx, PROPOSE_TRAINING_PLAN_TOOL)
       if (!key || !ctx.llm) return UNAVAILABLE
       const existing = await existingDraft(ctx, key)
-      if (existing) return replayed(existing, 'training')
+      if (existing) return closedDraft(existing) ?? replayed(existing, 'training')
 
       // O mesmo limite de gera_treino, somando gerações e propostas.
       if ((await recentEvents(ctx, ['training.plan_generated', 'training.plan_proposed'], 24)) >= 1) {
@@ -159,6 +209,7 @@ export function createPlanProposalTools<
             'Já foi criado um plano ou uma proposta de treino nas últimas 24h. Explique ao paciente que ele pode revisar a proposta existente no app ou pedir outra amanhã. Não chame a ferramenta de novo.',
         }
       }
+      if (await generationBlocked(ctx, 'training.proposal_failed')) return BLOCKED
 
       const sp = ctx.supabase as Untyped
       const [user, profile, progress] = await Promise.all([
@@ -222,23 +273,17 @@ export function createPlanProposalTools<
         { method: 'training_plan_generator', identity: 'flow' },
       )
       if (!draft) {
-        await ctx.supabase.from('product_events').insert({
-          user_id: ctx.userId,
-          event: 'training.proposal_failed',
-          properties: { days_per_week: plan.days_per_week },
-        })
+        await record(ctx, 'training.proposal_failed', { days_per_week: plan.days_per_week })
         return UNAVAILABLE
       }
-      await ctx.supabase.from('product_events').insert({
-        user_id: ctx.userId,
-        event: 'training.plan_proposed',
-        properties: {
+      if (draft.inserted) {
+        await record(ctx, 'training.plan_proposed', {
           draft_id: draft.id,
           plan_type: plan.plan_type,
           days_per_week: plan.days_per_week,
           location: input.location,
-        },
-      })
+        })
+      }
       return {
         success: true,
         draft_id: draft.id,
@@ -269,7 +314,7 @@ export function createPlanProposalTools<
       const key = requestKey(ctx, PROPOSE_DIET_PLAN_TOOL)
       if (!key || !ctx.llm) return UNAVAILABLE
       const existing = await existingDraft(ctx, key)
-      if (existing) return replayed(existing, 'nutrition')
+      if (existing) return closedDraft(existing) ?? replayed(existing, 'nutrition')
 
       // O mesmo limite de gera_dieta, somando gerações e propostas.
       if ((await recentEvents(ctx, ['diet.generated', 'diet.proposed'], 2)) >= 2) {
@@ -280,6 +325,7 @@ export function createPlanProposalTools<
             'Já foram criados 2 cardápios ou propostas nas últimas 2h. Explique ao paciente que ele pode revisar as propostas existentes no app ou pedir outra mais tarde. Não chame a ferramenta de novo.',
         }
       }
+      if (await generationBlocked(ctx, 'diet.proposal_failed')) return BLOCKED
 
       const sp = ctx.supabase as Untyped
       const [user, profile, progress] = await Promise.all([
@@ -364,22 +410,16 @@ export function createPlanProposalTools<
         { method: 'diet_generator', identity: 'flow' },
       )
       if (!draft) {
-        await ctx.supabase.from('product_events').insert({
-          user_id: ctx.userId,
-          event: 'diet.proposal_failed',
-          properties: { horizon: plan.horizon },
-        })
+        await record(ctx, 'diet.proposal_failed', { horizon: plan.horizon })
         return UNAVAILABLE
       }
-      await ctx.supabase.from('product_events').insert({
-        user_id: ctx.userId,
-        event: 'diet.proposed',
-        properties: {
+      if (draft.inserted) {
+        await record(ctx, 'diet.proposed', {
           draft_id: draft.id,
           horizon: plan.horizon,
           meals_count: plan.daily_meals.length,
-        },
-      })
+        })
+      }
       return {
         success: true,
         draft_id: draft.id,

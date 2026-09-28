@@ -329,6 +329,10 @@ export async function createPlanImport(
         'This document was already imported as another kind of plan',
       )
     }
+    // A draft still waiting for its reading asks for it again: the first
+    // request may have stored the draft and failed to send the event. The
+    // event id is the same, so a reading already under way is not repeated.
+    if (existing.status === 'extracting') await requestReading(deps, userId, asset.id, existing.id)
     return { draft_id: existing.id, status: existing.status }
   }
   // Read before: a new draft would wait for a reading that already happened.
@@ -345,21 +349,49 @@ export async function createPlanImport(
   }
 
   const requestHash = sha256(`${userId}:${idempotencyKey}`)
-  const outcome = await deps.repository.createImport({
-    userId,
-    domain: input.domain,
-    origin: asset.mime_type === 'application/pdf' ? 'imported_pdf' : 'imported_photo',
-    mediaAssetId: asset.id,
-    requestKey: `plan-import:${requestHash}`,
-  })
+  let outcome: PlanDraftOutcome
+  try {
+    outcome = await deps.repository.createImport({
+      userId,
+      domain: input.domain,
+      origin: asset.mime_type === 'application/pdf' ? 'imported_pdf' : 'imported_photo',
+      mediaAssetId: asset.id,
+      requestKey: `plan-import:${requestHash}`,
+    })
+  } catch (error) {
+    // Two requests for the same document at once: the database keeps one
+    // draft per document, and the other request answers with it.
+    if (error instanceof MobileApiError && error.code === 'idempotency_key_conflict') {
+      const winner = await deps.repository.findImportOfMedia(userId, asset.id)
+      if (winner && winner.domain === input.domain) {
+        if (winner.status === 'extracting') await requestReading(deps, userId, asset.id, winner.id)
+        return { draft_id: winner.id, status: winner.status }
+      }
+      throw new MobileApiError(
+        409,
+        'plan_document_already_imported',
+        'This document was already imported as another kind of plan',
+      )
+    }
+    throw error
+  }
   // The document is read by the worker; the draft stays "extracting" until
-  // its outcome arrives. A repeated request sends the same event id.
-  await deps.events.sendProcessingRequested({
-    assetId: asset.id,
-    userId,
-    requestId: sha256(`plan-import:${outcome.id}`),
-  })
+  // its outcome arrives.
+  await requestReading(deps, userId, asset.id, outcome.id)
   return { draft_id: outcome.id, status: outcome.status }
+}
+
+function requestReading(
+  deps: PlanDraftDependencies,
+  userId: string,
+  assetId: string,
+  draftId: string,
+): Promise<void> {
+  return deps.events.sendProcessingRequested({
+    assetId,
+    userId,
+    requestId: sha256(`plan-import:${draftId}`),
+  })
 }
 
 // --- Supabase ---------------------------------------------------------------

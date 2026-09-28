@@ -29,6 +29,8 @@ export type PlanDraftUncertainReason =
   | 'out_of_range'
   | 'invalid'
   | 'not_in_document'
+  /** O texto falava de medicamento, suplemento ou dose e foi retirado. */
+  | 'not_allowed'
 
 export interface PlanDraftUncertainField {
   /** Ponteiro JSON (RFC 6901) dentro do conteúdo do rascunho. */
@@ -191,20 +193,94 @@ function leaf(value: unknown): unknown {
   return null
 }
 
-function project(value: unknown, shape: Shape): Record<string, unknown> {
+// Campos de texto que o formato não exige: vazio ou `null` é o mesmo que
+// ausente, e não torna o rascunho incompleto.
+const OPTIONAL_KEYS = new Set([
+  'plan_type',
+  'equipment_summary',
+  'progression_rule',
+  'notes',
+  'rpe_target',
+  'execution_steps',
+  'common_mistakes',
+  'mode',
+  'horizon',
+  'meta_kcal',
+  'meta_protein_g',
+  'day_of_week',
+  'time_suggestion',
+  'display_qty',
+  'display_unit',
+  'kcal',
+  'protein_g',
+  'carbs_g',
+  'fat_g',
+  'total_kcal',
+  'total_protein_g',
+])
+
+interface Projection {
+  /** Textos retirados por falarem de medicamento, suplemento ou dose. */
+  removed: string[]
+  /** Campos obrigatórios esvaziados pelo mesmo motivo. */
+  notAllowed: Array<Array<string | number>>
+}
+
+/**
+ * Medicamento, suplemento e dose não entram em campo nenhum, venha de onde
+ * vier (modelo, documento ou edição). O texto sai do campo e é devolvido à
+ * parte; num campo obrigatório, o campo fica vazio para o paciente decidir.
+ */
+function withoutMedication(
+  key: string,
+  value: unknown,
+  path: Array<string | number>,
+  projection: Projection,
+): unknown {
+  if (typeof value === 'string') {
+    if (!mentionsMedication(value)) return value
+    projection.removed.push(value)
+    if (!OPTIONAL_KEYS.has(key)) projection.notAllowed.push(path)
+    return null
+  }
+  if (Array.isArray(value)) {
+    return value.filter((entry) => {
+      if (typeof entry !== 'string' || !mentionsMedication(entry)) return true
+      projection.removed.push(entry)
+      return false
+    })
+  }
+  return value
+}
+
+function project(
+  value: unknown,
+  shape: Shape,
+  projection: Projection,
+  path: Array<string | number> = [],
+): Record<string, unknown> {
   const source = isRecord(value) ? value : {}
   const result: Record<string, unknown> = {}
   for (const [key, inner] of Object.entries(shape)) {
-    if (!(key in source) || source[key] === undefined) continue
+    if (!Object.hasOwn(source, key) || source[key] === undefined) continue
     const current = source[key]
     if (inner === true) {
-      result[key] = leaf(current)
+      const cleaned = withoutMedication(key, leaf(current), [...path, key], projection)
+      const empty =
+        cleaned === null ||
+        (typeof cleaned === 'string' && cleaned.trim() === '') ||
+        (Array.isArray(cleaned) && cleaned.length === 0)
+      if (empty && OPTIONAL_KEYS.has(key)) continue
+      result[key] = cleaned
     } else if (Array.isArray(inner)) {
+      const entryShape = inner[0]
       result[key] = Array.isArray(current)
-        ? current.slice(0, MAX_ARRAY_LENGTH).map((entry) => project(entry, inner[0]))
+        ? current
+            .slice(0, MAX_ARRAY_LENGTH)
+            .map((entry, index) => project(entry, entryShape, projection, [...path, key, index]))
         : null
     } else {
-      result[key] = isRecord(current) ? project(current, inner) : null
+      result[key] = isRecord(current) ? project(current, inner, projection, [...path, key]) : null
     }
   }
   return result
@@ -252,6 +328,8 @@ export interface PlanDraftAssessment {
   uncertain_fields: PlanDraftUncertainField[]
   /** `true` só quando o conteúdo passa inteiro na validação de confirmação. */
   complete: boolean
+  /** Textos retirados dos campos por falarem de medicamento, suplemento ou dose. */
+  removed_segments: string[]
 }
 
 /**
@@ -263,14 +341,26 @@ export function assessPlanDraftPayload(
   candidate: unknown,
 ): PlanDraftAssessment {
   if (!isRecord(candidate)) throw new TypeError('plan draft payload must be an object')
-  const payload = project(candidate, SHAPES[domain])
+  const projection: Projection = { removed: [], notAllowed: [] }
+  const payload = project(candidate, SHAPES[domain], projection)
+  const removed = sanitizeUnrecognizedSegments(projection.removed)
   const parsed = STRICT_SCHEMAS[domain].safeParse(payload)
   if (parsed.success) {
-    return { payload: parsed.data as Record<string, unknown>, uncertain_fields: [], complete: true }
+    return {
+      payload: parsed.data as Record<string, unknown>,
+      uncertain_fields: [],
+      complete: true,
+      removed_segments: removed,
+    }
   }
 
   const seen = new Set<string>()
   const uncertain: PlanDraftUncertainField[] = []
+  for (const path of projection.notAllowed) {
+    const pointer = pointerOf(path)
+    seen.add(pointer)
+    uncertain.push({ pointer, reason: 'not_allowed' })
+  }
   for (const issue of parsed.error.issues) {
     const pointer = pointerOf(issue.path)
     if (seen.has(pointer)) continue
@@ -284,6 +374,7 @@ export function assessPlanDraftPayload(
     payload,
     uncertain_fields: uncertain.slice(0, PLAN_DRAFT_MAX_UNCERTAIN_FIELDS),
     complete: false,
+    removed_segments: removed,
   }
 }
 

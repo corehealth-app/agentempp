@@ -89,6 +89,10 @@ export interface MediaServiceDependencies {
   repository: MediaAssetRepository
   storage: MediaStorageGateway
   events: MediaProcessingEventGateway
+  /** Plan drafts that still depend on a document; absent = none exist. */
+  planDrafts?: {
+    hasOpenDraftOfMedia(userId: string, assetId: string): Promise<boolean>
+  }
 }
 
 const mediaPolicy = {
@@ -299,6 +303,19 @@ export async function deleteMediaAsset(
 ) {
   const asset = requireOwnedAsset(await deps.repository.findOwned(userId, assetId))
   if (asset.status === 'deleted') return mediaAssetDto(asset)
+  // A document under reading or review is its draft's source: the patient
+  // discards the draft first, and then the document.
+  if (
+    asset.kind === 'plan_document' &&
+    deps.planDrafts &&
+    (await deps.planDrafts.hasOpenDraftOfMedia(userId, assetId))
+  ) {
+    throw new MobileApiError(
+      409,
+      'media_in_use_by_plan_draft',
+      'Discard the plan draft of this document before deleting it',
+    )
+  }
 
   await deps.storage.remove(asset.bucket_id, asset.object_path)
   return mediaAssetDto(await deps.repository.markDeleted(userId, assetId, now.toISOString()))
@@ -311,6 +328,11 @@ export async function requestMediaProcessing(
   requestKey: string,
 ) {
   const asset = requireOwnedAsset(await deps.repository.findOwned(userId, assetId))
+  // A plan document is read only for a draft that waits for it, through
+  // POST /plan-imports; reading it here would leave nothing to import.
+  if (asset.kind === 'plan_document') {
+    throw new MobileApiError(422, 'media_kind_not_supported', 'Plan documents are read on import')
+  }
   const retryableFailure = asset.status === 'failed' && asset.failure_stage === 'processing'
   if (asset.status !== 'uploaded' && asset.status !== 'processing' && !retryableFailure) {
     throw new MobileApiError(409, 'media_not_processable', 'Media asset is not processable')

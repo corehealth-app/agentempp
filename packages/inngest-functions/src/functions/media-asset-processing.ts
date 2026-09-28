@@ -6,6 +6,7 @@ import { createWorkerSupabase } from '../lib/env.js'
 import { loadVisionConfig } from '../lib/runtime-config.js'
 import {
   createDefaultPlanDocumentDependencies,
+  failWaitingPlanDrafts,
   type PlanDocumentDependencies,
   processPlanDocument,
 } from './plan-document-processing.js'
@@ -160,7 +161,23 @@ export async function processMediaAsset(
   | { status: 'skipped' }
 > {
   const asset = await deps.repository.claim(input)
-  if (!asset) return { status: 'skipped' }
+  if (!asset) {
+    // Nothing to read (already read, deleted, or claimed by another
+    // request). A plan draft that still waited for it must not wait forever.
+    if (deps.planDocuments) {
+      await failWaitingPlanDrafts(deps.planDocuments, input, 'document_unreadable')
+    }
+    return { status: 'skipped' }
+  }
+  const failPlanDrafts = async () => {
+    if (asset.kind === 'plan_document' && deps.planDocuments) {
+      await failWaitingPlanDrafts(
+        deps.planDocuments,
+        { assetId: asset.id, userId: asset.user_id },
+        'document_unreadable',
+      )
+    }
+  }
 
   let bytes: Uint8Array
   try {
@@ -172,6 +189,7 @@ export async function processMediaAsset(
       input.requestId,
       'storage_download_error',
     )
+    await failPlanDrafts()
     throw error
   }
 
@@ -182,6 +200,7 @@ export async function processMediaAsset(
       input.requestId,
       'invalid_file_signature',
     )
+    await failPlanDrafts()
     return { status: 'failed', reason: 'invalid_file_signature' }
   }
 
@@ -217,14 +236,24 @@ export async function processMediaAsset(
     // Each draft waiting for this document gets its own outcome (content to
     // review, or the reason it could not be read). The asset keeps only a
     // count and the method — never the document's text.
-    const summary = await processPlanDocument(deps.planDocuments, {
-      assetId: asset.id,
-      userId: asset.user_id,
-      mimeType: asset.mime_type,
-      bytes,
-    })
-    await deps.repository.markProcessed(asset.id, asset.user_id, input.requestId, summary)
-    return { status: 'processed' }
+    try {
+      const summary = await processPlanDocument(deps.planDocuments, {
+        assetId: asset.id,
+        userId: asset.user_id,
+        mimeType: asset.mime_type,
+        bytes,
+      })
+      await deps.repository.markProcessed(asset.id, asset.user_id, input.requestId, summary)
+      return { status: 'processed' }
+    } catch (error) {
+      // The database refused an outcome: the asset does not stay
+      // "processing" and the drafts that still wait are told.
+      await deps.repository
+        .markFailed(asset.id, asset.user_id, input.requestId, 'plan_document_error')
+        .catch(() => undefined)
+      await failPlanDrafts()
+      throw error
+    }
   }
 
   try {

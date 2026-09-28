@@ -1730,12 +1730,17 @@ Rascunho de outro paciente responde `404 plan_draft_not_found` em todas.
   `expires_at` vencido (30 dias) é lido como `expired`.
 - `origin`: `flow_generated`, `imported_photo`, `imported_pdf`.
 - `uncertain_fields[].reason`: `missing`, `out_of_range`, `invalid`,
-  `not_in_document` (o número não está escrito no documento). Valor ausente ou
-  fora da faixa fica `null`; nada é ajustado, estimado ou calculado.
+  `not_in_document` (o número não está escrito no documento) e `not_allowed`
+  (o texto falava de medicamento, suplemento ou dose e foi retirado do campo).
+  Valor ausente ou fora da faixa fica `null`; nada é ajustado, estimado ou
+  calculado. Campo opcional vazio ou `null` é tratado como ausente.
 - Plano alimentar: alimento e quantidade são obrigatórios; calorias e macros
   são opcionais e só existem quando o documento (ou o gerador) os trouxe.
 - `unrecognized_segments`: trechos do documento que não viraram campo, como
-  vieram. Medicamento, suplemento e dose nunca viram campo; quando aparecem,
+  vieram. Medicamento, suplemento e dose nunca viram campo — a regra vale para
+  o conteúdo de qualquer campo de texto, venha do documento, do Flow ou da
+  edição do paciente: o texto sai do campo (num campo obrigatório, o campo
+  fica vazio) e, na importação, volta para esta lista. Quando aparecem,
   `notices` traz `medications_not_imported`.
 - `notices` sempre traz `not_professionally_reviewed`.
 - `failure_code` (com `status: failed`): `document_without_text` (PDF
@@ -1762,8 +1767,13 @@ Erros: `409 draft_changed` (a versão não é a atual),
 - plano alimentar: só insere uma prescrição; as anteriores ficam como estão;
 - `409 plan_changed_during_review`: o plano em vigor mudou desde que o
   rascunho nasceu — o paciente revisa de novo (novo rascunho);
-- `409 prescribed_plan_protected`: o plano em vigor foi prescrito por um
-  profissional e não é substituído por rascunho;
+- `409 prescribed_plan_protected`: o plano de treino em vigor, ou a
+  prescrição mais recente ainda válida, foi feito por um profissional e não é
+  substituído por rascunho;
+- o plano confirmado guarda a origem (`flow_draft` ou `patient_import`) e, se
+  o paciente alterou o conteúdo antes de confirmar, o sufixo `_edited`;
+- uma prescrição que apenas venceu durante a revisão não conta como mudança
+  de plano;
 - repetir a mesma confirmação devolve o mesmo plano (`already_confirmed: true`);
 - validade: os gerados seguem a regra dos geradores (treino 6 semanas; plano
   alimentar 1 ou 7 dias); um plano importado não recebe validade.
@@ -1778,8 +1788,13 @@ Erros: `409 draft_changed` (a versão não é a atual),
    "training" | "nutrition" }` → `202 { "draft_id", "status": "extracting" }`.
 3. O app consulta `GET /plan-drafts/:id` até sair de `extracting`.
 
+`POST /media/:id/process` recusa documento de plano (`422
+media_kind_not_supported`): ele só é lido pela importação. `DELETE /media/:id`
+de um documento com rascunho em leitura ou em revisão responde `409
+media_in_use_by_plan_draft` — o paciente descarta o rascunho antes.
+
 Um documento é importado uma vez: pedir de novo devolve o rascunho que ele já
-gerou (`409 plan_document_already_imported` se for pedido como outro tipo de
+gerou e, se a leitura ainda não começou, pede a leitura outra vez (`409 plan_document_already_imported` se for pedido como outro tipo de
 plano; `409 plan_document_already_read` se a leitura anterior não deixou
 rascunho aberto — o paciente envia o documento de novo). Mídia de outro
 paciente: `404 media_asset_not_found`.
@@ -1796,7 +1811,9 @@ do paciente.
 que aquele turno criou (lido do banco, preso ao paciente e ao turno). O Flow
 só tem as ferramentas `propoe_plano_treino` e `propoe_plano_dieta`, com os
 mesmos limites dos geradores (treino 1 por 24 h; plano alimentar 2 por 2 h,
-somando gerações e propostas). `gera_treino`/`gera_dieta` continuam recusadas
+somando gerações e propostas). Antes de gerar, a ferramenta confere se há
+lugar para guardar a proposta (menos de 20 rascunhos abertos e menos de 3
+falhas de gravação na última hora): sem lugar, nada é gerado. `gera_treino`/`gera_dieta` continuam recusadas
 no app, e as propostas não existem no WhatsApp.
 
 ## Proposta de treino

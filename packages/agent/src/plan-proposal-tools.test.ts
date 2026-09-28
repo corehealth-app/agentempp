@@ -93,6 +93,10 @@ interface Recorded {
 function makeContext(options: {
   existingDraft?: { id: string; status: string } | null
   recentEvents?: number
+  /** Events counted per name; overrides `recentEvents` for the names given. */
+  eventsByName?: Record<string, number>
+  openDrafts?: number
+  insertError?: boolean
   providerMessageId?: string | undefined
   llm?: unknown
   rpcError?: boolean
@@ -109,13 +113,34 @@ function makeContext(options: {
   }
   const from = (table: string) => {
     recorded.reads.push(table)
-    const result = { data: rows[table] ?? null, error: null }
+    const result: { data: unknown; error: null } = { data: rows[table] ?? null, error: null }
     const query = Promise.resolve(result) as Promise<typeof result> & Record<string, unknown>
-    for (const method of ['select', 'eq', 'in', 'gte', 'order', 'limit']) query[method] = () => query
-    query.maybeSingle = async () => result
+    for (const method of ['select', 'eq', 'gte', 'order']) query[method] = () => query
+    query.in = (column: string, values: string[]) => {
+      if (table === 'product_events' && column === 'event' && options.eventsByName) {
+        const count = values.reduce(
+          (total, name) => total + (options.eventsByName?.[name] ?? 0),
+          0,
+        )
+        result.data = Array.from({ length: count }, (_, id) => ({ id }))
+      }
+      return query
+    }
+    // `limit` is how the open drafts are counted; a single-row lookup
+    // (maybeSingle) is the draft of this turn.
+    query.limit = () => {
+      if (table === 'plan_drafts') {
+        result.data = Array.from({ length: options.openDrafts ?? 0 }, (_, id) => ({ id }))
+      }
+      return query
+    }
+    query.maybeSingle = async () => ({ data: rows[table] ?? null, error: null })
     query.insert = (row: Record<string, unknown>) => {
       recorded.inserts.push({ table, row })
-      return Promise.resolve({ data: null, error: null })
+      return Promise.resolve({
+        data: null,
+        error: options.insertError ? { message: 'insert failed' } : null,
+      })
     }
     return query
   }
@@ -345,7 +370,49 @@ describe('propoe_plano_treino', () => {
     }
   })
 
-  it('falha do gerador ou do banco não vira proposta nem conta para o limite', async () => {
+  it('sem lugar para guardar a proposta, nada é gerado (nem pago)', async () => {
+    generateTrainingPlan.mockResolvedValue(trainingPlan)
+    for (const options of [
+      { openDrafts: 20 },
+      { eventsByName: { 'training.proposal_failed': 3 } },
+    ]) {
+      const { ctx, recorded } = makeContext(options)
+      const result = await propoePlanoTreino.execute(trainingArguments, ctx)
+      expect(result).toMatchObject({ success: false, retry_tool: false })
+      expect(generateTrainingPlan).not.toHaveBeenCalled()
+      expect(recorded.rpcs).toEqual([])
+      expect(recorded.inserts).toEqual([])
+    }
+
+    const allowed = makeContext({
+      openDrafts: 19,
+      eventsByName: { 'training.proposal_failed': 2 },
+    })
+    expect(await propoePlanoTreino.execute(trainingArguments, allowed.ctx)).toMatchObject({
+      success: true,
+    })
+  })
+
+  it('o evento que sustenta o limite precisa ser gravado', async () => {
+    generateTrainingPlan.mockResolvedValue(trainingPlan)
+    const { ctx } = makeContext({ insertError: true })
+    await expect(propoePlanoTreino.execute(trainingArguments, ctx)).rejects.toThrow(
+      'plan proposal event was not stored',
+    )
+  })
+
+  it('rascunho do turno que já foi descartado não é anunciado como pronto', async () => {
+    for (const status of ['discarded', 'expired', 'failed', 'confirmed']) {
+      const { ctx, recorded } = makeContext({ existingDraft: { id: DRAFT, status } })
+      const result = await propoePlanoTreino.execute(trainingArguments, ctx)
+      expect(result, status).toMatchObject({ success: false, retry_tool: false })
+      expect(result).not.toHaveProperty('draft_id')
+      expect(generateTrainingPlan).not.toHaveBeenCalled()
+      expect(recorded.rpcs).toEqual([])
+    }
+  })
+
+  it('falha do gerador ou do banco não vira proposta; a falha de gravação é contada', async () => {
     generateTrainingPlan.mockResolvedValueOnce(null)
     const first = makeContext()
     expect(await propoePlanoTreino.execute(trainingArguments, first.ctx)).toMatchObject({

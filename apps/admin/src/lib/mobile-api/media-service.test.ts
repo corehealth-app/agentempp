@@ -144,6 +144,47 @@ describe('mobile media service', () => {
     )
   })
 
+  it('a plan document is read only through the import, never by a direct request', async () => {
+    const deps = makeDeps(asset({ kind: 'plan_document', status: 'uploaded' }))
+
+    await expect(
+      requestMediaProcessing(deps, USER_ID, ASSET_ID, 'mobile-media-request-0011'),
+    ).rejects.toMatchObject({ status: 422, code: 'media_kind_not_supported' })
+    expect(deps.events.sendProcessingRequested).not.toHaveBeenCalled()
+  })
+
+  it('a document whose draft is open is not deleted; without a draft it is', async () => {
+    const document = asset({ kind: 'plan_document', status: 'uploaded' })
+    const inUse = {
+      ...makeDeps(document),
+      planDrafts: { hasOpenDraftOfMedia: vi.fn().mockResolvedValue(true) },
+    }
+    await expect(deleteMediaAsset(inUse, USER_ID, ASSET_ID)).rejects.toMatchObject({
+      status: 409,
+      code: 'media_in_use_by_plan_draft',
+    })
+    expect(inUse.planDrafts.hasOpenDraftOfMedia).toHaveBeenCalledWith(USER_ID, ASSET_ID)
+    expect(inUse.storage.remove).not.toHaveBeenCalled()
+    expect(inUse.repository.markDeleted).not.toHaveBeenCalled()
+
+    const free = {
+      ...makeDeps(document),
+      planDrafts: { hasOpenDraftOfMedia: vi.fn().mockResolvedValue(false) },
+    }
+    await expect(deleteMediaAsset(free, USER_ID, ASSET_ID)).resolves.toMatchObject({
+      status: 'deleted',
+    })
+    expect(free.storage.remove).toHaveBeenCalledOnce()
+
+    // Other kinds never ask about drafts.
+    const photo = {
+      ...makeDeps(asset({ kind: 'meal_photo', status: 'uploaded' })),
+      planDrafts: { hasOpenDraftOfMedia: vi.fn().mockResolvedValue(true) },
+    }
+    await deleteMediaAsset(photo, USER_ID, ASSET_ID)
+    expect(photo.planDrafts.hasOpenDraftOfMedia).not.toHaveBeenCalled()
+  })
+
   it('refuses an audio declared longer than 180 seconds before creating anything', async () => {
     const deps = makeDeps()
     const audio = { kind: 'audio_note' as const, mime_type: 'audio/mp4' as const, size_bytes: 1200 }

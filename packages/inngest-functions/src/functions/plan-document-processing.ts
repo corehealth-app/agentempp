@@ -61,8 +61,47 @@ export interface PlanDocumentSummary {
   kind: 'plan_document'
   method: 'pdf_text' | 'image_transcription'
   drafts: number
+  /** Drafts that got content to review (complete or to be completed). */
   ready: number
   failed: number
+}
+
+/**
+ * Every draft still waiting for this document ends as failed, with the
+ * reason. Called whenever the document will not be read (refused file,
+ * download failure, lost claim…), so no draft stays "extracting" forever.
+ * Never throws: it runs on failure paths.
+ */
+export async function failWaitingPlanDrafts(
+  deps: PlanDocumentDependencies,
+  input: { assetId: string; userId: string },
+  failureCode: PlanDocumentFailure,
+): Promise<number> {
+  try {
+    const waiting = await deps.drafts.findWaiting(input.assetId, input.userId)
+    let failed = 0
+    for (const draft of waiting) {
+      try {
+        await deps.drafts.resolve({
+          userId: input.userId,
+          draftId: draft.id,
+          status: 'failed',
+          payload: null,
+          extractionPayload: null,
+          uncertainFields: [],
+          unrecognizedSegments: [],
+          originDetail: { method: 'not_read', prompt_version: PLAN_DOCUMENT_PROMPT_VERSION },
+          failureCode,
+        })
+        failed += 1
+      } catch {
+        // The next delivery of the same work tries again.
+      }
+    }
+    return failed
+  } catch {
+    return 0
+  }
 }
 
 async function readDocument(
@@ -172,11 +211,9 @@ export function createDefaultPlanDocumentDependencies(
   const llm = () => {
     const apiKey = process.env.OPENROUTER_API_KEY
     if (!apiKey) throw new Error('OPENROUTER_API_KEY ausente')
-    return new OpenRouterLLM({
-      apiKey,
-      heliconeApiKey: process.env.HELICONE_API_KEY,
-      appName: 'Performe AI Plan Import',
-    })
+    // No observability proxy here: the request carries the whole document
+    // (it may name medications) and must not be logged by a third party.
+    return new OpenRouterLLM({ apiKey, appName: 'Performe AI Plan Import' })
   }
   return {
     drafts: {

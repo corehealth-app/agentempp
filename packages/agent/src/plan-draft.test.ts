@@ -234,6 +234,76 @@ describe('assessPlanDraftPayload — dieta', () => {
   })
 })
 
+describe('medicamento, suplemento e dose nunca viram campo', () => {
+  it('na edição do paciente e na proposta do Flow, o texto sai e o campo obrigatório fica vazio', () => {
+    const result = assessPlanDraftPayload('training', {
+      ...training,
+      notes: 'Tomar 2 comprimidos de X antes do treino',
+      weekly_schedule: [
+        {
+          day: 'seg',
+          focus: 'inferiores',
+          duration_min: 60,
+          exercises: [
+            {
+              ...exercise,
+              notes: 'creatina 5 g',
+              execution_steps: ['descer devagar', 'tomar suplemento antes'],
+            },
+            { ...exercise, name: 'Whey pós-treino' },
+          ],
+        },
+      ],
+    })
+
+    expect(JSON.stringify(result.payload)).not.toMatch(/comprimido|creatina|suplemento|whey/i)
+    expect([...result.removed_segments].sort()).toEqual([
+      'Tomar 2 comprimidos de X antes do treino',
+      'Whey pós-treino',
+      'creatina 5 g',
+      'tomar suplemento antes',
+    ])
+    expect(result.complete).toBe(false)
+    expect(result.uncertain_fields).toEqual([
+      { pointer: '/weekly_schedule/0/exercises/1/name', reason: 'not_allowed' },
+    ])
+    const exercises = (result.payload.weekly_schedule as Array<Record<string, unknown>>)[0]
+      ?.exercises as Array<Record<string, unknown>>
+    expect(exercises[0]?.execution_steps).toEqual(['descer devagar'])
+    expect(exercises[0]).not.toHaveProperty('notes')
+    expect(exercises[1]?.name).toBeNull()
+  })
+
+  it('texto opcional retirado não impede a confirmação do resto', () => {
+    const result = assessPlanDraftPayload('nutrition', {
+      ...nutrition,
+      notes: 'Vitamina D 2000 UI',
+    })
+    expect(result.complete).toBe(true)
+    expect(result.payload).not.toHaveProperty('notes')
+    expect(result.removed_segments).toEqual(['Vitamina D 2000 UI'])
+  })
+
+  it('opcional vazio ou null é o mesmo que ausente', () => {
+    const result = assessPlanDraftPayload('nutrition', {
+      horizon: null,
+      notes: '  ',
+      meta_kcal: null,
+      daily_meals: [
+        {
+          meal_type: 'almoco',
+          day_of_week: null,
+          time_suggestion: null,
+          notes: null,
+          items: [{ food_name: 'arroz', quantity_g: 120, kcal: null, display_unit: null }],
+        },
+      ],
+    })
+    expect(result.complete).toBe(true)
+    expect(result.uncertain_fields).toEqual([])
+  })
+})
+
 describe('apoios', () => {
   it('trechos não reconhecidos ficam como vieram, com limites', () => {
     expect(

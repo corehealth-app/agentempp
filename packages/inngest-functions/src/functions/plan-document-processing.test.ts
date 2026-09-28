@@ -5,6 +5,7 @@ import {
   processMediaAsset,
 } from './media-asset-processing.js'
 import {
+  failWaitingPlanDrafts,
   type PlanDocumentDependencies,
   type PlanDocumentDraftOutcome,
   processPlanDocument,
@@ -248,6 +249,82 @@ describe('plan documents in the media worker', () => {
     })
     expect(plan.pdfText).not.toHaveBeenCalled()
     expect(plan.structure).not.toHaveBeenCalled()
+    // The draft that waited for it is told, instead of waiting forever.
+    expect(plan.outcomes).toEqual([
+      expect.objectContaining({
+        draftId: 'draft-1', status: 'failed', failureCode: 'document_unreadable', payload: null,
+      }),
+    ])
+  })
+
+  it('a download failure and a lost claim also end the drafts that waited', async () => {
+    const download = planDependencies()
+    const failing = mediaDependencies(download.deps)
+    failing.storage.download = vi.fn(async () => {
+      throw new Error('storage down')
+    })
+    await expect(processMediaAsset(failing, request)).rejects.toThrow('storage down')
+    expect(failing.repository.markFailed).toHaveBeenCalledWith(
+      ASSET, USER, request.requestId, 'storage_download_error',
+    )
+    expect(download.outcomes.map((outcome) => outcome.failureCode)).toEqual([
+      'document_unreadable',
+    ])
+
+    const lost = planDependencies()
+    const skipped = mediaDependencies(lost.deps)
+    skipped.repository.claim = vi.fn(async () => null)
+    expect(await processMediaAsset(skipped, request)).toEqual({ status: 'skipped' })
+    expect(lost.deps.drafts.findWaiting).toHaveBeenCalledWith(ASSET, USER)
+    expect(lost.outcomes.map((outcome) => outcome.status)).toEqual(['failed'])
+  })
+
+  it('when no outcome can be stored the asset does not stay processing', async () => {
+    const plan = planDependencies()
+    plan.deps.drafts.resolve = vi.fn(async () => {
+      throw new Error('database down')
+    })
+    const deps = mediaDependencies(plan.deps)
+
+    await expect(processMediaAsset(deps, request)).rejects.toThrow('database down')
+
+    expect(deps.repository.markProcessed).not.toHaveBeenCalled()
+    expect(deps.repository.markFailed).toHaveBeenCalledWith(
+      ASSET, USER, request.requestId, 'plan_document_error',
+    )
+  })
+
+  it('an outcome refused once becomes a failed draft, not a lost one', async () => {
+    const plan = planDependencies()
+    const stored: string[] = []
+    let calls = 0
+    plan.deps.drafts.resolve = vi.fn(async (outcome) => {
+      calls += 1
+      if (calls === 1) throw new Error('payload refused')
+      stored.push(`${outcome.status}:${outcome.failureCode}`)
+    })
+    const deps = mediaDependencies(plan.deps)
+
+    expect(await processMediaAsset(deps, request)).toEqual({ status: 'processed' })
+    expect(stored).toEqual(['failed:extraction_failed'])
+  })
+
+  it('failing the drafts never throws, whatever the database does', async () => {
+    const plan = planDependencies()
+    plan.deps.drafts.findWaiting = vi.fn(async () => {
+      throw new Error('database down')
+    })
+    await expect(
+      failWaitingPlanDrafts(plan.deps, { assetId: ASSET, userId: USER }, 'document_unreadable'),
+    ).resolves.toBe(0)
+
+    const other = planDependencies()
+    other.deps.drafts.resolve = vi.fn(async () => {
+      throw new Error('database down')
+    })
+    await expect(
+      failWaitingPlanDrafts(other.deps, { assetId: ASSET, userId: USER }, 'document_unreadable'),
+    ).resolves.toBe(0)
   })
 
   it('without the reader the kind is refused instead of going to the meal analysis', async () => {

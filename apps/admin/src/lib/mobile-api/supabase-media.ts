@@ -231,6 +231,37 @@ export function createSupabaseMediaDependencies(supabase: ServiceClient): MediaS
   return {
     repository: createRepository(supabase),
     storage: createStorage(supabase),
+    planDrafts: {
+      async hasOpenDraftOfMedia(userId, assetId) {
+        const { data, error } = await (
+          supabase.from('plan_drafts' as never) as unknown as {
+            select(columns: string): {
+              eq(column: string, value: string): {
+                eq(column: string, value: string): {
+                  in(column: string, values: string[]): {
+                    limit(count: number): PromiseLike<{
+                      data: unknown[] | null
+                      error: { code?: string; message: string } | null
+                    }>
+                  }
+                }
+              }
+            }
+          }
+        )
+          .select('id')
+          .eq('user_id', userId)
+          .eq('source_media_asset_id', assetId)
+          .in('status', ['extracting', 'needs_completion', 'ready_for_review'])
+          .limit(1)
+        // A database without plan drafts (42P01) has none.
+        if (error?.code === '42P01') return false
+        if (error) {
+          throw new MobileApiError(503, 'media_storage_unavailable', 'Media storage is unavailable')
+        }
+        return (data ?? []).length > 0
+      },
+    },
     events: {
       async sendProcessingRequested(input) {
         await inngest.send({

@@ -104,27 +104,44 @@ export function planDocumentAsData(text: string): string {
   return `<documento>\n${clean}\n</documento>`
 }
 
-function numbersIn(text: string): Set<string> {
-  const found = new Set<string>()
-  for (const match of text.matchAll(/\d+(?:[.,]\d+)?/g)) {
-    const value = Number(match[0].replace(',', '.'))
-    if (Number.isFinite(value)) found.add(String(value))
+function numberOf(token: string): number {
+  // "1.500" é mil e quinhentos; "1,5" e "1.5" são um e meio.
+  if (/^\d{1,3}(?:\.\d{3})+$/.test(token)) return Number(token.replaceAll('.', ''))
+  return Number(token.replace(',', '.'))
+}
+
+interface WrittenNumbers {
+  plain: Set<string>
+  /** Números escritos junto de minuto ou hora, que valem ×60 no campo certo. */
+  minutes: Set<string>
+  hours: Set<string>
+}
+
+function numbersIn(text: string): WrittenNumbers {
+  const written: WrittenNumbers = { plain: new Set(), minutes: new Set(), hours: new Set() }
+  const pattern = /(\d{1,3}(?:\.\d{3})+|\d+(?:[.,]\d+)?)(\s*(?:minutos?|min\b|'|horas?|hrs?\b|h\b))?/gi
+  for (const match of text.matchAll(pattern)) {
+    const value = numberOf(match[1] ?? '')
+    if (!Number.isFinite(value)) continue
+    written.plain.add(String(value))
+    const unit = (match[2] ?? '').trim().toLowerCase()
+    if (unit.startsWith('h')) written.hours.add(String(value))
+    else if (unit) written.minutes.add(String(value))
   }
-  return found
+  return written
 }
 
-/** Conversões de unidade que o documento autoriza por escrito (min → s, h → min). */
-const CONVERSIONS: Record<string, number[]> = {
-  rest_seconds: [60],
-  duration_min: [60],
-}
-
-function isWritten(key: string, value: number, written: Set<string>): boolean {
-  if (written.has(String(value))) return true
-  return (CONVERSIONS[key] ?? []).some((factor) => {
-    const original = value / factor
-    return Number.isFinite(original) && written.has(String(Number(original.toFixed(4))))
-  })
+/**
+ * Conversões que o documento autoriza por escrito: descanso em minutos vira
+ * segundos e duração em horas vira minutos — só quando a unidade está
+ * escrita junto do número.
+ */
+function isWritten(key: string, value: number, written: WrittenNumbers): boolean {
+  if (written.plain.has(String(value))) return true
+  const original = String(Number((value / 60).toFixed(4)))
+  if (key === 'rest_seconds') return written.minutes.has(original)
+  if (key === 'duration_min') return written.hours.has(original)
+  return false
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -137,7 +154,7 @@ const UNGROUNDED_KEYS = new Set(['day_of_week'])
 function ground(
   value: unknown,
   path: Array<string | number>,
-  written: Set<string>,
+  written: WrittenNumbers,
   removed: PlanDraftUncertainField[],
 ): void {
   if (Array.isArray(value)) {
@@ -150,7 +167,9 @@ function ground(
       if (UNGROUNDED_KEYS.has(key) || isWritten(key, entry, written)) continue
       value[key] = null
       removed.push({
-        pointer: [...path, key].map((part) => `/${part}`).join(''),
+        pointer: [...path, key]
+          .map((part) => `/${String(part).replace(/~/g, '~0').replace(/\//g, '~1')}`)
+          .join(''),
         reason: 'not_in_document',
       })
     } else {
@@ -198,7 +217,8 @@ export async function extractPlanDocument(
   if (!isRecord(answer.payload)) throw new PlanDocumentNothingRecognizedError()
 
   // 1) só os campos conhecidos; 2) só números escritos; 3) regras do formato.
-  const extraction = assessPlanDraftPayload(input.domain, answer.payload).payload
+  const read = assessPlanDraftPayload(input.domain, answer.payload)
+  const extraction = read.payload
   const extractionPayload = structuredClone(extraction)
   const notWritten = removeNumbersNotInDocument(extraction, document)
   const assessment = assessPlanDraftPayload(input.domain, extraction)
@@ -209,16 +229,29 @@ export async function extractPlanDocument(
     throw new PlanDocumentNothingRecognizedError()
   }
 
-  const flagged = new Set(notWritten.map((field) => field.pointer))
+  // O motivo mais específico fica: retirado por regra, depois não escrito
+  // no documento, depois o que a validação do formato apontar.
+  const specific = [
+    ...read.uncertain_fields.filter((field) => field.reason === 'not_allowed'),
+    ...notWritten,
+  ]
+  const flagged = new Set(specific.map((field) => field.pointer))
   return {
     payload: assessment.payload,
     complete: assessment.complete,
     uncertain_fields: [
-      ...notWritten,
+      ...specific,
       ...assessment.uncertain_fields.filter((field) => !flagged.has(field.pointer)),
     ].slice(0, PLAN_DRAFT_MAX_UNCERTAIN_FIELDS),
     extraction_payload: extractionPayload,
-    unrecognized_segments: sanitizeUnrecognizedSegments(answer.unrecognized_segments),
+    // O que o modelo pôs num campo e falava de medicamento, suplemento ou
+    // dose volta para cá, como veio.
+    unrecognized_segments: sanitizeUnrecognizedSegments([
+      ...(Array.isArray(answer.unrecognized_segments) ? answer.unrecognized_segments : []),
+      ...read.removed_segments,
+      ...assessment.removed_segments,
+    ]),
+    removed_segments: assessment.removed_segments,
     model,
   }
 }

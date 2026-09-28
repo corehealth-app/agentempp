@@ -291,7 +291,8 @@ BEGIN
     RAISE EXCEPTION 'support RBAC identity failed';
   END IF;
 
-  SELECT count(*) INTO v_count FROM public.user_profiles;
+  SELECT count(*) INTO v_count FROM public.user_profiles
+    WHERE user_id IN ('00000000-0000-0000-0000-000000000510', '00000000-0000-0000-0000-000000000511');
   IF v_count <> 2 THEN RAISE EXCEPTION 'support cannot read patient care rows'; END IF;
   SELECT count(*) INTO v_count FROM public.attention_dismissals WHERE kind = 'p0_matrix';
   IF v_count <> 1 THEN RAISE EXCEPTION 'support cannot read attention dismissals'; END IF;
@@ -342,7 +343,8 @@ BEGIN
   IF public.admin_role() <> 'nutrition_admin' OR NOT public.is_admin() THEN
     RAISE EXCEPTION 'nutrition_admin RBAC identity failed';
   END IF;
-  SELECT count(*) INTO v_count FROM public.user_profiles;
+  SELECT count(*) INTO v_count FROM public.user_profiles
+    WHERE user_id IN ('00000000-0000-0000-0000-000000000510', '00000000-0000-0000-0000-000000000511');
   IF v_count <> 2 THEN RAISE EXCEPTION 'nutrition_admin cannot read patient profiles'; END IF;
   SELECT count(*) INTO v_count FROM public.food_education_phrases WHERE id = '00000000-0000-0000-0000-000000000551';
   IF v_count <> 1 THEN RAISE EXCEPTION 'nutrition_admin cannot read food education content'; END IF;
@@ -366,7 +368,8 @@ BEGIN
   IF public.admin_role() <> 'operations_admin' OR NOT public.is_admin() THEN
     RAISE EXCEPTION 'operations_admin RBAC identity failed';
   END IF;
-  SELECT count(*) INTO v_count FROM public.user_profiles;
+  SELECT count(*) INTO v_count FROM public.user_profiles
+    WHERE user_id IN ('00000000-0000-0000-0000-000000000510', '00000000-0000-0000-0000-000000000511');
   IF v_count <> 2 THEN RAISE EXCEPTION 'operations_admin cannot read patient profiles'; END IF;
   SELECT count(*) INTO v_count FROM public.global_config WHERE key = 'p0.matrix.config';
   IF v_count <> 1 THEN RAISE EXCEPTION 'operations_admin cannot read global config'; END IF;
@@ -391,7 +394,8 @@ BEGIN
     RAISE EXCEPTION 'master_admin RBAC identity failed';
   END IF;
   SELECT
-    (SELECT count(*) FROM public.user_profiles)
+    (SELECT count(*) FROM public.user_profiles
+      WHERE user_id IN ('00000000-0000-0000-0000-000000000510', '00000000-0000-0000-0000-000000000511'))
     + (SELECT count(*) FROM public.global_config WHERE key = 'p0.matrix.config')
     + (SELECT count(*) FROM public.engagement_phrases WHERE id = '00000000-0000-0000-0000-000000000550')
     + (SELECT count(*) FROM public.food_education_phrases WHERE id = '00000000-0000-0000-0000-000000000551')

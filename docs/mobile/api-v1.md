@@ -337,6 +337,10 @@ Semântica obrigatória:
   são `null`; ausência de registro nunca é apresentada como progresso zero.
 - `targets.source`, `consumed.source`, `block_7700.source` e `sources` identificam
   a origem operacional de cada seção.
+- Cada item de `meals` é uma linha de `meal_logs` como gravada: `kcal`,
+  `quantity_g` e macros são números com até duas casas decimais (ex.: `284.6`)
+  e podem ser `null`, assim como `meal_type`. O cliente decodifica como decimal
+  opcional e exibe sem arredondar; `null` é "indisponível", nunca `0`.
 - Propostas pendentes expõem somente ID, tipo, horário e `meal_type`; texto bruto,
   mídia, IDs de provider e evidências internas não saem do backend.
 - A meta de hidratação existe apenas quando foi configurada em
@@ -1442,6 +1446,26 @@ Para manter uma kcal informada ao editar (`PATCH`), o cliente reenvia o mesmo
 `user_kcal`; omiti-lo volta ao cálculo do servidor. `null` não é aceito na
 entrada. Um cliente que receba um item sem essas duas chaves (servidor anterior)
 não deve presumir que não havia valor informado.
+
+Identificação do alimento (mesmo cálculo do WhatsApp):
+
+- um candidato "X de Y" da base é o alimento X, não Y (`Bolinho de arroz` não
+  responde por "arroz"; `Farinha, de mandioca` não responde por "mandioca"),
+  salvo quando o paciente nomeou X ou quando X é parte/corte de Y ("peito de
+  frango");
+- quando o nome não diz o preparo (cru, cozido, grelhado, assado, refogado,
+  frito) e a base traz o PRÓPRIO alimento pedido (mesmo núcleo e variedade) em
+  preparos cuja energia média varia 50% ou mais (decisão de produto de
+  2026-09-28 — feijão carioca cru 329 × cozido 76 kcal/100 g), o servidor não
+  escolhe: o item volta com `kcal` 0, `nutrition_source` `"no_match"` e um
+  aviso em `warnings` pedindo o preparo. Isso vale antes do histórico do
+  paciente e, num nome composto ("frango grelhado com batata doce"), para o
+  item inteiro. Editar o nome com o preparo ("Feijão carioca cozido")
+  recalcula pela base. Abaixo de 50% (cenoura, peito de frango) não há
+  pergunta; outros alimentos que só compartilham uma palavra ("couve manteiga"
+  para "manteiga") não contam.
+- a confirmação ainda aceita um item com `kcal` 0 vindo dessa pergunta; o app
+  mostra o aviso, mas não bloqueia (pendência registrada em 2026-09-28).
 
 ## Mídia privada
 

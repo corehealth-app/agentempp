@@ -179,7 +179,11 @@ export function planDraftDto(draft: PlanDraftRecord, now = new Date()) {
       'not_professionally_reviewed',
       ...(segments.some(mentionsMedication) ||
       uncertainFields(draft.uncertain_fields).some(
-        (field) => field.reason === 'outside_domain' || field.reason === 'supplement',
+        // A supplement read from the patient's own document stays as it came
+        // (the item says so); only one proposed by Flow is "not imported".
+        (field) =>
+          field.reason === 'outside_domain' ||
+          (field.reason === 'supplement' && planDraftAuthor(draft.origin) === 'flow'),
       )
         ? ['medications_not_imported']
         : []),

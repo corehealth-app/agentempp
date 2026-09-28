@@ -76,7 +76,17 @@ function ResetDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        // Fechar sem executar volta ao padrão seguro: manter os planos.
+        if (!next) {
+          setConfirm('')
+          setDeletePlans(false)
+        }
+      }}
+    >
       <DialogTrigger asChild>
         <Button
           variant="outline"
@@ -96,7 +106,9 @@ function ResetDialog({
             <br />
             <strong>Mantém:</strong> o paciente cadastrado, assinaturas, auditoria, fotos, áudios e
             documentos enviados
-            {deletePlans ? '.' : ', e também o plano de treino, as prescrições e os rascunhos de plano.'}
+            {deletePlans
+              ? '.'
+              : ', e também o plano de treino, as prescrições, os rascunhos de plano e a entrega diária do treino pelo WhatsApp, se estava ligada.'}
             <br />
             <strong>Útil pra testar o fluxo do zero sem precisar criar paciente novo.</strong>
             <br />

@@ -14,6 +14,9 @@ ALTER TABLE public.user_profiles
   ADD COLUMN IF NOT EXISTS weight_instant_source text;
 
 ALTER TABLE public.user_profiles
+  DROP CONSTRAINT IF EXISTS user_profiles_weight_instant_source_check;
+
+ALTER TABLE public.user_profiles
   ADD CONSTRAINT user_profiles_weight_instant_source_check CHECK (
     weight_instant_source IS NULL
     OR weight_instant_source IN ('measured', 'recorded')
@@ -58,9 +61,21 @@ BEGIN
       COALESCE(OLD.weight_measured_at + interval '1 microsecond', clock_timestamp())
     );
     NEW.weight_instant_source := 'recorded';
-  ELSIF NEW.weight_measured_at IS DISTINCT FROM OLD.weight_measured_at
-    AND NEW.weight_instant_source IS NOT DISTINCT FROM OLD.weight_instant_source THEN
-    NEW.weight_instant_source := 'recorded';
+  ELSIF NEW.weight_measured_at IS NULL THEN
+    -- The instant was cleared and the weight kept: its age is unknown again,
+    -- like a legacy value, so it carries no origin either.
+    NEW.weight_instant_source := NULL;
+  ELSIF NEW.weight_measured_at IS DISTINCT FROM OLD.weight_measured_at THEN
+    -- A trigger cannot tell "the writer left the origin alone" from "the
+    -- writer wrote the same origin again" (a second measurement over a
+    -- 'measured' row). The ordered path therefore marks its own write in a
+    -- transaction-local setting; any other writer that moves the instant is
+    -- recorded as a write.
+    IF current_setting('bodyflow.weight_write', true) = 'measured' THEN
+      NEW.weight_instant_source := 'measured';
+    ELSE
+      NEW.weight_instant_source := 'recorded';
+    END IF;
   END IF;
   RETURN NEW;
 END;
@@ -147,12 +162,16 @@ BEGIN
     END IF;
   END IF;
 
+  PERFORM set_config('bodyflow.weight_write', 'measured', true);
   UPDATE public.user_profiles
   SET weight_kg = v_weight,
       weight_measured_at = p_measured_at,
       weight_instant_source = 'measured',
       updated_at = clock_timestamp()
   WHERE user_id = p_user_id;
+  -- Only this UPDATE is a measurement; later writes in the same transaction
+  -- are not.
+  PERFORM set_config('bodyflow.weight_write', '', true);
 
   RETURN jsonb_build_object(
     'applied', true, 'reason', 'applied',

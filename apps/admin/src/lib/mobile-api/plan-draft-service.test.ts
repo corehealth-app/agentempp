@@ -157,6 +157,24 @@ async function failure(promise: Promise<unknown>): Promise<MobileApiError> {
 }
 
 describe('reading', () => {
+  it('a supplement kept from an imported document is not called "not imported"; one proposed by Flow is', async () => {
+    const flagged = { uncertain_fields: [{ pointer: '/daily_meals/0/items/0', reason: 'supplement' }] }
+    const imported = await getPlanDraft(
+      harness(draft({ origin: 'imported_pdf', source_media_asset_id: ASSET, ...flagged })).deps,
+      USER_A,
+      DRAFT,
+      NOW,
+    )
+    expect(imported.notices).toEqual(['not_professionally_reviewed'])
+    const proposed = await getPlanDraft(
+      harness(draft({ origin: 'flow_generated', ...flagged })).deps,
+      USER_A,
+      DRAFT,
+      NOW,
+    )
+    expect(proposed.notices).toEqual(['not_professionally_reviewed', 'medications_not_imported'])
+  })
+
   it('shows the draft with the notice that it is not a professional review', async () => {
     const { deps } = harness(
       draft({

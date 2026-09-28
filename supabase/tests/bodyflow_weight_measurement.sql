@@ -79,6 +79,12 @@ BEGIN
   IF NOT (v_result->>'applied')::boolean OR v_weight <> 77.90 OR v_at <> v_t2 THEN
     RAISE EXCEPTION 'newer measurement not applied: %', v_result;
   END IF;
+  -- Review 2026-09-28 (HIGH): a second app measurement rewrites 'measured'
+  -- over 'measured'; it must stay a measurement, not become 'recorded'.
+  IF (SELECT weight_instant_source FROM public.user_profiles WHERE user_id = v_user_a)
+    IS DISTINCT FROM 'measured' THEN
+    RAISE EXCEPTION 'a second app measurement was not labelled measured';
+  END IF;
 
   -- 5. An older measurement arriving late does not replace the newer one.
   v_result := public.record_weight_atomic(
@@ -116,6 +122,10 @@ BEGIN
   SELECT weight_measured_at INTO v_at FROM public.user_profiles WHERE user_id = v_legacy;
   IF v_at IS NOT NULL THEN
     RAISE EXCEPTION 'test setup: legacy row must have no instant';
+  END IF;
+  -- An instant cleared with the weight kept leaves no origin behind.
+  IF (SELECT weight_instant_source FROM public.user_profiles WHERE user_id = v_legacy) IS NOT NULL THEN
+    RAISE EXCEPTION 'a cleared instant kept its origin';
   END IF;
   v_result := public.record_weight_atomic(v_legacy, 81.5, 'kg', v_t1, 'weight-key-0008');
   SELECT weight_kg, weight_measured_at INTO v_weight, v_at

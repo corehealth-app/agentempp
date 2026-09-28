@@ -392,6 +392,102 @@ describe('medicamento, suplemento e dose: nunca orientação, nunca nome apagado
   })
 })
 
+describe('revisão adversarial 2026-09-28: dose separada, grafias, Unicode e falsos positivos', () => {
+  const meal = (items: Array<Record<string, unknown>>, extra: Record<string, unknown> = {}) => ({
+    daily_meals: [{ meal_type: 'cafe', ...extra, items }],
+  })
+  const itemsOf = (payload: Record<string, unknown>) =>
+    (payload.daily_meals as Array<Record<string, unknown>>)[0]?.items as Array<
+      Record<string, unknown>
+    >
+
+  it('dose em número e unidade separados nunca vira campo confirmável', () => {
+    for (const author of ['document', 'flow'] as const) {
+      const result = assessPlanDraftPayload(
+        'nutrition',
+        meal([{ food_name: 'Metformina', quantity_g: 1, display_qty: 500, display_unit: 'mg' }]),
+        author,
+      )
+      expect(itemsOf(result.payload)[0]?.food_name, author).toBe('Metformina')
+      expect(itemsOf(result.payload)[0]?.display_unit, author).toBeUndefined()
+      expect(result.uncertain_fields, author).toContainEqual({
+        pointer: '/daily_meals/0/items/0',
+        reason: 'outside_domain',
+      })
+      expect(result.complete, author).toBe(false)
+    }
+    const vitamin = assessPlanDraftPayload(
+      'nutrition',
+      meal([{ food_name: 'Vitamina D', quantity_g: 1, display_qty: 2000, display_unit: 'UI' }]),
+      'document',
+    )
+    expect(itemsOf(vitamin.payload)[0]?.food_name).toBe('Vitamina D')
+    expect(vitamin.complete).toBe(false)
+  })
+
+  it('grafias de dose e Unicode decomposto são reconhecidos', () => {
+    const cases: Array<[string, 'medication' | 'supplement' | null]> = [
+      ['Vitamina D 2.000 U.I.', 'medication'],
+      ['10 gotas de vitamina D', 'supplement'],
+      ['10 gotas de adoçante', null],
+      ['Vitamina E', 'supplement'],
+      ['Vitamina C 500 mg', 'medication'],
+      ['500 miligramas', 'medication'],
+      ['Ômega 3'.normalize('NFD'), 'supplement'],
+      ['cápsula'.normalize('NFD'), 'medication'],
+      ['remédio'.normalize('NFD'), 'medication'],
+      ['Caseína', 'supplement'],
+      ['Maltodextrina', 'supplement'],
+      ['Óleo de peixe', 'supplement'],
+      ['Créatine', 'supplement'],
+      ['pré treino', 'supplement'],
+    ]
+    for (const [text, kind] of cases) expect(classifyHealthProduct(text), text).toBe(kind)
+  })
+
+  it('um suplemento em Unicode decomposto proposto pelo Flow bloqueia', () => {
+    const result = assessPlanDraftPayload(
+      'nutrition',
+      meal([{ food_name: 'Ômega 3'.normalize('NFD'), quantity_g: 2 }]),
+      'flow',
+    )
+    expect(itemsOf(result.payload)[0]?.food_name).toBe('Ômega 3'.normalize('NFD'))
+    expect(result.complete).toBe(false)
+  })
+
+  it('comida comum e horário de refeição não são medicamento nem suplemento', () => {
+    const cases = [
+      'Café de cápsula',
+      'Café (cápsula)',
+      'Vitamina c/ leite',
+      'vitamina c/leite',
+      'Vitamina e aveia',
+    ]
+    for (const text of cases) expect(classifyHealthProduct(text), text).toBeNull()
+    const result = assessPlanDraftPayload(
+      'nutrition',
+      meal([{ food_name: 'Banana', quantity_g: 100 }], {
+        time_suggestion: 'Pré-treino',
+        notes: 'Refeição pré-treino, 1 h antes',
+      }),
+      'flow',
+    )
+    const first = (result.payload.daily_meals as Array<Record<string, unknown>>)[0]
+    expect(first?.time_suggestion).toBe('Pré-treino')
+    expect(first?.notes).toBe('Refeição pré-treino, 1 h antes')
+    expect(result.removed_segments).toEqual([])
+    expect(result.complete).toBe(true)
+  })
+
+  it('nome longo demais nunca é apagado: fica como veio e bloqueia até ser editado', () => {
+    const long = `Losartana potássica 50 mg: tomar 1 comprimido pela manhã ${'x'.repeat(80)}`
+    expect(long.length).toBeGreaterThan(120)
+    const result = assessPlanDraftPayload('nutrition', meal([{ food_name: long, quantity_g: 1 }]), 'document')
+    expect(itemsOf(result.payload)[0]?.food_name).toBe(long)
+    expect(result.complete).toBe(false)
+  })
+})
+
 describe('apoios', () => {
   it('trechos não reconhecidos ficam como vieram, com limites', () => {
     expect(
@@ -430,8 +526,10 @@ describe('apoios', () => {
     ]
     for (const [text, kind] of cases) {
       expect(classifyHealthProduct(text), text).toBe(kind)
-      expect(mentionsMedication(text), text).toBe(kind !== null)
+      // "Pré-treino" só é produto como nome de item; num texto é um horário.
+      if (text !== 'Pré-treino') expect(mentionsMedication(text), text).toBe(kind !== null)
     }
+    expect(mentionsMedication('Pré-treino')).toBe(false)
   })
 
   it('validade: gerados seguem a regra dos geradores; importados não ganham validade', () => {

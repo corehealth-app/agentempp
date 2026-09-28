@@ -96,6 +96,28 @@ A reversão destrutiva **nunca é automática**. Ela só roda com autorização
 escrita que cite o arquivo e o hash, e recusa rodar enquanto houver objetos no
 bucket `plan-documents`.
 
+## 5b. Novo ensaio depois da revisão adversarial (M1 alterada)
+
+A revisão encontrou um defeito HIGH na M1: a segunda pesagem feita pelo app
+era rotulada `recorded`. A M1 foi corrigida e passou a ter o SHA-256
+`0e7789f173e5c6ed4ed7b6778c1aae06be729400e486e177b1af23923c173447`. O ensaio
+foi refeito sobre uma restauração da base anterior às migrations:
+
+| Passo | Resultado |
+|---|---|
+| Restauração do dump da base num banco novo com dono `postgres` | 0 erros; dados idênticos à base |
+| Pré-checagem | OK |
+| M1 (nova), M2, M3, M4, uma transação cada | Aplicadas |
+| Dados legados | Idênticos |
+| Checagens pós-upgrade 1 a 9 | OK |
+| Testes de peso, rascunhos, documentos, redefinição (2), matriz de autorização e refeição | 7 de 7 passam |
+| Reversão destrutiva, em transação desfeita | Remove 1 rascunho e o instante de 1 peso medido, como esperado |
+
+Achado do procedimento de restauração: o banco de destino precisa ter o
+usuário `postgres` como dono. A ACL do schema `public` dá `CREATE` ao dono do
+banco (`pg_database_owner`). Um banco criado por `supabase_admin` impede as
+migrations de criar funções.
+
 ## 6. O que este ensaio não prova
 - Duração dos locks com o volume real do staging.
 - Disponibilidade de backup ou PITR no staging: **não verificada** (acesso

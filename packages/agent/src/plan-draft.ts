@@ -256,7 +256,14 @@ function screenHealthProducts(
   projection: Projection,
 ): unknown {
   if (typeof value === 'string') {
-    const kind = classifyHealthProduct(value)
+    if (key === 'display_unit' && DOSE_UNIT_ONLY.test(value.normalize('NFC'))) {
+      // A dose com o número num campo e a unidade em outro: a unidade sai e o
+      // item fica identificado, com o nome como veio.
+      projection.flags.push({ path: path.slice(0, -1), reason: 'outside_domain' })
+      projection.removed.push(value)
+      return null
+    }
+    const kind = classifyHealthProduct(value, IDENTITY_KEYS.has(key) ? 'item' : 'text')
     if (!kind) return value
     if (IDENTITY_KEYS.has(key)) {
       projection.flags.push({
@@ -270,7 +277,7 @@ function screenHealthProducts(
   }
   if (Array.isArray(value)) {
     return value.filter((entry) => {
-      if (typeof entry !== 'string' || !classifyHealthProduct(entry)) return true
+      if (typeof entry !== 'string' || !classifyHealthProduct(entry, 'text')) return true
       projection.removed.push(entry)
       return false
     })
@@ -410,7 +417,10 @@ export function assessPlanDraftPayload(
     const current = valueAt(payload, issue.path)
     uncertain.push({ pointer, reason: reasonOf(issue, current) })
     const isLeaf = current !== undefined && !isRecord(current) && !Array.isArray(current)
-    if (isLeaf) clearAt(payload, issue.path)
+    // Um nome nunca é apagado: fica como veio, marcado, e bloqueia até ser editado.
+    const lastKey = issue.path[issue.path.length - 1]
+    const isName = typeof lastKey === 'string' && IDENTITY_KEYS.has(lastKey) && typeof current === 'string'
+    if (isLeaf && !isName) clearAt(payload, issue.path)
   }
   return {
     payload,
@@ -457,7 +467,8 @@ const MEDICATION_TERMS = words(
   'medicamentos?',
   'rem[eé]dios?',
   'comprimidos?',
-  'c[aá]psulas?',
+  // "Café de cápsula" é café, não medicamento.
+  '(?<!caf[eé]\\s(?:de\\s)?)(?<!caf[eé]\\s\\()c[aá]psulas?',
   'dr[aá]geas?',
   'inje[cç](?:[aã]o|[oõ]es)',
   'injet[aá]ve(?:l|is)',
@@ -472,8 +483,13 @@ const MEDICATION_TERMS = words(
   'pills?',
   'tablets?',
 )
-// Uma dose farmacológica escrita: número com mg, mcg, µg ou UI.
-const DOSE = new RegExp(`${B}\\d+(?:[.,]\\d+)?\\s?(?:mg|mcg|µg|ui|iu)${E}`, 'iu')
+// Uma dose farmacológica escrita: número com mg, mcg, µg, UI (também U.I.),
+// miligramas ou microgramas. "2.000" e "2,5" contam como número. Gotas
+// ficam de fora: "10 gotas de adoçante" é comida.
+const DOSE_UNIT = '(?:mg|mcg|µg|ui|u\\.\\s?i\\.?|iu|miligramas?|microgramas?)'
+const DOSE = new RegExp(`${B}\\d+(?:[.,]\\d+)*\\s?${DOSE_UNIT}(?![\\p{L}\\d])`, 'iu')
+// A unidade sozinha, num campo de unidade, quando o número vem em outro campo.
+const DOSE_UNIT_ONLY = new RegExp(`^\\s*${DOSE_UNIT}\\s*$`, 'iu')
 const SUPPLEMENT_TERMS = words(
   'suplementos?',
   'suplementa[cç][aã]o',
@@ -486,16 +502,27 @@ const SUPPLEMENT_TERMS = words(
   'polivitam[ií]nicos?',
   '[oô]mega[ -]?3',
   'termog[eê]nicos?',
-  'pr[eé]-?treino',
   'albumina',
   'prote[ií]na em p[oó]',
   'supplements?',
   'creatine',
   'protein powder',
+  'case[ií]na',
+  'maltodextrina',
+  '[oó]leo de peixe',
+  'cr[eé]atine',
 )
+// Como nome de item, "pré-treino" é o produto; num horário ou observação é o
+// momento antes do treino ("Refeição pré-treino").
+const PRE_WORKOUT_PRODUCT = words('pr[eé][- ]?treino')
 // "Vitamina D", "vitamina B12": suplemento. "Vitamina de banana", "vitamina
 // com leite": bebida. Uma palavra isolada não decide.
-const VITAMIN_SUPPLEMENT = new RegExp(`${B}vitaminas?\\s+(?!de${E}|com${E})[a-z]\\d{0,2}${E}`, 'iu')
+// "Vitamina c/ leite" é a abreviação de "com leite"; "vitamina e aveia" é a
+// bebida com aveia (a vitamina E sozinha continua sendo suplemento).
+const VITAMIN_SUPPLEMENT = new RegExp(
+  `${B}vitaminas?\\s+(?!de${E}|com${E}|c\\s?\\/|e\\s+\\p{L})[a-z]\\d{0,2}${E}`,
+  'iu',
+)
 
 export type HealthProductKind = 'medication' | 'supplement'
 
@@ -503,15 +530,21 @@ export type HealthProductKind = 'medication' | 'supplement'
  * O que um texto do plano diz sobre medicamento, dose ou suplemento, pelo
  * contexto e não por uma palavra isolada. `null` quando não diz nada disso.
  */
-export function classifyHealthProduct(text: string): HealthProductKind | null {
-  if (MEDICATION_TERMS.test(text) || DOSE.test(text)) return 'medication'
-  if (SUPPLEMENT_TERMS.test(text) || VITAMIN_SUPPLEMENT.test(text)) return 'supplement'
+export function classifyHealthProduct(
+  text: string,
+  where: 'item' | 'text' = 'item',
+): HealthProductKind | null {
+  // Acentos decompostos (NFD) não escapam da classificação.
+  const normalized = text.normalize('NFC')
+  if (MEDICATION_TERMS.test(normalized) || DOSE.test(normalized)) return 'medication'
+  if (SUPPLEMENT_TERMS.test(normalized) || VITAMIN_SUPPLEMENT.test(normalized)) return 'supplement'
+  if (where === 'item' && PRE_WORKOUT_PRODUCT.test(normalized)) return 'supplement'
   return null
 }
 
 /** O trecho fala de medicamento, suplemento ou dose (o app avisa que não importa). */
 export function mentionsMedication(segment: string): boolean {
-  return classifyHealthProduct(segment) !== null
+  return classifyHealthProduct(segment, 'text') !== null
 }
 
 /**

@@ -828,3 +828,24 @@ describe('a failed Flow turn is logged without patient data', () => {
     }
   })
 })
+
+describe('an empty Flow reply names the tools that ran, without their data', () => {
+  it('summarises tool calls by name, outcome and a safe code', async () => {
+    const { summarizeFlowToolCalls } = await import('./flow-chat-service')
+    expect(
+      summarizeFlowToolCalls([
+        { name: 'propoe_plano_dieta', arguments: { preferences: ['frango'] }, result: { success: false, error: 'Não foi possível criar a proposta agora.' } },
+        { name: 'propoe_plano_dieta', arguments: {}, error: 'diet proposal history lookup failed' },
+        { name: 'propoe_plano_dieta', arguments: {}, error: '[{"code":"too_big","path":["meals_per_day"]}]' },
+        { name: 'consulta_progresso', arguments: {}, result: { success: true } },
+        { name: 'x; drop', arguments: {}, error: 'Maria 54 anos' },
+      ]),
+    ).toEqual([
+      { name: 'propoe_plano_dieta', outcome: 'returned_failure', code: null },
+      { name: 'propoe_plano_dieta', outcome: 'threw', code: 'diet proposal history lookup failed' },
+      { name: 'propoe_plano_dieta', outcome: 'threw', code: 'validation' },
+      { name: 'consulta_progresso', outcome: 'ok', code: null },
+      { name: 'invalid_tool_name', outcome: 'threw', code: null },
+    ])
+  })
+})

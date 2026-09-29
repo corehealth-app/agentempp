@@ -255,6 +255,26 @@ function logTurnFailure(error: unknown): void {
   })
 }
 
+/** Safe outline of the tools a Flow turn ran: names, outcome, own codes only. */
+export function summarizeFlowToolCalls(
+  toolCalls: ReadonlyArray<{ name: string; arguments?: unknown; result?: unknown; error?: string }>,
+): Array<{ name: string; outcome: 'ok' | 'returned_failure' | 'threw'; code: string | null }> {
+  return toolCalls.slice(0, 10).map((call) => {
+    const name = /^[a-z_]{1,64}$/.test(call.name) ? call.name : 'invalid_tool_name'
+    if (call.error !== undefined) {
+      const code = call.error.trimStart().startsWith('[{')
+        ? 'validation'
+        : INTERNAL_CODE.test(call.error)
+          ? call.error
+          : null
+      return { name, outcome: 'threw', code }
+    }
+    const failed =
+      call.result !== null && typeof call.result === 'object' && (call.result as { success?: unknown }).success === false
+    return { name, outcome: failed ? 'returned_failure' : 'ok', code: null }
+  })
+}
+
 function providerFailed(): MobileApiError {
   return new MobileApiError(502, 'flow_provider_failed', 'Flow is temporarily unavailable')
 }

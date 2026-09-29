@@ -5,6 +5,7 @@ import {
   createSupabaseFlowDraftLookup,
   loadFlowHistory,
   sendFlowMessage,
+  summarizeFlowToolCalls,
 } from '@/lib/mobile-api/flow-chat-service'
 import { executeSupabaseIdempotent } from '@/lib/mobile-api/idempotency'
 import { createMobileRoute } from '@/lib/mobile-api/route'
@@ -33,6 +34,12 @@ const dependencies: FlowChatRouteDependencies = {
             },
             input,
           )
+          if (output.text.trim().length === 0) {
+            console.error('[mobile-flow] empty_reply_detail', {
+              completion_tokens: output.completionTokens,
+              tool_calls: summarizeFlowToolCalls(output.toolCalls),
+            })
+          }
           return {
             text: output.text,
             metadata: {

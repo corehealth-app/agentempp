@@ -487,6 +487,11 @@ struct ContentCoverView: View {
                 )
                 .resizable()
                 .scaledToFill()
+                // Decorative: the fill overflows its frame and clipShape
+                // clips only the drawing, so the overflow would take taps
+                // meant for controls around it (the accessibility-size
+                // card's "Open article" on a 440 pt wide phone).
+                .allowsHitTesting(false)
             } else {
                 ContentCoverPlaceholder(descriptor: descriptor.placeholder)
             }

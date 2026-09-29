@@ -366,13 +366,13 @@ struct MealProposalEditorView: View {
                     BodyFlowStatusLine(copy("registration.editor.origin-unknown"), kind: .warning)
                         .accessibilityIdentifier("registration.proposal.edit.origin-unknown")
                 }
-                Text(copy(
-                    draft.editedIndex == 0
-                        ? "registration.proposal.first-item-notice"
-                        : "registration.editor.other-items-kept"
-                ))
-                    .font(BodyFlowTypography.callout)
-                    .foregroundStyle(BodyFlowColor.secondaryText)
+                // Any item can be edited and the save resends every item, so
+                // the note only says the others are kept.
+                if draft.items.count > 1 {
+                    Text(copy("registration.editor.other-items-kept"))
+                        .font(BodyFlowTypography.callout)
+                        .foregroundStyle(BodyFlowColor.secondaryText)
+                }
                 TextField(copy("registration.editor.food"), text: $draft.foodName)
                     .accessibilityIdentifier("registration.proposal.edit.food-name")
                 if !draft.preparationOptions.isEmpty {

@@ -12,6 +12,15 @@ final class RoutineDetailViewModel {
         listModel.snapshot?.items.first { $0.id == itemID && $0.kind == kind }
     }
 
+    /// The screen to show while `item` is nil: the list read still in flight
+    /// is loading, not "unavailable" (it flashed on every Today-origin open).
+    var missingItemState: ScreenState {
+        switch listModel.state {
+        case .idle, .loading: .loading
+        default: .unavailable
+        }
+    }
+
     init(
         kind: RoutineItemKind,
         itemID: String,

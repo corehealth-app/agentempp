@@ -11,14 +11,21 @@ struct RoutineOccurrenceContext: Hashable, Sendable {
     let reminderRuleID: String
     let scheduledFor: APITimestamp
 
+    /// The server refuses an action on an occurrence that has not started
+    /// (`scheduled_for` after now), so only a due occurrence is actionable.
     static func actionContext(
         kind: RoutineItemKind,
         itemID: String,
-        schedules: [RoutineScheduleSnapshot]
+        schedules: [RoutineScheduleSnapshot],
+        now: Date
     ) -> Self? {
-        let schedule = schedules.first(where: {
+        let due = schedules.filter { schedule in
+            guard let occurrence = schedule.occurrence else { return false }
+            return occurrence.scheduledFor.value <= now
+        }
+        let schedule = due.first(where: {
             $0.occurrence?.status == "pending"
-        }) ?? schedules.first(where: {
+        }) ?? due.first(where: {
             $0.occurrence?.status == "snoozed"
         })
         guard let schedule, let occurrence = schedule.occurrence else { return nil }
@@ -34,18 +41,27 @@ struct RoutineOccurrenceContext: Hashable, Sendable {
 struct RoutineActionConfiguration: Equatable, Sendable {
     let context: RoutineOccurrenceContext?
     let schedules: [RoutineScheduleSnapshot]
+    /// With nothing due yet, the earliest open occurrence still ahead: its
+    /// actions open at that instant.
+    let upcoming: RoutineUpcomingOccurrence?
 
     init(
         kind: RoutineItemKind,
         itemID: String,
-        schedules: [RoutineScheduleSnapshot]
+        schedules: [RoutineScheduleSnapshot],
+        now: Date
     ) {
         self.schedules = schedules
-        context = RoutineOccurrenceContext.actionContext(
+        let context = RoutineOccurrenceContext.actionContext(
             kind: kind,
             itemID: itemID,
-            schedules: schedules
+            schedules: schedules,
+            now: now
         )
+        self.context = context
+        upcoming = context == nil
+            ? RoutineUpcomingOccurrence.earliest(in: schedules, after: now)
+            : nil
     }
 
     func shouldApply(
@@ -53,6 +69,30 @@ struct RoutineActionConfiguration: Equatable, Sendable {
         isSubmitting: Bool
     ) -> Bool {
         !isSubmitting && self != applied
+    }
+}
+
+struct RoutineUpcomingOccurrence: Hashable, Sendable {
+    let scheduledFor: Date
+    /// The rule's patient-local "HH:mm" as the server sent it.
+    let localTime: String
+
+    static func earliest(
+        in schedules: [RoutineScheduleSnapshot],
+        after now: Date
+    ) -> Self? {
+        schedules
+            .compactMap { schedule -> Self? in
+                guard let occurrence = schedule.occurrence,
+                      occurrence.status == "pending" || occurrence.status == "snoozed",
+                      occurrence.scheduledFor.value > now
+                else { return nil }
+                return Self(
+                    scheduledFor: occurrence.scheduledFor.value,
+                    localTime: schedule.localTime
+                )
+            }
+            .min { $0.scheduledFor < $1.scheduledFor }
     }
 }
 

@@ -10,7 +10,7 @@ final class Prompt13RoutineUITests: XCTestCase {
         app.buttons["routine.action.taken"].tap()
         XCTAssertTrue(app.buttons["routine.action.submit"].waitForExistence(timeout: 3))
         app.buttons["routine.action.submit"].tap()
-        XCTAssertTrue(app.staticTexts["taken"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Registrado: Tomado"].waitForExistence(timeout: 5))
         XCTAssertTrue(
             app.descendants(matching: .any)["routine.operation.summary"]
                 .waitForExistence(timeout: 3)
@@ -24,7 +24,7 @@ final class Prompt13RoutineUITests: XCTestCase {
         app.buttons["routine.action.skipped"].tap()
         XCTAssertTrue(app.buttons["routine.action.submit"].waitForExistence(timeout: 3))
         app.buttons["routine.action.submit"].tap()
-        XCTAssertTrue(app.staticTexts["skipped"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Registrado: Pulado"].waitForExistence(timeout: 5))
     }
 
     @MainActor
@@ -103,7 +103,7 @@ final class Prompt13RoutineUITests: XCTestCase {
         app.buttons["routine.action.taken"].tap()
         app.buttons["routine.action.submit"].tap()
         XCTAssertTrue(app.staticTexts["Indisponível nesta versão"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.staticTexts["taken"].exists)
+        XCTAssertFalse(app.staticTexts["Registrado: Tomado"].exists)
     }
 
     @MainActor

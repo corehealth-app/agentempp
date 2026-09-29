@@ -156,7 +156,8 @@ private struct Prompt13RoutineSnoozePreview: View {
         let context = RoutineOccurrenceContext.actionContext(
             kind: .supplement,
             itemID: item.id,
-            schedules: item.schedules
+            schedules: item.schedules,
+            now: dependencies.timeProvider.now
         ) ?? RoutineOccurrenceContext(
             kind: .supplement,
             itemID: item.id,

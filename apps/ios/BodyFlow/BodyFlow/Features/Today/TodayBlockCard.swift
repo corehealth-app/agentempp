@@ -17,6 +17,19 @@ struct TodayBlockDescriptor: Equatable, Sendable {
     var currentText: String {
         TodayValueFormatter.optionalKcal(currentKcal)
     }
+
+    /// The server's `availability` code in the reader's language; an unknown
+    /// code is shown as sent rather than guessed.
+    static func availabilityText(
+        _ availability: String?,
+        language: SupportedAppLanguage
+    ) -> String {
+        switch availability {
+        case "available": TodayCopy.string("common.available", language: language)
+        case "unavailable", nil: TodayCopy.string("common.not-available", language: language)
+        case let other?: other
+        }
+    }
 }
 
 @MainActor
@@ -75,7 +88,10 @@ struct TodayBlockCard: View {
                     )
                 }
                 BodyFlowStatusLine(
-                    descriptor.availability ?? copy("common.not-available"),
+                    TodayBlockDescriptor.availabilityText(
+                        descriptor.availability,
+                        language: language
+                    ),
                     kind: descriptor.enabled == true ? .success : .info,
                     font: BodyFlowTypography.callout
                 )

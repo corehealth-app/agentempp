@@ -2919,6 +2919,12 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "As informações podem estar desatualizadas." } }
       }
     },
+    "common.available" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Available" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Disponível" } }
+      }
+    },
     "common.not-available" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Not available" } },
@@ -3518,10 +3524,6 @@
     "registration.proposal.expires" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Expires %@" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Expira em %@" } }
-    } },
-    "registration.proposal.first-item-notice" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Only the first item can be corrected in this version." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Somente o primeiro item pode ser corrigido nesta versão." } }
     } },
     "registration.proposal.meal-title" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Meal proposal" } },
@@ -4301,6 +4303,10 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not complete. Try again." } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não foi possível concluir. Tente novamente." } }
     } },
+    "routine.action.recorded-format" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Recorded: %@" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Registrado: %@" } }
+    } },
     "routine.action.skip" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Skip" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Pular" } }
@@ -4316,6 +4322,10 @@
     "routine.action.unavailable" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Unavailable in this version" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Indisponível nesta versão" } }
+    } },
+    "routine.actions.available-at-format" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "You can mark this item from %@." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Você poderá marcar este item a partir das %@." } }
     } },
     "routine.actions.title" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Actions" } },
@@ -4424,6 +4434,10 @@
     "today.provenance.user-provided" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Provided by patient" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Informado pelo paciente" } }
+    } },
+    "today.provenance.reference" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Approximate reference" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Referência aproximada" } }
     } },
     "today.provenance.unknown" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Source not provided" } },

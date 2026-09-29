@@ -47,6 +47,9 @@ struct RoutineDetailView: View {
     @State private var actionModel: RoutineActionModel?
     @State private var appliedActionConfiguration: RoutineActionConfiguration?
     @State private var selectedAction: RoutineActionSheetItem?
+    /// Bumped when an upcoming occurrence becomes due, so its actions open
+    /// without leaving the screen.
+    @State private var clockTick = 0
     @AccessibilityFocusState private var operationFocus: RoutineAccessibilityFocusTarget?
 
     init(
@@ -76,6 +79,15 @@ struct RoutineDetailView: View {
         }
         .onAppear {
             configureActionModel()
+        }
+        .task(id: actionConfiguration.upcoming) {
+            guard let upcoming = actionConfiguration.upcoming else { return }
+            let wait = upcoming.scheduledFor.timeIntervalSince(dependencies.timeProvider.now)
+            if wait > 0 {
+                try? await Task.sleep(for: .seconds(wait + 1))
+            }
+            guard !Task.isCancelled else { return }
+            clockTick &+= 1
         }
         .onChange(of: actionConfiguration) { _, _ in
             configureActionModel()
@@ -123,9 +135,7 @@ struct RoutineDetailView: View {
                         }
                     }
 
-                    if actionModel != nil, actionConfiguration.context != nil {
-                        actionButtons
-                    }
+                    actionArea
 
                     NavigationLink(value: AppRoute.routine(RoutineRoute(
                         kind: model.kind,
@@ -166,7 +176,23 @@ struct RoutineDetailView: View {
                 .padding(BodyFlowSpacing.md)
             }
         } else {
-            ScreenStateView(state: .unavailable, retryAction: {})
+            ScreenStateView(state: model.missingItemState, retryAction: {})
+        }
+    }
+
+    /// One reading of the clock per render: the buttons and the "from HH:mm"
+    /// note can never both disappear at the instant the occurrence falls due.
+    @ViewBuilder
+    private var actionArea: some View {
+        let configuration = actionConfiguration
+        if actionModel != nil, configuration.context != nil {
+            actionButtons
+        } else if let upcoming = configuration.upcoming {
+            Label(verbatim: availableAtText(upcoming), symbol: .clock)
+                .font(BodyFlowTypography.body)
+                .foregroundStyle(BodyFlowColor.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("routine.actions.available-at")
         }
     }
 
@@ -227,10 +253,20 @@ struct RoutineDetailView: View {
     }
 
     private var actionConfiguration: RoutineActionConfiguration {
-        RoutineActionConfiguration(
+        _ = clockTick
+        return RoutineActionConfiguration(
             kind: model.kind,
             itemID: model.itemID,
-            schedules: model.item?.schedules ?? []
+            schedules: model.item?.schedules ?? [],
+            now: dependencies.timeProvider.now
+        )
+    }
+
+    private func availableAtText(_ upcoming: RoutineUpcomingOccurrence) -> String {
+        String(
+            format: copy("routine.actions.available-at-format"),
+            locale: language.formattingLocale,
+            upcoming.localTime
         )
     }
 

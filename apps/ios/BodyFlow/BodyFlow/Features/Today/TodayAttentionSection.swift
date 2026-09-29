@@ -89,7 +89,10 @@ struct TodayAttentionSection: View {
                     .accessibilityIdentifier("today.pending")
 
                 ForEach(descriptor.routineActions) { action in
-                    attentionRow(title: action.title, detail: action.status)
+                    attentionRow(
+                        title: action.title,
+                        detail: RoutineCopy.status(action.status, language: language)
+                    )
                 }
 
                 if descriptor.pending.isEmpty,

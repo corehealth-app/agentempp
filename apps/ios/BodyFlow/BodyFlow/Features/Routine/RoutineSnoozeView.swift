@@ -6,6 +6,8 @@ struct RoutineSnoozeView: View {
     let model: RoutineActionModel
     let submit: @MainActor (RoutineSnoozeSelection) -> Void
     @State private var customTime: Date
+    /// The choice being sent, so only its button shows the spinner.
+    @State private var submittedPreset: Int?
 
     init(
         model: RoutineActionModel,
@@ -62,12 +64,13 @@ struct RoutineSnoozeView: View {
             .accessibilityIdentifier("routine.snooze.custom-time")
 
             Button {
+                submittedPreset = nil
                 submit(.custom(customTime))
             } label: {
                 Text(copy("routine.snooze.use-custom"))
                     .frame(minHeight: BodyFlowSpacing.minimumTapTarget + 1)
             }
-            .buttonStyle(BodyFlowButtonStyle(role: .primary, isLoading: model.isSubmitting))
+            .buttonStyle(BodyFlowButtonStyle(role: .primary, isLoading: isSubmittingCustom))
             .disabled(model.isSubmitting || model.snoozeDate(for: .custom(customTime)) == nil)
             .accessibilityIdentifier("routine.snooze.custom")
         }
@@ -75,6 +78,7 @@ struct RoutineSnoozeView: View {
 
     private func presetButton(_ minutes: Int) -> some View {
         Button {
+            submittedPreset = minutes
             submit(.minutes(minutes))
         } label: {
             Text(String(
@@ -84,9 +88,17 @@ struct RoutineSnoozeView: View {
             ))
                 .frame(minHeight: BodyFlowSpacing.minimumTapTarget + 1)
         }
-        .buttonStyle(BodyFlowButtonStyle(role: .secondary))
+        .buttonStyle(BodyFlowButtonStyle(role: .secondary, isLoading: isSubmitting(minutes)))
         .disabled(model.isSubmitting || model.snoozeDate(for: .minutes(minutes)) == nil)
         .accessibilityIdentifier("routine.snooze.\(minutes)")
+    }
+
+    private var isSubmittingCustom: Bool {
+        model.isSubmitting && submittedPreset == nil
+    }
+
+    private func isSubmitting(_ minutes: Int) -> Bool {
+        model.isSubmitting && submittedPreset == minutes
     }
 
     private var language: SupportedAppLanguage {

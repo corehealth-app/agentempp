@@ -111,6 +111,25 @@ struct RoutineViewModelTests {
         ])
     }
 
+    // Staging 2026-09-29: every Today-origin open flashed "Indisponível nesta
+    // versão" before the list read answered.
+    @Test("detail is loading until its list read answers, then unavailable only if missing")
+    func detailLoadsBeforeClaimingUnavailable() async throws {
+        let listed = Self.item(id: "medication-1", kind: .medication)
+        let provider = RoutineReadProvider(lists: [.success(Self.list(items: [listed]))])
+        let list = RoutineListViewModel(kind: .medication, provider: provider)
+        let missing = RoutineDetailViewModel(
+            kind: .medication,
+            itemID: "medication-archived",
+            listModel: list
+        )
+
+        #expect(missing.missingItemState == .loading)
+        await missing.resolveFromTodayIfNeeded()
+        #expect(missing.item == nil)
+        #expect(missing.missingItemState == .unavailable)
+    }
+
     @Test("detail route composition reuses its list snapshot while Today owns one list read")
     func detailRouteCompositionSharesLoadedListAndLoadsTodayOnce() async throws {
         let listed = Self.item(id: "supplement-1", name: "Creatina")

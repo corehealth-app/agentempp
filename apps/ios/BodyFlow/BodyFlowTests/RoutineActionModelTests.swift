@@ -32,17 +32,20 @@ struct RoutineActionModelTests {
         let initial = RoutineActionConfiguration(
             kind: .supplement,
             itemID: "supplement-1",
-            schedules: [earlierSnoozed, initialPending]
+            schedules: [earlierSnoozed, initialPending],
+            now: Self.occurredAt
         )
         let snoozed = RoutineActionConfiguration(
             kind: .supplement,
             itemID: "supplement-1",
-            schedules: [snoozedOccurrence]
+            schedules: [snoozedOccurrence],
+            now: Self.occurredAt
         )
         let taken = RoutineActionConfiguration(
             kind: .supplement,
             itemID: "supplement-1",
-            schedules: [takenOccurrence]
+            schedules: [takenOccurrence],
+            now: Self.occurredAt
         )
 
         #expect(initial.context?.reminderRuleID == "rule-shared")
@@ -52,6 +55,73 @@ struct RoutineActionModelTests {
         #expect(!snoozed.shouldApply(over: initial, isSubmitting: true))
         #expect(taken.context == nil)
         #expect(taken.shouldApply(over: snoozed, isSubmitting: false))
+    }
+
+    // Staging 2026-09-29: medication scheduled 16:05 BRT, "Tomado" tapped at
+    // 15:44 BRT; the server answered 422 (scheduled_for after occurred_at).
+    @Test("an occurrence that has not started opens no action, only its time")
+    func futureOccurrenceIsNotActionable() {
+        let scheduledFor = Date(timeIntervalSince1970: 1_790_708_700) // 16:05 BRT
+        let tappedAt = Date(timeIntervalSince1970: 1_790_707_440) // 15:44 BRT
+        let upcoming = RoutineScheduleSnapshot(
+            id: "rule-1605",
+            localTime: "16:05",
+            weekdays: [0, 1, 2, 3, 4, 5, 6],
+            occurrence: RoutineOccurrenceSnapshot(
+                scheduledFor: APITimestamp(value: scheduledFor),
+                status: "pending",
+                lastActionAt: nil,
+                snoozedUntil: nil
+            )
+        )
+
+        let early = RoutineActionConfiguration(
+            kind: .medication,
+            itemID: "medication-1",
+            schedules: [upcoming],
+            now: tappedAt
+        )
+        let due = RoutineActionConfiguration(
+            kind: .medication,
+            itemID: "medication-1",
+            schedules: [upcoming],
+            now: scheduledFor
+        )
+
+        #expect(early.context == nil)
+        #expect(early.upcoming == RoutineUpcomingOccurrence(
+            scheduledFor: scheduledFor,
+            localTime: "16:05"
+        ))
+        #expect(due.context?.reminderRuleID == "rule-1605")
+        #expect(due.context?.scheduledFor.value == scheduledFor)
+        #expect(due.upcoming == nil)
+        #expect(due.shouldApply(over: early, isSubmitting: false))
+    }
+
+    @Test("a due occurrence is chosen over a later pending one")
+    func dueOccurrenceWinsOverLaterPending() {
+        let now = Self.occurredAt
+        let due = Self.schedule(
+            id: "rule-due",
+            status: "pending",
+            scheduledFor: now.addingTimeInterval(-600)
+        )
+        let later = Self.schedule(
+            id: "rule-later",
+            status: "pending",
+            scheduledFor: now.addingTimeInterval(3_600)
+        )
+
+        let configuration = RoutineActionConfiguration(
+            kind: .supplement,
+            itemID: "supplement-1",
+            schedules: [later, due],
+            now: now
+        )
+
+        #expect(configuration.context?.reminderRuleID == "rule-due")
+        #expect(configuration.upcoming == nil)
     }
 
     @Test("taken uses the injected occurrence time and omits snooze")

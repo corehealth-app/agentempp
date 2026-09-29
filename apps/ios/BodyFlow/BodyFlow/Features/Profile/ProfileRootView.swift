@@ -128,7 +128,9 @@ struct ProfileRootView: View {
                                 localReminders.status,
                                 language: BodyFlowPresentationLanguage.resolve(locale)
                             ),
-                            systemImage: BodyFlowSymbol.reminders.systemName
+                            systemImage: BodyFlowSymbol.reminders.systemName,
+                            // The list row already draws its own chevron.
+                            showsDisclosureIndicator: false
                         )
                     }
                     .buttonStyle(.bodyFlowRow)

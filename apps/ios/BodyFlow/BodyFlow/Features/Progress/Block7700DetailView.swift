@@ -89,7 +89,10 @@ struct Block7700DetailView: View {
                             Divider()
                             FixtureMetricRow(
                                 title: copy("progress.block.availability"),
-                                value: descriptor.availability
+                                value: TodayBlockDescriptor.availabilityText(
+                                    descriptor.availability,
+                                    language: language
+                                )
                             )
                             Divider()
                             FixtureMetricRow(

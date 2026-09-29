@@ -136,7 +136,12 @@ struct RoutineActionSummary: View {
 
     private var message: String? {
         switch model.mutationState {
-        case let .succeeded(receipt): receipt.data.status
+        case let .succeeded(receipt):
+            String(
+                format: copy("routine.action.recorded-format"),
+                locale: language.formattingLocale,
+                RoutineCopy.status(receipt.data.status, language: language)
+            )
         case .unavailable: copy("routine.action.unavailable")
         case .failed: copy("routine.action.failed")
         case .idle, .submitting: nil

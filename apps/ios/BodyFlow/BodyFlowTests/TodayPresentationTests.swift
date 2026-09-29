@@ -406,6 +406,14 @@ struct TodayPresentationTests {
     @Test(arguments: [
         ("canonical_exact", "Referência confirmada"),
         ("product_label", "Referência confirmada"),
+        ("taco", "Referência confirmada"),
+        // Staging 2026-09-29: TACO fuzzy matches showed "Origem não informada".
+        ("canonical_fuzzy", "Referência aproximada"),
+        ("canonical_composite", "Referência aproximada"),
+        ("canonical_composite_partial", "Referência aproximada"),
+        ("rule_based", "Referência aproximada"),
+        ("history", "Referência aproximada"),
+        ("pending_approved", "Referência aproximada"),
         ("llm_estimate", "Estimativa"),
         ("category_mismatch", "Estimativa"),
         ("protein_mismatch", "Estimativa"),

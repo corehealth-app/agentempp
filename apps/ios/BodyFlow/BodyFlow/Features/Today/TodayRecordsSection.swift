@@ -10,8 +10,17 @@ enum TodayNutritionProvenance {
         language: SupportedAppLanguage
     ) -> String {
         let key: String.LocalizationValue = switch source {
-        case "canonical_exact", "product_label":
+        case "canonical_exact", "product_label", "taco":
             "today.provenance.confirmed"
+        // A reference-table value reached by an approximate match, a
+        // composition or the patient's own history (`MealNutritionSource`).
+        case "canonical_fuzzy",
+             "canonical_composite",
+             "canonical_composite_partial",
+             "rule_based",
+             "history",
+             "pending_approved":
+            "today.provenance.reference"
         case "llm_estimate",
              "category_mismatch",
              "protein_mismatch",

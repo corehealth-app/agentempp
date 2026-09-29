@@ -470,6 +470,21 @@ export function estimateMacros(foodName: string): {
   fiber: number
 } {
   const n = foodName.toLowerCase()
+  // Café puro (audit 2026-09-28): "café sem açúcar" caía na regra de doces pela
+  // palavra "açúcar". Só o item que é EXATAMENTE a bebida sem açúcar vira
+  // bebida sem caloria; "bolo de café sem açúcar" ou "café com mel" não.
+  const bareCoffee = n
+    .normalize('NFC')
+    .replace(/[,;.\-–/]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (
+    /^caf[ée](?: (?:preto|puro|coado|expresso|espresso))?(?: sem a[çc][uú]car)?$/.test(bareCoffee) &&
+    bareCoffee !== 'café' &&
+    bareCoffee !== 'cafe'
+  ) {
+    return { category: 'bebida_zero', kcal: 1, protein: 0, carbs: 0, fat: 0, fiber: 0 }
+  }
   // Frutas (doces vs neutras)
   if (
     /\buvas?\b|manga|abacaxi|melancia|melão|mam[ãa]o|pera|maçã|banana|laranja|tangerina|kiwi|morango|cereja|pêssego|figo|caqui|jabuticaba|goiaba|fruta/.test(

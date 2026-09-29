@@ -16,7 +16,14 @@ function convert(schema: z.ZodTypeAny): Record<string, unknown> {
     return out
   }
   if (schema instanceof z.ZodNumber) {
-    const out: Record<string, unknown> = { type: 'number' }
+    const checks = (schema._def.checks ?? []) as Array<{ kind: string; value?: number; inclusive?: boolean }>
+    const out: Record<string, unknown> = {
+      type: checks.some((c) => c.kind === 'int') ? 'integer' : 'number',
+    }
+    for (const c of checks) {
+      if (c.kind === 'min' && c.inclusive !== false && typeof c.value === 'number') out.minimum = c.value
+      if (c.kind === 'max' && c.inclusive !== false && typeof c.value === 'number') out.maximum = c.value
+    }
     if (schema.description) out.description = schema.description
     return out
   }
@@ -40,8 +47,20 @@ function convert(schema: z.ZodTypeAny): Record<string, unknown> {
       ...(schema.description ? { description: schema.description } : {}),
     }
   }
+  // Wrappers keep the inner type (audit 2026-09-29: ZodDefault and ZodEffects
+  // fell to the fallback, so the model saw an enum/number/object as a string).
+  // Descriptions set on a wrapper stay unshown, as before: surfacing them would
+  // change the WhatsApp agent's instructions (adversarial review 2026-09-29).
   if (schema instanceof z.ZodOptional) {
     return convert(schema.unwrap())
+  }
+  if (schema instanceof z.ZodDefault) {
+    const inner = convert(schema._def.innerType)
+    const value = schema._def.defaultValue()
+    return value === undefined ? inner : { ...inner, default: value }
+  }
+  if (schema instanceof z.ZodEffects) {
+    return convert(schema.innerType())
   }
   if (schema instanceof z.ZodNullable) {
     const inner = convert(schema.unwrap())
@@ -56,7 +75,7 @@ function convert(schema: z.ZodTypeAny): Record<string, unknown> {
     const required: string[] = []
     for (const [k, v] of Object.entries(shape)) {
       properties[k] = convert(v)
-      if (!(v instanceof z.ZodOptional)) {
+      if (!(v instanceof z.ZodOptional) && !(v instanceof z.ZodDefault)) {
         required.push(k)
       }
     }

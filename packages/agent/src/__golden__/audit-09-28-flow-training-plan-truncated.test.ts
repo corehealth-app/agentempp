@@ -98,3 +98,82 @@ describe('audit 2026-09-28 — Flow training plan cut by the output limit', () =
     expect(String(calls[0]!.messages[0]!.content).endsWith('Gere o plano em JSON.')).toBe(true)
   })
 })
+
+// Second attempt on the device (22:30 local, backend 57e0c20): the compact JSON
+// arrived whole, then failed validation with
+//   zod_validation_failed weekly_schedule.0.exercises.{0..3}.rpe_target
+//   "Expected string, received number"
+// The model wrote the RPE as a number (8). It is kept as text, as stored.
+describe('audit 2026-09-28 — numeric RPE from the generator', () => {
+  const exercise = (name: string, rpe: unknown) => ({
+    name,
+    muscle_group: 'peito',
+    sets: 4,
+    reps_range: '8-12',
+    rest_seconds: 90,
+    rpe_target: rpe,
+  })
+  const plan = (rpe: unknown) =>
+    JSON.stringify({
+      plan_type: 'split',
+      weekly_schedule: [
+        {
+          day: 'seg',
+          focus: 'Peito e tríceps',
+          duration_min: 60,
+          exercises: [
+            exercise('Supino reto', rpe),
+            exercise('Supino inclinado', rpe),
+            exercise('Crucifixo', rpe),
+            exercise('Tríceps corda', rpe),
+          ],
+        },
+      ],
+    })
+
+  it('a numeric rpe_target is accepted and kept as text', async () => {
+    const { llm, supabase, events } = capture(plan(8))
+    const result = await generateTrainingPlan(llm, supabase, { ...INPUT, identity: 'flow' })
+    expect(events).toHaveLength(0)
+    expect(result?.weekly_schedule[0]?.exercises.map((e) => e.rpe_target)).toEqual(['8', '8', '8', '8'])
+  })
+
+  it('a decimal RPE keeps its value and a text RPE is unchanged', async () => {
+    const decimal = await generateTrainingPlan(capture(plan(7.5)).llm, capture('').supabase, INPUT)
+    expect(decimal?.weekly_schedule[0]?.exercises[0]?.rpe_target).toBe('7.5')
+    const text = await generateTrainingPlan(capture(plan('RPE 8')).llm, capture('').supabase, INPUT)
+    expect(text?.weekly_schedule[0]?.exercises[0]?.rpe_target).toBe('RPE 8')
+  })
+
+  // Adversarial review: same failure class on neighbouring fields.
+  it('numeric reps, fractional seconds/minutes and null optionals no longer refuse the plan', async () => {
+    const body = JSON.parse(plan(8))
+    const ex = body.weekly_schedule[0].exercises[0]
+    ex.reps_range = 12
+    ex.rest_seconds = 90.5
+    ex.notes = null
+    ex.execution_steps = null
+    body.weekly_schedule[0].duration_min = 45.5
+    body.progression_rule = null
+    const { llm, supabase, events } = capture(JSON.stringify(body))
+    const result = await generateTrainingPlan(llm, supabase, INPUT)
+    expect(events).toHaveLength(0)
+    const day = result!.weekly_schedule[0]!
+    expect(day.duration_min).toBe(46)
+    expect(day.exercises[0]).toMatchObject({ reps_range: '12', rest_seconds: 91, rpe_target: '8' })
+    expect(day.exercises[0]).not.toHaveProperty('notes')
+  })
+
+  it('the shared schema is unchanged: a numeric RPE is still invalid for document import', async () => {
+    const { TrainingDaySchema } = await import('../training-plan-generator.js')
+    const day = JSON.parse(plan(9)).weekly_schedule[0]
+    expect(TrainingDaySchema.safeParse(day).success).toBe(false)
+  })
+
+  it('a non-finite or non-scalar RPE is still refused', async () => {
+    for (const bad of [{ value: 8 }, [8], true]) {
+      const { llm, supabase } = capture(plan(bad))
+      expect(await generateTrainingPlan(llm, supabase, INPUT)).toBeNull()
+    }
+  })
+})

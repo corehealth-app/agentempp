@@ -62,5 +62,49 @@ describe('audit 2026-09-29 — diet meal_type labels', () => {
     } as unknown as DietGeneratorInput
     await generateDietPlan(llm, supabase, input)
     expect(String(calls[0]!.messages[0]!.content)).toMatch(/meal_type.*cafe.*lanche_manha.*almoco.*lanche_tarde.*jantar.*ceia/)
+    expect(String(calls[0]!.messages[0]!.content)).toMatch(/category.*proteínas.*carboidratos.*vegetais.*frutas.*laticínios.*gorduras.*outros/)
+  })
+})
+
+// Next device attempt (08:59 local, backend 6b9e909): meal types passed, then
+//   shopping_list.0.category received 'Panificados'
+//   shopping_list.1.category received 'Proteínas'
+//   shopping_list.2.category received 'Laticínios'
+// Category only groups the shopping list: labels read as their code, an
+// unknown one goes to 'outros'. Null display fields are dropped.
+describe('audit 2026-09-29 — shopping list categories and display fields', () => {
+  const shopping = (category: unknown, extra: Record<string, unknown> = {}) => ({ category, food_name: 'pão', quantity_g: 100, ...extra })
+  const categories = (raw: unknown) =>
+    (normalizeGeneratedDiet(raw) as { shopping_list: Array<{ category: string }> }).shopping_list.map((i) => i.category)
+
+  it('the device categories are read', () => {
+    const raw = { daily_meals: [], shopping_list: ['Panificados', 'Proteínas', 'Laticínios'].map((c) => shopping(c)) }
+    expect(categories(raw)).toEqual(['outros', 'proteínas', 'laticínios'])
+  })
+
+  it('a null or missing category is grouped under outros', () => {
+    const raw = { daily_meals: [], shopping_list: [shopping(null), { food_name: 'sal', quantity_g: 10 }] }
+    expect(categories(raw)).toEqual(['outros', 'outros'])
+  })
+
+  it('accent and case variants of every code; codes stay codes', () => {
+    const raw = {
+      daily_meals: [],
+      shopping_list: ['PROTEINAS', 'Carboidratos', 'vegetais', 'Frutas', 'laticinios', 'Gorduras', 'Outros', 'proteínas'].map((c) => shopping(c)),
+    }
+    expect(categories(raw)).toEqual(['proteínas', 'carboidratos', 'vegetais', 'frutas', 'laticínios', 'gorduras', 'outros', 'proteínas'])
+  })
+
+  it('null display fields are dropped from meal items and the shopping list; numbers untouched', () => {
+    const raw = {
+      daily_meals: [{ ...meal('almoco'), items: [{ food_name: 'arroz', quantity_g: 150, display_qty: null, display_unit: null, kcal: 192.4, protein_g: 3.78, carbs_g: 42.09, fat_g: 0.35 }] }],
+      shopping_list: [shopping('proteínas', { quantity_g: 1200, display_qty: null, display_unit: null })],
+    }
+    const out = normalizeGeneratedDiet(raw) as {
+      daily_meals: Array<{ items: Array<Record<string, unknown>> }>
+      shopping_list: Array<Record<string, unknown>>
+    }
+    expect(out.daily_meals[0]!.items[0]).toEqual({ food_name: 'arroz', quantity_g: 150, kcal: 192.4, protein_g: 3.78, carbs_g: 42.09, fat_g: 0.35 })
+    expect(out.shopping_list[0]).toEqual({ category: 'proteínas', food_name: 'pão', quantity_g: 1200 })
   })
 })

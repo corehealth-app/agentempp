@@ -194,7 +194,11 @@ struct TodayPresentation: Equatable, Sendable {
             )
         }
         let state: TodayRoutineCollectionDescriptor.State =
-            if section.availability != "available" {
+            // "not_configured" means the patient has no items yet: an empty
+            // collection, not a failure. Any other unknown value stays unavailable.
+            if section.availability == "not_configured" && items.isEmpty {
+                .empty
+            } else if section.availability != "available" {
                 .unavailable
             } else if items.isEmpty {
                 .empty

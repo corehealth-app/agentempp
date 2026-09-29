@@ -250,6 +250,38 @@ struct TodayPresentationTests {
         #expect(collections[0].items.isEmpty)
     }
 
+    // The server sends "not_configured" for a patient with no routine items
+    // (packages/core daily-state). Staging device gate 2026-09-28: QA account A
+    // saw "Indisponível" for both collections instead of the empty state.
+    @Test("not configured routine collection presents the empty state, not unavailable")
+    func notConfiguredRoutineCollectionUsesEmptyState() throws {
+        let response = try Self.routineAvailabilitySnapshot(
+            supplementsAvailability: "not_configured",
+            supplementsItems: [],
+            medicationsAvailability: "not_configured",
+            medicationsItems: []
+        )
+        let collections = TodayPresentation(snapshot: response.data)
+            .routineCollections
+
+        #expect(collections.map(\.state) == [.empty, .empty])
+        #expect(collections.allSatisfy { $0.items.isEmpty })
+    }
+
+    @Test("an unknown routine availability stays unavailable")
+    func unknownRoutineAvailabilityStaysUnavailable() throws {
+        let response = try Self.routineAvailabilitySnapshot(
+            supplementsAvailability: "paused",
+            supplementsItems: [],
+            medicationsAvailability: "available",
+            medicationsItems: []
+        )
+        let collections = TodayPresentation(snapshot: response.data)
+            .routineCollections
+
+        #expect(collections[0].state == .unavailable)
+    }
+
     @Test("mixed routine availability remains separate in response order")
     func mixedRoutineCollectionsStayIndependent() throws {
         let original = try BodyFlowTestFixtures.decodeInconsistentToday()

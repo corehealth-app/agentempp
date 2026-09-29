@@ -53,6 +53,10 @@ export interface LLMCallParams {
   metadata?: Record<string, string>
   /** User identifier (Helicone-User-Id). */
   userId?: string
+  /** Time limit for this call only (ms); absent = client default (90 s). */
+  requestTimeoutMs?: number
+  /** Retries for this call only; absent = client default (1). */
+  maxRetries?: number
 }
 
 /** Detecta se o modelo suporta prompt caching nativo (Anthropic). */
@@ -162,7 +166,14 @@ export class OpenRouterLLM {
         ...(toolsToSend ? { tools: toolsToSend, tool_choice: p.toolChoice ?? 'auto' } : {}),
         ...(p.responseFormat ? { response_format: p.responseFormat } : {}),
       },
-      Object.keys(headers).length ? { headers } : undefined,
+      (() => {
+        const options = {
+          ...(Object.keys(headers).length ? { headers } : {}),
+          ...(p.requestTimeoutMs !== undefined ? { timeout: p.requestTimeoutMs } : {}),
+          ...(p.maxRetries !== undefined ? { maxRetries: p.maxRetries } : {}),
+        }
+        return Object.keys(options).length ? options : undefined
+      })(),
     )
 
     const choice = completion.choices[0]

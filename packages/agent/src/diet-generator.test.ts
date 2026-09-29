@@ -328,3 +328,37 @@ describe('generateDietPlan — pipeline com mock LLM', () => {
     expect(result).not.toBeNull()
   })
 })
+
+// Adversarial review of audit 2026-09-28 (training plan cut on the Flow): the
+// daily diet on the Flow had the same exposure (4000 tokens, indented JSON,
+// 90 s client limit with a silent retry). WhatsApp keeps its call.
+describe('generateDietPlan — limits per channel', () => {
+  type Call = { maxTokens?: number; requestTimeoutMs?: number; maxRetries?: number; messages: Array<{ content: unknown }> }
+  function capturing() {
+    const calls: Call[] = []
+    const llm = {
+      complete: async (params: Call) => {
+        calls.push(params)
+        return { content: 'sem json', model: 'mock', finishReason: 'length' }
+      },
+    } as unknown as OpenRouterLLM
+    return { llm, calls }
+  }
+  const supabase = { from: () => ({ insert: async () => ({ error: null }) }) } as unknown as ServiceClient
+
+  it('the Flow daily diet asks for compact JSON, 8000 tokens, 120 s and no retry', async () => {
+    const { llm, calls } = capturing()
+    await generateDietPlan(llm, supabase, { ...VALID_PROFILE, identity: 'flow' })
+    expect(calls[0]).toMatchObject({ maxTokens: 8000, requestTimeoutMs: 120_000, maxRetries: 0 })
+    expect(String(calls[0]!.messages[0]!.content)).toMatch(/JSON compacto/)
+  })
+
+  it('the WhatsApp daily diet keeps 4000 tokens, client defaults and its payload', async () => {
+    const { llm, calls } = capturing()
+    await generateDietPlan(llm, supabase, VALID_PROFILE)
+    expect(calls[0]!.maxTokens).toBe(4000)
+    expect(calls[0]!.requestTimeoutMs).toBeUndefined()
+    expect(calls[0]!.maxRetries).toBeUndefined()
+    expect(String(calls[0]!.messages[0]!.content).endsWith('Gere a prescrição em JSON.')).toBe(true)
+  })
+})

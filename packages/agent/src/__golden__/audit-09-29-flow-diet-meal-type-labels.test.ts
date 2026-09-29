@@ -108,3 +108,40 @@ describe('audit 2026-09-29 — shopping list categories and display fields', () 
     expect(out.shopping_list[0]).toEqual({ category: 'proteínas', food_name: 'pão', quantity_g: 1200 })
   })
 })
+
+// Next device attempt (09:35 local, backend 819b76e): format accepted, then
+//   diet.generation_failed protein_drift_exceeded day_protein_g 232,
+//   meta_protein_g 186.1, drift 25% (limit ±20%)
+// The generator was never told the accepted window. The Flow request now
+// states it in numbers; the check itself is unchanged.
+describe('audit 2026-09-29 — the Flow diet request states the accepted window', () => {
+  it('kcal ±15% and protein ±20% of the official targets, in numbers', async () => {
+    const calls: Array<{ messages: Array<{ content: unknown }> }> = []
+    const llm = {
+      complete: async (params: { messages: Array<{ content: unknown }> }) => {
+        calls.push(params)
+        return { content: 'x', model: 'm', finishReason: 'stop' }
+      },
+    } as unknown as OpenRouterLLM
+    const supabase = { from: () => ({ insert: async () => ({ error: null }) }) } as unknown as ServiceClient
+    const profile = { name: null, sex: null, age: null, weight_kg: null, height_cm: null, activity_level: null, protocol: 'ganho_massa', meta_kcal: 3361, meta_protein_g: 186.1, bf_percent: null, restrictions: [], preferences: [] }
+    await generateDietPlan(llm, supabase, { userId: 'qa-a', identity: 'flow', profile, historical_foods: [] } as unknown as DietGeneratorInput)
+    const text = String(calls[0]!.messages[0]!.content)
+    expect(text).toContain('entre 2857 e 3865 kcal')
+    expect(text).toContain('entre 149 e 223 g de proteína')
+  })
+
+  it('WhatsApp payload is unchanged (no window line)', async () => {
+    const calls: Array<{ messages: Array<{ content: unknown }> }> = []
+    const llm = {
+      complete: async (params: { messages: Array<{ content: unknown }> }) => {
+        calls.push(params)
+        return { content: 'x', model: 'm', finishReason: 'stop' }
+      },
+    } as unknown as OpenRouterLLM
+    const supabase = { from: () => ({ insert: async () => ({ error: null }) }) } as unknown as ServiceClient
+    const profile = { name: null, sex: null, age: null, weight_kg: null, height_cm: null, activity_level: null, protocol: 'ganho_massa', meta_kcal: 3361, meta_protein_g: 186.1, bf_percent: null, restrictions: [], preferences: [] }
+    await generateDietPlan(llm, supabase, { userId: 'qa-a', profile, historical_foods: [] } as unknown as DietGeneratorInput)
+    expect(String(calls[0]!.messages[0]!.content)).not.toContain('Faixa aceita')
+  })
+})

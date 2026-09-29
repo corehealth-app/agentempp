@@ -46,7 +46,11 @@ function makeDeps(replies: string[], recorded: Recorded): PipelineDeps {
   return makeScriptedDeps(replies.map((content) => ({ toolCalls: [], content })), recorded)
 }
 
-function makeScriptedDeps(steps: ScriptedStep[], recorded: Recorded): PipelineDeps {
+function makeScriptedDeps(
+  steps: ScriptedStep[],
+  recorded: Recorded,
+  overrides: { messages?: unknown[]; onComplete?: (input: { messages: unknown[] }) => void } = {},
+): PipelineDeps {
   const rowsByTable: Record<string, unknown> = {
     users: {
       id: 'fixture-user',
@@ -75,7 +79,7 @@ function makeScriptedDeps(steps: ScriptedStep[], recorded: Recorded): PipelineDe
       goal_value: null,
       deficit_level: null,
     },
-    messages: [],
+    messages: overrides.messages ?? [],
     daily_snapshots: [],
     user_progress: {
       current_streak: 0,
@@ -105,7 +109,8 @@ function makeScriptedDeps(steps: ScriptedStep[], recorded: Recorded): PipelineDe
   } as unknown as PipelineDeps['supabase']
   let call = 0
   const llm = {
-    complete: async () => {
+    complete: async (input: { messages: unknown[] }) => {
+      overrides.onComplete?.(input)
       const step = steps[Math.min(call, steps.length - 1)] ?? { toolCalls: [] }
       call += 1
       return {
@@ -317,5 +322,57 @@ describe('adversarial review follow-ups', () => {
       timestamp,
     })
     expect(seen).toEqual(['flow', undefined])
+  })
+})
+
+// Audit 2026-09-28 (golden: __golden__/audit-09-28-flow-history-date.test.ts):
+// the date label is wired to the Flow channel only, through the real pipeline.
+describe('history rows from a previous local day', () => {
+  const now = new Date('2026-09-29T00:08:34.286Z') // 28/09 21:08 in São Paulo
+  const yesterdayAnswer = 'Hoje você tá em 676 kcal de 3.355 — ainda bem abaixo da meta.'
+  const rows = [
+    { direction: 'out', content: yesterdayAnswer, content_type: 'text', created_at: '2026-09-28T02:43:53.130Z', provider_message_id: 'out-1' },
+    { direction: 'in', content: 'Quanto eu ja comi hoje?', content_type: 'text', created_at: '2026-09-28T02:43:41.662Z', provider_message_id: 'in-1' },
+  ]
+  const historyOf = (input: { messages: unknown[] }) =>
+    (input.messages as Array<{ role: string; content: unknown }>)
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .map((m) => String(m.content))
+
+  it('the mobile Flow sends yesterday\'s rows dated to the model', async () => {
+    const seen: string[][] = []
+    const deps = makeScriptedDeps([{ toolCalls: [], content: 'Ok.' }], { inserts: [] }, {
+      messages: rows,
+      onComplete: (input) => seen.push(historyOf(input)),
+    })
+    await processAuthenticatedMessage(deps, {
+      userId: 'fixture-user',
+      providerMessageId: 'mobile_flow/fixture-user/key-0002',
+      text: 'Qual é a minha meta de hoje e quanto falta?',
+      timestamp: now,
+    })
+    const first = seen[0] ?? []
+    expect(first.filter((c) => c.startsWith('[Mensagem de 27/09/2026, dia anterior'))).toHaveLength(2)
+    expect(first.some((c) => c.endsWith(yesterdayAnswer))).toBe(true)
+  })
+
+  it('WhatsApp sends the same rows byte for byte, without any date label', async () => {
+    const seen: string[][] = []
+    const deps = makeScriptedDeps([{ toolCalls: [], content: 'Ok.' }], { inserts: [] }, {
+      messages: rows,
+      onComplete: (input) => seen.push(historyOf(input)),
+    })
+    await processMessage(deps, {
+      from: '5511999999999',
+      providerMessageId: 'wamid.fixture-2',
+      text: 'Qual é a minha meta de hoje e quanto falta?',
+      contentType: 'text',
+      provider: 'whatsapp',
+      timestamp: now,
+    })
+    const first = seen[0] ?? []
+    expect(first.some((c) => c.includes('[Mensagem de'))).toBe(false)
+    expect(first).toContain('Quanto eu ja comi hoje?')
+    expect(first).toContain(yesterdayAnswer)
   })
 })

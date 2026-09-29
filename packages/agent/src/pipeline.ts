@@ -2338,6 +2338,24 @@ type RecentMessageRow = {
   content: string | null
   content_type?: string | null
   provider_message_id?: string | null
+  created_at?: string | null
+}
+
+/** Local day of the current turn, used to date older history rows. */
+export type PromptHistoryDay = { timeZone: string; today: string }
+
+// A history row from another local day carries its date, so "hoje" and the
+// hour said on that day are not read as today's (audit 2026-09-28, Flow).
+function datedHistoryContent(content: string, createdAt: string | null | undefined, day: PromptHistoryDay): string {
+  if (!createdAt) return content
+  const when = new Date(createdAt)
+  if (Number.isNaN(when.getTime())) return content
+  const rowDay = getLocalDateString(day.timeZone, when)
+  // YYYY-MM-DD compares in date order; a row from a later day (a concurrent
+  // turn across midnight) is not "dia anterior" and stays as it is.
+  if (rowDay >= day.today) return content
+  const [year, month, dayOfMonth] = rowDay.split('-')
+  return `[Mensagem de ${dayOfMonth}/${month}/${year}, dia anterior — números do dia e horário citados nela não valem para hoje]\n${content}`
 }
 
 function normalizeCurrentProviderMessageIds(
@@ -2359,6 +2377,7 @@ function isRawInteractiveTap(m: RecentMessageRow): boolean {
 export function buildPromptRecentMessages(
   rows: RecentMessageRow[],
   currentProviderMessageIds: string | string[] | null | undefined,
+  historyDay?: PromptHistoryDay,
 ): Array<{ role: 'user' | 'assistant'; content: string }> {
   const currentIds = normalizeCurrentProviderMessageIds(currentProviderMessageIds)
   return rows
@@ -2371,7 +2390,9 @@ export function buildPromptRecentMessages(
     )
     .map((m) => ({
       role: m.direction === 'in' ? ('user' as const) : ('assistant' as const),
-      content: m.content as string,
+      content: historyDay
+        ? datedHistoryContent(m.content as string, m.created_at, historyDay)
+        : (m.content as string),
     }))
 }
 
@@ -2430,9 +2451,14 @@ export async function loadContext(
   // ~1412) abaixo passa a pegar a inbound MAIS ANTIGA da janela em vez da
   // mais recente — bug Paulo+Roberto 2026-05-30 (sourceContentType invertido:
   // text→image e image→text).
+  // Only the app's Flow channel dates older rows; WhatsApp history is unchanged.
+  const historyTimeZone = (user as { timezone?: string | null }).timezone ?? 'America/Sao_Paulo'
   const recentMessages = buildPromptRecentMessages(
     (msgs ?? []) as RecentMessageRow[],
     currentProviderMessageIds,
+    historyProvider === 'mobile_flow'
+      ? { timeZone: historyTimeZone, today: getLocalDateString(historyTimeZone, referenceTimestamp) }
+      : undefined,
   )
 
   const userTyped = user as

@@ -232,6 +232,28 @@ export function splitMealText(text: string): string[] {
     .filter(Boolean)
 }
 
+// Spoken/written introduction before a quantity (audit 2026-09-29: "No almoço
+// eu comi 150 gramas de arroz"): only meal/time words, then an eating verb.
+const EATING_VERBS = new Set(['comi', 'tomei', 'bebi', 'almocei', 'jantei', 'lanchei', 'consumi', 'ingeri'])
+const INTRO_WORDS = new Set([
+  'no', 'na', 'nos', 'nas', 'o', 'a', 'em', 'de', 'do', 'da', 'pelo', 'pela', 'eu', 'e', 'hoje', 'ontem', 'agora',
+  'depois', 'mais', 'tambem', 'cafe', 'manha', 'almoco', 'jantar', 'janta', 'lanche', 'ceia', 'tarde', 'noite',
+])
+
+function withoutLeadIn(prefix: string): string {
+  const words = prefix.trim().split(/\s+/).filter(Boolean)
+  const plain = words.map((word) => normalize(word).replace(/[^a-z]/g, ''))
+  let verb = -1
+  for (let i = plain.length - 1; i >= 0; i -= 1) {
+    if (EATING_VERBS.has(plain[i] ?? '')) {
+      verb = i
+      break
+    }
+  }
+  if (verb < 0 || !plain.slice(0, verb).every((word) => INTRO_WORDS.has(word))) return prefix
+  return words.slice(verb + 1).join(' ')
+}
+
 /** "alimento + gramas" (mesmas regras do parser do app): declarado, exato. */
 export function parseStatedGrams(segment: string): MealDraftRawItem | null {
   const match = GRAMS.exec(segment)
@@ -240,7 +262,9 @@ export function parseStatedGrams(segment: string): MealDraftRawItem | null {
   if (value == null) return null
   const kilograms = /^(kg|quilos?)$/i.test(match[2] ?? '')
   const grams = validGrams(kilograms ? value * 1000 : value)
-  const name = cleanName(`${segment.slice(0, match.index)} ${segment.slice(match.index + match[0].length)}`)
+  const name = cleanName(
+    `${withoutLeadIn(segment.slice(0, match.index))} ${segment.slice(match.index + match[0].length)}`,
+  )
   if (grams == null || !name) return null
   return { name, grams_stated: grams }
 }

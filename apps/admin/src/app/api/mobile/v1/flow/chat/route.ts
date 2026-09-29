@@ -37,7 +37,8 @@ const dependencies: FlowChatRouteDependencies = {
           if (output.text.trim().length === 0) {
             console.error('[mobile-flow] empty_reply_detail', {
               completion_tokens: output.completionTokens,
-              tool_calls: summarizeFlowToolCalls(output.toolCalls),
+              // Serialised: console.error would print nested arrays as [Array].
+              tool_calls: JSON.stringify(summarizeFlowToolCalls(output.toolCalls)),
             })
           }
           return {

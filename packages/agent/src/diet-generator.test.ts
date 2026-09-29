@@ -362,3 +362,30 @@ describe('generateDietPlan — limits per channel', () => {
     expect(String(calls[0]!.messages[0]!.content).endsWith('Gere a prescrição em JSON.')).toBe(true)
   })
 })
+
+describe('normalizeGeneratedDiet — generator prose and null optionals (audit 2026-09-28)', () => {
+  const long = (n: number) => Array.from({ length: n }, (_, i) => `palavra${i}`).join(' ')
+  it('cuts plan and meal notes within their limits and drops null optionals; numbers untouched', async () => {
+    const { normalizeGeneratedDiet } = await import('./diet-generator.js')
+    const meal = { meal_type: 'almoco', notes: long(80), time_suggestion: null, day_of_week: null, items: [{ food_name: 'arroz', quantity_g: 150, kcal: 192.4, protein_g: 3.78, carbs_g: 42.09, fat_g: 0.35 }], total_kcal: 192.4, total_protein_g: 3.78 }
+    const out = normalizeGeneratedDiet({ daily_meals: [meal], shopping_list: [], notes: long(120) }) as {
+      notes: string
+      daily_meals: Array<Record<string, unknown>>
+    }
+    expect(out.notes.length).toBeLessThanOrEqual(500)
+    const m = out.daily_meals[0]!
+    expect(String(m.notes).length).toBeLessThanOrEqual(300)
+    expect(m).not.toHaveProperty('time_suggestion')
+    expect(m).not.toHaveProperty('day_of_week')
+    expect(m.items).toEqual(meal.items)
+    expect(m.total_kcal).toBe(192.4)
+  })
+})
+
+it('a cut never leaves half of an emoji', async () => {
+  const { normalizeGeneratedDiet } = await import('./diet-generator.js')
+  const notes = `${'a'.repeat(498)}💪 mais`
+  const out = normalizeGeneratedDiet({ daily_meals: [], shopping_list: [], notes }) as { notes: string }
+  expect(out.notes.length).toBeLessThanOrEqual(500)
+  expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(out.notes)).toBe(false)
+})

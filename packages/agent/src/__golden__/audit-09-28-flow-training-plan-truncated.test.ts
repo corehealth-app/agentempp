@@ -177,3 +177,64 @@ describe('audit 2026-09-28 — numeric RPE from the generator', () => {
     }
   })
 })
+
+// Third attempt on the device (22:41 local, backend e397f3f): whole JSON, RPE
+// accepted, then zod_validation_failed notes "String must contain at most 500
+// character(s)". Prose fields of the generator's own answer are cut at a word
+// boundary within their limit; identifiers and ranges stay strict.
+describe('audit 2026-09-28 — generator prose longer than its limit', () => {
+  const long = (n: number) => Array.from({ length: n }, (_, i) => `palavra${i}`).join(' ')
+  const base = () => ({
+    plan_type: 'split',
+    weekly_schedule: [
+      {
+        day: 'seg',
+        focus: 'Peito',
+        duration_min: 60,
+        exercises: [{ name: 'Supino reto', muscle_group: 'peito', sets: 4, reps_range: '8-12', rest_seconds: 90 }],
+      },
+    ],
+  })
+
+  it('plan notes over 500 characters (the device case) are cut within the limit, not refused', async () => {
+    const body = { ...base(), notes: long(120) }
+    const { llm, supabase, events } = capture(JSON.stringify(body))
+    const result = await generateTrainingPlan(llm, supabase, { ...INPUT, identity: 'flow' })
+    expect(events).toHaveLength(0)
+    expect(result!.notes!.length).toBeLessThanOrEqual(500)
+    expect(result!.notes!.endsWith('…')).toBe(true)
+    expect(body.notes.startsWith(result!.notes!.slice(0, -1).trimEnd())).toBe(true)
+  })
+
+  it('every prose field is cut within its limit; lists keep at most 10 items', async () => {
+    const body = base() as Record<string, unknown> & ReturnType<typeof base>
+    body.progression_rule = long(120)
+    Object.assign(body.weekly_schedule[0]!.exercises[0]!, {
+      notes: long(80),
+      execution_steps: Array.from({ length: 12 }, () => long(80)),
+      common_mistakes: [long(80)],
+    })
+    const { llm, supabase, events } = capture(JSON.stringify(body))
+    const result = await generateTrainingPlan(llm, supabase, INPUT)
+    expect(events).toHaveLength(0)
+    const ex = result!.weekly_schedule[0]!.exercises[0]!
+    expect(result!.progression_rule.length).toBeLessThanOrEqual(500)
+    expect(ex.notes!.length).toBeLessThanOrEqual(300)
+    expect(ex.execution_steps).toHaveLength(10)
+    expect(ex.execution_steps!.every((s) => s.length <= 300)).toBe(true)
+    expect(ex.common_mistakes![0]!.length).toBeLessThanOrEqual(300)
+  })
+
+  it('identifiers are not cut: an over-long exercise name still refuses the plan', async () => {
+    const body = base()
+    body.weekly_schedule[0]!.exercises[0]!.name = long(40)
+    const { llm, supabase } = capture(JSON.stringify(body))
+    expect(await generateTrainingPlan(llm, supabase, INPUT)).toBeNull()
+  })
+
+  it('the Flow request states the text limits to the model', async () => {
+    const { llm, supabase, calls } = capture(JSON.stringify(base()))
+    await generateTrainingPlan(llm, supabase, { ...INPUT, identity: 'flow' })
+    expect(String(calls[0]!.messages[0]!.content)).toMatch(/notes.*500/)
+  })
+})

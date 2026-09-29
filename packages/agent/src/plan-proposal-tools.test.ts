@@ -393,6 +393,23 @@ describe('propoe_plano_treino', () => {
     })
   })
 
+  // Staging 2026-09-28: after failed proposals the Flow told the patient to
+  // "gerar pelo app diretamente", a path that does not exist.
+  it('a falha diz ao modelo que não há outro caminho para gerar o plano', async () => {
+    generateTrainingPlan.mockResolvedValueOnce(null)
+    const failed = makeContext()
+    const blocked = makeContext({ eventsByName: { 'training.proposal_failed': 3 } })
+    for (const result of [
+      await propoePlanoTreino.execute(trainingArguments, failed.ctx),
+      await propoePlanoTreino.execute(trainingArguments, blocked.ctx),
+    ]) {
+      expect(result).toMatchObject({ success: false })
+      expect(String((result as { error?: unknown }).error)).toContain(
+        'Não sugira outro caminho, tela ou recurso para gerar o plano',
+      )
+    }
+  })
+
   it('o evento que sustenta o limite precisa ser gravado', async () => {
     generateTrainingPlan.mockResolvedValue(trainingPlan)
     const { ctx } = makeContext({ insertError: true })

@@ -475,11 +475,11 @@ export function estimateMacros(foodName: string): {
   // bebida sem caloria; "bolo de café sem açúcar" ou "café com mel" não.
   const bareCoffee = n
     .normalize('NFC')
-    .replace(/[,;.\-–/]+/g, ' ')
+    .replace(/[(),;.\-–/]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
   if (
-    /^caf[ée](?: (?:preto|puro|coado|expresso|espresso))?(?: sem a[çc][uú]car)?$/.test(bareCoffee) &&
+    /^caf[ée](?: (?:preto|puro|coado|expresso|espresso|descafeinado)){0,2}(?: sem a[çc][uú]car)?$/.test(bareCoffee) &&
     bareCoffee !== 'café' &&
     bareCoffee !== 'cafe'
   ) {

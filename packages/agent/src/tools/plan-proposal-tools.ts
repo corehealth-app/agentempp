@@ -107,7 +107,7 @@ const BLOCKED = {
   success: false,
   retry_tool: false,
   error:
-    'Não é possível criar outra proposta agora. Explique ao paciente que ele pode revisar, confirmar ou descartar as propostas que já existem no app, e tentar de novo mais tarde. Não chame a ferramenta de novo e não apresente um plano.',
+    'Não é possível criar outra proposta agora. Explique ao paciente que ele pode revisar, confirmar ou descartar as propostas que já existem no app, e tentar de novo mais tarde. Não chame a ferramenta de novo e não apresente um plano. Não sugira outro caminho, tela ou recurso para gerar o plano: não existe.',
 }
 
 async function record(
@@ -169,7 +169,7 @@ const UNAVAILABLE = {
   success: false,
   retry_tool: false,
   error:
-    'Não foi possível criar a proposta agora. Explique ao paciente que houve um problema técnico e peça para tentar de novo em alguns minutos. Não apresente um plano.',
+    'Não foi possível criar a proposta agora. Explique ao paciente que houve um problema técnico e peça para tentar de novo em alguns minutos. Não apresente um plano. Não sugira outro caminho, tela ou recurso para gerar o plano: não existe.',
 }
 
 function ageAt(reference: Date, birthDate: string | null | undefined): number | null {

@@ -73,6 +73,11 @@ describe('audit 2026-09-28 — "café sem açúcar" is not a sweet', () => {
       'café, sem açúcar',
       'café-puro',
       'cafe\u0301 sem ac\u0327u\u0301car', // decomposed accents (NFD)
+      // Pending from the 2026-09-28 review, closed 2026-09-29:
+      'café (sem açúcar)',
+      'café descafeinado sem açúcar',
+      'café descafeinado',
+      'café expresso descafeinado sem açúcar',
     ]) {
       expect(estimateMacros(name).category, name).toBe('bebida_zero')
     }
@@ -104,6 +109,9 @@ describe('audit 2026-09-28 — "café sem açúcar" is not a sweet', () => {
       'café puro com mel',
       'café expresso com chantili',
       'café puro com óleo de coco',
+      'café (com açúcar)',
+      'café descafeinado com açúcar',
+      'bolo de café descafeinado',
       'café com manteiga sem açúcar',
       'café', // plain "café" keeps its previous estimate: sugar is not ruled out
     ]) {

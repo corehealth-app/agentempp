@@ -79,13 +79,17 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
     let queryItems: [URLQueryItem]
     let body: Data?
     let idempotency: MobileAPIIdempotency
+    /// Longer limit for a request whose server work is known to be slow;
+    /// nil keeps the transport default.
+    let timeout: Duration?
 
     init(
         method: HTTPMethod,
         path: String,
         queryItems: [URLQueryItem] = [],
         body: Data? = nil,
-        idempotencyKey: IdempotencyKey? = nil
+        idempotencyKey: IdempotencyKey? = nil,
+        timeout: Duration? = nil
     ) throws {
         guard MobileAPIRequestPath.isValid(path) else {
             throw MobileAPIRequestError.invalidPath
@@ -103,6 +107,7 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
         self.path = path
         self.queryItems = queryItems
         self.body = body
+        self.timeout = timeout
         if isMutation {
             self.idempotency = .required(
                 idempotencyKey ?? Self.makeIdempotencyKey()

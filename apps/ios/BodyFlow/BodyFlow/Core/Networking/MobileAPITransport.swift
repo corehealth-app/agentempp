@@ -45,8 +45,10 @@ struct MobileAPITransport: Sendable {
         sessionConfiguration.httpShouldSetCookies = false
         sessionConfiguration.httpCookieStorage = nil
         sessionConfiguration.urlCredentialStorage = nil
-        sessionConfiguration.timeoutIntervalForRequest = Self.seconds(timeout)
-        sessionConfiguration.timeoutIntervalForResource = Self.seconds(timeout)
+        // The session ceilings (idle and total) admit the longest per-request
+        // limit; each request is still bounded by its own limit and clock race.
+        sessionConfiguration.timeoutIntervalForRequest = Self.seconds(max(timeout, Self.longestRequestTimeout))
+        sessionConfiguration.timeoutIntervalForResource = Self.seconds(max(timeout, Self.longestRequestTimeout))
         self.session = URLSession(configuration: sessionConfiguration)
         self.clock = clock
         self.timeout = timeout
@@ -179,10 +181,11 @@ struct MobileAPITransport: Sendable {
             throw MobileAPIRequestError.invalidPath
         }
 
+        let attemptTimeout = min(request.timeout ?? timeout, max(timeout, Self.longestRequestTimeout))
         var urlRequest = URLRequest(
             url: url,
             cachePolicy: .reloadIgnoringLocalAndRemoteCacheData,
-            timeoutInterval: Self.seconds(timeout)
+            timeoutInterval: Self.seconds(attemptTimeout)
         )
         urlRequest.httpMethod = request.method.rawValue
         urlRequest.httpBody = request.body
@@ -224,7 +227,7 @@ struct MobileAPITransport: Sendable {
                         )
                     }
                     group.addTask {
-                        try await clock.sleep(for: timeout)
+                        try await clock.sleep(for: attemptTimeout)
                         throw MobileAPITransportError.timeout
                     }
 
@@ -378,6 +381,9 @@ struct MobileAPITransport: Sendable {
             )
         }
     }
+
+    /// Upper bound for a per-request limit (Flow plan turns; the server allows 300 s).
+    static let longestRequestTimeout: Duration = .seconds(180)
 
     private static func seconds(_ duration: Duration) -> TimeInterval {
         let components = duration.components

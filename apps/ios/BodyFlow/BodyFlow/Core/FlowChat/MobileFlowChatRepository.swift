@@ -25,7 +25,10 @@ struct MobileFlowChatRepository: FlowChatProviding {
             method: .post,
             path: "/api/mobile/v1/flow/chat",
             body: body,
-            idempotencyKey: idempotencyKey
+            idempotencyKey: idempotencyKey,
+            // A turn that builds a plan takes 60-90 s (staging 2026-09-28: 77 s);
+            // its generator may take up to 120 s on its own.
+            timeout: .seconds(180)
         ))
     }
 }

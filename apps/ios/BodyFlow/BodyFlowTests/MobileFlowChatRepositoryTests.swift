@@ -48,6 +48,17 @@ struct MobileFlowChatRepositoryTests {
         #expect(request.path == "/api/mobile/v1/flow/chat")
         #expect(request.idempotencyKey == "flow-key-0001")
         #expect(String(data: try #require(request.body), encoding: .utf8)?.contains("Olá, Flow") == true)
+        // A turn that builds a plan takes 60-90 s (staging 2026-09-28: 77 s).
+        #expect(request.timeout == .seconds(180))
+    }
+
+    @Test("history keeps the transport default timeout")
+    func historyKeepsDefaultTimeout() async throws {
+        let transport = FlowChatRecordingTransport(
+            history: FlowHistoryResponse(conversationID: "flow", messages: [])
+        )
+        _ = try await MobileFlowChatRepository(transport: transport).history(limit: 20)
+        #expect(try #require(await transport.lastRequest).timeout == nil)
     }
 }
 
@@ -58,6 +69,7 @@ private actor FlowChatRecordingTransport: MobileAPIExecuting {
         let queryItems: [URLQueryItem]
         let body: Data?
         let idempotencyKey: String?
+        let timeout: Duration?
     }
 
     private let historyResponse: FlowHistoryResponse?
@@ -81,7 +93,8 @@ private actor FlowChatRecordingTransport: MobileAPIExecuting {
             path: request.path,
             queryItems: request.queryItems,
             body: request.body,
-            idempotencyKey: key
+            idempotencyKey: key,
+            timeout: request.timeout
         )
         if let response = historyResponse as? Response { return response }
         if let response = sendResponse as? Response { return response }

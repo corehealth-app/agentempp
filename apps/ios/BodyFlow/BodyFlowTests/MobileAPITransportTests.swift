@@ -132,6 +132,30 @@ struct MobileAPITransportTests {
         #expect(await harness.stub.requests().count == 1)
     }
 
+    // Staging device gate 2026-09-28: a Flow turn that builds a plan took 77 s
+    // and the app gave up at the shared 30 s limit. A request may ask for a
+    // longer limit; every other request keeps the transport default.
+    @Test("a request with its own longer timeout outlives the default")
+    func requestTimeoutOverridesDefault() async throws {
+        let harness = try await TransportHarness(
+            tokens: ["session-alpha", "session-beta"],
+            timeout: .milliseconds(100)
+        )
+        await harness.stub.respond(with: .success(delay: .milliseconds(400)))
+
+        let slow = try MobileAPIRequest<TransportPayload>(
+            method: .get,
+            path: "/api/mobile/v1/today",
+            timeout: .seconds(3)
+        )
+        let _: TransportPayload = try await harness.transport.execute(slow)
+
+        await harness.stub.respond(with: .success(delay: .milliseconds(400)))
+        await #expect(throws: MobileAPITransportError.timeout) {
+            let _: TransportPayload = try await harness.transport.execute(.getToday())
+        }
+    }
+
     @Test("task cancellation remains CancellationError")
     func preservesCancellation() async throws {
         let harness = try await TransportHarness(tokens: ["session-alpha"])

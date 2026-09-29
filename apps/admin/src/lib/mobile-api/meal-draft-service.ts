@@ -84,6 +84,47 @@ function macros(value: unknown): Record<string, number | null> | null {
   }
 }
 
+const SAFE_EXTRACTION_ERROR_NAMES = new Set([
+  'Error',
+  'TypeError',
+  'MealExtractionContentError',
+  'APIError',
+  'APIConnectionError',
+  'APIConnectionTimeoutError',
+  'APIUserAbortError',
+  'BadRequestError',
+  'AuthenticationError',
+  'PermissionDeniedError',
+  'NotFoundError',
+  'UnprocessableEntityError',
+  'RateLimitError',
+  'InternalServerError',
+])
+
+// Only the class, a fixed code and the provider's HTTP status are logged:
+// never the patient's text, the model's answer or the provider's message.
+function logExtractionFailure(error: unknown): void {
+  // The OpenAI SDK error classes keep .name === 'Error'; the class name tells
+  // a timeout from a connection failure. Both are checked against the list.
+  const className = error instanceof Error ? error.constructor.name : ''
+  const name =
+    error instanceof Error && SAFE_EXTRACTION_ERROR_NAMES.has(className) && className !== 'Error'
+      ? className
+      : error instanceof Error && SAFE_EXTRACTION_ERROR_NAMES.has(error.name)
+        ? error.name
+        : 'UnknownError'
+  const rawCode = (error as { code?: unknown } | null)?.code
+  const code =
+    rawCode === 'empty_content' || rawCode === 'invalid_json' || rawCode === 'truncated' ? rawCode : 'unknown'
+  const rawStatus = (error as { status?: unknown } | null)?.status
+  const status = typeof rawStatus === 'number' && Number.isInteger(rawStatus) ? rawStatus : null
+  console.error('[mobile-meal-drafts] extraction_failed', {
+    error_name: name,
+    error_code: code,
+    provider_status: status,
+  })
+}
+
 async function draftFromText(
   deps: MealDraftDependencies,
   userId: string,
@@ -100,7 +141,8 @@ async function draftFromText(
     let extraction: MealTextExtraction
     try {
       extraction = await deps.extractor.extract({ text: remaining, userId })
-    } catch {
+    } catch (error) {
+      logExtractionFailure(error)
       throw new MobileApiError(502, 'meal_extraction_failed', 'Meal extraction failed')
     }
     const extracted = sanitizeExtractedItems(remaining, extraction.items)

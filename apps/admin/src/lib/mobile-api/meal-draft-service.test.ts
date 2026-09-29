@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mealDraftInputSchema } from './contracts'
 import {
   createMealDraft,
@@ -137,6 +137,63 @@ describe('meal draft from text', () => {
         { source: 'text', text: 'comi bem no almoço' },
       ),
     ).rejects.toMatchObject({ status: 502, code: 'meal_extraction_failed', message: 'Meal extraction failed' })
+  })
+
+  it('an SDK error class is logged by its class name even when .name is the generic "Error"', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      class APIConnectionTimeoutError extends Error {}
+      await expect(
+        createMealDraft(
+          deps({
+            extractor: {
+              async extract() {
+                throw new APIConnectionTimeoutError('timed out with detail')
+              },
+            },
+          }),
+          'patient-a',
+          { source: 'text', text: 'comi bem no almoço' },
+        ),
+      ).rejects.toMatchObject({ code: 'meal_extraction_failed' })
+      expect(spy.mock.calls[0]?.[1]).toEqual({
+        error_name: 'APIConnectionTimeoutError',
+        error_code: 'unknown',
+        provider_status: null,
+      })
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('a provider failure is logged by class and code only, never with the text or the detail', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const providerError = Object.assign(new Error('provider secret detail'), { status: 400 })
+      await expect(
+        createMealDraft(
+          deps({
+            extractor: {
+              async extract() {
+                throw providerError
+              },
+            },
+          }),
+          'patient-a',
+          { source: 'text', text: 'comi bem no almoço' },
+        ),
+      ).rejects.toMatchObject({ code: 'meal_extraction_failed' })
+      expect(spy).toHaveBeenCalledTimes(1)
+      expect(spy.mock.calls[0]).toEqual([
+        '[mobile-meal-drafts] extraction_failed',
+        { error_name: 'Error', error_code: 'unknown', provider_status: 400 },
+      ])
+      const logged = JSON.stringify(spy.mock.calls)
+      expect(logged).not.toContain('secret')
+      expect(logged).not.toContain('almoço')
+    } finally {
+      spy.mockRestore()
+    }
   })
 })
 

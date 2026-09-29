@@ -194,6 +194,8 @@ export function createPlanProposalTools<
       'Nunca chute o nível — pergunte. A proposta é um rascunho: só vira plano quando o paciente ' +
       'confirma no app. Se receber {success:false}, NÃO apresente plano nenhum.',
     parameters: parameters.training,
+    // Audit 2026-09-28: the model writes null for "none"; optional only.
+    nullMeansAbsent: ['training_days', 'goes_to_failure', 'limitations', 'priority_muscles'],
     execute: async (args, ctx) => {
       const key = requestKey(ctx, PROPOSE_TRAINING_PLAN_TOOL)
       if (!key || !ctx.llm) return UNAVAILABLE
@@ -310,6 +312,8 @@ export function createPlanProposalTools<
       'rascunho: só vira plano quando o paciente confirma no app. ' +
       'Se receber {success:false}, NÃO apresente cardápio nenhum.',
     parameters: parameters.diet,
+    // Audit 2026-09-28: "sem restrições" arrived as null and refused the call.
+    nullMeansAbsent: ['horizon', 'meals_per_day', 'restrictions', 'preferences'],
     execute: async (args, ctx) => {
       const key = requestKey(ctx, PROPOSE_DIET_PLAN_TOOL)
       if (!key || !ctx.llm) return UNAVAILABLE

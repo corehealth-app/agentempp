@@ -57,4 +57,15 @@ export interface ToolDefinition<T extends z.ZodTypeAny = z.ZodTypeAny> {
   description: string
   parameters: T
   execute: (args: z.infer<T>, ctx: ToolContext) => Promise<Record<string, unknown>>
+  /** Top-level arguments the model may send as null meaning "none"; they are
+   * dropped before validation. Only tools that opt in (the Flow proposals). */
+  nullMeansAbsent?: readonly string[]
+}
+
+/** Arguments as the tool validates them (see `nullMeansAbsent`). */
+export function normalizeToolArguments(tool: Pick<ToolDefinition, 'nullMeansAbsent'>, raw: unknown): unknown {
+  if (!tool.nullMeansAbsent?.length || !raw || typeof raw !== 'object' || Array.isArray(raw)) return raw
+  const args = { ...(raw as Record<string, unknown>) }
+  for (const key of tool.nullMeansAbsent) if (args[key] === null) delete args[key]
+  return args
 }

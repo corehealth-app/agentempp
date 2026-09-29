@@ -843,9 +843,23 @@ describe('an empty Flow reply names the tools that ran, without their data', () 
     ).toEqual([
       { name: 'propoe_plano_dieta', outcome: 'returned_failure', code: null },
       { name: 'propoe_plano_dieta', outcome: 'threw', code: 'diet proposal history lookup failed' },
-      { name: 'propoe_plano_dieta', outcome: 'threw', code: 'validation' },
+      { name: 'propoe_plano_dieta', outcome: 'threw', code: 'validation', issues: ['meals_per_day:too_big'] },
       { name: 'consulta_progresso', outcome: 'ok', code: null },
       { name: 'invalid_tool_name', outcome: 'threw', code: null },
+    ])
+  })
+})
+
+describe('a validation error of a Flow tool is outlined by path and code only', () => {
+  it('a real ZodError message (pretty-printed) is recognised', async () => {
+    const { summarizeFlowToolCalls } = await import('./flow-chat-service')
+    const zodMessage = JSON.stringify(
+      [{ code: 'invalid_type', expected: 'array', received: 'null', path: ['restrictions'], message: 'Expected array, received null' }],
+      null,
+      2,
+    )
+    expect(summarizeFlowToolCalls([{ name: 'propoe_plano_dieta', error: zodMessage }])).toEqual([
+      { name: 'propoe_plano_dieta', outcome: 'threw', code: 'validation', issues: ['restrictions:invalid_type'] },
     ])
   })
 })

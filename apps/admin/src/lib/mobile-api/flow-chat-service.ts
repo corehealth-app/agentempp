@@ -255,19 +255,36 @@ function logTurnFailure(error: unknown): void {
   })
 }
 
+// A ZodError message is a JSON list of issues; only the argument path (schema
+// keys) and the issue code are kept, never received values or messages.
+function validationIssues(error: string): string[] | null {
+  if (!/^\s*\[\s*\{/.test(error)) return null
+  try {
+    const parsed = JSON.parse(error) as unknown
+    if (!Array.isArray(parsed)) return null
+    return parsed.slice(0, 5).map((issue) => {
+      const record = (issue ?? {}) as { path?: unknown; code?: unknown }
+      const path = Array.isArray(record.path)
+        ? record.path.filter((part) => typeof part === 'number' || /^[a-z_]{1,40}$/.test(String(part))).join('.')
+        : ''
+      const code = typeof record.code === 'string' && /^[a-z_]{1,40}$/.test(record.code) ? record.code : 'unknown'
+      return `${path}:${code}`
+    })
+  } catch {
+    return ['unparsed:unknown']
+  }
+}
+
 /** Safe outline of the tools a Flow turn ran: names, outcome, own codes only. */
 export function summarizeFlowToolCalls(
   toolCalls: ReadonlyArray<{ name: string; arguments?: unknown; result?: unknown; error?: string }>,
-): Array<{ name: string; outcome: 'ok' | 'returned_failure' | 'threw'; code: string | null }> {
+): Array<{ name: string; outcome: 'ok' | 'returned_failure' | 'threw'; code: string | null; issues?: string[] }> {
   return toolCalls.slice(0, 10).map((call) => {
     const name = /^[a-z_]{1,64}$/.test(call.name) ? call.name : 'invalid_tool_name'
     if (call.error !== undefined) {
-      const code = call.error.trimStart().startsWith('[{')
-        ? 'validation'
-        : INTERNAL_CODE.test(call.error)
-          ? call.error
-          : null
-      return { name, outcome: 'threw', code }
+      const issues = validationIssues(call.error)
+      if (issues) return { name, outcome: 'threw', code: 'validation', issues }
+      return { name, outcome: 'threw', code: INTERNAL_CODE.test(call.error) ? call.error : null }
     }
     const failed =
       call.result !== null && typeof call.result === 'object' && (call.result as { success?: unknown }).success === false

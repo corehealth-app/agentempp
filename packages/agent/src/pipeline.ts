@@ -110,6 +110,7 @@ import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/reso
 import { ALL_TOOLS, getToolByName } from './tools.js'
 import type { ToolContext, ToolDefinition } from './tools.js'
 import { zodToJsonSchema } from './tool-schema.js'
+import { normalizeToolArguments } from './tools/types.js'
 import type { AgentInput, AgentOutput, AuthenticatedAgentInput } from './types.js'
 
 export interface PipelineDeps {
@@ -900,7 +901,7 @@ async function processResolvedMessage(
         parsed = {}
       }
       try {
-        const validated = tool.parameters.parse(parsed)
+        const validated = tool.parameters.parse(normalizeToolArguments(tool, parsed))
         const trustedVisionLabels = input.visionNutritionLabels ?? []
         let matchedLabelCount: number | undefined
         if (tc.name === 'registra_refeicao' && trustedVisionLabels.length > 0) {

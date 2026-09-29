@@ -131,6 +131,63 @@ async function readDocument(
   return { text: clean }
 }
 
+// The structurer (Anthropic via OpenRouter) ignores json_object and may fence
+// its answer (audit 2026-09-29). Only a whole object, fenced or bare, is read.
+export class PlanDocumentAnswerError extends Error {
+  override name = 'PlanDocumentAnswerError'
+  constructor(readonly code: 'empty_content' | 'invalid_json' | 'truncated') {
+    super(`plan document structuring returned ${code}`)
+  }
+}
+
+export function parseStructuredAnswer(content: string | null, finishReason?: string): unknown {
+  const trimmed = (content ?? '').trim()
+  if (!trimmed) throw new PlanDocumentAnswerError('empty_content')
+  const fenced = /^```[a-z]*[ \t]*\n?([\s\S]*?)\s*```$/i.exec(trimmed)
+  try {
+    return JSON.parse(fenced ? fenced[1]! : trimmed)
+  } catch {
+    throw new PlanDocumentAnswerError(finishReason === 'length' ? 'truncated' : 'invalid_json')
+  }
+}
+
+const SAFE_ERROR_NAMES = new Set([
+  'Error',
+  'TypeError',
+  'ZodError',
+  'PlanDocumentAnswerError',
+  'APIError',
+  'APIConnectionError',
+  'APIConnectionTimeoutError',
+  'BadRequestError',
+  'AuthenticationError',
+  'PermissionDeniedError',
+  'NotFoundError',
+  'UnprocessableEntityError',
+  'RateLimitError',
+  'InternalServerError',
+])
+
+// Class, a fixed code and the provider status only: never the document text,
+// the model answer or the provider message (it may name medications).
+function logExtractionFailure(error: unknown): void {
+  const className = error instanceof Error ? error.constructor.name : ''
+  const name =
+    error instanceof Error && SAFE_ERROR_NAMES.has(className)
+      ? className
+      : error instanceof Error && SAFE_ERROR_NAMES.has(error.name)
+        ? error.name
+        : 'UnknownError'
+  const rawCode = (error as { code?: unknown } | null)?.code
+  const code = rawCode === 'empty_content' || rawCode === 'invalid_json' || rawCode === 'truncated' ? rawCode : 'unknown'
+  const rawStatus = (error as { status?: unknown } | null)?.status
+  console.error('[plan-document] extraction_failed', {
+    error_name: name,
+    error_code: code,
+    provider_status: typeof rawStatus === 'number' && Number.isInteger(rawStatus) ? rawStatus : null,
+  })
+}
+
 export async function processPlanDocument(
   deps: PlanDocumentDependencies,
   input: { assetId: string; userId: string; mimeType: string; bytes: Uint8Array },
@@ -192,6 +249,7 @@ export async function processPlanDocument(
       })
       summary.ready += 1
     } catch (error) {
+      if (!(error instanceof PlanDocumentNothingRecognizedError)) logExtractionFailure(error)
       await fail(
         error instanceof PlanDocumentNothingRecognizedError
           ? 'nothing_recognized'
@@ -290,12 +348,7 @@ export function createDefaultPlanDocumentDependencies(
             responseFormat: { type: 'json_object' },
             userId: input.userId,
           })
-          let content: unknown
-          try {
-            content = JSON.parse(result.content ?? '')
-          } catch {
-            throw new Error('plan document structuring returned invalid JSON')
-          }
+          const content = parseStructuredAnswer(result.content, result.finishReason)
           return { content, model: result.model ?? PLAN_DOCUMENT_STRUCTURE_MODEL }
         },
       },

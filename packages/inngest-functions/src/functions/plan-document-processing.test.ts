@@ -342,3 +342,37 @@ describe('plan documents in the media worker', () => {
     expect(mediaSignatureMatches(PDF, 'image/jpeg')).toBe(false)
   })
 })
+
+// Staging simulator gate 2026-09-29 14:02: a typed PDF plan was read (pdf_text)
+// and the draft failed with extraction_failed, nothing logged. The structurer
+// (anthropic/claude-haiku-4.5 via OpenRouter, json_object ignored) may fence
+// its JSON, and the cause was swallowed.
+describe('plan document structuring answer and failure log', () => {
+  it('reads a bare or fenced JSON object; a cut answer is truncated, prose is invalid', async () => {
+    const { parseStructuredAnswer } = await import('./plan-document-processing.js')
+    const body = '{"payload":{"weekly_schedule":[]}}'
+    expect(parseStructuredAnswer(body)).toEqual(JSON.parse(body))
+    expect(parseStructuredAnswer('```json\n' + body + '\n```')).toEqual(JSON.parse(body))
+    expect(parseStructuredAnswer('```\n' + body + '\n```\n')).toEqual(JSON.parse(body))
+    expect(() => parseStructuredAnswer('{"payload":{"week', 'length')).toThrow(/truncated/)
+    expect(() => parseStructuredAnswer('Aqui está o plano')).toThrow(/invalid_json/)
+    expect(() => parseStructuredAnswer(null)).toThrow(/empty_content/)
+  })
+
+  it('an extraction failure is logged by class, code and provider status, never with the document', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const answer = Object.assign(new Error('400 The document says: Maria, 54 anos'), { status: 400 })
+      const { deps } = planDependencies({ answer })
+      await processPlanDocument(deps, input)
+      expect(spy).toHaveBeenCalledWith('[plan-document] extraction_failed', {
+        error_name: 'Error',
+        error_code: 'unknown',
+        provider_status: 400,
+      })
+      expect(JSON.stringify(spy.mock.calls)).not.toContain('Maria')
+    } finally {
+      spy.mockRestore()
+    }
+  })
+})

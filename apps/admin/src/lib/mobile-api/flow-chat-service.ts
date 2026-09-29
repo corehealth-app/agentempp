@@ -209,6 +209,52 @@ function inProgress(): MobileApiError {
   )
 }
 
+const SAFE_TURN_ERROR_NAMES = new Set([
+  'Error',
+  'TypeError',
+  'RangeError',
+  'SyntaxError',
+  'ZodError',
+  'APIError',
+  'APIConnectionError',
+  'APIConnectionTimeoutError',
+  'APIUserAbortError',
+  'BadRequestError',
+  'AuthenticationError',
+  'PermissionDeniedError',
+  'NotFoundError',
+  'UnprocessableEntityError',
+  'RateLimitError',
+  'InternalServerError',
+])
+
+// Our own failure messages are short lowercase codes ("diet proposal profile
+// lookup failed"); only those are logged. Provider messages, and anything that
+// could carry the patient's text, are not (audit 2026-09-28).
+const INTERNAL_CODE = /^[a-z][a-z _-]{2,79}$/
+
+function logTurnFailure(error: unknown): void {
+  if (error === 'empty_reply') {
+    console.error('[mobile-flow] turn_failed', { error_name: 'EmptyReply', provider_status: null, internal_code: null })
+    return
+  }
+  const className = error instanceof Error ? error.constructor.name : ''
+  const name =
+    error instanceof Error && SAFE_TURN_ERROR_NAMES.has(className)
+      ? className
+      : error instanceof Error && SAFE_TURN_ERROR_NAMES.has(error.name)
+        ? error.name
+        : 'UnknownError'
+  const rawStatus = (error as { status?: unknown } | null)?.status
+  const status = typeof rawStatus === 'number' && Number.isInteger(rawStatus) ? rawStatus : null
+  const message = error instanceof Error ? error.message : ''
+  console.error('[mobile-flow] turn_failed', {
+    error_name: name,
+    provider_status: status,
+    internal_code: status === null && INTERNAL_CODE.test(message) ? message : null,
+  })
+}
+
 function providerFailed(): MobileApiError {
   return new MobileApiError(502, 'flow_provider_failed', 'Flow is temporarily unavailable')
 }
@@ -455,12 +501,14 @@ export async function sendFlowMessage(
       text: input.text,
       timestamp: input.now,
     })
-  } catch {
+  } catch (error) {
+    logTurnFailure(error)
     throw await failTurn()
   }
   // A reply with no visible text is not a completed turn (nothing is shown to
   // the patient); it fails with the typed 502 and no assistant row is stored.
   if (reply.text.trim().length === 0) {
+    logTurnFailure('empty_reply')
     throw await failTurn()
   }
 

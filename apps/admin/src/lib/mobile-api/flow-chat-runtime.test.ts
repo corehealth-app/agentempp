@@ -773,3 +773,58 @@ describe('second review follow-ups', () => {
     ).rejects.toThrow('Unable to enforce Flow rate limit')
   })
 })
+
+// Staging device gate 2026-09-28 (23:02 local): a Flow diet proposal turn
+// failed with 502 flow_provider_failed and nothing was logged, so the cause
+// could not be found. The failure is now logged by class, provider status and
+// an internal code only; the patient's text and provider messages never are.
+describe('a failed Flow turn is logged without patient data', () => {
+  it('logs class, provider status and an internal code-like message', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const store = new RuntimeTable()
+      const agent = {
+        reply: vi.fn(async () => {
+          throw new Error('diet proposal profile lookup failed')
+        }),
+      } satisfies FlowAgent
+      await expect(send({ store, agent }, 'user-log', 'log-key-00001', new Date('2026-09-29T02:02:15Z'), 'quero uma dieta com frango')).rejects.toMatchObject({ code: 'flow_provider_failed' })
+      expect(spy).toHaveBeenCalledWith('[mobile-flow] turn_failed', {
+        error_name: 'Error',
+        provider_status: null,
+        internal_code: 'diet proposal profile lookup failed',
+      })
+      expect(JSON.stringify(spy.mock.calls)).not.toContain('frango')
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('a provider message or anything not code-like is not logged', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const store = new RuntimeTable()
+      const agent = {
+        reply: vi.fn(async () => {
+          throw Object.assign(new Error('400 Prompt contained: Maria, 54 anos, diabética'), { status: 400 })
+        }),
+      } satisfies FlowAgent
+      await expect(send({ store, agent }, 'user-log', 'log-key-00002', new Date('2026-09-29T02:02:15Z'))).rejects.toMatchObject({ code: 'flow_provider_failed' })
+      expect(spy.mock.calls[0]?.[1]).toEqual({ error_name: 'Error', provider_status: 400, internal_code: null })
+      expect(JSON.stringify(spy.mock.calls)).not.toContain('Maria')
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('an empty visible reply is logged as such', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const store = new RuntimeTable()
+      await expect(send({ store, agent: agentReplying('   ') }, 'user-log', 'log-key-00003', new Date('2026-09-29T02:02:15Z'))).rejects.toMatchObject({ code: 'flow_provider_failed' })
+      expect(spy).toHaveBeenCalledWith('[mobile-flow] turn_failed', { error_name: 'EmptyReply', provider_status: null, internal_code: null })
+    } finally {
+      spy.mockRestore()
+    }
+  })
+})

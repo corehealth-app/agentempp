@@ -22,6 +22,16 @@ enum RegistrationCopy {
         }
     }
 
+    /// A meal type as the server sends it ("cafe", "almoco"...) in the
+    /// reader's language; an unknown code is shown as sent.
+    static func mealTypeTitle(
+        code: String,
+        language: SupportedAppLanguage
+    ) -> String {
+        guard let mealType = MealType(rawValue: code) else { return code }
+        return mealTypeTitle(mealType, language: language)
+    }
+
     static func workoutIntensityTitle(
         _ intensity: WorkoutIntensity,
         language: SupportedAppLanguage

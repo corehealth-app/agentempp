@@ -47,4 +47,24 @@ struct TextMealDetectorTests {
             try await detector(hour: 12).detect(.photoSample(label: "x"))
         }
     }
+
+    // Staging 2026-09-30 (simulator, QA B): imported audio "No almoço eu comi
+    // 150 gramas de arroz..." at 09:34 was proposed as "Café da manhã".
+    @Test("a meal the patient names outranks the hour of the day")
+    func statedMealTypeFromTheWords() {
+        let transcript = "No almoço eu comi 150 gramas de arroz branco cozido e 120 gramas de frango grelhado."
+        #expect(TextMealDetector.statedMealType(in: transcript) == .lunch)
+        #expect(TextMealDetector.statedMealType(in: "Café da manhã: pão e ovos") == .breakfast)
+        #expect(TextMealDetector.statedMealType(in: "jantei arroz e feijão") == .dinner)
+        #expect(TextMealDetector.statedMealType(in: "na ceia tomei um iogurte") == .supper)
+        #expect(TextMealDetector.statedMealType(in: "ALMOCEI frango") == .lunch)
+    }
+
+    @Test("no meal, a lone coffee or two meals leave the hour default")
+    func noSingleStatedMealType() {
+        #expect(TextMealDetector.statedMealType(in: nil) == nil)
+        #expect(TextMealDetector.statedMealType(in: "150 g de arroz") == nil)
+        #expect(TextMealDetector.statedMealType(in: "200 ml de café sem açúcar") == nil)
+        #expect(TextMealDetector.statedMealType(in: "no almoço arroz e no jantar sopa") == nil)
+    }
 }

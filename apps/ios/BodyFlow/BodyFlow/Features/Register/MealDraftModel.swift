@@ -260,10 +260,8 @@ final class MealDraftModel {
             review = MealDraftReview(
                 draft: draft,
                 source: source,
-                mealType: TextMealDetector.suggestedMealType(
-                    at: timeProvider.now,
-                    calendar: calendar
-                )
+                mealType: TextMealDetector.statedMealType(in: statedText(for: request, draft: draft))
+                    ?? TextMealDetector.suggestedMealType(at: timeProvider.now, calendar: calendar)
             )
             phase = .review
         } catch is CancellationError {
@@ -272,6 +270,13 @@ final class MealDraftModel {
             guard sequence == current else { return }
             fail(MealCaptureFailure(error))
         }
+    }
+
+    /// What the patient said or typed, where a meal named in it
+    /// ("no almoço") outranks the hour of the day.
+    private func statedText(for request: MealDraftRequest, draft: MealDraftSnapshot) -> String? {
+        if case let .text(text) = request { return text }
+        return draft.transcript
     }
 
     private func send(_ staged: StagedMedia, sequence current: Int) async throws {

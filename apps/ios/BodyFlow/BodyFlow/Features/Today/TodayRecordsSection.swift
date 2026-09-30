@@ -100,8 +100,9 @@ struct TodayRecordsSection: View {
                             // Received type and energy on one line while
                             // they fit; stacked at accessibility sizes.
                             recordLine(
-                                detail: meal.mealType
-                                    ?? TodayCopy.string("common.not-available", language: language),
+                                detail: meal.mealType.map {
+                                    RegistrationCopy.mealTypeTitle(code: $0, language: language)
+                                } ?? TodayCopy.string("common.not-available", language: language),
                                 value: TodayValueFormatter.mealKcal(meal.kcal, language: language)
                             )
                             BodyFlowStatusLine(

@@ -33,3 +33,19 @@ struct TodayBlockAvailabilityTests {
         ) == "paused")
     }
 }
+
+@Suite("Meal type label")
+struct MealTypeLabelTests {
+    // Staging 2026-09-30: Today and History showed the raw code "cafe".
+    @Test("a meal type code is shown in the reader's language")
+    func codeIsLocalized() {
+        #expect(RegistrationCopy.mealTypeTitle(code: "cafe", language: .portugueseBrazil) == "Café da manhã")
+        #expect(RegistrationCopy.mealTypeTitle(code: "almoco", language: .portugueseBrazil) == "Almoço")
+        #expect(RegistrationCopy.mealTypeTitle(code: "ceia", language: .portugueseBrazil) == "Ceia")
+    }
+
+    @Test("an unknown meal type code is shown as sent")
+    func unknownCodeIsKept() {
+        #expect(RegistrationCopy.mealTypeTitle(code: "brunch", language: .portugueseBrazil) == "brunch")
+    }
+}

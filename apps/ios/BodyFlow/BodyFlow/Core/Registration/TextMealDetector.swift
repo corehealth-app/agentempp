@@ -77,6 +77,22 @@ struct TextMealDetector: MealDetectionProviding {
         return MealProposalItemRequest(foodName: name, quantityG: quantity, userKcal: nil)
     }
 
+    /// The meal the patient named ("no almoço eu comi...", "jantei"), when
+    /// exactly one is named. "café" alone is the drink, not breakfast.
+    static func statedMealType(in text: String?) -> MealType? {
+        guard let text else { return nil }
+        let folded = text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "pt_BR"))
+        let patterns: [(MealType, String)] = [
+            (.breakfast, #"\bcafe da manha\b|\bdesjejum\b"#),
+            (.lunch, #"\balmoc(o|ei|ar)\b"#),
+            (.snack, #"\blanch(e|ei|ar)\b"#),
+            (.dinner, #"\bjant(ar|a|ei)\b"#),
+            (.supper, #"\bceia\b"#),
+        ]
+        let named = patterns.filter { folded.range(of: $0.1, options: .regularExpression) != nil }
+        return named.count == 1 ? named[0].0 : nil
+    }
+
     /// A default the patient can change in the proposal editor; it is a
     /// convenience, not an official value.
     static func suggestedMealType(at date: Date, calendar: Calendar) -> MealType {

@@ -18,7 +18,7 @@ struct HistoryMealLogDetailView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                                 .accessibilityAddTraits(.isHeader)
                             if let mealType = row.mealType {
-                                Text(mealType)
+                                Text(RegistrationCopy.mealTypeTitle(code: mealType, language: language))
                                     .font(BodyFlowTypography.body)
                                     .foregroundStyle(BodyFlowColor.secondaryText)
                             }

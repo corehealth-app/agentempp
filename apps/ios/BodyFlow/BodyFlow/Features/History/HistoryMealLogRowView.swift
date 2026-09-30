@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct HistoryMealLogRowView: View {
+    @Environment(\.locale) private var locale
     let row: HistoryMealLogRow
 
     var body: some View {
@@ -11,7 +12,10 @@ struct HistoryMealLogRowView: View {
                         .font(BodyFlowTypography.headline)
                         .foregroundStyle(BodyFlowColor.primaryText)
                     if let mealType = row.mealType {
-                        Text(mealType)
+                        Text(RegistrationCopy.mealTypeTitle(
+                            code: mealType,
+                            language: BodyFlowPresentationLanguage.resolve(locale)
+                        ))
                             .font(BodyFlowTypography.callout)
                             .foregroundStyle(BodyFlowColor.secondaryText)
                     }

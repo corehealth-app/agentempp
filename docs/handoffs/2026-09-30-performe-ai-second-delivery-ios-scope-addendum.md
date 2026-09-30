@@ -1,6 +1,6 @@
 # Addendum — segunda entrega revisada do Performe AI
 
-**Data:** 2026-09-30  
+**Data:** 2026-09-30
 **Decisão:** Eduardo definiu o escopo e a ordem da segunda entrega após o [addendum de 2026-09-14](2026-09-14-performe-ai-client-beta-flow-v1-addendum.md) e o [handoff beta de 2026-09-30](2026-09-30-performe-ai-beta-handoff-to-codex.md). O dossiê histórico permanece em `b4c09e80190fd6ce5c5f59b5193f8a6621554854:docs/handoffs/2026-08-20-better-ahead-contexto-completo-e-finalizacao.md`.
 
 Este addendum altera a **ordem da entrega comercial** a partir desta decisão. Não altera nem apaga os documentos, PDFs ou evidências anteriores.
@@ -27,6 +27,8 @@ A **entrega final** continua responsável por Android, homologação final, dist
 
 Usar apenas staging e contas QA autorizadas. Não executar push, PR, merge, tag, deploy em Production, TestFlight, App Store, contratação ou criação de serviço pago persistente. Preservar o deployment histórico `dfik0mb7c`. O aceite visual só pode ser marcado após confirmação expressa de Eduardo.
 
-**ANDROID STATUS:** `DEFERRED_TO_FINAL_DELIVERY`  
-**WHATSAPP STATUS:** `OUT_OF_PRODUCT_SCOPE`  
+**ANDROID STATUS:** `DEFERRED_TO_FINAL_DELIVERY`
+
+**WHATSAPP STATUS:** `OUT_OF_PRODUCT_SCOPE`
+
 **PRODUCTION STATUS:** `NOT DEPLOYED`

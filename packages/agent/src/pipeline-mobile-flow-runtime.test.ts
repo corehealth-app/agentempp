@@ -49,7 +49,11 @@ function makeDeps(replies: string[], recorded: Recorded): PipelineDeps {
 function makeScriptedDeps(
   steps: ScriptedStep[],
   recorded: Recorded,
-  overrides: { messages?: unknown[]; onComplete?: (input: { messages: unknown[] }) => void } = {},
+  overrides: {
+    messages?: unknown[]
+    onComplete?: (input: { messages: unknown[] }) => void
+    maxToolIterations?: number
+  } = {},
 ): PipelineDeps {
   const rowsByTable: Record<string, unknown> = {
     users: {
@@ -123,7 +127,7 @@ function makeScriptedDeps(
       }
     },
   } as unknown as PipelineDeps['llm']
-  return { supabase, llm, maxToolIterations: 3 }
+  return { supabase, llm, maxToolIterations: overrides.maxToolIterations ?? 3 }
 }
 
 const timestamp = new Date('2026-09-27T12:00:00.000Z')
@@ -374,5 +378,62 @@ describe('history rows from a previous local day', () => {
     expect(first.some((c) => c.includes('[Mensagem de'))).toBe(false)
     expect(first).toContain('Quanto eu ja comi hoje?')
     expect(first).toContain(yesterdayAnswer)
+  })
+})
+
+// Staging device E2E 2026-09-30 (iPhone, QA A, BFF p2six2e3s, Flow config
+// f5013b3f with max_tool_iterations 2): "Mostre meu progresso recente." ran
+// consulta_progresso, the next answer tripped the premature-block guard
+// (llm.premature_block_completion), the guard's retry had no iteration left,
+// and the turn ended with no text (POST /flow/chat 502 empty_reply). A guard
+// retry must not consume the patient's answer.
+describe('a guard retry on the last allowed iteration', () => {
+  it('still produces the corrected answer (mobile Flow, 2 tool iterations)', async () => {
+    vi.spyOn(consultaProgresso, 'execute').mockResolvedValue({ success: true })
+    const corrected = 'Seu bloco atual está em andamento; ele só é creditado no fechamento do dia.'
+    const output = await processAuthenticatedMessage(
+      makeScriptedDeps(
+        [
+          { toolCalls: [{ id: 'call-1', name: 'consulta_progresso', arguments: '{}' }] },
+          { toolCalls: [], content: 'Com o treino de hoje você fechou o segundo bloco completo!' },
+          { toolCalls: [], content: corrected },
+        ],
+        { inserts: [] },
+        { maxToolIterations: 2 },
+      ),
+      {
+        userId: 'fixture-user',
+        providerMessageId: 'mobile_flow/fixture-user/key-0930',
+        text: 'Mostre meu progresso recente.',
+        timestamp,
+      },
+    )
+    expect(output.text).toBe(corrected)
+  })
+
+  it('a guard retries at most once, so the turn stays bounded', async () => {
+    vi.spyOn(consultaProgresso, 'execute').mockResolvedValue({ success: true })
+    let calls = 0
+    const premature = 'Com o treino de hoje você fechou o segundo bloco completo!'
+    const output = await processAuthenticatedMessage(
+      makeScriptedDeps(
+        [
+          { toolCalls: [{ id: 'call-1', name: 'consulta_progresso', arguments: '{}' }] },
+          { toolCalls: [], content: premature },
+          { toolCalls: [], content: premature },
+          { toolCalls: [], content: 'nunca chamado' },
+        ],
+        { inserts: [] },
+        { maxToolIterations: 2, onComplete: () => { calls += 1 } },
+      ),
+      {
+        userId: 'fixture-user',
+        providerMessageId: 'mobile_flow/fixture-user/key-0931',
+        text: 'Mostre meu progresso recente.',
+        timestamp,
+      },
+    )
+    expect(calls).toBe(3)
+    expect(output.text).toBe(premature)
   })
 })

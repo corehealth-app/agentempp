@@ -625,7 +625,13 @@ async function processResolvedMessage(
   // FASE B (Roberto 2026-05-28, botões #4): se virou pending → o caller manda
   // sendInteractive em vez de sendHumanized, e o pipeline NÃO chama o LLM de novo.
   let interactivePayload: NonNullable<AgentOutput['interactive']> | null = null
-  for (let iter = 0; iter < max; iter++) {
+  // A guard retry (fake write, premature block, false duplication; each at
+  // most once) re-asks the model for the SAME answer: it gets its own extra
+  // iteration instead of consuming the patient's. Staging 2026-09-30: with
+  // max_tool_iterations 2, a tool call plus a guard retry left no iteration
+  // and the mobile Flow turn ended with no text (502 empty_reply).
+  let guardRetries = 0
+  for (let iter = 0; iter < max + guardRetries; iter++) {
     const result = await deps.llm.complete({
       model: promptRow.model,
       systemPrompt,
@@ -681,6 +687,7 @@ async function processResolvedMessage(
 
       if (fake.isFake && !fakeWriteRetried) {
         fakeWriteRetried = true
+        guardRetries += 1
         await deps.supabase.from('product_events').insert({
           user_id: userId,
           event: 'llm.fake_write_detected',
@@ -723,6 +730,7 @@ async function processResolvedMessage(
       // hoje" contradizendo o card. 1 retry forçado.
       if (detectPrematureBlockCompletion(content) && !prematureBlockRetried) {
         prematureBlockRetried = true
+        guardRetries += 1
         await deps.supabase.from('product_events').insert({
           user_id: userId,
           event: 'llm.premature_block_completion',
@@ -751,6 +759,7 @@ async function processResolvedMessage(
         detectFalseDuplicationClaim(content, input.text)
       ) {
         falseDuplicationRetried = true
+        guardRetries += 1
         await deps.supabase.from('product_events').insert({
           user_id: userId,
           event: 'llm.false_duplication_caught',

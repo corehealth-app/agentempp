@@ -325,7 +325,7 @@ final class FlowChatUITests: XCTestCase {
         // Flow preview scenarios require the generic UI-testing flag. Bootstrap
         // the actual local auth/onboarding journey once, then combine that flag
         // with the keychain-preservation flag so the scenario does not bypass it.
-        if !Self.hasAcknowledgedQAOnboarding && extraArguments.isEmpty {
+        if !Self.hasAcknowledgedQAOnboarding {
             let bootstrap = support.launch(
                 arguments: ["--ui-testing-fresh-auth"],
                 language: language,
@@ -337,7 +337,7 @@ final class FlowChatUITests: XCTestCase {
         }
         let arguments = ["--ui-testing", "--ui-testing-flow-\(scenario)"]
             + extraArguments
-            + (extraArguments.isEmpty ? ["--ui-testing-preserve-state"] : [])
+            + ["--ui-testing-preserve-state"]
         let app = support.launch(arguments: arguments,
                                  language: language, dark: dark, category: category)
         XCTAssertTrue(element("screen.hoje", app: app).waitForExistence(timeout: 5),

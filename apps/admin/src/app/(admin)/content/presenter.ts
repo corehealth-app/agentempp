@@ -1,5 +1,5 @@
 import type { ContentDraftInput } from '@mpp/core'
-import type { AdminRole } from '@/lib/admin-rbac'
+import { type AdminRole, canPublishContent } from '@/lib/admin-rbac'
 import type {
   ContentPublicationDetail,
   ContentPublicationSummary,
@@ -134,11 +134,17 @@ export function canReviewContentVersion(
 
 export function canPublishContentVersion(
   role: AdminRole,
+  canPublishContentFlag: boolean,
   state: ContentPublicationDetail['versions'][number]['state'],
   publishAt: string | null,
   archivedAt: string | null,
 ): boolean {
-  return role === 'master_admin' && state === 'approved' && publishAt === null && !archivedAt
+  return (
+    canPublishContent(role, canPublishContentFlag) &&
+    state === 'approved' &&
+    publishAt === null &&
+    !archivedAt
+  )
 }
 
 export function canCreateContentDraft(

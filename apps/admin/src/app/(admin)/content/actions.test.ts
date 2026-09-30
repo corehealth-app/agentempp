@@ -138,12 +138,12 @@ function service(): ContentAdminService {
   } as ContentAdminService
 }
 
-function dependencies(role: AdminRole, contentService = service()) {
+function dependencies(role: AdminRole, contentService = service(), canPublishContent = false) {
   const order: string[] = []
   const deps: ContentAdminActionDependencies = {
     loadAuthenticatedAdmin: vi.fn(async () => {
       order.push('authenticated-role')
-      return { id: ACTOR_ID, role }
+      return { id: ACTOR_ID, role, canPublishContent }
     }),
     createService: vi.fn(() => {
       order.push('service-role')
@@ -172,6 +172,27 @@ const roleMatrix: Record<ContentAdminAction['type'], AdminRole[]> = {
 }
 
 describe('content admin action core', () => {
+  // Performe AI evaluation 2026-09-30: the editorial owner (content_editor)
+  // also publishes; the reviewer (nutrition_admin) stays independent.
+  it.each([
+    ['publish', 'content_editor', true, true],
+    ['publish', 'content_editor', false, false],
+    ['archive', 'content_editor', true, false],
+    ['review', 'content_editor', true, false],
+    ['publish', 'nutrition_admin', true, false],
+    ['publish', 'support', true, false],
+    ['submit', 'content_editor', true, true],
+  ] as const)('%s by %s with can_publish_content=%s allowed=%s', async (type, role, flag, allowed) => {
+    const { deps } = dependencies(role, service(), flag)
+    const operation = executeContentAdminAction(action(type), deps)
+    if (allowed) {
+      await expect(operation).resolves.toBeDefined()
+    } else {
+      await expect(operation).rejects.toMatchObject({ kind: 'forbidden' })
+      expect(deps.createService).not.toHaveBeenCalled()
+    }
+  })
+
   it.each(
     (Object.keys(roleMatrix) as ContentAdminAction['type'][]).flatMap((type) =>
       (

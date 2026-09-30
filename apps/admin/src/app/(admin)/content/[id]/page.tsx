@@ -51,6 +51,7 @@ export default async function ContentDetailPage({
       <ContentEditor
         publication={publication}
         role={admin.role}
+        canPublishContent={admin.canPublishContent}
         initialError={initialError}
         now={now}
       />
@@ -66,21 +67,30 @@ async function loadAdmin() {
   if (!user) return null
   const reader = supabase as unknown as {
     from(table: 'admin_users'): {
-      select(columns: 'id, role'): {
+      select(columns: 'id, role, can_publish_content'): {
         eq(
           column: 'id',
           value: string,
-        ): { maybeSingle(): Promise<{ data: { id: string; role: string } | null; error: unknown }> }
+        ): {
+          maybeSingle(): Promise<{
+            data: { id: string; role: string; can_publish_content: boolean | null } | null
+            error: unknown
+          }>
+        }
       }
     }
   }
   const { data } = await reader
     .from('admin_users')
-    .select('id, role')
+    .select('id, role, can_publish_content')
     .eq('id', user.id)
     .maybeSingle()
   if (!data || !isAdminRole(data.role)) return null
-  return { id: data.id, role: data.role }
+  return {
+    id: data.id,
+    role: data.role,
+    canPublishContent: data.can_publish_content === true,
+  }
 }
 
 function scalar(value: string | string[] | undefined): string | undefined {

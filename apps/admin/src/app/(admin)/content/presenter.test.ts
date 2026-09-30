@@ -136,19 +136,22 @@ describe('content presenter', () => {
   })
 
   it('shows publish controls only for an approved version without a publication command', () => {
-    expect(canPublishContentVersion('master_admin', 'approved', null, null)).toBe(true)
+    expect(canPublishContentVersion('master_admin', false, 'approved', null, null)).toBe(true)
     expect(
-      canPublishContentVersion('master_admin', 'approved', '2026-07-22T12:00:00.000Z', null),
+      canPublishContentVersion('master_admin', false, 'approved', '2026-07-22T12:00:00.000Z', null),
     ).toBe(false)
     expect(
-      canPublishContentVersion('master_admin', 'approved', '2026-07-21T11:00:00.000Z', null),
+      canPublishContentVersion('master_admin', false, 'approved', '2026-07-21T11:00:00.000Z', null),
     ).toBe(false)
-    expect(canPublishContentVersion('master_admin', 'approved', null, NOW)).toBe(false)
-    expect(canPublishContentVersion('content_editor', 'approved', null, null)).toBe(false)
-    expect(canPublishContentVersion('nutrition_admin', 'approved', null, null)).toBe(false)
-    expect(canPublishContentVersion('operations_admin', 'approved', null, null)).toBe(false)
-    expect(canPublishContentVersion('support', 'approved', null, null)).toBe(false)
-    expect(canPublishContentVersion('master_admin', 'draft', null, null)).toBe(false)
+    expect(canPublishContentVersion('master_admin', false, 'approved', null, NOW)).toBe(false)
+    expect(canPublishContentVersion('content_editor', false, 'approved', null, null)).toBe(false)
+    expect(canPublishContentVersion('nutrition_admin', false, 'approved', null, null)).toBe(false)
+    expect(canPublishContentVersion('operations_admin', false, 'approved', null, null)).toBe(false)
+    expect(canPublishContentVersion('support', false, 'approved', null, null)).toBe(false)
+    expect(canPublishContentVersion('master_admin', false, 'draft', null, null)).toBe(false)
+    expect(canPublishContentVersion('content_editor', true, 'approved', null, null)).toBe(true)
+    expect(canPublishContentVersion('content_editor', true, 'in_review', null, null)).toBe(false)
+    expect(canPublishContentVersion('nutrition_admin', true, 'approved', null, null)).toBe(false)
   })
 
   it('labels unscheduled, scheduled, and published timing in Portuguese', () => {

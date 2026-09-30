@@ -9,6 +9,7 @@ import {
   type AdminRole,
   CONTENT_AUTHOR_ROLES,
   CONTENT_MODULE_ROLES,
+  canPublishContent,
   CONTENT_PUBLISH_ROLES,
   CONTENT_REVIEW_ROLES,
   hasAdminRole,
@@ -145,7 +146,7 @@ const actionSchema = z.discriminatedUnion('type', [
 export type ContentAdminAction = z.infer<typeof actionSchema>
 
 export interface ContentAdminActionDependencies {
-  loadAuthenticatedAdmin(): Promise<{ id: string; role: AdminRole }>
+  loadAuthenticatedAdmin(): Promise<{ id: string; role: AdminRole; canPublishContent?: boolean }>
   createService(): ContentAdminService
   revalidatePath(path: string, type?: 'page'): void | Promise<void>
 }
@@ -174,11 +175,16 @@ const MUTATIONS = new Set<ContentAdminAction['type']>([
   ...PUBLISH_ACTIONS,
 ])
 
-function requireRole(role: AdminRole, type: ContentAdminAction['type']): void {
+function requireRole(
+  admin: { role: AdminRole; canPublishContent?: boolean },
+  type: ContentAdminAction['type'],
+): void {
+  const { role } = admin
   let allowed = hasAdminRole(role, CONTENT_MODULE_ROLES)
   if (AUTHOR_ACTIONS.has(type)) allowed = hasAdminRole(role, CONTENT_AUTHOR_ROLES)
   if (REVIEW_ACTIONS.has(type)) allowed = hasAdminRole(role, CONTENT_REVIEW_ROLES)
   if (PUBLISH_ACTIONS.has(type)) allowed = hasAdminRole(role, CONTENT_PUBLISH_ROLES)
+  if (type === 'publish') allowed = canPublishContent(role, admin.canPublishContent === true)
   if (!allowed) throw new ContentActionAuthError('forbidden')
 }
 
@@ -231,7 +237,7 @@ export async function executeContentAdminAction(
 ): Promise<unknown> {
   const admin = await dependencies.loadAuthenticatedAdmin()
   const action = parseAction(untrustedAction)
-  requireRole(admin.role, action.type)
+  requireRole(admin, action.type)
   const service = dependencies.createService()
   let result: unknown
 

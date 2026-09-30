@@ -22,13 +22,13 @@ function productionDependencies() {
 
       const roleReader = supabase as unknown as {
         from(table: 'admin_users'): {
-          select(columns: 'id, role'): {
+          select(columns: 'id, role, can_publish_content'): {
             eq(
               column: 'id',
               value: string,
             ): {
               maybeSingle(): Promise<{
-                data: { id: string; role: string } | null
+                data: { id: string; role: string; can_publish_content: boolean | null } | null
                 error: unknown
               }>
             }
@@ -37,13 +37,17 @@ function productionDependencies() {
       }
       const { data: admin, error: roleError } = await roleReader
         .from('admin_users')
-        .select('id, role')
+        .select('id, role, can_publish_content')
         .eq('id', user.id)
         .maybeSingle()
       if (roleError || !admin || !isAdminRole(admin.role)) {
         throw new ContentActionAuthError('forbidden')
       }
-      return { id: admin.id, role: admin.role }
+      return {
+        id: admin.id,
+        role: admin.role,
+        canPublishContent: admin.can_publish_content === true,
+      }
     },
 
     createService() {

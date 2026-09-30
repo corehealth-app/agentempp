@@ -53,6 +53,9 @@ export async function addAdmin(input: AddInput) {
       email: input.email,
       name: input.name || null,
       role: input.role,
+      // The content publish capability belongs to content_editor only
+      // (admin_users_publish_capability_role_check): leaving that role drops it.
+      ...(input.role === 'content_editor' ? {} : { can_publish_content: false }),
       updated_at: new Date().toISOString(),
     })
     if (error) return { error: error.message }

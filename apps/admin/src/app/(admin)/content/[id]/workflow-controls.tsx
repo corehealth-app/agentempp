@@ -35,11 +35,13 @@ type Version = ContentPublicationDetail['versions'][number]
 
 export function WorkflowControls({
   role,
+  canPublishContent,
   publicationId,
   archivedAt,
   version,
 }: {
   role: AdminRole
+  canPublishContent: boolean
   publicationId: string
   archivedAt: string | null
   version: Version | null
@@ -117,7 +119,7 @@ export function WorkflowControls({
 
   const canReview = version ? canReviewContentVersion(role, version.state, archivedAt) : false
   const canPublish = version
-    ? canPublishContentVersion(role, version.state, version.publishAt, archivedAt)
+    ? canPublishContentVersion(role, canPublishContent, version.state, version.publishAt, archivedAt)
     : false
   const canArchive = role === 'master_admin' && !archivedAt
   const targetLabel = version ? contentWorkflowTargetLabel(version) : null

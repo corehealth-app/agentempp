@@ -37,6 +37,19 @@ export const AI_PLAYGROUND_ROLES = [
   'master_admin',
 ] as const satisfies readonly AdminRole[]
 
+/**
+ * Publishing an approved content version: master_admin, or a content_editor
+ * the database marks with `can_publish_content` (the editorial owner who also
+ * publishes; review by an independent nutrition_admin stays mandatory).
+ * Archiving stays master_admin only.
+ */
+export function canPublishContent(role: AdminRole, canPublishContentFlag: boolean): boolean {
+  return (
+    (CONTENT_PUBLISH_ROLES as readonly string[]).includes(role) ||
+    (role === 'content_editor' && canPublishContentFlag)
+  )
+}
+
 export function isAdminRole(value: string): value is AdminRole {
   return (ADMIN_ROLES as readonly string[]).includes(value)
 }

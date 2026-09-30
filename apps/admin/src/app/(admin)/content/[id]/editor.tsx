@@ -100,11 +100,13 @@ const UNSAVED_CHANGES_WARNING = 'Existem alteracoes nao salvas. Deseja descarta-
 export function ContentEditor({
   publication,
   role,
+  canPublishContent,
   initialError,
   now,
 }: {
   publication: ContentPublicationDetail
   role: AdminRole
+  canPublishContent: boolean
   initialError?: string
   now: string
 }) {
@@ -206,6 +208,7 @@ export function ContentEditor({
       </Tabs>
       <WorkflowControls
         role={role}
+        canPublishContent={canPublishContent}
         publicationId={publication.publicationId}
         archivedAt={publication.archivedAt}
         version={activeWorkflowVersion}

@@ -12,6 +12,19 @@ final class PlanDraftUITests: XCTestCase {
     }
 
     @MainActor
+    func testReviewLocalizesFullBodyPlanType() {
+        let app = launch(language: "pt-BR")
+        app.buttons["tab.plano"].tap()
+        let item = app.buttons[draftItem]
+        XCTAssertTrue(item.waitForExistence(timeout: 8))
+        item.tap()
+
+        XCTAssertTrue(element("screen.plan.draft", app: app).waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Corpo inteiro"].exists)
+        XCTAssertFalse(app.staticTexts["full_body"].exists)
+    }
+
+    @MainActor
     func testImportedDraftIsCompletedSavedAndOnlyThenConfirmed() {
         let app = launch(language: "pt-BR")
         app.buttons["tab.plano"].tap()

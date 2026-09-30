@@ -379,7 +379,11 @@ struct PlanDraftReviewView: View {
         ForEach(details) { detail in
             FixtureMetricRow(
                 title: copy(PlanDraftCopy.detailKey(detail.key)),
-                value: detail.text
+                value: PlanDraftCopy.detailValue(
+                    key: detail.key,
+                    text: detail.text,
+                    language: language
+                )
             )
             .accessibilityIdentifier("plan.draft.detail\(detail.id)")
         }

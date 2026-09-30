@@ -87,6 +87,19 @@ enum PlanDraftCopy {
         }
     }
 
+    static func detailValue(
+        key: String,
+        text: String,
+        language: SupportedAppLanguage
+    ) -> String {
+        guard key == "plan_type",
+              ["split", "full_body", "custom"].contains(text) else {
+            return text
+        }
+        let localizationKey = "plan.training.type." + text
+        return string(String.LocalizationValue(stringLiteral: localizationKey), language: language)
+    }
+
     static func mealTypeKey(_ value: String) -> String.LocalizationValue {
         switch value {
         case "cafe": "plan.draft.meal.cafe"

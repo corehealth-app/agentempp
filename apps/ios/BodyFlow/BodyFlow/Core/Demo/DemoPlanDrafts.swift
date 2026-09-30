@@ -17,7 +17,7 @@ actor DemoPlanDraftProvider: PlanDraftProviding {
     private var status = "needs_completion"
     private var version = 1
     private var payload: JSONValue = .object([
-        "plan_type": .string("custom"),
+        "plan_type": .string("full_body"),
         "weekly_schedule": .array([
             .object([
                 "day": .string("Treino A"),

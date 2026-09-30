@@ -20,7 +20,9 @@ struct TodayPresentation: Equatable, Sendable {
     ) {
         header = TodayHeaderDescriptor(
             localDate: snapshot.localDate,
-            protocolName: snapshot.protocolName,
+            protocolName: snapshot.protocolName.map { code in
+                BodyFlowObjective(rawValue: code)?.onboardingLabel(for: language) ?? code
+            },
             updatedAt: snapshot.updatedAt
         )
         attention = TodayAttentionDescriptor(

@@ -68,10 +68,23 @@ struct TodayPresentationTests {
         let presentation = TodayPresentation(snapshot: snapshot)
 
         #expect(presentation.header.localDate == "2026-07-20")
-        #expect(presentation.header.protocolName == "recomposicao")
+        #expect(presentation.header.protocolName == "Recomposição corporal")
         #expect(presentation.header.updatedAt == APITimestamp(
             value: Date(timeIntervalSince1970: 1_784_563_200)
         ))
+    }
+
+    @Test("staging muscle-gain protocol is readable in the Today header")
+    func muscleGainProtocolIsLocalized() throws {
+        let snapshot = try Self.mutateResponse { data in
+            data["protocol"] = "ganho_massa"
+        }.data
+
+        #expect(TodayPresentation(snapshot: snapshot).header.protocolName == "Ganho de massa")
+        #expect(TodayPresentation(
+            snapshot: snapshot,
+            language: .englishUnitedStates
+        ).header.protocolName == "Muscle gain")
     }
 
     @Test("core metrics precede pending context while preserving response order")

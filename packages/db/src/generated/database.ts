@@ -41,6 +41,7 @@ export type Database = {
     Tables: {
       admin_users: {
         Row: {
+          can_publish_content: boolean
           created_at: string
           email: string
           id: string
@@ -49,6 +50,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          can_publish_content?: boolean
           created_at?: string
           email: string
           id: string
@@ -57,6 +59,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          can_publish_content?: boolean
           created_at?: string
           email?: string
           id?: string

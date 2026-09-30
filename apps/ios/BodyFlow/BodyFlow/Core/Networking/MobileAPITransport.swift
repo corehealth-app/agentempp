@@ -581,7 +581,8 @@ extension MobileAPITransport {
             session: session,
             clock: clock,
             timeout: timeout,
-            responseBodyLimit: max(limit, responseBodyLimit)
+            responseBodyLimit: max(limit, responseBodyLimit),
+            serverClock: serverClock
         )
     }
 

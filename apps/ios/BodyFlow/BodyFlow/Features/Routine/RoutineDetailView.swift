@@ -262,14 +262,16 @@ struct RoutineDetailView: View {
         )
     }
 
-    /// The server accepts an action on its own clock; a phone running ahead
-    /// must not open the actions before the server would take them.
+    /// The server takes an action only once both its own clock and the
+    /// action's `occurred_at` (the phone's clock) reached the occurrence, so
+    /// the actions open at the earlier of the two: a phone ahead waits for
+    /// the server, a phone behind waits for itself.
     private var serverNow: Date {
         let deviceNow = dependencies.timeProvider.now
         guard let transport = dependencies.apiClient as? MobileAPITransport else {
             return deviceNow
         }
-        return transport.serverClock.serverNow(deviceNow: deviceNow)
+        return transport.serverClock.actionableNow(deviceNow: deviceNow)
     }
 
     private func availableAtText(_ upcoming: RoutineUpcomingOccurrence) -> String {

@@ -50,7 +50,7 @@ struct ServerClockEstimateTests {
             kind: .medication,
             itemID: "medication-1",
             schedules: [schedule],
-            now: clock.serverNow(deviceNow: phoneAt1605)
+            now: clock.actionableNow(deviceNow: phoneAt1605)
         )
         #expect(early.context == nil)
         #expect(early.upcoming?.localTime == "16:05")
@@ -59,9 +59,28 @@ struct ServerClockEstimateTests {
             kind: .medication,
             itemID: "medication-1",
             schedules: [schedule],
-            now: clock.serverNow(deviceNow: phoneAt1605.addingTimeInterval(120))
+            now: clock.actionableNow(deviceNow: phoneAt1605.addingTimeInterval(120))
         )
         #expect(due.context?.reminderRuleID == "rule-1605")
+    }
+
+    // Adversarial review of 9854ad0 (HIGH): occurred_at is the phone's
+    // clock, so a phone behind the server must also wait for itself.
+    @Test("a phone two minutes behind waits until its own clock reaches 16:05")
+    func phoneBehindWaitsForItself() {
+        let clock = ServerClockEstimate()
+        let phoneAt1603 = Self.serverDue.addingTimeInterval(-120)
+        clock.record(dateHeader: "Tue, 29 Sep 2026 19:05:00 GMT", receivedAt: phoneAt1603)
+        #expect(clock.offset == 120)
+        #expect(clock.actionableNow(deviceNow: phoneAt1603) == phoneAt1603)
+        #expect(clock.actionableNow(deviceNow: Self.serverDue) == Self.serverDue)
+    }
+
+    @Test("a phone ahead is held to the server's clock")
+    func phoneAheadHeldToServer() {
+        let clock = ServerClockEstimate()
+        clock.record(dateHeader: "Tue, 29 Sep 2026 19:03:00 GMT", receivedAt: Self.serverDue)
+        #expect(clock.actionableNow(deviceNow: Self.serverDue) == Self.serverDue.addingTimeInterval(-120))
     }
 
     @Test("the latest response replaces an older reading")

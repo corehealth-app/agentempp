@@ -27,6 +27,13 @@ final class ServerClockEstimate: @unchecked Sendable {
         deviceNow.addingTimeInterval(offset ?? 0)
     }
 
+    /// The instant a routine action may be sent: the server checks
+    /// `scheduled_for <= min(occurred_at, its own now)` and `occurred_at` is
+    /// the phone's clock, so both must have reached the occurrence.
+    func actionableNow(deviceNow: Date) -> Date {
+        min(deviceNow, serverNow(deviceNow: deviceNow))
+    }
+
     /// RFC 9110 IMF-fixdate, e.g. "Tue, 29 Sep 2026 19:05:00 GMT".
     static func parse(_ value: String) -> Date? {
         let formatter = DateFormatter()

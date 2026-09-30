@@ -48,4 +48,10 @@ struct MealTypeLabelTests {
     func unknownCodeIsKept() {
         #expect(RegistrationCopy.mealTypeTitle(code: "brunch", language: .portugueseBrazil) == "brunch")
     }
+
+    @Test("a pending meal in Precisa da sua atenção shows its type in Portuguese")
+    func pendingMealTypeIsLocalized() {
+        let pending = TodayPendingDescriptor(id: "p1", kind: "meal", mealType: "almoco")
+        #expect(pending.detail(for: .portugueseBrazil) == "Almoço")
+    }
 }

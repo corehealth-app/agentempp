@@ -34,7 +34,7 @@ struct TodayPendingDescriptor: Equatable, Sendable, Identifiable {
     }
 
     func detail(for language: SupportedAppLanguage) -> String {
-        mealType ?? TodayCopy.string(
+        mealType.map { RegistrationCopy.mealTypeTitle(code: $0, language: language) } ?? TodayCopy.string(
             "today.pending.confirmation",
             language: language
         )

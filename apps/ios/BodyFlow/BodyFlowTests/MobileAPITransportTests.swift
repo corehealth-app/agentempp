@@ -19,6 +19,27 @@ struct MobileAPITransportTests {
         #expect(requests[0].value(forHTTPHeaderField: "Authorization") == "Bearer session-alpha")
     }
 
+    @Test("a response Date header sets the server clock estimate")
+    func recordsTheServerDate() async throws {
+        let harness = try await TransportHarness(tokens: ["session-alpha"])
+        let body = Data(
+            "{\"data\":{\"value\":\"ok\"},\"meta\":{\"api_version\":\"v1\",\"request_id\":\"request-date-0001\"}}".utf8
+        )
+        let serverDate = "Tue, 29 Sep 2026 19:03:00 GMT"
+        await harness.stub.respond(with: StubResponse(
+            status: 200,
+            headers: ["Content-Type": "application/json", "Date": serverDate],
+            body: body
+        ))
+
+        #expect(harness.transport.serverClock.offset == nil)
+        let _: TransportPayload = try await harness.transport.execute(.getToday())
+
+        let offset = try #require(harness.transport.serverClock.offset)
+        let expected = ServerClockEstimate.parse(serverDate)!.timeIntervalSinceNow
+        #expect(abs(offset - expected) < 5)
+    }
+
     @Test("missing token fails closed before network activity")
     func rejectsMissingToken() async throws {
         let harness = try await TransportHarness(tokens: [])

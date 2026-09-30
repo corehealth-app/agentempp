@@ -7,6 +7,8 @@ struct MobileAPITransport: Sendable {
     private let clock: any Clock<Duration>
     private let timeout: Duration
     private let responseBodyLimit: Int
+    /// Read by routine actions, which the server accepts on its own clock.
+    let serverClock: ServerClockEstimate
 
     init(
         configuration: MobileAPIConfiguration?,
@@ -35,8 +37,10 @@ struct MobileAPITransport: Sendable {
         session: URLSession,
         clock: any Clock<Duration>,
         timeout: Duration = .seconds(30),
-        responseBodyLimit: Int = 64 * 1_024
+        responseBodyLimit: Int = 64 * 1_024,
+        serverClock: ServerClockEstimate = ServerClockEstimate()
     ) {
+        self.serverClock = serverClock
         self.configuration = configuration
         self.sessionLifecycle = sessionLifecycle
         let sessionConfiguration = session.configuration
@@ -305,6 +309,10 @@ struct MobileAPITransport: Sendable {
         guard let response = response as? HTTPURLResponse else {
             throw MobileAPITransportError.invalidResponse
         }
+        serverClock.record(
+            dateHeader: response.value(forHTTPHeaderField: "Date"),
+            receivedAt: Date()
+        )
         if response.expectedContentLength > Int64(responseBodyLimit) {
             throw MobileAPITransportError.responseTooLarge(limit: responseBodyLimit)
         }

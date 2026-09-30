@@ -82,7 +82,7 @@ struct RoutineDetailView: View {
         }
         .task(id: actionConfiguration.upcoming) {
             guard let upcoming = actionConfiguration.upcoming else { return }
-            let wait = upcoming.scheduledFor.timeIntervalSince(dependencies.timeProvider.now)
+            let wait = upcoming.scheduledFor.timeIntervalSince(serverNow)
             if wait > 0 {
                 try? await Task.sleep(for: .seconds(wait + 1))
             }
@@ -258,8 +258,18 @@ struct RoutineDetailView: View {
             kind: model.kind,
             itemID: model.itemID,
             schedules: model.item?.schedules ?? [],
-            now: dependencies.timeProvider.now
+            now: serverNow
         )
+    }
+
+    /// The server accepts an action on its own clock; a phone running ahead
+    /// must not open the actions before the server would take them.
+    private var serverNow: Date {
+        let deviceNow = dependencies.timeProvider.now
+        guard let transport = dependencies.apiClient as? MobileAPITransport else {
+            return deviceNow
+        }
+        return transport.serverClock.serverNow(deviceNow: deviceNow)
     }
 
     private func availableAtText(_ upcoming: RoutineUpcomingOccurrence) -> String {

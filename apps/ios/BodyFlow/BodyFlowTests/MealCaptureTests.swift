@@ -113,6 +113,32 @@ struct StorageUploadTransportTests {
         )
     }
 
+    // Staging 2026-09-30: a second upload reused a QUIC connection idle for
+    // 162 s, stalled 60 s and showed "Sem conexão". Each upload now opens its
+    // own session (a new connection) and releases it.
+    @Test("every upload runs on its own new session")
+    func eachUploadUsesAFreshSession() async throws {
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("upload-\(UUID().uuidString).jpg")
+        try Data(repeating: 1, count: 16).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let made = SessionCounter()
+        let transport = StorageUploadTransport(
+            storageOrigin: CaptureFixtures.storageOrigin,
+            now: { CaptureFixtures.now },
+            makeSession: { configuration in
+                configuration.protocolClasses = [AcceptingUploadProtocol.self]
+                made.increment()
+                return URLSession(configuration: configuration)
+            }
+        )
+
+        try await transport.upload(CaptureFixtures.photo(at: file), with: CaptureFixtures.ticket())
+        try await transport.upload(CaptureFixtures.photo(at: file), with: CaptureFixtures.ticket())
+
+        #expect(made.count == 2)
+    }
+
     @Test("A valid ticket becomes a PUT with the ticket's headers and nothing else")
     func validTicket() throws {
         let request = try request(CaptureFixtures.ticket())
@@ -959,4 +985,26 @@ struct MealProposalOriginContractTests {
         #expect(MealProposalSourceSnapshot(channel: "text", mediaAssetID: nil).requestSource
             == MealProposalSource(channel: .text, mediaAssetID: nil))
     }
+}
+
+private final class SessionCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+    var count: Int { lock.withLock { value } }
+    func increment() { lock.withLock { value += 1 } }
+}
+
+/// Answers every upload 200 without touching the network.
+private final class AcceptingUploadProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let response = HTTPURLResponse(
+            url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: [:]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data())
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }

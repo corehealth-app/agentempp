@@ -12,13 +12,19 @@ struct StorageUploadTransport: StorageUploading {
     static let allowedHeaders: Set<String> = ["content-type", "x-upsert"]
 
     private let storageOrigin: URL
-    private let session: URLSession
+    /// One session per upload: a fresh connection each time. Staging
+    /// 2026-09-30 showed a PUT reusing a QUIC connection idle for 162 s,
+    /// stalling until the 60 s limit ("Sem conexão") while the network was
+    /// fine; an upload body is never retried by URLSession, so a stale
+    /// pooled connection must not carry it.
+    private let makeSession: @Sendable () -> URLSession
     private let now: @Sendable () -> Date
 
     init(
         storageOrigin: URL,
         session: URLSession = .shared,
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        makeSession: (@Sendable (URLSessionConfiguration) -> URLSession)? = nil
     ) {
         self.storageOrigin = storageOrigin
         let configuration = session.configuration
@@ -30,7 +36,9 @@ struct StorageUploadTransport: StorageUploading {
         configuration.httpAdditionalHeaders = nil
         configuration.timeoutIntervalForRequest = 60
         configuration.timeoutIntervalForResource = 180
-        self.session = URLSession(configuration: configuration)
+        let factory = makeSession ?? { URLSession(configuration: $0) }
+        let base = UploadSessionConfiguration(configuration)
+        self.makeSession = { factory(base.fresh()) }
         self.now = now
     }
 
@@ -42,6 +50,8 @@ struct StorageUploadTransport: StorageUploading {
             now: now()
         )
         let delegate = RefusingRedirectDelegate()
+        let session = makeSession()
+        defer { session.finishTasksAndInvalidate() }
         let response: URLResponse
         do {
             (_, response) = try await session.upload(
@@ -167,5 +177,20 @@ private final class RefusingRedirectDelegate: NSObject,
         lock.withLock { redirected = true }
         completionHandler(nil)
         task.cancel()
+    }
+}
+
+/// The upload session settings, copied for each new session (the
+/// configuration class is not Sendable; it is only ever copied, never
+/// mutated after init).
+private final class UploadSessionConfiguration: @unchecked Sendable {
+    private let configuration: URLSessionConfiguration
+
+    init(_ configuration: URLSessionConfiguration) {
+        self.configuration = configuration
+    }
+
+    func fresh() -> URLSessionConfiguration {
+        (configuration.copy() as? URLSessionConfiguration) ?? configuration
     }
 }

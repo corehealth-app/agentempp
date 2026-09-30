@@ -4,7 +4,13 @@ import { flattenLegacyTagsForApp } from './onboarding-button.js'
 import type { PipelineDeps } from './pipeline.js'
 import { processAuthenticatedMessage, processMessage } from './pipeline.js'
 import { trainingSystemPrompt } from './training-plan-generator.js'
-import { consultaProgresso, geraDieta, geraTreino } from './tools.js'
+import {
+  consultaProgresso,
+  geraDieta,
+  geraTreino,
+  propoePlanoDieta,
+  propoePlanoTreino,
+} from './tools.js'
 
 // Mobile Flow runtime: legacy WhatsApp tags never reach the app as syntax or
 // as an empty reply, and the plan generators speak as Flow only when the
@@ -435,5 +441,115 @@ describe('a guard retry on the last allowed iteration', () => {
     )
     expect(calls).toBe(3)
     expect(output.text).toBe(premature)
+  })
+})
+
+describe('audit 09-30: the Flow reply shows the stored suggestion, never a summary', () => {
+  // The exact turn from the device (QA A, 2026-09-30 15:56Z): the patient's
+  // answer and the generic reply the model gave after the tool.
+  const patientText = 'Pode ser equilibrado no geral.'
+  const genericReply =
+    'Proposta pronta! Ficou assim:\n\nSegunda — Full Body A (6 exercícios)\nQuarta — Full Body B (6 exercícios)\nSexta — Full Body C (6 exercícios)\n\nPra iniciante, full body 3x por semana é o formato ideal — trabalha o corpo todo com frequência alta e dá tempo de recuperação entre os dias.\n\nÉ um rascunho ainda. Abre o app, toca em "Revisar proposta", confere os exercícios e confirma pra valer.'
+  const sugestao =
+    'Segunda-feira — Full Body A (60 min)\n• Agachamento livre — 3×12-15, descanso 90 s\n• Supino reto com barra — 3×12-15, descanso 90 s'
+  const toolCall = {
+    id: 'call-1',
+    name: 'propoe_plano_treino',
+    arguments: JSON.stringify({
+      available_equipment: ['equipamentos completos de academia'],
+      location: 'academia_completa',
+      days_per_week: 3,
+      training_level: 'iniciante',
+    }),
+  }
+
+  function run(reply: string, recorded: Recorded, onComplete?: () => void) {
+    return processAuthenticatedMessage(
+      makeScriptedDeps([{ toolCalls: [toolCall] }, { toolCalls: [], content: reply }], recorded, {
+        maxToolIterations: 2,
+        ...(onComplete ? { onComplete } : {}),
+      }),
+      {
+        userId: 'fixture-user',
+        providerMessageId: 'mobile_flow/fixture-user/key-0932',
+        text: patientText,
+        timestamp,
+      },
+    )
+  }
+
+  it('a generic summary is replaced by the stored suggestion', async () => {
+    vi.spyOn(propoePlanoTreino, 'execute').mockResolvedValue({
+      success: true,
+      status: 'ready_for_review',
+      sugestao,
+      message: 'instrução',
+    })
+    const recorded: Recorded = { inserts: [] }
+
+    const output = await run(genericReply, recorded)
+
+    expect(output.text).toContain(sugestao)
+    expect(output.text).not.toMatch(/6 exercícios|Revisar proposta/)
+    expect(output.text).toContain('Revisar sugestão')
+    expect(
+      recorded.inserts.some(
+        (entry) => (entry.row as { event?: string }).event === 'llm.plan_suggestion_rewritten',
+      ),
+    ).toBe(true)
+  })
+
+  it('a diet reply that copies the suggestion stays as written, with no fake-write retry', async () => {
+    const dietSuggestion =
+      'Almoço (12:30) — 835 kcal, 74,7 g de proteína\n• Frango grelhado: 200 g\n• Arroz branco cozido: 200 g\n\nTotal do dia: 835 kcal, 74,7 g de proteína (meta: 3.361 kcal, 186,1 g)'
+    vi.spyOn(propoePlanoDieta, 'execute').mockResolvedValue({
+      success: true,
+      status: 'ready_for_review',
+      sugestao: dietSuggestion,
+      message: 'instrução',
+    })
+    const recorded: Recorded = { inserts: [] }
+    let calls = 0
+    // With "kcal" in the text, "conferir, ajustar, corrigir" matched
+    // CORRECTION_CLAIM and the retraction erased the suggestion (review M2).
+    const faithful = `Sua sugestão está pronta!\n\n${dietSuggestion}\n\nToque em "Revisar sugestão" para conferir, ajustar, corrigir o que quiser e confirmar.`
+
+    const output = await processAuthenticatedMessage(
+      makeScriptedDeps(
+        [
+          { toolCalls: [{ id: 'call-1', name: 'propoe_plano_dieta', arguments: '{}' }] },
+          { toolCalls: [], content: faithful },
+          { toolCalls: [], content: 'retratação' },
+        ],
+        recorded,
+        { maxToolIterations: 2, onComplete: () => { calls += 1 } },
+      ),
+      {
+        userId: 'fixture-user',
+        providerMessageId: 'mobile_flow/fixture-user/key-0933',
+        // Exact patient text from the device (QA A, 2026-09-29).
+        text: 'Tenta de novo a proposta de cardápio de um dia, por favor. Sem restricoes.',
+        timestamp,
+      },
+    )
+
+    expect(output.text).toBe(faithful)
+    expect(calls).toBe(2)
+    expect(
+      recorded.inserts.map((entry) => (entry.row as { event?: string }).event),
+    ).not.toContain('llm.fake_write_detected')
+  })
+
+  it('a failed proposal is never dressed up as a suggestion', async () => {
+    vi.spyOn(propoePlanoTreino, 'execute').mockResolvedValue({
+      success: false,
+      retry_tool: false,
+      error: 'Não foi possível criar a sugestão agora.',
+    })
+    const apology = 'Não consegui criar a sugestão agora. Tenta de novo em alguns minutos?'
+
+    const output = await run(apology, { inserts: [] })
+
+    expect(output.text).toBe(apology)
   })
 })

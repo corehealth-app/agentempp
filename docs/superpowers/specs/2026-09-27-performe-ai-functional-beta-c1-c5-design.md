@@ -300,7 +300,7 @@ RLS ligada, leitura só do próprio paciente, sem escrita por cliente; escrita s
 - Ferramentas novas **só de proposta**: `propoe_plano_treino`, `propoe_plano_dieta`. Reutilizam os geradores existentes (mesmas validações e limites: treino 1/24 h, dieta 2/2 h) com persona Flow, e gravam **somente** via `create_plan_draft_atomic` (`origin='flow_generated'`, `source_message_id`). Nunca chamam `saveTrainingPlan`/`saveDietPlan`.
 - Allowlist mobile = as 4 de leitura + essas 2. `gera_*` **nunca** entram. WhatsApp permanece como está.
 - Idempotência da proposta: a chave do turno do chat já é obrigatória [INSP] → `request_key = '<chave-do-chat>:<ferramenta>'`; replay não duplica rascunho.
-- Resposta do `/flow/chat` ganha `draft: { id, domain }` opcional; o app mostra "Revisar proposta" e abre a revisão.
+- Resposta do `/flow/chat` ganha `draft: { id, domain }` opcional; o app mostra "Revisar sugestão" e abre a revisão. (2026-09-30: o que o Flow cria é "sugestão" — "Revisar sugestão", "Sugerido pelo Flow" —, o que vem de foto/PDF do paciente é "plano importado" — "Revisar plano importado" —, e o que vale para os dois diz "rascunho" — erros, "Para revisar". O registro de refeição continua "proposta". A resposta do Flow é o plano gravado — exercício, séries×repetições, descanso; refeição, alimento, medida caseira com gramas, kcal e total contra a meta — renderizado por `plan-suggestion-text.ts` (limite de 2.000 caracteres, corte entre blocos); item de medicamento, dose ou suplemento nunca vai para o chat; se o modelo resumir ou parafrasear, o pipeline troca a resposta pelo texto gravado (`ensureSuggestionShown`, evento `llm.plan_suggestion_rewritten`).)
 - **O LLM não confirma:** não existe ferramenta de confirmação; confirmar é só `POST /plan-drafts/:id/confirm` pela interface do app, com o bearer do paciente e chave própria.
 
 ### 3.4 C3 — importação de foto/PDF
@@ -313,7 +313,7 @@ RLS ligada, leitura só do próprio paciente, sem escrita por cliente; escrita s
 
 ### 3.5 iOS [PROP]
 
-`Core/Plan/PlanDraftModels.swift`, `Core/Networking/MobilePlanDraftRepository.swift`, `Features/Plan/PlanDraftReviewView.swift` (compartilhada, seções por domínio, marcadores de incerto, trechos não reconhecidos, confirmar/descartar, conflito), `Features/Plan/PlanImportSourceView.swift` (PHPicker + seletor de PDF), cartão "Revisar proposta" no Flow, e `PlanSnapshot` decodificando `weekly_schedule`.
+`Core/Plan/PlanDraftModels.swift`, `Core/Networking/MobilePlanDraftRepository.swift`, `Features/Plan/PlanDraftReviewView.swift` (compartilhada, seções por domínio, marcadores de incerto, trechos não reconhecidos, confirmar/descartar, conflito), `Features/Plan/PlanImportSourceView.swift` (PHPicker + seletor de PDF), cartão "Revisar sugestão" no Flow, e `PlanSnapshot` decodificando `weekly_schedule`.
 
 ### 3.6 Segurança e testes
 

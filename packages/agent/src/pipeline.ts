@@ -107,6 +107,7 @@ import type { AgentStage, UserProfile } from '@mpp/core'
 import type { Json, ServiceClient } from '@mpp/db'
 import type { OpenRouterEmbeddings, OpenRouterLLM, SystemPromptBlock } from '@mpp/providers'
 import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions'
+import { ensureSuggestionShown } from './plan-suggestion-text.js'
 import { ALL_TOOLS, getToolByName } from './tools.js'
 import type { ToolContext, ToolDefinition } from './tools.js'
 import { zodToJsonSchema } from './tool-schema.js'
@@ -135,6 +136,20 @@ export const MOBILE_FLOW_READ_ONLY_TOOLS = [
  * app. No tool confirms, and `gera_*` never runs on this channel.
  */
 export const MOBILE_FLOW_DRAFT_TOOLS = ['propoe_plano_treino', 'propoe_plano_dieta'] as const
+
+/**
+ * Um rascunho de plano foi criado neste turno. A resposta então descreve a
+ * sugestão ("conferir, ajustar, corrigir…") e não é escrita fantasma: sem isso,
+ * palavras da instrução de revisão casavam com CORRECTION_CLAIM (review
+ * 2026-09-30 M2) e a retratação apagava a sugestão.
+ */
+function draftCreatedThisTurn(toolCalls: AgentOutput['toolCalls']): boolean {
+  return toolCalls.some(
+    (tc) =>
+      (MOBILE_FLOW_DRAFT_TOOLS as readonly string[]).includes(tc.name) &&
+      (tc.result as { success?: unknown } | undefined)?.success === true,
+  )
+}
 
 export const MOBILE_FLOW_TOOLS = [
   ...MOBILE_FLOW_READ_ONLY_TOOLS,
@@ -171,9 +186,12 @@ MPP é uma referência interna: não o apresente espontaneamente como método, m
 Responda em texto simples, sem Markdown decorativo, inclusive na apresentação curta.
 Não envolva nomes ou dados em asteriscos, underscores, headings ou crases de formatação.
 Uma mensagem enviada no chat não autoriza alteração de dados de saúde.
-Este canal consulta dados oficiais e pode criar PROPOSTAS de plano de treino
-ou de cardápio (rascunhos). Uma proposta nunca é o plano do paciente: ela só
-passa a valer depois que ele revisa e confirma no app. Você não confirma,
+Este canal consulta dados oficiais e pode criar SUGESTÕES de plano de treino
+ou de cardápio (rascunhos). Para o paciente, chame-as sempre de "sugestão",
+nunca de "proposta". Uma sugestão nunca é o plano do paciente: ela só
+passa a valer depois que ele revisa e confirma no app. Não reescreva, não resuma
+e não altere uma sugestão no chat: ajustes são feitos pelo paciente em
+"Revisar sugestão"; para uma sugestão diferente, crie outra. Você não confirma,
 não ativa e não substitui plano nenhum, e a confirmação do paciente não é
 revisão de um profissional. Não proponha medicamentos, suplementos ou doses.
 Para qualquer outra mutação sensível, explique que é necessária confirmação
@@ -276,7 +294,7 @@ export function draftRetryMessage(
   return (
     `SISTEMA (não é o paciente): você apresentou um plano no texto sem chamar \`${tool}\`. ` +
     'Nada foi criado. Se o paciente pediu explicitamente e você já tem os dados necessários, chame ' +
-    `\`${tool}\` AGORA para criar a PROPOSTA que ele vai revisar no app. Se faltar algum dado, ` +
+    `\`${tool}\` AGORA para criar a SUGESTÃO que ele vai revisar no app. Se faltar algum dado, ` +
     'pergunte e NÃO mostre plano nenhum. Se ele só tirava uma dúvida, responda sem plano.'
   )
 }
@@ -679,7 +697,7 @@ async function processResolvedMessage(
       const fake = detectFakeWrite({
         content,
         patientText: semanticPatientText,
-        registrationToolCalled,
+        registrationToolCalled: registrationToolCalled || draftCreatedThisTurn(toolCallsSummary),
         prescriptionToolCalled,
         skipToolCalled,
         mealTypeHint,
@@ -2093,6 +2111,22 @@ async function processResolvedMessage(
     }
   }
 
+  // SUGESTÃO DE PLANO (Flow do app, audit 2026-09-30): o chat mostra o
+  // rascunho gravado, nunca um resumo genérico nem um plano parafraseado. Se o
+  // modelo não reproduziu o texto da ferramenta (ou não respondeu nada), a
+  // resposta vira esse texto.
+  {
+    const shown = ensureSuggestionShown(finalText, toolCallsSummary)
+    if (shown.replaced) {
+      await deps.supabase.from('product_events').insert({
+        user_id: userId,
+        event: 'llm.plan_suggestion_rewritten',
+        properties: { stage, model_reply_empty: finalText.trim().length === 0 },
+      })
+      finalText = shown.text
+    }
+  }
+
   // GUARD DE ESCRITA FANTASMA — Camadas 2 e 3 (rede de finalização).
   // Checa o TEXTO REAL enviado ao paciente (pós-FIX C). Não bloqueia: registra
   // sinais de alta prioridade pra auditoria 5×/dia investigar/agir.
@@ -2113,7 +2147,7 @@ async function processResolvedMessage(
     const fakeFinal = detectFakeWrite({
       content: finalText,
       patientText: semanticPatientText,
-      registrationToolCalled,
+      registrationToolCalled: registrationToolCalled || draftCreatedThisTurn(toolCallsSummary),
       prescriptionToolCalled,
       skipToolCalled,
       mealTypeHint,

@@ -91,7 +91,7 @@ interface Recorded {
 }
 
 function makeContext(options: {
-  existingDraft?: { id: string; status: string } | null
+  existingDraft?: { id: string; status: string; payload?: unknown } | null
   recentEvents?: number
   /** Events counted per name; overrides `recentEvents` for the names given. */
   eventsByName?: Record<string, number>
@@ -258,7 +258,7 @@ describe('canal do app: o que o Flow pode chamar', () => {
     expect(diet).toContain('propoe_plano_dieta')
     for (const message of [training, diet]) {
       expect(message).not.toMatch(/gera_(treino|dieta)/)
-      expect(message).toContain('PROPOSTA')
+      expect(message).toContain('SUGESTÃO')
     }
     expect(fakeWriteRetryAllowed('training_fake', mobile)).toBe(true)
     expect(fakeWriteRetryAllowed('registration', mobile)).toBe(false)
@@ -270,7 +270,8 @@ describe('canal do app: o que o Flow pode chamar', () => {
   })
 
   it('a política do canal diz que proposta não é plano e que confirmar não é revisão', () => {
-    expect(mobileFlowSystemPolicy).toContain('PROPOSTAS')
+    expect(mobileFlowSystemPolicy).toContain('SUGESTÕES')
+    expect(mobileFlowSystemPolicy).toMatch(/chame-as sempre de "sugestão",\s+nunca de "proposta"/)
     expect(mobileFlowSystemPolicy).toMatch(/só\s+passa a valer depois que ele revisa e confirma no app/)
     expect(mobileFlowSystemPolicy).toMatch(/não é\s+revisão de um profissional/)
     expect(mobileFlowSystemPolicy).toMatch(/medicamentos, suplementos ou doses/)
@@ -307,7 +308,11 @@ describe('propoe_plano_treino', () => {
     )
     expect(result).toMatchObject({ success: true, draft_id: DRAFT, domain: 'training' })
     expect(String(result.message)).toContain('RASCUNHO')
-    expect(String(result.message)).toContain('Revisar proposta')
+    expect(String(result.message)).toContain('Revisar sugestão')
+    expect(String(result.message)).toContain('EXATAMENTE')
+    expect(result.sugestao).toBe(
+      ['seg — inferiores (60 min)', '• Agachamento — 4×8-12, descanso 90 s', '', 'qua — superiores (50 min)', '• Agachamento — 4×8-12, descanso 90 s', '', 'Progressão: subir carga a cada 2 semanas'].join('\n'),
+    )
     expect(recorded.inserts.map((entry) => entry.row.event)).toEqual(['training.plan_proposed'])
   })
 
@@ -491,5 +496,66 @@ describe('propoe_plano_dieta', () => {
     generateDietPlan.mockResolvedValue(dietPlan)
     const allowed = makeContext({ recentEvents: 1 })
     expect(await propoePlanoDieta.execute({}, allowed.ctx)).toMatchObject({ success: true })
+  })
+})
+
+describe('o texto da sugestão vem do rascunho gravado', () => {
+  it('cardápio: alimentos e quantidades no campo sugestao, com a instrução de copiar', async () => {
+    generateDietPlan.mockResolvedValue(dietPlan)
+    const { ctx } = makeContext()
+
+    const result = await propoePlanoDieta.execute({ horizon: 'daily' }, ctx)
+
+    expect(result.sugestao).toBe(
+      [
+        'Almoço — 150 kcal, 3 g de proteína',
+        '• arroz: 120 g',
+        '',
+        'Total do dia: 150 kcal, 3 g de proteína (meta: 2.000 kcal, 140 g)',
+      ].join('\n'),
+    )
+    expect(String(result.message)).toContain('Revisar sugestão')
+    expect(String(result.message)).toContain('nunca de "proposta"')
+  })
+
+  it('o mesmo turno de novo mostra o rascunho que está gravado, sem gerar', async () => {
+    const { ctx } = makeContext({
+      existingDraft: {
+        id: DRAFT,
+        status: 'ready_for_review',
+        payload: { weekly_schedule: [{ day: 'seg', focus: 'pernas', exercises: [exercise] }] },
+      },
+    })
+
+    const result = await propoePlanoTreino.execute(trainingArguments, ctx)
+
+    expect(result).toMatchObject({ replayed: true })
+    expect(result.sugestao).toBe('seg — pernas\n• Agachamento — 4×8-12, descanso 90 s')
+    expect(generateTrainingPlan).not.toHaveBeenCalled()
+  })
+
+  it('rascunho incompleto: o valor limpo não aparece e o paciente sabe que falta completar', async () => {
+    generateTrainingPlan.mockResolvedValue({
+      ...trainingPlan,
+      weekly_schedule: [
+        { day: 'seg', focus: 'a', duration_min: 60, exercises: [{ ...exercise, sets: 40 }] },
+      ],
+    })
+    const { ctx } = makeContext()
+
+    const result = await propoePlanoTreino.execute(trainingArguments, ctx)
+
+    expect(result.sugestao).toContain('• Agachamento — 8-12, descanso 90 s')
+    expect(result.sugestao).not.toContain('40')
+    expect(String(result.message)).toContain('completar na revisão')
+  })
+
+  it('sem conteúdo gravado para mostrar, o Flow não apresenta itens', async () => {
+    const { ctx } = makeContext({ existingDraft: { id: DRAFT, status: 'ready_for_review' } })
+
+    const result = await propoePlanoTreino.execute(trainingArguments, ctx)
+
+    expect(result).not.toHaveProperty('sugestao')
+    expect(String(result.message)).toContain('NÃO apresente itens do plano')
   })
 })

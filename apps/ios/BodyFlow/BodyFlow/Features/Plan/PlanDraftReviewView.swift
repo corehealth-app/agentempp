@@ -28,7 +28,7 @@ struct PlanDraftReviewView: View {
                 .padding(BodyFlowSpacing.md)
             }
         }
-        .bodyFlowScreenChrome(title: copy("plan.draft.navigation.title"))
+        .bodyFlowScreenChrome(title: copy(PlanDraftCopy.navigationTitleKey(imported: model.snapshot?.isImported)))
         .accessibilityIdentifier("screen.plan.draft")
         .task { await model.load() }
         .onDisappear { model.invalidate() }
@@ -67,7 +67,7 @@ struct PlanDraftReviewView: View {
             Text(copy("plan.draft.remove.message"))
         }
         .confirmationDialog(
-            copy("plan.draft.discard.title"),
+            copy(PlanDraftCopy.discardTitleKey(imported: isImported)),
             isPresented: $askingToDiscard,
             titleVisibility: .visible
         ) {
@@ -99,7 +99,7 @@ struct PlanDraftReviewView: View {
             )
         case .discarded:
             outcome(
-                title: copy("plan.draft.discarded.title"),
+                title: copy(PlanDraftCopy.discardedTitleKey(imported: isImported)),
                 detail: nil,
                 kind: .info,
                 identifier: "plan.draft.discarded"
@@ -358,11 +358,15 @@ struct PlanDraftReviewView: View {
         .accessibilityIdentifier("plan.draft.unrecognized")
     }
 
+    /// What Flow created is a "sugestão"; what came from the patient's own
+    /// photo or PDF is an imported plan, never called a suggestion.
+    private var isImported: Bool { model.snapshot?.isImported == true }
+
     private var discardButton: some View {
         Button {
             askingToDiscard = true
         } label: {
-            label("plan.draft.discard")
+            label(PlanDraftCopy.discardKey(imported: isImported))
         }
         .buttonStyle(BodyFlowButtonStyle(role: .tertiary))
         .disabled(!model.canDiscard)

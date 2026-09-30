@@ -11,6 +11,7 @@ import type { z } from 'zod'
 import { loadCalcConfig } from '../calc-config-loader.js'
 import { loadDailyTargets } from '../calc-targets.js'
 import { assessPlanDraftPayload, type PlanDraftDomain } from '../plan-draft.js'
+import { nutritionSuggestionText, trainingSuggestionText } from '../plan-suggestion-text.js'
 import type { ToolContext, ToolDefinition } from './types.js'
 
 export const PROPOSE_TRAINING_PLAN_TOOL = 'propoe_plano_treino'
@@ -22,6 +23,14 @@ interface DraftOutcome {
   id: string
   status: string
   inserted: boolean
+  /** O conteúdo gravado, que é o que o paciente revisa. */
+  payload: Record<string, unknown> | null
+}
+
+interface StoredDraft {
+  id: string
+  status: string
+  payload?: unknown
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: cliente sem tipos gerados para as tabelas novas
@@ -37,10 +46,10 @@ function requestKey(ctx: ToolContext, tool: string): string | null {
 async function existingDraft(
   ctx: ToolContext,
   key: string,
-): Promise<{ id: string; status: string } | null> {
+): Promise<StoredDraft | null> {
   const { data, error } = await (ctx.supabase as Untyped)
     .from('plan_drafts')
-    .select('id, status')
+    .select('id, status, payload')
     .eq('user_id', ctx.userId)
     .eq('request_key', key)
     .maybeSingle()
@@ -55,7 +64,7 @@ function closedDraft(draft: { status: string }): Record<string, unknown> | null 
     success: false,
     retry_tool: false,
     error:
-      'A proposta criada neste turno não está mais disponível para revisão. Explique isso ao paciente e ofereça criar outra em uma nova mensagem. Não apresente um plano.',
+      'A sugestão criada neste turno não está mais disponível para revisão. Explique isso ao paciente e ofereça criar outra em uma nova mensagem. Não apresente um plano.',
   }
 }
 
@@ -107,7 +116,7 @@ const BLOCKED = {
   success: false,
   retry_tool: false,
   error:
-    'Não é possível criar outra proposta agora. Explique ao paciente que ele pode revisar, confirmar ou descartar as propostas que já existem no app, e tentar de novo mais tarde. Não chame a ferramenta de novo e não apresente um plano. Não sugira outro caminho, tela ou recurso para gerar o plano: não existe.',
+    'Não é possível criar outra sugestão agora. Explique ao paciente que ele pode revisar, confirmar ou descartar as sugestões que já existem no app, e tentar de novo mais tarde. Não chame a ferramenta de novo e não apresente um plano. Não sugira outro caminho, tela ou recurso para gerar o plano: não existe.',
 }
 
 async function record(
@@ -145,23 +154,60 @@ async function createDraft(
     p_request_key: key,
   })
   if (error || typeof data?.id !== 'string') return null
-  return { id: data.id, status: String(data.status), inserted: data.inserted === true }
+  const inserted = data.inserted === true
+  // Outra chamada do mesmo turno pode ter gravado primeiro: vale o que está gravado.
+  const payload = inserted
+    ? assessment.payload
+    : (((await existingDraft(ctx, key))?.payload as Record<string, unknown> | undefined) ?? null)
+  return { id: data.id, status: String(data.status), inserted, payload }
 }
 
 const REVIEW_INSTRUCTION =
-  'A proposta foi criada como RASCUNHO e ainda NÃO é o plano do paciente. ' +
-  'Diga que a proposta está pronta para revisão e que ele deve tocar em "Revisar proposta" no app ' +
-  'para conferir, ajustar e confirmar. NÃO diga que o plano foi salvo, ativado, registrado ou que ' +
-  'já está valendo, e NÃO diga que foi revisado por um profissional.'
+  'A sugestão foi criada como RASCUNHO e ainda NÃO é o plano do paciente. ' +
+  'Chame-a de "sugestão", nunca de "proposta". ' +
+  'Abra com UMA frase curta dizendo que a sugestão está pronta. Em seguida, copie o campo `sugestao` ' +
+  'EXATAMENTE como veio: os mesmos itens, na mesma ordem, com as mesmas quantidades, séries, ' +
+  'repetições e números. Não resuma, não arredonde, não acrescente nem remova itens e não use Markdown. ' +
+  'Termine dizendo que ele deve tocar em "Revisar sugestão" no app para conferir, ajustar e confirmar. ' +
+  'NÃO diga que o plano foi salvo, ativado, registrado ou que já está valendo, e NÃO diga que foi ' +
+  'revisado por um profissional.'
 
-function replayed(draft: { id: string; status: string }, domain: PlanDraftDomain) {
+const REVIEW_INSTRUCTION_WITHOUT_TEXT =
+  'A sugestão foi criada como RASCUNHO e ainda NÃO é o plano do paciente. ' +
+  'Chame-a de "sugestão", nunca de "proposta". ' +
+  'Diga que a sugestão está pronta e que ele deve tocar em "Revisar sugestão" no app para conferir, ' +
+  'completar o que faltar e confirmar. NÃO apresente itens do plano no texto. NÃO diga que o plano ' +
+  'foi salvo, ativado, registrado ou que já está valendo, e NÃO diga que foi revisado por um profissional.'
+
+const NEEDS_COMPLETION_NOTE =
+  ' Alguns campos ficaram para o paciente completar na revisão: diga isso em uma frase.'
+
+/** O texto do chat vem do rascunho gravado; o modelo só o reproduz. */
+function suggestionResult(
+  domain: PlanDraftDomain,
+  status: string,
+  payload: unknown,
+): { sugestao?: string; message: string } {
+  const suggestion =
+    payload && typeof payload === 'object'
+      ? domain === 'training'
+        ? trainingSuggestionText(payload)
+        : nutritionSuggestionText(payload)
+      : ''
+  const note = status === 'needs_completion' ? NEEDS_COMPLETION_NOTE : ''
+  return suggestion
+    ? { sugestao: suggestion, message: REVIEW_INSTRUCTION + note }
+    : { message: REVIEW_INSTRUCTION_WITHOUT_TEXT }
+}
+
+function replayed(draft: StoredDraft, domain: PlanDraftDomain) {
   return {
     success: true,
     draft_id: draft.id,
     domain,
     status: draft.status,
     replayed: true,
-    message: REVIEW_INSTRUCTION,
+    ...suggestionResult(domain, draft.status, draft.payload),
   }
 }
 
@@ -169,7 +215,7 @@ const UNAVAILABLE = {
   success: false,
   retry_tool: false,
   error:
-    'Não foi possível criar a proposta agora. Explique ao paciente que houve um problema técnico e peça para tentar de novo em alguns minutos. Não apresente um plano. Não sugira outro caminho, tela ou recurso para gerar o plano: não existe.',
+    'Não foi possível criar a sugestão agora. Explique ao paciente que houve um problema técnico e peça para tentar de novo em alguns minutos. Não apresente um plano. Não sugira outro caminho, tela ou recurso para gerar o plano: não existe.',
 }
 
 function ageAt(reference: Date, birthDate: string | null | undefined): number | null {
@@ -188,10 +234,10 @@ export function createPlanProposalTools<
   const proposeTraining: ToolDefinition<TrainingParameters> = {
     name: PROPOSE_TRAINING_PLAN_TOOL,
     description:
-      'Cria uma PROPOSTA de plano de treino semanal para o paciente revisar no app. ' +
+      'Cria uma SUGESTÃO de plano de treino semanal (rascunho) para o paciente revisar no app. ' +
       'Use APENAS depois de perguntar e confirmar com o paciente: (1) equipamentos disponíveis, ' +
       '(2) quantos dias por semana, (3) nível atual (iniciante, intermediário ou avançado). ' +
-      'Nunca chute o nível — pergunte. A proposta é um rascunho: só vira plano quando o paciente ' +
+      'Nunca chute o nível — pergunte. A sugestão é um rascunho: só vira plano quando o paciente ' +
       'confirma no app. Se receber {success:false}, NÃO apresente plano nenhum.',
     parameters: parameters.training,
     // Audit 2026-09-28: the model writes null for "none"; optional only.
@@ -208,7 +254,7 @@ export function createPlanProposalTools<
           success: false,
           retry_tool: false,
           error:
-            'Já foi criado um plano ou uma proposta de treino nas últimas 24h. Explique ao paciente que ele pode revisar a proposta existente no app ou pedir outra amanhã. Não chame a ferramenta de novo.',
+            'Já foi criado um plano ou uma sugestão de treino nas últimas 24h. Explique ao paciente que ele pode revisar a sugestão existente no app ou pedir outra amanhã. Não chame a ferramenta de novo.',
         }
       }
       if (await generationBlocked(ctx, 'training.proposal_failed')) return BLOCKED
@@ -278,6 +324,11 @@ export function createPlanProposalTools<
         await record(ctx, 'training.proposal_failed', { days_per_week: plan.days_per_week })
         return UNAVAILABLE
       }
+      // Outra chamada deste turno gravou primeiro e o rascunho já foi fechado.
+      if (!draft.inserted) {
+        const closed = closedDraft(draft)
+        if (closed) return closed
+      }
       if (draft.inserted) {
         await record(ctx, 'training.plan_proposed', {
           draft_id: draft.id,
@@ -293,12 +344,7 @@ export function createPlanProposalTools<
         status: draft.status,
         plan_type: plan.plan_type,
         days_per_week: plan.days_per_week,
-        days: plan.weekly_schedule.map((day) => ({
-          day: day.day,
-          focus: day.focus,
-          exercises: day.exercises.length,
-        })),
-        message: REVIEW_INSTRUCTION,
+        ...suggestionResult('training', draft.status, draft.payload),
       }
     },
   }
@@ -306,9 +352,9 @@ export function createPlanProposalTools<
   const proposeDiet: ToolDefinition<DietParameters> = {
     name: PROPOSE_DIET_PLAN_TOOL,
     description:
-      'Cria uma PROPOSTA de cardápio (com lista de compras) para o paciente revisar no app. ' +
+      'Cria uma SUGESTÃO de cardápio (rascunho, com lista de compras) para o paciente revisar no app. ' +
       'Use APENAS quando o paciente pedir explicitamente para montar/gerar agora. Se ele só estiver ' +
-      'tirando dúvida, responda e pergunte se quer que você crie a proposta. A proposta é um ' +
+      'tirando dúvida, responda e pergunte se quer que você crie a sugestão. A sugestão é um ' +
       'rascunho: só vira plano quando o paciente confirma no app. ' +
       'Se receber {success:false}, NÃO apresente cardápio nenhum.',
     parameters: parameters.diet,
@@ -326,7 +372,7 @@ export function createPlanProposalTools<
           success: false,
           retry_tool: false,
           error:
-            'Já foram criados 2 cardápios ou propostas nas últimas 2h. Explique ao paciente que ele pode revisar as propostas existentes no app ou pedir outra mais tarde. Não chame a ferramenta de novo.',
+            'Já foram criados 2 cardápios ou sugestões nas últimas 2h. Explique ao paciente que ele pode revisar as sugestões existentes no app ou pedir outra mais tarde. Não chame a ferramenta de novo.',
         }
       }
       if (await generationBlocked(ctx, 'diet.proposal_failed')) return BLOCKED
@@ -417,6 +463,11 @@ export function createPlanProposalTools<
         await record(ctx, 'diet.proposal_failed', { horizon: plan.horizon })
         return UNAVAILABLE
       }
+      // Outra chamada deste turno gravou primeiro e o rascunho já foi fechado.
+      if (!draft.inserted) {
+        const closed = closedDraft(draft)
+        if (closed) return closed
+      }
       if (draft.inserted) {
         await record(ctx, 'diet.proposed', {
           draft_id: draft.id,
@@ -431,7 +482,7 @@ export function createPlanProposalTools<
         status: draft.status,
         horizon: plan.horizon,
         meals_count: plan.daily_meals.length,
-        message: REVIEW_INSTRUCTION,
+        ...suggestionResult('nutrition', draft.status, draft.payload),
       }
     },
   }

@@ -1958,16 +1958,16 @@
       }
     },
     "flow.proposal.detail.nutrition" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Meal plan proposal created as a draft. It only counts after you confirm it." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Proposta de cardápio criada como rascunho. Ela só vale depois que você confirmar." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Meal plan suggestion created as a draft. It only counts after you confirm it." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sugestão de cardápio criada como rascunho. Ela só vale depois que você confirmar." } }
     } },
     "flow.proposal.detail.training" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Workout proposal created as a draft. It only counts after you confirm it." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Proposta de treino criada como rascunho. Ela só vale depois que você confirmar." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Workout suggestion created as a draft. It only counts after you confirm it." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sugestão de treino criada como rascunho. Ela só vale depois que você confirmar." } }
     } },
     "flow.proposal.review" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Review proposal" } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Revisar proposta" } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Review suggestion" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Revisar sugestão" } }
     } },
     "plan.draft.blocker.incomplete" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Fill in or remove what is missing to be able to confirm." } },
@@ -1978,8 +1978,8 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Corrija os campos inválidos para salvar." } }
     } },
     "plan.draft.blocker.unreadable" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "This proposal has a value the app cannot show. It cannot be confirmed." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Esta proposta tem um valor que o app não consegue mostrar. Ela não pode ser confirmada." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This draft has a value the app cannot show. It cannot be confirmed." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Este rascunho tem um valor que o app não consegue mostrar. Ele não pode ser confirmado." } }
     } },
     "plan.draft.blocker.unsaved" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Save the changes before confirming." } },
@@ -2094,20 +2094,32 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Dados do plano" } }
     } },
     "plan.draft.discard" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Discard proposal" } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Descartar proposta" } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Discard suggestion" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Descartar sugestão" } }
     } },
     "plan.draft.discard.action" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Discard" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Descartar" } }
     } },
+    "plan.draft.discard.imported" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Discard imported plan" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Descartar plano importado" } }
+    } },
     "plan.draft.discard.title" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Discard this proposal?" } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Descartar esta proposta?" } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Discard this suggestion?" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Descartar esta sugestão?" } }
+    } },
+    "plan.draft.discard.title.imported" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Discard this imported plan?" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Descartar este plano importado?" } }
     } },
     "plan.draft.discarded.title" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Proposal discarded" } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Proposta descartada" } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Suggestion discarded" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sugestão descartada" } }
+    } },
+    "plan.draft.discarded.title.imported" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Imported plan discarded" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Plano importado descartado" } }
     } },
     "plan.draft.domain.nutrition" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Meal plan" } },
@@ -2118,36 +2130,36 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Plano de treino" } }
     } },
     "plan.draft.failure.changed" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "The proposal changed since you opened it. Review the current version." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "A proposta mudou desde que você abriu. Revise a versão atual." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The draft changed since you opened it. Review the current version." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O rascunho mudou desde que você abriu. Revise a versão atual." } }
     } },
     "plan.draft.failure.expired" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "This proposal has expired." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Esta proposta expirou." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This draft has expired." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Este rascunho expirou." } }
     } },
     "plan.draft.failure.incomplete" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Information is still missing to confirm." } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ainda faltam informações para confirmar." } }
     } },
     "plan.draft.failure.not-found" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "This proposal no longer exists." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Esta proposta não existe mais." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This draft no longer exists." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Este rascunho não existe mais." } }
     } },
     "plan.draft.failure.not-reviewable" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "This proposal can no longer be changed." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Esta proposta não pode mais ser alterada." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This draft can no longer be changed." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Este rascunho não pode mais ser alterado." } }
     } },
     "plan.draft.failure.plan-changed" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Your current plan changed while you were reviewing. This proposal can no longer be confirmed; ask for or import a new one." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O seu plano atual mudou enquanto você revisava. Esta proposta não pode mais ser confirmada; peça ou importe uma nova." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Your current plan changed while you were reviewing. This draft can no longer be confirmed; ask for or import a new one." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O seu plano atual mudou enquanto você revisava. Este rascunho não pode mais ser confirmado; peça ou importe um novo." } }
     } },
     "plan.draft.failure.prescribed" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Your current plan was prescribed by a professional and cannot be replaced by a proposal." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O seu plano atual foi prescrito por um profissional e não pode ser substituído por uma proposta." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Your current plan was prescribed by a professional and cannot be replaced by this draft." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O seu plano atual foi prescrito por um profissional e não pode ser substituído por este rascunho." } }
     } },
     "plan.draft.failure.too-many" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "There are too many open proposals. Confirm or discard one before creating another." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Há propostas demais em aberto. Confirme ou descarte alguma antes de criar outra." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "There are too many open drafts. Confirm or discard one before creating another." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Há rascunhos demais em aberto. Confirme ou descarte algum antes de criar outro." } }
     } },
     "plan.draft.field.day" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Day or workout" } },
@@ -2202,16 +2214,16 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Horário sugerido" } }
     } },
     "plan.draft.in-progress.generating" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Preparing the proposal…" } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Preparando a proposta…" } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Preparing the suggestion…" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Preparando a sugestão…" } }
     } },
     "plan.draft.in-progress.reading" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Reading the document…" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Lendo o documento…" } }
     } },
     "plan.draft.loading" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading the proposal…" } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Carregando a proposta…" } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading the draft…" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Carregando o rascunho…" } }
     } },
     "plan.draft.meal.almoco" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Lunch" } },
@@ -2242,8 +2254,16 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Escolha a refeição" } }
     } },
     "plan.draft.navigation.title" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Review proposal" } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Revisar proposta" } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Review suggestion" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Revisar sugestão" } }
+    } },
+    "plan.draft.navigation.title.imported" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Review imported plan" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Revisar plano importado" } }
+    } },
+    "plan.draft.navigation.title.pending" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Review draft" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Revisar rascunho" } }
     } },
     "plan.draft.notice.confirmed" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "You confirmed this plan. It was not reviewed by a professional." } },
@@ -2254,8 +2274,8 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Isto é um rascunho. Ele só vira o seu plano depois que você confirmar." } }
     } },
     "plan.draft.notice.edits-dropped" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "The proposal changed on the server and what you had typed was not applied. Review the current version." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "A proposta mudou no servidor e o que você tinha digitado não foi aplicado. Revise a versão atual." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The draft changed on the server and what you had typed was not applied. Review the current version." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O rascunho mudou no servidor e o que você tinha digitado não foi aplicado. Revise a versão atual." } }
     } },
     "plan.draft.notice.medications" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Medications, supplements and doses are not imported. Talk to your professional." } },
@@ -2270,8 +2290,8 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ao confirmar, este plano substitui o seu plano de treino atual." } }
     } },
     "plan.draft.origin.flow" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Proposed by Flow" } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Proposto pelo Flow" } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Suggested by Flow" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sugerido pelo Flow" } }
     } },
     "plan.draft.origin.imported" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Read from the document you sent" } },
@@ -2286,8 +2306,8 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Remover" } }
     } },
     "plan.draft.remove.message" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "The removal is saved in the proposal, together with what you have already typed." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "A remoção é salva na proposta, junto com o que você já digitou." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The removal is saved in the draft, together with what you have already typed." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "A remoção é salva no rascunho, junto com o que você já digitou." } }
     } },
     "plan.draft.remove.row" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Remove item" } },
@@ -2298,8 +2318,8 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Remover este bloco" } }
     } },
     "plan.draft.remove.title" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Remove from the proposal?" } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Remover da proposta?" } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Remove from the draft?" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Remover do rascunho?" } }
     } },
     "plan.draft.save" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Save changes" } },
@@ -2358,8 +2378,8 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Pronta para revisar" } }
     } },
     "plan.drafts.title" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Proposals to review" } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Propostas para revisar" } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "To review" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Para revisar" } }
     } },
     "plan.import.action.detail" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Send the photo or PDF of a plan you already have." } },

@@ -23,6 +23,27 @@ enum PlanDraftCopy {
         imported ? "plan.draft.origin.imported" : "plan.draft.origin.flow"
     }
 
+    /// `nil` while the draft is still loading: its origin is not known yet.
+    static func navigationTitleKey(imported: Bool?) -> String.LocalizationValue {
+        switch imported {
+        case .some(true): "plan.draft.navigation.title.imported"
+        case .some(false): "plan.draft.navigation.title"
+        case .none: "plan.draft.navigation.title.pending"
+        }
+    }
+
+    static func discardKey(imported: Bool) -> String.LocalizationValue {
+        imported ? "plan.draft.discard.imported" : "plan.draft.discard"
+    }
+
+    static func discardTitleKey(imported: Bool) -> String.LocalizationValue {
+        imported ? "plan.draft.discard.title.imported" : "plan.draft.discard.title"
+    }
+
+    static func discardedTitleKey(imported: Bool) -> String.LocalizationValue {
+        imported ? "plan.draft.discarded.title.imported" : "plan.draft.discarded.title"
+    }
+
     static func fieldKey(_ key: String) -> String.LocalizationValue {
         switch key {
         case "day": "plan.draft.field.day"

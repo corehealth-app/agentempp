@@ -1254,3 +1254,31 @@ private actor PlanTransportSpy: MobileAPIEnvelopeExecuting {
         return try JSONDecoder().decode(MobileResponse<Response>.self, from: responseJSON)
     }
 }
+
+@Suite("Plan draft words by origin")
+struct PlanDraftOriginCopyTests {
+    private func text(_ key: String.LocalizationValue, _ language: SupportedAppLanguage) -> String {
+        PlanDraftCopy.string(key, language: language)
+    }
+
+    @Test("What Flow created is a suggestion; an imported document is never called one")
+    func suggestionOnlyForFlow() {
+        #expect(text(PlanDraftCopy.navigationTitleKey(imported: false), .portugueseBrazil) == "Revisar sugestão")
+        #expect(text(PlanDraftCopy.navigationTitleKey(imported: true), .portugueseBrazil) == "Revisar plano importado")
+        #expect(text(PlanDraftCopy.navigationTitleKey(imported: nil), .portugueseBrazil) == "Revisar rascunho")
+        #expect(text(PlanDraftCopy.discardKey(imported: false), .portugueseBrazil) == "Descartar sugestão")
+        #expect(text(PlanDraftCopy.discardTitleKey(imported: true), .englishUnitedStates) == "Discard this imported plan?")
+        #expect(text(PlanDraftCopy.discardedTitleKey(imported: false), .englishUnitedStates) == "Suggestion discarded")
+        for language in SupportedAppLanguage.allCases {
+            for key in [
+                PlanDraftCopy.navigationTitleKey(imported: true),
+                PlanDraftCopy.discardKey(imported: true),
+                PlanDraftCopy.discardTitleKey(imported: true),
+                PlanDraftCopy.discardedTitleKey(imported: true),
+            ] {
+                let value = text(key, language).lowercased()
+                #expect(!value.contains("sugest") && !value.contains("suggest") && !value.contains("propost") && !value.contains("proposal"))
+            }
+        }
+    }
+}

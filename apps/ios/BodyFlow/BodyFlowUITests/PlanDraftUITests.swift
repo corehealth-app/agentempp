@@ -18,7 +18,7 @@ final class PlanDraftUITests: XCTestCase {
 
         let item = app.buttons[draftItem]
         XCTAssertTrue(item.waitForExistence(timeout: 8))
-        XCTAssertTrue(app.staticTexts["Propostas para revisar"].exists)
+        XCTAssertTrue(app.staticTexts["Para revisar"].exists)
         support.assertTarget(item)
         // No document can be sent in this scenario: the import is not offered.
         XCTAssertFalse(app.buttons["plan.import"].exists)
@@ -110,7 +110,7 @@ final class PlanDraftUITests: XCTestCase {
         let accept = app.buttons["plan.draft.discard.accept"].firstMatch
         XCTAssertTrue(accept.waitForExistence(timeout: 5))
         XCTAssertEqual(accept.label, "Discard")
-        XCTAssertTrue(app.staticTexts["Discard this proposal?"].exists)
+        XCTAssertTrue(app.staticTexts["Discard this imported plan?"].exists)
         // Asking is not discarding: nothing happened yet.
         XCTAssertFalse(element("plan.draft.discarded", app: app).exists)
         accept.tap()
@@ -137,7 +137,7 @@ final class PlanDraftUITests: XCTestCase {
         let review = app.buttons["flow.proposal.review"]
         XCTAssertTrue(review.waitForExistence(timeout: 10))
         support.assertTarget(review)
-        XCTAssertTrue(review.label.contains("Revisar proposta"))
+        XCTAssertTrue(review.label.contains("Revisar sugestão"))
         XCTAssertTrue(review.label.contains("só vale depois que você confirmar"))
         review.tap()
 

@@ -82,8 +82,12 @@ struct RoutineDetailView: View {
         }
         .task(id: actionConfiguration.upcoming) {
             guard let upcoming = actionConfiguration.upcoming else { return }
-            let wait = upcoming.scheduledFor.timeIntervalSince(serverNow)
-            if wait > 0 {
+            // Re-checked after each wait: a later response can move the
+            // server estimate back by a second or two, and the task id (the
+            // occurrence) does not change when that happens.
+            while !Task.isCancelled {
+                let wait = upcoming.scheduledFor.timeIntervalSince(serverNow)
+                if wait <= 0 { break }
                 try? await Task.sleep(for: .seconds(wait + 1))
             }
             guard !Task.isCancelled else { return }

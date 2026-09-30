@@ -105,7 +105,6 @@ final class RoutineActionModel {
     private let invalidationCenter: FeatureInvalidationCenter
     private let patientTimeZone: PatientTimeZoneContext
     let context: RoutineOccurrenceContext
-    let occurredAt: Date
 
     private var activeOwnership: FeatureLoadOwnership?
     private var activeIntent: RoutineActionIntent?
@@ -128,7 +127,13 @@ final class RoutineActionModel {
         self.invalidationCenter = invalidationCenter
         self.patientTimeZone = patientTimeZone
         self.context = context
-        occurredAt = timeProvider.now
+    }
+
+    /// The action happens when the patient taps, not when the detail
+    /// opened: a new attempt reads the clock at submit. A retry resends its
+    /// attempt unchanged (same idempotency key, same payload).
+    var occurredAt: Date {
+        timeProvider.now
     }
 
     var isSubmitting: Bool {
@@ -136,6 +141,10 @@ final class RoutineActionModel {
     }
 
     func snoozeDate(for selection: RoutineSnoozeSelection) -> Date? {
+        snoozeDate(for: selection, occurredAt: occurredAt)
+    }
+
+    private func snoozeDate(for selection: RoutineSnoozeSelection, occurredAt: Date) -> Date? {
         guard let policy = try? RoutineSnoozePolicy(context: patientTimeZone) else {
             return nil
         }
@@ -153,12 +162,13 @@ final class RoutineActionModel {
         guard !isSubmitting else { return }
         let intent = RoutineActionIntent(status: status, selection: selection)
         guard activeIntent != intent else { return }
+        let occurredAt = self.occurredAt
         let snoozedUntil: APITimestamp?
         switch status {
         case .taken, .skipped:
             snoozedUntil = nil
         case .snoozed:
-            guard let selection, let date = snoozeDate(for: selection) else {
+            guard let selection, let date = snoozeDate(for: selection, occurredAt: occurredAt) else {
                 accessibilityFocusTarget = .operationSummary
                 return
             }

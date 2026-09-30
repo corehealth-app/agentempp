@@ -248,7 +248,10 @@ struct RoutineDetailView: View {
         guard let context = configuration.context else { return }
         actionModel = RoutineActionModel(
             provider: dependencies.routine,
-            timeProvider: dependencies.timeProvider,
+            timeProvider: RoutineActionClock(
+                base: dependencies.timeProvider,
+                serverClock: (dependencies.apiClient as? MobileAPITransport)?.serverClock
+            ),
             keyProvider: dependencies.idempotencyKeyProvider,
             invalidationCenter: invalidationCenter,
             patientTimeZone: dependencies.patientTimeZone,
@@ -271,11 +274,10 @@ struct RoutineDetailView: View {
     /// the actions open at the earlier of the two: a phone ahead waits for
     /// the server, a phone behind waits for itself.
     private var serverNow: Date {
-        let deviceNow = dependencies.timeProvider.now
-        guard let transport = dependencies.apiClient as? MobileAPITransport else {
-            return deviceNow
-        }
-        return transport.serverClock.actionableNow(deviceNow: deviceNow)
+        RoutineActionClock(
+            base: dependencies.timeProvider,
+            serverClock: (dependencies.apiClient as? MobileAPITransport)?.serverClock
+        ).now
     }
 
     private func availableAtText(_ upcoming: RoutineUpcomingOccurrence) -> String {

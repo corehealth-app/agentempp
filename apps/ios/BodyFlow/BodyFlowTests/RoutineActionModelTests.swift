@@ -124,6 +124,76 @@ struct RoutineActionModelTests {
         #expect(configuration.upcoming == nil)
     }
 
+    // Staging finding (2026-09-29/30): occurred_at was the moment the detail
+    // opened, not the tap. A patient who opens at 16:05 and taps at 16:50
+    // must record 16:50.
+    @Test("taken records the moment of the tap, not when the detail opened")
+    func takenRecordsTheTapMoment() async throws {
+        let provider = RoutineActionProvider(results: [.success(Self.receipt(.taken))])
+        let clock = MovingTimeProvider(Self.occurredAt)
+        let model = RoutineActionModel(
+            provider: provider,
+            timeProvider: clock,
+            keyProvider: DeterministicIdempotencyKeyProvider(prefix: "routine-action"),
+            invalidationCenter: FeatureInvalidationCenter(),
+            patientTimeZone: PatientTimeZoneContext(documentedIANAIdentifier: "America/Sao_Paulo"),
+            context: RoutineOccurrenceContext(
+                kind: .supplement,
+                itemID: "supplement-1",
+                reminderRuleID: "rule-1",
+                scheduledFor: APITimestamp(value: Self.occurredAt)
+            )
+        )
+        let tap = Self.occurredAt.addingTimeInterval(45 * 60)
+        clock.set(tap)
+
+        await model.submit(status: .taken)
+
+        let attempt = try #require(await provider.attempts.first)
+        #expect(attempt.payload.occurredAt.value == tap)
+    }
+
+    @Test("a snooze is measured from the tap as well")
+    func snoozeMeasuredFromTheTap() async throws {
+        let provider = RoutineActionProvider(results: [.success(Self.receipt(.snoozed))])
+        let clock = MovingTimeProvider(Self.occurredAt)
+        let model = RoutineActionModel(
+            provider: provider,
+            timeProvider: clock,
+            keyProvider: DeterministicIdempotencyKeyProvider(prefix: "routine-action"),
+            invalidationCenter: FeatureInvalidationCenter(),
+            patientTimeZone: PatientTimeZoneContext(documentedIANAIdentifier: "America/Sao_Paulo"),
+            context: RoutineOccurrenceContext(
+                kind: .supplement,
+                itemID: "supplement-1",
+                reminderRuleID: "rule-1",
+                scheduledFor: APITimestamp(value: Self.occurredAt)
+            )
+        )
+        let tap = Self.occurredAt.addingTimeInterval(10 * 60)
+        clock.set(tap)
+
+        await model.submit(status: .snoozed, selection: .minutes(15))
+
+        let attempt = try #require(await provider.attempts.first)
+        #expect(attempt.payload.occurredAt.value == tap)
+        #expect(attempt.payload.snoozedUntil?.value == tap.addingTimeInterval(900))
+    }
+
+    // A phone 7 min ahead of the server sent occurred_at beyond the server's
+    // +5 min window (422 occurred_at_out_of_range). The routine clock is the
+    // earlier of the phone and the server estimate.
+    @Test("the routine clock never runs ahead of the server estimate")
+    func routineClockHeldToServer() {
+        let server = ServerClockEstimate()
+        let phone = Self.occurredAt
+        server.record(dateHeader: "Tue, 29 Sep 2026 19:03:00 GMT", receivedAt: Date(timeIntervalSince1970: 1_790_709_000))
+        let clock = RoutineActionClock(base: FixedTimeProvider(value: phone), serverClock: server)
+        #expect(clock.now == phone.addingTimeInterval(-420))
+        let behind = RoutineActionClock(base: FixedTimeProvider(value: phone), serverClock: nil)
+        #expect(behind.now == phone)
+    }
+
     @Test("taken uses the injected occurrence time and omits snooze")
     func takenUsesExactOccurrence() async throws {
         let provider = RoutineActionProvider(results: [.success(Self.receipt(.taken))])
@@ -555,4 +625,12 @@ actor RoutineActionProvider: RoutineProviding {
         guard !histories.isEmpty else { throw BodyFlowCapabilityError.operationUnavailable }
         return histories.removeFirst()
     }
+}
+
+private final class MovingTimeProvider: TimeProviding, @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Date
+    init(_ value: Date) { self.value = value }
+    var now: Date { lock.withLock { value } }
+    func set(_ date: Date) { lock.withLock { value = date } }
 }

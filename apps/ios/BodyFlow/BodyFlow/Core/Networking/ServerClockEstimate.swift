@@ -43,3 +43,19 @@ final class ServerClockEstimate: @unchecked Sendable {
         return formatter.date(from: value)
     }
 }
+
+/// The clock a routine action is stamped with (`occurred_at`) and opened
+/// on: the earlier of the phone's clock and the server estimate, so a phone
+/// ahead never stamps a time the server rejects as future
+/// (`occurred_at_out_of_range`, +5 min window) and a phone behind still waits
+/// for itself (`scheduled_for <= occurred_at`). Without a server reading it
+/// is the phone's clock (offline window).
+struct RoutineActionClock: TimeProviding {
+    let base: any TimeProviding
+    let serverClock: ServerClockEstimate?
+
+    var now: Date {
+        let deviceNow = base.now
+        return serverClock?.actionableNow(deviceNow: deviceNow) ?? deviceNow
+    }
+}

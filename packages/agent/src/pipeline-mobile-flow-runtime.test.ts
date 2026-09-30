@@ -273,7 +273,9 @@ describe('3.4 S3 — plan generator identity', () => {
         })
         .catch(() => undefined)
       // The generator must actually have been reached (no vacuous pass).
-      expect(identities).toHaveLength(1)
+      // An invalid Flow diet answer gets one generator retry; the legacy
+      // WhatsApp path and the training generator keep their call counts.
+      expect(identities).toHaveLength(identity === 'flow' && tool.name === 'gera_dieta' ? 2 : 1)
       expect(identities[0]).toMatch(identity === 'flow' ? /^Você é o Flow/ : /^Você é Dr\. Roberto Menescal/)
     }
   })

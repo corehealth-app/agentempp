@@ -2217,6 +2217,22 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Common mistakes" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Erros comuns" } }
     } },
+    "plan.draft.value.horizon.daily" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Daily" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Diário" } }
+    } },
+    "plan.draft.value.horizon.weekly" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Weekly" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Semanal" } }
+    } },
+    "plan.draft.value.mode.referencia" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Reference" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Referência" } }
+    } },
+    "plan.draft.value.mode.rigida" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Strict" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Rígida" } }
+    } },
     "plan.draft.detail.mode" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Mode" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Modo" } }

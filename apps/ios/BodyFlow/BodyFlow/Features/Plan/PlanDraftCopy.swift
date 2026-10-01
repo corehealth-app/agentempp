@@ -92,11 +92,16 @@ enum PlanDraftCopy {
         text: String,
         language: SupportedAppLanguage
     ) -> String {
-        guard key == "plan_type",
-              ["split", "full_body", "custom"].contains(text) else {
-            return text
+        let localizationKey: String
+        switch (key, text) {
+        case ("plan_type", "split"), ("plan_type", "full_body"), ("plan_type", "custom"):
+            localizationKey = "plan.training.type." + text
+        case ("mode", "rigida"), ("mode", "referencia"):
+            localizationKey = "plan.draft.value.mode." + text
+        case ("horizon", "daily"), ("horizon", "weekly"):
+            localizationKey = "plan.draft.value.horizon." + text
+        default: return text
         }
-        let localizationKey = "plan.training.type." + text
         return string(String.LocalizationValue(stringLiteral: localizationKey), language: language)
     }
 

@@ -1310,6 +1310,33 @@ private actor PlanTransportSpy: MobileAPIEnvelopeExecuting {
 
 @Suite("Plan draft words by origin")
 struct PlanDraftOriginCopyTests {
+    @Test("physical Flow diet review localizes referencia and daily without changing payload")
+    func physicalDietMetadataLabels() throws {
+        let payload = try JSONDecoder().decode(JSONValue.self, from: Data(
+            #"{"mode":"referencia","horizon":"daily","meta_kcal":3361,"meta_protein_g":186.1}"#.utf8
+        ))
+        let document = PlanDraftDocument(domain: .nutrition, payload: payload)
+        let raw = document.planDetails(language: .portugueseBrazil)
+        #expect(raw.map(\.text) == ["referencia", "daily", "3361", "186,1"])
+        #expect(PlanDraftCopy.detailValue(key: "mode", text: "referencia", language: .portugueseBrazil) == "Referência")
+        #expect(PlanDraftCopy.detailValue(key: "horizon", text: "daily", language: .portugueseBrazil) == "Diário")
+        #expect(PlanDraftCopy.detailValue(key: "mode", text: "referencia", language: .englishUnitedStates) == "Reference")
+        #expect(PlanDraftCopy.detailValue(key: "horizon", text: "daily", language: .englishUnitedStates) == "Daily")
+        #expect(document.root == payload)
+    }
+
+    @Test("neighboring closed diet enums localize while unknown and unrelated values stay literal")
+    func dietMetadataNeighbors() {
+        #expect(PlanDraftCopy.detailValue(key: "mode", text: "rigida", language: .portugueseBrazil) == "Rígida")
+        #expect(PlanDraftCopy.detailValue(key: "mode", text: "rigida", language: .englishUnitedStates) == "Strict")
+        #expect(PlanDraftCopy.detailValue(key: "horizon", text: "weekly", language: .portugueseBrazil) == "Semanal")
+        #expect(PlanDraftCopy.detailValue(key: "horizon", text: "weekly", language: .englishUnitedStates) == "Weekly")
+        #expect(PlanDraftCopy.detailValue(key: "horizon", text: "monthly", language: .portugueseBrazil) == "monthly")
+        #expect(PlanDraftCopy.detailValue(key: "mode", text: "custom", language: .portugueseBrazil) == "custom")
+        #expect(PlanDraftCopy.detailValue(key: "notes", text: "daily", language: .portugueseBrazil) == "daily")
+        #expect(PlanDraftCopy.detailValue(key: "plan_type", text: "full_body", language: .portugueseBrazil) == "Corpo inteiro")
+    }
+
     private func text(_ key: String.LocalizationValue, _ language: SupportedAppLanguage) -> String {
         PlanDraftCopy.string(key, language: language)
     }

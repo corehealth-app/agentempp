@@ -224,6 +224,26 @@ final class Prompt13TodayUITests: XCTestCase {
     }
 
     @MainActor
+    func testExpandedTodayDetailsRenderLocalizedStatusLabels() {
+        let support = BodyFlowUITestSupport(testCase: self)
+        let app = support.launch(scenario: .loaded)
+        let details = element("today.energy.details", in: app)
+        XCTAssertTrue(details.waitForExistence(timeout: 5))
+        for _ in 0..<3 where !details.isHittable { app.swipeUp() }
+        XCTAssertTrue(details.isHittable)
+        details.tap()
+
+        let balance = app.staticTexts["Dia em andamento"]
+        XCTAssertTrue(balance.waitForExistence(timeout: 5))
+        let hydration = app.staticTexts["Registrado sem meta"]
+        // The status line combines its accessibility children. Verify its
+        // rendered copy rather than requiring its child text to accept a tap.
+        XCTAssertTrue(hydration.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["provisional"].exists)
+        XCTAssertFalse(app.staticTexts["tracked_without_target"].exists)
+    }
+
+    @MainActor
     private func element(
         _ identifier: String,
         in app: XCUIApplication

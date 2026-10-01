@@ -1,5 +1,32 @@
 import SwiftUI
 
+enum TodayStatusText {
+    enum Kind { case balance, protein, hydration }
+
+    static func label(
+        _ code: String,
+        kind: Kind,
+        language: SupportedAppLanguage
+    ) -> String {
+        let key: String.LocalizationValue
+        switch (kind, code) {
+        case (.balance, "provisional"): key = "today.status.day-in-progress"
+        case (.balance, "final"): key = "today.status.final-balance"
+        case (.balance, "insufficient_data"): key = "today.status.insufficient-data"
+        case (.protein, "below_target"): key = "today.status.below-target"
+        case (.protein, "target_unavailable"): key = "today.status.target-unavailable"
+        case (.protein, "target_reached"), (.hydration, "target_reached"):
+            key = "today.status.target-reached"
+        case (.hydration, "not_recorded"): key = "today.status.no-records"
+        case (.hydration, "tracked_without_target"): key = "today.status.tracked-without-target"
+        case (.hydration, "not_started"): key = "today.status.not-started"
+        case (.hydration, "in_progress"): key = "today.status.in-progress"
+        default: return code
+        }
+        return TodayCopy.string(key, language: language)
+    }
+}
+
 struct TodayEnergyDescriptor: Equatable, Sendable {
     let targetKcal: Int?
     let consumedKcal: Int
@@ -273,7 +300,7 @@ struct TodaySummaryPanel: View {
             Divider()
             FixtureMetricRow(
                 title: copy("today.energy.balance-status"),
-                value: energy.dailyBalanceStatus
+                value: TodayStatusText.label(energy.dailyBalanceStatus, kind: .balance, language: language)
             )
         }
     }
@@ -305,7 +332,7 @@ struct TodaySummaryPanel: View {
             Divider()
             FixtureMetricRow(
                 title: copy("metric.status"),
-                value: protein.status
+                value: TodayStatusText.label(protein.status, kind: .protein, language: language)
             )
         }
         .accessibilityIdentifier("today.protein.details")
@@ -337,7 +364,7 @@ struct TodaySummaryPanel: View {
             }
             Divider()
             BodyFlowStatusLine(
-                hydration.status,
+                TodayStatusText.label(hydration.status, kind: .hydration, language: language),
                 kind: .info,
                 font: BodyFlowTypography.callout
             )

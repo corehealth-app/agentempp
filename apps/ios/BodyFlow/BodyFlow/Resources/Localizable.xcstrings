@@ -1,6 +1,166 @@
 {
   "sourceLanguage" : "pt-BR",
   "strings" : {
+"today.status.day-in-progress" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Day in progress"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Dia em andamento"
+      }
+    }
+  }
+},
+"today.status.final-balance" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Final balance"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Balanço final"
+      }
+    }
+  }
+},
+"today.status.insufficient-data" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Insufficient data"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Dados insuficientes"
+      }
+    }
+  }
+},
+"today.status.below-target" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Below target"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Abaixo da meta"
+      }
+    }
+  }
+},
+"today.status.target-unavailable" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Target unavailable"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Meta indisponível"
+      }
+    }
+  }
+},
+"today.status.target-reached" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Target reached"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Meta atingida"
+      }
+    }
+  }
+},
+"today.status.no-records" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "No records"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Nenhum registro"
+      }
+    }
+  }
+},
+"today.status.tracked-without-target" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Recorded without a target"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Registrado sem meta"
+      }
+    }
+  }
+},
+"today.status.not-started" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Not started yet"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Ainda não iniciado"
+      }
+    }
+  }
+},
+"today.status.in-progress" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "In progress"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Em andamento"
+      }
+    }
+  }
+},
 "app.onboarding.error.message" : {
   "localizations": {
     "en": {

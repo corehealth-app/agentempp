@@ -23,6 +23,7 @@ final class TodayViewModel {
     private var sequence = 0
 
     private(set) var state: FeatureReadState<TodaySnapshot> = .idle
+    private(set) var isRefreshing = false
 
     init(provider: any TodayProviding) {
         self.provider = provider
@@ -92,15 +93,23 @@ final class TodayViewModel {
             }
             return true
         case .retry:
-            return revision == currentRevision
+            guard revision == currentRevision else { return false }
+            if let activeLoad,
+               activeLoad.revision == revision,
+               !activeLoad.ownership.isInvalidated {
+                return false
+            }
+            return true
         }
     }
 
     private func publishLoadingState() {
         if let previousValue = visibleSnapshot {
             state = .loaded(previousValue)
+            isRefreshing = true
         } else {
             state = .loading
+            isRefreshing = false
         }
     }
 
@@ -116,6 +125,7 @@ final class TodayViewModel {
             try Task.checkCancellation()
             guard canPublish(identity) else { return }
             completedRevisions.insert(identity.revision)
+            isRefreshing = false
             state = response.data.completionStatus.status == "no_records"
                 ? .empty
                 : .loaded(response.data)
@@ -129,6 +139,7 @@ final class TodayViewModel {
             }
             guard canPublish(identity) else { return }
             completedRevisions.insert(identity.revision)
+            isRefreshing = false
             publish(error: error, previousValue: visibleSnapshot)
         }
     }
@@ -139,6 +150,7 @@ final class TodayViewModel {
             return
         }
         state = identity.previousState
+        isRefreshing = false
         activeLoad = nil
     }
 

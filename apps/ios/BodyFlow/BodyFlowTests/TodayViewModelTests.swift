@@ -114,6 +114,120 @@ struct TodayViewModelTests {
         #expect(await provider.callCount == 2)
     }
 
+    @Test("repeated manual Today refresh shares one in-flight read and preserves the prior snapshot")
+    func repeatedManualRefreshIsDeduplicated() async throws {
+        let previous = try Self.octoberFirstAudioSnapshot(confirmed: false)
+        let current = try Self.octoberFirstAudioSnapshot(confirmed: true)
+        let provider = TodayControlledProvider()
+        let model = TodayViewModel(provider: provider)
+
+        let initial = Task { await model.load(revision: 0) }
+        await provider.waitUntilStarted(1)
+        await provider.succeed(call: 1, with: previous)
+        await initial.value
+
+        let firstRefresh = Task { await model.retry() }
+        await provider.waitUntilStarted(2)
+        #expect(model.state == .loaded(previous.data))
+        #expect(model.isRefreshing)
+
+        let probe = TodayRetryCompletionProbe()
+        let duplicateRefresh = Task {
+            await model.retry()
+            probe.finished = true
+        }
+        for _ in 0..<1_000 {
+            let calls = await provider.callCount
+            if probe.finished || calls >= 3 { break }
+            await Task.yield()
+        }
+        #expect(await provider.callCount == 2)
+        #expect(model.state == .loaded(previous.data))
+
+        await provider.succeed(call: 2, with: current)
+        await firstRefresh.value
+        for _ in 0..<1_000 {
+            let calls = await provider.callCount
+            if probe.finished || calls >= 3 { break }
+            await Task.yield()
+        }
+        if await provider.callCount >= 3 {
+            await provider.succeed(call: 3, with: previous)
+        }
+        await duplicateRefresh.value
+        #expect(model.state == .loaded(current.data))
+        #expect(!model.isRefreshing)
+    }
+
+    @Test("two pull refreshes during a suspended invalidation do not repeat independent reads")
+    func refreshDuringInvalidationDoesNotDuplicateIndependentReads() async throws {
+        let previous = try Self.octoberFirstAudioSnapshot(confirmed: false)
+        let current = try Self.octoberFirstAudioSnapshot(confirmed: true)
+        let provider = TodayControlledProvider()
+        let model = TodayViewModel(provider: provider)
+        let coordinator = TodayRefreshCoordinator()
+        let initial = Task { await model.load(revision: 0) }
+        await provider.waitUntilStarted(1)
+        await provider.succeed(call: 1, with: previous)
+        await initial.value
+
+        let invalidation = Task { await model.load(revision: 2) }
+        await provider.waitUntilStarted(2)
+        var contentReads = 0
+        var coachReads = 0
+        for _ in 0..<2 {
+            await coordinator.run(isExternallyRefreshing: model.isRefreshing) {
+                await model.retry()
+                contentReads += 1
+                coachReads += 1
+            }
+        }
+        #expect(contentReads == 0)
+        #expect(coachReads == 0)
+        #expect(await provider.callCount == 2)
+        #expect(model.state == .loaded(previous.data))
+        await provider.succeed(call: 2, with: current)
+        await invalidation.value
+        #expect(model.state == .loaded(current.data))
+        await coordinator.run(isExternallyRefreshing: model.isRefreshing) {
+            contentReads += 1
+            coachReads += 1
+        }
+        #expect(contentReads == 1)
+        #expect(coachReads == 1)
+    }
+
+    @Test("a confirmation invalidation supersedes manual refresh without dropping the visible snapshot")
+    func confirmationSupersedesManualRefresh() async throws {
+        let previous = try Self.octoberFirstAudioSnapshot(confirmed: false)
+        let current = try Self.octoberFirstAudioSnapshot(confirmed: true)
+        let provider = TodayControlledProvider()
+        let model = TodayViewModel(provider: provider)
+        let center = FeatureInvalidationCenter()
+
+        let initial = Task { await model.load(revision: center.revision(for: .today)) }
+        await provider.waitUntilStarted(1)
+        await provider.succeed(call: 1, with: previous)
+        await initial.value
+
+        let manualRefresh = Task { await model.retry() }
+        await provider.waitUntilStarted(2)
+        center.record(.registrationConfirmed)
+        let confirmationRead = Task { await model.load(revision: center.revision(for: .today)) }
+        await provider.waitUntilStarted(3)
+        #expect(model.state == .loaded(previous.data))
+        #expect(model.isRefreshing)
+
+        await provider.succeed(call: 3, with: current)
+        await confirmationRead.value
+        await provider.succeed(call: 2, with: previous)
+        await manualRefresh.value
+
+        #expect(model.state == .loaded(current.data))
+        #expect(!model.isRefreshing)
+        #expect(await provider.callCount == 3)
+    }
+
     @Test("cancelled retry restores offline with the exact previous snapshot")
     func cancelledRetryRestoresStaleOffline() async throws {
         let response = try Self.snapshot(localDate: "2026-07-20")
@@ -139,6 +253,7 @@ struct TodayViewModelTests {
         await cancelledRetry.value
 
         #expect(model.state == .offline(previousValue: response.data))
+        #expect(!model.isRefreshing)
     }
 
     @Test("cancelled retry restores failed with the exact previous snapshot")
@@ -170,6 +285,7 @@ struct TodayViewModelTests {
         await cancelledRetry.value
 
         #expect(model.state == expected)
+        #expect(!model.isRefreshing)
     }
 
     @Test("cancelled retry restores failed without inventing a snapshot")
@@ -481,6 +597,11 @@ struct TodayViewModelTests {
             from: JSONSerialization.data(withJSONObject: object)
         )
     }
+}
+
+@MainActor
+private final class TodayRetryCompletionProbe {
+    var finished = false
 }
 
 private actor TodayQueueProvider: TodayProviding {

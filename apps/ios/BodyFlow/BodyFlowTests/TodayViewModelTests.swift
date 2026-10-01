@@ -321,6 +321,51 @@ struct TodayViewModelTests {
         #expect(await provider.callCount == 2)
     }
 
+    // Physical staging, 2026-10-01: the six-second audio said
+    // "No almoço eu comi 150 gramas de arroz branco cozido e 120 gramas de frango grelhado".
+    // Registration 2777524f-c4e2-4a90-befc-8bea387092b5 was confirmed at
+    // 14:54:19.051Z; Today still showed zero and 27/09 23:55 before manual refresh.
+    // This characterizes the read model and invalidation with the observed figures;
+    // it does not prove microphone capture, SwiftUI task delivery or device latency.
+    @Test("the exact post-audio Today figures replace the old snapshot after confirmation invalidation without Retry")
+    func exactOctoberFirstAudioConfirmationRead() async throws {
+        let previous = try Self.octoberFirstAudioSnapshot(confirmed: false)
+        let official = try Self.octoberFirstAudioSnapshot(confirmed: true)
+        let provider = TodayControlledProvider()
+        let model = TodayViewModel(provider: provider)
+        let center = FeatureInvalidationCenter()
+
+        let initialTask = Task { await model.load(revision: center.revision(for: .today)) }
+        await provider.waitUntilStarted(1)
+        await provider.succeed(call: 1, with: previous)
+        await initialTask.value
+        #expect(model.state == .loaded(previous.data))
+
+        center.record(.registrationConfirmed)
+        #expect(center.revision(for: .history) == 1)
+        let confirmedRevision = center.revision(for: .today)
+        let confirmationTask = Task { await model.load(revision: confirmedRevision) }
+        await provider.waitUntilStarted(2)
+        // An immediate capture can legitimately retain the old figures while
+        // the server read is pending. The completed read must replace them.
+        #expect(model.state == .loaded(previous.data))
+        await provider.succeed(call: 2, with: official)
+        await confirmationTask.value
+        await model.load(revision: confirmedRevision)
+
+        #expect(model.state == .loaded(official.data))
+        #expect(await provider.callCount == 2)
+        let visible = TodayPresentation(snapshot: official.data)
+        #expect(official.data.consumed.caloriesKcal == 383)
+        #expect(official.data.consumed.proteinG == Decimal(string: "42.22"))
+        #expect(visible.energy.remainingFoodKcal == 2978)
+        #expect(visible.protein.targetG == Decimal(string: "186.1"))
+        #expect(official.data.meals.map(\.id) == [
+            "a29a59a5-7050-4e3c-bb19-84d37c4fc7c5",
+            "10c3250a-f072-48b3-9e87-b4a8ae6555ba",
+        ])
+    }
+
     @Test("newer revision suppresses a late error from the older load")
     func newerRevisionSuppressesLateError() async throws {
         let newer = try Self.snapshot(localDate: "2026-07-21")
@@ -361,6 +406,57 @@ struct TodayViewModelTests {
 
         #expect(model.state == .loaded(visibleAgain.data))
         #expect(await provider.callCount == 2)
+    }
+
+    private static func octoberFirstAudioSnapshot(confirmed: Bool) throws -> TodayResponse {
+        let base = try snapshot(localDate: "2026-10-01")
+        func decimal(_ value: String) throws -> Decimal { try #require(Decimal(string: value)) }
+        func timestamp(_ value: String) throws -> APITimestamp {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return APITimestamp(value: try #require(formatter.date(from: value)))
+        }
+        let consumedAt = try timestamp("2026-10-01T14:52:24.051Z")
+        // Build Decimal from the recorded decimal text, avoiding a Double
+        // round-trip in JSONSerialization that would change 42.22 itself.
+        let consumedProtein = try decimal(confirmed ? "42.22" : "0")
+        let targetProtein = try decimal("186.1")
+        let meals: [TodayMeal] = confirmed ? [
+            TodayMeal(
+                id: "a29a59a5-7050-4e3c-bb19-84d37c4fc7c5", mealType: "almoco",
+                foodName: "arroz branco cozido", quantityG: 150, kcal: try decimal("192.4"),
+                proteinG: try decimal("3.78"), carbsG: try decimal("42.09"), fatG: try decimal("0.35"),
+                consumedAt: consumedAt, nutritionSource: "canonical_exact"
+            ),
+            TodayMeal(
+                id: "10c3250a-f072-48b3-9e87-b4a8ae6555ba", mealType: "almoco",
+                foodName: "frango grelhado", quantityG: 120, kcal: 191,
+                proteinG: try decimal("38.44"), carbsG: 0, fatG: try decimal("2.98"),
+                consumedAt: consumedAt, nutritionSource: "canonical_exact"
+            ),
+        ] : []
+        return TodayResponse(data: TodaySnapshot(
+            localDate: "2026-10-01", protocolName: "ganho_massa",
+            targets: TodayTargets(caloriesKcal: 3361, proteinG: targetProtein,
+                                  source: "daily_snapshot", caloriesSource: "daily_snapshot", proteinSource: "daily_snapshot"),
+            consumed: TodayConsumed(caloriesKcal: confirmed ? 383 : 0, proteinG: consumedProtein,
+                                    carbsG: try decimal(confirmed ? "42.09" : "0"), fatG: try decimal(confirmed ? "3.33" : "0"),
+                                    source: "daily_snapshot"),
+            remainingFoodKcal: confirmed ? 2978 : 3361, foodExcessKcal: nil,
+            exerciseKcal: 0, dailyBalanceKcal: confirmed ? -2978 : -3361, dailyBalanceStatus: "provisional",
+            proteinStatus: TodayProteinStatus(consumedG: consumedProtein, targetG: targetProtein,
+                                              remainingG: try decimal(confirmed ? "143.88" : "186.1"),
+                                              percentage: confirmed ? 23 : 0, status: "below_target"),
+            meals: meals, workouts: [],
+            hydration: TodayHydration(consumedML: 0, targetML: nil, remainingML: nil, percentage: nil, status: "not_recorded"),
+            supplements: TodayRoutineSection(availability: "not_configured", items: []),
+            medications: TodayRoutineSection(availability: "not_configured", items: []),
+            pendingActions: TodayPendingActions(registrations: [], mealGaps: base.data.pendingActions.mealGaps),
+            block7700: nil, completionStatus: base.data.completionStatus,
+            sources: base.data.sources, calculationVersion: base.data.calculationVersion,
+            updatedAt: try timestamp(confirmed ? "2026-10-01T14:54:19.051Z" : "2026-09-28T02:55:00.000Z"),
+            generatedAt: try timestamp("2026-10-01T14:55:00.000Z")
+        ), meta: base.meta)
     }
 
     private static func snapshot(

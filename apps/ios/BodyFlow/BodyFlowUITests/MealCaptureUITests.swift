@@ -214,10 +214,15 @@ final class MealCaptureUITests: XCTestCase {
     @MainActor
     private func turnOn(_ toggle: XCUIElement) {
         toggle.tap()
-        if toggle.value as? String != "1" {
-            toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
-        }
-        XCTAssertEqual(toggle.value as? String, "1")
+        let enabled = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "1"),
+            object: toggle
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [enabled], timeout: 5),
+            .completed,
+            "O item deve ficar confirmado após um único toque"
+        )
     }
 
     @MainActor

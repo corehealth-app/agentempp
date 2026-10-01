@@ -74,3 +74,49 @@ Produção não foi alterada. Nenhum novo ambiente pago foi criado. O Preview e 
 ### Próxima ação física
 
 No iPhone: `Registrar → Refeição → Gravar áudio → Começar gravação`; dizer em voz alta `No almoço eu comi 150 gramas de arroz branco cozido e 120 gramas de frango grelhado`; tocar em `Parar`; deixar em `Usar gravação` sem tocar nessa opção; bloquear o iPhone e avisar. Só então reconectar, conferir a tela, enviar ao staging e verificar transcrição, revisão e persistência. A foto do plano sintético e o smoke A/B vêm depois.
+
+
+## Atualização de 2026-10-01 — áudio físico enviado e confirmado
+
+- Eduardo deixou uma nova gravação sintética de **6 segundos** em `Usar gravação`. Foi enviada ao staging pelo app; a revisão mostrou literalmente `No almoço eu comi 150g de arroz branco cozido e 120g de frango grelhado.` As quantidades foram apresentadas como informadas pelo usuário. A proposta mostrou 383,4 kcal, 42,2 g de proteína, 42,1 g de carboidrato e 3,3 g de gordura; a refeição sintética da QA A foi confirmada.
+- Consulta somente leitura no Supabase `xitugspwfxkcluxvrdeg`: asset `653c5bdd-2ff8-478d-91a3-8e7687776201`, `audio_note`, MIME `audio/mp4`, 107.275 bytes declarados e reais, bucket `audio-notes` **privado**, objeto presente, estado `processed`, sem failure_code, retenção até 2026-10-31 14:50:34 UTC. Nenhuma URL assinada nem credencial foi exposta.
+- Proposta `2777524f-c4e2-4a90-befc-8bea387092b5` confirmada às 14:54:19 UTC. Dois logs foram persistidos: arroz `a29a59a5-7050-4e3c-bb19-84d37c4fc7c5` (150 g, 192,4 kcal, 3,78 g de proteína) e frango `10c3250a-f072-48b3-9e87-b4a8ae6555ba` (120 g, 191 kcal, 38,44 g de proteína), ambos Almoço. Histórico mostrou os dois itens e detalhe do arroz com 150 g/192,4 kcal.
+- Após recarregar manualmente Hoje, a UI mostrou 383 kcal consumidas, 2.978 kcal restantes, balanço -2.978 kcal, proteína 42,22 g, meta 186,1 g, restante 143,88 g, 23%. **Áudio físico: upload/transcrição/revisão/confirmação/persistência verificados.** A atualização automática de Hoje tem o achado abaixo; não confundir atualização manual bem-sucedida com resolução dele.
+- Plano por foto: documento sintético `/tmp/performe-qa-plano-treino.png` preparado no Mac, sem dados pessoais. A opção `Fotografar o plano` abriu câmera preta e o macOS avisou `A câmera do iPhone não está disponível pelo Mac.` Ação física exata solicitada ao Eduardo; extração/revisão ainda não verificadas. Não confirmar o plano importado nem substituir o treino QA existente.
+
+### Regressão manual exata — Hoje desatualizado após confirmação de áudio
+
+**Estado: OPEN / causa não estabelecida.** O intervalo entre a entrada em Hoje e o refresh manual não foi medido: a captura pode representar o snapshot anterior durante uma leitura em curso. A repetição precisa aguardar o fim do carregamento/limite de leitura do app e registrar duração e estado antes de classificar falha persistente. Nenhuma alteração de refresh feita com base somente no sintoma. Invalidação de confirmação, compartilhamento do centro entre shell e sheet e política de transporte sem cache foram inspecionados.
+
+1. Usar a QA A no iPhone com Hoje previamente carregado: 0 kcal consumidas, meta 3.361 kcal, atualização antiga `27/09/2026 23:55`.
+2. Em Registrar → Refeição, gravar 6 segundos dizendo `No almoço eu comi 150 gramas de arroz branco cozido e 120 gramas de frango grelhado`.
+3. Enviar, revisar arroz 150 g/frango 120 g, calcular e confirmar a proposta de 383,4 kcal/42,22 g de proteína.
+4. Fechar o sheet e entrar em Hoje, sem tocar em refresh. **Esperado:** carregar o snapshot atual do serviço, exibindo 383 kcal/42,22 g de proteína, 2.978 kcal restantes e data atual. **Observado nesta execução:** 0 kcal, proteína 0 e data antiga permaneceram.
+5. Tocar no refresh. **Observado:** snapshot atual correto e dois logs presentes em Hoje/Histórico. Esta etapa comprova disponibilidade dos dados e funciona como controle, não como correção do passo 4.
+
+### Regressão exata — códigos técnicos em Mais detalhes
+
+Depois do passo 5 acima, expandir Mais detalhes. O iPhone exibiu literalmente `provisional`, `below_target` e `not_recorded` em balanço, proteína e hidratação. O teste `TodayExpandedStatusLabelTests` usa essa combinação e os valores 3.361/383/2.978 kcal, 42,22/186,1/143,88 g, hidratação 0 sem meta. A correção de apresentação e os gates serão registrados após resultados; o transporte/contrato e os cálculos devem permanecer literais.
+
+Production intocada; nenhum ambiente pago novo; sem push/PR/merge. WhatsApp: nenhum arquivo compartilhado alterado nesta rodada. O custo adicional da transcrição curta não foi obtido do provedor; não declarar custo exato com base em estimativa anterior.
+
+
+## Atualização de 2026-10-01 — correção local dos estados em Hoje
+
+- Commit local `f101db5`: rótulos conhecidos de balanço, proteína e hidratação passam por localização **somente na apresentação iOS**. A combinação física exata `provisional/below_target/not_recorded` mostra `Dia em andamento/Abaixo da meta/Nenhum registro`; há traduções em inglês e cobertura dos estados vizinhos. Códigos desconhecidos continuam literais. Nenhuma fórmula, DTO, transporte, auth, RLS, schema ou integração compartilhada mudou. Os 10 novos itens do catálogo possuem ambos os idiomas; zero chaves anteriores foram alteradas.
+- RED: o cenário exato de `TodayExpandedStatusLabelTests` falhou nas 6 expectativas de tradução pt/en antes da correção. GREEN: **34 XCTest + 1.475 Swift Testing**, zero falhas. O log persistente está em `~/.local/share/performe-ai/pre-llm-e2e/today-status-unit-20261001.log`.
+- UI focada: `Prompt13TodayUITests.testExpandedTodayDetailsRenderLocalizedStatusLabels` passou. A primeira execução encontrou os rótulos traduzidos e falhou numa premissa adicionada nessa mesma rodada: exigir que o texto filho da linha de status fosse tocável. A linha combina os filhos de acessibilidade e o contrato desse teste é a renderização do texto. A premissa de toque foi corrigida; a segunda execução passou, mantendo as exigências de rótulos presentes e códigos crus ausentes. O runner da primeira execução permaneceu sem progresso após fechar a suíte e foi encerrado pelo PID específico, preservando o log de falha. **Isto não substitui a suíte UI canônica completa**, que continua parcialmente verificada.
+- Release staging compilou e `codesign --verify --deep --strict` passou. Bundle dev mantido: `com.performeai.app.dev.k6942zjtv6`; equipe e iPhone presentes no perfil; expiração real **2026-10-04 18:12:24 BRT**. O host BFF e o ref staging do build foram comparados com o candidato anterior; origem mantida. Após o gate canônico, o staging foi recompilado em pasta própria persistente e sua assinatura foi verificada novamente: `~/.local/share/performe-ai/pre-llm-e2e/today-status-staging-release/BodyFlow.app`, fonte iOS `f101db5`. Build novo preparado, **ainda não instalado** enquanto a captura física do plano está pendente.
+- Scanner: executá-lo diretamente no bundle dev resultou no guard esperado `UNEXPECTED_BUNDLE_IDENTIFIER`, sem PUBLIC_LEAK. Um Release canônico separado, sem assinatura e sem instalação, compilou com a configuração do projeto. Seu scanner passou, zero falhas e zero vazamentos públicos; 21 testes do scanner passaram. Não se alterou o scanner nem o bundle do app físico para passar o gate.
+- Diff revisado, `git diff --check` passou. Severidade da correção de rótulos: LOW; nenhuma correção HIGH/CRITICAL foi feita nesta rodada. A causa da observação de atualização de Hoje continua aberta. Sem push, PR, merge, tag ou deploy de backend; Production intocada; WhatsApp sem impacto identificado.
+- A consulta somente leitura repetida após a interrupção confirmou áudio `processed`, objeto presente, bucket privado, **2 logs / 383,40 kcal / 42,22 g de proteína**.
+- A imagem sintética do plano foi recriada em caminho persistente `~/.local/share/performe-ai/pre-llm-e2e/qa-plano-treino-20261001.png` para evitar depender de `/tmp`. O iPhone foi observado ainda na câmera do Performe; nenhuma foto aceita/processada foi verificada. **Ação física pendente:** fotografar esse documento no Mac, tocar em `Usar foto`, aguardar a revisão, bloquear o iPhone e avisar; não confirmar o plano.
+
+### Estado operacional atual
+
+- `REGRESSION STATUS: PARTIALLY VERIFIED` — unitária e UI focada acima passam; suíte canônica integral final pendente e instabilidade de navegação em lote preservada como achado.
+- `PRODUCTION STATUS: NOT DEPLOYED`; `IOS INTEGRATION STATUS: PARTIAL`.
+- `SECOND DELIVERY STATUS: BLOCKED`; `ROBERTO BETA CANDIDATE STATUS: BLOCKED`; `USER VISUAL ACCEPTANCE: PENDING FINAL REVIEW`.
+- Próximos gates: foto física do plano; instalação do Release novo sobre o app após a captura; conferir os três rótulos e repetir Hoje com duração medida; smoke real QA A/B; regressão canônica final; Biblioteca editorial e aceite visual humano ao final.
+- `DELIVERY CHANNEL STATUS: LOCAL-DEVICE-ONLY`. Nenhum TestFlight/loja/certificado novo foi solicitado ou contratado.
+- Nenhum novo recurso pago, novo worktree ou branch foi criado. Staging e Preview preexistentes permanecem necessários ao beta; closeout global ainda depende do término e de verificação no provedor. Custo adicional de áudio não foi obtido do provedor; estimativa anterior não foi transformada em valor confirmado.

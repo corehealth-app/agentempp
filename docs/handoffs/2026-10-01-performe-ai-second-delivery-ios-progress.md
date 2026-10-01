@@ -198,3 +198,75 @@ Production intocada; nenhum ambiente pago novo; sem push/PR/merge. WhatsApp: nen
 - Release iOS com xcconfig privado **v23** muda somente host BFF. Fonte iOS igual a **04e954f** (HEAD de build 08b08ed, backend/SQL/docs não alteram iOS). **BUILD SUCCEEDED + ANALYZE SUCCEEDED, zero erros**, assinatura estrita/equipe/UDID/bundle conferidos. Provisioning expira **04/10/2026 18:12:24 BRT**. Artefato `flow-target-staging-derived/Build/Products/Release-iphoneos/BodyFlow.app`; instalação por cima passou, sem apagar app/sessão, QA A preservada e Hoje ainda 42,22 g/500 ml/2.978 kcal.
 - Smoke Flow pós-deploy preparado no composer, **não enviado**: texto inserido pelo espelhamento apareceu fora de ordem, correção por colagem não completou e telefone entrou em uso; reconexão retornou **iPhone Não Encontrado**. Aguardar aparelho disponível e conferir frase antes de enviar. Drafts QA A continuam **7, 2 confirmados históricos**, sem novo plano nesta tentativa.
 - Biblioteca reconsultada em staging: **6 pt-BR + 6 en-US, todos draft**, nenhum publicado. Fluxo editorial humano e aceite visual ainda pendentes. Nenhum envio em nome de Roberto/Eduardo.
+
+## 2026-10-01 — lifecycle verificado de staging
+
+- Listagem oficial do parent **xuxehkhdvjivitduarvb** confirmou staging **xitugspwfxkcluxvrdeg**, branch ID **6d41a673-566b-4a6b-bbf7-3463b063979d**, name `bodyflow-staging`, **is_default=false, persistent=false, with_data=false, ACTIVE_HEALTHY**, criada 20/07/2026. `get_project` NotFound para o ref da branch é comportamento conhecido; SQL/branches confirmam presença. Parent/default Production preservado.
+- Staging: **KEPT**. Owner: workstream Performe AI beta; finalidade: banco do iPhone/BFF instalado, mídia e drafts editoriais em validação. Próxima revisão: aceite da segunda entrega ou substituição/retirada do candidato. Ambiente temporário potencialmente faturável preexistente. Dependências ainda ativas; dados **PRESERVE_REQUIRED** antes de retirada, inclusive Storage separado. Compute/fatura não consultados; custo recorrente exato não determinado.
+- Vercel projeto existente **prj_NTrnUNFXfmddMuci3VWjalfAoejW**, Preview atual **dpl_6MHg32BnJZHSBAFK1zap9TWqcp8W**: **KEPT**, app instalado usa o host. Preview anterior **dpl_GLErXCCTkuvXuaNqBmqn2qBWdZSp** mantido como rollback até smoke/aceite atual. Nenhuma base de compute persistente nova; consumo serverless não faturado/verificado nesta sessão. Revisar deploys substituídos após retirar referências do app e concluir aceite.
+- Projeto Vercel vazio acidental **prj_G6yu4s0xwWl6dzzLVDz8waCqfCXm**: **CLOSED**, remoção/ausência verificadas. Nenhum outro projeto/branch pago novo. Env temporário do pacote removido de `.vercel/.env.preview.local` e `apps/mobile-bff/.env.local` após deploy; ambos ausentes. CLI auth anterior e xcconfig do candidato preservados.
+- Fixture rotina **CLOSED**, duas ações conservadas. QA A/B e mídias anteriores pertencem ao beta e continuam preservadas. Nenhum worktree novo nesta rodada; checkout vigente ainda necessário; outros worktrees não foram limpos por inferência.
+- Regressão vizinha SQL: QA B Creatina conserva **16:00**, ocorrência de hoje **19:00Z pending**, regra ativa desde 29/09, sem dados da QA A.
+
+## 2026-10-01 — suíte UI canônica final
+
+- Suíte completa **BodyFlowUITests** no simulador Pro Max `44AFCC15-85B3-4823-801E-2837718B9266`, sem paralelismo: **171 testes, zero falhas**, encerrada **15:35 BRT**, duração 4.102,8 segundos. Fonte iOS **04e954f**, igual à do candidato instalado; alterações posteriores foram agent/SQL/documentação. Não é uma soma de execuções isoladas. Log privado: `ios-canonical-ui-final-20261001.log`.
+- Finalização do runner confirmada **15:45 BRT**: **exit 0 / TEST SUCCEEDED**. `xcresulttool` confirmou `Passed`, 171 passed, 0 failed, 0 skipped. O coletor adicional de diagnóstico do simulador expirou após 600 s, sem invalidar a sessão de testes; bundle `.xcresult` legível. Resumo privado: `ios-canonical-ui-final-summary-20261001.json`. Há um runtime warning `Invalid frame dimension (negative or non-finite)`; origem/regressão não determinadas, sem falha de teste associada no resumo. Não confundir testes aprovados com ausência de todo warning.
+- O gate UI completo que antes bloqueava o candidato agora passou. Isso não comprova entrega visual de notificação, fluxo editorial ou smoke físico da nova meta do Flow ainda não enviado. Regressão funcional da entrega continua **PARTIALLY VERIFIED** até concluir esses gates e a observação cronometrada de Hoje após confirmação.
+
+## Checkpoint de retomada — 2026-10-01, após 15:45 BRT
+
+### Estado operacional
+
+- **HOST:** `MacBook-Air-de-Eduardo.local`, Darwin, LOCAL_DEVELOPMENT; destinos cloud sensíveis separados do filesystem local. **REPOSITORY / WORKTREE:** `/Users/eduardohenrique/Developer/performe-ai-client-beta-flow-v1`; **BRANCH:** `codex/performe-ai-client-beta-flow-v1`. **STARTING HEAD:** a374553 nesta etapa; **HEAD antes deste checkpoint documental:** 450d785 (fonte funcional já commitada). SHA do commit documental final deve ser consultado no Git.
+- **SECOND DELIVERY STATUS / ROBERTO BETA CANDIDATE STATUS: BLOCKED**, pendências abaixo. Não declarar beta aceito por inferência.
+- **AUTHORITY STATUS: EXECUTED_WITHIN_STAGING_SCOPE**. Sem push/PR/merge/tag/Production/TestFlight/loja; escopo do gerador continua Flow-only, uma nova tentativa com motivo da recusa, travas preservadas.
+- **IOS INTEGRATION STATUS: STAGING_INSTALLED; FINAL_DEVICE_SMOKE_PENDING**. iPhone 13 Pro Max, UDID `00008110-001649510208401E`, bundle/equipe autorizados, Release v23 sobre app existente; sessão QA A mantida. BFF Preview `gw0tiyc19`, fonte agent 47a36aa; iOS 04e954f; SQL 20261001180504.
+- **REBRAND STATUS: PUBLIC_SURFACES_VERIFIED; DEV_BUNDLE_SCANNER_EXCEPTION_RECORDED**. Scanner Debug canônico PASS; Release dev anterior sem PUBLIC_LEAK, uma falha técnica esperada de bundle diferente do canônico. Não apresentar scanner Release estrito como PASS; bundle físico dev já autorizado. Assets públicos inalterados no v23.
+- **USER VISUAL ACCEPTANCE: PENDING_FINAL_REVIEW**.
+- **ANDROID STATUS: DEFERRED_TO_FINAL_DELIVERY**; **WHATSAPP STATUS: OUT_OF_PRODUCT_SCOPE; LEGACY_BEHAVIOR_PRESERVED_BY_CHANNEL_GUARDS_AND_TESTS**. Usuário avisado antes das alterações compartilhadas.
+- **PRODUCTION STATUS: NOT DEPLOYED**. `dfik0mb7c` e parent/default Supabase intocados.
+
+### E2E observado e limites
+
+| Fluxo | Evidência corrente |
+| --- | --- |
+| Auth / session restore / A-B-A | Troca física real no iPhone, B sem drafts A, A restaurada; candidato v23 preservou QA A. Gate UI completo passou. |
+| Onboarding | Gate UI passou; não repetir como cadastro físico novo nesta etapa. |
+| Hoje | Snapshot real 383 kcal/42,22 g/500 ml/2.978 kcal restantes. Regra intradia C5 preservada. Atualização automática após confirmação de áudio ainda exige repetição cronometrada. |
+| Texto / galeria / áudio importado / PDF | Fluxos cobertos pelo gate UI; não rotular essa execução como E2E físico novo dessas entradas. Preservar evidência PRE-LLM anterior, sem repetir chamadas pagas sem necessidade. |
+| Câmera de refeição | Captura/revisão reais, mídia privada e persistida; não confirmada só para testar. |
+| Gravação de áudio | 6 s sintéticos enviados/transcritos/revisados/confirmados; dois logs e histórico reais verificados. |
+| Peso / Progresso | 80 kg oficial com instante de medição no iPhone; demais indicadores preservados. |
+| Histórico | Refeição/arroz e ações de rotina verificados fisicamente e por SQL. |
+| Flow | Histórico e consumo reais reconhecidos no smoke anterior. Contexto/consulta_metricas corrigidos e deployados; novo smoke de meta ainda não enviado porque o aparelho ficou indisponível. |
+| Dieta | Retry autorizado já gerou draft válido, Revisão/Para revisar verificados; nenhuma confirmação indevida. Rótulos Referência/Diário corrigidos. Regra de meta para novas sugestões depois do peso aguarda decisão de produto. |
+| Treino | Draft anterior e plano QA preservados; importação por foto abriu revisão sem ativação. |
+| Foto de plano | Retry do mesmo asset após erro offline abriu revisão, 1 draft para o asset, literalidade OCR/missing fields preservados; causa de rede intermitente não estabelecida. |
+| Rotina | Tomado/Adiar/histórico no iPhone e SQL; ocorrência fantasma corrigida com teste exato. Fixture arquivada, 2 ações mantidas, regras ativas zero. |
+| Notificações | Ativação/agendamento/desativação no iPhone verificados. Banner entregue/tap NÃO verificados pela superfície disponível; não inferir entrega pela contagem. |
+| Biblioteca | 6 artigos x 2 idiomas, todos draft; nenhum publicado. Gate UI demo passou, fluxo editorial/publicação/E2E real ainda pendentes. |
+
+### Próxima ação concreta
+
+1. Quando o iPhone voltar a ser encontrado, reconectar sem reinstalar novamente, abrir Flow e **conferir/limpar o composer antes de enviar** a frase exata: `Resuma somente os registros de hoje, sem gerar planos.` Deve informar meta 3.361 kcal/186,1 g, consumo 383/42,22 e restante 2.978/143,88; comprovar no SQL que não criou/confirmou plano. O último texto digitado ficou fora de ordem e NÃO foi enviado.
+2. Repetir confirmação de refeição sintética em Hoje previamente carregado, medir o tempo de carregamento sem refresh e confrontar snapshot/logs. Não alterar invalidação nem fórmula baseado só na captura antiga. Teste exato de caracterização antes de eventual fix; revisão independente se grave.
+3. Verificar entrega/tap de notificação local real com fixture sintética válida e apagar somente a agenda temporária via mecanismo do app; manter política de texto genérico sem nome/dose. A disponibilidade do aparelho/observação real é necessária; nenhuma credencial precisa ser enviada pelo usuário.
+4. Aguardar decisão já solicitada sobre metas de novas sugestões após peso. Não inventar regra, não gerar nova dieta paga até resolver esse ponto.
+5. Ao final: Roberto envia os artigos para revisão, Eduardo revisa independentemente, Roberto publica; então E2E real da Biblioteca e aceite visual explícito do Eduardo. Link editorial anterior expirou em 01/10 14:20 UTC; qualquer novo acesso deve manter identidade/permissões e destino autorizado.
+
+### Gates e closeout
+
+- **BASELINE:** operação dc5854f; retomada desta etapa a374553. Falhas anteriores de UI/carga documentadas; três erros e 18 warnings de lint compartilhado preexistentes.
+- **TESTS / REGRESSION TESTS:** agent 1.296/89 suites; BFF 26; iOS 34 XCTest + 1.484 Swift Testing; golden exato Flow 8; SQL exato RED/GREEN; UI completo 171/0 falhas. Teste SQL não deixou usuários de fixture (contagem independente zero).
+- **TYPECHECK:** agent/BFF PASS; Swift build/analyze PASS. **LINT:** golden PASS; compartilhado mantém 3 erros/18 warnings preexistentes, não verde global.
+- **BUILD / SIGNING / ANALYZE:** PASS staging; **DIFF REVIEW:** PASS, independente nas correções graves; HIGH de SQL corrigido antes de aplicar/commitar.
+- **RESOURCE GATE:** PASS antes do build final, 89 GiB livres/37% memória livre. Sem espera por oscilação transitória.
+- **COMMIT:** YES, apenas local; **PUSH / MERGED / INTEGRATED:** NO, proibidos nesta operação.
+- **DEPLOYMENT REQUIRED / PERFORMED:** YES, apenas Preview/BFF staging e migration staging; **POST-DEPLOY HEALTH:** PASS em quatro rotas 401/no-store/Vary Authorization. **PRODUCTION QA:** NOT APPLICABLE; **ROLLBACK:** NOT REQUIRED, candidato anterior e função anterior preservados.
+- **NEW FAILURES INTRODUCED:** nenhuma comprovada nos gates concluídos. Runtime warning de frame na suíte UI permanece sem classificação de origem/regressão; coletor de diagnóstico adicional expirou, runner exit 0. Falha de preparação do pacote e falso negativo de header corrigidos sem enfraquecer testes/servidor. Bug de ocorrência pré-criação corrigido nesta rodada; pendências funcionais permanecem explícitas.
+- **REGRESSION STATUS:** PARTIALLY VERIFIED para a entrega funcional inteira, embora a suíte UI completa tenha passado. **CLEANUP:** fixtures/env temporário/projeto vazio COMPLETE; checkout/candidato/rollback KEPT por dependências ativas.
+- **COST / ENVIRONMENT CLOSEOUT:** recursos novos dispensáveis CLOSED; staging e Preview necessários KEPT com propósito/condição de revisão. Valor recorrente da branch preexistente e consumo serverless/LLM adicional não determinado; não declarar custo zero total nem encerramento financeiro completo.
+- **TEMPORARY PAID ENVIRONMENTS CREATED:** projeto Vercel vazio acidental (CLOSED), novo deployment Preview no projeto existente (KEPT para candidato); nenhum Supabase branch/compute/VPS criado. **ESTIMATED RECURRING COST LEFT:** não determinado para recursos preexistentes mantidos; nenhuma nova base de compute persistente criada.
+- **CLOSEOUT BLOCKERS / REMAINING RISKS:** aparelho indisponível, smoke Flow final, atualização cronometrada de Hoje, entrega de notificação, regra de produto das novas metas, Biblioteca/aceite visual e provisioning que expira em 04/10 18:12:24 BRT. Nenhum trabalho único/worktree desconhecido descartado.
+- Última conferência de superfície após finalizar o Xcode: espelhamento ainda **iPhone Não Encontrado**. Nenhuma mensagem Flow enviada e nenhuma nova credencial solicitada. A pendência de disponibilidade do aparelho já foi comunicada ao usuário; não repetir login nem reinstalação ao retomar.

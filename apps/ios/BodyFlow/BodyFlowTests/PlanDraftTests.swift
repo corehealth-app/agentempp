@@ -628,11 +628,15 @@ struct PlanImportModelTests {
         }
     }
 
-    private func makeHarness(withMedia: Bool = true) -> Harness {
+    private func makeHarness(
+        withMedia: Bool = true,
+        assetID: String = DraftFixtures.assetID,
+        draftID: String = DraftFixtures.draftID
+    ) -> Harness {
         let base = FileManager.default.temporaryDirectory
             .appendingPathComponent("plan-import-\(UUID().uuidString)", isDirectory: true)
         let staging = MediaStagingStore(temporaryDirectory: base)
-        let server = PlanImportServerFake()
+        let server = PlanImportServerFake(assetID: assetID, draftID: draftID)
         let model = PlanImportModel(
             capability: PlanDraftCapability(
                 drafts: server,
@@ -683,6 +687,45 @@ struct PlanImportModelTests {
             fileURL: pdf.fileURL, kind: .planDocument, mimeType: "text/html",
             sizeBytes: 10, duration: nil, channel: .gallery
         )) == .unsupportedFile)
+    }
+
+    // Physical staging 2026-10-01: camera JPEG uploaded at 12:50:54 BRT;
+    // "Sem conexão" appeared before a draft existed. Retry opened the
+    // imported draft using the same asset. OCR content is verified live;
+    // this fake isolates upload/import ownership and retry identity.
+    @Test("camera plan photo 867902 bytes resumes the exact import after Sem conexão without another upload")
+    func physicalPhotoOfflineImportResumesSameAsset() async throws {
+        let assetID = "d5aabd2a-8d87-41bf-a2f9-aaee52d21f0b"
+        let draftID = "48cd7301-67e9-4955-8f63-f5b1bcae5ec7"
+        let harness = makeHarness(assetID: assetID, draftID: draftID)
+        defer { try? FileManager.default.removeItem(at: harness.base) }
+        let file = try harness.staging.stage(
+            Data(repeating: 0, count: 867_902), fileExtension: "jpg"
+        )
+        let photo = StagedMedia(
+            fileURL: file, kind: .planDocument, mimeType: "image/jpeg",
+            sizeBytes: 867_902, duration: nil, channel: .camera
+        )
+        await harness.server.failNextImport(.offline)
+        await harness.model.submit(photo)
+
+        #expect(harness.model.phase == .failed(.draft(.offline)))
+        #expect(harness.model.canRetry)
+        #expect(PlanDraftCopy.string(
+            PlanDraftCopy.importFailureKey(.draft(.offline)), language: .portugueseBrazil
+        ) == "Sem conexão. Verifique a internet e tente novamente.")
+        #expect(await harness.server.calls == [.create, .upload, .complete, .startImport])
+        let first = try #require(await harness.server.attemptedImports.first)
+        #expect(first.payload == PlanImportRequest(mediaAssetID: assetID, domain: .training))
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+
+        await harness.model.retry()
+
+        #expect(await harness.server.calls == [.create, .upload, .complete, .startImport, .startImport])
+        #expect(await harness.server.attemptedImports == [first, first])
+        #expect(await harness.server.created == [photo.uploadRequest])
+        #expect(harness.model.phase == .started(draftID: draftID))
+        #expect(!harness.model.canRetry)
     }
 
     @Test("A failed start resumes without sending the file again")
@@ -1105,6 +1148,14 @@ private actor PlanImportServerFake: PlanDraftProviding, MealMediaProviding, Stor
         case create, upload, complete, startImport, delete
     }
 
+    private let assetID: String
+    private let draftID: String
+
+    init(assetID: String = DraftFixtures.assetID, draftID: String = DraftFixtures.draftID) {
+        self.assetID = assetID
+        self.draftID = draftID
+    }
+
     private var importFailure: PlanDraftFailure?
     private var uploaded = false
     private var uploadFails = false
@@ -1131,6 +1182,7 @@ private actor PlanImportServerFake: PlanDraftProviding, MealMediaProviding, Stor
     private(set) var created: [MediaUploadRequest] = []
     private(set) var imports: [PlanImportRequest] = []
     private(set) var importKeys: [String] = []
+    private(set) var attemptedImports: [MutationAttempt<PlanImportRequest>] = []
 
     func failNextImport(_ failure: PlanDraftFailure) { importFailure = failure }
 
@@ -1142,7 +1194,7 @@ private actor PlanImportServerFake: PlanDraftProviding, MealMediaProviding, Stor
 
     private func asset(_ status: String) -> MediaAssetSnapshot {
         MediaAssetSnapshot(
-            id: DraftFixtures.assetID, kind: "plan_document", status: status,
+            id: assetID, kind: "plan_document", status: status,
             failureStage: nil, failureCode: nil
         )
     }
@@ -1220,12 +1272,13 @@ private actor PlanImportServerFake: PlanDraftProviding, MealMediaProviding, Stor
         calls.append(.startImport)
         imports.append(attempt.payload)
         importKeys.append(attempt.key.value)
+        attemptedImports.append(attempt)
         if let importFailure {
             self.importFailure = nil
             imports.removeLast()
             throw importFailure
         }
-        return PlanImportReceipt(draftID: DraftFixtures.draftID, status: "extracting")
+        return PlanImportReceipt(draftID: draftID, status: "extracting")
     }
 }
 

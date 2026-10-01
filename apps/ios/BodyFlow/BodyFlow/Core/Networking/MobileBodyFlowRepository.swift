@@ -33,6 +33,10 @@ struct MobileBodyFlowRepository: TodayProviding, HistoryProviding,
         try await read("/api/mobile/v1/progress")
     }
 
+    func profileWeight() async throws -> ProfileWeightResponse? {
+        try await read("/api/mobile/v1/profile")
+    }
+
     func history(_ query: HistoryQuery) async throws -> HistoryResponse {
         var items = [URLQueryItem(name: "limit", value: String(query.limit))]
         if let before = query.before {

@@ -6,6 +6,40 @@ import Testing
 @MainActor
 @Suite("Prompt 14 authenticated session ownership")
 struct Prompt14SessionOwnershipTests {
+    @Test("late profile weight is suppressed on QA A logout and QA A to B switch",
+          arguments: [Optional<String>.none, Optional("user-b")])
+    func profileWeightFollowsSession(nextUser: String?) async throws {
+        let operation = Prompt14SuspendedValue<ProfileWeightResponse?>()
+        let coordinator = Prompt14AuthenticatedShellCoordinator(dependencies: Self.scaffoldDependencies(
+            me: UnavailableBodyFlowCapabilities(), progress: Prompt14ControlledProfileWeight(operation: operation)
+        ))
+        await coordinator.transition(to: "user-a")
+        let ownerA = try #require(coordinator.renderableOwner)
+        let read = Task {
+            do { _ = try await ownerA.progress.profileWeight(); return false }
+            catch is CancellationError { return true }
+            catch { return false }
+        }
+        await operation.waitUntilStarted()
+        let entered = Prompt14MainActorSignal()
+        let transition = Task { entered.signal(); await coordinator.transition(to: nextUser) }
+        await entered.wait()
+        #expect(ownerA.isInvalidated)
+        #expect(coordinator.renderableOwner == nil)
+        await operation.resume(returning: ProfileWeightResponse(
+            data: ProfileWeightSnapshot(weightKG: 80, measuredAt: nil, instantSource: nil),
+            meta: BodyFlowTestFixtures.progressResponse.meta
+        ))
+        #expect(await read.value)
+        await transition.value
+        #expect(coordinator.renderableOwner?.userID == nextUser)
+        await #expect(throws: CancellationError.self) {
+            _ = try await ownerA.progress.profileWeight()
+        }
+        #expect(await operation.startedCount == 1)
+        await coordinator.transition(to: nil)
+    }
+
     // The suspended fixture keeps content/cover lifetimes open on purpose, so
     // these two use the plain demo dependencies (their lifetimes end at once)
     // and swap only the account row.
@@ -42,7 +76,9 @@ struct Prompt14SessionOwnershipTests {
         #expect(coordinator.renderableOwner == nil)
     }
 
-    private static func scaffoldDependencies(me: any MeProviding) -> AppDependencies {
+    private static func scaffoldDependencies(
+        me: any MeProviding, progress: (any ProgressProviding)? = nil
+    ) -> AppDependencies {
         let base = AppDependencies.scaffold()
         return AppDependencies(
             apiClient: base.apiClient,
@@ -54,7 +90,7 @@ struct Prompt14SessionOwnershipTests {
             today: base.today,
             history: base.history,
             plan: base.plan,
-            progress: base.progress,
+            progress: progress ?? base.progress,
             mealDetection: base.mealDetection,
             registration: base.registration,
             hydration: base.hydration,
@@ -1203,4 +1239,11 @@ private struct Prompt14StubMe: MeProviding {
             meta: DemoPrompt14Fixtures.contentStateMetadata
         )
     }
+}
+
+
+private struct Prompt14ControlledProfileWeight: ProgressProviding {
+    let operation: Prompt14SuspendedValue<ProfileWeightResponse?>
+    func progress() async throws -> ProgressResponse { BodyFlowTestFixtures.progressResponse }
+    func profileWeight() async throws -> ProfileWeightResponse? { await operation.suspend() }
 }

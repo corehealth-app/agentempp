@@ -5,6 +5,24 @@ import Testing
 
 @Suite("Mobile API Transport", .serialized)
 struct MobileAPITransportTests {
+    @Test("progress reads official profile weight without querying history or mutating the ledger")
+    func profileWeightRead() async throws {
+        let harness = try await TransportHarness(tokens: ["session-alpha"])
+        let json = #"{"data":{"weight_kg":80,"weight_measured_at":"2026-10-01T16:15:33.319Z","weight_instant_source":"measured","height_cm":180},"meta":{"api_version":"v1","request_id":"profile-weight-qa-a"}}"#
+        await harness.stub.respond(with: StubResponse(
+            status: 200, headers: ["Content-Type": "application/json"], body: Data(json.utf8)
+        ))
+        let response = try await MobileBodyFlowRepository(transport: harness.transport).profileWeight()
+        #expect(response?.data?.weightKG == 80)
+        #expect(response?.data?.instantSource == "measured")
+        #expect(response?.meta.requestID == "profile-weight-qa-a")
+        let requests = await harness.stub.requests()
+        #expect(requests.count == 1)
+        #expect(requests[0].httpMethod == "GET")
+        #expect(requests[0].url?.path == "/api/mobile/v1/profile")
+        #expect(requests[0].httpBody == nil)
+    }
+
     @Test("same-origin request obtains and sends the current bearer")
     func sendsCurrentBearer() async throws {
         let harness = try await TransportHarness(tokens: ["session-alpha"])

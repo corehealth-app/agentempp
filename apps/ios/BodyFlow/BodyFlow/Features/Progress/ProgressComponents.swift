@@ -254,6 +254,8 @@ enum ProgressCopy {
 struct ProgressContentView: View {
     let presentation: ProgressPresentation
     @Binding var selectedTab: AppTab
+    var profileWeightState: FeatureReadState<ProfileWeightSnapshot>? = nil
+    var retryProfileWeight: @MainActor () -> Void = {}
     @Environment(\.locale) private var locale
 
     var body: some View {
@@ -289,11 +291,15 @@ struct ProgressContentView: View {
         BodyFlowCard(surface: .card) {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
                 metricGroup(copy("progress.section.measurements")) {
-                    metricRow(
-                        copy("progress.metric.current-weight"),
-                        presentation.weightText,
-                        symbol: .weight
-                    )
+                    if let profileWeightState {
+                        ProfileWeightContent(state: profileWeightState, language: language, retryAction: retryProfileWeight)
+                    } else {
+                        metricRow(
+                            copy("progress.metric.current-weight"),
+                            presentation.weightText,
+                            symbol: .weight
+                        )
+                    }
                     Divider()
                     metricRow(
                         copy("progress.metric.body-fat"),
@@ -573,5 +579,75 @@ private struct ProgressProvenanceRow: View {
             .font(BodyFlowTypography.supporting)
             .foregroundStyle(BodyFlowColor.primaryText)
             .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+
+/// Latest official profile measurement; the progress ledger is not rewritten.
+struct ProfileWeightPresentation {
+    let snapshot: ProfileWeightSnapshot
+    let language: SupportedAppLanguage
+    var timeZone: TimeZone = .current
+
+    var weightText: String {
+        guard let weight = snapshot.weightKG else {
+            return ProgressCopy.string("progress.not-available", language: language)
+        }
+        let formatter = NumberFormatter()
+        formatter.locale = language.formattingLocale
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 2
+        return (formatter.string(from: NSDecimalNumber(decimal: weight)) ?? "") + " kg"
+    }
+
+    var dateText: String {
+        guard snapshot.weightKG != nil, let date = snapshot.measuredAt,
+              snapshot.instantSource == "measured" || snapshot.instantSource == "recorded" else {
+            return ProgressCopy.string("progress.weight.date-unknown", language: language)
+        }
+        let formatter = DateFormatter()
+        formatter.locale = language.formattingLocale
+        formatter.timeZone = timeZone
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        let key: String.LocalizationValue = snapshot.instantSource == "measured"
+            ? "progress.weight.measured-at" : "progress.weight.recorded-at"
+        return ProgressCopy.string(key, language: language) + " " + formatter.string(from: date.value)
+    }
+}
+
+@MainActor
+struct ProfileWeightContent: View {
+    let state: FeatureReadState<ProfileWeightSnapshot>
+    let language: SupportedAppLanguage
+    let retryAction: @MainActor () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+            Text(ProgressCopy.string("progress.metric.current-weight", language: language))
+                .font(BodyFlowTypography.body)
+            if let snapshot = state.presentation.value {
+                let presentation = ProfileWeightPresentation(snapshot: snapshot, language: language)
+                Text(presentation.weightText)
+                    .font(BodyFlowTypography.title)
+                    .accessibilityIdentifier("progress.profile-weight.value")
+                Text(presentation.dateText)
+                    .font(BodyFlowTypography.body)
+                    .foregroundStyle(BodyFlowColor.secondaryText)
+                    .accessibilityIdentifier("progress.profile-weight.date")
+            }
+            switch state {
+            case .idle, .loading:
+                ProgressView()
+            case .loaded: EmptyView()
+            case .empty, .unavailable:
+                Text(ProgressCopy.string("progress.not-available", language: language))
+            case .offline, .failed:
+                Text(ProgressCopy.string("progress.weight.read-failed", language: language))
+                Button(ProgressCopy.string("progress.weight.retry", language: language), action: retryAction)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier("progress.profile-weight")
     }
 }

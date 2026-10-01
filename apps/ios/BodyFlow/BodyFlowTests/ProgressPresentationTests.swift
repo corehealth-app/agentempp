@@ -7,6 +7,32 @@ import UIKit
 
 @Suite("Progress Presentation")
 struct ProgressPresentationTests {
+    @Test("official 80 kg measurement uses the supplied instant, source and locale")
+    func profileWeightProvenance() throws {
+        let snapshot = try JSONDecoder().decode(ProfileWeightSnapshot.self, from: Data(
+            #"{"weight_kg":80,"weight_measured_at":"2026-10-01T16:15:33.319Z","weight_instant_source":"measured"}"#.utf8
+        ))
+        let timeZone = try #require(TimeZone(identifier: "America/Sao_Paulo"))
+        let pt = ProfileWeightPresentation(snapshot: snapshot, language: .portugueseBrazil, timeZone: timeZone)
+        #expect(pt.weightText == "80 kg")
+        #expect(pt.dateText.hasPrefix("Medido em "))
+        #expect(pt.dateText.contains("2026"))
+        #expect(pt.dateText.contains("13:15"))
+        let recorded = ProfileWeightPresentation(snapshot: ProfileWeightSnapshot(
+            weightKG: 80, measuredAt: snapshot.measuredAt, instantSource: "recorded"
+        ), language: .englishUnitedStates, timeZone: timeZone)
+        #expect(recorded.dateText.hasPrefix("Recorded on "))
+        let unknown = ProfileWeightPresentation(snapshot: ProfileWeightSnapshot(
+            weightKG: 80, measuredAt: snapshot.measuredAt, instantSource: nil
+        ), language: .portugueseBrazil, timeZone: timeZone)
+        #expect(unknown.dateText == "Data não informada")
+        let missing = ProfileWeightPresentation(snapshot: ProfileWeightSnapshot(
+            weightKG: nil, measuredAt: nil, instantSource: nil
+        ), language: .portugueseBrazil, timeZone: timeZone)
+        #expect(missing.weightText == "Não disponível")
+        #expect(missing.dateText == "Data não informada")
+    }
+
     @Test("presentation formats only received progress values")
     func receivedValues() {
         let presentation = ProgressPresentation(snapshot: BodyFlowTestFixtures.progressSnapshot)

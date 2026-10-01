@@ -12,35 +12,37 @@ struct ProgressRootView: View {
                 .ignoresSafeArea()
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier(AppTab.progress.rootAccessibilityIdentifier)
-            FeatureReadStateView(state: model.state, retryAction: retry) { snapshot in
-                let presentation = ProgressPresentation(
-                    snapshot: snapshot,
-                    language: language
-                )
-                ScrollView {
-                    VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
-                        ProgressContentView(
-                            presentation: presentation,
-                            selectedTab: $selectedTab
-                        )
-                        NavigationLink(value: AppRoute.progress(.block7700)) {
-                            BodyFlowCard(surface: .card) {
-                                FeatureActionLabel(
-                                    title: copy("progress.block.title"),
-                                    detail: copy("progress.block.action.detail"),
-                                    systemImage: BodyFlowSymbol.block.systemName
-                                )
-                            }
-                        }
-                        .buttonStyle(.bodyFlowRow)
-                        .accessibilityIdentifier("progress.block.detail")
+            ScrollView {
+                VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
+                    if model.state.presentation.value == nil, let weightState = model.profileWeight.state {
+                        ProfileWeightCard(state: weightState, language: language, retryAction: retry)
                     }
-                    .padding(BodyFlowSpacing.md)
+                    FeatureReadStateView(state: model.state, retryAction: retry) { snapshot in
+                        let presentation = ProgressPresentation(snapshot: snapshot, language: language)
+                        VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
+                            ProgressContentView(
+                                presentation: presentation,
+                                selectedTab: $selectedTab,
+                                profileWeightState: model.profileWeight.state,
+                                retryProfileWeight: retry
+                            )
+                            NavigationLink(value: AppRoute.progress(.block7700)) {
+                                BodyFlowCard(surface: .card) {
+                                    FeatureActionLabel(
+                                        title: copy("progress.block.title"),
+                                        detail: copy("progress.block.action.detail"),
+                                        systemImage: BodyFlowSymbol.block.systemName
+                                    )
+                                }
+                            }
+                            .buttonStyle(.bodyFlowRow)
+                            .accessibilityIdentifier("progress.block.detail")
+                        }
+                    }
                 }
-                .refreshable {
-                    await model.retry()
-                }
+                .padding(BodyFlowSpacing.md)
             }
+            .refreshable { await model.retry() }
         }
         .navigationTitle(copy("progress.navigation.title"))
         .navigationBarTitleDisplayMode(.inline)
@@ -72,4 +74,18 @@ struct ProgressRootView: View {
     }
     .environment(AppRouter())
     .installAppDependencies(AppDependencies.scaffold())
+}
+
+
+@MainActor
+private struct ProfileWeightCard: View {
+    let state: FeatureReadState<ProfileWeightSnapshot>
+    let language: SupportedAppLanguage
+    let retryAction: @MainActor () -> Void
+
+    var body: some View {
+        BodyFlowCard(surface: .card) {
+            ProfileWeightContent(state: state, language: language, retryAction: retryAction)
+        }
+    }
 }

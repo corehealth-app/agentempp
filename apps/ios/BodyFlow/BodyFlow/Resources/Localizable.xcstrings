@@ -1,6 +1,86 @@
 {
   "sourceLanguage" : "pt-BR",
   "strings" : {
+  "progress.weight.date-unknown": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Data não informada"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Date unavailable"
+        }
+      }
+    }
+  },
+  "progress.weight.measured-at": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Medido em"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Measured on"
+        }
+      }
+    }
+  },
+  "progress.weight.recorded-at": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Registrado em"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Recorded on"
+        }
+      }
+    }
+  },
+  "progress.weight.read-failed": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Não foi possível atualizar o peso."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Unable to update weight."
+        }
+      }
+    }
+  },
+  "progress.weight.retry": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Tentar novamente"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Try again"
+        }
+      }
+    }
+  },
 "today.status.day-in-progress" : {
   "localizations": {
     "en": {

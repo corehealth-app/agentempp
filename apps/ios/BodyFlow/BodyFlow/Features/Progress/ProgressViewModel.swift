@@ -11,6 +11,7 @@ final class ProgressViewModel {
     }
 
     private let provider: any ProgressProviding
+    let profileWeight: ProfileWeightViewModel
     private var activeLoad: LoadIdentity?
     private var sequence = 0
 
@@ -18,14 +19,19 @@ final class ProgressViewModel {
 
     init(provider: any ProgressProviding) {
         self.provider = provider
+        profileWeight = ProfileWeightViewModel(provider: provider)
     }
 
     func load() async {
+        async let weight: Void = profileWeight.load()
         await start()
+        await weight
     }
 
     func retry() async {
+        async let weight: Void = profileWeight.load()
         await start()
+        await weight
     }
 
     private func start() async {
@@ -113,6 +119,128 @@ final class ProgressViewModel {
              let .failed(previousValue: value?, error: _):
             value
         case .idle, .loading, .empty, .offline(previousValue: nil),
+             .failed(previousValue: nil, error: _), .unavailable:
+            nil
+        }
+    }
+}
+
+@MainActor
+@Observable
+final class ProfileWeightViewModel {
+    private struct LoadIdentity {
+        let sequence: Int
+        let ownership: FeatureLoadOwnership
+        let previousState: FeatureReadState<ProfileWeightSnapshot>?
+    }
+
+    private let provider: any ProgressProviding
+    private var activeLoad: LoadIdentity?
+    private var sequence = 0
+
+    private(set) var state: FeatureReadState<ProfileWeightSnapshot>?
+
+    init(provider: any ProgressProviding) {
+        self.provider = provider
+    }
+
+    func load() async {
+        await start()
+    }
+
+    func retry() async {
+        await start()
+    }
+
+    private func start() async {
+        guard !Task.isCancelled else { return }
+        let ownership = FeatureLoadOwnership()
+
+        await withTaskCancellationHandler {
+            guard !Task.isCancelled, !ownership.isInvalidated else { return }
+            sequence += 1
+            let identity = LoadIdentity(
+                sequence: sequence,
+                ownership: ownership,
+                previousState: activeLoad?.previousState ?? state
+            )
+            activeLoad?.ownership.invalidate()
+            activeLoad = identity
+            state = visibleSnapshot.map(FeatureReadState.loaded) ?? .loading
+            await perform(identity)
+        } onCancel: {
+            ownership.invalidate()
+            Task { @MainActor [weak self] in
+                self?.restoreCancelledLoad(ownedBy: ownership)
+            }
+        }
+    }
+
+    private func perform(_ identity: LoadIdentity) async {
+        defer {
+            if activeLoad?.sequence == identity.sequence {
+                activeLoad = nil
+            }
+        }
+
+        do {
+            let response = try await provider.profileWeight()
+            try Task.checkCancellation()
+            guard canPublish(identity) else { return }
+            guard let response else {
+                state = nil // Provider does not implement the separate profile read.
+                return
+            }
+            switch response.data {
+            case let .some(snapshot):
+                state = .loaded(snapshot)
+            case .none:
+                state = .empty
+            }
+        } catch is CancellationError {
+            restoreCancelledLoad(identity)
+        } catch {
+            guard !Task.isCancelled, canPublish(identity) else { return }
+            publish(error: error, previousValue: visibleSnapshot)
+        }
+    }
+
+    private func restoreCancelledLoad(_ identity: LoadIdentity) {
+        guard activeLoad?.sequence == identity.sequence else { return }
+        state = identity.previousState
+        activeLoad = nil
+    }
+
+    private func restoreCancelledLoad(ownedBy ownership: FeatureLoadOwnership) {
+        guard let activeLoad, activeLoad.ownership === ownership else { return }
+        restoreCancelledLoad(activeLoad)
+    }
+
+    private func canPublish(_ identity: LoadIdentity) -> Bool {
+        activeLoad?.sequence == identity.sequence
+            && identity.ownership.claimPublication()
+    }
+
+    private func publish(error: any Error, previousValue: ProfileWeightSnapshot?) {
+        let capabilityError = error as? BodyFlowCapabilityError
+            ?? .serviceUnavailable
+        switch capabilityError {
+        case .operationUnavailable:
+            state = .unavailable
+        case .offline:
+            state = .offline(previousValue: previousValue)
+        default:
+            state = .failed(previousValue: previousValue, error: capabilityError)
+        }
+    }
+
+    private var visibleSnapshot: ProfileWeightSnapshot? {
+        switch state {
+        case let .loaded(value),
+             let .offline(previousValue: value?),
+             let .failed(previousValue: value?, error: _):
+            value
+        case nil, .idle, .loading, .empty, .offline(previousValue: nil),
              .failed(previousValue: nil, error: _), .unavailable:
             nil
         }

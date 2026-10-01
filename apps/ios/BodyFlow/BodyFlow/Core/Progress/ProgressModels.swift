@@ -2,6 +2,22 @@ import Foundation
 
 typealias ProgressResponse = MobileResponse<ProgressSnapshot?>
 
+typealias ProfileWeightResponse = MobileResponse<ProfileWeightSnapshot?>
+
+/// C5: the latest official weight is read from `/profile`, independently of
+/// the progress ledger. A recorded instant is not a measured instant.
+struct ProfileWeightSnapshot: Codable, Equatable, Sendable {
+    let weightKG: Decimal?
+    let measuredAt: APITimestamp?
+    let instantSource: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case weightKG = "weight_kg"
+        case measuredAt = "weight_measured_at"
+        case instantSource = "weight_instant_source"
+    }
+}
+
 struct ProgressSnapshot: Codable, Equatable, Sendable {
     let xpTotal: Int
     let level: Int

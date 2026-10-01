@@ -6,6 +6,78 @@ import Testing
 @Suite("Progress View Model")
 @MainActor
 struct ProgressViewModelTests {
+    @Test("unsupported demo weight leaves legacy presentation intact; live null profile stays empty")
+    func unsupportedAndEmptyProfile() async {
+        let demo = ProgressViewModel(provider: ProgressQueueProvider([.success(BodyFlowTestFixtures.progressResponse)]))
+        await demo.load()
+        #expect(demo.profileWeight.state == nil)
+        let provider = ControlledProfileWeightProvider()
+        let model = ProfileWeightViewModel(provider: provider)
+        let load = Task { await model.load() }
+        await provider.waitUntilStarted(1)
+        await provider.succeed(call: 1, with: ProfileWeightResponse(
+            data: nil, meta: BodyFlowTestFixtures.progressResponse.meta
+        ))
+        await load.value
+        #expect(model.state == .empty)
+    }
+
+    @Test("profile errors preserve official prior measurement; canceled and superseded loads cannot replace it")
+    func profileLifetimeAndErrors() async {
+        let provider = ControlledProfileWeightProvider()
+        let model = ProfileWeightViewModel(provider: provider)
+        let profile = ProfileWeightSnapshot(weightKG: 80, measuredAt: nil, instantSource: nil)
+        let response = ProfileWeightResponse(data: profile, meta: BodyFlowTestFixtures.progressResponse.meta)
+        let initial = Task { await model.load() }
+        await provider.waitUntilStarted(1)
+        await provider.succeed(call: 1, with: response)
+        await initial.value
+        let offline = Task { await model.load() }
+        await provider.waitUntilStarted(2)
+        await provider.fail(call: 2, with: .offline)
+        await offline.value
+        #expect(model.state == .offline(previousValue: profile))
+        let cancelled = Task { await model.load() }
+        await provider.waitUntilStarted(3)
+        cancelled.cancel()
+        await provider.succeed(call: 3, with: ProfileWeightResponse(
+            data: ProfileWeightSnapshot(weightKG: 999, measuredAt: nil, instantSource: nil), meta: response.meta
+        ))
+        await cancelled.value
+        #expect(model.state == .offline(previousValue: profile))
+        let older = Task { await model.load() }
+        await provider.waitUntilStarted(4)
+        let newer = Task { await model.load() }
+        await provider.waitUntilStarted(5)
+        await provider.succeed(call: 5, with: response)
+        await newer.value
+        await provider.fail(call: 4, with: .serviceUnavailable)
+        await older.value
+        #expect(model.state == .loaded(profile))
+    }
+
+    @Test("physical QA A recorded 80 kg at 2026-10-01T16:15:33.319Z while progress weight is null")
+    func physicalWeightReadsOfficialProfile() async throws {
+        let profile = try JSONDecoder().decode(ProfileWeightSnapshot.self, from: Data(
+            #"{"weight_kg":80,"weight_measured_at":"2026-10-01T16:15:33.319Z","weight_instant_source":"measured"}"#.utf8
+        ))
+        let progress = ProgressSnapshot(
+            xpTotal: 0, level: 1, currentStreak: 0, longestStreak: 0,
+            blocksCompleted: 0, deficitBlock: 0, currentWeight: nil,
+            currentBodyFatPercent: nil, badgesEarned: [], lastActiveDate: nil,
+            nextReevaluation: nil, updatedAt: BodyFlowTestFixtures.progressSnapshot.updatedAt
+        )
+        let provider = ProfileWeightProgressProvider(progress: progress, profile: profile)
+        let model = ProgressViewModel(provider: provider)
+        await model.load()
+
+        #expect(model.profileWeight.state == .loaded(profile))
+        #expect(await provider.profileCalls == 1)
+        // Reading the official weight must not rewrite the old progress DTO.
+        #expect(model.state == .loaded(progress))
+        #expect(progress.currentWeight == nil)
+    }
+
     @Test("complete progress response becomes loaded content")
     func loaded() async {
         let model = ProgressViewModel(
@@ -117,6 +189,23 @@ struct ProgressViewModelTests {
     }
 }
 
+private actor ProfileWeightProgressProvider: ProgressProviding {
+    let progressSnapshot: ProgressSnapshot
+    let profile: ProfileWeightSnapshot
+    private(set) var profileCalls = 0
+    init(progress: ProgressSnapshot, profile: ProfileWeightSnapshot) {
+        progressSnapshot = progress
+        self.profile = profile
+    }
+    func progress() async throws -> ProgressResponse {
+        ProgressResponse(data: progressSnapshot, meta: BodyFlowTestFixtures.progressResponse.meta)
+    }
+    func profileWeight() async throws -> ProfileWeightResponse? {
+        profileCalls += 1
+        return ProfileWeightResponse(data: profile, meta: BodyFlowTestFixtures.progressResponse.meta)
+    }
+}
+
 private actor ProgressQueueProvider: ProgressProviding {
     enum Outcome: Sendable { case success(ProgressResponse), failure(BodyFlowCapabilityError) }
     private var outcomes: [Outcome]
@@ -141,4 +230,23 @@ private actor ProgressControlledProvider: ProgressProviding {
     func waitUntilStarted(_ count: Int) async { while calls < count { await Task.yield() } }
     func succeed(call: Int, with response: ProgressResponse) { continuations.removeValue(forKey: call)?.resume(returning: response) }
     func fail(call: Int, with error: BodyFlowCapabilityError) { continuations.removeValue(forKey: call)?.resume(throwing: error) }
+}
+
+
+private actor ControlledProfileWeightProvider: ProgressProviding {
+    private var calls = 0
+    private var continuations: [Int: CheckedContinuation<ProfileWeightResponse?, Error>] = [:]
+    func progress() async throws -> ProgressResponse { BodyFlowTestFixtures.progressResponse }
+    func profileWeight() async throws -> ProfileWeightResponse? {
+        calls += 1
+        let call = calls
+        return try await withCheckedThrowingContinuation { continuations[call] = $0 }
+    }
+    func waitUntilStarted(_ count: Int) async { while calls < count { await Task.yield() } }
+    func succeed(call: Int, with response: ProfileWeightResponse) {
+        continuations.removeValue(forKey: call)?.resume(returning: response)
+    }
+    func fail(call: Int, with error: BodyFlowCapabilityError) {
+        continuations.removeValue(forKey: call)?.resume(throwing: error)
+    }
 }

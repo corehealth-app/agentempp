@@ -3,6 +3,8 @@
  * split incremental (audit 06-26 Layer 2.1 prevention plan). Sem mudança de
  * lógica — só relocation. tools.ts re-exporta pra preservar API pública.
  */
+
+import type { DailyTargets } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import type { z } from 'zod'
 
@@ -50,6 +52,9 @@ export interface ToolContext {
   /** Set by the pipeline from the server-side channel only ('flow' on the
    * mobile Flow). Absent = the legacy identity. Never read from a payload. */
   assistantIdentity?: GeneratorIdentity
+  /** Intraday targets from the authenticated Flow context. Server-owned;
+   * never supplied by tool arguments or used by the legacy channel. */
+  flowDailyTargets?: DailyTargets
 }
 
 export interface ToolDefinition<T extends z.ZodTypeAny = z.ZodTypeAny> {

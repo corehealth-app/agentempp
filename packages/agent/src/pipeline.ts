@@ -894,7 +894,9 @@ async function processResolvedMessage(
       // Set only here, from the server-side channel (never from a payload):
       // plan generators speak as Flow on the mobile channel, and keep the
       // current identity everywhere else.
-      ...(options.historyProvider === 'mobile_flow' ? { assistantIdentity: 'flow' as const } : {}),
+      ...(options.historyProvider === 'mobile_flow'
+        ? { assistantIdentity: 'flow' as const, flowDailyTargets: ctx.dailyTargets }
+        : {}),
     }
     for (const tc of result.toolCalls) {
       // Authorization comes first: nothing below (argument parsing, the
@@ -2569,10 +2571,14 @@ export async function loadContext(
   // entre 20h-24h local pegava o snapshot do dia seguinte (UTC já rolou).
   const userTz = userTyped?.timezone ?? 'America/Sao_Paulo'
   const today = getLocalDateString(userTz, referenceTimestamp)
+  const snapshotColumns =
+    'calories_consumed, protein_g, carbs_g, fat_g, exercise_calories, daily_balance, deficit_accumulated, day_status, gap_reminder_sent_at'
   const { data: snapToday, error: snapshotError } = await supabase
     .from('daily_snapshots')
     .select(
-      'calories_consumed, protein_g, carbs_g, fat_g, exercise_calories, daily_balance, deficit_accumulated, day_status, gap_reminder_sent_at',
+      historyProvider === 'mobile_flow'
+        ? `${snapshotColumns}, calories_target, protein_target`
+        : snapshotColumns,
     )
     .eq('user_id', userId)
     .eq('date', today)
@@ -2613,6 +2619,8 @@ export async function loadContext(
     ).length,
   }
   const snapTyped = snapToday as {
+    calories_target?: number | null
+    protein_target?: number | string | null
     calories_consumed?: number | null
     protein_g?: number | null
     carbs_g?: number | null
@@ -2673,6 +2681,22 @@ export async function loadContext(
       ? deriveBodyPhotoState(bodySignals, bodyPhotoTexts)
       : null
 
+  // C5 preserves the day's recorded targets. Flow must use the same targets
+  // as Today after a new weight; the legacy channels keep their old context.
+  const positiveSnapshotTarget = (value: number | string | null | undefined) => {
+    const target = value == null ? null : Number(value)
+    return target != null && Number.isFinite(target) && target > 0 ? target : null
+  }
+  const contextTargets =
+    historyProvider === 'mobile_flow'
+      ? {
+          calories_target:
+            positiveSnapshotTarget(snapTyped?.calories_target) ?? dailyTargets.calories_target,
+          protein_target:
+            positiveSnapshotTarget(snapTyped?.protein_target) ?? dailyTargets.protein_target,
+        }
+      : dailyTargets
+
   return {
     userId,
     userName: userTyped?.name ?? null,
@@ -2700,7 +2724,7 @@ export async function loadContext(
     referenceTimestamp,
     bodyPhotoState,
     reevaluationDueRecent,
-    dailyTargets,
+    dailyTargets: contextTargets,
     todaySnapshot: snapTyped
       ? {
           calories_consumed: snapTyped.calories_consumed ?? 0,

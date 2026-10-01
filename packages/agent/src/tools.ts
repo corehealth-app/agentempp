@@ -2085,6 +2085,8 @@ export const consultaMetricas: ToolDefinition = {
 
     const config = await loadCalcConfig(ctx.supabase)
     const targets = await loadDailyTargets(ctx.supabase, ctx.userId, config)
+    const todayTargets =
+      ctx.assistantIdentity === 'flow' && ctx.flowDailyTargets ? ctx.flowDailyTargets : targets
 
     const profileTyped = profile as {
       sex: 'masculino' | 'feminino' | null
@@ -2131,8 +2133,8 @@ export const consultaMetricas: ToolDefinition = {
       tdee_kcal: tdee,
       imc: m.imc != null ? +m.imc.toFixed(1) : null,
       lbm_kg: m.lbm != null ? +m.lbm.toFixed(1) : null,
-      calories_target_today: targets.calories_target,
-      protein_target_today_g: targets.protein_target,
+      calories_target_today: todayTargets.calories_target,
+      protein_target_today_g: todayTargets.protein_target,
       activity_factor: m.activityFactor,
       formula_used:
         profileTyped.body_fat_percent != null ? 'Katch-McArdle (com BF%)' : 'Mifflin-St Jeor',

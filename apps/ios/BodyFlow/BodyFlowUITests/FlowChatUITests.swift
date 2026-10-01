@@ -9,7 +9,7 @@ final class FlowChatUITests: XCTestCase {
     func testAXCancelActionContainsItsWholeNativeLabelWhilePending() {
         let setup = launchFlow(scenario: "empty")
         setup.terminate()
-        let app = support.launch(arguments: ["--ui-testing", "--ui-testing-preserve-state", "--ui-testing-flow-empty"],
+        let app = support.launch(arguments: ["--ui-testing", "--ui-testing-preserve-state", "--ui-testing-flow-pendingCancellation"],
                                  language: "en-US", dark: false,
                                  category: "UICTContentSizeCategoryAccessibilityXXXL")
         XCTAssertTrue(element("screen.hoje", app: app).waitForExistence(timeout: 5))
@@ -154,7 +154,7 @@ final class FlowChatUITests: XCTestCase {
     }
 
     func testExplicitLocalCancelAndReopenDoNotSendAgain() {
-        let app = launchFlow(scenario: "empty")
+        let app = launchFlow(scenario: "pendingCancellation")
         let composer = app.textFields["flow.composer"]
         composer.tap()
         composer.typeText("QA")

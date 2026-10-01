@@ -3,6 +3,7 @@ import Foundation
 
 enum FlowPreviewScenario: String, CaseIterable, Sendable {
     case empty, loading, processing, response, error, offline, longHistory, retryOnce
+    case pendingCancellation
 
     static func resolve(arguments: [String]) -> FlowPreviewScenario? {
         guard arguments.contains("--ui-testing") else { return nil }
@@ -50,8 +51,9 @@ actor FlowPreviewRepository: FlowChatProviding {
             throw URLError(.timedOut)
         }
         if let response = try replay(text: text, key: idempotencyKey.value) { return response }
-        // Finite mock delay lets UI tests observe the unchanged model's isSending.
-        try await Task.sleep(for: .seconds(2))
+        // Native accessibility snapshots can outlast the usual mock reply.
+        // Keep cancellation QA pending without changing the other scenarios.
+        try await Task.sleep(for: scenario == .pendingCancellation ? .seconds(30) : .seconds(2))
         try Task.checkCancellation()
         if let response = try replay(text: text, key: idempotencyKey.value) { return response }
         let user = Self.message(id: "qa-user-\(idempotencyKey.value)", role: .user, content: text)

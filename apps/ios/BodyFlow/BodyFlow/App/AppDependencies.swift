@@ -272,6 +272,13 @@ struct AppDependencies: Sendable {
                 DemoPrompt14ProgressProvider(
                     response: DemoPrompt14Fixtures.minimumProgress
                 )
+            case .progressOfficialWeight:
+                DemoPrompt14ProgressProvider(
+                    response: DemoPrompt14Fixtures.minimumProgress,
+                    profileWeightResponse: DemoPrompt14Fixtures.officialWeightProfile
+                )
+            case .progressProfileFirst:
+                DemoPrompt14ProfileFirstProgressProvider()
             case .streakZero:
                 DemoPrompt14ProgressProvider(
                     response: DemoPrompt14Fixtures.streakZeroProgress
@@ -536,10 +543,12 @@ struct AppDependencies: Sendable {
         #if DEBUG
         if configuration.mode == .demo,
            DemoPlanDraftScenario.isEnabled(arguments: ProcessInfo.processInfo.arguments) {
+            let manyDrafts = ProcessInfo.processInfo.arguments.contains(DemoPlanDraftScenario.manyDraftsArgument)
+            let importBoundary = manyDrafts ? DemoPlanDraftImportUnavailable() : nil
             planDrafts = PlanDraftCapability(
-                drafts: DemoPlanDraftProvider(),
-                media: nil,
-                uploader: nil,
+                drafts: DemoPlanDraftProvider(openDraftCount: manyDrafts ? 20 : 1),
+                media: importBoundary,
+                uploader: importBoundary,
                 staging: MediaStagingStore()
             )
         }

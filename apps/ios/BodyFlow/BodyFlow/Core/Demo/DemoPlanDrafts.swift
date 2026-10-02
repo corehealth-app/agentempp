@@ -6,6 +6,7 @@ import Foundation
 /// memory. No server, no media, no real data.
 enum DemoPlanDraftScenario {
     static let argument = "--ui-testing-plan-drafts"
+    static let manyDraftsArgument = "--ui-testing-plan-drafts-many"
     static let draftID = "0d0d0d0d-1111-4222-8333-444455556666"
 
     static func isEnabled(arguments: [String]) -> Bool {
@@ -14,6 +15,7 @@ enum DemoPlanDraftScenario {
 }
 
 actor DemoPlanDraftProvider: PlanDraftProviding {
+    private let openDraftCount: Int
     private var status = "needs_completion"
     private var version = 1
     private var payload: JSONValue = .object([
@@ -42,6 +44,10 @@ actor DemoPlanDraftProvider: PlanDraftProviding {
             ]),
         ]),
     ])
+
+    init(openDraftCount: Int = 1) {
+        self.openDraftCount = openDraftCount
+    }
 
     private var missing: [PlanDraftUncertainField] {
         guard case let .object(root) = payload,
@@ -91,14 +97,17 @@ actor DemoPlanDraftProvider: PlanDraftProviding {
 
     func openDrafts() -> [PlanDraftSummary] {
         guard status == "needs_completion" || status == "ready_for_review" else { return [] }
-        return [PlanDraftSummary(
-            id: DemoPlanDraftScenario.draftID,
-            domain: .training,
-            origin: "imported_pdf",
-            status: status,
-            payloadVersion: version,
-            createdAt: APITimestamp(value: Date(timeIntervalSince1970: 1_790_000_000))
-        )]
+        return (1...openDraftCount).map { index in
+            PlanDraftSummary(
+                id: index == 1 ? DemoPlanDraftScenario.draftID
+                    : String(format: "0d0d0d0d-1111-4222-8333-%012d", index),
+                domain: .training,
+                origin: "imported_pdf",
+                status: status,
+                payloadVersion: version,
+                createdAt: APITimestamp(value: Date(timeIntervalSince1970: 1_790_000_000))
+            )
+        }
     }
 
     func draft(id: String) throws -> PlanDraftSnapshot {
@@ -137,6 +146,25 @@ actor DemoPlanDraftProvider: PlanDraftProviding {
         _ attempt: MutationAttempt<PlanImportRequest>
     ) throws -> PlanImportReceipt {
         throw PlanDraftFailure.unavailable
+    }
+}
+
+/// Gives the layout scenario the real import route while refusing every
+/// media operation. A UI test can open the screen; no file can leave the app.
+struct DemoPlanDraftImportUnavailable: MealMediaProviding, StorageUploading {
+    func create(_ attempt: MutationAttempt<MediaUploadRequest>) throws -> MediaCreateSnapshot {
+        throw MealCaptureFailure.unavailable
+    }
+    func complete(_ attempt: MutationAttempt<MediaAssetCommand>) throws -> MediaAssetSnapshot {
+        throw MealCaptureFailure.unavailable
+    }
+    func requestProcessing(_ attempt: MutationAttempt<MediaAssetCommand>) throws -> MediaAssetSnapshot {
+        throw MealCaptureFailure.unavailable
+    }
+    func asset(id: String) throws -> MediaAssetSnapshot { throw MealCaptureFailure.unavailable }
+    func delete(_ attempt: MutationAttempt<MediaAssetCommand>) throws { throw MealCaptureFailure.unavailable }
+    func upload(_ media: StagedMedia, with ticket: MediaUploadTicket) throws {
+        throw MealCaptureFailure.unavailable
     }
 }
 #endif

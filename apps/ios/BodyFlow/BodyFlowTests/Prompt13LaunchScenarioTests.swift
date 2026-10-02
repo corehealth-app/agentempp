@@ -6,6 +6,23 @@ import Testing
 
 @Suite("Prompt 13 Launch Scenarios")
 struct Prompt13LaunchScenarioTests {
+    @Test("precreation routine scenario preserves schedules but omits past occurrences")
+    func precreationRoutineScenario() async throws {
+        let configuration = AppLaunchConfiguration.resolve(
+            arguments: ["--ui-testing", "--ui-testing-prompt13-routine-precreation-no-occurrence"],
+            buildFlavor: .debug
+        )
+        #expect(configuration.prompt13Scenario == .routinePrecreationNoOccurrence)
+        let dependencies = AppDependencies.make(configuration: configuration)
+        let list = try await dependencies.routine.list(kind: .supplement, includeArchived: false)
+        let item = try #require(list.data.items.first)
+        #expect(item.id == "7e6ffa8f-0863-45f4-bc51-e74f88d2e1e0")
+        #expect(item.createdAt.value == Date(timeIntervalSince1970: 1_790_874_822))
+        #expect(item.schedules.map(\.localTime) == ["12:00", "12:05"])
+        #expect(item.schedules.allSatisfy { $0.occurrence == nil })
+        #expect(!item.remindersEnabled && item.active)
+    }
+
     private let scenarios: [(flag: String, scenario: DemoBodyFlowScenario)] = [
         ("--ui-testing-prompt13-loaded", .loaded),
         ("--ui-testing-prompt13-loading", .loadingDelay),

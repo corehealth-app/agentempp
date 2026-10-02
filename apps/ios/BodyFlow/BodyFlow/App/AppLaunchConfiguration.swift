@@ -29,6 +29,7 @@ enum DemoBodyFlowScenario: Equatable, Sendable {
     case registrationFailureOnce
     case routineConflictOnce
     case routineActionUnavailable
+    case routinePrecreationNoOccurrence
     case reduceMotionVerification
 
     fileprivate static func resolve(arguments: [String]) -> DemoBodyFlowScenario? {
@@ -45,6 +46,7 @@ enum DemoBodyFlowScenario: Equatable, Sendable {
             ("--ui-testing-prompt13-registration-error-once", .registrationFailureOnce),
             ("--ui-testing-prompt13-routine-conflict-once", .routineConflictOnce),
             ("--ui-testing-prompt13-routine-action-unavailable", .routineActionUnavailable),
+            ("--ui-testing-prompt13-routine-precreation-no-occurrence", .routinePrecreationNoOccurrence),
             ("--ui-testing-prompt13-reduce-motion", .reduceMotionVerification),
         ]
 
@@ -90,6 +92,8 @@ enum DemoPrompt14ScenarioSelection: Equatable, Sendable {
     case mascotVariants
     case progressEmpty
     case progressMinimum
+    case progressOfficialWeight
+    case progressProfileFirst
     case streakZero
     case conflict
     case reduceMotion
@@ -129,6 +133,8 @@ enum DemoPrompt14ScenarioSelection: Equatable, Sendable {
             ("--ui-testing-prompt14-mascot-variants", .mascotVariants),
             ("--ui-testing-prompt14-progress-empty", .progressEmpty),
             ("--ui-testing-prompt14-progress-minimum", .progressMinimum),
+            ("--ui-testing-prompt14-progress-official-weight", .progressOfficialWeight),
+            ("--ui-testing-prompt14-progress-profile-first", .progressProfileFirst),
             ("--ui-testing-prompt14-streak-zero", .streakZero),
             ("--ui-testing-prompt14-conflict", .conflict),
             ("--ui-testing-prompt14-reduce-motion", .reduceMotion),
@@ -255,6 +261,8 @@ enum DemoPrompt14ScenarioSelection: Equatable, Sendable {
              .mascotFocusActive,
              .mascotZenNeglected,
              .progressCompleteDuplicateBadges,
+             .progressOfficialWeight,
+             .progressProfileFirst,
              .personaStateful:
             nil
         }

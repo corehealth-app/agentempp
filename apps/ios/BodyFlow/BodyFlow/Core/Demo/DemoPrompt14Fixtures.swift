@@ -501,6 +501,18 @@ enum DemoPrompt14Fixtures {
         )
     )
 
+    static let officialWeightProfile = ProfileWeightResponse(
+        data: ProfileWeightSnapshot(
+            weightKG: 80,
+            measuredAt: timestamp(1_790_871_333.319),
+            instantSource: "measured"
+        ),
+        meta: MobileResponseMetadata(
+            apiVersion: "1",
+            requestID: "92000000-0000-4000-8000-000000000080"
+        )
+    )
+
     static let emptyProgress = ProgressResponse(
         data: nil,
         meta: MobileResponseMetadata(

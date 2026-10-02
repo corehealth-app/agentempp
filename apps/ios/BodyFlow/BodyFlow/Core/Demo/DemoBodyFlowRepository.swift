@@ -537,6 +537,9 @@ actor DemoBodyFlowRepository:
         guard scenario != .empty else {
             return DemoBodyFlowFixtures.emptyRoutineList
         }
+        if scenario == .routinePrecreationNoOccurrence, kind == .supplement {
+            return DemoBodyFlowFixtures.preCreationSupplementList
+        }
         return switch kind {
         case .supplement:
             switch supplementRoutineVariant {
@@ -823,6 +826,7 @@ actor DemoBodyFlowRepository:
              .registrationFailureOnce,
              .routineConflictOnce,
              .routineActionUnavailable,
+             .routinePrecreationNoOccurrence,
              .reduceMotionVerification:
             break
         }

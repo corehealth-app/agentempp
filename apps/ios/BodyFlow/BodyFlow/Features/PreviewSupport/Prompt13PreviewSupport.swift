@@ -33,6 +33,8 @@ enum Prompt13PreviewSupport {
             "--ui-testing-prompt13-routine-conflict-once"
         case .routineActionUnavailable:
             "--ui-testing-prompt13-routine-action-unavailable"
+        case .routinePrecreationNoOccurrence:
+            "--ui-testing-prompt13-routine-precreation-no-occurrence"
         case .reduceMotionVerification:
             "--ui-testing-prompt13-reduce-motion"
         }

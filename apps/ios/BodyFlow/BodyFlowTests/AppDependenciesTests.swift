@@ -722,6 +722,7 @@ struct AppDependenciesTests {
         let cases: [(String, ProgressResponse)] = [
             ("--ui-testing-prompt14-progress-empty", DemoPrompt14Fixtures.emptyProgress),
             ("--ui-testing-prompt14-progress-minimum", DemoPrompt14Fixtures.minimumProgress),
+            ("--ui-testing-prompt14-progress-official-weight", DemoPrompt14Fixtures.minimumProgress),
             ("--ui-testing-prompt14-streak-zero", DemoPrompt14Fixtures.streakZeroProgress),
         ]
 
@@ -743,6 +744,9 @@ struct AppDependenciesTests {
         let loaded = prompt14Dependencies("--ui-testing-prompt14-loaded")
         #expect(loaded.progress is DemoBodyFlowRepository)
         #expect(try await loaded.progress.progress() == DemoBodyFlowFixtures.loadedProgress)
+
+        let officialWeight = prompt14Dependencies("--ui-testing-prompt14-progress-official-weight")
+        #expect(try await officialWeight.progress.profileWeight() == DemoPrompt14Fixtures.officialWeightProfile)
     }
 
     @Test("Every added Prompt 14 state keeps official Today loaded and scopes content to one session actor")

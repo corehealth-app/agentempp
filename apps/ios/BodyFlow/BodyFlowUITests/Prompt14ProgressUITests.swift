@@ -59,6 +59,47 @@ final class Prompt14ProgressUITests: XCTestCase {
         XCTAssertFalse(support.element("state.empty", in: app).exists)
     }
 
+    @MainActor
+    func testPhysicalOfficialWeightAppearsWithMeasuredDateWhenProgressWeightIsNull() {
+        let support = Prompt14UITestSupport(testCase: self)
+        let app = support.launch(scenario: .progressOfficialWeight)
+
+        support.openProgress(in: app)
+        XCTAssertTrue(
+            support.element("progress.profile-weight.value", in: app)
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertEqual(
+            support.element("progress.profile-weight.value", in: app).label,
+            "80 kg"
+        )
+        let measuredDate = support.element("progress.profile-weight.date", in: app)
+        XCTAssertTrue(measuredDate.exists)
+        XCTAssertTrue(measuredDate.label.contains("Medido em "))
+        XCTAssertTrue(measuredDate.label.contains("2026"))
+        XCTAssertTrue(support.element("progress.summary", in: app).exists)
+    }
+
+    @MainActor
+    func testOfficialWeightAndMeasuredDateRemainVisibleWhileProgressReadIsPending() {
+        let support = Prompt14UITestSupport(testCase: self)
+        let app = support.launch(scenario: .progressProfileFirst)
+
+        support.openProgress(in: app)
+        let weight = support.element("progress.profile-weight.value", in: app)
+        XCTAssertTrue(weight.waitForExistence(timeout: 5))
+        XCTAssertEqual(weight.label, "80 kg")
+        let measuredDate = support.element("progress.profile-weight.date", in: app)
+        XCTAssertTrue(measuredDate.exists)
+        XCTAssertTrue(measuredDate.label.contains("Medido em "))
+        XCTAssertTrue(measuredDate.label.contains("2026"))
+        XCTAssertTrue(
+            support.element("state.loading", in: app).exists,
+            "The progress read must still be pending when profile weight is visible"
+        )
+        XCTAssertFalse(support.element("progress.summary", in: app).exists)
+    }
+
     /// Measurements and consistency share one card and the achievements
     /// (streak restart, medals, missions) share another, while the official
     /// summary keeps its own card. Every existing identifier keeps a real

@@ -107,6 +107,26 @@ final class Prompt13RoutineUITests: XCTestCase {
     }
 
     @MainActor
+    func testPrecreationSchedulesRemainVisibleWithoutActionableOccurrence() {
+        let app = BodyFlowUITestSupport(testCase: self).launch(
+            scenario: .routinePrecreationNoOccurrence
+        )
+        let list = app.buttons["routine.list.supplement"]
+        XCTAssertTrue(list.waitForExistence(timeout: 5))
+        list.tap()
+        let item = app.buttons["routine.7e6ffa8f-0863-45f4-bc51-e74f88d2e1e0"]
+        XCTAssertTrue(item.waitForExistence(timeout: 5))
+        item.tap()
+
+        XCTAssertTrue(app.staticTexts["12:00"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["12:05"].exists)
+        XCTAssertFalse(app.buttons["routine.action.taken"].exists)
+        XCTAssertFalse(app.buttons["routine.action.skipped"].exists)
+        XCTAssertFalse(app.buttons["routine.action.snoozed"].exists)
+        XCTAssertFalse(app.buttons["routine.action.submit"].exists)
+    }
+
+    @MainActor
     func testConflictSheetKeepsRetryUntilDismissAfterTerminalRefresh() {
         let app = BodyFlowUITestSupport(testCase: self).launch(
             scenario: .routineConflictOnce

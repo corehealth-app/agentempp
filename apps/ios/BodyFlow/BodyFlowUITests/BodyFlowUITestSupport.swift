@@ -13,6 +13,7 @@ enum Prompt13UITestScenario: String, CaseIterable {
     case registrationErrorOnce = "--ui-testing-prompt13-registration-error-once"
     case routineConflictOnce = "--ui-testing-prompt13-routine-conflict-once"
     case routineActionUnavailable = "--ui-testing-prompt13-routine-action-unavailable"
+    case routinePrecreationNoOccurrence = "--ui-testing-prompt13-routine-precreation-no-occurrence"
     case reduceMotion = "--ui-testing-prompt13-reduce-motion"
 }
 

@@ -638,7 +638,7 @@ struct ProfileWeightContent: View {
             }
             switch state {
             case .idle, .loading:
-                ProgressView()
+                BodyFlowDelayedProgress()
             case .loaded: EmptyView()
             case .empty, .unavailable:
                 Text(ProgressCopy.string("progress.not-available", language: language))
@@ -648,6 +648,7 @@ struct ProfileWeightContent: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("progress.profile-weight")
     }
 }

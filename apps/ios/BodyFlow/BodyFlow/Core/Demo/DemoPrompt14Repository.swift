@@ -404,6 +404,8 @@ actor DemoPrompt14Repository:
              .mascotVariants,
              .progressEmpty,
              .progressMinimum,
+             .progressOfficialWeight,
+             .progressProfileFirst,
              .streakZero,
              .conflict,
              .reduceMotion,
@@ -910,11 +912,33 @@ struct DemoPrompt14CoachExperienceSessionFactory:
 
 struct DemoPrompt14ProgressProvider: ProgressProviding {
     let response: ProgressResponse
+    var profileWeightResponse: ProfileWeightResponse? = nil
 
     func progress() async throws -> ProgressResponse {
         response
     }
+
+    func profileWeight() async throws -> ProfileWeightResponse? {
+        profileWeightResponse
+    }
 }
+
+#if DEBUG
+/// The profile read resolves immediately while the independent progress read
+/// remains pending until its owning task is cancelled by navigation or exit.
+struct DemoPrompt14ProfileFirstProgressProvider: ProgressProviding {
+    func progress() async throws -> ProgressResponse {
+        let (stream, continuation) = AsyncStream<Void>.makeStream()
+        defer { continuation.finish() }
+        for await _ in stream { }
+        throw CancellationError()
+    }
+
+    func profileWeight() async throws -> ProfileWeightResponse? {
+        DemoPrompt14Fixtures.officialWeightProfile
+    }
+}
+#endif
 
 struct DemoPrompt14ContentCoverSessionFactory: ContentCoverSessionCreating {
     private let selection: DemoPrompt14ScenarioSelection

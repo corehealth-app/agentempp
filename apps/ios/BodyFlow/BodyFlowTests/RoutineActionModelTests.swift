@@ -99,6 +99,34 @@ struct RoutineActionModelTests {
         #expect(due.shouldApply(over: early, isSubmitting: false))
     }
 
+    // Physical QA A, 2026-10-01: a supplement item was created at 17:13:42Z
+    // with 12:00 and 12:05 BRT rules (15:00/15:05Z). The read-model fix keeps
+    // both schedules but returns occurrence=null because they predate creation.
+    @Test("pre-creation schedules remain visible without enabling Tomado")
+    func preCreationSchedulesHaveNoAction() {
+        let openedAt = Date(timeIntervalSince1970: 1_790_877_258) // 17:54:18Z
+        let schedules = [
+            RoutineScheduleSnapshot(
+                id: "rule-1200", localTime: "12:00",
+                weekdays: [0, 1, 2, 3, 4, 5, 6], occurrence: nil
+            ),
+            RoutineScheduleSnapshot(
+                id: "rule-1205", localTime: "12:05",
+                weekdays: [0, 1, 2, 3, 4, 5, 6], occurrence: nil
+            ),
+        ]
+        let configuration = RoutineActionConfiguration(
+            kind: .supplement,
+            itemID: "7e6ffa8f-0863-45f4-bc51-e74f88d2e1e0",
+            schedules: schedules,
+            now: openedAt
+        )
+
+        #expect(configuration.schedules.map(\.localTime) == ["12:00", "12:05"])
+        #expect(configuration.context == nil)
+        #expect(configuration.upcoming == nil)
+    }
+
     @Test("a due occurrence is chosen over a later pending one")
     func dueOccurrenceWinsOverLaterPending() {
         let now = Self.occurredAt

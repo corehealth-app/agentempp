@@ -909,6 +909,41 @@ enum DemoBodyFlowFixtures {
         meta: metadata("demo-supplement-list-loaded")
     )
 
+    static let preCreationSupplementList = RoutineListResponse(
+        data: RoutineListSnapshot(
+            localDate: "2026-10-01",
+            items: [RoutineItemSnapshot(
+                id: "7e6ffa8f-0863-45f4-bc51-e74f88d2e1e0",
+                kind: .supplement,
+                name: "Item criado após os horários",
+                doseText: "",
+                origin: "",
+                remindersEnabled: false,
+                active: true,
+                archivedAt: nil,
+                version: 1,
+                createdAt: apiTimestamp(1_790_874_822),
+                updatedAt: apiTimestamp(1_790_874_822),
+                frequencySummary: RoutineFrequencySummary(timesPerWeek: 7),
+                schedules: [
+                    RoutineScheduleSnapshot(
+                        id: "precreation-rule-1200",
+                        localTime: "12:00",
+                        weekdays: [0, 1, 2, 3, 4, 5, 6],
+                        occurrence: nil
+                    ),
+                    RoutineScheduleSnapshot(
+                        id: "precreation-rule-1205",
+                        localTime: "12:05",
+                        weekdays: [0, 1, 2, 3, 4, 5, 6],
+                        occurrence: nil
+                    ),
+                ]
+            )]
+        ),
+        meta: metadata("demo-supplement-precreation-no-occurrence")
+    )
+
     static let postRoutineTakenSupplementList = routineList(
         status: .taken,
         requestID: "demo-supplement-list-after-taken"

@@ -16,6 +16,8 @@ enum Prompt14UITestScenario: String, CaseIterable {
     case mascotVariants = "--ui-testing-prompt14-mascot-variants"
     case progressEmpty = "--ui-testing-prompt14-progress-empty"
     case progressMinimum = "--ui-testing-prompt14-progress-minimum"
+    case progressOfficialWeight = "--ui-testing-prompt14-progress-official-weight"
+    case progressProfileFirst = "--ui-testing-prompt14-progress-profile-first"
     case streakZero = "--ui-testing-prompt14-streak-zero"
     case conflict = "--ui-testing-prompt14-conflict"
     case reduceMotion = "--ui-testing-prompt14-reduce-motion"

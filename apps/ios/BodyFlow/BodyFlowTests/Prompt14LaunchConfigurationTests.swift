@@ -30,6 +30,7 @@ private let legacyPrompt14Cases: [(String, DemoPrompt14Scenario)] = [
 ]
 
 private let addedPrompt14Cases: [(String, String)] = [
+    ("--ui-testing-prompt14-progress-official-weight", "progressOfficialWeight"),
     (
         "--ui-testing-prompt14-today-recommendations-stale",
         "todayRecommendationsStale"
@@ -83,8 +84,8 @@ struct Prompt14LaunchConfigurationTests {
 
     @Test("Debug maps every exact added Prompt 14 flag to its isolated state")
     func debugMapsEveryAddedExactFlag() {
-        #expect(addedPrompt14Cases.count == 15)
-        #expect(prompt14Arguments.count == 34)
+        #expect(addedPrompt14Cases.count == 16)
+        #expect(prompt14Arguments.count == 35)
         #expect(Set(prompt14Arguments).count == prompt14Arguments.count)
 
         for (argument, expectedName) in addedPrompt14Cases {

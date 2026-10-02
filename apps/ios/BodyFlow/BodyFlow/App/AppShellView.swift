@@ -17,6 +17,7 @@ struct AppShellView: View {
     @State private var contentCoverEnvironment: ContentCoverEnvironment
     @State private var localReminders: LocalReminderModel?
     @State private var planDraftsModel: PlanDraftsModel?
+    @State private var tutorialPresentation: GuidedTutorialPresentation?
     @Environment(\.locale) private var locale
     @Environment(\.scenePhase) private var scenePhase
     let userID: String
@@ -131,6 +132,21 @@ struct AppShellView: View {
             BodyFlowKeyboardObserver { keyboardVisible = $0 }
             .frame(width: 0, height: 0)
         }
+        .background {
+            // Its own presenter, so it never competes with the registration
+            // sheet; it is only offered while no sheet is shown.
+            Color.clear
+                .frame(width: 0, height: 0)
+                .sheet(item: $tutorialPresentation) { presentation in
+                    GuidedTutorialView(
+                        presentation: presentation,
+                        steps: GuidedTutorialContent.steps(facts: tutorialFacts)
+                    ) { outcome in
+                        recordTutorial(outcome, for: presentation)
+                    }
+                    .installAppDependencies(dependencies)
+                }
+        }
         .environment(router)
         .environment(
             \.contentCoverEnvironment,
@@ -145,7 +161,8 @@ struct AppShellView: View {
                 .environment(router)
         }
         .task {
-            routePendingReminderTap()
+            let routedReminder = routePendingReminderTap()
+            offerTutorialIfEligible(afterRoutingReminder: routedReminder)
             guard let localReminders else { return }
             // Session start: after `/me` settles the documented time zone.
             await sessionOwner.awaitPatientTimeZoneResolution()
@@ -181,11 +198,17 @@ struct AppShellView: View {
 
     /// Opens a tapped reminder only for this session's owner; a tap of
     /// another account is discarded unopened, and nothing is recorded.
-    private func routePendingReminderTap() {
+    @discardableResult
+    private func routePendingReminderTap() -> Bool {
         guard !sessionOwner.isInvalidated,
               let tap = LocalReminderRouteInbox.shared.take(
                   ownerKey: LocalReminderPlanner.ownerKey(for: userID)
-              ) else { return }
+              ) else { return false }
+        // The reminder's screen wins over the tour, which only closes; it is
+        // not the user's answer, so it is offered again next time.
+        if let tutorialPresentation {
+            recordTutorial(.interrupted, for: tutorialPresentation)
+        }
         selectedTab = .today
         router.popToRoot(in: .today)
         if case let .routineItem(kind, itemID) = tap.destination {
@@ -194,6 +217,68 @@ struct AppShellView: View {
                 in: .today
             )
         }
+        return true
+    }
+
+    private var tutorialOwnerKey: String {
+        LocalReminderPlanner.ownerKey(for: userID)
+    }
+
+    private var tutorialFacts: GuidedTutorialFacts {
+        GuidedTutorialFacts(
+            // The same condition the meal screen uses to offer photo/audio.
+            mealMedia: dependencies.mealCapture.map { $0.media != nil && $0.uploader != nil } ?? false,
+            planDrafts: dependencies.planDrafts != nil,
+            planImport: dependencies.planDrafts?.supportsImport == true,
+            reminders: localReminders != nil,
+            // Profile shows "Sair da conta" only with both.
+            realAccount: accountEmail != nil && signOut != nil
+        )
+    }
+
+    /// The first eligible entry offers the tour once; it never covers a
+    /// sheet or a reminder being opened, and never moves the user's tab.
+    private func offerTutorialIfEligible(afterRoutingReminder routedReminder: Bool) {
+        guard !sessionOwner.isInvalidated, tutorialPresentation == nil else { return }
+        let capability = dependencies.guidedTutorial
+        guard GuidedTutorialOffer.shouldOffer(
+            status: capability.store.status(ownerKey: tutorialOwnerKey),
+            offersOnFirstEntry: capability.offersOnFirstEntry,
+            isPresentingSheet: router.presentedSheet != nil,
+            hasPendingRoute: routedReminder
+        ) else { return }
+        tutorialPresentation = GuidedTutorialPresentation(
+            origin: .firstEntry,
+            ownerKey: tutorialOwnerKey
+        )
+    }
+
+    private func presentTutorialFromProfile() {
+        guard !sessionOwner.isInvalidated,
+              tutorialPresentation == nil,
+              router.presentedSheet == nil else { return }
+        tutorialPresentation = GuidedTutorialPresentation(
+            origin: .profile,
+            ownerKey: tutorialOwnerKey
+        )
+    }
+
+    /// Writes the answer for the account that opened the tour and closes only
+    /// that presentation; a late answer never reaches another one.
+    private func recordTutorial(
+        _ outcome: GuidedTutorialOutcome,
+        for presentation: GuidedTutorialPresentation
+    ) {
+        guard tutorialPresentation?.id == presentation.id else { return }
+        let store = dependencies.guidedTutorial.store
+        store.setStatus(
+            GuidedTutorialOffer.status(
+                after: outcome,
+                from: store.status(ownerKey: presentation.ownerKey)
+            ),
+            ownerKey: presentation.ownerKey
+        )
+        tutorialPresentation = nil
     }
 
     private var presentedSheetBinding: Binding<AppSheet?> {
@@ -263,6 +348,7 @@ struct AppShellView: View {
                 coachExperienceProvider: sessionOwner.coachExperience,
                 invalidationCenter: invalidationCenter,
                 localReminders: localReminders,
+                showTutorial: { presentTutorialFromProfile() },
                 signOut: signOut
             )
         }

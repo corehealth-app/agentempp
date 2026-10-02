@@ -4177,6 +4177,14 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Version" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Versão" } }
     } },
+    "profile.tutorial.detail" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "See the tour of the app again" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Rever o passeio pelas áreas do app" } }
+    } },
+    "profile.tutorial.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Get to know the app" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Conhecer o app" } }
+    } },
     "progress.block.action.detail" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "View the block stored in today's summary" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ver o bloco persistido no resumo de hoje" } }
@@ -4936,7 +4944,183 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Flow" } },
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Flow" } }
       }
-    }
+    },
+    "tutorial.areas.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Go straight to an area" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ir direto para uma área" } }
+    } },
+    "tutorial.back" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Back" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Voltar" } }
+    } },
+    "tutorial.close" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Close" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Fechar" } }
+    } },
+    "tutorial.finish" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Done" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Concluir" } }
+    } },
+    "tutorial.flow.cancel" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel waiting stops waiting for the answer on this device, but does not guarantee the request was cancelled." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Cancelar espera para de aguardar a resposta neste aparelho, mas não garante que o pedido foi cancelado." } }
+    } },
+    "tutorial.flow.open" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "In Today, tap Chat with Flow to ask about your data, targets and progress. Flow is an AI and does not replace professional advice." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Em Hoje, toque em Falar com o Flow para perguntar sobre seus dados, metas e progresso. O Flow é uma IA e não substitui orientação profissional." } }
+    } },
+    "tutorial.flow.pending" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "You can keep typing while Flow answers. If the connection fails, the message shows “Delivery unconfirmed”, with the option to try again." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Você pode continuar escrevendo enquanto o Flow responde. Se a conexão falhar, a mensagem aparece como “Envio sem confirmação”, com a opção de tentar novamente." } }
+    } },
+    "tutorial.flow.suggestions" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Flow can create a workout or meal plan suggestion. It arrives as a draft and only counts after you review and confirm it." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O Flow pode criar uma sugestão de treino ou de cardápio. Ela chega como rascunho e só vale depois que você revisar e confirmar." } }
+    } },
+    "tutorial.flow.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Flow" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Flow" } }
+    } },
+    "tutorial.later" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Not now" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Agora não" } }
+    } },
+    "tutorial.more.library" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Also in Today, the Library holds published articles to read, save and mark as completed, with the All and Saved filters. It can be empty while nothing has been published." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Também em Hoje, a Biblioteca reúne artigos publicados para ler, salvar e marcar como concluídos, com os filtros Todos e Salvos. Ela pode estar vazia enquanto nada foi publicado." } }
+    } },
+    "tutorial.more.routine" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "In Today, Routine lists the supplements and medications already on file, with their times. Marking, snoozing or skipping becomes available from each item’s time." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Em Hoje, Rotina lista os suplementos e medicamentos já cadastrados, com horários. Marcar, adiar ou pular fica disponível a partir do horário de cada item." } }
+    } },
+    "tutorial.more.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Routine and Library" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Rotina e Biblioteca" } }
+    } },
+    "tutorial.navigation.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Get to know the app" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Conhecer o app" } }
+    } },
+    "tutorial.next" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Next" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Próximo" } }
+    } },
+    "tutorial.plan.confirm" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Reviewing changes nothing: your plan is only replaced when you confirm." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Revisar não muda nada: seu plano só é substituído quando você confirma." } }
+    } },
+    "tutorial.plan.current" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Plan shows your current workout and nutrition plans, with their details." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Plano mostra seus planos atuais de treino e de alimentação, com os detalhes." } }
+    } },
+    "tutorial.plan.review" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "To review holds the suggestions Flow created." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Em Para revisar ficam as sugestões criadas pelo Flow." } }
+    } },
+    "tutorial.plan.review.import" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "To review holds Flow’s suggestions and the plans you import from a photo or a PDF with Import plan." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Em Para revisar ficam as sugestões do Flow e os planos que você importar por foto ou PDF, em Importar plano." } }
+    } },
+    "tutorial.plan.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Plan" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Plano" } }
+    } },
+    "tutorial.position" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Step %1$lld of %2$lld" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Etapa %1$lld de %2$lld" } }
+    } },
+    "tutorial.profile.persona" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "In Flow’s style you choose how Flow talks to you." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Em Estilo do Flow você escolhe como o Flow conversa com você." } }
+    } },
+    "tutorial.profile.reminders" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "In Reminders on this iPhone you turn on your routine’s notices. They only work after you turn them on." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Em Lembretes neste iPhone você liga os avisos da sua rotina. Eles só funcionam depois que você ativa." } }
+    } },
+    "tutorial.profile.replay" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Get to know the app opens this tour again whenever you want." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Conhecer o app abre este passeio de novo quando você quiser." } }
+    } },
+    "tutorial.profile.sign-out" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Sign out is in Profile too." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sair da conta também fica no Perfil." } }
+    } },
+    "tutorial.profile.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Profile" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Perfil" } }
+    } },
+    "tutorial.progress.body" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Progress brings together weight, measurements, consistency, achievements and the 7,700 kcal Block, with the date of each value." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Progresso reúne peso, medidas, consistência, conquistas e o Bloco 7.700 kcal, com a data de cada dado." } }
+    } },
+    "tutorial.progress.empty" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "When a value does not exist yet, the app shows it is not available, never a made-up number." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Quando um dado ainda não existe, o app mostra que ele não está disponível, nunca um número inventado." } }
+    } },
+    "tutorial.progress.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Progress" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Progresso" } }
+    } },
+    "tutorial.register.direct" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Weight and hydration are saved when you tap Record weight or Record hydration." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Peso e hidratação são salvos quando você toca em Registrar peso ou Registrar hidratação." } }
+    } },
+    "tutorial.register.meal.capture" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "For a meal, describe what you ate in text, or send a photo or an audio." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Na refeição, descreva o que comeu por texto, envie uma foto ou um áudio." } }
+    } },
+    "tutorial.register.meal.text" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "For a meal, describe what you ate in text." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Na refeição, descreva o que comeu por texto." } }
+    } },
+    "tutorial.register.open" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The central Register button opens Meal, Workout, Weight and Hydration." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O botão central Registrar abre Refeição, Treino, Peso e Hidratação." } }
+    } },
+    "tutorial.register.review" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "For a meal or a workout, the app builds a proposal. Review and adjust it before confirming: none of it is saved without your confirmation." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Na refeição e no treino, o app monta uma proposta. Revise e ajuste antes de confirmar: nada disso é salvo sem a sua confirmação." } }
+    } },
+    "tutorial.register.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Register" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Registrar" } }
+    } },
+    "tutorial.start" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Start" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Começar" } }
+    } },
+    "tutorial.today.balance" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "“Net deficit” includes exercise and shows the balance of the whole day." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "“Déficit líquido” inclui o exercício e mostra o balanço do dia inteiro." } }
+    } },
+    "tutorial.today.details" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "More details shows the day’s values. History lists your confirmed meals and workouts." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Em Mais detalhes ficam os valores do dia. O Histórico reúne as refeições e os treinos confirmados." } }
+    } },
+    "tutorial.today.food" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "“Remaining for food” shows how much still fits in today’s food target. If you go past it, you see “Food excess”. Exercise is not part of this number." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "“Restam para comida” mostra quanto ainda cabe na sua meta de comida de hoje. Se você passar da meta, aparece “Excesso alimentar”. O exercício não entra nessa conta." } }
+    } },
+    "tutorial.today.refresh" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "To get the latest data, tap the refresh icon or pull the screen down. When it is out of date, the app tells you." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Para buscar os dados mais recentes, toque no ícone de atualizar ou puxe a tela para baixo. Quando eles estiverem desatualizados, o app avisa." } }
+    } },
+    "tutorial.today.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Today" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Hoje" } }
+    } },
+    "tutorial.welcome.body" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "A quick tour of the five areas of the app: Today, Plan, Register, Progress and Profile." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Um passeio rápido pelas cinco áreas do app: Hoje, Plano, Registrar, Progresso e Perfil." } }
+    } },
+    "tutorial.welcome.safety" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Nothing is recorded, sent or changed during the tour. You can see it again later in Profile, under Get to know the app." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Durante o passeio nada é registrado, enviado ou alterado. Você pode rever tudo depois em Perfil, em Conhecer o app." } }
+    } },
+    "tutorial.welcome.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Welcome to Performe AI" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Boas-vindas ao Performe AI" } }
+    } }
   },
   "version" : "1.0"
 }

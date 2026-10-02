@@ -19,6 +19,8 @@ struct ProfileRootView: View {
     private let signOut: (@MainActor () async -> Void)?
     /// This session's local reminders; nil where no reminder source exists.
     private let localReminders: LocalReminderModel?
+    /// Opens the guided tour again; nil where the shell offers no tour.
+    private let showTutorial: (@MainActor () -> Void)?
 
     @State private var selectedPersona: CoachPersona?
     @State private var personaEditor: CoachPersonaEditorModel?
@@ -37,6 +39,7 @@ struct ProfileRootView: View {
         invalidationCenter: FeatureInvalidationCenter? = nil,
         retryAction: @escaping @MainActor () -> Void = {},
         localReminders: LocalReminderModel? = nil,
+        showTutorial: (@MainActor () -> Void)? = nil,
         signOut: (@MainActor () async -> Void)? = nil
     ) {
         self.userID = userID
@@ -48,6 +51,7 @@ struct ProfileRootView: View {
         self.retryAction = retryAction
         self.signOut = signOut
         self.localReminders = localReminders
+        self.showTutorial = showTutorial
         _selectedPersona = State(initialValue: nil)
         _personaEditor = State(initialValue: nil)
     }
@@ -167,6 +171,25 @@ struct ProfileRootView: View {
                     .foregroundStyle(BodyFlowColor.primaryText)
             }
             .bodyFlowListRow()
+
+            if let showTutorial {
+                Section {
+                    Button {
+                        showTutorial()
+                    } label: {
+                        FeatureActionLabel(
+                            title: copy("profile.tutorial.title"),
+                            detail: copy("profile.tutorial.detail"),
+                            systemImage: BodyFlowSymbol.info.systemName,
+                            showsDisclosureIndicator: false
+                        )
+                    }
+                    .buttonStyle(.bodyFlowRow)
+                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                    .accessibilityIdentifier("profile.tutorial")
+                }
+                .bodyFlowListRow()
+            }
 
             if accountEmail != nil, let signOut {
                 Section {

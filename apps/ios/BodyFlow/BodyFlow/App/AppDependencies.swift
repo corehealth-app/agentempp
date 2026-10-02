@@ -36,6 +36,12 @@ struct AppDependencies: Sendable {
     /// Plan drafts (Flow proposals and imported documents); nil where no
     /// server keeps them.
     var planDrafts: PlanDraftCapability? = nil
+    /// The guided tour's per-account answer on this iPhone and whether it
+    /// offers itself on the first entry.
+    var guidedTutorial = GuidedTutorialCapability(
+        store: InMemoryGuidedTutorialStore(),
+        offersOnFirstEntry: false
+    )
 
     var patientTimeZone: PatientTimeZoneContext {
         patientTimeZoneStore.current
@@ -554,6 +560,28 @@ struct AppDependencies: Sendable {
         }
         #endif
 
+        var guidedTutorial = GuidedTutorialCapability(
+            store: InMemoryGuidedTutorialStore(),
+            offersOnFirstEntry: false
+        )
+        if apiClient is MobileAPITransport {
+            guidedTutorial = GuidedTutorialCapability(
+                store: UserDefaultsGuidedTutorialStore(),
+                offersOnFirstEntry: true
+            )
+        }
+        #if DEBUG
+        if configuration.mode == .demo {
+            // The demonstration and UI tests land on the shell; only a test
+            // that asks for the first-entry offer sees it.
+            guidedTutorial = GuidedTutorialCapability(
+                store: InMemoryGuidedTutorialStore(),
+                offersOnFirstEntry: ProcessInfo.processInfo.arguments
+                    .contains(GuidedTutorialCapability.firstEntryTestArgument)
+            )
+        }
+        #endif
+
         let onboarding: any OnboardingRepository
         #if DEBUG
         if configuration.mode == .demo {
@@ -606,7 +634,8 @@ struct AppDependencies: Sendable {
             flowChat: flowChat,
             localReminders: localReminders,
             mealCapture: mealCapture,
-            planDrafts: planDrafts
+            planDrafts: planDrafts,
+            guidedTutorial: guidedTutorial
         )
     }
 }

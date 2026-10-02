@@ -160,6 +160,8 @@ struct LocalizationContractTests {
             "reminders.summary.off",
             "reminders.summary.on",
             "profile.reminders.title",
+            "profile.tutorial.title",
+            "profile.tutorial.detail",
         ]
 
         for key in reviewedKeys {

@@ -148,7 +148,26 @@ final class BodyFlowUITests: XCTestCase {
 
     @MainActor
     func testApprovedVisualTabOrderAndCenterActionOpenExistingRegister() {
-        let app = launchApp(arguments: ["--ui-testing", Prompt13UITestScenario.loaded.rawValue])
+        assertApprovedTabOrderAndCenterAction(category: nil)
+    }
+
+    @MainActor
+    func testApprovedVisualTabOrderAndCenterActionOpenExistingRegisterAtLarge() {
+        assertApprovedTabOrderAndCenterAction(category: "UICTContentSizeCategoryL")
+    }
+
+    @MainActor
+    func testApprovedVisualTabOrderAndCenterActionOpenExistingRegisterAtAXXXL() {
+        assertApprovedTabOrderAndCenterAction(category: "UICTContentSizeCategoryAccessibilityXXXL")
+    }
+
+    @MainActor
+    private func assertApprovedTabOrderAndCenterAction(category: String?) {
+        var arguments = ["--ui-testing", Prompt13UITestScenario.loaded.rawValue]
+        if let category {
+            arguments += ["-UIPreferredContentSizeCategoryName", category]
+        }
+        let app = launchApp(arguments: arguments)
         attachHierarchy(of: app, name: "final-polish-tab-semantics")
         let bar = app.descendants(matching: .any)["navigation.tab-bar"].firstMatch
         XCTAssertTrue(bar.waitForExistence(timeout: 5))

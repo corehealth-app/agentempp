@@ -14,6 +14,10 @@ final class FlowChatUITests: XCTestCase {
                                 "The composer must stay above the floating navigation before focusing")
         composer.tap()
         composer.typeText("Mensagem A")
+        guard waitForStableComposerKeyboard(composer, action: app.buttons["flow.send"], app: app,
+                                           expectedComposer: "Mensagem A",
+                                           diagnosticName: "flow-pending-before-send") else { return }
+        capture("flow-pending-stable-before-send", app: app)
         app.buttons["flow.send"].tap()
         let outbox = element("flow.outbox", app: app)
         XCTAssertTrue(outbox.waitForExistence(timeout: 3))
@@ -21,6 +25,9 @@ final class FlowChatUITests: XCTestCase {
         XCTAssertNotEqual(composer.value as? String, "Mensagem A")
         composer.tap()
         composer.typeText("Rascunho B")
+        guard waitForStableComposerKeyboard(composer, action: app.buttons["flow.cancel"], app: app,
+                                           expectedComposer: "Rascunho B",
+                                           diagnosticName: "flow-pending-before-cancel") else { return }
         XCTAssertTrue(app.keyboards.firstMatch.exists)
         XCTAssertFalse(app.performeTabBar.exists, "The custom navigation must not form a second bar above the composer")
         XCTAssertTrue(app.buttons["flow.cancel"].isHittable)
@@ -63,6 +70,40 @@ final class FlowChatUITests: XCTestCase {
         capture("flow-ax-local-cancel", app: app)
     }
 
+    func testEmptyAXComposerKeepsDisabledSendAboveDoneWithoutTyping() {
+        let setup = launchFlow(scenario: "empty")
+        setup.terminate()
+        let app = support.launch(arguments: ["--ui-testing", "--ui-testing-preserve-state", "--ui-testing-flow-empty"],
+                                 language: "en-US", dark: false,
+                                 category: "UICTContentSizeCategoryAccessibilityXXXL")
+        XCTAssertTrue(element("screen.hoje", app: app).waitForExistence(timeout: 5))
+        tapVisible(app.buttons["today.flow-chat"], app: app)
+        let composer = app.textFields["flow.composer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 3))
+        composer.tap()
+        let send = app.buttons["flow.send"]
+        // Keep the field blank: typing QA would trigger the observed reflow
+        // and would no longer reproduce the pre-typing 20pt Done overlap.
+        guard waitForStableComposerKeyboard(
+            composer, action: send, app: app,
+            expectedComposer: "Write a message", requiresEnabledAction: false,
+            diagnosticName: "flow-empty-ax-before-typing"
+        ) else { return }
+        XCTAssertEqual(composer.value as? String, "Write a message")
+        XCTAssertFalse(send.isEnabled)
+        let done = app.buttons["keyboard.done"]
+        XCTAssertTrue(done.exists)
+        XCTAssertTrue(done.isHittable)
+        let doneFrame = done.frame
+        XCTAssertGreaterThanOrEqual(doneFrame.width, 44)
+        XCTAssertGreaterThanOrEqual(doneFrame.height, 44)
+        XCTAssertTrue(app.windows.firstMatch.frame.contains(doneFrame))
+        XCTAssertLessThanOrEqual(composer.frame.insetBy(dx: -16, dy: -16).maxY, doneFrame.minY)
+        XCTAssertLessThanOrEqual(send.frame.maxY, doneFrame.minY)
+        assertComposerContainedAboveKeyboard(composer, action: send, app: app)
+        capture("flow-empty-ax-before-typing-settled-raster", app: app)
+    }
+
     func testComposerCannotSubmitOverExisting4000Limit() {
         let app = launchFlow(scenario: "empty")
         let composer = app.textFields["flow.composer"]
@@ -88,14 +129,27 @@ final class FlowChatUITests: XCTestCase {
         XCTAssertTrue(element("flow.limit.detail", app: app).exists)
         capture("flow-ax-limit-keyboard-before-navigation", app: app)
         let adaptive = app.scrollViews["flow.composer-scroll"]
-        if adaptive.exists { reveal(field, in: adaptive) }
+        XCTAssertTrue(adaptive.exists)
+        guard revealComposerSurface(field, in: adaptive, app: app, padding: 16) else { return }
         XCTAssertTrue(field.isHittable, "The real AX input must remain reachable with its keyboard and limit feedback")
         assertControlContainedAboveKeyboard(field.frame.insetBy(dx: -16, dy: -16), app: app)
-        if adaptive.exists { reveal(send, in: adaptive) }
+        XCTAssertLessThanOrEqual(field.frame.maxY + 16, app.buttons["keyboard.done"].frame.minY)
+        guard revealComposerSurface(send, in: adaptive, app: app) else { return }
         XCTAssertTrue(send.isHittable, "The disabled Send still needs a fully reachable native presentation")
         assertAXActionHasMinimumGlyphFootprint(send, app: app)
         assertControlContainedAboveKeyboard(send.frame, app: app)
+        XCTAssertLessThanOrEqual(send.frame.maxY, app.buttons["keyboard.done"].frame.minY)
         capture("flow-ax-limit-native-send-reachable", app: app)
+        let warning = element("flow.limit.detail", app: app)
+        guard revealComposerSurface(warning, in: adaptive, app: app) else { return }
+        assertControlContainedAboveKeyboard(warning.frame, app: app)
+        XCTAssertLessThanOrEqual(warning.frame.maxY, app.buttons["keyboard.done"].frame.minY)
+        XCTAssertEqual(field.value as? String, String(repeating: "a", count: 4_001))
+        XCTAssertTrue(waitForKeyboardFocus(field))
+        XCTAssertTrue(app.keyboards.firstMatch.exists)
+        XCTAssertFalse(send.isEnabled)
+        support.assertTarget(app.buttons["keyboard.done"])
+        capture("flow-ax-limit-warning-reachable-with-keyboard", app: app)
     }
 
     func testHistoricalReadingAndExplicitLatestNavigation() {
@@ -124,6 +178,9 @@ final class FlowChatUITests: XCTestCase {
         for index in 0..<5 {
             composer.tap()
             composer.typeText("QA local \(index)")
+            guard waitForStableComposerKeyboard(composer, action: app.buttons["flow.send"], app: app,
+                                               expectedComposer: "QA local \(index)",
+                                               diagnosticName: "flow-fifty-before-send-\(index)") else { return }
             app.buttons["flow.send"].tap()
             let reconciled = XCTNSPredicateExpectation(
                 predicate: NSPredicate(format: "count == %d", 42 + index * 2),
@@ -212,6 +269,9 @@ final class FlowChatUITests: XCTestCase {
         // A genuine native drag/hold spans the finite two-second mock response.
         // It does not change the provider delay or introduce a test-only event API.
         let history = app.scrollViews["flow.history"]
+        guard waitForStableComposerKeyboard(composer, action: app.buttons["flow.send"], app: app,
+                                           expectedComposer: "QA",
+                                           diagnosticName: "flow-incoming-before-send") else { return }
         app.buttons["flow.send"].tap()
         let rectangle = history.frame
         let historicRole = app.staticTexts["flow.role.qa-seed-35"]
@@ -220,7 +280,7 @@ final class FlowChatUITests: XCTestCase {
         let start = origin.withOffset(CGVector(dx: rectangle.midX, dy: rectangle.minY + rectangle.height * 0.25))
         let end = origin.withOffset(CGVector(dx: rectangle.midX, dy: rectangle.minY + rectangle.height * 0.5))
         XCTAssertTrue(app.buttons["flow.cancel"].exists, "The response must still be pending before the native reader gesture")
-        start.press(forDuration: 0.01, thenDragTo: end, withVelocity: .fast, thenHoldForDuration: 3)
+        start.press(forDuration: 0.01, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 3)
         XCTAssertFalse(app.buttons["flow.cancel"].exists)
         let afterY = historicRole.frame.minY
         // Finger distance is not a valid pixel-offset oracle while the keyboard,
@@ -249,6 +309,9 @@ final class FlowChatUITests: XCTestCase {
         let composer = app.textFields["flow.composer"]
         composer.tap()
         composer.typeText("QA")
+        guard waitForStableComposerKeyboard(composer, action: app.buttons["flow.send"], app: app,
+                                           expectedComposer: "QA",
+                                           diagnosticName: "flow-reopen-before-send") else { return }
         app.buttons["flow.send"].tap()
         let cancel = app.buttons["flow.cancel"]
         XCTAssertTrue(cancel.exists)
@@ -272,6 +335,9 @@ final class FlowChatUITests: XCTestCase {
         let composer = app.textFields["flow.composer"]
         composer.tap()
         composer.typeText("QA")
+        guard waitForStableComposerKeyboard(composer, action: app.buttons["flow.send"], app: app,
+                                           expectedComposer: "QA",
+                                           diagnosticName: "flow-retry-before-send") else { return }
         app.buttons["flow.send"].tap()
         XCTAssertTrue(element("flow.error", app: app).waitForExistence(timeout: 3))
         let retry = app.buttons["flow.retry"]
@@ -645,6 +711,58 @@ final class FlowChatUITests: XCTestCase {
         }
     }
 
+    /// The whole decorated surface must fit; a partially visible target can
+    /// already be hittable. Drag the outer gutter, outside the field's own scroll.
+    private func revealComposerSurface(_ control: XCUIElement, in scroll: XCUIElement,
+                                       app: XCUIApplication, padding: CGFloat = 0) -> Bool {
+        var lastGeometry = "not read"
+        func valid(_ frame: CGRect) -> Bool {
+            !frame.isNull && !frame.isInfinite && frame.width > 0 && frame.height > 0
+                && [frame.minX, frame.minY, frame.maxX, frame.maxY].allSatisfy(\.isFinite)
+        }
+        for _ in 0..<40 {
+            let keyboard = app.keyboards.firstMatch
+            let done = app.buttons["keyboard.done"]
+            guard control.exists, scroll.exists, keyboard.exists, done.exists else { break }
+            let raw = control.frame
+            let scroller = scroll.frame
+            let window = app.windows.firstMatch.frame
+            let header = app.navigationBars.firstMatch.frame
+            let keyboardFrame = keyboard.frame
+            let doneFrame = done.frame
+            lastGeometry = "raw=\(raw); scroll=\(scroller); window=\(window); header=\(header); keyboard=\(keyboardFrame); done=\(doneFrame)"
+            guard [raw, scroller, window, header, keyboardFrame, doneFrame].allSatisfy(valid),
+                  keyboard.isHittable, done.isHittable else { break }
+            let top = max(scroller.minY, window.minY, header.maxY)
+            let bottom = min(scroller.maxY, window.maxY, keyboardFrame.minY, doneFrame.minY)
+            let left = max(scroller.minX, window.minX)
+            let right = min(scroller.maxX, window.maxX)
+            let viewport = CGRect(x: left, y: top, width: right - left, height: bottom - top)
+            let surface = raw.insetBy(dx: -padding, dy: -padding)
+            guard valid(viewport), surface.height <= viewport.height,
+                  surface.minX >= viewport.minX, surface.maxX <= viewport.maxX else { break }
+            if viewport.contains(surface), control.isHittable { return true }
+            let movingDown = surface.minY < viewport.minY
+            let missing = movingDown ? viewport.minY - surface.minY : surface.maxY - viewport.maxY
+            guard missing > 0 else { break }
+            let distance = min(viewport.height * 0.45, max(20, missing + 2))
+            let startY = viewport.minY + viewport.height * (movingDown ? 0.25 : 0.75)
+            let endY = startY + (movingDown ? distance : -distance)
+            let x = viewport.minX + min(12, viewport.width / 4)
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            let start = origin.withOffset(CGVector(dx: x, dy: startY))
+            let end = origin.withOffset(CGVector(dx: x, dy: endY))
+            start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.1)
+        }
+        let diagnostic = XCTAttachment(string: lastGeometry)
+        diagnostic.name = "flow-composer-unreachable-\(control.identifier)-geometry"
+        diagnostic.lifetime = .keepAlways
+        add(diagnostic)
+        capture("flow-composer-unreachable-\(control.identifier)", app: app)
+        XCTFail("The entire composer surface must be reachable above Done with its keyboard still open")
+        return false
+    }
+
     private func assertAXActionHasMinimumGlyphFootprint(_ action: XCUIElement, app: XCUIApplication,
                                                        captureName: String? = nil) {
         // A native minimum glyph-painting bound, NOT equality between UIKit's
@@ -701,44 +819,6 @@ final class FlowChatUITests: XCTestCase {
                                     "The AX button needs at least the native glyph footprint plus DS padding")
     }
 
-    /// Same bounded 250ms/8s readiness pattern used by MealCaptureUITests.
-    /// AX queries are sequential; the final reread must match before assertions.
-    private func waitForStableComposerKeyboard(_ field: XCUIElement, action: XCUIElement,
-                                               app: XCUIApplication) -> Bool {
-        func readGeometry() -> FlowComposerKeyboardGeometry? {
-            let keyboard = app.keyboards.firstMatch
-            let header = app.navigationBars.firstMatch
-            let window = app.windows.firstMatch
-            let done = app.buttons["keyboard.done"]
-            guard keyboard.exists, header.exists, window.exists, done.exists,
-                  field.exists, action.exists, action.isEnabled,
-                  field.value as? String == "QA" else { return nil }
-            return FlowComposerKeyboardGeometry(
-                field: field.frame.insetBy(dx: -16, dy: -16), action: action.frame,
-                keyboard: keyboard.frame, header: header.frame, window: window.frame, done: done.frame,
-                keyboardHittable: keyboard.isHittable, fieldHittable: field.isHittable,
-                actionHittable: action.isHittable, doneHittable: done.isHittable
-            )
-        }
-        var readiness = FlowComposerKeyboardReadiness()
-        let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            readiness.accepts(readGeometry(), at: ProcessInfo.processInfo.systemUptime)
-        }, object: nil)
-        let result = XCTWaiter.wait(for: [settled], timeout: 8)
-        XCTAssertEqual(result, .completed,
-                       "Visible keyboard/composer must settle. Last geometry: \(String(describing: readiness.lastGeometry))")
-        guard result == .completed else { return false }
-        let finalGeometry = readGeometry()
-        XCTAssertEqual(finalGeometry, readiness.lastGeometry, "Geometry changed before containment assertions")
-        XCTAssertEqual(finalGeometry?.isUsable, true)
-        guard let finalGeometry, finalGeometry == readiness.lastGeometry, finalGeometry.isUsable else { return false }
-        let attachment = XCTAttachment(string: String(describing: finalGeometry))
-        attachment.name = "flow-composer-keyboard-settled-geometry"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-        return true
-    }
-
     private func assertComposerContainedAboveKeyboard(_ field: XCUIElement, action: XCUIElement,
                                                       app: XCUIApplication) {
         let keyboard = app.keyboards.firstMatch
@@ -767,6 +847,68 @@ final class FlowChatUITests: XCTestCase {
         support.element(id, app: app)
     }
     private func capture(_ name: String, app: XCUIApplication) { support.capture(name, app: app) }
+}
+
+@MainActor
+extension XCTestCase {
+    /// Same bounded 250ms/8s readiness pattern used by MealCaptureUITests.
+    /// AX queries are sequential; the final reread must match before assertions.
+    func waitForStableComposerKeyboard(_ field: XCUIElement, action: XCUIElement,
+                                               app: XCUIApplication, expectedComposer: String = "QA",
+                                               requiresEnabledAction: Bool = true,
+                                               diagnosticName: String = "flow-composer-keyboard") -> Bool {
+        func readGeometry() -> FlowComposerKeyboardGeometry? {
+            let keyboard = app.keyboards.firstMatch
+            let header = app.navigationBars.firstMatch
+            let window = app.windows.firstMatch
+            let done = app.buttons["keyboard.done"]
+            guard keyboard.exists, header.exists, window.exists, done.exists,
+                  field.exists, action.exists, action.isEnabled == requiresEnabledAction,
+                  field.value as? String == expectedComposer else { return nil }
+            return FlowComposerKeyboardGeometry(
+                field: field.frame.insetBy(dx: -16, dy: -16), action: action.frame,
+                keyboard: keyboard.frame, header: header.frame, window: window.frame, done: done.frame,
+                keyboardHittable: keyboard.isHittable, fieldHittable: field.isHittable,
+                actionHittable: action.isHittable, doneHittable: done.isHittable
+            )
+        }
+        func captureFailure(_ phase: String, geometry: FlowComposerKeyboardGeometry?) {
+            let metrics = XCTAttachment(string: "phase=\(phase); geometry=\(String(describing: geometry))")
+            metrics.name = "\(diagnosticName)-\(phase)-geometry"
+            metrics.lifetime = .keepAlways
+            add(metrics)
+            let raster = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            raster.name = "\(diagnosticName)-\(phase)-raster"
+            raster.lifetime = .keepAlways
+            add(raster)
+        }
+        var readiness = FlowComposerKeyboardReadiness()
+        var lastObservedGeometry: FlowComposerKeyboardGeometry?
+        let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            lastObservedGeometry = readGeometry()
+            return readiness.accepts(lastObservedGeometry, at: ProcessInfo.processInfo.systemUptime)
+        }, object: nil)
+        let result = XCTWaiter.wait(for: [settled], timeout: 8)
+        if result != .completed {
+            // Preserve invalid overlap frames before continueAfterFailure=false aborts.
+            captureFailure("timeout", geometry: lastObservedGeometry)
+        }
+        XCTAssertEqual(result, .completed,
+                       "Visible keyboard/composer must settle. Last geometry: \(String(describing: lastObservedGeometry))")
+        guard result == .completed else { return false }
+        let finalGeometry = readGeometry()
+        if finalGeometry != readiness.lastGeometry || finalGeometry?.isUsable != true {
+            captureFailure("changed-before-assertion", geometry: finalGeometry)
+        }
+        XCTAssertEqual(finalGeometry, readiness.lastGeometry, "Geometry changed before containment assertions")
+        XCTAssertEqual(finalGeometry?.isUsable, true)
+        guard let finalGeometry, finalGeometry == readiness.lastGeometry, finalGeometry.isUsable else { return false }
+        let attachment = XCTAttachment(string: String(describing: finalGeometry))
+        attachment.name = "\(diagnosticName)-settled-geometry"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        return true
+    }
 }
 
 // Only this Flow UI gate uses these pure frames; no app layout is changed.

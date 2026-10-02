@@ -14,25 +14,40 @@ struct FlowChatView: View {
     @State private var initiatedSend = false
     @State private var lastAnnouncedMessageID: String?
     @State private var hasLoadedHistory = false
+    @State private var keyboardClearance: CGFloat = 0
     private var reduceMotion: Bool { systemReduceMotion || appReduceMotion }
 
     var body: some View {
         @Bindable var model = model
         GeometryReader { geometry in
-            VStack(spacing: 0) {
-                conversation(gutter: BodyFlowSpacing.screenGutter(usableWidth: geometry.size.width))
-                if let draft = model.turnDraft {
-                    proposalCard(
-                        draft,
-                        gutter: BodyFlowSpacing.screenGutter(usableWidth: geometry.size.width)
-                    )
+            ZStack {
+                FlowKeyboardClearanceObserver(owner: ObjectIdentifier(model)) { clearance in
+                    if keyboardClearance != clearance { keyboardClearance = clearance }
                 }
-                Divider().overlay(BodyFlowColor.color(.borderSubtle))
-                composer(text: $model.composer,
-                         gutter: BodyFlowSpacing.screenGutter(usableWidth: geometry.size.width))
-                    .fixedSize(horizontal: false, vertical: true)
+                .frame(width: geometry.size.width, height: geometry.size.height)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+                VStack(spacing: 0) {
+                    conversation(gutter: BodyFlowSpacing.screenGutter(usableWidth: geometry.size.width))
+                    FlowComposerViewport(viewportHeight: geometry.size.height,
+                                         keyboardClearance: keyboardClearance) {
+                        VStack(spacing: 0) {
+                            if let draft = model.turnDraft {
+                                proposalCard(
+                                    draft,
+                                    gutter: BodyFlowSpacing.screenGutter(usableWidth: geometry.size.width)
+                                )
+                            }
+                            Divider().overlay(BodyFlowColor.color(.borderSubtle))
+                            composer(text: $model.composer,
+                                     gutter: BodyFlowSpacing.screenGutter(usableWidth: geometry.size.width))
+                        }
+                    }
                     .layoutPriority(1)
+                }
+                .padding(.bottom, keyboardClearance)
             }
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
         .background(BodyFlowColor.color(.backgroundPrimary))
         .navigationTitle("flow.title")
@@ -351,6 +366,40 @@ struct FlowChatView: View {
         UIAccessibility.post(notification: .announcement,
                              argument: String(localized: LocalizedStringResource("flow.response.received",
                                 locale: BodyFlowPresentationLanguage.resolve(locale).formattingLocale)))
+    }
+}
+
+/// One persistent scroll container keeps the native field/focus identity while
+/// two-line AX input and limit feedback can outgrow the keyboard-safe viewport.
+private struct FlowComposerViewport<Content: View>: View {
+    let viewportHeight: CGFloat
+    let keyboardClearance: CGFloat
+    private let content: Content
+    @State private var naturalHeight: CGFloat?
+
+    init(viewportHeight: CGFloat, keyboardClearance: CGFloat,
+         @ViewBuilder content: () -> Content) {
+        self.viewportHeight = viewportHeight
+        self.keyboardClearance = keyboardClearance
+        self.content = content()
+    }
+
+    var body: some View {
+        ScrollView(.vertical) {
+            content
+                .fixedSize(horizontal: false, vertical: true)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                    guard height.isFinite, height > 0, naturalHeight != height else { return }
+                    naturalHeight = height
+                }
+        }
+        .frame(height: FlowComposerViewportPolicy.height(
+            natural: naturalHeight, viewport: viewportHeight, clearance: keyboardClearance
+        ), alignment: .top)
+        .defaultScrollAnchor(.top, for: .initialOffset)
+        .scrollDismissesKeyboard(.never)
+        .scrollBounceBehavior(.basedOnSize)
+        .accessibilityIdentifier("flow.composer-scroll")
     }
 }
 

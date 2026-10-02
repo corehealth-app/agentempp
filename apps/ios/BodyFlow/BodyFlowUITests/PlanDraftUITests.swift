@@ -279,6 +279,9 @@ final class PlanDraftUITests: XCTestCase {
         XCTAssertTrue(composer.waitForExistence(timeout: 5))
         composer.tap()
         composer.typeText("Quero um treino")
+        guard waitForStableComposerKeyboard(composer, action: app.buttons["flow.send"], app: app,
+                                           expectedComposer: "Quero um treino",
+                                           diagnosticName: "plan-flow-proposal-before-send") else { return }
         app.buttons["flow.send"].tap()
 
         let review = app.buttons["flow.proposal.review"]

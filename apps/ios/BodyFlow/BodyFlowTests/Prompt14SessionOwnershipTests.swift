@@ -1,6 +1,9 @@
 import CoreGraphics
 import Foundation
+import SwiftUI
 import Testing
+import UIKit
+import XCTest
 @testable import BodyFlow
 
 @MainActor
@@ -751,6 +754,214 @@ struct Prompt14SessionOwnershipTests {
         #expect(await attachedCall.value)
         await drainTask.value
         #expect(drainFinished.hasSignaled)
+    }
+}
+
+@MainActor
+final class AppRootSessionPrivacyRenderingTests: XCTestCase {
+    func testLogoutDoesNotFadeOutPreviousAccountShell() async throws {
+        try await assertNoPreviousAccountShellDuringTransition(switchToAccountB: false)
+    }
+
+    func testAccountSwitchDoesNotFadeOutPreviousAccountShell() async throws {
+        try await assertNoPreviousAccountShellDuringTransition(switchToAccountB: true)
+    }
+
+    private func assertNoPreviousAccountShellDuringTransition(
+        switchToAccountB: Bool
+    ) async throws {
+        let fixture = Prompt14SessionFixture()
+        let authentication = Prompt14RootAuthentication()
+        let model = AppFlowModel(
+            authentication: authentication,
+            onboarding: Prompt14CompletedOnboarding(),
+            persona: fixture.dependencies.coachPersona,
+            telemetry: InMemoryTelemetryClient()
+        )
+        await model.start()
+        guard model.state == .authenticated(userID: DemoUser.id) else {
+            XCTFail("Fixture must begin with authenticated account A: \(model.state)")
+            return
+        }
+
+        let configuration = AppLaunchConfiguration(
+            mode: .demo,
+            shouldResetDemoState: true,
+            startsWithCompletedFixture: true,
+            preloadsSyntheticOnboardingValues: true,
+            authBehavior: .succeed(after: nil)
+        )
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let originalKeyWindow = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 375, height: 812)
+        let host = UIHostingController(rootView: AppRootView(
+            model: model,
+            dependencies: fixture.dependencies,
+            configuration: configuration
+        ))
+        XCTAssertFalse(UIAccessibility.isReduceMotionEnabled, "This regression exercises an animated session exit")
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            originalKeyWindow?.makeKey()
+        }
+
+        for _ in 0..<100 where fixture.factories.totalCalls(for: DemoUser.id) < 3 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        guard fixture.factories.totalCalls(for: DemoUser.id) == 3 else {
+            XCTFail("Account A shell was never installed")
+            return
+        }
+        for _ in 0..<100 {
+            if await authentication.restoreCount >= 2 { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let restoreCount = await authentication.restoreCount
+        guard restoreCount == 2 else {
+            XCTFail("AppRoot did not finish its restore before capture")
+            return
+        }
+
+        let session = fixture.factories.session(for: DemoUser.id)
+        await session.listing.waitUntilStarted()
+        await session.coachOperation.waitUntilStarted()
+        await session.listing.resume(returning: DemoPrompt14Fixtures.emptyTodayFeed)
+        await session.coachOperation.resume(returning: DemoPrompt14Fixtures.balancedCoachResponse)
+
+        // The image is read in CG pixels: x=16 stays left of the centered
+        // mark at every simulator scale. Wait for A's shell and its entry fade.
+        var before = (0, 59, 59)
+        for _ in 0..<50 {
+            host.view.layoutIfNeeded()
+            before = try Self.pixel(in: host.view, x: 16, y: 400)
+            if Self.distance(before, from: (0, 59, 59)) > 30 { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try await Task.sleep(for: .milliseconds(260))
+        host.view.layoutIfNeeded()
+        before = try Self.pixel(in: host.view, x: 16, y: 400)
+        XCTAssertGreaterThan(Self.distance(before, from: (0, 59, 59)), 30,
+                "The test must begin with A's shell visible, not the neutral root: \(before)")
+
+        if switchToAccountB {
+            await authentication.setRestoredUserID("user-b")
+            await model.start()
+            guard model.state == .authenticated(userID: "user-b") else {
+                XCTFail("Fixture must switch from account A to account B: \(model.state)")
+                return
+            }
+        } else {
+            await model.signOut()
+            XCTAssertEqual(model.state, .signedOut(.signIn))
+        }
+        try await Task.sleep(for: .milliseconds(20))
+        host.view.layoutIfNeeded()
+        let firstNeutralFrame = try Self.pixel(in: host.view, x: 16, y: 400)
+        XCTAssertLessThanOrEqual(Self.distance(firstNeutralFrame, from: (0, 59, 59)), 6,
+                "Account A must not fade over the neutral loading screen during \(switchToAccountB ? "account switch" : "logout"): \(firstNeutralFrame)")
+
+        await session.contentEnd.waitUntilStarted()
+        await session.coverEnd.waitUntilStarted()
+        await session.contentEnd.resume(returning: ())
+        await session.coverEnd.resume(returning: ())
+    }
+
+    private static func pixel(in view: UIView, x: Int, y: Int) throws -> (Int, Int, Int) {
+        let image = UIGraphicsImageRenderer(size: view.bounds.size).image { _ in
+            view.drawHierarchy(in: view.bounds, afterScreenUpdates: false)
+        }
+        let cgImage = try XCTUnwrap(image.cgImage)
+        let width = cgImage.width
+        let height = cgImage.height
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        let context = try XCTUnwrap(CGContext(
+            data: &bytes, width: width, height: height,
+            bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        let offset = (y * width + x) * 4
+        return (Int(bytes[offset]), Int(bytes[offset + 1]), Int(bytes[offset + 2]))
+    }
+
+    private static func distance(_ pixel: (Int, Int, Int), from expected: (Int, Int, Int)) -> Int {
+        max(abs(pixel.0 - expected.0), abs(pixel.1 - expected.1), abs(pixel.2 - expected.2))
+    }
+
+}
+
+private actor Prompt14RootAuthentication: AuthenticationService {
+    private(set) var restoreCount = 0
+    private var restoredUserID = DemoUser.id
+
+    func setRestoredUserID(_ userID: String) {
+        restoredUserID = userID
+    }
+
+    func restoreSession() async throws -> AuthSession? {
+        restoreCount += 1
+        return AuthSession(
+            userID: restoredUserID,
+            email: restoredUserID == DemoUser.id
+                ? "account-a@fixture.invalid"
+                : "account-b@fixture.invalid",
+            isEmailConfirmed: true,
+            isOnboardingCompleted: true
+        )
+    }
+
+    func signIn(email: String, password: String) async throws -> AuthSession {
+        throw AuthenticationError.operationUnavailable
+    }
+
+    func signUp(email: String, password: String) async throws -> AuthSignUpResult {
+        throw AuthenticationError.operationUnavailable
+    }
+
+    func confirmEmailForDevelopment() async throws -> AuthSession {
+        throw AuthenticationError.operationUnavailable
+    }
+
+    func requestPasswordRecovery(email: String) async throws {
+        throw AuthenticationError.operationUnavailable
+    }
+
+    func signOut() async throws {}
+}
+
+private struct Prompt14CompletedOnboarding: OnboardingRepository {
+    func loadDraft(for userID: String) async throws -> OnboardingDraft? { nil }
+
+    func loadState(for userID: String) async throws -> OnboardingServerState {
+        OnboardingServerState(
+            locale: "pt-BR",
+            completion: OnboardingCompletionState(
+                completed: true,
+                completedAt: "2026-10-01T15:00:00.000Z"
+            ),
+            requirements: .unavailable,
+            acceptedActions: [],
+            draft: nil
+        )
+    }
+
+    func saveDraft(_ draft: OnboardingDraft, for userID: String) async throws {
+        throw OnboardingRepositoryError.serviceUnavailable
+    }
+
+    func complete(_ draft: OnboardingDraft, for userID: String) async throws {
+        throw OnboardingRepositoryError.serviceUnavailable
+    }
+
+    func clear(for userID: String) async throws {
+        throw OnboardingRepositoryError.serviceUnavailable
     }
 }
 

@@ -329,6 +329,17 @@ struct AppLaunchConfiguration: Sendable {
         else { return nil }
         return Date(timeIntervalSince1970: 1_784_602_200) // 2026-07-20 23:50 BRT
     }
+
+    /// Keeps the real Splash view on screen for the landscape accessibility
+    /// UI test. This fixture is reachable only in a Debug demo UI-test run.
+    var splashLandscapeAccessibilityTestLabel: String? {
+        guard mode == .demo,
+              ProcessInfo.processInfo.arguments.contains("--ui-testing"),
+              ProcessInfo.processInfo.arguments.contains(
+                "--ui-testing-final-polish-splash-landscape"
+              ) else { return nil }
+        return "Preparando sua interface com os dados desta sessão"
+    }
     #else
     init(
         mode: AppRuntimeMode,

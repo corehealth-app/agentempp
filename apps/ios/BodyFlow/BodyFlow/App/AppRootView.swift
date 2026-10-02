@@ -5,6 +5,7 @@ struct AppRootView: View {
     let model: AppFlowModel
     let dependencies: AppDependencies
     let configuration: AppLaunchConfiguration
+    @Namespace private var brandNamespace
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Environment(\.accessibilityDifferentiateWithoutColor)
     private var systemDifferentiateWithoutColor
@@ -31,28 +32,37 @@ struct AppRootView: View {
     var body: some View {
         Group {
             rootContent
-                .transition(BodyFlowMotion.stateTransition(reduceMotion: effectiveReduceMotion))
+                .transition(
+                    hasOutgoingAuthenticatedOwner
+                        ? .identity
+                        : BodyFlowMotion.stateTransition(reduceMotion: effectiveReduceMotion)
+                )
         }
         .animation(
-            BodyFlowMotion.animation(.content, reduceMotion: effectiveReduceMotion),
+            hasOutgoingAuthenticatedOwner
+                ? nil
+                : BodyFlowMotion.animation(.content, reduceMotion: effectiveReduceMotion),
             value: rootPresentationKey
         )
+        .transaction { transaction in
+            if hasOutgoingAuthenticatedOwner {
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
+        }
         .installAppDependencies(dependencies)
+        .environment(
+            \.performeBrandNamespace,
+            hasOutgoingAuthenticatedOwner ? nil : brandNamespace
+        )
         // Appearance only: the catalog AccentColor is a historical asset (its
         // dark value is the achievement gold), so every SwiftUI control that
         // is not explicitly tinted — sheets, dialogs, auth and onboarding —
         // takes the semantic brand primary from here instead.
         .tint(BodyFlowColor.color(.brandPrimary))
-        .environment(
-            \.bodyFlowReduceMotion,
-            BodyFlowReduceMotionPolicy.effectiveValue(
-                systemValue: systemReduceMotion,
-                override: configuration.accessibilityReduceMotionOverride
-            )
-        )
-        .environment(
-            \.bodyFlowDifferentiateWithoutColor,
-            configuration.differentiateWithoutColorOverride
+        .bodyFlowVisualEnvironment(
+            reduceMotion: effectiveReduceMotion,
+            differentiateWithoutColor: configuration.differentiateWithoutColorOverride
                 ?? systemDifferentiateWithoutColor
         )
         .task {
@@ -86,7 +96,9 @@ struct AppRootView: View {
 
     @ViewBuilder
     private var rootContent: some View {
-        if authenticatedShellCoordinator.requiresNeutralRoot(
+        if let label = splashLandscapeAccessibilityTestLabel {
+            SplashView(loadingLabel: label)
+        } else if authenticatedShellCoordinator.requiresNeutralRoot(
             for: requestedAuthenticatedUserID
         ) {
             authenticatedSessionLoading
@@ -140,6 +152,14 @@ struct AppRootView: View {
                 }
             }
         }
+    }
+
+    private var splashLandscapeAccessibilityTestLabel: String? {
+        #if DEBUG
+        configuration.splashLandscapeAccessibilityTestLabel
+        #else
+        nil
+        #endif
     }
 
     private var authenticatedSessionLoading: some View {
@@ -210,6 +230,17 @@ struct AppRootView: View {
         return userID
     }
 
+    /// A removed shell must never remain in the outgoing opacity transition,
+    /// even for one frame: the next root may represent another account.
+    /// After teardown, the neutral root may animate into its safe destination.
+    private var hasOutgoingAuthenticatedOwner: Bool {
+        if authenticatedShellCoordinator.tearingDownOwner != nil { return true }
+        guard let owner = authenticatedShellCoordinator.renderableOwner else {
+            return false
+        }
+        return owner.isInvalidated || owner.userID != requestedAuthenticatedUserID
+    }
+
     private var onboardingUserID: String? {
         guard case .onboarding(let userID, _) = model.state else { return nil }
         return userID
@@ -251,14 +282,7 @@ struct AppRootView: View {
         _ key: String.LocalizationValue,
         fallback: String
     ) -> some View {
-        VStack(spacing: BodyFlowSpacing.lg) {
-            BodyFlowBrandIdentityView()
-            ProgressView(rootCopy(key, fallback: fallback))
-                .tint(BodyFlowColor.color(.brandPrimary))
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(BodyFlowColor.background)
-        .accessibilityElement(children: .contain)
+        SplashView(loadingLabel: rootCopy(key, fallback: fallback))
     }
 
     private func rootCopy(

@@ -272,7 +272,10 @@ struct SessionLifecycleCoordinatorTests {
         let logout = Task { await coordinator.signOut() }
         await secureStore.waitForMarkerWrite()
 
-        let validation = Task { try await coordinator.validate(oldLease) }
+        #expect(await store.currentRecord() == old)
+        // Keep the concurrent replacement uncommitted after logout. Task
+        // creation order cannot select which session validate() observes.
+        await secureStore.blockNextRecordWrite()
         let replacement = lifecycleRecord(
             userID: "00000000-0000-4000-8000-000000000002",
             marker: "new-user",
@@ -282,10 +285,16 @@ struct SessionLifecycleCoordinatorTests {
         await secureStore.releaseMarkerWrite()
 
         _ = await logout.value
+        await secureStore.waitForRecordWrite()
+        #expect(await store.currentRecord() == nil)
         await #expect(throws: SessionLifecycleError.missingSession) {
-            try await validation.value
+            try await coordinator.validate(oldLease)
         }
+        await secureStore.releaseRecordWrite()
         try await switching.value
+        await #expect(throws: SessionLifecycleError.sessionSuperseded) {
+            try await coordinator.validate(oldLease)
+        }
         #expect(try await coordinator.leaseForRequest().bearer == replacement.accessToken)
         #expect(await store.currentRecord() == replacement)
     }

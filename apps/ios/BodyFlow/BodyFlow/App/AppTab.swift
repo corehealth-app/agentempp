@@ -7,6 +7,9 @@ enum AppTab: String, CaseIterable, Identifiable, Hashable, Sendable {
     case progress
     case profile
 
+    /// Visual order only: persistent raw values and route identity stay stable.
+    static let displayOrder: [AppTab] = [.today, .plan, .register, .progress, .profile]
+
     var id: String { rawValue }
 
     var title: String {

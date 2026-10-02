@@ -56,8 +56,8 @@ struct BodyFlowButtonStyle: ButtonStyle {
             if isLoading {
                 // Takes the role's foreground (white on teal, near-black on
                 // mint) so it stays visible in both color schemes.
-                ProgressView()
-                    .tint(foreground)
+                BodyFlowDelayedProgress(tint: foreground)
+                    .foregroundStyle(foreground)
                     .accessibilityHidden(true)
             }
             configuration.label

@@ -34,6 +34,17 @@ struct FeatureStateContentStack<Content: View>: View {
 
 enum BodyFlowSurfaceRole: Sendable {
     case legacy, card, hero, elevated
+    case canvas, content, floating, modal, interactive
+
+    var colorRole: BodyFlowColor.Role {
+        switch self {
+        case .canvas: .backgroundPrimary
+        case .legacy, .card, .content: .backgroundSecondary
+        case .hero: .heroBackground
+        case .elevated, .floating, .modal: .surfaceElevated
+        case .interactive: .surfaceInteractive
+        }
+    }
 }
 
 @MainActor
@@ -76,6 +87,8 @@ struct BodyFlowCard<Content: View>: View {
         case .card: BodyFlowColor.color(.backgroundSecondary)
         case .hero: BodyFlowColor.color(.heroBackground)
         case .elevated: BodyFlowColor.color(.surfaceElevated)
+        case .canvas, .content, .floating, .modal, .interactive:
+            BodyFlowColor.color(surface.colorRole)
         }
     }
 

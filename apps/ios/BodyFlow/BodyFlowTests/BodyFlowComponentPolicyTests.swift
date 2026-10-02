@@ -22,8 +22,8 @@ struct BodyFlowComponentPolicyTests {
     @Test func reduceMotionRemovesBothTransitionKinds() {
         #expect(BodyFlowMotion.duration(reduceMotion: true, disclosure: false) == 0)
         #expect(BodyFlowMotion.duration(reduceMotion: true, disclosure: true) == 0)
-        #expect(BodyFlowMotion.duration(reduceMotion: false, disclosure: false) == 0.20)
-        #expect(BodyFlowMotion.duration(reduceMotion: false, disclosure: true) == 0.25)
+        #expect(BodyFlowMotion.duration(reduceMotion: false, disclosure: false) == 0.22)
+        #expect(BodyFlowMotion.duration(reduceMotion: false, disclosure: true) == 0.22)
     }
 
     @Test func uiLocaleSelectionDoesNotChangeServerLocale() {

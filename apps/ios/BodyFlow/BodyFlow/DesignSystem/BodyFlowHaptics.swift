@@ -9,7 +9,7 @@ import SwiftUI
 /// never uses them as the only channel, since every case here is also shown
 /// as a status line.
 enum BodyFlowHaptics {
-    enum Result: Sendable {
+    enum Result: Equatable, Sendable {
         case success
         case warning
         case failure
@@ -31,8 +31,30 @@ extension View {
         _ result: @escaping (Trigger) -> BodyFlowHaptics.Result?,
         trigger: Trigger
     ) -> some View {
-        sensoryFeedback(trigger: trigger) { _, newValue in
-            result(newValue)?.feedback
+        modifier(BodyFlowResultFeedbackModifier(result: result, trigger: trigger))
+    }
+}
+
+private struct BodyFlowResultFeedbackEnabledKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    /// A visible operation coordinator can own feedback instead of nested summaries.
+    var bodyFlowResultFeedbackEnabled: Bool {
+        get { self[BodyFlowResultFeedbackEnabledKey.self] }
+        set { self[BodyFlowResultFeedbackEnabledKey.self] = newValue }
+    }
+}
+
+private struct BodyFlowResultFeedbackModifier<Trigger: Equatable>: ViewModifier {
+    @Environment(\.bodyFlowResultFeedbackEnabled) private var enabled
+    let result: (Trigger) -> BodyFlowHaptics.Result?
+    let trigger: Trigger
+
+    func body(content: Content) -> some View {
+        content.sensoryFeedback(trigger: trigger) { _, value in
+            enabled ? result(value)?.feedback : nil
         }
     }
 }

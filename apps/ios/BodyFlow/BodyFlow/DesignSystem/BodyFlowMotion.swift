@@ -2,16 +2,17 @@ import SwiftUI
 
 enum BodyFlowMotion {
     static func duration(reduceMotion: Bool, disclosure: Bool) -> Double {
-        reduceMotion ? 0 : (disclosure ? 0.25 : 0.20)
+        reduceMotion ? 0 : 0.22
     }
 
     enum Kind: Sendable {
-        /// State replacement and content fades (≤200 ms).
+        /// State replacement and content fades (220 ms).
         case content
-        /// Native disclosure expand/collapse (≤250 ms).
+        /// Native disclosure expand/collapse (220 ms).
         case disclosure
         /// Card/row press feedback; critically damped so nothing overshoots.
         case press
+        case brand
     }
 
     /// Scale applied to a pressed card/row. Reduce Motion removes it.
@@ -28,7 +29,9 @@ enum BodyFlowMotion {
         case .disclosure:
             return .easeInOut(duration: duration(reduceMotion: false, disclosure: true))
         case .press:
-            return .spring(duration: duration(reduceMotion: false, disclosure: false), bounce: 0)
+            return .easeOut(duration: 0.14)
+        case .brand:
+            return .easeInOut(duration: 0.40)
         }
     }
 

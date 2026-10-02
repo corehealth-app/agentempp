@@ -1,0 +1,11 @@
+Continue a implementação do Performe AI no checkout /Users/eduardohenrique/Developer/performe-ai-client-beta-flow-v1.
+
+Leia primeiro CLAUDE.md e docs/handoffs/2026-10-02-performe-ios-claude-code-handoff.md. Esse handoff consolida o estado atual, decisões, evidências, patches, comandos e pendências; não recomece pelo handoff antigo de setembro. Leia também o relatório e a especificação do tutorial referenciados nele.
+
+Retome do ponto exato: existe um diff RED em FlowChatUITests.swift; o patch GREEN do readiness do benchmark está preservado e ainda não foi aplicado/testado. Finalize essa correção, revisão independente e benchmark com o mesmo runner novo nos dois apps. Conclua os focados, a revisão e a comparação atual de performance. Reserve a integral final, Release e smoke físico para o candidato completo, já com o tutorial, evitando duplicar esses gates caros.
+
+Ao final das alterações de produto, implemente o tutorial inicial guiado solicitado: ensinar tudo que realmente está disponível no app atual, com opção de pular e rever pelo Perfil, sem alterar onboarding/consentimentos, registrar dados ou fazer envios reais para demonstrar. Depois execute os gates impactados no candidato que contém o tutorial.
+
+Preserve as regras: cada bug vira teste do cenário exato; revisão independente antes de commit grave; avisar qualquer impacto no WhatsApp. Commits locais apenas, sem push, PR, merge remoto, Production, TestFlight, App Store ou infraestrutura paga nova. Preserve dados e o rollback assinado; instalação autorizada é por cima do app de staging.
+
+Prossiga autonomamente nas etapas técnicas já autorizadas, sem pedir confirmação repetida. Não contorne o bloqueio do Mac/iPhone e não invente aceite visual/editorial ou decisão nutricional. Relate limites reais; o refinamento e o tutorial ainda não estão concluídos.

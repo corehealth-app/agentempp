@@ -52,6 +52,53 @@ struct FlowChatPreviewSupportTests {
     }
 
     @Test
+    func cancellationFixtureStaysPendingPastThirtyAndSixtyVirtualSeconds() async throws {
+        let clock = FlowPreviewReplyClock()
+        let repository = FlowPreviewRepository(scenario: .pendingCancellation) {
+            try await clock.wait($0)
+        }
+        let key = try IdempotencyKey(validating: "flow-preview-pending-key")
+        let send = Task { try await repository.send(text: "QA", idempotencyKey: key) }
+        defer { send.cancel() }
+        await clock.waitForRegistrations(1)
+        #expect(await clock.pendingCount == 1)
+
+        // The unchanged UI case can inspect Cancel only after a 60-second
+        // XCTest idle wait. Advancing this clock does not consume wall time.
+        await clock.advance(by: .seconds(30))
+        #expect(await clock.pendingCount == 1)
+        await clock.advance(by: .seconds(30))
+        #expect(await clock.pendingCount == 1)
+        #expect(try await repository.history(limit: 50).messages.isEmpty)
+        send.cancel()
+        await #expect(throws: CancellationError.self) { try await send.value }
+        #expect(await clock.pendingCount == 0)
+        #expect(try await repository.history(limit: 50).messages.isEmpty)
+
+        #expect(await repository.sentKeys == [key.value])
+        #expect(await repository.sendCallCount == 1)
+    }
+
+    @Test
+    func defaultCancellationWaitExitsWithoutPublishingAReply() async throws {
+        let entered = AsyncStream<Void>.makeStream()
+        defer { entered.continuation.finish() }
+        let repository = FlowPreviewRepository(scenario: .pendingCancellation) { duration in
+            entered.continuation.yield(())
+            try await FlowPreviewRepository.waitForReply(duration)
+        }
+        let key = try IdempotencyKey(validating: "flow-preview-default-cancel-key")
+        let send = Task { try await repository.send(text: "QA", idempotencyKey: key) }
+        defer { send.cancel() }
+        var iterator = entered.stream.makeAsyncIterator()
+        _ = await iterator.next()
+        send.cancel()
+        await #expect(throws: CancellationError.self) { try await send.value }
+        #expect(try await repository.history(limit: 50).messages.isEmpty)
+        #expect(await repository.sendCallCount == 1)
+    }
+
+    @Test
     func suppliedProcessingLongRawHistoryAndOfflineStayDistinct() async throws {
         let processing = try await FlowPreviewRepository(scenario: .processing).history(limit: 50)
         #expect(processing.messages.last?.state == .processing)
@@ -64,6 +111,56 @@ struct FlowChatPreviewSupportTests {
         await #expect(throws: URLError(.notConnectedToInternet)) {
             try await FlowPreviewRepository(scenario: .offline).history(limit: 50)
         }
+    }
+}
+
+/// A test-only virtual clock. Registration is an explicit barrier; advancing
+/// time and cancellation remove a waiter before resuming it exactly once.
+private actor FlowPreviewReplyClock {
+    private struct Waiter {
+        let deadline: Duration?
+        let continuation: CheckedContinuation<Void, any Error>
+    }
+    private var now = Duration.zero
+    private var registrations = 0
+    private var waiters: [UUID: Waiter] = [:]
+    private var registrationBarriers: [(Int, CheckedContinuation<Void, Never>)] = []
+    var pendingCount: Int { waiters.count }
+
+    func wait(_ duration: Duration?) async throws {
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                guard !Task.isCancelled else {
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+                waiters[id] = Waiter(deadline: duration.map { now + $0 }, continuation: continuation)
+                registrations += 1
+                let ready = registrationBarriers.filter { $0.0 <= registrations }
+                registrationBarriers.removeAll { $0.0 <= registrations }
+                for (_, barrier) in ready { barrier.resume() }
+            }
+        } onCancel: {
+            Task { await self.cancel(id) }
+        }
+    }
+
+    func waitForRegistrations(_ count: Int) async {
+        if registrations >= count { return }
+        await withCheckedContinuation { registrationBarriers.append((count, $0)) }
+    }
+
+    func advance(by duration: Duration) {
+        now += duration
+        let ready = waiters.compactMap { id, waiter in
+            waiter.deadline.map { $0 <= now } == true ? id : nil
+        }
+        for id in ready { waiters.removeValue(forKey: id)?.continuation.resume() }
+    }
+
+    private func cancel(_ id: UUID) {
+        waiters.removeValue(forKey: id)?.continuation.resume(throwing: CancellationError())
     }
 }
 #endif

@@ -17,6 +17,7 @@ enum FlowPreviewScenario: String, CaseIterable, Sendable {
 /// Deterministic local QA only; no provider, network or remote completion.
 actor FlowPreviewRepository: FlowChatProviding {
     private let scenario: FlowPreviewScenario
+    private let replyWait: @Sendable (Duration?) async throws -> Void
     private var messages: [FlowMessage]
     private var responses: [String: FlowSendResponse] = [:]
     private var submittedText: [String: String] = [:]
@@ -25,8 +26,14 @@ actor FlowPreviewRepository: FlowChatProviding {
     private(set) var sendCallCount = 0
     private(set) var sentKeys: [String] = []
 
-    init(scenario: FlowPreviewScenario) {
+    init(
+        scenario: FlowPreviewScenario,
+        replyWait: @escaping @Sendable (Duration?) async throws -> Void = {
+            try await FlowPreviewRepository.waitForReply($0)
+        }
+    ) {
         self.scenario = scenario
+        self.replyWait = replyWait
         messages = Self.seed(scenario)
     }
 
@@ -51,9 +58,9 @@ actor FlowPreviewRepository: FlowChatProviding {
             throw URLError(.timedOut)
         }
         if let response = try replay(text: text, key: idempotencyKey.value) { return response }
-        // Native accessibility snapshots can outlast the usual mock reply.
-        // Keep cancellation QA pending without changing the other scenarios.
-        try await Task.sleep(for: scenario == .pendingCancellation ? .seconds(30) : .seconds(2))
+        // Cancellation QA must remain pending even when AX idle takes longer
+        // than a timed reply. Other scenarios retain their two-second delay.
+        try await replyWait(scenario == .pendingCancellation ? nil : .seconds(2))
         try Task.checkCancellation()
         if let response = try replay(text: text, key: idempotencyKey.value) { return response }
         let requestID = UUID().uuidString
@@ -70,6 +77,19 @@ actor FlowPreviewRepository: FlowChatProviding {
         responses[idempotencyKey.value] = response
         messages.append(contentsOf: [user, assistant])
         return response
+    }
+
+    /// A nil duration has no timer and ends only when the caller cancels.
+    nonisolated static func waitForReply(_ duration: Duration?) async throws {
+        if let duration {
+            try await Task.sleep(for: duration)
+            return
+        }
+        let (stream, continuation) = AsyncStream<Void>.makeStream()
+        defer { continuation.finish() }
+        var iterator = stream.makeAsyncIterator()
+        _ = await iterator.next()
+        throw CancellationError()
     }
 
     private func replay(text: String, key: String) throws -> FlowSendResponse? {

@@ -30,6 +30,12 @@ final class PremiumCoreSurfacesUITests: XCTestCase {
             element("today.energy.remaining-food", app: app).value as? String,
             "731 kilocalories; exercise excluded"
         )
+        XCTAssertTrue(element("today.energy.food-excess", app: app).label.contains("17 kcal"))
+        let technicalDetails = element("today.energy.details", app: app)
+        XCTAssertTrue(technicalDetails.waitForExistence(timeout: 5))
+        for _ in 0..<4 where !technicalDetails.isHittable { app.swipeUp() }
+        XCTAssertTrue(technicalDetails.isHittable)
+        technicalDetails.tap()
         XCTAssertEqual(
             element("today.energy.net-balance", app: app).value as? String,
             "minus 83 kilocalories; exercise included"

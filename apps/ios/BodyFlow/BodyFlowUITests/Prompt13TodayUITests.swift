@@ -19,9 +19,14 @@ final class Prompt13TodayUITests: XCTestCase {
         let pending = element("today.pending", in: app)
         let energy = element("today.energy.remaining-food", in: app)
 
-        for item in [localDate, protocolName, updatedAt, attention, pending, energy] {
+        for item in [localDate, attention, pending, energy] {
             XCTAssertTrue(item.waitForExistence(timeout: 3))
         }
+        XCTAssertFalse(protocolName.exists)
+        XCTAssertFalse(updatedAt.exists)
+        element("today.header.details", in: app).tap()
+        XCTAssertTrue(protocolName.waitForExistence(timeout: 3))
+        XCTAssertTrue(updatedAt.exists)
         XCTAssertLessThanOrEqual(energy.frame.minY, attention.frame.minY)
         XCTAssertTrue(app.staticTexts["Data local: 2026-07-20"].exists)
         XCTAssertTrue(app.staticTexts["Protocolo: Recomposição corporal"].exists)
@@ -34,14 +39,41 @@ final class Prompt13TodayUITests: XCTestCase {
         let app = support.launch(scenario: .loaded)
 
         let remaining = element("today.energy.remaining-food", in: app)
+        let excess = element("today.energy.food-excess", in: app)
         let netBalance = element("today.energy.net-balance", in: app)
         XCTAssertTrue(remaining.waitForExistence(timeout: 5))
+        XCTAssertTrue(excess.waitForExistence(timeout: 3))
+        XCTAssertFalse(netBalance.exists)
+        element("today.energy.details", in: app).tap()
         XCTAssertTrue(netBalance.waitForExistence(timeout: 3))
         XCTAssertNotEqual(remaining.frame, netBalance.frame)
         XCTAssertTrue(app.staticTexts["731 kcal"].exists)
+        XCTAssertTrue(app.staticTexts["17 kcal"].exists)
         XCTAssertTrue(app.staticTexts["-83 kcal"].exists)
         XCTAssertTrue(app.staticTexts["Exercício excluído"].exists)
         XCTAssertTrue(app.staticTexts["Exercício incluído"].exists)
+    }
+
+    @MainActor
+    func testFoodBalanceLeadsWhileTechnicalBalanceOpensInDetails() {
+        let support = BodyFlowUITestSupport(testCase: self)
+        let app = support.launch(scenario: .loaded)
+
+        let food = element("today.energy.remaining-food", in: app)
+        let technical = element("today.energy.net-balance", in: app)
+        XCTAssertTrue(food.waitForExistence(timeout: 5))
+        XCTAssertFalse(technical.exists, "Technical balance belongs in the disclosure")
+        XCTAssertTrue(element("today.energy.consumed", in: app).exists)
+        XCTAssertTrue(element("today.energy.target", in: app).exists)
+        XCTAssertTrue(app.staticTexts["1.200 kcal"].exists)
+        XCTAssertTrue(app.staticTexts["1.935 kcal"].exists)
+
+        let details = element("today.energy.details", in: app)
+        for _ in 0..<3 where !details.isHittable { app.swipeUp() }
+        XCTAssertTrue(details.isHittable)
+        details.tap()
+        XCTAssertTrue(technical.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["-83 kcal"].exists)
     }
 
     @MainActor

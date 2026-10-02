@@ -72,6 +72,7 @@ final class BodyFlowUITests: XCTestCase {
         ])
         let openFlow = app.buttons["today.flow-chat"]
         XCTAssertTrue(openFlow.waitForExistence(timeout: 5))
+        for _ in 0..<6 where !openFlow.isHittable { app.swipeUp() }
         XCTAssertTrue(openFlow.isHittable)
         openFlow.tap()
 

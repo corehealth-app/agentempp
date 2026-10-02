@@ -114,7 +114,7 @@ final class Prompt13AccessibilityUITests: XCTestCase {
                 .waitForExistence(timeout: 5)
         )
         XCTAssertTrue(
-            element("today.energy.net-balance", in: app)
+            element("today.energy.food-excess", in: app)
                 .waitForExistence(timeout: 5)
         )
         support.captureEvidence(named: "10-dark-mode.png", of: app)
@@ -220,6 +220,9 @@ final class Prompt13AccessibilityUITests: XCTestCase {
         XCTAssertTrue(refresh.waitForExistence(timeout: 5))
         support.assertMinimumTapTarget(refresh)
         refresh.tap()
+        let headerDetails = element("today.header.details", in: app)
+        XCTAssertTrue(headerDetails.waitForExistence(timeout: 5))
+        headerDetails.tap()
         XCTAssertTrue(
             element("today.header.updated-at", in: app)
                 .waitForExistence(timeout: 5)

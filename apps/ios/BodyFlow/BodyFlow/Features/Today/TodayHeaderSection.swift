@@ -139,66 +139,31 @@ enum TodayCopy {
 struct TodayHeaderSection: View {
     let descriptor: TodayHeaderDescriptor
     @Environment(\.locale) private var locale
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.bodyFlowReduceMotion) private var reduceMotion
     @State private var showsDetails = false
 
-    // Secondary day context only. The shell brand and the inline "Hoje"
-    // navigation title already identify the screen, so this block no longer
-    // repeats an eyebrow or a decorative headline; it keeps the received
-    // date/protocol/freshness readable without outranking the summary. The
-    // rows share one line when the width allows and wrap otherwise.
+    // The date anchors the day; protocol and freshness are still available
+    // from the server verbatim after expanding the native disclosure.
     var body: some View {
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                // At accessibility sizes the three rows alone would fill the
-                // first screen ahead of Energy. The date stays visible; the
-                // protocol and freshness rows (same received values) move
-                // behind a native disclosure.
-                DisclosureGroup(
-                    isExpanded: $showsDetails.animation(
-                        BodyFlowMotion.animation(.disclosure, reduceMotion: reduceMotion)
-                    )
-                ) {
-                    VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                        protocolLabel
-                        updatedLabel
-                    }
-                    .padding(.top, BodyFlowSpacing.xs)
-                } label: {
-                    localDateLabel
-                }
-                .accessibilityIdentifier("today.header.details")
-            } else {
-                regularLayout
+        DisclosureGroup(
+            isExpanded: $showsDetails.animation(
+                BodyFlowMotion.animation(.disclosure, reduceMotion: reduceMotion)
+            )
+        ) {
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+                protocolLabel
+                updatedLabel
             }
+            .padding(.top, BodyFlowSpacing.xs)
+            .accessibilityElement(children: .contain)
+        } label: {
+            localDateLabel
         }
         .font(BodyFlowTypography.caption)
         .foregroundStyle(BodyFlowColor.secondaryText)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
-    }
-
-    private var regularLayout: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: BodyFlowSpacing.md) {
-                localDateLabel
-                protocolLabel
-                updatedLabel
-            }
-            VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
-                HStack(spacing: BodyFlowSpacing.md) {
-                    localDateLabel
-                    protocolLabel
-                }
-                updatedLabel
-            }
-            VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
-                localDateLabel
-                protocolLabel
-                updatedLabel
-            }
-        }
+        .accessibilityIdentifier("today.header.details")
     }
 
     private var localDateLabel: some View {

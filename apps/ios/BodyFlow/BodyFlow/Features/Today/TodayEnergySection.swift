@@ -112,11 +112,8 @@ struct TodayEnergyDescriptor: Equatable, Sendable {
     }
 }
 
-/// The day at a glance: one panel with the four official figures — both
-/// energy balances first, then protein and hydration — on a single elevated
-/// surface instead of four competing cards. Every remaining official value
-/// stays one tap away in the panel's disclosure, grouped by domain and
-/// keeping its identifier; nothing is abridged, only ranked.
+/// The day at a glance leads with the food balance excluding exercise.
+/// The technical daily balance remains one tap away in the disclosure.
 @MainActor
 struct TodaySummaryPanel: View {
     let energy: TodayEnergyDescriptor
@@ -147,7 +144,27 @@ struct TodaySummaryPanel: View {
                     summaryRow {
                         remainingFoodCell
                     } trailing: {
-                        netBalanceCell
+                        foodExcessCell
+                    }
+
+                    Divider()
+
+                    summaryRow {
+                        TodaySummaryCell(
+                            title: copy("metric.consumed"),
+                            value: TodayValueFormatter.kcal(energy.consumedKcal, language: language),
+                            caption: copy("today.energy.title"),
+                            prominence: .supporting
+                        )
+                        .accessibilityIdentifier("today.energy.consumed")
+                    } trailing: {
+                        TodaySummaryCell(
+                            title: copy("metric.target"),
+                            value: TodayValueFormatter.optionalKcal(energy.targetKcal, language: language),
+                            caption: copy("today.energy.title"),
+                            prominence: .supporting
+                        )
+                        .accessibilityIdentifier("today.energy.target")
                     }
 
                     Divider()
@@ -203,18 +220,17 @@ struct TodaySummaryPanel: View {
         .accessibilityIdentifier("today.energy.remaining-food")
     }
 
-    private var netBalanceCell: some View {
+    private var foodExcessCell: some View {
         TodaySummaryCell(
-            title: copy("today.energy.net-balance"),
+            title: copy("today.energy.food-excess"),
             value: TodayValueFormatter.optionalKcal(
-                energy.dailyBalanceKcal,
+                energy.foodExcessKcal,
                 language: language
             ),
-            caption: copy("today.energy.net-balance.detail"),
+            caption: copy("today.energy.food-remaining.detail"),
             prominence: .headline
         )
-        .accessibilityValue(energy.netBalanceAccessibilityValue(for: language))
-        .accessibilityIdentifier("today.energy.net-balance")
+        .accessibilityIdentifier("today.energy.food-excess")
     }
 
     private var proteinCell: some View {
@@ -261,34 +277,24 @@ struct TodaySummaryPanel: View {
             TodayDisclosureLabel(title: copy("today.energy.details.title"))
         }
         .font(BodyFlowTypography.headline)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("today.energy.details")
     }
 
     private var energyDetails: some View {
         detailGroup(copy("today.energy.title")) {
             FixtureMetricRow(
-                title: copy("metric.target"),
+                title: copy("today.energy.net-balance"),
                 value: TodayValueFormatter.optionalKcal(
-                    energy.targetKcal,
+                    energy.dailyBalanceKcal,
                     language: language
                 )
             )
-            Divider()
-            FixtureMetricRow(
-                title: copy("metric.consumed"),
-                value: TodayValueFormatter.kcal(
-                    energy.consumedKcal,
-                    language: language
-                )
-            )
-            Divider()
-            FixtureMetricRow(
-                title: copy("today.energy.food-excess"),
-                value: TodayValueFormatter.optionalKcal(
-                    energy.foodExcessKcal,
-                    language: language
-                )
-            )
+            .accessibilityValue(energy.netBalanceAccessibilityValue(for: language))
+            .accessibilityIdentifier("today.energy.net-balance")
+            Text(copy("today.energy.net-balance.detail"))
+                .font(BodyFlowTypography.caption)
+                .foregroundStyle(BodyFlowColor.secondaryText)
             Divider()
             FixtureMetricRow(
                 title: copy("today.energy.exercise"),

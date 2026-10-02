@@ -225,6 +225,7 @@ struct TodayRootView: View {
     @Environment(\.locale) private var locale
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.bodyFlowReduceMotion) private var reduceMotion
+    @State private var refreshCoordinator = TodayRefreshCoordinator()
 
     init(
         model: TodayViewModel,
@@ -283,14 +284,22 @@ struct TodayRootView: View {
             if model.state.presentation.value != nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(action: retry) {
-                        Label(verbatim: copy("today.refresh"), symbol: .refresh)
-                            .frame(
-                                width: BodyFlowSpacing.minimumTapTarget + 1,
-                                height: BodyFlowSpacing.minimumTapTarget + 1
-                            )
-                            .contentShape(Rectangle())
+                        Group {
+                            if refreshCoordinator.isRunning || model.isRefreshing {
+                                BodyFlowDelayedProgress()
+                            } else {
+                                Label(verbatim: copy("today.refresh"), symbol: .refresh)
+                            }
+                        }
+                        .frame(
+                            width: BodyFlowSpacing.minimumTapTarget + 1,
+                            height: BodyFlowSpacing.minimumTapTarget + 1
+                        )
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .disabled(refreshCoordinator.isRunning || model.isRefreshing)
+                    .accessibilityLabel(copy("today.refresh"))
                     .accessibilityIdentifier("today.refresh")
                 }
             } else if navigation.toolbarRoutes.contains(.mainHistory) {
@@ -383,10 +392,12 @@ struct TodayRootView: View {
     private var stateContent: some View {
         let presentation = model.state.presentation
         let transition = BodyFlowMotion.stateTransition(reduceMotion: reduceMotion)
-        // Full-screen state ↔ loaded day cross-fades (≤200 ms); immediate
+        // Full-screen state ↔ loaded day cross-fades (220 ms); immediate
         // under Reduce Motion.
         Group {
-            if let fullScreenState = presentation.fullScreenState {
+            if presentation.fullScreenState == .loading {
+                BodyFlowFeatureSkeleton(kind: .today).transition(transition)
+            } else if let fullScreenState = presentation.fullScreenState {
                 ScreenStateView(
                     state: fullScreenState,
                     retryAction: retry
@@ -416,8 +427,8 @@ struct TodayRootView: View {
                     FeatureStaleRecovery(retry: retry)
                 }
 
-                // Day summary first: compact day context, Energy (both
-                // official meanings), then Protein and Hydration paired.
+                // The food balance leads; the technical balance stays in
+                // the summary disclosure with its official meaning.
                 standardSummary(presentation)
 
                 // Next actions: Flow/Library entries, then pending items.
@@ -472,10 +483,7 @@ struct TodayRootView: View {
             .padding(BodyFlowSpacing.md)
         }
         .refreshable {
-            await model.retry()
-            if let mascot {
-                await mascot.retry()
-            }
+            await refreshAll()
         }
     }
 
@@ -492,8 +500,25 @@ struct TodayRootView: View {
 
     private func retry() {
         Task {
-            await model.retry()
+            await refreshAll()
         }
+    }
+
+    private func refreshAll() async {
+        await refreshCoordinator.run(isExternallyRefreshing: model.isRefreshing) {
+            async let day: Void = model.retry()
+            async let content: Void = refreshRecommendations()
+            async let coach: Void = refreshMascot()
+            _ = await (day, content, coach)
+        }
+    }
+
+    private func refreshRecommendations() async {
+        if let recommendations { await recommendations.retry() }
+    }
+
+    private func refreshMascot() async {
+        if let mascot { await mascot.retry() }
     }
 
     private var language: SupportedAppLanguage {

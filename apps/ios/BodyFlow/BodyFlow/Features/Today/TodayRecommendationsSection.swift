@@ -134,7 +134,7 @@ struct TodayRecommendationsSection: View {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
                 loadingPlaceholder
                     .accessibilityHidden(true)
-                ProgressView()
+                BodyFlowDelayedProgress()
                     .frame(maxWidth: .infinity, minHeight: BodyFlowSpacing.minimumTapTarget)
                     .accessibilityIdentifier("today.recommendations.loading")
             }

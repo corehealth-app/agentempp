@@ -9,10 +9,19 @@ final class Prompt14TodayMascotUITests: XCTestCase {
     }
 
     @MainActor
+    private func openHeaderDetails(in app: XCUIApplication, support: Prompt14UITestSupport) {
+        let details = support.element("today.header.details", in: app)
+        XCTAssertTrue(details.waitForExistence(timeout: 5))
+        XCTAssertFalse(support.element("today.header.updated-at", in: app).exists)
+        details.tap()
+    }
+
+    @MainActor
     func testTodayRecommendationsLoadedInServerOrder() {
         let support = Prompt14UITestSupport(testCase: self)
         let app = support.launch(scenario: .loaded)
 
+        openHeaderDetails(in: app, support: support)
         XCTAssertTrue(
             support.element("today.header.updated-at", in: app)
                 .waitForExistence(timeout: 5)
@@ -36,6 +45,7 @@ final class Prompt14TodayMascotUITests: XCTestCase {
         let support = Prompt14UITestSupport(testCase: self)
         let app = support.launch(scenario: .empty)
 
+        openHeaderDetails(in: app, support: support)
         XCTAssertTrue(
             support.element("today.header.updated-at", in: app)
                 .waitForExistence(timeout: 5)
@@ -57,6 +67,7 @@ final class Prompt14TodayMascotUITests: XCTestCase {
 
         for scenario in [Prompt14UITestScenario.offline, .error] {
             let app = support.launch(scenario: scenario)
+            openHeaderDetails(in: app, support: support)
             XCTAssertTrue(
                 support.element("today.header.updated-at", in: app)
                     .waitForExistence(timeout: 5)
@@ -113,6 +124,7 @@ final class Prompt14TodayMascotUITests: XCTestCase {
         let support = Prompt14UITestSupport(testCase: self)
         let app = support.launch(scenario: .unavailable)
 
+        openHeaderDetails(in: app, support: support)
         XCTAssertTrue(
             support.element("today.header.updated-at", in: app)
                 .waitForExistence(timeout: 5)

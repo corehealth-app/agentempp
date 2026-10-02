@@ -461,7 +461,7 @@ function inspectCompiledResources({ appPath, catalog, failures, classifications 
   };
 }
 
-function inspectInfoAndBinary({ appPath, failures, classifications }) {
+function inspectInfoAndBinary({ appPath, expectedBundleIdentifier, failures, classifications }) {
   const infoPath = path.join(appPath, "Info.plist");
   if (!existsSync(infoPath)) throw new Error("compiled Info.plist is missing");
   const info = readPlist(infoPath);
@@ -471,7 +471,7 @@ function inspectInfoAndBinary({ appPath, failures, classifications }) {
     bundleName: info.CFBundleName ?? null,
     executable: info.CFBundleExecutable ?? null,
   };
-  if (sanitizedInfo.bundleIdentifier !== "com.bodyflow.app") {
+  if (sanitizedInfo.bundleIdentifier !== expectedBundleIdentifier) {
     failures.push({ code: "UNEXPECTED_BUNDLE_IDENTIFIER", path: "Info.plist" });
   }
   for (const field of ["displayName", "bundleName"]) {
@@ -514,11 +514,15 @@ export function scanSurface({
   baseline,
   repoRoot = defaultRepoRoot,
   compiledAssetNames,
+  expectedBundleIdentifier = "com.bodyflow.app",
 }) {
   if (!appPath || !existsSync(appPath) || !lstatSync(appPath).isDirectory()) {
     throw new Error("app path does not exist or is not a directory");
   }
   if (!baseline) throw new Error("baseline revision is required");
+  if (typeof expectedBundleIdentifier !== "string" || expectedBundleIdentifier.length === 0) {
+    throw new Error("expected bundle identifier is required");
+  }
 
   const failures = [];
   const classifications = {
@@ -532,7 +536,7 @@ export function scanSurface({
   const publicSource = inspectPublicSource({ repoRoot, failures, classifications });
   const assets = inspectAssets({ repoRoot, baseline, failures, classifications });
   const compiled = inspectCompiledResources({ appPath, catalog: source.catalog, failures, classifications });
-  const binary = inspectInfoAndBinary({ appPath, failures, classifications });
+  const binary = inspectInfoAndBinary({ appPath, expectedBundleIdentifier, failures, classifications });
   const compiledAssets = inspectCompiledAssets({
     appPath,
     repoRoot,
@@ -563,6 +567,7 @@ export function scanSurface({
     classifications,
     compiled: {
       ...binary.info,
+      expectedBundleIdentifier,
       localizationDirectories: compiled.languageDirectories,
       resourceFiles: compiled.files,
       assetCatalogPresent: compiledAssets.present,
@@ -579,13 +584,13 @@ function parseArguments(argv) {
   for (let index = 0; index < argv.length; index += 2) {
     const flag = argv[index];
     const value = argv[index + 1];
-    if (!["--app", "--baseline"].includes(flag) || !value) {
-      throw new Error("usage: premium-surface-scan.mjs --app <path> --baseline <git-sha>");
+    if (!["--app", "--baseline", "--expected-bundle-id"].includes(flag) || !value) {
+      throw new Error("usage: premium-surface-scan.mjs --app <path> --baseline <git-sha> [--expected-bundle-id <identifier>]");
     }
     values[flag.slice(2)] = value;
   }
   if (!values.app || !values.baseline) {
-    throw new Error("usage: premium-surface-scan.mjs --app <path> --baseline <git-sha>");
+    throw new Error("usage: premium-surface-scan.mjs --app <path> --baseline <git-sha> [--expected-bundle-id <identifier>]");
   }
   return values;
 }
@@ -594,7 +599,11 @@ const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPat
 if (isMain) {
   try {
     const arguments_ = parseArguments(process.argv.slice(2));
-    const result = scanSurface({ appPath: path.resolve(arguments_.app), baseline: arguments_.baseline });
+    const result = scanSurface({
+      appPath: path.resolve(arguments_.app),
+      baseline: arguments_.baseline,
+      expectedBundleIdentifier: arguments_["expected-bundle-id"],
+    });
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     if (result.status !== "PASS") process.exitCode = 1;
   } catch (error) {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -118,6 +118,83 @@ function run(fixture, overrides = {}) {
     ...overrides,
   });
 }
+
+
+const stagingBundleIdentifier = "com.performeai.app.dev.k6942zjtv6";
+
+function writeFixtureBundleIdentifier(fixture, identifier) {
+  writeFileSync(path.join(fixture.appPath, "Info.plist"), plist({
+    CFBundleIdentifier: identifier,
+    CFBundleDisplayName: "Performe AI",
+    CFBundleName: "Performe AI",
+    CFBundleExecutable: "PerformeAI",
+  }));
+}
+
+test("accepts the exact staging bundle only when explicitly expected", (t) => {
+  const fixture = createFixture(t);
+  writeFixtureBundleIdentifier(fixture, stagingBundleIdentifier);
+  const result = run(fixture, { expectedBundleIdentifier: stagingBundleIdentifier });
+  assert.equal(result.status, "PASS");
+  assert.equal(result.compiled.bundleIdentifier, stagingBundleIdentifier);
+  assert.equal(result.compiled.expectedBundleIdentifier, stagingBundleIdentifier);
+  assert.equal(result.classifications.PUBLIC_LEAK, 0);
+});
+
+test("keeps the canonical bundle strict by default for a staging artifact", (t) => {
+  const fixture = createFixture(t);
+  writeFixtureBundleIdentifier(fixture, stagingBundleIdentifier);
+  const result = run(fixture);
+  assert.equal(result.status, "FAIL");
+  assert.ok(result.failures.some((failure) => failure.code === "UNEXPECTED_BUNDLE_IDENTIFIER"));
+});
+
+test("rejects a staging artifact whose explicitly expected bundle differs", (t) => {
+  const fixture = createFixture(t);
+  writeFixtureBundleIdentifier(fixture, stagingBundleIdentifier);
+  const result = run(fixture, { expectedBundleIdentifier: "com.performeai.app.dev.other" });
+  assert.equal(result.status, "FAIL");
+  assert.ok(result.failures.some((failure) => failure.code === "UNEXPECTED_BUNDLE_IDENTIFIER"));
+});
+
+test("CLI applies explicit staging identity and preserves default and mismatch rejection", (t) => {
+  const fixture = createFixture(t);
+  writeFixtureBundleIdentifier(fixture, stagingBundleIdentifier);
+  // The fixture Assets.car is synthetic. Keep this CLI test deterministic by
+  // substituting only assetutil metadata, matching run()'s existing injected names.
+  const bin = path.join(fixture.root, "fixture-bin");
+  mkdirSync(bin);
+  writeFileSync(path.join(bin, "xcrun"), `#!/usr/bin/env node
+if (process.argv[2] !== "assetutil" || process.argv[3] !== "--info"
+    || process.argv[4] !== ${JSON.stringify(path.join(fixture.appPath, "Assets.car"))}) process.exit(99);
+process.stdout.write(${JSON.stringify(JSON.stringify(fixture.compiledAssetNames.map((Name) => ({ Name }))))});
+`, { mode: 0o755 });
+  const sourceScript = fileURLToPath(new URL("./premium-surface-scan.mjs", import.meta.url));
+  const script = path.join(fixture.root, "scripts", "uiux", "premium-surface-scan.mjs");
+  mkdirSync(path.dirname(script), { recursive: true });
+  writeFileSync(script, readFileSync(sourceScript));
+  for (const [expected, accepted] of [
+    [stagingBundleIdentifier, true],
+    [undefined, false],
+    ["com.performeai.app.dev.other", false],
+  ]) {
+    const args = [realpathSync(script), "--app", fixture.appPath, "--baseline", fixture.baseline];
+    if (expected !== undefined) args.push("--expected-bundle-id", expected);
+    const result = spawnSync(process.execPath, args, {
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${bin}${path.delimiter}${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH ?? ""}` },
+    });
+    assert.equal(result.status, accepted ? 0 : 1);
+    assert.equal(result.stderr, "");
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.compiled.bundleIdentifier, stagingBundleIdentifier);
+    assert.equal(output.compiled.expectedBundleIdentifier, expected ?? "com.bodyflow.app");
+    assert.equal(output.status, accepted ? "PASS" : "FAIL");
+    if (!accepted) {
+      assert.ok(output.failures.some((failure) => failure.code === "UNEXPECTED_BUNDLE_IDENTIFIER"));
+    }
+  }
+});
 
 test("accepts approved public identity and explicitly allowlisted technical BodyFlow", (t) => {
   const fixture = createFixture(t);

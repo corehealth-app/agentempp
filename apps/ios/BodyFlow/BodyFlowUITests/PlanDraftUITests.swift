@@ -25,6 +25,140 @@ final class PlanDraftUITests: XCTestCase {
     }
 
     @MainActor
+    func testTwentyDraftsKeepLastDraftImportAndPlanReachableAtAXXXL() {
+        assertManyDraftsRemainReachable(scenario: "--ui-testing-prompt13-loaded", terminalID: "plan.detail")
+    }
+
+    @MainActor
+    func testTwentyDraftsKeepImportAndEmptyStateReachableAtAXXXL() {
+        assertManyDraftsRemainReachable(scenario: "--ui-testing-prompt13-empty", terminalID: "state.empty")
+    }
+
+    @MainActor
+    func testTwentyDraftsKeepImportAndOfflineRecoveryReachableAtAXXXL() {
+        assertManyDraftsRemainReachable(scenario: "--ui-testing-prompt13-offline", terminalID: "state.retry")
+    }
+
+    @MainActor
+    func testNumericRestFieldDoneRestoresNavigationWithoutSavingOrConfirming() {
+        let app = launch(language: "pt-BR")
+        app.buttons["tab.plano"].tap()
+        let item = app.buttons[draftItem]
+        XCTAssertTrue(item.waitForExistence(timeout: 8))
+        item.tap()
+        let field = app.textFields[rest]
+        reveal(field, app: app)
+        field.tap()
+        field.typeText("60")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        let done = app.buttons["keyboard.done"]
+        guard done.waitForExistence(timeout: 5) else {
+            XCTFail("The numeric rest field must offer an accessible Done action")
+            return
+        }
+        support.assertTarget(done)
+        done.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["tab.plano"].isHittable)
+        XCTAssertEqual(field.value as? String, "60")
+        XCTAssertFalse(element("plan.draft.confirmed", app: app).exists)
+        XCTAssertFalse(app.buttons["plan.draft.confirm"].exists)
+        reveal(app.buttons["plan.draft.save"], app: app)
+        XCTAssertTrue(app.buttons["plan.draft.save"].isEnabled)
+        support.capture("plan-rest-keyboard-dismissed-unsaved", app: app)
+    }
+
+    @MainActor
+    func testTwentyDraftsKeepUnsavedRestAndReadingPositionAcrossAllTabs() {
+        let app = launch(language: "pt-BR", manyDrafts: true)
+        app.performeTabBar.buttons["tab.plano"].tap()
+        let firstDraft = app.buttons[draftItem]
+        XCTAssertTrue(firstDraft.waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["plan.drafts.item.0d0d0d0d-1111-4222-8333-000000000020"].exists)
+        firstDraft.tap()
+
+        let field = app.textFields[rest]
+        revealInLongList(field, app: app)
+        field.tap()
+        field.typeText("60")
+        let done = app.buttons["keyboard.done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 5))
+        support.assertTarget(done)
+        done.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.performeTabBar.waitForExistence(timeout: 5))
+        revealInLongList(field, app: app)
+        XCTAssertEqual(field.value as? String, "60")
+        let anchorBefore = field.frame
+        support.capture("plan-unsaved-rest-before-tab-roundtrip", app: app)
+
+        for (tab, screen) in [
+            ("tab.perfil", "screen.perfil"),
+            ("tab.progresso", "screen.progresso"),
+            ("tab.registrar", "screen.registrar"),
+            ("tab.hoje", "screen.hoje"),
+        ] {
+            app.performeTabBar.buttons[tab].tap()
+            XCTAssertTrue(element(screen, app: app).waitForExistence(timeout: 5))
+        }
+        app.performeTabBar.buttons["tab.plano"].tap()
+        XCTAssertTrue(element("screen.plan.draft", app: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(field.isHittable, "The same reading anchor must return without another scroll")
+        XCTAssertEqual(field.value as? String, "60")
+        XCTAssertEqual(field.frame.minY, anchorBefore.minY, accuracy: 2,
+                       "Tab changes must preserve the unsaved form's reading position")
+        XCTAssertFalse(app.keyboards.firstMatch.exists)
+        XCTAssertTrue(app.buttons["plan.draft.save"].isEnabled)
+        XCTAssertFalse(app.buttons["plan.draft.confirm"].exists)
+        XCTAssertFalse(element("plan.draft.confirmed", app: app).exists)
+        support.capture("plan-unsaved-rest-after-tab-roundtrip", app: app)
+    }
+
+    @MainActor
+    private func assertManyDraftsRemainReachable(scenario: String, terminalID: String) {
+        let app = launch(
+            language: "pt-BR", scenario: scenario, manyDrafts: true,
+            category: "UICTContentSizeCategoryAccessibilityXXXL"
+        )
+        app.buttons["tab.plano"].tap()
+        let last = app.buttons["plan.drafts.item.0d0d0d0d-1111-4222-8333-000000000020"]
+        XCTAssertTrue(last.waitForExistence(timeout: 8))
+        revealInLongList(last, app: app)
+        support.assertTarget(last)
+        revealInLongList(app.buttons["plan.import"], app: app)
+        support.assertTarget(app.buttons["plan.import"])
+        let terminal = terminalID == "state.empty"
+            ? app.staticTexts["Nada por aqui"] : element(terminalID, app: app)
+        revealInLongList(terminal, app: app)
+        support.capture("plan-twenty-drafts-\(terminalID)-axxxl", app: app)
+    }
+
+    @MainActor
+    private func revealInLongList(_ target: XCUIElement, app: XCUIApplication) {
+        XCTAssertTrue(target.waitForExistence(timeout: 5))
+        for _ in 0..<50 where !isReachable(target, app: app) {
+            let window = visibleWindow(app)
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            let targetFrame = target.frame
+            let movesDown = targetFrame.minY < window.top
+            let neededDistance = movesDown
+                ? window.top - targetFrame.minY + 20
+                : targetFrame.maxY - window.bottom + 20
+            let distance = min(max(neededDistance, 40), (window.bottom - window.top) * 0.6)
+            let startY = movesDown ? window.top + 25 : window.bottom - 25
+            let start = CGPoint(x: app.frame.midX, y: startY)
+            let end = CGPoint(x: start.x, y: startY + (movesDown ? distance : -distance))
+            origin.withOffset(CGVector(dx: start.x, dy: start.y)).press(
+                forDuration: 0.05,
+                thenDragTo: origin.withOffset(CGVector(dx: end.x, dy: end.y)),
+                withVelocity: .slow,
+                thenHoldForDuration: 0.1
+            )
+        }
+        XCTAssertTrue(isReachable(target, app: app), "\(target.identifier) must scroll fully into the visible content area")
+    }
+
+    @MainActor
     func testImportedDraftIsCompletedSavedAndOnlyThenConfirmed() {
         let app = launch(language: "pt-BR")
         app.buttons["tab.plano"].tap()
@@ -167,13 +301,19 @@ final class PlanDraftUITests: XCTestCase {
     }
 
     @MainActor
-    private func launch(language: String, dark: Bool = false) -> XCUIApplication {
+    private func launch(
+        language: String, dark: Bool = false,
+        scenario: String = "--ui-testing-prompt13-loaded",
+        manyDrafts: Bool = false,
+        category: String = "UICTContentSizeCategoryL"
+    ) -> XCUIApplication {
         let app = support.launch(
             arguments: [
-                "--ui-testing", "--ui-testing-prompt13-loaded", "--ui-testing-plan-drafts",
-            ],
+                "--ui-testing", scenario, "--ui-testing-plan-drafts",
+            ] + (manyDrafts ? ["--ui-testing-plan-drafts-many"] : []),
             language: language,
-            dark: dark
+            dark: dark,
+            category: category
         )
         XCTAssertTrue(app.buttons["tab.plano"].waitForExistence(timeout: 8))
         return app

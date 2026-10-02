@@ -176,6 +176,7 @@ struct ScreenStateView: View {
     private let retryAction: @MainActor () -> Void
     private let identifier: String
     private let titleIdentifier: String?
+    private let isEmbedded: Bool
 
     private var descriptor: ScreenState.Descriptor {
         state.descriptor(for: BodyFlowPresentationLanguage.resolve(locale))
@@ -190,58 +191,68 @@ struct ScreenStateView: View {
         state: ScreenState,
         retryAction: @escaping @MainActor () -> Void,
         accessibilityIdentifier: String? = nil,
-        titleAccessibilityIdentifier: String? = nil
+        titleAccessibilityIdentifier: String? = nil,
+        isEmbedded: Bool = false
     ) {
         self.state = state
         self.retryAction = retryAction
         identifier = accessibilityIdentifier ?? state.accessibilityIdentifier
         titleIdentifier = titleAccessibilityIdentifier
+        self.isEmbedded = isEmbedded
     }
 
     var body: some View {
-        GeometryReader { geometry in
-            ScrollView {
-                VStack(spacing: BodyFlowSpacing.md) {
-                    stateGraphic
-
-                    if let titleIdentifier {
-                        Text(descriptor.title)
-                            .font(BodyFlowTypography.screenTitle)
-                            .foregroundStyle(BodyFlowColor.color(.textPrimary))
-                            .accessibilityIdentifier(titleIdentifier)
-                    } else {
-                        Text(descriptor.title)
-                            .font(BodyFlowTypography.screenTitle)
-                            .foregroundStyle(BodyFlowColor.color(.textPrimary))
+        Group {
+            if isEmbedded {
+                content
+            } else {
+                GeometryReader { geometry in
+                    ScrollView {
+                        content.frame(minHeight: geometry.size.height)
                     }
-
-                    if !descriptor.message.isEmpty {
-                        Text(descriptor.message)
-                            .font(BodyFlowTypography.body)
-                            .foregroundStyle(BodyFlowColor.color(.textSecondary))
-                    }
-
-                    if descriptor.showsRetry {
-                        Button(action: triggerRetry) {
-                            Text(retryTitle)
-                        }
-                        .buttonStyle(BodyFlowButtonStyle(role: .primary))
-                        .accessibilityIdentifier("state.retry")
-                    }
+                    .scrollBounceBehavior(.basedOnSize)
                 }
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, BodyFlowSpacing.lg)
-                .padding(.vertical, BodyFlowSpacing.xl)
-                .frame(
-                    maxWidth: .infinity,
-                    minHeight: geometry.size.height
-                )
             }
-            .scrollBounceBehavior(.basedOnSize)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: isEmbedded ? nil : .infinity)
         .background(BodyFlowColor.color(.backgroundPrimary))
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier(identifier)
+    }
+
+    /// An owning screen can put this unchanged state inside its own scroll
+    /// alongside independently available content, without nesting scroll views.
+    private var content: some View {
+        VStack(spacing: BodyFlowSpacing.md) {
+            stateGraphic
+
+            if let titleIdentifier {
+                Text(descriptor.title)
+                    .font(BodyFlowTypography.screenTitle)
+                    .foregroundStyle(BodyFlowColor.color(.textPrimary))
+                    .accessibilityIdentifier(titleIdentifier)
+            } else {
+                Text(descriptor.title)
+                    .font(BodyFlowTypography.screenTitle)
+                    .foregroundStyle(BodyFlowColor.color(.textPrimary))
+            }
+
+            if !descriptor.message.isEmpty {
+                Text(descriptor.message)
+                    .font(BodyFlowTypography.body)
+                    .foregroundStyle(BodyFlowColor.color(.textSecondary))
+            }
+
+            if descriptor.showsRetry {
+                Button(action: triggerRetry) { Text(retryTitle) }
+                    .buttonStyle(BodyFlowButtonStyle(role: .primary))
+                    .accessibilityIdentifier("state.retry")
+            }
+        }
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, BodyFlowSpacing.lg)
+        .padding(.vertical, BodyFlowSpacing.xl)
+        .frame(maxWidth: .infinity)
     }
 
     @MainActor
@@ -252,9 +263,8 @@ struct ScreenStateView: View {
     @ViewBuilder
     private var stateGraphic: some View {
         if state == .loading {
-            ProgressView()
-                .controlSize(.large)
-                .tint(BodyFlowColor.color(.brandPrimary))
+            BodyFlowDelayedProgress()
+                .foregroundStyle(BodyFlowColor.color(.brandPrimary))
                 .accessibilityHidden(true)
         } else {
             Image(systemName: descriptor.systemImage)

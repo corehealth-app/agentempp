@@ -8,6 +8,7 @@ struct PlanDraftReviewView: View {
     @State private var askingToConfirm = false
     @State private var askingToDiscard = false
     @State private var removal: PlanDraftDocument.Path?
+    @FocusState private var focusedField: String?
     @Environment(\.locale) private var locale
     @Environment(\.dismiss) private var dismiss
 
@@ -29,6 +30,21 @@ struct PlanDraftReviewView: View {
             }
         }
         .bodyFlowScreenChrome(title: copy(PlanDraftCopy.navigationTitleKey(imported: model.snapshot?.isImported)))
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button { focusedField = nil } label: {
+                    Text(copy("keyboard.done"))
+                        .frame(
+                            minWidth: BodyFlowSpacing.minimumTapTarget,
+                            minHeight: BodyFlowSpacing.minimumTapTarget
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("keyboard.done")
+            }
+        }
         .accessibilityIdentifier("screen.plan.draft")
         .task { await model.load() }
         .onDisappear { model.invalidate() }
@@ -321,6 +337,7 @@ struct PlanDraftReviewView: View {
                 TextField(title, text: binding(field), axis: .vertical)
                     .lineLimit(1...3)
                     .keyboardType(keyboard(for: field.kind))
+                    .focused($focusedField, equals: field.pointer)
                     .bodyFlowField()
                     .disabled(model.isWorking)
                     .accessibilityLabel(title)
@@ -429,7 +446,7 @@ struct PlanDraftReviewView: View {
 
     private func progress(_ message: String) -> some View {
         HStack(spacing: BodyFlowSpacing.sm) {
-            ProgressView()
+            BodyFlowDelayedProgress()
                 .tint(BodyFlowColor.accent)
                 .accessibilityHidden(true)
             Text(verbatim: message)

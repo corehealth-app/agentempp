@@ -179,7 +179,7 @@ struct PlanImportView: View {
 
     private func progress(_ message: String) -> some View {
         HStack(spacing: BodyFlowSpacing.sm) {
-            ProgressView()
+            BodyFlowDelayedProgress()
                 .tint(BodyFlowColor.accent)
                 .accessibilityHidden(true)
             Text(verbatim: message)

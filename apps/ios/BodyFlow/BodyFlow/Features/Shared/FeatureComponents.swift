@@ -217,6 +217,7 @@ struct FeatureActionLabel: View {
         Text(title)
             .font(BodyFlowTypography.headline)
             .foregroundStyle(BodyFlowColor.primaryText)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var actionDetail: some View {

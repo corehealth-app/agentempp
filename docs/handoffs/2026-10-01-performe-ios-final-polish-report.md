@@ -1,8 +1,10 @@
 # Performe AI — refinamento final iOS
 
-**RELATÓRIO PROVISÓRIO — transferido para continuação no Claude Code em 02/10/2026, sem aceite de cliente.** Ponto de retomada: [handoff atual](2026-10-02-performe-ios-claude-code-handoff.md). Tutorial inicial guiado foi acrescentado ao escopo e ainda não foi implementado. O compositor recebeu limite de altura e scroll persistente após reprodução de overflow em Accessibility XXXL com 4.001 caracteres. Os focados qualificam os 20 casos unitários, os quatro UI AX/histórico e, após sincronização do teclado, seis UI normais e três casos de readiness (9/9 na rodada final). Revisão independente concluída. Último HEAD técnico `306ecbf`, **22 commits locais** desde `5d9429f` antes do checkpoint documental; produto iOS congelado em `5b123d0`. Release, análise nativa, assinatura e scanner dos dois bundles aprovados. Nova integral, par de performance do Flow e smoke físico permanecem pendentes.
+**RELATÓRIO ATUALIZADO EM 02/10/2026 (continuação no Claude Code), sem aceite de cliente.** Candidato completo `05f4f7c`, com o tutorial inicial guiado: **suíte integral 1.827/1.827 PASS, zero skips** (iOS 27); Release sim/staging, Analyze, assinatura e scanner dos dois bundles PASS. Ajuste do runner do benchmark (`791303b`), tutorial (`90e1585`) e sincronização de um teste do Flow (`05f4f7c`) com revisões independentes. Pendentes: smoke físico no iPhone (dispositivo indisponível no corte), gesto real de VoiceOver/tato, aceite visual de Eduardo, fluxo editorial da Biblioteca e canal de distribuição para Roberto.
 
 ## 1. RESUMO EXECUTIVO
+
+**Atualização 02/10 (Claude Code):** o readiness do benchmark foi concluído (RED 7/2 → GREEN 10/10), o novo par Flow foi executado e analisado, o **tutorial inicial guiado** foi implementado e o candidato completo passou na integral **1.827/1.827, zero skips** e nos gates de Release. O texto abaixo desta nota é o histórico anterior a essa atualização.
 
 Refinamento implementado localmente: Registrar central, abertura coerente com a marca, loading compartilhado, hierarquia de Hoje, acessibilidade e preservação de sessões/edições. Correções de Flow, teclado e captura têm cenários exatos, focados aprovados e revisão independente.
 
@@ -51,6 +53,10 @@ Capturas reais preservadas: [coleção visual revisada do simulador](/Users/edua
 PT/EN, claro/escuro efetivo e rotações passaram no iOS 27 em 48,788 s e no compacto 26.5 em 41,385 s. A falha anterior de tema, também observada no baseline, está preservada sem causa definitiva atribuída. SDK 27 e mínimo 18 mantidos; **runtime iOS 18 indisponível, sem execução nessa versão**.
 
 ## 9. PERFORMANCE
+
+**Par `performance-pair-ios27-flow-dock-stable-keyboard` (02/10):** mesmos apps congelados do par falho (antes `c6ac3457…`, depois `4d29e8c9…`) e runner novo comum compilado de `791303b` (log real de compilação). Ordem antes→depois, condições `MATCHED_RECORDED_CONDITIONS`, 2/2 PASS por lado, 8 métricas × 5 amostras, workload 40→50 mensagens verificado nos dois lados.
+- Resposta longa (clock XCTest): 5,334 → 5,394 s, faixas sobrepostas. Memória absoluta/pico menor no depois (−1,7%); sem atribuição causal.
+- Flow 50 (clock XCTest): 5,450 → **238,537 s** no depois, causado por esperas de 60 s do XCTest (“App animations complete notification not received”). **Caracterização:** com o mesmo produto, a reexecução com sonda temporária deu 5,468 s e, com fontes restaurados byte a byte, 5,488 s, ambos sem nenhuma espera; a integral final também não teve nenhuma. **Comparação Flow 50 deste par NÃO ACEITA** (estol de quiescência não reproduzível, não atribuído ao produto). Evidência: `flow-dock-stable-keyboard-pair-characterization.json`. Warning `Invalid frame dimension` apareceu de novo só no depois, sem causa atribuída.
 
 **Atualização do produto5b123d0:** o par `performance-pair-ios27-flow-dock` terminou baseline2PASS/candidato1PASS1FAIL no setup do Flow50, exit65. Sem comparação aceita. O runner v2 tocou durante movimento do teclado. Novo par preparado exige os mesmos apps e um runner atualizado comum; nada foi medido nesse futuro par. Os números abaixo são históricos do produto anterior.
 
@@ -101,7 +107,13 @@ VoiceOver 27: **4/4 PASS em 55,283 s, zero skips — 1 UI de foco/leitura/ordem/
 
 ## 12. NOVAS IDEIAS
 
-Eduardo acrescentou ao escopo, em 02/10/2026, um tutorial inicial guiado para explicar as capacidades existentes. **Ainda não implementado.** Especificação para continuação: [tutorial](2026-10-02-performe-ios-guided-tutorial-scope.md). Implementar após focados/benchmark atuais e antes da integral, Release e smoke finais.
+**Tutorial inicial guiado — implementado (`90e1585`).** Especificação: [tutorial](2026-10-02-performe-ios-guided-tutorial-scope.md).
+- Oferecido uma vez na primeira entrada elegível após login/onboarding (consentimentos intocados); nunca sobre uma sheet ou lembrete em abertura; não muda aba/pilha/rascunho; nada é enviado, registrado ou solicitado.
+- Oito etapas na ordem da barra: boas-vindas, Hoje (Restam para comida sem exercício; Déficit líquido com exercício), Flow, Plano, Registrar, Progresso, Rotina e Biblioteca, Perfil. Linhas condicionadas às capacidades reais da sessão (foto/áudio, rascunhos/importação, lembretes, sair da conta).
+- Estado por conta neste iPhone (`pai.tutorial.v1.<hash>`, sem id nem dado de saúde): não oferecido / “Agora não” / concluído; fechar nunca conta como concluir; lembrete que fecha o tour não é resposta. Perfil → “Conhecer o app” revê tudo ou vai direto a uma área.
+- AX: posição em texto, título como header com foco do VoiceOver após a transição, rolagem ao topo por etapa, alvos 44 pt, ações empilhadas em AXXXL, Reduce Motion. PT/EN, claro/escuro conferidos em captura.
+- Revisão independente: 0 CRITICAL/HIGH; seis MEDIUM e os LOW relevantes corrigidos antes do commit. A seção do Perfil ficou sem cabeçalho porque o título “Ajuda” acionou a auditoria de Dynamic Type (sem ampliar exceções).
+- **Não coberto nesta rodada:** logout/expiração durante o tour e A→B→A pelo shell real (smoke físico com QA A/B); gesto real de VoiceOver.
 
 ## 13. TESTES
 
@@ -118,6 +130,12 @@ Eduardo acrescentou ao escopo, em 02/10/2026, um tutorial inicial guiado para ex
 | Build/assinatura | Release sim/staging, Analyze, build-for-testing | Quatro gates PASS; candidato não instalado |
 
 **Integrais, sem somar repetições como casos exclusivos:**
+
+- **`05f4f7c` (candidato completo com tutorial): 1.827 PASS / 0 FAIL / 0 skips**, 17:48–19:33 UTC, fontes estáveis, nenhuma espera de quiescência. Esta é a integral de referência.
+- `90e1585`: 1.826/1.827; único FAIL em `BodyFlowUITests.testFlowChatIsReachableAndReturnsExplicitLocalSimulation` — toque em Enviar durante o movimento do teclado (árvore mostra texto ainda no campo). Corrigido em `05f4f7c` com o mesmo gate de readiness dos demais testes do Flow; cenário exato 3/3. Sem mudança de produto.
+- Readiness do benchmark (`791303b`): RED 7 PASS/2 FAIL → GREEN 9/9 → 10/10 com o caso de Done que desaparece; cenários normais do Flow e benchmark 3/3; revisão independente sem bloqueios.
+- Tutorial: unitários 1.538 PASS (inclui `GuidedTutorialTests`); `GuidedTutorialUITests` 5/5 (inclui AXXXL); `PremiumConvergenceUITests` teve 4 falhas numa rodada focada (contraste em Hoje na borda da rolagem, foco de teclado no onboarding, timeout de consulta AX) e 4/4 isoladas; a integral final passou inteira.
+- **Release do candidato (`release-gates-tutorial-05f4f7c`):** Release sim 62 s, Analyze PASS (0 warnings), Release staging 58 s, assinatura estrita sim/staging PASS, scan dos dois bundles PASS, testes do scanner 25/25. Perfil staging expira em 04/10/2026 21:12:24 UTC.
 
 - `b8d7b1e`, histórica interrompida: 1.527 Swift Testing/130 suítes, 51 XCTest e 47 UI PASS; três UI FAIL e um Plano cancelado. Focados posteriores não a tornam aprovada.
 - `038c1b7`, concluída: resumo oficial **1.776 PASS / 1 FAIL / zero skips** — 52 XCTest, 1.527 Swift Testing e 197 UI PASS. O único FAIL exigia crescimento do antigo cabeçalho acima do cap da nova barra. Revisão confirmou defeito do contrato do teste; produto intacto.
@@ -145,37 +163,29 @@ Eduardo acrescentou ao escopo, em 02/10/2026, um tutorial inicial guiado para ex
 
 ## 14. PONTOS PENDENTES
 
-- **Tutorial novo:** implementar apresentação guiada das capacidades atuais, opcional e acessível, com replay no Perfil, preservando onboarding/consentimentos/isolamento. A integral, Release e smoke finais devem incluir essa feature.
-- **Próximo passo técnico exato:** GREEN do readiness do benchmark ainda não aplicado; RED7/2 preservado. Conferir o handoff e pacote privado antes de iniciar.
-
-- **Técnicos:** obter nova integral aprovada, par Flow 50/resposta longa após o commit `5b123d0`; focados e revisão da correção Send/Done/overflow concluídos; App Launch bloqueado na finalização, SwiftUI/Hitches incompatíveis com o simulador, janela de Allocations e sinais de launch/memória ainda abertos. Time Profiler qualificado somente no escopo descrito. Sem retry adicional de captura planejado. Warning sem causa/impacto estabelecidos; investigar mediante evidência, sem supressão especulativa.
-- **Físico/entrega:** instalar candidato preservando dados do staging; smoke da abertura e jornadas, gesto real VoiceOver, tato, aceite visual de Eduardo e canal efetivo para Roberto. Perfil expira em 04/10/2026 21:12:24 UTC: revalidar antes de instalar. Rollback assinado preservado. Instalação em Eduardo não equivale a distribuição ao cliente. Limites de cache/rede/warm resume estão na seção 4; runtime 18 não foi exercitado.
+- **Físico/entrega:** iPhone apareceu **indisponível** no corte; instalar o candidato `05f4f7c` por cima do staging (rollback preservado) e fazer o smoke: abertura/restore/logout/onboarding, QA A→B→A, cinco abas/sheets, teclado e B durante A, cancel/retry, proposta × confirmação, peso 80/data, rotina após o horário, lembrete, Biblioteca sem rascunhos, VoiceOver real/tato, tutorial (oferta, “Agora não”, replay e áreas). Perfil expira em 04/10 21:12 UTC; a conta Apple Developer paga (em aprovação) resolve a assinatura para distribuição.
+- **Distribuição para Roberto:** TestFlight ou Ad Hoc depois da aprovação da conta Apple Developer e de autorização explícita de Eduardo (fora do escopo atual).
+- **Performance nativa:** App Launch/Hitches/Allocations continuam com os limites da seção 9; Flow 50 do par atual não aceito (estol não reproduzível).
 - **Humanos/editoriais:** decisão nutricional de produto; Roberto submete artigos, Eduardo revisa, Roberto publica e então validar Biblioteca publicada. Seis rascunhos PT + seis EN não equivalem a publicação. Notificação foi aceita anteriormente pelo usuário, sem nova prova independente nesta rodada.
 - **Fechamento:** simulador27 restaurado a Shutdown no handoff (12:06:20 UTC); voltar a conferir/restaurar após os futuros testes. VO26.5 já restaurado. Arquivamento de ambos os auxiliares foi recusado: “This worktree is protected by a pinned task or workspace.” Inventário sem commits exclusivos/arquivos ignorados; estados preservados, sem snapshot de arquivamento ou remoção, proteção não contornada. Caminhos: `/Users/eduardohenrique/.codex/worktrees/performe-flow-polish/performe-ai-client-beta-flow-v1` e `/Users/eduardohenrique/.codex/worktrees/performe-journey-polish/performe-ai-client-beta-flow-v1`. Evidências diagnósticas preservadas.
 
 ## 15. STATUS FINAL
 
-**STATUS: HANDOFF PARA CONTINUAÇÃO, PRODUTO NÃO CONCLUÍDO.** O commit documental posterior é consultável no Git e não altera o produto. Produto5b123d0 com focados/revisão/Release/análise/assinatura/scanner aprovados; testes RED do próximo ajuste de runner permanecem na árvore e GREEN está preservado, não aplicado. Integral e performance atual pendentes; tutorial autorizado ainda a implementar. **Sem instalação do candidato atual ou aceite de cliente.**
+**STATUS: CANDIDATO COMPLETO VERIFICADO EM SIMULADOR; ENTREGA AO CLIENTE NÃO CONCLUÍDA.** Produto `05f4f7c` com tutorial, integral 1.827/1.827, Release/Analyze/assinatura/scanner PASS. Sem instalação física nesta rodada (iPhone indisponível), sem aceite visual ou editorial.
 
-| Campo | Situação no corte |
+| Campo | Situação |
 |---|---|
 | Host | MacBook-Air-de-Eduardo.local / LOCAL_DEVELOPMENT |
-| Repositório/worktree principal | `/Users/eduardohenrique/Developer/performe-ai-client-beta-flow-v1` |
-| Branch | `codex/performe-ai-client-beta-flow-v1` |
-| HEAD inicial / último técnico | `5d9429f9648c0906e1c9a13ebd1bbe0c6c467103` / `306ecbf442c704acd7b8103bc648c75d839f157c` |
-| Commit / integração / push / merge remoto | 22 commits técnicos antes do checkpoint documental na branch local; push NÃO; merge remoto NÃO; produto Release `5b123d0`, scanner `306ecbf` |
-| Baseline / revisão | Baseline puro de 440 blobs; revisões independentes concluídas antes dos commits |
-| TYPECHECK / LINT / BUILD | Compilação Swift, builds, assinaturas e scanner PASS; sem comando separado de typecheck/lint alegado |
-| Testes / QA | Integral038: 1.776 PASS/1 FAIL; marca corrigida 1/1 focado; pares v2 5/5 e nav/sheet v3 2/2 por lado; integral3e9 interrompida: 52 XCTest + 1.527 Swift + 26 UI PASS, uma falha de geometria e um cancelamento. QA físico aberto |
-| NEW FAILURES INTRODUCED | Contrato da escala corrigido/retestado; Flow AX/compositor corrigido em5b123d0 com focados/revisão. Par Flow atual falhou no setup; RED do runner aberto (7 PASS/2 FAIL). Warning de frame sem causa/impacto atribuídos; sem alegação global de ausência de falhas |
-| Resource gate | Último build5b: PASS, 46 GiB livres/43% de memória livre; swap21.245 MiB, amostra sem tendência. Handoff: NOT REQUIRED (documentos/cópias pequenas). Revalidar antes de novos jobs pesados |
-| Deployment required / performed | NÃO para esta rodada local / NÃO; instalação e distribuição beta pendentes |
-| Release / health / produção | BUILT_AND_VERIFIED_NOT_INSTALLED; health/QA de produção não aplicáveis nesta rodada |
-| Rollback | Não requerido; artefato anterior assinado preservado |
-| REGRESSION STATUS | **PARTIALLY VERIFIED** |
+| Branch / HEAD | `codex/performe-ai-client-beta-flow-v1` / `05f4f7c` (mais commit documental) |
+| Commits desta continuação | `791303b` runner, `90e1585` tutorial, `05f4f7c` teste; locais; push NÃO; merge remoto NÃO |
+| Testes | Integral `05f4f7c` 1.827 PASS / 0 FAIL / 0 skips; par Flow: resposta longa comparável, Flow 50 não aceito |
+| NEW FAILURES INTRODUCED | Nenhuma na integral final |
+| Resource gate | PASS (≈55 GiB livres, 43% memória livre no início dos jobs pesados) |
+| Deployment | NÃO (nem produção nem staging nesta rodada) |
+| Rollback | Artefato assinado anterior preservado |
+| REGRESSION STATUS | **VERIFIED** (simulador iOS 27, suíte integral); físico pendente |
 | PRODUCTION STATUS | **NOT DEPLOYED** |
-| Cleanup | **BLOCKED** para dois worktrees protegidos, nenhum removido. Principal mantido para gates físicos; simulador27 restaurado a Shutdown no handoff |
-| Custo / ambientes | Nenhum ambiente pago temporário novo; custo recorrente novo de infraestrutura zero. Staging preexistente KEPT para beta, custo não reestimado |
-| COST / ENVIRONMENT CLOSEOUT | NOT APPLICABLE a recursos novos; não significa encerramento do staging preexistente |
+| Cleanup | Simulador 27 a restaurar para Shutdown no fechamento; worktrees auxiliares protegidos mantidos |
+| COST / ENVIRONMENT CLOSEOUT | Nenhum recurso pago novo; staging preexistente KEPT; conta Apple Developer (US$ 99/ano) contratada por Eduardo fora desta automação |
 
-`IOS INTEGRATION STATUS: IMPLEMENTED / PARTIALLY VERIFIED` · `REBRAND STATUS: IMPLEMENTED / FINAL VISUAL GATE OPEN` · `ROBERTO BETA CANDIDATE STATUS: NOT READY FOR CLIENT ACCEPTANCE` · `USER VISUAL ACCEPTANCE: PENDING`.
+`IOS INTEGRATION STATUS: IMPLEMENTED / VERIFIED IN SIMULATOR, PHYSICAL PENDING` · `REBRAND STATUS: IMPLEMENTED / FINAL VISUAL GATE OPEN` · `ROBERTO BETA CANDIDATE STATUS: NOT READY FOR CLIENT ACCEPTANCE` · `USER VISUAL ACCEPTANCE: PENDING`.

@@ -13,6 +13,8 @@ struct PerformeBrandAction: View {
     var connectsLaunch = false
     var action: (@MainActor () -> Void)? = nil
     @Environment(\.bodyFlowReduceMotion) private var reduceMotion
+    /// One short pulse when the coordinator confirms a result.
+    @State private var pulsing = false
 
     var body: some View {
         Group {
@@ -84,9 +86,21 @@ struct PerformeBrandAction: View {
         }
         .frame(maxWidth: .infinity, minHeight: 44)
         .contentShape(Rectangle())
-        .scaleEffect(state == .press && !reduceMotion ? BodyFlowMotion.pressedScale : 1)
-        .animation(BodyFlowMotion.animation(.content, reduceMotion: reduceMotion), value: state)
+        .scaleEffect(state == .press && !reduceMotion ? BodyFlowMotion.tapScale : (pulsing ? Self.pulseScale : 1))
+        .animation(BodyFlowMotion.animation(.tap, reduceMotion: reduceMotion), value: state)
+        .animation(BodyFlowMotion.animation(.tap, reduceMotion: reduceMotion), value: pulsing)
+        .onChange(of: state) { _, newState in
+            guard newState == .success, !reduceMotion else { return }
+            pulsing = true
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(180))
+                pulsing = false
+            }
+        }
     }
+
+    /// Grows just enough to be noticed, never past the bar's bounds.
+    static let pulseScale: CGFloat = 1.06
 
     private var caption: some View {
         Text(label)
@@ -112,8 +126,11 @@ private struct PerformeBrandPressStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed && !reduceMotion ? BodyFlowMotion.pressedScale : 1)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? BodyFlowMotion.tapScale : 1)
             .opacity(configuration.isPressed ? BodyFlowOpacity.pressed : 1)
-            .animation(BodyFlowMotion.animation(.press, reduceMotion: reduceMotion), value: configuration.isPressed)
+            .animation(BodyFlowMotion.animation(.tap, reduceMotion: reduceMotion), value: configuration.isPressed)
+            .sensoryFeedback(trigger: configuration.isPressed) { _, pressed in
+                pressed ? BodyFlowHaptics.Tap.action : nil
+            }
     }
 }

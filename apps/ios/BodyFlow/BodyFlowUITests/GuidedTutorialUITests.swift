@@ -5,7 +5,9 @@ import XCTest
 /// moves the user's tab or opens an action by itself.
 final class GuidedTutorialUITests: XCTestCase {
     @MainActor private var support: PremiumUIUXUITestSupport { PremiumUIUXUITestSupport(testCase: self) }
-    private let eligible = ["--ui-testing", "--ui-testing-tutorial-eligible"]
+    /// The text tour is the VoiceOver path; the spotlight tour is covered by
+    /// GuidedTourUITests.
+    private let eligible = ["--ui-testing", "--ui-testing-tutorial-eligible", "--ui-testing-tutorial-text"]
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -16,6 +18,7 @@ final class GuidedTutorialUITests: XCTestCase {
         let app = support.launch(arguments: ["--ui-testing"], language: "pt-BR", dark: false)
         XCTAssertTrue(app.buttons["tab.hoje"].waitForExistence(timeout: 10))
         XCTAssertFalse(support.element("screen.tutorial", app: app).waitForExistence(timeout: 2))
+        XCTAssertFalse(support.element("tour.overlay", app: app).exists)
     }
 
     @MainActor

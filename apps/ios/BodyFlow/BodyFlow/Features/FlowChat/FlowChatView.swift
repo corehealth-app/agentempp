@@ -303,6 +303,7 @@ struct FlowChatView: View {
             .submitLabel(.send)
             .onSubmit(send)
             .accessibilityIdentifier("flow.composer")
+            .guidedTourTarget(.flowComposer)
     }
 
     @ViewBuilder

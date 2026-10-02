@@ -1,9 +1,25 @@
 import SwiftUI
 
+/// The first frame after the static launch screen is that screen (the mark
+/// at the same place and size, so the handoff is seamless); then the name
+/// fades in and the mark breathes while the session is restored, before it
+/// travels to the brand action of the tab bar (`performeBrandContinuity`).
+/// No spinner; a loading line only appears when the wait is long enough to
+/// need one. Reduce Motion, Low Power and a hot device keep the mark still.
 @MainActor
 struct SplashView: View {
     @Environment(\.locale) private var locale
+    @Environment(\.bodyFlowReduceMotion) private var reduceMotion
+    @Environment(\.bodyFlowVisualPolicy) private var visualPolicy
+    @State private var entered = false
+    @State private var breathing = false
+    @State private var showsLoadingText = false
     var loadingLabel: String? = nil
+
+    /// Shown only after this wait: a fast restore never reads "Carregando".
+    nonisolated static let loadingTextDelay: Duration = .milliseconds(1200)
+    /// The breath is a slow 3% swell around the launch-screen size.
+    nonisolated static let breathScale: CGFloat = 1.03
 
     var body: some View {
         GeometryReader { geometry in
@@ -35,13 +51,38 @@ struct SplashView: View {
         .background(BodyFlowColor.color(.heroBackground))
         .foregroundStyle(BodyFlowColor.color(.onHero))
         .accessibilityElement(children: .contain)
+        .accessibilityLabel(loadingText)
         .accessibilityIdentifier("screen.splash")
+        .onAppear {
+            withAnimation(BodyFlowMotion.animation(.brand, reduceMotion: motionReduced)) {
+                entered = true
+            }
+        }
+        .task {
+            // The breath starts once the mark has settled.
+            try? await Task.sleep(for: .milliseconds(420))
+            guard !Task.isCancelled, !motionReduced else { return }
+            withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) {
+                breathing = true
+            }
+        }
+        .task {
+            guard loadingLabel == nil else { return }
+            try? await Task.sleep(for: Self.loadingTextDelay)
+            guard !Task.isCancelled else { return }
+            withAnimation(BodyFlowMotion.animation(.content, reduceMotion: motionReduced)) {
+                showsLoadingText = true
+            }
+        }
     }
+
+    private var motionReduced: Bool { reduceMotion || !visualPolicy.allowsMotion }
 
     private var mark: some View {
         Image(decorative: PerformeAIBrandAsset.symbolNegative.resourceName)
             .resizable().renderingMode(.original).scaledToFit()
             .frame(width: 112, height: 112)
+            .scaleEffect(breathing && !motionReduced ? Self.breathScale : 1)
             .performeBrandContinuity(source: true)
     }
 
@@ -55,15 +96,14 @@ struct SplashView: View {
         VStack(spacing: BodyFlowSpacing.sm) {
             Text(BrandIdentity.productName)
                 .font(BodyFlowTypography.title.weight(.bold))
+                .opacity(reservesOnly || entered || motionReduced ? 1 : 0)
                 .accessibilityIdentifier(reservesOnly ? "" : "brand.product-name")
-            if reservesOnly {
-                HStack(spacing: BodyFlowSpacing.sm) {
-                    Color.clear.frame(width: 20, height: 20)
-                    Text(loadingText).fixedSize(horizontal: false, vertical: true)
-                }
-            } else {
-                BodyFlowDelayedProgress(label: loadingText, tint: BodyFlowColor.color(.onHero))
-            }
+            // The line is always reserved so the mark never jumps when it
+            // appears; a caller-provided label (a long restore) shows at once.
+            Text(loadingText)
+                .fixedSize(horizontal: false, vertical: true)
+                .opacity(reservesOnly ? 0 : (loadingLabel != nil || showsLoadingText ? 1 : 0))
+                .accessibilityHidden(reservesOnly || (loadingLabel == nil && !showsLoadingText))
         }
         .font(BodyFlowTypography.callout)
         .multilineTextAlignment(.center)

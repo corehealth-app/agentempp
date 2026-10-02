@@ -36,13 +36,47 @@ struct BodyFlowComponentPolicyTests {
     }
 
     @Test func motionAndOpacityTokensCollapseUnderReduceMotion() {
-        for kind in [BodyFlowMotion.Kind.content, .disclosure, .press] {
+        for kind in [BodyFlowMotion.Kind.content, .disclosure, .press, .tap, .brand] {
             #expect(BodyFlowMotion.animation(kind, reduceMotion: true) == nil)
             #expect(BodyFlowMotion.animation(kind, reduceMotion: false) != nil)
         }
         #expect(BodyFlowMotion.pressedScale >= 0.98)
         #expect(BodyFlowOpacity.tintWash == 0.10)
         #expect(BodyFlowOpacity.pressed == 0.85)
+    }
+
+    @Test func buttonPressFeedbackDropsScaleUnderReduceMotion() {
+        #expect(BodyFlowMotion.tapScale == 0.96)
+        #expect(BodyFlowButtonStyle.pressedScale(reduceMotion: true) == 1)
+        #expect(BodyFlowButtonStyle.pressedScale(reduceMotion: false) == BodyFlowMotion.tapScale)
+        #expect(PerformeBrandAction.pulseScale == 1.06)
+        #expect(AppShellView.tabArrivalOffset == 6)
+    }
+
+    @Test func openingMotionIsBoundedAndStillUnderReduceMotion() {
+        #expect(SplashView.loadingTextDelay == .milliseconds(1200))
+        #expect(SplashView.breathScale == 1.03)
+        #expect(BodyFlowArrival.rise == 8)
+        #expect(BodyFlowArrival.delay(index: 0, reduceMotion: false) == 0)
+        #expect(BodyFlowArrival.delay(index: 3, reduceMotion: false) == 0.12)
+        // A long list never waits more than a quarter second.
+        #expect(BodyFlowArrival.delay(index: 40, reduceMotion: false) == 0.24)
+        #expect(BodyFlowArrival.delay(index: 40, reduceMotion: true) == 0)
+        #expect(BodyFlowShimmer.period == 1.2)
+        #expect(BodyFlowShimmer.phase(elapsed: 0) == -1)
+        #expect(abs(BodyFlowShimmer.phase(elapsed: 0.6) - 0.5) < 0.0001)
+        #expect(abs(BodyFlowShimmer.phase(elapsed: 1.2) - (-1)) < 0.0001)
+        #expect(BodyFlowOpacity.shimmer == 0.55)
+    }
+
+    @Test func tapHapticsAnswerOnlyThePrimaryActions() {
+        #expect(BodyFlowHaptics.Tap.feedback(for: .primary) == .impact(weight: .light))
+        for role in [BodyFlowButtonRole.secondary, .tertiary, .destructive] {
+            #expect(BodyFlowHaptics.Tap.feedback(for: role) == nil)
+        }
+        #expect(BodyFlowRowButtonStyle().playsTapFeedback == false)
+        #expect(BodyFlowRowButtonStyle.bodyFlowRowAction.playsTapFeedback == true)
+        #expect(BodyFlowHaptics.Tap.selection == .selection)
     }
 
     @Test func rowPressFeedbackDropsScaleUnderReduceMotion() {

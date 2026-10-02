@@ -38,10 +38,12 @@ struct AppRootView: View {
                         : BodyFlowMotion.stateTransition(reduceMotion: effectiveReduceMotion)
                 )
         }
+        // The root changes with the brand duration (400 ms) so the Signal
+        // Spark mark is seen travelling from the splash into the tab bar.
         .animation(
             hasOutgoingAuthenticatedOwner
                 ? nil
-                : BodyFlowMotion.animation(.content, reduceMotion: effectiveReduceMotion),
+                : BodyFlowMotion.animation(.brand, reduceMotion: effectiveReduceMotion),
             value: rootPresentationKey
         )
         .transaction { transaction in

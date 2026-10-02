@@ -18,8 +18,14 @@ struct AppShellView: View {
     @State private var localReminders: LocalReminderModel?
     @State private var planDraftsModel: PlanDraftsModel?
     @State private var tutorialPresentation: GuidedTutorialPresentation?
+    @State private var tour: GuidedTourModel?
+    @State private var tipsShownThisSession = 0
+    /// Counts the user's own taps on the tab bar; programmatic changes
+    /// (a tour step, a reminder route) never tick.
+    @State private var tabTaps = 0
     @Environment(\.locale) private var locale
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.bodyFlowReduceMotion) private var reduceMotion
     let userID: String
     let dependencies: AppDependencies
     let sessionOwner: Prompt14SessionOwner
@@ -105,20 +111,7 @@ struct AppShellView: View {
     }
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-                ForEach(AppTab.displayOrder) { tab in
-                    Tab(
-                        tab.title(for: presentationLanguage),
-                        systemImage: tab.systemImage,
-                        value: tab
-                    ) {
-                        navigationStack(for: tab)
-                    }
-                    .accessibilityIdentifier(tab.accessibilityIdentifier)
-                }
-        }
-        .toolbar(.hidden, for: .tabBar)
-        .tint(BodyFlowColor.accent)
+        shell
 #if DEBUG
         .task {
             guard ProcessInfo.processInfo.arguments.contains("--ui-testing-prompt13-stale-offline") else {
@@ -132,21 +125,7 @@ struct AppShellView: View {
             BodyFlowKeyboardObserver { keyboardVisible = $0 }
             .frame(width: 0, height: 0)
         }
-        .background {
-            // Its own presenter, so it never competes with the registration
-            // sheet; it is only offered while no sheet is shown.
-            Color.clear
-                .frame(width: 0, height: 0)
-                .sheet(item: $tutorialPresentation) { presentation in
-                    GuidedTutorialView(
-                        presentation: presentation,
-                        steps: GuidedTutorialContent.steps(facts: tutorialFacts)
-                    ) { outcome in
-                        recordTutorial(outcome, for: presentation)
-                    }
-                    .installAppDependencies(dependencies)
-                }
-        }
+        .background { tutorialSheetPresenter }
         .environment(router)
         .environment(
             \.contentCoverEnvironment,
@@ -196,6 +175,88 @@ struct AppShellView: View {
         }
     }
 
+    /// The five stacks, with the guided tour drawn over them. Split from
+    /// `body` so the type checker handles each chain on its own.
+    private var shell: some View {
+        tabs
+            // The guided tour draws over the real screen and its tab bar.
+            .overlayPreferenceValue(GuidedTourAnchorKey.self) { anchors in
+                tourOverlay(anchors: anchors)
+            }
+            .animation(BodyFlowMotion.animation(.content, reduceMotion: reduceMotion), value: tour == nil)
+            .onChange(of: tour?.index) { followTourStep() }
+            .onChange(of: selectedTab) {
+                guard selectedTab == .register else { return }
+                offerContextualTip(.mealCommand)
+            }
+            .onChange(of: router.path(for: .today).last) {
+                guard router.path(for: .today).last == .flowChat else { return }
+                offerContextualTip(.flowComposer)
+            }
+    }
+
+    private var tabs: some View {
+        TabView(selection: $selectedTab) {
+            ForEach(AppTab.displayOrder) { tab in
+                Tab(
+                    tab.title(for: presentationLanguage),
+                    systemImage: tab.systemImage,
+                    value: tab
+                ) {
+                    navigationStack(for: tab)
+                }
+                .accessibilityIdentifier(tab.accessibilityIdentifier)
+            }
+        }
+        .toolbar(.hidden, for: .tabBar)
+        .tint(BodyFlowColor.accent)
+        // One tick per tap on the bar, from the shell (the bar is drawn once per stack).
+        .sensoryFeedback(BodyFlowHaptics.Tap.selection, trigger: tabTaps)
+        // Today scrolls its spotlighted control into view for the tour.
+        .environment(\.guidedTourFocus, tour?.current.target)
+    }
+
+    @ViewBuilder
+    private func tourOverlay(anchors: [GuidedTourTarget: Anchor<CGRect>]) -> some View {
+        if let tour {
+            GeometryReader { proxy in
+                GuidedTourOverlay(model: tour, anchors: anchors, proxy: proxy) { outcome in
+                    endTour(tour, outcome: outcome)
+                }
+            }
+            .ignoresSafeArea()
+            // Fades in; leaves at once, so a tap right after the tour never
+            // lands on a dim layer that is still fading.
+            .transition(.asymmetric(
+                insertion: BodyFlowMotion.stateTransition(reduceMotion: reduceMotion),
+                removal: .identity
+            ))
+        }
+    }
+
+    /// Each step is shown on its own tab (a replay from Profile starts on
+    /// Today); the stacks underneath are untouched.
+    private func followTourStep() {
+        guard let tour else { return }
+        if selectedTab != tour.current.tab { selectedTab = tour.current.tab }
+    }
+
+    /// Its own presenter, so it never competes with the registration sheet;
+    /// it is only offered while no sheet is shown.
+    private var tutorialSheetPresenter: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .sheet(item: $tutorialPresentation) { presentation in
+                GuidedTutorialView(
+                    presentation: presentation,
+                    steps: GuidedTutorialContent.steps(facts: tutorialFacts)
+                ) { outcome in
+                    recordTutorial(outcome, for: presentation)
+                }
+                .installAppDependencies(dependencies)
+            }
+    }
+
     /// Opens a tapped reminder only for this session's owner; a tap of
     /// another account is discarded unopened, and nothing is recorded.
     @discardableResult
@@ -208,6 +269,9 @@ struct AppShellView: View {
         // not the user's answer, so it is offered again next time.
         if let tutorialPresentation {
             recordTutorial(.interrupted, for: tutorialPresentation)
+        }
+        if let tour {
+            endTour(tour, outcome: .interrupted)
         }
         selectedTab = .today
         router.popToRoot(in: .today)
@@ -247,20 +311,98 @@ struct AppShellView: View {
             isPresentingSheet: router.presentedSheet != nil,
             hasPendingRoute: routedReminder
         ) else { return }
-        tutorialPresentation = GuidedTutorialPresentation(
-            origin: .firstEntry,
-            ownerKey: tutorialOwnerKey
-        )
+        if prefersTextTour {
+            tutorialPresentation = GuidedTutorialPresentation(
+                origin: .firstEntry,
+                ownerKey: tutorialOwnerKey
+            )
+        } else {
+            startTour(origin: .firstEntry)
+        }
     }
 
     private func presentTutorialFromProfile() {
         guard !sessionOwner.isInvalidated,
-              tutorialPresentation == nil,
+              tutorialPresentation == nil, tour == nil,
               router.presentedSheet == nil else { return }
-        tutorialPresentation = GuidedTutorialPresentation(
-            origin: .profile,
-            ownerKey: tutorialOwnerKey
+        if prefersTextTour {
+            tutorialPresentation = GuidedTutorialPresentation(
+                origin: .profile,
+                ownerKey: tutorialOwnerKey
+            )
+        } else {
+            startTour(origin: .profile)
+        }
+    }
+
+    /// VoiceOver reads the text tour; everyone else gets the spotlight tour.
+    private var prefersTextTour: Bool {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains(GuidedTutorialCapability.textTourTestArgument) {
+            return true
+        }
+        #endif
+        return UIAccessibility.isVoiceOverRunning
+    }
+
+    /// The spotlight tour points at Today's real controls, so a replay asked
+    /// for from Profile moves to Today's root and comes back at the end.
+    private func startTour(origin: GuidedTourModel.Origin) {
+        let model = GuidedTourModel(
+            steps: GuidedTourContent.steps(facts: tutorialFacts),
+            origin: origin,
+            ownerKey: tutorialOwnerKey,
+            returnTab: selectedTab
         )
+        if origin == .profile {
+            router.popToRoot(in: .today)
+            selectedTab = .today
+        }
+        tour = model
+    }
+
+    /// One contextual tip per control, once per account, at most three per
+    /// session, and never over a running tour or a sheet.
+    private func offerContextualTip(_ target: GuidedTourTarget) {
+        let capability = dependencies.guidedTutorial
+        guard capability.offersOnFirstEntry, !prefersTextTour,
+              tour == nil, tutorialPresentation == nil, router.presentedSheet == nil,
+              tipsShownThisSession < GuidedTourContent.tipsPerSession,
+              !capability.store.hasShownTip(target, ownerKey: tutorialOwnerKey),
+              let step = GuidedTourContent.tip(target),
+              !sessionOwner.isInvalidated else { return }
+        let ownerKey = tutorialOwnerKey
+        Task { @MainActor in
+            // The screen settles first, so the spotlight finds its control.
+            try? await Task.sleep(for: .milliseconds(600))
+            guard tour == nil, router.presentedSheet == nil, !sessionOwner.isInvalidated else { return }
+            switch target {
+            case .mealCommand: guard selectedTab == .register else { return }
+            case .flowComposer: guard router.path(for: .today).last == .flowChat else { return }
+            default: return
+            }
+            tipsShownThisSession += 1
+            capability.store.markTipShown(target, ownerKey: ownerKey)
+            tour = GuidedTourModel(steps: [step], origin: .tip, ownerKey: ownerKey, returnTab: selectedTab)
+        }
+    }
+
+    /// Records the answer for the account that opened the tour; a tip
+    /// records nothing beyond having been shown. A replay returns to the
+    /// tab it started from.
+    private func endTour(_ model: GuidedTourModel, outcome: GuidedTutorialOutcome) {
+        guard tour === model else { return }
+        if model.origin != .tip {
+            let store = dependencies.guidedTutorial.store
+            store.setStatus(
+                GuidedTutorialOffer.status(after: outcome, from: store.status(ownerKey: model.ownerKey)),
+                ownerKey: model.ownerKey
+            )
+        }
+        tour = nil
+        if model.origin == .profile, outcome != .interrupted {
+            selectedTab = model.returnTab
+        }
     }
 
     /// Writes the answer for the account that opened the tour and closes only
@@ -292,21 +434,34 @@ struct AppShellView: View {
     private func navigationStack(for tab: AppTab) -> some View {
         NavigationStack(path: router.binding(for: tab)) {
             rootView(for: tab)
-                .safeAreaInset(edge: .bottom, spacing: 0) { navigationBar }
+                .safeAreaInset(edge: .bottom, spacing: 0) { navigationBar(for: tab, atRoot: true) }
                 .navigationDestination(for: AppRoute.self) { route in
                     destination(for: route)
-                        .safeAreaInset(edge: .bottom, spacing: 0) { navigationBar }
+                        .safeAreaInset(edge: .bottom, spacing: 0) { navigationBar(for: tab, atRoot: false) }
                 }
         }
         .toolbar(.hidden, for: .tabBar)
+        // The arriving tab fades and settles up by a few points instead of
+        // cutting in (220 ms; instant under Reduce Motion). Stacks, state and
+        // the tab bar's native control are untouched.
+        .opacity(selectedTab == tab ? 1 : 0)
+        .offset(y: selectedTab == tab || reduceMotion ? 0 : Self.tabArrivalOffset)
+        .animation(BodyFlowMotion.animation(.content, reduceMotion: reduceMotion), value: selectedTab)
         .accessibilityHidden(selectedTab != tab)
     }
 
+    nonisolated static let tabArrivalOffset: CGFloat = 6
+
     /// Reserve space on each actual screen, inside the native navigation
     /// controller boundary, so its own bottom composer receives the inset.
-    @ViewBuilder private var navigationBar: some View {
+    @ViewBuilder private func navigationBar(for tab: AppTab, atRoot: Bool) -> some View {
         if !keyboardVisible {
-            PerformeTabBar(selection: $selectedTab, language: presentationLanguage)
+            PerformeTabBar(
+                selection: $selectedTab,
+                language: presentationLanguage,
+                attachesTourTargets: atRoot && selectedTab == tab && router.path(for: tab).isEmpty,
+                onUserSelect: { tabTaps += 1 }
+            )
         }
     }
 

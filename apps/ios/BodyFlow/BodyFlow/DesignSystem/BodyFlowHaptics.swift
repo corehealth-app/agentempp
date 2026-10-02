@@ -1,14 +1,29 @@
 import SwiftUI
 
-/// Result feedback for operations the patient just triggered: a confirmed
-/// registration, a routine action, a saved preference, a failure worth
-/// noticing. Never used for navigation, refresh, filtering or arriving
-/// content — feedback follows the patient's own action, not the app's.
+/// Two kinds of feedback, both following the patient's own finger:
+/// - result feedback for operations they triggered (confirmed registration,
+///   routine action, saved preference, a failure worth noticing);
+/// - a light tap on the primary actions and a selection tick on the tab bar
+///   (Eduardo, 02/10: touches must answer). Never on refresh, filtering or
+///   content arriving on its own.
 ///
-/// Result haptics survive Reduce Motion (they are not movement); the app
-/// never uses them as the only channel, since every case here is also shown
-/// as a status line.
+/// Haptics survive Reduce Motion (they are not movement); the app never
+/// uses them as the only channel: results are also shown as a status line
+/// and taps also scale the control.
 enum BodyFlowHaptics {
+    enum Tap {
+        /// The primary role answers with a light impact on touch down; the
+        /// quieter roles rely on their visual press state only.
+        static func feedback(for role: BodyFlowButtonRole) -> SensoryFeedback? {
+            role == .primary ? .impact(weight: .light) : nil
+        }
+
+        /// The central brand action and the Flow shortcut.
+        static let action: SensoryFeedback = .impact(weight: .light)
+        /// Changing the selected tab.
+        static let selection: SensoryFeedback = .selection
+    }
+
     enum Result: Equatable, Sendable {
         case success
         case warning

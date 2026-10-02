@@ -207,6 +207,28 @@ struct TodaySummaryPanel: View {
     }
 
     private var remainingFoodCell: some View {
+        // The ring only draws consumed ÷ target; the figure is the official
+        // value. No ring without a target. Beside the figure when the column
+        // is wide enough, above it on a narrow phone.
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: BodyFlowSpacing.sm) {
+                foodRing
+                remainingFoodFigure
+            }
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+                foodRing
+                remainingFoodFigure
+            }
+        }
+    }
+
+    @ViewBuilder private var foodRing: some View {
+        if let fraction = BodyFlowRing.clampedFraction(consumed: energy.consumedKcal, target: energy.targetKcal) {
+            BodyFlowRing(fraction: fraction, exceeded: (energy.foodExcessKcal ?? 0) > 0)
+        }
+    }
+
+    private var remainingFoodFigure: some View {
         TodaySummaryCell(
             title: copy("today.energy.food-remaining"),
             value: TodayValueFormatter.optionalKcal(
@@ -216,6 +238,7 @@ struct TodaySummaryPanel: View {
             caption: copy("today.energy.food-remaining.detail"),
             prominence: .headline
         )
+        .fixedSize(horizontal: false, vertical: true)
         .accessibilityValue(energy.remainingFoodAccessibilityValue(for: language))
         .accessibilityIdentifier("today.energy.remaining-food")
     }
@@ -409,6 +432,7 @@ struct TodaySummaryPanel: View {
 private struct TodaySummaryCell: View {
     enum Prominence { case headline, supporting }
 
+    @Environment(\.bodyFlowReduceMotion) private var reduceMotion
     let title: String
     let value: String
     let caption: String
@@ -431,6 +455,10 @@ private struct TodaySummaryCell: View {
                 )
                 .foregroundStyle(BodyFlowColor.primaryText)
                 .fixedSize(horizontal: false, vertical: true)
+                // A refreshed official value rolls its digits instead of
+                // snapping; the value itself is never interpolated.
+                .contentTransition(.numericText())
+                .animation(BodyFlowMotion.animation(.content, reduceMotion: reduceMotion), value: value)
 
             Text(verbatim: caption)
                 .font(BodyFlowTypography.caption)

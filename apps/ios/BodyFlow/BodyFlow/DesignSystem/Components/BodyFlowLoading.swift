@@ -58,7 +58,8 @@ struct BodyFlowDelayedProgress: View {
     }
 }
 
-/// The first frame reserves the structure of each destination. No shimmer,
+/// The first frame reserves the structure of each destination, with a soft
+/// shimmer so it reads as working (still under Reduce Motion). No
 /// percentages or invented user values; one accessible loading description.
 struct BodyFlowFeatureSkeleton: View {
     enum Kind { case today, plan, progress, library }
@@ -71,9 +72,7 @@ struct BodyFlowFeatureSkeleton: View {
             if isEmbedded { content }
             else { ScrollView { content } }
         }
-        .overlay(alignment: .topTrailing) {
-            BodyFlowDelayedProgress().padding(BodyFlowSpacing.md).accessibilityHidden(true)
-        }
+        .bodyFlowShimmerTimeline()
         .allowsHitTesting(false)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(PremiumPresentationCopy.string("splash.loading", locale: locale, fallback: "Carregando"))
@@ -109,11 +108,15 @@ struct BodyFlowFeatureSkeleton: View {
         RoundedRectangle(cornerRadius: BodyFlowRadius.card)
             .fill(BodyFlowColor.color(.backgroundSecondary))
             .frame(maxWidth: .infinity).frame(height: height)
+            .bodyFlowShimmer()
+            .clipShape(RoundedRectangle(cornerRadius: BodyFlowRadius.card))
     }
 
     private func bar(width: CGFloat?, height: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: BodyFlowRadius.small)
             .fill(BodyFlowColor.color(.borderSubtle))
             .frame(width: width, height: height)
+            .bodyFlowShimmer()
+            .clipShape(RoundedRectangle(cornerRadius: BodyFlowRadius.small))
     }
 }

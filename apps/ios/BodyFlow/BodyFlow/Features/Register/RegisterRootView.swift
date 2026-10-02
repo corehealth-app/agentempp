@@ -65,6 +65,7 @@ struct RegisterRootView: View {
                     RegistrationKind(rawValue: $0.kindID) == .meal
                 }) {
                     commandButton(mealCommand, role: .primary)
+                        .guidedTourTarget(.mealCommand)
                 }
 
                 if presentsLocalDemonstration {

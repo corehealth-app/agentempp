@@ -4945,6 +4945,174 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Flow" } }
       }
     },
+    "today.trail.block.detail" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "%@ so far" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "%@ acumulado" } }
+    } },
+    "today.trail.detail" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Each entry updates Today. When the day closes, meeting your food target credits the deficit to the 7,700 kcal Block (exercise speeds it up; going over subtracts), and Progress shows the weeks." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Cada registro atualiza o Hoje. Ao fechar o dia, bater a meta de comida credita o déficit no Bloco 7.700 kcal (o exercício acelera; passar da meta desconta), e o Progresso mostra as semanas." } }
+    } },
+    "today.trail.node.block" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "7,700 Block" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Bloco 7.700" } }
+    } },
+    "today.trail.node.progress" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Progress" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Progresso" } }
+    } },
+    "today.trail.node.register" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Register" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Registrar" } }
+    } },
+    "today.trail.node.today" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Today" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Hoje" } }
+    } },
+    "today.trail.pending" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "No data yet" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ainda sem dados" } }
+    } },
+    "today.trail.progress.detail" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Result over the weeks" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Resultado ao longo das semanas" } }
+    } },
+    "today.trail.reached" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "done" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "feito" } }
+    } },
+    "today.trail.records" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld entries" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "%lld registros" } }
+    } },
+    "today.trail.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Your trail today" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sua trilha hoje" } }
+    } },
+    "tour.flow.body" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Ask about your data, targets and progress. Flow is an AI and does not replace professional advice." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Pergunte sobre seus dados, metas e progresso. O Flow é uma IA e não substitui orientação profissional." } }
+    } },
+    "tour.flow.body.suggestions" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Ask about your data and request workout or meal plan suggestions. They only count after you review and confirm them." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Pergunte sobre seus dados e peça sugestões de treino ou cardápio. Elas só valem depois que você revisar e confirmar." } }
+    } },
+    "tour.flow.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Chat with Flow" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Falar com o Flow" } }
+    } },
+    "tour.got-it" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Got it" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Entendi" } }
+    } },
+    "tour.library.body" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Published articles to read, save and mark as completed. It can be empty while nothing has been published." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Artigos publicados para ler, salvar e marcar como concluídos. Pode estar vazia enquanto nada foi publicado." } }
+    } },
+    "tour.library.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Library" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Biblioteca" } }
+    } },
+    "tour.plan.body" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Your current workout and nutrition plans, and Flow’s suggestions under “To review”." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Seus planos atuais de treino e alimentação, e as sugestões do Flow em “Para revisar”." } }
+    } },
+    "tour.plan.body.import" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Your current plans, Flow’s suggestions under “To review” and importing a plan from a photo or PDF." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Seus planos atuais, as sugestões do Flow em “Para revisar” e a importação de um plano por foto ou PDF." } }
+    } },
+    "tour.plan.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Plan" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Plano" } }
+    } },
+    "tour.profile.body" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Flow’s style, your account and “Get to know the app” to see this tour again." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O estilo do Flow, a sua conta e “Conhecer o app” para rever este passeio." } }
+    } },
+    "tour.profile.body.reminders" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Flow’s style, reminders on this iPhone, your account and “Get to know the app” to see this tour again." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O estilo do Flow, os lembretes neste iPhone, a sua conta e “Conhecer o app” para rever este passeio." } }
+    } },
+    "tour.profile.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Profile" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Perfil" } }
+    } },
+    "tour.progress.body" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Weight, measurements, consistency, achievements and the 7,700 kcal Block, always with the date of each value." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Peso, medidas, consistência, conquistas e o Bloco 7.700 kcal, sempre com a data de cada dado." } }
+    } },
+    "tour.progress.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Progress" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Progresso" } }
+    } },
+    "tour.register.body" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The central button opens Meal, Workout, Weight and Hydration. A meal is described in text and reviewed before you confirm." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O botão central abre Refeição, Treino, Peso e Hidratação. A refeição é descrita por texto e revisada antes de confirmar." } }
+    } },
+    "tour.register.body.media" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The central button opens Meal, Workout, Weight and Hydration. A meal can go by text, photo or audio and is reviewed before you confirm." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O botão central abre Refeição, Treino, Peso e Hidratação. A refeição pode ir por texto, foto ou áudio e é revisada antes de confirmar." } }
+    } },
+    "tour.register.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Register" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Registrar" } }
+    } },
+    "tour.skip" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Skip" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Pular" } }
+    } },
+    "tour.tip.composer.body" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Ask in your own words. While it answers, you can keep typing." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Pergunte em suas palavras. Enquanto ele responde, você pode continuar escrevendo." } }
+    } },
+    "tour.tip.composer.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Write to Flow" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Escreva para o Flow" } }
+    } },
+    "tour.tip.meal.body" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Describe what you ate. The app builds the proposal and you confirm after reviewing." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Descreva o que comeu. O app monta a proposta e você confirma depois de revisar." } }
+    } },
+    "tour.tip.meal.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Start with a meal" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Comece pela refeição" } }
+    } },
+    "tour.trail.body" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Each entry updates Today. When the day closes, meeting your food target credits the deficit to the 7,700 kcal Block: exercise speeds it up, going over subtracts. Progress shows the result over the weeks." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Cada registro atualiza o Hoje. Ao fechar o dia, bater a meta de comida credita o déficit no Bloco 7.700 kcal: o exercício acelera, passar da meta desconta. O Progresso mostra o resultado ao longo das semanas." } }
+    } },
+    "tour.trail.node.block" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "7,700 Block" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Bloco 7.700" } }
+    } },
+    "tour.trail.node.progress" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Progress" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Progresso" } }
+    } },
+    "tour.trail.node.register" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Register" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Registrar" } }
+    } },
+    "tour.trail.node.today" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Today" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Hoje" } }
+    } },
+    "tour.trail.plan" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Plan is your protocol: your current workout and nutrition. Flow can suggest changes, but only you confirm them." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O Plano é o seu protocolo: treino e alimentação atuais. O Flow pode sugerir mudanças, mas só você confirma." } }
+    } },
+    "tour.trail.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "How the trail works" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Como a trilha funciona" } }
+    } },
+    "tour.welcome.body" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "In a minute you will see where everything is. Nothing is recorded or sent during the tour." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Em um minuto você vê onde cada coisa fica. Nada é registrado ou enviado durante o passeio." } }
+    } },
+    "tour.welcome.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Welcome to Performe AI" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Boas-vindas ao Performe AI" } }
+    } },
     "tutorial.areas.title" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Go straight to an area" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ir direto para uma área" } }

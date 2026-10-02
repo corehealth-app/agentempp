@@ -6,6 +6,9 @@ import SwiftUI
 /// pressed state stays visible without movement.
 struct BodyFlowRowButtonStyle: ButtonStyle {
     @Environment(\.bodyFlowReduceMotion) private var reduceMotion
+    /// A row that is a primary action (the Flow shortcut) answers with a
+    /// light tap; plain navigation rows stay silent.
+    var playsTapFeedback = false
 
     static func pressedScale(reduceMotion: Bool) -> CGFloat {
         reduceMotion ? 1 : BodyFlowMotion.pressedScale
@@ -25,12 +28,17 @@ struct BodyFlowRowButtonStyle: ButtonStyle {
                     : 1
             )
             .animation(
-                BodyFlowMotion.animation(.press, reduceMotion: reduceMotion),
+                BodyFlowMotion.animation(.tap, reduceMotion: reduceMotion),
                 value: configuration.isPressed
             )
+            .sensoryFeedback(trigger: configuration.isPressed) { _, pressed in
+                pressed && playsTapFeedback ? BodyFlowHaptics.Tap.action : nil
+            }
     }
 }
 
 extension ButtonStyle where Self == BodyFlowRowButtonStyle {
     static var bodyFlowRow: BodyFlowRowButtonStyle { BodyFlowRowButtonStyle() }
+    /// A primary action laid out as a row.
+    static var bodyFlowRowAction: BodyFlowRowButtonStyle { BodyFlowRowButtonStyle(playsTapFeedback: true) }
 }

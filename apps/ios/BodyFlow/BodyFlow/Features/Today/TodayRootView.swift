@@ -223,6 +223,7 @@ struct TodayRootView: View {
     let invalidationCenter: FeatureInvalidationCenter
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.locale) private var locale
+    @Environment(\.guidedTourFocus) private var guidedTourFocus
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.bodyFlowReduceMotion) private var reduceMotion
     @State private var refreshCoordinator = TodayRefreshCoordinator()
@@ -345,9 +346,10 @@ struct TodayRootView: View {
                 isPrimary: true
             )
         }
-        .buttonStyle(.bodyFlowRow)
+        .buttonStyle(.bodyFlowRowAction)
         .accessibilityLabel(copy("flow.open"))
         .accessibilityIdentifier("today.flow-chat")
+        .guidedTourTarget(.flow)
     }
 
     private func libraryNavigationLink(route: AppRoute, expands: Bool) -> some View {
@@ -362,6 +364,7 @@ struct TodayRootView: View {
         .buttonStyle(.bodyFlowRow)
         .accessibilityLabel(copy("today.library"))
         .accessibilityIdentifier("today.library")
+        .guidedTourTarget(.library)
     }
 
     private func shortcutLabel(
@@ -421,6 +424,7 @@ struct TodayRootView: View {
         _ presentation: TodayPresentation,
         showsStaleBanner: Bool
     ) -> some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
                 if showsStaleBanner {
@@ -428,26 +432,44 @@ struct TodayRootView: View {
                 }
 
                 // The food balance leads; the technical balance stays in
-                // the summary disclosure with its official meaning.
+                // the summary disclosure with its official meaning. Blocks
+                // settle in a short cascade once the day has loaded.
                 standardSummary(presentation)
+                    .bodyFlowArrival(index: 0)
 
                 // Next actions: Flow/Library entries, then pending items.
                 todayShortcuts
+                    .bodyFlowArrival(index: 1)
+                    .id(Self.shortcutsScrollID)
                 TodayAttentionSection(descriptor: presentation.attention)
+                    .bodyFlowArrival(index: 2)
+
+                TodayTrailSection(descriptor: TodayTrailDescriptor(
+                    recordCount: presentation.meals.count + presentation.workouts.count,
+                    remainingFood: presentation.energy.remainingFoodKcal.map {
+                        TodayValueFormatter.kcal($0, language: language)
+                    },
+                    blockPercentage: presentation.block.percentage,
+                    language: language
+                ))
+                .bodyFlowArrival(index: 3)
 
                 if let recommendations {
                     TodayRecommendationsSection(
                         model: recommendations,
                         catalogRevision: invalidationCenter.revision(for: .contentCatalog)
                     )
+                    .bodyFlowArrival(index: 4)
                 }
                 TodayRoutineSectionView(
                     collections: presentation.routineCollections
                 )
+                .bodyFlowArrival(index: 5)
                 TodayRecordsSection(
                     meals: presentation.meals,
                     workouts: presentation.workouts
                 )
+                .bodyFlowArrival(index: 6)
 
                 NavigationLink(value: AppRoute.mainHistory) {
                     BodyFlowCard {
@@ -485,7 +507,18 @@ struct TodayRootView: View {
         .refreshable {
             await refreshAll()
         }
+        .onChange(of: guidedTourFocus, initial: true) {
+            // The tour's spotlight lands on a control that may be below the
+            // fold; bring it to the middle of the viewport first.
+            guard let guidedTourFocus, guidedTourFocus == .flow || guidedTourFocus == .library else { return }
+            withAnimation(BodyFlowMotion.animation(.content, reduceMotion: reduceMotion)) {
+                proxy.scrollTo(Self.shortcutsScrollID, anchor: .center)
+            }
+        }
+        }
     }
+
+    nonisolated static let shortcutsScrollID = "today.shortcuts"
 
     @ViewBuilder
     private func standardSummary(_ presentation: TodayPresentation) -> some View {

@@ -949,8 +949,10 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
         if !root.contains("BodyFlowMotion.stateTransition(reduceMotion:") {
             offenders.append("AppRootView: no root state transition")
         }
-        if !root.contains("BodyFlowMotion.animation(.content, reduceMotion:") {
-            offenders.append("AppRootView: no content-motion animation")
+        // Eduardo (02/10): the root changes with the brand duration so the
+        // mark is seen travelling from the splash into the tab bar.
+        if !root.contains("BodyFlowMotion.animation(.brand, reduceMotion:") {
+            offenders.append("AppRootView: no brand-motion animation")
         }
         let container = try reviewedSource("BodyFlow/Features/Onboarding/OnboardingContainerView.swift")
         if !container.contains("value: model.step") {

@@ -3,6 +3,10 @@ import SwiftUI
 struct PerformeTabBar: View {
     @Binding var selection: AppTab
     let language: SupportedAppLanguage
+    /// Only the visible bar of the selected root publishes tour targets.
+    var attachesTourTargets = false
+    /// Called for a tap on an item (not for a programmatic selection).
+    var onUserSelect: () -> Void = {}
     @ScaledMetric(relativeTo: .title3) private var iconSize: CGFloat = 20
     @State private var highlightedTab: AppTab?
     @Environment(\.bodyFlowReduceMotion) private var reduceMotion
@@ -40,14 +44,28 @@ struct PerformeTabBar: View {
                         connectsLaunch: true
                     )
                     .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                    .guidedTourTarget(.register, enabled: attachesTourTargets)
                 } else {
                     tabLabel(tab)
                         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                        .guidedTourTarget(Self.tourTarget(for: tab) ?? .flow, enabled: attachesTourTargets && Self.tourTarget(for: tab) != nil)
                         .scaleEffect(highlightedTab == tab && !reduceMotion ? BodyFlowMotion.pressedScale : 1)
                         .opacity(highlightedTab == tab ? BodyFlowOpacity.pressed : 1)
-                        .animation(BodyFlowMotion.animation(.press, reduceMotion: reduceMotion), value: highlightedTab)
+                        .animation(BodyFlowMotion.animation(.tap, reduceMotion: reduceMotion), value: highlightedTab)
                 }
             }
+        }
+    }
+
+    /// Today has no tab step (its shortcuts are the targets), so its label
+    /// publishes nothing — never a second anchor for `.flow`.
+    static func tourTarget(for tab: AppTab) -> GuidedTourTarget? {
+        switch tab {
+        case .today: nil
+        case .register: .register
+        case .plan: .planTab
+        case .progress: .progressTab
+        case .profile: .profileTab
         }
     }
 
@@ -60,7 +78,10 @@ struct PerformeTabBar: View {
                     : UIImage(systemName: tab.systemImage),
                 selected: selection == tab,
                 identifier: tab.accessibilityIdentifier,
-                action: { selection = tab },
+                action: {
+                    onUserSelect()
+                    selection = tab
+                },
                 highlightChanged: { isHighlighted in
                     if isHighlighted { highlightedTab = tab }
                     else if highlightedTab == tab { highlightedTab = nil }

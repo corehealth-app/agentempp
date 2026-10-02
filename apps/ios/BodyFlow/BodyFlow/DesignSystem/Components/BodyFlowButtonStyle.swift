@@ -35,6 +35,11 @@ enum BodyFlowButtonRole: CaseIterable, Sendable {
 
 struct BodyFlowButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.bodyFlowReduceMotion) private var reduceMotion
+
+    static func pressedScale(reduceMotion: Bool) -> CGFloat {
+        reduceMotion ? 1 : BodyFlowMotion.tapScale
+    }
     let role: BodyFlowButtonRole
     var isLoading: Bool = false
     /// Compact buttons (icon-only actions such as the chat composer) keep the
@@ -85,6 +90,12 @@ struct BodyFlowButtonStyle: ButtonStyle {
                 }
             }
             .contentShape(shape)
+            .scaleEffect(configuration.isPressed ? Self.pressedScale(reduceMotion: reduceMotion) : 1)
+            .opacity(configuration.isPressed ? BodyFlowOpacity.pressed : 1)
+            .animation(BodyFlowMotion.animation(.tap, reduceMotion: reduceMotion), value: configuration.isPressed)
+            .sensoryFeedback(trigger: configuration.isPressed) { _, pressed in
+                pressed && isEnabled ? BodyFlowHaptics.Tap.feedback(for: role) : nil
+            }
     }
 
     private var shape: RoundedRectangle {

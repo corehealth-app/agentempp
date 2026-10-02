@@ -18,6 +18,9 @@ enum GuidedTutorialStatus: String, Sendable, Equatable {
 protocol GuidedTutorialStoring: Sendable {
     func status(ownerKey: String) -> GuidedTutorialStatus
     func setStatus(_ status: GuidedTutorialStatus, ownerKey: String)
+    /// A contextual tip (one per control) is shown once per account.
+    func hasShownTip(_ tip: GuidedTourTarget, ownerKey: String) -> Bool
+    func markTipShown(_ tip: GuidedTourTarget, ownerKey: String)
 }
 
 struct UserDefaultsGuidedTutorialStore: GuidedTutorialStoring {
@@ -30,17 +33,38 @@ struct UserDefaultsGuidedTutorialStore: GuidedTutorialStoring {
         UserDefaults.standard.set(status.rawValue, forKey: Self.key(ownerKey))
     }
 
+    func hasShownTip(_ tip: GuidedTourTarget, ownerKey: String) -> Bool {
+        UserDefaults.standard.bool(forKey: Self.tipKey(tip, ownerKey))
+    }
+
+    func markTipShown(_ tip: GuidedTourTarget, ownerKey: String) {
+        UserDefaults.standard.set(true, forKey: Self.tipKey(tip, ownerKey))
+    }
+
     static func key(_ ownerKey: String) -> String {
         "\(LocalReminderPlanner.identifierPrefix)tutorial.v1.\(ownerKey)"
+    }
+
+    static func tipKey(_ tip: GuidedTourTarget, _ ownerKey: String) -> String {
+        "\(LocalReminderPlanner.identifierPrefix)tutorial.v1.tip.\(tip.rawValue).\(ownerKey)"
     }
 }
 
 final class InMemoryGuidedTutorialStore: GuidedTutorialStoring, @unchecked Sendable {
     private let lock = NSLock()
     private var statuses: [String: GuidedTutorialStatus]
+    private var tips: Set<String> = []
 
     init(statuses: [String: GuidedTutorialStatus] = [:]) {
         self.statuses = statuses
+    }
+
+    func hasShownTip(_ tip: GuidedTourTarget, ownerKey: String) -> Bool {
+        lock.withLock { tips.contains("\(tip.rawValue).\(ownerKey)") }
+    }
+
+    func markTipShown(_ tip: GuidedTourTarget, ownerKey: String) {
+        lock.withLock { _ = tips.insert("\(tip.rawValue).\(ownerKey)") }
     }
 
     func status(ownerKey: String) -> GuidedTutorialStatus {
@@ -63,6 +87,9 @@ struct GuidedTutorialCapability: Sendable {
     #if DEBUG
     /// UI tests only: offer the tour on the demonstration's first entry.
     static let firstEntryTestArgument = "--ui-testing-tutorial-eligible"
+    /// UI tests only: use the text tour (the VoiceOver path) instead of
+    /// the spotlight overlay.
+    static let textTourTestArgument = "--ui-testing-tutorial-text"
     #endif
 }
 

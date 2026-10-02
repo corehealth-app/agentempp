@@ -49,6 +49,7 @@ final class FlowChatUITests: XCTestCase {
         composer.typeText("QA")
         let send = app.buttons["flow.send"]
         assertAXActionHasMinimumGlyphFootprint(send, app: app)
+        guard waitForStableComposerKeyboard(composer, action: send, app: app) else { return }
         assertComposerContainedAboveKeyboard(composer, action: send, app: app)
         send.tap()
         let cancel = app.buttons["flow.cancel"]
@@ -700,6 +701,44 @@ final class FlowChatUITests: XCTestCase {
                                     "The AX button needs at least the native glyph footprint plus DS padding")
     }
 
+    /// Same bounded 250ms/8s readiness pattern used by MealCaptureUITests.
+    /// AX queries are sequential; the final reread must match before assertions.
+    private func waitForStableComposerKeyboard(_ field: XCUIElement, action: XCUIElement,
+                                               app: XCUIApplication) -> Bool {
+        func readGeometry() -> FlowComposerKeyboardGeometry? {
+            let keyboard = app.keyboards.firstMatch
+            let header = app.navigationBars.firstMatch
+            let window = app.windows.firstMatch
+            let done = app.buttons["keyboard.done"]
+            guard keyboard.exists, header.exists, window.exists, done.exists,
+                  field.exists, action.exists, action.isEnabled,
+                  field.value as? String == "QA" else { return nil }
+            return FlowComposerKeyboardGeometry(
+                field: field.frame.insetBy(dx: -16, dy: -16), action: action.frame,
+                keyboard: keyboard.frame, header: header.frame, window: window.frame, done: done.frame,
+                keyboardHittable: keyboard.isHittable, fieldHittable: field.isHittable,
+                actionHittable: action.isHittable, doneHittable: done.isHittable
+            )
+        }
+        var readiness = FlowComposerKeyboardReadiness()
+        let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            readiness.accepts(readGeometry(), at: ProcessInfo.processInfo.systemUptime)
+        }, object: nil)
+        let result = XCTWaiter.wait(for: [settled], timeout: 8)
+        XCTAssertEqual(result, .completed,
+                       "Visible keyboard/composer must settle. Last geometry: \(String(describing: readiness.lastGeometry))")
+        guard result == .completed else { return false }
+        let finalGeometry = readGeometry()
+        XCTAssertEqual(finalGeometry, readiness.lastGeometry, "Geometry changed before containment assertions")
+        XCTAssertEqual(finalGeometry?.isUsable, true)
+        guard let finalGeometry, finalGeometry == readiness.lastGeometry, finalGeometry.isUsable else { return false }
+        let attachment = XCTAttachment(string: String(describing: finalGeometry))
+        attachment.name = "flow-composer-keyboard-settled-geometry"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        return true
+    }
+
     private func assertComposerContainedAboveKeyboard(_ field: XCUIElement, action: XCUIElement,
                                                       app: XCUIApplication) {
         let keyboard = app.keyboards.firstMatch
@@ -728,4 +767,107 @@ final class FlowChatUITests: XCTestCase {
         support.element(id, app: app)
     }
     private func capture(_ name: String, app: XCUIApplication) { support.capture(name, app: app) }
+}
+
+// Only this Flow UI gate uses these pure frames; no app layout is changed.
+private struct FlowComposerKeyboardGeometry: Equatable {
+    var field: CGRect // Whole field surface, including the existing 16pt padding.
+    var action: CGRect
+    var keyboard: CGRect
+    var header: CGRect
+    var window: CGRect
+    var done: CGRect
+    var keyboardHittable: Bool
+    var fieldHittable: Bool
+    var actionHittable: Bool
+    var doneHittable: Bool
+
+    var isUsable: Bool {
+        let frames = [field, action, keyboard, header, window, done]
+        guard frames.allSatisfy({ frame in
+            [frame.origin.x, frame.origin.y, frame.width, frame.height].allSatisfy { $0.isFinite }
+                && frame.width > 0 && frame.height > 0
+        }), keyboardHittable, fieldHittable, actionHittable, doneHittable,
+              window.contains(header), window.contains(keyboard), window.contains(done),
+              done.width >= 44, done.height >= 44,
+              done.minY >= header.maxY, done.maxY <= keyboard.minY,
+              keyboard.minY > header.maxY else { return false }
+        return [field, action].allSatisfy {
+            $0.width >= 44 && $0.height >= 44 && window.contains($0)
+                && $0.minY >= header.maxY && $0.maxY <= min(keyboard.minY, done.minY)
+        }
+    }
+}
+
+private struct FlowComposerKeyboardReadiness {
+    private(set) var lastGeometry: FlowComposerKeyboardGeometry?
+    private var unchangedSince: TimeInterval?
+
+    mutating func accepts(_ geometry: FlowComposerKeyboardGeometry?, at now: TimeInterval) -> Bool {
+        guard let geometry, geometry.isUsable else {
+            lastGeometry = nil
+            unchangedSince = nil
+            return false
+        }
+        guard geometry == lastGeometry, let since = unchangedSince else {
+            lastGeometry = geometry
+            unchangedSince = now
+            return false
+        }
+        return now - since >= 0.25
+    }
+}
+
+final class FlowComposerKeyboardReadinessTests: XCTestCase {
+    func testRecordedKeyboard590To918To590RequiresANewStableInterval() {
+        let visible = readyGeometry()
+        var offscreen = visible
+        offscreen.keyboard.origin.y = 918
+        offscreen.keyboardHittable = false
+        XCTAssertFalse(offscreen.isUsable)
+        var gate = FlowComposerKeyboardReadiness()
+        XCTAssertFalse(gate.accepts(visible, at: 0))
+        XCTAssertTrue(gate.accepts(visible, at: 0.25))
+        XCTAssertFalse(gate.accepts(offscreen, at: 0.30))
+        XCTAssertFalse(gate.accepts(visible, at: 0.40))
+        XCTAssertFalse(gate.accepts(visible, at: 0.64))
+        XCTAssertTrue(gate.accepts(visible, at: 0.65))
+    }
+
+    func testRecordedStaleComposer622Point667DoesNotPassWithKeyboard590() {
+        var stale = readyGeometry()
+        stale.field = CGRect(x: 24, y: 526.6666666666666, width: 354, height: 96)
+        stale.action = CGRect(x: 24, y: 630.6666666666666, width: 354, height: 149.33333333333337)
+        XCTAssertEqual(stale.field.maxY, 622.6666666666666)
+        XCTAssertFalse(stale.isUsable)
+        var gate = FlowComposerKeyboardReadiness()
+        XCTAssertFalse(gate.accepts(stale, at: 0))
+        XCTAssertFalse(gate.accepts(stale, at: 8))
+        XCTAssertFalse(gate.accepts(readyGeometry(), at: 8.1))
+        XCTAssertTrue(gate.accepts(readyGeometry(), at: 8.4))
+    }
+
+    func testRecordedPreTypingDoneOverlapIsNotUsableGeometry() {
+        // Observation only: this gate runs after QA is typed. This test does
+        // not claim that the pre-typing product overlap has been fixed.
+        var overlap = readyGeometry()
+        overlap.field = CGRect(x: 24, y: 266.66666666666663, width: 354, height: 96)
+        overlap.action = CGRect(x: 24, y: 370.6666666666667, width: 354, height: 149.33333333333331)
+        XCTAssertEqual(overlap.action.maxY, 520)
+        XCTAssertEqual(overlap.done.minY, 500)
+        XCTAssertFalse(overlap.isUsable)
+    }
+
+    private func readyGeometry() -> FlowComposerKeyboardGeometry {
+        FlowComposerKeyboardGeometry(
+            field: CGRect(x: 24, y: 198.66666666666666, width: 354, height: 96),
+            action: CGRect(x: 24, y: 302.66666666666663, width: 354, height: 149.33333333333331),
+            keyboard: CGRect(x: 0, y: 590, width: 402, height: 226),
+            header: CGRect(x: 0, y: 62, width: 402, height: 54),
+            window: CGRect(x: 0, y: 0, width: 402, height: 874),
+            done: CGRect(x: 331, y: 500, width: 50, height: 44),
+            keyboardHittable: true, fieldHittable: true,
+            actionHittable: true, doneHittable: true
+        )
+    }
 }

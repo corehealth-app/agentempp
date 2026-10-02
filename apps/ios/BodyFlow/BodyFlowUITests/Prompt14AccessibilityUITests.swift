@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 
 final class Prompt14AccessibilityUITests: XCTestCase {
@@ -395,21 +396,36 @@ final class Prompt14AccessibilityUITests: XCTestCase {
         }
     }
 
+    /// Navigation scales through XXXL, then keeps its approved compact size;
+    /// ordinary content must continue scaling through Accessibility XXXL.
+    /// The companion FinalPolishAccessibility tests retain the native LCV
+    /// hold/release and cross-tab drag gates; screenshots retain visual proof.
     @MainActor
     func testAuthenticatedBrandLayoutAcrossContentSizes() {
         let support = Prompt14UITestSupport(testCase: self)
-        var previousBrandHeight: CGFloat?
+        var previousRegularBrandHeight: CGFloat?
+        var cappedBrandHeight: CGFloat?
+        var cappedBarHeight: CGFloat?
+        var previousAccessibilityContentHeight: CGFloat?
+        let categories: [UIContentSizeCategory] = [
+            .large,
+            .extraExtraLarge,
+            .extraExtraExtraLarge,
+            .accessibilityExtraLarge,
+            .accessibilityExtraExtraLarge,
+            .accessibilityExtraExtraExtraLarge,
+        ]
+        let tabIdentifiers = [
+            "tab.hoje", "tab.plano", "tab.registrar", "tab.progresso", "tab.perfil",
+        ]
 
-        for contentSizeCategory in [
-            "UICTContentSizeCategoryLarge",
-            "UICTContentSizeCategoryAccessibilityXL",
-            "UICTContentSizeCategoryAccessibilityXXL",
-        ] {
+        for (index, category) in categories.enumerated() {
             let app = support.launch(
                 scenario: .loaded,
                 additionalArguments: [
-                    "-UIPreferredContentSizeCategoryName",
-                    contentSizeCategory,
+                    "-UIPreferredContentSizeCategoryName", category.rawValue,
+                    "-AppleLanguages", "(pt-BR)",
+                    "-AppleLocale", "pt_BR",
                 ]
             )
             let window = app.windows.element(boundBy: 0)
@@ -417,37 +433,79 @@ final class Prompt14AccessibilityUITests: XCTestCase {
             let navigationBar = app.navigationBars["Hoje"]
             let tabBar = app.performeTabBar
             let screen = support.element("screen.hoje", in: app)
-            for element in [
-                window,
-                brand,
-                navigationBar,
-                tabBar,
-                screen,
-            ] {
+            let remaining = support.element("today.energy.remaining-food", in: app)
+            for element in [window, brand, navigationBar, tabBar, screen, remaining] {
                 XCTAssertTrue(
                     element.waitForExistence(timeout: 5),
-                    "Missing layout element at \(contentSizeCategory)"
+                    "Missing layout element at \(category.rawValue)"
                 )
             }
 
             assertSingleActiveBrand(in: app)
-            XCTAssertTrue(brand.isHittable)
-            if let previousBrandHeight {
-                XCTAssertGreaterThan(
-                    brand.frame.height,
-                    previousBrandHeight,
-                    "The requested content size must increase brand height at "
-                        + contentSizeCategory
-                )
+            XCTAssertEqual(brand.label, "Registrar")
+            XCTAssertEqual(tabBar.buttons.count, 5)
+            XCTAssertLessThanOrEqual(tabBar.frame.height, 96)
+            for identifier in tabIdentifiers {
+                let control = tabBar.buttons[identifier]
+                XCTAssertTrue(control.isHittable, "\(identifier) at \(category.rawValue)")
+                support.assertMinimumTapTarget(control)
+                XCTAssertTrue(window.frame.contains(control.frame))
+                XCTAssertTrue(tabBar.frame.contains(control.frame))
             }
-            previousBrandHeight = brand.frame.height
-            XCTAssertTrue(
-                brand.frame.intersection(navigationBar.frame).isNull
-            )
-            XCTAssertGreaterThanOrEqual(
-                brand.frame.minY,
-                navigationBar.frame.maxY
-            )
+            XCTAssertTrue(brand.frame.intersection(navigationBar.frame).isNull)
+            XCTAssertGreaterThanOrEqual(brand.frame.minY, navigationBar.frame.maxY)
+
+            let brandHeight = brand.frame.height
+            if index < 3 {
+                if let previousRegularBrandHeight {
+                    XCTAssertGreaterThan(
+                        brandHeight, previousRegularBrandHeight,
+                        "Navigation must still grow before and up to XXXL: \(category.rawValue)"
+                    )
+                }
+                previousRegularBrandHeight = brandHeight
+                if category == .extraExtraExtraLarge {
+                    cappedBrandHeight = brandHeight
+                    cappedBarHeight = tabBar.frame.height
+                }
+            } else {
+                guard let cappedBrandHeight, let cappedBarHeight else {
+                    XCTFail("The XXXL navigation reference must be measured first")
+                    return
+                }
+                // At most half a point for frame rounding, not another font step.
+                XCTAssertEqual(brandHeight, cappedBrandHeight, accuracy: 0.5,
+                               "Registrar must keep its XXXL cap at \(category.rawValue)")
+                XCTAssertEqual(tabBar.frame.height, cappedBarHeight, accuracy: 0.5,
+                               "The whole navigation bar must keep its XXXL cap")
+            }
+
+            // This cell has semantic fonts, no fixed height or scale factor.
+            // Compare only AX categories, where the layout is already stacked;
+            // changing from two columns to one is not a font-size regression.
+            support.reveal(remaining, in: app)
+            XCTAssertTrue(remaining.isHittable)
+            XCTAssertEqual(remaining.value as? String,
+                           "731 quilocalorias; exercício excluído")
+            XCTAssertTrue(window.frame.contains(remaining.frame))
+            XCTAssertGreaterThanOrEqual(remaining.frame.minY, navigationBar.frame.maxY)
+            XCTAssertLessThanOrEqual(remaining.frame.maxY, tabBar.frame.minY)
+            if index >= 3 {
+                let contentHeight = remaining.frame.height
+                if let previousAccessibilityContentHeight {
+                    XCTAssertGreaterThan(
+                        contentHeight, previousAccessibilityContentHeight,
+                        "Screen content must keep scaling above the navigation cap: \(category.rawValue)"
+                    )
+                }
+                previousAccessibilityContentHeight = contentHeight
+            }
+            let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            attachment.name = "navigation-cap-and-content-\(category.rawValue)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+
+            support.reveal(support.element("today.library", in: app), in: app)
             support.openLibrary(in: app)
             XCTAssertTrue(
                 support.element("screen.library", in: app)

@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 @MainActor
 final class PremiumPerformanceUITests: XCTestCase {
@@ -146,6 +147,207 @@ final class PremiumPerformanceUITests: XCTestCase {
         XCTAssertTrue(body.exists)
         capturePerformanceConditionEvidence(phase: "workload-end", app: app)
         app.terminate()
+    }
+
+    /// Runner-observed cycle of the same five destinations in both versions.
+    /// Includes tap/idle/AX polling overhead, not native animation or hitch time.
+    func testFiveTabNavigationUsableObservedBaseline() {
+        beginPerformanceConditionEvidence()
+        let app = observedTransitionBenchmarkApp()
+        let options = fiveIterations
+        options.invocationOptions = [.manuallyStart, .manuallyStop]
+        capturePerformanceConditionEvidence(phase: "workload-start", app: app)
+        measure(metrics: [XCTClockMetric()], options: options) {
+            app.terminate()
+            app.launch()
+            defer { app.terminate() }
+            let destinations: [(tab: String, screen: String, content: XCUIElement)] = [
+                ("tab.registrar", "screen.registrar", app.buttons["register.refeicao"]),
+                ("tab.plano", "screen.plano", app.staticTexts["Training plan"]),
+                ("tab.progresso", "screen.progresso", app.staticTexts["78.4 kg"]),
+                ("tab.perfil", "screen.perfil", app.buttons["profile.coach-persona"]),
+                ("tab.hoje", "screen.hoje", app.buttons["today.refresh"]),
+            ]
+            let initialToday = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                self.observedRootIsUsable(
+                    tab: "tab.hoje", screen: "screen.hoje",
+                    content: app.buttons["today.refresh"], in: app
+                )
+            }, object: nil)
+            let initialResult = XCTWaiter.wait(for: [initialToday], timeout: 8)
+            if initialResult != .completed {
+                let header = app.navigationBars.firstMatch
+                let refresh = app.buttons["today.refresh"]
+                let remaining = app.descendants(matching: .any)["today.energy.remaining-food"].firstMatch
+                let details = "scale=\(UIScreen.main.scale) window=\(app.windows.firstMatch.frame) header=\(header.frame) "
+                    + "refresh=\(refresh.frame) remaining=\(remaining.frame) "
+                    + "bar=\(benchmarkTabBar(in: app).frame)\n\(app.debugDescription)"
+                let attachment = XCTAttachment(string: details)
+                attachment.name = "navigation-initial-today-failure-geometry"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+                screenshot.name = "navigation-initial-today-failure-screen"
+                screenshot.lifetime = .keepAlways
+                add(screenshot)
+                print("NAVIGATION_INITIAL_TODAY_GEOMETRY:\(details)")
+            }
+            XCTAssertEqual(initialResult, .completed)
+            // Construct every query and expectation before starting the clock.
+            let transitions = destinations.map { destination in
+                (button: app.buttons[destination.tab], ready: XCTNSPredicateExpectation(
+                    predicate: NSPredicate { _, _ in
+                        self.observedRootIsUsable(
+                            tab: destination.tab, screen: destination.screen,
+                            content: destination.content, in: app
+                        )
+                    }, object: nil
+                ))
+            }
+            var outcomes: [XCTWaiter.Result] = []
+            startMeasuring()
+            for transition in transitions {
+                transition.button.tap()
+                let result = XCTWaiter.wait(for: [transition.ready], timeout: 5)
+                outcomes.append(result)
+                if result != .completed { break }
+            }
+            stopMeasuring()
+            XCTAssertEqual(outcomes.count, destinations.count,
+                           "The entire five-tab cycle must execute")
+            for (destination, result) in zip(destinations, outcomes) {
+                XCTAssertEqual(result, .completed,
+                               "Destination must be selected, loaded and usable: \(destination.tab)")
+            }
+        }
+        capturePerformanceConditionEvidence(phase: "workload-end", app: app)
+    }
+
+    /// Runner-observed presentation of one representative registration sheet.
+    /// Launch/navigation/dismissal/reset are outside the measured interval.
+    func testMealSheetPresentationUsableObservedBaseline() {
+        beginPerformanceConditionEvidence()
+        let app = observedTransitionBenchmarkApp()
+        let options = fiveIterations
+        options.invocationOptions = [.manuallyStart, .manuallyStop]
+        capturePerformanceConditionEvidence(phase: "workload-start", app: app)
+        measure(metrics: [XCTClockMetric()], options: options) {
+            app.terminate()
+            app.launch()
+            defer { app.terminate() }
+            let register = app.buttons["tab.registrar"]
+            XCTAssertTrue(register.waitForExistence(timeout: 8))
+            XCTAssertTrue(observedControlIsUsable(register, in: app))
+            register.tap()
+            let open = app.buttons["register.refeicao"]
+            let registrationReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                self.observedRootIsUsable(
+                    tab: "tab.registrar", screen: "screen.registrar", content: open, in: app
+                )
+            }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [registrationReady], timeout: 5), .completed)
+            let sheet = app.descendants(matching: .any)["sheet.registrar.refeicao"].firstMatch
+            let close = app.buttons["sheet.fechar"]
+            let headers = app.navigationBars.containing(.button, identifier: "sheet.fechar")
+            let choices = [
+                app.buttons["registration.meal.source.text"],
+                app.buttons["registration.meal.source.photo"],
+                app.buttons["registration.meal.source.audio"],
+            ]
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                guard sheet.exists, headers.count == 1,
+                      self.observedControlIsUsable(close, in: app) else { return false }
+                let header = headers.firstMatch
+                return choices.allSatisfy {
+                    self.observedControlIsUsable($0, in: app)
+                        && $0.frame.minY >= header.frame.maxY
+                }
+            }, object: nil)
+            startMeasuring()
+            open.tap()
+            let result = XCTWaiter.wait(for: [ready], timeout: 5)
+            stopMeasuring()
+            XCTAssertEqual(result, .completed,
+                           "Meal sheet must expose all three usable choices and its close button")
+            XCTAssertEqual(choices.map(\.label), ["Text", "Photo — local sample", "Audio — local sample"])
+            XCTAssertEqual(app.alerts.count, 0)
+            close.tap()
+            let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                !sheet.exists && self.observedRootIsUsable(
+                    tab: "tab.registrar", screen: "screen.registrar", content: open, in: app
+                )
+            }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 5), .completed)
+        }
+        capturePerformanceConditionEvidence(phase: "workload-end", app: app)
+    }
+
+    private func observedTransitionBenchmarkApp() -> XCUIApplication {
+        XCTAssertEqual(XCUIDevice.shared.appearance, .light,
+                       "The paired benchmark requires the recorded Light configuration")
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-testing", "--ui-testing-prompt13-loaded",
+            "-AppleLanguages", "(en-US)", "-AppleLocale", "en_US",
+            "-AppleInterfaceStyle", "Light",
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryL",
+        ]
+        return app
+    }
+
+    private func observedControlIsUsable(_ control: XCUIElement, in app: XCUIApplication) -> Bool {
+        control.exists && control.isEnabled && control.isHittable
+            && control.frame.width >= 44 && control.frame.height >= 44
+            && app.windows.firstMatch.frame.contains(control.frame)
+    }
+
+    private func observedRootIsUsable(
+        tab: String, screen: String, content: XCUIElement, in app: XCUIApplication
+    ) -> Bool {
+        let selected = app.buttons[tab]
+        let root = app.descendants(matching: .any)[screen].firstMatch
+        let bar = benchmarkTabBar(in: app)
+        let header = app.navigationBars.firstMatch
+        guard root.exists, selected.isSelected,
+              observedControlIsUsable(selected, in: app),
+              content.exists, content.isHittable,
+              content.frame.width > 0, content.frame.height > 0,
+              app.windows.firstMatch.frame.contains(content.frame),
+              bar.exists, header.exists else { return false }
+        if content.elementType == .button && !observedControlIsUsable(content, in: app) {
+            return false
+        }
+        if tab == "tab.hoje" {
+            // Refresh is a toolbar action. Its full hit target belongs inside
+            // the header; the loaded energy value belongs in the content area.
+            let remaining = app.descendants(matching: .any)["today.energy.remaining-food"].firstMatch
+            // The recorded AX frame extends 0.333 pt above the UIKit header.
+            // Allow at most one physical pixel, only for this header comparison.
+            let scale = UIScreen.main.scale
+            guard scale.isFinite, scale > 0 else { return false }
+            let onePixel = 1 / scale
+            return header.frame.insetBy(dx: -onePixel, dy: -onePixel).contains(content.frame)
+                && remaining.exists && remaining.isHittable
+                && remaining.value as? String == "731 kilocalories; exercise excluded"
+                && remaining.frame.width > 0 && remaining.frame.height > 0
+                && app.windows.firstMatch.frame.contains(remaining.frame)
+                && remaining.frame.minY >= header.frame.maxY
+                && remaining.frame.maxY <= bar.frame.minY
+        }
+        guard content.frame.minY >= header.frame.maxY,
+              content.frame.maxY <= bar.frame.minY else { return false }
+        if tab == "tab.perfil" {
+            // The loaded Prompt 13 fixture resets the persona to nil. The
+            // button is already tappable during loading, so require its
+            // actual loaded value as well as its geometry.
+            return content.label.contains("Not selected")
+        }
+        if tab == "tab.progresso" {
+            // Weight can resolve independently. This marker exists only
+            // when the progress snapshot itself has been published.
+            return app.descendants(matching: .any)["progress.received-values"].firstMatch.exists
+        }
+        return true
     }
 
     private var fiveIterations: XCTMeasureOptions {

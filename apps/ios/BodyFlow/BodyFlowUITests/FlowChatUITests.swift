@@ -30,6 +30,10 @@ final class FlowChatUITests: XCTestCase {
         XCTAssertTrue(outbox.exists)
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "QA_REPLY_VISIBLE")).firstMatch.exists)
         capture("flow-outbox-local-cancel-keeps-new-composer", app: app)
+        app.buttons["keyboard.done"].tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
+        XCTAssertTrue(app.performeTabBar.waitForExistence(timeout: 3))
+        XCTAssertEqual(composer.value as? String, "Rascunho B")
     }
 
     func testAXCancelActionContainsItsWholeNativeLabelWhilePending() {

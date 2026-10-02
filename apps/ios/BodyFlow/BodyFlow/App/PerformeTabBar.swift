@@ -121,7 +121,9 @@ struct BodyFlowKeyboardObserver: UIViewRepresentable {
             self.changed = changed
             super.init(frame: .zero)
             NotificationCenter.default.addObserver(self, selector: #selector(keyboardChanged(_:)), name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
-            NotificationCenter.default.addObserver(self, selector: #selector(keyboardHidden), name: UIResponder.keyboardDidHideNotification, object: nil)
+            // Hiding software keys can leave the Done accessory on screen.
+            // Both notifications describe the remaining occupied frame.
+            NotificationCenter.default.addObserver(self, selector: #selector(keyboardChanged(_:)), name: UIResponder.keyboardDidHideNotification, object: nil)
         }
 
         required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -133,7 +135,5 @@ struct BodyFlowKeyboardObserver: UIViewRepresentable {
             let keyboard = window.convert(value.cgRectValue, from: window.screen.coordinateSpace)
             changed(window.bounds.intersection(keyboard).height > 0)
         }
-
-        @objc private func keyboardHidden() { changed(false) }
     }
 }

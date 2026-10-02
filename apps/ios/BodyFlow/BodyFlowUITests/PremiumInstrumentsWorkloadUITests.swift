@@ -9,6 +9,7 @@ final class PremiumInstrumentsWorkloadUITests: XCTestCase {
     }
 
     func testFiveTabNavigationCommonWorkload() {
+        beginPerformanceConditionEvidence()
         let support = PremiumUIUXUITestSupport(testCase: self)
         let app = support.launch(
             arguments: ["--ui-testing", "--ui-testing-prompt13-loaded"],
@@ -28,6 +29,7 @@ final class PremiumInstrumentsWorkloadUITests: XCTestCase {
             (tab: "tab.perfil", screen: "screen.perfil"),
             (tab: "tab.hoje", screen: "screen.hoje"),
         ]
+        capturePerformanceConditionEvidence(phase: "workload-start", app: app)
         for iteration in 1...5 {
             XCTContext.runActivity(named: "navigation-cycle-\(iteration)") { _ in
                 for destination in destinations {
@@ -46,5 +48,6 @@ final class PremiumInstrumentsWorkloadUITests: XCTestCase {
                 }
             }
         }
+        capturePerformanceConditionEvidence(phase: "workload-end", app: app)
     }
 }

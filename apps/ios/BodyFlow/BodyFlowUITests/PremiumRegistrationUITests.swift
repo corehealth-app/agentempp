@@ -7,8 +7,11 @@ final class PremiumRegistrationUITests: XCTestCase {
 
     @MainActor
     func testCaptureChoicesExposeLocalSampleProvenance() {
+        beginPerformanceConditionEvidence()
         let app = launchRegistration(language: "en-US", dark: false)
+        capturePerformanceConditionEvidence(phase: "workload-start", app: app)
         open("register.refeicao", sheet: "sheet.registrar.refeicao", app: app)
+        capturePerformanceConditionEvidence(phase: "workload-end", app: app)
 
         let text = app.buttons["registration.meal.source.text"]
         let photo = app.buttons["registration.meal.source.photo"]

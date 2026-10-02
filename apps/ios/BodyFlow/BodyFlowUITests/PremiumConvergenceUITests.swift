@@ -88,6 +88,7 @@ final class PremiumConvergenceUITests: XCTestCase {
         }
     }
 
+
     @MainActor
     func testRepresentativeLoadedTabsPassAutomatedAccessibilityAudit() throws {
         let app = support.launch(
@@ -132,6 +133,39 @@ final class PremiumConvergenceUITests: XCTestCase {
             try performConvergenceAudit(app, screen: item.identifier)
             app.terminate()
         }
+    }
+
+    func testStateAuditViewportRejectsErrorTextBehindPinnedShortcutsAtAXXXL() {
+        // Captured on iPhone 17e, iOS 26.5, English AX5. The Library shortcut
+        // ends at 349.7; its opaque inset has another 8 points of bottom padding.
+        let screenFrame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let libraryFrame = CGRect(x: 16, y: 265.7, width: 358, height: 84)
+        let errorTextFrame = CGRect(x: 45.2, y: 333, width: 299.7, height: 249.3)
+        let top = ConvergenceAuditViewport.topEdge(
+            screen: "state.error", navigationBarBottom: 101,
+            pinnedShortcutFrames: [libraryFrame]
+        )
+
+        XCTAssertEqual(top, 357.7, accuracy: 0.01)
+        XCTAssertFalse(ConvergenceAuditViewport.containsFullFrame(
+            errorTextFrame, screenFrame: screenFrame,
+            top: top, bottom: 729.7, margin: 16
+        ), "The complete error message must clear the opaque pinned shortcuts")
+        // At AX5 this paragraph is taller than the preferred 64-point-margin
+        // area, but can still be completely exposed with the existing 16-point
+        // boundary rule. It must then pass a fresh native contrast audit.
+        XCTAssertTrue(ConvergenceAuditViewport.containsFullFrame(
+            CGRect(x: 45.2, y: 419.05, width: 299.7, height: 249.3),
+            screenFrame: screenFrame, top: top, bottom: 729.7, margin: 16
+        ))
+    }
+
+    func testLoadedAuditViewportDoesNotTreatScrollableShortcutsAsPinned() {
+        let top = ConvergenceAuditViewport.topEdge(
+            screen: "today", navigationBarBottom: 101,
+            pinnedShortcutFrames: [CGRect(x: 16, y: 265.7, width: 358, height: 84)]
+        )
+        XCTAssertEqual(top, 101)
     }
 
     @MainActor
@@ -223,7 +257,23 @@ final class PremiumConvergenceUITests: XCTestCase {
         var validatedFrames: [String: CGRect] = [:]
         var verifyingKeys = Set<String>()
         var reportedContrastKeys = Set<String>()
-        let top = app.navigationBars.firstMatch.exists ? app.navigationBars.firstMatch.frame.maxY : app.frame.minY
+        let navigationBarBottom = app.navigationBars.firstMatch.exists
+            ? app.navigationBars.firstMatch.frame.maxY : app.frame.minY
+        let pinnedShortcutFrames: [CGRect]
+        if ConvergenceAuditViewport.hasPinnedTodayShortcuts(screen: screen) {
+            pinnedShortcutFrames = ["today.flow-chat", "today.library"].map { identifier in
+                let shortcut = app.buttons[identifier]
+                XCTAssertTrue(shortcut.exists, "The pinned Today shortcut must remain resolvable")
+                return shortcut.frame
+            }
+        } else {
+            // In loaded Today these actions belong to scrolling content.
+            pinnedShortcutFrames = []
+        }
+        let top = ConvergenceAuditViewport.topEdge(
+            screen: screen, navigationBarBottom: navigationBarBottom,
+            pinnedShortcutFrames: pinnedShortcutFrames
+        )
         func identity(in description: String) -> String {
             // XCTest binds findings to an AX node; labels are not identities
             // (several routine rows intentionally share the same title).
@@ -240,12 +290,16 @@ final class PremiumConvergenceUITests: XCTestCase {
         // Conservative evaluation margin, not an assumed native blur size.
         // Each finding still has to pass while exposed in this central area.
         func frameIsVisible(_ frame: CGRect) -> Bool {
-            frame.minY >= top + 64 && frame.maxY < tabBarFrame.minY - 64
-                && frame.minX >= screenFrame.minX && frame.maxX <= screenFrame.maxX
+            ConvergenceAuditViewport.containsFullFrame(
+                frame, screenFrame: screenFrame, top: top,
+                bottom: tabBarFrame.minY, margin: 64
+            )
         }
         func frameIsExposed(_ frame: CGRect) -> Bool {
-            frame.minY >= top + 16 && frame.maxY < tabBarFrame.minY - 16
-                && frame.minX >= screenFrame.minX && frame.maxX <= screenFrame.maxX
+            ConvergenceAuditViewport.containsFullFrame(
+                frame, screenFrame: screenFrame, top: top,
+                bottom: tabBarFrame.minY, margin: 16
+            )
         }
         func audit(_ types: XCUIAccessibilityAuditType = .all) throws {
             reportedContrastKeys.removeAll()
@@ -380,7 +434,12 @@ final class PremiumConvergenceUITests: XCTestCase {
                 let center = (top + app.performeTabBar.frame.minY) / 2
                 let delta = max(-240, min(240, center - previous.midY))
                 let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-                start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: delta)))
+                start.press(
+                    forDuration: 0.05,
+                    thenDragTo: start.withOffset(CGVector(dx: 0, dy: delta)),
+                    withVelocity: .slow,
+                    thenHoldForDuration: 0.1
+                )
                 if element.frame == previous {
                     // The last row can already be fully exposed while the
                     // scroll limit prevents centering it. Audit those actual
@@ -419,5 +478,37 @@ final class PremiumConvergenceUITests: XCTestCase {
             verifyingKeys.removeAll()
             resolved += 1
         }
+    }
+}
+
+/// Geometry used only by the audit harness; never changes app layout.
+private enum ConvergenceAuditViewport {
+    static func hasPinnedTodayShortcuts(screen: String) -> Bool {
+        ["state.empty", "state.offline", "state.error", "state.unavailable"].contains(screen)
+    }
+
+    static func topEdge(
+        screen: String,
+        navigationBarBottom: CGFloat,
+        pinnedShortcutFrames: [CGRect]
+    ) -> CGFloat {
+        guard hasPinnedTodayShortcuts(screen: screen),
+              let shortcutsBottom = pinnedShortcutFrames.map(\.maxY).max() else {
+            return navigationBarBottom
+        }
+        // TodayRootView adds BodyFlowSpacing.xs (8 pt) below the fixed
+        // shortcuts and paints that entire safe-area inset opaquely.
+        return max(navigationBarBottom, shortcutsBottom + 8)
+    }
+
+    static func containsFullFrame(
+        _ frame: CGRect,
+        screenFrame: CGRect,
+        top: CGFloat,
+        bottom: CGFloat,
+        margin: CGFloat
+    ) -> Bool {
+        frame.minY >= top + margin && frame.maxY < bottom - margin
+            && frame.minX >= screenFrame.minX && frame.maxX <= screenFrame.maxX
     }
 }

@@ -7,12 +7,14 @@ final class PremiumPerformanceUITests: XCTestCase {
     }
 
     func testLocalLaunchBaseline() {
+        beginPerformanceConditionEvidence()
         let app = XCUIApplication()
         app.launchArguments = [
             "--ui-testing-fresh-auth",
             "-AppleLanguages", "(pt-BR)",
             "-AppleLocale", "pt_BR",
         ]
+        capturePerformanceConditionEvidence(phase: "workload-start", app: app)
         measure(metrics: [XCTApplicationLaunchMetric()], options: fiveIterations) {
             app.launch()
             XCTAssertTrue(
@@ -21,9 +23,11 @@ final class PremiumPerformanceUITests: XCTestCase {
             )
             app.terminate()
         }
+        capturePerformanceConditionEvidence(phase: "workload-end", app: app)
     }
 
     func testLibraryFeedScrollBaseline() {
+        beginPerformanceConditionEvidence()
         let support = Prompt14UITestSupport(testCase: self)
         let app = support.launch(scenario: .loaded)
         openBenchmarkLibrary(in: app)
@@ -34,6 +38,7 @@ final class PremiumPerformanceUITests: XCTestCase {
             ).waitForExistence(timeout: 5)
         )
 
+        capturePerformanceConditionEvidence(phase: "workload-start", app: app)
         measure(
             metrics: [XCTClockMetric(), XCTMemoryMetric(application: app)],
             options: fiveIterations
@@ -41,16 +46,19 @@ final class PremiumPerformanceUITests: XCTestCase {
             app.swipeUp(velocity: .fast)
             app.swipeDown(velocity: .fast)
         }
+        capturePerformanceConditionEvidence(phase: "workload-end", app: app)
         app.terminate()
     }
 
     func testFlowFiftyMessageHistoryRenderBaseline() {
+        beginPerformanceConditionEvidence()
         let app = launchFlow(scenario: "longHistory")
         assertFlowMessageCount(40, in: app)
         appendFiveLocalExchanges(to: app)
         let history = app.scrollViews["flow.history"]
         XCTAssertTrue(history.waitForExistence(timeout: 5))
 
+        capturePerformanceConditionEvidence(phase: "workload-start", app: app)
         measure(
             metrics: [XCTClockMetric(), XCTMemoryMetric(application: app)],
             options: fiveIterations
@@ -58,10 +66,12 @@ final class PremiumPerformanceUITests: XCTestCase {
             history.swipeDown(velocity: .fast)
             history.swipeUp(velocity: .fast)
         }
+        capturePerformanceConditionEvidence(phase: "workload-end", app: app)
         app.terminate()
     }
 
     func testFlowLongPlainResponseWrappingBaseline() {
+        beginPerformanceConditionEvidence()
         let app = launchFlow(scenario: "response")
         let history = app.scrollViews["flow.history"]
         let body = app.staticTexts.matching(
@@ -69,6 +79,7 @@ final class PremiumPerformanceUITests: XCTestCase {
         ).firstMatch
         XCTAssertTrue(body.waitForExistence(timeout: 5))
 
+        capturePerformanceConditionEvidence(phase: "workload-start", app: app)
         measure(
             metrics: [XCTClockMetric(), XCTMemoryMetric(application: app)],
             options: fiveIterations
@@ -77,6 +88,7 @@ final class PremiumPerformanceUITests: XCTestCase {
             history.swipeUp(velocity: .fast)
         }
         XCTAssertTrue(body.exists)
+        capturePerformanceConditionEvidence(phase: "workload-end", app: app)
         app.terminate()
     }
 

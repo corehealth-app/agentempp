@@ -856,20 +856,25 @@ extension XCTestCase {
     func waitForStableComposerKeyboard(_ field: XCUIElement, action: XCUIElement,
                                                app: XCUIApplication, expectedComposer: String = "QA",
                                                requiresEnabledAction: Bool = true,
+                                               requiresKeyboardAccessory: Bool = true,
                                                diagnosticName: String = "flow-composer-keyboard") -> Bool {
         func readGeometry() -> FlowComposerKeyboardGeometry? {
             let keyboard = app.keyboards.firstMatch
             let header = app.navigationBars.firstMatch
             let window = app.windows.firstMatch
             let done = app.buttons["keyboard.done"]
-            guard keyboard.exists, header.exists, window.exists, done.exists,
+            let hasAccessory = done.exists
+            guard keyboard.exists, header.exists, window.exists,
+                  hasAccessory || !requiresKeyboardAccessory,
                   field.exists, action.exists, action.isEnabled == requiresEnabledAction,
                   field.value as? String == expectedComposer else { return nil }
             return FlowComposerKeyboardGeometry(
                 field: field.frame.insetBy(dx: -16, dy: -16), action: action.frame,
-                keyboard: keyboard.frame, header: header.frame, window: window.frame, done: done.frame,
+                keyboard: keyboard.frame, header: header.frame, window: window.frame,
+                done: hasAccessory ? done.frame : nil,
                 keyboardHittable: keyboard.isHittable, fieldHittable: field.isHittable,
-                actionHittable: action.isHittable, doneHittable: done.isHittable
+                actionHittable: action.isHittable, doneHittable: hasAccessory && done.isHittable,
+                requiresKeyboardAccessory: requiresKeyboardAccessory
             )
         }
         func captureFailure(_ phase: String, geometry: FlowComposerKeyboardGeometry?) {
@@ -918,25 +923,33 @@ private struct FlowComposerKeyboardGeometry: Equatable {
     var keyboard: CGRect
     var header: CGRect
     var window: CGRect
-    var done: CGRect
+    var done: CGRect?
     var keyboardHittable: Bool
     var fieldHittable: Bool
     var actionHittable: Bool
     var doneHittable: Bool
+    var requiresKeyboardAccessory = true
 
     var isUsable: Bool {
-        let frames = [field, action, keyboard, header, window, done]
+        let frames = [field, action, keyboard, header, window] + (done.map { [$0] } ?? [])
         guard frames.allSatisfy({ frame in
             [frame.origin.x, frame.origin.y, frame.width, frame.height].allSatisfy { $0.isFinite }
                 && frame.width > 0 && frame.height > 0
-        }), keyboardHittable, fieldHittable, actionHittable, doneHittable,
-              window.contains(header), window.contains(keyboard), window.contains(done),
-              done.width >= 44, done.height >= 44,
-              done.minY >= header.maxY, done.maxY <= keyboard.minY,
+        }), keyboardHittable, fieldHittable, actionHittable,
+              window.contains(header), window.contains(keyboard),
               keyboard.minY > header.maxY else { return false }
+        var lowerEdge = keyboard.minY
+        if let done {
+            // An optional accessory is still fully checked whenever present.
+            guard doneHittable, window.contains(done), done.width >= 44, done.height >= 44,
+                  done.minY >= header.maxY, done.maxY <= keyboard.minY else { return false }
+            lowerEdge = min(lowerEdge, done.minY)
+        } else if requiresKeyboardAccessory {
+            return false
+        }
         return [field, action].allSatisfy {
             $0.width >= 44 && $0.height >= 44 && window.contains($0)
-                && $0.minY >= header.maxY && $0.maxY <= min(keyboard.minY, done.minY)
+                && $0.minY >= header.maxY && $0.maxY <= lowerEdge
         }
     }
 }
@@ -996,8 +1009,109 @@ final class FlowComposerKeyboardReadinessTests: XCTestCase {
         overlap.field = CGRect(x: 24, y: 266.66666666666663, width: 354, height: 96)
         overlap.action = CGRect(x: 24, y: 370.6666666666667, width: 354, height: 149.33333333333331)
         XCTAssertEqual(overlap.action.maxY, 520)
-        XCTAssertEqual(overlap.done.minY, 500)
+        XCTAssertEqual(overlap.done?.minY, 500)
         XCTAssertFalse(overlap.isUsable)
+    }
+
+    func testMissingKeyboardAccessoryIsRejectedByDefault() {
+        var missing = readyGeometry()
+        missing.done = nil
+        missing.doneHittable = false
+        XCTAssertFalse(missing.isUsable)
+        var gate = FlowComposerKeyboardReadiness()
+        XCTAssertFalse(gate.accepts(missing, at: 0))
+        XCTAssertFalse(gate.accepts(missing, at: 8))
+    }
+
+    func testExplicitBenchmarkPolicyAllowsMissingAccessoryAfterFullStableInterval() {
+        var missing = readyGeometry()
+        missing.done = nil
+        missing.doneHittable = false
+        missing.requiresKeyboardAccessory = false
+        XCTAssertTrue(missing.isUsable)
+        var gate = FlowComposerKeyboardReadiness()
+        XCTAssertFalse(gate.accepts(missing, at: 0))
+        XCTAssertFalse(gate.accepts(missing, at: 0.249))
+        XCTAssertTrue(gate.accepts(missing, at: 0.25))
+    }
+
+    func testOptionalAccessoryDoesNotAllowRecordedSend758OverVisibleKeyboard590() {
+        var moving = readyGeometry()
+        moving.done = nil
+        moving.doneHittable = false
+        moving.requiresKeyboardAccessory = false
+        // The failed benchmark synthesized a tap at (356, 758) while the
+        // keyboard was moving. It must not be a valid target over visible keys.
+        moving.action = CGRect(x: 334, y: 736, width: 44, height: 44)
+        XCTAssertEqual(moving.action.midX, 356)
+        XCTAssertEqual(moving.action.midY, 758)
+        XCTAssertFalse(moving.isUsable)
+        var gate = FlowComposerKeyboardReadiness()
+        XCTAssertFalse(gate.accepts(moving, at: 0))
+        XCTAssertFalse(gate.accepts(moving, at: 8))
+    }
+
+    func testOptionalAccessoryStillRequiresVisibleSoftwareKeyboard() {
+        var missing = readyGeometry()
+        missing.done = nil
+        missing.doneHittable = false
+        missing.requiresKeyboardAccessory = false
+        missing.keyboardHittable = false
+        XCTAssertFalse(missing.isUsable)
+        missing.keyboardHittable = true
+        missing.keyboard.origin.y = 918
+        XCTAssertFalse(missing.isUsable)
+    }
+
+    func testOptionalButPresentAccessoryStillChecksContainmentSizeAndHittability() {
+        var visible = readyGeometry()
+        visible.requiresKeyboardAccessory = false
+        XCTAssertTrue(visible.isUsable)
+        let invalidFrames: [CGRect] = [
+            CGRect(x: 331, y: 440, width: 50, height: 44), // overlaps Send
+            CGRect(x: 331, y: 560, width: 50, height: 44), // overlaps keyboard
+            CGRect(x: 331, y: 100, width: 50, height: 44), // overlaps navigation
+            CGRect(x: 380, y: 500, width: 50, height: 44), // outside window
+            CGRect(x: 331, y: 500, width: 43, height: 44),
+            CGRect(x: 331, y: 500, width: 50, height: 43),
+            CGRect(x: CGFloat.nan, y: 500, width: 50, height: 44),
+        ]
+        for frame in invalidFrames {
+            var invalid = visible
+            invalid.done = frame
+            XCTAssertFalse(invalid.isUsable, "Present accessory must be checked: \(frame)")
+        }
+        visible.doneHittable = false
+        XCTAssertFalse(visible.isUsable)
+    }
+
+    func testOptionalAccessoryAppearingResetsTheStableInterval() {
+        var missing = readyGeometry()
+        missing.done = nil
+        missing.doneHittable = false
+        missing.requiresKeyboardAccessory = false
+        var visible = readyGeometry()
+        visible.requiresKeyboardAccessory = false
+        var gate = FlowComposerKeyboardReadiness()
+        XCTAssertFalse(gate.accepts(missing, at: 0))
+        XCTAssertTrue(gate.accepts(missing, at: 0.25))
+        XCTAssertFalse(gate.accepts(visible, at: 0.30))
+        XCTAssertFalse(gate.accepts(visible, at: 0.549))
+        XCTAssertTrue(gate.accepts(visible, at: 0.55))
+    }
+
+    func testOptionalAccessoryDisappearingResetsTheStableInterval() {
+        var visible = readyGeometry()
+        visible.requiresKeyboardAccessory = false
+        var missing = visible
+        missing.done = nil
+        missing.doneHittable = false
+        var gate = FlowComposerKeyboardReadiness()
+        XCTAssertFalse(gate.accepts(visible, at: 0))
+        XCTAssertTrue(gate.accepts(visible, at: 0.25))
+        XCTAssertFalse(gate.accepts(missing, at: 0.30))
+        XCTAssertFalse(gate.accepts(missing, at: 0.549))
+        XCTAssertTrue(gate.accepts(missing, at: 0.55))
     }
 
     private func readyGeometry() -> FlowComposerKeyboardGeometry {

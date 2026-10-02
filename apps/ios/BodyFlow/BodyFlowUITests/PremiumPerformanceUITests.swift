@@ -430,6 +430,13 @@ final class PremiumPerformanceUITests: XCTestCase {
             composer.typeText("QA local \(index)")
             let send = app.buttons["flow.send"]
             XCTAssertTrue(send.isEnabled)
+            // Setup is outside measure. The frozen baseline has no Done accessory;
+            // if one exists, the shared gate still validates its full geometry.
+            guard waitForStableComposerKeyboard(
+                composer, action: send, app: app, expectedComposer: "QA local \(index)",
+                requiresKeyboardAccessory: false,
+                diagnosticName: "performance-flow-exchange-\(index)-keyboard"
+            ) else { return }
             send.tap()
             let cancelling = app.buttons["flow.cancel"]
             let reply = app.staticTexts.matching(

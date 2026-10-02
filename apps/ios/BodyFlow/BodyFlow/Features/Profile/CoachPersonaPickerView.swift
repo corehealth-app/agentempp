@@ -95,7 +95,7 @@ struct CoachPersonaPickerView: View {
     private var content: some View {
         switch model.operationState {
         case .loading:
-            ProgressView(copy("profile.persona.loading"))
+            BodyFlowDelayedProgress(label: copy("profile.persona.loading"))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .idle, .saving:
             personaList
@@ -148,7 +148,7 @@ struct CoachPersonaPickerView: View {
         .bodyFlowList()
         .overlay {
             if isSaving {
-                ProgressView(copy("profile.persona.saving"))
+                BodyFlowDelayedProgress(label: copy("profile.persona.saving"))
                     .padding(BodyFlowSpacing.md)
                     .background(savingSurface, in: savingShape)
                     .overlay {

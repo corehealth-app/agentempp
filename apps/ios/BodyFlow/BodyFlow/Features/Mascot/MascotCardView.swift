@@ -181,7 +181,7 @@ struct MascotCardView: View {
                     .foregroundStyle(BodyFlowColor.primaryText)
 
                 if state == .loading {
-                    ProgressView(copy("mascot.loading"))
+                    BodyFlowDelayedProgress(label: copy("mascot.loading"))
                         .tint(BodyFlowColor.accent)
                 } else {
                     Text(state.descriptor.title)

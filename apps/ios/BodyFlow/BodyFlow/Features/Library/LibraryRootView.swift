@@ -851,7 +851,9 @@ struct LibraryRootView: View {
     private var readStateContent: some View {
         let presentation = model.state.presentation
 
-        if let fullScreenState = presentation.fullScreenState {
+        if presentation.fullScreenState == .loading {
+            BodyFlowFeatureSkeleton(kind: .library)
+        } else if let fullScreenState = presentation.fullScreenState {
             fullScreenContent(fullScreenState)
         } else if let feed = presentation.value {
             feedContent(
@@ -859,7 +861,7 @@ struct LibraryRootView: View {
                 showsStaleBanner: presentation.showsStaleBanner
             )
         } else {
-            fullScreenContent(.loading)
+            BodyFlowFeatureSkeleton(kind: .library)
         }
     }
 
@@ -882,7 +884,7 @@ struct LibraryRootView: View {
             fullScreenScroll(state: state) {
                 VStack(spacing: BodyFlowSpacing.md) {
                     if state == .loading {
-                        ProgressView()
+                        BodyFlowDelayedProgress()
                             .controlSize(.large)
                             .tint(BodyFlowColor.accent)
                             .accessibilityHidden(true)
@@ -1094,7 +1096,7 @@ struct LibraryRootView: View {
         )
 
         if paging.showsProgress {
-            ProgressView(copy("library.paging.loading"))
+            BodyFlowDelayedProgress(label: copy("library.paging.loading"))
                 .frame(
                     maxWidth: .infinity,
                     minHeight: BodyFlowSpacing.minimumTapTarget

@@ -24,7 +24,7 @@ struct FeatureReadStateView<
         let presentation = state.presentation
         let transition = BodyFlowMotion.stateTransition(reduceMotion: reduceMotion)
 
-        // Full-screen state ↔ loaded content cross-fades (≤200 ms) instead
+        // Full-screen state ↔ loaded content cross-fades (220 ms) instead
         // of popping; Reduce Motion makes the replacement immediate.
         Group {
             if let fullScreenState = presentation.fullScreenState {

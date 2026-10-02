@@ -1,12 +1,20 @@
 import UIKit
 import XCTest
 
-/// Read-only evidence from the UI test runner in the selected simulator.
+/// Performance setup establishes portrait once before launching the workload.
+/// The subsequent condition captures are read-only runner/simulator evidence.
 /// These values do not claim to be the target app's window/SwiftUI traits,
 /// physical-device power measurements, or continuous samples during a measure.
 extension XCTestCase {
     @MainActor
     func beginPerformanceConditionEvidence() {
+        // A freshly booted simulator can report .unknown. Establish the
+        // common workload orientation through the public API, then verify
+        // the actual getter; never substitute a requested value in evidence.
+        let device = XCUIDevice.shared
+        device.orientation = .portrait
+        XCTAssertEqual(device.orientation, .portrait,
+                       "Performance setup must establish portrait before capturing conditions")
         let testName = name
         PerformePerformanceConditionSnapshot.capture(testName: testName, phase: "setup")
         addTeardownBlock {

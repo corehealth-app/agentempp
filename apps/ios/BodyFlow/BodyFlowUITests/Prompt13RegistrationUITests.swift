@@ -34,6 +34,19 @@ final class Prompt13RegistrationUITests: XCTestCase {
     }
 
     @MainActor
+    func testRegistrationBrandDistinguishesReviewAndNewSheet() {
+        let app = reachTextProposal(scenario: .loaded)
+        let brand = element("registration.brand", in: app)
+        let ready = NSPredicate(format: "label == %@", "Pronto para revisar")
+        XCTAssertTrue(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: ready, object: brand)], timeout: 3) == .completed)
+        XCTAssertFalse(element("registration.proposal.confirmed", in: app).exists)
+        app.buttons["sheet.fechar"].tap()
+        app.buttons["register.refeicao"].tap()
+        XCTAssertTrue(element("registration.meal.source.text", in: app).waitForExistence(timeout: 3))
+        XCTAssertEqual(element("registration.brand", in: app).label, "Registrar")
+    }
+
+    @MainActor
     func testPhotoDemonstrationReachesProposalWithoutPermission() {
         let app = launchAndOpenMeal(scenario: .loaded)
 
@@ -165,10 +178,12 @@ final class Prompt13RegistrationUITests: XCTestCase {
         let retry = app.buttons["registration.mutation.retry"]
         XCTAssertTrue(retry.waitForExistence(timeout: 5))
         XCTAssertEqual(draft.value as? String, originalDraft)
+        XCTAssertEqual(element("registration.brand", in: app).label, "Não foi possível concluir. Revise e tente novamente.")
         retry.tap()
 
         XCTAssertTrue(element("registration.proposal", in: app).waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["389 kcal"].exists)
+        XCTAssertEqual(element("registration.brand", in: app).label, "Pronto para revisar")
     }
 
     @MainActor
@@ -347,6 +362,43 @@ final class Prompt13RegistrationUITests: XCTestCase {
         custom.typeText("500")
         app.buttons["registration.hydration.submit"].tap()
         XCTAssertTrue(app.staticTexts["Hidratação registrada."].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testNumericRegistrationKeyboardsDismissWithoutLosingDrafts() {
+        let app = launchAndOpenHydration(scenario: .loaded)
+        let hydration = app.textFields["registration.hydration.custom"]
+        XCTAssertTrue(hydration.waitForExistence(timeout: 3))
+        hydration.tap()
+        hydration.typeText("500")
+        assertKeyboardDismisses(in: app)
+        XCTAssertEqual(hydration.value as? String, "500")
+        app.buttons["sheet.fechar"].tap()
+
+        app.buttons["register.peso"].tap()
+        let weight = app.textFields["registration.weight.value"]
+        XCTAssertTrue(weight.waitForExistence(timeout: 3))
+        weight.tap()
+        weight.typeText("80")
+        assertKeyboardDismisses(in: app)
+        XCTAssertEqual(weight.value as? String, "80")
+        app.buttons["sheet.fechar"].tap()
+
+        app.buttons["register.treino"].tap()
+        let duration = app.textFields["registration.workout.duration"]
+        XCTAssertTrue(duration.waitForExistence(timeout: 3))
+        duration.tap()
+        assertKeyboardDismisses(in: app)
+        XCTAssertEqual(duration.value as? String, "47")
+    }
+
+    @MainActor
+    private func assertKeyboardDismisses(in app: XCUIApplication) {
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
+        let done = app.buttons["keyboard.done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 3))
+        done.tap()
+        XCTAssertFalse(app.keyboards.firstMatch.waitForExistence(timeout: 2))
     }
 
     @MainActor

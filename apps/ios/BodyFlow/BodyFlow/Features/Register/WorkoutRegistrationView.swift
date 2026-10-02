@@ -298,6 +298,11 @@ private struct WorkoutTextField: UIViewRepresentable {
         field.tintColor = UIColor(BodyFlowColor.color(.brandPrimary))
         field.accessibilityIdentifier = identifier
         field.accessibilityLabel = accessibilityLabel
+        if keyboardType == .numberPad || keyboardType == .decimalPad {
+            RegistrationNumericKeyboardAccessory.install(
+                on: field, locale: context.environment.locale
+            )
+        }
         field.addTarget(
             context.coordinator,
             action: #selector(Coordinator.valueChanged),
@@ -311,6 +316,9 @@ private struct WorkoutTextField: UIViewRepresentable {
 
     func updateUIView(_ field: UITextField, context: Context) {
         if field.text != text { field.text = text }
+        RegistrationNumericKeyboardAccessory.update(
+            on: field, locale: context.environment.locale
+        )
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(text: $text) }

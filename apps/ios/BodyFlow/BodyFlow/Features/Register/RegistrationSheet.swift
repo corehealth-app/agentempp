@@ -16,6 +16,7 @@ struct RegistrationSheet: View {
     @State private var hydrationModel: HydrationRegistrationModel
     @State private var weightModel: WeightRegistrationModel
     @State private var taskCoordinator = RegistrationSheetTaskCoordinator()
+    @State private var presentation = PerformeOperationPresentation()
 
     init(
         sheet: AppSheet,
@@ -217,6 +218,16 @@ struct RegistrationSheet: View {
                 : "registration.sheet.title.live"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    PerformeBrandAction(
+                        state: presentation.state,
+                        label: copy("tab.register"),
+                        status: brandStatus,
+                        showsLabel: false
+                    )
+                    .frame(width: 44)
+                    .accessibilityIdentifier("registration.brand")
+                }
                 ToolbarItem(placement: .cancellationAction) {
                     Button {
                         discardSheet()
@@ -236,11 +247,27 @@ struct RegistrationSheet: View {
                 }
             }
         }
+        .environment(\.bodyFlowResultFeedbackEnabled, false)
+        .sensoryFeedback(trigger: presentation.feedback) { _, value in
+            value?.result.feedback
+        }
+        .task(id: presentation.successToken) {
+            guard let token = presentation.successToken else { return }
+            do {
+                try await Task.sleep(for: .seconds(2))
+                try Task.checkCancellation()
+                presentation.expireSuccess(for: token)
+            } catch { /* Sheet/operation changed. Persistent receipt stays visible. */ }
+        }
         .presentationDetents(
             Self.presentationDetents(for: dynamicTypeSize)
         )
         .presentationContentInteraction(.scrolls)
         .presentationDragIndicator(.visible)
+        .onChange(of: mealDraftModel.phase) { _, phase in
+            guard kind == .meal else { return }
+            presentation.capturePhaseChanged(phase)
+        }
         .onDisappear {
             discardOperation()
         }
@@ -250,7 +277,11 @@ struct RegistrationSheet: View {
         _ intent: RegistrationSheetOperationIntent,
         _ operation: @escaping @MainActor () async -> Void
     ) {
-        taskCoordinator.perform(intent, operation: operation)
+        taskCoordinator.perform(intent) {
+            let token = presentation.begin()
+            await operation()
+            presentation.finish(token, outcome: operationOutcome(for: intent), confirmation: confirmationIdentity, isCancelled: Task.isCancelled)
+        }
     }
 
     private func discardSheet() {
@@ -290,6 +321,7 @@ struct RegistrationSheet: View {
     }
 
     private func discardOperation() {
+        presentation.invalidate()
         taskCoordinator.discard()
         mealRecorder.discard()
         mealDraftModel.discardSheet()
@@ -297,6 +329,50 @@ struct RegistrationSheet: View {
         workoutModel.discardSheet()
         hydrationModel.discardSheet()
         weightModel.discardSheet()
+    }
+
+    private func operationOutcome(for intent: RegistrationSheetOperationIntent) -> PerformeOperationOutcome {
+        switch kind {
+        case .meal:
+            return PerformeRegistrationProjection.meal(intent: intent, draft: mealDraftModel.phase, mutation: mealModel.mutationState, captureError: mealModel.captureError)
+        case .training:
+            return PerformeRegistrationProjection.registration(workoutModel.mutationState, captureError: workoutModel.captureError)
+        case .hydration:
+            if hydrationModel.captureError != nil { return .failed }
+            if case .failed = hydrationModel.mutationState { return .failed }
+            if case .succeeded = hydrationModel.mutationState { return .confirmed }
+        case .weight:
+            if weightModel.captureError != nil { return .failed }
+            if case .failed = weightModel.mutationState { return .failed }
+            if case .succeeded = weightModel.mutationState { return .confirmed }
+        }
+        return .cancelled
+    }
+
+    private var confirmationIdentity: PerformeOperationPresentation.Confirmation? {
+        switch kind {
+        case .meal:
+            guard case let .succeeded(.confirm(receipt)) = mealModel.mutationState else { return nil }
+            return .registration(receipt.data.registration.id)
+        case .training:
+            guard case let .succeeded(.confirm(receipt)) = workoutModel.mutationState else { return nil }
+            return .registration(receipt.data.registration.id)
+        case .hydration:
+            return hydrationModel.receipt.map { .hydration($0.data.hydrationLogID) }
+        case .weight:
+            return weightModel.receipt.map { .weight($0.weightKG, $0.recordedAt) }
+        }
+    }
+
+    private var brandStatus: String {
+        let key: String.LocalizationValue = switch presentation.state {
+        case .processing: "brand.processing"
+        case .error: "brand.error"
+        case .success: "brand.confirmed"
+        case .idle, .press, .active:
+            presentation.outcome == .ready ? "brand.ready" : "tab.register"
+        }
+        return copy(key)
     }
 
     static func presentationDetents(

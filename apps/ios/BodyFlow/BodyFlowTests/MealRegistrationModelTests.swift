@@ -330,6 +330,28 @@ struct MealRegistrationModelTests {
         #expect(receipt == Self.confirmedResponse)
     }
 
+    @Test("proposal network failure does not contaminate a new draft review after start over")
+    func failedProposalThenNewDraftPresentation() async throws {
+        let harness = try Self.makeHarness(proposeOutcomes: [.failure(.offline)])
+        await harness.model.submit(.text("Refeição"))
+        guard case .failed(.propose, .offline) = harness.model.mutationState else {
+            Issue.record("Expected the exact retained network failure of the proposal")
+            return
+        }
+        // Starting capture over resets the capture model, not this retained
+        // mutation. A successful new draft review must query its own phase.
+        #expect(PerformeRegistrationProjection.meal(
+            intent: .draftText("Nova refeição"), draft: .review,
+            mutation: harness.model.mutationState,
+            captureError: harness.model.captureError
+        ) == .ready)
+        #expect(PerformeRegistrationProjection.meal(
+            intent: .confirm, draft: .review,
+            mutation: harness.model.mutationState,
+            captureError: harness.model.captureError
+        ) == .failed)
+    }
+
     @Test("expired or no longer pending errors discard only the invalid pending and offer a new proposal", arguments: [
         BodyFlowCapabilityError.registrationExpired,
         BodyFlowCapabilityError.registrationNotPending,

@@ -22,6 +22,40 @@ enum RegistrationControlSizing {
     }
 }
 
+@MainActor
+enum RegistrationNumericKeyboardAccessory {
+    static func install(on field: UITextField, locale: Locale) {
+        let done = UIButton(type: .system)
+        done.setTitle(title(for: locale), for: .normal)
+        done.accessibilityIdentifier = "keyboard.done"
+        done.frame = CGRect(x: 0, y: 0, width: 88, height: BodyFlowSpacing.minimumTapTarget)
+        done.addAction(UIAction { [weak field] _ in
+            field?.resignFirstResponder()
+        }, for: .touchUpInside)
+
+        let toolbar = UIToolbar()
+        toolbar.items = [
+            UIBarButtonItem(systemItem: .flexibleSpace),
+            UIBarButtonItem(customView: done),
+        ]
+        toolbar.sizeToFit()
+        field.inputAccessoryView = toolbar
+    }
+
+    static func update(on field: UITextField, locale: Locale) {
+        let toolbar = field.inputAccessoryView as? UIToolbar
+        let done = toolbar?.items?.last?.customView as? UIButton
+        done?.setTitle(title(for: locale), for: .normal)
+    }
+
+    private static func title(for locale: Locale) -> String {
+        RegistrationCopy.string(
+            "keyboard.done",
+            language: BodyFlowPresentationLanguage.resolve(locale)
+        )
+    }
+}
+
 struct HydrationRegistrationView: View {
     let initialOccurredAt: Date
     let isSubmitting: Bool
@@ -121,6 +155,11 @@ struct RegistrationBoundedTextField: UIViewRepresentable {
         field.tintColor = UIColor(BodyFlowColor.color(.brandPrimary))
         field.accessibilityIdentifier = identifier
         field.accessibilityLabel = accessibilityLabel
+        if keyboardType == .numberPad || keyboardType == .decimalPad {
+            RegistrationNumericKeyboardAccessory.install(
+                on: field, locale: context.environment.locale
+            )
+        }
         field.addTarget(context.coordinator, action: #selector(Coordinator.changed), for: .editingChanged)
         field.heightAnchor.constraint(
             greaterThanOrEqualToConstant: BodyFlowSpacing.minimumTapTarget + 4
@@ -130,6 +169,9 @@ struct RegistrationBoundedTextField: UIViewRepresentable {
 
     func updateUIView(_ field: UITextField, context: Context) {
         if field.text != text { field.text = text }
+        RegistrationNumericKeyboardAccessory.update(
+            on: field, locale: context.environment.locale
+        )
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(text: $text) }

@@ -214,7 +214,7 @@ struct MealLiveCaptureView: View {
 
     private func progressLine(_ message: String) -> some View {
         HStack(spacing: BodyFlowSpacing.sm) {
-            ProgressView()
+            BodyFlowDelayedProgress()
                 .tint(BodyFlowColor.accent)
                 .accessibilityHidden(true)
             Text(verbatim: message)

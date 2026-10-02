@@ -55,6 +55,14 @@ final class BodyFlowUITests: XCTestCase {
         XCTAssertTrue(composer.waitForExistence(timeout: 3))
         composer.tap()
         composer.typeText("Como esta meu progresso?")
+        // Full suite 90e1585: Send was tapped while the keyboard was still
+        // moving and the message was never sent. Same readiness gate as the
+        // Flow suites (Done accessory required), before the tap.
+        guard waitForStableComposerKeyboard(
+            composer, action: app.buttons["flow.send"], app: app,
+            expectedComposer: "Como esta meu progresso?",
+            diagnosticName: "bodyflow-local-simulation-keyboard"
+        ) else { return }
         app.buttons["flow.send"].tap()
 
         XCTAssertTrue(

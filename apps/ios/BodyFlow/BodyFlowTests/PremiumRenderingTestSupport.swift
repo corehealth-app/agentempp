@@ -36,6 +36,7 @@ enum PremiumRenderingTestSupport {
         let isButton: Bool
         let isEnabled: Bool
         let frame: CGRect
+        let nativeBounds: CGRect?
         var description: String { "\(label): button=\(isButton), frame=\(frame)" }
     }
 
@@ -81,7 +82,8 @@ enum PremiumRenderingTestSupport {
                     label: object.accessibilityLabel ?? "",
                     isButton: object.accessibilityTraits.contains(.button),
                     isEnabled: !object.accessibilityTraits.contains(.notEnabled),
-                    frame: object.accessibilityFrame
+                    frame: object.accessibilityFrame,
+                    nativeBounds: (object as? UIView)?.bounds
                 ))
             }
             if let elements = object.accessibilityElements {

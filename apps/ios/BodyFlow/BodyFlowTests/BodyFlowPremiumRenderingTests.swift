@@ -523,11 +523,10 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
         XCTAssertTrue(offenders.isEmpty, "Card links without press feedback: \(offenders)")
     }
 
-    /// The brand band above the tab roots and the persona sheet is one
-    /// shared header, not two inline copies of the same padding/background.
+    /// Authenticated roots give their vertical space to content; the central
+    /// action owns the brand. The persona sheet keeps the shared header.
     func testReviewedBrandBandsUseTheSharedHeader() throws {
         let reviewedSources = [
-            "BodyFlow/App/AppShellView.swift",
             "BodyFlow/Features/Profile/CoachPersonaPickerView.swift",
         ]
         var offenders: [String] = []
@@ -536,6 +535,9 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
             if source.contains("BodyFlowBrandIdentityView(") { offenders.append("\(path): inline BodyFlowBrandIdentityView") }
             if !source.contains("BodyFlowBrandHeader(") { offenders.append("\(path): no BodyFlowBrandHeader") }
         }
+        let shell = try reviewedSource("BodyFlow/App/AppShellView.swift")
+        if shell.contains("BodyFlowBrandHeader(") { offenders.append("AppShellView: repeated root brand band") }
+        if !shell.contains("PerformeTabBar(") { offenders.append("AppShellView: missing central brand navigation") }
         XCTAssertTrue(offenders.isEmpty, "Brand bands outside the shared header: \(offenders)")
     }
 

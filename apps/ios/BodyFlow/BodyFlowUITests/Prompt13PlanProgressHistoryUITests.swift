@@ -10,7 +10,7 @@ final class Prompt13PlanProgressHistoryUITests: XCTestCase {
         let support = BodyFlowUITestSupport(testCase: self)
         let app = support.launch(scenario: .loaded)
 
-        app.tabBars.buttons["Plano"].tap()
+        app.performeTabBar.buttons["Plano"].tap()
         XCTAssertTrue(element("screen.plano", in: app).waitForExistence(timeout: 5))
 
         for label in [
@@ -38,12 +38,12 @@ final class Prompt13PlanProgressHistoryUITests: XCTestCase {
     func testPlanEmptyDiffersFromUnavailable() {
         let support = BodyFlowUITestSupport(testCase: self)
         let empty = support.launch(scenario: .empty)
-        empty.tabBars.buttons["Plano"].tap()
+        empty.performeTabBar.buttons["Plano"].tap()
         XCTAssertTrue(empty.staticTexts["Nada por aqui"].waitForExistence(timeout: 5))
         empty.terminate()
 
         let unavailable = support.launch(scenario: .unavailable)
-        unavailable.tabBars.buttons["Plano"].tap()
+        unavailable.performeTabBar.buttons["Plano"].tap()
         XCTAssertTrue(
             unavailable.staticTexts["Indisponível nesta versão"]
                 .waitForExistence(timeout: 5)
@@ -56,7 +56,7 @@ final class Prompt13PlanProgressHistoryUITests: XCTestCase {
         let support = BodyFlowUITestSupport(testCase: self)
         let app = support.launch(scenario: .loaded)
 
-        app.tabBars.buttons["Progresso"].tap()
+        app.performeTabBar.buttons["Progresso"].tap()
         XCTAssertTrue(
             element("progress.received-values", in: app)
                 .waitForExistence(timeout: 5)
@@ -71,7 +71,7 @@ final class Prompt13PlanProgressHistoryUITests: XCTestCase {
         let support = BodyFlowUITestSupport(testCase: self)
         let app = support.launch(scenario: .loaded)
 
-        app.tabBars.buttons["Progresso"].tap()
+        app.performeTabBar.buttons["Progresso"].tap()
         let detail = element("progress.block.detail", in: app)
         XCTAssertTrue(detail.waitForExistence(timeout: 5))
         support.assertMinimumTapTarget(detail)
@@ -92,7 +92,7 @@ final class Prompt13PlanProgressHistoryUITests: XCTestCase {
         let support = BodyFlowUITestSupport(testCase: self)
         let app = support.launch(scenario: .incomplete)
 
-        app.tabBars.buttons["Progresso"].tap()
+        app.performeTabBar.buttons["Progresso"].tap()
         let detail = element("progress.block.detail", in: app)
         XCTAssertTrue(detail.waitForExistence(timeout: 5))
         detail.tap()

@@ -6,6 +6,32 @@ final class FlowChatUITests: XCTestCase {
     private static var hasAcknowledgedQAOnboarding = false
     override func setUpWithError() throws { continueAfterFailure = false }
 
+    func testPendingOutboxAppearsBeforeReplyAndKeepsNewComposerOnLocalCancel() {
+        let app = launchFlow(scenario: "pendingCancellation")
+        let composer = app.textFields["flow.composer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 3))
+        XCTAssertLessThanOrEqual(composer.frame.maxY, app.performeTabBar.frame.minY,
+                                "The composer must stay above the floating navigation before focusing")
+        composer.tap()
+        composer.typeText("Mensagem A")
+        app.buttons["flow.send"].tap()
+        let outbox = element("flow.outbox", app: app)
+        XCTAssertTrue(outbox.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Mensagem A"].exists)
+        XCTAssertNotEqual(composer.value as? String, "Mensagem A")
+        composer.tap()
+        composer.typeText("Rascunho B")
+        XCTAssertTrue(app.keyboards.firstMatch.exists)
+        XCTAssertFalse(app.performeTabBar.exists, "The custom navigation must not form a second bar above the composer")
+        XCTAssertTrue(app.buttons["flow.cancel"].isHittable)
+        app.buttons["flow.cancel"].tap()
+        XCTAssertTrue(element("flow.error", app: app).waitForExistence(timeout: 3))
+        XCTAssertEqual(composer.value as? String, "Rascunho B")
+        XCTAssertTrue(outbox.exists)
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "QA_REPLY_VISIBLE")).firstMatch.exists)
+        capture("flow-outbox-local-cancel-keeps-new-composer", app: app)
+    }
+
     func testAXCancelActionContainsItsWholeNativeLabelWhilePending() {
         let setup = launchFlow(scenario: "empty")
         setup.terminate()
@@ -36,8 +62,7 @@ final class FlowChatUITests: XCTestCase {
         let app = launchFlow(scenario: "empty")
         let composer = app.textFields["flow.composer"]
         XCTAssertTrue(composer.waitForExistence(timeout: 3))
-        composer.tap()
-        composer.typeText(String(repeating: "a", count: 4_001))
+        enterSyntheticMessageAcrossLimit(in: composer, app: app)
         XCTAssertFalse(app.buttons["flow.send"].isEnabled)
         XCTAssertTrue(element("flow.limit.detail", app: app).exists)
         capture("flow-limit-keyboard", app: app)
@@ -52,8 +77,7 @@ final class FlowChatUITests: XCTestCase {
         XCTAssertTrue(element("screen.hoje", app: app).waitForExistence(timeout: 5))
         tapVisible(app.buttons["today.flow-chat"], app: app)
         let field = app.textFields["flow.composer"]
-        field.tap()
-        field.typeText(String(repeating: "a", count: 4_001))
+        enterSyntheticMessageAcrossLimit(in: field, app: app)
         let send = app.buttons["flow.send"]
         XCTAssertFalse(send.isEnabled)
         XCTAssertTrue(element("flow.limit.detail", app: app).exists)
@@ -82,6 +106,68 @@ final class FlowChatUITests: XCTestCase {
         app.buttons["flow.latest-message"].tap()
         XCTAssertTrue(lastRole.isHittable)
         capture("flow-reader-after-latest", app: app)
+    }
+
+    func testFiftyMessagesKeepUnsentComposerAndReadingPositionAcrossTabs() {
+        let app = launchFlow(scenario: "longHistory")
+        let composer = app.textFields["flow.composer"]
+        let roles = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "flow.role."))
+        XCTAssertEqual(roles.count, 40, "The existing longHistory fixture begins with forty messages")
+
+        // Same preparation as the performance baseline: five local exchanges
+        // grow the existing fixture to fifty messages, without a new provider.
+        for index in 0..<5 {
+            composer.tap()
+            composer.typeText("QA local \(index)")
+            app.buttons["flow.send"].tap()
+            let reconciled = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "count == %d", 42 + index * 2),
+                object: roles
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [reconciled], timeout: 8), .completed)
+            XCTAssertFalse(app.buttons["flow.cancel"].exists)
+            XCTAssertFalse(app.buttons["flow.send"].isEnabled)
+        }
+        let persistedIDs = Set(roles.allElementsBoundByIndex.map(\.identifier))
+        XCTAssertEqual(persistedIDs.count, 50)
+        composer.tap()
+        composer.typeText("Rascunho B")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        let done = app.buttons["keyboard.done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 5),
+                      "An unsent Flow draft needs a public keyboard dismissal action to reach other tabs")
+        support.assertTarget(done)
+        done.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.performeTabBar.waitForExistence(timeout: 5))
+        XCTAssertEqual(composer.value as? String, "Rascunho B")
+
+        let history = app.scrollViews["flow.history"]
+        let anchor = app.staticTexts["flow.role.qa-seed-35"]
+        reveal(anchor, in: history)
+        XCTAssertTrue(anchor.isHittable)
+        XCTAssertTrue(app.buttons["flow.latest-message"].isHittable)
+        let anchorBefore = anchor.frame
+        capture("flow-unsent-draft-reader-before-tab-roundtrip", app: app)
+
+        app.performeTabBar.buttons["tab.plano"].tap()
+        XCTAssertTrue(element("screen.plano", app: app).waitForExistence(timeout: 5))
+        app.performeTabBar.buttons["tab.perfil"].tap()
+        XCTAssertTrue(element("screen.perfil", app: app).waitForExistence(timeout: 5))
+        app.performeTabBar.buttons["tab.hoje"].tap()
+        XCTAssertTrue(element("screen.flow-chat", app: app).waitForExistence(timeout: 5))
+        XCTAssertEqual(composer.value as? String, "Rascunho B")
+        XCTAssertTrue(anchor.isHittable, "Returning to Flow must not follow the last message automatically")
+        XCTAssertEqual(anchor.frame.minY, anchorBefore.minY, accuracy: 2,
+                       "The same historical reading position must survive tab changes")
+        XCTAssertTrue(app.buttons["flow.latest-message"].isHittable)
+        XCTAssertFalse(app.keyboards.firstMatch.exists)
+        XCTAssertFalse(app.buttons["flow.cancel"].exists)
+        XCTAssertFalse(element("flow.outbox", app: app).exists)
+        XCTAssertFalse(app.staticTexts["Rascunho B"].exists, "B must remain in the composer, not become a sent message")
+        XCTAssertEqual(Set(roles.allElementsBoundByIndex.map(\.identifier)), persistedIDs,
+                       "Tab navigation must not append a new local send or replace the fifty persisted messages")
+        capture("flow-unsent-draft-reader-after-tab-roundtrip", app: app)
     }
 
     func testEmptyStateStartsAtReadableContentAtAXXXXL() {
@@ -167,11 +253,11 @@ final class FlowChatUITests: XCTestCase {
         let error = element("flow.error", app: app)
         XCTAssertTrue(error.waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "A operação remota pode continuar")).firstMatch.exists)
-        XCTAssertTrue(element("flow.empty", app: app).exists)
+        XCTAssertTrue(element("flow.outbox", app: app).exists)
         capture("flow-local-cancel", app: app)
         app.navigationBars.buttons.firstMatch.tap()
         tapVisible(app.buttons["today.flow-chat"], app: app)
-        XCTAssertTrue(element("flow.empty", app: app).waitForExistence(timeout: 3))
+        XCTAssertTrue(element("flow.outbox", app: app).waitForExistence(timeout: 3))
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "QA_REPLY_VISIBLE")).firstMatch.exists)
         capture("flow-cancel-reopened-no-send", app: app)
     }
@@ -413,6 +499,46 @@ final class FlowChatUITests: XCTestCase {
         if acknowledged { Self.hasAcknowledgedQAOnboarding = true }
     }
 
+    /// Both the synthetic setup and the 4,001st character use native input,
+    /// avoiding cross-process paste permission during this boundary test.
+    /// No model injection, send, measurement or accessibility assertion changes.
+    private func enterSyntheticMessageAcrossLimit(
+        in field: XCUIElement,
+        app: XCUIApplication,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let atLimit = String(repeating: "a", count: 4_000)
+        XCTAssertTrue(field.waitForExistence(timeout: 3), file: file, line: line)
+        field.tap()
+        XCTAssertTrue(waitForKeyboardFocus(field), file: file, line: line)
+        field.typeText(atLimit)
+        XCTAssertTrue(
+            waitForExactComposerValue(atLimit, in: field),
+            "The focused native composer must contain exactly the synthetic 4,000-character setup",
+            file: file, line: line
+        )
+        XCTAssertTrue(app.buttons["flow.send"].isEnabled, file: file, line: line)
+        XCTAssertFalse(element("flow.limit.detail", app: app).exists, file: file, line: line)
+        XCTAssertTrue(waitForKeyboardFocus(field), file: file, line: line)
+        field.typeText("a")
+        XCTAssertTrue(
+            waitForExactComposerValue(atLimit + "a", in: field),
+            "One native keystroke must produce exactly 4,001 characters without trimming or losing input",
+            file: file, line: line
+        )
+    }
+
+    private func waitForExactComposerValue(_ expected: String, in field: XCUIElement) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate { object, _ in
+                (object as? XCUIElement)?.value as? String == expected
+            },
+            object: field
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: 3) == .completed
+    }
+
     private func enterSecure(_ text: String, in field: XCUIElement) {
         XCTAssertTrue(field.waitForExistence(timeout: 3))
         field.tap()
@@ -464,14 +590,20 @@ final class FlowChatUITests: XCTestCase {
 
     private func tapVisible(_ control: XCUIElement, app: XCUIApplication) {
         XCTAssertTrue(control.exists || control.waitForExistence(timeout: 3))
-        for _ in 0..<40 where !control.isHittable {
-            // The same native onboarding scroll container retains its offset
-            // across steps. An earlier option can therefore be above, not below.
+        func isClearOfNavigation() -> Bool {
+            let bar = app.performeTabBar
+            return !bar.exists || control.frame.maxY <= bar.frame.minY
+        }
+        for _ in 0..<40 where !control.isHittable || !isClearOfNavigation() {
+            // A partly visible action can report hittable while its center is
+            // under the floating navigation. Scroll its whole target into view.
             if control.frame.midY < app.frame.midY { app.swipeDown() }
             else { app.swipeUp() }
         }
-        if !control.isHittable { capture("flow-setup-unreachable-\(control.identifier)", app: app) }
-        XCTAssertTrue(control.isHittable, "Unreachable native control: \(control.identifier)")
+        if !control.isHittable || !isClearOfNavigation() {
+            capture("flow-setup-unreachable-\(control.identifier)", app: app)
+        }
+        XCTAssertTrue(control.isHittable && isClearOfNavigation(), "Unreachable native control: \(control.identifier)")
         if control.elementType == .button { waitUntilEnabled(control) }
         control.tap()
     }

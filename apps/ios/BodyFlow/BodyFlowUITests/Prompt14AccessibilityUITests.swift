@@ -46,7 +46,7 @@ final class Prompt14AccessibilityUITests: XCTestCase {
             "tab.progresso",
             "tab.perfil",
         ] {
-            let tab = app.tabBars.buttons[identifier]
+            let tab = app.performeTabBar.buttons[identifier]
             XCTAssertTrue(tab.waitForExistence(timeout: 5))
             support.assertMinimumTapTarget(tab)
         }
@@ -59,7 +59,7 @@ final class Prompt14AccessibilityUITests: XCTestCase {
         )
         assertBrandHiddenOnPushedDestination(in: app)
 
-        app.tabBars.buttons["tab.plano"].tap()
+        app.performeTabBar.buttons["tab.plano"].tap()
         let planDetail = support.element("plan.detail", in: app)
         support.reveal(planDetail, in: app)
         planDetail.tap()
@@ -69,32 +69,32 @@ final class Prompt14AccessibilityUITests: XCTestCase {
         )
         assertBrandHiddenOnPushedDestination(in: app)
 
-        app.tabBars.buttons["tab.registrar"].tap()
+        app.performeTabBar.buttons["tab.registrar"].tap()
         XCTAssertTrue(
             support.element("screen.registrar", in: app)
                 .waitForExistence(timeout: 5)
         )
         assertSingleActiveBrand(in: app)
-        app.tabBars.buttons["tab.progresso"].tap()
+        app.performeTabBar.buttons["tab.progresso"].tap()
         XCTAssertTrue(
             support.element("screen.progresso", in: app)
                 .waitForExistence(timeout: 5)
         )
         assertSingleActiveBrand(in: app)
-        app.tabBars.buttons["tab.perfil"].tap()
+        app.performeTabBar.buttons["tab.perfil"].tap()
         XCTAssertTrue(
             support.element("screen.perfil", in: app)
                 .waitForExistence(timeout: 5)
         )
         assertSingleActiveBrand(in: app)
 
-        app.tabBars.buttons["tab.hoje"].tap()
+        app.performeTabBar.buttons["tab.hoje"].tap()
         XCTAssertTrue(
             support.element("screen.library", in: app)
                 .waitForExistence(timeout: 5)
         )
         assertBrandHiddenOnPushedDestination(in: app)
-        app.tabBars.buttons["tab.plano"].tap()
+        app.performeTabBar.buttons["tab.plano"].tap()
         XCTAssertTrue(
             support.element("screen.plan.detail", in: app)
                 .waitForExistence(timeout: 5)
@@ -189,7 +189,7 @@ final class Prompt14AccessibilityUITests: XCTestCase {
         XCTAssertTrue(window.waitForExistence(timeout: 5))
         assertBrandHiddenOnPushedDestination(in: app)
         let navigationBar = app.navigationBars["Biblioteca"]
-        let tabBar = app.tabBars.element(boundBy: 0)
+        let tabBar = app.performeTabBar
         let scrollView = app.scrollViews["screen.library"]
         for chrome in [navigationBar, tabBar, scrollView] {
             XCTAssertTrue(chrome.waitForExistence(timeout: 5))
@@ -290,7 +290,7 @@ final class Prompt14AccessibilityUITests: XCTestCase {
                 "identifier: 'screen.library'",
                 "identifier: 'library.category'",
                 "identifier: 'library.card.\(firstPublicationID)'",
-                "TabBar,",
+                "identifier: 'navigation.tab-bar'",
             ],
             in: app
         )
@@ -333,10 +333,10 @@ final class Prompt14AccessibilityUITests: XCTestCase {
             XCUIDevice.shared.appearance = appearance
             XCTAssertTrue(library.waitForExistence(timeout: 5))
             XCTAssertTrue(saved.isSelected)
-            XCTAssertTrue(app.tabBars.buttons["tab.hoje"].isSelected)
+            XCTAssertTrue(app.performeTabBar.buttons["tab.hoje"].isSelected)
             assertBrandHiddenOnPushedDestination(in: app)
             for identifier in tabIdentifiers {
-                let tab = app.tabBars.buttons[identifier]
+                let tab = app.performeTabBar.buttons[identifier]
                 XCTAssertTrue(tab.isHittable, "\(identifier) after \(appearance)")
                 support.assertMinimumTapTarget(tab)
             }
@@ -363,73 +363,34 @@ final class Prompt14AccessibilityUITests: XCTestCase {
         )
     }
 
-    /// The repeated shell wordmark above Today uses the compact brand
-    /// presentation: at the largest accessibility size it stays a single,
-    /// readable, hittable "Performe AI" header, but it must not outrank the
-    /// day's content — the first Energy value starts in the initial viewport
-    /// and is taller than the wordmark.
+    /// At AXXXL the central action remains reachable while the food value
+    /// starts in the initial viewport; there is no repeated root wordmark.
     @MainActor
-    func testCompactShellBrandStaysSecondaryAtAccessibilityXXXL() {
+    func testCentralBrandKeepsContentReachableAtAccessibilityXXXL() {
         let support = Prompt14UITestSupport(testCase: self)
-
         for language in ["pt-BR", "en"] {
-            let app = support.launch(
-                scenario: .loaded,
-                additionalArguments: [
-                    "-UIPreferredContentSizeCategoryName",
-                    "UICTContentSizeCategoryAccessibilityXXXL",
-                    "-AppleLanguages", "(\(language))",
-                ]
-            )
-            let window = app.windows.element(boundBy: 0)
-            let brand = app.staticTexts["brand.product-name"]
+            let app = support.launch(scenario: .loaded, additionalArguments: [
+                "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
+                "-AppleLanguages", "(\(language))",
+            ])
+            let window = app.windows.firstMatch
+            let brand = app.buttons["tab.registrar"]
             let navigationBar = app.navigationBars.firstMatch
-            let tabBar = app.tabBars.element(boundBy: 0)
-            let remaining = support.element(
-                "today.energy.remaining-food",
-                in: app
-            )
-            for element in [window, brand, navigationBar, tabBar, remaining] {
-                XCTAssertTrue(
-                    element.waitForExistence(timeout: 5),
-                    "Missing compact-brand layout element (\(language))"
-                )
+            let tabBar = app.performeTabBar
+            let remaining = support.element("today.energy.remaining-food", in: app)
+            for item in [window, brand, navigationBar, tabBar, remaining] {
+                XCTAssertTrue(item.waitForExistence(timeout: 5))
             }
-
             assertSingleActiveBrand(in: app)
-            XCTAssertEqual(brand.label, "Performe AI")
+            XCTAssertEqual(brand.label, language == "en" ? "Register" : "Registrar")
             XCTAssertTrue(window.frame.contains(brand.frame))
+            XCTAssertTrue(brand.isHittable)
+            XCTAssertGreaterThanOrEqual(brand.frame.width, 44)
+            XCTAssertGreaterThanOrEqual(brand.frame.height, 44)
             XCTAssertTrue(brand.frame.intersection(navigationBar.frame).isNull)
-            XCTAssertGreaterThanOrEqual(
-                navigationBar.frame.minY,
-                brand.frame.maxY
-            )
-            // The compact wordmark must be strictly smaller than one body
-            // line at AccessibilityXXXL (measured in the runner, so the
-            // threshold does not depend on the device's window height).
-            let bodyLineAtAXXXL = UIFont.preferredFont(
-                forTextStyle: .body,
-                compatibleWith: UITraitCollection(
-                    preferredContentSizeCategory: .accessibilityExtraExtraExtraLarge
-                )
-            ).lineHeight
-            XCTAssertLessThan(
-                brand.frame.height,
-                bodyLineAtAXXXL,
-                "Compact shell brand must not dominate the AXXXL viewport "
-                    + "(\(language)): \(brand.frame) vs body line \(bodyLineAtAXXXL)"
-            )
-            XCTAssertLessThan(
-                remaining.frame.minY,
-                tabBar.frame.minY,
-                "The first Energy value must start in the initial viewport "
-                    + "(\(language))"
-            )
-            XCTAssertGreaterThan(
-                remaining.frame.height,
-                brand.frame.height,
-                "Day content must outrank the compact brand (\(language))"
-            )
+            XCTAssertGreaterThanOrEqual(brand.frame.minY, navigationBar.frame.maxY)
+            XCTAssertLessThan(remaining.frame.minY, tabBar.frame.minY)
+            XCTAssertTrue(remaining.isHittable)
             app.terminate()
         }
     }
@@ -452,9 +413,9 @@ final class Prompt14AccessibilityUITests: XCTestCase {
                 ]
             )
             let window = app.windows.element(boundBy: 0)
-            let brand = app.staticTexts["brand.product-name"]
+            let brand = app.buttons["tab.registrar"]
             let navigationBar = app.navigationBars["Hoje"]
-            let tabBar = app.tabBars.element(boundBy: 0)
+            let tabBar = app.performeTabBar
             let screen = support.element("screen.hoje", in: app)
             for element in [
                 window,
@@ -484,8 +445,8 @@ final class Prompt14AccessibilityUITests: XCTestCase {
                 brand.frame.intersection(navigationBar.frame).isNull
             )
             XCTAssertGreaterThanOrEqual(
-                navigationBar.frame.minY,
-                brand.frame.maxY
+                brand.frame.minY,
+                navigationBar.frame.maxY
             )
             support.openLibrary(in: app)
             XCTAssertTrue(
@@ -543,9 +504,8 @@ final class Prompt14AccessibilityUITests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        let brands = app.staticTexts.matching(
-            identifier: "brand.product-name"
-        )
+        let brands = app.buttons.matching(identifier: "tab.registrar")
+        XCTAssertEqual(app.staticTexts.matching(identifier: "brand.product-name").count, 0, file: file, line: line)
         XCTAssertEqual(brands.count, 1, file: file, line: line)
         XCTAssertTrue(
             brands.element(boundBy: 0).isHittable,

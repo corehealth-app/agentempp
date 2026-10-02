@@ -335,11 +335,11 @@ final class Prompt13RegistrationUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Hidratação registrada."].waitForExistence(timeout: 5))
 
         app.buttons["sheet.fechar"].tap()
-        app.tabBars.buttons["tab.hoje"].tap()
+        app.performeTabBar.buttons["tab.hoje"].tap()
         XCTAssertTrue(element("today.hydration", in: app).waitForExistence(timeout: 5))
         XCTAssertTrue(element("today.hydration", in: app).value as? String == "2.111 ml; meta Indisponível")
 
-        app.tabBars.buttons["tab.registrar"].tap()
+        app.performeTabBar.buttons["tab.registrar"].tap()
         app.buttons["register.hidratacao"].tap()
         let custom = app.textFields["registration.hydration.custom"]
         XCTAssertTrue(custom.waitForExistence(timeout: 3))
@@ -428,7 +428,7 @@ final class Prompt13RegistrationUITests: XCTestCase {
         )
 
         app.buttons["sheet.fechar"].tap()
-        let today = app.tabBars.buttons["tab.hoje"]
+        let today = app.performeTabBar.buttons["tab.hoje"]
         XCTAssertTrue(today.waitForExistence(timeout: 3))
         today.tap()
         let hydration = element("today.hydration", in: app)
@@ -449,7 +449,7 @@ final class Prompt13RegistrationUITests: XCTestCase {
             // The Flow shortcut scrolls with Today's content (it is no
             // longer a pinned band), so only the navigation bar obstructs.
             below: [app.navigationBars.firstMatch],
-            above: app.tabBars.firstMatch
+            above: app.performeTabBar
         )
         XCTAssertTrue(routine.isHittable)
         XCTAssertGreaterThanOrEqual(routine.frame.minY, flow.frame.maxY)
@@ -541,7 +541,7 @@ final class Prompt13RegistrationUITests: XCTestCase {
     ) -> XCUIApplication {
         let support = BodyFlowUITestSupport(testCase: self)
         let app = support.launch(scenario: scenario)
-        let registerTab = app.tabBars.buttons["tab.registrar"]
+        let registerTab = app.performeTabBar.buttons["tab.registrar"]
         XCTAssertTrue(registerTab.waitForExistence(timeout: 5))
         registerTab.tap()
 
@@ -575,7 +575,7 @@ final class Prompt13RegistrationUITests: XCTestCase {
     ) -> XCUIApplication {
         let support = BodyFlowUITestSupport(testCase: self)
         let app = support.launch(scenario: scenario)
-        let registerTab = app.tabBars.buttons["tab.registrar"]
+        let registerTab = app.performeTabBar.buttons["tab.registrar"]
         XCTAssertTrue(registerTab.waitForExistence(timeout: 5))
         registerTab.tap()
 
@@ -625,7 +625,7 @@ final class Prompt13RegistrationUITests: XCTestCase {
     ) -> XCUIApplication {
         let support = BodyFlowUITestSupport(testCase: self)
         let app = support.launch(scenario: scenario)
-        let registerTab = app.tabBars.buttons["tab.registrar"]
+        let registerTab = app.performeTabBar.buttons["tab.registrar"]
         XCTAssertTrue(registerTab.waitForExistence(timeout: 5))
         registerTab.tap()
         return app

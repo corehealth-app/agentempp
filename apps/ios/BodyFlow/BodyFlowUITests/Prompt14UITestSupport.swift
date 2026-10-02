@@ -187,7 +187,7 @@ struct Prompt14UITestSupport {
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        let progress = app.tabBars.buttons["tab.progresso"]
+        let progress = app.performeTabBar.buttons["tab.progresso"]
         XCTAssertTrue(
             progress.waitForExistence(timeout: 5),
             file: file,
@@ -213,7 +213,7 @@ struct Prompt14UITestSupport {
         let resolvedTarget = target.firstMatch
         let window = app.windows.firstMatch
         let scrollView = app.scrollViews.firstMatch
-        let tabBar = app.tabBars.firstMatch
+        let tabBar = app.performeTabBar
         let brand = element("brand.product-name", in: app)
         let navigationBar = app.navigationBars.firstMatch
         guard window.exists,

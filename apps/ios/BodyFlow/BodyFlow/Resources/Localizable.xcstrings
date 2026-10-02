@@ -1,6 +1,70 @@
 {
   "sourceLanguage" : "pt-BR",
   "strings" : {
+  "brand.confirmed": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Registro confirmado"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Registration confirmed"
+        }
+      }
+    }
+  },
+  "brand.error": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Não foi possível concluir. Revise e tente novamente."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Could not complete. Review and try again."
+        }
+      }
+    }
+  },
+  "brand.processing": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Processando"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Processing"
+        }
+      }
+    }
+  },
+  "brand.ready": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Pronto para revisar"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Ready to review"
+        }
+      }
+    }
+  },
   "flow.error.history": {
     "localizations": {
       "en": {

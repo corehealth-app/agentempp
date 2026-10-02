@@ -14,7 +14,8 @@ final class PremiumCoreSurfacesUITests: XCTestCase {
             category: "UICTContentSizeCategoryAccessibilityXXXL"
         )
         XCTAssertTrue(element("screen.hoje", app: app).waitForExistence(timeout: 8))
-        XCTAssertEqual(app.staticTexts.matching(identifier: "brand.product-name").count, 1)
+        XCTAssertEqual(app.staticTexts.matching(identifier: "brand.product-name").count, 0)
+        XCTAssertEqual(app.buttons.matching(identifier: "tab.registrar").count, 1)
 
         let expectedLabels = ["Today", "Register", "Plan", "Progress", "Profile"]
         let tabIDs = ["tab.hoje", "tab.registrar", "tab.plano", "tab.progresso", "tab.perfil"]

@@ -3,6 +3,7 @@ import SwiftUI
 @MainActor
 struct AppShellView: View {
     @State private var selectedTab = AppTab.today
+    @State private var keyboardVisible = false
     @State private var router = AppRouter()
     @State private var invalidationCenter: FeatureInvalidationCenter
     @State private var todayViewModel: TodayViewModel
@@ -103,17 +104,8 @@ struct AppShellView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            if router.path(for: selectedTab).isEmpty {
-                BodyFlowBrandHeader(
-                    presentation: .compact,
-                    alignment: .leading,
-                    horizontalPadding: BodyFlowSpacing.md
-                )
-            }
-
-            TabView(selection: $selectedTab) {
-                ForEach(AppTab.allCases) { tab in
+        TabView(selection: $selectedTab) {
+                ForEach(AppTab.displayOrder) { tab in
                     Tab(
                         tab.title(for: presentationLanguage),
                         systemImage: tab.systemImage,
@@ -123,9 +115,9 @@ struct AppShellView: View {
                     }
                     .accessibilityIdentifier(tab.accessibilityIdentifier)
                 }
-            }
-            .tint(BodyFlowColor.accent)
         }
+        .toolbar(.hidden, for: .tabBar)
+        .tint(BodyFlowColor.accent)
 #if DEBUG
         .task {
             guard ProcessInfo.processInfo.arguments.contains("--ui-testing-prompt13-stale-offline") else {
@@ -136,9 +128,7 @@ struct AppShellView: View {
         }
 #endif
         .background {
-            TabBarAccessibilityConfigurator(
-                identifiers: AppTab.allCases.map(\.accessibilityIdentifier)
-            )
+            BodyFlowKeyboardObserver { keyboardVisible = $0 }
             .frame(width: 0, height: 0)
         }
         .environment(router)
@@ -217,11 +207,22 @@ struct AppShellView: View {
     private func navigationStack(for tab: AppTab) -> some View {
         NavigationStack(path: router.binding(for: tab)) {
             rootView(for: tab)
+                .safeAreaInset(edge: .bottom, spacing: 0) { navigationBar }
                 .navigationDestination(for: AppRoute.self) { route in
                     destination(for: route)
+                        .safeAreaInset(edge: .bottom, spacing: 0) { navigationBar }
                 }
         }
+        .toolbar(.hidden, for: .tabBar)
         .accessibilityHidden(selectedTab != tab)
+    }
+
+    /// Reserve space on each actual screen, inside the native navigation
+    /// controller boundary, so its own bottom composer receives the inset.
+    @ViewBuilder private var navigationBar: some View {
+        if !keyboardVisible {
+            PerformeTabBar(selection: $selectedTab, language: presentationLanguage)
+        }
     }
 
     private var presentationLanguage: SupportedAppLanguage {

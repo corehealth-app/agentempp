@@ -34,7 +34,11 @@ final class BodyFlowUITests: XCTestCase {
             element("screen.hoje", in: app)
                 .waitForExistence(timeout: 5)
         )
-        assertVisibleBrand(in: app)
+        XCTAssertEqual(app.staticTexts.matching(identifier: "brand.product-name").count, 0)
+        let brand = app.buttons["tab.registrar"]
+        XCTAssertTrue(brand.waitForExistence(timeout: 5))
+        XCTAssertTrue(brand.isHittable)
+        assertMinimumTapTarget(brand)
     }
 
     @MainActor
@@ -90,7 +94,7 @@ final class BodyFlowUITests: XCTestCase {
                 .waitForExistence(timeout: 5)
         )
 
-        let profileTab = app.tabBars.buttons["tab.perfil"]
+        let profileTab = app.performeTabBar.buttons["tab.perfil"]
         XCTAssertTrue(profileTab.waitForExistence(timeout: 5))
         profileTab.tap()
         XCTAssertTrue(waitForSelected(profileTab))
@@ -117,7 +121,7 @@ final class BodyFlowUITests: XCTestCase {
         ]
 
         for (tabID, screenID, attachmentName) in tabs {
-            let tab = app.tabBars.buttons[tabID]
+            let tab = app.performeTabBar.buttons[tabID]
             XCTAssertTrue(tab.waitForExistence(timeout: 3), "A aba \(tabID) deve existir")
             tab.tap()
             XCTAssertTrue(
@@ -143,6 +147,31 @@ final class BodyFlowUITests: XCTestCase {
     }
 
     @MainActor
+    func testApprovedVisualTabOrderAndCenterActionOpenExistingRegister() {
+        let app = launchApp(arguments: ["--ui-testing", Prompt13UITestScenario.loaded.rawValue])
+        attachHierarchy(of: app, name: "final-polish-tab-semantics")
+        let bar = app.descendants(matching: .any)["navigation.tab-bar"].firstMatch
+        XCTAssertTrue(bar.waitForExistence(timeout: 5))
+        let ids = ["tab.hoje", "tab.plano", "tab.registrar", "tab.progresso", "tab.perfil"]
+        let tabs = ids.map { bar.buttons[$0] }
+        XCTAssertEqual(bar.buttons.count, 5)
+        for index in tabs.indices {
+            XCTAssertTrue(tabs[index].exists)
+            XCTAssertTrue(tabs[index].isHittable)
+            XCTAssertGreaterThanOrEqual(tabs[index].frame.width, 44)
+            XCTAssertGreaterThanOrEqual(tabs[index].frame.height, 44)
+            XCTAssertTrue(app.frame.contains(tabs[index].frame))
+            if index > 0 { XCTAssertLessThan(tabs[index - 1].frame.midX, tabs[index].frame.midX) }
+        }
+        XCTAssertEqual(tabs[2].frame.midX, app.frame.midX, accuracy: 12)
+        tabs[2].tap()
+        XCTAssertTrue(element("screen.registrar", in: app).waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForSelected(tabs[2]))
+        XCTAssertFalse(app.buttons["sheet.fechar"].exists)
+        capture("final-polish-approved-tabs", app: app)
+    }
+
+    @MainActor
     func testTodayNavigationPersistsAcrossTabSwitch() {
         let app = launchApp(arguments: [
             "--ui-testing",
@@ -155,12 +184,12 @@ final class BodyFlowUITests: XCTestCase {
         let detail = element("route.hoje.detalhe", in: app)
         XCTAssertTrue(detail.waitForExistence(timeout: 3))
 
-        app.tabBars.buttons["tab.registrar"].tap()
+        app.performeTabBar.buttons["tab.registrar"].tap()
         XCTAssertTrue(
             element("screen.registrar", in: app).waitForExistence(timeout: 3)
         )
 
-        app.tabBars.buttons["tab.hoje"].tap()
+        app.performeTabBar.buttons["tab.hoje"].tap()
         XCTAssertTrue(detail.waitForExistence(timeout: 3))
         XCTAssertTrue(waitForHorizontallySettled(detail, in: app))
         XCTAssertTrue(waitForVisualStability())
@@ -170,7 +199,7 @@ final class BodyFlowUITests: XCTestCase {
     @MainActor
     func testRegistrationSheetExplainsNothingWasSaved() {
         let app = launchApp()
-        app.tabBars.buttons["tab.registrar"].tap()
+        app.performeTabBar.buttons["tab.registrar"].tap()
 
         let meal = app.buttons["register.refeicao"]
         XCTAssertTrue(meal.waitForExistence(timeout: 3))
@@ -463,7 +492,7 @@ final class BodyFlowUITests: XCTestCase {
                 .waitForExistence(timeout: 5)
         )
 
-        let profileTab = app.tabBars.buttons["tab.perfil"]
+        let profileTab = app.performeTabBar.buttons["tab.perfil"]
         XCTAssertTrue(profileTab.waitForExistence(timeout: 5))
         profileTab.tap()
         XCTAssertTrue(waitForSelected(profileTab))

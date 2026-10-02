@@ -6,6 +6,13 @@ struct PremiumUIUXUITestSupport {
 
     func launch(arguments: [String], language: String, dark: Bool,
                 category: String = "UICTContentSizeCategoryL") -> XCUIApplication {
+        // Launch arguments alone did not change the effective appearance on
+        // iOS 26.5. Drive the simulator's public XCTest setting and restore it.
+        let originalAppearance = XCUIDevice.shared.appearance
+        XCUIDevice.shared.appearance = dark ? .dark : .light
+        testCase.addTeardownBlock {
+            await MainActor.run { XCUIDevice.shared.appearance = originalAppearance }
+        }
         let app = XCUIApplication()
         app.launchArguments = arguments + [
             "-AppleLanguages", "(\(language))", "-AppleLocale",

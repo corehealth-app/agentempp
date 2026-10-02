@@ -251,7 +251,7 @@ final class PremiumContentProfileUITests: XCTestCase {
 
     @MainActor
     private func openProfile(in app: XCUIApplication) {
-        let tab = app.tabBars.buttons["tab.perfil"]
+        let tab = app.performeTabBar.buttons["tab.perfil"]
         XCTAssertTrue(tab.waitForExistence(timeout: 5))
         tab.tap()
         XCTAssertTrue(

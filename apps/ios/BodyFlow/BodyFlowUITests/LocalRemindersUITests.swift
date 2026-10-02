@@ -99,7 +99,7 @@ final class LocalRemindersUITests: XCTestCase {
     func testPlainDemonstrationHasNoRemindersEntry() {
         let support = BodyFlowUITestSupport(testCase: self)
         let app = support.launch(scenario: .loaded)
-        let profileTab = app.tabBars.buttons["tab.perfil"]
+        let profileTab = app.performeTabBar.buttons["tab.perfil"]
         XCTAssertTrue(profileTab.waitForExistence(timeout: 5))
         profileTab.tap()
         XCTAssertTrue(element("profile.coach-persona", in: app).waitForExistence(timeout: 5))
@@ -108,7 +108,7 @@ final class LocalRemindersUITests: XCTestCase {
 
     @MainActor
     private func openReminders(in app: XCUIApplication, support: BodyFlowUITestSupport) {
-        let profileTab = app.tabBars.buttons["tab.perfil"]
+        let profileTab = app.performeTabBar.buttons["tab.perfil"]
         XCTAssertTrue(profileTab.waitForExistence(timeout: 5))
         profileTab.tap()
         XCTAssertTrue(element("screen.perfil", in: app).waitForExistence(timeout: 5))

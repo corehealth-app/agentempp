@@ -142,17 +142,16 @@ final class Prompt14TodayMascotUITests: XCTestCase {
 
         let window = app.windows.firstMatch
         let scrollView = app.scrollViews.firstMatch
-        let brand = support.element("brand.product-name", in: app)
         let navigationBar = app.navigationBars.firstMatch
-        let tabBar = app.tabBars.firstMatch
-        for element in [window, scrollView, brand, navigationBar, tabBar] {
+        let tabBar = app.performeTabBar
+        for element in [window, scrollView, navigationBar, tabBar] {
             XCTAssertTrue(element.exists)
         }
         let viewport = support.revealFully(
             [unavailable, library],
             in: scrollView,
             within: window,
-            below: [brand, navigationBar],
+            below: [navigationBar],
             above: tabBar
         )
         let combinedFrame = unavailable.frame.union(library.frame)

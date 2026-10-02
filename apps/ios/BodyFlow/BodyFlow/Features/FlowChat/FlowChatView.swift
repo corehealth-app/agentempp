@@ -37,6 +37,18 @@ struct FlowChatView: View {
         .background(BodyFlowColor.color(.backgroundPrimary))
         .navigationTitle("flow.title")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button { composerFocused = false } label: {
+                    Text("keyboard.done")
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("keyboard.done")
+            }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("screen.flow-chat")
         .task {
@@ -79,13 +91,13 @@ struct FlowChatView: View {
 
     @ViewBuilder
     private func conversation(gutter: CGFloat) -> some View {
-        let isLoadingHistory = model.isLoading && model.messages.isEmpty
+        let isLoadingHistory = model.isLoading && model.conversationItems.isEmpty
         let transition = BodyFlowMotion.stateTransition(reduceMotion: reduceMotion)
-        // Loading ↔ conversation cross-fades (≤200 ms); immediate under
+        // Loading ↔ conversation cross-fades (220 ms); immediate under
         // Reduce Motion. The scroll policy below is untouched.
         Group {
             if isLoadingHistory {
-                ProgressView("flow.loading")
+                BodyFlowDelayedProgress(label: flowCopy("flow.loading"))
                     .font(BodyFlowTypography.body)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityIdentifier("flow.loading")
@@ -109,22 +121,29 @@ struct FlowChatView: View {
                             // lazy culling at its tail otherwise hides the text.
                             VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
                                 preamble
-                                if model.messages.isEmpty {
+                                if model.conversationItems.isEmpty {
                                     emptyConversation
                                 }
-                                ForEach(model.messages) { message in
-                                    FlowMessageBubble(message: message).id(message.id)
+                                ForEach(model.conversationItems) { item in
+                                    switch item {
+                                    case let .message(message):
+                                        FlowMessageBubble(message: message).id(message.id)
+                                    case let .outbox(pending):
+                                        FlowOutboxBubble(message: pending, isSending: model.isSending) {
+                                            Task { await model.retry(outboxID: pending.id) }
+                                        }
+                                    }
                                 }
-                                if model.isSending {
+                                if model.isSending || model.isReconcilingHistory {
                                     HStack(alignment: .top, spacing: BodyFlowSpacing.sm) {
-                                        ProgressView()
-                                        Text("flow.responding")
+                                        BodyFlowDelayedProgress()
+                                        Text(model.isSending ? "flow.responding" : "flow.reconciling")
                                             .font(BodyFlowTypography.supporting)
                                             .foregroundStyle(BodyFlowColor.color(.textSecondary))
                                             .fixedSize(horizontal: false, vertical: true)
                                         Spacer(minLength: 0)
                                     }
-                                    .accessibilityIdentifier("flow.responding")
+                                    .accessibilityIdentifier(model.isSending ? "flow.responding" : "flow.reconciling")
                                 }
                                 if let errorMessage = model.errorMessage { errorCard(message: errorMessage) }
                             }
@@ -134,8 +153,9 @@ struct FlowChatView: View {
                                 .id("flow.history-end").accessibilityHidden(true)
                         }
                     }
+                    .scrollDismissesKeyboard(.interactively)
                     .defaultScrollAnchor(
-                        model.messages.isEmpty && model.errorMessage == nil ? .top : .bottom,
+                        model.conversationItems.isEmpty && model.errorMessage == nil ? .top : .bottom,
                         for: .initialOffset
                     )
                     .accessibilityIdentifier("flow.history")
@@ -158,12 +178,17 @@ struct FlowChatView: View {
                         }
                         announceNewReplyIfFollowing()
                     }
+                    .onChange(of: model.outbox.last?.id) {
+                        if FlowChatScrollPolicy.shouldFollow(atEnd: atEnd, initiatedSend: initiatedSend) {
+                            followEnd(proxy)
+                        }
+                    }
                     .onChange(of: initiatedSend) {
                         guard initiatedSend else { return }
                         followEnd(proxy)
                         initiatedSend = false
                     }
-                    if !atEnd && !model.messages.isEmpty {
+                    if !atEnd && !model.conversationItems.isEmpty {
                         Button("flow.latest-message") { followEnd(proxy) }
                             .buttonStyle(BodyFlowButtonStyle(role: .secondary))
                             .padding(.horizontal, gutter)
@@ -326,6 +351,55 @@ struct FlowChatView: View {
         UIAccessibility.post(notification: .announcement,
                              argument: String(localized: LocalizedStringResource("flow.response.received",
                                 locale: BodyFlowPresentationLanguage.resolve(locale).formattingLocale)))
+    }
+}
+
+/// Local submission, never presented as an official persisted message.
+private struct FlowOutboxBubble: View {
+    let message: FlowOutboxMessage
+    let isSending: Bool
+    let retry: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicType
+
+    private var statusKey: LocalizedStringKey {
+        switch message.state {
+        case .sending: "flow.outbox.sending"
+        case .unconfirmed: "flow.outbox.unconfirmed"
+        case .accepted: "flow.outbox.accepted"
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            Spacer(minLength: dynamicType.isAccessibilitySize ? 0 : BodyFlowSpacing.xl + BodyFlowSpacing.lg)
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+                Text("flow.role.user")
+                    .font(BodyFlowTypography.caption)
+                    .fontWeight(.semibold)
+                Text(message.text)
+                    .font(BodyFlowTypography.body)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                Label(statusKey, symbol: message.state == .accepted ? .success : .clock)
+                    .font(BodyFlowTypography.supporting)
+                    .fixedSize(horizontal: false, vertical: true)
+                if message.state == .unconfirmed {
+                    Button("flow.retry", action: retry)
+                        .font(BodyFlowTypography.button)
+                        .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                        .disabled(isSending)
+                        .accessibilityIdentifier("flow.outbox.retry.\(message.id.uuidString)")
+                }
+            }
+            .foregroundStyle(BodyFlowColor.color(.onPrimary))
+            .tint(BodyFlowColor.color(.onPrimary))
+            .padding(BodyFlowSpacing.md)
+            .background(BodyFlowColor.color(.brandPrimary),
+                        in: RoundedRectangle(cornerRadius: BodyFlowRadius.card, style: .continuous))
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("flow.outbox")
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 

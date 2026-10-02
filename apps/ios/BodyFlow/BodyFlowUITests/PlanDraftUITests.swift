@@ -217,7 +217,7 @@ final class PlanDraftUITests: XCTestCase {
         let header = bars.element(boundBy: max(bars.count - 1, 0))
         let top = header.exists ? header.frame.maxY : 0
         let keyboard = app.keyboards.firstMatch
-        let tabBar = app.tabBars.firstMatch
+        let tabBar = app.performeTabBar
         var bottom = tabBar.exists ? tabBar.frame.minY : app.frame.maxY
         if keyboard.exists, keyboard.frame.height > 0,
            keyboard.frame.minY > top, keyboard.frame.minY < bottom {

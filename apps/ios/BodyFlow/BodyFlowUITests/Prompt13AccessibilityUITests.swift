@@ -22,7 +22,7 @@ final class Prompt13AccessibilityUITests: XCTestCase {
             "tab.hoje", "tab.registrar", "tab.plano", "tab.progresso",
             "tab.perfil",
         ] {
-            let tab = app.tabBars.buttons[identifier]
+            let tab = app.performeTabBar.buttons[identifier]
             XCTAssertTrue(tab.waitForExistence(timeout: 5))
             support.assertMinimumTapTarget(tab)
         }
@@ -39,7 +39,7 @@ final class Prompt13AccessibilityUITests: XCTestCase {
                 .waitForExistence(timeout: 5)
         )
 
-        app.tabBars.buttons["tab.plano"].tap()
+        app.performeTabBar.buttons["tab.plano"].tap()
         let planDetail = element("plan.detail", in: app)
         reveal(planDetail, in: app)
         XCTAssertTrue(planDetail.isHittable)
@@ -49,36 +49,36 @@ final class Prompt13AccessibilityUITests: XCTestCase {
                 .waitForExistence(timeout: 5)
         )
 
-        app.tabBars.buttons["tab.progresso"].tap()
+        app.performeTabBar.buttons["tab.progresso"].tap()
         XCTAssertTrue(
             element("screen.progresso", in: app)
                 .waitForExistence(timeout: 5)
         )
 
-        app.tabBars.buttons["tab.registrar"].tap()
+        app.performeTabBar.buttons["tab.registrar"].tap()
         XCTAssertTrue(
             element("screen.registrar", in: app)
                 .waitForExistence(timeout: 5)
         )
 
-        app.tabBars.buttons["tab.perfil"].tap()
+        app.performeTabBar.buttons["tab.perfil"].tap()
         XCTAssertTrue(
             element("screen.perfil", in: app)
                 .waitForExistence(timeout: 5)
         )
 
-        app.tabBars.buttons["tab.hoje"].tap()
+        app.performeTabBar.buttons["tab.hoje"].tap()
         XCTAssertTrue(
             app.navigationBars["Registro de alimento"]
                 .waitForExistence(timeout: 5)
         )
-        app.tabBars.buttons["tab.plano"].tap()
+        app.performeTabBar.buttons["tab.plano"].tap()
         XCTAssertTrue(
             element("screen.plan.detail", in: app)
                 .waitForExistence(timeout: 5)
         )
 
-        app.tabBars.buttons["tab.hoje"].tap()
+        app.performeTabBar.buttons["tab.hoje"].tap()
         app.navigationBars["Registro de alimento"].buttons.element(boundBy: 0).tap()
         XCTAssertTrue(
             element("screen.history", in: app).waitForExistence(timeout: 5)
@@ -139,7 +139,7 @@ final class Prompt13AccessibilityUITests: XCTestCase {
         XCTAssertTrue(window.waitForExistence(timeout: 3))
         let navigationBar = app.navigationBars["Hoje"]
         let library = element("today.library", in: app)
-        let tabBar = app.tabBars.element(boundBy: 0)
+        let tabBar = app.performeTabBar
         let scrollView = app.scrollViews.element(boundBy: 0)
         XCTAssertTrue(navigationBar.waitForExistence(timeout: 3))
         XCTAssertTrue(library.waitForExistence(timeout: 3))
@@ -235,7 +235,7 @@ final class Prompt13AccessibilityUITests: XCTestCase {
         let support = BodyFlowUITestSupport(testCase: self)
         let app = support.launch(scenario: .registrationErrorOnce)
 
-        let register = app.tabBars.buttons["tab.registrar"]
+        let register = app.performeTabBar.buttons["tab.registrar"]
         XCTAssertTrue(register.waitForExistence(timeout: 5))
         register.tap()
         let meal = app.buttons["register.refeicao"]

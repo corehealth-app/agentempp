@@ -206,7 +206,7 @@ final class PremiumConvergenceUITests: XCTestCase {
         _ app: XCUIApplication,
         screen: String
     ) throws {
-        let tabBar = app.tabBars.firstMatch
+        let tabBar = app.performeTabBar
         let tabBarFrame = tabBar.exists ? tabBar.frame : .null
         try app.performAccessibilityAudit { issue in
             let identifier = issue.element?.identifier ?? ""

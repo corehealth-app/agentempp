@@ -47,7 +47,7 @@ final class FlowChatModel {
     // The acknowledged turn can reconcile in the background while the
     // patient submits the next turn. Only a pending POST owns the composer.
     var isSending: Bool { sendPhase == .awaitingReply }
-    var isReconcilingHistory: Bool { isLoading && !messages.isEmpty }
+    var isReconcilingHistory: Bool { isLoading && (!messages.isEmpty || !outbox.isEmpty) }
     private(set) var errorMessage: String?
     /// Opening review never confirms the patient's plan.
     private(set) var turnDraft: FlowTurnDraft?

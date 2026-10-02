@@ -64,6 +64,63 @@ struct FlowChatConcurrencyTests {
         #expect(model.messages.contains { $0.id == "reply-b" })
     }
 
+    @Test("reopening Flow after the first POST fails or is cancelled shows pending GET without dropping outbox or repeating POST", arguments: [false, true])
+    func pendingHistoryWithOnlyUnconfirmedOutboxShowsReconciliation(cancelled: Bool) async {
+        let provider = ControlledFlowProvider(suspendsHistory: true)
+        let model = makeModel(provider)
+        let initialLoad = Task { await model.load() }
+        await provider.waitForHistories(1)
+        #expect(model.isLoading)
+        #expect(model.conversationItems.isEmpty)
+        #expect(!model.isReconcilingHistory)
+        await provider.completeHistory(0, with: .success(history([])))
+        await initialLoad.value
+
+        model.composer = "Mensagem A"
+        let send = Task { await model.send() }
+        await provider.waitForSends(1)
+        if cancelled {
+            model.cancel()
+            await provider.completeSend(0, with: .failure(CancellationError()))
+        } else {
+            await provider.completeSend(0, with: .failure(URLError(.timedOut)))
+        }
+        await send.value
+        #expect(model.messages.isEmpty)
+        #expect(model.outbox.map(\.text) == ["Mensagem A"])
+        #expect(model.outbox.map(\.state) == [.unconfirmed])
+        #expect(!model.isSending)
+        #expect(!model.isLoading)
+        #expect(!model.isReconcilingHistory)
+        let preservedOutbox = model.outbox
+        let sentKeys = await provider.sentKeys
+        #expect(sentKeys.count == 1)
+        #expect(await provider.historyCount == 1)
+
+        // The view cancels locally on disappearance and loads on re-entry.
+        // Hold that GET at the existing explicit network barrier.
+        model.cancel()
+        let reopened = Task { await model.load() }
+        await provider.waitForHistories(2)
+        #expect(model.isLoading)
+        #expect(model.messages.isEmpty)
+        #expect(!model.conversationItems.isEmpty)
+        #expect(model.isReconcilingHistory)
+        #expect(!model.isSending)
+        #expect(model.outbox == preservedOutbox)
+        #expect(await provider.sentKeys == sentKeys)
+
+        // Drain even on RED: #expect does not throw or strand the GET.
+        await provider.completeHistory(1, with: .success(history([])))
+        await reopened.value
+        #expect(!model.isLoading)
+        #expect(!model.isReconcilingHistory)
+        #expect(model.messages.isEmpty)
+        #expect(model.outbox == preservedOutbox)
+        #expect(await provider.sentKeys == sentKeys)
+        #expect(await provider.historyCount == 2)
+    }
+
     @Test("reversed GET completion keeps the most recently requested history")
     func reversedHistory() async {
         let provider = ControlledFlowProvider(suspendsHistory: true)

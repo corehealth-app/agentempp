@@ -26,7 +26,7 @@ final class PremiumPerformanceUITests: XCTestCase {
     func testLibraryFeedScrollBaseline() {
         let support = Prompt14UITestSupport(testCase: self)
         let app = support.launch(scenario: .loaded)
-        support.openLibrary(in: app)
+        openBenchmarkLibrary(in: app)
         XCTAssertTrue(
             support.element(
                 "library.card.10000000-0000-4000-8000-000000000001",
@@ -35,7 +35,7 @@ final class PremiumPerformanceUITests: XCTestCase {
         )
 
         measure(
-            metrics: [XCTClockMetric(), XCTMemoryMetric()],
+            metrics: [XCTClockMetric(), XCTMemoryMetric(application: app)],
             options: fiveIterations
         ) {
             app.swipeUp(velocity: .fast)
@@ -46,12 +46,13 @@ final class PremiumPerformanceUITests: XCTestCase {
 
     func testFlowFiftyMessageHistoryRenderBaseline() {
         let app = launchFlow(scenario: "longHistory")
+        assertFlowMessageCount(40, in: app)
         appendFiveLocalExchanges(to: app)
         let history = app.scrollViews["flow.history"]
         XCTAssertTrue(history.waitForExistence(timeout: 5))
 
         measure(
-            metrics: [XCTClockMetric(), XCTMemoryMetric()],
+            metrics: [XCTClockMetric(), XCTMemoryMetric(application: app)],
             options: fiveIterations
         ) {
             history.swipeDown(velocity: .fast)
@@ -69,7 +70,7 @@ final class PremiumPerformanceUITests: XCTestCase {
         XCTAssertTrue(body.waitForExistence(timeout: 5))
 
         measure(
-            metrics: [XCTClockMetric(), XCTMemoryMetric()],
+            metrics: [XCTClockMetric(), XCTMemoryMetric(application: app)],
             options: fiveIterations
         ) {
             history.swipeDown(velocity: .fast)
@@ -98,14 +99,57 @@ final class PremiumPerformanceUITests: XCTestCase {
             app.descendants(matching: .any)["screen.hoje"]
                 .waitForExistence(timeout: 5)
         )
-        let entry = app.buttons["today.flow-chat"]
-        XCTAssertTrue(entry.waitForExistence(timeout: 5))
+        let entry = revealBenchmarkEntry("today.flow-chat", in: app)
         entry.tap()
         XCTAssertTrue(
             app.descendants(matching: .any)["screen.flow-chat"]
                 .waitForExistence(timeout: 5)
         )
         return app
+    }
+
+    // Benchmark setup supports both the frozen native-bar baseline and the
+    // custom-bar candidate. This fallback is intentionally local to this suite.
+    private func benchmarkTabBar(in app: XCUIApplication) -> XCUIElement {
+        let custom = app.otherElements["navigation.tab-bar"].firstMatch
+        return custom.exists ? custom : app.tabBars.firstMatch
+    }
+
+    private func revealBenchmarkEntry(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
+        let entry = app.buttons[identifier]
+        XCTAssertTrue(entry.waitForExistence(timeout: 5))
+        let bar = benchmarkTabBar(in: app)
+        XCTAssertTrue(bar.exists, "Benchmark requires its authenticated tab bar")
+        func entryIsVisible() -> Bool {
+            entry.isHittable && app.windows.firstMatch.frame.contains(entry.frame)
+                && entry.frame.maxY <= bar.frame.minY
+        }
+        for _ in 0..<8 where !entryIsVisible() {
+            if entry.frame.midY < app.frame.midY { app.swipeDown() }
+            else { app.swipeUp() }
+        }
+        XCTAssertTrue(entryIsVisible())
+        XCTAssertGreaterThanOrEqual(entry.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(entry.frame.height, 44)
+        return entry
+    }
+
+    private func openBenchmarkLibrary(in app: XCUIApplication) {
+        XCTAssertTrue(app.descendants(matching: .any)["screen.hoje"].waitForExistence(timeout: 5))
+        revealBenchmarkEntry("today.library", in: app).tap()
+        XCTAssertTrue(app.descendants(matching: .any)["screen.library"].waitForExistence(timeout: 5))
+    }
+
+    private func assertFlowMessageCount(_ expected: Int, in app: XCUIApplication) {
+        let messages = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND identifier != %@ AND identifier != %@",
+            "flow.message.", "flow.message.processing", "flow.message.failed"
+        ))
+        let reachedCount = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            Set(messages.allElementsBoundByIndex.map(\.identifier)).count == expected
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [reachedCount], timeout: 8), .completed)
+        XCTAssertEqual(Set(messages.allElementsBoundByIndex.map(\.identifier)).count, expected)
     }
 
     private func appendFiveLocalExchanges(to app: XCUIApplication) {
@@ -137,6 +181,7 @@ final class PremiumPerformanceUITests: XCTestCase {
                 "neither pending nor completed state materialized for exchange index \(index)"
             )
             XCTAssertFalse(send.isEnabled)
+            assertFlowMessageCount(40 + 2 * (index + 1), in: app)
         }
     }
 }

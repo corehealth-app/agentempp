@@ -2,8 +2,11 @@ import XCTest
 import UIKit
 
 final class PremiumConvergenceUITests: XCTestCase {
+    private var permitsAuditExecutionRecovery = true
+
     override func setUpWithError() throws {
         continueAfterFailure = false
+        permitsAuditExecutionRecovery = true
     }
 
     @MainActor
@@ -59,6 +62,11 @@ final class PremiumConvergenceUITests: XCTestCase {
             XCTAssertTrue(
                 support.element("screen.hoje", app: app)
                     .waitForExistence(timeout: 8)
+            )
+            XCTAssertEqual(
+                support.element("screen.hoje", app: app).value as? String,
+                item.dark ? "dark" : "light",
+                "The matrix must verify the app's effective theme, not just a launch argument"
             )
             XCTAssertTrue(app.navigationBars[item.title].exists)
             for orientation in [
@@ -208,52 +216,208 @@ final class PremiumConvergenceUITests: XCTestCase {
     ) throws {
         let tabBar = app.performeTabBar
         let tabBarFrame = tabBar.exists ? tabBar.frame : .null
-        try app.performAccessibilityAudit { issue in
-            let identifier = issue.element?.identifier ?? ""
-            let label = issue.element?.label ?? ""
-            let diagnostic = [
-                "screen: \(screen)",
-                "type: \(issue.auditType.rawValue)",
-                "summary: \(issue.compactDescription)",
-                "detail: \(issue.detailedDescription)",
-                "element: \(issue.element?.debugDescription ?? "none")",
-                "tabBarFrame: \(tabBarFrame)",
-            ].joined(separator: "\n")
-            let attachment = XCTAttachment(string: diagnostic)
-            attachment.name = "slice9-accessibility-audit-\(screen)"
-            attachment.lifetime = .keepAlways
-            self.add(attachment)
+        let screenFrame = app.frame
+        var occluded: [XCUIElement] = []
+        var pendingKeys = Set<String>()
+        var validatedKeys = Set<String>()
+        var validatedFrames: [String: CGRect] = [:]
+        var verifyingKeys = Set<String>()
+        var reportedContrastKeys = Set<String>()
+        let top = app.navigationBars.firstMatch.exists ? app.navigationBars.firstMatch.frame.maxY : app.frame.minY
+        func identity(in description: String) -> String {
+            // XCTest binds findings to an AX node; labels are not identities
+            // (several routine rows intentionally share the same title).
+            // Read the public diagnostic's binding, fail closed if unavailable.
+            guard let binding = description.components(separatedBy: "elementOrHash.elementID: ").dropFirst().first else {
+                XCTFail("Audit finding has no resolvable XCTest identity binding")
+                return "unresolved"
+            }
+            let identity = String(binding.prefix { $0.isNumber || $0 == "." })
+            XCTAssertFalse(identity.isEmpty, "Audit identity binding must not be empty")
+            return identity
+        }
+        func key(_ element: XCUIElement) -> String { identity(in: element.debugDescription) }
+        // Conservative evaluation margin, not an assumed native blur size.
+        // Each finding still has to pass while exposed in this central area.
+        func frameIsVisible(_ frame: CGRect) -> Bool {
+            frame.minY >= top + 64 && frame.maxY < tabBarFrame.minY - 64
+                && frame.minX >= screenFrame.minX && frame.maxX <= screenFrame.maxX
+        }
+        func frameIsExposed(_ frame: CGRect) -> Bool {
+            frame.minY >= top + 16 && frame.maxY < tabBarFrame.minY - 16
+                && frame.minX >= screenFrame.minX && frame.maxX <= screenFrame.maxX
+        }
+        func audit(_ types: XCUIAccessibilityAuditType = .all) throws {
+            reportedContrastKeys.removeAll()
+            var findings: [XCUIAccessibilityAuditIssue] = []
+            // The handler only retains findings, avoiding nested AX queries
+            // while the system audit owns the service. Execution failures
+            // still propagate; every finding is handled before any UI moves.
+            func collectFindings() throws {
+                try app.performAccessibilityAudit(for: types) { issue in
+                    findings.append(issue)
+                    return true
+                }
+            }
+            do {
+                try collectFindings()
+            } catch {
+                let executionError = error as NSError
+                guard permitsAuditExecutionRecovery,
+                      executionError.domain == "com.apple.xcode.xctest.accessibilityAudit",
+                      executionError.code == -56 else { throw error }
+                permitsAuditExecutionRecovery = false
+                let attachment = XCTAttachment(string: """
+                screen: \(screen)
+                auditType: \(types.rawValue)
+                executionError: \(executionError.domain) / \(executionError.code)
+                recoveryAttempt: 1 of 1 for this entire test method
+                retainedFindings: \(findings.count)
+                """)
+                attachment.name = "accessibility-audit-execution-recovery"
+                attachment.lifetime = .keepAlways
+                self.add(attachment)
+                // Retry only the incomplete native execution. Preserve every
+                // finding from both attempts and require a complete second
+                // pass. No relaunch, scrolling or changed acceptance rules.
+                try collectFindings()
+            }
+            func accepts(_ issue: XCUIAccessibilityAuditIssue) -> Bool {
+                let element = issue.element
+                let identifier = element?.identifier ?? ""
+                let label = element?.label ?? ""
+                let description = element?.debugDescription ?? "none"
+                let frame = element?.frame ?? .null
+                let diagnostic = [
+                    "screen: \(screen)",
+                    "type: \(issue.auditType.rawValue)",
+                    "summary: \(issue.compactDescription)",
+                    "detail: \(issue.detailedDescription)",
+                    "element: \(description)",
+                    "tabBarFrame: \(tabBarFrame)",
+                ].joined(separator: "\n")
+                let attachment = XCTAttachment(string: diagnostic)
+                attachment.name = "slice9-accessibility-audit-\(screen)"
+                attachment.lifetime = .keepAlways
+                self.add(attachment)
 
-            // XCTest's Dynamic Type audit treats icon-only SwiftUI buttons as
-            // scalable text. This control contains no visible text, preserves a
-            // 44+ point target, and exposes a localized spoken label.
-            let iconOnlyDynamicTypeFindings = [
-                "Dynamic Type font sizes are partially unsupported",
-                "Text clipped",
-            ]
-            let isIconOnlyFalsePositive =
-                iconOnlyDynamicTypeFindings.contains(issue.compactDescription)
-                && identifier == "today.refresh"
-            let isElementlessContrastLimitation =
-                ["Contrast failed", "Contrast nearly passed"]
-                .contains(issue.compactDescription)
-                && issue.element == nil
-            let isTabBarOcclusionFalsePositive =
-                issue.compactDescription == "Contrast failed"
-                && !identifier.hasPrefix("tab.")
-                && tabBar.exists
-                && ((issue.element?.frame.maxY ?? 0) >= tabBarFrame.minY - 32)
-            let isCombinedMetricDynamicTypeFalsePositive =
-                screen == "tab.perfil"
-                && [
+                // XCTest's Dynamic Type audit treats icon-only SwiftUI buttons as
+                // scalable text. This control contains no visible text, preserves a
+                // 44+ point target, and exposes a localized spoken label.
+                let iconOnlyDynamicTypeFindings = [
                     "Dynamic Type font sizes are partially unsupported",
                     "Text clipped",
-                ].contains(issue.compactDescription)
-                && ["Notificações da demonstração", "Ativadas"].contains(label)
-            return isIconOnlyFalsePositive
-                || isElementlessContrastLimitation
-                || isTabBarOcclusionFalsePositive
-                || isCombinedMetricDynamicTypeFalsePositive
+                ]
+                let isIconOnlyFalsePositive =
+                    iconOnlyDynamicTypeFindings.contains(issue.compactDescription)
+                    && identifier == "today.refresh"
+                let isElementlessContrastLimitation =
+                    ["Contrast failed", "Contrast nearly passed"]
+                    .contains(issue.compactDescription)
+                    && issue.element == nil
+                let isCombinedMetricDynamicTypeFalsePositive =
+                    screen == "tab.perfil"
+                    && [
+                        "Dynamic Type font sizes are partially unsupported",
+                        "Text clipped",
+                    ].contains(issue.compactDescription)
+                    && ["Notificações da demonstração", "Ativadas"].contains(label)
+                // A scrollable row can be partially behind the floating bar.
+                // Its occluded pixels cannot establish text contrast. Defer this
+                // exact finding, reveal the complete element, then audit it again.
+                // Every deferred element must complete that second pass below.
+                if issue.auditType == .contrast, let element,
+                   !tabBarFrame.isNull,
+                   !["tab.hoje", "tab.plano", "tab.registrar", "tab.progresso", "tab.perfil"].contains(identifier),
+                   frame.intersects(screenFrame) {
+                    let identity = identity(in: description)
+                    reportedContrastKeys.insert(identity)
+                    guard !verifyingKeys.contains(identity) else { return false }
+                    if validatedKeys.contains(identity) {
+                        // A recurring warning at its verified position, or
+                        // anywhere in the central viewport, remains a failure.
+                        return !frameIsVisible(frame) && validatedFrames[identity] != frame
+                    }
+                    if pendingKeys.insert(identity).inserted { occluded.append(element) }
+                    return true
+                }
+                return isIconOnlyFalsePositive
+                    || isElementlessContrastLimitation
+                    || isCombinedMetricDynamicTypeFalsePositive
+            }
+            var failures: [String] = []
+            for issue in findings where !accepts(issue) {
+                failures.append("\(issue.compactDescription): \(issue.element?.debugDescription ?? "no element")")
+            }
+            if !failures.isEmpty {
+                throw NSError(domain: "Performe.ConvergenceAudit", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: failures.joined(separator: "; ")])
+            }
+        }
+        func fullyVisible(_ element: XCUIElement) -> Bool {
+            element.exists && element.isHittable && frameIsVisible(element.frame)
+        }
+        try audit()
+        var resolved = 0
+        while !occluded.isEmpty {
+            guard resolved < 32 else {
+                XCTFail("The audit must close every occluded finding in a bounded number of passes")
+                return
+            }
+            let element = occluded.removeFirst()
+            let queuedKey = key(element)
+            XCTAssertTrue(element.exists, "The original audit element must remain resolvable")
+            var reachedScrollBoundary = false
+            // A prior pass may reveal the bottom of a long screen. Allow
+            // the same bounded reach used elsewhere to return to this node.
+            for _ in 0..<24 {
+                if fullyVisible(element) { break }
+                let scroll = app.scrollViews.firstMatch
+                XCTAssertTrue(scroll.exists, "An occluded element must be revealable by its real scroll view")
+                let previous = element.frame
+                // Center the reported element without jumping an entire page.
+                // Native scroll-edge effects can extend beyond the bar frame.
+                let center = (top + app.performeTabBar.frame.minY) / 2
+                let delta = max(-240, min(240, center - previous.midY))
+                let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: delta)))
+                if element.frame == previous {
+                    // The last row can already be fully exposed while the
+                    // scroll limit prevents centering it. Audit those actual
+                    // pixels; never waive the finding at the boundary.
+                    XCTAssertTrue(element.isHittable && frameIsExposed(element.frame),
+                                  "A scroll boundary must not conceal any part of the audited element")
+                    reachedScrollBoundary = true
+                    break
+                }
+            }
+            XCTAssertTrue(fullyVisible(element) || reachedScrollBoundary,
+                          "The complete audited element must be exposed before re-auditing: \(element)")
+            let auditedFrame = element.frame
+            support.capture("s9-audit-revealed-\(screen)-\(resolved)", app: app)
+            let visibleCandidates = occluded.filter { fullyVisible($0) }
+            verifyingKeys = Set(([element] + visibleCandidates).map(key))
+            try audit(.contrast)
+            XCTAssertEqual(element.frame, auditedFrame, "The audit must verify the revealed position")
+            XCTAssertTrue(element.isHittable && frameIsExposed(element.frame),
+                          "The validated element must remain exposed for the whole second pass")
+            pendingKeys.remove(queuedKey)
+            validatedKeys.insert(queuedKey)
+            validatedFrames[queuedKey] = element.frame
+            // The same contrast audit covers the entire visible viewport.
+            // Close other queued nodes only if they too were fully visible
+            // and had no finding in this pass; unseen nodes stay pending.
+            occluded.removeAll { candidate in
+                let identity = key(candidate)
+                guard verifyingKeys.contains(identity), fullyVisible(candidate),
+                      !reportedContrastKeys.contains(identity) else { return false }
+                validatedKeys.insert(identity)
+                validatedFrames[identity] = candidate.frame
+                pendingKeys.remove(identity)
+                return true
+            }
+            verifyingKeys.removeAll()
+            resolved += 1
         }
     }
 }

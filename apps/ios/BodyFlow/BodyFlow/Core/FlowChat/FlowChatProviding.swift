@@ -18,6 +18,7 @@ struct UnavailableFlowChatRepository: FlowChatProviding {
 #if DEBUG
 actor DemoFlowChatRepository: FlowChatProviding {
     private var messages: [FlowMessage] = []
+    private var replies: [String: (text: String, response: FlowSendResponse)] = [:]
 
     func history(limit: Int) -> FlowHistoryResponse {
         FlowHistoryResponse(
@@ -26,15 +27,20 @@ actor DemoFlowChatRepository: FlowChatProviding {
         )
     }
 
-    func send(text: String, idempotencyKey: IdempotencyKey) -> FlowSendResponse {
+    func send(text: String, idempotencyKey: IdempotencyKey) throws -> FlowSendResponse {
+        if let prior = replies[idempotencyKey.value] {
+            guard prior.text == text else { throw URLError(.badServerResponse) }
+            return prior.response
+        }
         let now = Date()
+        let requestID = UUID().uuidString
         let user = FlowMessage(
             id: "demo-user-\(idempotencyKey.value)",
             conversationID: "flow",
             role: .user,
             content: text,
             state: .completed,
-            requestID: "demo-request",
+            requestID: requestID,
             createdAt: now
         )
         let assistant = FlowMessage(
@@ -43,7 +49,7 @@ actor DemoFlowChatRepository: FlowChatProviding {
             role: .assistant,
             content: "Estou aqui. Esta resposta é uma simulação local do Flow; a resposta real será validada no staging.",
             state: .completed,
-            requestID: "demo-request",
+            requestID: requestID,
             createdAt: now
         )
         messages.append(contentsOf: [user, assistant])
@@ -52,12 +58,14 @@ actor DemoFlowChatRepository: FlowChatProviding {
         let proposes = DemoPlanDraftScenario.isEnabled(
             arguments: ProcessInfo.processInfo.arguments
         ) && text.localizedCaseInsensitiveContains("treino")
-        return FlowSendResponse(
+        let response = FlowSendResponse(
             conversationID: "flow",
             message: assistant,
             draft: proposes
                 ? FlowTurnDraft(id: DemoPlanDraftScenario.draftID, domain: .training) : nil
         )
+        replies[idempotencyKey.value] = (text, response)
+        return response
     }
 }
 #endif

@@ -1,6 +1,86 @@
 {
   "sourceLanguage" : "pt-BR",
   "strings" : {
+  "flow.error.history": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Your reply was received. The rest of the conversation could not be refreshed."
+        }
+      },
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Sua resposta foi recebida. Não foi possível atualizar o restante da conversa."
+        }
+      }
+    }
+  },
+  "flow.outbox.accepted": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Received by Flow"
+        }
+      },
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Recebida pelo Flow"
+        }
+      }
+    }
+  },
+  "flow.outbox.sending": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Sending"
+        }
+      },
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Envio em andamento"
+        }
+      }
+    }
+  },
+  "flow.outbox.unconfirmed": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Delivery unconfirmed"
+        }
+      },
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Envio sem confirmação"
+        }
+      }
+    }
+  },
+  "flow.reconciling": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Updating conversation…"
+        }
+      },
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Atualizando conversa…"
+        }
+      }
+    }
+  },
   "progress.weight.date-unknown": {
     "localizations": {
       "pt-BR": {

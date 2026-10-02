@@ -64,7 +64,7 @@ struct FlowChatModelTests {
         #expect(await provider.sentKeys.first == provider.sentKeys.last)
     }
 
-    @Test("cancel stops a post-send history refresh before it can update the session")
+    @Test("cancel stops reconciliation and preserves the already acknowledged POST reply")
     func cancelStopsHistoryRefresh() async throws {
         let provider = FlowChatTestProvider(historyDelayAfterSend: .seconds(1))
         let model = FlowChatModel(
@@ -75,15 +75,15 @@ struct FlowChatModelTests {
         model.composer = "Cancelar"
 
         let send = Task { await model.send() }
-        for _ in 0..<100 where await provider.sentKeys.isEmpty {
-            await Task.yield()
-        }
+        await provider.waitForPostSendHistory()
         #expect(await provider.sentKeys.count == 1)
+        #expect(model.messages.map(\.id) == ["assistant"])
         model.cancel()
         await send.value
 
-        #expect(model.messages.isEmpty)
+        #expect(model.messages.map(\.id) == ["assistant"])
         #expect(!model.isSending)
+        #expect(model.errorMessage == nil)
     }
 }
 
@@ -93,6 +93,8 @@ private actor FlowChatTestProvider: FlowChatProviding {
     private let historyDelayAfterSend: Duration?
     private var failsRemaining: Int
     private(set) var sentKeys: [String] = []
+    private var didStartPostSendHistory = false
+    private var historyWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(
         delay: Duration? = nil,
@@ -110,9 +112,17 @@ private actor FlowChatTestProvider: FlowChatProviding {
 
     func history(limit: Int) async throws -> FlowHistoryResponse {
         if !sentKeys.isEmpty, let historyDelayAfterSend {
+            didStartPostSendHistory = true
+            historyWaiters.forEach { $0.resume() }
+            historyWaiters.removeAll()
             try await Task.sleep(for: historyDelayAfterSend)
         }
         return FlowHistoryResponse(conversationID: "flow", messages: historyMessages)
+    }
+
+    func waitForPostSendHistory() async {
+        guard !didStartPostSendHistory else { return }
+        await withCheckedContinuation { historyWaiters.append($0) }
     }
 
     func send(text: String, idempotencyKey: IdempotencyKey) async throws -> FlowSendResponse {

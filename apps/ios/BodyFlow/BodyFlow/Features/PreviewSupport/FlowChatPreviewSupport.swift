@@ -56,11 +56,14 @@ actor FlowPreviewRepository: FlowChatProviding {
         try await Task.sleep(for: scenario == .pendingCancellation ? .seconds(30) : .seconds(2))
         try Task.checkCancellation()
         if let response = try replay(text: text, key: idempotencyKey.value) { return response }
-        let user = Self.message(id: "qa-user-\(idempotencyKey.value)", role: .user, content: text)
+        let requestID = UUID().uuidString
+        let user = Self.message(id: "qa-user-\(idempotencyKey.value)", role: .user, content: text,
+                                requestID: requestID)
         let assistant = Self.message(
             id: "qa-flow-\(idempotencyKey.value)", role: .assistant,
             content: scenario == .response ? Self.longResponse
-                : "QA local: resposta simulada do Flow. Nenhum provider ou completion real. QA_REPLY_VISIBLE"
+                : "QA local: resposta simulada do Flow. Nenhum provider ou completion real. QA_REPLY_VISIBLE",
+            requestID: requestID
         )
         let response = FlowSendResponse(conversationID: "flow", message: assistant)
         submittedText[idempotencyKey.value] = text
@@ -97,9 +100,10 @@ actor FlowPreviewRepository: FlowChatProviding {
     }
 
     private static func message(id: String, role: FlowMessageRole, content: String,
-                                state: FlowMessageState = .completed) -> FlowMessage {
+                                state: FlowMessageState = .completed,
+                                requestID: String = "qa-local-request") -> FlowMessage {
         FlowMessage(id: id, conversationID: "flow", role: role, content: content,
-                    state: state, requestID: "qa-local-request",
+                    state: state, requestID: requestID,
                     createdAt: Date(timeIntervalSince1970: 1_789_603_200))
     }
 }

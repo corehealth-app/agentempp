@@ -28,8 +28,9 @@ final class MealCaptureUITests: XCTestCase {
         XCTAssertFalse(read.isEnabled)
         field.tap()
         field.typeText("2 ovos mexidos e granola")
+        XCTAssertEqual(field.value as? String, "2 ovos mexidos e granola")
         XCTAssertTrue(read.isEnabled)
-        read.tap()
+        tapDetectWithVisibleKeyboard(read, app: app)
 
         let eggs = app.textFields["registration.review.item.c1-0a1b2c3d.name"]
         XCTAssertTrue(eggs.waitForExistence(timeout: 8))
@@ -74,7 +75,10 @@ final class MealCaptureUITests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.tap()
         field.typeText("xyz")
-        app.buttons["registration.meal.detect"].tap()
+        XCTAssertEqual(field.value as? String, "xyz")
+        let read = app.buttons["registration.meal.detect"]
+        XCTAssertTrue(read.isEnabled)
+        tapDetectWithVisibleKeyboard(read, app: app)
 
         let failure = element("registration.meal.capture.failure", app: app)
         XCTAssertTrue(failure.waitForExistence(timeout: 8))
@@ -152,6 +156,84 @@ final class MealCaptureUITests: XCTestCase {
         meal.tap()
         XCTAssertTrue(element("sheet.registrar.refeicao", app: app).waitForExistence(timeout: 5))
         return app
+    }
+
+    /// iOS 27 can accept typeText before the medium sheet finishes moving
+    /// above the software keyboard. The failing recordings tapped during
+    /// that transition. Keep the keyboard open and wait for the actual
+    /// target geometry, rather than changing the capture scenario or retrying.
+    private struct CaptureTapGeometry: Equatable {
+        let button: CGRect
+        let keyboard: CGRect
+        let header: CGRect
+        let window: CGRect
+    }
+
+    @MainActor
+    private func tapDetectWithVisibleKeyboard(
+        _ button: XCUIElement,
+        app: XCUIApplication,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let keyboard = app.keyboards.firstMatch
+        let window = app.windows.firstMatch
+        var lastGeometry: CaptureTapGeometry?
+        var unchangedSince: TimeInterval?
+
+        func readyGeometry() -> CaptureTapGeometry? {
+            guard keyboard.exists, button.exists, button.isEnabled,
+                  button.isHittable, window.exists else { return nil }
+            // A presented sheet and its underlying tab can both expose a
+            // navigation bar; query order does not identify the visible one.
+            let bars = app.navigationBars.containing(.button, identifier: "sheet.fechar")
+            guard bars.count == 1 else { return nil }
+            let header = bars.firstMatch
+            let geometry = CaptureTapGeometry(
+                button: button.frame, keyboard: keyboard.frame,
+                header: header.frame, window: window.frame
+            )
+            guard geometry.header.width > 0, geometry.header.height > 0,
+                  geometry.window.contains(geometry.header),
+                  geometry.keyboard.height > 0,
+                  geometry.window.intersects(geometry.keyboard),
+                  geometry.keyboard.minY > geometry.header.maxY,
+                  geometry.button.width >= 44, geometry.button.height >= 44,
+                  geometry.window.contains(geometry.button),
+                  geometry.button.minY >= geometry.header.maxY,
+                  geometry.button.maxY <= geometry.keyboard.minY else { return nil }
+            return geometry
+        }
+
+        let geometrySettled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            guard let geometry = readyGeometry() else {
+                lastGeometry = nil
+                unchangedSince = nil
+                return false
+            }
+            let now = ProcessInfo.processInfo.systemUptime
+            guard geometry == lastGeometry, let since = unchangedSince else {
+                lastGeometry = geometry
+                unchangedSince = now
+                return false
+            }
+            return now - since >= 0.25
+        }, object: nil)
+        let result = XCTWaiter.wait(for: [geometrySettled], timeout: 8)
+        XCTAssertEqual(result, .completed,
+                       "Keyboard and detect target must settle before a single tap. Last geometry: \(String(describing: lastGeometry))",
+                       file: file, line: line)
+        guard result == .completed else { return }
+        let finalGeometry = readyGeometry()
+        XCTAssertNotNil(finalGeometry, file: file, line: line)
+        XCTAssertEqual(finalGeometry, lastGeometry,
+                       "Geometry changed between readiness and tap", file: file, line: line)
+        guard finalGeometry == lastGeometry, let finalGeometry else { return }
+        let attachment = XCTAttachment(string: String(describing: finalGeometry))
+        attachment.name = "meal-detect-with-visible-keyboard-geometry"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        button.tap()
     }
 
     private enum Direction { case up, down }

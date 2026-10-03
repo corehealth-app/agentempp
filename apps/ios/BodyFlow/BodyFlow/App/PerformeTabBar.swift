@@ -9,6 +9,9 @@ struct PerformeTabBar: View {
     var onUserSelect: () -> Void = {}
     @ScaledMetric(relativeTo: .title3) private var iconSize: CGFloat = 20
     @State private var highlightedTab: AppTab?
+    /// Ticks only for the tab that just became selected, so the leaving
+    /// tab's glyph never bounces.
+    @State private var bounceTicks: [AppTab: Int] = [:]
     @Environment(\.bodyFlowReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -30,6 +33,10 @@ struct PerformeTabBar: View {
         .padding(.horizontal, BodyFlowSpacing.sm)
         .padding(.top, BodyFlowSpacing.xxs)
         .padding(.bottom, BodyFlowSpacing.xxs)
+        .onChange(of: selection) { _, newValue in
+            guard !reduceMotion else { return }
+            bounceTicks[newValue, default: 0] += 1
+        }
     }
 
     private var visualLabels: some View {
@@ -99,6 +106,9 @@ struct PerformeTabBar: View {
                 .fontWeight(selection == tab ? .semibold : .regular)
                 .frame(width: min(iconSize, 28), height: min(iconSize, 28))
                 .frame(width: 28, height: 28)
+                // The arriving tab's glyph bounces once (finite symbol effect);
+                // Reduce Motion keeps it still.
+                .symbolEffect(.bounce, options: .nonRepeating, value: bounceTicks[tab, default: 0])
                 .accessibilityHidden(true)
             tabCaption(tab)
         }

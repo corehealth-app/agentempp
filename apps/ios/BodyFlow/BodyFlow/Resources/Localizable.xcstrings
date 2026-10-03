@@ -145,6 +145,58 @@
       }
     }
   },
+  "progress.trends.block" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "7,700 block accumulated" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Bloco 7.700 acumulado" } }
+  } },
+  "progress.trends.calories" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Food vs target (%lld days)" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Comida × meta (%lld dias)" } }
+  } },
+  "progress.trends.calories.accessibility" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Food per day: %lld days with records" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Comida por dia: %lld dias com registro" } }
+  } },
+  "progress.trends.days" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Days with records" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Dias com registro" } }
+  } },
+  "progress.trends.days.value" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld of %lld" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "%lld de %lld" } }
+  } },
+  "progress.trends.empty" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "No days recorded yet. Your first logged meal opens the charts." } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ainda sem dias registrados. A primeira refeição registrada abre os gráficos." } }
+  } },
+  "progress.trends.over" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "over target" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "acima da meta" } }
+  } },
+  "progress.trends.target" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "target" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "meta" } }
+  } },
+  "progress.trends.title" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Trends" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Tendências" } }
+  } },
+  "progress.trends.unavailable" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Trends unavailable right now." } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Tendências indisponíveis no momento." } }
+  } },
+  "progress.trends.under" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "under target" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "abaixo da meta" } }
+  } },
+  "progress.trends.weight" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Weight" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Peso" } }
+  } },
+  "progress.trends.weight.accessibility" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Weight: %lld measurements; latest %@" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Peso: %lld medições; última %@" } }
+  } },
   "progress.weight.date-unknown": {
     "localizations": {
       "pt-BR": {

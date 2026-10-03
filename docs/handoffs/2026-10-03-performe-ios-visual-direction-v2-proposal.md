@@ -117,3 +117,42 @@ Após a prévia (artifact "Performe AI v2 Preview") Eduardo perguntou se dava pa
 | 9 | Liquid Glass (iOS 26): barra de abas e herói com `glassEffect` quando disponível, mantendo a ação central da marca | ~6 h | `#available(iOS 26)`; testes da barra |
 
 Ordem de execução: H (+8, +5) → 2 → 6 → 7 → 9 → G (+3, +4). Item 1 fica aberto até a decisão de asset. Instalação + aceite de Eduardo a cada checkpoint.
+
+## 9. Fase final — QA ponta a ponta no iPhone (pedido de Eduardo, 03/10)
+
+Depois de E + F + H + 2 + 6 + 7 + 9 + G, antes de qualquer distribuição ao Roberto, uma suíte completa **no iPhone físico via espelhamento** (staging, nunca produção), cobrindo o que o Roberto vai ver e precisar:
+
+| # | Jornada | O que provar | Evidência |
+|---|---|---|---|
+| 1 | Cadastro de conta nova + onboarding | e-mail de confirmação, consentimento, objetivo, dados corporais, metas calculadas | capturas + linhas no banco (users, profile) |
+| 2 | Hoje do dia zero → primeiro registro | estado vazio honesto, trilha, anel após a 1ª refeição | capturas antes/depois + `daily_snapshots` |
+| 3 | Refeição por texto, foto e áudio | proposta → confirmação; kcal/macros batem com a base (TACO/rótulo); proveniência correta | meal_logs + snapshot; comparação com a base |
+| 4 | Treino | tipo/duração/intensidade; kcal estimadas; efeito no bloco (não na comida) | workout_logs + snapshot `daily_balance` |
+| 5 | Hidratação, peso, rotina (suplemento/medicação) e lembrete | valores, horários, notificação local | capturas + tabelas |
+| 6 | Flow | consumo do dia, sugestão de treino e de dieta (séries/reps; alimentos/quantidades), histórico, retry, cancel | transcrição + `llm_*` logs |
+| 7 | Plano | rascunho → revisão → confirmado; importação | plan_drafts, training_plans |
+| 8 | Progresso + gráficos | números = banco; 14 dias; peso; bloco; estado vazio | capturas + consultas |
+| 9 | Biblioteca | lista, detalhe, salvar/concluir (conteúdo publicado) | capturas |
+| 10 | Performance | abertura a frio/quente, rolagem, resposta do Flow (p50/p95), memória; Instruments quando possível | medições registradas |
+| 11 | Custo de tokens | por turno do Flow e por gerador: prompt/completion tokens e US$; comparar com orçamento e apontar cortes | `llm_calls`/logs do agente |
+| 12 | Base de alimentos e exercícios | cobertura dos itens que o Roberto usa (ex.: café sem açúcar, pão francês, whey, corrida, musculação) | tabela de acertos/erros |
+| 13 | Acessibilidade real | VoiceOver, Dynamic Type, Reduce Motion no aparelho | capturas + notas |
+
+Regras: contas de teste criadas por mim só com valores de teste registrados em arquivo local (nunca segredos no chat); câmera não funciona pelo espelhamento (foto via biblioteca do aparelho); cada achado vira golden fixture do cenário exato (CLAUDE.md); nada de produção, push ou TestFlight sem autorização.
+
+## 10. Estado de execução (03/10, fim da tarde)
+
+| Bloco | Estado |
+|---|---|
+| E cor por domínio + F Hoje vivo | **commitado** `842accc`; revisão adversarial aplicada; focados 81/81 |
+| H motion v2 (+5 números contando, +8 anel fecha com celebração) | implementado; revisão adversarial aplicada (count-up real, texto acessível com `foregroundStyle(.clear)`, bounce só na aba que entra, anel condensa por escala, zoom só nas rotas com fonte, malha 1,5 s); overlay do count-up removido ao terminar e contagem única por carga (auditoria de Dynamic Type) |
+| 2 fonte de display | SF Rounded (fonte do sistema, como o Fitness) em títulos e números; `sectionTitle` = `cardTitle` mantido |
+| 6 herói que encolhe | anel condensa 104→64 pt por `scaleEffect` em slot fixo (sem salto de layout) |
+| 7 skeleton → conteúdo | skeleton do Hoje reserva herói (300) + cartão de macros (220) |
+| 9 Liquid Glass | **já existia**: a barra flutuante usa `glassEffect` no iOS 26 (BodyFlowVisualPolicy); nada novo |
+| G gráficos | BFF `GET /mobile/v1/trends?days=` (admin + espelho; manifesto 47→48; `read-model` 397/397); iOS `TrendsSnapshot`, `ProgressTrendsSection` (Swift Charts: peso, comida × meta com scrub `chartXSelection`, bloco, dias com registro; estado vazio honesto; sem score/projeção) |
+| 1 ilustração | **aberto** — depende de asset/decisão de compra |
+| 3/4 (estado vazio, gráfico interativo) | incluídos em G |
+
+Pendências antes de instalar: gates do BFF (`next build` + superfície com 48 rotas + deploy Preview no staging), integral iOS, Release gates, instalar por cima no iPhone, aceite visual de Eduardo. Depois: §9 (QA ponta a ponta).
+

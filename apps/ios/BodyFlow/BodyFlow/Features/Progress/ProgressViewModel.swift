@@ -12,6 +12,7 @@ final class ProgressViewModel {
 
     private let provider: any ProgressProviding
     let profileWeight: ProfileWeightViewModel
+    let trends: ProgressTrendsViewModel
     private var activeLoad: LoadIdentity?
     private var sequence = 0
 
@@ -20,18 +21,23 @@ final class ProgressViewModel {
     init(provider: any ProgressProviding) {
         self.provider = provider
         profileWeight = ProfileWeightViewModel(provider: provider)
+        trends = ProgressTrendsViewModel(provider: provider)
     }
 
     func load() async {
         async let weight: Void = profileWeight.load()
+        async let series: Void = trends.load()
         await start()
         await weight
+        await series
     }
 
     func retry() async {
         async let weight: Void = profileWeight.load()
+        async let series: Void = trends.load()
         await start()
         await weight
+        await series
     }
 
     private func start() async {

@@ -376,14 +376,16 @@ final class PremiumConvergenceUITests: XCTestCase {
                         "Text clipped",
                     ].contains(issue.compactDescription)
                     && ["Notificações da demonstração", "Ativadas"].contains(label)
-                // A scrollable row can be partially behind the floating bar.
-                // Its occluded pixels cannot establish text contrast. Defer this
-                // exact finding, reveal the complete element, then audit it again.
-                // Every deferred element must complete that second pass below.
+                // A scrollable row can be partially behind the floating bar, or
+                // (direction v2, taller Today) scrolled just past the top edge
+                // behind the navigation bar. Its occluded pixels cannot
+                // establish text contrast. Defer this exact finding, reveal the
+                // complete element, then audit it again. Every deferred element
+                // must complete that second pass below; nothing is waived.
                 if issue.auditType == .contrast, let element,
                    !tabBarFrame.isNull,
                    !["tab.hoje", "tab.plano", "tab.registrar", "tab.progresso", "tab.perfil"].contains(identifier),
-                   frame.intersects(screenFrame) {
+                   frame.intersects(screenFrame) || frame.maxY <= top || frame.minY >= tabBarFrame.minY {
                     let identity = identity(in: description)
                     reportedContrastKeys.insert(identity)
                     guard !verifyingKeys.contains(identity) else { return false }

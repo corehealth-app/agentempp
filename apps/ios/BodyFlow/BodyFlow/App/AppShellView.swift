@@ -23,6 +23,10 @@ struct AppShellView: View {
     /// Counts the user's own taps on the tab bar; programmatic changes
     /// (a tour step, a reminder route) never tick.
     @State private var tabTaps = 0
+    /// Counts finished tours (not skipped ones) for the celebration burst.
+    @State private var tourFinishes = 0
+    /// One namespace for the card → detail zoom of every stack.
+    @Namespace private var zoomNamespace
     @Environment(\.locale) private var locale
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.bodyFlowReduceMotion) private var reduceMotion
@@ -212,6 +216,9 @@ struct AppShellView: View {
         .tint(BodyFlowColor.accent)
         // One tick per tap on the bar, from the shell (the bar is drawn once per stack).
         .sensoryFeedback(BodyFlowHaptics.Tap.selection, trigger: tabTaps)
+        .environment(\.bodyFlowZoomNamespace, zoomNamespace)
+        // Finishing the tour (not skipping it) earns a short burst.
+        .bodyFlowCelebration({ $0 > 0 ? .progress : nil }, trigger: tourFinishes)
         // Today scrolls its spotlighted control into view for the tour.
         .environment(\.guidedTourFocus, tour?.current.target)
     }
@@ -400,6 +407,7 @@ struct AppShellView: View {
             )
         }
         tour = nil
+        if outcome == .finished { tourFinishes += 1 }
         if model.origin == .profile, outcome != .interrupted {
             selectedTab = model.returnTab
         }
@@ -436,21 +444,49 @@ struct AppShellView: View {
             rootView(for: tab)
                 .safeAreaInset(edge: .bottom, spacing: 0) { navigationBar(for: tab, atRoot: true) }
                 .navigationDestination(for: AppRoute.self) { route in
-                    destination(for: route)
-                        .safeAreaInset(edge: .bottom, spacing: 0) { navigationBar(for: tab, atRoot: false) }
+                    zoomed(route) {
+                        destination(for: route)
+                            .safeAreaInset(edge: .bottom, spacing: 0) { navigationBar(for: tab, atRoot: false) }
+                    }
                 }
         }
         .toolbar(.hidden, for: .tabBar)
-        // The arriving tab fades and settles up by a few points instead of
-        // cutting in (220 ms; instant under Reduce Motion). Stacks, state and
-        // the tab bar's native control are untouched.
+        // The arriving tab fades in and slides from the side it sits on in
+        // the bar (300 ms spring; instant under Reduce Motion). Stacks, state
+        // and the tab bar's native control are untouched.
         .opacity(selectedTab == tab ? 1 : 0)
-        .offset(y: selectedTab == tab || reduceMotion ? 0 : Self.tabArrivalOffset)
-        .animation(BodyFlowMotion.animation(.content, reduceMotion: reduceMotion), value: selectedTab)
+        .offset(x: reduceMotion ? 0 : Self.tabSlideOffset(for: tab, selected: selectedTab))
+        .animation(BodyFlowMotion.animation(.navigation, reduceMotion: reduceMotion), value: selectedTab)
         .accessibilityHidden(selectedTab != tab)
     }
 
-    nonisolated static let tabArrivalOffset: CGFloat = 6
+    /// Routes whose card marks itself with `bodyFlowZoomSource`; only these
+    /// grow from the card. Every other route keeps the standard push.
+    nonisolated static let zoomRoutes: Set<AppRoute> = [
+        .mainHistory,
+        .detail(tab: .today, id: "daily-summary"),
+        .progress(.block7700),
+    ]
+
+    @ViewBuilder
+    private func zoomed<Content: View>(_ route: AppRoute, @ViewBuilder content: () -> Content) -> some View {
+        if Self.zoomRoutes.contains(route) {
+            content().navigationTransition(.zoom(sourceID: route, in: zoomNamespace))
+        } else {
+            content()
+        }
+    }
+
+    nonisolated static let tabSlide: CGFloat = 16
+
+    /// A hidden tab waits on the side it occupies in the bar relative to the
+    /// selected one, so a change always slides in the direction of travel.
+    nonisolated static func tabSlideOffset(for tab: AppTab, selected: AppTab) -> CGFloat {
+        guard tab != selected,
+              let position = AppTab.displayOrder.firstIndex(of: tab),
+              let current = AppTab.displayOrder.firstIndex(of: selected) else { return 0 }
+        return position < current ? -tabSlide : tabSlide
+    }
 
     /// Reserve space on each actual screen, inside the native navigation
     /// controller boundary, so its own bottom composer receives the inset.

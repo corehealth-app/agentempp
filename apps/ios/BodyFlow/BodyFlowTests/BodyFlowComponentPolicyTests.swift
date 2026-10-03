@@ -50,7 +50,7 @@ struct BodyFlowComponentPolicyTests {
         #expect(BodyFlowButtonStyle.pressedScale(reduceMotion: true) == 1)
         #expect(BodyFlowButtonStyle.pressedScale(reduceMotion: false) == BodyFlowMotion.tapScale)
         #expect(PerformeBrandAction.pulseScale == 1.06)
-        #expect(AppShellView.tabArrivalOffset == 6)
+        #expect(AppShellView.tabSlide == 16)
     }
 
     @Test func openingMotionIsBoundedAndStillUnderReduceMotion() {
@@ -133,13 +133,15 @@ struct BodyFlowComponentPolicyTests {
     }
 
     @Test func premiumTypographyUsesScalableNativeStyles() {
-        #expect(BodyFlowTypography.largeTitle == Font.largeTitle.bold())
-        #expect(BodyFlowTypography.screenTitle == Font.title2.weight(.semibold))
-        #expect(BodyFlowTypography.sectionTitle == Font.headline.weight(.semibold))
-        #expect(BodyFlowTypography.cardTitle == Font.headline.weight(.semibold))
+        // Direction v2: rounded display design for titles and figures; still
+        // text styles, so Dynamic Type scales every role.
+        #expect(BodyFlowTypography.largeTitle == Font.system(.largeTitle, design: .rounded).bold())
+        #expect(BodyFlowTypography.screenTitle == Font.system(.title2, design: .rounded).weight(.bold))
+        #expect(BodyFlowTypography.sectionTitle == Font.system(.headline, design: .rounded).weight(.bold))
+        #expect(BodyFlowTypography.cardTitle == Font.system(.headline, design: .rounded).weight(.bold))
         #expect(BodyFlowTypography.supporting == Font.callout)
-        #expect(BodyFlowTypography.metricLarge == Font.largeTitle.weight(.semibold).monospacedDigit())
-        #expect(BodyFlowTypography.metricSmall == Font.title2.weight(.semibold).monospacedDigit())
+        #expect(BodyFlowTypography.metricLarge == Font.system(.largeTitle, design: .rounded).weight(.bold).monospacedDigit())
+        #expect(BodyFlowTypography.metricSmall == Font.system(.title2, design: .rounded).weight(.bold).monospacedDigit())
         #expect(BodyFlowTypography.button == Font.headline.weight(.semibold))
         #expect(BodyFlowTypography.title == Font.title2)
         #expect(BodyFlowTypography.headline == Font.headline)

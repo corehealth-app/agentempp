@@ -846,6 +846,46 @@ enum DemoBodyFlowFixtures {
         meta: metadata("demo-progress-loaded")
     )
 
+    /// Fourteen days ending on the fixture's local date, with two days absent
+    /// (never filled in) and two days over target; three dated weights.
+    static let loadedTrends = TrendsResponse(
+        data: TrendsSnapshot(
+            days: 14,
+            daily: [
+                ("2026-07-07", 1_750, 0, false), ("2026-07-08", 1_820, 120, true),
+                ("2026-07-09", 2_310, 0, true), ("2026-07-10", 1_640, 90, true),
+                ("2026-07-12", 1_900, 0, true), ("2026-07-13", 1_780, 150, true),
+                ("2026-07-14", 2_120, 0, true), ("2026-07-15", 1_690, 60, true),
+                ("2026-07-16", 1_810, 0, true), ("2026-07-18", 1_720, 110, true),
+                ("2026-07-19", 1_880, 0, true), ("2026-07-20", 1_200, 100, false),
+            ].enumerated().map { index, day in
+                TrendsDay(
+                    date: day.0,
+                    caloriesConsumed: day.1,
+                    caloriesTarget: 1_935,
+                    exerciseCalories: day.2,
+                    proteinG: 120,
+                    proteinTarget: 186.1,
+                    waterConsumedML: 1_800,
+                    deficitAccumulated: 1_200 + index * 110,
+                    xpEarned: 40,
+                    dayClosed: day.3
+                )
+            },
+            weights: [
+                TrendsWeight(date: "2026-06-22", weightKG: 80.0),
+                TrendsWeight(date: "2026-07-06", weightKG: 79.1),
+                TrendsWeight(date: "2026-07-20", weightKG: 78.4),
+            ]
+        ),
+        meta: metadata("demo-trends-loaded")
+    )
+
+    static let emptyTrends = TrendsResponse(
+        data: .empty(days: 14),
+        meta: metadata("demo-trends-empty")
+    )
+
     static let emptyProgress = ProgressResponse(
         data: nil,
         meta: metadata("demo-progress-empty")

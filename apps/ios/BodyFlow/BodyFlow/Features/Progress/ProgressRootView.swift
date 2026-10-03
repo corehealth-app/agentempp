@@ -20,6 +20,9 @@ struct ProgressRootView: View {
                         if model.state.presentation.value == nil, let weightState = model.profileWeight.state {
                             ProfileWeightCard(state: weightState, language: language, retryAction: retry)
                         }
+                        // The charts sit beside the snapshot: a day with
+                        // records has trends even before any gamification.
+                        ProgressTrendsSection(model: model.trends)
                         FeatureReadStateView(state: model.state, retryAction: retry) { snapshot in
                             let presentation = ProgressPresentation(snapshot: snapshot, language: language)
                             VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
@@ -40,6 +43,7 @@ struct ProgressRootView: View {
                                 }
                                 .buttonStyle(.bodyFlowRow)
                                 .accessibilityIdentifier("progress.block.detail")
+                                .bodyFlowZoomSource(.progress(.block7700))
                             }
                         }
                     }

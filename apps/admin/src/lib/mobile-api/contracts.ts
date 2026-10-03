@@ -210,6 +210,13 @@ export const historyQuerySchema = z
   })
   .strict()
 
+/// Trends window for the charts: a fixed, bounded number of past days.
+export const trendsQuerySchema = z
+  .object({
+    days: z.coerce.number().int().min(7).max(90).default(14),
+  })
+  .strict()
+
 export const resourceIdSchema = z.string().uuid()
 
 export const mealDraftInputSchema = z.discriminatedUnion('source', [
@@ -434,6 +441,7 @@ export type OnboardingCompletionInput = z.infer<typeof onboardingCompletionInput
 export type OnboardingDocumentActionInput = z.infer<typeof onboardingDocumentActionInputSchema>
 export type RegistrationProposalInput = z.infer<typeof registrationProposalInputSchema>
 export type HistoryQuery = z.infer<typeof historyQuerySchema>
+export type TrendsQuery = z.infer<typeof trendsQuerySchema>
 export type MediaUploadInput = z.infer<typeof mediaUploadInputSchema>
 export type MobileDeviceInput = z.infer<typeof mobileDeviceInputSchema>
 export type NotificationPreferencesPatch = z.infer<typeof notificationPreferencesPatchSchema>

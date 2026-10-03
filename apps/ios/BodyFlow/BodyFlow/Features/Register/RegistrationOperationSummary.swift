@@ -128,6 +128,8 @@ struct RegistrationOperationSummary: View {
         // Result feedback for the patient's own submit; the message above is
         // always the primary channel.
         .bodyFlowResultFeedback(Self.feedback, trigger: descriptor.kind)
+        // A confirmed registration earns a short burst in the energy color.
+        .bodyFlowCelebration({ $0 == .success ? .energy : nil }, trigger: descriptor.kind)
     }
 
     /// Only the two terminal outcomes of a submit speak; idle and

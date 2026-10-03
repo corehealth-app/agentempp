@@ -14,7 +14,11 @@ struct SplashView: View {
     @State private var entered = false
     @State private var breathing = false
     @State private var showsLoadingText = false
+    /// The mesh starts flat (identical to the launch screen) and drifts
+    /// into its colors once, over `meshDuration`; then it is still.
+    @State private var meshLive = false
     var loadingLabel: String? = nil
+    nonisolated static let meshDuration: TimeInterval = 1.5
 
     /// Shown only after this wait: a fast restore never reads "Carregando".
     nonisolated static let loadingTextDelay: Duration = .milliseconds(1200)
@@ -52,7 +56,7 @@ struct SplashView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .ignoresSafeArea()
-        .background(BodyFlowColor.color(.heroBackground))
+        .background { meshBackground.ignoresSafeArea() }
         .foregroundStyle(BodyFlowColor.color(.onHero))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(loadingText)
@@ -80,6 +84,11 @@ struct SplashView: View {
             withTransaction(transaction) { breathing = false }
         }
         .task {
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled, !motionReduced else { return }
+            withAnimation(.easeInOut(duration: Self.meshDuration)) { meshLive = true }
+        }
+        .task {
             guard loadingLabel == nil else { return }
             try? await Task.sleep(for: Self.loadingTextDelay)
             guard !Task.isCancelled else { return }
@@ -90,6 +99,26 @@ struct SplashView: View {
     }
 
     private var motionReduced: Bool { reduceMotion || !visualPolicy.allowsMotion }
+
+    /// Nine control points; only the colors animate, from the flat hero
+    /// teal to a soft sweep toward the brand aqua at the top-left.
+    private var meshBackground: some View {
+        let base = BodyFlowColor.color(.heroBackground)
+        let end = BodyFlowColor.color(.heroGradientEnd)
+        let glow = BodyFlowColor.color(.brandPrimary)
+        let colors: [Color] = meshLive
+            ? [glow, end, base, end, base, base, base, base, end]
+            : Array(repeating: base, count: 9)
+        return MeshGradient(
+            width: 3, height: 3,
+            points: [
+                [0, 0], [0.5, 0], [1, 0],
+                [0, 0.5], [0.45, 0.55], [1, 0.5],
+                [0, 1], [0.5, 1], [1, 1],
+            ],
+            colors: colors
+        )
+    }
 
     private var mark: some View {
         Image(decorative: PerformeAIBrandAsset.symbolNegative.resourceName)

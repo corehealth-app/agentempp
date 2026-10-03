@@ -5,7 +5,7 @@ import {
 } from '@mpp/agent'
 import type { Json, ServiceClient } from '@mpp/db'
 import type { MobileAuthContext } from './auth'
-import type { HistoryQuery } from './contracts'
+import type { HistoryQuery, TrendsQuery } from './contracts'
 import { MobileApiError } from './http'
 
 type JsonRecord = Record<string, Json | undefined>
@@ -221,6 +221,84 @@ export async function loadProgress(supabase: ServiceClient, userId: string) {
     .maybeSingle()
   throwQueryError(error, 'Progress lookup')
   return data
+}
+
+export interface TrendsSnapshotRow {
+  date: string
+  calories_consumed: number
+  calories_target: number | null
+  exercise_calories: number
+  protein_g: number | string
+  protein_target: number | string | null
+  water_consumed_ml: number
+  deficit_accumulated: number
+  xp_earned: number
+  day_closed: boolean
+}
+
+export interface TrendsWeightRow {
+  evaluation_date: string
+  weight_kg: number | string | null
+}
+
+/**
+ * Series for the mobile charts, exactly as stored: one row per day that has a
+ * snapshot (days without one are absent, never filled in) and the dated
+ * weights from reevaluations. Both ascend by date. Nothing is estimated.
+ */
+export function shapeTrends(
+  snapshots: TrendsSnapshotRow[],
+  weights: TrendsWeightRow[],
+  days: number,
+) {
+  const byDate = [...snapshots].sort((a, b) => a.date.localeCompare(b.date)).slice(-days)
+  const datedWeights = weights
+    .filter((row) => row.weight_kg !== null)
+    .map((row) => ({ date: row.evaluation_date, weight_kg: Number(row.weight_kg) }))
+    .filter((row) => Number.isFinite(row.weight_kg))
+    .sort((a, b) => a.date.localeCompare(b.date))
+  return {
+    days,
+    daily: byDate.map((row) => ({
+      date: row.date,
+      calories_consumed: row.calories_consumed,
+      calories_target: row.calories_target,
+      exercise_calories: row.exercise_calories,
+      protein_g: Number(row.protein_g),
+      protein_target: row.protein_target === null ? null : Number(row.protein_target),
+      water_consumed_ml: row.water_consumed_ml,
+      deficit_accumulated: row.deficit_accumulated,
+      xp_earned: row.xp_earned,
+      day_closed: row.day_closed,
+    })),
+    weights: datedWeights,
+  }
+}
+
+export async function loadTrends(supabase: ServiceClient, userId: string, query: TrendsQuery) {
+  const [snapshotResult, weightResult] = await Promise.all([
+    supabase
+      .from('daily_snapshots')
+      .select(
+        'date, calories_consumed, calories_target, exercise_calories, protein_g, protein_target, water_consumed_ml, deficit_accumulated, xp_earned, day_closed',
+      )
+      .eq('user_id', userId)
+      .order('date', { ascending: false })
+      .limit(query.days),
+    supabase
+      .from('reevaluations')
+      .select('evaluation_date, weight_kg')
+      .eq('user_id', userId)
+      .order('evaluation_date', { ascending: false })
+      .limit(12),
+  ])
+  throwQueryError(snapshotResult.error, 'Trends snapshot lookup')
+  throwQueryError(weightResult.error, 'Trends weight lookup')
+  return shapeTrends(
+    (snapshotResult.data ?? []) as TrendsSnapshotRow[],
+    (weightResult.data ?? []) as TrendsWeightRow[],
+    query.days,
+  )
 }
 
 export async function loadHistory(supabase: ServiceClient, userId: string, query: HistoryQuery) {

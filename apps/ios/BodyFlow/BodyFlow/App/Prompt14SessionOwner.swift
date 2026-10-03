@@ -595,6 +595,15 @@ private struct Prompt14ProgressCapability: ProgressProviding {
             return try await capability.profileWeight()
         }
     }
+
+    func trends(days: Int) async throws -> TrendsResponse {
+        try await gate.perform {
+            guard let capability = reference.current() else {
+                throw CancellationError()
+            }
+            return try await capability.trends(days: days)
+        }
+    }
 }
 
 private struct Prompt14CoverCapability: ContentCoverLoading {

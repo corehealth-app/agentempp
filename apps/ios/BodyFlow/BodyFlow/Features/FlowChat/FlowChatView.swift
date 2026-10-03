@@ -140,14 +140,23 @@ struct FlowChatView: View {
                                     emptyConversation
                                 }
                                 ForEach(model.conversationItems) { item in
-                                    switch item {
-                                    case let .message(message):
-                                        FlowMessageBubble(message: message).id(message.id)
-                                    case let .outbox(pending):
-                                        FlowOutboxBubble(message: pending, isSending: model.isSending) {
-                                            Task { await model.retry(outboxID: pending.id) }
+                                    Group {
+                                        switch item {
+                                        case let .message(message):
+                                            FlowMessageBubble(message: message).id(message.id)
+                                        case let .outbox(pending):
+                                            FlowOutboxBubble(message: pending, isSending: model.isSending) {
+                                                Task { await model.retry(outboxID: pending.id) }
+                                            }
                                         }
                                     }
+                                    // A new bubble slides up into place (finite
+                                    // spring); history loads and Reduce Motion
+                                    // show bubbles at once.
+                                    .transition(reduceMotion ? .identity : .asymmetric(
+                                        insertion: .move(edge: .bottom).combined(with: .opacity),
+                                        removal: .identity
+                                    ))
                                 }
                                 if model.isSending || model.isReconcilingHistory {
                                     HStack(alignment: .top, spacing: BodyFlowSpacing.sm) {
@@ -164,6 +173,10 @@ struct FlowChatView: View {
                             }
                             .padding(.horizontal, gutter)
                             .padding(.vertical, BodyFlowSpacing.md)
+                            .animation(
+                                hasLoadedHistory ? BodyFlowMotion.animation(.navigation, reduceMotion: reduceMotion) : nil,
+                                value: model.conversationItems.count
+                            )
                             Color.clear.frame(height: BodyFlowSpacing.xxs)
                                 .id("flow.history-end").accessibilityHidden(true)
                         }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sanitizePendingProposal } from './read-model'
+import { sanitizePendingProposal, shapeTrends } from './read-model'
 
 describe('mobile read model', () => {
   it('removes transport and internal evidence from pending meal proposals', () => {
@@ -124,5 +124,71 @@ describe('mobile read model', () => {
 
   it('returns a minimal safe shape for malformed legacy proposals', () => {
     expect(sanitizePendingProposal({ source_text: 'hidden' })).toEqual({ kind: 'unknown' })
+  })
+})
+
+describe('trends read model', () => {
+  it('returns stored days ascending, never filling the gaps, and dated weights only', () => {
+    const shaped = shapeTrends(
+      [
+        {
+          date: '2026-07-20',
+          calories_consumed: 1200,
+          calories_target: 1935,
+          exercise_calories: 100,
+          protein_g: '90.50',
+          protein_target: null,
+          water_consumed_ml: 1250,
+          deficit_accumulated: 2464,
+          xp_earned: 40,
+          day_closed: false,
+        },
+        {
+          date: '2026-07-18',
+          calories_consumed: 2100,
+          calories_target: 1935,
+          exercise_calories: 0,
+          protein_g: '120',
+          protein_target: '186.10',
+          water_consumed_ml: 2000,
+          deficit_accumulated: 2364,
+          xp_earned: 60,
+          day_closed: true,
+        },
+      ],
+      [
+        { evaluation_date: '2026-07-15', weight_kg: '79.10' },
+        { evaluation_date: '2026-07-01', weight_kg: '80.00' },
+        { evaluation_date: '2026-06-17', weight_kg: null },
+      ],
+      14,
+    )
+    expect(shaped.days).toBe(14)
+    expect(shaped.daily.map((row) => row.date)).toEqual(['2026-07-18', '2026-07-20'])
+    expect(shaped.daily[0]).toMatchObject({ protein_g: 120, protein_target: 186.1, day_closed: true })
+    expect(shaped.daily[1]).toMatchObject({ protein_g: 90.5, protein_target: null, day_closed: false })
+    expect(shaped.weights).toEqual([
+      { date: '2026-07-01', weight_kg: 80 },
+      { date: '2026-07-15', weight_kg: 79.1 },
+    ])
+  })
+
+  it('keeps only the last `days` rows when more are given', () => {
+    const rows = Array.from({ length: 20 }, (_, index) => ({
+      date: `2026-07-${String(index + 1).padStart(2, '0')}`,
+      calories_consumed: 0,
+      calories_target: null,
+      exercise_calories: 0,
+      protein_g: 0,
+      protein_target: null,
+      water_consumed_ml: 0,
+      deficit_accumulated: 0,
+      xp_earned: 0,
+      day_closed: false,
+    }))
+    const shaped = shapeTrends(rows, [], 7)
+    expect(shaped.daily).toHaveLength(7)
+    expect(shaped.daily[0].date).toBe('2026-07-14')
+    expect(shaped.daily[6].date).toBe('2026-07-20')
   })
 })

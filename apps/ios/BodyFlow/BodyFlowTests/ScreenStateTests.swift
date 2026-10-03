@@ -114,7 +114,7 @@ struct ScreenStateTests {
     @Test("typography uses only system Dynamic Type text styles")
     func dynamicTypeStyles() {
         // The approved premium role explicitly adds bold; all legacy aliases remain.
-        #expect(BodyFlowTypography.largeTitle == Font.largeTitle.bold())
+        #expect(BodyFlowTypography.largeTitle == Font.system(.largeTitle, design: .rounded).bold())
         #expect(BodyFlowTypography.title == Font.title2)
         #expect(BodyFlowTypography.headline == Font.headline)
         #expect(BodyFlowTypography.body == Font.body)

@@ -35,6 +35,10 @@ struct UnavailableBodyFlowCapabilities:
         throw BodyFlowCapabilityError.operationUnavailable
     }
 
+    func trends(days: Int) async throws -> TrendsResponse {
+        throw BodyFlowCapabilityError.operationUnavailable
+    }
+
     func detect(
         _ input: MealDetectionInput
     ) async throws -> RegistrationProposalRequest {

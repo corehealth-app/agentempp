@@ -517,6 +517,13 @@ actor DemoBodyFlowRepository:
             : DemoBodyFlowFixtures.loadedProgress
     }
 
+    func trends(days: Int) async throws -> TrendsResponse {
+        try await prepareRead(.progress)
+        return scenario == .empty
+            ? DemoBodyFlowFixtures.emptyTrends
+            : DemoBodyFlowFixtures.loadedTrends
+    }
+
     func history(_ query: HistoryQuery) async throws -> HistoryResponse {
         _ = query
         try await prepareRead(.history)

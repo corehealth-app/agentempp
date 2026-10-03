@@ -45,6 +45,10 @@ struct RoutineActionSheet: View {
             RoutineActionSummary.feedback,
             trigger: RoutineActionSummary.kind(for: model.mutationState)
         )
+        .bodyFlowCelebration(
+            { $0 == .success ? .progress : nil },
+            trigger: RoutineActionSummary.kind(for: model.mutationState)
+        )
     }
 
     @ViewBuilder

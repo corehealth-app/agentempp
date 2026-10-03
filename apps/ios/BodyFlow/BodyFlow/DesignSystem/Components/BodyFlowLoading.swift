@@ -84,8 +84,13 @@ struct BodyFlowFeatureSkeleton: View {
     private var content: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
             bar(width: 150, height: 24)
-            if kind == .today || kind == .progress {
-                tile(height: kind == .today ? 152 : 180)
+            if kind == .today {
+                // Hero, macros card, hydration row: the content lands in
+                // these exact slots, so arrival settles instead of jumping.
+                tile(height: 300)
+                tile(height: 220)
+            } else if kind == .progress {
+                tile(height: 180)
                 HStack(spacing: BodyFlowSpacing.md) {
                     tile(height: 100)
                     tile(height: 100)

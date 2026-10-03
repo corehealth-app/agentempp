@@ -232,6 +232,14 @@ struct TodayRootView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.bodyFlowReduceMotion) private var reduceMotion
     @State private var refreshCoordinator = TodayRefreshCoordinator()
+    /// 0 at rest, 1 once the day has scrolled `heroCollapseDistance`; the
+    /// hero ring condenses with it (Strava/Apple style).
+    @State private var heroCollapse: CGFloat = 0
+    nonisolated static let heroCollapseDistance: CGFloat = 120
+    /// The hero figures count up once per load of the day; a later relayout
+    /// (a size change swaps the hero's ViewThatFits branch) never recounts.
+    @State private var countsUp = true
+    nonisolated static let countUpWindow: Duration = .milliseconds(1_500)
 
     init(
         model: TodayViewModel,
@@ -487,6 +495,7 @@ struct TodayRootView: View {
                 }
                 .buttonStyle(.bodyFlowRow)
                 .accessibilityIdentifier("today.history")
+                .bodyFlowZoomSource(.mainHistory)
 
                 TodayBlockCard(descriptor: presentation.block)
                 if let mascot {
@@ -506,11 +515,17 @@ struct TodayRootView: View {
                 }
                 .buttonStyle(.bodyFlowRow)
                 .accessibilityIdentifier("today.next-action")
+                .bodyFlowZoomSource(.detail(tab: .today, id: "daily-summary"))
             }
             .padding(BodyFlowSpacing.md)
         }
         .refreshable {
             await refreshAll()
+        }
+        .onScrollGeometryChange(for: CGFloat.self) { geometry in
+            Self.collapse(forOffset: geometry.contentOffset.y + geometry.contentInsets.top)
+        } action: { _, collapse in
+            heroCollapse = collapse
         }
         .onChange(of: guidedTourFocus, initial: true) {
             // The tour's spotlight lands on a control that may be below the
@@ -525,6 +540,11 @@ struct TodayRootView: View {
 
     nonisolated static let shortcutsScrollID = "today.shortcuts"
 
+    /// Clamped progress of the hero's condensation for a scroll offset.
+    nonisolated static func collapse(forOffset offset: CGFloat) -> CGFloat {
+        min(max(offset / heroCollapseDistance, 0), 1)
+    }
+
     @ViewBuilder
     private func standardSummary(_ presentation: TodayPresentation) -> some View {
         TodayHeaderSection(descriptor: presentation.header)
@@ -533,8 +553,15 @@ struct TodayRootView: View {
             protein: presentation.protein,
             macros: presentation.macros,
             hydration: presentation.hydration,
-            completionMessage: presentation.completionMessage(for: language)
+            completionMessage: presentation.completionMessage(for: language),
+            collapse: reduceMotion ? 0 : heroCollapse,
+            countsUp: countsUp
         )
+        .task {
+            try? await Task.sleep(for: Self.countUpWindow)
+            guard !Task.isCancelled else { return }
+            countsUp = false
+        }
     }
 
     private func retry() {

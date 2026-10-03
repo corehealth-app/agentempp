@@ -123,6 +123,13 @@ struct TodaySummaryPanel: View {
     let macros: TodayMacrosDescriptor
     let hydration: TodayHydrationDescriptor
     let completionMessage: String?
+    /// 0…1 as the day scrolls: the hero ring shrinks from 104 to 64 pt.
+    var collapse: CGFloat = 0
+    /// False once the first count has landed: figures are plain text again.
+    var countsUp = true
+
+    nonisolated static let heroRingDiameter: CGFloat = 104
+    nonisolated static let heroRingCondensed: CGFloat = 64
 
     @Environment(\.locale) private var locale
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -158,6 +165,13 @@ struct TodaySummaryPanel: View {
 
     // MARK: Energy hero
 
+    /// Exactly on the food target (nothing left, nothing over): the ring
+    /// closes and the day earns a burst. A later refresh that lands here
+    /// triggers it; the first appearance never does.
+    private var foodTargetMet: Bool {
+        energy.targetKcal != nil && energy.remainingFoodKcal == 0 && (energy.foodExcessKcal ?? 0) == 0
+    }
+
     private var energyHero: some View {
         BodyFlowHeroCard {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
@@ -165,9 +179,15 @@ struct TodaySummaryPanel: View {
                     .font(BodyFlowTypography.cardTitle)
                     .accessibilityAddTraits(.isHeader)
 
-                // Ring beside the figure when the width allows; stacked on a
-                // narrow phone or at accessibility sizes.
-                ViewThatFits(in: .horizontal) {
+                // Ring beside the figures at regular sizes; stacked at
+                // accessibility sizes (the rule the hero cells already use).
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+                        foodRing
+                        remainingFoodFigure
+                        foodExcessCell
+                    }
+                } else {
                     HStack(alignment: .center, spacing: BodyFlowSpacing.md) {
                         foodRing
                         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
@@ -175,11 +195,7 @@ struct TodaySummaryPanel: View {
                             foodExcessCell
                         }
                     }
-                    VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-                        foodRing
-                        remainingFoodFigure
-                        foodExcessCell
-                    }
+                    .fixedSize(horizontal: false, vertical: true)
                 }
 
                 summaryRow {
@@ -188,7 +204,8 @@ struct TodaySummaryPanel: View {
                         value: TodayValueFormatter.kcal(energy.consumedKcal, language: language),
                         caption: copy("today.energy.title"),
                         prominence: .supporting,
-                        tone: .hero
+                        tone: .hero,
+                        counting: countsUp ? .init(value: energy.consumedKcal) { TodayValueFormatter.kcal($0, language: language) } : nil
                     )
                     .accessibilityIdentifier("today.energy.consumed")
                 } trailing: {
@@ -197,12 +214,16 @@ struct TodaySummaryPanel: View {
                         value: TodayValueFormatter.optionalKcal(energy.targetKcal, language: language),
                         caption: copy("today.energy.title"),
                         prominence: .supporting,
-                        tone: .hero
+                        tone: .hero,
+                        counting: countsUp ? energy.targetKcal.map { target in
+                            .init(value: target) { TodayValueFormatter.kcal($0, language: language) }
+                        } : nil
                     )
                     .accessibilityIdentifier("today.energy.target")
                 }
             }
         }
+        .bodyFlowCelebration({ $0 ? .energy : nil }, trigger: foodTargetMet)
     }
 
     /// The ring only draws consumed ÷ target; the figure is the official
@@ -213,7 +234,7 @@ struct TodaySummaryPanel: View {
             BodyFlowRing(
                 fraction: fraction,
                 exceeded: (energy.foodExcessKcal ?? 0) > 0,
-                diameter: 104,
+                diameter: Self.heroRingDiameter,
                 lineWidth: 11,
                 role: .accentCoral,
                 track: BodyFlowColor.color(.onHero).opacity(BodyFlowOpacity.heroTrack),
@@ -227,6 +248,9 @@ struct TodaySummaryPanel: View {
                     .foregroundStyle(BodyFlowColor.color(.onHero))
                     .accessibilityHidden(true)
             }
+            // Scaled, not resized: the slot keeps its 104 pt, so the hero's
+            // height never changes under the finger while scrolling.
+            .scaleEffect(1 - (1 - Self.heroRingCondensed / Self.heroRingDiameter) * collapse, anchor: .topLeading)
         }
     }
 
@@ -239,7 +263,10 @@ struct TodaySummaryPanel: View {
             ),
             caption: copy("today.energy.food-remaining.detail"),
             prominence: .headline,
-            tone: .hero
+            tone: .hero,
+            counting: countsUp ? energy.remainingFoodKcal.map { remaining in
+                .init(value: remaining) { TodayValueFormatter.kcal($0, language: language) }
+            } : nil
         )
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityValue(energy.remainingFoodAccessibilityValue(for: language))
@@ -290,12 +317,15 @@ struct TodaySummaryPanel: View {
                 .foregroundStyle(BodyFlowColor.primaryText)
                 .accessibilityAddTraits(.isHeader)
             proteinRow
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: BodyFlowSpacing.md) {
+            // Side by side at regular sizes, stacked at accessibility sizes
+            // (the same rule as the hero cells, which the audit accepts).
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
                     macroChip(.carbs, title: copy("today.macros.carbs"), grams: macros.carbsG)
                     macroChip(.fat, title: copy("today.macros.fat"), grams: macros.fatG)
                 }
-                VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+            } else {
+                HStack(alignment: .top, spacing: BodyFlowSpacing.md) {
                     macroChip(.carbs, title: copy("today.macros.carbs"), grams: macros.carbsG)
                     macroChip(.fat, title: copy("today.macros.fat"), grams: macros.fatG)
                 }
@@ -315,20 +345,21 @@ struct TodaySummaryPanel: View {
         return HStack(alignment: .center, spacing: BodyFlowSpacing.sm) {
             BodyFlowDomainGlyph(domain: .protein)
             VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
-                ViewThatFits(in: .horizontal) {
+                if dynamicTypeSize.isAccessibilitySize {
+                    Text(verbatim: copy("today.protein.title"))
+                        .font(BodyFlowTypography.headline)
+                        .foregroundStyle(BodyFlowColor.primaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(verbatim: figure)
+                        .font(BodyFlowTypography.callout.monospacedDigit())
+                        .foregroundStyle(BodyFlowColor.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
                     HStack(alignment: .firstTextBaseline, spacing: BodyFlowSpacing.sm) {
                         Text(verbatim: copy("today.protein.title"))
                             .font(BodyFlowTypography.headline)
                             .foregroundStyle(BodyFlowColor.primaryText)
                         Spacer(minLength: BodyFlowSpacing.sm)
-                        Text(verbatim: figure)
-                            .font(BodyFlowTypography.callout.monospacedDigit())
-                            .foregroundStyle(BodyFlowColor.secondaryText)
-                    }
-                    VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
-                        Text(verbatim: copy("today.protein.title"))
-                            .font(BodyFlowTypography.headline)
-                            .foregroundStyle(BodyFlowColor.primaryText)
                         Text(verbatim: figure)
                             .font(BodyFlowTypography.callout.monospacedDigit())
                             .foregroundStyle(BodyFlowColor.secondaryText)
@@ -567,6 +598,9 @@ private struct TodaySummaryCell: View {
     let caption: String
     let prominence: Prominence
     var tone: Tone = .standard
+    /// When set, the figure counts up to its value on first appearance
+    /// (decorative; the accessible text is the final value from frame one).
+    var counting: BodyFlowCountUp.Figure? = nil
 
     private var labelColor: Color {
         tone == .hero ? BodyFlowColor.color(.onHero) : BodyFlowColor.secondaryText
@@ -585,6 +619,7 @@ private struct TodaySummaryCell: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             Text(verbatim: value)
+                .bodyFlowCountUp(counting)
                 .font(
                     prominence == .headline
                         ? BodyFlowTypography.metricLarge

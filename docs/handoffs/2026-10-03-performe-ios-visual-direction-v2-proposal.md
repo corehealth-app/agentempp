@@ -98,4 +98,4 @@ Total ≈ 30 h de execução + ~2 h de integral/gates por checkpoint ≈ **4–5
 - **Referência direta ao Mobbin:** se Eduardo abrir a página no Chrome dele e nomear 3–5 apps/telas preferidas, calibro cor e composição por essas telas em vez de pela memória de catálogo.
 
 ## 7. Status
-`USER VISUAL ACCEPTANCE: REJECTED (606d5d6)` · `VISUAL DIRECTION V2: PROPOSED, AWAITING EDUARDO` · `PRODUCTION STATUS: NOT DEPLOYED`.
+`USER VISUAL ACCEPTANCE: REJECTED (606d5d6)` · `VISUAL DIRECTION V2: APPROVED BY EDUARDO 2026-10-03 ("Sim, tudo": E + F + H + G, superando os limites listados em §4)` · `PRODUCTION STATUS: NOT DEPLOYED`.

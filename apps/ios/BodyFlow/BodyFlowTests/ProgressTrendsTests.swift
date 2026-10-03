@@ -49,6 +49,25 @@ struct ProgressTrendsTests {
         #expect(ProgressTrendsPresentation.kilograms(78.4, language: .englishUnitedStates) == "78.4 kg")
     }
 
+    @Test("The window is calendar days ending at the latest record, not the last N rows")
+    func windowIsCalendarDays() {
+        func day(_ date: String, _ kcal: Int) -> TrendsDay {
+            TrendsDay(date: date, caloriesConsumed: kcal, caloriesTarget: 2_000, exerciseCalories: 0, proteinG: 0,
+                      proteinTarget: nil, waterConsumedML: 0, deficitAccumulated: 0, xpEarned: 0, dayClosed: true)
+        }
+        // Sparse records over five weeks; only the last seven calendar days count.
+        let snapshot = TrendsSnapshot(
+            days: 7,
+            daily: [day("2026-09-01", 1), day("2026-09-10", 2), day("2026-09-27", 3), day("2026-09-29", 4), day("2026-10-01", 5)],
+            weights: []
+        )
+        let presentation = ProgressTrendsPresentation(snapshot: snapshot, language: .portugueseBrazil)
+        // Window = 25/09…01/10: three records inside, two outside.
+        #expect(presentation.calories.map(\.consumed) == [3, 4, 5])
+        #expect(presentation.block.count == 3)
+        #expect(presentation.recordedDays == [false, false, true, false, true, false, true])
+    }
+
     @Test("Trends copy exists in both languages", arguments: SupportedAppLanguage.allCases)
     func copyExists(_ language: SupportedAppLanguage) throws {
         for key in ["progress.trends.title", "progress.trends.weight", "progress.trends.calories", "progress.trends.block",

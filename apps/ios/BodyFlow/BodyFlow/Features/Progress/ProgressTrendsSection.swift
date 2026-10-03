@@ -40,8 +40,18 @@ struct ProgressTrendsPresentation: Equatable, Sendable {
 
     init(snapshot: TrendsSnapshot, language: SupportedAppLanguage, today: Date = .now) {
         window = snapshot.days
-        let days = snapshot.daily.compactMap { day -> (Date, TrendsDay)? in
+        let parsed = snapshot.daily.compactMap { day -> (Date, TrendsDay)? in
             Self.date(from: day.date).map { ($0, day) }
+        }
+        // The server sends the last `days` stored rows; the charts show a
+        // true calendar window of `days` days ending at the latest record,
+        // so "14 dias" never stretches over weeks of sparse records.
+        let days: [(Date, TrendsDay)]
+        if let latest = parsed.map(\.0).max(),
+           let start = Self.calendar.date(byAdding: .day, value: -(snapshot.days - 1), to: latest) {
+            days = parsed.filter { $0.0 >= start }.sorted { $0.0 < $1.0 }
+        } else {
+            days = []
         }
         calories = days.map { date, day in
             CaloriesBar(

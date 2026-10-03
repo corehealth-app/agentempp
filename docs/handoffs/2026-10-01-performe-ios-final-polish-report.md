@@ -1,6 +1,6 @@
 # Performe AI — refinamento final iOS
 
-**RELATÓRIO ATUALIZADO EM 02/10/2026 (continuação no Claude Code), sem aceite de cliente.** Candidato completo `05f4f7c`, com o tutorial inicial guiado: **suíte integral 1.827/1.827 PASS, zero skips** (iOS 27); Release sim/staging, Analyze, assinatura e scanner dos dois bundles PASS. Ajuste do runner do benchmark (`791303b`), tutorial (`90e1585`) e sincronização de um teste do Flow (`05f4f7c`) com revisões independentes. Pendentes: smoke físico no iPhone (dispositivo indisponível no corte), gesto real de VoiceOver/tato, aceite visual de Eduardo, fluxo editorial da Biblioteca e canal de distribuição para Roberto.
+**RELATÓRIO ATUALIZADO EM 03/10/2026 (continuação no Claude Code), sem aceite de cliente.** Em 02/10 Eduardo **rejeitou o aceite visual** do candidato `05f4f7c` no iPhone (abertura genérica e sem transição; toques sem suavidade; tutorial em texto em vez de guiado apontando os controles e explicando a trilha) e aprovou os quatro blocos da proposta ([`2026-10-02-performe-ios-visual-feedback-proposal.md`](2026-10-02-performe-ios-visual-feedback-proposal.md)). Novo candidato `606d5d6`: abertura viva (nome entra, marca respira 3 ciclos, linha "Carregando" só após 1,2 s), toques com mola/escala/háptica nos botões, linhas e abas, tour spotlight sobre os controles reais (8 etapas + trilha do dia, replay no Perfil, uma dica contextual no Registrar), anel de comida e trilha do dia no Hoje (`81543c6`), e placeholders estáticos após o shimmer provar-se causa de 62 travas de idle do XCTest (`606d5d6`). **Suíte integral 1.849/1.849 PASS, zero skips** (iOS 27); Release sim/staging, Analyze, assinatura e scanner dos dois bundles PASS. Pendentes: instalar por cima no iPhone e novo aceite visual de Eduardo, smoke físico, VoiceOver/tato reais, fluxo editorial da Biblioteca e canal de distribuição para Roberto.
 
 ## 1. RESUMO EXECUTIVO
 
@@ -131,11 +131,13 @@ VoiceOver 27: **4/4 PASS em 55,283 s, zero skips — 1 UI de foco/leitura/ordem/
 
 **Integrais, sem somar repetições como casos exclusivos:**
 
-- **`05f4f7c` (candidato completo com tutorial): 1.827 PASS / 0 FAIL / 0 skips**, 17:48–19:33 UTC, fontes estáveis, nenhuma espera de quiescência. Esta é a integral de referência.
+- **`606d5d6` (candidato com polish A–D e placeholders estáticos): 1.849 PASS / 0 FAIL / 0 skips**, 03/10 15:12–17:14 UTC, fontes estáveis. 13 esperas "App animations complete notification not received" (60 s cada), todas em `FlowChatUITests` (7 em `testLocalResponseAndExplicitRetryPreserveNativeContract`, 5 no limite de 4.000, 1 no compositor AX) — nenhuma falha; pendência de diagnóstico (05f4f7c teve 0; 90e1585 teve 9 e passou). Esta é a integral de referência.
+- `81543c6` (polish A–D com shimmer por `TimelineView(.animation)`): 1.840/1.849, 62 esperas de idle e 9 FAIL por timeout. Sonda com o shimmer desligado: 0 esperas, 3/3 nos testes que travavam → causa confirmada. Variante finita (duas passagens via `withAnimation`) ainda travou 6× nos testes do Flow/Plano. Decisão: placeholders sem shimmer nem pulso; respiração da splash limitada a 3 ciclos. Rodada de verificação: 60/60 (política, matriz de render, tour, Plano, Flow AX e 4.000).
+- `05f4f7c` (candidato anterior, com tutorial em texto): 1.827 PASS / 0 FAIL / 0 skips, 02/10 17:48–19:33 UTC. Rejeitado no aceite visual de Eduardo (ver cabeçalho).
 - `90e1585`: 1.826/1.827; único FAIL em `BodyFlowUITests.testFlowChatIsReachableAndReturnsExplicitLocalSimulation` — toque em Enviar durante o movimento do teclado (árvore mostra texto ainda no campo). Corrigido em `05f4f7c` com o mesmo gate de readiness dos demais testes do Flow; cenário exato 3/3. Sem mudança de produto.
 - Readiness do benchmark (`791303b`): RED 7 PASS/2 FAIL → GREEN 9/9 → 10/10 com o caso de Done que desaparece; cenários normais do Flow e benchmark 3/3; revisão independente sem bloqueios.
 - Tutorial: unitários 1.538 PASS (inclui `GuidedTutorialTests`); `GuidedTutorialUITests` 5/5 (inclui AXXXL); `PremiumConvergenceUITests` teve 4 falhas numa rodada focada (contraste em Hoje na borda da rolagem, foco de teclado no onboarding, timeout de consulta AX) e 4/4 isoladas; a integral final passou inteira.
-- **Release do candidato (`release-gates-tutorial-05f4f7c`):** Release sim 62 s, Analyze PASS (0 warnings), Release staging 58 s, assinatura estrita sim/staging PASS, scan dos dois bundles PASS, testes do scanner 25/25. Perfil staging expira em 04/10/2026 21:12:24 UTC.
+- **Release do candidato (`release-gates-polish-606d5d6`):** Release sim 63 s, Analyze PASS (0 warnings), Release staging 64 s, assinatura estrita sim/staging PASS, scan dos dois bundles PASS (0 falhas), testes do scanner 25/25; único aviso de compilação é o preexistente `SessionLifecycleCoordinator.swift:210`. Perfil staging expira em 04/10/2026 21:12:24 UTC. (`release-gates-tutorial-05f4f7c` idem para o candidato anterior.)
 
 - `b8d7b1e`, histórica interrompida: 1.527 Swift Testing/130 suítes, 51 XCTest e 47 UI PASS; três UI FAIL e um Plano cancelado. Focados posteriores não a tornam aprovada.
 - `038c1b7`, concluída: resumo oficial **1.776 PASS / 1 FAIL / zero skips** — 52 XCTest, 1.527 Swift Testing e 197 UI PASS. O único FAIL exigia crescimento do antigo cabeçalho acima do cap da nova barra. Revisão confirmou defeito do contrato do teste; produto intacto.
@@ -163,29 +165,30 @@ VoiceOver 27: **4/4 PASS em 55,283 s, zero skips — 1 UI de foco/leitura/ordem/
 
 ## 14. PONTOS PENDENTES
 
-- **Físico/entrega:** iPhone apareceu **indisponível** no corte; instalar o candidato `05f4f7c` por cima do staging (rollback preservado) e fazer o smoke: abertura/restore/logout/onboarding, QA A→B→A, cinco abas/sheets, teclado e B durante A, cancel/retry, proposta × confirmação, peso 80/data, rotina após o horário, lembrete, Biblioteca sem rascunhos, VoiceOver real/tato, tutorial (oferta, “Agora não”, replay e áreas). Perfil expira em 04/10 21:12 UTC; a conta Apple Developer paga (em aprovação) resolve a assinatura para distribuição.
+- **Físico/entrega:** instalar o candidato `606d5d6` por cima do staging no iPhone (rollback `05f4f7c`/`79dfe83` preservados) e colher o **novo aceite visual de Eduardo** (abertura, toques, tour spotlight, trilha); depois o smoke: abertura/restore/logout/onboarding, QA A→B→A, cinco abas/sheets, teclado e B durante A, cancel/retry, proposta × confirmação, peso 80/data, rotina após o horário, lembrete, Biblioteca sem rascunhos, VoiceOver real/tato, tutorial (oferta, “Agora não”, replay e áreas). Perfil expira em 04/10 21:12 UTC; a conta Apple Developer paga (em aprovação) resolve a assinatura para distribuição.
 - **Distribuição para Roberto:** TestFlight ou Ad Hoc depois da aprovação da conta Apple Developer e de autorização explícita de Eduardo (fora do escopo atual).
-- **Performance nativa:** App Launch/Hitches/Allocations continuam com os limites da seção 9; Flow 50 do par atual não aceito (estol não reproduzível).
+- **Performance nativa:** App Launch/Hitches/Allocations continuam com os limites da seção 9; Flow 50 do par atual não aceito (estol não reproduzível). Par de benchmark não reexecutado após o polish `81543c6`/`606d5d6`.
+- **Esperas de idle no Flow:** 13 em `FlowChatUITests` na integral de `606d5d6` (passou). Diagnosticar o que segue animando na tela do Flow (única animação contínua conhecida no app é o mascote, pré-existente).
 - **Humanos/editoriais:** decisão nutricional de produto; Roberto submete artigos, Eduardo revisa, Roberto publica e então validar Biblioteca publicada. Seis rascunhos PT + seis EN não equivalem a publicação. Notificação foi aceita anteriormente pelo usuário, sem nova prova independente nesta rodada.
 - **Fechamento:** simulador27 restaurado a Shutdown no handoff (12:06:20 UTC); voltar a conferir/restaurar após os futuros testes. VO26.5 já restaurado. Arquivamento de ambos os auxiliares foi recusado: “This worktree is protected by a pinned task or workspace.” Inventário sem commits exclusivos/arquivos ignorados; estados preservados, sem snapshot de arquivamento ou remoção, proteção não contornada. Caminhos: `/Users/eduardohenrique/.codex/worktrees/performe-flow-polish/performe-ai-client-beta-flow-v1` e `/Users/eduardohenrique/.codex/worktrees/performe-journey-polish/performe-ai-client-beta-flow-v1`. Evidências diagnósticas preservadas.
 
 ## 15. STATUS FINAL
 
-**STATUS: CANDIDATO COMPLETO VERIFICADO EM SIMULADOR; ENTREGA AO CLIENTE NÃO CONCLUÍDA.** Produto `05f4f7c` com tutorial, integral 1.827/1.827, Release/Analyze/assinatura/scanner PASS. Sem instalação física nesta rodada (iPhone indisponível), sem aceite visual ou editorial.
+**STATUS: CANDIDATO COMPLETO VERIFICADO EM SIMULADOR; ENTREGA AO CLIENTE NÃO CONCLUÍDA.** Produto `606d5d6` (polish A–D após rejeição visual de 02/10), integral 1.849/1.849, Release/Analyze/assinatura/scanner PASS. Instalação física e novo aceite visual de Eduardo pendentes; sem aceite editorial.
 
 | Campo | Situação |
 |---|---|
 | Host | MacBook-Air-de-Eduardo.local / LOCAL_DEVELOPMENT |
-| Branch / HEAD | `codex/performe-ai-client-beta-flow-v1` / `05f4f7c` (mais commit documental) |
-| Commits desta continuação | `791303b` runner, `90e1585` tutorial, `05f4f7c` teste; locais; push NÃO; merge remoto NÃO |
-| Testes | Integral `05f4f7c` 1.827 PASS / 0 FAIL / 0 skips; par Flow: resposta longa comparável, Flow 50 não aceito |
+| Branch / HEAD | `codex/performe-ai-client-beta-flow-v1` / `606d5d6` (mais commit documental) |
+| Commits desta continuação | `791303b` runner, `90e1585` tutorial, `05f4f7c` teste, `eaee1e6` docs, `81543c6` polish A–D, `606d5d6` placeholders estáticos; locais; push NÃO; merge remoto NÃO |
+| Testes | Integral `606d5d6` 1.849 PASS / 0 FAIL / 0 skips (13 esperas de idle no Flow, sem falha); par Flow: resposta longa comparável, Flow 50 não aceito |
 | NEW FAILURES INTRODUCED | Nenhuma na integral final |
 | Resource gate | PASS (≈55 GiB livres, 43% memória livre no início dos jobs pesados) |
 | Deployment | NÃO (nem produção nem staging nesta rodada) |
-| Rollback | Artefato assinado anterior preservado |
+| Rollback | Artefatos assinados `05f4f7c` e `79dfe83` (instalado no iPhone) preservados |
 | REGRESSION STATUS | **VERIFIED** (simulador iOS 27, suíte integral); físico pendente |
 | PRODUCTION STATUS | **NOT DEPLOYED** |
 | Cleanup | Simulador 27 a restaurar para Shutdown no fechamento; worktrees auxiliares protegidos mantidos |
 | COST / ENVIRONMENT CLOSEOUT | Nenhum recurso pago novo; staging preexistente KEPT; conta Apple Developer (US$ 99/ano) contratada por Eduardo fora desta automação |
 
-`IOS INTEGRATION STATUS: IMPLEMENTED / VERIFIED IN SIMULATOR, PHYSICAL PENDING` · `REBRAND STATUS: IMPLEMENTED / FINAL VISUAL GATE OPEN` · `ROBERTO BETA CANDIDATE STATUS: NOT READY FOR CLIENT ACCEPTANCE` · `USER VISUAL ACCEPTANCE: PENDING`.
+`IOS INTEGRATION STATUS: IMPLEMENTED / VERIFIED IN SIMULATOR, PHYSICAL PENDING` · `REBRAND STATUS: IMPLEMENTED / FINAL VISUAL GATE OPEN` · `ROBERTO BETA CANDIDATE STATUS: NOT READY FOR CLIENT ACCEPTANCE` · `USER VISUAL ACCEPTANCE: REJECTED 2026-10-02 (05f4f7c) → PENDING (606d5d6)`.

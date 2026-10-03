@@ -18,6 +18,14 @@ Conclusão: o resultado é fiel à direção **"Warm Performance" contida** que 
 
 ## 2. O que os apps de referência fazem (padrões, não cópias)
 
+**Visto no Mobbin pelo Chrome de Eduardo (03/10, conta sem Pro — só a primeira fileira de telas de cada app).** Os 15 mais populares em Saúde & Fitness: Headspace, How We Feel, stoic., Lifesum, Withings Health Mate, Strava, Hims, Gentler Streak, Apple Fitness, Apple Health, AllTrails, Ahead, Open, MyFitnessPal, Nike Run Club. Observações diretas:
+
+- **Apple Fitness (Resumo):** fundo escuro; cartão "Activity Ring" com anel grosso vermelho e "46/250 CAL" ao lado; cartões pequenos de passos/distância com **mini-gráfico de barras por hora** em azul; semana como 7 anéis pequenos; calendário de anéis; detalhe do dia com anel grande + barras por hora.
+- **Lifesum (Diário):** marca verde; cartão "Daily intake 340 / 1947 kcal" com **barra de progresso + três barras de macro** (carbo azul, proteína rosa, gordura roxa) cada uma com "x / meta g"; detalhe do alimento com **três anéis percentuais** (25 % / 7 % / 68 %) coloridos; "Food rating" com ✓/✗ coloridos; ilustração grande do alimento; botões verdes cheios.
+- **MyFitnessPal (Hoje):** fundo azul claro; **linha de 7 dias** com check nos dias registrados; cartão Calorias "963 cal / 2.930 — 1.967 left" com barra azul; cartão Macros com **barras verde/roxa/amarela** e "x g / meta"; Diário por refeição com ícone + "Log"; entrada de alimento com **anel segmentado** por macro (782 cal) e barras "Percent of daily goals"; grade de ações rápidas com **ícones coloridos em bolhas** (azul, rosa, roxo, verde) e linhas Água (gota azul) / Peso (verde).
+
+Padrões comuns a todos: uma cor por macro/métrica; número oficial grande + meta pequena + barra/anel; ícones com cor de domínio; fundo claro com um cartão forte; ação principal em botão cheio. Nada disso exige dados que o Performe AI não tenha (`calories_consumed/target`, `protein_g/target`, `carbs_g`, `fat_g`, `water_consumed_ml`, `exercise_calories`, dias com registro).
+
 1. **Uma cor por métrica** (Apple Fitness: vermelho/verde/azul; Yazio/Lifesum: calorias, proteína, carbo, gordura cada um com sua cor; Oura: sono/prontidão/atividade). O olho aprende a cor antes de ler o número.
 2. **Anéis e barras como linguagem principal** (Fitness, MyFitnessPal, Zero, WHOOP). O número oficial fica dentro ou ao lado do anel; o anel "varre" com mola quando o dado chega.
 3. **Cartão-herói com gradiente** no topo da tela principal (Strava, Headspace, Calm, Gentler Streak): a única superfície com cor de fundo intensa; o resto é claro.

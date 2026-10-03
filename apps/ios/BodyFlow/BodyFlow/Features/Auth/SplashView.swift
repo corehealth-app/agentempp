@@ -18,8 +18,12 @@ struct SplashView: View {
 
     /// Shown only after this wait: a fast restore never reads "Carregando".
     nonisolated static let loadingTextDelay: Duration = .milliseconds(1200)
-    /// The breath is a slow 3% swell around the launch-screen size.
+    /// The breath is a slow 3% swell around the launch-screen size, for a
+    /// few cycles only: a restore that takes longer shows the loading line
+    /// and a still mark, never an endless animation.
     nonisolated static let breathScale: CGFloat = 1.03
+    nonisolated static let breathCycles = 3
+    nonisolated static let breathDuration: TimeInterval = 1.6
 
     var body: some View {
         GeometryReader { geometry in
@@ -59,12 +63,21 @@ struct SplashView: View {
             }
         }
         .task {
-            // The breath starts once the mark has settled.
+            // The breath starts once the mark has settled and ends after a
+            // few cycles, back at the launch-screen size.
             try? await Task.sleep(for: .milliseconds(420))
             guard !Task.isCancelled, !motionReduced else { return }
-            withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) {
+            withAnimation(
+                .easeInOut(duration: Self.breathDuration)
+                    .repeatCount(Self.breathCycles * 2 - 1, autoreverses: true)
+            ) {
                 breathing = true
             }
+            try? await Task.sleep(for: .seconds(Self.breathDuration * Double(Self.breathCycles * 2 - 1)))
+            guard !Task.isCancelled else { return }
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { breathing = false }
         }
         .task {
             guard loadingLabel == nil else { return }

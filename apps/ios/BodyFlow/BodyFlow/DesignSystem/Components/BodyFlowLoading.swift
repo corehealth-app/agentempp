@@ -58,9 +58,12 @@ struct BodyFlowDelayedProgress: View {
     }
 }
 
-/// The first frame reserves the structure of each destination, with a soft
-/// shimmer so it reads as working (still under Reduce Motion). No
-/// percentages or invented user values; one accessible loading description.
+/// The first frame reserves the structure of each destination: still shapes
+/// where the content will land, so arrival settles into place instead of
+/// jumping. Deliberately no shimmer or pulse — a restarting placeholder
+/// animation keeps the app "animating" in a hidden tab and stalls XCTest's
+/// idle wait 60 s at a time. No percentages or invented user values; one
+/// accessible loading description.
 struct BodyFlowFeatureSkeleton: View {
     enum Kind { case today, plan, progress, library }
     let kind: Kind
@@ -72,7 +75,6 @@ struct BodyFlowFeatureSkeleton: View {
             if isEmbedded { content }
             else { ScrollView { content } }
         }
-        .bodyFlowShimmerTimeline()
         .allowsHitTesting(false)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(PremiumPresentationCopy.string("splash.loading", locale: locale, fallback: "Carregando"))
@@ -108,7 +110,6 @@ struct BodyFlowFeatureSkeleton: View {
         RoundedRectangle(cornerRadius: BodyFlowRadius.card)
             .fill(BodyFlowColor.color(.backgroundSecondary))
             .frame(maxWidth: .infinity).frame(height: height)
-            .bodyFlowShimmer()
             .clipShape(RoundedRectangle(cornerRadius: BodyFlowRadius.card))
     }
 
@@ -116,7 +117,6 @@ struct BodyFlowFeatureSkeleton: View {
         RoundedRectangle(cornerRadius: BodyFlowRadius.small)
             .fill(BodyFlowColor.color(.borderSubtle))
             .frame(width: width, height: height)
-            .bodyFlowShimmer()
             .clipShape(RoundedRectangle(cornerRadius: BodyFlowRadius.small))
     }
 }

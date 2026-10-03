@@ -8,8 +8,6 @@ enum BodyFlowOpacity {
     static let tintWash: Double = 0.10
     /// Pressed state of card/row buttons.
     static let pressed: Double = 0.85
-    /// Peak of the loading shimmer highlight.
-    static let shimmer: Double = 0.55
 }
 
 /// A flat semantic wash with accessibility fallbacks: opaque secondary

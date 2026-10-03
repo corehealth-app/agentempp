@@ -62,11 +62,9 @@ struct BodyFlowComponentPolicyTests {
         // A long list never waits more than a quarter second.
         #expect(BodyFlowArrival.delay(index: 40, reduceMotion: false) == 0.24)
         #expect(BodyFlowArrival.delay(index: 40, reduceMotion: true) == 0)
-        #expect(BodyFlowShimmer.period == 1.2)
-        #expect(BodyFlowShimmer.phase(elapsed: 0) == -1)
-        #expect(abs(BodyFlowShimmer.phase(elapsed: 0.6) - 0.5) < 0.0001)
-        #expect(abs(BodyFlowShimmer.phase(elapsed: 1.2) - (-1)) < 0.0001)
-        #expect(BodyFlowOpacity.shimmer == 0.55)
+        // Placeholders are still: no shimmer, no pulse (a restarting placeholder
+        // animation stalls XCTest's idle wait). The splash breath is bounded.
+        #expect(SplashView.breathCycles == 3)
     }
 
     @Test func tapHapticsAnswerOnlyThePrimaryActions() {

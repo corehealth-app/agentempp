@@ -1,5 +1,12 @@
 import SwiftUI
 
+/// Carbohydrate and fat as received for the day (no targets exist for them,
+/// so they are shown as grams only, never as a fraction).
+struct TodayMacrosDescriptor: Equatable, Sendable {
+    let carbsG: Decimal
+    let fatG: Decimal
+}
+
 struct TodayProteinDescriptor: Equatable, Sendable {
     let consumedG: Decimal
     let targetG: Decimal?

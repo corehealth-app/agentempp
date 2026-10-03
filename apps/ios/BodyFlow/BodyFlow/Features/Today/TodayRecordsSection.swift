@@ -93,6 +93,8 @@ struct TodayRecordsSection: View {
             } else {
                 ForEach(meals) { meal in
                     BodyFlowCard {
+                        HStack(alignment: .top, spacing: BodyFlowSpacing.sm) {
+                        BodyFlowDomainGlyph(domain: .energy)
                         VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
                             Text(meal.foodName)
                                 .font(BodyFlowTypography.headline)
@@ -110,6 +112,7 @@ struct TodayRecordsSection: View {
                                 kind: .info,
                                 font: BodyFlowTypography.caption
                             )
+                        }
                         }
                     }
                     .accessibilityElement(children: .combine)
@@ -132,6 +135,8 @@ struct TodayRecordsSection: View {
             } else {
                 ForEach(workouts) { workout in
                     BodyFlowCard {
+                        HStack(alignment: .top, spacing: BodyFlowSpacing.sm) {
+                        BodyFlowDomainGlyph(domain: .exercise)
                         VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
                             Text(workout.workoutType ?? copy("history.workout.fallback"))
                                 .font(BodyFlowTypography.headline)
@@ -143,6 +148,7 @@ struct TodayRecordsSection: View {
                                     language: language
                                 )
                             )
+                        }
                         }
                     }
                     .accessibilityElement(children: .combine)

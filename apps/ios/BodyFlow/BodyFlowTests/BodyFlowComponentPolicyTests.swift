@@ -67,6 +67,23 @@ struct BodyFlowComponentPolicyTests {
         #expect(SplashView.breathCycles == 3)
     }
 
+    @Test func domainColorsAreDistinctAndMetersAreBoundedOfficialFractions() {
+        for dark in [false, true] {
+            let hexes = BodyFlowDomain.allCases.map { BodyFlowColor.hex($0.colorRole, dark: dark) }
+            #expect(Set(hexes).count == hexes.count)
+            #expect(!hexes.contains(BodyFlowColor.hex(.brandPrimary, dark: dark)))
+        }
+        #expect(Set(BodyFlowDomain.allCases.map(\.symbol)).count == BodyFlowDomain.allCases.count)
+        // A meter/ring only draws what it is given, never past the end.
+        #expect(BodyFlowMeter.clampedFraction(consumed: 150, target: 100) == 1)
+        #expect(BodyFlowMeter.clampedFraction(consumed: 50, target: 200) == 0.25)
+        #expect(BodyFlowMeter.clampedFraction(consumed: 50, target: nil) == nil)
+        #expect(BodyFlowMeter.clampedFraction(consumed: 50, target: 0) == nil)
+        // The sweep is finite and event-driven; Reduce Motion removes it.
+        #expect(BodyFlowMotion.animation(.sweep, reduceMotion: true) == nil)
+        #expect(BodyFlowMotion.animation(.sweep, reduceMotion: false) != nil)
+    }
+
     @Test func tapHapticsAnswerOnlyThePrimaryActions() {
         #expect(BodyFlowHaptics.Tap.feedback(for: .primary) == .impact(weight: .light))
         for role in [BodyFlowButtonRole.secondary, .tertiary, .destructive] {

@@ -32,6 +32,16 @@ struct BodyFlowSemanticColorTests {
         (.heroSupporting, 0xB3C7C2, 0xB3C7C2),
         (.achievement, 0xD4AF7A, 0xD4AF7A),
         (.onAchievement, 0x222528, 0x222528),
+        // Direction v2 domain colors (2026-10-03).
+        (.energy, 0xB93C27, 0xFF8E7A),
+        (.protein, 0x9E2F6B, 0xF48FC3),
+        (.carbs, 0x2A62C9, 0x8FB8FF),
+        (.fat, 0x9C5A14, 0xFFB76E),
+        (.hydration, 0x1A6FB5, 0x7CC6FF),
+        (.exercise, 0x3E7A1A, 0xA6E07A),
+        (.block, 0x8F5A12, 0xE8B86D),
+        (.progress, 0x5A3DC0, 0xBBA8FF),
+        (.heroGradientEnd, 0x0C6B64, 0x0E5A54),
     ]
 
     @Test func exactPairsAndNativeTraitResolution() throws {
@@ -53,10 +63,12 @@ struct BodyFlowSemanticColorTests {
     }
 
     @Test func readableForegroundsOnEveryApprovedThemeSurface() {
+        // Domain colors are used as text (figures, labels), so they meet the
+        // same bar as the semantic foregrounds.
         let foregrounds: [BodyFlowColor.Role] = [
             .textPrimary, .textSecondary, .textTertiary, .brandPrimary,
             .feedbackPositive, .feedbackWarning, .feedbackDestructive,
-        ]
+        ] + BodyFlowDomain.allCases.map(\.colorRole)
         let surfaces: [BodyFlowColor.Role] = [
             .backgroundPrimary, .backgroundSecondary, .surfaceElevated,
         ]
@@ -72,6 +84,7 @@ struct BodyFlowSemanticColorTests {
             let pairedForegrounds: [(BodyFlowColor.Role, BodyFlowColor.Role)] = [
                 (BodyFlowColor.Role.onPrimary, .brandPrimary),
                 (.onHero, .heroBackground), (.heroSupporting, .heroBackground),
+                (.onHero, .heroGradientEnd),
                 (.disabledText, .disabledFill), (.onAchievement, .achievement),
             ]
             for (foreground, background) in pairedForegrounds {

@@ -3507,6 +3507,18 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "HOJE" } }
       }
     },
+    "today.macros.carbs" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Carbs" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Carboidratos" } }
+    } },
+    "today.macros.fat" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Fat" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Gordura" } }
+    } },
+    "today.macros.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Macros" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Macros" } }
+    } },
     "today.pending.confirmation" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Pending confirmation" } },

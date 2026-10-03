@@ -40,10 +40,20 @@ struct TodayBlockCard: View {
     var body: some View {
         BodyFlowCard {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                Label(verbatim: copy("today.block.title"), symbol: .block)
-                    .font(BodyFlowTypography.cardTitle)
-                    .foregroundStyle(BodyFlowColor.primaryText)
-                    .accessibilityAddTraits(.isHeader)
+                HStack(spacing: BodyFlowSpacing.sm) {
+                    BodyFlowDomainGlyph(domain: .block)
+                    Text(verbatim: copy("today.block.title"))
+                        .font(BodyFlowTypography.cardTitle)
+                        .foregroundStyle(BodyFlowColor.primaryText)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isHeader)
+
+                // The meter draws the server's reported percentage only.
+                BodyFlowMeter(
+                    fraction: descriptor.percentage.map { min(max(Double($0) / 100, 0), 1) },
+                    domain: .block
+                )
 
                 FixtureMetricRow(
                     title: copy("metric.target"),

@@ -6,6 +6,7 @@ struct TodayPresentation: Equatable, Sendable {
     let attention: TodayAttentionDescriptor
     let energy: TodayEnergyDescriptor
     let protein: TodayProteinDescriptor
+    let macros: TodayMacrosDescriptor
     let meals: [TodayMealDescriptor]
     let workouts: [TodayWorkoutDescriptor]
     let hydration: TodayHydrationDescriptor
@@ -53,6 +54,10 @@ struct TodayPresentation: Equatable, Sendable {
             remainingG: snapshot.proteinStatus.remainingG,
             percentage: snapshot.proteinStatus.percentage,
             status: snapshot.proteinStatus.status
+        )
+        macros = TodayMacrosDescriptor(
+            carbsG: snapshot.consumed.carbsG,
+            fatG: snapshot.consumed.fatG
         )
         meals = snapshot.meals.map { meal in
             TodayMealDescriptor(
@@ -526,6 +531,7 @@ struct TodayRootView: View {
         TodaySummaryPanel(
             energy: presentation.energy,
             protein: presentation.protein,
+            macros: presentation.macros,
             hydration: presentation.hydration,
             completionMessage: presentation.completionMessage(for: language)
         )

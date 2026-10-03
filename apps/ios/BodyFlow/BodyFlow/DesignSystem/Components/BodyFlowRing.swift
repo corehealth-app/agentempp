@@ -12,6 +12,11 @@ struct BodyFlowRing: View {
     let exceeded: Bool
     var diameter: CGFloat = 56
     var lineWidth: CGFloat = 6
+    /// Fill color role (a domain color or the brand); nil track = subtle border.
+    var role: BodyFlowColor.Role = .brandPrimary
+    var track: Color? = nil
+    /// Color past the target; the hero passes gold, which reads on teal.
+    var exceededRole: BodyFlowColor.Role = .feedbackWarning
 
     @Environment(\.bodyFlowReduceMotion) private var reduceMotion
     @Environment(\.bodyFlowVisualPolicy) private var visualPolicy
@@ -28,16 +33,16 @@ struct BodyFlowRing: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(BodyFlowColor.color(.borderSubtle), lineWidth: lineWidth)
+                .stroke(track ?? BodyFlowColor.color(.borderSubtle), lineWidth: lineWidth)
             if let fraction {
                 Circle()
                     .trim(from: 0, to: swept || still ? fraction : 0)
                     .stroke(
-                        BodyFlowColor.color(exceeded ? .feedbackWarning : .brandPrimary),
+                        BodyFlowColor.color(exceeded ? exceededRole : role),
                         style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))
-                    .animation(BodyFlowMotion.animation(.brand, reduceMotion: still), value: swept)
+                    .animation(BodyFlowMotion.animation(.sweep, reduceMotion: still), value: swept)
                     .animation(BodyFlowMotion.animation(.content, reduceMotion: still), value: fraction)
             }
         }

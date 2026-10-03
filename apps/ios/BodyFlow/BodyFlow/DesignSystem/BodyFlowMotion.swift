@@ -17,6 +17,9 @@ enum BodyFlowMotion {
         /// "não tem transição quando toco nos botões").
         case tap
         case brand
+        /// A ring or meter filling to an official value when the data lands
+        /// (direction v2: 600 ms spring, finite, event-driven).
+        case sweep
     }
 
     /// Scale applied to a pressed card/row. Reduce Motion removes it.
@@ -41,6 +44,8 @@ enum BodyFlowMotion {
             return .spring(duration: 0.18, bounce: 0.25)
         case .brand:
             return .easeInOut(duration: 0.40)
+        case .sweep:
+            return .spring(duration: 0.60, bounce: 0.15)
         }
     }
 

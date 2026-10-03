@@ -37,6 +37,8 @@ enum BodyFlowSymbol: String, CaseIterable, Sendable {
     // Today domains
     case energy = "bolt.heart"
     case protein = "leaf"
+    case carbs = "circle.grid.2x2"
+    case fat = "drop.halffull"
     case hydration = "drop"
     case meals = "fork.knife"
     case workouts = "figure.run"

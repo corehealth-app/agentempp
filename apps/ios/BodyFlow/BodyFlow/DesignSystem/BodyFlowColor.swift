@@ -9,6 +9,14 @@ enum BodyFlowColor {
         case feedbackPositive, feedbackWarning, feedbackDestructive
         case disabledFill, disabledText, heroBackground, onHero, heroSupporting
         case achievement, onAchievement
+        // Domain colors (direction v2, 2026-10-03): one color per metric so the
+        // eye learns the color before reading the number. All readable as text
+        // on the three theme surfaces (≥ 4.5:1, locked in
+        // BodyFlowSemanticColorTests).
+        case energy, protein, carbs, fat, hydration, exercise, block, progress
+        /// End of the hero gradient (start is `heroBackground`); `onHero`
+        /// stays readable across the whole sweep.
+        case heroGradientEnd
     }
 
     static func hex(_ role: Role, dark: Bool) -> UInt32 {
@@ -35,6 +43,15 @@ enum BodyFlowColor {
         case .heroSupporting: 0xB3C7C2
         case .achievement: 0xD4AF7A
         case .onAchievement: 0x222528
+        case .energy: dark ? 0xFF8E7A : 0xB93C27
+        case .protein: dark ? 0xF48FC3 : 0x9E2F6B
+        case .carbs: dark ? 0x8FB8FF : 0x2A62C9
+        case .fat: dark ? 0xFFB76E : 0x9C5A14
+        case .hydration: dark ? 0x7CC6FF : 0x1A6FB5
+        case .exercise: dark ? 0xA6E07A : 0x3E7A1A
+        case .block: dark ? 0xE8B86D : 0x8F5A12
+        case .progress: dark ? 0xBBA8FF : 0x5A3DC0
+        case .heroGradientEnd: dark ? 0x0E5A54 : 0x0C6B64
         }
     }
 

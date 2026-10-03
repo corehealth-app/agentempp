@@ -112,12 +112,15 @@ struct TodayEnergyDescriptor: Equatable, Sendable {
     }
 }
 
-/// The day at a glance leads with the food balance excluding exercise.
-/// The technical daily balance remains one tap away in the disclosure.
+/// The day at a glance: the food balance (excluding exercise) leads inside
+/// the hero card as a big energy ring with the official figure beside it;
+/// macros and hydration follow in their own colors; the technical daily
+/// balance remains one tap away in the disclosure (direction v2, 03/10).
 @MainActor
 struct TodaySummaryPanel: View {
     let energy: TodayEnergyDescriptor
     let protein: TodayProteinDescriptor
+    let macros: TodayMacrosDescriptor
     let hydration: TodayHydrationDescriptor
     let completionMessage: String?
 
@@ -139,92 +142,91 @@ struct TodaySummaryPanel: View {
                 .accessibilityIdentifier("today.completion.insufficient-data")
             }
 
+            energyHero
+
             BodyFlowCard(surface: .elevated) {
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                    summaryRow {
-                        remainingFoodCell
-                    } trailing: {
-                        foodExcessCell
-                    }
-
+                    macrosBlock
                     Divider()
-
-                    summaryRow {
-                        TodaySummaryCell(
-                            title: copy("metric.consumed"),
-                            value: TodayValueFormatter.kcal(energy.consumedKcal, language: language),
-                            caption: copy("today.energy.title"),
-                            prominence: .supporting
-                        )
-                        .accessibilityIdentifier("today.energy.consumed")
-                    } trailing: {
-                        TodaySummaryCell(
-                            title: copy("metric.target"),
-                            value: TodayValueFormatter.optionalKcal(energy.targetKcal, language: language),
-                            caption: copy("today.energy.title"),
-                            prominence: .supporting
-                        )
-                        .accessibilityIdentifier("today.energy.target")
-                    }
-
+                    hydrationRow
                     Divider()
-
-                    summaryRow {
-                        proteinCell
-                    } trailing: {
-                        hydrationCell
-                    }
-
-                    Divider()
-
                     detailsDisclosure
                 }
             }
         }
     }
 
-    /// Two figures side by side while the width allows; stacked at
-    /// accessibility sizes so neither is squeezed into a column.
-    @ViewBuilder
-    private func summaryRow<Leading: View, Trailing: View>(
-        @ViewBuilder leading: () -> Leading,
-        @ViewBuilder trailing: () -> Trailing
-    ) -> some View {
-        if dynamicTypeSize.isAccessibilitySize {
+    // MARK: Energy hero
+
+    private var energyHero: some View {
+        BodyFlowHeroCard {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                leading()
-                Divider()
-                trailing()
+                Label(verbatim: copy("today.energy.title"), symbol: .energy)
+                    .font(BodyFlowTypography.cardTitle)
+                    .accessibilityAddTraits(.isHeader)
+
+                // Ring beside the figure when the width allows; stacked on a
+                // narrow phone or at accessibility sizes.
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .center, spacing: BodyFlowSpacing.md) {
+                        foodRing
+                        VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+                            remainingFoodFigure
+                            foodExcessCell
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+                        foodRing
+                        remainingFoodFigure
+                        foodExcessCell
+                    }
+                }
+
+                summaryRow {
+                    TodaySummaryCell(
+                        title: copy("metric.consumed"),
+                        value: TodayValueFormatter.kcal(energy.consumedKcal, language: language),
+                        caption: copy("today.energy.title"),
+                        prominence: .supporting,
+                        tone: .hero
+                    )
+                    .accessibilityIdentifier("today.energy.consumed")
+                } trailing: {
+                    TodaySummaryCell(
+                        title: copy("metric.target"),
+                        value: TodayValueFormatter.optionalKcal(energy.targetKcal, language: language),
+                        caption: copy("today.energy.title"),
+                        prominence: .supporting,
+                        tone: .hero
+                    )
+                    .accessibilityIdentifier("today.energy.target")
+                }
             }
-        } else {
-            HStack(alignment: .top, spacing: BodyFlowSpacing.md) {
-                leading()
-                Divider()
-                trailing()
-            }
-            .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    private var remainingFoodCell: some View {
-        // The ring only draws consumed ÷ target; the figure is the official
-        // value. No ring without a target. Beside the figure when the column
-        // is wide enough, above it on a narrow phone.
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .center, spacing: BodyFlowSpacing.sm) {
-                foodRing
-                remainingFoodFigure
-            }
-            VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                foodRing
-                remainingFoodFigure
-            }
-        }
-    }
-
+    /// The ring only draws consumed ÷ target; the figure is the official
+    /// value. No ring without a target. The energy glyph sits in the middle
+    /// so the ring never shows a second number.
     @ViewBuilder private var foodRing: some View {
         if let fraction = BodyFlowRing.clampedFraction(consumed: energy.consumedKcal, target: energy.targetKcal) {
-            BodyFlowRing(fraction: fraction, exceeded: (energy.foodExcessKcal ?? 0) > 0)
+            BodyFlowRing(
+                fraction: fraction,
+                exceeded: (energy.foodExcessKcal ?? 0) > 0,
+                diameter: 104,
+                lineWidth: 11,
+                role: .accentCoral,
+                track: BodyFlowColor.color(.onHero).opacity(BodyFlowOpacity.heroTrack),
+                exceededRole: .achievement
+            )
+            .overlay {
+                // Fixed size: the ring is fixed, so the decorative glyph never
+                // outgrows it at accessibility text sizes.
+                Image(symbol: .energy)
+                    .font(.system(size: 36, weight: .semibold))
+                    .foregroundStyle(BodyFlowColor.color(.onHero))
+                    .accessibilityHidden(true)
+            }
         }
     }
 
@@ -236,7 +238,8 @@ struct TodaySummaryPanel: View {
                 language: language
             ),
             caption: copy("today.energy.food-remaining.detail"),
-            prominence: .headline
+            prominence: .headline,
+            tone: .hero
         )
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityValue(energy.remainingFoodAccessibilityValue(for: language))
@@ -251,34 +254,157 @@ struct TodaySummaryPanel: View {
                 language: language
             ),
             caption: copy("today.energy.food-remaining.detail"),
-            prominence: .headline
+            prominence: .supporting,
+            tone: .hero
         )
         .accessibilityIdentifier("today.energy.food-excess")
     }
 
-    private var proteinCell: some View {
-        TodaySummaryCell(
-            title: copy("today.protein.title"),
-            value: TodayValueFormatter.grams(protein.consumedG, language: language),
-            caption: copy("metric.consumed"),
-            prominence: .supporting
-        )
+    /// Two figures side by side while the width allows; stacked at
+    /// accessibility sizes so neither is squeezed into a column.
+    @ViewBuilder
+    private func summaryRow<Leading: View, Trailing: View>(
+        @ViewBuilder leading: () -> Leading,
+        @ViewBuilder trailing: () -> Trailing
+    ) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
+                leading()
+                trailing()
+            }
+        } else {
+            HStack(alignment: .top, spacing: BodyFlowSpacing.md) {
+                leading()
+                trailing()
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    // MARK: Macros
+
+    private var macrosBlock: some View {
+        VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+            Text(verbatim: copy("today.macros.title"))
+                .font(BodyFlowTypography.cardTitle)
+                .foregroundStyle(BodyFlowColor.primaryText)
+                .accessibilityAddTraits(.isHeader)
+            proteinRow
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: BodyFlowSpacing.md) {
+                    macroChip(.carbs, title: copy("today.macros.carbs"), grams: macros.carbsG)
+                    macroChip(.fat, title: copy("today.macros.fat"), grams: macros.fatG)
+                }
+                VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+                    macroChip(.carbs, title: copy("today.macros.carbs"), grams: macros.carbsG)
+                    macroChip(.fat, title: copy("today.macros.fat"), grams: macros.fatG)
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("today.macros")
+    }
+
+    /// Protein against its target: the only macro with an official target,
+    /// so the only one with a meter.
+    private var proteinRow: some View {
+        let consumed = TodayValueFormatter.grams(protein.consumedG, language: language)
+        let target = TodayValueFormatter.optionalGrams(protein.targetG, language: language)
+        // "x / meta" only when a target exists; otherwise the consumed figure alone.
+        let figure = protein.targetG == nil ? consumed : "\(consumed) / \(target)"
+        return HStack(alignment: .center, spacing: BodyFlowSpacing.sm) {
+            BodyFlowDomainGlyph(domain: .protein)
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline, spacing: BodyFlowSpacing.sm) {
+                        Text(verbatim: copy("today.protein.title"))
+                            .font(BodyFlowTypography.headline)
+                            .foregroundStyle(BodyFlowColor.primaryText)
+                        Spacer(minLength: BodyFlowSpacing.sm)
+                        Text(verbatim: figure)
+                            .font(BodyFlowTypography.callout.monospacedDigit())
+                            .foregroundStyle(BodyFlowColor.secondaryText)
+                    }
+                    VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
+                        Text(verbatim: copy("today.protein.title"))
+                            .font(BodyFlowTypography.headline)
+                            .foregroundStyle(BodyFlowColor.primaryText)
+                        Text(verbatim: figure)
+                            .font(BodyFlowTypography.callout.monospacedDigit())
+                            .foregroundStyle(BodyFlowColor.secondaryText)
+                    }
+                }
+                // Reaching the protein target is the positive outcome the
+                // server reports ("Meta atingida"), so the meter never warns.
+                BodyFlowMeter(
+                    fraction: BodyFlowMeter.clampedFraction(consumed: protein.consumedG, target: protein.targetG),
+                    domain: .protein
+                )
+            }
+        }
+        .accessibilityElement(children: .combine)
         .accessibilityIdentifier("today.protein")
     }
 
-    private var hydrationCell: some View {
-        TodaySummaryCell(
-            title: copy("today.hydration.title"),
-            value: TodayValueFormatter.milliliters(
-                hydration.consumedML,
-                language: language
-            ),
-            caption: copy("metric.consumed"),
-            prominence: .supporting
-        )
-        .accessibilityValue(
-            "\(TodayValueFormatter.milliliters(hydration.consumedML, language: language)); \(copy("metric.target").lowercased()) \(TodayValueFormatter.optionalMilliliters(hydration.targetML, language: language))"
-        )
+    private func macroChip(_ domain: BodyFlowDomain, title: String, grams: Decimal) -> some View {
+        HStack(spacing: BodyFlowSpacing.xs) {
+            BodyFlowDomainGlyph(domain: domain, diameter: 28)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(verbatim: title)
+                    .font(BodyFlowTypography.caption)
+                    .foregroundStyle(BodyFlowColor.secondaryText)
+                Text(verbatim: TodayValueFormatter.grams(grams, language: language))
+                    .font(BodyFlowTypography.headline.monospacedDigit())
+                    .foregroundStyle(BodyFlowColor.primaryText)
+                    .contentTransition(.numericText())
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(BodyFlowSpacing.xs)
+        .bodyFlowWash(domain.colorRole)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("today.macros.\(domain == .carbs ? "carbs" : "fat")")
+    }
+
+    // MARK: Hydration
+
+    /// The ring draws the server's reported percentage only; without one it
+    /// stays an empty track.
+    private var hydrationRow: some View {
+        let consumed = TodayValueFormatter.milliliters(hydration.consumedML, language: language)
+        let target = TodayValueFormatter.optionalMilliliters(hydration.targetML, language: language)
+        return HStack(alignment: .center, spacing: BodyFlowSpacing.sm) {
+            BodyFlowRing(
+                fraction: hydration.percentage.map { min(max(Double($0) / 100, 0), 1) },
+                exceeded: false,
+                diameter: 44,
+                lineWidth: 5,
+                role: .hydration
+            )
+            .overlay {
+                Image(symbol: .hydration)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(BodyFlowColor.color(.hydration))
+                    .accessibilityHidden(true)
+            }
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
+                Text(verbatim: copy("today.hydration.title"))
+                    .font(BodyFlowTypography.headline)
+                    .foregroundStyle(BodyFlowColor.primaryText)
+                Text(verbatim: consumed)
+                    .font(BodyFlowTypography.metricSmall)
+                    .foregroundStyle(BodyFlowColor.primaryText)
+                    .contentTransition(.numericText())
+                    .animation(BodyFlowMotion.animation(.content, reduceMotion: reduceMotion), value: consumed)
+                Text(verbatim: "\(copy("metric.target")): \(target)")
+                    .font(BodyFlowTypography.caption)
+                    .foregroundStyle(BodyFlowColor.secondaryText)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityValue("\(consumed); \(copy("metric.target").lowercased()) \(target)")
         .accessibilityIdentifier("today.hydration")
     }
 
@@ -431,12 +557,23 @@ struct TodaySummaryPanel: View {
 @MainActor
 private struct TodaySummaryCell: View {
     enum Prominence { case headline, supporting }
+    /// On the hero card every line is `onHero`; elsewhere the label and
+    /// caption are secondary text.
+    enum Tone { case standard, hero }
 
     @Environment(\.bodyFlowReduceMotion) private var reduceMotion
     let title: String
     let value: String
     let caption: String
     let prominence: Prominence
+    var tone: Tone = .standard
+
+    private var labelColor: Color {
+        tone == .hero ? BodyFlowColor.color(.onHero) : BodyFlowColor.secondaryText
+    }
+    private var valueColor: Color {
+        tone == .hero ? BodyFlowColor.color(.onHero) : BodyFlowColor.primaryText
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
@@ -444,7 +581,7 @@ private struct TodaySummaryCell: View {
             // keep their figures on the same baseline.
             Text(verbatim: title)
                 .font(BodyFlowTypography.caption)
-                .foregroundStyle(BodyFlowColor.secondaryText)
+                .foregroundStyle(labelColor)
                 .fixedSize(horizontal: false, vertical: true)
 
             Text(verbatim: value)
@@ -453,7 +590,7 @@ private struct TodaySummaryCell: View {
                         ? BodyFlowTypography.metricLarge
                         : BodyFlowTypography.metricSmall
                 )
-                .foregroundStyle(BodyFlowColor.primaryText)
+                .foregroundStyle(valueColor)
                 .fixedSize(horizontal: false, vertical: true)
                 // A refreshed official value rolls its digits instead of
                 // snapping; the value itself is never interpolated.
@@ -462,7 +599,7 @@ private struct TodaySummaryCell: View {
 
             Text(verbatim: caption)
                 .font(BodyFlowTypography.caption)
-                .foregroundStyle(BodyFlowColor.secondaryText)
+                .foregroundStyle(labelColor)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

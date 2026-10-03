@@ -422,3 +422,23 @@ its owner as a separate decision rather than being disguised as visual polish.
 - Production: **NOT DEPLOYED**.
 - Remote integration: **NOT REVALIDATED**.
 - VoiceOver manual: **NOT FULLY VERIFIED**.
+
+## 12. Addendum — visual direction v2 (2026-10-03, approved by Eduardo)
+
+After two physical acceptance rounds (02/10 `05f4f7c`, 03/10 `606d5d6`) Eduardo
+rejected the contained "Warm Performance" result as "simple, monochromatic,
+without effects" and approved, in full, the direction v2 proposal
+(`docs/handoffs/2026-10-03-performe-ios-visual-direction-v2-proposal.md`,
+blocks E + F + H + G). This addendum supersedes the following limits of this
+spec and of the 2026-09-17 refinement spec; everything not listed stays.
+
+| Superseded limit | Direction v2 |
+|---|---|
+| Motion ≤ 200 ms content / ≤ 250 ms disclosure; no decorative loop | Added kinds: `sweep` 600 ms spring (ring/meter filling to an official value), navigation 250–300 ms, celebrations ≤ 1.5 s. All finite and event-driven; Reduce Motion removes them. A placeholder or decoration that restarts by itself remains forbidden (it stalls XCTest and the device). |
+| "Avoid continuous gradients" | One gradient surface per screen (`BodyFlowHeroCard`: `heroBackground` → `heroGradientEnd`); the splash may animate a mesh gradient for ≤ 3 s. Increase Contrast / Reduce Transparency flatten it. No gradient behind body text outside the hero. |
+| Palette B2 (5 colors) | Additive domain colors: energy, protein, carbs, fat, hydration, exercise, block, progress (light/dark, ≥ 4.5:1 as text on the three surfaces). The five B2 colors are unchanged. |
+| "No charts / ranges" in Progress | Swift Charts over **real** `daily_snapshots`/weight series with a fixed 14-day window. Scores, projections and estimates remain forbidden. |
+
+Capability truth (§4) is unchanged: every ring, meter and chart draws an
+official value the server sent; nothing is interpolated into a different
+number, and a missing value is shown as missing.

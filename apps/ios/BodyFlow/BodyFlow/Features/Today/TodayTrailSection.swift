@@ -100,9 +100,12 @@ struct TodayTrailSection: View {
     private func nodes(vertical: Bool) -> some View {
         ForEach(Array(descriptor.nodes.enumerated()), id: \.element.id) { index, node in
             if index > 0 {
+                // The connector lights up once the previous node is reached.
                 Image(symbol: .chevron)
-                    .font(BodyFlowTypography.caption)
-                    .foregroundStyle(BodyFlowColor.secondaryText)
+                    .font(BodyFlowTypography.caption.weight(.semibold))
+                    .foregroundStyle(
+                        BodyFlowColor.color(descriptor.nodes[index - 1].reached ? .feedbackPositive : .controlBoundary)
+                    )
                     .rotationEffect(.degrees(vertical ? 90 : 0))
                     .frame(maxHeight: .infinity, alignment: vertical ? .leading : .center)
                     .padding(.top, vertical ? 0 : BodyFlowSpacing.sm)
@@ -116,7 +119,7 @@ struct TodayTrailSection: View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
             HStack(spacing: BodyFlowSpacing.xxs) {
                 Image(symbol: node.reached ? .success : symbol(for: node.kind))
-                    .foregroundStyle(BodyFlowColor.color(node.reached ? .feedbackPositive : .brandPrimary))
+                    .foregroundStyle(BodyFlowColor.color(node.reached ? .feedbackPositive : colorRole(for: node.kind)))
                     .accessibilityHidden(true)
                 Text(verbatim: copy(node.kind.titleKey))
                     .font(BodyFlowTypography.caption.weight(.semibold))
@@ -131,6 +134,16 @@ struct TodayTrailSection: View {
         .accessibilityElement(children: .combine)
         .accessibilityValue(node.reached ? copy("today.trail.reached") : "")
         .accessibilityIdentifier("today.trail.\(node.kind.rawValue)")
+    }
+
+    /// Each node in the color of the domain it leads to.
+    private func colorRole(for kind: TodayTrailDescriptor.Node.Kind) -> BodyFlowColor.Role {
+        switch kind {
+        case .register: .energy
+        case .today: .brandPrimary
+        case .block: .block
+        case .progress: .progress
+        }
     }
 
     private func symbol(for kind: TodayTrailDescriptor.Node.Kind) -> BodyFlowSymbol {

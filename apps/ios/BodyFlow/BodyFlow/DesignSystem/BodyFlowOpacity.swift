@@ -8,6 +8,10 @@ enum BodyFlowOpacity {
     static let tintWash: Double = 0.10
     /// Pressed state of card/row buttons.
     static let pressed: Double = 0.85
+    /// Empty track of a ring drawn over the hero gradient.
+    static let heroTrack: Double = 0.22
+    /// Round wash behind a domain glyph (a little stronger than a text wash).
+    static let glyphWash: Double = 0.16
 }
 
 /// A flat semantic wash with accessibility fallbacks: opaque secondary

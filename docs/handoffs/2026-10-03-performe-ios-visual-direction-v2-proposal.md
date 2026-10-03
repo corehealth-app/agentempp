@@ -99,3 +99,21 @@ Total ≈ 30 h de execução + ~2 h de integral/gates por checkpoint ≈ **4–5
 
 ## 7. Status
 `USER VISUAL ACCEPTANCE: REJECTED (606d5d6)` · `VISUAL DIRECTION V2: APPROVED BY EDUARDO 2026-10-03 ("Sim, tudo": E + F + H + G, superando os limites listados em §4)` · `PRODUCTION STATUS: NOT DEPLOYED`.
+
+## 8. Adendo (03/10, tarde) — "pode adicionar todos ao plano e começar"
+
+Após a prévia (artifact "Performe AI v2 Preview") Eduardo perguntou se dava para ir além com base nos concorrentes e aprovou **todos** os itens abaixo, além de E + F + H + G:
+
+| # | Item | Esforço | Dependência |
+|---|---|---|---|
+| 1 | Ilustração/imagem (alimentos, personagem) | — | **Asset externo**: pacote licenciado ou ilustrador, aprovação de marca. Até lá: SF Symbols em bolhas de domínio. Eduardo decide a compra. |
+| 2 | Fonte de display própria (números e títulos), licença aberta, embutida | ~3 h | Nenhuma |
+| 3 | Estado vazio bonito dos gráficos (conta nova) | incluso em G | G |
+| 4 | Gráficos interativos (arrastar para ver o dia) | +2 h em G | G |
+| 5 | Números que contam até o valor ao abrir o Hoje | ~2 h | Testes leem o valor final: a contagem termina em ≤ 0,8 s e o texto final é o oficial |
+| 6 | Herói que encolhe ao rolar e vira a barra de título | ~4 h | Nenhuma |
+| 7 | Skeleton → conteúdo com os blocos nascendo no lugar | ~2 h | Nenhuma |
+| 8 | Anel que "fecha" com celebração ao bater a meta de comida | incluso em H | H |
+| 9 | Liquid Glass (iOS 26): barra de abas e herói com `glassEffect` quando disponível, mantendo a ação central da marca | ~6 h | `#available(iOS 26)`; testes da barra |
+
+Ordem de execução: H (+8, +5) → 2 → 6 → 7 → 9 → G (+3, +4). Item 1 fica aberto até a decisão de asset. Instalação + aceite de Eduardo a cada checkpoint.

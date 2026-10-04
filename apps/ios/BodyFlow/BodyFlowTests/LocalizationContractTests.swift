@@ -322,6 +322,8 @@ struct LocalizationContractTests {
             "flow.error.cancelled",
             "flow.error.offline", "flow.error.rate-limited",
             "flow.error.session", "flow.error.forbidden", "flow.error.generic",
+            "flow.suggestions.title", "flow.suggestion.day", "flow.suggestion.dinner",
+            "flow.suggestion.workout", "flow.suggestion.hint", "flow.suggestion.filled",
         ]
 
         for key in keys {

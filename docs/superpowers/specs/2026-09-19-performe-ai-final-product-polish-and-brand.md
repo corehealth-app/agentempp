@@ -461,6 +461,7 @@ the iPhone, light, dark).
 | Today | Week strip (indicator only), ring with the official "Restam" figure inside, macro tiles, hydration/exercise pair, meals by slot with "Registrar" on open slots (slots come from the server's `meal_gaps` and the records). The hero does not move while the page scrolls. |
 | Register | Meal as one brand tile naming photo/text/audio; workout, hydration and weight as colored tiles. |
 | Progress | Streak and XP·level chips above the charts; chart fills in the vivid tones; the weight axis frames the measured range. |
+| Flow | Assistant avatar on the role line, bubbles (sent, pending and received) with a tight corner pointing at the author, and three ready-made questions on an empty conversation. A tap only fills the composer; nothing is sent until Send (VoiceOver hears a hint and a confirmation). The questions appear only while the composer is empty or still holds one of them, so a typed draft is never replaced; they are hidden on a load error and at accessibility text sizes, where they make the empty state several screens tall and one swipe scrolls past the invitation (policy: `FlowChatPresentation.showsSuggestions`). |
 
 Not in this step: registering a meal straight from a Flow suggestion, "repeat
 a previous meal", food imagery (needs licensed assets or the patient's own

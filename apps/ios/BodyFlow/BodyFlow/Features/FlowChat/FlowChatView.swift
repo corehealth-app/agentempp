@@ -8,6 +8,7 @@ struct FlowChatView: View {
     @Environment(\.bodyFlowReduceMotion) private var appReduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicType
     @Environment(\.locale) private var locale
+    @Environment(\.colorSchemeContrast) private var contrast
     @FocusState private var composerFocused: Bool
     @State private var atEnd = true
     @State private var userScrolling = false
@@ -253,23 +254,95 @@ struct FlowChatView: View {
     /// The conversation's own empty state: the Flow glyph in the brand color,
     /// the invitation as a screen title and the received guidance.
     private var emptyConversation: some View {
-        VStack(spacing: BodyFlowSpacing.sm) {
-            Image(symbol: .flow)
-                .font(BodyFlowTypography.largeTitle)
-                .foregroundStyle(BodyFlowColor.color(.brandPrimary))
-                .accessibilityHidden(true)
-            Text("flow.empty.title")
-                .font(BodyFlowTypography.screenTitle)
-                .foregroundStyle(BodyFlowColor.color(.textPrimary))
-            Text("flow.empty.detail")
-                .font(BodyFlowTypography.body)
-                .foregroundStyle(BodyFlowColor.color(.textSecondary))
+        VStack(spacing: BodyFlowSpacing.lg) {
+            VStack(spacing: BodyFlowSpacing.sm) {
+                FlowAvatar(diameter: 64)
+                Text("flow.empty.title")
+                    .font(BodyFlowTypography.screenTitle)
+                    .foregroundStyle(BodyFlowColor.color(.textPrimary))
+                Text("flow.empty.detail")
+                    .font(BodyFlowTypography.body)
+                    .foregroundStyle(BodyFlowColor.color(.textSecondary))
+            }
+            .multilineTextAlignment(.center)
+            // Policy in FlowChatPresentation.showsSuggestions: never over a
+            // typed draft, a load error or accessibility text sizes (there
+            // the three questions make the empty state several screens tall
+            // and one swipe scrolls past the invitation).
+            if FlowChatPresentation.showsSuggestions(
+                composer: model.composer,
+                suggestions: suggestionTexts,
+                isAccessibilitySize: dynamicType.isAccessibilitySize,
+                hasError: model.errorMessage != nil
+            ) {
+                suggestions
+            }
         }
-        .multilineTextAlignment(.center)
         .frame(maxWidth: .infinity)
         .padding(.vertical, BodyFlowSpacing.xl)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("flow.empty")
+    }
+
+    /// The localized questions; a key that fails to resolve is dropped, never
+    /// shown as a blank row.
+    private var suggestionTexts: [String] {
+        let language = BodyFlowPresentationLanguage.resolve(locale)
+        return FlowChatPresentation.suggestionKeys.compactMap { key in
+            guard let text = try? AppLocalization.string(key, for: language), !text.isEmpty else { return nil }
+            return text
+        }
+    }
+
+    /// Ready-made questions for a first conversation. A tap only fills the
+    /// composer: nothing is sent until the person presses Send.
+    private var suggestions: some View {
+        let shape = RoundedRectangle(cornerRadius: BodyFlowRadius.card, style: .continuous)
+        return VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+            Text("flow.suggestions.title")
+                .font(BodyFlowTypography.caption.weight(.semibold))
+                .foregroundStyle(BodyFlowColor.color(.textSecondary))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            ForEach(Array(suggestionTexts.enumerated()), id: \.offset) { index, text in
+                Button {
+                    model.composer = text
+                    if UIAccessibility.isVoiceOverRunning {
+                        UIAccessibility.post(notification: .announcement,
+                                             argument: flowCopy("flow.suggestion.filled"))
+                    }
+                } label: {
+                    HStack(spacing: BodyFlowSpacing.sm) {
+                        Text(verbatim: text)
+                            .font(BodyFlowTypography.callout)
+                            .foregroundStyle(BodyFlowColor.color(.textPrimary))
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: BodyFlowSpacing.sm)
+                        // "Put this in the field", not "send".
+                        Image(symbol: .fillField)
+                            .font(BodyFlowTypography.caption.weight(.bold))
+                            .foregroundStyle(BodyFlowColor.color(.brandPrimary))
+                            .accessibilityHidden(true)
+                    }
+                    .padding(.horizontal, BodyFlowSpacing.md)
+                    .padding(.vertical, BodyFlowSpacing.sm)
+                    .frame(maxWidth: .infinity, minHeight: BodyFlowSpacing.minimumTapTarget + 1, alignment: .leading)
+                    .background(BodyFlowColor.color(.surfaceElevated), in: shape)
+                    .overlay(
+                        shape.strokeBorder(
+                            BodyFlowColor.color(contrast == .increased ? .controlBoundary : .borderSubtle),
+                            lineWidth: 1
+                        )
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.bodyFlowRow)
+                .accessibilityHint(Text("flow.suggestion.hint"))
+                .accessibilityIdentifier("flow.suggestion.\(index)")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("flow.suggestions")
     }
 
     private func errorCard(message: String) -> some View {
@@ -458,7 +531,7 @@ private struct FlowOutboxBubble: View {
             .tint(BodyFlowColor.color(.onPrimary))
             .padding(BodyFlowSpacing.md)
             .background(BodyFlowColor.color(.brandPrimary),
-                        in: RoundedRectangle(cornerRadius: BodyFlowRadius.card, style: .continuous))
+                        in: FlowBubbleShape.shape(tailOnTrailing: true))
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("flow.outbox")
         }
@@ -477,6 +550,37 @@ private struct FlowScrollViewport: Equatable {
     }
 }
 
+/// The assistant's mark: the Flow glyph on the brand color. Decorative.
+struct FlowAvatar: View {
+    var diameter: CGFloat = 20
+
+    var body: some View {
+        Image(symbol: .flow)
+            .font(.system(size: diameter * 0.46, weight: .semibold))
+            .foregroundStyle(BodyFlowColor.color(.onPrimary))
+            .frame(width: diameter, height: diameter)
+            .background(BodyFlowColor.color(.brandPrimary), in: Circle())
+            .accessibilityHidden(true)
+    }
+}
+
+/// A chat bubble: the card radius everywhere except the corner that points
+/// at its author, which is tight.
+enum FlowBubbleShape {
+    nonisolated static let tail: CGFloat = 6
+
+    static func shape(tailOnTrailing: Bool) -> UnevenRoundedRectangle {
+        let radius = BodyFlowRadius.card
+        return UnevenRoundedRectangle(
+            topLeadingRadius: radius,
+            bottomLeadingRadius: tailOnTrailing ? radius : tail,
+            bottomTrailingRadius: tailOnTrailing ? tail : radius,
+            topTrailingRadius: radius,
+            style: .continuous
+        )
+    }
+}
+
 private struct FlowMessageBubble: View {
     let message: FlowMessage
     @Environment(\.dynamicTypeSize) private var dynamicType
@@ -486,11 +590,14 @@ private struct FlowMessageBubble: View {
         HStack(alignment: .top, spacing: 0) {
             if message.role == .user { Spacer(minLength: dynamicType.isAccessibilitySize ? 0 : BodyFlowSpacing.xl + BodyFlowSpacing.lg) }
             VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                Text(LocalizedStringResource(FlowChatPresentation.roleLabelKey(message.role),
-                    locale: BodyFlowPresentationLanguage.resolve(locale).formattingLocale))
-                    .font(BodyFlowTypography.caption)
-                    .fontWeight(.semibold)
-                    .accessibilityIdentifier("flow.role.\(message.id)")
+                HStack(spacing: BodyFlowSpacing.xs) {
+                    if message.role == .assistant { FlowAvatar(diameter: 20) }
+                    Text(LocalizedStringResource(FlowChatPresentation.roleLabelKey(message.role),
+                        locale: BodyFlowPresentationLanguage.resolve(locale).formattingLocale))
+                        .font(BodyFlowTypography.caption)
+                        .fontWeight(.semibold)
+                        .accessibilityIdentifier("flow.role.\(message.id)")
+                }
                 Text(message.content)
                     .font(BodyFlowTypography.body)
                     .textSelection(.enabled)
@@ -509,8 +616,10 @@ private struct FlowMessageBubble: View {
             }
             .foregroundStyle(BodyFlowColor.color(message.role == .user ? .onPrimary : .textPrimary))
             .padding(BodyFlowSpacing.md)
-            .background(BodyFlowColor.color(message.role == .user ? .brandPrimary : .backgroundSecondary),
-                        in: RoundedRectangle(cornerRadius: BodyFlowRadius.card, style: .continuous))
+            .background(
+                BodyFlowColor.color(message.role == .user ? .brandPrimary : .backgroundSecondary),
+                in: FlowBubbleShape.shape(tailOnTrailing: message.role == .user)
+            )
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("flow.message.\(message.id)")
             if message.role == .assistant { Spacer(minLength: dynamicType.isAccessibilitySize ? 0 : BodyFlowSpacing.xl + BodyFlowSpacing.lg) }

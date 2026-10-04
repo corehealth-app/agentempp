@@ -16,6 +16,45 @@ struct FlowChatPresentationTests {
     }
 
     @Test
+    func suggestionsNeverReplaceATypedDraft() {
+        let questions = ["Como está meu dia até agora?", "O que comer no jantar?"]
+        func shows(_ composer: String, ax: Bool = false, error: Bool = false) -> Bool {
+            FlowChatPresentation.showsSuggestions(
+                composer: composer, suggestions: questions, isAccessibilitySize: ax, hasError: error
+            )
+        }
+        #expect(shows(""))
+        #expect(shows("  \n "))
+        // Picking another question after one was filled in is still safe.
+        #expect(shows("Como está meu dia até agora?"))
+        #expect(shows(" O que comer no jantar? "))
+        // A draft the person typed survives leaving and reopening the chat;
+        // a tap must not be able to replace it.
+        #expect(!shows("Comi 200 g de frango e arroz no almoço, quanto falta de proteína?"))
+        #expect(!shows("Como está meu dia até agora? E amanhã"))
+        #expect(!shows("", ax: true))
+        #expect(!shows("", error: true))
+        #expect(!FlowChatPresentation.showsSuggestions(
+            composer: "", suggestions: [], isAccessibilitySize: false, hasError: false
+        ))
+    }
+
+    @Test(arguments: SupportedAppLanguage.allCases)
+    func suggestionCopyIsReviewedAndSaysNothingIsSent(_ language: SupportedAppLanguage) throws {
+        let pt = language == .portugueseBrazil
+        let questions = try FlowChatPresentation.suggestionKeys.map {
+            try AppLocalization.string($0, for: language)
+        }
+        #expect(questions == (pt
+            ? ["Como está meu dia até agora?", "Sugira um jantar para fechar o dia", "Monte um treino para hoje"]
+            : ["How is my day so far?", "Suggest a dinner to close my day", "Build a workout for today"]))
+        #expect(try AppLocalization.string("flow.suggestion.hint", for: language)
+            .contains(pt ? "Nada é enviado" : "Nothing is sent"))
+        #expect(try AppLocalization.string("flow.suggestion.filled", for: language)
+            .contains(pt ? "Enviar" : "Send"))
+    }
+
+    @Test
     func readerPolicyDoesNotStealHistoryOrAnimateReducedMotion() {
         #expect(!FlowChatScrollPolicy.shouldFollow(atEnd: false, initiatedSend: false))
         #expect(FlowChatScrollPolicy.shouldFollow(atEnd: true, initiatedSend: false))

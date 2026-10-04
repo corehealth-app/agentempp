@@ -273,6 +273,30 @@
     "en" : { "stringUnit" : { "state" : "translated", "value" : "Text" } },
     "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Texto" } }
   } },
+  "flow.suggestion.day" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "How is my day so far?" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Como está meu dia até agora?" } }
+  } },
+  "flow.suggestion.dinner" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Suggest a dinner to close my day" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sugira um jantar para fechar o dia" } }
+  } },
+  "flow.suggestion.workout" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Build a workout for today" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Monte um treino para hoje" } }
+  } },
+  "flow.suggestions.title" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Try asking" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Experimente perguntar" } }
+  } },
+  "flow.suggestion.filled" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Message filled in. Tap Send to send it." } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Mensagem preenchida. Toque em Enviar para mandar." } }
+  } },
+  "flow.suggestion.hint" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Fills the message. Nothing is sent until you tap Send." } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Preenche a mensagem. Nada é enviado até você tocar em Enviar." } }
+  } },
   "progress.weight.date-unknown": {
     "localizations": {
       "pt-BR": {

@@ -12,6 +12,8 @@ enum BodyFlowSymbol: String, CaseIterable, Sendable {
     case list = "list.bullet"
     case chevron = "chevron.right"
     case send = "arrow.up"
+    /// Places a suggestion in a text field without sending it.
+    case fillField = "arrow.up.left"
     case add = "plus"
     case stop = "stop.fill"
     case summary = "doc.text.magnifyingglass"

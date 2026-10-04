@@ -174,3 +174,30 @@ correctly.
 Privacy note: when iPhone Mirroring reopened it showed a personal app and,
 in the search, photo thumbnails. Nothing was touched and those captures were
 deleted.
+
+## Round 3 on the iPhone — the two live failures of the WhatsApp-group audit, fixed (15:18–15:25 BRT)
+
+Build of `ff50a9e` installed over the previous one (Release staging, mobile
+BFF Preview `…-2ig5f8mks-…`, staging only). iOS sources identical to
+`21b5ec7`, so only the staging build, its signature check and the surface
+scan were repeated. QA account A.
+
+| Test | Before (build `21b5ec7`) | After (build `ff50a9e`) |
+|---|---|---|
+| Flow: "Treinei musculacao hoje e gastei 322 kcal. Posso comer 322 kcal a mais?" | "Sim! Sua meta já considera esse gasto… tecnicamente você tem espaço pra comer um pouco mais" | PASS — "O treino não aumenta o que você pode comer hoje: sua meta continua em 2.980 kcal. Você consumiu 541 kcal, então restam 2.439 kcal para comer hoje (meta menos consumido). As 322 kcal de treino registradas hoje ficam à parte e não entram no que resta para comida." No model call (0 tokens), 4.3 s |
+| Flow, a neighbouring question answered by the model: "O treino de hoje aumenta minha meta de calorias?" | not run | PASS — "Não. A meta de 2.980 kcal é fixa — o treino não muda isso. O que você pode comer hoje é só meta menos consumido: 2.980 − 541 = 2.439 kcal restantes." (11,116 / 65 tokens, 7.5 s) |
+| "150 g de frango grelhado no almoco" confirmed twice (15:23:28 and 15:24:40) | one `meal_logs` row, day at 541 kcal | PASS — two new rows of 238.8 kcal, both proposals carry `registration_origin = mobile_app`; the day went from 541 to 1,018 kcal and protein from 59.03 g to 155.13 g; Today shows "1.018 / 2.980, restam 1.962" |
+
+The numbers on the Today screen matched the database before and after.
+
+Not yet on the device at the time of writing: the rules of commit `9bc012b`
+(milk and whey defaults, day balance per protocol), the app changes of
+`9624cd5` ("Balanço do dia", "Musculação por semana", the already-saved
+message) and the function region change (`e57806f`). The signing profile
+expired at 18:12 BRT; the next install is re-signed.
+
+Flow cost and speed at this point (staging, 34 answers in 14 days): about
+11,000 prompt tokens per model call, US$ 0.035 per answer, median 14 s, 74 s
+at the 90th percentile; the deterministic answer above still took 4.3 s
+because the function ran in Virginia while the database is in São Paulo
+(fixed in `e57806f`, not yet measured on the device).

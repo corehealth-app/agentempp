@@ -367,8 +367,10 @@ export function renderExerciseFoodAnswer(
       : null
   const consumed = Number.isFinite(day.caloriesConsumed) ? Math.round(day.caloriesConsumed) : 0
   const exercise = Number.isFinite(day.exerciseCalories) ? Math.round(day.exerciseCalories) : 0
-  // Block wording only in recomposição; whether exercise enters the day
-  // balance in ganho de massa / manutenção is Roberto's open decision.
+  // Block wording only in recomposição. In ganho de massa / manutenção the
+  // workout "stays apart": by the client's rule it is not in the day's
+  // balance either (docs/CALCULO-MPP.md §2c). This text uses only the food
+  // balance and did not change.
   const recomp = day.protocol === 'recomposicao'
   const food = target == null ? null : eatingBalance(consumed, target)
 

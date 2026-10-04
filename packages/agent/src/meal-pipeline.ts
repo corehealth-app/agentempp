@@ -7,6 +7,7 @@
  * ADR-006: cálculos saem da TACO, não do LLM.
  */
 import type { ServiceClient } from '@mpp/db'
+import { type EverydayFoodDefault, everydayFoodDefault } from './everyday-food-defaults.js'
 import { classifyNutritionContext, isAggregateNutritionText } from './nutrition-context.js'
 import { hasImpossibleKcalDensity } from './nutrition-invariants.js'
 
@@ -1190,6 +1191,13 @@ export interface MealCalcResult {
    *  - estimativa por categoria silenciosa
    * Estes vão pra product_events mas não pro paciente. */
   audit_warnings: string[]
+  /** Present ONLY when input items were added into one returned line (two
+   * names of the same everyday default): for each returned item, the
+   * positions of the input items it answers for. Absent, item N answers
+   * input N. A caller that pairs `items` with its own input by position must
+   * read this, or the lines after the added one are paired with the wrong
+   * input. */
+  input_indexes?: number[][]
 }
 
 /**
@@ -1720,6 +1728,82 @@ export async function lookupUserHistory(
   }
 }
 
+type EverydayCatalogRow = {
+  id: number
+  name_pt: string
+  kcal_per_100g: number
+  protein_g: number
+  carbs_g: number
+  fat_g: number
+  fiber_g: number
+}
+
+/**
+ * The verified catalog row an everyday default points to, or null.
+ *
+ * The list never supplies a value: the row is read through the same RPC as
+ * every other match (verified rows only), by its exact name, and it is used
+ * only while its four values equal the ones written in the entry. A missing
+ * or changed row returns null and the item follows the normal calculation.
+ */
+async function fetchEverydayCatalogRow(
+  supabase: ServiceClient,
+  entry: EverydayFoodDefault,
+  country: string,
+): Promise<EverydayCatalogRow | null> {
+  const { data, error } = await (
+    supabase as unknown as {
+      rpc: (n: string, p: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>
+    }
+  ).rpc('search_food_trgm', {
+    search_term: entry.catalog_name.toLowerCase(),
+    min_similarity: 0.9,
+    max_results: 5,
+    p_country: country,
+  })
+  if (error) throw nutritionSourceError(error, 'canonical food search failed')
+
+  type Row = {
+    id: number | null
+    name_pt: string | null
+    kcal_per_100g: number | string | null
+    protein_g: number | string | null
+    carbs_g: number | string | null
+    fat_g: number | string | null
+    fiber_g: number | string | null
+    country_code?: string | null
+  }
+  // Same value at the catalog precision (two decimals).
+  const same = (actual: number | string | null, expected: number) =>
+    actual != null && Math.abs(Number(actual) - expected) < 0.005
+  const wantedName = normalizeFoodText(entry.catalog_name)
+  const requestedCountry = country.toUpperCase()
+  const countryRank = (row: Row) => (row.country_code?.toUpperCase() === requestedCountry ? 0 : 1)
+  // Same row for every call: the patient's country first, then the lowest id.
+  const row = ((data ?? []) as Row[])
+    .filter(
+      (candidate) =>
+        Number.isInteger(candidate.id) &&
+        normalizeFoodText(candidate.name_pt ?? '') === wantedName &&
+        same(candidate.kcal_per_100g, entry.per_100g.kcal) &&
+        same(candidate.protein_g, entry.per_100g.protein_g) &&
+        same(candidate.carbs_g, entry.per_100g.carbs_g) &&
+        same(candidate.fat_g, entry.per_100g.fat_g),
+    )
+    .sort((a, b) => countryRank(a) - countryRank(b) || Number(a.id) - Number(b.id))[0]
+  if (!row || row.id == null || row.name_pt == null) return null
+  const fiber = Number(row.fiber_g ?? 0)
+  return {
+    id: row.id,
+    name_pt: row.name_pt,
+    kcal_per_100g: Number(row.kcal_per_100g),
+    protein_g: Number(row.protein_g),
+    carbs_g: Number(row.carbs_g),
+    fat_g: Number(row.fat_g),
+    fiber_g: Number.isFinite(fiber) ? fiber : 0,
+  }
+}
+
 export async function calcMealMacros(
   supabase: ServiceClient,
   items: MealItemInput[],
@@ -1732,8 +1816,13 @@ export async function calcMealMacros(
   const auditWarnings: string[] = []
   const warnings = userWarnings // alias pra compat com pushes existentes que não classificou
   const totals = { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 }
+  // Everyday defaults already answered in this call, by list entry: the
+  // catalog row read for it (null = not usable) and the line it produced.
+  const everydayRows = new Map<EverydayFoodDefault, EverydayCatalogRow | null>()
+  const everydayLines = new Map<EverydayFoodDefault, { line: number; inputs: number[] }>()
 
-  for (let it of items) {
+  for (const [inputIndex, inputItem] of items.entries()) {
+    let it = inputItem
     // ── PRIORIDADE -4: PROPOSTA JÁ APROVADA PELO PACIENTE ──────────────────
     // O pending é a fronteira de aprovação. Reconsultar TACO/histórico no tap
     // pode gravar números diferentes dos que acabaram de ser mostrados.
@@ -2000,6 +2089,97 @@ export async function calcMealMacros(
         }
         it = { ...it, food_name: corr.corrected_to }
       }
+    }
+
+    // ── PADRÃO DO DIA A DIA (2026-10-04; confirmação do cliente pendente) ───
+    // "leite" alone matched coconut milk (332.3 kcal in 200 g) and "whey"
+    // alone matched dairy whey and was blocked (iPhone, staging, 2026-10-04).
+    // A whole item name on the short list of everyday-food-defaults.ts is
+    // taken as the usual item, from its verified catalog row, and renamed so
+    // every screen shows what was assumed. After the patient's own active
+    // correction, before the preparation question and the history (which may
+    // hold the wrong match already confirmed once). Parts of a composed name
+    // never come here: they are still resolved by matchFood alone.
+    // Revert: empty the list in everyday-food-defaults.ts.
+    //
+    // ONE LINE PER EVERYDAY ITEM. Two names of the same entry in one call
+    // ("leite" and "leite integral", 200 g each) used to come back as two
+    // identical lines, and the confirmation's in-array dedup, which reads
+    // identical lines as the model repeating itself, wrote only one: the
+    // proposal showed 244 kcal and the day received 122. So the later item
+    // is added to the line of the first one and the values are computed
+    // again from the same catalog row for the summed quantity. Only lines
+    // produced by this branch are added; every other pair of equal names is
+    // left exactly as it was.
+    const everyday = everydayFoodDefault(it.food_name)
+    if (everyday) {
+      let row = everydayRows.get(everyday)
+      if (row === undefined) {
+        row = await fetchEverydayCatalogRow(supabase, everyday, country)
+        everydayRows.set(everyday, row)
+      }
+      if (row) {
+        const earlier = everydayLines.get(everyday)
+        const previous = earlier ? matched[earlier.line] : undefined
+        // Three decimals: the precision the in-array dedup compares grams at.
+        const quantity = previous
+          ? +(previous.quantity_g + it.quantity_g).toFixed(3)
+          : it.quantity_g
+        const f = quantity / 100
+        const kcal = +(row.kcal_per_100g * f).toFixed(1)
+        const protein = +(row.protein_g * f).toFixed(2)
+        const carbs = +(row.carbs_g * f).toFixed(2)
+        const fat = +(row.fat_g * f).toFixed(2)
+        const fiber = +(row.fiber_g * f).toFixed(2)
+        const nat = naturalUnit(everyday.shown_as, quantity)
+        const line: MealItemMatched = {
+          food_name: everyday.shown_as,
+          matched_taco_name: row.name_pt,
+          matched_taco_id: row.id,
+          quantity_g: quantity,
+          kcal,
+          protein_g: protein,
+          carbs_g: carbs,
+          fat_g: fat,
+          fiber_g: fiber,
+          similarity: 1,
+          // The shown name is not the catalog name, so not "canonical_exact".
+          source: 'canonical_fuzzy',
+          display_qty: nat.display_qty,
+          display_unit: nat.display_unit,
+        }
+        auditWarnings.push(
+          `"${it.food_name}" assumido como "${everyday.shown_as}" (${row.name_pt}; ${everyday.source_ref}) — padrão do dia a dia, confirmação do cliente pendente.`,
+        )
+        if (earlier && previous) {
+          // The line of the first item is replaced, so its share leaves the
+          // totals before the summed line enters.
+          matched[earlier.line] = line
+          earlier.inputs.push(inputIndex)
+          totals.kcal -= previous.kcal
+          totals.protein_g -= previous.protein_g
+          totals.carbs_g -= previous.carbs_g
+          totals.fat_g -= previous.fat_g
+          totals.fiber_g -= previous.fiber_g
+          auditWarnings.push(
+            `"${it.food_name}" (${it.quantity_g} g) somado à linha "${everyday.shown_as}" já calculada nesta refeição: ${quantity} g numa linha só.`,
+          )
+        } else {
+          matched.push(line)
+          everydayLines.set(everyday, { line: matched.length - 1, inputs: [inputIndex] })
+        }
+        totals.kcal += kcal
+        totals.protein_g += protein
+        totals.carbs_g += carbs
+        totals.fat_g += fat
+        totals.fiber_g += fiber
+        continue
+      }
+      // Nothing is invented: without the row of the list the item is
+      // calculated exactly as it was before the list existed.
+      auditWarnings.push(
+        `"${it.food_name}" tem padrão do dia a dia (${everyday.source_ref}), mas a linha da lista não está no catálogo verificado com os mesmos valores — seguiu o cálculo normal.`,
+      )
     }
 
     // Um item canônico EXATO é mais confiável que um valor herdado do
@@ -2767,12 +2947,27 @@ export async function calcMealMacros(
     }
   }
 
+  // Which input items each line answers for, reported only when items were
+  // added into one line (see MealCalcResult.input_indexes). Every other item
+  // gives one line, in order; if that ever stops holding nothing is reported
+  // rather than a wrong pairing.
+  const addedLines = [...everydayLines.values()].filter((entry) => entry.inputs.length > 1)
+  const absorbed = new Set(addedLines.flatMap((entry) => entry.inputs.slice(1)))
+  const firstInputs = items.map((_, index) => index).filter((index) => !absorbed.has(index))
+  const inputIndexes =
+    absorbed.size > 0 && firstInputs.length === matched.length
+      ? firstInputs.map(
+          (first) => addedLines.find((entry) => entry.inputs[0] === first)?.inputs ?? [first],
+        )
+      : null
+
   return {
     items: matched,
     totals: roundTotals(totals),
     warnings: [...userWarnings, ...auditWarnings], // compat
     user_warnings: userWarnings,
     audit_warnings: auditWarnings,
+    ...(inputIndexes ? { input_indexes: inputIndexes } : {}),
   }
 }
 

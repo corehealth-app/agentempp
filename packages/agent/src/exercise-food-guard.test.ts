@@ -25,7 +25,9 @@ const REPORT_PHRASE = 'Treinei musculacao hoje e gastei 322 kcal. Posso comer 32
 // > RC A — cenário resposta do MODELO com o contexto corrigido NÃO coberto nesta PR (pendência da audit 2026-10-04).
 // > RC A — cenário redação da resposta do sistema e da REGRA NÃO coberto nesta PR (pendência da audit 2026-10-04).
 //   Texto clínico ainda sem aprovação do Roberto.
-// > RC A — cenário exercício no balanço de ganho_massa/manutenção NÃO coberto nesta PR (pendência da audit 2026-10-04).
+// > RC A — cenário exercício no balanço de ganho_massa/manutenção fora do Flow e da tela Hoje (WhatsApp, bom dia, fechamento, consulta_resumo_periodo) NÃO coberto nesta PR (pendência da audit 2026-10-04).
+//   No Flow e na tela Hoje passou a valer o §2c de docs/CALCULO-MPP.md (regra
+//   dita pelo cliente; confirmação pendente), com as pendências RC R1/R2 de lá.
 // > RC A — cenário canal WhatsApp NÃO coberto nesta PR (pendência da audit 2026-10-04).
 // > RC A — cenário afirmação sem pontuação final ("treinei hoje e posso comer mais") quando o Flow NÃO tinha acabado de perguntar algo NÃO coberto nesta PR (pendência da audit 2026-10-04).
 //   Sem "?" e sem marca no fim o predicado não separa a pergunta ditada da
@@ -33,7 +35,7 @@ const REPORT_PHRASE = 'Treinei musculacao hoje e gastei 322 kcal. Posso comer 32
 //   última resposta do Flow no dia termine em pergunta — aí é resposta do
 //   paciente e vai para o modelo (answersFlowQuestion, usado pelo pipeline).
 //   Com "." ou "!" no fim vai sempre para o modelo.
-// > RC A — cenário pergunta ditada sem "?" logo depois de uma pergunta do Flow NÃO coberto nesta PR (pendência da audit 2026-10-04).
+// > RC A — cenário pergunta ditada sem `?` logo depois de uma pergunta do Flow NÃO coberto nesta PR (pendência da audit 2026-10-04).
 //   Pela mesma regra vai para o modelo, com o contexto corrigido.
 
 const unique = (list: string[]): string[] => [...new Set(list)]

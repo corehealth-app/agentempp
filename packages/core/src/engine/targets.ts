@@ -5,11 +5,13 @@
  *   recomposição: BMR × 1,2 (FIXO, atividade NÃO entra) − déficit
  *   ganho_massa:  TDEE × 1,05 (superávit leve)
  *   manutenção:   TDEE
+ * Proteína (§1b): recomposição = peso × 1,5 fixo; os outros protocolos =
+ *   peso × fator de `protein_factors` (fome + treino).
  *
  * Função pura: recebe a linha do perfil + config, devolve targets. Sem I/O
  * (o carregamento do banco fica em @mpp/agent/calc-targets.loadDailyTargets).
  */
-import { calcProteinTargetG, calcTDEE, computeMetrics } from '../nutrition.js'
+import { calcTDEE, computeMetrics, resolveProteinFactorForProtocol } from '../nutrition.js'
 import type { CalcConfig } from '../calc-config.js'
 import type { UserProfile } from '../types.js'
 
@@ -87,9 +89,17 @@ export function computeDailyTargets(
   }
 
   const effectiveHunger = profile.hungerLevel ?? 'moderada'
+  // Recomposição: weight × the fixed factor (docs/CALCULO-MPP.md §1b). The
+  // other protocols: weight × the `protein_factors` cascade, as before.
   const proteinTarget =
     profile.weightKg != null
-      ? calcProteinTargetG(profile.weightKg, effectiveHunger, config, profile.trainingFrequency)
+      ? profile.weightKg *
+        resolveProteinFactorForProtocol(
+          profile.currentProtocol,
+          effectiveHunger,
+          profile.trainingFrequency,
+          config,
+        )
       : null
 
   return {

@@ -7,6 +7,7 @@
 import type { DailyTargets } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import type { z } from 'zod'
+import type { FlowDayBalanceInputs } from '../flow-energy-context.js'
 
 /** Who a plan generator speaks as. 'legacy' is the current WhatsApp identity. */
 export type GeneratorIdentity = 'legacy' | 'flow'
@@ -69,6 +70,12 @@ export interface ToolContext {
   /** Intraday targets from the authenticated Flow context. Server-owned;
    * never supplied by tool arguments or used by the legacy channel. */
   flowDailyTargets?: DailyTargets
+  /** Effective protocol, gain multiplier, programmed deficit and the verdict
+   * about the day's stored target (false on the day the protocol changed) of
+   * the authenticated Flow context, for the per-protocol day balance
+   * (docs/CALCULO-MPP.md §2c). Server-owned; set only by the pipeline on the
+   * Flow channel. Absent = the legacy net balance against the target. */
+  flowDayBalance?: FlowDayBalanceInputs
 }
 
 export interface ToolDefinition<T extends z.ZodTypeAny = z.ZodTypeAny> {

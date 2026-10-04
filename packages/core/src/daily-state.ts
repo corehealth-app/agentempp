@@ -1,10 +1,15 @@
-import { eatingBalance, netBalance } from './engine/balance.js'
+import { DEFAULT_CALC_CONFIG } from './calc-config.js'
+import { dayEnergyBalance, eatingBalance } from './engine/balance.js'
 import type { DailyTargets } from './engine/targets.js'
 import { KCAL_BLOCK } from './progress-calc.js'
 import type { RoutineItemType, RoutineOrigin, RoutinePublicStatus } from './routine.js'
 import type { Protocol } from './types.js'
 
-export const DAILY_STATE_CALCULATION_VERSION = 'bodyflow.daily-state.v2' as const
+// v3 (2026-10-04): `daily_balance_kcal` is measured against the day's
+// expenditure, per protocol (engine/balance.ts `dayEnergyBalance`), and two
+// additive fields say what it was measured against. Reverting the switch
+// there brings the v2 numbers back; the version literal then goes back too.
+export const DAILY_STATE_CALCULATION_VERSION = 'bodyflow.daily-state.v3' as const
 
 export type DailyStateMealType = 'cafe' | 'almoco' | 'lanche' | 'jantar' | 'ceia'
 export type DailyStateDayStatus =
@@ -112,6 +117,24 @@ export interface DailyStateInput {
   routineItems: DailyStateRoutineItemInput[]
   mealGap: DailyStateMealGapInput
   progress: DailyStateProgressInput | null
+  /**
+   * `ganho_massa_surplus_multiplier` of the loaded calc config; used only to
+   * derive the reference expenditure in ganho de massa. Absent = the default.
+   */
+  gainSurplusMultiplier?: number
+  /**
+   * Deficit built into the recomposição target, with the daily closer's
+   * expression (profile in recomposição ? (deficit_level ?? 500) : 0), so the
+   * app's number mirrors the block credit. Absent = 0.
+   */
+  programmedDeficitKcal?: number
+  /**
+   * False when the day's stored target was written under another protocol's
+   * rule (engine/day-balance-inputs.ts `resolveDayBalanceInputs`): the day
+   * then keeps the legacy balance, against the stored target and with
+   * exercise. Absent = true.
+   */
+  dayTargetMatchesProtocol?: boolean
 }
 
 type CompletionState =
@@ -280,8 +303,22 @@ export function buildDailyState(input: DailyStateInput) {
   const exerciseCalories = nonNegative(snapshot?.exerciseCalories ?? 0)
   const foodBalance =
     caloriesTarget === null ? null : eatingBalance(caloriesConsumed, caloriesTarget)
-  const dailyBalance =
-    caloriesTarget === null ? null : netBalance(caloriesConsumed, caloriesTarget, exerciseCalories)
+  const protocol = snapshot?.protocol ?? input.protocol
+  // "Balanço do dia" per protocol (docs/CALCULO-MPP.md §2c). The food line
+  // above never goes through this: it stays against the target, no exercise.
+  const dayBalance =
+    caloriesTarget === null
+      ? null
+      : dayEnergyBalance({
+          protocol,
+          caloriesConsumed,
+          caloriesTarget,
+          exerciseCalories,
+          gainSurplusMultiplier:
+            input.gainSurplusMultiplier ?? DEFAULT_CALC_CONFIG.ganho_massa_surplus_multiplier,
+          programmedDeficitKcal: input.programmedDeficitKcal ?? 0,
+          targetMatchesProtocol: input.dayTargetMatchesProtocol,
+        })
   const hasObservedActivity =
     input.meals.length > 0 ||
     input.workouts.length > 0 ||
@@ -294,7 +331,6 @@ export function buildDailyState(input: DailyStateInput) {
       : completion.status === 'complete' || completion.status === 'complete_with_explicit_skip'
         ? ('final' as const)
         : ('provisional' as const)
-  const protocol = snapshot?.protocol ?? input.protocol
 
   const blockCurrent = input.progress ? nonNegative(input.progress.deficitBlock) : null
   const completedBlocks = input.progress
@@ -350,7 +386,14 @@ export function buildDailyState(input: DailyStateInput) {
     remaining_food_kcal: foodBalance === null ? null : Math.max(0, -foodBalance),
     food_excess_kcal: foodBalance === null ? null : Math.max(0, foodBalance),
     exercise_kcal: exerciseCalories,
-    daily_balance_kcal: dailyBalance,
+    daily_balance_kcal: dayBalance === null ? null : dayBalance.balance,
+    // Additive (v3): what `daily_balance_kcal` was measured against, and
+    // whether the day's exercise is inside it. Null with no target.
+    // Always an integer (the iOS app decodes Int): the legacy path hands the
+    // target over as it came, and only the three protocols round it.
+    daily_balance_reference_kcal:
+      dayBalance === null ? null : Math.round(dayBalance.referenceKcal) + 0,
+    daily_balance_includes_exercise: dayBalance === null ? null : dayBalance.includesExercise,
     daily_balance_status: dailyBalanceStatus,
     protein_status: {
       consumed_g: proteinConsumed,

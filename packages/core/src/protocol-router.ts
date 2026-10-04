@@ -9,7 +9,12 @@
  *   4. Default sempre é "recomposicao" (mais conservador)
  */
 import type { ProtocolDecision, UserMetrics, UserProfile } from './types.js'
-import { DEFAULT_CALC_CONFIG, type CalcConfig } from './calc-config.js'
+import {
+  DEFAULT_CALC_CONFIG,
+  IMC_GOAL_STEP_POINTS,
+  IMC_GOAL_STEP_POINTS_SANITY_MAX,
+  type CalcConfig,
+} from './calc-config.js'
 
 /**
  * Calcula horas de sono a partir de bedTime/wakeTime (HH:MM).
@@ -47,11 +52,68 @@ export function calcBFGoal(bf: number, config: CalcConfig = DEFAULT_CALC_CONFIG)
   return 10
 }
 
+/** A goal less than this many BMI points away is skipped (already in place). */
+const IMC_GOAL_MIN_MARGIN = 1
+
+/**
+ * BMI points of one step of the first goal, or null when rule R3 is off.
+ *
+ * The value comes from a `global_config` row copied as it is by the loader, so
+ * it is read as `unknown` (same reading as `fixedRecompProteinFactor`):
+ *  - explicit `null` or `0` → off (the revert switch: the previous ladder);
+ *  - a number in (0, IMC_GOAL_STEP_POINTS_SANITY_MAX] → that step;
+ *  - anything else (absent key, text such as "5", NaN, a negative number, 50)
+ *    → the code default. A typing mistake in the row must not switch the rule
+ *    off without anyone noticing (review of 2026-10-04: the text "5" brought
+ *    the previous ladder back, 32.7 → 30, with no error and no log).
+ */
+export function imcGoalStepPoints(config: CalcConfig = DEFAULT_CALC_CONFIG): number | null {
+  const raw: unknown = config.imc_goal_step_points
+  if (raw === null || raw === 0) return null
+  if (typeof raw === 'number' && raw > 0 && raw <= IMC_GOAL_STEP_POINTS_SANITY_MAX) return raw
+  return IMC_GOAL_STEP_POINTS
+}
+
+/**
+ * First BMI goal.
+ *
+ * Above the normal range (`imc_limit_recomp`, 25) the goal drops
+ * `imc_goal_step_points` (5) per step, to one decimal, and lands on 25 when the
+ * step would stop less than 1 point above it: 32.7 → 27.7 → 25; 31 → 26;
+ * 30.1 → 25. From there down it is the ladder of `imc_goal_steps` below 25
+ * (23 → 22 → 21), as before.
+ *
+ * The rule lives here and not in the array because the array is overridden by
+ * `global_config` at runtime (staging holds [30, 25, 23, 22, 21]).
+ *
+ * Stated by the client on 2026-01-26 (typed) and in his manual 9.4.3.1
+ * (35→30, 34→29, 31→26). On 2026-02-07 he typed "perder 10 pontos do imc"
+ * once; that conflict is open. Implemented on 2026-10-04 at Eduardo's request;
+ * the client's confirmation is pending. Revert switch: `imc_goal_step_points`
+ * null or 0 runs the previous ladder, untouched (any other value that is not a
+ * usable step is the code default: see `imcGoalStepPoints`).
+ */
 export function calcIMCGoal(imc: number, config: CalcConfig = DEFAULT_CALC_CONFIG): number {
-  for (const meta of config.imc_goal_steps) {
-    if (imc - meta >= 1) return meta
+  const steps = config.imc_goal_steps
+  const lowest = steps[steps.length - 1] ?? 21
+  const stepPoints = imcGoalStepPoints(config)
+
+  if (stepPoints == null) {
+    for (const meta of steps) {
+      if (imc - meta >= IMC_GOAL_MIN_MARGIN) return meta
+    }
+    return lowest
   }
-  return config.imc_goal_steps[config.imc_goal_steps.length - 1] ?? 21
+
+  const normal = config.imc_limit_recomp
+  if (imc - normal >= IMC_GOAL_MIN_MARGIN) {
+    const stepped = Math.round((imc - stepPoints) * 10) / 10
+    return stepped - normal < IMC_GOAL_MIN_MARGIN ? normal : stepped
+  }
+  for (const meta of steps) {
+    if (meta < normal && imc - meta >= IMC_GOAL_MIN_MARGIN) return meta
+  }
+  return lowest
 }
 
 export function resolveProtocol(

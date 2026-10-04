@@ -102,6 +102,35 @@ export interface CalcConfig {
   }
   /** Multiplicador FIXO do BMR pra recomposição (doc MPP: 1.2 — atividade não entra). */
   recomp_bmr_multiplier: number
+  /**
+   * Fixed protein factor (g/kg) of recomposição: hunger and training do not
+   * enter, and `protein_factors` does not apply to that protocol (see
+   * `resolveProteinFactorForProtocol`). Absent = `RECOMP_PROTEIN_G_PER_KG`.
+   *
+   * Revert switch: an explicit `0` (or JSON `null`) = recomposição follows
+   * `protein_factors` again, like the other protocols, and
+   * `cadastra_dados_iniciais` hands the view's `protein_factor` back to the
+   * model. Without a deploy (up to 60 s of loader cache) — the row does not
+   * exist in any migration and `global_config.value` is `jsonb NOT NULL`, so
+   * it has to be created with a JSON value; `0` is the recommended one
+   * because a SQL NULL (what a client sending JSON null to the
+   * `set_global_config` RPC produces, as read from the migrations — never
+   * run against a database) is refused by the column:
+   *
+   *   INSERT INTO public.global_config (key, value, updated_at)
+   *   VALUES ('calc.recomp_protein_g_per_kg', '0'::jsonb, now())
+   *   ON CONFLICT (key) DO UPDATE
+   *     SET value = EXCLUDED.value, updated_at = now();
+   *
+   * Turning it on again: `DELETE FROM public.global_config WHERE key =
+   * 'calc.recomp_protein_g_per_kg';` (the code default is back).
+   *
+   * Any other row value is read by `fixedRecompProteinFactor`: a number in
+   * (0, `RECOMP_PROTEIN_G_PER_KG_SANITY_MAX`] replaces the factor; text, a
+   * negative number or anything above the bound is a typing mistake and falls
+   * back to `RECOMP_PROTEIN_G_PER_KG` — never silently to the cascade.
+   */
+  recomp_protein_g_per_kg?: number | null
   /** Multiplicador de superávit pra ganho de massa (doc MPP: 1.05 = superávit leve). */
   ganho_massa_surplus_multiplier: number
   /** Déficit calórico por nível de fome (apenas recomposição). */
@@ -113,11 +142,62 @@ export interface CalcConfig {
   sleep_min_hours: number
   bf_limits: Record<Sex, BFLimits>
   imc_goal_steps: number[]
+  /**
+   * BMI points the first goal drops per step while the BMI is above
+   * `imc_limit_recomp` (see `calcIMCGoal`). `null` or `0` = the previous
+   * ladder, walking `imc_goal_steps` from the top (30 first): the revert
+   * switch, also reachable without a deploy through a `global_config` row
+   * `calc.imc_goal_step_points` = null.
+   *
+   * Any other row value is read by `imcGoalStepPoints`: a number in
+   * (0, `IMC_GOAL_STEP_POINTS_SANITY_MAX`] is the step; text (such as "5"), a
+   * negative number or anything above the bound is a typing mistake and falls
+   * back to `IMC_GOAL_STEP_POINTS` — never silently to the previous ladder.
+   */
+  imc_goal_step_points: number | null
   bf_goal_rules: BFGoalRule[]
   levels: LevelDef[]
   badges: BadgeDef[]
   xp_rules: XPRules
 }
+
+/**
+ * Protein of recomposição, in g per kg of body weight.
+ *
+ * Stated by the client on 2026-04-15 (typed: "fixa de 1,5 g de proteina por
+ * quilo de peso pra o protocolo de recomposição") and on 2026-05-15 (typed:
+ * "Mantém 1,5 para todos"). Implemented on 2026-10-04 at Eduardo's request;
+ * the client's confirmation is pending. Whether "todos" also covers ganho de
+ * massa and manutenção was never said, so those keep `protein_factors`.
+ * `null` here = the previous behaviour for recomposição too.
+ */
+export const RECOMP_PROTEIN_G_PER_KG: number | null = 1.5
+
+/**
+ * Highest g/kg accepted from the `calc.recomp_protein_g_per_kg` database row.
+ * A typing guard, not a clinical limit and not a number the client stated: a
+ * row holding 99 used to become a 9900 g target for a 100 kg patient. Above
+ * it (or below/equal to 0, other than the explicit switch) the code default
+ * is used.
+ */
+export const RECOMP_PROTEIN_G_PER_KG_SANITY_MAX = 3
+
+/**
+ * BMI points of one step of the first goal (rule R3, `calcIMCGoal`).
+ *
+ * Stated by the client on 2026-01-26 (typed: "caindo de 5 em cinco pontos até
+ * chegar a faixa da normalidade") and in his manual 9.4.3.1. Implemented on
+ * 2026-10-04 at Eduardo's request; the client's confirmation is pending.
+ */
+export const IMC_GOAL_STEP_POINTS = 5
+
+/**
+ * Highest step accepted from the `calc.imc_goal_step_points` database row. A
+ * typing guard, not a clinical limit and not a number the client stated. Above
+ * it (or below 0, or not a number) the code default is used; only an explicit
+ * `null` or `0` switches the rule off.
+ */
+export const IMC_GOAL_STEP_POINTS_SANITY_MAX = 20
 
 export const DEFAULT_CALC_CONFIG: CalcConfig = {
   bmr_mifflin: {
@@ -143,6 +223,10 @@ export const DEFAULT_CALC_CONFIG: CalcConfig = {
     // a meta calórica. Continua sendo hiperproteica (média BR é 0,8-1,2 g/kg);
     // saturação de síntese muscular fica em ~1.6 — perda marginal vs ganho de
     // adesão. Antes era cascata 1.6-2.0 dependente de fome+treino.
+    // Since 2026-10-04 recomposição no longer reads this map (a `global_config`
+    // row replaced it with the 1.6–2.0 cascade): see `recomp_protein_g_per_kg`.
+    // This map is what ganho de massa, manutenção and a profile without a
+    // protocol use.
     muita: 1.5,
     moderada: 1.5,
     pouca: 1.5,
@@ -151,6 +235,9 @@ export const DEFAULT_CALC_CONFIG: CalcConfig = {
     optimal_high_training: 1.5,
   },
   recomp_bmr_multiplier: 1.2,
+  // No migration seeds this key, so the code value is the one at runtime
+  // unless someone creates the `global_config` row.
+  recomp_protein_g_per_kg: RECOMP_PROTEIN_G_PER_KG,
   ganho_massa_surplus_multiplier: 1.05,
   deficit_by_hunger: {
     pouca: 600,
@@ -165,9 +252,18 @@ export const DEFAULT_CALC_CONFIG: CalcConfig = {
     masculino: { recomp: 20, gain: 19 },
     feminino: { recomp: 28, gain: 27 },
   },
-  // Escada oficial Notion MPP: [30, 25, 23, 22, 21] com margem mínima 1.
-  // Antes faltava o 30 — paciente com IMC 32 ia direto pra 25 (meta agressiva).
+  // The array mirrors `global_config` (`calc.imc_goal_steps`), which wins at
+  // runtime. The 30 came from the previous developer's n8n node (commit
+  // 63f2aea, 2026-05-07), not from the client's manual. With
+  // `imc_goal_step_points` set, only the steps below `imc_limit_recomp` are
+  // used; the whole array is used again when the switch is off.
   imc_goal_steps: [30, 25, 23, 22, 21],
+  // Stated by the client on 2026-01-26 (typed: "caindo de 5 em cinco pontos
+  // até chegar a faixa da normalidade ... até chegar a 25") and in his manual
+  // 9.4.3.1 (35→30, 34→29, 31→26). On 2026-02-07 he typed "perder 10 pontos
+  // do imc" once: unresolved conflict. Implemented on 2026-10-04 at Eduardo's
+  // request; the client's confirmation is pending. null/0 = previous ladder.
+  imc_goal_step_points: IMC_GOAL_STEP_POINTS,
   bf_goal_rules: [
     { above: 30, subtract: 10 },
     { above: 20, target: 20 },

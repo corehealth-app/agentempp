@@ -107,6 +107,13 @@ export interface FakeWriteInput {
   prescriptionToolCalled?: boolean
   /** marca_refeicao_pulada foi chamada com sucesso no turno. */
   skipToolCalled?: boolean
+  /** define_protocolo OU define_meta_peso rodou sem erro no turno. O verbo
+   *  "registrado/registrada/atualizado" da resposta fala então do protocolo ou
+   *  da meta que a tool gravou (ou recusou), não de uma refeição: a regra
+   *  genérica "verbo + kcal/emoji" não dispara. As outras regras (pulei,
+   *  cardápio/treino inventado, proposta imitada, bullets com kcal, card
+   *  "Total refeição") continuam valendo. Ausente = false (zero regressão). */
+  goalToolCalled?: boolean
   /** Fallback de meal_type quando texto do paciente não cita (vem do gap
    *  reminder do dia ou inferência por hora local — pipeline preenche). */
   mealTypeHint?: 'cafe' | 'almoco' | 'lanche' | 'jantar' | 'ceia'
@@ -174,6 +181,7 @@ export function detectFakeWrite({
   registrationToolCalled,
   prescriptionToolCalled,
   skipToolCalled,
+  goalToolCalled,
   mealTypeHint,
 }: FakeWriteInput): FakeWriteResult {
   if (registrationToolCalled) return { isFake: false, kind: null }
@@ -290,6 +298,15 @@ export function detectFakeWrite({
     return { isFake: true, kind: 'registration' }
   }
   if (!hasFoodSignature && !hasWorkoutSignature) return { isFake: false, kind: null }
+
+  // Review 2026-10-04 (reavaliação com meta recusada): depois de
+  // define_protocolo o modelo responde "Protocolo registrado … a meta de 7% não
+  // foi registrada … 1.746 kcal 💪" — texto fiel ao retorno da tool, que a regra
+  // abaixo lia como refeição registrada sem tool e forçava uma 3ª chamada com
+  // "chame registra_refeicao". Com uma tool de protocolo/meta gravada no turno
+  // o verbo está explicado; só o card de refeição ("Total refeição") continua
+  // sendo afirmação de registro de refeição.
+  if (goalToolCalled && !MEAL_CARD.test(content)) return { isFake: false, kind: null }
 
   if (CORRECTION_CLAIM.test(content)) return { isFake: true, kind: 'correction' }
   if (REGISTRATION_CLAIM.test(content) || MEAL_CARD.test(content))

@@ -58,10 +58,14 @@ const SECTIONS: FormulaSection[] = [
   {
     id: 'proteina',
     title: 'Meta de proteína',
-    equation: ['meta_proteína (g) = fator × peso (kg)'],
+    equation: [
+      'Recomposição: meta_proteína (g) = 1,5 × peso (kg) — fixo, sem fome nem treino',
+      'Ganho de massa / manutenção / sem protocolo: fator de calc.protein_factors × peso (kg)',
+    ],
     explanation:
-      'Fator de proteína por g/kg, em cascata por fome + treino. Hoje todos em 1,5 (override do Dr. Roberto).',
+      'Recomposição usa 1,5 g/kg fixo (100 kg → 150 g) e NÃO lê calc.protein_factors. Os outros protocolos seguem o fator em cascata por fome + treino dessa linha (padrão do código 1,5; o banco pode sobrescrever).',
     keys: ['calc.protein_factors'],
+    note: '1,5 g/kg na recomposição: dito pelo cliente em 15/04/2026 e 15/05/2026 ("Mantém 1,5 para todos"); implementado em 04/10/2026 a pedido do Eduardo; confirmação do cliente pendente. Ele não disse se "todos" inclui ganho de massa e manutenção, por isso esses não mudaram. O fator fixo é recomp_protein_g_per_kg (padrão 1,5 no código, sem linha no banco; linha criada por SQL com valor 0 = recomposição volta a seguir calc.protein_factors; um número até 3 troca o fator; qualquer outro valor é ignorado e vale 1,5). Detalhes em docs/CALCULO-MPP.md §1b.',
   },
   {
     id: 'balanco-comida',
@@ -98,13 +102,16 @@ const SECTIONS: FormulaSection[] = [
     id: 'escadas',
     title: 'Escadas de meta (IMC / %BF) e elegibilidade',
     equation: [
-      'IMC: próxima meta na escada [30, 25, 23, 22, 21] (margem mín. 1)',
+      'IMC acima de 25: IMC − 5 por vez até 25 (32,7 → 27,7 → 25 · 31 → 26 · 30,1 → 25)',
+      'IMC abaixo de 25: 23 → 22 → 21 (margem mín. 1)',
       '%BF: >30 → bf−10 · >20 → 20 · >18 → 18 · >15 → 15 · base → 10',
+      'Meta declarada: gordura < 10% ou IMC < 18,5 (perdendo peso) não é gravada',
       'Ganho exige: BF/IMC abaixo do limite + treino ≥ N/sem + sono ≥ Xh',
     ],
     explanation:
-      'Metas progressivas de composição corporal e os critérios que decidem recomposição vs ganho de massa.',
+      'Metas progressivas de composição corporal e os critérios que decidem recomposição vs ganho de massa. A meta de composição não entra em meta calórica, balanço, bloco nem card.',
     keys: ['calc.imc_goal_steps', 'calc.bf_goal_rules', 'calc.imc_limit_recomp', 'calc.bf_limits', 'calc.training_min', 'calc.sleep_min_hours'],
+    note: 'Passo de 5 pontos de IMC (dito pelo cliente em 26/01/2026 e no manual 9.4.3.1) e pisos de meta (28/12/2025 e 09/06/2026): implementados em 04/10/2026 a pedido do Eduardo; confirmação do cliente pendente. Em 07/02/2026 ele escreveu "10 pontos" uma vez. O passo é calc.imc_goal_step_points (padrão 5 no código; null = escada antiga com o degrau 30). Detalhes em docs/CALCULO-MPP.md §8.',
   },
   {
     id: 'gamificacao',

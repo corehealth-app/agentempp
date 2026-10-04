@@ -237,6 +237,95 @@ describe('reconcileBalanceProse — corrige rótulo/magnitude na prosa (Paulo 20
   })
 })
 
+// Flow only (docs/CALCULO-MPP.md §2c, 2026-10-04): the Flow context also gives
+// the model the protocol's day balance against the day's expenditure. It is a
+// second true number whose sign can differ from the food balance.
+describe('reconcileBalanceProse — opts.dayBalance (Flow: o balanço do dia por protocolo)', () => {
+  // Ganho de massa, 2900 de 2980: comida −80 (restam 80), balanço do dia +62.
+  const GAIN = 'Hoje você está com superávit de 62 kcal em relação ao seu gasto do dia.'
+
+  it('sem a opção (WhatsApp, e o Flow antes de 2026-10-04): a frase verdadeira vira "restam 80 kcal"', () => {
+    const r = reconcileBalanceProse(GAIN, -80)
+    expect(r.replacements).toBe(1)
+    expect(r.text).toBe('Hoje você está com restam 80 kcal em relação ao seu gasto do dia.')
+    // Passing an empty options object is the same thing.
+    expect(reconcileBalanceProse(GAIN, -80, {})).toEqual(r)
+    expect(reconcileBalanceProse(GAIN, -80, { dayBalance: null })).toEqual(r)
+  })
+
+  it('com o balanço do dia +62: "superávit de 62 kcal" fica como o modelo escreveu', () => {
+    const r = reconcileBalanceProse(GAIN, -80, { dayBalance: 62 })
+    expect(r.replacements).toBe(0)
+    expect(r.text).toBe(GAIN)
+  })
+
+  it('vale para as duas ordens e para "excedente"', () => {
+    for (const text of [
+      'São 62 kcal de superávit contra o gasto do dia.',
+      'Excedente de 62 kcal contra o gasto do dia.',
+      'Superávit leve de 62 kcal hoje.',
+    ]) {
+      expect(reconcileBalanceProse(text, -80, { dayBalance: 62 })).toEqual({
+        text,
+        replacements: 0,
+      })
+    }
+  })
+
+  it('número que não é o do balanço do dia continua corrigido (o modelo inventou)', () => {
+    const r = reconcileBalanceProse('Hoje você está com superávit de 500 kcal.', -80, {
+      dayBalance: 62,
+    })
+    expect(r.replacements).toBe(1)
+    expect(r.text).toBe('Hoje você está com restam 80 kcal.')
+  })
+
+  it('tolerância de 1 kcal no número, e milhar com ponto ("2.297")', () => {
+    expect(
+      reconcileBalanceProse('superávit de 63 kcal', -80, { dayBalance: 62 }).replacements,
+    ).toBe(0)
+    expect(
+      reconcileBalanceProse('superávit de 64 kcal', -80, { dayBalance: 62 }).replacements,
+    ).toBe(1)
+    // Recomposição acima da meta com treino grande: comida +233, dia −2.297.
+    expect(
+      reconcileBalanceProse('déficit de 2.297 kcal', 233, { dayBalance: -2297 }).replacements,
+    ).toBe(0)
+  })
+
+  it('recomposição 19/05 (comida +233, balanço do dia −832): "déficit de 832 kcal" fica; "déficit de 332 kcal" é corrigido', () => {
+    const kept = reconcileBalanceProse('O dia está com déficit de 832 kcal.', 233, {
+      dayBalance: -832,
+    })
+    expect(kept.replacements).toBe(0)
+
+    const fixed = reconcileBalanceProse('O dia está com déficit de 332 kcal.', 233, {
+      dayBalance: -832,
+    })
+    expect(fixed.replacements).toBe(1)
+    expect(fixed.text).toBe('O dia está com excedente de 233 kcal.')
+  })
+
+  it('sinal trocado em relação ao balanço do dia não é poupado', () => {
+    // Day balance −832 (déficit): "superávit de 832 kcal" is not about it.
+    const r = reconcileBalanceProse('superávit de 832 kcal', -436, { dayBalance: -832 })
+    expect(r.replacements).toBe(1)
+    expect(r.text).toBe('restam 436 kcal')
+  })
+
+  it('balanço do dia 0 ou não finito não poupa nada', () => {
+    for (const dayBalance of [0, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(reconcileBalanceProse('superávit de 0 kcal', -80, { dayBalance }).replacements).toBe(1)
+    }
+  })
+
+  it('prosa que já bate com o balanço de comida segue intacta, com ou sem a opção', () => {
+    const text = 'Ainda restam 80 kcal. Déficit de 80 kcal contra a meta.'
+    expect(reconcileBalanceProse(text, -80, { dayBalance: 62 })).toEqual({ text, replacements: 0 })
+    expect(reconcileBalanceProse(text, -80)).toEqual({ text, replacements: 0 })
+  })
+})
+
 describe('reconcileRealDeficitProse — matinal usa déficit REAL vs manutenção (Paulo 2026-05-27)', () => {
   it('BUG do Paulo: "excedente de 119 kcal real" com realDef +381 vira "déficit real de 381 kcal vs manutenção"', () => {
     const text = 'Ontem fechou com excedente de 119 kcal real — o treino ajudou bastante nesse total.'

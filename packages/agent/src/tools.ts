@@ -12,6 +12,7 @@ import {
   computePeriodSummary,
   evaluateGainSafety,
   evaluateGainVelocity,
+  fixedRecompProteinFactor,
   type SnapshotForAgg,
 } from '@mpp/core'
 import type { Json, TablesUpdate } from '@mpp/db'
@@ -28,11 +29,11 @@ import { applyKnownProductServingQuantities } from './known-product-servings.js'
 import { detectAdditionInRecentMessages } from './addition-intent-detector.js'
 import { detectPhantomItems } from './phantom-item-detector.js'
 import { loadCalcConfig } from './calc-config-loader.js'
-import { loadDailyTargets } from './calc-targets.js'
+import { loadDailyTargets, loadDailyTargetsWithProtocol } from './calc-targets.js'
 import { getLocalDateString, getTzOffset } from './timezone-utils.js'
 import { detectCorrectionIntent } from './correction-detector.js'
-import { classifyWeightGoal } from './weight-goal-classifier.js'
-import { classifyBfGoal } from './bf-goal-classifier.js'
+import { classifyWeightGoal, IMC_GOAL_FLOOR } from './weight-goal-classifier.js'
+import { BF_METHOD_FLOOR, classifyBfGoal, lowestBfGoalWithoutWarning } from './bf-goal-classifier.js'
 import { detectConsumedDate } from './consumed-date-detector.js'
 import { getPersonalMealWindows, resolveMealTypeByHour } from './personal-meal-windows.js'
 import { decideReplaceRequest } from './replace-decision.js'
@@ -251,18 +252,42 @@ export const cadastraDadosIniciais: ToolDefinition = {
     // Calcula meta canônica AGORA (com profile recém-atualizado) pra evitar
     // que o LLM estime na cabeça. Pode ser null se ainda faltam dados.
     const cfg = await loadCalcConfig(ctx.supabase)
-    const targets = await loadDailyTargets(ctx.supabase, ctx.userId, cfg)
+    const { targets, currentProtocol } = await loadDailyTargetsWithProtocol(
+      ctx.supabase,
+      ctx.userId,
+      cfg,
+    )
+
+    // The view maps hunger to 1.6/1.8/2.0 g/kg in SQL. With recomposição on
+    // its fixed factor that number is not the one of the target below, and
+    // handing it over made the model quote a g/kg that did not match the grams
+    // (report C3-38) — so in that case, and only in that case, the model gets
+    // the grams alone. Any other protocol, a profile without a protocol, and
+    // recomposição with the fixed factor switched off (docs/CALCULO-MPP.md
+    // §1b) get the view's row untouched, as before 2026-10-04: one switch
+    // turns the whole rule off.
+    const viewFactorContradictsTarget =
+      currentProtocol === 'recomposicao' && fixedRecompProteinFactor(cfg) != null
 
     return {
       success: true,
       updated_fields: Object.keys(updates),
-      metrics: metrics ?? null,
+      metrics:
+        metrics && viewFactorContradictsTarget ? withoutProteinFactor(metrics) : (metrics ?? null),
       // ⚠️ Sempre que estes valores estiverem presentes, USE EXATAMENTE eles
       // ao informar meta ao paciente — não calcule na cabeça.
       calories_target_today: targets.calories_target,
       protein_target_today_g: targets.protein_target,
     }
   },
+}
+
+/** A `v_user_metrics` row without its stale `protein_factor` column. */
+function withoutProteinFactor<T extends { protein_factor?: unknown }>(
+  row: T,
+): Omit<T, 'protein_factor'> {
+  const { protein_factor: _staleViewFactor, ...rest } = row
+  return rest
 }
 
 // ----------------------------------------------------------------------------
@@ -280,7 +305,8 @@ export const defineProtocolo: ToolDefinition = {
     'protocol = "recomposicao" (déficit + preserva massa), "ganho_massa" (superávit), "manutencao" (sem ajuste). ' +
     'deficit_level = kcal/dia de déficit, APENAS pra recomposicao. 400=MUITA fome, 500=moderada, 600=POUCA fome (mais fome → MENOR déficit, pra não quebrar a adesão — regra fixa do método). Omita pra ganho_massa/manutencao. ' +
     'goal_type = "BF" (% gordura alvo) ou "IMC" (IMC alvo). ' +
-    'goal_value = número absoluto da meta (ex: BF=15 ou IMC=23). Omita se não chegou nesse nível de detalhe.',
+    'goal_value = número absoluto da meta (ex: BF=15 ou IMC=23). Omita se não chegou nesse nível de detalhe.' +
+    goalFloorToolTexts().protocolo,
   parameters: z.object({
     protocol: z.enum(['recomposicao', 'ganho_massa', 'manutencao']),
     deficit_level: z
@@ -297,11 +323,16 @@ export const defineProtocolo: ToolDefinition = {
   }),
   execute: async (args, ctx) => {
     const operationTimestamp = ctx.referenceTimestamp ?? new Date()
+    // R4 (docs/CALCULO-MPP.md §8b): this tool was the way around the floor of
+    // define_meta_peso. A goal under the floor is dropped, written exactly as
+    // an omitted goal is; the protocol, the deficit and the cycle baseline are
+    // still saved, so a recomposition is never lost over its goal.
+    const goalBelowFloor = goalBelowFloorReason(args.goal_type, args.goal_value)
     const updatePayload: TablesUpdate<'user_profiles'> = {
       current_protocol: args.protocol,
       deficit_level: args.deficit_level ?? null,
-      goal_type: args.goal_type ?? null,
-      goal_value: args.goal_value ?? null,
+      goal_type: goalBelowFloor ? null : (args.goal_type ?? null),
+      goal_value: goalBelowFloor ? null : (args.goal_value ?? null),
       updated_at: operationTimestamp.toISOString(),
     }
     // Sub-projeto C (wiring): ao entrar em ganho/manutenção, captura o BASELINE
@@ -335,6 +366,14 @@ export const defineProtocolo: ToolDefinition = {
     // Próxima resposta do LLM tem o valor pronto pra usar.
     const config = await loadCalcConfig(ctx.supabase)
     const targets = await loadDailyTargets(ctx.supabase, ctx.userId, config)
+    // Base text for the model: the protocol IS saved, the goal is not.
+    const goalMessage = goalBelowFloor
+      ? goalBelowFloor.message(
+          goalBelowFloor.reason === 'gordura_abaixo_do_piso'
+            ? await bfGoalOfferFrom(ctx)
+            : goalBelowFloor.floor,
+        )
+      : null
 
     return {
       success: true,
@@ -348,8 +387,114 @@ export const defineProtocolo: ToolDefinition = {
           : args.protocol === 'ganho_massa'
             ? `BMR × activity_factor × ${config.ganho_massa_surplus_multiplier} (superávit leve)`
             : 'BMR × activity_factor (manutenção)',
+      ...(goalBelowFloor && {
+        goal_saved: false,
+        goal_refused_reason: goalBelowFloor.reason,
+        goal_type_refused: args.goal_type,
+        goal_value_refused: args.goal_value,
+        goal_floor: goalBelowFloor.floor,
+        goal_message: goalMessage,
+      }),
     }
   },
+}
+
+/** Why a goal handed to define_protocolo is under the floor, or null.
+ *
+ * This tool reads neither the height nor the current weight, so it cannot tell
+ * losing from gaining: ANY IMC goal under the floor is dropped, also for
+ * someone gaining weight (define_meta_peso only refuses when losing). Declared
+ * in docs/CALCULO-MPP.md §8c. */
+function goalBelowFloorReason(
+  goalType: 'BF' | 'IMC' | undefined,
+  goalValue: number | undefined,
+): { reason: string; floor: number; message: (offerFrom: number) => string } | null {
+  if (goalValue == null) return null
+  // A floor at 0 is the revert switch (§8b): nothing is refused, a negative
+  // goal included — the behaviour of before the floors.
+  if (goalType === 'BF' && BF_METHOD_FLOOR > 0 && goalValue < BF_METHOD_FLOOR) {
+    return {
+      reason: 'gordura_abaixo_do_piso',
+      floor: BF_METHOD_FLOOR,
+      message: (offerFrom) =>
+        `Protocolo registrado. A meta de ${goalValue}% de gordura corporal não foi registrada: fica abaixo de ${BF_METHOD_FLOOR}%, ` +
+        `que é o limite inferior seguro do método. Posso registrar uma meta a partir de ${offerFrom}%. Qual você prefere?`,
+    }
+  }
+  if (goalType === 'IMC' && IMC_GOAL_FLOOR > 0 && goalValue < IMC_GOAL_FLOOR) {
+    return {
+      reason: 'imc_abaixo_do_minimo_saudavel',
+      floor: IMC_GOAL_FLOOR,
+      message: (offerFrom) =>
+        `Protocolo registrado. A meta de IMC ${goalValue} não foi registrada: fica abaixo do saudável (mínimo OMS é ${IMC_GOAL_FLOOR}). ` +
+        `Posso registrar uma meta de IMC a partir de ${offerFrom}. Qual você prefere?`,
+    }
+  }
+  return null
+}
+
+/** The body-fat goal a refusal of define_protocolo offers: the same one
+ * define_meta_peso offers for the patient's sex (a woman was offered "a partir
+ * de 10%" here and "a partir de 12%" there). It runs after the protocol is
+ * written, so a failed or empty read never costs the protocol: it falls back
+ * to the method floor. */
+async function bfGoalOfferFrom(
+  ctx: Parameters<ToolDefinition['execute']>[1],
+): Promise<number> {
+  try {
+    const { data, error } = await ctx.supabase
+      .from('user_profiles')
+      .select('sex')
+      .eq('user_id', ctx.userId)
+      .maybeSingle()
+    const sex = error ? null : (data as { sex: string | null } | null)?.sex
+    if (sex === 'masculino' || sex === 'feminino') return lowestBfGoalWithoutWarning(sex)
+  } catch {
+    // The protocol is already saved; the offer falls back to the method floor.
+  }
+  return BF_METHOD_FLOOR
+}
+
+/** What the model reads about the goal floors (R4), built from the two
+ * constants: with a floor at 0 its sentence is gone, and with both at 0 the
+ * descriptions are the ones from before R4. Written by hand they kept saying
+ * "NÃO grava" after the switch was turned off, so the model denied a goal the
+ * tool had saved. */
+function goalFloorToolTexts(): {
+  protocolo: string
+  metaPesoBfParam: string
+  metaPesoRefusal: string
+  bfParamDescribe: string
+} {
+  const pt = (n: number) => String(n).replace('.', ',')
+  const bfOn = BF_METHOD_FLOOR > 0
+  const imcOn = IMC_GOAL_FLOOR > 0
+  const protocolGoals = [
+    ...(bfOn ? [`BF abaixo de ${pt(BF_METHOD_FLOOR)}%`] : []),
+    ...(imcOn ? [`IMC abaixo de ${pt(IMC_GOAL_FLOOR)}`] : []),
+  ]
+  const declaredGoals = [
+    ...(bfOn ? [`meta de gordura corporal abaixo de ${pt(BF_METHOD_FLOOR)}%`] : []),
+    ...(imcOn
+      ? [`meta de PESO que deixaria o IMC abaixo de ${pt(IMC_GOAL_FLOOR)} perdendo peso`]
+      : []),
+  ]
+  return {
+    protocolo:
+      protocolGoals.length > 0
+        ? ` PISO DA META: ${protocolGoals.join(' ou ')} NÃO é gravado como meta. O protocolo e o déficit são gravados normalmente e o retorno traz goal_saved=false com goal_message: NÃO diga que a meta foi registrada; explique o piso e ofereça uma meta a partir dele.`
+        : '',
+    metaPesoBfParam: bfOn
+      ? `Abaixo de ${pt(BF_METHOD_FLOOR)}% a tool NÃO grava (piso do método).`
+      : 'Faixa 3-50.',
+    metaPesoRefusal:
+      declaredGoals.length > 0
+        ? `RECUSA (piso de segurança): ${declaredGoals.length > 1 ? `${declaredGoals.join(', ou ')},` : declaredGoals[0]} NÃO é gravada. O retorno traz refused=true, goal_saved=false e a meta anterior continua como estava. NÃO diga que registrou, NÃO chame a tool de novo com o mesmo valor: explique com a mensagem retornada e ofereça uma meta a partir do piso.\n`
+        : '',
+    bfParamDescribe: bfOn
+      ? `Abaixo de ${pt(BF_METHOD_FLOOR)}% a tool NÃO grava e devolve refused=true.`
+      : 'Valores 1-4% caem em unhealthy_low; classifier lida com extremos.',
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -365,9 +510,10 @@ export const defineMetaPeso: ToolDefinition = {
     'Salva a META do paciente — PESO em kg OU PERCENTUAL DE GORDURA (BF%) — e retorna classificação automática da viabilidade. ' +
     'PASSE EXATAMENTE UM dos dois parâmetros (XOR):\n' +
     '  - `target_weight_kg`: quando o paciente fala em peso ("quero pesar 65kg", "minha meta é 70"). Faixa 30-300.\n' +
-    '  - `target_bf_percent`: quando o paciente fala em gordura corporal ("quero chegar em 18%", "minha meta é 20% de BF"). Faixa 3-50.\n' +
+    `  - \`target_bf_percent\`: quando o paciente fala em gordura corporal ("quero chegar em 18%", "minha meta é 20% de BF"). ${goalFloorToolTexts().metaPesoBfParam}\n` +
     '⚠️ USE APENAS depois que: (1) cadastra_dados_iniciais foi chamada (peso, altura, sexo, e — se for BF — body_fat_percent atual); (2) o paciente declarou EXPLICITAMENTE o alvo. NÃO USE quando ele especulou ou pediu sua opinião antes.\n' +
     'Retorno: classificação (ideal/agressiva/sobrepeso/abaixo/manutenção) + números da meta (IMC alvo OU pp de gordura) + faixa saudável + semanas estimadas + MENSAGEM-BASE.\n' +
+    goalFloorToolTexts().metaPesoRefusal +
     'IMPORTANTE: a mensagem retornada NÃO é literal — varie o jeito de dizer mas MANTENHA os números. NUNCA invente IMC, faixa saudável nem BF essencial — use os da tool.',
   parameters: z
     .object({
@@ -395,7 +541,7 @@ export const defineMetaPeso: ToolDefinition = {
         .max(60, { message: 'target_bf_percent acima de 60% é fisicamente improvável.' })
         .optional()
         .describe(
-          'Percentual de gordura corporal alvo (1-60). Use quando paciente fala em %BF/composição corporal. Valores 1-4% caem em unhealthy_low; classifier lida com extremos.',
+          `Percentual de gordura corporal alvo (1-60). Use quando paciente fala em %BF/composição corporal. ${goalFloorToolTexts().bfParamDescribe}`,
         ),
     })
     .refine(
@@ -479,6 +625,26 @@ export const defineMetaPeso: ToolDefinition = {
         targetBfPercent: args.target_bf_percent,
         sex: p.sex,
       })
+      // R4 (docs/CALCULO-MPP.md §8b): under the method floor nothing is
+      // written, so the previous goal stays as it was.
+      if (assessment.refused) {
+        return {
+          success: false,
+          refused: true,
+          goal_saved: false,
+          reason: 'gordura_abaixo_do_piso',
+          goal_type: 'BF',
+          target_bf_percent: args.target_bf_percent,
+          classification: assessment.classification,
+          bf_atual: assessment.bfAtual,
+          bf_alvo: assessment.bfAlvo,
+          bf_piso_metodo: BF_METHOD_FLOOR,
+          bf_minimo_saudavel: assessment.bfMinimoSaudavel,
+          direction: assessment.direction,
+          delta_pp: assessment.deltaPp,
+          message_template: assessment.message,
+        }
+      }
       const updateRow = {
         goal_type: 'BF' as const,
         goal_value: args.target_bf_percent,
@@ -528,6 +694,27 @@ export const defineMetaPeso: ToolDefinition = {
       targetWeightKg,
       heightCm: Number(p.height_cm),
     })
+
+    // R4 (docs/CALCULO-MPP.md §8b): losing weight to a BMI under 18.5 is not
+    // written; the previous goal stays as it was.
+    if (assessment.refused) {
+      return {
+        success: false,
+        refused: true,
+        goal_saved: false,
+        reason: 'peso_abaixo_do_minimo_saudavel',
+        goal_type: 'peso_kg',
+        target_weight_kg: targetWeightKg,
+        classification: assessment.classification,
+        imc_atual: assessment.imcAtual,
+        imc_alvo: assessment.imcAlvo,
+        peso_minimo_saudavel_kg: assessment.pesoMinimoSaudavelKg,
+        peso_maximo_saudavel_kg: assessment.pesoMaximoSaudavelKg,
+        direction: assessment.direction,
+        delta_kg: assessment.deltaKg,
+        message_template: assessment.message,
+      }
+    }
 
     // Grava no banco
     const updateRow = {
@@ -2164,7 +2351,9 @@ export const consultaProgresso: ToolDefinition = {
     // iPhone, staging, 2026-10-04: the raw `daily_balance` (net, with
     // exercise) read as "what is left to eat". The Flow gets the two balances
     // under explicit keys, over the same target the context prints, and the
-    // raw key is withheld. No formula changes.
+    // raw key is withheld. The day's balance follows the protocol (§2c of
+    // docs/CALCULO-MPP.md) through the same core function as the context and
+    // the Today screen; without `flowDayBalance` it is the legacy net balance.
     if (ctx.assistantIdentity === 'flow') {
       const day = (snap ?? null) as {
         calories_consumed?: number | null
@@ -2175,7 +2364,33 @@ export const consultaProgresso: ToolDefinition = {
         caloriesTarget: ctx.flowDailyTargets?.calories_target ?? day?.calories_target ?? null,
         caloriesConsumed: day?.calories_consumed ?? 0,
         exerciseCalories: day?.exercise_calories ?? 0,
+        ...(ctx.flowDayBalance ?? {}),
       })
+      const foodRule =
+        'Exercício não libera comida nem apaga excedente: a meta é a mesma com ou sem treino e o que resta para comida é meta − consumido, sem exercício.'
+      // One key per meaning, so the model never reads one balance as another.
+      const dayBalance =
+        energy.netBasis === 'target'
+          ? {
+              keys: { balanco_do_dia_com_exercicio_kcal: energy.net },
+              rule: `${foodRule} O gasto do treino fica à parte; balanco_do_dia_com_exercicio_kcal não é o que resta para comer.`,
+            }
+          : energy.netIncludesExercise
+            ? {
+                keys: {
+                  gasto_de_referencia_kcal: energy.reference,
+                  balanco_do_dia_com_exercicio_kcal: energy.net,
+                },
+                rule: `${foodRule} O gasto do treino fica à parte; balanco_do_dia_com_exercicio_kcal é consumido − (gasto_de_referencia_kcal + exercicio_kcal): o déficit (negativo) ou superávit (positivo) real do dia até agora, provisório até o dia fechar, quando é creditado no bloco 7700. Não é o que resta para comer.`,
+              }
+            : {
+                keys: {
+                  gasto_de_referencia_kcal: energy.reference,
+                  balanco_do_dia_sem_exercicio_kcal: energy.net,
+                },
+                rule: `${foodRule} O gasto do treino fica à parte; balanco_do_dia_sem_exercicio_kcal é consumido − gasto_de_referencia_kcal (negativo = déficit, positivo = superávit): o exercício já está no fator de atividade e não é somado. Não é o que resta para comer.`,
+              }
+      const showsDayBalance = Boolean(snap) && energy.net != null
       const { daily_balance: _net, ...todayWithoutNet } = (snap ?? {}) as Record<string, unknown>
       return {
         progresso: progressoPt,
@@ -2189,12 +2404,13 @@ export const consultaProgresso: ToolDefinition = {
               ? { excedente_de_comida_kcal: energy.food }
               : { restam_para_comida_kcal: 0 - energy.food }),
           exercicio_kcal: energy.exercise,
-          // No net balance before the day has a row (same as the context).
-          ...(snap && energy.net != null
-            ? { balanco_do_dia_com_exercicio_kcal: energy.net }
-            : {}),
+          // No day balance before the day has a row (same as the context);
+          // then the per-protocol rule does not cite keys that are not there.
+          ...(showsDayBalance ? dayBalance.keys : {}),
           regra:
-            'Exercício não libera comida nem apaga excedente: a meta é a mesma com ou sem treino e o que resta para comida é meta − consumido, sem exercício. O gasto do treino fica à parte; balanco_do_dia_com_exercicio_kcal não é o que resta para comer.',
+            showsDayBalance || energy.netBasis === 'target'
+              ? dayBalance.rule
+              : `${foodRule} O gasto do treino fica à parte.`,
         },
       }
     }

@@ -4,7 +4,9 @@ import {
   type DailyStateDayStatus,
   type DailyStateMealType,
   type DailyStateRoutineItemInput,
+  dailyTargetByProtocol,
   type ProfileRow,
+  resolveDayBalanceInputs,
   routineItemTypeSchema,
   routineOriginSchema,
 } from '@mpp/core'
@@ -498,11 +500,29 @@ async function loadOfficialDailyStateAttempt(
     throw new DailyStateReadChangedError()
   }
 
+  // Inputs of the per-protocol day balance (docs/CALCULO-MPP.md §2c), from
+  // the same core function the Flow pipeline calls, so the Today screen and
+  // the Flow say the same number: the effective protocol (the day row's, else
+  // the profile's), the daily closer's programmed deficit for THAT protocol
+  // (daily-closer.ts `designDeficit`), the multiplier as a number, and
+  // whether the day's stored target still belongs to that protocol's rule.
+  const dayBalanceInputs = resolveDayBalanceInputs({
+    profileProtocol: profile?.current_protocol ?? null,
+    deficitLevel: profile?.deficit_level ?? null,
+    gainSurplusMultiplier: config.ganho_massa_surplus_multiplier,
+    dayRowProtocol: snapshot?.current_protocol ?? null,
+    storedTargetKcal: snapshot?.calories_target ?? null,
+    targetByProtocol: dailyTargetByProtocol(profile, config),
+  })
+
   return buildDailyState({
     localDate,
     generatedAt: nowIso,
     protocol: profile?.current_protocol ?? null,
     calculatedTargets: computeDailyTargets(profile, config),
+    gainSurplusMultiplier: dayBalanceInputs.gainSurplusMultiplier,
+    programmedDeficitKcal: dayBalanceInputs.programmedDeficitKcal,
+    dayTargetMatchesProtocol: dayBalanceInputs.targetMatchesProtocol,
     snapshot: snapshot
       ? {
           caloriesConsumed: snapshot.calories_consumed,

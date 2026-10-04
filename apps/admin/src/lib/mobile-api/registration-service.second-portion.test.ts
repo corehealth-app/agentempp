@@ -89,18 +89,21 @@
  * Declared pendencies of the BFF end (CLAUDE.md criterion 2). The lines of
  * the agent end are in the golden; every line is in docs/CALCULO-MPP.md §5.
  *
- * > RC B — cenário mensagem "já registrado" no iPhone para o código registration_already_confirmed NÃO coberto nesta PR (pendência da audit 2026-10-04).
- *   O build atual não conhece o código: mostra "Não foi possível concluir.
- *   Tente novamente.", mantém a proposta na tela, "Tentar novamente" reenvia o
+ * > RC B — cenário mensagem "já registrado" no iPhone para o código registration_already_confirmed vista no aparelho NÃO coberto nesta PR (pendência da audit 2026-10-04).
+ *   Coberto no código do app em commit separado do mesmo dia (9624cd5): um
+ *   409 registration_already_confirmed ao editar ou cancelar fecha a proposta
+ *   como confirmada, com a mensagem "Este registro já estava salvo. A
+ *   alteração não foi aplicada.", sem oferecer nova proposta. Ainda não
+ *   verificado no aparelho, e nenhum teste de interface do app dirige o 409
+ *   (só testes de unidade). Continua aberto: um build anterior a esse commit
+ *   não conhece o código — mostra "Não foi possível concluir. Tente
+ *   novamente.", mantém a proposta na tela, "Tentar novamente" reenvia o
  *   mesmo PATCH ou o mesmo DELETE (mesma resposta) e Confirmar responde
- *   "Registro confirmado." sem gravar de novo. Falta a mudança no iOS
- *   (mensagem própria e fechar a proposta). Enquanto ela não existe, o
- *   paciente que tocou em Cancelar não fica sabendo que a refeição JÁ está
- *   salva (esta API não apaga registro confirmado): se ele fechar a tela e
- *   registrar a mesma refeição de novo, ela é gravada duas vezes (2 linhas,
- *   780) — o servidor só recusa o cancelamento, não impede uma proposta nova
- *   (teste "declared: the refusal is all the server does" do bloco 7).
- *   Sequência lida no código do app, não executada no aparelho.
+ *   "Registro confirmado." sem gravar de novo; e, em qualquer build, o
+ *   servidor só recusa o pedido, não impede uma proposta nova: quem registrar
+ *   a mesma refeição de novo depois do aviso a grava duas vezes (2 linhas,
+ *   780), porque esta API não apaga registro confirmado (teste "declared:
+ *   the refusal is all the server does" do bloco 7).
  * > RC B — cenário pending de refeição sem o marcador cuja escrita já aconteceu, editado pela API NÃO coberto nesta PR (pendência da audit 2026-10-04).
  *   A guarda da edição vale só para proposta com `registration_origin`
  *   `mobile_app`. Sem o marcador (WhatsApp, ou app antes desta PR) a edição é

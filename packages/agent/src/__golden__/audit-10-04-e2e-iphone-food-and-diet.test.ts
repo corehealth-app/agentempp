@@ -17,13 +17,18 @@
  * 2026-10-04.
  *
  * > RC F23 — "leite integral" 200 ml (224.9 kcal, "Canjica, com leite
- * > integral") and "whey" 30 g (protein_mismatch, 0 kcal) NOT covered by this
- * > change (pending from the audit 2026-10-04). They need audited catalog
- * > aliases; a first set was withdrawn after the adversarial review showed
- * > that exact "azeite"/"whey" rows make the composed-name split price half
- * > of "salada com azeite" as oil, that "ovo cozido" + "ovo frito" turn a
- * > bare "ovo" into a cru/cozido question, and that "arroz branco cozido"
- * > removes the preparation question of 2026-09-28. Catalog decision pending.
+ * > integral") and "whey" 30 g (protein_mismatch, 0 kcal) are NOT covered by
+ * > the fixtures of THIS file. Since later the same day they are covered by
+ * > audit-10-04-app-leite-whey.test.ts: the two names are on the short list of
+ * > everyday-food-defaults.ts and take their values from the verified catalog
+ * > rows FDC:171265 and FDC:173180 (rule M2; implemented at Eduardo's request,
+ * > the client's confirmation of the list is pending). No catalog row was
+ * > added: the first attempt, audited catalog aliases, was withdrawn after
+ * > the adversarial review showed that exact "azeite"/"whey" rows make the
+ * > composed-name split price half of "salada com azeite" as oil, that "ovo
+ * > cozido" + "ovo frito" turn a bare "ovo" into a cru/cozido question, and
+ * > that "arroz branco cozido" removes the preparation question of
+ * > 2026-09-28. Those three cases are guards of the new golden.
  * > RC F25 — "1 scoop de whey" and "1 colher de sopa de azeite" (household
  * > measures not converted) NOT covered: the fixtures enter with the grams
  * > typed on the phone (30 g, 13 g).

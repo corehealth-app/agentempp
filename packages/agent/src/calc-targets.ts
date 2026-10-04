@@ -6,7 +6,7 @@
  * pra compatibilidade de imports existentes via @mpp/agent.
  */
 
-import type { CalcConfig, DailyTargets } from '@mpp/core'
+import type { CalcConfig, DailyTargets, ProfileRow } from '@mpp/core'
 import { computeDailyTargets } from '@mpp/core'
 
 export type { DailyTargets, ProfileRow } from '@mpp/core'
@@ -19,6 +19,22 @@ export async function loadDailyTargets(
   userId: string,
   config: CalcConfig,
 ): Promise<DailyTargets> {
+  return (await loadDailyTargetsWithProtocol(svc, userId, config)).targets
+}
+
+/**
+ * The same single read as `loadDailyTargets`, also handing over the protocol
+ * of the row the targets were computed from. `cadastra_dados_iniciais` needs
+ * both from one read: whether the view's `protein_factor` contradicts the
+ * protein target depends on the protocol that target was computed with.
+ */
+export async function loadDailyTargetsWithProtocol(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
+  svc: any,
+  userId: string,
+  config: CalcConfig,
+): Promise<{ targets: DailyTargets; currentProtocol: ProfileRow['current_protocol'] }> {
   const { data, error } = await svc
     .from('user_profiles')
     .select(
@@ -33,5 +49,9 @@ export async function loadDailyTargets(
         : 'profile lookup failed'
     throw new Error(message)
   }
-  return computeDailyTargets(data ?? null, config)
+  const row: ProfileRow | null = data ?? null
+  return {
+    targets: computeDailyTargets(row, config),
+    currentProtocol: row?.current_protocol ?? null,
+  }
 }

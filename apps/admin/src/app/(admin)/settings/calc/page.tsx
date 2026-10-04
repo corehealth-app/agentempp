@@ -43,8 +43,11 @@ export default async function CalcConfigPage() {
         <p className="text-muted-foreground">
           Todos os valores aqui seguem a documentação oficial do método MPP (Notion). As fórmulas
           incluem BMR Mifflin-St Jeor / Katch-McArdle, recomp = BMR × 1.2 − déficit, ganho = BMR ×
-          atividade × 1.05, escada IMC [30, 25, 23, 22, 21], escada BF, levels (8 níveis), 17
-          badges, fatores de proteína em cascata por hunger + treino, e critérios de elegibilidade
+          atividade × 1.05, meta de IMC (5 pontos por vez até 25, depois 23 → 22 → 21; dito pelo
+          cliente em 26/01/2026, confirmação pendente), escada BF, levels (8 níveis), 17
+          badges, fatores de proteína em cascata por hunger + treino (a cascata vale para ganho de
+          massa, manutenção e perfil sem protocolo; a recomposição é fixa em 1,5 g/kg — dito pelo
+          cliente em 15/04 e 15/05/2026; confirmação pendente), e critérios de elegibilidade
           (treino ≥ 3, sono ≥ 6h30, alimentação estruturada). Antes de alterar, verifique a doc
           original.
         </p>

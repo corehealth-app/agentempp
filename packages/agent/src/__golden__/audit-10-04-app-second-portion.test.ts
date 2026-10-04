@@ -102,13 +102,16 @@
  * > RC B — cenário pending sem o marcador (criado no WhatsApp ou antes desta PR) confirmado pela API do app NÃO coberto nesta PR (pendência da audit 2026-10-04).
  *   Segue o caminho antigo, com perda; só medido por
  *   `mobile.registration.implicit_replace`.
- * > RC B — cenário mensagem "já registrado" no iPhone para o código registration_already_confirmed NÃO coberto nesta PR (pendência da audit 2026-10-04).
+ * > RC B — cenário mensagem "já registrado" no iPhone para o código registration_already_confirmed vista no aparelho NÃO coberto nesta PR (pendência da audit 2026-10-04).
  *   O PATCH de um pending cujo registro já foi gravado responde esse código
  *   (não `registration_not_pending`, que o iPhone trata com "Criar nova
  *   proposta" e que, com a confirmação aditiva, gravaria a refeição de novo).
- *   O build atual não conhece o código: mostra "Não foi possível concluir.
- *   Tente novamente.", mantém a proposta na tela e Confirmar responde
- *   "Registro confirmado." sem gravar de novo. Falta a mudança no iOS. Lido no
+ *   Coberto no código do app em commit separado do mesmo dia (9624cd5): o 409
+ *   ao editar ou cancelar fecha a proposta como confirmada, com a mensagem
+ *   "Este registro já estava salvo. A alteração não foi aplicada.". Ainda não
+ *   verificado no aparelho. Um build anterior não conhece o código: mostra
+ *   "Não foi possível concluir. Tente novamente.", mantém a proposta na tela e
+ *   Confirmar responde "Registro confirmado." sem gravar de novo. Lido no
  *   código do app, não executado no aparelho; a parte do servidor está em
  *   apps/admin/src/lib/mobile-api/registration-service.second-portion.test.ts,
  *   com as demais pendências da guarda da edição (pending sem marcador, treino

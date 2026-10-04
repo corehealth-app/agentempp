@@ -47,6 +47,18 @@
  * No formula changed. Every test here runs the REAL pipeline entry
  * (processAuthenticatedMessage) or the real tool; nothing is a replica.
  *
+ * Later the same day (docs/CALCULO-MPP.md §2c; golden
+ * audit-10-04-day-balance-by-protocol.test.ts): the "Balanço calórico de
+ * hoje" line and the day-balance key of consulta_progresso became per
+ * protocol — against the day's expenditure, with exercise only in
+ * recomposição. Dito pelo cliente em 20/01/2026, 22/02/2026, 23/02/2026 e
+ * 09/03/2026; implementado em 2026-10-04 a pedido do Eduardo; confirmação do
+ * cliente pendente. The expectations of that one line / key were updated
+ * below, each with its old value in a comment (-2761 → -2297, -3000 → -2536,
+ * -102 → +362, -2769 → -2305, recomposição -903 → -1403 and -1107 → -1607).
+ * The food line, the exercise line, the rule and every system answer are as
+ * they were.
+ *
  * > RC A — cenário canal WhatsApp NÃO coberto nesta PR (pendência da audit 2026-10-04).
  *   Travado como está em audit-10-04-whatsapp-context-lock.test.ts.
  * > RC A — cenário pergunta direta fora da gramática NÃO coberto nesta PR (pendência da audit 2026-10-04).
@@ -62,16 +74,18 @@
  *   texto que o sistema daria agora. Só nova rodada no iPhone/staging prova.
  * > RC A — cenário redação da resposta do sistema e da REGRA NÃO coberto nesta PR (pendência da audit 2026-10-04).
  *   Texto clínico ainda sem aprovação do Roberto.
- * > RC A — cenário exercício no balanço de ganho_massa/manutenção NÃO coberto nesta PR (pendência da audit 2026-10-04).
- *   Decisão do Roberto em aberto; a resposta só diz que o gasto fica à parte.
- * > RC A — cenário consulta_resumo_periodo (média de daily_balance sem rótulo), "balanço de ontem" e resumo persistente do paciente NÃO coberto nesta PR (pendência da audit 2026-10-04).
+ * > RC A — cenário exercício no balanço de ganho_massa/manutenção fora do Flow e da tela Hoje (WhatsApp, bom dia, fechamento, consulta_resumo_periodo) NÃO coberto nesta PR (pendência da audit 2026-10-04).
+ *   No Flow e na tela Hoje passou a valer a regra do §2c (ver o golden
+ *   audit-10-04-day-balance-by-protocol.test.ts e as pendências RC R1/R2 lá).
+ *   A resposta do sistema continua dizendo só que o gasto fica à parte.
+ * > RC A — cenário `consulta_resumo_periodo` (média de `daily_balance` sem rótulo), "balanço de ontem" e resumo persistente do paciente NÃO coberto nesta PR (pendência da audit 2026-10-04).
  * > RC A — cenário afirmação sem pontuação final ("treinei hoje e posso comer mais") quando o Flow NÃO tinha acabado de perguntar algo NÃO coberto nesta PR (pendência da audit 2026-10-04).
  *   Sem "?" e sem marca no fim o predicado não separa a pergunta ditada da
  *   afirmação: a mensagem ainda recebe a resposta do sistema, a não ser que a
  *   última resposta do Flow no dia termine em pergunta — aí é resposta do
  *   paciente e vai para o modelo. Com "." ou "!" no fim vai sempre para o
  *   modelo. Os dois lados travados abaixo.
- * > RC A — cenário pergunta ditada sem "?" logo depois de uma pergunta do Flow NÃO coberto nesta PR (pendência da audit 2026-10-04).
+ * > RC A — cenário pergunta ditada sem `?` logo depois de uma pergunta do Flow NÃO coberto nesta PR (pendência da audit 2026-10-04).
  *   Pela mesma regra vai para o modelo, com o contexto corrigido (travado
  *   abaixo como está).
  */
@@ -580,27 +594,36 @@ describe('audit 2026-10-04 RC A — what the Flow model reads on the same day', 
       '- Consumido hoje: 541 kcal | 59.03 g proteína | 47.32g carbo | 10.27g gordura',
       '- Para COMIDA hoje (meta − consumido, SEM exercício): restam 2439 kcal',
       '- Exercício hoje: 322 kcal queimadas — NÃO aumenta a meta e NÃO entra no que resta para comida',
-      '- Balanço calórico de hoje COM exercício (consumido − meta − exercício): -2761 kcal (negativo=déficit, positivo=superávit) — NÃO é o que resta para comer',
+      // §2c (2026-10-04): was "COM exercício (consumido − meta − exercício):
+      // -2761 kcal". Ganho de massa: 541 − 2838 (2980 ÷ 1,05), no exercise.
+      '- Balanço calórico de hoje (consumido − gasto de referência de 2838 kcal; o exercício já está no fator de atividade e não é somado): -2297 kcal (negativo=déficit, positivo=superávit) — NÃO é o que resta para comer',
       RULE_LINE,
       '- Sequência atual: 0 dias consecutivos (recorde 0) | XP: 0 (nível 1) | Blocos 7700 fechados: 0',
       '- Bloco 7700 em andamento: **0 kcal de 7700** (0%)',
     ])
     // The legacy line (colon right after "hoje") is what misled the model.
     expect(prompt).not.toContain('- Balanço calórico de hoje: ')
-    // -2761 appears once, and only on the line that says what it is.
-    expect(prompt.split('-2761')).toHaveLength(2)
-    expect(prompt.split('\n').find((line) => line.includes('-2761'))).toContain('COM exercício')
+    // The day balance appears once, and only on the line that says what it
+    // is; the net balance with exercise (-2761) is nowhere in the prompt.
+    expect(prompt.split('-2297')).toHaveLength(2)
+    expect(prompt.split('\n').find((line) => line.includes('-2297'))).toContain(
+      'Balanço calórico de hoje (consumido − gasto de referência',
+    )
+    expect(prompt).not.toContain('-2761')
+    expect(prompt).not.toContain('COM exercício')
   })
 
-  it('the day row before the second lunch (consumed 302): 2678 left, net -3000', async () => {
+  it('the day row before the second lunch (consumed 302): 2678 left, day balance -2536 (was net -3000)', async () => {
     const lines = await contextFor({ day: S302 })
 
     expect(lines).toContain(
       '- Para COMIDA hoje (meta − consumido, SEM exercício): restam 2678 kcal',
     )
+    // §2c: was "COM exercício (…): -3000 kcal". 302 − 2838, no exercise.
     expect(lines).toContain(
-      '- Balanço calórico de hoje COM exercício (consumido − meta − exercício): -3000 kcal (negativo=déficit, positivo=superávit) — NÃO é o que resta para comer',
+      '- Balanço calórico de hoje (consumido − gasto de referência de 2838 kcal; o exercício já está no fator de atividade e não é somado): -2536 kcal (negativo=déficit, positivo=superávit) — NÃO é o que resta para comer',
     )
+    expect(lines.join('\n')).not.toContain('-3000')
   })
 
   it('the stable (cached) block of the Flow prompt is untouched: shared rules + channel policy', async () => {
@@ -652,12 +675,17 @@ describe('audit 2026-10-04 RC A — neighbours on the Flow (context and system a
     const lines = await contextFor(fixture)
 
     expect(lines).toContain('- Para COMIDA hoje (meta − consumido, SEM exercício): restam 436 kcal')
+    // §2c: was "(consumido − meta − exercício): -903 kcal … o crédito do bloco
+    // 7700 só é calculado no fechamento do dia (déficit programado − este
+    // número)". Recomposição is now against the day's expenditure:
+    // 1407 − (1843 + 500) − 467 = −1403, the real deficit of the day.
     expect(lines).toContain(
-      '- Balanço calórico de hoje COM exercício (consumido − meta − exercício): -903 kcal (negativo=déficit, positivo=superávit) — o crédito do bloco 7700 só é calculado no fechamento do dia (déficit programado − este número); até lá o valor é provisório e NÃO é o que resta para comer',
+      '- Balanço calórico de hoje COM exercício (consumido − gasto do dia; gasto do dia = 2343 kcal de gasto de referência + 467 kcal de exercício): -1403 kcal (negativo=déficit, positivo=superávit) — é o déficit ou superávit real do dia até agora, provisório até o dia fechar; o crédito no bloco 7700 só acontece no fechamento do dia e este número NÃO é o que resta para comer',
     )
     // Review round 2: the line called -903 "the number the closing uses in
-    // the block"; the credit of that day is 500 − (−903) = 1.403.
+    // the block". It still must not: the credit exists only at closing.
     expect(lines.join('\n')).not.toContain('é o número que o fechamento')
+    expect(lines.join('\n')).not.toContain('-903')
     const rule = lines.find((line) => line.startsWith('- REGRA:'))
     expect(rule?.endsWith('o gasto do treino fica à parte (acelera o bloco 7700).')).toBe(true)
 
@@ -678,7 +706,7 @@ describe('audit 2026-10-04 RC A — neighbours on the Flow (context and system a
     )
   })
 
-  it('recomposição, Roberto 2026-05-21 (1301 / 1843 / 565): 542 left, net -1107', async () => {
+  it('recomposição, Roberto 2026-05-21 (1301 / 1843 / 565): 542 left, day balance -1607 (was net -1107)', async () => {
     const lines = await contextFor(
       recomposicao({
         calories_target: 1843,
@@ -689,7 +717,10 @@ describe('audit 2026-10-04 RC A — neighbours on the Flow (context and system a
     )
 
     expect(lines).toContain('- Para COMIDA hoje (meta − consumido, SEM exercício): restam 542 kcal')
-    expect(lines.find((line) => line.includes('COM exercício'))).toContain(': -1107 kcal')
+    // §2c: was ": -1107 kcal" against the target. 1301 − (1843 + 500) − 565.
+    expect(lines.find((line) => line.includes('COM exercício'))).toContain(
+      'gasto do dia = 2343 kcal de gasto de referência + 565 kcal de exercício): -1607 kcal',
+    )
   })
 
   it('over the target with a workout: an excess stays an excess, the workout does not erase it', async () => {
@@ -699,7 +730,12 @@ describe('audit 2026-10-04 RC A — neighbours on the Flow (context and system a
     expect(lines).toContain(
       '- Para COMIDA hoje (consumido − meta, SEM exercício): excedente de 220 kcal acima da meta',
     )
-    expect(lines.find((line) => line.includes('COM exercício'))).toContain(': -102 kcal')
+    // §2c: was "COM exercício (…): -102 kcal", a deficit shown to someone 220
+    // kcal over the target. Against 2838, no exercise: a surplus of 362.
+    expect(lines.find((line) => line.startsWith('- Balanço calórico de hoje'))).toContain(
+      'gasto de referência de 2838 kcal; o exercício já está no fator de atividade e não é somado): 362 kcal',
+    )
+    expect(lines.join('\n')).not.toContain('-102')
     // Review round 2: with an excess the rule asked for "o que resta para
     // comida", a number the context does not have.
     expect(lines.find((line) => line.startsWith('- REGRA:'))).toBe(
@@ -741,7 +777,11 @@ describe('audit 2026-10-04 RC A — neighbours on the Flow (context and system a
     expect(lines).toContain(
       '- Exercício hoje: 0 kcal queimadas — NÃO aumenta a meta e NÃO entra no que resta para comida',
     )
-    expect(lines.find((line) => line.includes('COM exercício'))).toContain(': -2439 kcal')
+    // §2c: was the "COM exercício" line with -2439. In ganho de massa the
+    // workout is not in the balance, stored or not: 541 − 2838.
+    expect(lines.find((line) => line.startsWith('- Balanço calórico de hoje'))).toContain(
+      'não é somado): -2297 kcal',
+    )
   })
 
   it('the workout stored is not the one typed (150 stored, "gastei 400 kcal"): the answer says whose number it is', async () => {
@@ -834,7 +874,11 @@ describe('audit 2026-10-04 RC A — neighbours on the Flow (context and system a
     expect(lines).toContain(
       '- Para COMIDA hoje (meta − consumido, SEM exercício): restam 2447 kcal',
     )
-    expect(lines.find((line) => line.includes('COM exercício'))).toContain(': -2769 kcal')
+    // §2c: was "COM exercício … : -2769 kcal" (541 − 2988 − 322). The
+    // reference follows the target printed: 2988 ÷ 1,05 = 2846; 541 − 2846.
+    expect(lines.find((line) => line.startsWith('- Balanço calórico de hoje'))).toContain(
+      'gasto de referência de 2846 kcal; o exercício já está no fator de atividade e não é somado): -2305 kcal',
+    )
     expect(prompt).not.toContain('219 kcal')
   })
 
@@ -1407,8 +1451,12 @@ describe('audit 2026-10-04 RC A — consulta_progresso through the Flow pipeline
       consumido_kcal: 541,
       restam_para_comida_kcal: 2447,
       exercicio_kcal: 322,
-      balanco_do_dia_com_exercicio_kcal: -2769,
+      // §2c: was balanco_do_dia_com_exercicio_kcal: -2769. The pipeline now
+      // hands the tool the protocol and the multiplier (flowDayBalance).
+      gasto_de_referencia_kcal: 2846,
+      balanco_do_dia_sem_exercicio_kcal: -2305,
     })
+    expect(result.energia_hoje).not.toHaveProperty('balanco_do_dia_com_exercicio_kcal')
     expect(result.energia_hoje).not.toHaveProperty('excedente_de_comida_kcal')
     expect(seen).not.toContain('daily_balance')
     expect(seen).not.toContain('219')
@@ -1427,6 +1475,14 @@ describe('audit 2026-10-04 RC A — consulta_progresso', () => {
     userTimezone: 'America/Sao_Paulo',
     referenceTimestamp: NOW,
   })
+  // What the pipeline sets for the QA account (ganho de massa). The review of
+  // 2026-10-04 found tool tests that stayed green without the field the
+  // pipeline sends; here the field is sent, and its absence has its own test.
+  const flowDayBalance = {
+    protocol: 'ganho_massa',
+    gainSurplusMultiplier: 1.05,
+    programmedDeficitKcal: 0,
+  }
   const progresso = {
     xp: 0,
     nivel: 1,
@@ -1445,10 +1501,13 @@ describe('audit 2026-10-04 RC A — consulta_progresso', () => {
         ...toolContext(h),
         assistantIdentity: 'flow',
         flowDailyTargets: { calories_target: 2980, protein_target: 144 },
+        flowDayBalance,
       },
     )
     const { daily_balance: _net, ...dayWithoutNet } = S541
 
+    // §2c: was balanco_do_dia_com_exercicio_kcal: -2761 and a rule ending in
+    // "balanco_do_dia_com_exercicio_kcal não é o que resta para comer.".
     expect(output).toEqual({
       progresso,
       hoje: dayWithoutNet,
@@ -1457,13 +1516,38 @@ describe('audit 2026-10-04 RC A — consulta_progresso', () => {
         consumido_kcal: 541,
         restam_para_comida_kcal: 2439,
         exercicio_kcal: 322,
-        balanco_do_dia_com_exercicio_kcal: -2761,
+        gasto_de_referencia_kcal: 2838,
+        balanco_do_dia_sem_exercicio_kcal: -2297,
         regra:
-          'Exercício não libera comida nem apaga excedente: a meta é a mesma com ou sem treino e o que resta para comida é meta − consumido, sem exercício. O gasto do treino fica à parte; balanco_do_dia_com_exercicio_kcal não é o que resta para comer.',
+          'Exercício não libera comida nem apaga excedente: a meta é a mesma com ou sem treino e o que resta para comida é meta − consumido, sem exercício. O gasto do treino fica à parte; balanco_do_dia_sem_exercicio_kcal é consumido − gasto_de_referencia_kcal (negativo = déficit, positivo = superávit): o exercício já está no fator de atividade e não é somado. Não é o que resta para comer.',
       },
     })
     expect(output.hoje).not.toHaveProperty('daily_balance')
     expect(JSON.stringify(output)).not.toContain('daily_balance')
+    expect(JSON.stringify(output)).not.toContain('-2761')
+    expect(JSON.stringify(output.energia_hoje)).not.toMatch(/7\.?700|bloco/)
+  })
+
+  it('on the Flow WITHOUT the day-balance inputs (a caller that is not the pipeline): the net balance of before, unchanged', async () => {
+    const h = harness()
+    const output = await consultaProgresso.execute(
+      {},
+      {
+        ...toolContext(h),
+        assistantIdentity: 'flow',
+        flowDailyTargets: { calories_target: 2980, protein_target: 144 },
+      },
+    )
+
+    expect(output.energia_hoje).toEqual({
+      meta_kcal: 2980,
+      consumido_kcal: 541,
+      restam_para_comida_kcal: 2439,
+      exercicio_kcal: 322,
+      balanco_do_dia_com_exercicio_kcal: -2761,
+      regra:
+        'Exercício não libera comida nem apaga excedente: a meta é a mesma com ou sem treino e o que resta para comida é meta − consumido, sem exercício. O gasto do treino fica à parte; balanco_do_dia_com_exercicio_kcal não é o que resta para comer.',
+    })
   })
 
   it('on the Flow, over the target: an excess key, never a negative "restam"', async () => {
@@ -1474,6 +1558,7 @@ describe('audit 2026-10-04 RC A — consulta_progresso', () => {
         ...toolContext(h),
         assistantIdentity: 'flow',
         flowDailyTargets: { calories_target: 2980, protein_target: 144 },
+        flowDayBalance,
       },
     )
 
@@ -1482,8 +1567,11 @@ describe('audit 2026-10-04 RC A — consulta_progresso', () => {
       consumido_kcal: 3200,
       excedente_de_comida_kcal: 220,
       exercicio_kcal: 322,
-      balanco_do_dia_com_exercicio_kcal: -102,
+      // §2c: was balanco_do_dia_com_exercicio_kcal: -102.
+      gasto_de_referencia_kcal: 2838,
+      balanco_do_dia_sem_exercicio_kcal: 362,
     })
+    expect(output.energia_hoje).not.toHaveProperty('balanco_do_dia_com_exercicio_kcal')
     expect(output.energia_hoje).not.toHaveProperty('restam_para_comida_kcal')
   })
 
@@ -1495,17 +1583,20 @@ describe('audit 2026-10-04 RC A — consulta_progresso', () => {
         ...toolContext(h),
         assistantIdentity: 'flow',
         flowDailyTargets: { calories_target: 2988, protein_target: 144.9 },
+        flowDayBalance,
       },
     )
 
     expect(output.hoje).toBeNull()
-    expect(output.energia_hoje).toMatchObject({
+    // No day row: no day balance, no reference, and a rule that cites none.
+    expect(output.energia_hoje).toEqual({
       meta_kcal: 2988,
       consumido_kcal: 0,
       restam_para_comida_kcal: 2988,
       exercicio_kcal: 0,
+      regra:
+        'Exercício não libera comida nem apaga excedente: a meta é a mesma com ou sem treino e o que resta para comida é meta − consumido, sem exercício. O gasto do treino fica à parte.',
     })
-    expect(output.energia_hoje).not.toHaveProperty('balanco_do_dia_com_exercicio_kcal')
   })
 
   it('legacy channel (no Flow identity): the raw row, unchanged', async () => {

@@ -27,7 +27,7 @@ const GROUPS: Record<
   factors: {
     title: '2️⃣ Fatores de atividade e proteína',
     description:
-      'activity_factors: multiplicador BMR→TDEE (sedentário 1.2 → atleta 1.9). protein_factors: cascata oficial Notion — muita→1.6 (perfil difícil), training_low<3→1.7, optimal_high_training (pouca+treino≥5)→2.0, default→1.8.',
+      'activity_factors: multiplicador BMR→TDEE (sedentário 1.2 → atleta 1.9). protein_factors: fator de proteína (g/kg) em cascata por fome + treino — muita, training_low (treino < 3), optimal_high_training (pouca + treino ≥ 5), optimal_mid_training (pouca + treino ≥ 4), moderada (demais). Vale só para ganho de massa, manutenção e perfil sem protocolo. A recomposição NÃO lê esta linha: usa 1,5 g/kg fixo (calc.recomp_protein_g_per_kg, padrão do código; a linha não existe no banco e esta tela só edita linhas existentes — para a recomposição voltar a seguir esta linha é preciso criar a linha com valor 0 por SQL, ver docs/CALCULO-MPP.md §1b). 1,5 fixo: dito pelo cliente em 15/04/2026 e 15/05/2026; implementado em 04/10/2026 a pedido do Eduardo; confirmação do cliente pendente.',
     keys: ['calc.activity_factors', 'calc.protein_factors'],
   },
   formulas: {
@@ -54,7 +54,7 @@ const GROUPS: Record<
   goals: {
     title: '5️⃣ Escadas de meta (BF / IMC)',
     description:
-      'Metas progressivas. BF: >30→bf−10, >20→20, >18→18, >15→15, base→10. IMC: [30, 25, 23, 22, 21] com margem mínima 1 (se IMC=32, próxima meta=30).',
+      'Metas progressivas. BF: >30→bf−10, >20→20, >18→18, >15→15, base→10. IMC: acima de 25 cai 5 pontos por vez até 25 (IMC 32 → 27; 31 → 26; 30,1 → 25); abaixo de 25 segue 23 → 22 → 21, com margem mínima 1. Os degraus de 25 para cima em imc_goal_steps só voltam a valer se calc.imc_goal_step_points for null (escada antiga: IMC 32 → 30). Passo de 5: dito pelo cliente em 26/01/2026 e no manual 9.4.3.1; implementado em 04/10/2026 a pedido do Eduardo; confirmação do cliente pendente.',
     keys: ['calc.bf_goal_rules', 'calc.imc_goal_steps'],
   },
   gamification: {

@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
   buildDailyState,
   DAILY_STATE_CALCULATION_VERSION,
   type DailyStateInput,
+  type DailyStateSnapshotInput,
 } from './daily-state.js'
+import { DAY_BALANCE_AGAINST_EXPENDITURE } from './engine/balance.js'
 
 const NOW = '2026-07-20T15:00:00.000Z'
 
@@ -331,7 +333,8 @@ describe('buildDailyState', () => {
         },
       ],
     })
-    expect(state.calculation_version).toBe('bodyflow.daily-state.v2')
+    // v3 since 2026-10-04: `daily_balance_kcal` is per protocol (§2c).
+    expect(state.calculation_version).toBe('bodyflow.daily-state.v3')
     expect(JSON.stringify(state)).not.toContain('occurrence_key')
     expect(routineItems.map((item) => item.id)).toEqual([
       'medication-1',
@@ -729,5 +732,315 @@ describe('buildDailyState', () => {
       source: 'user_progress',
     })
     expect(state.updated_at).toBe('2026-07-20T14:31:00.000Z')
+  })
+})
+
+// docs/CALCULO-MPP.md §2c — dito pelo cliente em 20/01/2026, 22/02/2026,
+// 23/02/2026 e 09/03/2026; implementado em 2026-10-04 a pedido do Eduardo;
+// confirmação do cliente pendente.
+describe('buildDailyState — daily_balance_kcal per protocol (v3)', () => {
+  type Switches = Record<keyof typeof DAY_BALANCE_AGAINST_EXPENDITURE, boolean>
+  const switches = DAY_BALANCE_AGAINST_EXPENDITURE as Switches
+  const original: Switches = { ...DAY_BALANCE_AGAINST_EXPENDITURE }
+  afterEach(() => {
+    Object.assign(switches, original)
+  })
+
+  const day = (
+    protocol: DailyStateSnapshotInput['protocol'],
+    caloriesConsumed: number,
+    caloriesTarget: number | null,
+    exerciseCalories: number,
+  ): DailyStateSnapshotInput => ({
+    caloriesConsumed,
+    caloriesTarget,
+    proteinG: 0,
+    proteinTarget: 140,
+    carbsG: 0,
+    fatG: 0,
+    exerciseCalories,
+    waterConsumedMl: 0,
+    protocol,
+    dayClosed: false,
+    dayStatus: null,
+    updatedAt: '2026-07-20T14:30:00.000Z',
+  })
+  const energy = (state: ReturnType<typeof buildDailyState>) => ({
+    remaining_food_kcal: state.remaining_food_kcal,
+    food_excess_kcal: state.food_excess_kcal,
+    exercise_kcal: state.exercise_kcal,
+    daily_balance_kcal: state.daily_balance_kcal,
+    daily_balance_reference_kcal: state.daily_balance_reference_kcal,
+    daily_balance_includes_exercise: state.daily_balance_includes_exercise,
+  })
+
+  it('the version is v3', () => {
+    expect(DAILY_STATE_CALCULATION_VERSION).toBe('bodyflow.daily-state.v3')
+  })
+
+  it('recomposição 19/05 (2076 / 1843, treino 565, déficit 500): −332 → −832, against 2343', () => {
+    const state = buildDailyState(
+      input({ snapshot: day(null, 2_076, 1_843, 565), programmedDeficitKcal: 500 }),
+    )
+
+    expect(energy(state)).toEqual({
+      remaining_food_kcal: 0,
+      food_excess_kcal: 233,
+      exercise_kcal: 565,
+      daily_balance_kcal: -832,
+      daily_balance_reference_kcal: 2_343,
+      daily_balance_includes_exercise: true,
+    })
+    expect(state.block_7700.enabled).toBe(true)
+  })
+
+  it('recomposição, morning with no record (target 1900, déficit 500): −1900 → −2400', () => {
+    const state = buildDailyState(input({ programmedDeficitKcal: 500 }))
+
+    expect(energy(state)).toEqual({
+      remaining_food_kcal: 1_900,
+      food_excess_kcal: 0,
+      exercise_kcal: 0,
+      daily_balance_kcal: -2_400,
+      daily_balance_reference_kcal: 2_400,
+      daily_balance_includes_exercise: true,
+    })
+    expect(state.daily_balance_status).toBe('provisional')
+  })
+
+  it('recomposição without the programmed deficit input: the number of before (netBalance)', () => {
+    const state = buildDailyState(input({ snapshot: day(null, 2_076, 1_843, 565) }))
+
+    expect(state.daily_balance_kcal).toBe(-332)
+    expect(state.daily_balance_reference_kcal).toBe(1_843)
+    expect(state.daily_balance_includes_exercise).toBe(true)
+  })
+
+  it('ganho de massa, QA account (541 / 2980, treino 322): −2761 → −2297 against 2838; 2439 left as before', () => {
+    const state = buildDailyState(
+      input({
+        protocol: 'ganho_massa',
+        snapshot: day(null, 541, 2_980, 322),
+        gainSurplusMultiplier: 1.05,
+        // The service sends 0 outside recomposição; even a stray 500 is ignored.
+        programmedDeficitKcal: 500,
+      }),
+    )
+
+    expect(energy(state)).toEqual({
+      remaining_food_kcal: 2_439,
+      food_excess_kcal: 0,
+      exercise_kcal: 322,
+      daily_balance_kcal: -2_297,
+      daily_balance_reference_kcal: 2_838,
+      daily_balance_includes_exercise: false,
+    })
+    expect(state.protocol).toBe('ganho_massa')
+    expect(state.block_7700.enabled).toBe(false)
+  })
+
+  it.each([
+    322, 0,
+  ])('ganho de massa eating exactly 2980 with a %s kcal workout: +142', (exercise) => {
+    const state = buildDailyState(
+      input({ protocol: 'ganho_massa', snapshot: day(null, 2_980, 2_980, exercise) }),
+    )
+
+    expect(energy(state)).toEqual({
+      remaining_food_kcal: 0,
+      food_excess_kcal: 0,
+      exercise_kcal: exercise,
+      daily_balance_kcal: 142,
+      daily_balance_reference_kcal: 2_838,
+      daily_balance_includes_exercise: false,
+    })
+  })
+
+  it('ganho de massa without the multiplier input: the default 1,05 of the calc config', () => {
+    const state = buildDailyState(
+      input({ protocol: 'ganho_massa', snapshot: day(null, 541, 2_980, 322) }),
+    )
+
+    expect(state.daily_balance_reference_kcal).toBe(2_838)
+    expect(state.daily_balance_kcal).toBe(-2_297)
+  })
+
+  it('manutenção (3044 / 3044, treino 400): −400 → 0', () => {
+    const state = buildDailyState(
+      input({ protocol: 'manutencao', snapshot: day(null, 3_044, 3_044, 400) }),
+    )
+
+    expect(energy(state)).toEqual({
+      remaining_food_kcal: 0,
+      food_excess_kcal: 0,
+      exercise_kcal: 400,
+      daily_balance_kcal: 0,
+      daily_balance_reference_kcal: 3_044,
+      daily_balance_includes_exercise: false,
+    })
+    expect(Object.is(state.daily_balance_kcal, -0)).toBe(false)
+  })
+
+  it('protocol not set: unchanged (netBalance against the target, exercise included)', () => {
+    const state = buildDailyState(
+      input({
+        protocol: null,
+        snapshot: day(null, 541, 2_980, 322),
+        gainSurplusMultiplier: 1.05,
+        programmedDeficitKcal: 500,
+      }),
+    )
+
+    expect(energy(state)).toEqual({
+      remaining_food_kcal: 2_439,
+      food_excess_kcal: 0,
+      exercise_kcal: 322,
+      daily_balance_kcal: -2_761,
+      daily_balance_reference_kcal: 2_980,
+      daily_balance_includes_exercise: true,
+    })
+  })
+
+  it('the protocol of the day row wins over the profile, as in the published `protocol`', () => {
+    const state = buildDailyState(
+      input({
+        protocol: 'recomposicao',
+        snapshot: day('manutencao', 3_044, 3_044, 400),
+        programmedDeficitKcal: 500,
+      }),
+    )
+
+    expect(state.protocol).toBe('manutencao')
+    expect(state.daily_balance_kcal).toBe(0)
+    expect(state.daily_balance_includes_exercise).toBe(false)
+  })
+
+  it('day of a protocol change (stored target of another rule): the legacy number, against the stored target, with exercise', () => {
+    // Review of 2026-10-04: morning in ganho de massa stores 2799, the profile
+    // becomes recomposição/500 at noon, consumed 2500. Before: −799 against
+    // 3299 (a deficit) when the client's rule gives +436 (a surplus).
+    const changed = input({
+      protocol: 'recomposicao',
+      snapshot: day(null, 2_500, 2_799, 0),
+      programmedDeficitKcal: 500,
+    })
+
+    expect(buildDailyState(changed).daily_balance_kcal).toBe(-799)
+    expect(buildDailyState({ ...changed, dayTargetMatchesProtocol: true }).daily_balance_kcal).toBe(
+      -799,
+    )
+    const state = buildDailyState({ ...changed, dayTargetMatchesProtocol: false })
+    expect(energy(state)).toEqual({
+      remaining_food_kcal: 299,
+      food_excess_kcal: 0,
+      exercise_kcal: 0,
+      daily_balance_kcal: -299,
+      daily_balance_reference_kcal: 2_799,
+      daily_balance_includes_exercise: true,
+    })
+    // Only the balance falls back: the protocol published is still the profile's.
+    expect(state.protocol).toBe('recomposicao')
+    expect(state.block_7700.enabled).toBe(true)
+  })
+
+  it('the reference is published as an integer on the legacy path too (the app decodes Int)', () => {
+    // Review of 2026-10-04: protocol null and a target of 2980,4 published
+    // daily_balance_reference_kcal 2980,4. The three protocols already
+    // rounded; the legacy balance itself is left as it was.
+    const legacy = buildDailyState(
+      input({ protocol: null, snapshot: day(null, 541, 2_980.4, 322) }),
+    )
+
+    expect(legacy.daily_balance_reference_kcal).toBe(2_980)
+    expect(legacy.daily_balance_includes_exercise).toBe(true)
+    expect(legacy.daily_balance_kcal).toBeCloseTo(-2_761.4, 6)
+
+    const up = buildDailyState(input({ protocol: null, snapshot: day(null, 541, 2_980.5, 322) }))
+    expect(up.daily_balance_reference_kcal).toBe(2_981)
+
+    // Same on the fallback of a protocol-change day and with the switch off.
+    const fallback = buildDailyState(
+      input({
+        protocol: 'ganho_massa',
+        snapshot: day(null, 541, 2_980.4, 322),
+        dayTargetMatchesProtocol: false,
+      }),
+    )
+    expect(fallback.daily_balance_reference_kcal).toBe(2_980)
+    Object.assign(switches, { recomposicao: false, ganho_massa: false, manutencao: false })
+    for (const protocol of ['recomposicao', 'ganho_massa', 'manutencao'] as const) {
+      const off = buildDailyState(input({ protocol, snapshot: day(null, 541, 2_980.4, 322) }))
+      expect(Number.isInteger(off.daily_balance_reference_kcal)).toBe(true)
+      expect(off.daily_balance_reference_kcal).toBe(2_980)
+    }
+  })
+
+  it('no target at all: the balance and its two companions are null, never 0', () => {
+    const state = buildDailyState(
+      input({
+        protocol: 'ganho_massa',
+        calculatedTargets: { calories_target: null, protein_target: null },
+        snapshot: day(null, 541, null, 322),
+      }),
+    )
+
+    expect(state.remaining_food_kcal).toBeNull()
+    expect(state.daily_balance_kcal).toBeNull()
+    expect(state.daily_balance_reference_kcal).toBeNull()
+    expect(state.daily_balance_includes_exercise).toBeNull()
+  })
+
+  it('switch off: the three protocols publish the numbers of v2', () => {
+    Object.assign(switches, { recomposicao: false, ganho_massa: false, manutencao: false })
+
+    const recomp = buildDailyState(
+      input({ snapshot: day(null, 2_076, 1_843, 565), programmedDeficitKcal: 500 }),
+    )
+    const ganho = buildDailyState(
+      input({ protocol: 'ganho_massa', snapshot: day(null, 541, 2_980, 322) }),
+    )
+    const manutencao = buildDailyState(
+      input({ protocol: 'manutencao', snapshot: day(null, 3_044, 3_044, 400) }),
+    )
+
+    expect(recomp.daily_balance_kcal).toBe(-332)
+    expect(ganho.daily_balance_kcal).toBe(-2_761)
+    expect(manutencao.daily_balance_kcal).toBe(-400)
+    for (const state of [recomp, ganho, manutencao]) {
+      expect(state.daily_balance_includes_exercise).toBe(true)
+      expect(state.daily_balance_reference_kcal).toBe(state.targets.calories_kcal)
+    }
+  })
+
+  it('nothing else of the energy block moves: food line, exercise, status and block are the same on and off', () => {
+    const build = () =>
+      buildDailyState(
+        input({
+          protocol: 'ganho_massa',
+          snapshot: day(null, 3_200, 2_980, 322),
+          progress: { deficitBlock: 3_850, blocksCompleted: 2, updatedAt: null },
+        }),
+      )
+    const on = build()
+    Object.assign(switches, { recomposicao: false, ganho_massa: false, manutencao: false })
+    const off = build()
+
+    expect(on.daily_balance_kcal).toBe(362)
+    expect(off.daily_balance_kcal).toBe(-102)
+    const {
+      daily_balance_kcal: _a,
+      daily_balance_reference_kcal: _b,
+      daily_balance_includes_exercise: _c,
+      ...restOn
+    } = on
+    const {
+      daily_balance_kcal: _d,
+      daily_balance_reference_kcal: _e,
+      daily_balance_includes_exercise: _f,
+      ...restOff
+    } = off
+    expect(restOn).toEqual(restOff)
+    expect(on.food_excess_kcal).toBe(220)
+    expect(on.block_7700.current_kcal).toBe(3_850)
   })
 })

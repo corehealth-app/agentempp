@@ -224,7 +224,9 @@ Estrutura resumida:
   "remaining_food_kcal": 735,
   "food_excess_kcal": 0,
   "exercise_kcal": 300,
-  "daily_balance_kcal": -1035,
+  "daily_balance_kcal": -1535,
+  "daily_balance_reference_kcal": 2435,
+  "daily_balance_includes_exercise": true,
   "daily_balance_status": "provisional",
   "protein_status": {
     "consumed_g": 90,
@@ -314,7 +316,7 @@ Estrutura resumida:
     "pending_actions": "pending_registrations_and_meal_pattern",
     "block_7700": "user_progress"
   },
-  "calculation_version": "bodyflow.daily-state.v2",
+  "calculation_version": "bodyflow.daily-state.v3",
   "updated_at": "2026-07-20T14:05:00.000Z",
   "generated_at": "2026-07-20T15:00:00.000Z"
 }
@@ -324,9 +326,65 @@ Semântica obrigatória:
 
 - `remaining_food_kcal = max(meta - consumido, 0)`. Exercício não aumenta esse
   valor; `food_excess_kcal` informa o excedente de ingestão separadamente.
-- `daily_balance_kcal = consumido - meta - exercício`. Esse saldo é
-  `provisional` durante o dia, `final` após fechamento válido e
-  `insufficient_data` quando faltaram dados no fechamento.
+- `daily_balance_kcal = consumido - gasto do dia`, **por protocolo** (negativo =
+  déficit, positivo = superávit; sempre inteiro). Regra dita pelo cliente em
+  20/01/2026, 22/02/2026, 23/02/2026 e 09/03/2026; implementada em 2026-10-04 a
+  pedido do Eduardo; confirmação do cliente pendente
+  (`docs/CALCULO-MPP.md` §2c).
+  - `recomposicao`: `consumido - (meta + déficit programado) - exercício`. O
+    gasto de referência é `meta + déficit programado` (= BMR × 1,2); o déficit
+    programado é o do perfil (`deficit_level`, 500 quando ausente), a mesma
+    expressão do fechamento, e só é somado quando o `protocol` publicado é
+    `recomposicao`. No exemplo: `1200 - (1935 + 500) - 300 = -1535`
+    (antes da v3: `-1035`).
+  - `ganho_massa`: `consumido - round(meta ÷ multiplicador)`, **sem** exercício.
+    O multiplicador é `calc.ganho_massa_surplus_multiplier` (1,05), lido como
+    número mesmo se a linha da configuração o guardar como texto. Meta 2980,
+    consumido 541, exercício 322: referência 2838, saldo `-2297` (antes da v3:
+    `-2761`). Comendo exatamente a meta, com ou sem treino: `+142`.
+  - `manutencao`: `consumido - meta`, **sem** exercício. Meta 3044, consumido
+    3044, exercício 400: `0` (antes da v3: `-400`).
+  - `protocol` `null`: `consumido - meta - exercício`, como na v2.
+  - O protocolo usado é o `protocol` publicado no mesmo payload: o da linha do
+    dia quando ela o tem (dia fechado), senão o do perfil. O déficit programado
+    é o desse protocolo. Dia fechado em `recomposicao` com o perfil já em
+    `ganho_massa` (meta 1843, consumido 2076, exercício 565): `-832` contra
+    2343 (antes da revisão de 2026-10-04: `-332` contra 1843).
+  - **Dia de troca de protocolo:** a linha do dia guarda a primeira meta do
+    dia. Quando essa meta está mais perto da meta que o perfil dá agora em
+    OUTRO protocolo do que da meta do `protocol` publicado, o saldo daquele dia
+    é o da v2 — `consumido - meta - exercício` — com
+    `daily_balance_reference_kcal` = `targets.calories_kcal` e
+    `daily_balance_includes_exercise` `true`; o `protocol` publicado não muda.
+    Meta 2799 gravada em `ganho_massa`, perfil em `recomposicao` ao meio-dia,
+    consumido 2500, sem exercício: `-299` (antes da revisão: `-799` contra
+    3299). Um peso novo no dia não dispara isso (`docs/CALCULO-MPP.md` §2c diz
+    exatamente o que é comparado). O cliente não precisa detectar o caso: basta
+    renderizar os três campos.
+- `daily_balance_reference_kcal` (aditivo, v3): o gasto de referência contra o
+  qual `daily_balance_kcal` foi medido, **sem** o exercício. Sempre inteiro
+  (também com `protocol` `null` e no dia de troca de protocolo); `null` quando
+  não há meta.
+- `daily_balance_includes_exercise` (aditivo, v3): `true` quando o exercício do
+  dia é subtraído além da referência (`recomposicao`, `protocol` `null` e dia
+  de troca de protocolo), `false` quando não é (`ganho_massa`, `manutencao`);
+  `null` quando não há meta. Um cliente que não conhece o campo deve tratar a
+  ausência como `true` (comportamento da v2). No código do app do iPhone
+  (commit separado do mesmo dia, 9624cd5; ainda não verificado no aparelho) a
+  linha é "Balanço do dia", o valor sai em palavras ("Déficit de N kcal" /
+  "Superávit de N kcal") e a legenda vem deste campo (ausente = "Exercício
+  incluído"). Um build anterior mostra o rótulo "Déficit líquido" com o número
+  cru e a legenda fixa "Exercício incluído", incorreta em `ganho_massa` e
+  `manutencao`. Continua aberto no app: o VoiceOver lê o valor duas vezes nessa
+  linha; as frases da trilha e do tour sobre o bloco de 7.700 aparecem para
+  todo protocolo; o app mostra o número do dia aberto (pendências no §2c do
+  `docs/CALCULO-MPP.md`).
+- `remaining_food_kcal`, `food_excess_kcal` e `exercise_kcal` **não mudaram** na
+  v3: continuam contra a meta, sem exercício, em todo protocolo.
+- O saldo é `provisional` durante o dia, `final` após fechamento válido e
+  `insufficient_data` quando faltaram dados no fechamento. `GET /today` devolve
+  sempre o dia em andamento: o número é do dia aberto e o bloco não recebe
+  crédito antes do fechamento.
 - `completion_status.status=insufficient_data` descreve qualidade insuficiente da
   informação. Não representa falha, punição ou falta de esforço do paciente.
 - `user_skipped` aparece como `complete_with_explicit_skip`, porque a ausência foi
@@ -362,6 +420,19 @@ Semântica obrigatória:
 podem manter a versão; mudança de fórmula ou significado incrementa a versão.
 Quebra de estrutura exige uma nova versão HTTP. O app deve renderizar os números
 do backend e usar a versão para telemetria, nunca reimplementar a fórmula.
+
+Histórico da versão: `v1` — estado inicial; `v2` — contrato de suplementos e
+medicamentos; `v3` (2026-10-04) — fórmula de `daily_balance_kcal` por protocolo
+e os campos aditivos `daily_balance_reference_kcal` e
+`daily_balance_includes_exercise`. Nenhuma rota, método ou campo existente
+mudou de nome ou tipo; o manifesto de rotas do BFF é o mesmo. A v3 volta a v2
+desligando `DAY_BALANCE_AGAINST_EXPENDITURE`
+(`packages/core/src/engine/balance.ts`) e a constante de versão. A revisão de
+2026-10-04 (protocolo efetivo com o déficit dele, dia de troca de protocolo,
+referência sempre inteira, multiplicador lido como número) ficou dentro da v3:
+nenhum campo novo, e a parte que muda número tem interruptor próprio,
+`DAY_BALANCE_DAY_ROW_GUARD`
+(`packages/core/src/engine/day-balance-inputs.ts`).
 
 ## Suplementos, medicamentos e adesão de rotina
 
@@ -1474,6 +1545,24 @@ Identificação do alimento (mesmo cálculo do WhatsApp):
   registration_unresolved_items` enquanto houver um; nada é gravado e o pending
   continua editável. Zero legítimo (água, bebida zero, `user_kcal` 0) é
   `resolved` e pode ser confirmado.
+- nomes do dia a dia (regra M2 — regra geral dita pelo cliente em 06/01/2026
+  (manual 4.2), 18/05/2026 e 01/06/2026 (assumir em vez de perguntar); a lista
+  de itens NÃO foi confirmada por ele; implementado em 2026-10-04 a pedido do
+  Eduardo; confirmação do cliente pendente): o `name` de um item da proposta
+  pode voltar como o item ASSUMIDO, diferente do `food_name` enviado. Hoje:
+  "leite" → `name` "leite integral"; "whey" → `name` "whey protein em pó". Vale
+  só para o nome inteiro ("leite de coco", "leite com whey" e "café com leite"
+  seguem as regras acima). O item vem com `nutrition_source` `"canonical_fuzzy"`,
+  `resolution` `"resolved"` e sem aviso em `warnings`. O `name` é o texto que o
+  app tem para mostrar (a tela do iPhone não foi executada depois desta mudança
+  — pendência RC M2), e reenviar esse `name` numa edição resolve para o mesmo
+  item. Dois itens enviados que são o mesmo item assumido ("leite" 200 g e "leite integral"
+  200 g) voltam como UM item com a quantidade somada (400 g, 244 kcal): a
+  proposta pode ter menos itens que o pedido. Nesse caso o `quantity_basis` dos
+  itens seguintes ainda é lido por posição e pode vir do item somado (pendência
+  RC M2 em `docs/CALCULO-MPP.md` §9f). Se o catálogo do ambiente não tiver a
+  linha verificada com os valores da lista, o item segue o cálculo normal e o
+  `name` volta como enviado. Nenhum campo novo no contrato.
 
 ## Rascunho de refeição (candidatos)
 
@@ -1870,14 +1959,19 @@ perfil, com fallback determinístico de 70 kg quando o peso ainda não existe.
    - O servidor só recusa o pedido; ele não impede uma proposta nova. Uma
      proposta nova da mesma refeição depois da recusa grava a refeição pela
      segunda vez.
-   - iPhone (build atual, lido no código, não executado no aparelho): o app
-     ainda não conhece `registration_already_confirmed`. Mostra "Não foi
-     possível concluir. Tente novamente.", mantém a proposta na tela e
-     "Tentar novamente" reenvia o mesmo `PATCH` ou o mesmo `DELETE` (mesma
-     resposta); o botão Confirmar recebe `already_confirmed: true` e mostra
-     "Registro confirmado.". "Criar nova proposta" não aparece. Falta no app a
-     mensagem própria de "já registrado": hoje quem tocou em Cancelar não é
-     avisado de que a refeição já está salva.
+   - iPhone: coberto no código do app em commit separado do mesmo dia
+     (9624cd5), ainda não verificado no aparelho — um
+     `409 registration_already_confirmed` ao editar ou cancelar fecha a
+     proposta como confirmada, com a mensagem "Este registro já estava salvo.
+     A alteração não foi aplicada.", e "Criar nova proposta" não aparece.
+     Nenhum teste de interface do app dirige o 409 (só testes de unidade). Um
+     build anterior a esse commit (lido no código, não executado no aparelho)
+     não conhece o código: mostra "Não foi possível concluir. Tente
+     novamente.", mantém a proposta na tela e "Tentar novamente" reenvia o
+     mesmo `PATCH` ou o mesmo `DELETE` (mesma resposta); o botão Confirmar
+     recebe `already_confirmed: true` e mostra "Registro confirmado."; nesse
+     build quem tocou em Cancelar não é avisado de que a refeição já está
+     salva.
 5. Refeição criada por `propose`: cada proposta confirmada é um registro novo.
    Repetir a mesma refeição soma — nada é substituído nem descartado, com
    qualquer intervalo. O servidor só mede, em dois eventos internos com
@@ -1906,7 +2000,7 @@ perfil, com fallback determinístico de 70 kg quando o peso ainda não existe.
 | HTTP | `error.code` | Rota | Quando ocorre | O que o cliente faz |
 |---:|---|---|---|---|
 | `404` | `registration_not_found` | todas | pending inexistente ou de outro paciente | descartar a proposta |
-| `409` | `registration_already_confirmed` | `PATCH`, `DELETE` | o registro desse pending já foi gravado (pending `confirmed`, ou gravado com a marcação pendente — item 4); no `DELETE`, nada foi cancelado | tratar como confirmado; não criar outra proposta |
+| `409` | `registration_already_confirmed` | `PATCH`, `DELETE` | o registro desse pending já foi gravado (pending `confirmed`, ou gravado com a marcação pendente — item 4); no `DELETE`, nada foi cancelado | tratar como confirmado; não criar outra proposta. No código do app do iPhone (commit 9624cd5, ainda não verificado no aparelho): fecha a proposta como confirmada com "Este registro já estava salvo. A alteração não foi aplicada."; um build anterior mostra a falha genérica (item 4) |
 | `409` | `registration_not_pending` | `PATCH`, `confirm`, `DELETE` | `PATCH` e `confirm`: pending `cancelled` ou `expired`; `DELETE`: pending `expired` (o `cancelled` responde `200`) | criar outra proposta, se ainda houver o que registrar |
 | `409` | `registration_update_conflict`, `registration_confirmation_conflict`, `registration_cancel_conflict` | `PATCH`, `confirm`, `DELETE` | o pending mudou durante a operação | reler e tentar de novo |
 | `409` | `registration_proposal_invalid` | `confirm` | proposta guardada fora do formato | criar outra proposta |

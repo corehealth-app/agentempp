@@ -258,10 +258,10 @@ export default function TutorialPage() {
           description="⚠️ Impacto clínico — toda fórmula determinística do método. 6 grupos numerados na UI. Mudanças refletem em até 60s (cache)."
           examples={[
             '1️⃣ BMR: Mifflin-St Jeor (sem BF) e Katch-McArdle (370 + 21.6 × LBM)',
-            '2️⃣ Fatores: activity (sedentário 1.2 → atleta 1.9). protein (cascata oficial: muita→1.6 perfil difícil, training_low<3→1.7, pouca+treino≥5→2.0, pouca+treino≥4→1.9, default→1.8)',
+            '2️⃣ Fatores: activity (sedentário 1.2 → atleta 1.9). protein (cascata oficial: muita→1.6 perfil difícil, training_low<3→1.7, pouca+treino≥5→2.0, pouca+treino≥4→1.9, default→1.8). A cascata vale para ganho de massa, manutenção e perfil sem protocolo; a recomposição NÃO a usa: 1,5 g/kg fixo (dito pelo cliente em 15/04 e 15/05/2026; confirmação pendente)',
             '3️⃣ Fórmulas: recomp = BMR × 1.2 − déficit (atividade NÃO entra). ganho = BMR × atividade × 1.05. Manutenção = BMR × atividade. deficit_by_hunger: 600/500/400',
             '4️⃣ Roteamento: imc_limit_recomp (25), training_min (3), sleep_min_hours (6.5 ← novo), bf_limits por sexo. Critérios obrigatórios pra ganho: treino + sono + alimentação estruturada',
-            '5️⃣ Escadas: bf_goal_rules (>30→bf−10, >20→20, …, base→10). imc_goal_steps [30, 25, 23, 22, 21] com margem mínima 1',
+            '5️⃣ Escadas: bf_goal_rules (>30→bf−10, >20→20, …, base→10). Meta de IMC: acima de 25 cai 5 pontos por vez até 25, depois imc_goal_steps abaixo de 25 (23, 22, 21) com margem mínima 1 (passo dito pelo cliente em 26/01/2026; confirmação pendente)',
             '6️⃣ Gamificação: kcal_block (7700). levels (8 níveis Notion: 0/100/300/600/1000/1500/2200/3000). 17 badges. xp_rules diárias',
           ]}
         />
@@ -343,9 +343,9 @@ export default function TutorialPage() {
             '✅ Recomp = BMR × 1.2 − déficit (atividade NÃO entra). Doc Notion: "regra de ouro: dieta como base"',
             '✅ Ganho = BMR × atividade × 1.05 (superávit leve). Manutenção = BMR × atividade',
             '✅ Déficit por fome: muita 400, moderada 500, pouca 600 (paciente com mais fome → menos déficit)',
-            '✅ Protein cascade Notion: muita→1.6 (perfil difícil), training<3→1.7, pouca+treino≥5→2.0, pouca+treino≥4→1.9, default→1.8 (corrigido — antes invertido)',
+            '✅ Protein cascade Notion: muita→1.6 (perfil difícil), training<3→1.7, pouca+treino≥5→2.0, pouca+treino≥4→1.9, default→1.8 (corrigido — antes invertido). 🟡 A cascata vale para ganho de massa, manutenção e perfil sem protocolo; a recomposição é fixa em 1,5 g/kg, sem fome nem treino (100 kg → 150 g), e editar calc.protein_factors não a move (dito pelo cliente em 15/04 e 15/05/2026; confirmação pendente)',
             '✅ Levels (8 Notion): 0/100/300/600/1000/1500/2200/3000 com Lenda MPP no topo',
-            '✅ IMC goal escada [30, 25, 23, 22, 21] margem 1 (corrigido — antes faltava 30)',
+            '🟡 Meta de IMC: acima de 25 cai 5 pontos por vez até 25 (35→30, 34→29, 31→26), depois 23→22→21 com margem 1. Dito pelo cliente em 26/01/2026 e no manual 9.4.3.1; implementado em 04/10/2026 a pedido do Eduardo; confirmação do cliente pendente (em 07/02/2026 ele escreveu "10 pontos"). O degrau 30 veio do fluxo n8n antigo, não do manual',
             '✅ BF goal escada: >30→bf−10, >20→20, >18→18, >15→15, base→10',
             '✅ Critérios pra Ganho: treino ≥3 + sono ≥6h30 + alimentação estruturada (food_organization=sim). Onboarding agora pergunta os 3.',
             '✅ Bloco 7700 kcal = 1kg gordura (referência popular MPP)',

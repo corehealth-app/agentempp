@@ -9,7 +9,14 @@
  *   5. callAgent      — LLM com tools, loop até finalizar
  *   6. persistTurn    — salva mensagens in/out
  */
-import { computeMetrics, eatingBalance, resolveProtocol } from '@mpp/core'
+import {
+  computeMetrics,
+  dailyTargetByProtocol,
+  dayEnergyBalance,
+  eatingBalance,
+  type ProfileRow,
+  resolveProtocol,
+} from '@mpp/core'
 import { loadCalcConfig } from './calc-config-loader.js'
 import { loadDailyTargets } from './calc-targets.js'
 import { throwIfQueryFailed } from './db-query-error.js'
@@ -35,7 +42,11 @@ import {
   renderExerciseFoodAnswer,
   statedWorkoutCalories,
 } from './exercise-food-guard.js'
-import { flowEnergyContextLines } from './flow-energy-context.js'
+import {
+  type FlowDayRow,
+  flowDayBalanceInputs,
+  flowEnergyContextLines,
+} from './flow-energy-context.js'
 import { isMultiTimezoneCountry } from './location-timezone.js'
 import {
   buildPendingNutritionConfirmationNotes,
@@ -165,6 +176,18 @@ export const MOBILE_FLOW_TOOLS = [
 ] as const
 
 const MOBILE_ONLY_TOOLS = new Set<string>(MOBILE_FLOW_DRAFT_TOOLS)
+
+/**
+ * Tools that write the protocol or the goal. When one of them ran without
+ * error in the turn, "registrado / não foi registrada" in the answer is about
+ * that write (or its refusal), not about a meal: the phantom MEAL-write guard
+ * does not read the sentence as a registration claim (review 2026-10-04).
+ */
+const GOAL_WRITE_TOOLS = new Set<string>(['define_protocolo', 'define_meta_peso'])
+
+function goalToolRanThisTurn(toolCalls: AgentOutput['toolCalls']): boolean {
+  return toolCalls.some((tc) => GOAL_WRITE_TOOLS.has(tc.name) && !tc.error)
+}
 
 /** Tools that produce a plan or a proposal of one (saved or drafted). */
 const PRESCRIPTION_TOOLS = new Set<string>([
@@ -387,6 +410,10 @@ interface UserContext {
   referenceTimestamp: Date
   /** Metas calóricas/proteína calculadas determinísticamente (anti-alucinação). */
   dailyTargets: { calories_target: number | null; protein_target: number | null }
+  /** Flow only: the day row's protocol and stored target, and the targets the
+   * profile gives now under each protocol, for the per-protocol day balance
+   * (docs/CALCULO-MPP.md §2c). Absent on the legacy channels. */
+  flowDayRow?: FlowDayRow | null
   /** Snapshot do dia LOCAL do paciente — consumo + balanço atual. */
   todaySnapshot: {
     calories_consumed: number
@@ -761,6 +788,7 @@ async function processResolvedMessage(
         registrationToolCalled: registrationToolCalled || draftCreatedThisTurn(toolCallsSummary),
         prescriptionToolCalled,
         skipToolCalled,
+        goalToolCalled: goalToolRanThisTurn(toolCallsSummary),
         mealTypeHint,
       })
 
@@ -956,7 +984,13 @@ async function processResolvedMessage(
       // plan generators speak as Flow on the mobile channel, and keep the
       // current identity everywhere else.
       ...(options.historyProvider === 'mobile_flow'
-        ? { assistantIdentity: 'flow' as const, flowDailyTargets: ctx.dailyTargets }
+        ? {
+            assistantIdentity: 'flow' as const,
+            flowDailyTargets: ctx.dailyTargets,
+            // Same inputs as the context, so consulta_progresso and the
+            // per-turn context give the model the same day's balance.
+            flowDayBalance: flowDayBalanceInputs(ctx.profile, calcConfig, ctx.flowDayRow),
+          }
         : {}),
     }
     for (const tc of result.toolCalls) {
@@ -2118,7 +2152,24 @@ async function processResolvedMessage(
       // base. (Antes usava consumido−meta−exercício, inflava o restante.)
       if (snapTyped.calories_target != null) {
         const eb = eatingBalance(snapTyped.calories_consumed, snapTyped.calories_target)
-        const proseFix = reconcileBalanceProse(finalText, eb)
+        // Flow only: the context also gives the model the protocol's day
+        // balance (§2c), a second true number whose sign can differ from the
+        // food balance. A claim quoting it is not rewritten into "restam".
+        // WhatsApp passes nothing: its reconciliation is unchanged.
+        const flowDay =
+          options.historyProvider === 'mobile_flow'
+            ? dayEnergyBalance({
+                ...flowDayBalanceInputs(ctx.profile, calcConfig, ctx.flowDayRow),
+                caloriesConsumed: snapTyped.calories_consumed,
+                caloriesTarget: snapTyped.calories_target,
+                exerciseCalories: snapTyped.exercise_calories,
+              })
+            : null
+        const proseFix = reconcileBalanceProse(
+          finalText,
+          eb,
+          flowDay?.basis === 'expenditure' ? { dayBalance: flowDay.balance } : {},
+        )
         if (proseFix.replacements > 0) {
           finalText = proseFix.text
           if (options.includeSensitiveTelemetry !== false) {
@@ -2213,6 +2264,7 @@ async function processResolvedMessage(
       registrationToolCalled: registrationToolCalled || draftCreatedThisTurn(toolCallsSummary),
       prescriptionToolCalled,
       skipToolCalled,
+      goalToolCalled: goalToolRanThisTurn(toolCallsSummary),
       mealTypeHint,
     })
     if (fakeFinal.isFake) {
@@ -2638,7 +2690,7 @@ export async function loadContext(
     .from('daily_snapshots')
     .select(
       historyProvider === 'mobile_flow'
-        ? `${snapshotColumns}, calories_target, protein_target`
+        ? `${snapshotColumns}, calories_target, protein_target, current_protocol`
         : snapshotColumns,
     )
     .eq('user_id', userId)
@@ -2682,6 +2734,7 @@ export async function loadContext(
   const snapTyped = snapToday as {
     calories_target?: number | null
     protein_target?: number | string | null
+    current_protocol?: string | null
     calories_consumed?: number | null
     protein_g?: number | null
     carbs_g?: number | null
@@ -2757,6 +2810,33 @@ export async function loadContext(
             positiveSnapshotTarget(snapTyped?.protein_target) ?? dailyTargets.protein_target,
         }
       : dailyTargets
+  // Flow only: what the day balance needs to know about the day row, read
+  // with the same profile and config as the targets above, so the Flow and
+  // the Today screen reach the same verdict (same number) on the day the
+  // protocol changed and on a closed day that carries its own protocol.
+  const flowProfileRow: ProfileRow = {
+    sex: profileTyped.sex,
+    birth_date: profile?.birth_date ?? null,
+    height_cm: profileTyped.heightCm,
+    weight_kg: profileTyped.weightKg,
+    body_fat_percent: profileTyped.bodyFatPercent,
+    activity_level: profileTyped.activityLevel,
+    training_frequency: profileTyped.trainingFrequency,
+    water_intake: profileTyped.waterIntake,
+    hunger_level: profileTyped.hungerLevel,
+    current_protocol: profileTyped.currentProtocol,
+    goal_type: profileTyped.goalType,
+    goal_value: profileTyped.goalValue,
+    deficit_level: profileTyped.deficitLevel,
+  }
+  const flowDayRow: FlowDayRow | null =
+    historyProvider === 'mobile_flow'
+      ? {
+          protocol: snapTyped?.current_protocol ?? null,
+          storedTargetKcal: positiveSnapshotTarget(snapTyped?.calories_target),
+          targetByProtocol: dailyTargetByProtocol(flowProfileRow, calcCfg),
+        }
+      : null
 
   return {
     userId,
@@ -2786,6 +2866,7 @@ export async function loadContext(
     bodyPhotoState,
     reevaluationDueRecent,
     dailyTargets: contextTargets,
+    flowDayRow,
     todaySnapshot: snapTyped
       ? {
           calories_consumed: snapTyped.calories_consumed ?? 0,
@@ -3180,7 +3261,8 @@ function formatUserContext(
           caloriesTarget: ctx.dailyTargets.calories_target,
           caloriesConsumed: s.calories_consumed,
           exerciseCalories: s.exercise_calories,
-          protocol: ctx.profile.currentProtocol,
+          // The day's balance per protocol (docs/CALCULO-MPP.md §2c).
+          ...flowDayBalanceInputs(ctx.profile, calcConfig, ctx.flowDayRow),
           hasSnapshot: true,
         }),
       )
@@ -3220,7 +3302,7 @@ function formatUserContext(
           caloriesTarget: ctx.dailyTargets.calories_target,
           caloriesConsumed: 0,
           exerciseCalories: 0,
-          protocol: ctx.profile.currentProtocol,
+          ...flowDayBalanceInputs(ctx.profile, calcConfig, ctx.flowDayRow),
           hasSnapshot: false,
         }),
       )

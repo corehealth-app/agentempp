@@ -537,7 +537,13 @@ describe('loadOfficialDailyState', () => {
       protein_source: 'daily_snapshot',
     })
     expect(state.remaining_food_kcal).toBe(735)
-    expect(state.daily_balance_kcal).toBe(-1_035)
+    // 2026-10-04 (docs/CALCULO-MPP.md §2c): was -1_035 (1200 − 1935 − 300,
+    // against the target). Recomposição with deficit_level 500 is measured
+    // against the day's expenditure: 1200 − (1935 + 500) − 300.
+    expect(state.daily_balance_kcal).toBe(-1_535)
+    expect(state.daily_balance_reference_kcal).toBe(2_435)
+    expect(state.daily_balance_includes_exercise).toBe(true)
+    expect(state.calculation_version).toBe('bodyflow.daily-state.v3')
     expect(state.meals.map((meal) => meal.id)).toEqual(['meal-cafe', 'meal-1'])
     expect(state.meals[0]).toMatchObject({ nutrition_source: 'canonical_exact' })
     expect(state.pending_actions.registrations).toEqual([

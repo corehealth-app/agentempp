@@ -403,7 +403,20 @@ export function detectSentimentMismatch(
 export function reconcileBalanceProse(
   text: string,
   dailyBalance: number | null | undefined,
-  opts: { tolerance?: number } = {},
+  opts: {
+    tolerance?: number
+    /**
+     * Flow only (docs/CALCULO-MPP.md §2c): the protocol's day balance against
+     * the day's expenditure. It is a SECOND true number of the day and its
+     * sign can differ from the food balance — ganho de massa between the
+     * reference and the target is a true "superávit de 62 kcal" while food is
+     * still left; recomposição over the target with a workout is a true
+     * "déficit de 832 kcal". A claim with this sign AND this number (±1) is
+     * about that balance and is left alone. Absent = the behaviour of before
+     * (WhatsApp never passes it).
+     */
+    dayBalance?: number | null
+  } = {},
 ): { text: string; replacements: number } {
   if (!text || dailyBalance == null) return { text, replacements: 0 }
   const tol = opts.tolerance ?? 50
@@ -415,15 +428,24 @@ export function reconcileBalanceProse(
   const replacement = realSign === 'deficit' ? `restam ${mag} kcal` : `excedente de ${mag} kcal`
   const wordToSign = (w: string): 'deficit' | 'excedente' =>
     /^d[ée]f/i.test(w) ? 'deficit' : 'excedente'
+  const day = opts.dayBalance
+  const quotesDayBalance = (word: string, digits: string): boolean => {
+    if (day == null || !Number.isFinite(day) || day === 0) return false
+    if (wordToSign(word) !== (day < 0 ? 'deficit' : 'excedente')) return false
+    // pt-BR: "2.297" is 2297; a comma is the decimal mark.
+    const said = Number.parseFloat(digits.replace(/\./g, '').replace(',', '.'))
+    return Number.isFinite(said) && Math.abs(said - Math.abs(day)) <= 1
+  }
 
   let replacements = 0
   let out = text
 
   // Padrão A: "<palavra> (leve|pequeno|grande)? de <n> kcal"
   out = out.replace(
-    /\b(d[ée]ficit|super[áa]vit|excedente)\b(?:\s+(?:leve|pequen[oa]|grande))?\s+de\s+[\d.,]+\s*kcal/gi,
-    (full: string, word: string) => {
+    /\b(d[ée]ficit|super[áa]vit|excedente)\b(?:\s+(?:leve|pequen[oa]|grande))?\s+de\s+([\d.,]+)\s*kcal/gi,
+    (full: string, word: string, digits: string) => {
       if (wordToSign(word) === realSign) return full
+      if (quotesDayBalance(word, digits)) return full
       replacements++
       return /^[A-ZÀ-Ý]/.test(full.trimStart())
         ? replacement.charAt(0).toUpperCase() + replacement.slice(1)
@@ -433,9 +455,10 @@ export function reconcileBalanceProse(
 
   // Padrão B: "<n> kcal de <palavra>"
   out = out.replace(
-    /[\d.,]+\s*kcal\s+de\s+(d[ée]ficit|super[áa]vit|excedente)\b/gi,
-    (full: string, word: string) => {
+    /([\d.,]+)\s*kcal\s+de\s+(d[ée]ficit|super[áa]vit|excedente)\b/gi,
+    (full: string, digits: string, word: string) => {
       if (wordToSign(word) === realSign) return full
+      if (quotesDayBalance(word, digits)) return full
       replacements++
       return replacement
     },

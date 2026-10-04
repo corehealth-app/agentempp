@@ -297,6 +297,38 @@ describe('isReevalToolTurn (parte barata do gatilho de reavaliação)', () => {
     expect(isReevalToolTurn([{ name: 'cadastra_dados_iniciais', error: 'x' }], '80kg')).toBe(false)
     expect(isReevalToolTurn([], '80kg')).toBe(false)
   })
+
+  // Review of 2026-10-04 (docs/CALCULO-MPP.md §8b): define_protocolo drops a
+  // goal under the floor and says so in `goal_message`; the fixed text has no
+  // place for it, so the model writes that answer.
+  it('define_protocolo que NÃO gravou a meta (goal_saved=false) → NÃO dispara', () => {
+    const cadastra = { name: 'cadastra_dados_iniciais', result: { success: true } }
+    expect(
+      isReevalToolTurn(
+        [
+          cadastra,
+          {
+            name: 'define_protocolo',
+            result: { success: true, goal_saved: false, goal_message: 'Protocolo registrado. …' },
+          },
+        ],
+        'Peso 79 kg, fome moderada. Minha meta agora é 7% de gordura',
+      ),
+    ).toBe(false)
+    // A saved goal carries no `goal_saved` key: still the deterministic text.
+    expect(
+      isReevalToolTurn(
+        [cadastra, { name: 'define_protocolo', result: { success: true, protocol: 'recomposicao' } }],
+        'Peso 79 kg, fome moderada',
+      ),
+    ).toBe(true)
+    expect(
+      isReevalToolTurn(
+        [cadastra, { name: 'define_protocolo', result: { success: true, goal_saved: true } }],
+        'Peso 79 kg, fome moderada',
+      ),
+    ).toBe(true)
+  })
 })
 
 describe('composeReevalResultMessage', () => {

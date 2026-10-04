@@ -23,9 +23,17 @@
  *   - masculino: 8-19% atlético/fitness, 20-25% aceitável, >25 obesidade
  *   - feminino: 16-24% atlético/fitness, 25-31% aceitável, >32 obesidade
  *   abaixo do "essencial" (homem <5%, mulher <12%) é unhealthy_low.
+ *
+ * Floor of the method (R4, docs/CALCULO-MPP.md §8b): a goal below 10% is
+ * REFUSED for both sexes (`refused`), and the tool does not save it. Stated by
+ * the client on 2025-12-28 (typed: "não é possível reduzir para menos de 10% de
+ * gordura corporal no nosso sistema") and in his manual 9.3 ("limite inferior
+ * ... seguro"). Implemented on 2026-10-04 at Eduardo's request; the client's
+ * confirmation is pending. The 12% for women above is NOT his: it stays the
+ * warning it was (saved), never a refusal.
  */
 export type BfGoalClass =
-  | 'unhealthy_low' // alvo < BF essencial (homem <5, mulher <12) — risco
+  | 'unhealthy_low' // alvo abaixo do mínimo (homem <10 = piso do método, recusado; mulher <12, recusado só abaixo de 10)
   | 'aggressive_pace' // alvo saudável mas chegar em <4 semanas é rápido demais (perda muscular)
   | 'overweight_remaining' // alvo > limite recomp (homem >20, mulher >28) — ainda obeso/sobrepeso
   | 'long_term' // alvo saudável MAS exige >26 semanas (~6 meses) — sugerir degrau intermediário
@@ -35,6 +43,17 @@ export type BfGoalClass =
 export type Sex = 'masculino' | 'feminino'
 
 const BF_ESSENTIAL = { masculino: 5, feminino: 12 }
+/** Lowest body-fat goal the method works with, both sexes. One constant: to
+ * revert R4 for body fat, set it to 0 (nothing is refused; the men's minimum
+ * goes back to 5; the tool descriptions drop the floor sentences). */
+export const BF_METHOD_FLOOR = 10
+
+/** Lowest goal saved without a warning for the sex: 10 for men (the method
+ * floor), 12 for women (a value of the code, not stated by the client). It is
+ * what a refusal offers, in define_meta_peso and in define_protocolo alike. */
+export function lowestBfGoalWithoutWarning(sex: Sex): number {
+  return Math.max(BF_ESSENTIAL[sex], BF_METHOD_FLOOR)
+}
 const BF_RECOMP_LIMIT = { masculino: 20, feminino: 28 } // espelhado de calc-config
 // Velocidade segura: 0.5pp/semana de BF — perda sustentável típica
 const BF_LOSS_SAFE_PP_PER_WEEK = 0.5
@@ -63,8 +82,12 @@ export interface BfGoalAssessment {
   bfAtual: number
   /** BF alvo do paciente (%). */
   bfAlvo: number
-  /** BF essencial mínimo pro sexo (homem 5%, mulher 12%). */
+  /** Menor meta sem aviso pro sexo: homem 10% (piso do método), mulher 12%
+   * (valor anterior do código, não dito pelo cliente). */
   bfMinimoSaudavel: number
+  /** True when the goal is below the method floor (10%): the caller must NOT
+   * save it. A woman's 10–11.9% is `unhealthy_low` with `refused` false. */
+  refused: boolean
   /** Limite recomp pro sexo (homem 20%, mulher 28%) — acima disso protocolo
    * MPP recomenda foco em perda de gordura antes de recomp pura. */
   bfRecompLimit: number
@@ -82,8 +105,17 @@ export interface BfGoalAssessment {
 export function classifyBfGoal(input: BfGoalInput): BfGoalAssessment {
   const { currentBfPercent, targetBfPercent, sex } = input
   const bfAtual = round1(currentBfPercent)
-  const bfAlvo = round1(targetBfPercent)
-  const bfMinimoSaudavel = BF_ESSENTIAL[sex]
+  const bfMinimoSaudavel = lowestBfGoalWithoutWarning(sex)
+  // The raw target is what the caller would store, so it is what the floor
+  // judges (9.96 would round to 10.0 and is still below the floor).
+  const refused = targetBfPercent < BF_METHOD_FLOOR
+  // A refused target is never shown rounded up to the floor: 9.96 reads 9.9,
+  // or the refusal would say "10% fica abaixo de 10%".
+  const bfAlvoRounded = round1(targetBfPercent)
+  const bfAlvo =
+    refused && bfAlvoRounded >= BF_METHOD_FLOOR
+      ? Math.floor(targetBfPercent * 10) / 10
+      : bfAlvoRounded
   const bfRecompLimit = BF_RECOMP_LIMIT[sex]
   const deltaPp = round1(Math.abs(bfAtual - bfAlvo))
   const direction: 'perder' | 'ganhar' | 'manter' =
@@ -105,7 +137,11 @@ export function classifyBfGoal(input: BfGoalInput): BfGoalAssessment {
 
   // Classificação
   let classification: BfGoalClass
-  if (direction === 'manter') {
+  if (refused) {
+    // Before 'maintenance': a man at 8% asking for 7% was saved as maintenance.
+    classification = 'unhealthy_low'
+    semanasParaMetaSeguro = null
+  } else if (direction === 'manter') {
     classification = 'maintenance'
   } else if (bfAlvo < bfMinimoSaudavel) {
     classification = 'unhealthy_low'
@@ -146,6 +182,7 @@ export function classifyBfGoal(input: BfGoalInput): BfGoalAssessment {
     deltaPp,
     semanasParaMetaSeguro,
     sex,
+    refused,
   })
 
   return {
@@ -153,6 +190,7 @@ export function classifyBfGoal(input: BfGoalInput): BfGoalAssessment {
     bfAtual,
     bfAlvo,
     bfMinimoSaudavel,
+    refused,
     bfRecompLimit,
     semanasParaMetaSeguro,
     direction,
@@ -171,6 +209,7 @@ interface BuildMessageInput {
   deltaPp: number
   semanasParaMetaSeguro: number | null
   sex: Sex
+  refused: boolean
 }
 
 function buildMessage(i: BuildMessageInput): string {
@@ -182,6 +221,16 @@ function buildMessage(i: BuildMessageInput): string {
         `Manutenção, onde o foco é estabilidade e composição corporal (preservar massa).`
       )
     case 'unhealthy_low':
+      if (i.refused) {
+        // The offer starts at the lowest goal that is saved without a warning
+        // (10 for men; 12 for women, the value the warning already quotes).
+        return (
+          `Não registrei essa meta: ${i.bfAlvo}% fica abaixo de ${BF_METHOD_FLOOR}% de gordura corporal, ` +
+          `que é o limite inferior seguro do método. O método não reduz a gordura corporal abaixo de ${BF_METHOD_FLOOR}%. ` +
+          `Nada mudou no seu cadastro. Posso registrar uma meta a partir de ${i.bfMinimoSaudavel}%. ` +
+          `Qual você prefere?`
+        )
+      }
       return (
         `Cuidado — ${i.bfAlvo}% está ABAIXO do limite essencial ${sexLabel} ` +
         `(mínimo ${i.bfMinimoSaudavel}%). Perder gordura abaixo desse limite ` +

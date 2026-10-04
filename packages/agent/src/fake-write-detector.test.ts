@@ -396,3 +396,83 @@ describe('detectFakeWrite — SKIP claim (bug Roberto 2026-06-15)', () => {
     expect(inferMealFromSkipText('Pulei', 'jantar')).toBe('jantar')
   })
 })
+
+// Review 2026-10-04 (WhatsApp reassessment, goal refused by define_protocolo):
+// the model answers from the tool result — "Protocolo registrado … a meta não
+// foi registrada … 1.746 kcal" — and the generic rule (claim verb + kcal/emoji)
+// read it as a meal registered without the tool, forcing a third model call
+// that told it to call registra_refeicao. `goalToolCalled` = define_protocolo
+// or define_meta_peso ran without error in the turn (set by pipeline.ts).
+describe('detectFakeWrite — turno em que define_protocolo/define_meta_peso gravou', () => {
+  // The reviewer's reproduction, verbatim (man 80 kg, 12% body fat, goal 7%).
+  const REFUSED_GOAL_WITH_KCAL =
+    'Sua nova meta é 1.746 kcal e 118,5 g de proteína por dia. A meta de 7% de gordura corporal não foi registrada: fica abaixo de 10%, que é o limite inferior seguro do método. Posso registrar uma meta a partir de 10%. Qual você prefere?'
+  const REFUSED_GOAL_WITH_EMOJI =
+    'Protocolo registrado. A meta de 7% de gordura corporal não foi registrada: fica abaixo de 10%. Posso registrar uma meta a partir de 10%. Qual você prefere? 💪'
+  // "Before": HEAD already tripped on an accepted goal after define_meta_peso.
+  const ACCEPTED_GOAL = 'Meta registrada: 12% de gordura corporal. Vamos focar! 💪'
+
+  const UPDATED_PROTOCOL = 'Protocolo atualizado: recomposição, 1.746 kcal por dia.'
+  const CASES = [
+    { label: 'recusa com kcal', content: REFUSED_GOAL_WITH_KCAL, kind: 'registration' },
+    { label: 'recusa sem kcal terminando em 💪', content: REFUSED_GOAL_WITH_EMOJI, kind: 'registration' },
+    { label: 'meta aceita com 💪', content: ACCEPTED_GOAL, kind: 'registration' },
+    { label: 'protocolo atualizado com kcal', content: UPDATED_PROTOCOL, kind: 'correction' },
+  ] as const
+
+  it.each(CASES)('$label: não é escrita fantasma de refeição quando a tool de protocolo/meta rodou', ({
+    content,
+  }) => {
+    expect(
+      detectFakeWrite({ content, registrationToolCalled: false, goalToolCalled: true }),
+    ).toEqual({ isFake: false, kind: null })
+  })
+
+  it.each(CASES)('$label: sem a tool (ou com a flag ausente) o guard dispara como antes', ({
+    content,
+    kind,
+  }) => {
+    expect(detectFakeWrite({ content, registrationToolCalled: false })).toEqual({
+      isFake: true,
+      kind,
+    })
+    expect(
+      detectFakeWrite({ content, registrationToolCalled: false, goalToolCalled: false }),
+    ).toEqual({ isFake: true, kind })
+  })
+
+  it('o card de refeição ("Total refeição") continua sendo afirmação de registro, mesmo com a tool de protocolo', () => {
+    const content =
+      'Protocolo registrado. **Almoço:**\n• arroz (150g)\n• frango (120g)\n**Total refeição: 521 kcal**'
+    expect(
+      detectFakeWrite({ content, registrationToolCalled: false, goalToolCalled: true }),
+    ).toEqual({ isFake: true, kind: 'registration' })
+  })
+
+  it('as regras estruturais não mudam com a tool de protocolo: proposta imitada, bullets com kcal e "pulei"', () => {
+    expect(
+      detectFakeWrite({
+        content: 'Vi isso na sua foto (Almoço):\n• arroz (150g)\n• frango (120g)\nConfirma?',
+        registrationToolCalled: false,
+        goalToolCalled: true,
+      }),
+    ).toEqual({ isFake: true, kind: 'registration' })
+    expect(
+      detectFakeWrite({
+        content:
+          'Entendi isso pro seu almoço:\n• alface crespa (40g) — 6 kcal\n• alface roxa (20g) — 3 kcal\nTem proteína nessa refeição?',
+        registrationToolCalled: false,
+        goalToolCalled: true,
+      }),
+    ).toEqual({ isFake: true, kind: 'registration' })
+    expect(
+      detectFakeWrite({
+        content: 'Anotado: jantar pulado.',
+        patientText: 'Pulei o jantar',
+        registrationToolCalled: false,
+        skipToolCalled: false,
+        goalToolCalled: true,
+      }),
+    ).toMatchObject({ isFake: true, kind: 'skip', inferredMealType: 'jantar' })
+  })
+})

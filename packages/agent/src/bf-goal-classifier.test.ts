@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { classifyBfGoal } from './bf-goal-classifier.js'
+import { BF_METHOD_FLOOR, classifyBfGoal } from './bf-goal-classifier.js'
 
 describe('classifyBfGoal — bug Roberto 06-18 (Q4 reavaliação BF)', () => {
   // Roberto: masculino, BF atual 20%, meta 20% (goal_type=BF, goal_value=20).
@@ -20,7 +20,9 @@ describe('classifyBfGoal — bug Roberto 06-18 (Q4 reavaliação BF)', () => {
     expect(r.direction).toBe('perder')
     expect(r.deltaPp).toBe(10)
     expect(r.semanasParaMetaSeguro).toBe(20) // 10pp / 0.5pp por semana
-    expect(r.bfMinimoSaudavel).toBe(5)
+    // Piso do método (R4, 2026-10-04); antes era o "essencial" 5.
+    expect(r.bfMinimoSaudavel).toBe(10)
+    expect(r.refused).toBe(false)
     expect(r.bfRecompLimit).toBe(20)
   })
 
@@ -31,11 +33,12 @@ describe('classifyBfGoal — bug Roberto 06-18 (Q4 reavaliação BF)', () => {
     expect(r.classification).toBe('overweight_remaining')
   })
 
-  it('homem 18% → 3% → unhealthy_low (abaixo do essencial 5%)', () => {
+  it('homem 18% → 3% → unhealthy_low (abaixo do piso do método, 10%)', () => {
     const r = classifyBfGoal({ currentBfPercent: 18, targetBfPercent: 3, sex: 'masculino' })
     expect(r.classification).toBe('unhealthy_low')
     expect(r.semanasParaMetaSeguro).toBe(null)
     expect(r.message).toContain('abaixo')
+    expect(r.refused).toBe(true)
   })
 
   it('mulher 30% → 26% saudável (recomp limit 28%)', () => {
@@ -100,16 +103,22 @@ describe('classifyBfGoal — bug Roberto 06-18 (Q4 reavaliação BF)', () => {
     })
 
     it('long_term: cenário REAL — homem dentro do limit precisa de mais de 26 semanas', () => {
-      // BF 19, alvo 6 (saudável > 5 essencial, dentro do recomp 20)
-      // delta=13pp, semanas=26 → NÃO entra (precisa > 26)
-      // Vamos pra delta 13pp = 26 sem (não entra), delta 15 = 30 sem (entra)
-      const r = classifyBfGoal({ currentBfPercent: 20, targetBfPercent: 5, sex: 'masculino' })
-      // delta=15, semanas=30, alvo=5=essencial (boundary, < essencial seria 4)
-      // alvo 5 >= bfMinimoSaudavel 5 → não unhealthy_low. recomp 20, alvo 5 ≤ 20 → não overweight
-      // semanas 30 > 26 E delta 15 > 10 → long_term ✓
+      // Era 20 → 5 (a meta de 5% era aceita). Com o piso do método (R4,
+      // 2026-10-04) 5% é recusado; o caso passa a ser 25 → 10, no piso:
+      // delta=15, semanas=30; alvo 10 >= piso 10 → não unhealthy_low;
+      // alvo 10 ≤ recomp 20 → não overweight; 30 > 26 E 15 > 10 → long_term ✓
+      const r = classifyBfGoal({ currentBfPercent: 25, targetBfPercent: 10, sex: 'masculino' })
       expect(r.classification).toBe('long_term')
+      expect(r.refused).toBe(false)
       expect(r.message).toContain('LONGO PRAZO')
       expect(r.message).toContain('degrau intermediário')
+    })
+
+    it('20 → 5 (o long_term antigo) agora é recusado, não elogiado', () => {
+      const r = classifyBfGoal({ currentBfPercent: 20, targetBfPercent: 5, sex: 'masculino' })
+      expect(r.classification).toBe('unhealthy_low')
+      expect(r.refused).toBe(true)
+      expect(r.message).not.toContain('LONGO PRAZO')
     })
 
     it('long_term: mulher 38→18 (delta 20pp, 40sem) também é long_term', () => {
@@ -118,5 +127,114 @@ describe('classifyBfGoal — bug Roberto 06-18 (Q4 reavaliação BF)', () => {
       // 40>26 e 20>10 → long_term ✓
       expect(r.classification).toBe('long_term')
     })
+  })
+})
+
+// R4 — piso do método (docs/CALCULO-MPP.md §8b). Dito pelo cliente em
+// 28/12/2025 (texto) e no manual 9.3; implementado em 2026-10-04 a pedido do
+// Eduardo; confirmação do cliente pendente.
+describe('classifyBfGoal — piso do método: meta abaixo de 10% é recusada', () => {
+  const REFUSAL_MAN = (alvo: number) =>
+    `Não registrei essa meta: ${alvo}% fica abaixo de 10% de gordura corporal, que é o limite inferior seguro do método. ` +
+    'O método não reduz a gordura corporal abaixo de 10%. Nada mudou no seu cadastro. ' +
+    'Posso registrar uma meta a partir de 10%. Qual você prefere?'
+
+  it('o piso é 10 e é uma constante só', () => {
+    expect(BF_METHOD_FLOOR).toBe(10)
+  })
+
+  it.each([
+    // [atual, alvo, o que acontecia antes]
+    [12, 7, 'ideal: "Boa meta — vamos focar."'],
+    [8, 7, 'maintenance (variação de 1 ponto)'],
+    [8, 5, 'ideal'],
+    [8, 6, 'ideal'],
+    [12, 9.9, 'ideal'],
+    [12, 4, 'unhealthy_low, aviso com pergunta'],
+    [6, 8, 'ideal (subindo)'],
+    [9, 9, 'maintenance'],
+  ])('homem %s%% → %s%% recusado (antes: %s)', (atual, alvo) => {
+    const r = classifyBfGoal({ currentBfPercent: atual, targetBfPercent: alvo, sex: 'masculino' })
+    expect(r.refused).toBe(true)
+    expect(r.classification).toBe('unhealthy_low')
+    expect(r.semanasParaMetaSeguro).toBeNull()
+    expect(r.bfMinimoSaudavel).toBe(10)
+    expect(r.message).toBe(REFUSAL_MAN(alvo))
+    expect(r.message).not.toMatch(/Boa meta|Meta saudável|manter o BF/)
+  })
+
+  // Review of 2026-10-04 (LOW): the target was shown rounded to one decimal,
+  // so the refusal read "10% fica abaixo de 10%".
+  it.each([[9.95], [9.96], [9.99], [9.999]])(
+    'o que seria gravado é o que o piso julga: %s é recusado e o texto mostra 9.9%%, nunca 10%%',
+    (alvo) => {
+      const r = classifyBfGoal({ currentBfPercent: 12, targetBfPercent: alvo, sex: 'masculino' })
+      expect(r.refused).toBe(true)
+      expect(r.bfAlvo).toBe(9.9)
+      expect(r.deltaPp).toBe(2.1)
+      expect(r.message).toBe(REFUSAL_MAN(9.9))
+      expect(r.message).not.toContain('10% fica abaixo de 10%')
+    },
+  )
+
+  it('alvo aceito continua mostrado com uma casa (10.04 → 10)', () => {
+    const r = classifyBfGoal({ currentBfPercent: 12, targetBfPercent: 10.04, sex: 'masculino' })
+    expect(r.refused).toBe(false)
+    expect(r.bfAlvo).toBe(10)
+  })
+
+  it.each([
+    [12, 10, 'ideal', 4],
+    [15, 10, 'ideal', 10],
+    [11, 10, 'maintenance', null],
+    [10, 10, 'maintenance', null],
+  ])('homem %s%% → %s%% aceito no piso (%s)', (atual, alvo, classification, semanas) => {
+    const r = classifyBfGoal({ currentBfPercent: atual, targetBfPercent: alvo, sex: 'masculino' })
+    expect(r.refused).toBe(false)
+    expect(r.classification).toBe(classification)
+    expect(r.semanasParaMetaSeguro).toBe(semanas)
+  })
+
+  it('homem 12% → 10%: o texto de meta aceita não mudou', () => {
+    const r = classifyBfGoal({ currentBfPercent: 12, targetBfPercent: 10, sex: 'masculino' })
+    expect(r.message).toBe(
+      'Meta saudável: 10% (abaixo dos 12% atuais, delta 2pp). No ritmo seguro de ~0.5pp/semana, ~4 semanas. Boa meta — vamos focar.',
+    )
+  })
+
+  it('mulher 22% → 9% recusada; a oferta parte do 12% que o aviso já cita', () => {
+    const r = classifyBfGoal({ currentBfPercent: 22, targetBfPercent: 9, sex: 'feminino' })
+    expect(r.refused).toBe(true)
+    expect(r.classification).toBe('unhealthy_low')
+    expect(r.bfMinimoSaudavel).toBe(12)
+    expect(r.message).toBe(
+      'Não registrei essa meta: 9% fica abaixo de 10% de gordura corporal, que é o limite inferior seguro do método. ' +
+        'O método não reduz a gordura corporal abaixo de 10%. Nada mudou no seu cadastro. ' +
+        'Posso registrar uma meta a partir de 12%. Qual você prefere?',
+    )
+  })
+
+  // O 12% feminino NÃO foi dito pelo cliente: continua aviso, nunca recusa.
+  it.each([[10], [11], [11.9]])('mulher 22%% → %s%%: aviso de hoje, sem recusa', (alvo) => {
+    const r = classifyBfGoal({ currentBfPercent: 22, targetBfPercent: alvo, sex: 'feminino' })
+    expect(r.refused).toBe(false)
+    expect(r.classification).toBe('unhealthy_low')
+    expect(r.message).toBe(
+      `Cuidado — ${alvo}% está ABAIXO do limite essencial pra mulher (mínimo 12%). ` +
+        'Perder gordura abaixo desse limite compromete hormônios, recuperação muscular e saúde geral. ' +
+        'Sugiro mirar pelo menos 15% — ainda atlético, mas seguro. Faz sentido revisar a meta?',
+    )
+  })
+
+  it('mulher 11% → 11.5% continua maintenance (o 12% não passou à frente de "manter")', () => {
+    const r = classifyBfGoal({ currentBfPercent: 11, targetBfPercent: 11.5, sex: 'feminino' })
+    expect(r.refused).toBe(false)
+    expect(r.classification).toBe('maintenance')
+  })
+
+  it('mulher 22% → 12% segue sem aviso e sem recusa', () => {
+    const r = classifyBfGoal({ currentBfPercent: 22, targetBfPercent: 12, sex: 'feminino' })
+    expect(r.refused).toBe(false)
+    expect(r.classification).toBe('ideal')
   })
 })

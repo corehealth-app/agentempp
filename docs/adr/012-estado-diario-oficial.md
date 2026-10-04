@@ -67,3 +67,25 @@ aplicação única sobre essas fontes.
 
 Nenhuma migration, consulta live ou alteração de ambiente foi realizada nesta
 decisão.
+
+## Nota de 2026-10-04 — saldo do dia por protocolo (`bodyflow.daily-state.v3`)
+
+O item 4 definia o saldo líquido como ingestão menos meta menos exercício. O
+cliente (Dr. Roberto) disse em 20/01/2026, 22/02/2026, 23/02/2026 e 09/03/2026
+que o balanço do dia é ingestão menos o gasto do dia: BMR × 1,2 + exercício na
+recomposição; BMR × fator de atividade, sem somar exercício, em ganho de massa
+e manutenção. Isso foi implementado em 2026-10-04 a pedido do Eduardo, com a
+confirmação do cliente pendente, e não é uma decisão nova desta ADR.
+
+- `daily_balance_kcal` passa a vir de `dayEnergyBalance` (`@mpp/core`), com um
+  interruptor por protocolo (`DAY_BALANCE_AGAINST_EXPENDITURE`).
+- "Restam" (item 4) não mudou: ingestão menos meta, sem exercício.
+- Pelo item 9, a fórmula mudou e a versão subiu para `bodyflow.daily-state.v3`.
+  Dois campos aditivos (`daily_balance_reference_kcal`,
+  `daily_balance_includes_exercise`) dizem contra o que o número foi medido.
+- Os itens 5 e 6 continuam valendo: o número é provisório no dia aberto e o
+  bloco mostra só o `user_progress` persistido.
+- Regra, números, interruptor e pendências: `docs/CALCULO-MPP.md` §2c e §4a;
+  contrato: `docs/mobile/api-v1.md`.
+
+Nenhuma migration, consulta live ou alteração de ambiente foi realizada.

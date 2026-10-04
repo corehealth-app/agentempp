@@ -324,7 +324,11 @@ const PROTOCOL_LABEL: Record<string, string> = {
  * Parte barata do gatilho de reavaliação (checa só as tools do turno):
  *  - todas as tools = cadastra_dados_iniciais/define_protocolo, com sucesso;
  *  - há ao menos um cadastra_dados_iniciais (o peso — sinal canônico da reavaliação);
- *  - o paciente não fez pergunta (sem "?").
+ *  - o paciente não fez pergunta (sem "?");
+ *  - no tool dropped a goal (`goal_saved === false`, define_protocolo under the
+ *    floor of docs/CALCULO-MPP.md §8b): that result carries a `goal_message`
+ *    the patient has to hear, and the fixed "Reavaliação concluída" text has no
+ *    place for it — the model writes the answer with the message in hand.
  * A confirmação de que É reavaliação (não onboarding/update casual) fica no
  * pipeline (stage ativo + reevaluation.due recente).
  */
@@ -338,8 +342,18 @@ export function isReevalToolTurn(
   )
   const hasCadastra = entries.some((e) => e.name === 'cadastra_dados_iniciais')
   if (!allReeval || !hasCadastra) return false
+  if (entries.some((e) => droppedAGoal(e.result))) return false
   if (/\?/.test(patientText ?? '')) return false
   return true
+}
+
+/** True when a tool result says it did not save the goal it was handed. */
+function droppedAGoal(result: unknown): boolean {
+  return (
+    typeof result === 'object' &&
+    result !== null &&
+    (result as { goal_saved?: unknown }).goal_saved === false
+  )
 }
 
 export interface ReevalResult {

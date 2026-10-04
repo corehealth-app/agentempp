@@ -5,8 +5,20 @@
  * Todas as funções aceitam um CalcConfig opcional; sem ele usa
  * DEFAULT_CALC_CONFIG (constantes científicas padrão).
  */
-import type { ActivityLevel, HungerLevel, Sex, UserMetrics, UserProfile } from './types.js'
-import { DEFAULT_CALC_CONFIG, type CalcConfig } from './calc-config.js'
+import type {
+  ActivityLevel,
+  HungerLevel,
+  Protocol,
+  Sex,
+  UserMetrics,
+  UserProfile,
+} from './types.js'
+import {
+  DEFAULT_CALC_CONFIG,
+  RECOMP_PROTEIN_G_PER_KG,
+  RECOMP_PROTEIN_G_PER_KG_SANITY_MAX,
+  type CalcConfig,
+} from './calc-config.js'
 
 export function calcAge(birthDate: Date, today: Date = new Date()): number {
   let age = today.getFullYear() - birthDate.getFullYear()
@@ -109,6 +121,51 @@ export function resolveProteinFactor(
 }
 
 /**
+ * Fixed g/kg of recomposição, or null when the rule is off.
+ *
+ * The value comes from a `global_config` row copied as it is by the loader, so
+ * it is read as `unknown`:
+ *  - explicit `null` or `0` → off (the revert switch: recomposição follows the
+ *    `protein_factors` cascade again);
+ *  - a number in (0, RECOMP_PROTEIN_G_PER_KG_SANITY_MAX] → that factor;
+ *  - anything else (absent key, text such as "1.5", NaN, a negative number, 99)
+ *    → the code default. A typing mistake in the row must neither multiply a
+ *    weight (99 → 9900 g) nor switch the rule off without anyone noticing.
+ * The code default itself may be null (`RECOMP_PROTEIN_G_PER_KG = null`, the
+ * switch in code), which is off.
+ */
+export function fixedRecompProteinFactor(config: CalcConfig = DEFAULT_CALC_CONFIG): number | null {
+  const raw: unknown = config.recomp_protein_g_per_kg
+  if (raw === null || raw === 0) return null
+  if (typeof raw === 'number' && raw > 0 && raw <= RECOMP_PROTEIN_G_PER_KG_SANITY_MAX) return raw
+  return RECOMP_PROTEIN_G_PER_KG
+}
+
+/**
+ * Protein factor (g/kg) for a protocol — the one place the daily protein
+ * target takes its factor from.
+ *
+ * Recomposição: fixed `recomp_protein_g_per_kg` (1.5), whatever the hunger and
+ * the training frequency. Stated by the client on 2026-04-15 and 2026-05-15;
+ * implemented on 2026-10-04 at Eduardo's request; confirmation pending.
+ * Ganho de massa, manutenção and a profile without a protocol: unchanged, the
+ * `protein_factors` cascade of `resolveProteinFactor` (the client never said
+ * whether "1,5 para todos" covers them).
+ */
+export function resolveProteinFactorForProtocol(
+  protocol: Protocol | null | undefined,
+  hunger: HungerLevel,
+  trainingFrequency: number | null | undefined,
+  config: CalcConfig = DEFAULT_CALC_CONFIG,
+): number {
+  if (protocol === 'recomposicao') {
+    const fixed = fixedRecompProteinFactor(config)
+    if (fixed != null) return fixed
+  }
+  return resolveProteinFactor(hunger, trainingFrequency, config)
+}
+
+/**
  * Computa todas as métricas derivadas de um perfil.
  */
 export function computeMetrics(
@@ -142,9 +199,14 @@ export function computeMetrics(
   const imc =
     profile.weightKg && profile.heightCm ? calcIMC(profile.weightKg, profile.heightCm) : null
 
-  const proteinFactor = profile.hungerLevel
-    ? resolveProteinFactor(profile.hungerLevel, profile.trainingFrequency, config)
-    : null
+  // Recomposição does not need the hunger level: its factor is fixed.
+  const fixedRecomp =
+    profile.currentProtocol === 'recomposicao' ? fixedRecompProteinFactor(config) : null
+  const proteinFactor =
+    fixedRecomp ??
+    (profile.hungerLevel
+      ? resolveProteinFactor(profile.hungerLevel, profile.trainingFrequency, config)
+      : null)
 
   return { age, bmr, activityFactor, lbm, imc, proteinFactor }
 }

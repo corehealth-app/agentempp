@@ -28,6 +28,22 @@ describe('renderBalanceCard — formato canônico', () => {
     expect(card).toContain('📊 Bloco 7700: **5.254 / 7.700 kcal (68%)**')
   })
 
+  it('consumed exactly equal to the target reads "Restam: 0 kcal", never "-0" (audit 2026-10-04)', () => {
+    // Found while recomputing the WhatsApp-group audit: 3044 eaten of 3044
+    // printed "Restam: **-0 kcal**" (Intl formats negative zero with a sign).
+    const card = renderBalanceCard({
+      caloriesConsumed: 3044,
+      caloriesTarget: 3044,
+      proteinG: 150,
+      proteinTarget: 150,
+      exerciseCalories: 0,
+      deficitBlock: 0,
+      protocol: 'manutencao',
+    })
+    expect(card).toContain('🎯 Restam: **0 kcal**')
+    expect(card).not.toContain('-0')
+  })
+
   it('Roberto 2026-05-20: comeu 1407 (meta 1843) + 467 exercício → Restam 436, NÃO 903', () => {
     // O exercício (467) NÃO infla o "Restam". Restam = 1843 - 1407 = 436.
     const card = renderBalanceCard({

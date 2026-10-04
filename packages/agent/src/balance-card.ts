@@ -42,7 +42,9 @@ export interface BalanceCardData {
 const PT_NUM = new Intl.NumberFormat('pt-BR')
 
 function fmt(n: number): string {
-  return PT_NUM.format(Math.round(n))
+  // `+ 0` turns -0 into 0: Intl prints "-0", and the card never shows a
+  // negative sign (consumed exactly equal to the target read "Restam: -0 kcal").
+  return PT_NUM.format(Math.round(n) + 0)
 }
 
 function pct(num: number, den: number): number {

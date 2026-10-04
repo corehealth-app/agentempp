@@ -13,7 +13,8 @@
 import { renderBalanceCard, type BalanceCardData } from './balance-card.js'
 
 const PT_NUM = new Intl.NumberFormat('pt-BR')
-const fmt = (n: number): string => PT_NUM.format(Math.round(n))
+// `+ 0` turns -0 into 0 (Intl prints "-0").
+const fmt = (n: number): string => PT_NUM.format(Math.round(n) + 0)
 /** Macro em g: inteiro quando exato, senão 1 casa (ex: "2", "0.5"). */
 const gram = (n: number): string => (Number.isInteger(n) ? String(n) : n.toFixed(1))
 

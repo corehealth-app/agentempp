@@ -18,16 +18,19 @@ enum FlowChatPresentation {
     /// The questions are offered only where a tap cannot destroy anything:
     /// the composer is empty or still holds one of the questions. A draft the
     /// person typed (it survives leaving and reopening the chat) is never
-    /// replaced. They stay out of the way of a load error and of
-    /// accessibility text sizes, where the empty state is the invitation and
-    /// the composer alone.
+    /// replaced. They stay out of the way of a load error, of accessibility
+    /// text sizes (the empty state is the invitation and the composer alone)
+    /// and of the keyboard: while the person is writing, the questions are
+    /// not needed and the short viewport above the keyboard is the
+    /// conversation's.
     static func showsSuggestions(
         composer: String,
         suggestions: [String],
         isAccessibilitySize: Bool,
-        hasError: Bool
+        hasError: Bool,
+        isComposing: Bool = false
     ) -> Bool {
-        guard !isAccessibilitySize, !hasError, !suggestions.isEmpty else { return false }
+        guard !isAccessibilitySize, !hasError, !isComposing, !suggestions.isEmpty else { return false }
         let draft = composer.trimmingCharacters(in: .whitespacesAndNewlines)
         return draft.isEmpty || suggestions.contains(draft)
     }

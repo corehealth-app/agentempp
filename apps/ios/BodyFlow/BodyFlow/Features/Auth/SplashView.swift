@@ -4,8 +4,10 @@ import SwiftUI
 /// at the same place and size, so the handoff is seamless); then the name
 /// fades in and the mark breathes while the session is restored, before it
 /// travels to the brand action of the tab bar (`performeBrandContinuity`).
-/// No spinner; a loading line only appears when the wait is long enough to
-/// need one. Reduce Motion, Low Power and a hot device keep the mark still.
+/// Under the name a ball climbs an endless staircase while the session is
+/// restored (Eduardo, 2026-10-04: a more animated, more elaborate opening);
+/// the loading line only appears when the wait is long enough to need one.
+/// Reduce Motion, Low Power and a hot device keep everything still.
 @MainActor
 struct SplashView: View {
     @Environment(\.locale) private var locale
@@ -139,7 +141,24 @@ struct SplashView: View {
             Text(BrandIdentity.productName)
                 .font(BodyFlowTypography.title.weight(.bold))
                 .opacity(reservesOnly || entered || motionReduced ? 1 : 0)
+                // The name rises into place as it fades in.
+                .offset(y: reservesOnly || entered || motionReduced ? 0 : BodyFlowSpacing.sm)
                 .accessibilityIdentifier(reservesOnly ? "" : "brand.product-name")
+            // The mirrored reservation above the mark only keeps the space:
+            // one loader, one set of layers.
+            Group {
+                if reservesOnly {
+                    Color.clear
+                } else {
+                    BodyFlowStairLoader()
+                        .opacity(entered || motionReduced ? 1 : 0)
+                }
+            }
+            .frame(
+                width: BodyFlowStairLoaderMetrics.size.width,
+                height: BodyFlowStairLoaderMetrics.size.height
+            )
+            .accessibilityHidden(true)
             // The line is always reserved so the mark never jumps when it
             // appears; a caller-provided label (a long restore) shows at once.
             Text(loadingText)

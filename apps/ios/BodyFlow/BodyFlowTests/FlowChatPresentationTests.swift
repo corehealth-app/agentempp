@@ -34,6 +34,10 @@ struct FlowChatPresentationTests {
         #expect(!shows("Como está meu dia até agora? E amanhã"))
         #expect(!shows("", ax: true))
         #expect(!shows("", error: true))
+        // While the keyboard is up the questions leave the short viewport.
+        #expect(!FlowChatPresentation.showsSuggestions(
+            composer: "", suggestions: questions, isAccessibilitySize: false, hasError: false, isComposing: true
+        ))
         #expect(!FlowChatPresentation.showsSuggestions(
             composer: "", suggestions: [], isAccessibilitySize: false, hasError: false
         ))

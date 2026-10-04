@@ -463,6 +463,32 @@ the iPhone, light, dark).
 | Progress | Streak and XP·level chips above the charts; chart fills in the vivid tones; the weight axis frames the measured range. |
 | Flow | Assistant avatar on the role line, bubbles (sent, pending and received) with a tight corner pointing at the author, and three ready-made questions on an empty conversation. A tap only fills the composer; nothing is sent until Send (VoiceOver hears a hint and a confirmation). The questions appear only while the composer is empty or still holds one of them, so a typed draft is never replaced; they are hidden on a load error and at accessibility text sizes, where they make the empty state several screens tall and one swipe scrolls past the invitation (policy: `FlowChatPresentation.showsSuggestions`). |
 
+### 13.0 Looping indicators (Eduardo, 2026-10-04)
+
+Eduardo asked for a conversation-like wait in Flow ("como se fosse o
+WhatsApp… 3 pontinhos balançando como se fosse o Flow digitando") and a more
+animated, more elaborate opening, giving a "rising ball" stair loader as the
+reference. This supersedes two earlier limits: "no spinner on the splash" and
+"only finite, event-driven animations".
+
+- **Flow typing bubble** — while the answer is on its way, Flow's side shows
+  its avatar and three bouncing dots in a received bubble. VoiceOver and the
+  tests still read the true sentence ("Enviando e aguardando o Flow…"): the
+  app knows the request is out, not what the service is doing.
+- **Stair loader on the splash** — a ball climbs an endless staircase under
+  the product name while the session is restored. The reference is a React
+  component; it was rebuilt natively.
+- **How they loop** — both are Core Animation layer animations
+  (`BodyFlowLayerAnimations.swift`), handed to the render server once like the
+  system activity indicator. They cost the main thread nothing and do not keep
+  XCTest waiting for idle (0 idle stalls in the Flow and splash suites),
+  unlike a SwiftUI `repeatForever`/`TimelineView` loop (the shimmer lesson of
+  2026-10-03). Still frame under Reduce Motion, Low Power and a hot device.
+- **Ready-made questions leave while the keyboard is up.** With an empty
+  conversation and the keyboard open the questions kept the layout busy: the
+  pending-outbox test stalled 8 × 60 s on `d6278c2` and runs clean now
+  (509 s → 124 s).
+
 ### 13.1 Full suite on `d6278c2` and the open VoiceOver decision (2026-10-04)
 
 FULL SUITE RESULT (iOS 27 simulator, one invocation, no filters): 1871 of

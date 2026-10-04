@@ -159,16 +159,24 @@ struct FlowChatView: View {
                                         removal: .identity
                                     ))
                                 }
-                                if model.isSending || model.isReconcilingHistory {
+                                if model.isSending {
+                                    // The wait reads as a conversation: the
+                                    // sent message above, Flow "typing" below.
+                                    FlowTypingBubble(label: flowCopy("flow.responding"))
+                                        .transition(reduceMotion ? .identity : .asymmetric(
+                                            insertion: .move(edge: .bottom).combined(with: .opacity),
+                                            removal: .opacity
+                                        ))
+                                } else if model.isReconcilingHistory {
                                     HStack(alignment: .top, spacing: BodyFlowSpacing.sm) {
                                         BodyFlowDelayedProgress()
-                                        Text(model.isSending ? "flow.responding" : "flow.reconciling")
+                                        Text("flow.reconciling")
                                             .font(BodyFlowTypography.supporting)
                                             .foregroundStyle(BodyFlowColor.color(.textSecondary))
                                             .fixedSize(horizontal: false, vertical: true)
                                         Spacer(minLength: 0)
                                     }
-                                    .accessibilityIdentifier(model.isSending ? "flow.responding" : "flow.reconciling")
+                                    .accessibilityIdentifier("flow.reconciling")
                                 }
                                 if let errorMessage = model.errorMessage { errorCard(message: errorMessage) }
                             }
@@ -177,6 +185,10 @@ struct FlowChatView: View {
                             .animation(
                                 hasLoadedHistory ? BodyFlowMotion.animation(.navigation, reduceMotion: reduceMotion) : nil,
                                 value: model.conversationItems.count
+                            )
+                            .animation(
+                                hasLoadedHistory ? BodyFlowMotion.animation(.navigation, reduceMotion: reduceMotion) : nil,
+                                value: model.isSending
                             )
                             Color.clear.frame(height: BodyFlowSpacing.xxs)
                                 .id("flow.history-end").accessibilityHidden(true)
@@ -273,7 +285,8 @@ struct FlowChatView: View {
                 composer: model.composer,
                 suggestions: suggestionTexts,
                 isAccessibilitySize: dynamicType.isAccessibilitySize,
-                hasError: model.errorMessage != nil
+                hasError: model.errorMessage != nil,
+                isComposing: composerFocused
             ) {
                 suggestions
             }
@@ -578,6 +591,37 @@ enum FlowBubbleShape {
             topTrailingRadius: radius,
             style: .continuous
         )
+    }
+}
+
+/// Flow's side of the conversation while the answer is on its way: its
+/// avatar and three bouncing dots in a received bubble, as in a messaging
+/// app. VoiceOver and the tests read the same true sentence as before
+/// ("Enviando e aguardando o Flow…"): the app knows the request is out, not
+/// what the service is doing.
+private struct FlowTypingBubble: View {
+    let label: String
+    @Environment(\.dynamicTypeSize) private var dynamicType
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            HStack(spacing: BodyFlowSpacing.sm) {
+                FlowAvatar(diameter: 20)
+                BodyFlowTypingDots()
+            }
+            .padding(.horizontal, BodyFlowSpacing.md)
+            .padding(.vertical, BodyFlowSpacing.sm)
+            .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+            .background(
+                BodyFlowColor.color(.backgroundSecondary),
+                in: FlowBubbleShape.shape(tailOnTrailing: false)
+            )
+            Spacer(minLength: dynamicType.isAccessibilitySize ? 0 : BodyFlowSpacing.xl + BodyFlowSpacing.lg)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityRepresentation {
+            Text(verbatim: label).accessibilityIdentifier("flow.responding")
+        }
     }
 }
 

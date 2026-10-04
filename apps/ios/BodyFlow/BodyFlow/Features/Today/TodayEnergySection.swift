@@ -291,9 +291,12 @@ struct TodaySummaryPanel: View {
     /// once, right under the ring.
     private var exerciseExcludedNote: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // VoiceOver already hears "Restam para comida" on the ring's own
+            // element; repeating it here was one more stop on a long page.
             Text(verbatim: copy("today.energy.food-remaining"))
                 .font(BodyFlowTypography.caption.weight(.semibold))
                 .foregroundStyle(BodyFlowColor.primaryText)
+                .accessibilityHidden(true)
             Text(verbatim: copy("today.energy.food-remaining.detail"))
                 .font(BodyFlowTypography.caption)
                 .foregroundStyle(BodyFlowColor.secondaryText)

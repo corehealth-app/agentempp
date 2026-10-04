@@ -22,19 +22,28 @@ final class TodayHorizontalFitUITests: XCTestCase {
         return app
     }
 
+    /// One accessibility snapshot per check: asking every descendant for its
+    /// frame one query at a time took longer than the suite's ten-minute
+    /// allowance once Today gained the week strip and the meal slots.
     @MainActor
     private func assertNothingOverflowsSideways(_ app: XCUIApplication, _ note: String) {
         let window = app.windows.firstMatch.frame
         let scroll = app.scrollViews.firstMatch
         XCTAssertTrue(scroll.waitForExistence(timeout: 8))
+        guard let root = try? scroll.snapshot() else { return XCTFail("\(note): no snapshot of the Today scroll view") }
         var offenders: [String] = []
-        for element in scroll.descendants(matching: .any).allElementsBoundByIndex {
+        var inspected = 0
+        var pending: [any XCUIElementSnapshot] = root.children
+        while let element = pending.popLast() {
+            pending.append(contentsOf: element.children)
             let frame = element.frame
             guard frame.width > 0, frame.height > 0 else { continue }
+            inspected += 1
             if frame.minX < window.minX - 0.5 || frame.maxX > window.maxX + 0.5 {
                 offenders.append("\(element.elementType.rawValue) id='\(element.identifier)' label='\(element.label.prefix(40))' frame=\(frame)")
             }
         }
+        XCTAssertGreaterThan(inspected, 5, "\(note): the snapshot must hold the day's content")
         XCTAssertTrue(offenders.isEmpty, "\(note): content past the window sides:\n" + offenders.joined(separator: "\n"))
     }
 

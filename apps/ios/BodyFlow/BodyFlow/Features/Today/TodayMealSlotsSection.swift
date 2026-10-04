@@ -65,6 +65,8 @@ struct TodayMealSlotsSection: View {
                     .foregroundStyle(BodyFlowColor.secondaryText)
                 }
             }
+            // One VoiceOver stop: "Refeições, 2 de 3", still a heading.
+            .accessibilityElement(children: .combine)
 
             if descriptor.slots.isEmpty {
                 Text(copy("today.records.meals.empty"))

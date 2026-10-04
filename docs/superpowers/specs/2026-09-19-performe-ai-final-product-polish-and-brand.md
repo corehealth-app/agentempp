@@ -463,6 +463,35 @@ the iPhone, light, dark).
 | Progress | Streak and XP·level chips above the charts; chart fills in the vivid tones; the weight axis frames the measured range. |
 | Flow | Assistant avatar on the role line, bubbles (sent, pending and received) with a tight corner pointing at the author, and three ready-made questions on an empty conversation. A tap only fills the composer; nothing is sent until Send (VoiceOver hears a hint and a confirmation). The questions appear only while the composer is empty or still holds one of them, so a typed draft is never replaced; they are hidden on a load error and at accessibility text sizes, where they make the empty state several screens tall and one swipe scrolls past the invitation (policy: `FlowChatPresentation.showsSuggestions`). |
 
+### 13.1 Full suite on `d6278c2` and the open VoiceOver decision (2026-10-04)
+
+FULL SUITE RESULT (iOS 27 simulator, one invocation, no filters): 1871 of
+1873 passed, 0 skipped, 2 failed.
+
+1. `TodayHorizontalFitUITests.testTodayNeverExceedsTheWindowSidewaysInAnyScenario`
+   exceeded the ten-minute allowance. Cause: the test asked every descendant
+   for its frame one query at a time; Today's new content multiplied the
+   queries. Fixed in the test (one accessibility snapshot per check, same
+   assertions, plus a floor on inspected elements); 290 s in a focused run.
+2. `PerformeVoiceOverNavigationUITests.testVoiceOverReadsFiveTabsInOrderAndPreservesSelectionOnIOS27`
+   fails deterministically (3 of 3 isolated). Cause: the approved Today has
+   more VoiceOver stops between the top of the page and the tab bar (57
+   before; 64 after the week strip, the exercise tile, the note under the
+   ring and the meals by slot). The test allows 30 s of linear swiping, about
+   57 stops. Two redundant stops were removed (the note's repeated title and
+   the "2 of 3" count, now part of the Meals heading): 62 stops, about 32 s.
+
+> RC VoiceOver — scenario "reach the Today tab by linear swipe within 30 s"
+> NOT covered by this change (pending Eduardo's decision, audit 2026-10-04).
+> The test's budget was not raised and no assertion was relaxed. Options:
+> (a) accept a 45 s budget, keeping the 80-step cap (recommended: the tab bar
+> stays reachable by touch and by the same linear path); (b) remove content
+> from Today.
+
+Idle stalls: 11, all in two Flow tests right after the keyboard opens; both
+passed. The same intermittent pattern is in earlier full runs (13 on
+`606d5d6`, 5 on `e40bed3`, 0 on `748de02`), so it is not new to this step.
+
 Not in this step: registering a meal straight from a Flow suggestion, "repeat
 a previous meal", food imagery (needs licensed assets or the patient's own
 photo through a new server route), opening a past day from the week strip.

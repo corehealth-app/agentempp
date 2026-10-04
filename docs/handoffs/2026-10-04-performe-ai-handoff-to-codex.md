@@ -105,48 +105,39 @@ Leia antes de agir: `CLAUDE.md` (raiz), `docs/CALCULO-MPP.md` e este arquivo.
 
 ## 6. Trabalho em andamento no momento da passagem
 
-### 6.1 Regras do Roberto no servidor — NÃO commitado (56 arquivos)
+### 6.1 Regras do Roberto no servidor — COMMITADO em `9bc012b` (18:45)
 
-Conteúdo (tudo em `packages/core`, `packages/agent`, `apps/admin`, docs):
-"leite" → leite integral e "whey" → whey em pó (linhas verificadas 4492 e 6407
-do catálogo); escada de IMC em passos de 5 até 25; recusa de meta de gordura
-abaixo de 10% e de perda de peso abaixo de IMC 18,5 (o piso feminino não foi
-inventado); proteína 1,5 g/kg só na recomposição; balanço do dia por protocolo
-em `/today` e no Flow (recomposição = consumido − (meta + déficit) − exercício;
-ganho = consumido − meta/1,05; manutenção = consumido − meta; versão
-`bodyflow.daily-state.v3` e dois campos aditivos).
+Conteúdo: "leite" → leite integral e "whey" → whey em pó (linhas verificadas
+4492 e 6407 do catálogo); escada de IMC em passos de 5 até 25; recusa de meta
+de gordura abaixo de 10% e de perda de peso abaixo de IMC 18,5 (o piso
+feminino não foi inventado); proteína 1,5 g/kg só na recomposição; balanço do
+dia por protocolo em `/today` e no Flow (versão `bodyflow.daily-state.v3`,
+dois campos aditivos). A mensagem do commit lista as diferenças intencionais
+no WhatsApp e o que não mudou.
 
-Situação: implementado e revisado duas vezes por revisores adversariais; a
-segunda rodada deu **COMMIT_OK nas duas lentes** (sem CRITICAL/HIGH). Uma
-última passada fechava um MEDIUM e alguns LOW (lista em
-`$H/rulemap/impl-result-round2.json`, `reviews[].findings`): a guarda de
-"escrita-fantasma" disparando depois de uma meta recusada na reavaliação;
-`goalBelowFloorReason` com piso em 0; `calc.imc_goal_step_points` em texto;
-linhas RC desatualizadas.
+Revisão: duas rodadas adversariais; a segunda sem CRITICAL/HIGH. A última
+passada (achados menores) foi aplicada, **mas a verificação independente dela
+não rodou** — os agentes pararam no limite semanal da conta. As suítes foram
+rodadas à mão na árvore final, todas verdes (core 498, agent 2571, admin
+mobile-api 516, inngest 194, mobile-bff 29, typecheck 9/9), e o golden de
+trava do WhatsApp está sem edição.
 
-**Para fechar:** na raiz, rodar e exigir verde em tudo:
-`pnpm --filter @mpp/core test`, `pnpm --filter @mpp/agent test`,
-`cd apps/admin && npx vitest run src/lib/mobile-api`,
-`pnpm --filter @mpp/inngest-functions test`,
-`pnpm --filter @mpp/mobile-bff test`, `pnpm typecheck`; conferir que
-`packages/agent/src/__golden__/audit-10-04-whatsapp-context-lock.test.ts` não
-foi editado (`git diff HEAD --stat` nele vazio); commitar por caminho explícito
-(`git status --short` lista os arquivos; nada de `git add -A`). Mensagem: dizer
-que são regras ditas pelo cliente, implementadas a pedido do Eduardo, com
-confirmação do cliente pendente, e listar as diferenças intencionais no
-WhatsApp (valor da meta de IMC a partir de 31, proteína da recomposição,
-padrões do dia a dia, recusas abaixo dos pisos, reavaliação com meta recusada,
-chave `protein_factor` na recomposição, `peso_minimo_saudavel_kg` arredondado
-para cima, `bf_minimo_saudavel` do homem 5 → 10).
-
-> Se esta seção ainda estiver aqui quando você ler, veja no fim do arquivo a
-> nota "Atualização" — ela diz se o commit já foi feito.
+**O que o Codex deve fazer aqui:** uma checagem adversarial curta só da
+mudança em código compartilhado dessa última passada — a isenção da guarda de
+"escrita-fantasma" quando `define_protocolo` ou `define_meta_peso` rodou sem
+erro no turno (`packages/agent/src/fake-write-detector.ts`,
+`goalToolRanThisTurn` em `pipeline.ts`): confirmar que um turno sem tool de
+escrita, ou só com tool de leitura, ainda dispara a guarda, e que o card
+"Total refeição" continua sendo tratado como afirmação de refeição. Lacunas
+conhecidas, todas LOW: falta o golden do caso "protocolo nulo" da frase de
+balanço (3100 / 2980 / 322); a redação do modelo depois de uma recusa não é
+provada por teste.
 
 ### 6.2 Suíte completa do iOS em `9624cd5`
 
-Rodando em segundo plano desde ~17:07 (≈ 2 h). Resultado em
+Rodando em segundo plano desde ~17:07 (≈ 2 h; às 18:45 tinha 168 testes de UI passados e 2 falhas). Resultado em
 `$B/ios27-final-full-suite-9624cd5.{log,json,xcresult}` e `-summary.json`.
-Até 18:30: 152 testes de UI passaram, 2 falharam:
+Falhas até agora:
 - `PerformeVoiceOverNavigationUITests.testVoiceOverReadsFiveTabsInOrder…` —
   falha conhecida e determinística (Hoje tem 62 paradas de VoiceOver para um
   orçamento de 30 s). **Não aumentar o orçamento**: decisão do Eduardo (45 s
@@ -159,7 +150,7 @@ Até 18:30: 152 testes de UI passaram, 2 falharam:
 
 ## 7. O que falta, em ordem
 
-1. **Fechar 6.1** (commit das regras).
+1. **Conferir 6.1** (as regras já estão commitadas em `9bc012b`; falta só a checagem curta descrita lá).
 2. **Flow, parte B — custo e velocidade** (só caminho do Flow; WhatsApp byte a
    byte igual). Roteiro completo em `$H/flowperf/flow-perf-part-b.js` e mapa em
    `$H/flowperf/map.json`:
@@ -296,3 +287,14 @@ Do Roberto: os pontos do §8.
   `--local-config apps/mobile-bff/vercel.json`; a prova é o `x-vercel-id`.
 - Revisão adversarial achou defeito real em todas as rodadas de hoje; não
   commitar CRITICAL/HIGH sem ela.
+
+## Atualização — 18:45 BRT
+
+- As regras do Roberto no servidor foram commitadas: `9bc012b`. **A árvore
+  está limpa.** HEAD = `9bc012b` mais este documento.
+- Os agentes auxiliares do Claude Code pararam no limite semanal da conta
+  (volta em 09/10 às 9h). Nada ficou pela metade no repositório.
+- Ainda NÃO foi feito: Flow parte B (§7.2), publicar/instalar/validar
+  (§7.3–7.4), documentos (§7.5), mensagem ao Roberto (§7.6).
+- O BFF Preview `…-dpdnrn1xu-…` (gru1) é do commit `e57806f`: **não** tem as
+  regras de `9bc012b`. Publicar de novo antes de instalar.

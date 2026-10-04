@@ -112,3 +112,43 @@ following turns by about 60 %. The prompt size is the place to cut.
 > retry/cancel, plan import, cold start and memory were NOT covered (pending
 > for round 2, audit 2026-10-04). No golden fixture was written for the
 > findings yet: none of them was fixed in this round.
+
+## Fixes after the round (same day, staging only)
+
+Eduardo answered "sim" to fixing the findings. What changed, and what did not:
+
+| Finding | Status |
+|---|---|
+| F8 dark-mode buttons | FIXED — the UIKit-bridged primary buttons use the brand fill with the on-primary title (`RegistrationBridgedButtonStyle`), contrast pinned in both appearances |
+| F18 weight in the chart | FIXED in the mobile read model — `/trends` adds the profile weight on the day it was measured (patient calendar), only when the instant is a real measurement. It is the latest value, not a history: the profile keeps one weight |
+| F14 Flow menu | FIXED in the generator — numbers written between quotes are read as numbers (ambiguous "1.500" still refused); the Flow prompt states the protein ceiling; a refused total tells the retry which way to change. The accepted window (±15 % kcal, ±20 % protein) and the two attempts are unchanged; the WhatsApp generator keeps its single call and its prompt |
+| F24/F1 invented macros | FIXED for eggs and for an item that IS oil, butter or whey powder (`estimateMacros`). A dish that only mentions them ("legumes no azeite", "shake de whey") keeps the generic estimate |
+| F23 catalog aliases | NOT FIXED — see below |
+
+### F23 is a catalog decision, not a bug in staging
+
+The 149 everyday names are out of the search on purpose: migration
+`20260718212715_enforce_verified_food_catalog.sql` quarantined every row
+without an auditable source, in every environment. Only twelve audited aliases
+exist. The round-1 text above ("unverified on staging") was wrong about the
+cause.
+
+A first set of nine audited aliases (values copied from TACO/USDA rows) was
+written and then withdrawn before commit. The adversarial review simulated the
+catalog with them and found:
+
+- exact "azeite" and "whey" rows make the composed-name split give them half
+  of the grams: "salada com azeite" 200 g went from 41 to 904.6 kcal, "leite
+  com whey" 300 g to 1,056 kcal with 234 g of protein;
+- "ovo cozido" plus "ovo frito" verified turn a bare "ovo" into a
+  cooked-or-fried question (0 kcal until answered);
+- "arroz branco cozido" removes the cru/cozido question for "arroz branco"
+  decided on 2026-09-28.
+
+> RC F23 — "leite integral" 200 ml (224.9 kcal, matched to "Canjica, com leite
+> integral") and "whey" 30 g (0 kcal, protein_mismatch) NOT covered (pending
+> from the audit 2026-10-04). They need (a) the split to stop dividing grams
+> equally when one part is a pure fat or a powder, and (b) Roberto's decision
+> on which everyday names become audited aliases. Neighbours seen in the same
+> simulation, also open: "leite" 200 ml resolves to "Leite, de coco" 332 kcal;
+> "leite desnatado" 200 ml to powdered milk 723 kcal.

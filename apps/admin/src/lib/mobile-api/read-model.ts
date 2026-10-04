@@ -241,22 +241,71 @@ export interface TrendsWeightRow {
   weight_kg: number | string | null
 }
 
+/** The profile's current weight: the value `POST /weight` writes. */
+export interface TrendsCurrentWeight {
+  weight_kg: number | string | null
+  weight_measured_at: string | null
+  /** 'measured' = the instant of the measurement; 'recorded' = only when it was written. */
+  weight_instant_source?: string | null
+}
+
+/** YYYY-MM-DD of an instant on the patient's own calendar. */
+function localDateOf(instant: string, timezone: string): string | null {
+  const date = new Date(instant)
+  if (Number.isNaN(date.getTime())) return null
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(date)
+  } catch {
+    return null
+  }
+}
+
 /**
  * Series for the mobile charts, exactly as stored: one row per day that has a
  * snapshot (days without one are absent, never filled in) and the dated
- * weights from reevaluations. Both ascend by date. Nothing is estimated.
+ * weights. Both ascend by date. Nothing is estimated.
+ *
+ * Weights are the reevaluations plus the profile's current weight on the day
+ * it was measured (the patient's calendar). A weight registered in the app
+ * only updates the profile; without this point the chart ended at the last
+ * reevaluation while the same screen showed the newer weight. The profile
+ * holds one value, so on a day that also has a reevaluation it replaces that
+ * point (it is the newest reading). Left out: an undated weight, and a weight
+ * whose instant is only when the value was written ('recorded'), since that
+ * is not the day it was measured. The profile keeps a single value: this adds
+ * the latest measurement, not a history of the weights typed in the app.
  */
 export function shapeTrends(
   snapshots: TrendsSnapshotRow[],
   weights: TrendsWeightRow[],
   days: number,
+  current?: { weight: TrendsCurrentWeight | null; timezone: string },
 ) {
   const byDate = [...snapshots].sort((a, b) => a.date.localeCompare(b.date)).slice(-days)
-  const datedWeights = weights
+  let datedWeights = weights
     .filter((row) => row.weight_kg !== null)
     .map((row) => ({ date: row.evaluation_date, weight_kg: Number(row.weight_kg) }))
     .filter((row) => Number.isFinite(row.weight_kg))
     .sort((a, b) => a.date.localeCompare(b.date))
+  const profile = current?.weight
+  if (
+    profile &&
+    profile.weight_kg !== null &&
+    profile.weight_measured_at &&
+    profile.weight_instant_source === 'measured'
+  ) {
+    const date = localDateOf(profile.weight_measured_at, current.timezone || 'UTC')
+    const value = Number(profile.weight_kg)
+    const latest = datedWeights.at(-1)?.date
+    if (date && Number.isFinite(value) && (latest === undefined || date >= latest)) {
+      datedWeights = [...datedWeights.filter((row) => row.date !== date), { date, weight_kg: value }]
+    }
+  }
   return {
     days,
     daily: byDate.map((row) => ({
@@ -275,8 +324,13 @@ export function shapeTrends(
   }
 }
 
-export async function loadTrends(supabase: ServiceClient, userId: string, query: TrendsQuery) {
-  const [snapshotResult, weightResult] = await Promise.all([
+export async function loadTrends(
+  supabase: ServiceClient,
+  userId: string,
+  query: TrendsQuery,
+  timezone = 'UTC',
+) {
+  const [snapshotResult, weightResult, profile] = await Promise.all([
     supabase
       .from('daily_snapshots')
       .select(
@@ -291,6 +345,9 @@ export async function loadTrends(supabase: ServiceClient, userId: string, query:
       .eq('user_id', userId)
       .order('evaluation_date', { ascending: false })
       .limit(12),
+    // The charts never depended on the profile: if it cannot be read, the
+    // series is the stored one, without the extra point.
+    loadProfile(supabase, userId).catch(() => null),
   ])
   throwQueryError(snapshotResult.error, 'Trends snapshot lookup')
   throwQueryError(weightResult.error, 'Trends weight lookup')
@@ -298,6 +355,7 @@ export async function loadTrends(supabase: ServiceClient, userId: string, query:
     (snapshotResult.data ?? []) as TrendsSnapshotRow[],
     (weightResult.data ?? []) as TrendsWeightRow[],
     query.days,
+    { weight: (profile ?? null) as TrendsCurrentWeight | null, timezone },
   )
 }
 

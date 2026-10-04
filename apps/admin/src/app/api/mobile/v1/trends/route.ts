@@ -9,7 +9,12 @@ export const GET = createMobileRoute(async (context) => {
   const url = new URL(context.request.url)
   const query = trendsQuerySchema.parse(Object.fromEntries(url.searchParams.entries()))
   return mobileSuccess(
-    await loadTrends(context.supabase, context.auth.userId, query),
+    await loadTrends(
+      context.supabase,
+      context.auth.userId,
+      query,
+      context.auth.patient.timezone ?? 'UTC',
+    ),
     context.requestId,
   )
 })

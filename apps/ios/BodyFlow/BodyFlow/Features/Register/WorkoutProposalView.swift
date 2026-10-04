@@ -166,7 +166,7 @@ private struct WorkoutProposalActionButton: UIViewRepresentable {
         for role: BodyFlowButtonRole
     ) -> UIButton.Configuration {
         switch role {
-        case .primary: .filled()
+        case .primary: RegistrationBridgedButtonStyle.primary()
         case .secondary: .bordered()
         case .tertiary: .plain()
         case .destructive: .bordered()

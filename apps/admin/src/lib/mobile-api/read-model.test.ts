@@ -173,6 +173,86 @@ describe('trends read model', () => {
     ])
   })
 
+  // iPhone, 2026-10-04 (QA A): weight 80.5 kg registered at 09:09 showed
+  // under "Medidas" while the chart still ended at 80.0 kg on 3 Oct.
+  it('adds the weight registered in the app on the day it was measured', () => {
+    const reevaluations = [
+      { evaluation_date: '2026-09-19', weight_kg: '79.20' },
+      { evaluation_date: '2026-09-26', weight_kg: '79.60' },
+      { evaluation_date: '2026-10-03', weight_kg: '80.00' },
+    ]
+    const shaped = shapeTrends([], reevaluations, 14, {
+      weight: {
+        weight_kg: '80.50',
+        weight_measured_at: '2026-10-04T12:09:12.243+00:00',
+        weight_instant_source: 'measured',
+      },
+      timezone: 'America/Sao_Paulo',
+    })
+    expect(shaped.weights).toEqual([
+      { date: '2026-09-19', weight_kg: 79.2 },
+      { date: '2026-09-26', weight_kg: 79.6 },
+      { date: '2026-10-03', weight_kg: 80 },
+      { date: '2026-10-04', weight_kg: 80.5 },
+    ])
+  })
+
+  it('dates the app weight on the patient calendar, not in UTC', () => {
+    // 01:30 UTC on 5 Oct is still 22:30 on 4 Oct in São Paulo.
+    const shaped = shapeTrends([], [], 14, {
+      weight: { weight_kg: 80.5, weight_measured_at: '2026-10-05T01:30:00Z', weight_instant_source: 'measured' },
+      timezone: 'America/Sao_Paulo',
+    })
+    expect(shaped.weights).toEqual([{ date: '2026-10-04', weight_kg: 80.5 }])
+  })
+
+  it('replaces a reevaluation of the same day and never rewrites an older point', () => {
+    const sameDay = shapeTrends([], [{ evaluation_date: '2026-10-04', weight_kg: '80.00' }], 14, {
+      weight: { weight_kg: '80.50', weight_measured_at: '2026-10-04T12:09:12Z', weight_instant_source: 'measured' },
+      timezone: 'America/Sao_Paulo',
+    })
+    expect(sameDay.weights).toEqual([{ date: '2026-10-04', weight_kg: 80.5 }])
+
+    // A profile weight older than the last reevaluation is not the newest
+    // reading: the series stays as the reevaluations tell it.
+    const older = shapeTrends([], [{ evaluation_date: '2026-10-03', weight_kg: '80.00' }], 14, {
+      weight: { weight_kg: '103.00', weight_measured_at: '2026-10-01T16:15:33Z', weight_instant_source: 'measured' },
+      timezone: 'America/Sao_Paulo',
+    })
+    expect(older.weights).toEqual([{ date: '2026-10-03', weight_kg: 80 }])
+  })
+
+  it('leaves out an undated or missing profile weight', () => {
+    const base = [{ evaluation_date: '2026-10-03', weight_kg: '80.00' }]
+    const measured = { weight_instant_source: 'measured' }
+    for (const weight of [
+      null,
+      { ...measured, weight_kg: null, weight_measured_at: '2026-10-04T12:00:00Z' },
+      { ...measured, weight_kg: '80.50', weight_measured_at: null },
+      { ...measured, weight_kg: '80.50', weight_measured_at: 'not a date' },
+      // Only the time the value was written is known: not the measurement day.
+      { weight_kg: '80.50', weight_measured_at: '2026-10-04T12:00:00Z', weight_instant_source: 'recorded' },
+      { weight_kg: '80.50', weight_measured_at: '2026-10-04T12:00:00Z', weight_instant_source: null },
+    ]) {
+      expect(shapeTrends([], base, 14, { weight, timezone: 'America/Sao_Paulo' }).weights).toEqual([
+        { date: '2026-10-03', weight_kg: 80 },
+      ])
+    }
+    expect(
+      shapeTrends([], base, 14, {
+        weight: { ...measured, weight_kg: '80.50', weight_measured_at: '2026-10-04T12:00:00Z' },
+        timezone: 'Not/AZone',
+      }).weights,
+    ).toEqual([{ date: '2026-10-03', weight_kg: 80 }])
+    // An empty timezone falls back to UTC instead of dropping the point.
+    expect(
+      shapeTrends([], base, 14, {
+        weight: { ...measured, weight_kg: '80.50', weight_measured_at: '2026-10-04T12:00:00Z' },
+        timezone: '',
+      }).weights.at(-1),
+    ).toEqual({ date: '2026-10-04', weight_kg: 80.5 })
+  })
+
   it('keeps only the last `days` rows when more are given', () => {
     const rows = Array.from({ length: 20 }, (_, index) => ({
       date: `2026-07-${String(index + 1).padStart(2, '0')}`,

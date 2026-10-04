@@ -231,6 +231,22 @@ struct RegistrationBoundedDatePicker: UIViewRepresentable {
     }
 }
 
+/// The primary look of the registration sheets' UIKit-bridged buttons.
+/// `UIButton.Configuration.filled()` paints its title white whatever the
+/// tint: on the dark palette the brand fill is a light teal and white text
+/// on it is unreadable (iPhone, 2026-10-04: "Propor treino", "Registrar
+/// hidratação", "Registrar peso"). Fill and title come from the same token
+/// pair as every other primary button.
+enum RegistrationBridgedButtonStyle {
+    @MainActor
+    static func primary() -> UIButton.Configuration {
+        var configuration = UIButton.Configuration.filled()
+        configuration.baseBackgroundColor = UIColor(BodyFlowColor.color(.brandPrimary))
+        configuration.baseForegroundColor = UIColor(BodyFlowColor.color(.onPrimary))
+        return configuration
+    }
+}
+
 struct RegistrationBoundedButton: UIViewRepresentable {
     let title: String
     let isEnabled: Bool
@@ -239,7 +255,7 @@ struct RegistrationBoundedButton: UIViewRepresentable {
     let action: @MainActor () -> Void
 
     func makeUIView(context: Context) -> UIButton {
-        var configuration = UIButton.Configuration.filled()
+        var configuration = RegistrationBridgedButtonStyle.primary()
         configuration.cornerStyle = .medium
         configuration.title = title
         let button = UIButton(configuration: configuration)

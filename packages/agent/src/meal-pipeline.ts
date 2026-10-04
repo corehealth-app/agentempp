@@ -598,6 +598,17 @@ export function estimateMacros(foodName: string): {
   if (/molho/.test(n)) {
     return { category: 'molho', kcal: 80, protein: 2, carbs: 8, fat: 4, fiber: 0.5 }
   }
+  // Egg comes before sweets: "omelete" contains "mel" and was priced as a
+  // sweet (260 kcal, 45 g of carbohydrate). A dessert that merely lists eggs
+  // ("bolo de ovos") stays a sweet and a chocolate egg ("ovo de Páscoa") is
+  // not an egg.
+  if (
+    /omelete/.test(n) ||
+    (/\bovos?\b/.test(n) &&
+      !/sorvete|chocolate|brigadeiro|pudim|torta|bolo|doce|geleia|a[çc][úu]car|p[áa]scoa/.test(n))
+  ) {
+    return { category: 'ovo', kcal: 146, protein: 13.3, carbs: 0.6, fat: 9.5, fiber: 0 }
+  }
   // Doces / sobremesas
   if (/sorvete|chocolate|brigadeiro|pudim|torta|bolo|doce|geleia|mel|açúcar/.test(n)) {
     return { category: 'doce', kcal: 260, protein: 3, carbs: 45, fat: 8, fiber: 1 }
@@ -617,6 +628,29 @@ export function estimateMacros(foodName: string): {
       ))
   ) {
     return { category: 'bebida_zero', kcal: 1, protein: 0, carbs: 0, fat: 0, fiber: 0 }
+  }
+  // Single ingredients that are nothing like a prepared dish (iPhone, staging,
+  // 2026-10-04): "ovo mexido" 100 g was saved with 18 g of carbohydrate and
+  // 7 g of protein, and "azeite" 13 g as 19.5 kcal, both from the generic
+  // dish below. Fat and whey apply ONLY when the item IS the fat or the
+  // powder (the name starts with it): "legumes no azeite", "feijão manteiga",
+  // "salada com azeite" or "shake de whey" are dishes and keep the generic
+  // estimate — pricing 150 g of vegetables as 150 g of oil would be far
+  // worse. Values per 100 g are the official rows: egg (above) TACO4:488
+  // whole, boiled; oil FDC:171413 olive oil; butter TACO4:261; whey
+  // FDC:173180 whey protein powder.
+  if (
+    /^(?:whey|prote[ií]na\s+(?:em\s+p[óo]|isolada|concentrada))(?:\s|$)/.test(n) &&
+    !/shake|vitamina|bebida|batid|pronto|barra/.test(n)
+  ) {
+    return { category: 'whey', kcal: 352, protein: 78, carbs: 6, fat: 1.6, fiber: 0 }
+  }
+  const pureFat = n.replace(/^(?:fio|colher(?:es)?(?:\s+de\s+(?:sopa|ch[áa]|sobremesa))?)\s+de\s+/, '')
+  if (/^(?:azeite|[óo]leo|banha)(?:\s|$)/.test(pureFat)) {
+    return { category: 'gordura_pura', kcal: 884, protein: 0, carbs: 0, fat: 100, fiber: 0 }
+  }
+  if (/^(?:manteiga|margarina)(?:\s|$)/.test(pureFat)) {
+    return { category: 'gordura_pura', kcal: 726, protein: 0.4, carbs: 0.1, fat: 82, fiber: 0 }
   }
   // Fallback genérico — prato preparado
   return { category: 'prato_genérico', kcal: 150, protein: 7, carbs: 18, fat: 5, fiber: 1 }

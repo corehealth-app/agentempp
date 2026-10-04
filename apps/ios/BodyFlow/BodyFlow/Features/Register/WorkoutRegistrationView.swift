@@ -110,7 +110,7 @@ private struct WorkoutActionButton: UIViewRepresentable {
     let action: @MainActor () -> Void
 
     func makeUIView(context: Context) -> UIButton {
-        var configuration = UIButton.Configuration.filled()
+        var configuration = RegistrationBridgedButtonStyle.primary()
         configuration.cornerStyle = .medium
         configuration.title = title
         let button = UIButton(configuration: configuration)

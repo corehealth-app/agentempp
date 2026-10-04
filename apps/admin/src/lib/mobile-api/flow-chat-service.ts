@@ -108,20 +108,50 @@ export interface FlowChatDependencies {
   drafts?: FlowDraftLookup
 }
 
+type Settled<T> = { ok: true; value: T } | { ok: false; error: unknown }
+
 /**
- * The reply plus the proposal its turn created. The draft comes from the
- * database (bound to the patient and to the turn), never from the model's
- * text, and a failed lookup only leaves the reply without the shortcut.
+ * Starts an operation now and never rejects. Operations that do not depend on
+ * each other are sent in one wave (one database round trip of wall time
+ * instead of one each); every outcome is then read — or ignored — exactly
+ * where the sequential code read it, so no decision changes.
  */
-async function turnResponse(
+function settle<T>(run: () => Promise<T>): Promise<Settled<T>> {
+  // The async wrapper also turns a synchronous throw into a settled error.
+  return (async () => run())().then(
+    (value): Settled<T> => ({ ok: true, value }),
+    (error: unknown): Settled<T> => ({ ok: false, error }),
+  )
+}
+
+function unwrap<T>(result: Settled<T>): T {
+  if (!result.ok) throw result.error
+  return result.value
+}
+
+/**
+ * Marks the turn completed and, in the same wave, looks up the proposal it
+ * created (two tables, neither reads the other). Throws only when the
+ * completion failed. The draft comes from the database (bound to the patient
+ * and to the turn), never from the model's text, and a failed lookup only
+ * leaves the reply without the shortcut.
+ */
+async function completeTurn(
   dependencies: FlowChatDependencies,
   userId: string,
   turnProviderMessageId: string,
-  message: StoredFlowMessage,
-) {
-  const draft = dependencies.drafts
-    ? await dependencies.drafts.findForTurn(userId, turnProviderMessageId).catch(() => null)
-    : null
+): Promise<FlowTurnDraft | null> {
+  const drafts = dependencies.drafts
+  const [completed, draft] = await Promise.all([
+    settle(() => dependencies.store.completeInbound(userId, turnProviderMessageId)),
+    settle(async () => (drafts ? drafts.findForTurn(userId, turnProviderMessageId) : null)),
+  ])
+  unwrap(completed)
+  return draft.ok ? draft.value : null
+}
+
+/** The reply plus the proposal its turn created. */
+function turnResponse(message: StoredFlowMessage, draft: FlowTurnDraft | null) {
   return { conversation_id: 'flow' as const, message: dto(message), draft }
 }
 
@@ -301,12 +331,18 @@ function providerFailed(): MobileApiError {
  * retry of a failed turn, or the continuation of a turn whose invocation died
  * before the provider — is counted here. A replay of a stored reply is not.
  */
-async function assertExecutionBudget(dependencies: FlowChatDependencies, input: SendFlowMessageInput) {
-  const since = new Date(input.now.getTime() - 60_000).toISOString()
-  const executions = await dependencies.store.countRecentExecutions(input.userId, since)
+function assertExecutionBudget(counted: Settled<number>) {
+  // The count was read in the turn's first wave. One that failed is not zero:
+  // its error refuses the turn here, before anything is recorded.
+  const executions = unwrap(counted)
   if (executions >= FLOW_EXECUTIONS_PER_MINUTE) {
     throw new MobileApiError(429, 'flow_rate_limited', 'Please wait before sending again')
   }
+}
+
+/** Start of the rolling minute the execution limit is counted over. */
+function executionWindowStart(input: SendFlowMessageInput): string {
+  return new Date(input.now.getTime() - 60_000).toISOString()
 }
 
 function retryAttempt(previous: FlowInboundAttempt | null | undefined, now: string): FlowInboundAttempt {
@@ -326,6 +362,7 @@ async function resumeTurn(
   input: SendFlowMessageInput,
   providerMessageId: string,
   inbound: StoredFlowMessage,
+  counted: Settled<number>,
 ): Promise<FlowInboundAttempt> {
   const store = dependencies.store
   const nowIso = input.now.toISOString()
@@ -359,7 +396,7 @@ async function resumeTurn(
 
   // A failed turn (or, defensively, a completed one whose reply is missing)
   // runs again only as a new, counted execution.
-  await assertExecutionBudget(dependencies, input)
+  assertExecutionBudget(counted)
   const attempt = retryAttempt(inbound.attempt, nowIso)
   let claimed: boolean
   try {
@@ -418,10 +455,9 @@ async function confirmExecutionBudget(
   providerMessageId: string,
   attempt: FlowInboundAttempt,
 ) {
-  const since = new Date(input.now.getTime() - 60_000).toISOString()
   let executions: number
   try {
-    executions = await dependencies.store.countRecentExecutions(input.userId, since)
+    executions = await dependencies.store.countRecentExecutions(input.userId, executionWindowStart(input))
   } catch {
     await releaseTurn(dependencies, input, providerMessageId, attempt, 'flow_provider_failed')
     throw providerFailed()
@@ -431,20 +467,119 @@ async function confirmExecutionBudget(
   throw new MobileApiError(429, 'flow_rate_limited', 'Please wait before sending again')
 }
 
+/** Monotonic marks of one turn, in milliseconds. */
+interface FlowTurnMarks {
+  startedAt: number
+  agentStartedAt: number | null
+  agentEndedAt: number | null
+  /** The latency the agent reported for its own work, when it reported one. */
+  pipelineMs: number | null
+}
+
+const TIMED_REFUSAL_CODES = new Set([
+  'idempotency_key_conflict',
+  'idempotency_request_in_progress',
+  'flow_rate_limited',
+  'flow_provider_failed',
+])
+
+// The charset the route accepts for X-Request-Id (and of the UUID it creates).
+const LOGGABLE_REQUEST_ID = /^[A-Za-z0-9._:-]{8,128}$/
+
+function timedOutcome(error: unknown): string {
+  return error instanceof MobileApiError && TIMED_REFUSAL_CODES.has(error.code) ? error.code : 'unexpected_error'
+}
+
+/**
+ * Wall time of the service's phases, one line per turn: whole milliseconds,
+ * the request id and a fixed outcome code — never the patient's text, the
+ * reply or a provider message. A phase that did not run is null, and when
+ * the agent was not called `pre_agent_ms` is the whole turn. The three
+ * phases always add up to `total_ms`. `pipeline_ms` is the agent's own
+ * figure (what `messages.latency_ms` stores), so `agent_ms - pipeline_ms` is
+ * what the route adds around it.
+ */
+function logTurnTiming(requestId: string, outcome: string, marks: FlowTurnMarks, endedAt: number): void {
+  try {
+    const since = (mark: number) => Math.max(0, Math.round(mark - marks.startedAt))
+    const total = since(endedAt)
+    const agentStart = marks.agentStartedAt === null ? null : Math.min(since(marks.agentStartedAt), total)
+    const agentEnd =
+      agentStart === null || marks.agentEndedAt === null
+        ? null
+        : Math.min(Math.max(since(marks.agentEndedAt), agentStart), total)
+    console.info('[mobile-flow] turn_timing', {
+      request_id: LOGGABLE_REQUEST_ID.test(requestId) ? requestId : null,
+      outcome,
+      pre_agent_ms: agentStart ?? total,
+      agent_ms: agentStart === null || agentEnd === null ? null : agentEnd - agentStart,
+      post_agent_ms: agentEnd === null ? null : total - agentEnd,
+      total_ms: total,
+      pipeline_ms: marks.pipelineMs,
+    })
+  } catch {
+    // Telemetry never changes the outcome of a turn.
+  }
+}
+
+function reportedLatencyMs(metadata: Record<string, unknown> | null | undefined): number | null {
+  // Tolerant on purpose: telemetry must never fail a turn the agent already answered.
+  const value = metadata?.latencyMs
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.round(value) : null
+}
+
 export async function sendFlowMessage(
   dependencies: FlowChatDependencies,
   input: SendFlowMessageInput,
 ) {
+  const marks: FlowTurnMarks = {
+    startedAt: performance.now(),
+    agentStartedAt: null,
+    agentEndedAt: null,
+    pipelineMs: null,
+  }
+  try {
+    const turn = await runFlowTurn(dependencies, input, marks)
+    logTurnTiming(input.requestId, turn.replayed ? 'replayed' : 'completed', marks, performance.now())
+    return turn.response
+  } catch (error) {
+    logTurnTiming(input.requestId, timedOutcome(error), marks, performance.now())
+    throw error
+  }
+}
+
+async function runFlowTurn(
+  dependencies: FlowChatDependencies,
+  input: SendFlowMessageInput,
+  marks: FlowTurnMarks,
+) {
+  const store = dependencies.store
+  const scopedInboundId = scopedFlowProviderMessageId(input.userId, input.idempotencyKey)
+  const assistantProviderId = scopedReplyProviderMessageId(input.userId, input.idempotencyKey)
+
+  // First wave: the four reads every turn may need, none of which depends on
+  // another. They used to run one after the other (five round trips). Each
+  // outcome — value or error — is consumed below in the same order and under
+  // the same conditions as before; one that the sequential code would not
+  // have read (the legacy row when a scoped one exists, the count on a
+  // replay) is ignored, error included.
+  const [scopedInbound, legacyInbound, scopedReply, counted] = await Promise.all([
+    settle(() => store.findInbound(input.userId, scopedInboundId)),
+    settle(() => store.findInbound(input.userId, input.idempotencyKey)),
+    settle(() => store.findAssistant(input.userId, assistantProviderId)),
+    settle(() => store.countRecentExecutions(input.userId, executionWindowStart(input))),
+  ])
+
   // The inbound this key already created: a scoped row, or a legacy
   // (pre-scoping) row that used the bare key. Both lookups are pinned to the
   // authenticated user, so another user's rows are never read.
-  let inboundProviderId = scopedFlowProviderMessageId(input.userId, input.idempotencyKey)
+  let inboundProviderId = scopedInboundId
   let legacyTurn = false
-  let existingInbound = await dependencies.store.findInbound(input.userId, inboundProviderId)
+  let existingInbound = unwrap(scopedInbound)
   if (!existingInbound) {
-    const legacyInbound = await dependencies.store.findInbound(input.userId, input.idempotencyKey)
-    if (legacyInbound) {
-      existingInbound = legacyInbound
+    const legacy = unwrap(legacyInbound)
+    if (legacy) {
+      existingInbound = legacy
       inboundProviderId = input.idempotencyKey
       legacyTurn = true
     }
@@ -458,30 +593,38 @@ export async function sendFlowMessage(
     )
   }
 
-  const assistantProviderId = scopedReplyProviderMessageId(input.userId, input.idempotencyKey)
-  const existing =
-    (await dependencies.store.findAssistant(input.userId, assistantProviderId)) ??
-    (legacyTurn
-      ? await dependencies.store.findAssistant(input.userId, `${input.idempotencyKey}:assistant`)
-      : null)
+  // A legacy reply is only looked for on a legacy turn, so it stays a read of
+  // its own (rare: rows written before ids were scoped).
+  let existing =
+    unwrap(scopedReply) ??
+    (legacyTurn ? await store.findAssistant(input.userId, `${input.idempotencyKey}:assistant`) : null)
+  // The reply and the turn are read in the same wave, and the reply is stored
+  // before the turn is completed. A turn seen as completed with no reply may
+  // be another request's write landing between the two reads: look for the
+  // reply once more before treating it as missing, or the agent would run —
+  // and be charged — a second time. (The legacy reply above is already read
+  // after the turn.)
+  if (!existing && !legacyTurn && existingInbound?.state === 'completed') {
+    existing = await store.findAssistant(input.userId, assistantProviderId)
+  }
   if (existing) {
     // A reply stored empty before tags were flattened is never replayed as a
     // successful turn (and is not re-executed: the patient sends it again).
     if (existing.content.trim().length === 0) throw providerFailed()
-    await dependencies.store.completeInbound(input.userId, inboundProviderId)
-    return turnResponse(dependencies, input.userId, inboundProviderId, existing)
+    const draft = await completeTurn(dependencies, input.userId, inboundProviderId)
+    return { response: turnResponse(existing, draft), replayed: true }
   }
 
   let attempt: FlowInboundAttempt
   if (existingInbound) {
-    attempt = await resumeTurn(dependencies, input, inboundProviderId, existingInbound)
+    attempt = await resumeTurn(dependencies, input, inboundProviderId, existingInbound, counted)
   } else {
-    await assertExecutionBudget(dependencies, input)
+    assertExecutionBudget(counted)
 
     const createdAt = input.now.toISOString()
     attempt = { startedAt: createdAt, providerStartedAt: null, retryStartedAt: [] }
     try {
-      await dependencies.store.insertInbound({
+      await store.insertInbound({
         userId: input.userId,
         content: input.text,
         providerMessageId: inboundProviderId,
@@ -500,12 +643,16 @@ export async function sendFlowMessage(
   }
 
   const failTurn = async () => {
-    await dependencies.store
+    await store
       .failInbound(input.userId, inboundProviderId, 'flow_provider_failed')
       .catch(() => undefined)
     return providerFailed()
   }
 
+  // From here to the provider the steps stay one after the other: the recount
+  // must see this execution recorded, and the provider marker may only be
+  // written once the recount allowed the turn (a marked turn is never run
+  // again without an explicit retry).
   await confirmExecutionBudget(dependencies, input, inboundProviderId, attempt)
 
   // Recorded before the provider is called: if this invocation dies from here
@@ -513,7 +660,7 @@ export async function sendFlowMessage(
   const providerAttempt: FlowInboundAttempt = { ...attempt, providerStartedAt: input.now.toISOString() }
   let owned: boolean
   try {
-    owned = await dependencies.store.transitionInbound(input.userId, inboundProviderId, {
+    owned = await store.transitionInbound(input.userId, inboundProviderId, {
       from: 'processing',
       to: 'processing',
       requestId: input.requestId,
@@ -530,6 +677,7 @@ export async function sendFlowMessage(
   if (!owned) throw inProgress()
 
   let reply: Awaited<ReturnType<FlowAgent['reply']>>
+  marks.agentStartedAt = performance.now()
   try {
     reply = await dependencies.agent.reply({
       userId: input.userId,
@@ -539,9 +687,12 @@ export async function sendFlowMessage(
       timestamp: input.now,
     })
   } catch (error) {
+    marks.agentEndedAt = performance.now()
     logTurnFailure(error)
     throw await failTurn()
   }
+  marks.agentEndedAt = performance.now()
+  marks.pipelineMs = reportedLatencyMs(reply.metadata)
   // A reply with no visible text is not a completed turn (nothing is shown to
   // the patient); it fails with the typed 502 and no assistant row is stored.
   if (reply.text.trim().length === 0) {
@@ -549,9 +700,11 @@ export async function sendFlowMessage(
     throw await failTurn()
   }
 
+  // The reply is stored before the turn is marked completed, never together:
+  // a completed turn must always have its reply to replay.
   let assistant: StoredFlowMessage
   try {
-    assistant = await dependencies.store.insertAssistant({
+    assistant = await store.insertAssistant({
       userId: input.userId,
       content: reply.text,
       providerMessageId: assistantProviderId,
@@ -564,23 +717,22 @@ export async function sendFlowMessage(
     // This turn's reply is already stored: replay it. Anything else fails the
     // turn, so the inbound never stays "processing".
     if (error instanceof FlowMessageAlreadyStoredError) {
-      const stored = await dependencies.store
-        .findAssistant(input.userId, assistantProviderId)
-        .catch(() => null)
+      const stored = await store.findAssistant(input.userId, assistantProviderId).catch(() => null)
       if (stored) {
-        await dependencies.store.completeInbound(input.userId, inboundProviderId)
-        return turnResponse(dependencies, input.userId, inboundProviderId, stored)
+        const draft = await completeTurn(dependencies, input.userId, inboundProviderId)
+        return { response: turnResponse(stored, draft), replayed: true }
       }
     }
     throw await failTurn()
   }
 
+  let draft: FlowTurnDraft | null
   try {
-    await dependencies.store.completeInbound(input.userId, inboundProviderId)
+    draft = await completeTurn(dependencies, input.userId, inboundProviderId)
   } catch {
     throw await failTurn()
   }
-  return turnResponse(dependencies, input.userId, inboundProviderId, assistant)
+  return { response: turnResponse(assistant, draft), replayed: false }
 }
 
 /** 23505 on the messages unique index: this exact provider id is stored. */
@@ -704,24 +856,28 @@ export function createSupabaseFlowChatStore(supabase: ServiceClient): FlowChatSt
       return ((data ?? []) as MessageRow[]).map(mapRow)
     },
     async countRecentExecutions(userId, since) {
-      const { count, error } = await supabase
-        .from('messages')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', userId)
-        .eq('provider', 'mobile_flow')
-        .eq('direction', 'in')
-        .gte('created_at', since)
+      // Two reads of the same window that do not depend on each other, sent
+      // together: this runs twice per turn. Either failing refuses the turn.
+      const [{ count, error }, { data: retried, error: retryError }] = await Promise.all([
+        supabase
+          .from('messages')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', userId)
+          .eq('provider', 'mobile_flow')
+          .eq('direction', 'in')
+          .gte('created_at', since),
+        // Retries do not create rows: every retry start is recorded on its turn,
+        // and turns retried inside the window carry a recent `last_retry_at`.
+        supabase
+          .from('messages')
+          .select('raw_payload')
+          .eq('user_id', userId)
+          .eq('provider', 'mobile_flow')
+          .eq('direction', 'in')
+          .gte('raw_payload->>last_retry_at', since)
+          .limit(50),
+      ])
       if (error) throw new Error('Unable to enforce Flow rate limit')
-      // Retries do not create rows: every retry start is recorded on its turn,
-      // and turns retried inside the window carry a recent `last_retry_at`.
-      const { data: retried, error: retryError } = await supabase
-        .from('messages')
-        .select('raw_payload')
-        .eq('user_id', userId)
-        .eq('provider', 'mobile_flow')
-        .eq('direction', 'in')
-        .gte('raw_payload->>last_retry_at', since)
-        .limit(50)
       if (retryError) throw new Error('Unable to enforce Flow rate limit')
       const retries = ((retried ?? []) as Array<{ raw_payload: unknown }>).reduce(
         (total, row) =>

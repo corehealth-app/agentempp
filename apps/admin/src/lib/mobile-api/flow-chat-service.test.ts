@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest'
 import {
   createSupabaseFlowChatStore,
   createSupabaseFlowDraftLookup,
@@ -11,6 +11,16 @@ import {
   sendFlowMessage,
 } from './flow-chat-service'
 import { MobileApiError } from './http'
+
+// The per-turn timing line is asserted in flow-chat-service.parallel.test.ts;
+// here it would only fill the test output.
+let timingLine: MockInstance<typeof console.info>
+beforeEach(() => {
+  timingLine = vi.spyOn(console, 'info').mockImplementation(() => {})
+})
+afterEach(() => {
+  timingLine.mockRestore()
+})
 
 const userId = '00000000-0000-0000-0000-000000000111'
 const now = new Date('2026-09-14T20:00:00.000Z')

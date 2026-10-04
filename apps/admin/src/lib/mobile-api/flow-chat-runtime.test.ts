@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest'
 import {
   createSupabaseFlowChatStore,
   FLOW_EXECUTION_LEASE_MS,
@@ -12,6 +12,16 @@ import {
   scopedFlowProviderMessageId,
   sendFlowMessage,
 } from './flow-chat-service'
+
+// The per-turn timing line is asserted in flow-chat-service.parallel.test.ts;
+// here it would only fill the test output.
+let timingLine: MockInstance<typeof console.info>
+beforeEach(() => {
+  timingLine = vi.spyOn(console, 'info').mockImplementation(() => {})
+})
+afterEach(() => {
+  timingLine.mockRestore()
+})
 
 // Runtime gaps of the mobile Flow turn, closed without a paid provider call:
 // retries under the per-minute limit, empty replies, and turns interrupted

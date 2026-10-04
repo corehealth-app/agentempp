@@ -152,3 +152,25 @@ catalog with them and found:
 > on which everyday names become audited aliases. Neighbours seen in the same
 > simulation, also open: "leite" 200 ml resolves to "Leite, de coco" 332 kcal;
 > "leite desnatado" 200 ml to powdered milk 723 kcal.
+
+## Round 2 on the iPhone — the fixes, checked on the device (10:28–11:40 BRT)
+
+Builds `474294f` (fixes) and `21b5ec7` (animations), mobile BFF Preview
+`…-r09mvdxlq-…` (staging only).
+
+| Finding | Result on the device |
+|---|---|
+| F18 weight chart | PASS — the chart ends at "4 de out. · 80,5 kg" |
+| F8 dark buttons | PASS — dark title on the teal fill in the hydration sheet |
+| F14 Flow menu | PASS — "Sugira um cardápio completo para hoje" answered in 52.9 s (22,443 / 608 tokens, US$ 0.078): 2,884 kcal and 152.3 g of protein, inside the window; `plan_drafts` nutrition `ready_for_review`; no generator refusal in the Preview logs. The draft was not confirmed |
+| F24/F1 egg and oil | PASS — "100 g de ovo mexido e 13 g de azeite no lanche da tarde": egg 146 kcal, P 13.3, C 0.6, F 9.5; oil 114.9 kcal, F 13. Proposal cancelled |
+| Opening | PASS — mark, name and the ball climbing the stairs for about 3 s, then Today |
+| Flow "typing" | PASS — avatar and three dots while waiting; answer "consumiu 11 g, meta 144 g, faltam 133 g" matches the database |
+
+New LOW finding F29: the text extractor named the item "azeite no lanche da
+tarde" (the meal phrase leaked into the food name); the meal type was read
+correctly.
+
+Privacy note: when iPhone Mirroring reopened it showed a personal app and,
+in the search, photo thumbnails. Nothing was touched and those captures were
+deleted.

@@ -20,6 +20,11 @@ struct ProgressRootView: View {
                         if model.state.presentation.value == nil, let weightState = model.profileWeight.state {
                             ProfileWeightCard(state: weightState, language: language, retryAction: retry)
                         }
+                        if let snapshot = model.state.presentation.value {
+                            ProgressHighlights(
+                                presentation: ProgressPresentation(snapshot: snapshot, language: language)
+                            )
+                        }
                         // The charts sit beside the snapshot: a day with
                         // records has trends even before any gamification.
                         ProgressTrendsSection(model: model.trends)

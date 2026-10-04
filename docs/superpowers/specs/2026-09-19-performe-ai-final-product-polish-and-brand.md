@@ -442,3 +442,26 @@ spec and of the 2026-09-17 refinement spec; everything not listed stays.
 Capability truth (§4) is unchanged: every ring, meter and chart draws an
 official value the server sent; nothing is interpolated into a different
 number, and a missing value is shown as missing.
+
+## 13. Addendum — directions A and B coexisting (2026-10-03/04, approved by Eduardo)
+
+After the third physical review ("quase todas as telas parecem muito simples")
+the process changed to mockups first. From the "Performe AI Direções" mockups
+Eduardo chose **both** ("quero as duas coexistindo"): direction A (light,
+airy) is the app's light mode and direction B (dark, bold) its dark mode,
+switched by the appearance control on Today (automatic by the clock, match
+the iPhone, light, dark).
+
+| Decision | Detail |
+|---|---|
+| Palette | New surfaces, text and brand values per mode (BodyFlowColor; exact pairs in BodyFlowSemanticColorTests). Brand hero roles (launch screen, splash) keep the Signal Spark teal. |
+| Domain colors | Two tiers: text-safe roles (≥ 4.5:1 on the three surfaces) and `*Vivid` roles for fills only (rings, bars, glyphs). |
+| Elevation | In light mode cards lift with the hero shadow token, applied to the card's SHAPE only (a shadow on the card also shadows its text and fails the contrast audit). Dark mode separates by fill. |
+| Figures | Number large, unit small, one accessible string (`BodyFlowFigure`). |
+| Today | Week strip (indicator only), ring with the official "Restam" figure inside, macro tiles, hydration/exercise pair, meals by slot with "Registrar" on open slots (slots come from the server's `meal_gaps` and the records). The hero does not move while the page scrolls. |
+| Register | Meal as one brand tile naming photo/text/audio; workout, hydration and weight as colored tiles. |
+| Progress | Streak and XP·level chips above the charts; chart fills in the vivid tones; the weight axis frames the measured range. |
+
+Not in this step: registering a meal straight from a Flow suggestion, "repeat
+a previous meal", food imagery (needs licensed assets or the patient's own
+photo through a new server route), opening a past day from the week strip.

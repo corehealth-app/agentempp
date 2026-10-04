@@ -8,6 +8,7 @@ struct TodayPresentation: Equatable, Sendable {
     let protein: TodayProteinDescriptor
     let macros: TodayMacrosDescriptor
     let meals: [TodayMealDescriptor]
+    let mealSlots: TodayMealSlotsDescriptor
     let workouts: [TodayWorkoutDescriptor]
     let hydration: TodayHydrationDescriptor
     let routineCollections: [TodayRoutineCollectionDescriptor]
@@ -76,6 +77,11 @@ struct TodayPresentation: Equatable, Sendable {
                 )
             )
         }
+        mealSlots = TodayMealSlotsDescriptor(
+            meals: meals,
+            expected: snapshot.pendingActions.mealGaps.expected,
+            skipped: snapshot.pendingActions.mealGaps.skipped
+        )
         workouts = snapshot.workouts.map { workout in
             TodayWorkoutDescriptor(
                 id: workout.id,
@@ -225,7 +231,10 @@ struct TodayRootView: View {
     let model: TodayViewModel
     let recommendations: TodayRecommendationsViewModel?
     let mascot: MascotExperienceViewModel?
+    let week: TodayWeekViewModel?
     let invalidationCenter: FeatureInvalidationCenter
+    /// Absent in previews and unit renders; open meal slots are then inert.
+    @Environment(AppRouter.self) private var router: AppRouter?
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.locale) private var locale
     @Environment(\.guidedTourFocus) private var guidedTourFocus
@@ -234,10 +243,6 @@ struct TodayRootView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.bodyFlowReduceMotion) private var reduceMotion
     @State private var refreshCoordinator = TodayRefreshCoordinator()
-    /// 0 at rest, 1 once the day has scrolled `heroCollapseDistance`; the
-    /// hero ring condenses with it (Strava/Apple style).
-    @State private var heroCollapse: CGFloat = 0
-    nonisolated static let heroCollapseDistance: CGFloat = 120
     /// The hero figures count up once per load of the day; a later relayout
     /// (a size change swaps the hero's ViewThatFits branch) never recounts.
     @State private var countsUp = true
@@ -247,11 +252,13 @@ struct TodayRootView: View {
         model: TodayViewModel,
         recommendations: TodayRecommendationsViewModel? = nil,
         mascot: MascotExperienceViewModel? = nil,
+        week: TodayWeekViewModel? = nil,
         invalidationCenter: FeatureInvalidationCenter
     ) {
         self.model = model
         self.recommendations = recommendations
         self.mascot = mascot
+        self.week = week
         self.invalidationCenter = invalidationCenter
     }
 
@@ -282,7 +289,9 @@ struct TodayRootView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task(id: invalidationCenter.revision(for: .today)) {
             let revision = invalidationCenter.revision(for: .today)
+            async let weekLoad: Void = loadWeek()
             await model.load(revision: revision)
+            await weekLoad
         }
         .task(id: invalidationCenter.revision(for: .contentCatalog)) {
             guard let recommendations else { return }
@@ -464,6 +473,13 @@ struct TodayRootView: View {
                 TodayAttentionSection(descriptor: presentation.attention)
                     .bodyFlowArrival(index: 2)
 
+                // The day by meal, right after what needs attention.
+                TodayMealSlotsSection(
+                    descriptor: presentation.mealSlots,
+                    register: router.map { router in { router.presentedSheet = .registration(.meal) } }
+                )
+                .bodyFlowArrival(index: 3)
+
                 TodayTrailSection(descriptor: TodayTrailDescriptor(
                     recordCount: presentation.meals.count + presentation.workouts.count,
                     remainingFood: presentation.energy.remainingFoodKcal.map {
@@ -486,7 +502,6 @@ struct TodayRootView: View {
                 )
                 .bodyFlowArrival(index: 5)
                 TodayRecordsSection(
-                    meals: presentation.meals,
                     workouts: presentation.workouts
                 )
                 .bodyFlowArrival(index: 6)
@@ -533,11 +548,6 @@ struct TodayRootView: View {
         .refreshable {
             await refreshAll()
         }
-        .onScrollGeometryChange(for: CGFloat.self) { geometry in
-            Self.collapse(forOffset: geometry.contentOffset.y + geometry.contentInsets.top)
-        } action: { _, collapse in
-            heroCollapse = collapse
-        }
         .onChange(of: guidedTourFocus, initial: true) {
             // The tour's spotlight lands on a control that may be below the
             // fold; bring it to the middle of the viewport first.
@@ -551,21 +561,24 @@ struct TodayRootView: View {
 
     nonisolated static let shortcutsScrollID = "today.shortcuts"
 
-    /// Clamped progress of the hero's condensation for a scroll offset.
-    nonisolated static func collapse(forOffset offset: CGFloat) -> CGFloat {
-        min(max(offset / heroCollapseDistance, 0), 1)
+    private func loadWeek() async {
+        await week?.load()
     }
 
     @ViewBuilder
     private func standardSummary(_ presentation: TodayPresentation) -> some View {
         TodayHeaderSection(descriptor: presentation.header)
+        TodayWeekStrip(descriptor: TodayWeekDescriptor(
+            localDate: presentation.header.localDate,
+            trends: week?.trends,
+            language: language
+        ))
         TodaySummaryPanel(
             energy: presentation.energy,
             protein: presentation.protein,
             macros: presentation.macros,
             hydration: presentation.hydration,
             completionMessage: presentation.completionMessage(for: language),
-            collapse: reduceMotion ? 0 : heroCollapse,
             countsUp: countsUp
         )
         .task {

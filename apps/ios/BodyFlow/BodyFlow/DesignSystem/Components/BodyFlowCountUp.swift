@@ -12,9 +12,13 @@ enum BodyFlowCountUp {
     struct Figure {
         let value: Int
         let render: (Int) -> String
-        init(value: Int, render: @escaping (Int) -> String) {
+        /// The counting value drawn in the figure's own style (number large,
+        /// unit small); a plain text of `render` when absent.
+        let text: ((Int) -> Text)?
+        init(value: Int, render: @escaping (Int) -> String, text: ((Int) -> Text)? = nil) {
             self.value = value
             self.render = render
+            self.text = text
         }
     }
 }
@@ -22,6 +26,7 @@ enum BodyFlowCountUp {
 private struct BodyFlowCountingTextModifier: ViewModifier, @preconcurrency Animatable {
     var shown: Double
     let render: (Int) -> String
+    let text: ((Int) -> Text)?
 
     var animatableData: Double {
         get { shown }
@@ -34,7 +39,7 @@ private struct BodyFlowCountingTextModifier: ViewModifier, @preconcurrency Anima
         content
             .foregroundStyle(.clear)
             .overlay(alignment: .leading) {
-                Text(verbatim: render(Int(shown.rounded())))
+                (text?(Int(shown.rounded())) ?? Text(verbatim: render(Int(shown.rounded()))))
                     .accessibilityHidden(true)
             }
     }
@@ -56,7 +61,7 @@ private struct BodyFlowCountUpModifier: ViewModifier {
             // Frame one draws 0 and the first update animates to the value;
             // resetting and animating in the same update would never count.
             content
-                .modifier(BodyFlowCountingTextModifier(shown: shown ?? 0, render: figure.render))
+                .modifier(BodyFlowCountingTextModifier(shown: shown ?? 0, render: figure.render, text: figure.text))
                 .onAppear {
                     guard shown == nil else { return }
                     withAnimation(.easeOut(duration: BodyFlowCountUp.duration)) {

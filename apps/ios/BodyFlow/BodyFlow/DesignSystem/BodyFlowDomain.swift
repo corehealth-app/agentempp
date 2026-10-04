@@ -22,6 +22,22 @@ enum BodyFlowDomain: CaseIterable, Sendable {
 
     var color: Color { BodyFlowColor.color(colorRole) }
 
+    /// The vivid tone for fills (rings, bars, glyphs and their washes).
+    var fillRole: BodyFlowColor.Role {
+        switch self {
+        case .energy: .energyVivid
+        case .protein: .proteinVivid
+        case .carbs: .carbsVivid
+        case .fat: .fatVivid
+        case .hydration: .hydrationVivid
+        case .exercise: .exerciseVivid
+        case .block: .blockVivid
+        case .progress: .progressVivid
+        }
+    }
+
+    var fill: Color { BodyFlowColor.color(fillRole) }
+
     var symbol: BodyFlowSymbol {
         switch self {
         case .energy: .energy
@@ -46,7 +62,7 @@ struct BodyFlowDomainGlyph: View {
     var body: some View {
         Image(symbol: domain.symbol)
             .font(.system(size: diameter * 0.45, weight: .semibold))
-            .foregroundStyle(domain.color)
+            .foregroundStyle(domain.fill)
             .frame(width: diameter, height: diameter)
             .background(fill, in: Circle())
             .accessibilityHidden(true)
@@ -56,6 +72,6 @@ struct BodyFlowDomainGlyph: View {
     private var fill: Color {
         contrast == .increased
             ? BodyFlowColor.color(.backgroundSecondary)
-            : domain.color.opacity(BodyFlowOpacity.glyphWash)
+            : domain.fill.opacity(BodyFlowOpacity.glyphWash)
     }
 }

@@ -4,6 +4,7 @@ import SwiftUI
 struct RegisterRootView: View {
     @Environment(AppRouter.self) private var router
     @Environment(\.locale) private var locale
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let fixture: RegistrationFixture
     let state: ScreenContentState
@@ -64,7 +65,7 @@ struct RegisterRootView: View {
                 if let mealCommand = fixture.commands.first(where: {
                     RegistrationKind(rawValue: $0.kindID) == .meal
                 }) {
-                    commandButton(mealCommand, role: .primary)
+                    mealTile(mealCommand)
                         .guidedTourTarget(.mealCommand)
                 }
 
@@ -75,52 +76,137 @@ struct RegisterRootView: View {
                     )
                 }
 
-                // The remaining kinds share one panel of rows instead of one
-                // card each, so the primary action keeps its weight.
+                // The remaining kinds: three tiles in their own colors at
+                // regular text sizes, one panel of rows at larger ones.
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
                     BodyFlowSectionHeader(copy("registration.root.other-actions"))
-
-                    BodyFlowCard {
-                        VStack(alignment: .leading, spacing: 0) {
-                            let commands = fixture.commands.filter {
-                                RegistrationKind(rawValue: $0.kindID) != .meal
+                    let commands = fixture.commands.filter {
+                        RegistrationKind(rawValue: $0.kindID) != .meal
+                    }
+                    if dynamicTypeSize <= .xLarge {
+                        HStack(alignment: .top, spacing: BodyFlowSpacing.sm) {
+                            ForEach(commands) { command in
+                                otherTile(command)
                             }
-                            ForEach(Array(commands.enumerated()), id: \.element.id) { index, command in
-                                if index > 0 { Divider() }
-                                Button {
-                                    present(command)
-                                } label: {
-                                    FeatureActionLabel(
-                                        title: commandTitle(for: command),
-                                        detail: copy(presentsLocalDemonstration
-                                            ? "registration.root.open-demo"
-                                            : "registration.root.open"),
-                                        systemImage: command.systemImage
-                                    )
-                                    .padding(.vertical, BodyFlowSpacing.xs)
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        BodyFlowCard {
+                            VStack(alignment: .leading, spacing: 0) {
+                                ForEach(Array(commands.enumerated()), id: \.element.id) { index, command in
+                                    if index > 0 { Divider() }
+                                    Button {
+                                        present(command)
+                                    } label: {
+                                        FeatureActionLabel(
+                                            title: commandTitle(for: command),
+                                            detail: openDetail,
+                                            systemImage: command.systemImage
+                                        )
+                                        .padding(.vertical, BodyFlowSpacing.xs)
+                                    }
+                                    .buttonStyle(.bodyFlowRow)
+                                    .disabled(RegistrationKind(rawValue: command.kindID) == nil)
+                                    .accessibilityIdentifier(identifier(for: command))
                                 }
-                                .buttonStyle(.bodyFlowRow)
-                                .disabled(RegistrationKind(rawValue: command.kindID) == nil)
-                                .accessibilityIdentifier(identifier(for: command))
                             }
                         }
                     }
                 }
             }
             .padding(BodyFlowSpacing.md)
+            .containerRelativeFrame(.horizontal)
         }
     }
 
-    private func commandButton(
-        _ command: RegistrationCommandFixture,
-        role: BodyFlowButtonRole
-    ) -> some View {
+    private var openDetail: String {
+        copy(presentsLocalDemonstration ? "registration.root.open-demo" : "registration.root.open")
+    }
+
+    /// The meal is the one primary action: a brand tile that names the three
+    /// ways to tell the app what was eaten. The ways are a hint, not three
+    /// buttons — the sheet that opens offers them.
+    private func mealTile(_ command: RegistrationCommandFixture) -> some View {
         Button { present(command) } label: {
-            Label(commandTitle(for: command), systemImage: command.systemImage)
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
+                VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
+                    Text(verbatim: commandTitle(for: command))
+                        .font(BodyFlowTypography.screenTitle)
+                    Text(verbatim: copy("registration.root.meal.detail"))
+                        .font(BodyFlowTypography.callout)
+                }
+                .foregroundStyle(BodyFlowColor.color(.onPrimary))
+                .fixedSize(horizontal: false, vertical: true)
+                if dynamicTypeSize <= .xLarge {
+                    HStack(spacing: BodyFlowSpacing.xs) {
+                        way(.camera, copy("registration.root.way.photo"))
+                        way(.compose, copy("registration.root.way.text"))
+                        way(.microphone, copy("registration.root.way.audio"))
+                    }
+                    .accessibilityHidden(true)
+                }
+            }
+            .padding(BodyFlowSpacing.md)
+            .frame(maxWidth: .infinity, minHeight: BodyFlowSpacing.minimumTapTarget, alignment: .leading)
+            .background(
+                BodyFlowColor.color(.brandPrimary),
+                in: RoundedRectangle(cornerRadius: BodyFlowRadius.card, style: .continuous)
+            )
+            .contentShape(Rectangle())
         }
-        .buttonStyle(BodyFlowButtonStyle(role: role))
+        .buttonStyle(.bodyFlowRowAction)
+        .disabled(RegistrationKind(rawValue: command.kindID) == nil)
+        .accessibilityLabel(commandTitle(for: command))
+        .accessibilityHint(copy("registration.root.meal.detail"))
+        .accessibilityIdentifier(identifier(for: command))
+    }
+
+    private func way(_ symbol: BodyFlowSymbol, _ title: String) -> some View {
+        VStack(spacing: BodyFlowSpacing.xxs) {
+            Image(symbol: symbol).font(.system(size: 17, weight: .semibold)).frame(height: 22)
+            Text(verbatim: title).font(BodyFlowTypography.caption.weight(.semibold))
+        }
+        .foregroundStyle(BodyFlowColor.color(.brandPrimary))
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, BodyFlowSpacing.xs)
+        .background(
+            BodyFlowColor.color(.surfaceElevated),
+            in: RoundedRectangle(cornerRadius: BodyFlowRadius.field, style: .continuous)
+        )
+    }
+
+    private func otherTile(_ command: RegistrationCommandFixture) -> some View {
+        Button { present(command) } label: {
+            BodyFlowCard(surface: .elevated, padding: BodyFlowSpacing.sm) {
+                VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+                    BodyFlowDomainGlyph(domain: domain(for: command), diameter: 36)
+                    Text(verbatim: commandTitle(for: command))
+                        .font(BodyFlowTypography.headline)
+                        .foregroundStyle(BodyFlowColor.primaryText)
+                    Text(verbatim: openDetail)
+                        .font(BodyFlowTypography.caption)
+                        .foregroundStyle(BodyFlowColor.secondaryText)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(
+                    maxWidth: .infinity, minHeight: BodyFlowSpacing.minimumTapTarget,
+                    maxHeight: .infinity, alignment: .topLeading
+                )
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.bodyFlowRow)
         .disabled(RegistrationKind(rawValue: command.kindID) == nil)
         .accessibilityIdentifier(identifier(for: command))
+    }
+
+    private func domain(for command: RegistrationCommandFixture) -> BodyFlowDomain {
+        switch RegistrationKind(rawValue: command.kindID) {
+        case .training: .exercise
+        case .hydration: .hydration
+        case .weight: .progress
+        case .meal, nil: .energy
+        }
     }
 
     private func present(_ command: RegistrationCommandFixture) {

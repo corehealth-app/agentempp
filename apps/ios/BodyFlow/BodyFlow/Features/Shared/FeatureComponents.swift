@@ -49,28 +49,53 @@ enum BodyFlowSurfaceRole: Sendable {
 
 @MainActor
 struct BodyFlowCard<Content: View>: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
     let surface: BodyFlowSurfaceRole
+    /// Inner padding: the default for content cards, `sm` for compact tiles.
+    let padding: CGFloat
     private let content: Content
 
-    init(surface: BodyFlowSurfaceRole = .card, @ViewBuilder content: () -> Content) {
+    init(
+        surface: BodyFlowSurfaceRole = .card,
+        padding: CGFloat = BodyFlowSpacing.md,
+        @ViewBuilder content: () -> Content
+    ) {
         self.surface = surface
+        self.padding = padding
         self.content = content()
     }
 
     var body: some View {
         styledContent
-            .padding(BodyFlowSpacing.md)
+            .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                backgroundColor,
-                in: RoundedRectangle(cornerRadius: BodyFlowRadius.card, style: .continuous)
-            )
+            .background {
+                // Direction A: white cards float on the light canvas with a
+                // soft lift; dark mode (direction B) separates by fill. The
+                // shadow is on the shape only — a shadow on the card itself
+                // would also shadow every text inside it.
+                RoundedRectangle(cornerRadius: BodyFlowRadius.card, style: .continuous)
+                    .fill(backgroundColor)
+                    .shadow(
+                        color: .black.opacity(liftsInLight ? BodyFlowElevation.heroOpacity : 0),
+                        radius: BodyFlowElevation.heroBlur, y: BodyFlowElevation.heroY
+                    )
+            }
             .overlay {
                 if surface == .legacy {
                     RoundedRectangle(cornerRadius: BodyFlowRadius.card, style: .continuous)
                         .stroke(legacyAccent.opacity(BodyFlowOpacity.tintWash), lineWidth: 1)
+                } else if contrast == .increased {
+                    // The lift is never the only boundary under Increase Contrast.
+                    RoundedRectangle(cornerRadius: BodyFlowRadius.card, style: .continuous)
+                        .strokeBorder(BodyFlowColor.color(.controlBoundary), lineWidth: 1)
                 }
             }
+    }
+
+    private var liftsInLight: Bool {
+        colorScheme == .light && surface != .legacy && surface != .hero && surface != .canvas
     }
 
     @ViewBuilder private var styledContent: some View {

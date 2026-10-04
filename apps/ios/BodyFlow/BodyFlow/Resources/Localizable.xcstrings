@@ -217,6 +217,62 @@
     "en" : { "stringUnit" : { "state" : "translated", "value" : "Appearance" } },
     "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Aparência" } }
   } },
+  "today.energy.exercise.caption" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Not part of what is left for food" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não entra no que resta para comida" } }
+  } },
+  "today.meals.count" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld of %lld" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "%lld de %lld" } }
+  } },
+  "today.meals.open" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Not logged yet" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ainda não registrada" } }
+  } },
+  "today.meals.register" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Log" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Registrar" } }
+  } },
+  "today.meals.skipped" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Skipped" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Pulada" } }
+  } },
+  "today.week.summary" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld of 7 days with records this week" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "%lld de 7 dias com registro nesta semana" } }
+  } },
+  "today.meals.title" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Meals" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Refeições" } }
+  } },
+  "today.energy.food-remaining.short" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "left" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "restam" } }
+  } },
+  "progress.highlight.streak" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Streak: %@" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sequência: %@" } }
+  } },
+  "progress.highlight.xp" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "%@ · %@" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "%@ · %@" } }
+  } },
+  "registration.root.meal.detail" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Photo, text or audio. You confirm before it is saved." } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Foto, texto ou áudio. Você confirma antes de salvar." } }
+  } },
+  "registration.root.way.audio" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Audio" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Áudio" } }
+  } },
+  "registration.root.way.photo" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Photo" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Foto" } }
+  } },
+  "registration.root.way.text" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Text" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Texto" } }
+  } },
   "progress.weight.date-unknown": {
     "localizations": {
       "pt-BR": {

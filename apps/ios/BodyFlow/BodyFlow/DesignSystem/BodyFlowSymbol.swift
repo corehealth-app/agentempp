@@ -12,6 +12,7 @@ enum BodyFlowSymbol: String, CaseIterable, Sendable {
     case list = "list.bullet"
     case chevron = "chevron.right"
     case send = "arrow.up"
+    case add = "plus"
     case stop = "stop.fill"
     case summary = "doc.text.magnifyingglass"
     case compose = "text.alignleft"
@@ -58,6 +59,7 @@ enum BodyFlowSymbol: String, CaseIterable, Sendable {
     case deficit = "arrow.down.circle"
     case medal = "medal.fill"
     case weight = "scalemass"
+    case trends = "chart.xyaxis.line"
     case bodyComposition = "figure"
 
     // Profile, library and selection

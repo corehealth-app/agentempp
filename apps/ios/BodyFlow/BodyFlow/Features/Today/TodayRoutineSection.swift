@@ -139,7 +139,8 @@ struct TodayRoutineSectionView: View {
                     .accessibilityHidden(true)
             }
             .foregroundStyle(BodyFlowColor.accent)
-            .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+            // +1: a fractional layout offset must never round the target under 44 pt.
+            .frame(minHeight: BodyFlowSpacing.minimumTapTarget + 1)
             .contentShape(Rectangle())
         }
         .buttonStyle(.bodyFlowRow)

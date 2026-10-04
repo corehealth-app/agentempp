@@ -43,9 +43,10 @@ final class TodayHorizontalFitUITests: XCTestCase {
     @MainActor
     private func assertDiagonalDragStaysVertical(_ app: XCUIApplication, _ note: String) {
         let scroll = app.scrollViews.firstMatch
-        guard let probe = scroll.descendants(matching: .staticText).allElementsBoundByIndex.first(where: {
-            $0.isHittable && $0.frame.width > 0
-        }) else { return XCTFail("\(note): no visible text to probe") }
+        // The week strip and the hero are plain content of the page: if the
+        // page could pan sideways, their leading edges would move with it.
+        let probe = app.descendants(matching: .any)["today.energy.consumed"].firstMatch
+        guard probe.exists else { return XCTFail("\(note): no hero figure to probe") }
         let before = probe.frame.minX
         for vector in [CGVector(dx: -140, dy: 180), CGVector(dx: 140, dy: -180)] {
             let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))

@@ -72,7 +72,6 @@ struct TodayTrailDescriptor: Equatable, Sendable {
 struct TodayTrailSection: View {
     let descriptor: TodayTrailDescriptor
     @Environment(\.locale) private var locale
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         BodyFlowCard {
@@ -81,10 +80,12 @@ struct TodayTrailSection: View {
                     .font(BodyFlowTypography.cardTitle)
                     .foregroundStyle(BodyFlowColor.primaryText)
                     .accessibilityAddTraits(.isHeader)
-                if dynamicTypeSize.isAccessibilitySize {
-                    VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) { nodes(vertical: true) }
-                } else {
-                    HStack(alignment: .top, spacing: BodyFlowSpacing.xxs) { nodes(vertical: false) }
+                // A vertical timeline at every size: titles and details read
+                // on full lines instead of four squeezed columns.
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(descriptor.nodes.enumerated()), id: \.element.id) { index, node in
+                        timelineRow(node, isLast: index == descriptor.nodes.count - 1)
+                    }
                 }
                 Text(copy("today.trail.detail"))
                     .font(BodyFlowTypography.caption)
@@ -96,53 +97,51 @@ struct TodayTrailSection: View {
         .accessibilityIdentifier("today.trail")
     }
 
-    @ViewBuilder
-    private func nodes(vertical: Bool) -> some View {
-        ForEach(Array(descriptor.nodes.enumerated()), id: \.element.id) { index, node in
-            if index > 0 {
-                // The connector lights up once the previous node is reached.
-                Image(symbol: .chevron)
-                    .font(BodyFlowTypography.caption.weight(.semibold))
-                    .foregroundStyle(
-                        BodyFlowColor.color(descriptor.nodes[index - 1].reached ? .feedbackPositive : .controlBoundary)
+    private func timelineRow(_ node: TodayTrailDescriptor.Node, isLast: Bool) -> some View {
+        HStack(alignment: .top, spacing: BodyFlowSpacing.sm) {
+            VStack(spacing: 0) {
+                Image(symbol: node.reached ? .confirm : symbol(for: node.kind))
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(BodyFlowColor.color(node.reached ? .onPrimary : fillRole(for: node.kind)))
+                    .frame(width: 28, height: 28)
+                    .background(
+                        BodyFlowColor.color(node.reached ? .brandPrimary : fillRole(for: node.kind))
+                            .opacity(node.reached ? 1 : BodyFlowOpacity.glyphWash),
+                        in: Circle()
                     )
-                    .rotationEffect(.degrees(vertical ? 90 : 0))
-                    .frame(maxHeight: .infinity, alignment: vertical ? .leading : .center)
-                    .padding(.top, vertical ? 0 : BodyFlowSpacing.sm)
-                    .accessibilityHidden(true)
+                if !isLast {
+                    // The connector lights up once this node is reached.
+                    Rectangle()
+                        .fill(BodyFlowColor.color(node.reached ? .brandPrimary : .borderSubtle))
+                        .frame(width: 2)
+                        .frame(maxHeight: .infinity)
+                }
             }
-            nodeView(node)
-        }
-    }
-
-    private func nodeView(_ node: TodayTrailDescriptor.Node) -> some View {
-        VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
-            HStack(spacing: BodyFlowSpacing.xxs) {
-                Image(symbol: node.reached ? .success : symbol(for: node.kind))
-                    .foregroundStyle(BodyFlowColor.color(node.reached ? .feedbackPositive : colorRole(for: node.kind)))
-                    .accessibilityHidden(true)
+            .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 0) {
                 Text(verbatim: copy(node.kind.titleKey))
-                    .font(BodyFlowTypography.caption.weight(.semibold))
+                    .font(BodyFlowTypography.headline)
                     .foregroundStyle(BodyFlowColor.primaryText)
+                Text(verbatim: node.detail ?? copy("today.trail.pending"))
+                    .font(BodyFlowTypography.caption)
+                    .foregroundStyle(BodyFlowColor.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Text(verbatim: node.detail ?? copy("today.trail.pending"))
-                .font(BodyFlowTypography.caption)
-                .foregroundStyle(BodyFlowColor.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
+            .padding(.bottom, isLast ? 0 : BodyFlowSpacing.sm)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+            .accessibilityValue(node.reached ? copy("today.trail.reached") : "")
+            .accessibilityIdentifier("today.trail.\(node.kind.rawValue)")
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
-        .accessibilityValue(node.reached ? copy("today.trail.reached") : "")
-        .accessibilityIdentifier("today.trail.\(node.kind.rawValue)")
+        .fixedSize(horizontal: false, vertical: true)
     }
 
-    /// Each node in the color of the domain it leads to.
-    private func colorRole(for kind: TodayTrailDescriptor.Node.Kind) -> BodyFlowColor.Role {
+    private func fillRole(for kind: TodayTrailDescriptor.Node.Kind) -> BodyFlowColor.Role {
         switch kind {
-        case .register: .energy
+        case .register: .energyVivid
         case .today: .brandPrimary
-        case .block: .block
-        case .progress: .progress
+        case .block: .blockVivid
+        case .progress: .progressVivid
         }
     }
 

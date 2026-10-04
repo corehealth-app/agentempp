@@ -13,6 +13,7 @@ struct AppShellView: View {
     @State private var historyCoordinator: HistoryFeatureCoordinator
     @State private var todayRecommendationsViewModel: TodayRecommendationsViewModel
     @State private var todayMascotViewModel: MascotExperienceViewModel
+    @State private var todayWeekViewModel: TodayWeekViewModel
     @State private var flowChatModel: FlowChatModel
     @State private var contentCoverEnvironment: ContentCoverEnvironment
     @State private var localReminders: LocalReminderModel?
@@ -60,6 +61,9 @@ struct AppShellView: View {
         )
         _progressViewModel = State(
             initialValue: ProgressViewModel(provider: sessionOwner.progress)
+        )
+        _todayWeekViewModel = State(
+            initialValue: TodayWeekViewModel(provider: sessionOwner.progress)
         )
         let historyModel = HistoryViewModel(provider: dependencies.history)
         _historyViewModel = State(initialValue: historyModel)
@@ -513,6 +517,7 @@ struct AppShellView: View {
                 model: todayViewModel,
                 recommendations: todayRecommendationsViewModel,
                 mascot: todayMascotViewModel,
+                week: todayWeekViewModel,
                 invalidationCenter: invalidationCenter
             )
         case .register:

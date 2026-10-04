@@ -70,58 +70,13 @@ struct TodayWorkoutDescriptor: Equatable, Sendable, Identifiable {
 }
 
 @MainActor
+/// The day's confirmed workouts (the meals live in `TodayMealSlotsSection`).
 struct TodayRecordsSection: View {
-    let meals: [TodayMealDescriptor]
     let workouts: [TodayWorkoutDescriptor]
     @Environment(\.locale) private var locale
 
     var body: some View {
-        VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
-            mealsSection
-            workoutsSection
-        }
-    }
-
-    private var mealsSection: some View {
-        VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-            BodyFlowSectionHeader(copy("today.records.meals"), symbol: .meals)
-
-            if meals.isEmpty {
-                Text(copy("today.records.meals.empty"))
-                    .font(BodyFlowTypography.body)
-                    .foregroundStyle(BodyFlowColor.secondaryText)
-            } else {
-                ForEach(meals) { meal in
-                    BodyFlowCard {
-                        HStack(alignment: .top, spacing: BodyFlowSpacing.sm) {
-                        BodyFlowDomainGlyph(domain: .energy)
-                        VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                            Text(meal.foodName)
-                                .font(BodyFlowTypography.headline)
-                                .foregroundStyle(BodyFlowColor.primaryText)
-                            // Received type and energy on one line while
-                            // they fit; stacked at accessibility sizes.
-                            recordLine(
-                                detail: meal.mealType.map {
-                                    RegistrationCopy.mealTypeTitle(code: $0, language: language)
-                                } ?? TodayCopy.string("common.not-available", language: language),
-                                value: TodayValueFormatter.mealKcal(meal.kcal, language: language)
-                            )
-                            BodyFlowStatusLine(
-                                meal.provenance,
-                                kind: .info,
-                                font: BodyFlowTypography.caption
-                            )
-                        }
-                        }
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier("today.meal.\(meal.id)")
-                }
-            }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("today.meals")
+        workoutsSection
     }
 
     private var workoutsSection: some View {

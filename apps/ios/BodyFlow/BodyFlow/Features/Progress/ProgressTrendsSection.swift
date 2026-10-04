@@ -38,6 +38,14 @@ struct ProgressTrendsPresentation: Equatable, Sendable {
 
     var isEmpty: Bool { calories.isEmpty && weights.isEmpty }
 
+    /// The weight axis: the measured range with one kilogram of air on each
+    /// side (never from zero, where a real change is an invisible slope).
+    var weightRange: ClosedRange<Double> {
+        let values = weights.map(\.kilograms)
+        guard let low = values.min(), let high = values.max() else { return 0...1 }
+        return (low - 1).rounded(.down)...(high + 1).rounded(.up)
+    }
+
     init(snapshot: TrendsSnapshot, language: SupportedAppLanguage, today: Date = .now) {
         window = snapshot.days
         let parsed = snapshot.daily.compactMap { day -> (Date, TrendsDay)? in
@@ -164,7 +172,7 @@ struct ProgressTrendsSection: View {
 
     private func charts(_ presentation: ProgressTrendsPresentation) -> some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-            BodyFlowSectionHeader(copy("progress.trends.title"), symbol: BodyFlowDomain.progress.symbol)
+            BodyFlowSectionHeader(copy("progress.trends.title"), symbol: .trends)
             if !presentation.weights.isEmpty { weightCard(presentation) }
             if !presentation.calories.isEmpty {
                 caloriesCard(presentation)
@@ -182,18 +190,26 @@ struct ProgressTrendsSection: View {
         BodyFlowCard(surface: .elevated) {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
                 cardTitle(copy("progress.trends.weight"), domain: .progress, value: presentation.latestWeight)
+                // The scale frames the measured range (with a kilogram of
+                // air), so a real change reads as a slope, not a flat line
+                // on a 0–80 axis. The area starts at the scale's floor.
+                let range = presentation.weightRange
                 Chart(presentation.weights) { point in
-                    AreaMark(x: .value("date", point.date), y: .value("kg", point.kilograms))
-                        .foregroundStyle(BodyFlowDomain.progress.color.opacity(BodyFlowOpacity.glyphWash))
-                        .interpolationMethod(.catmullRom)
+                    AreaMark(
+                        x: .value("date", point.date),
+                        yStart: .value("floor", range.lowerBound),
+                        yEnd: .value("kg", point.kilograms)
+                    )
+                    .foregroundStyle(BodyFlowDomain.progress.fill.opacity(BodyFlowOpacity.glyphWash))
+                    .interpolationMethod(.monotone)
                     LineMark(x: .value("date", point.date), y: .value("kg", point.kilograms))
-                        .foregroundStyle(BodyFlowDomain.progress.color)
-                        .interpolationMethod(.catmullRom)
-                        .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                        .foregroundStyle(BodyFlowDomain.progress.fill)
+                        .interpolationMethod(.monotone)
+                        .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round))
                     PointMark(x: .value("date", point.date), y: .value("kg", point.kilograms))
-                        .foregroundStyle(BodyFlowDomain.progress.color)
+                        .foregroundStyle(BodyFlowDomain.progress.fill)
                 }
-                .chartYScale(domain: .automatic(includesZero: false))
+                .chartYScale(domain: range)
                 .chartXAxis(.hidden)
                 .chartYAxis(.hidden)
                 .frame(height: 140)
@@ -219,12 +235,13 @@ struct ProgressTrendsSection: View {
                 cardTitle(
                     String(format: copy("progress.trends.calories"), presentation.window),
                     domain: .energy,
-                    value: presentation.target.map { "\(copy("progress.trends.target")) \(TodayValueFormatter.kcal($0, language: language))" }
+                    value: nil,
+                    note: presentation.target.map { "\(copy("progress.trends.target")) \(TodayValueFormatter.kcal($0, language: language))" }
                 )
                 Chart {
                     ForEach(presentation.calories) { bar in
                         BarMark(x: .value("date", bar.date, unit: .day), y: .value("kcal", bar.consumed))
-                            .foregroundStyle(BodyFlowColor.color(bar.overTarget ? .feedbackWarning : .energy))
+                            .foregroundStyle(BodyFlowColor.color(bar.overTarget ? .fatVivid : .energyVivid))
                             .cornerRadius(3)
                             .opacity(selected == nil || selected?.id == bar.id ? 1 : 0.45)
                     }
@@ -270,8 +287,8 @@ struct ProgressTrendsSection: View {
                 .accessibilityLabel(String(format: copy("progress.trends.calories.accessibility"), presentation.calories.count))
                 dateRange(first: presentation.calories.first?.label, last: presentation.calories.last?.label)
                 HStack(spacing: BodyFlowSpacing.md) {
-                    legend(copy("progress.trends.under"), color: .energy)
-                    legend(copy("progress.trends.over"), color: .feedbackWarning)
+                    legend(copy("progress.trends.under"), color: .energyVivid)
+                    legend(copy("progress.trends.over"), color: .fatVivid)
                 }
             }
         }
@@ -290,10 +307,10 @@ struct ProgressTrendsSection: View {
                 )
                 Chart(presentation.block) { point in
                     AreaMark(x: .value("date", point.date, unit: .day), y: .value("kcal", point.accumulated))
-                        .foregroundStyle(BodyFlowDomain.block.color.opacity(BodyFlowOpacity.glyphWash))
+                        .foregroundStyle(BodyFlowDomain.block.fill.opacity(BodyFlowOpacity.glyphWash))
                     LineMark(x: .value("date", point.date, unit: .day), y: .value("kcal", point.accumulated))
-                        .foregroundStyle(BodyFlowDomain.block.color)
-                        .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                        .foregroundStyle(BodyFlowDomain.block.fill)
+                        .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round))
                 }
                 .chartXAxis(.hidden)
                 .chartYAxis(.hidden)
@@ -336,20 +353,30 @@ struct ProgressTrendsSection: View {
     /// Title with its glyph and the latest official value: one line at
     /// regular sizes, stacked at accessibility sizes so neither is squeezed.
     @ViewBuilder
-    private func cardTitle(_ title: String, domain: BodyFlowDomain, value: String?) -> some View {
+    private func cardTitle(_ title: String, domain: BodyFlowDomain, value: String?, note: String? = nil) -> some View {
         let heading = HStack(alignment: .center, spacing: BodyFlowSpacing.sm) {
             BodyFlowDomainGlyph(domain: domain, diameter: 26)
-            Text(verbatim: title)
-                .font(BodyFlowTypography.cardTitle)
-                .foregroundStyle(BodyFlowColor.primaryText)
-                .fixedSize(horizontal: false, vertical: true)
-                .layoutPriority(1)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(verbatim: title)
+                    .font(BodyFlowTypography.cardTitle)
+                    .foregroundStyle(BodyFlowColor.primaryText)
+                if let note {
+                    Text(verbatim: note)
+                        .font(BodyFlowTypography.caption)
+                        .foregroundStyle(BodyFlowColor.secondaryText)
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .layoutPriority(1)
         }
+        // The latest official value: number large, unit small.
         let figure = value.map { value in
-            Text(verbatim: value)
-                .font(BodyFlowTypography.metricSmall)
-                .foregroundStyle(domain.color)
-                .fixedSize(horizontal: false, vertical: true)
+            BodyFlowFigure.text(
+                value, value: BodyFlowTypography.metricSmall, unit: BodyFlowTypography.caption,
+                unitColor: BodyFlowColor.secondaryText
+            )
+            .foregroundStyle(BodyFlowColor.primaryText)
+            .fixedSize(horizontal: false, vertical: true)
         }
         Group {
             if dynamicTypeSize.isAccessibilitySize {

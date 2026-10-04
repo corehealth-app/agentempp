@@ -124,9 +124,10 @@ struct ScreenStateTests {
 
     @Test("semantic brand colors resolve correctly in light appearance")
     func lightSemanticColors() throws {
-        try expectRGB(BodyFlowColor.background, style: .light, rgb: (246, 239, 227))
-        try expectRGB(BodyFlowColor.primaryText, style: .light, rgb: (34, 37, 40))
-        try expectRGB(BodyFlowColor.accent, style: .light, rgb: (0, 109, 103))
+        // Direction A (light), approved 2026-10-03.
+        try expectRGB(BodyFlowColor.background, style: .light, rgb: (245, 246, 248))
+        try expectRGB(BodyFlowColor.primaryText, style: .light, rgb: (20, 26, 33))
+        try expectRGB(BodyFlowColor.accent, style: .light, rgb: (0, 122, 114))
         try expectRGB(BodyFlowColor.warning, style: .light, rgb: (138, 90, 0))
         try expectRGB(BodyFlowColor.achievement, style: .light, rgb: (212, 175, 122))
         try expectRGB(BodyFlowColor.onAchievement, style: .light, rgb: (34, 37, 40))
@@ -134,10 +135,11 @@ struct ScreenStateTests {
 
     @Test("semantic brand colors resolve correctly in dark appearance")
     func darkSemanticColors() throws {
-        try expectRGB(BodyFlowColor.background, style: .dark, rgb: (7, 30, 32))
-        try expectRGB(BodyFlowColor.primaryText, style: .dark, rgb: (246, 239, 227))
-        try expectRGB(BodyFlowColor.accent, style: .dark, rgb: (85, 213, 199))
-        try expectRGB(BodyFlowColor.warning, style: .dark, rgb: (242, 201, 118))
+        // Direction B (dark), approved 2026-10-03.
+        try expectRGB(BodyFlowColor.background, style: .dark, rgb: (9, 13, 16))
+        try expectRGB(BodyFlowColor.primaryText, style: .dark, rgb: (242, 245, 246))
+        try expectRGB(BodyFlowColor.accent, style: .dark, rgb: (61, 224, 206))
+        try expectRGB(BodyFlowColor.warning, style: .dark, rgb: (255, 194, 77))
         try expectRGB(BodyFlowColor.achievement, style: .dark, rgb: (212, 175, 122))
         try expectRGB(BodyFlowColor.onAchievement, style: .dark, rgb: (34, 37, 40))
     }

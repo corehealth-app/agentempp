@@ -20,6 +20,8 @@ struct ProgressTrendsTests {
         #expect(presentation.calories.filter(\.overTarget).map(\.consumed) == [2_310, 2_120])
         #expect(presentation.target == 1_935)
         #expect(presentation.weights.map(\.kilograms) == [80.0, 79.1, 78.4])
+        // The axis frames the measured range, never from zero.
+        #expect(presentation.weightRange == 77.0...81.0)
         #expect(presentation.latestWeight == "78,4 kg")
         #expect(presentation.calories.last?.label == "20 de jul.")
         #expect(presentation.block.last?.accumulated == 1_200 + 11 * 110)

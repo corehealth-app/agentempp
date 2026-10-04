@@ -33,7 +33,7 @@ struct BodyFlowMeter: View {
                 // Nothing is drawn for 0: no pill for progress that does not exist.
                 if let fraction, fraction > 0 {
                     Capsule()
-                        .fill(BodyFlowColor.color(exceeded ? .feedbackWarning : domain.colorRole))
+                        .fill(BodyFlowColor.color(exceeded ? .fatVivid : domain.fillRole))
                         .frame(width: max(height, geometry.size.width * (swept || still ? fraction : 0)))
                         .animation(BodyFlowMotion.animation(.sweep, reduceMotion: still), value: swept)
                         .animation(BodyFlowMotion.animation(.content, reduceMotion: still), value: fraction)

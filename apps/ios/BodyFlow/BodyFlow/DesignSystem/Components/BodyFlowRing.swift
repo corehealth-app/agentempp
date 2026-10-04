@@ -15,8 +15,11 @@ struct BodyFlowRing: View {
     /// Fill color role (a domain color or the brand); nil track = subtle border.
     var role: BodyFlowColor.Role = .brandPrimary
     var track: Color? = nil
-    /// Color past the target; the hero passes gold, which reads on teal.
+    /// Color past the target.
     var exceededRole: BodyFlowColor.Role = .feedbackWarning
+    /// Direction B: the arc glows softly in dark mode.
+    var glows = false
+    @Environment(\.colorScheme) private var colorScheme
 
     @Environment(\.bodyFlowReduceMotion) private var reduceMotion
     @Environment(\.bodyFlowVisualPolicy) private var visualPolicy
@@ -30,20 +33,35 @@ struct BodyFlowRing: View {
 
     private var still: Bool { reduceMotion || !visualPolicy.allowsMotion }
 
+    nonisolated static let haloWidth: CGFloat = 10
+    nonisolated static let haloOpacity: Double = 0.22
+
+    private func arc(_ fraction: Double, lineWidth: CGFloat) -> some View {
+        Circle()
+            .trim(from: 0, to: swept || still ? fraction : 0)
+            .stroke(
+                BodyFlowColor.color(exceeded ? exceededRole : role),
+                style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+            )
+            .rotationEffect(.degrees(-90))
+            .animation(BodyFlowMotion.animation(.sweep, reduceMotion: still), value: swept)
+            .animation(BodyFlowMotion.animation(.content, reduceMotion: still), value: fraction)
+    }
+
     var body: some View {
         ZStack {
             Circle()
                 .stroke(track ?? BodyFlowColor.color(.borderSubtle), lineWidth: lineWidth)
             if let fraction {
-                Circle()
-                    .trim(from: 0, to: swept || still ? fraction : 0)
-                    .stroke(
-                        BodyFlowColor.color(exceeded ? exceededRole : role),
-                        style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
-                    )
-                    .rotationEffect(.degrees(-90))
-                    .animation(BodyFlowMotion.animation(.sweep, reduceMotion: still), value: swept)
-                    .animation(BodyFlowMotion.animation(.content, reduceMotion: still), value: fraction)
+                if glows, colorScheme == .dark {
+                    // Direction B's glow as a wider, translucent arc under
+                    // the real one. Not a blur/shadow: an offscreen effect
+                    // behind the figure makes the system contrast audit fail
+                    // the small text drawn inside the ring.
+                    arc(fraction, lineWidth: lineWidth + Self.haloWidth)
+                        .opacity(Self.haloOpacity)
+                }
+                arc(fraction, lineWidth: lineWidth)
             }
         }
         .frame(width: diameter, height: diameter)

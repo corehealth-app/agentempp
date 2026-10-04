@@ -164,7 +164,12 @@ final class PremiumPerformanceUITests: XCTestCase {
             let destinations: [(tab: String, screen: String, content: XCUIElement)] = [
                 ("tab.registrar", "screen.registrar", app.buttons["register.refeicao"]),
                 ("tab.plano", "screen.plano", app.staticTexts["Training plan"]),
-                ("tab.progresso", "screen.progresso", app.staticTexts["78.4 kg"]),
+                // Direction v2: Progress leads with the trend charts, so the
+                // first official value on screen is the weight card's header
+                // ("Weight, 78.4 kg"); the measurements row sits below the fold.
+                ("tab.progresso", "screen.progresso", app.staticTexts.matching(
+                    NSPredicate(format: "label BEGINSWITH 'Weight' AND label CONTAINS '78.4 kg'")
+                ).firstMatch),
                 ("tab.perfil", "screen.perfil", app.buttons["profile.coach-persona"]),
                 ("tab.hoje", "screen.hoje", app.buttons["today.refresh"]),
             ]

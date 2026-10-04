@@ -4,12 +4,20 @@
 app, onde roda o chat do Flow) em **gru1 (São Paulo)**. O arquivo não configura
 mais nada. O conteúdo é travado por `apps/mobile-bff/src/function-region.test.ts`.
 
-> **Premissa.** A Vercel só obedece o `vercel.json` que está no Root Directory
-> do projeto. O Root Directory do projeto `agentempp-mobile-bff-staging` não
-> está escrito no repositório; pelo log do deploy (build em
-> `/vercel/path0/apps/mobile-bff`, Next detectado, e o `package.json` da raiz
-> não tem `next`) ele é `apps/mobile-bff`. Se no painel for outro, o arquivo é
-> ignorado em silêncio. A conferência abaixo (cabeçalho `x-vercel-id`) decide.
+> **Como o arquivo é obedecido (conferido em 2026-10-04, staging).** O Root
+> Directory do projeto `agentempp-mobile-bff-staging` é `apps/mobile-bff`
+> (`vercel project inspect`). Mesmo assim, um deploy feito pela CLI a partir da
+> raiz do pacote (onde estão `package.json`, `packages/` e `apps/`) **ignora**
+> este arquivo: o preview `…-jv7v4qj2c-…` continuou em `iad1`. A CLI só manda a
+> região quando recebe o arquivo explicitamente:
+>
+> ```
+> vercel deploy --target preview --local-config apps/mobile-bff/vercel.json
+> ```
+>
+> Com a opção, o preview `…-dpdnrn1xu-…` respondeu `x-vercel-id: gru1::gru1::…`.
+> Todo deploy do BFF pela CLI precisa dessa opção (ou da região definida nas
+> configurações do projeto na Vercel); o cabeçalho `x-vercel-id` é a prova.
 
 ## O que foi medido (2026-10-04, staging)
 

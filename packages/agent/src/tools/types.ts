@@ -49,6 +49,20 @@ export interface ToolContext {
    * paciente clicou 2h47min depois (localHour=15) → autocorrect virava pra
    * 'lanche' silenciosamente, divergindo do card "Café registrado". */
   trustMealType?: boolean
+  /** Each confirmed proposal is a NEW record. Set ONLY by the mobile BFF
+   * (`confirmRegistration`) for a proposal the app itself built
+   * (`registration_origin: 'mobile_app'`). With it `registra_refeicao` does
+   * not promote `replace` from a name overlap in the last 30 min and does not
+   * drop an item as a duplicate of the day; both are only counted
+   * (`tool.replace_implicit_skipped_additive_confirmation`,
+   * `tool.same_day_duplicate_kept_additive_confirmation`), and a failed read
+   * or insert of that telemetry never fails the confirmation. The idempotency
+   * by `providerMessageId` still holds, so a retry of the same proposal never
+   * doubles. Never set by the WhatsApp pipeline or its button tap, and never
+   * read from a payload. Defect B (iPhone, staging, 2026-10-04): the app
+   * context has no patient text, so a second identical lunch confirmed one
+   * minute later silently replaced the first row (541 kcal instead of 780). */
+  additiveConfirmation?: boolean
   /** Set by the pipeline from the server-side channel only ('flow' on the
    * mobile Flow). Absent = the legacy identity. Never read from a payload. */
   assistantIdentity?: GeneratorIdentity

@@ -9,6 +9,7 @@ import {
   registraRefeicao,
   registraTreino,
   resolveTrustedNutritionLabel,
+  type ToolContext,
 } from '@mpp/agent'
 import type { Json, ServiceClient } from '@mpp/db'
 import { z } from 'zod'
@@ -44,14 +45,19 @@ const pendingMealItemSchema = z.object({
   preparation_options: z.array(z.string()).nullable().optional(),
 })
 
+const MEAL_TYPES = ['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro'] as const
+
 const pendingMealProposalSchema = z.object({
   kind: z.literal('meal'),
-  mealType: z.enum(['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro']),
+  mealType: z.enum(MEAL_TYPES),
   items: z.array(pendingMealItemSchema).min(1).max(30),
   source_provider_message_id: z.string().min(1),
   source_timestamp: z.string().datetime({ offset: true }),
   source_timezone: z.string().min(1),
   source_local_date: z.string().date(),
+  // Kept on purpose: zod strips unknown keys, and without this one the
+  // confirm would lose the marker and fall back to the lossy path in silence.
+  registration_origin: z.string().optional(),
 })
 
 const pendingWorkoutProposalSchema = z.object({
@@ -66,6 +72,23 @@ const pendingWorkoutProposalSchema = z.object({
   source_local_date: z.string().date(),
 })
 
+/** Origin of a meal proposal the app itself created (propose route). */
+const MOBILE_APP_REGISTRATION_ORIGIN = 'mobile_app' as const
+type RegistrationOrigin = typeof MOBILE_APP_REGISTRATION_ORIGIN
+
+function proposalRecord(proposal: Json): { [key: string]: Json | undefined } | null {
+  return typeof proposal === 'object' && proposal !== null && !Array.isArray(proposal)
+    ? proposal
+    : null
+}
+
+/** The origin an edit must keep: the marker the stored proposal carries, or none. */
+function storedOrigin(proposal: Json): RegistrationOrigin | null {
+  return proposalRecord(proposal)?.registration_origin === MOBILE_APP_REGISTRATION_ORIGIN
+    ? MOBILE_APP_REGISTRATION_ORIGIN
+    : null
+}
+
 function normalizeFoodName(value: string): string {
   return value
     .normalize('NFD')
@@ -78,6 +101,8 @@ export function buildMealPendingProposal(
   input: MealProposalInput,
   calculation: MealCalcResult,
   timing: ProposalTiming,
+  // `null` only for the edit of a pending the app did not create.
+  origin: RegistrationOrigin | null = MOBILE_APP_REGISTRATION_ORIGIN,
 ) {
   const overrides = new Map(
     input.items
@@ -124,6 +149,12 @@ export function buildMealPendingProposal(
     source_timezone: timing.timezone,
     source_local_date: timing.localDate,
     replace: false,
+    // Marks a proposal the app created. The confirm reads it to register the
+    // meal as a new record (Defect B, iPhone, staging, 2026-10-04). An edit
+    // keeps what the pending had: stamping it on a pending created on
+    // WhatsApp would confirm a correction as an addition. Not exposed: the
+    // DTO is a closed list.
+    ...(origin ? { registration_origin: origin } : {}),
     express_eligible: false,
   }
 }
@@ -269,6 +300,7 @@ async function buildProposal(
   auth: MobileAuthContext,
   input: RegistrationProposalInput,
   requestKey: string,
+  origin: RegistrationOrigin | null,
   now = new Date(),
 ): Promise<Json> {
   const timezone = auth.patient.timezone ?? 'UTC'
@@ -294,7 +326,7 @@ async function buildProposal(
       auth.patient.country,
       auth.userId,
     )
-    return buildMealPendingProposal(input, calculation, timing) as unknown as Json
+    return buildMealPendingProposal(input, calculation, timing, origin) as unknown as Json
   }
 
   const { data: profile, error: profileError } = await supabase
@@ -359,7 +391,13 @@ export async function proposeRegistration(
   input: RegistrationProposalInput,
   requestKey: string,
 ) {
-  const proposal = await buildProposal(supabase, auth, input, requestKey)
+  const proposal = await buildProposal(
+    supabase,
+    auth,
+    input,
+    requestKey,
+    MOBILE_APP_REGISTRATION_ORIGIN,
+  )
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
   const id = await createPendingRegistration(supabase, {
     userId: auth.userId,
@@ -371,6 +409,73 @@ export async function proposeRegistration(
   return pendingDto(row)
 }
 
+/**
+ * The record of this registration is already saved, so it cannot be edited.
+ * Its own code on purpose: the iPhone reads `registration_not_pending` as
+ * "this pending is gone, propose the draft again", and since an app
+ * confirmation adds, that second proposal writes the same meal twice. A code
+ * the current build does not know keeps the proposal on screen, where Confirm
+ * answers `already_confirmed`.
+ */
+function alreadyConfirmedError(): MobileApiError {
+  return new MobileApiError(
+    409,
+    'registration_already_confirmed',
+    'Este registro já foi salvo e não pode mais ser editado.',
+  )
+}
+
+/**
+ * True when the rows of this proposal are already in the database, found by
+ * the same key the tools use for idempotency (meal: provider message id;
+ * workout: provider message id + type). A failed read refuses the caller: an
+ * edit accepted blind is the double registration this guards against.
+ */
+async function proposalAlreadyWritten(
+  supabase: ServiceClient,
+  userId: string,
+  proposal: Json,
+): Promise<boolean> {
+  const stored = proposalRecord(proposal)
+  const key = stored?.source_provider_message_id
+  if (typeof key !== 'string' || !key) return false
+
+  if (stored?.kind === 'meal') {
+    // Only a proposal the app created: its key is the idempotency key of one
+    // attempt, so rows under it can only be its own. A WhatsApp message id can
+    // also hold the rows of ANOTHER meal of the same message; closing that
+    // pending here would lose a meal that was never written.
+    if (storedOrigin(proposal) !== MOBILE_APP_REGISTRATION_ORIGIN) return false
+    const { data, error } = await supabase
+      .from('meal_logs')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('raw_provider_message_id', key)
+      .limit(1)
+    if (error) {
+      throw new MobileApiError(500, 'registration_lookup_failed', 'Registration lookup failed')
+    }
+    return (data ?? []).length > 0
+  }
+  // Workouts carry no origin marker, so the guard holds for every origin. The
+  // key is the exact idempotency key of `registra_treino` (message id + type):
+  // a row under it means the confirm of this pending would write nothing.
+  if (stored?.kind === 'workout' && typeof stored.workoutType === 'string') {
+    const { data, error } = await supabase
+      .from('workout_logs')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('raw_provider_message_id', key)
+      .eq('workout_type', stored.workoutType)
+      .limit(1)
+    if (error) {
+      throw new MobileApiError(500, 'registration_lookup_failed', 'Registration lookup failed')
+    }
+    return (data ?? []).length > 0
+  }
+  return false
+}
+
 export async function editRegistration(
   supabase: ServiceClient,
   auth: MobileAuthContext,
@@ -379,14 +484,31 @@ export async function editRegistration(
   requestKey: string,
 ) {
   const current = await loadOwnedRegistration(supabase, auth.userId, registrationId)
+  // Same answer as the guard below: once it closed the pending, the app's
+  // "try again" resends this PATCH and must not be told to propose again.
+  if (current.status === 'confirmed') throw alreadyConfirmedError()
   if (current.status !== 'pending') {
     throw new MobileApiError(409, 'registration_not_pending', 'Registration is not pending')
   }
   if (new Date(current.expires_at).getTime() <= Date.now()) {
     throw new MobileApiError(410, 'registration_expired', 'Registration has expired')
   }
+  // The tool wrote this proposal and the pending→confirmed UPDATE failed: the
+  // pending still reads "pending". An edit would give it a new key, and the
+  // next confirm would write the meal a second time (the app confirm adds).
+  // So the transition is completed here and the edit is refused.
+  if (await proposalAlreadyWritten(supabase, auth.userId, current.proposal)) {
+    await transitionToConfirmed(supabase, auth.userId, registrationId)
+    throw alreadyConfirmedError()
+  }
 
-  const proposal = await buildProposal(supabase, auth, input, requestKey)
+  const proposal = await buildProposal(
+    supabase,
+    auth,
+    input,
+    requestKey,
+    storedOrigin(current.proposal),
+  )
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
   const { data, error } = await supabase
     .from('pending_registrations')
@@ -487,6 +609,16 @@ export async function confirmRegistration(
         'Registration has items that need clarification',
       )
     }
+    // Defect B (iPhone, staging, 2026-10-04): two identical lunches confirmed
+    // one minute apart ended as ONE row, because the tool read the name
+    // overlap as a correction. A proposal the app built is a new record. The
+    // field is typed so a rename in the tool breaks the typecheck here (the
+    // context below is passed `as never`). A pending without the marker
+    // (created on WhatsApp, or before this change) keeps the previous path.
+    const additive: Pick<ToolContext, 'additiveConfirmation'> =
+      proposal.registration_origin === MOBILE_APP_REGISTRATION_ORIGIN
+        ? { additiveConfirmation: true }
+        : {}
     const result = await registraRefeicao.execute(
       buildConfirmedMealArgs(
         { mealType: proposal.mealType, items: proposal.items },
@@ -495,12 +627,37 @@ export async function confirmRegistration(
       ) as never,
       {
         ...commonContext,
+        ...additive,
         providerMessageId: proposal.source_provider_message_id,
         referenceTimestamp: new Date(proposal.source_timestamp),
       } as never,
     )
     if (result.success !== true) {
       throw new MobileApiError(422, 'registration_rejected', 'Meal registration was rejected')
+    }
+    // Telemetry only, never an error: by now the tool has already written.
+    // Measures the path without the marker, where a row can still be replaced.
+    const replaced =
+      typeof result.replaced === 'object' && result.replaced !== null
+        ? (result.replaced as Record<string, unknown>)
+        : null
+    if (replaced) {
+      try {
+        await supabase.from('product_events').insert({
+          user_id: auth.userId,
+          event: 'mobile.registration.implicit_replace',
+          properties: {
+            registration_id: registrationId,
+            replaced_count: finite(replaced.count),
+            kcal_removed: finite(replaced.kcal_removed),
+            // A known meal type or nothing: no free text reaches the event.
+            cross_from: MEAL_TYPES.find((type) => type === replaced.cross_from) ?? null,
+            additive_confirmation: additive.additiveConfirmation === true,
+          },
+        })
+      } catch {
+        // The meal is written; a lost event must not fail the confirm.
+      }
     }
     deduped = result.deduped === true || result.already_logged === true
   } else if (kind && !Array.isArray(kind) && kind.kind === 'workout') {

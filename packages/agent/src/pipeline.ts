@@ -28,6 +28,13 @@ import {
 } from './balance-card.js'
 import { getLocalDateMinusDays, getLocalDateString, getLocalHour } from './timezone-utils.js'
 import { buildPendingTiming, burstCrossesLocalDate } from './registration-time.js'
+import {
+  asksExerciseFoodQuestion,
+  lastReplyIsSameAnswer,
+  renderExerciseFoodAnswer,
+  statedWorkoutCalories,
+} from './exercise-food-guard.js'
+import { flowEnergyContextLines } from './flow-energy-context.js'
 import { isMultiTimezoneCountry } from './location-timezone.js'
 import {
   buildPendingNutritionConfirmationNotes,
@@ -532,6 +539,55 @@ async function processResolvedMessage(
       completionTokens: 0,
       costUsd: 0,
       latencyMs: Date.now() - start,
+    }
+  }
+
+  // Flow only. The direct question "I trained — may I eat N kcal more?" is
+  // answered by the system, before any model call (iPhone, staging,
+  // 2026-10-04: Flow said "Sim! Sua meta já considera esse gasto…"). Food left
+  // = target − consumed, WITHOUT exercise (docs/CALCULO-MPP.md §2a). On this
+  // channel ctx.dailyTargets is the day row's target, the one Today shows.
+  // WhatsApp never enters: processMessage passes no historyProvider.
+  if (
+    options.historyProvider === 'mobile_flow' &&
+    asksExerciseFoodQuestion(semanticPatientText)
+  ) {
+    const exerciseFoodAnswer = renderExerciseFoodAnswer(
+      {
+        caloriesTarget: ctx.dailyTargets.calories_target ?? null,
+        caloriesConsumed: ctx.todaySnapshot?.calories_consumed ?? 0,
+        exerciseCalories: ctx.todaySnapshot?.exercise_calories ?? 0,
+        protocol: ctx.profile.currentProtocol ?? null,
+      },
+      statedWorkoutCalories(semanticPatientText),
+    )
+    // The model answers only when Flow's last reply is this very text: the
+    // same words again would not help. Other numbers, another day state or
+    // any reply in between, and the system answers again.
+    if (!lastReplyIsSameAnswer(ctx.recentMessages, exerciseFoodAnswer)) {
+      // No patient text in the event (MOBILE_FLOW_TELEMETRY_INCLUDES_CONTENT).
+      await deps.supabase.from('product_events').insert({
+        user_id: userId,
+        event: 'pipeline.deterministic_exercise_food',
+        properties: {
+          stage,
+          protocol: ctx.profile.currentProtocol ?? null,
+          has_target: ctx.dailyTargets.calories_target != null,
+          has_snapshot: ctx.todaySnapshot != null,
+        },
+      })
+      return {
+        text: exerciseFoodAnswer,
+        preferAudio: false,
+        singleMessage: true,
+        toolCalls: [],
+        stage,
+        modelUsed: promptRow.model,
+        promptTokens: 0,
+        completionTokens: 0,
+        costUsd: 0,
+        latencyMs: Date.now() - start,
+      }
     }
   }
 
@@ -3109,10 +3165,28 @@ function formatUserContext(
     numericLines.push(
       `- Consumido hoje: ${s.calories_consumed} kcal | ${s.protein_g} g proteína | ${s.carbs_g}g carbo | ${s.fat_g}g gordura`,
     )
-    numericLines.push(`- Exercício hoje: ${s.exercise_calories} kcal queimadas`)
-    numericLines.push(
-      `- Balanço calórico de hoje: ${s.daily_balance} kcal (negativo=déficit, positivo=superávit)`,
-    )
+    if (historyProvider === 'mobile_flow') {
+      // Flow only (iPhone, staging, 2026-10-04): the single unlabeled net
+      // balance read as "the workout is already discounted, eat more". Two
+      // labeled balances + the rule. Computed over the target printed above,
+      // not from the generated column (wrong when the day row has no target).
+      numericLines.push(
+        ...flowEnergyContextLines({
+          caloriesTarget: ctx.dailyTargets.calories_target,
+          caloriesConsumed: s.calories_consumed,
+          exerciseCalories: s.exercise_calories,
+          protocol: ctx.profile.currentProtocol,
+          hasSnapshot: true,
+        }),
+      )
+    } else {
+      // LEGACY (WhatsApp in production): byte for byte. Locked by
+      // __golden__/audit-10-04-whatsapp-context-lock.test.ts.
+      numericLines.push(`- Exercício hoje: ${s.exercise_calories} kcal queimadas`)
+      numericLines.push(
+        `- Balanço calórico de hoje: ${s.daily_balance} kcal (negativo=déficit, positivo=superávit)`,
+      )
+    }
     if (s.deficit_accumulated > 0) {
       numericLines.push(
         `- Déficit acumulado (bloco 7700): ${s.deficit_accumulated} kcal de 7700 — falta ${7700 - s.deficit_accumulated} pra fechar bloco`,
@@ -3133,6 +3207,19 @@ function formatUserContext(
     }
   } else {
     numericLines.push(`- Consumo hoje: 0 kcal (nada registrado ainda)`)
+    if (historyProvider === 'mobile_flow') {
+      // Flow only: a patient who trained before logging anything still gets
+      // the food line and the rule; no net-balance line without a day row.
+      numericLines.push(
+        ...flowEnergyContextLines({
+          caloriesTarget: ctx.dailyTargets.calories_target,
+          caloriesConsumed: 0,
+          exerciseCalories: 0,
+          protocol: ctx.profile.currentProtocol,
+          hasSnapshot: false,
+        }),
+      )
+    }
   }
   if (ctx.userProgress) {
     const p = ctx.userProgress

@@ -85,6 +85,10 @@ describe('mobile registration service', () => {
       mealType: 'almoco',
       sourceContentType: 'mobile',
       source_provider_message_id: 'mobile-request-0001',
+      // Defect B (iPhone, staging, 2026-10-04): the confirm registers a
+      // proposal the app built as a new record only when it carries this.
+      registration_origin: 'mobile_app',
+      replace: false,
       items: [
         {
           name: 'arroz branco',
@@ -96,6 +100,52 @@ describe('mobile registration service', () => {
       totals: { kcal: 124, protein_g: 2.6, carbs_g: 25.8, fat_g: 1 },
       userWarnings: [],
     })
+  })
+
+  it('writes the app origin only when told the pending is one the app created', () => {
+    const calculation: MealCalcResult = {
+      items: [
+        {
+          food_name: 'arroz branco',
+          matched_taco_name: 'Arroz, integral, cozido',
+          matched_taco_id: 42,
+          quantity_g: 100,
+          kcal: 124,
+          protein_g: 2.6,
+          carbs_g: 25.8,
+          fat_g: 1,
+          fiber_g: 2.7,
+          similarity: 0.91,
+          source: 'canonical_exact',
+        },
+      ],
+      totals: { kcal: 124, protein_g: 2.6, carbs_g: 25.8, fat_g: 1, fiber_g: 2.7 },
+      warnings: [],
+      user_warnings: [],
+      audit_warnings: [],
+    }
+    const build = (origin: 'mobile_app' | null) =>
+      buildMealPendingProposal(
+        {
+          kind: 'meal',
+          meal_type: 'almoco',
+          items: [{ food_name: 'arroz branco', quantity_g: 100 }],
+        },
+        calculation,
+        {
+          requestKey: 'mobile-request-0002',
+          timestamp: '2026-07-20T16:00:00.000Z',
+          timezone: 'America/New_York',
+          localDate: '2026-07-20',
+        },
+        origin,
+      )
+
+    expect(build('mobile_app')).toMatchObject({ registration_origin: 'mobile_app' })
+    // The edit of a pending created on WhatsApp: no key at all, so the confirm
+    // does not take it for a proposal of the app.
+    expect(build(null)).not.toHaveProperty('registration_origin')
+    expect(build(null)).toMatchObject({ replace: false, mealType: 'almoco' })
   })
 
   it('scopes registration lookup to the authenticated patient', async () => {

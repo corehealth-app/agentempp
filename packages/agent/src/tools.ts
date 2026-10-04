@@ -54,6 +54,7 @@ import {
   resolveResidenceTimezone,
 } from './location-timezone.js'
 import { dedupeMealItems } from './meal-item-dedup.js'
+import { flowEnergyNumbers } from './flow-energy-context.js'
 
 // Audit 06-26 Layer 2.1: ToolContext e ToolDefinition movidos pra
 // packages/agent/src/tools/types.ts pra permitir split incremental de tools
@@ -562,6 +563,19 @@ export const defineMetaPeso: ToolDefinition = {
 // ----------------------------------------------------------------------------
 // registra_refeicao — usa TACO determinísticamente (ADR-006)
 // ----------------------------------------------------------------------------
+/** The key of the day dedup in `registra_refeicao` (unaccented name + whole
+ * grams), for the app confirm, which counts such an item instead of dropping
+ * it. Keep it equal to `dedupKey` in the WhatsApp branch. */
+function sameDayItemKey(foodName: string, quantityG: number): string {
+  const name = foodName
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return `${name}|${Math.round(quantityG)}`
+}
+
 export const registraRefeicao: ToolDefinition = {
   name: 'registra_refeicao',
   description:
@@ -923,6 +937,12 @@ export const registraRefeicao: ToolDefinition = {
     let crossMealTypeFrom: string | null = null
     let recentCorrectionLogs: ReplacementMealLog[] = []
     let replacementTarget: MealReplacementTarget = { status: 'not_found', overlapRatio: 0 }
+    // Defect B (iPhone, staging, 2026-10-04): the app confirm carries no
+    // patient text, so the overlap alone turned a second identical lunch into
+    // a replace and the first row was deleted (541 kcal instead of 780). A
+    // proposal confirmed in the app is a new record; the overlap and the
+    // duplicate of the day are only measured. Set by the mobile BFF alone.
+    const additiveConfirmation = ctx.additiveConfirmation === true && args.replace !== true
     if (args.meal_type && args.items.length > 0) {
       // Janela 30min (era 15min). Caso Luciana 2026-05-15: corrigiu "não tem bacon"
       // 17min após a foto → fora dos 15min → detector pulou → blocker derrubou
@@ -935,7 +955,10 @@ export const registraRefeicao: ToolDefinition = {
         .gte('created_at', thirtyMinAgo)
         .order('created_at', { ascending: false })
         .limit(30)
-      if (recentLogsError) {
+      // In the app confirm this read only feeds telemetry, so a failed read is
+      // "no overlap evidence" there. WhatsApp keeps throwing: on that path the
+      // rows decide what is replaced.
+      if (recentLogsError && !additiveConfirmation) {
         throw new Error(recentLogsError.message ?? 'recent meal correction lookup failed')
       }
       recentCorrectionLogs = (recentLogs ?? []) as ReplacementMealLog[]
@@ -1033,7 +1056,31 @@ export const registraRefeicao: ToolDefinition = {
     // legitimamente o mesmo alimento de novo (2ª porção). Intent verbal de
     // ADIÇÃO é o sinal mais forte que isso é adição, não correção.
     let implicitReplaceDetected = false
-    if (args.replace !== true && objectiveCorrectionEvidence) {
+    // App confirm (see `additiveConfirmation` above): the overlap that would
+    // have become a replace is only logged. Counts, never names: an item name
+    // is patient text. A lost event must not fail the confirmation.
+    if (additiveConfirmation && objectiveCorrectionEvidence) {
+      try {
+        await ctx.supabase.from('product_events').insert({
+          user_id: ctx.userId,
+          event: 'tool.replace_implicit_skipped_additive_confirmation',
+          properties: {
+            meal_type: args.meal_type ?? null,
+            overlap_ratio: overlapMeta?.ratio ?? null,
+            recent_count: overlapMeta?.recent.length ?? 0,
+            new_count: overlapMeta?.new.length ?? 0,
+            provider_message_id: ctx.providerMessageId ?? null,
+          },
+        })
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          '[tool.replace_implicit_skipped_additive_confirmation] insert failed (non-fatal):',
+          e,
+        )
+      }
+    }
+    if (args.replace !== true && objectiveCorrectionEvidence && !additiveConfirmation) {
       const additionTrigger = detectAdditionInRecentMessages(
         (ctx.recentUserMessages ?? []).map((c) => ({ role: 'user' as const, content: c })),
         4,
@@ -1717,9 +1764,13 @@ export const registraRefeicao: ToolDefinition = {
         },
       })
     }
+    // `additiveConfirmation` (Defect B, iPhone 2026-10-04): without this the
+    // second portion confirmed in the app is dropped here as `already_logged`
+    // and, past 30 min, a repeated item vanishes from the meal in silence.
     if (
       args.replace !== true &&
       !explicitAdditionTrigger &&
+      !additiveConfirmation &&
       args.meal_type &&
       calc.items.length > 0
     ) {
@@ -1798,6 +1849,56 @@ export const registraRefeicao: ToolDefinition = {
             itemsToInsert = survivors
           }
         }
+      }
+    }
+
+    // App confirm: the day dedup above is skipped, so an identical item (name
+    // + grams) already in this meal today is KEPT. It is only counted here:
+    // past the 30-min window this is the one trace of an accidental duplicate.
+    // Nothing is dropped, and neither a failed read nor a lost event fails the
+    // confirmation.
+    if (additiveConfirmation && args.meal_type && itemsToInsert.length > 0) {
+      try {
+        const { data: snapToday } = await ctx.supabase
+          .from('daily_snapshots')
+          .select('id')
+          .eq('user_id', ctx.userId)
+          .eq('date', effectiveDate)
+          .maybeSingle()
+        const snapshotId = (snapToday as { id: string } | null)?.id ?? null
+        const { data: sameMealRows } = snapshotId
+          ? await ctx.supabase
+              .from('meal_logs')
+              .select('food_name, quantity_g')
+              .eq('user_id', ctx.userId)
+              .eq('snapshot_id', snapshotId)
+              .eq('meal_type', args.meal_type)
+          : { data: null }
+        const existingKeys = new Set(
+          ((sameMealRows ?? []) as Array<{ food_name: string; quantity_g: number }>).map((row) =>
+            sameDayItemKey(row.food_name, row.quantity_g),
+          ),
+        )
+        const existingCount = itemsToInsert.filter((item) =>
+          existingKeys.has(sameDayItemKey(item.food_name, item.quantity_g)),
+        ).length
+        if (existingCount > 0) {
+          await ctx.supabase.from('product_events').insert({
+            user_id: ctx.userId,
+            event: 'tool.same_day_duplicate_kept_additive_confirmation',
+            properties: {
+              meal_type: args.meal_type,
+              existing_count: existingCount,
+              provider_message_id: ctx.providerMessageId ?? null,
+            },
+          })
+        }
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          '[tool.same_day_duplicate_kept_additive_confirmation] measurement failed (non-fatal):',
+          e,
+        )
       }
     }
 
@@ -2059,6 +2160,45 @@ export const consultaProgresso: ToolDefinition = {
         }
       : null
 
+    // Flow only (identity set by the pipeline from the server-side channel).
+    // iPhone, staging, 2026-10-04: the raw `daily_balance` (net, with
+    // exercise) read as "what is left to eat". The Flow gets the two balances
+    // under explicit keys, over the same target the context prints, and the
+    // raw key is withheld. No formula changes.
+    if (ctx.assistantIdentity === 'flow') {
+      const day = (snap ?? null) as {
+        calories_consumed?: number | null
+        calories_target?: number | null
+        exercise_calories?: number | null
+      } | null
+      const energy = flowEnergyNumbers({
+        caloriesTarget: ctx.flowDailyTargets?.calories_target ?? day?.calories_target ?? null,
+        caloriesConsumed: day?.calories_consumed ?? 0,
+        exerciseCalories: day?.exercise_calories ?? 0,
+      })
+      const { daily_balance: _net, ...todayWithoutNet } = (snap ?? {}) as Record<string, unknown>
+      return {
+        progresso: progressoPt,
+        hoje: snap ? todayWithoutNet : null,
+        energia_hoje: {
+          meta_kcal: energy.target,
+          consumido_kcal: energy.consumed,
+          ...(energy.food == null
+            ? {}
+            : energy.food > 0
+              ? { excedente_de_comida_kcal: energy.food }
+              : { restam_para_comida_kcal: 0 - energy.food }),
+          exercicio_kcal: energy.exercise,
+          // No net balance before the day has a row (same as the context).
+          ...(snap && energy.net != null
+            ? { balanco_do_dia_com_exercicio_kcal: energy.net }
+            : {}),
+          regra:
+            'Exercício não libera comida nem apaga excedente: a meta é a mesma com ou sem treino e o que resta para comida é meta − consumido, sem exercício. O gasto do treino fica à parte; balanco_do_dia_com_exercicio_kcal não é o que resta para comer.',
+        },
+      }
+    }
+    // LEGACY (WhatsApp in production): unchanged shape.
     return { progresso: progressoPt, hoje: snap ?? null }
   },
 }

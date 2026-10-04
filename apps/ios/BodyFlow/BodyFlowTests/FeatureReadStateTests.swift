@@ -249,6 +249,17 @@ struct FeatureReadStateTests {
             "confirmation-request",
             "proposal-request",
         ])
+        #expect(receipts.map(\.confirmedRegistrationID) == [
+            nil, nil, confirmation.data.registration.id, nil,
+        ])
+
+        // A fifth outcome carries no server response: the record was already
+        // saved when the edit or the cancellation arrived.
+        let alreadySaved = RegistrationMutationReceipt.alreadyConfirmed(
+            registrationID: "registration-saved"
+        )
+        #expect(alreadySaved.requestID == nil)
+        #expect(alreadySaved.confirmedRegistrationID == "registration-saved")
     }
 
     private static let proposalResponseJSON = """

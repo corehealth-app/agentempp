@@ -166,6 +166,129 @@ struct WorkoutRegistrationModelTests {
         #expect(harness.model.confirmedRegistration == Self.confirmedResponse.data.registration)
     }
 
+    /// docs/mobile/api-v1.md, "Ciclo do pending" item 4 and "Erros do
+    /// pending": `409 registration_already_confirmed` means the record of
+    /// this proposal is already saved. The sheet ends confirmed.
+    @Test("an edit or a cancellation refused because the record is already saved ends confirmed, with no new proposal", arguments: [
+        AlreadySavedOperation.edit,
+        AlreadySavedOperation.cancel,
+    ])
+    func alreadySavedRecordEndsConfirmed(operation: AlreadySavedOperation) async {
+        let harness = Self.makeHarness(
+            edit: [.failure(.registrationAlreadyConfirmed)],
+            cancel: [.failure(.registrationAlreadyConfirmed)]
+        )
+        await harness.model.submit(Self.request)
+        #expect(harness.center.revision(for: .today) == 1)
+
+        switch operation {
+        case .edit: await harness.model.saveEdit(Self.editedRequest)
+        case .cancel: await harness.model.cancel()
+        }
+
+        // The same end state as a normal confirmation.
+        #expect(harness.model.phase == .confirmed)
+        #expect(harness.model.currentProposal == nil)
+        #expect(harness.model.pendingDraft == nil)
+        #expect(harness.model.captureError == nil)
+        #expect(harness.model.mutationState == .succeeded(
+            .alreadyConfirmed(registrationID: Self.pendingResponse.data.id)
+        ))
+        #expect(harness.model.accessibilityFocusTarget == .operationSummary)
+        // Today and History refresh exactly as a confirmation makes them.
+        #expect(harness.center.revision(for: .today) == 2)
+        #expect(harness.center.revision(for: .history) == 1)
+
+        for language in SupportedAppLanguage.allCases {
+            let descriptor = RegistrationOperationSummaryDescriptor(
+                state: harness.model.mutationState,
+                captureError: harness.model.captureError,
+                language: language
+            )
+            // The record is saved, but what the patient just asked for was
+            // not applied: its own sentence, never the normal success.
+            #expect(descriptor.message == (language == .portugueseBrazil
+                ? "Este registro já estava salvo. A alteração não foi aplicada."
+                : "This record was already saved. The change was not applied."))
+            #expect(descriptor.message != (language == .portugueseBrazil
+                ? "Registro confirmado." : "Record confirmed."))
+            #expect(descriptor.action == nil)
+            // A warning line: no burst and no success haptic.
+            #expect(descriptor.kind == .warning)
+            #expect(descriptor.kind != .success)
+            #expect(RegistrationOperationSummaryDescriptor.celebration(for: descriptor.kind) == nil)
+            #expect(RegistrationOperationSummaryDescriptor.feedback(for: descriptor.kind) == nil)
+        }
+        let outcome = PerformeRegistrationProjection.registration(
+            harness.model.mutationState,
+            captureError: harness.model.captureError
+        )
+        #expect(outcome == .confirmed)
+        #expect(harness.model.mutationState.receipt?.confirmedRegistrationID
+            == Self.pendingResponse.data.id)
+        // The sheet's brand stays quiet: no confirmed state, no success
+        // haptic, because no confirmation was answered for this operation.
+        let confirmation = PerformeRegistrationProjection.confirmation(
+            for: harness.model.mutationState
+        )
+        #expect(confirmation == nil)
+        let presentation = PerformeOperationPresentation()
+        let token = presentation.begin()
+        presentation.finish(token, outcome: outcome, confirmation: confirmation, isCancelled: false)
+        #expect(presentation.state == .active)
+        #expect(presentation.feedback == nil)
+        #expect(presentation.successToken == nil)
+
+        // Nothing sends the workout again.
+        await harness.model.retry()
+        await harness.model.confirm()
+        await harness.model.cancel()
+        await harness.model.saveEdit(Self.editedRequest)
+        #expect(await harness.service.calls == [
+            .propose,
+            operation == .edit ? .edit : .cancel,
+        ])
+        #expect(harness.model.phase == .confirmed)
+    }
+
+    @Test("a workout confirmation the server answered keeps the normal success, in both languages",
+          arguments: SupportedAppLanguage.allCases)
+    func answeredConfirmationStillCelebrates(_ language: SupportedAppLanguage) {
+        let state = RegistrationMutationState.succeeded(.confirm(Self.confirmedResponse))
+        let descriptor = RegistrationOperationSummaryDescriptor(
+            state: state,
+            captureError: nil,
+            language: language
+        )
+        #expect(descriptor.message == (language == .portugueseBrazil
+            ? "Registro confirmado." : "Record confirmed."))
+        #expect(descriptor.kind == .success)
+        #expect(RegistrationOperationSummaryDescriptor.celebration(for: descriptor.kind) == .energy)
+        #expect(RegistrationOperationSummaryDescriptor.feedback(for: descriptor.kind) == .success)
+        #expect(PerformeRegistrationProjection.confirmation(for: state)
+            == .registration(Self.confirmedResponse.data.registration.id))
+    }
+
+    @Test("a cancelled or expired workout proposal still returns to the form", arguments: [
+        BodyFlowCapabilityError.registrationExpired,
+        BodyFlowCapabilityError.registrationNotPending,
+    ])
+    func notPendingStillReturnsToTheForm(error: BodyFlowCapabilityError) async {
+        let harness = Self.makeHarness(edit: [.failure(error)])
+        await harness.model.submit(Self.request)
+
+        await harness.model.saveEdit(Self.editedRequest)
+
+        #expect(harness.model.phase == .form)
+        #expect(harness.model.currentProposal == nil)
+        #expect(harness.model.mutationState == .idle)
+        #expect(RegistrationOperationSummaryDescriptor(
+            state: harness.model.mutationState,
+            captureError: harness.model.captureError
+        ).action == .newProposal)
+        #expect(harness.center.revision(for: .history) == 0)
+    }
+
     @Test("successful and failed operations target only the operation summary for accessibility")
     func operationSummaryFocusTarget() async {
         let success = Self.makeHarness()

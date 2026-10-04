@@ -196,7 +196,7 @@ extension OnboardingValidationIssue {
         case .bodyFatOutOfRange: "Informe gordura corporal entre 3% e 60%, ou deixe em branco."
         case .objectiveRequired: "Selecione um objetivo."
         case .activityLevelRequired: "Selecione seu nível de atividade."
-        case .trainingFrequencyOutOfRange: "Informe de 0 a 7 treinos por semana."
+        case .trainingFrequencyOutOfRange: "Informe de 0 a 7 treinos de musculação por semana."
         case .waterIntakeRequired: "Selecione seu consumo de água."
         case .hungerLevelRequired: "Selecione seu nível de fome."
         case .wakeTimeRequired: "Informe um horário válido para acordar."

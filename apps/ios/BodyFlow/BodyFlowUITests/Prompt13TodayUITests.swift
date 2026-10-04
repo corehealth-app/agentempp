@@ -49,7 +49,14 @@ final class Prompt13TodayUITests: XCTestCase {
         XCTAssertNotEqual(remaining.frame, netBalance.frame)
         XCTAssertTrue(app.staticTexts["731 kcal"].exists)
         XCTAssertTrue(app.staticTexts["17 kcal"].exists)
-        XCTAssertTrue(app.staticTexts["-83 kcal"].exists)
+        XCTAssertTrue(app.staticTexts["Déficit de 83 kcal"].exists)
+        XCTAssertFalse(app.staticTexts["-83 kcal"].exists)
+        XCTAssertTrue(app.staticTexts["Balanço do dia"].exists)
+        XCTAssertFalse(app.staticTexts["Déficit líquido"].exists)
+        XCTAssertEqual(
+            netBalance.value as? String,
+            "déficit de 83 quilocalorias; exercício incluído"
+        )
         XCTAssertTrue(app.staticTexts["Exercício excluído"].exists)
         XCTAssertTrue(app.staticTexts["Exercício incluído"].exists)
     }
@@ -73,7 +80,7 @@ final class Prompt13TodayUITests: XCTestCase {
         XCTAssertTrue(details.isHittable)
         details.tap()
         XCTAssertTrue(technical.waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["-83 kcal"].exists)
+        XCTAssertTrue(app.staticTexts["Déficit de 83 kcal"].exists)
     }
 
     @MainActor

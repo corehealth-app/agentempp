@@ -415,7 +415,9 @@ extension BodyFlowCapabilityError {
              .contentVersionChanged,
              .idempotencyRequestInProgress:
             .idempotencyConflict
-        case .registrationNotPending:
+        // No category of its own on the wire: the proposal stopped being
+        // pending because its record was already saved.
+        case .registrationNotPending, .registrationAlreadyConfirmed:
             .registrationNotPending
         case .registrationExpired:
             .registrationExpired

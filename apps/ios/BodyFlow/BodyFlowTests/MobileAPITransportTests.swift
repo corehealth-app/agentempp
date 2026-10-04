@@ -338,6 +338,59 @@ struct MobileAPITransportTests {
         }
     }
 
+    /// docs/mobile/api-v1.md, "Erros do pending": the real HTTP answer to an
+    /// edit (PATCH) or a cancellation (DELETE) of an already saved record.
+    @Test("HTTP 409 registration_already_confirmed on PATCH and DELETE reaches the repository caller as the already-confirmed capability error")
+    func alreadyConfirmedConflictThroughTheRegistrationRepository() async throws {
+        let harness = try await TransportHarness(
+            tokens: ["session-alpha", "session-alpha"],
+            maximumRetryCount: 0
+        )
+        await harness.stub.respond(with: .failure(
+            status: 409,
+            code: "registration_already_confirmed",
+            requestID: "request-conflict-0001"
+        ))
+        let repository = MobileRegistrationRepository(transport: harness.transport)
+        let id = "7c9c0c5e-1f6a-4a1a-9c0b-0f1d2e3a4b5c"
+
+        await #expect(throws: BodyFlowCapabilityError.registrationAlreadyConfirmed) {
+            try await repository.edit(MutationAttempt(
+                operation: .proposalEdit,
+                key: try IdempotencyKey(validating: "mobile-test-edit-409"),
+                payload: RegistrationEditCommand(
+                    registrationID: id,
+                    proposal: .meal(MealProposalRequest(
+                        mealType: .lunch,
+                        items: [MealProposalItemRequest(foodName: "arroz", quantityG: 100, userKcal: nil)],
+                        consumedAt: nil
+                    ))
+                ),
+                createdAt: Date()
+            ))
+        }
+        await #expect(throws: BodyFlowCapabilityError.registrationAlreadyConfirmed) {
+            try await repository.cancel(MutationAttempt(
+                operation: .proposalCancel,
+                key: try IdempotencyKey(validating: "mobile-test-cancel-409"),
+                payload: RegistrationIDCommand(registrationID: id),
+                createdAt: Date()
+            ))
+        }
+
+        // One request each: a 409 is an answer, not a failure to send again.
+        let requests = await harness.stub.requests()
+        #expect(requests.map(\.httpMethod) == ["PATCH", "DELETE"])
+        #expect(requests.map { $0.url?.path } == [
+            "/api/mobile/v1/registrations/\(id)",
+            "/api/mobile/v1/registrations/\(id)",
+        ])
+        #expect(BodyFlowCapabilityError.registrationAlreadyConfirmed.telemetryValue
+            == .registrationNotPending)
+        #expect(BodyFlowCapabilityError.registrationAlreadyConfirmed.telemetryValue.rawValue
+            == "registration_not_pending")
+    }
+
     @Test("request ID is safe and attached to every attempt")
     func attachesRequestID() async throws {
         let harness = try await TransportHarness(tokens: ["session-alpha"])

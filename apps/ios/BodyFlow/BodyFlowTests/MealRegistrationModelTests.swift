@@ -376,6 +376,196 @@ struct MealRegistrationModelTests {
         #expect(attempts[0].key != attempts[1].key)
     }
 
+    /// docs/mobile/api-v1.md, "Ciclo do pending" item 4 and "Erros do
+    /// pending": `409 registration_already_confirmed` means the record of
+    /// this proposal is already saved. The sheet ends confirmed; proposing
+    /// the same meal again would add it a second time.
+    @Test("an edit or a cancellation refused because the record is already saved ends confirmed, with no new proposal", arguments: [
+        AlreadySavedOperation.edit,
+        AlreadySavedOperation.cancel,
+    ])
+    func alreadySavedRecordEndsConfirmed(operation: AlreadySavedOperation) async throws {
+        let harness = try Self.makeHarness(
+            editOutcomes: [.failure(.registrationAlreadyConfirmed)],
+            cancelOutcomes: [.failure(.registrationAlreadyConfirmed)]
+        )
+        await harness.model.submit(.text("Refeição já salva"))
+        #expect(harness.invalidationCenter.revision(for: .today) == 1)
+
+        switch operation {
+        case .edit: await harness.model.saveEdit(Self.editedMealRequest)
+        case .cancel: await harness.model.cancel()
+        }
+
+        // The same end state as a normal confirmation.
+        #expect(harness.model.phase == .confirmed)
+        #expect(harness.model.currentProposal == nil)
+        #expect(harness.model.captureError == nil)
+        #expect(harness.model.mutationState == .succeeded(
+            .alreadyConfirmed(registrationID: Self.pendingResponse.data.id)
+        ))
+        #expect(harness.model.accessibilityFocusTarget == .operationSummary)
+        // Today and History refresh exactly as a confirmation makes them.
+        #expect(harness.invalidationCenter.revision(for: .today) == 2)
+        #expect(harness.invalidationCenter.revision(for: .history) == 1)
+
+        for language in SupportedAppLanguage.allCases {
+            let descriptor = RegistrationOperationSummaryDescriptor(
+                state: harness.model.mutationState,
+                captureError: harness.model.captureError,
+                language: language
+            )
+            // The record is saved, but what the patient just asked for was
+            // not applied: its own sentence, never the normal success.
+            #expect(descriptor.message == (language == .portugueseBrazil
+                ? "Este registro já estava salvo. A alteração não foi aplicada."
+                : "This record was already saved. The change was not applied."))
+            #expect(descriptor.message != (language == .portugueseBrazil
+                ? "Registro confirmado." : "Record confirmed."))
+            #expect(descriptor.action == nil)
+            // A warning line: no burst and no success haptic.
+            #expect(descriptor.kind == .warning)
+            #expect(descriptor.kind != .success)
+            #expect(RegistrationOperationSummaryDescriptor.celebration(for: descriptor.kind) == nil)
+            #expect(RegistrationOperationSummaryDescriptor.feedback(for: descriptor.kind) == nil)
+        }
+        let outcome = PerformeRegistrationProjection.meal(
+            intent: operation == .edit ? .edit(Self.editedMealRequest) : .cancel,
+            draft: .review,
+            mutation: harness.model.mutationState,
+            captureError: harness.model.captureError
+        )
+        #expect(outcome == .confirmed)
+        #expect(harness.model.mutationState.receipt?.confirmedRegistrationID
+            == Self.pendingResponse.data.id)
+        // The sheet's brand stays quiet: no confirmed state, no success
+        // haptic, because no confirmation was answered for this operation.
+        let confirmation = PerformeRegistrationProjection.confirmation(
+            for: harness.model.mutationState
+        )
+        #expect(confirmation == nil)
+        let presentation = PerformeOperationPresentation()
+        let token = presentation.begin()
+        presentation.finish(token, outcome: outcome, confirmation: confirmation, isCancelled: false)
+        #expect(presentation.state == .active)
+        #expect(presentation.feedback == nil)
+        #expect(presentation.successToken == nil)
+
+        // Nothing offers or sends the draft again.
+        #expect(!harness.model.canCreateNewProposal)
+        #expect(harness.model.detectedDraft == nil)
+        await harness.model.createNewProposalFromDraft()
+        await RegistrationOperationCoordinator(model: harness.model).perform(.newProposal)
+        await harness.model.retry()
+        await harness.model.propose(reviewed: Self.editedMealRequest)
+        #expect(await harness.service.calls == [
+            .detect(.text("Refeição já salva")),
+            .propose,
+            operation == .edit ? .edit : .cancel,
+        ])
+        #expect(await harness.service.proposeAttempts.count == 1)
+        #expect(harness.model.phase == .confirmed)
+    }
+
+    /// Review finding of 04/10/2026: a patient who edits 200 g to 100 g and
+    /// gets `409 registration_already_confirmed` must not believe 100 g was
+    /// saved. The sheet ends confirmed and says the change was not applied.
+    @Test("editing 200 g to 100 g after the record was already saved says the change was not applied")
+    func editOf200gTo100gOnAnAlreadySavedRecordIsNotShownAsSaved() async throws {
+        let harness = try Self.makeHarness(
+            proposeOutcomes: [.success(Self.pending200gResponse)],
+            editOutcomes: [.failure(.registrationAlreadyConfirmed)]
+        )
+        await harness.model.submit(.text("200 g de arroz"))
+        #expect(harness.model.currentProposal == Self.pending200gResponse.data)
+
+        await harness.model.saveEdit(Self.editTo100gRequest)
+
+        let attempt = try #require(await harness.service.editAttempts.first)
+        #expect(attempt.payload.registrationID == Self.pending200gResponse.data.id)
+        #expect(attempt.payload.proposal == .meal(Self.editTo100gRequest))
+        #expect(harness.model.phase == .confirmed)
+        #expect(harness.model.currentProposal == nil)
+        #expect(harness.model.confirmedRegistration == nil)
+        #expect(harness.model.detectedDraft == nil)
+        #expect(harness.model.mutationState == .succeeded(
+            .alreadyConfirmed(registrationID: Self.pending200gResponse.data.id)
+        ))
+        #expect(harness.invalidationCenter.revision(for: .today) == 2)
+        #expect(harness.invalidationCenter.revision(for: .history) == 1)
+
+        let portuguese = RegistrationOperationSummaryDescriptor(
+            state: harness.model.mutationState,
+            captureError: harness.model.captureError,
+            language: .portugueseBrazil
+        )
+        #expect(portuguese.message
+            == "Este registro já estava salvo. A alteração não foi aplicada.")
+        #expect(portuguese.kind == .warning)
+        #expect(portuguese.action == nil)
+        let english = RegistrationOperationSummaryDescriptor(
+            state: harness.model.mutationState,
+            captureError: harness.model.captureError,
+            language: .englishUnitedStates
+        )
+        #expect(english.message
+            == "This record was already saved. The change was not applied.")
+        #expect(english.kind == .warning)
+        #expect(RegistrationOperationSummaryDescriptor.celebration(for: portuguese.kind) == nil)
+        #expect(RegistrationOperationSummaryDescriptor.feedback(for: portuguese.kind) == nil)
+        #expect(PerformeRegistrationProjection.confirmation(
+            for: harness.model.mutationState
+        ) == nil)
+
+        // No path sends the 100 g again.
+        #expect(!harness.model.canCreateNewProposal)
+        await harness.model.retry()
+        await harness.model.createNewProposalFromDraft()
+        await harness.model.propose(reviewed: Self.editTo100gRequest)
+        #expect(await harness.service.calls == [
+            .detect(.text("200 g de arroz")),
+            .propose,
+            .edit,
+        ])
+    }
+
+    @Test("a confirmation the server answered keeps the normal success, in both languages",
+          arguments: SupportedAppLanguage.allCases)
+    func answeredConfirmationStillCelebrates(_ language: SupportedAppLanguage) {
+        let state = RegistrationMutationState.succeeded(.confirm(Self.confirmedResponse))
+        let descriptor = RegistrationOperationSummaryDescriptor(
+            state: state,
+            captureError: nil,
+            language: language
+        )
+        #expect(descriptor.message == (language == .portugueseBrazil
+            ? "Registro confirmado." : "Record confirmed."))
+        #expect(descriptor.kind == .success)
+        #expect(RegistrationOperationSummaryDescriptor.celebration(for: descriptor.kind) == .energy)
+        #expect(RegistrationOperationSummaryDescriptor.feedback(for: descriptor.kind) == .success)
+        #expect(PerformeRegistrationProjection.confirmation(for: state)
+            == .registration(Self.confirmedResponse.data.registration.id))
+    }
+
+    @Test("a cancelled or expired proposal still offers a new proposal after the already-saved code exists", arguments: [
+        BodyFlowCapabilityError.registrationExpired,
+        BodyFlowCapabilityError.registrationNotPending,
+    ])
+    func notPendingStillOffersNewProposalOnEdit(error: BodyFlowCapabilityError) async throws {
+        let harness = try Self.makeHarness(editOutcomes: [.failure(error)])
+        await harness.model.submit(.text("Refeição preservada"))
+
+        await harness.model.saveEdit(Self.editedMealRequest)
+
+        #expect(harness.model.phase == .capture)
+        #expect(harness.model.canCreateNewProposal)
+        #expect(RegistrationOperationSummaryDescriptor(
+            state: harness.model.mutationState,
+            captureError: harness.model.captureError
+        ).action == .newProposal)
+        #expect(harness.invalidationCenter.revision(for: .history) == 0)
+    }
+
     @Test("expired pending recovery uses the sheet summary descriptor to create a fresh proposal without redetecting")
     func expiredPendingSummaryActionCreatesNewProposalFromPreservedDraft() async throws {
         let harness = try Self.makeHarness(
@@ -720,6 +910,56 @@ struct MealRegistrationModelTests {
             ),
         ],
         consumedAt: APITimestamp(value: fixedDate.addingTimeInterval(600))
+    )
+
+    private static let editTo100gRequest = MealProposalRequest(
+        mealType: .lunch,
+        items: [
+            MealProposalItemRequest(
+                foodName: "Arroz",
+                quantityG: 100,
+                userKcal: nil
+            ),
+        ],
+        consumedAt: APITimestamp(value: fixedDate)
+    )
+
+    private static let pending200gResponse = RegistrationProposalResponse(
+        data: RegistrationSnapshot(
+            id: "meal-pending-200g",
+            status: "pending",
+            createdAt: APITimestamp(value: fixedDate),
+            expiresAt: APITimestamp(
+                value: fixedDate.addingTimeInterval(3_600)
+            ),
+            resolvedAt: nil,
+            proposal: .meal(
+                MealProposalSnapshot(
+                    mealType: "almoco",
+                    items: [
+                        MealProposalItemSnapshot(
+                            name: "Arroz",
+                            quantityG: 200,
+                            kcal: 260,
+                            proteinG: 5,
+                            carbsG: 56,
+                            fatG: 0.4
+                        ),
+                    ],
+                    totals: MealProposalTotalsSnapshot(
+                        kcal: 260,
+                        proteinG: 5,
+                        carbsG: 56,
+                        fatG: 0.4
+                    ),
+                    warnings: []
+                )
+            )
+        ),
+        meta: MobileResponseMetadata(
+            apiVersion: "v1",
+            requestID: "meal-pending-200g-request"
+        )
     )
 
     private static let pendingResponse = RegistrationProposalResponse(
@@ -1136,4 +1376,9 @@ extension MealRegistrationModelTests {
         #expect(Set(keys).count == 1)
         #expect(harness.model.phase == .proposal)
     }
+}
+
+enum AlreadySavedOperation: Sendable {
+    case edit
+    case cancel
 }

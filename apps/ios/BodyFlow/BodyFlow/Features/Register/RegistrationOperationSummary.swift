@@ -29,7 +29,7 @@ struct RegistrationOperationSummaryDescriptor: Equatable {
         case let .succeeded(receipt):
             message = Self.successMessage(for: receipt, language: language)
             action = nil
-            kind = .success
+            kind = Self.kind(for: receipt)
         case .idle, .submitting:
             if let captureError {
                 message = Self.message(for: captureError, language: language)
@@ -47,7 +47,8 @@ struct RegistrationOperationSummaryDescriptor: Equatable {
         for error: BodyFlowCapabilityError
     ) -> RegistrationOperationAction? {
         switch error {
-        case .operationUnavailable:
+        // An already saved record is neither retried nor proposed again.
+        case .operationUnavailable, .registrationAlreadyConfirmed:
             nil
         case .registrationExpired, .registrationNotPending:
             .newProposal
@@ -74,7 +75,43 @@ struct RegistrationOperationSummaryDescriptor: Equatable {
         case .edit: copy("registration.operation.edited", language: language)
         case .confirm: copy("registration.operation.confirmed", language: language)
         case .cancel: copy("registration.operation.cancelled", language: language)
+        // The record is saved as it was; the edit or the cancellation the
+        // patient just asked for did not happen, and the message says so.
+        case .alreadyConfirmed:
+            copy("registration.operation.already-confirmed", language: language)
         }
+    }
+
+    /// An already saved record is not this operation's success: the patient
+    /// asked for a change that was not applied. It reads as a warning, which
+    /// neither celebrates nor plays the success haptic.
+    private static func kind(
+        for receipt: RegistrationMutationReceipt
+    ) -> BodyFlowStatusLine.Kind {
+        switch receipt {
+        case .alreadyConfirmed: .warning
+        case .propose, .edit, .confirm, .cancel: .success
+        }
+    }
+
+    /// Only the two terminal outcomes of a submit speak; idle, a warning and
+    /// unavailable stay silent.
+    static func feedback(
+        for kind: BodyFlowStatusLine.Kind
+    ) -> BodyFlowHaptics.Result? {
+        switch kind {
+        case .success: .success
+        case .error: .failure
+        case .info, .warning, .pending, .empty, .unavailable: nil
+        }
+    }
+
+    /// A confirmed registration earns a short burst in the energy color;
+    /// nothing else does.
+    static func celebration(
+        for kind: BodyFlowStatusLine.Kind
+    ) -> BodyFlowDomain? {
+        kind == .success ? .energy : nil
     }
 
     private static func copy(
@@ -127,21 +164,14 @@ struct RegistrationOperationSummary: View {
         .accessibilityIdentifier("registration.operation.summary")
         // Result feedback for the patient's own submit; the message above is
         // always the primary channel.
-        .bodyFlowResultFeedback(Self.feedback, trigger: descriptor.kind)
-        // A confirmed registration earns a short burst in the energy color.
-        .bodyFlowCelebration({ $0 == .success ? .energy : nil }, trigger: descriptor.kind)
-    }
-
-    /// Only the two terminal outcomes of a submit speak; idle and
-    /// unavailable stay silent.
-    private static func feedback(
-        for kind: BodyFlowStatusLine.Kind
-    ) -> BodyFlowHaptics.Result? {
-        switch kind {
-        case .success: .success
-        case .error: .failure
-        case .info, .warning, .pending, .empty, .unavailable: nil
-        }
+        .bodyFlowResultFeedback(
+            RegistrationOperationSummaryDescriptor.feedback,
+            trigger: descriptor.kind
+        )
+        .bodyFlowCelebration(
+            RegistrationOperationSummaryDescriptor.celebration,
+            trigger: descriptor.kind
+        )
     }
 
     private var language: SupportedAppLanguage {

@@ -154,6 +154,16 @@ struct Prompt13TelemetryTests {
             BodyFlowCapabilityError.registrationNotPending.telemetryValue
                 == .registrationNotPending
         )
+        // `409 registration_already_confirmed` has no category of its own:
+        // it reports under the existing one.
+        #expect(
+            BodyFlowCapabilityError.registrationAlreadyConfirmed.telemetryValue
+                == .registrationNotPending
+        )
+        #expect(
+            BodyFlowCapabilityError.registrationAlreadyConfirmed.telemetryValue.rawValue
+                == "registration_not_pending"
+        )
         #expect(
             BodyFlowCapabilityError.registrationExpired.telemetryValue
                 == .registrationExpired

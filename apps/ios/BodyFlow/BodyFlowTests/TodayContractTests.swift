@@ -177,6 +177,56 @@ struct TodayContractTests {
         #expect(second.intensity == nil)
     }
 
+    @Test("an older server sends neither balance field: exercise counts as included, no reference")
+    func decodesTodayWithoutTheBalanceSemanticsFields() throws {
+        let response = try BodyFlowTestFixtures.decodeInconsistentToday()
+
+        #expect(response.data.dailyBalanceIncludesExercise == nil)
+        #expect(response.data.dailyBalanceCountsExercise)
+        #expect(response.data.dailyBalanceReferenceKcal == nil)
+        #expect(response.data.dailyBalanceKcal == -83)
+    }
+
+    @Test("the two additive balance fields decode from their exact server keys", arguments: [true, false])
+    func decodesTheBalanceSemanticsFields(includesExercise: Bool) throws {
+        let response = try BodyFlowTestFixtures.decodeToday { data in
+            data["protocol"] = includesExercise ? "recomposicao" : "ganho_massa"
+            data["daily_balance_kcal"] = includesExercise ? -1_535 : 142
+            data["daily_balance_includes_exercise"] = includesExercise
+            data["daily_balance_reference_kcal"] = includesExercise ? 2_735 : 2_838
+        }
+
+        #expect(response.data.dailyBalanceIncludesExercise == includesExercise)
+        #expect(response.data.dailyBalanceCountsExercise == includesExercise)
+        #expect(response.data.dailyBalanceReferenceKcal == (includesExercise ? 2_735 : 2_838))
+        #expect(response.data.dailyBalanceKcal == (includesExercise ? -1_535 : 142))
+        // Every field that existed before keeps its literal value.
+        #expect(response.data.remainingFoodKcal == 731)
+        #expect(response.data.foodExcessKcal == 17)
+        #expect(response.data.exerciseKcal == 419)
+        #expect(response.data.dailyBalanceStatus == "provisional")
+
+        let roundTrip = try JSONDecoder().decode(
+            TodaySnapshot.self,
+            from: JSONEncoder().encode(response.data)
+        )
+        #expect(roundTrip.dailyBalanceIncludesExercise == includesExercise)
+        #expect(roundTrip.dailyBalanceReferenceKcal == response.data.dailyBalanceReferenceKcal)
+        #expect(roundTrip.dailyBalanceKcal == response.data.dailyBalanceKcal)
+    }
+
+    @Test("null balance fields read like absent ones")
+    func decodesNullBalanceSemanticsFields() throws {
+        let response = try BodyFlowTestFixtures.decodeToday { data in
+            data["daily_balance_includes_exercise"] = NSNull()
+            data["daily_balance_reference_kcal"] = NSNull()
+        }
+
+        #expect(response.data.dailyBalanceIncludesExercise == nil)
+        #expect(response.data.dailyBalanceCountsExercise)
+        #expect(response.data.dailyBalanceReferenceKcal == nil)
+    }
+
     @Test("without a calorie target the food and net balances are absent, not zero")
     func decodesAbsentBalancesWithoutCalorieTarget() throws {
         // packages/core daily-state: no calorie target -> the three balances

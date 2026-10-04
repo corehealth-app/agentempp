@@ -1923,8 +1923,8 @@
 },
 "onboarding.routine.training-frequency.title" : {
   "localizations" : {
-    "en" : { "stringUnit" : { "state" : "translated", "value" : "Workouts per week" } },
-    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Treinos por semana" } }
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Strength training per week" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Musculação por semana" } }
   }
 },
 "onboarding.routine.training-frequency.set" : {
@@ -2097,8 +2097,8 @@
 },
 "onboarding.completion.training" : {
   "localizations" : {
-    "en" : { "stringUnit" : { "state" : "translated", "value" : "Workouts" } },
-    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Treinos" } }
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Strength training" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Musculação" } }
   }
 },
 "onboarding.completion.flow-style" : {
@@ -2199,8 +2199,8 @@
 },
 "onboarding.validation.training-frequency-out-of-range" : {
   "localizations": {
-    "en": { "stringUnit": { "state": "translated", "value": "Enter between 0 and 7 workouts per week." } },
-    "pt-BR": { "stringUnit": { "state": "translated", "value": "Informe de 0 a 7 treinos por semana." } }
+    "en": { "stringUnit": { "state": "translated", "value": "Enter between 0 and 7 strength training sessions per week." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Informe de 0 a 7 treinos de musculação por semana." } }
   }
 },
 "onboarding.validation.wake-time-required" : {
@@ -3631,8 +3631,20 @@
     },
     "today.energy.net-balance" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Net deficit" } },
-        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Déficit líquido" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Day balance" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Balanço do dia" } }
+      }
+    },
+    "today.energy.net-balance.value.deficit" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@ kcal deficit" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Déficit de %@ kcal" } }
+      }
+    },
+    "today.energy.net-balance.value.surplus" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@ kcal surplus" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Superávit de %@ kcal" } }
       }
     },
     "today.energy.net-balance.accessibility" : {
@@ -3641,10 +3653,34 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "%@ quilocalorias; exercício incluído" } }
       }
     },
+    "today.energy.net-balance.accessibility.activity-level" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@ kilocalories; exercise already counted in your activity level" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "%@ quilocalorias; exercício já contado no nível de atividade" } }
+      }
+    },
+    "today.energy.net-balance.accessibility.deficit" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "deficit of %@" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "déficit de %@" } }
+      }
+    },
+    "today.energy.net-balance.accessibility.surplus" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "surplus of %@" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "superávit de %@" } }
+      }
+    },
     "today.energy.net-balance.detail" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Exercise included" } },
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Exercício incluído" } }
+      }
+    },
+    "today.energy.net-balance.detail.activity-level" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Exercise already counted in your activity level" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Exercício já contado no nível de atividade" } }
       }
     },
     "today.energy.title" : {
@@ -4040,6 +4076,10 @@
     "registration.metric.protein" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Protein" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Proteína" } }
+    } },
+    "registration.operation.already-confirmed" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This record was already saved. The change was not applied." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Este registro já estava salvo. A alteração não foi aplicada." } }
     } },
     "registration.operation.cancelled" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Proposal cancelled." } },
@@ -5422,8 +5462,8 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Começar" } }
     } },
     "tutorial.today.balance" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "“Net deficit” includes exercise and shows the balance of the whole day." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "“Déficit líquido” inclui o exercício e mostra o balanço do dia inteiro." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "“Day balance” shows the balance of the whole day. The caption below says whether exercise is counted." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "“Balanço do dia” mostra o balanço do dia inteiro. A legenda embaixo diz se o exercício entrou na conta." } }
     } },
     "tutorial.today.details" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "More details shows the day’s values. History lists your confirmed meals and workouts." } },

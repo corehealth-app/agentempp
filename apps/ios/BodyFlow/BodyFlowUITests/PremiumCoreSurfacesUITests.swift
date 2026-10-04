@@ -39,7 +39,7 @@ final class PremiumCoreSurfacesUITests: XCTestCase {
         technicalDetails.tap()
         XCTAssertEqual(
             element("today.energy.net-balance", app: app).value as? String,
-            "minus 83 kilocalories; exercise included"
+            "deficit of 83 kilocalories; exercise included"
         )
 
         let flow = app.buttons["today.flow-chat"]

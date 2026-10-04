@@ -84,7 +84,7 @@ struct GuidedTutorialTests {
         #expect(lines(noFacts).contains("tutorial.profile.replay"))
     }
 
-    @Test("The food line keeps exercise out; the net balance includes it",
+    @Test("The food line keeps exercise out; the day balance points to its caption instead of stating a rule per goal",
           arguments: SupportedAppLanguage.allCases)
     func balancesAreNotMixed(_ language: SupportedAppLanguage) throws {
         let food = try AppLocalization.string("tutorial.today.food", for: language)
@@ -95,10 +95,18 @@ struct GuidedTutorialTests {
         #expect(net.contains(netLabel))
         if language == .portugueseBrazil {
             #expect(food.contains("O exercício não entra"))
-            #expect(net.contains("inclui o exercício"))
+            #expect(netLabel == "Balanço do dia")
+            #expect(net == "“Balanço do dia” mostra o balanço do dia inteiro. A legenda embaixo diz se o exercício entrou na conta.")
+            #expect(!net.contains("Déficit líquido"))
+            // The caption follows the server field; the client states no
+            // rule per protocol.
+            #expect(!net.contains("recomposição") && !net.contains("objetivos"))
         } else {
             #expect(food.contains("Exercise is not part"))
-            #expect(net.contains("includes exercise"))
+            #expect(netLabel == "Day balance")
+            #expect(net == "“Day balance” shows the balance of the whole day. The caption below says whether exercise is counted.")
+            #expect(!net.contains("Net deficit"))
+            #expect(!net.contains("recomposition") && !net.contains("goals"))
         }
     }
 

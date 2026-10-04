@@ -35,6 +35,10 @@ struct TodayEnergyDescriptor: Equatable, Sendable {
     let exerciseKcal: Int
     let dailyBalanceKcal: Int?
     let dailyBalanceStatus: String
+    /// Whether the day balance already subtracts the day's exercise. True in
+    /// recomposition and for a server that does not say; false in the goals
+    /// whose expenditure carries exercise inside the activity level.
+    var dailyBalanceIncludesExercise = true
 
     var targetText: String {
         TodayValueFormatter.optionalKcal(targetKcal)
@@ -57,7 +61,11 @@ struct TodayEnergyDescriptor: Equatable, Sendable {
     }
 
     var netBalanceText: String {
-        TodayValueFormatter.optionalKcal(dailyBalanceKcal)
+        netBalanceText(for: .portugueseBrazil)
+    }
+
+    var netBalanceCaption: String {
+        netBalanceCaption(for: .portugueseBrazil)
     }
 
     var remainingFoodAccessibilityValue: String {
@@ -91,23 +99,65 @@ struct TodayEnergyDescriptor: Equatable, Sendable {
         guard let dailyBalanceKcal else {
             return TodayCopy.string("common.not-available", language: language)
         }
-        let formatted = TodayValueFormatter.integer(
-            dailyBalanceKcal,
-            language: language
-        )
-        let signedValue = if formatted.hasPrefix("-") {
-            "\(TodayCopy.string("number.minus", language: language)) \(formatted.dropFirst())"
+        let amount = Self.magnitudeText(dailyBalanceKcal, language: language)
+        let spokenAmount: String = if dailyBalanceKcal < 0 {
+            Self.format("today.energy.net-balance.accessibility.deficit", amount, language: language)
+        } else if dailyBalanceKcal > 0 {
+            Self.format("today.energy.net-balance.accessibility.surplus", amount, language: language)
         } else {
-            formatted
+            amount
         }
-        let format = TodayCopy.string(
-            "today.energy.net-balance.accessibility",
+        return Self.format(
+            dailyBalanceIncludesExercise
+                ? "today.energy.net-balance.accessibility"
+                : "today.energy.net-balance.accessibility.activity-level",
+            spokenAmount,
             language: language
         )
-        return String(
-            format: format,
+    }
+
+    /// The day balance as words, never as a signed number: a negative value
+    /// is a deficit, a positive one a surplus, zero is plain "0 kcal".
+    func netBalanceText(for language: SupportedAppLanguage) -> String {
+        guard let dailyBalanceKcal else {
+            return TodayCopy.string("common.not-available", language: language)
+        }
+        let amount = Self.magnitudeText(dailyBalanceKcal, language: language)
+        if dailyBalanceKcal < 0 {
+            return Self.format("today.energy.net-balance.value.deficit", amount, language: language)
+        }
+        if dailyBalanceKcal > 0 {
+            return Self.format("today.energy.net-balance.value.surplus", amount, language: language)
+        }
+        return TodayValueFormatter.kcal(0, language: language)
+    }
+
+    /// What the balance did with exercise, as the server reported it.
+    func netBalanceCaption(for language: SupportedAppLanguage) -> String {
+        TodayCopy.string(
+            dailyBalanceIncludesExercise
+                ? "today.energy.net-balance.detail"
+                : "today.energy.net-balance.detail.activity-level",
+            language: language
+        )
+    }
+
+    private static func magnitudeText(
+        _ value: Int,
+        language: SupportedAppLanguage
+    ) -> String {
+        value.magnitude.formatted(.number.locale(language.formattingLocale))
+    }
+
+    private static func format(
+        _ key: String.LocalizationValue,
+        _ argument: String,
+        language: SupportedAppLanguage
+    ) -> String {
+        String(
+            format: TodayCopy.string(key, language: language),
             locale: language.formattingLocale,
-            signedValue
+            argument
         )
     }
 }
@@ -534,14 +584,11 @@ struct TodaySummaryPanel: View {
         detailGroup(copy("today.energy.title")) {
             FixtureMetricRow(
                 title: copy("today.energy.net-balance"),
-                value: TodayValueFormatter.optionalKcal(
-                    energy.dailyBalanceKcal,
-                    language: language
-                )
+                value: energy.netBalanceText(for: language)
             )
             .accessibilityValue(energy.netBalanceAccessibilityValue(for: language))
             .accessibilityIdentifier("today.energy.net-balance")
-            Text(copy("today.energy.net-balance.detail"))
+            Text(energy.netBalanceCaption(for: language))
                 .font(BodyFlowTypography.caption)
                 .foregroundStyle(BodyFlowColor.secondaryText)
             Divider()

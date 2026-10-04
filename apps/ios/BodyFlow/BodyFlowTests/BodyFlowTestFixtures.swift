@@ -59,6 +59,8 @@ enum BodyFlowTestFixtures {
                 exerciseKcal: response.data.exerciseKcal,
                 dailyBalanceKcal: response.data.dailyBalanceKcal,
                 dailyBalanceStatus: response.data.dailyBalanceStatus,
+                dailyBalanceIncludesExercise: response.data.dailyBalanceIncludesExercise,
+                dailyBalanceReferenceKcal: response.data.dailyBalanceReferenceKcal,
                 proteinStatus: response.data.proteinStatus,
                 meals: response.data.meals,
                 workouts: response.data.workouts,

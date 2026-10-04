@@ -1444,6 +1444,8 @@ enum DemoBodyFlowFixtures {
                 exerciseKcal: base.data.exerciseKcal,
                 dailyBalanceKcal: base.data.dailyBalanceKcal,
                 dailyBalanceStatus: base.data.dailyBalanceStatus,
+                dailyBalanceIncludesExercise: base.data.dailyBalanceIncludesExercise,
+                dailyBalanceReferenceKcal: base.data.dailyBalanceReferenceKcal,
                 proteinStatus: base.data.proteinStatus,
                 meals: base.data.meals,
                 workouts: base.data.workouts,

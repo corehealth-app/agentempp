@@ -124,9 +124,21 @@ enum PerformeRegistrationProjection {
         if captureError != nil { return .failed }
         switch mutation {
         case .failed, .unavailable: return .failed
-        case .succeeded(.confirm): return .confirmed
+        case .succeeded(.confirm), .succeeded(.alreadyConfirmed): return .confirmed
         case .succeeded(.propose), .succeeded(.edit): return .ready
         case .succeeded(.cancel), .idle, .submitting: return .cancelled
         }
+    }
+
+    /// The identity the confirmed presentation (brand success and its
+    /// haptic) is shown for, once. Only a confirmation the server answered
+    /// has one. An already saved record (`alreadyConfirmed`) also ends
+    /// confirmed, but the edit or the cancellation the patient asked for was
+    /// not applied, so it has none and nothing is celebrated.
+    static func confirmation(
+        for mutation: RegistrationMutationState
+    ) -> PerformeOperationPresentation.Confirmation? {
+        guard case .succeeded(.confirm) = mutation else { return nil }
+        return mutation.receipt?.confirmedRegistrationID.map { .registration($0) }
     }
 }

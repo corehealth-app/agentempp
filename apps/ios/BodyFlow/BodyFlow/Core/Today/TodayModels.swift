@@ -11,8 +11,16 @@ struct TodaySnapshot: Codable, Equatable, Sendable {
     let remainingFoodKcal: Int?
     let foodExcessKcal: Int?
     let exerciseKcal: Int
+    /// Consumed minus the day's expenditure for the patient's protocol
+    /// (negative = deficit, positive = surplus), as the server computed it.
     let dailyBalanceKcal: Int?
     let dailyBalanceStatus: String
+    /// Whether `dailyBalanceKcal` already subtracts the day's exercise. An
+    /// older server does not send it; read `dailyBalanceCountsExercise`.
+    var dailyBalanceIncludesExercise: Bool? = nil
+    /// The expenditure the balance was measured against, when the server
+    /// sends it. Additive and optional; an older server sends nothing.
+    var dailyBalanceReferenceKcal: Int? = nil
     let proteinStatus: TodayProteinStatus
     let meals: [TodayMeal]
     let workouts: [TodayWorkout]
@@ -37,6 +45,8 @@ struct TodaySnapshot: Codable, Equatable, Sendable {
         case exerciseKcal = "exercise_kcal"
         case dailyBalanceKcal = "daily_balance_kcal"
         case dailyBalanceStatus = "daily_balance_status"
+        case dailyBalanceIncludesExercise = "daily_balance_includes_exercise"
+        case dailyBalanceReferenceKcal = "daily_balance_reference_kcal"
         case proteinStatus = "protein_status"
         case meals
         case workouts
@@ -50,6 +60,14 @@ struct TodaySnapshot: Codable, Equatable, Sendable {
         case calculationVersion = "calculation_version"
         case updatedAt = "updated_at"
         case generatedAt = "generated_at"
+    }
+}
+
+extension TodaySnapshot {
+    /// A response without `daily_balance_includes_exercise` comes from a
+    /// server that always subtracted exercise from the balance.
+    var dailyBalanceCountsExercise: Bool {
+        dailyBalanceIncludesExercise ?? true
     }
 }
 

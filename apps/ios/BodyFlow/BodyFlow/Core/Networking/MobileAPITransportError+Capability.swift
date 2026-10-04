@@ -14,6 +14,8 @@ extension MobileAPITransportError {
             switch code {
             case "registration_not_pending":
                 return .registrationNotPending
+            case "registration_already_confirmed":
+                return .registrationAlreadyConfirmed
             case "idempotency_key_conflict":
                 return .idempotencyConflict
             case "idempotency_request_in_progress":

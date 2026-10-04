@@ -176,6 +176,14 @@ final class WorkoutRegistrationModel {
             confirmedRegistration = nil
             phase = .cancelled
             invalidationCenter.record(.proposalCancelled)
+        case .alreadyConfirmed:
+            // The record is saved; the device holds no confirmed snapshot of
+            // it and keeps no draft to send again.
+            currentProposal = nil
+            pendingDraft = nil
+            confirmedRegistration = nil
+            phase = .confirmed
+            invalidationCenter.record(.registrationConfirmed)
         }
         mutationState = .succeeded(receipt)
         captureError = nil
@@ -184,8 +192,15 @@ final class WorkoutRegistrationModel {
     }
 
     private func publishFailure(_ attempt: RegistrationMutationAttempt, error: any Error, operation: ActiveWorkoutOperation) {
-        guard claimPublication(operation) else { return }
         let capabilityError = Self.capabilityError(from: error)
+        // `409 registration_already_confirmed`: this proposal's record is
+        // already saved. That is the confirmed outcome, not a failure.
+        if capabilityError == .registrationAlreadyConfirmed,
+           let registrationID = attempt.registrationID {
+            publishSuccess(.alreadyConfirmed(registrationID: registrationID), operation: operation)
+            return
+        }
+        guard claimPublication(operation) else { return }
         captureError = capabilityError
         if Self.invalidatesPending(capabilityError) {
             currentProposal = nil

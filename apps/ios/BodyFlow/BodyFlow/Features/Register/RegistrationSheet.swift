@@ -352,11 +352,9 @@ struct RegistrationSheet: View {
     private var confirmationIdentity: PerformeOperationPresentation.Confirmation? {
         switch kind {
         case .meal:
-            guard case let .succeeded(.confirm(receipt)) = mealModel.mutationState else { return nil }
-            return .registration(receipt.data.registration.id)
+            return PerformeRegistrationProjection.confirmation(for: mealModel.mutationState)
         case .training:
-            guard case let .succeeded(.confirm(receipt)) = workoutModel.mutationState else { return nil }
-            return .registration(receipt.data.registration.id)
+            return PerformeRegistrationProjection.confirmation(for: workoutModel.mutationState)
         case .hydration:
             return hydrationModel.receipt.map { .hydration($0.data.hydrationLogID) }
         case .weight:

@@ -198,10 +198,56 @@ struct MobileRegistrationRepositoryTests {
         )
     }
 
+    /// docs/mobile/api-v1.md, "Erros do pending": an edit (PATCH) or a
+    /// cancellation (DELETE) of a proposal whose record is already saved is
+    /// refused with `409 registration_already_confirmed`.
+    @Test("an edit and a cancellation refused with 409 registration_already_confirmed throw the already-confirmed capability error")
+    func editAndCancelOfAnAlreadySavedRecord() async throws {
+        let spy = RegistrationTransportSpy(
+            responseJSON: Self.pendingJSON,
+            failure: .conflict(code: "registration_already_confirmed", requestID: "req-conflict-1")
+        )
+        let repository = MobileRegistrationRepository(transport: spy)
+        let id = Self.registrationID
+
+        await #expect(throws: BodyFlowCapabilityError.registrationAlreadyConfirmed) {
+            try await repository.edit(MutationAttempt(
+                operation: .proposalEdit, key: try key("mobile-test-edit-409"),
+                payload: RegistrationEditCommand(registrationID: id, proposal: mealRequest),
+                createdAt: Date()
+            ))
+        }
+        await #expect(throws: BodyFlowCapabilityError.registrationAlreadyConfirmed) {
+            try await repository.cancel(MutationAttempt(
+                operation: .proposalCancel, key: try key("mobile-test-cancel-409"),
+                payload: RegistrationIDCommand(registrationID: id), createdAt: Date()
+            ))
+        }
+
+        let requests = await spy.requests
+        #expect(requests.map(\.method) == [.patch, .delete])
+        #expect(requests.map(\.path) == [
+            "/api/mobile/v1/registrations/\(id)",
+            "/api/mobile/v1/registrations/\(id)",
+        ])
+        #expect(requests.map(\.idempotency) == [
+            .required(try key("mobile-test-edit-409")),
+            .required(try key("mobile-test-cancel-409")),
+        ])
+        // Telemetry has no category of its own for it: the existing
+        // `registration_not_pending` one.
+        #expect(BodyFlowCapabilityError.registrationAlreadyConfirmed.telemetryValue
+            == .registrationNotPending)
+        #expect(BodyFlowCapabilityError.registrationAlreadyConfirmed.telemetryValue.rawValue
+            == "registration_not_pending")
+    }
+
     @Test("transport failures land on the registration capability states")
     func transportFailuresMap() async throws {
         let cases: [(MobileAPITransportError, BodyFlowCapabilityError)] = [
             (.conflict(code: "registration_not_pending", requestID: nil), .registrationNotPending),
+            (.conflict(code: "registration_already_confirmed", requestID: nil), .registrationAlreadyConfirmed),
+            (.conflict(code: "registration_update_conflict", requestID: nil), .serviceUnavailable),
             (.http(status: 410, code: "registration_expired", requestID: nil), .registrationExpired),
             (.validation(code: "registration_rejected", requestID: nil), .invalidInput),
             (.conflict(code: "idempotency_key_conflict", requestID: nil), .idempotencyConflict),

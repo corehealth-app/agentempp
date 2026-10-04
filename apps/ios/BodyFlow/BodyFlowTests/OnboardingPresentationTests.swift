@@ -125,6 +125,44 @@ struct OnboardingPresentationTests {
         )
     }
 
+    /// Client request C2-17 (16/01/2026 audio, 17/01/2026 21:39:38 text):
+    /// "trocar treinar por musculação" in the weekly frequency question.
+    @Test("the weekly frequency question asks about strength training, not workouts in general")
+    func frequencyQuestionSaysStrengthTraining() throws {
+        let expected: [(key: String.LocalizationValue, portuguese: String, english: String)] = [
+            ("onboarding.routine.training-frequency.title",
+             "Musculação por semana", "Strength training per week"),
+            ("onboarding.validation.training-frequency-out-of-range",
+             "Informe de 0 a 7 treinos de musculação por semana.",
+             "Enter between 0 and 7 strength training sessions per week."),
+            ("onboarding.completion.training", "Musculação", "Strength training"),
+        ]
+        for entry in expected {
+            let portuguese = try AppLocalization.string(entry.key, for: .portugueseBrazil)
+            let english = try AppLocalization.string(entry.key, for: .englishUnitedStates)
+            #expect(portuguese == entry.portuguese)
+            #expect(english == entry.english)
+            #expect(portuguese.contains("usculação"))
+            #expect(!portuguese.contains("treinos por semana"))
+            #expect(!english.localizedCaseInsensitiveContains("workout"))
+        }
+        // The two labels that used to say "Treinos" carry no trace of it. The
+        // validation sentence keeps the approved "treinos de musculação".
+        for key: String.LocalizationValue in [
+            "onboarding.routine.training-frequency.title",
+            "onboarding.completion.training",
+        ] {
+            #expect(!(try AppLocalization.string(key, for: .portugueseBrazil)).contains("rein"))
+        }
+        // The hard-coded Portuguese copy matches the catalog.
+        #expect(OnboardingValidationIssue.trainingFrequencyOutOfRange.message
+            == "Informe de 0 a 7 treinos de musculação por semana.")
+        #expect(OnboardingValidationIssue.trainingFrequencyOutOfRange.message(for: .portugueseBrazil)
+            == OnboardingValidationIssue.trainingFrequencyOutOfRange.message)
+        #expect(OnboardingValidationIssue.trainingFrequencyOutOfRange.message(for: .englishUnitedStates)
+            == "Enter between 0 and 7 strength training sessions per week.")
+    }
+
     @Test("premium onboarding copy is complete in Portuguese and English")
     func premiumOnboardingCopyIsBilingual() throws {
         #expect(

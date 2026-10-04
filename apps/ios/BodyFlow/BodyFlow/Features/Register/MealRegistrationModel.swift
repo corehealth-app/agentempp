@@ -304,6 +304,15 @@ final class MealRegistrationModel {
             confirmedRegistration = nil
             phase = .cancelled
             invalidationCenter.record(.proposalCancelled)
+        case .alreadyConfirmed:
+            // The record is saved; the device holds no confirmed snapshot of
+            // it, and the draft must not be proposable again (a new proposal
+            // of the same meal would be added a second time).
+            currentProposal = nil
+            confirmedRegistration = nil
+            detectedDraft = nil
+            phase = .confirmed
+            invalidationCenter.record(.registrationConfirmed)
         }
 
         mutationState = .succeeded(receipt)
@@ -337,8 +346,18 @@ final class MealRegistrationModel {
         error: any Error,
         operation: ActiveMealOperation
     ) {
-        guard claimPublication(operation) else { return }
         let capabilityError = Self.capabilityError(from: error)
+        // `409 registration_already_confirmed`: this proposal's record is
+        // already saved. That is the confirmed outcome, not a failure.
+        if capabilityError == .registrationAlreadyConfirmed,
+           let registrationID = attempt.registrationID {
+            publishSuccess(
+                .alreadyConfirmed(registrationID: registrationID),
+                operation: operation
+            )
+            return
+        }
+        guard claimPublication(operation) else { return }
 
         captureError = capabilityError
         if Self.invalidatesPending(capabilityError) {

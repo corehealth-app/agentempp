@@ -36,9 +36,130 @@ struct TodayPresentationTests {
         #expect(presentation.energy.remainingFoodText == "731 kcal")
         #expect(presentation.energy.remainingFoodAccessibilityValue
             == "731 quilocalorias; exercício excluído")
-        #expect(presentation.energy.netBalanceText == "-83 kcal")
+        // The fixture is an older server: no `daily_balance_includes_exercise`,
+        // so the balance reads as one that includes exercise.
+        #expect(presentation.energy.dailyBalanceIncludesExercise)
+        #expect(presentation.energy.netBalanceText == "Déficit de 83 kcal")
+        #expect(presentation.energy.netBalanceCaption == "Exercício incluído")
         #expect(presentation.energy.netBalanceAccessibilityValue
-            == "menos 83 quilocalorias; exercício incluído")
+            == "déficit de 83 quilocalorias; exercício incluído")
+    }
+
+    @Test("the day balance is named in both languages and never called a net deficit")
+    func dayBalanceLabel() throws {
+        #expect(try AppLocalization.string("today.energy.net-balance", for: .portugueseBrazil)
+            == "Balanço do dia")
+        #expect(try AppLocalization.string("today.energy.net-balance", for: .englishUnitedStates)
+            == "Day balance")
+    }
+
+    @Test("the day balance reads as a deficit, a surplus or zero, never with a minus sign", arguments: [
+        DayBalanceCase(
+            kcal: -1_535, includesExercise: true,
+            portuguese: "Déficit de 1.535 kcal", english: "1,535 kcal deficit",
+            portugueseSpoken: "déficit de 1.535 quilocalorias; exercício incluído",
+            englishSpoken: "deficit of 1,535 kilocalories; exercise included"
+        ),
+        DayBalanceCase(
+            kcal: 142, includesExercise: true,
+            portuguese: "Superávit de 142 kcal", english: "142 kcal surplus",
+            portugueseSpoken: "superávit de 142 quilocalorias; exercício incluído",
+            englishSpoken: "surplus of 142 kilocalories; exercise included"
+        ),
+        DayBalanceCase(
+            kcal: 0, includesExercise: true,
+            portuguese: "0 kcal", english: "0 kcal",
+            portugueseSpoken: "0 quilocalorias; exercício incluído",
+            englishSpoken: "0 kilocalories; exercise included"
+        ),
+        DayBalanceCase(
+            kcal: -83, includesExercise: false,
+            portuguese: "Déficit de 83 kcal", english: "83 kcal deficit",
+            portugueseSpoken: "déficit de 83 quilocalorias; exercício já contado no nível de atividade",
+            englishSpoken: "deficit of 83 kilocalories; exercise already counted in your activity level"
+        ),
+        DayBalanceCase(
+            kcal: 1_142, includesExercise: false,
+            portuguese: "Superávit de 1.142 kcal", english: "1,142 kcal surplus",
+            portugueseSpoken: "superávit de 1.142 quilocalorias; exercício já contado no nível de atividade",
+            englishSpoken: "surplus of 1,142 kilocalories; exercise already counted in your activity level"
+        ),
+        DayBalanceCase(
+            kcal: 0, includesExercise: false,
+            portuguese: "0 kcal", english: "0 kcal",
+            portugueseSpoken: "0 quilocalorias; exercício já contado no nível de atividade",
+            englishSpoken: "0 kilocalories; exercise already counted in your activity level"
+        ),
+        // The exact reported days, not near variants.
+        // Ganho de massa eating exactly the target: +142 kcal, exercise in
+        // the activity level.
+        DayBalanceCase(
+            kcal: 142, includesExercise: false,
+            portuguese: "Superávit de 142 kcal", english: "142 kcal surplus",
+            portugueseSpoken: "superávit de 142 quilocalorias; exercício já contado no nível de atividade",
+            englishSpoken: "surplus of 142 kilocalories; exercise already counted in your activity level"
+        ),
+        // The QA account today: -2297 kcal, exercise in the activity level.
+        DayBalanceCase(
+            kcal: -2_297, includesExercise: false,
+            portuguese: "Déficit de 2.297 kcal", english: "2,297 kcal deficit",
+            portugueseSpoken: "déficit de 2.297 quilocalorias; exercício já contado no nível de atividade",
+            englishSpoken: "deficit of 2,297 kilocalories; exercise already counted in your activity level"
+        ),
+        // Recomposição on 19/05: -832 kcal, exercise included.
+        DayBalanceCase(
+            kcal: -832, includesExercise: true,
+            portuguese: "Déficit de 832 kcal", english: "832 kcal deficit",
+            portugueseSpoken: "déficit de 832 quilocalorias; exercício incluído",
+            englishSpoken: "deficit of 832 kilocalories; exercise included"
+        ),
+    ])
+    func dayBalanceIsSignAware(_ expected: DayBalanceCase) throws {
+        let snapshot = try BodyFlowTestFixtures.decodeToday { data in
+            data["daily_balance_kcal"] = expected.kcal
+            data["daily_balance_includes_exercise"] = expected.includesExercise
+        }.data
+        let energy = TodayPresentation(snapshot: snapshot).energy
+
+        #expect(energy.dailyBalanceKcal == expected.kcal)
+        #expect(energy.dailyBalanceIncludesExercise == expected.includesExercise)
+        #expect(energy.netBalanceText == expected.portuguese)
+        #expect(energy.netBalanceText(for: .portugueseBrazil) == expected.portuguese)
+        #expect(energy.netBalanceText(for: .englishUnitedStates) == expected.english)
+        #expect(energy.netBalanceAccessibilityValue == expected.portugueseSpoken)
+        #expect(energy.netBalanceAccessibilityValue(for: .englishUnitedStates)
+            == expected.englishSpoken)
+        #expect(energy.netBalanceCaption(for: .portugueseBrazil) == (expected.includesExercise
+            ? "Exercício incluído" : "Exercício já contado no nível de atividade"))
+        #expect(energy.netBalanceCaption(for: .englishUnitedStates) == (expected.includesExercise
+            ? "Exercise included" : "Exercise already counted in your activity level"))
+        for text in [
+            energy.netBalanceText(for: .portugueseBrazil),
+            energy.netBalanceText(for: .englishUnitedStates),
+            energy.netBalanceAccessibilityValue(for: .portugueseBrazil),
+            energy.netBalanceAccessibilityValue(for: .englishUnitedStates),
+        ] {
+            #expect(!text.contains("-") && !text.contains("−"))
+            #expect(!text.contains("menos") && !text.contains("minus"))
+        }
+        // The food line is untouched by the balance and by its exercise flag.
+        #expect(energy.remainingFoodText == "731 kcal")
+        #expect(energy.remainingFoodAccessibilityValue == "731 quilocalorias; exercício excluído")
+        #expect(energy.exerciseText == "419 kcal")
+    }
+
+    @Test("an unavailable day balance stays unavailable whatever the exercise flag says", arguments: [true, false])
+    func unavailableDayBalanceKeepsItsWording(includesExercise: Bool) throws {
+        let snapshot = try BodyFlowTestFixtures.decodeToday { data in
+            data["daily_balance_kcal"] = NSNull()
+            data["daily_balance_includes_exercise"] = includesExercise
+        }.data
+        let energy = TodayPresentation(snapshot: snapshot).energy
+
+        #expect(energy.netBalanceText == "Indisponível")
+        #expect(energy.netBalanceText(for: .englishUnitedStates) == "Not available")
+        #expect(energy.netBalanceAccessibilityValue == "Indisponível")
+        #expect(energy.netBalanceAccessibilityValue(for: .englishUnitedStates) == "Not available")
     }
 
     @Test("English client-owned Today copy and energy announcements are localized")
@@ -59,7 +180,11 @@ struct TodayPresentationTests {
         ) == "731 kilocalories; exercise excluded")
         #expect(presentation.energy.netBalanceAccessibilityValue(
             for: .englishUnitedStates
-        ) == "minus 83 kilocalories; exercise included")
+        ) == "deficit of 83 kilocalories; exercise included")
+        #expect(presentation.energy.netBalanceText(for: .englishUnitedStates)
+            == "83 kcal deficit")
+        #expect(presentation.energy.netBalanceCaption(for: .englishUnitedStates)
+            == "Exercise included")
     }
 
     @Test("header values come from the response without client clock defaults")
@@ -580,5 +705,18 @@ struct TodayPresentationTests {
                 from: Data("\"\(scheduledFor)\"".utf8)
             )
         )
+    }
+}
+
+struct DayBalanceCase: Sendable, CustomTestStringConvertible {
+    let kcal: Int
+    let includesExercise: Bool
+    let portuguese: String
+    let english: String
+    let portugueseSpoken: String
+    let englishSpoken: String
+
+    var testDescription: String {
+        "\(kcal) kcal, exercise \(includesExercise ? "included" : "in the activity level")"
     }
 }

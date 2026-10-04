@@ -35,7 +35,7 @@ struct OnboardingCompletionView: View {
                         ?? copy("onboarding.completion.not-selected", fallback: "Não selecionado")
                 )
                 reviewRow(
-                    copy("onboarding.completion.training", fallback: "Treinos"),
+                    copy("onboarding.completion.training", fallback: "Musculação"),
                     value: OnboardingCopy.format(
                         "onboarding.routine.training-frequency.format",
                         language: language,

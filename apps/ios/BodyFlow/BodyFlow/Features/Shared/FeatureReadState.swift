@@ -114,6 +114,19 @@ enum RegistrationMutationAttempt: Equatable, Sendable {
     case confirm(MutationAttempt<RegistrationIDCommand>)
     case cancel(MutationAttempt<RegistrationIDCommand>)
 
+    /// The proposal an edit, confirmation or cancellation was sent for.
+    var registrationID: String? {
+        switch self {
+        case .propose:
+            nil
+        case let .edit(attempt):
+            attempt.payload.registrationID
+        case let .confirm(attempt),
+             let .cancel(attempt):
+            attempt.payload.registrationID
+        }
+    }
+
     var operation: MutationOperation {
         switch self {
         case let .propose(attempt):
@@ -133,8 +146,15 @@ enum RegistrationMutationReceipt: Equatable, Sendable {
     case edit(RegistrationProposalResponse)
     case confirm(RegistrationConfirmationResponse)
     case cancel(RegistrationCancellationResponse)
+    /// The server refused an edit or a cancellation with
+    /// `409 registration_already_confirmed`: the record of this proposal was
+    /// already saved (for example the confirmation went through and its
+    /// response was lost). It carries only what the device knows, the id of
+    /// the proposal; no confirmation response is made up.
+    case alreadyConfirmed(registrationID: String)
 
-    var requestID: String {
+    /// Absent for `alreadyConfirmed`, which has no success response.
+    var requestID: String? {
         switch self {
         case let .propose(receipt),
              let .edit(receipt),
@@ -142,6 +162,21 @@ enum RegistrationMutationReceipt: Equatable, Sendable {
             receipt.meta.requestID
         case let .confirm(receipt):
             receipt.meta.requestID
+        case .alreadyConfirmed:
+            nil
+        }
+    }
+
+    /// The registration a confirmed outcome is about, whichever way the
+    /// device learned it was saved.
+    var confirmedRegistrationID: String? {
+        switch self {
+        case let .confirm(receipt):
+            receipt.data.registration.id
+        case let .alreadyConfirmed(registrationID):
+            registrationID
+        case .propose, .edit, .cancel:
+            nil
         }
     }
 }

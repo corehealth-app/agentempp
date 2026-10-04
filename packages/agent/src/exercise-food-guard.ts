@@ -46,6 +46,11 @@ export interface ExerciseFoodDay {
 // report ("treino" is also the workout plan and the routine in the profile),
 // and a message that ends as a statement ("…consigo comer mais.") is not a
 // question.
+//
+// Round 3: "essas calorias" with no number must be the burn the report states
+// (thoseCaloriesAreTheBurn), and a message with no "?" sent right after a
+// question of Flow is the patient's answer (answersFlowQuestion, checked by
+// the pipeline, which holds the history).
 
 const MAX_LENGTH = 160
 
@@ -210,6 +215,22 @@ function numberEchoesTheReport(message: string): boolean {
   return reportedBurn(message) === Number(number)
 }
 
+// "Comer essas calorias" / "comer as calorias" with no number: whose calories?
+// With "do treino" / "que gastei" / "queimadas" the question says it. Without
+// it they are the workout's only when the report states the burn ("gastei 322
+// kcal… posso comer essas calorias?"); after "Um açaí tem cerca de 500 kcal."
+// the same words point at the açaí (review 2026-10-04, round 3). The lookahead
+// keeps "kcal" from matching inside "kcals".
+const THOSE_CALORIES = new RegExp(
+  `\\bcomer (?:essas|as) ${KCAL}(?= |$)( ${BURNED_CALORIES}(?= |$))?`,
+)
+
+function thoseCaloriesAreTheBurn(message: string): boolean {
+  const those = THOSE_CALORIES.exec(message)
+  if (!those || those[1]) return true
+  return reportedBurn(message) != null
+}
+
 // The tokenizer drops the final mark, so the raw text is read here: a message
 // with no "?" that ends in a mark states, it does not ask ("Treinei hoje e
 // posso comer mais!"). With no final mark at all (voice, fast typing) the
@@ -226,7 +247,8 @@ function endsAsStatement(rawText: string): boolean {
  * replace it / does the workout raise my target?", in either order, in
  * Portuguese. Anything else in it — another request, a symptom, a food, another
  * day or person, "o que", "mas", a negation — returns false. So does the
- * question with no report, and a message that ends as a statement.
+ * question with no report, a message that ends as a statement, and "essas
+ * calorias" with neither a number nor a burn stated.
  */
 export function asksExerciseFoodQuestion(patientText: string): boolean {
   const raw = patientText ?? ''
@@ -234,7 +256,43 @@ export function asksExerciseFoodQuestion(patientText: string): boolean {
   const message = tokenize(raw)
   if (message.length === 0 || message.length > MAX_LENGTH) return false
   if (!MESSAGE.some((form) => form.test(message))) return false
-  return numberEchoesTheReport(message)
+  return numberEchoesTheReport(message) && thoseCaloriesAreTheBurn(message)
+}
+
+// How the Flow history loader opens a row of an earlier local day
+// (datedHistoryContent in pipeline.ts). The golden runs a dated row through
+// the real loader, so the two cannot drift apart unnoticed.
+const FROM_AN_EARLIER_DAY = /^\[Mensagem de \d{2}\/\d{2}\/\d{4}, dia anterior\b/
+// The reply closes on a question: after its last "?" come only spaces, quotes,
+// brackets, Markdown or emoji — no word.
+const CLOSES_ON_A_QUESTION = /\?[^\p{L}\p{N}]*$/u
+
+/**
+ * True when the message is the patient ANSWERING Flow, not asking it: the raw
+ * text has no "?" and the last thing Flow said today closes on a question.
+ *
+ * Review 2026-10-04, round 3: Flow asked "Está conseguindo comer nas refeições
+ * principais?", the ganho-de-massa patient replied "Treinei hoje e dá pra
+ * comer mais" and read the canned answer; the model never saw his reply. With
+ * no final mark the predicate cannot tell a dictated question from a
+ * statement, but the conversation can: nobody asks without "?" right after
+ * being asked. The pipeline lets the model answer then.
+ *
+ * A "?" anywhere in the message keeps it a question whatever Flow said, and a
+ * question Flow asked on an earlier day (the loader dates that row) is not
+ * pending today.
+ */
+export function answersFlowQuestion(
+  patientText: string,
+  history: ReadonlyArray<{ role: 'user' | 'assistant'; content: string }>,
+): boolean {
+  if ((patientText ?? '').includes('?')) return false
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const message = history[index]
+    if (message?.role !== 'assistant') continue
+    return !FROM_AN_EARLIER_DAY.test(message.content) && CLOSES_ON_A_QUESTION.test(message.content)
+  }
+  return false
 }
 
 /**

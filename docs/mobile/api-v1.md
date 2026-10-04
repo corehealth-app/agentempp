@@ -90,7 +90,7 @@ somente ao backend.
 | `POST` | `/registrations/propose` | calcula e cria pending de refeição ou treino |
 | `POST` | `/registrations/:id/confirm` | grava deterministicamente o pending aprovado; proposta de refeição criada pelo app é sempre um registro novo e reenviar a confirmação da mesma proposta não duplica (ver "Ciclo do pending") |
 | `PATCH` | `/registrations/:id` | recalcula e edita um pending ainda aberto; `409 registration_already_confirmed` se o registro desse pending já foi gravado (ver "Ciclo do pending") |
-| `DELETE` | `/registrations/:id` | cancela um pending ainda aberto |
+| `DELETE` | `/registrations/:id` | cancela um pending ainda aberto; `409 registration_already_confirmed` se o registro desse pending já foi gravado (ver "Ciclo do pending") |
 | `GET` | `/pending` | lista pendings válidos do paciente, sem payload interno |
 | `GET` | `/coach/persona` | preferência, personalidade efetiva, opções localizadas e estado do mascote |
 | `PATCH` | `/coach/persona` | altera a preferência futura para `focus`, `impulse` ou `zen` |
@@ -1842,32 +1842,42 @@ perfil, com fallback determinístico de 70 kg quando o peso ainda não existe.
 4. Retry após gravação parcial é deduplicado pelo request key salvo na proposta.
    Se a gravação aconteceu e a marcação `confirmed` falhou, o pending ainda
    aparece como `pending`: um novo `confirm` fecha sem gravar de novo, e um
-   `PATCH` também fecha o pending como `confirmed` e responde
-   `409 registration_already_confirmed`, sem editar (editar trocaria o request
-   key e a refeição seria gravada duas vezes). O `PATCH` de um pending que já
-   está `confirmed` responde o mesmo código. Se a leitura que verifica isso
-   falhar, o `PATCH` responde `500 registration_lookup_failed`, também sem
-   editar.
+   `PATCH` ou um `DELETE` também fecha o pending como `confirmed` e responde
+   `409 registration_already_confirmed`, sem editar nem cancelar (editar
+   trocaria o request key e a refeição seria gravada duas vezes; cancelar
+   deixaria o pending `cancelled` com a refeição gravada, e a proposta seguinte
+   da mesma refeição a gravaria de novo). O `PATCH` e o `DELETE` de um pending
+   que já está `confirmed` respondem o mesmo código. Se a leitura que verifica
+   isso falhar, o pedido responde `500 registration_lookup_failed` e o pending
+   não muda. O `PATCH` olha a validade antes dessa verificação (`410`); o
+   `DELETE` não olha a validade.
    - Refeição: a verificação vale só para pending criado por `propose` (a
      chave dele é o `Idempotency-Key` de uma tentativa, então só o confirm
      dele grava sob ela). Pending de refeição de outra origem (WhatsApp, cuja
      chave é o id da mensagem e pode ter registros de outra refeição da mesma
-     mensagem) é editado como antes.
+     mensagem) é editado e cancelado como antes.
    - Treino: vale para qualquer origem, por request key + tipo — a mesma
      idempotência do registro de treino.
    - `registration_already_confirmed` quer dizer "este registro já está
      salvo": o cliente NÃO deve criar outra proposta (como toda confirmação de
      proposta do app soma, uma nova proposta gravaria a mesma refeição de
      novo). O certo é tratar como confirmado; `POST :id/confirm` responde
-     `already_confirmed: true` sem gravar. `registration_not_pending` continua
-     valendo para pending `cancelled` ou `expired`, onde criar outra proposta é
-     o caminho.
+     `already_confirmed: true` sem gravar. No `DELETE` o código também quer
+     dizer que nada foi cancelado nem apagado: o registro continua salvo.
+     `registration_not_pending` continua valendo para pending `expired` (e
+     para `PATCH`/`confirm` de um `cancelled`), onde criar outra proposta é o
+     caminho.
+   - O servidor só recusa o pedido; ele não impede uma proposta nova. Uma
+     proposta nova da mesma refeição depois da recusa grava a refeição pela
+     segunda vez.
    - iPhone (build atual, lido no código, não executado no aparelho): o app
      ainda não conhece `registration_already_confirmed`. Mostra "Não foi
      possível concluir. Tente novamente.", mantém a proposta na tela e
-     "Tentar novamente" reenvia o mesmo `PATCH` (mesma resposta); o botão
-     Confirmar recebe `already_confirmed: true` e mostra "Registro
-     confirmado.". Falta no app a mensagem própria de "já registrado".
+     "Tentar novamente" reenvia o mesmo `PATCH` ou o mesmo `DELETE` (mesma
+     resposta); o botão Confirmar recebe `already_confirmed: true` e mostra
+     "Registro confirmado.". "Criar nova proposta" não aparece. Falta no app a
+     mensagem própria de "já registrado": hoje quem tocou em Cancelar não é
+     avisado de que a refeição já está salva.
 5. Refeição criada por `propose`: cada proposta confirmada é um registro novo.
    Repetir a mesma refeição soma — nada é substituído nem descartado, com
    qualquer intervalo. O servidor só mede, em dois eventos internos com
@@ -1887,7 +1897,8 @@ perfil, com fallback determinístico de 70 kg quando o peso ainda não existe.
    Esta API não edita nem apaga refeição já confirmada: um registro feito por
    engano não pode ser desfeito pelo app.
 6. `DELETE :id` altera apenas um pending para `cancelled`; não apaga logs já
-   confirmados.
+   confirmados. Se o registro desse pending já foi gravado, o `DELETE` é
+   recusado com `409 registration_already_confirmed` (item 4).
 7. Estado expirado, editado, cancelado ou concorrente produz erro explícito.
 
 ### Erros do pending
@@ -1895,15 +1906,15 @@ perfil, com fallback determinístico de 70 kg quando o peso ainda não existe.
 | HTTP | `error.code` | Rota | Quando ocorre | O que o cliente faz |
 |---:|---|---|---|---|
 | `404` | `registration_not_found` | todas | pending inexistente ou de outro paciente | descartar a proposta |
-| `409` | `registration_already_confirmed` | `PATCH` | o registro desse pending já foi gravado (pending `confirmed`, ou gravado com a marcação pendente — item 4) | tratar como confirmado; não criar outra proposta |
-| `409` | `registration_not_pending` | `PATCH`, `confirm`, `DELETE` | pending `cancelled` ou `expired`; no `DELETE`, pending `confirmed` ou `expired` (o `cancelled` responde `200`) | criar outra proposta, se ainda houver o que registrar |
+| `409` | `registration_already_confirmed` | `PATCH`, `DELETE` | o registro desse pending já foi gravado (pending `confirmed`, ou gravado com a marcação pendente — item 4); no `DELETE`, nada foi cancelado | tratar como confirmado; não criar outra proposta |
+| `409` | `registration_not_pending` | `PATCH`, `confirm`, `DELETE` | `PATCH` e `confirm`: pending `cancelled` ou `expired`; `DELETE`: pending `expired` (o `cancelled` responde `200`) | criar outra proposta, se ainda houver o que registrar |
 | `409` | `registration_update_conflict`, `registration_confirmation_conflict`, `registration_cancel_conflict` | `PATCH`, `confirm`, `DELETE` | o pending mudou durante a operação | reler e tentar de novo |
 | `409` | `registration_proposal_invalid` | `confirm` | proposta guardada fora do formato | criar outra proposta |
 | `410` | `registration_expired` | `PATCH`, `confirm` | pending passou de `expires_at` | criar outra proposta |
 | `422` | `registration_unresolved_items` | `confirm` | item ainda sem cálculo | editar o item |
 | `422` | `registration_rejected` | `confirm` | a ferramenta recusou o registro | editar |
 | `500` | `registration_lookup_failed` | todas | leitura do pending ou da verificação do item 4 falhou; nada foi alterado | tentar de novo |
-| `500` | `registration_confirmation_failed` | `confirm`, `PATCH` | a gravação pode ter acontecido e a marcação `confirmed` falhou | tentar de novo (deduplicado) |
+| `500` | `registration_confirmation_failed` | `confirm`, `PATCH`, `DELETE` | a gravação pode ter acontecido e a marcação `confirmed` falhou | tentar de novo (deduplicado) |
 | `500` | `registration_update_failed`, `registration_cancel_failed` | `PATCH`, `DELETE` | falha ao gravar a edição ou o cancelamento | tentar de novo |
 
 ## Limites desta fase

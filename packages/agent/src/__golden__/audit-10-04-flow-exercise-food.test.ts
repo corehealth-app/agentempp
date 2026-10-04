@@ -34,6 +34,10 @@
  *    question, no question stands without the report of the workout, "essas N
  *    kcal" must repeat the burn reported, and the answer says the workout
  *    calories are the ones stored. Its inputs are locked below too;
+ *  - round 3: a message with no "?" sent right after a question of Flow is
+ *    the patient's answer ("Está conseguindo comer…?" → "Treinei hoje e dá
+ *    pra comer mais"), and "essas calorias" with no number needs the burn
+ *    stated in the report. Its inputs are locked below, with their history;
  *  - the model answers a repeated question only when Flow's last reply is,
  *    character by character, the text the system would send now (no loop);
  *    with other numbers or another day state the system answers again;
@@ -47,8 +51,9 @@
  *   Travado como está em audit-10-04-whatsapp-context-lock.test.ts.
  * > RC A — cenário pergunta direta fora da gramática NÃO coberto nesta PR (pendência da audit 2026-10-04).
  *   Erro de digitação, "será que", "consigo", emoji, modalidade fora da lista,
- *   "passar da meta", pergunta sem o relato do treino de hoje…: vai para o
- *   modelo com o contexto corrigido. Lista em exercise-food-guard.test.ts
+ *   "passar da meta", pergunta sem o relato do treino de hoje, "essas
+ *   calorias" sem número e sem gasto dito no relato…: vai para o modelo com o
+ *   contexto corrigido. Lista em exercise-food-guard.test.ts
  *   (OUTSIDE_THE_GRAMMAR).
  * > RC A — cenário mensagem mista (relato do treino + pergunta direta + outro pedido, sintoma, alimento ou segunda pergunta) NÃO coberto nesta PR (pendência da audit 2026-10-04).
  *   A resposta do sistema não entra; quem responde é o modelo.
@@ -60,10 +65,15 @@
  * > RC A — cenário exercício no balanço de ganho_massa/manutenção NÃO coberto nesta PR (pendência da audit 2026-10-04).
  *   Decisão do Roberto em aberto; a resposta só diz que o gasto fica à parte.
  * > RC A — cenário consulta_resumo_periodo (média de daily_balance sem rótulo), "balanço de ontem" e resumo persistente do paciente NÃO coberto nesta PR (pendência da audit 2026-10-04).
- * > RC A — cenário afirmação sem pontuação final ("treinei hoje e posso comer mais") NÃO coberto nesta PR (pendência da audit 2026-10-04).
- *   Sem "?" e sem marca no fim não dá para separar a pergunta ditada da
- *   afirmação: continua recebendo a resposta do sistema. Com "." ou "!" no fim
- *   vai para o modelo (travado abaixo).
+ * > RC A — cenário afirmação sem pontuação final ("treinei hoje e posso comer mais") quando o Flow NÃO tinha acabado de perguntar algo NÃO coberto nesta PR (pendência da audit 2026-10-04).
+ *   Sem "?" e sem marca no fim o predicado não separa a pergunta ditada da
+ *   afirmação: a mensagem ainda recebe a resposta do sistema, a não ser que a
+ *   última resposta do Flow no dia termine em pergunta — aí é resposta do
+ *   paciente e vai para o modelo. Com "." ou "!" no fim vai sempre para o
+ *   modelo. Os dois lados travados abaixo.
+ * > RC A — cenário pergunta ditada sem "?" logo depois de uma pergunta do Flow NÃO coberto nesta PR (pendência da audit 2026-10-04).
+ *   Pela mesma regra vai para o modelo, com o contexto corrigido (travado
+ *   abaixo como está).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearCalcConfigCache } from '../calc-config-loader.js'
@@ -932,7 +942,7 @@ describe('audit 2026-10-04 RC A — messages the system must NOT answer (the mod
   })
 })
 
-describe('audit 2026-10-04 RC A — review round 2: the conversation the patient was in', () => {
+describe('audit 2026-10-04 RC A — review rounds 2 and 3: the conversation the patient was in', () => {
   const MODEL_REPLY = 'Resposta do modelo.'
   /** No workout stored today (the Flow chat stores none). */
   const NO_WORKOUT_DAY: Row = { ...S541, exercise_calories: 0, daily_balance: -2439 }
@@ -1001,28 +1011,147 @@ describe('audit 2026-10-04 RC A — review round 2: the conversation the patient
     expectTheModelAnswered(h, await flow(h, text), text)
   })
 
+  const ACAI_HISTORY: Row[] = [
+    row('in', 'Quantas calorias tem um açaí médio com granola?', '2026-10-04T14:50:00.000Z', 'e1'),
+    row(
+      'out',
+      'Um açaí médio com granola tem cerca de 500 kcal.',
+      '2026-10-04T14:50:10.000Z',
+      'e2',
+    ),
+  ]
+
   it.each([
     'Treinei hoje. Posso comer essas 500 kcal?',
     'Treinei e gastei 300 kcal. Posso comer essas 500 kcal?',
+    // Round 3: the same anaphora with no number — each got the system answer.
+    'Treinei hoje. Posso comer essas calorias?',
+    'Treinei hoje. Posso comer essas calorias a mais?',
+    'Treinei hoje. Posso comer as calorias?',
   ])('after "Um açaí médio com granola tem cerca de 500 kcal.", "%s" points at the açaí: the model answers', async (text) => {
-    const h = harness({
-      text,
-      history: [
-        row(
-          'in',
-          'Quantas calorias tem um açaí médio com granola?',
-          '2026-10-04T14:50:00.000Z',
-          'e1',
-        ),
-        row(
-          'out',
-          'Um açaí médio com granola tem cerca de 500 kcal.',
-          '2026-10-04T14:50:10.000Z',
-          'e2',
-        ),
+    const h = harness({ text, history: ACAI_HISTORY, script: [{ content: MODEL_REPLY }] })
+
+    expectTheModelAnswered(h, await flow(h, text), text)
+  })
+
+  it.each([
+    // The burn stated in the report, or named in the question, makes "essas
+    // calorias" the workout's — the açaí before it changes nothing.
+    'Treinei e gastei 322 kcal. Posso comer essas calorias?',
+    'Treinei e gastei 322 kcal. Posso comer essas calorias a mais?',
+    'Treinei hoje. Posso comer as calorias do treino?',
+    'Treinei hoje. Posso comer as calorias que gastei?',
+  ])('after the açaí, "%s" says whose calories they are: the system answers', async (text) => {
+    const h = harness({ text, history: ACAI_HISTORY, script: [{ content: WRONG_REPLY }] })
+    const output = await flow(h, text)
+
+    expect(output.text).toBe(ANSWER_541)
+    expect(h.llmCalls).toHaveLength(0)
+    expect(events(h, 'pipeline.deterministic_exercise_food')).toHaveLength(1)
+  })
+
+  // Review round 3 — the history of the reproduction, verbatim.
+  const FLOW_QUESTION =
+    'Você está 2.439 kcal abaixo da meta de hoje. Está conseguindo comer nas refeições principais?'
+  const appetiteHistory = (day: '2026-10-04' | '2026-10-03' = '2026-10-04'): Row[] => [
+    row('in', 'Estou com dificuldade de bater a meta', `${day}T14:50:00.000Z`, 'a1'),
+    row('out', FLOW_QUESTION, `${day}T14:50:10.000Z`, 'a2'),
+  ]
+  /** What the system answers on the day of the reproduction (no workout stored). */
+  const ANSWER_NO_WORKOUT = `O treino não aumenta o que você pode comer hoje: sua meta continua em 2.980 kcal.\n\nVocê consumiu 541 kcal, então restam 2.439 kcal para comer hoje (meta menos consumido). ${NO_WORKOUT}`
+
+  it.each([
+    'Treinei hoje e dá pra comer mais',
+    'Treinei pesado hoje, dá pra comer mais',
+    'Treinei hoje e dá pra comer um pouco mais',
+    'Treinei hoje e dá pra comer mais hoje',
+  ])('Flow had asked "Está conseguindo comer nas refeições principais?": "%s" is the patient answering, the model answers', async (text) => {
+    // Round 3, through this pipeline: llmCalls 0 and "O treino não aumenta o
+    // que você pode comer hoje… Não encontrei treino registrado hoje." — the
+    // ganho-de-massa patient said he can eat more and the model never saw it.
+    // "Dá pra" with no final mark is inside the grammar; the conversation is
+    // what says it is an answer.
+    for (const day of [NO_WORKOUT_DAY, S541]) {
+      const h = harness({
+        text,
+        day,
+        history: appetiteHistory(),
+        script: [{ content: MODEL_REPLY }],
+      })
+      const output = await flow(h, text)
+
+      expectTheModelAnswered(h, output, text)
+      expect(output.text).not.toContain('O treino não aumenta')
+      expect(h.llmCalls[0]?.messages.at(-2)).toEqual({ role: 'assistant', content: FLOW_QUESTION })
+    }
+  })
+
+  it('the same history, the exact phrase of the report (it has "?"): the system still answers', async () => {
+    for (const [text, day, expected] of [
+      [PHRASE, S541, ANSWER_541],
+      [PHRASE_ACCENTED, S541, ANSWER_541],
+      [PHRASE, NO_WORKOUT_DAY, ANSWER_NO_WORKOUT],
+      // The reply of round 3 typed as a question is a question.
+      ['Treinei hoje e dá pra comer mais?', NO_WORKOUT_DAY, ANSWER_NO_WORKOUT],
+    ] as const) {
+      const h = harness({
+        text,
+        day,
+        history: appetiteHistory(),
+        script: [{ content: WRONG_REPLY }],
+      })
+      const output = await flow(h, text)
+
+      expect(output.text).toBe(expected)
+      expect(h.llmCalls).toHaveLength(0)
+      expect(events(h, 'pipeline.deterministic_exercise_food')).toHaveLength(1)
+    }
+  })
+
+  it.each([
+    // Voice style, no "?" and no final mark.
+    ['treinei hoje posso comer mais', ANSWER_541],
+    ['treinei musculacao hoje e gastei 322 kcal posso comer 322 kcal a mais', ANSWER_541],
+    ['treinei hj e gastei 322kcal posso comer 322kcal a mais', ANSWER_541],
+    ['Fiz academia hoje posso comer mais né', ANSWER_541],
+    // The replies of round 3 themselves, when Flow had asked nothing
+    // (declared above: the statement with no final mark keeps the answer).
+    ['Treinei hoje e dá pra comer mais', ANSWER_541],
+    ['Treinei pesado hoje, dá pra comer mais', ANSWER_541],
+  ])('no pending question of Flow, "%s": the system still answers', async (text, expected) => {
+    const histories: Row[][] = [
+      // First message of the day.
+      [],
+      // Flow's last reply states something.
+      [
+        row('in', 'Mostre meu progresso recente.', '2026-10-04T14:40:00.000Z', 'p1'),
+        row('out', 'Hoje: 541 kcal consumidas, meta 2.980 kcal.', '2026-10-04T14:40:09.000Z', 'p2'),
       ],
-      script: [{ content: MODEL_REPLY }],
-    })
+      // Flow asked, the patient answered and Flow replied with a statement.
+      [
+        ...appetiteHistory(),
+        row('in', 'Estou sim', '2026-10-04T14:51:00.000Z', 'a3'),
+        row('out', 'Ótimo, siga assim.', '2026-10-04T14:51:08.000Z', 'a4'),
+      ],
+      // The question of Flow is from yesterday: the real loader dates that
+      // row, and a dated question is not pending today.
+      appetiteHistory('2026-10-03'),
+    ]
+    for (const history of histories) {
+      const h = harness({ text, history, script: [{ content: WRONG_REPLY }] })
+      const output = await flow(h, text)
+
+      expect(output.text).toBe(expected)
+      expect(h.llmCalls).toHaveLength(0)
+      expect(events(h, 'pipeline.deterministic_exercise_food')).toHaveLength(1)
+    }
+  })
+
+  it('declared as it is: a dictated question with no "?" right after a question of Flow goes to the model', async () => {
+    // The price of the rule above: here the model answers, with the rule and
+    // both balances in its context.
+    const text = 'treinei hoje posso comer mais'
+    const h = harness({ text, history: appetiteHistory(), script: [{ content: MODEL_REPLY }] })
 
     expectTheModelAnswered(h, await flow(h, text), text)
   })
@@ -1032,7 +1161,9 @@ describe('audit 2026-10-04 RC A — review round 2: the conversation the patient
     ['Treinei hoje. O treino muda minha meta?', ANSWER_541],
     ['Treinei e gastei 322 kcal. Posso comer essas 322 kcal?', ANSWER_541],
     ['Treinei hoje, posso comer mais, certo?', ANSWER_541],
-    // Declared above: with no final mark, the statement still gets the answer.
+    ['Treinei e gastei 322 kcal. Posso comer essas calorias?', ANSWER_541],
+    // Declared above: with no final mark, and Flow not having just asked
+    // something, the statement still gets the answer.
     ['treinei hoje e posso comer mais', ANSWER_541],
   ])('still answered by the system: "%s"', async (text, expected) => {
     const h = harness({ text, script: [{ content: WRONG_REPLY }] })

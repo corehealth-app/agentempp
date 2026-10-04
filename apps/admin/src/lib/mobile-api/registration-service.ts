@@ -410,18 +410,20 @@ export async function proposeRegistration(
 }
 
 /**
- * The record of this registration is already saved, so it cannot be edited.
- * Its own code on purpose: the iPhone reads `registration_not_pending` as
- * "this pending is gone, propose the draft again", and since an app
- * confirmation adds, that second proposal writes the same meal twice. A code
- * the current build does not know keeps the proposal on screen, where Confirm
- * answers `already_confirmed`.
+ * The record of this registration is already saved, so it can be neither
+ * edited nor cancelled. Its own code on purpose: the iPhone reads
+ * `registration_not_pending` as "this pending is gone, propose the draft
+ * again", and since an app confirmation adds, that second proposal writes the
+ * same meal twice. A code the current build does not know keeps the proposal
+ * on screen, where Confirm answers `already_confirmed`.
  */
-function alreadyConfirmedError(): MobileApiError {
+function alreadyConfirmedError(refused: 'edit' | 'cancel'): MobileApiError {
   return new MobileApiError(
     409,
     'registration_already_confirmed',
-    'Este registro já foi salvo e não pode mais ser editado.',
+    refused === 'edit'
+      ? 'Este registro já foi salvo e não pode mais ser editado.'
+      : 'Este registro já foi salvo e não pode mais ser cancelado.',
   )
 }
 
@@ -429,7 +431,8 @@ function alreadyConfirmedError(): MobileApiError {
  * True when the rows of this proposal are already in the database, found by
  * the same key the tools use for idempotency (meal: provider message id;
  * workout: provider message id + type). A failed read refuses the caller: an
- * edit accepted blind is the double registration this guards against.
+ * edit or a cancel accepted blind is the double registration this guards
+ * against.
  */
 async function proposalAlreadyWritten(
   supabase: ServiceClient,
@@ -486,7 +489,7 @@ export async function editRegistration(
   const current = await loadOwnedRegistration(supabase, auth.userId, registrationId)
   // Same answer as the guard below: once it closed the pending, the app's
   // "try again" resends this PATCH and must not be told to propose again.
-  if (current.status === 'confirmed') throw alreadyConfirmedError()
+  if (current.status === 'confirmed') throw alreadyConfirmedError('edit')
   if (current.status !== 'pending') {
     throw new MobileApiError(409, 'registration_not_pending', 'Registration is not pending')
   }
@@ -499,7 +502,7 @@ export async function editRegistration(
   // So the transition is completed here and the edit is refused.
   if (await proposalAlreadyWritten(supabase, auth.userId, current.proposal)) {
     await transitionToConfirmed(supabase, auth.userId, registrationId)
-    throw alreadyConfirmedError()
+    throw alreadyConfirmedError('edit')
   }
 
   const proposal = await buildProposal(
@@ -706,8 +709,23 @@ export async function cancelRegistration(
 ) {
   const current = await loadOwnedRegistration(supabase, userId, registrationId)
   if (current.status === 'cancelled') return pendingDto(current)
+  // The record is saved, and this API has no way to undo it. Answering
+  // `registration_not_pending` here made the iPhone drop the proposal and
+  // offer "Criar nova proposta": the draft was proposed again and, since an
+  // app confirmation adds, the same meal was written twice (review of
+  // 2026-10-04, sequences PB-1 and PB-2).
+  if (current.status === 'confirmed') throw alreadyConfirmedError('cancel')
   if (current.status !== 'pending') {
     throw new MobileApiError(409, 'registration_not_pending', 'Registration is not pending')
+  }
+  // Same guard as the edit: the tool wrote and the pending→confirmed UPDATE
+  // failed. Cancelling would leave the rows saved under a pending that reads
+  // "cancelled", and the proposal the patient makes next would write the meal
+  // again (PB-3). No expiry check on purpose: a written pending past
+  // `expires_at` is closed as confirmed too.
+  if (await proposalAlreadyWritten(supabase, userId, current.proposal)) {
+    await transitionToConfirmed(supabase, userId, registrationId)
+    throw alreadyConfirmedError('cancel')
   }
 
   const { data, error } = await supabase

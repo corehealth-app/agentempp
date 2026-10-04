@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  answersFlowQuestion,
   asksExerciseFoodQuestion,
   EXERCISE_FOOD_ANSWER_OPENING,
   lastReplyIsSameAnswer,
@@ -16,8 +17,9 @@ const REPORT_PHRASE = 'Treinei musculacao hoje e gastei 322 kcal. Posso comer 32
 // > RC A — cenário pergunta direta fora da gramática NÃO coberto nesta PR (pendência da audit 2026-10-04).
 //   Lista OUTSIDE_THE_GRAMMAR abaixo (erro de digitação, "será que", "ingerir",
 //   "consigo", "repor" sem calorias, emoji, modalidade fora da lista, "passar
-//   da meta", pergunta sem o relato do treino de hoje…): vão para o modelo com
-//   o contexto corrigido.
+//   da meta", pergunta sem o relato do treino de hoje, "essas calorias" sem
+//   número e sem gasto dito no relato…): vão para o modelo com o contexto
+//   corrigido.
 // > RC A — cenário mensagem mista (relato do treino + pergunta direta + outro pedido, sintoma, alimento ou segunda pergunta) NÃO coberto nesta PR (pendência da audit 2026-10-04).
 //   Uma palavra a mais e quem responde é o modelo.
 // > RC A — cenário resposta do MODELO com o contexto corrigido NÃO coberto nesta PR (pendência da audit 2026-10-04).
@@ -25,12 +27,39 @@ const REPORT_PHRASE = 'Treinei musculacao hoje e gastei 322 kcal. Posso comer 32
 //   Texto clínico ainda sem aprovação do Roberto.
 // > RC A — cenário exercício no balanço de ganho_massa/manutenção NÃO coberto nesta PR (pendência da audit 2026-10-04).
 // > RC A — cenário canal WhatsApp NÃO coberto nesta PR (pendência da audit 2026-10-04).
-// > RC A — cenário afirmação sem pontuação final ("treinei hoje e posso comer mais") NÃO coberto nesta PR (pendência da audit 2026-10-04).
-//   Sem "?" e sem marca no fim não dá para separar a pergunta ditada da
-//   afirmação: continua recebendo a resposta do sistema. Com "." ou "!" no fim
-//   vai para o modelo.
+// > RC A — cenário afirmação sem pontuação final ("treinei hoje e posso comer mais") quando o Flow NÃO tinha acabado de perguntar algo NÃO coberto nesta PR (pendência da audit 2026-10-04).
+//   Sem "?" e sem marca no fim o predicado não separa a pergunta ditada da
+//   afirmação: a mensagem ainda recebe a resposta do sistema, a não ser que a
+//   última resposta do Flow no dia termine em pergunta — aí é resposta do
+//   paciente e vai para o modelo (answersFlowQuestion, usado pelo pipeline).
+//   Com "." ou "!" no fim vai sempre para o modelo.
+// > RC A — cenário pergunta ditada sem "?" logo depois de uma pergunta do Flow NÃO coberto nesta PR (pendência da audit 2026-10-04).
+//   Pela mesma regra vai para o modelo, com o contexto corrigido.
 
 const unique = (list: string[]): string[] => [...new Set(list)]
+
+// Review 2026-10-04, round 3, verbatim: after "Um açaí médio com granola tem
+// cerca de 500 kcal." each of these got the system answer.
+const THOSE_CALORIES_OF_NOTHING_SAID = [
+  'Treinei hoje. Posso comer essas calorias?',
+  'Treinei hoje. Posso comer essas calorias a mais?',
+  'Treinei hoje. Posso comer as calorias?',
+]
+// The same words when the message says whose calories they are: the burn
+// stated in the report, or "do treino" / "que gastei" / "queimadas".
+const THOSE_CALORIES_OF_THE_WORKOUT = [
+  'Treinei e gastei 322 kcal. Posso comer essas calorias?',
+  'Treinei e gastei 322 kcal. Posso comer essas calorias a mais?',
+  'Treinei hoje e queimei 322 kcal. Posso comer as calorias?',
+  'Posso comer essas calorias? Treinei hoje e gastei 322 kcal.',
+  'Treinei hoje. Posso comer essas calorias do treino?',
+  'Treinei hoje. Posso comer as calorias do treino a mais?',
+  'Treinei hoje. Posso comer as calorias que gastei?',
+  'Treinei hoje. Posso comer essas calorias que eu queimei a mais?',
+  'Treinei hoje. Posso comer as calorias gastas?',
+  'Treinei hoje. Posso comer essas calorias queimadas?',
+  'Treinei hoje. Posso comer as kcals do treino?',
+]
 
 // Inside the grammar: (greeting) + report of today's workout + direct question.
 const MUST_MATCH = unique([
@@ -108,6 +137,8 @@ const MUST_MATCH = unique([
   'Fui na academia. Posso comer as calorias do treino?',
   'Treinei e gastei 322 kcal, posso comer essas calorias?',
   'Treinei hoje. Posso comer as calorias que queimei no treino?',
+  // "essas calorias" with no number: the question or the report says whose
+  ...THOSE_CALORIES_OF_THE_WORKOUT,
   // replace
   'Fiz 40 min de corrida. Preciso repor as calorias?',
   'Fiz academia hoje. Posso repor as calorias do treino?',
@@ -189,6 +220,13 @@ const OUTSIDE_THE_GRAMMAR = unique([
   'Malhei hoje e queimei umas 300 calorias, posso comer elas?',
   'Como treinei, posso comer essas 322 kcal?',
   'Treinei e gastei 300 kcal. Posso comer as 500 kcal a mais?',
+  // "essas calorias" / "as calorias" with no number and no burn stated: they
+  // may be a food quoted earlier in the chat (review round 3, verbatim)
+  ...THOSE_CALORIES_OF_NOTHING_SAID,
+  'Posso comer essas calorias? Treinei hoje.',
+  'Posso comer as calorias a mais porque treinei?',
+  'Já que treinei hoje, posso comer essas calorias?',
+  'Corri 10 km hoje, dá pra comer essas kcal?',
   // "repor" with no calories named
   'Treinei e gastei 300 kcal, posso repor?',
   'Caminhei 1 hora. Tenho que repor o que gastei?',
@@ -808,6 +846,36 @@ describe('asksExerciseFoodQuestion — everything else goes to the model', () =>
     }
   })
 
+  it('"essas calorias" with no number: the system answers only when the message says whose calories they are', () => {
+    // Review round 3: the echo rule covered "essas N kcal" but not the form
+    // with no number, which may point at a food quoted earlier in the chat.
+    for (const text of THOSE_CALORIES_OF_NOTHING_SAID) {
+      expect(asksExerciseFoodQuestion(text)).toBe(false)
+      // The burn in the report is what makes them the workout's calories…
+      expect(
+        asksExerciseFoodQuestion(text.replace('Treinei hoje.', 'Treinei hoje e gastei 322 kcal.')),
+      ).toBe(true)
+      expect(
+        asksExerciseFoodQuestion(text.replace('Treinei hoje.', 'Queimei 322 kcal na academia.')),
+      ).toBe(true)
+      // …and no detail of the workout replaces it.
+      expect(asksExerciseFoodQuestion(text.replace('Treinei hoje.', 'Treinei 1 hora hoje.'))).toBe(
+        false,
+      )
+      expect(asksExerciseFoodQuestion(text.replace('Treinei hoje.', 'Corri 10 km hoje.'))).toBe(
+        false,
+      )
+    }
+    for (const text of THOSE_CALORIES_OF_THE_WORKOUT) {
+      expect(asksExerciseFoodQuestion(text)).toBe(true)
+    }
+    // "Repor" / "comer de volta" already point at what was burned: unchanged.
+    expect(asksExerciseFoodQuestion('Treinei hoje. Preciso repor as calorias?')).toBe(true)
+    expect(asksExerciseFoodQuestion('Treinei hoje. Tenho que comer de volta as calorias?')).toBe(
+      true,
+    )
+  })
+
   it.each(REVIEW_CORPUS)('review corpus: %s', (text) => {
     expect(asksExerciseFoodQuestion(text)).toBe(false)
   })
@@ -1199,6 +1267,115 @@ describe('statedWorkoutCalories', () => {
     ['', null],
   ])('%j → %s', (text, expected) => {
     expect(statedWorkoutCalories(text)).toBe(expected)
+  })
+})
+
+describe('answersFlowQuestion', () => {
+  type Turn = { role: 'user' | 'assistant'; content: string }
+  const user = (content: string): Turn => ({ role: 'user', content })
+  const flow = (content: string): Turn => ({ role: 'assistant', content })
+
+  // Review 2026-10-04, round 3 — the history of the reproduction, verbatim.
+  const FLOW_QUESTION =
+    'Você está 2.439 kcal abaixo da meta de hoje. Está conseguindo comer nas refeições principais?'
+  const APPETITE_HISTORY = [user('Estou com dificuldade de bater a meta'), flow(FLOW_QUESTION)]
+  // The four replies the review saw answered by the system in that history.
+  const REPLIES = [
+    'Treinei hoje e dá pra comer mais',
+    'Treinei pesado hoje, dá pra comer mais',
+    'Treinei hoje e dá pra comer um pouco mais',
+    'Treinei hoje e dá pra comer mais hoje',
+  ]
+  /** How the history loader hands over a row of an earlier local day. */
+  const dated = (content: string): string =>
+    `[Mensagem de 03/10/2026, dia anterior — números do dia e horário citados nela não valem para hoje]\n${content}`
+
+  it.each(REPLIES)('after Flow asked, "%s" is the patient answering', (text) => {
+    // The predicate alone cannot tell (no final mark): it is inside the grammar.
+    expect(asksExerciseFoodQuestion(text)).toBe(true)
+    expect(answersFlowQuestion(text, APPETITE_HISTORY)).toBe(true)
+  })
+
+  it('a "?" anywhere in the message keeps it a question, whatever Flow asked', () => {
+    expect(answersFlowQuestion(REPORT_PHRASE, APPETITE_HISTORY)).toBe(false)
+    expect(answersFlowQuestion('Treinei hoje e dá pra comer mais?', APPETITE_HISTORY)).toBe(false)
+    expect(
+      answersFlowQuestion('Posso comer mais? Treinei hoje e gastei 322 kcal.', APPETITE_HISTORY),
+    ).toBe(false)
+    expect(answersFlowQuestion('Treinei hoje? dá pra comer mais', APPETITE_HISTORY)).toBe(false)
+  })
+
+  it('no pending question of Flow: a message with no "?" is not an answer', () => {
+    const text = 'treinei hoje posso comer mais'
+    // First message of the conversation, or Flow never spoke.
+    expect(answersFlowQuestion(text, [])).toBe(false)
+    expect(answersFlowQuestion(text, [user('Bom dia')])).toBe(false)
+    // Flow's last reply states something.
+    for (const reply of [
+      'Hoje: 541 kcal consumidas, meta 2.980 kcal.',
+      'Registrei o almoço!',
+      'Quer saber mais? É só perguntar.',
+      'Você perguntou "posso comer mais?" e a resposta está acima.',
+      'Tudo certo',
+    ]) {
+      expect(answersFlowQuestion(text, [user('oi'), flow(reply)])).toBe(false)
+    }
+    // Flow asked, then said something else: the question is not the last reply.
+    expect(
+      answersFlowQuestion(text, [flow(FLOW_QUESTION), user('sim'), flow('Ótimo, siga assim.')]),
+    ).toBe(false)
+  })
+
+  it('only the LAST reply of Flow counts, and patient turns after it do not close the question', () => {
+    const text = 'Treinei hoje e dá pra comer mais'
+    expect(
+      answersFlowQuestion(text, [flow('Ótimo, siga assim.'), user('ok'), flow(FLOW_QUESTION)]),
+    ).toBe(true)
+    // Two patient messages in a row after the question: still answering it.
+    expect(answersFlowQuestion(text, [flow(FLOW_QUESTION), user('Então')])).toBe(true)
+    // A question the PATIENT asked earlier is not a question of Flow.
+    expect(answersFlowQuestion(text, [user('Posso comer mais?')])).toBe(false)
+    expect(
+      answersFlowQuestion(text, [flow('Registrei o almoço!'), user('Quanto falta de proteína?')]),
+    ).toBe(false)
+  })
+
+  it.each([
+    'Está conseguindo comer nas refeições principais?',
+    'Está conseguindo comer nas refeições principais? ',
+    'Está conseguindo comer nas refeições principais?\n',
+    'Está conseguindo comer nas refeições principais??',
+    'Está conseguindo comer nas refeições principais? 😊',
+    'Como foi o treino?)',
+    '**Quer registrar o treino?**',
+    'Ele perguntou "já comeu?"',
+    'Registrei o almoço.\n\nQuer registrar o treino também?',
+  ])('Flow reply %j closes on a question', (reply) => {
+    expect(answersFlowQuestion('Treinei hoje e dá pra comer mais', [flow(reply)])).toBe(true)
+  })
+
+  it('a question Flow asked on an earlier day is not pending today', () => {
+    const text = 'Treinei hoje e dá pra comer mais'
+    expect(answersFlowQuestion(text, [flow(dated(FLOW_QUESTION))])).toBe(false)
+    expect(
+      answersFlowQuestion(text, [
+        user(dated('Estou com dificuldade de bater a meta')),
+        flow(dated(FLOW_QUESTION)),
+      ]),
+    ).toBe(false)
+    // Yesterday's statement, today's question: today's is the last reply.
+    expect(
+      answersFlowQuestion(text, [flow(dated('Registrei o jantar.')), flow(FLOW_QUESTION)]),
+    ).toBe(true)
+    // Flow quoting such a header inside a reply of today is not an older row.
+    expect(answersFlowQuestion(text, [flow(`Bom dia!\n${dated(FLOW_QUESTION)}`)])).toBe(true)
+  })
+
+  it('a missing message does not throw', () => {
+    // It has no "?", so it counts as an answer; the predicate never accepts
+    // it, so the pipeline never asks.
+    expect(answersFlowQuestion(undefined as unknown as string, APPETITE_HISTORY)).toBe(true)
+    expect(asksExerciseFoodQuestion(undefined as unknown as string)).toBe(false)
   })
 })
 

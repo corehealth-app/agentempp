@@ -29,6 +29,7 @@ import {
 import { getLocalDateMinusDays, getLocalDateString, getLocalHour } from './timezone-utils.js'
 import { buildPendingTiming, burstCrossesLocalDate } from './registration-time.js'
 import {
+  answersFlowQuestion,
   asksExerciseFoodQuestion,
   lastReplyIsSameAnswer,
   renderExerciseFoodAnswer,
@@ -548,9 +549,13 @@ async function processResolvedMessage(
   // = target − consumed, WITHOUT exercise (docs/CALCULO-MPP.md §2a). On this
   // channel ctx.dailyTargets is the day row's target, the one Today shows.
   // WhatsApp never enters: processMessage passes no historyProvider.
+  // A message with no "?" sent right after a question of Flow ("Está
+  // conseguindo comer…?" → "Treinei hoje e dá pra comer mais") is the
+  // patient's answer, not the direct question: the model answers it.
   if (
     options.historyProvider === 'mobile_flow' &&
-    asksExerciseFoodQuestion(semanticPatientText)
+    asksExerciseFoodQuestion(semanticPatientText) &&
+    !answersFlowQuestion(semanticPatientText, ctx.recentMessages)
   ) {
     const exerciseFoodAnswer = renderExerciseFoodAnswer(
       {

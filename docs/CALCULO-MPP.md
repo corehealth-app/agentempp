@@ -214,6 +214,24 @@ pergunta direta. Tudo abaixo vale SÓ no canal Flow (`historyProvider ===
     (pendência declarada abaixo). Um `?` em qualquer
     ponto mantém a mensagem como pergunta ("Posso comer 322 kcal a mais?
     Treinei musculação hoje e gastei 322 kcal.").
+  - **Resposta a uma pergunta do Flow** (`answersFlowQuestion`, chamado pelo
+    pipeline depois do predicado, com o histórico já carregado em
+    `ctx.recentMessages`): o sistema NÃO responde quando o texto bruto da
+    mensagem não tem nenhum `?` **e** a última resposta do Flow no mesmo dia
+    termina em pergunta (depois do último `?` dela só há espaço, aspas,
+    parêntese, Markdown ou emoji). Nesse caso a mensagem é o paciente
+    respondendo, não perguntando, e vai para o modelo. Origem (revisão de
+    2026-10-04, 3ª rodada): Flow "Você está 2.439 kcal abaixo da meta de hoje.
+    Está conseguindo comer nas refeições principais?" → paciente de ganho de
+    massa "Treinei hoje e dá pra comer mais" → lia "O treino não aumenta o que
+    você pode comer hoje…" e o modelo nunca via a mensagem. Só a ÚLTIMA
+    resposta do Flow conta (se depois da pergunta o Flow disse outra coisa, não
+    há pergunta pendente); pergunta do Flow de dia anterior não conta (o
+    histórico entrega essa linha datada); mensagem com `?` em qualquer ponto
+    continua pergunta e recebe a resposta do sistema — inclusive a frase exata
+    do relato. Consequência aceita: a pergunta ditada sem `?` ("treinei hoje
+    posso comer mais") logo depois de uma pergunta do Flow também vai para o
+    modelo (pendência declarada abaixo).
   - A mensagem INTEIRA tem de ser: (saudação opcional: oi, olá, bom dia, boa
     tarde, boa noite, Flow) + **relato do treino** + **pergunta direta**, numa
     das duas ordens abaixo, e mais nada. Uma palavra sobrando e o predicado
@@ -234,7 +252,8 @@ pergunta direta. Tudo abaixo vale SÓ no canal Flow (`historyProvider ===
     - comer a mais: `(posso|dá pra) comer [N kcal | N | um pouco] (a
       mais|mais|extra)`, `… comer mais (N kcal|um pouco|calorias)`, `… comer N
       kcal`, `… comer (essas|as) [N] calorias [do treino|que gastei|que
-      queimei] [a mais]`;
+      queimei|gastas|queimadas] [a mais]` (com as duas condições de "de quem
+      são as calorias" logo abaixo);
     - repor: `(posso|devo|preciso|tenho que|dá pra) (repor|comer de volta)
       [as|essas] [N] calorias [do treino|que gastei]`;
     - a meta: `(a|minha) meta [de hoje] (aumenta|muda|sobe)`;
@@ -250,6 +269,16 @@ pergunta direta. Tudo abaixo vale SÓ no canal Flow (`historyProvider ===
     "essas 500 kcal" pode ser um alimento citado antes na conversa). Sem gasto
     no relato, ou com número diferente, não casa. `comer N kcal a mais` e
     `comer mais N kcal` casam com qualquer número.
+  - `comer (essas|as) calorias` SEM número e sem complemento que diga de quem
+    são ("do treino", "que gastei", "que queimei", "gastas", "queimadas"), com
+    ou sem "a mais": só casa quando o relato da mesma mensagem diz o gasto
+    (`gastei|queimei N kcal`). "Treinei e gastei 322 kcal. Posso comer essas
+    calorias?" casa; "Treinei hoje. Posso comer essas calorias?", "… essas
+    calorias a mais?" e "… as calorias?" não casam — depois de "Um açaí médio
+    com granola tem cerca de 500 kcal." apontam para o açaí (revisão de
+    2026-10-04, 3ª rodada). Duração ou distância no relato ("treinei 1 hora",
+    "corri 10 km") não substituem o gasto. `repor`/`comer de volta as
+    calorias` não mudou: o verbo já aponta para o que foi gasto.
   - Ordens e ligações aceitas — só estas duas:
     1. **relato → pergunta** (qualquer forma de pergunta): ligados por quebra
        de frase (`.`, `!`, quebra de linha), vírgula, nada, `e`, `então`, `e
@@ -271,7 +300,8 @@ pergunta direta. Tudo abaixo vale SÓ no canal Flow (`historyProvider ===
     perguntas abertas (`o que`, `como`, `quanto`), segundo pedido, sintoma,
     nome de alimento, plano/cardápio/dieta, `mas`, `sei que`, `já me disse`,
     `não entendi`, `consigo`, `?` entre o relato e a pergunta nessa ordem,
-    afirmação terminada em `.` ou `!`.
+    afirmação terminada em `.` ou `!`. Falso por regra (acima): número que não
+    repete o gasto do relato e "essas calorias" sem número nem gasto dito.
   - **Texto da resposta** (`renderExerciseFoodAnswer`): meta, consumido,
     `restam = meta − consumido` (ou "já bateu a meta" / "N kcal acima da
     meta") e o exercício do BANCO, dito como tal: "As N kcal de treino
@@ -308,12 +338,18 @@ pergunta direta. Tudo abaixo vale SÓ no canal Flow (`historyProvider ===
   primeiro, mesmo estado"; as mensagens que as duas rodadas da revisão de
   2026-10-04 viram respondidas pelo sistema no pipeline, com o histórico em que
   apareceram — apetite depois de "Está conseguindo comer…?", sugestão de plano
-  de treino, açaí de 500 kcal; treino gravado diferente do digitado; e a fiação
+  de treino, açaí de 500 kcal; as da 3ª rodada, no mesmo histórico — as quatro
+  respostas com "dá pra" sem pontuação depois de "Está conseguindo comer…?"
+  vão para o modelo, a frase exata do relato nesse mesmo histórico e as
+  perguntas ditadas sem pergunta pendente do Flow seguem com o sistema, e
+  "essas calorias"/"as calorias" sem número depois do açaí vão para o modelo;
+  treino gravado diferente do digitado; e a fiação
   de `consulta_progresso` — o modelo
   chama a tool num dia sem meta gravada e lê `energia_hoje` com meta e restam,
   sem `daily_balance`), `flow-energy-context.test.ts` e
   `exercise-food-guard.test.ts` (tabelas casa / fora da gramática de propósito
-  / não casa, com todas as mensagens citadas na revisão).
+  / não casa, com todas as mensagens citadas na revisão; `answersFlowQuestion`
+  isolado).
 - WhatsApp travado byte a byte em
   `packages/agent/src/__golden__/audit-10-04-whatsapp-context-lock.test.ts`
   (verde antes e depois da correção).
@@ -331,8 +367,9 @@ Pendências declaradas (critério do CLAUDE.md):
 > "repor" sem dizer calorias, emoji, modalidade fora da lista ("joguei
 > futebol", "treino de perna"), "passar da meta", "tenho N kcal a mais?", "o
 > treino libera/soma/conta…", a pergunta sem o relato do treino de hoje ("o
-> treino aumenta minha meta?", "posso comer as calorias do treino?") e "essas
-> N kcal" que não repete o gasto do relato: todas vão para o modelo com o
+> treino aumenta minha meta?", "posso comer as calorias do treino?"), "essas
+> N kcal" que não repete o gasto do relato e "essas calorias"/"as calorias"
+> sem número quando o relato não diz o gasto: todas vão para o modelo com o
 > contexto corrigido. A lista está em `exercise-food-guard.test.ts`
 > (`OUTSIDE_THE_GRAMMAR`), afirmada como falso.
 
@@ -342,7 +379,8 @@ Pendências declaradas (critério do CLAUDE.md):
 
 > RC A — cenário resposta do MODELO com o contexto corrigido NÃO coberto nesta PR (pendência da audit 2026-10-04).
 > Não é provada por teste nem por evento. Vale para tudo que fica fora da
-> gramática (inclusive as afirmações terminadas em "." ou "!") e para a
+> gramática (inclusive as afirmações terminadas em "." ou "!"), para a
+> mensagem sem `?` enviada logo depois de uma pergunta do Flow e para a
 > pergunta repetida quando a última resposta do Flow é o mesmo texto que o
 > sistema daria agora. Só nova rodada no iPhone/staging prova.
 
@@ -360,13 +398,21 @@ Pendências declaradas (critério do CLAUDE.md):
 
 > RC A — cenário `consulta_resumo_periodo` (média de `daily_balance` sem rótulo), "balanço de ontem" e resumo persistente do paciente NÃO coberto nesta PR (pendência da audit 2026-10-04).
 
-> RC A — cenário afirmação sem pontuação final ("treinei hoje e posso comer mais") NÃO coberto nesta PR (pendência da audit 2026-10-04).
-> Sem `?` e sem marca no fim não dá para separar a pergunta ditada da
-> afirmação: a mensagem continua recebendo a resposta do sistema (que, nesse
-> caso, corrige a crença). Também "Eu treinei hoje e por isso posso comer
-> mais" e "Treinei hoje dá pra comer mais". Com "." ou "!" no fim vai para o
-> modelo. Travado como está em `exercise-food-guard.test.ts` (`MUST_MATCH`) e
-> no golden.
+> RC A — cenário afirmação sem pontuação final ("treinei hoje e posso comer mais") quando o Flow NÃO tinha acabado de perguntar algo NÃO coberto nesta PR (pendência da audit 2026-10-04).
+> Sem `?` e sem marca no fim o predicado não separa a pergunta ditada da
+> afirmação. O que resta: essa afirmação ainda recebe a resposta do sistema
+> quando a última resposta do Flow no dia NÃO termina em pergunta (primeira
+> mensagem do dia, Flow tinha afirmado algo, ou a pergunta do Flow é de dia
+> anterior). Também "Eu treinei hoje e por isso posso comer mais" e "Treinei
+> hoje dá pra comer mais". Quando o Flow tinha acabado de perguntar algo, vai
+> para o modelo; com "." ou "!" no fim vai sempre para o modelo. Travado como
+> está em `exercise-food-guard.test.ts` (`MUST_MATCH`) e no golden.
+
+> RC A — cenário pergunta ditada sem `?` logo depois de uma pergunta do Flow NÃO coberto nesta PR (pendência da audit 2026-10-04).
+> "treinei hoje posso comer mais" enviada quando a última resposta do Flow no
+> dia termina em pergunta vai para o modelo (com o contexto corrigido), não
+> para o sistema: sem `?` não dá para separá-la da resposta do paciente.
+> Travado como está no golden.
 
 ## 5. Defesas anti-erro (não remover)
 
@@ -404,35 +450,56 @@ Pendências declaradas (critério do CLAUDE.md):
     30 min não dispara nenhum. Nesse caminho, erro na leitura de 30 min, na
     leitura do dia ou no insert de um desses eventos NÃO derruba a confirmação
     (leitura que falha vale como "sem evidência").
-  - **Edição depois de gravar sem fechar o pending.** Se a tool gravou e o
-    UPDATE `pending → confirmed` falhou, o pending continua `pending`.
-    `editRegistration` procura as linhas pela chave da proposta atual
-    (`meal_logs` por `raw_provider_message_id`; treino: `workout_logs` por chave
-    + tipo); se existem, conclui a transição e recusa o `PATCH` com
-    `409 registration_already_confirmed`. Sem isso a edição trocava a chave e a
-    confirmação seguinte gravava a refeição pela segunda vez. Se essa leitura
-    falha, a edição é recusada (`500 registration_lookup_failed`).
+  - **Edição ou cancelamento depois de gravar sem fechar o pending.** Se a
+    tool gravou e o UPDATE `pending → confirmed` falhou, o pending continua
+    `pending`. `editRegistration` (`PATCH`) e `cancelRegistration` (`DELETE`)
+    procuram as linhas pela chave da proposta atual (`meal_logs` por
+    `raw_provider_message_id`; treino: `workout_logs` por chave + tipo); se
+    existem, concluem a transição e recusam o pedido com
+    `409 registration_already_confirmed` — o pending fica `confirmed`, nunca
+    `cancelled`. Sem isso a edição trocava a chave e a confirmação seguinte
+    gravava a refeição pela segunda vez; e o cancelamento deixava o pending
+    `cancelled` com a refeição gravada, e a proposta seguinte da mesma refeição
+    a gravava de novo. Se essa leitura falha, o pedido é recusado
+    (`500 registration_lookup_failed`) e o pending não muda. O `PATCH` olha a
+    validade antes da guarda (`410`); o `DELETE` não olha a validade.
     - **Código próprio, não `registration_not_pending`.** O iPhone trata
       `registration_not_pending` como "pending inválido": descarta a proposta e
       oferece "Criar nova proposta", que repropõe o rascunho — e, como a
       confirmação do app soma, grava a mesma refeição de novo. Um código que o
-      build atual não conhece vira falha genérica: a proposta fica na tela e o
-      Confirmar recebe `already_confirmed: true`, sem segunda gravação. O
-      `PATCH` de um pending que já está `confirmed` responde o mesmo código
-      (é o que o "Tentar novamente" do app reenvia depois que a guarda fechou
-      o pending, e o que acontece quando a resposta do confirm se perdeu).
-      Pending `cancelled`/`expired` continua em `registration_not_pending`.
+      build atual não conhece vira falha genérica: a proposta fica na tela,
+      "Tentar novamente" reenvia o mesmo pedido (mesma resposta) e o Confirmar
+      recebe `already_confirmed: true`. O `PATCH` e o `DELETE` de um pending
+      que já está `confirmed` respondem o mesmo código (é o que o "Tentar
+      novamente" do app reenvia depois que a guarda fechou o pending, e o que
+      acontece quando a resposta do confirm se perdeu). Pending `expired`
+      continua em `registration_not_pending`, e o `PATCH` de um `cancelled`
+      também; o `DELETE` de um `cancelled` responde `200`.
+    - **O que isso garante, e o que não.** Depois da recusa, nenhum botão
+      dessa tela (Tentar novamente, Editar, Cancelar, Confirmar) grava de novo
+      nem leva a uma segunda proposta: uma linha, 541 kcal nos roteiros da
+      revisão (confirm sem resposta ou com falha na transição → `PATCH`
+      recusado → `DELETE` recusado → Confirmar). Lado do app lido no código,
+      não executado no aparelho. O servidor NÃO impede uma proposta nova: se o
+      paciente fechar a tela e registrar a mesma refeição outra vez, ela soma
+      (2 linhas, 780) — e o app ainda não diz que o registro já estava salvo
+      (pendência abaixo). O pending expirado também segue como pendência
+      (`410`). Antes desta regra o `DELETE` respondia
+      `registration_not_pending` (pending `confirmed`) ou cancelava (pending
+      `pending` com a refeição gravada), e o próprio app oferecia a segunda
+      proposta.
     - **Refeição: só proposta do app.** A guarda de refeição vale só para
       proposta com `registration_origin: 'mobile_app'`: a chave dela é o
       `Idempotency-Key` de uma tentativa, então linha sob essa chave só pode
       ser dela. A chave de um pending do WhatsApp é o id da mensagem, que pode
       ter linhas de OUTRA refeição da mesma mensagem (registro expresso +
       pending no mesmo turno); fechar esse pending perderia uma refeição nunca
-      gravada. Pending de refeição sem o marcador é editado como antes desta
-      regra.
+      gravada. Pending de refeição sem o marcador é editado e cancelado como
+      antes desta regra.
     - **Treino: qualquer origem.** A proposta de treino não carrega marcador,
       e a chave + tipo é exatamente a idempotência de `registra_treino`: linha
-      sob ela significa que o confirm desse pending não gravaria nada.
+      sob ela significa que o confirm desse pending não gravaria nada. Vale
+      igual para o `PATCH` e para o `DELETE`.
   - **WhatsApp inalterado.** Pipeline e tap do botão nunca definem o campo: sem
     frase de adição, a 2ª proposta com os mesmos nomes em 30 min substitui;
     depois disso, item idêntico (nome + quantidade) no mesmo `meal_type` é
@@ -502,22 +569,28 @@ Pendências declaradas (critério do CLAUDE.md):
   > A proposta de treino não carrega o marcador; a refeição resultante segue o
   > caminho antigo. A tela do iPhone não troca o tipo ao editar.
 
-  > RC B — cenário cancelar (DELETE) um pending cuja escrita já aconteceu NÃO coberto nesta PR (pendência da audit 2026-10-04).
-  > Inalterado, anterior a esta PR: o pending vira `cancelled` e a refeição fica
-  > gravada. A guarda nova cobre só a edição (`PATCH`). Com o pending já
-  > `confirmed`, o `DELETE` continua respondendo `409 registration_not_pending`
-  > (o iPhone oferece "Criar nova proposta").
+  > RC B — cenário cancelar (DELETE) um pending de refeição SEM o marcador cuja escrita já aconteceu NÃO coberto nesta PR (pendência da audit 2026-10-04).
+  > Com o marcador (proposta do app) e para treino o cancelamento agora é
+  > recusado com `409 registration_already_confirmed`. Sem o marcador
+  > (WhatsApp, ou app antes desta PR) segue como antes desta PR: o pending vira
+  > `cancelled` e a refeição fica gravada.
 
-  > RC B — cenário PATCH simultâneo a um confirm em andamento NÃO coberto nesta PR (pendência da audit 2026-10-04).
+  > RC B — cenário PATCH ou DELETE simultâneo a um confirm em andamento NÃO coberto nesta PR (pendência da audit 2026-10-04).
   > A guarda lê `meal_logs` antes do UPDATE, sem trava: um confirm que grava
-  > entre a leitura e o UPDATE ainda deixa a proposta com chave nova.
+  > entre a leitura e o UPDATE ainda deixa a proposta com chave nova (`PATCH`)
+  > ou o pending `cancelled` com a refeição gravada (`DELETE`).
 
   > RC B — cenário mensagem "já registrado" no iPhone para o código registration_already_confirmed NÃO coberto nesta PR (pendência da audit 2026-10-04).
   > O build atual não conhece o código: mostra "Não foi possível concluir. Tente
   > novamente.", mantém a proposta na tela, "Tentar novamente" reenvia o mesmo
-  > `PATCH` (mesma resposta) e Confirmar responde "Registro confirmado." sem
-  > gravar de novo. Falta a mudança no iOS (mensagem própria e fechar a
-  > proposta). Sequência lida no código do app, não executada no aparelho.
+  > `PATCH` ou o mesmo `DELETE` (mesma resposta) e Confirmar responde "Registro
+  > confirmado." sem gravar de novo. Falta a mudança no iOS (mensagem própria e
+  > fechar a proposta). Enquanto ela não existe, o paciente que tocou em
+  > Cancelar não fica sabendo que a refeição JÁ está salva (a API não apaga
+  > registro confirmado): se ele fechar a tela e registrar a mesma refeição de
+  > novo, ela é gravada duas vezes (2 linhas, 780) — o servidor só recusa o
+  > cancelamento, não impede uma proposta nova. Sequência lida no código do
+  > app, não executada no aparelho.
 
   > RC B — cenário pending de refeição sem o marcador cuja escrita já aconteceu, editado pela API NÃO coberto nesta PR (pendência da audit 2026-10-04).
   > A guarda da edição vale só para proposta com `registration_origin`
@@ -525,16 +598,22 @@ Pendências declaradas (critério do CLAUDE.md):
   > aceita como antes desta PR: chave nova, e o confirm segue o caminho antigo
   > (substitui em 30 min; depois disso duplica).
 
-  > RC B — cenário pending de treino do WhatsApp com treino do MESMO tipo já gravado pela mesma mensagem, editado pela API NÃO coberto nesta PR (pendência da audit 2026-10-04).
+  > RC B — cenário pending de treino do WhatsApp com treino do MESMO tipo já gravado pela mesma mensagem, editado ou cancelado pela API NÃO coberto nesta PR (pendência da audit 2026-10-04).
   > A proposta de treino não carrega marcador, então a guarda de treino vale
   > para qualquer origem, por chave + tipo (a idempotência de `registra_treino`):
-  > o `PATCH` fecha esse pending sem gravar o segundo treino. O confirm direto
-  > do mesmo pending já terminava igual (deduplicado).
+  > o `PATCH` fecha esse pending sem gravar o segundo treino, e o `DELETE`
+  > também o fecha como `confirmed` (`409 registration_already_confirmed`) em
+  > vez de cancelar. O confirm direto do mesmo pending já terminava igual
+  > (deduplicado).
 
   > RC B — cenário pending expirado cuja escrita já aconteceu NÃO coberto nesta PR (pendência da audit 2026-10-04).
   > Inalterado: `PATCH` e confirm respondem `410 registration_expired`, que o
   > iPhone trata com "Criar nova proposta" (a refeição seria gravada de novo).
-  > Exige a tela aberta 24 h depois de um confirm que falhou na transição.
+  > Exige a tela aberta 24 h depois de um confirm que falhou na transição. O
+  > `DELETE` não olha a validade: enquanto o status ainda é `pending`, ele
+  > responde `409 registration_already_confirmed` e fecha como `confirmed`.
+  > Depois de um confirm fora da validade o pending já está `expired`, e o
+  > `DELETE` responde `409 registration_not_pending`.
 
 - **Pergunta direta exercício × comida (só Flow)**: quando o paciente pergunta
   no chat do Flow se pode comer a mais / precisa repor / se a meta muda por ter

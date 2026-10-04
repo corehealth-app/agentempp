@@ -10,9 +10,12 @@
  * 2026-10-04): an edit after a failed pending transition, and the origin an
  * edit keeps. Blocks 5 and 6 come from the second review: the two pendings of
  * the report created THROUGH `proposeRegistration` (the seam that stamps the
- * origin), and the edit guard limited to proposals the app created. The one
- * thing replaced in `@mpp/agent` is `calcMealMacros`, the catalog lookup of
- * propose and edit; every other export is the production one.
+ * origin), and the edit guard limited to proposals the app created. Block 7
+ * comes from the third review: `cancelRegistration` (DELETE) on a pending
+ * whose record is already saved, with the real tool, for the reviewer's
+ * sequences PB-1, PB-2 and PB-3. The one thing replaced in `@mpp/agent` is
+ * `calcMealMacros`, the catalog lookup of propose and edit; every other export
+ * is the production one.
  *
  * READ FROM STAGING: the two pendings (created 14:58:03.558Z and
  * 14:59:03.518Z, source_timestamp 14:58:02.503Z and 14:59:02.488Z,
@@ -53,12 +56,35 @@
  * and a pending (rice at lunch, banana as a snack), its wamid and its macros
  * are invented; they are the scenario of the reviewer, not a print.
  *
- * READ FROM THE iPHONE CODE, not run on a device (block 3): the current build
- * maps `409 registration_not_pending` to "create a new proposal" and any
+ * ASSUMED in block 7 — nothing there was observed on a device: the sequences
+ * are the ones the third review ran (PB-1, PB-2, PB-3), the clocks of the
+ * Cancel and of the later requests are invented, KEY_3 is synthetic, and the
+ * propose body is the one of block 5. The WhatsApp message and the workout
+ * rows are the invented ones of blocks 6 and 3.
+ *
+ * READ FROM THE iPHONE CODE, not run on a device (blocks 3 and 7): the current
+ * build maps `409 registration_not_pending` to "create a new proposal" and any
  * conflict code it does not know to a generic failure that keeps the proposal
  * on screen (MobileAPITransportError+Capability.swift:15-16 and 27-28;
  * MealRegistrationModel.swift:344-352 and 431-435;
- * RegistrationOperationSummary.swift:46-57).
+ * WorkoutRegistrationModel.swift:186-202 and 251-253;
+ * RegistrationOperationSummary.swift:46-57). After a Cancel refused with
+ * `409 registration_already_confirmed` the meal sheet is in
+ * `.failed(.cancel, .serviceUnavailable)` with `currentProposal` kept: it
+ * shows "Não foi possível concluir. Tente novamente.", the proposal with
+ * Confirmar / Editar / Cancelar, and "Tentar novamente" (the same DELETE, same
+ * key). "Criar nova proposta" is not offered (only for
+ * `registration_not_pending` and 410), the capture screen is not shown while
+ * `currentProposal` exists (RegistrationSheet.swift:838-866), and
+ * `propose(reviewed:)` / `createNewProposalFromDraft` both require
+ * `currentProposal == nil` (MealRegistrationModel.swift:59-61, 107-108,
+ * 176-177). Editar and Cancelar get the same code again; Confirmar gets
+ * `already_confirmed: true`. The workout sheet behaves the same way
+ * (RegistrationSheet.swift:683-685 and 717-737). So no path of that sheet
+ * leads to a second proposal, with two exceptions that are declared below:
+ * the 410 of an expired pending, and the patient closing the sheet (X) and
+ * registering the same meal again by hand, since the app never said the meal
+ * was saved.
  *
  * Declared pendencies of the BFF end (CLAUDE.md criterion 2). The lines of
  * the agent end are in the golden; every line is in docs/CALCULO-MPP.md §5.
@@ -66,23 +92,35 @@
  * > RC B — cenário mensagem "já registrado" no iPhone para o código registration_already_confirmed NÃO coberto nesta PR (pendência da audit 2026-10-04).
  *   O build atual não conhece o código: mostra "Não foi possível concluir.
  *   Tente novamente.", mantém a proposta na tela, "Tentar novamente" reenvia o
- *   mesmo PATCH (mesma resposta) e Confirmar responde "Registro confirmado."
- *   sem gravar de novo. Falta a mudança no iOS (mensagem própria e fechar a
- *   proposta). Sequência lida no código do app, não executada no aparelho.
+ *   mesmo PATCH ou o mesmo DELETE (mesma resposta) e Confirmar responde
+ *   "Registro confirmado." sem gravar de novo. Falta a mudança no iOS
+ *   (mensagem própria e fechar a proposta). Enquanto ela não existe, o
+ *   paciente que tocou em Cancelar não fica sabendo que a refeição JÁ está
+ *   salva (esta API não apaga registro confirmado): se ele fechar a tela e
+ *   registrar a mesma refeição de novo, ela é gravada duas vezes (2 linhas,
+ *   780) — o servidor só recusa o cancelamento, não impede uma proposta nova
+ *   (teste "declared: the refusal is all the server does" do bloco 7).
+ *   Sequência lida no código do app, não executada no aparelho.
  * > RC B — cenário pending de refeição sem o marcador cuja escrita já aconteceu, editado pela API NÃO coberto nesta PR (pendência da audit 2026-10-04).
  *   A guarda da edição vale só para proposta com `registration_origin`
  *   `mobile_app`. Sem o marcador (WhatsApp, ou app antes desta PR) a edição é
  *   aceita como antes desta PR: chave nova, e o confirm segue o caminho antigo
  *   (substitui em 30 min; depois disso duplica). Caracterizado no bloco 6.
- * > RC B — cenário pending de treino do WhatsApp com treino do MESMO tipo já gravado pela mesma mensagem, editado pela API NÃO coberto nesta PR (pendência da audit 2026-10-04).
+ * > RC B — cenário pending de treino do WhatsApp com treino do MESMO tipo já gravado pela mesma mensagem, editado ou cancelado pela API NÃO coberto nesta PR (pendência da audit 2026-10-04).
  *   A proposta de treino não carrega marcador, então a guarda de treino vale
  *   para qualquer origem, por chave + tipo (a idempotência de
- *   `registra_treino`): o PATCH fecha esse pending sem gravar o segundo treino.
- *   O confirm direto do mesmo pending já terminava igual (deduplicado).
+ *   `registra_treino`): o PATCH fecha esse pending sem gravar o segundo treino,
+ *   e o DELETE também o fecha como "confirmed" (409
+ *   registration_already_confirmed) em vez de cancelar. O confirm direto do
+ *   mesmo pending já terminava igual (deduplicado).
  * > RC B — cenário pending expirado cuja escrita já aconteceu NÃO coberto nesta PR (pendência da audit 2026-10-04).
  *   Inalterado: PATCH e confirm respondem `410 registration_expired`, que o
  *   iPhone trata com "Criar nova proposta" (a refeição seria gravada de novo).
- *   Exige a tela aberta 24 h depois de um confirm que falhou na transição.
+ *   Exige a tela aberta 24 h depois de um confirm que falhou na transição. O
+ *   DELETE não olha a validade: enquanto o status ainda é "pending", ele
+ *   responde 409 registration_already_confirmed e fecha como "confirmed"
+ *   (bloco 7). Depois de um confirm fora da validade o pending já está
+ *   "expired", e o DELETE responde 409 registration_not_pending.
  * > RC B — cenário pending sem o marcador (criado no WhatsApp ou antes desta PR) confirmado pela API do app NÃO coberto nesta PR (pendência da audit 2026-10-04).
  *   Segue o caminho antigo, com perda; fixado abaixo e só medido por
  *   `mobile.registration.implicit_replace`. Editar esse pending não o torna
@@ -98,20 +136,22 @@
  * > RC B — cenário pending de treino editado para refeição pela API NÃO coberto nesta PR (pendência da audit 2026-10-04).
  *   A proposta de treino não carrega o marcador, então a refeição resultante
  *   segue o caminho antigo. A tela do iPhone não troca o tipo ao editar.
- * > RC B — cenário cancelar (DELETE) um pending cuja escrita já aconteceu NÃO coberto nesta PR (pendência da audit 2026-10-04).
- *   Inalterado, anterior a esta PR: o pending vira "cancelled" e a refeição
- *   fica gravada. A guarda nova cobre só a edição (PATCH). Com o pending já
- *   "confirmed", o DELETE continua respondendo 409 registration_not_pending
- *   (o iPhone oferece "Criar nova proposta").
- * > RC B — cenário PATCH simultâneo a um confirm em andamento NÃO coberto nesta PR (pendência da audit 2026-10-04).
+ * > RC B — cenário cancelar (DELETE) um pending de refeição SEM o marcador cuja escrita já aconteceu NÃO coberto nesta PR (pendência da audit 2026-10-04).
+ *   Com o marcador (proposta do app) e para treino o cancelamento agora é
+ *   recusado com 409 registration_already_confirmed (bloco 7). Sem o marcador
+ *   (WhatsApp, ou app antes desta PR) segue como antes desta PR: o pending
+ *   vira "cancelled" e a refeição fica gravada. Caracterizado no bloco 7.
+ * > RC B — cenário PATCH ou DELETE simultâneo a um confirm em andamento NÃO coberto nesta PR (pendência da audit 2026-10-04).
  *   A guarda lê `meal_logs` antes do UPDATE, sem trava: um confirm que grava
- *   entre a leitura e o UPDATE ainda deixa a proposta com chave nova.
+ *   entre a leitura e o UPDATE ainda deixa a proposta com chave nova (PATCH)
+ *   ou o pending "cancelled" com a refeição gravada (DELETE).
  */
 import { calcMealMacros, type MealCalcResult, registraRefeicao } from '@mpp/agent'
 import type { Json } from '@mpp/db'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   buildMealPendingProposal,
+  cancelRegistration,
   confirmRegistration,
   editRegistration,
   proposeRegistration,
@@ -1841,5 +1881,384 @@ describe('Defect B review — the edit guard applies only to a meal proposal the
       source_provider_message_id: KEY_1,
     })
     expect(db.lunchRows()).toHaveLength(1)
+  })
+})
+
+const KEY_3 = '0b9f6f0e-58a1-4a10-9d55-1501000000c3'
+const CANCEL_CLOCK = '2026-10-04T15:00:20.000Z'
+const ALREADY_SAVED_ON_CANCEL = {
+  status: 409,
+  code: 'registration_already_confirmed',
+  message: 'Este registro já foi salvo e não pode mais ser cancelado.',
+}
+
+async function cancelAt(db: StagingDay, registrationId: string, clock = CANCEL_CLOCK) {
+  vi.setSystemTime(new Date(clock))
+  return cancelRegistration(db.client as never, USER_ID, registrationId)
+}
+
+/** What a refused request answered; an accepted one fails the test. */
+function refusal(step: Promise<unknown>) {
+  return step.then(
+    () => {
+      throw new Error('the request was accepted')
+    },
+    (reason: { status: number; code: string; message: string }) => ({
+      status: reason.status,
+      code: reason.code,
+      message: reason.message,
+    }),
+  )
+}
+
+describe('Defect B review 3 — Cancelar (DELETE) on a pending whose record is already saved', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.mocked(calcMealMacros).mockReset()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  /** POST /registrations/propose as the route calls it: the app origin is stamped by the seam. */
+  async function proposeAt(db: StagingDay, key: string, requestedAt: string) {
+    vi.setSystemTime(new Date(requestedAt))
+    vi.mocked(calcMealMacros).mockImplementationOnce(async (_client, items) =>
+      stagingCalculation(items[0]?.food_name ?? '', 'canonical_fuzzy'),
+    )
+    return proposeRegistration(
+      db.client as never,
+      AUTH as never,
+      reportedMeal('frango grelhado no almoço'),
+      key,
+    )
+  }
+
+  /** The confirm wrote the lunch and failed at the pending→confirmed UPDATE (500). */
+  async function proposedWrittenStillPending() {
+    const db = stagingDay()
+    const first = await proposeAt(db, KEY_1, SOURCE_1)
+    db.failures.confirmTransitions = 1
+    await expect(confirmAt(db, first.id, CONFIRM_1)).rejects.toMatchObject({
+      status: 500,
+      code: 'registration_confirmation_failed',
+    })
+    expect(db.pending(first.id).status).toBe('pending')
+    expect(db.lunchRows()).toHaveLength(1)
+    return { db, first }
+  }
+
+  function expectOneLunchOf541(db: StagingDay) {
+    expect(db.pendings).toHaveLength(1)
+    expect(db.mealWrites()).toHaveLength(1)
+    expect(db.lunchRows()).toMatchObject([
+      { food_name: 'frango grelhado no almoço', quantity_g: 150, raw_provider_message_id: KEY_1 },
+    ])
+    // 301.9 + 238.8 = 540.7 → 541.
+    expect(db.snapshot.calories_consumed).toBe(541)
+  }
+
+  it('PB-1 · the confirm answer was lost: PATCH refused → Cancelar refused with the SAME code → "Tentar novamente" → Confirmar: ONE row, 541', async () => {
+    const db = stagingDay()
+    const first = await proposeAt(db, KEY_1, SOURCE_1)
+    expect(db.storedProposal(first.id)).toMatchObject({ registration_origin: 'mobile_app' })
+    // The confirm reaches the server and writes; the app times out and still
+    // shows the proposal with Editar / Confirmar / Cancelar.
+    await confirmAt(db, first.id, CONFIRM_1)
+    expect(db.snapshot.calories_consumed).toBe(541)
+    catalogAnswers([CHICKEN_200_G])
+
+    expect(await refusal(editAt(db, first.id, EDIT_TO_200_G))).toMatchObject({
+      status: 409,
+      code: 'registration_already_confirmed',
+    })
+
+    // Before: 409 registration_not_pending, which the iPhone turns into
+    // "Criar nova proposta" → the draft proposed again → second row, 780.
+    expect(await refusal(cancelAt(db, first.id))).toEqual(ALREADY_SAVED_ON_CANCEL)
+    // "Tentar novamente" resends the same DELETE (a refused request releases
+    // its idempotency claim, so it runs again): the answer does not change.
+    expect(await refusal(cancelAt(db, first.id, '2026-10-04T15:00:25.000Z'))).toEqual(
+      ALREADY_SAVED_ON_CANCEL,
+    )
+    expect(db.pending(first.id)).toMatchObject({ status: 'confirmed', resolved_at: CONFIRM_1 })
+
+    // The proposal is still on screen; Confirmar closes it without writing.
+    const confirmed = await confirmAt(db, first.id, '2026-10-04T15:00:40.000Z')
+    expect(confirmed).toMatchObject({ id: first.id, status: 'confirmed', already_confirmed: true })
+    expect(calcMealMacros).toHaveBeenCalledTimes(1)
+    expectOneLunchOf541(db)
+  })
+
+  it('PB-2 · the confirm failed at the transition: PATCH refused (the guard closes the pending) → Cancelar refused → Confirmar: ONE row, 541', async () => {
+    const { db, first } = await proposedWrittenStillPending()
+    catalogAnswers([CHICKEN_200_G])
+
+    expect(await refusal(editAt(db, first.id, EDIT_TO_200_G))).toMatchObject({
+      status: 409,
+      code: 'registration_already_confirmed',
+    })
+    expect(db.pending(first.id)).toMatchObject({ status: 'confirmed', resolved_at: EDIT_CLOCK })
+
+    expect(await refusal(cancelAt(db, first.id))).toEqual(ALREADY_SAVED_ON_CANCEL)
+    expect(db.pending(first.id)).toMatchObject({ status: 'confirmed', resolved_at: EDIT_CLOCK })
+
+    const confirmed = await confirmAt(db, first.id, '2026-10-04T15:00:40.000Z')
+    expect(confirmed).toMatchObject({ id: first.id, status: 'confirmed', already_confirmed: true })
+    expectOneLunchOf541(db)
+  })
+
+  it('PB-3 · the confirm failed at the transition and the patient taps Cancelar at once: the pending is closed as CONFIRMED, not cancelled', async () => {
+    const { db, first } = await proposedWrittenStillPending()
+
+    // Before: 200, the pending read "cancelled" with the lunch saved, and the
+    // next proposal of the same meal wrote it again (780).
+    expect(await refusal(cancelAt(db, first.id))).toEqual(ALREADY_SAVED_ON_CANCEL)
+    expect(db.pending(first.id)).toMatchObject({ status: 'confirmed', resolved_at: CANCEL_CLOCK })
+    expect(db.storedProposal(first.id)).toMatchObject({ source_provider_message_id: KEY_1 })
+
+    const confirmed = await confirmAt(db, first.id, '2026-10-04T15:00:40.000Z')
+    expect(confirmed).toMatchObject({ id: first.id, status: 'confirmed', already_confirmed: true })
+    expectOneLunchOf541(db)
+  })
+
+  it('a pending that was never written is still cancelled (200), writes nothing, and a new proposal is the way out', async () => {
+    const db = stagingDay()
+    const first = await proposeAt(db, KEY_1, SOURCE_1)
+
+    const cancelled = await cancelAt(db, first.id)
+    expect(cancelled).toMatchObject({
+      id: first.id,
+      status: 'cancelled',
+      resolved_at: CANCEL_CLOCK,
+    })
+    expect(db.pending(first.id)).toMatchObject({ status: 'cancelled', resolved_at: CANCEL_CLOCK })
+    expect(db.mealWrites()).toHaveLength(0)
+    expect(db.lunchRows()).toHaveLength(0)
+    expect(db.snapshot.calories_consumed).toBe(302)
+
+    // The DELETE sent again answers the same pending; nothing else moves.
+    const again = await cancelAt(db, first.id, '2026-10-04T15:00:25.000Z')
+    expect(again).toMatchObject({ id: first.id, status: 'cancelled', resolved_at: CANCEL_CLOCK })
+    // Here `registration_not_pending` is right: there is nothing saved.
+    expect(await refusal(confirmAt(db, first.id, '2026-10-04T15:00:27.000Z'))).toMatchObject({
+      status: 409,
+      code: 'registration_not_pending',
+    })
+    expect(db.mealWrites()).toHaveLength(0)
+
+    const second = await proposeAt(db, KEY_3, '2026-10-04T15:00:30.000Z')
+    expect(second.id).not.toBe(first.id)
+    await confirmAt(db, second.id, '2026-10-04T15:00:40.000Z')
+    expect(db.lunchRows()).toMatchObject([{ quantity_g: 150, raw_provider_message_id: KEY_3 }])
+    expect(db.snapshot.calories_consumed).toBe(541)
+  })
+
+  it('an expired pending keeps 409 registration_not_pending on Cancelar; a cancelled one keeps answering 200', async () => {
+    const db = stagingDay()
+    const first = await proposeAt(db, KEY_1, SOURCE_1)
+    db.pending(first.id).status = 'expired'
+
+    expect(await refusal(cancelAt(db, first.id))).toMatchObject({
+      status: 409,
+      code: 'registration_not_pending',
+    })
+    expect(db.pending(first.id).status).toBe('expired')
+
+    db.pending(first.id).status = 'cancelled'
+    expect(await cancelAt(db, first.id)).toMatchObject({ id: first.id, status: 'cancelled' })
+    expect(db.lunchRows()).toHaveLength(0)
+  })
+
+  it('the guard cannot read meal_logs: Cancelar is refused (500) instead of cancelling blind; the retry closes the pending as confirmed', async () => {
+    const { db, first } = await proposedWrittenStillPending()
+    db.failures.writtenLookup = true
+
+    expect(await refusal(cancelAt(db, first.id))).toMatchObject({
+      status: 500,
+      code: 'registration_lookup_failed',
+    })
+    expect(db.pending(first.id)).toMatchObject({ status: 'pending', resolved_at: null })
+
+    db.failures.writtenLookup = false
+    expect(await refusal(cancelAt(db, first.id, '2026-10-04T15:00:25.000Z'))).toEqual(
+      ALREADY_SAVED_ON_CANCEL,
+    )
+    expect(db.pending(first.id).status).toBe('confirmed')
+    expectOneLunchOf541(db)
+  })
+
+  it('the pending→confirmed UPDATE fails again during Cancelar: refused (500), never cancelled, and the next confirm is deduped', async () => {
+    const { db, first } = await proposedWrittenStillPending()
+    db.failures.confirmTransitions = 1
+
+    expect(await refusal(cancelAt(db, first.id))).toMatchObject({
+      status: 500,
+      code: 'registration_confirmation_failed',
+    })
+    expect(db.pending(first.id)).toMatchObject({ status: 'pending', resolved_at: null })
+
+    const later = await confirmAt(db, first.id, '2026-10-04T15:00:40.000Z')
+    expect(later).toMatchObject({ status: 'confirmed', already_confirmed: false, deduped: true })
+    expectOneLunchOf541(db)
+  })
+
+  it('a written pending past expires_at is closed as confirmed by Cancelar too (the DELETE never checked the expiry)', async () => {
+    const { db, first } = await proposedWrittenStillPending()
+
+    expect(await refusal(cancelAt(db, first.id, '2026-10-05T14:58:03.558Z'))).toEqual(
+      ALREADY_SAVED_ON_CANCEL,
+    )
+    expect(db.pending(first.id).status).toBe('confirmed')
+    expect(db.lunchRows()).toHaveLength(1)
+  })
+
+  it('WhatsApp message key shared by an express record and a pending of another meal: Cancelar cancels as before and the guard does not read meal_logs', async () => {
+    const db = stagingDay()
+    const WAMID = 'wamid.SAME_MESSAGE'
+    // The scenario of block 6: the rice was registered at once (express), the
+    // snack became a pending, and both carry the message id.
+    db.meals.push({
+      id: 'whatsapp-express-1',
+      user_id: USER_ID,
+      snapshot_id: SNAPSHOT_ID,
+      meal_type: 'almoco',
+      food_name: 'arroz branco',
+      food_db_id: null,
+      quantity_g: 100,
+      kcal: 128,
+      protein_g: 2.5,
+      carbs_g: 28.1,
+      fat_g: 0.2,
+      source: 'llm_estimate',
+      consumed_at: '2026-10-04T14:54:00.000Z',
+      created_at: '2026-10-04T14:54:20.000Z',
+      raw_provider_message_id: WAMID,
+    })
+    db.addPending(REGISTRATION_1, '2026-10-04T14:54:20.000Z', {
+      kind: 'meal',
+      mealType: 'lanche',
+      items: [
+        {
+          name: 'banana',
+          food_db_id: null,
+          nutrition_source: 'llm_estimate',
+          quantity_g: 100,
+          kcal: 92,
+          protein_g: 1.3,
+          carbs_g: 23.8,
+          fat_g: 0.1,
+        },
+      ],
+      totals: { kcal: 92, protein_g: 1.3, carbs_g: 23.8, fat_g: 0.1 },
+      sourceContentType: 'text',
+      source_provider_message_id: WAMID,
+      express_eligible: false,
+      replace: false,
+      source_timestamp: '2026-10-04T14:54:00.000Z',
+      source_timezone: TIMEZONE,
+      source_local_date: LOCAL_DATE,
+    })
+    // A read by key would fail here: the guard skips a pending without the marker.
+    db.failures.writtenLookup = true
+
+    // With the guard deciding by the key alone the snack nobody ate would be
+    // closed as "confirmed" and the patient could not cancel it.
+    const cancelled = await cancelAt(db, REGISTRATION_1)
+    expect(cancelled).toMatchObject({ id: REGISTRATION_1, status: 'cancelled' })
+    expect(db.pending(REGISTRATION_1)).toMatchObject({
+      status: 'cancelled',
+      resolved_at: CANCEL_CLOCK,
+    })
+    expect(db.meals.filter((row) => row.raw_provider_message_id === WAMID)).toHaveLength(1)
+  })
+
+  it('declared: a meal pending WITHOUT the marker that was already written is cancelled as before this PR — "cancelled" with the meal saved', async () => {
+    const db = stagingDay()
+    const { registration_origin: _marker, ...legacy } = appProposal(
+      'frango grelhado no almoço',
+      'canonical_fuzzy',
+      KEY_1,
+      SOURCE_1,
+    )
+    db.addPending(REGISTRATION_1, '2026-10-04T14:58:03.558Z', legacy)
+    db.failures.confirmTransitions = 1
+    await expect(confirmAt(db, REGISTRATION_1, CONFIRM_1)).rejects.toMatchObject({ status: 500 })
+    expect(db.lunchRows()).toHaveLength(1)
+
+    const cancelled = await cancelAt(db, REGISTRATION_1)
+    expect(cancelled).toMatchObject({ id: REGISTRATION_1, status: 'cancelled' })
+    expect(db.lunchRows()).toHaveLength(1)
+    expect(db.snapshot.calories_consumed).toBe(541)
+  })
+
+  it('declared: the refusal is all the server does — the same meal proposed again after it (a client that ignores the code, or the patient typing it again) is a second row, 780', async () => {
+    const db = stagingDay()
+    const first = await proposeAt(db, KEY_1, SOURCE_1)
+    await confirmAt(db, first.id, CONFIRM_1)
+    expect(await refusal(cancelAt(db, first.id))).toEqual(ALREADY_SAVED_ON_CANCEL)
+
+    const second = await proposeAt(db, KEY_3, '2026-10-04T15:00:30.000Z')
+    const confirmed = await confirmAt(db, second.id, '2026-10-04T15:00:40.000Z')
+
+    expect(confirmed).toMatchObject({ already_confirmed: false, deduped: false })
+    expect(db.lunchRows().map((row) => row.raw_provider_message_id)).toEqual([KEY_1, KEY_3])
+    // 301.9 + 238.8 + 238.8 = 779.5 → 780.
+    expect(db.snapshot.calories_consumed).toBe(780)
+  })
+
+  it('workouts follow the same rule: confirmed, or written under the pending key and type → refused and closed as confirmed; another type under the key → cancelled', async () => {
+    const db = stagingDay()
+    // As buildWorkoutPendingProposal stores it: no `registration_origin`, so
+    // the workout guard holds for every origin (key + type).
+    const workoutProposal = {
+      kind: 'workout',
+      workoutType: 'musculacao',
+      durationMin: 50,
+      kcalEst: 322,
+      intensity: 'moderada',
+      sourceContentType: 'mobile',
+      source_provider_message_id: KEY_1,
+      source_timestamp: SOURCE_1,
+      source_timezone: TIMEZONE,
+      source_local_date: LOCAL_DATE,
+      express_eligible: false,
+    }
+    const REGISTRATION_3 = '0b9f6f0e-0000-4000-8000-000000150003'
+    db.addPending(REGISTRATION_1, '2026-10-04T14:58:03.558Z', workoutProposal)
+    db.addPending(REGISTRATION_2, '2026-10-04T14:59:03.518Z', {
+      ...workoutProposal,
+      workoutType: 'corrida',
+    })
+    db.addPending(REGISTRATION_3, '2026-10-04T15:00:03.000Z', {
+      ...workoutProposal,
+      source_provider_message_id: KEY_2,
+    })
+    db.pending(REGISTRATION_3).status = 'confirmed'
+    db.workouts.push({
+      id: 'workout-1',
+      user_id: USER_ID,
+      workout_type: 'musculacao',
+      raw_provider_message_id: KEY_1,
+    })
+
+    // Written, the pending still "pending": closed as confirmed.
+    expect(await refusal(cancelAt(db, REGISTRATION_1))).toEqual(ALREADY_SAVED_ON_CANCEL)
+    expect(db.pending(REGISTRATION_1)).toMatchObject({
+      status: 'confirmed',
+      resolved_at: CANCEL_CLOCK,
+    })
+    // Already confirmed: same code, nothing changes.
+    expect(await refusal(cancelAt(db, REGISTRATION_3))).toEqual(ALREADY_SAVED_ON_CANCEL)
+    expect(db.pending(REGISTRATION_3).status).toBe('confirmed')
+    // A row of another type under the same key is not this pending's workout.
+    expect(await cancelAt(db, REGISTRATION_2)).toMatchObject({
+      id: REGISTRATION_2,
+      status: 'cancelled',
+    })
+
+    const confirmed = await confirmAt(db, REGISTRATION_1, '2026-10-04T15:00:40.000Z')
+    expect(confirmed).toMatchObject({ id: REGISTRATION_1, already_confirmed: true })
+    expect(db.workouts).toHaveLength(1)
   })
 })

@@ -197,6 +197,26 @@
     "en" : { "stringUnit" : { "state" : "translated", "value" : "Weight: %lld measurements; latest %@" } },
     "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Peso: %lld medições; última %@" } }
   } },
+  "appearance.dark" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Dark" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Escuro" } }
+  } },
+  "appearance.light" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Light" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Claro" } }
+  } },
+  "appearance.schedule" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Automatic: light by day, dark at night" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Automático: claro de dia, escuro à noite" } }
+  } },
+  "appearance.system" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Match iPhone" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Igual ao iPhone" } }
+  } },
+  "appearance.title" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Appearance" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Aparência" } }
+  } },
   "progress.weight.date-unknown": {
     "localizations": {
       "pt-BR": {

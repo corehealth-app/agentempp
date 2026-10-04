@@ -81,6 +81,12 @@ enum BodyFlowSymbol: String, CaseIterable, Sendable {
     case checkboxOn = "checkmark.square.fill"
     case checkboxOff = "square"
 
+    // Appearance (light/dark) control
+    case appearanceSchedule = "circle.lefthalf.filled"
+    case appearanceSystem = "iphone"
+    case appearanceLight = "sun.max"
+    case appearanceDark = "moon"
+
     // Auth / onboarding assurance copy
     case privacy = "lock.shield"
 

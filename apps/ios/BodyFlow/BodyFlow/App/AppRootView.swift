@@ -12,6 +12,8 @@ struct AppRootView: View {
     @State private var onboardingCoordinator = OnboardingRootCoordinator()
     @State private var authenticatedShellCoordinator: Prompt14AuthenticatedShellCoordinator
     @State private var onboardingRetryTask: Task<Void, Never>?
+    @State private var appearance: BodyFlowAppearanceStore
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.locale) private var locale
 
     init(
@@ -27,6 +29,7 @@ struct AppRootView: View {
                 dependencies: dependencies
             )
         )
+        _appearance = State(initialValue: BodyFlowAppearanceStore.make(isDemo: configuration.mode == .demo))
     }
 
     var body: some View {
@@ -67,6 +70,14 @@ struct AppRootView: View {
             differentiateWithoutColor: configuration.differentiateWithoutColorOverride
                 ?? systemDifferentiateWithoutColor
         )
+        // Light/dark: the person's choice, or the clock (day light, night
+        // dark), or the system. nil leaves it to the system.
+        .preferredColorScheme(appearance.colorScheme)
+        .environment(appearance)
+        .task { await appearance.followSchedule() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { appearance.refreshClock() }
+        }
         .task {
             await model.start()
         }

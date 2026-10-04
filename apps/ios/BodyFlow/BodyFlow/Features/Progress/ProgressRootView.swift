@@ -48,6 +48,8 @@ struct ProgressRootView: View {
                         }
                     }
                     .padding(BodyFlowSpacing.md)
+                    // Vertical scrolling only, whatever the charts measure.
+                    .containerRelativeFrame(.horizontal)
                 }
                 .refreshable { await model.retry() }
             }

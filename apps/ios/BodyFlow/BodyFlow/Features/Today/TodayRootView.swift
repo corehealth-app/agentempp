@@ -229,6 +229,8 @@ struct TodayRootView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.locale) private var locale
     @Environment(\.guidedTourFocus) private var guidedTourFocus
+    /// Absent in previews and unit renders; the control is then not shown.
+    @Environment(BodyFlowAppearanceStore.self) private var appearance: BodyFlowAppearanceStore?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.bodyFlowReduceMotion) private var reduceMotion
     @State private var refreshCoordinator = TodayRefreshCoordinator()
@@ -295,6 +297,11 @@ struct TodayRootView: View {
         }
         .toolbar {
             let navigation = TodayRootNavigationPresentation(state: model.state)
+            if let appearance {
+                ToolbarItem(placement: .topBarLeading) {
+                    BodyFlowAppearanceMenu(store: appearance)
+                }
+            }
             if model.state.presentation.value != nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(action: retry) {
@@ -518,6 +525,10 @@ struct TodayRootView: View {
                 .bodyFlowZoomSource(.detail(tab: .today, id: "daily-summary"))
             }
             .padding(BodyFlowSpacing.md)
+            // The day is exactly as wide as the screen: whatever a value or
+            // a text size does to one block, the page can only scroll
+            // vertically (Eduardo, 03/10: a diagonal drag moved it sideways).
+            .containerRelativeFrame(.horizontal)
         }
         .refreshable {
             await refreshAll()

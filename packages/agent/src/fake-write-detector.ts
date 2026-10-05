@@ -107,13 +107,24 @@ export interface FakeWriteInput {
   prescriptionToolCalled?: boolean
   /** marca_refeicao_pulada foi chamada com sucesso no turno. */
   skipToolCalled?: boolean
-  /** define_protocolo OU define_meta_peso rodou sem erro no turno. O verbo
-   *  "registrado/registrada/atualizado" da resposta fala então do protocolo ou
-   *  da meta que a tool gravou (ou recusou), não de uma refeição: a regra
-   *  genérica "verbo + kcal/emoji" não dispara. As outras regras (pulei,
-   *  cardápio/treino inventado, proposta imitada, bullets com kcal, card
-   *  "Total refeição") continuam valendo. Ausente = false (zero regressão). */
+  /** define_protocolo OU define_meta_peso gravou (ou recusou pelo piso) no
+   *  turno. A resposta só fica fora da regra genérica "verbo + kcal/emoji"
+   *  quando toda afirmação de registro/correção que o detector reconhece nela
+   *  está ligada ao nome da meta — os passos estão em `outsideGoalSentences`.
+   *  Um verbo que sobre dispara, como no commit pai 279ba09. O que ainda passa
+   *  em silêncio está nas entradas "RC R4" de docs/CALCULO-MPP.md §8c. As
+   *  outras regras (pulei, cardápio/treino inventado, proposta imitada, bullets
+   *  com kcal, card "Total refeição") não olham esta flag. Ausente = false
+   *  (zero regressão). */
   goalToolCalled?: boolean
+  /** Tudo o que o paciente mandou no turno e o pipeline tem como texto: o que
+   *  ele digitou, a transcrição dos áudios e a análise automática das fotos
+   *  (uma foto de prato entra como "[refeição]"). Quando esse texto tem uma
+   *  palavra de refeição ou treino (`MEAL_OR_WORKOUT_WORD`), a isenção de
+   *  `goalToolCalled` não vale: a resposta é lida inteira, como no commit pai
+   *  279ba09. Só pode fazer o guard disparar MAIS. Ausente = a isenção é
+   *  decidida só pela resposta (zero regressão). */
+  patientTurnText?: string
   /** Fallback de meal_type quando texto do paciente não cita (vem do gap
    *  reminder do dia ou inferência por hora local — pipeline preenche). */
   mealTypeHint?: 'cafe' | 'almoco' | 'lanche' | 'jantar' | 'ceia'
@@ -169,6 +180,214 @@ const FAKE_PROPOSAL =
   /\bvi\s+isso\s+na\s+sua\s+(?:foto|áudio|audio)|\bvi\s+isso\s+nas\s+suas\s+fotos\b|\bentendi\s+do\s+áudio\b|\bentendi\s+do\s+audio\b/i
 const PROPOSAL_QUESTION = /\bconfirma\??\s*$|\bregistro\?\s*$/i
 
+// ── Turn in which the goal or the protocol was written (review 2026-10-04) ──
+//
+// After define_protocolo / define_meta_peso the model repeats the tool's words
+// ("Protocolo registrado … a meta de 7% não foi registrada … 1.746 kcal 💪").
+// Only a claim ABOUT THE GOAL is explained by the tool. Two earlier versions
+// were too wide, and a meal, a correction or a workout claimed in the same
+// answer reached the patient with no retry and no audit event:
+//  - 9bc012b switched the generic rule off for the whole answer;
+//  - the first per-sentence version set aside every sentence that named the
+//    goal, so "Registrei o frango e o arroz na sua meta de hoje: 430 kcal 💪"
+//    and "Meta registrada: 75 kg. Registrei arroz, feijão e frango grelhado.
+//    Você está em 520 kcal da meta de 1.746." passed (16 of the 45 phantom
+//    answers of the second check).
+// A third check found two more shapes that passed: a participle that agrees
+// with the kcal eaten, not with the goal ("520 kcal da meta já registradas"),
+// and a verb cut from the list it governs by the sentence break at ": "
+// ("Registrei a meta e também: arroz, feijão e frango — 520 kcal").
+//
+// When in doubt a sentence is NOT set aside, and then the cost is the parent's
+// behaviour (one more model call). The exemption is still not complete: it
+// reads words, not meaning. What is known to pass in silence is declared,
+// phrase by phrase, in the "RC R4" entries of docs/CALCULO-MPP.md §8c (food
+// shown with no verb of its own, "520 kcal da meta registrada"). The exemption
+// is off when the patient's own text of the turn (`patientTurnText`) has a
+// word of MEAL_OR_WORKOUT_WORD: in the probes of the three checks every answer
+// that passed came from a turn in which the patient reported a meal or a
+// workout. A report made with other words ("Comi 2 fatias de pizza") does not
+// switch it off; that is declared in §8c too.
+
+// PT-BR letters: `\b` breaks on accented ones (same gotcha as MEAL_KEYWORDS).
+const LETTER = 'a-zà-ú'
+const ptWord = (alternatives: string): RegExp =>
+  new RegExp(`(?:^|[^${LETTER}])(?:${alternatives})(?=$|[^${LETTER}])`, 'i')
+
+// "gordura" only in its body-fat wording: alone it is also a macro of a meal
+// ("520 kcal, 20 g de gordura"), and that sentence must stay under the guard.
+const GOAL_NOUN =
+  'protocolos?|metas?|objetivos?|imc|gordura\\s+corporal|%\\s*de\\s+gordura|percentual\\s+de\\s+gordura|recomposi[çc][ãa]o|ganho\\s+de\\s+massa|manuten[çc][ãa]o'
+const GOAL_WORD = ptWord(GOAL_NOUN)
+// The workout words of WORKOUT_SIGNATURE without "peso" and "força", which
+// also describe a weight goal; a duration next to them ("40 minutos de força",
+// "1 hora de peso livre") is caught by WORKOUT_SIGNATURE itself. The same list
+// is applied to the patient's text of the turn (`patientTurnText`).
+const MEAL_OR_WORKOUT_WORD = ptWord(
+  'caf[ée]s?|almo[çc](?:os?|ar|ei|ou)|lanch(?:es?|ar|ei|ou)|jant(?:as?|ar|ares|ei|ou)|ceias?|refei[çc](?:[ãa]o|[õo]es)|treinos?|caminhadas?|corridas?|muscula[çc][ãa]o|bikes?|bicicletas?|nata[çc][ãa]o|alongamentos?|yoga|pilates|exerc[íi]cios?|cross\\w*',
+)
+// A sentence ends at . ! ? … or : followed by a space, or at a line break
+// ("1.746 kcal" and "118,5 g" are not split).
+const SENTENCE_BREAK = /(?<=[.!?…:])\s+|\n+/
+
+const hasFoodSignature = (text: string): boolean => /\bkcal\b/i.test(text) || /🔥|💪|📊/.test(text)
+const hasWriteClaim = (text: string): boolean =>
+  CORRECTION_CLAIM.test(text) || REGISTRATION_CLAIM.test(text)
+
+// A claim BOUND to the goal noun, in the two shapes the goal tools hand to
+// the model (goalBelowFloorReason in tools.ts; the messages of
+// bf-goal-classifier.ts and weight-goal-classifier.ts):
+//  (A) the participle right after the goal noun phrase — "Protocolo
+//      registrado", "A meta de 7% de gordura corporal não foi registrada",
+//      "A meta de IMC 18 não foi registrada", "Meta de 7% registrada";
+//  (B) the finite verb whose object, right after it, is the goal noun —
+//      "Não registrei essa meta", "não registrei essa meta e nada mudou";
+//      only a determiner (and "também"/"já") may stand between them.
+// Between the noun and the participle only the value of the goal and an
+// auxiliary may stand, so "Meta registrada e arroz com frango anotado" and
+// "…e já deixei anotado o pão com ovo" leave "anotado" unbound.
+//
+// The number token must leave ONE way to read a text. It used to end in
+// "\s*(?:%|kg|kcal)?": the spaces after a number could go to the token or to
+// the "\s+" of the next repetition, and "75 kg" was one token or two. A
+// sentence with a verb, a goal noun, N numbers two spaces apart and no
+// participle doubled the time per number (3.7 s at N=28; third check). Now a
+// unit belongs to the number only when attached ("75kg") or when it is "%" or
+// "kcal" (neither is a token of its own); a spaced "kg" is the standalone
+// token. The texts accepted are the same.
+const GOAL_VALUE_TOKEN =
+  'd[eoa]|imc|bf|peso|gordura|corporal|kg|di[áa]ri[ao]|recomposi[çc][ãa]o|manuten[çc][ãa]o|ganho\\s+de\\s+massa|\\d+(?:[.,]\\d+)*(?:kg|\\s*(?:%|kcal))?'
+const AUXILIARY_TOKEN = 'n[ãa]o|j[áa]|tamb[ée]m|ainda|agora|foi|foram|est[áa]|ficou'
+const GOAL_DETERMINER = '[ao]s?|seus?|suas?|ess[ea]|est[ea]|nov[oa]'
+const GOAL_BOUND_CLAIM = new RegExp(
+  `(?<![${LETTER}])(?:` +
+    // (A) noun phrase + participle
+    `(?:${GOAL_NOUN})(?![${LETTER}])(?:\\s+(?:${GOAL_VALUE_TOKEN}|${AUXILIARY_TOKEN})(?![${LETTER}]))*` +
+    `\\s+(?:re-?registrad|registrad|anotad|atualizad|corrigid|salv)[oa]s?` +
+    '|' +
+    // (B) finite verb + goal noun as its object
+    `(?:re-?registrei|registrei|anotei|salvei|salvamos|atualizei|corrigi|troquei)` +
+    `(?:\\s+(?:tamb[ée]m|j[áa]))?(?:\\s+(?:${GOAL_DETERMINER})(?![${LETTER}]))*\\s+(?:${GOAL_NOUN})` +
+    `)(?![${LETTER}])`,
+  'gi',
+)
+const GOAL_NOUN_PHRASE = new RegExp(`(?<![${LETTER}])(?:${GOAL_NOUN})(?![${LETTER}])`, 'gi')
+
+// Shape (A) only binds the participle that AGREES with the goal noun heading
+// the phrase. "520 kcal da meta já registradas" has the goal noun and then a
+// participle, but the feminine plural belongs to the kcal eaten: it is a claim
+// about the meal (third check, HIGH — 11 answers passed in silence).
+const BOUND_PARTICIPLE = /(?:registrad|anotad|atualizad|corrigid|salv)([oa])(s?)$/i
+// The phrase starts at its head noun. Feminine: meta, gordura corporal,
+// recomposição, manutenção. Masculine: protocolo, objetivo, IMC, "% de
+// gordura", percentual de gordura, ganho de massa.
+const FEMININE_GOAL_NOUN = /^(?:metas?|gordura|recomposi|manuten)/i
+const PLURAL_GOAL_NOUN = new RegExp(`^(?:protocolos|metas|objetivos)(?![${LETTER}])`, 'i')
+// "Protocolo e meta registrados", "O protocolo e a meta foram registrados":
+// one plural participle over two goal nouns joined by "e". The text before the
+// phrase must END in the other goal noun (with its value) and that "e" — two
+// goal nouns anywhere in the sentence are not enough ("520 kcal da meta de
+// recomposição já registradas" names two and claims the meal).
+const AFTER_COORDINATED_GOAL_NOUN = new RegExp(
+  `(?<![${LETTER}])(?:${GOAL_NOUN})(?![${LETTER}])(?:\\s+(?:${GOAL_VALUE_TOKEN})(?![${LETTER}]))*` +
+    `,?\\s+e\\s+(?:(?:${GOAL_DETERMINER})\\s+)*$`,
+  'i',
+)
+
+/** `claim` is one match of GOAL_BOUND_CLAIM and `before` the sentence up to it. */
+function isAboutTheGoal(claim: string, before: string): boolean {
+  const participle = BOUND_PARTICIPLE.exec(claim)
+  // Shape (B): the goal noun is the object of the finite verb.
+  if (!participle) return true
+  const feminine = participle[1]?.toLowerCase() === 'a'
+  const plural = participle[2] !== ''
+  if (feminine === FEMININE_GOAL_NOUN.test(claim) && plural === PLURAL_GOAL_NOUN.test(claim))
+    return true
+  return plural && AFTER_COORDINATED_GOAL_NOUN.test(before)
+}
+
+// Every other word of a sentence that carries a bound claim must be a goal
+// noun or come from this closed list (numbers and symbols are not words).
+// Food and sport names are an open class and cannot be listed; the words
+// around a goal claim can — these are the ones of the tools' own sentences
+// ("Por segurança, não registrei essa meta e nada mudou no seu cadastro"),
+// the units of a goal and a few fillers. One word from outside ("Registrei a
+// meta e o frango com arroz", "Salada dentro da meta registrada", "Meta
+// registrada, Roberto!") keeps the sentence under the guard. "massa" and
+// "gordura" are deliberately absent: outside "ganho de massa" and "gordura
+// corporal" they are food ("Registrei a meta e a massa: 430 kcal").
+const GOAL_SENTENCE_WORD = new RegExp(
+  '^(?:' +
+    'peso|bf|kg|kcal|d[ée]ficit|cadastro' +
+    '|[ao]s?|uma?|seus?|suas?|ess[ea]|est[ea]|nov[oa]' +
+    '|d[eoa]s?|em|n[oa]s?|para|pra|pro|por|com|como|e|ao|à' +
+    '|n[ãa]o|j[áa]|tamb[ée]m|ainda|agora|foi|foram|est[áa]|ficou' +
+    '|seguran[çc]a|nada|mudou|dia|di[áa]ri[ao]|sucesso' +
+    '|pronto|perfeito|feito|[óo]timo|certo|combinado|beleza|ok|vamos|focar|seguimos' +
+    ')$',
+  'i',
+)
+const SENTENCE_WORD = new RegExp(`[${LETTER}]+`, 'gi')
+
+/** True when every registration/correction verb of the sentence is bound to
+ * the goal noun (a participle also has to agree with it) and every other word
+ * of it is a goal noun or in the closed list. A sentence with no such verb
+ * claims nothing. */
+function claimsOnlyTheGoal(sentence: string): boolean {
+  if (!hasWriteClaim(sentence)) return true
+  // A phrase that fails the agreement stays in `rest`, verb included.
+  const rest = sentence.replace(GOAL_BOUND_CLAIM, (claim: string, offset: number) =>
+    isAboutTheGoal(claim, sentence.slice(0, offset)) ? ' ' : claim,
+  )
+  // Today the closed list alone would also catch an unbound verb (none is in
+  // it); the explicit check keeps the rule standing if the list grows.
+  if (hasWriteClaim(rest)) return false
+  const words = rest.replace(GOAL_NOUN_PHRASE, ' ').match(SENTENCE_WORD) ?? []
+  return words.every((word) => GOAL_SENTENCE_WORD.test(word))
+}
+
+// "Registrei a meta e também: arroz, feijão e frango — 520 kcal 💪": the
+// sentence break at ": " leaves the verb in a piece made only of listed words,
+// and the list the verb governs in the next piece, which has no verb (third
+// check, MEDIUM). A piece that stops at a coordination before the colon is an
+// open list and is not set aside (without a verb it claims nothing either
+// way). "Meta registrada:" and "Meta registrada também." are not matched.
+const OPEN_COORDINATION = new RegExp(`(?<![${LETTER}])(?:e|tamb[ée]m|mais|ainda)\\s*:$`, 'i')
+const endsInOpenList = (sentence: string): boolean => OPEN_COORDINATION.test(sentence.trimEnd())
+
+/**
+ * The part of an answer that the goal tool does NOT explain, or null when the
+ * tool explains every claim the steps below recognise in it.
+ *
+ *  1. Split the answer into sentences.
+ *  2. Set a sentence aside only when ALL of this holds: it has a goal word; it
+ *     has no meal-or-workout word and no workout signature (duration + type);
+ *     every registration/correction verb in it is bound to the goal noun, a
+ *     participle agreeing with it; its other words are all goal nouns or in
+ *     the closed list above; and it does not stop at an open coordination.
+ *  3. If a registration or correction verb is left in the remaining sentences,
+ *     the guard fires on them. The caller already checked that the WHOLE
+ *     answer carries kcal/emoji or a workout signature, exactly as the parent
+ *     commit 279ba09 did, so the signature is not required again here.
+ *
+ * In a sentence that carries a verb, the meal-or-workout word and the workout
+ * signature are today also words from outside the closed list; the two checks
+ * stay so that step 2 does not depend on what the list holds.
+ */
+function outsideGoalSentences(content: string): string | null {
+  const kept = content
+    .split(SENTENCE_BREAK)
+    .filter(
+      (s) =>
+        !GOAL_WORD.test(s) ||
+        MEAL_OR_WORKOUT_WORD.test(s) ||
+        WORKOUT_SIGNATURE.test(s) ||
+        !claimsOnlyTheGoal(s) ||
+        endsInOpenList(s),
+    )
+  return kept.some(hasWriteClaim) ? kept.join('\n') : null
+}
+
 /**
  * Retorna isFake=true quando o texto afirma registro/correção + tem assinatura
  * de card (kcal/🔥💪📊 pra refeição OU duração+tipo pra treino) MAS nenhuma
@@ -182,6 +401,7 @@ export function detectFakeWrite({
   prescriptionToolCalled,
   skipToolCalled,
   goalToolCalled,
+  patientTurnText,
   mealTypeHint,
 }: FakeWriteInput): FakeWriteResult {
   if (registrationToolCalled) return { isFake: false, kind: null }
@@ -252,7 +472,7 @@ export function detectFakeWrite({
     return { isFake: true, kind: 'registration' }
   }
 
-  const hasFoodSignature = /\bkcal\b/i.test(content) || /🔥|💪|📊/.test(content)
+  const foodSignature = hasFoodSignature(content)
   const hasWorkoutSignature = WORKOUT_SIGNATURE.test(content)
 
   // Proposta-fake genérica (Roberto 2026-05-30 13:47): LLM disse "Entendido!
@@ -261,7 +481,7 @@ export function detectFakeWrite({
   // claim ("incluo" não bate REGISTRATION_CLAIM, "vi isso" não bate
   // FAKE_PROPOSAL). Critério mais amplo: refeição-signature + ≥2 bullets de
   // itens + termina com "Confirma?" → é proposta de botão sem tool. Retry.
-  if (hasFoodSignature && PROPOSAL_QUESTION.test(content.trim())) {
+  if (foodSignature && PROPOSAL_QUESTION.test(content.trim())) {
     const bulletCount = (content.match(/(?:^|\n)\s*[•\-*]\s/g) ?? []).length
     if (bulletCount >= 2) {
       return { isFake: true, kind: 'registration' }
@@ -297,19 +517,35 @@ export function detectFakeWrite({
   if (kcalBullets.length >= 2) {
     return { isFake: true, kind: 'registration' }
   }
-  if (!hasFoodSignature && !hasWorkoutSignature) return { isFake: false, kind: null }
+  if (!foodSignature && !hasWorkoutSignature) return { isFake: false, kind: null }
 
   // Review 2026-10-04 (reavaliação com meta recusada): depois de
   // define_protocolo o modelo responde "Protocolo registrado … a meta de 7% não
   // foi registrada … 1.746 kcal 💪" — texto fiel ao retorno da tool, que a regra
   // abaixo lia como refeição registrada sem tool e forçava uma 3ª chamada com
-  // "chame registra_refeicao". Com uma tool de protocolo/meta gravada no turno
-  // o verbo está explicado; só o card de refeição ("Total refeição") continua
-  // sendo afirmação de registro de refeição.
-  if (goalToolCalled && !MEAL_CARD.test(content)) return { isFake: false, kind: null }
+  // "chame registra_refeicao". Com a tool de protocolo/meta no turno, só as
+  // frases cuja afirmação é toda sobre a meta saem da leitura; um verbo de
+  // registro/correção que sobre dispara. Com o card "Total refeição" o texto é
+  // lido inteiro.
+  const outsideGoal =
+    goalToolCalled && !MEAL_CARD.test(content) ? outsideGoalSentences(content) : content
+  // Third check of 2026-10-04: every answer that still passed in silence came
+  // from a turn in which the PATIENT reported a meal or a workout next to the
+  // goal ("Minha meta agora é 75 kg. Almocei arroz, feijão e frango
+  // grelhado."). In such a turn the goal tool explains nothing about the meal,
+  // so the exemption is off and the whole answer is read, as in the parent
+  // 279ba09. When the per-sentence reading already leaves a claim it is kept:
+  // same verdict and same kind of retry as without the patient's text. This
+  // can only add turns in which the guard fires. WORKOUT_SIGNATURE is not
+  // applied to the patient's text: it takes "peso" next to any hour, and a
+  // goal turn says "Acordo às 7h, peso 80 kg. Minha meta agora é 75 kg".
+  const claimText =
+    outsideGoal ??
+    (patientTurnText !== undefined && MEAL_OR_WORKOUT_WORD.test(patientTurnText) ? content : null)
+  if (claimText === null) return { isFake: false, kind: null }
 
-  if (CORRECTION_CLAIM.test(content)) return { isFake: true, kind: 'correction' }
-  if (REGISTRATION_CLAIM.test(content) || MEAL_CARD.test(content))
+  if (CORRECTION_CLAIM.test(claimText)) return { isFake: true, kind: 'correction' }
+  if (REGISTRATION_CLAIM.test(claimText) || MEAL_CARD.test(content))
     return { isFake: true, kind: 'registration' }
   return { isFake: false, kind: null }
 }

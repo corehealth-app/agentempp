@@ -1,0 +1,1917 @@
+{
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "cadastra_dados_iniciais",
+        "description": "Salva ou atualiza dados FACTUAIS do perfil do paciente (sexo, nascimento, altura, peso, BF%, atividade, sono, fome). Use durante onboarding OU quando o paciente confirmar EXPLICITAMENTE que quer atualizar (\"meu peso mudou\", \"agora meço 1.80m\"). ⚠️ NÃO USE quando: (a) o paciente está ESPECULANDO (\"acho que tenho uns 25%\", \"talvez seja 80kg\"); (b) o paciente está REFLETINDO sobre dados antigos; (c) os números vieram de fonte externa não confirmada (foto de balança sem confirmação verbal). 🚨 UNIDADES: height_cm SEMPRE em centímetros, weight_kg SEMPRE em quilos. Se o paciente disser em lb/inch (sistema imperial salvo em users.metadata.unit_system), CONVERTA antes (1 inch=2.54 cm, 1 lb=0.4536 kg). A tool valida limites: altura 100-250cm, peso 30-300kg, BF 5-60%. Se não bater, é provavelmente unidade errada — recue e pergunte.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "sex": {
+              "type": "string",
+              "enum": ["masculino", "feminino"]
+            },
+            "birth_date": {
+              "type": "string"
+            },
+            "height_cm": {
+              "type": "number"
+            },
+            "weight_kg": {
+              "type": "number"
+            },
+            "body_fat_percent": {
+              "type": "number"
+            },
+            "activity_level": {
+              "type": "string",
+              "enum": ["sedentario", "leve", "moderado", "alto", "atleta"]
+            },
+            "training_frequency": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 7
+            },
+            "water_intake": {
+              "type": "string",
+              "enum": ["pouco", "moderado", "bastante"]
+            },
+            "hunger_level": {
+              "type": "string",
+              "enum": ["pouca", "moderada", "muita"]
+            },
+            "wake_time": {
+              "type": "string"
+            },
+            "bedtime": {
+              "type": "string"
+            },
+            "food_organization": {
+              "type": "string",
+              "enum": ["sim", "nao"]
+            },
+            "onboarding_step": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 11
+            },
+            "onboarding_completed": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "define_protocolo",
+        "description": "Grava o protocolo nutricional + meta DO PACIENTE. ⚠️ USE APENAS depois que: (1) cadastra_dados_iniciais foi chamada com peso/altura/BF; (2) você apresentou as 3 opções (recomposicao/ganho_massa/manutencao) e o paciente escolheu UMA explicitamente; (3) você apresentou o nível de fome (muita/moderada/pouca → 400/500/600 kcal de déficit; MAIS fome = MENOR déficit, pra proteger a adesão — regra do método) e ele escolheu — APENAS pra protocolo recomposicao. NÃO USE quando o paciente apenas DESEJOU genericamente (\"quero emagrecer\", \"quero ganhar massa\") — peça pra ele confirmar a opção. Parâmetros: protocol = \"recomposicao\" (déficit + preserva massa), \"ganho_massa\" (superávit), \"manutencao\" (sem ajuste). deficit_level = kcal/dia de déficit, APENAS pra recomposicao. 400=MUITA fome, 500=moderada, 600=POUCA fome (mais fome → MENOR déficit, pra não quebrar a adesão — regra fixa do método). Omita pra ganho_massa/manutencao. goal_type = \"BF\" (% gordura alvo) ou \"IMC\" (IMC alvo). goal_value = número absoluto da meta (ex: BF=15 ou IMC=23). Omita se não chegou nesse nível de detalhe. PISO DA META: BF abaixo de 10% ou IMC abaixo de 18,5 NÃO é gravado como meta. O protocolo e o déficit são gravados normalmente e o retorno traz goal_saved=false com goal_message: NÃO diga que a meta foi registrada; explique o piso e ofereça uma meta a partir dele.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "protocol": {
+              "type": "string",
+              "enum": ["recomposicao", "ganho_massa", "manutencao"]
+            },
+            "deficit_level": {
+              "anyOf": [
+                {
+                  "const": 400
+                },
+                {
+                  "const": 500
+                },
+                {
+                  "const": 600
+                }
+              ]
+            },
+            "goal_type": {
+              "type": "string",
+              "enum": ["BF", "IMC"]
+            },
+            "goal_value": {
+              "type": "number"
+            }
+          },
+          "required": ["protocol"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "define_meta_peso",
+        "description": "Salva a META do paciente — PESO em kg OU PERCENTUAL DE GORDURA (BF%) — e retorna classificação automática da viabilidade. PASSE EXATAMENTE UM dos dois parâmetros (XOR):\n  - `target_weight_kg`: quando o paciente fala em peso (\"quero pesar 65kg\", \"minha meta é 70\"). Faixa 30-300.\n  - `target_bf_percent`: quando o paciente fala em gordura corporal (\"quero chegar em 18%\", \"minha meta é 20% de BF\"). Abaixo de 10% a tool NÃO grava (piso do método).\n⚠️ USE APENAS depois que: (1) cadastra_dados_iniciais foi chamada (peso, altura, sexo, e — se for BF — body_fat_percent atual); (2) o paciente declarou EXPLICITAMENTE o alvo. NÃO USE quando ele especulou ou pediu sua opinião antes.\nRetorno: classificação (ideal/agressiva/sobrepeso/abaixo/manutenção) + números da meta (IMC alvo OU pp de gordura) + faixa saudável + semanas estimadas + MENSAGEM-BASE.\nRECUSA (piso de segurança): meta de gordura corporal abaixo de 10%, ou meta de PESO que deixaria o IMC abaixo de 18,5 perdendo peso, NÃO é gravada. O retorno traz refused=true, goal_saved=false e a meta anterior continua como estava. NÃO diga que registrou, NÃO chame a tool de novo com o mesmo valor: explique com a mensagem retornada e ofereça uma meta a partir do piso.\nIMPORTANTE: a mensagem retornada NÃO é literal — varie o jeito de dizer mas MANTENHA os números. NUNCA invente IMC, faixa saudável nem BF essencial — use os da tool.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "target_weight_kg": {
+              "type": "number",
+              "minimum": 20,
+              "maximum": 300
+            },
+            "target_bf_percent": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 60
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "registra_refeicao",
+        "description": "Registra uma REFEIÇÃO QUE O PACIENTE ACABOU DE CONSUMIR (consumida hoje, agora ou nas últimas horas). Macros calculados automaticamente via base nutricional TACO. NÃO calcule macros manualmente. ⚠️ NÃO USE esta tool quando: (a) o paciente está descrevendo PADRÃO ALIMENTAR ou respondendo perguntas como \"o que costuma comer\", \"o que gosta\", \"o que costuma fazer no café da manhã\" — isso é coleta pra montar plano, não consumo; (b) o paciente está descrevendo cardápio HIPOTÉTICO ou plano futuro (\"vou começar a comer X\"); (c) o paciente está pedindo sugestão de cardápio. Use APENAS quando há sinal claro de CONSUMO RECENTE: \"acabei de comer\", \"no almoço comi\", foto de prato real, áudio descrevendo o que comeu hoje, \"tomei café da manhã com…\". PRESERVE EXATAMENTE o nome que o paciente usou no `food_name` (não troque \"ovo mexido\" por \"ovo cozido\", não traduza, não simplifique). 🚨 **SEPARE alimentos compostos em itens INDIVIDUAIS no array.** NUNCA mande um nome com \"com\", \"e\", \"+\" — quebre. Exemplos: ❌ items=[{food_name:\"ovos cozidos com azeite\", quantity_g:205}] (causa match errado, virou 1812 kcal de azeite). ✅ items=[{food_name:\"ovo cozido\", quantity_g:200}, {food_name:\"azeite de oliva\", quantity_g:5}]. ❌ items=[{food_name:\"arroz com feijão e bife\"}]. ✅ items=[{food_name:\"arroz branco cozido\", quantity_g:100}, {food_name:\"feijão preto cozido\", quantity_g:80}, {food_name:\"bife grelhado\", quantity_g:120}]. Se o paciente não especificou quantidade, ESTIME baseado em referências visuais/típicas e siga. ➕ ADIÇÃO de item a refeição JÁ REGISTRADA (\"adicionei X\", \"esqueci de mencionar Y\", \"coloca mais Z\"): chame com APENAS os itens NOVOS, sem re-listar a refeição inteira, e SEM replace=true. Exemplo: paciente diz \"Adicionei uma medida de geleia de morango ao café\" → items=[{food_name:\"geleia de morango\",quantity_g:20}]. Se você re-listar todos os itens da refeição + os novos sem replace=true, DUPLICA as calorias no tracking. 🔄 CORREÇÃO de item já registrado: passe `replace=true` + `meal_type` quando o paciente corrigir quantidade, preparo, identidade ou kcal (ex: \"o frango era grelhado\", \"o leite em pó tem 85 kcal\"). O sistema localiza e substitui somente os itens correspondentes do registro recente. Sem alvo inequívoco, a operação é bloqueada e nada é apagado. 📌 TABELA DE DECISÃO replace: \"adicionei X\" = replace=false e apenas o item novo. \"na verdade era X\" ou \"corrige X\" = replace=true com os itens corrigidos. Só uma instrução explícita como \"refaça/corrija o almoço inteiro\" autoriza substituir a refeição inteira. 🔁 CORREÇÃO IMPLÍCITA: se paciente acabou de registrar refeição e em <15min envia OS MESMOS alimentos com QUANTIDADES DIFERENTES (mesmo sem dizer \"corrige\"), trate como correção e use replace=true. Ex: agent registrou \"200g arroz + 180g carne\" pela foto, paciente responde \"100g arroz, 100g carne\" → replace=true. (Sistema também detecta automaticamente como defesa em profundidade.) 📏 UNIDADES: você passa SEMPRE quantity_g em GRAMAS (interno do sistema). Quando o paciente disser \"2 ovos\", converta pra 100g (50g/ovo). \"250ml de leite\" → 250g (1ml ≈ 1g pra líquidos). A tool retorna `display_qty` + `display_unit` no resultado pra você mostrar ao paciente em unidades naturais (ovos→\"2 unidades\", leite→\"250 ml\", pão francês→\"1 pão\"). USE display_qty/display_unit ao redigir a resposta — NÃO mostre \"120g de ovo\" pro paciente, mostre \"2 ovos\". 🧮 AGREGAÇÃO: cada alimento deve aparecer UMA única vez em `items`, com `quantity_g` igual ao TOTAL consumido. Ex.: 2 tortilhas de 43g → um item de 86g; nunca dois itens idênticos de 43g. 📅 DIA DA REFEIÇÃO: por padrão assume HOJE. Se o paciente disser que a refeição foi de um DIA ANTERIOR (\"isso foi ontem\", \"comi ontem à noite\", \"esse jantar foi de ontem\"), passe `consumed_date` (YYYY-MM-DD) com a data certa — senão a refeição entra no dia errado. 🧠 APRENDIZADO DE CORREÇÕES: quando o paciente CORRIGE um alimento que foi mal identificado (ex: a visão disse \"batata\" e ele diz \"não, é mandioca\", ou \"é cuscuz, não farofa\", ou \"o pão é francês\"), passe o array `corrections` com `{de: \"batata\", para: \"mandioca\"}`. Inclui também quando ele diz \"apenas N unidades\" pra ajustar quantidade junto com identidade. Se ele informar os macros específicos (ex: \"minha geleia caseira tem 130 kcal por 100g\"), inclua em `corrections` os campos de macro. O sistema aprende E o `corrections` preenchido é a evidência mais forte de que o turno é correção — garante que o replace=true não vai ser derrubado pela defesa anti-erro do LLM.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "meal_type": {
+              "type": "string",
+              "enum": ["cafe", "almoco", "lanche", "jantar", "ceia", "outro"]
+            },
+            "replace": {
+              "type": "boolean"
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "food_name": {
+                    "type": "string",
+                    "description": "Nome EXATO do alimento como o paciente disse, em português (ex: \"ovo mexido\", \"pão francês\"). NÃO altere preparo nem traduza."
+                  },
+                  "quantity_g": {
+                    "type": "number",
+                    "maximum": 9999,
+                    "description": "Quantidade em gramas (estime se não informado)"
+                  }
+                },
+                "required": ["food_name", "quantity_g"]
+              },
+              "description": "Lista de itens consumidos AGORA (não padrão alimentar)"
+            },
+            "corrections": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "de": {
+                    "type": "string",
+                    "description": "Nome que foi identificado ERRADO (ex: \"batata\")"
+                  },
+                  "para": {
+                    "type": "string",
+                    "description": "Nome correto que o paciente informou (ex: \"mandioca\")"
+                  },
+                  "kcal_per_100g": {
+                    "type": "number"
+                  },
+                  "protein_g": {
+                    "type": "number"
+                  },
+                  "carbs_g": {
+                    "type": "number"
+                  },
+                  "fat_g": {
+                    "type": "number"
+                  }
+                },
+                "required": ["de", "para"]
+              }
+            },
+            "consumed_date": {
+              "type": "string"
+            }
+          },
+          "required": ["items"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "registra_treino",
+        "description": "Registra um TREINO QUE O PACIENTE ACABOU DE EXECUTAR (completado hoje, agora ou nas últimas horas). Kcal queimadas: por padrão calculadas via fórmula (workout_type × duração × intensidade × peso). EXCEÇÃO: se o paciente enviou FOTO de app de fitness (Apple Health, Strava, Garmin, Samsung Health, etc) com kcal NUMÉRICO VISÍVEL, passe esse valor em `estimated_kcal_from_image` e o sistema usará ele em vez da fórmula. ⚠️ NÃO USE quando: (a) o paciente está descrevendo FREQUÊNCIA/PADRÃO (\"treino 3x por semana\", \"qual sua frequência?\", \"costumo treinar de manhã\") — isso é coleta pra montar plano; (b) o paciente está descrevendo treino FUTURO ou PLANEJADO (\"vou começar a treinar\", \"amanhã faço pernas\", \"tô pensando em correr\"); (c) o paciente pedindo SUGESTÃO de treino. Use APENAS com sinais claros de EXECUÇÃO RECENTE: \"acabei de sair da academia\", \"treino de hoje foi…\", \"agora saí da corrida\", \"treinei pernas hoje\".",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "workout_type": {
+              "type": "string",
+              "description": "Slug do tipo de treino. Use o MAIS específico que o paciente descreveu.\nMUSCULAÇÃO: peito_triceps, costas_biceps, perna_completa (=pernas),\n  ombro_trapezio (=ombros), abdomen (=abdominal), biceps_triceps,\n  gluteos, full_body, treino_a / treino_b / treino_c, musculacao (genérico).\nCARDIO: corrida, corrida_leve, corrida_intensa, caminhada, caminhada_rapida,\n  bicicleta, eliptico, escada, natacao, hiit, jumping_jacks, esteira,\n  spinning, remo, zumba, danca, cardio (genérico), aerobico.\nESPORTE: futebol, volei, beach_tennis, tenis, basquete, luta,\n  jiu_jitsu (=bjj), boxe, muay_thai, escalada.\nCALISTENIA: calistenia, handstand, crossfit (=crossfit_wod=funcional).\nMOBILIDADE: yoga, pilates (=pilates_solo), alongamento (=flex), mobility.\nSe não conseguir classificar: \"outro\"."
+            },
+            "duration_min": {
+              "type": "integer"
+            },
+            "intensity": {
+              "type": "string",
+              "enum": ["leve", "moderada", "alta"]
+            },
+            "notes": {
+              "type": "string"
+            },
+            "estimated_kcal_from_image": {
+              "type": "number"
+            }
+          },
+          "required": ["workout_type", "duration_min"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "consulta_progresso",
+        "description": "Retorna o painel de progresso do usuário (XP, nível, sequência de dias, blocos completos, conquistas, registro de hoje). Use quando ele perguntar como está indo.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "consulta_metricas",
+        "description": "Retorna métricas DETERMINÍSTICAS do paciente: idade, BMR, TDEE, IMC, LBM, meta calórica de hoje, meta de proteína. Use APENAS quando precisar de um número que NÃO está no contexto do sistema (ex: paciente pediu \"qual meu TDEE?\" mas o contexto não trouxe). ⚠️ NÃO use rotineiramente — o contexto do sistema já injeta meta/balanço/IMC na maioria dos turnos. Esta tool é o ESCAPE HATCH pra evitar alucinação quando o LLM ficaria tentado a calcular na cabeça.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "consulta_resumo_periodo",
+        "description": "Retorna o RESUMO determinístico de um período (semana = 7 dias, mês = 30 dias): médias de calorias e proteína, média do déficit do dia, dias completos e % de aderência. Use quando o paciente pedir comparação/evolução (\"como foi minha semana?\", \"minha média de proteína subiu?\"). Assim os números vêm CALCULADOS do banco, não da sua cabeça (evita alucinação de média).",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "periodo": {
+              "type": "string",
+              "enum": ["semana", "mes"],
+              "description": "semana = últimos 7 dias; mes = últimos 30 dias"
+            }
+          },
+          "required": ["periodo"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "consulta_reavaliacao_protocolo",
+        "description": "Computa as decisões DETERMINÍSTICAS da reavaliação de GANHO DE MASSA ou MANUTENÇÃO (velocidade de ganho, teto de gordura/IMC, ajuste calórico) a partir do baseline do ciclo e dos valores atuais. Use na reavaliação (~14 dias), DEPOIS que o paciente informar peso/BF atuais. Só para ganho_massa/manutencao (recomposição usa a escada de déficit). Os números vêm CALCULADOS — não invente velocidade/ajuste de cabeça.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "current_weight_kg": {
+              "type": "number",
+              "description": "Peso atual informado na reavaliação (kg)"
+            },
+            "current_bf_percent": {
+              "type": "number"
+            },
+            "current_training_freq": {
+              "type": "integer"
+            }
+          },
+          "required": ["current_weight_kg"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "registra_metrica_diaria",
+        "description": "Grava água (ml), sono (horas) e/ou passos do paciente no dia de HOJE, quando ele MENCIONAR esses dados (\"bebi 2L de água\", \"dormi 7 horas\", \"fiz 8 mil passos\"). Grava só o que o paciente informou (parcial ok). ⚠️ NÃO infira nem pergunte proativamente — registre apenas o que ele relatar espontaneamente. Não é meta obrigatória nem entra no card de balanço.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "water_ml": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 20000
+            },
+            "sleep_hours": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 24
+            },
+            "steps": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 200000
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "marca_refeicao_pulada",
+        "description": "Marca uma REFEIÇÃO específica como PULADA pelo paciente hoje (ele não comeu intencionalmente). Use quando paciente responder confirmando que pulou: \"pulei o jantar\", \"não comi café hoje\", \"fiquei sem almoço\", \"não tinha fome\", \"passei direto\", \"fui dormir sem jantar\", \"tô em jejum\". NÃO use quando paciente está PERGUNTANDO sobre pular, ou explicando teoria — só quando ele relata comportamento real do dia. Loga em product_events pro daily-closer considerar o dia como completo (creditar bloco 7700 normalmente) mesmo sem registro daquela refeição. Sem isso, o sistema fica esperando lembrete/registro e pode marcar dia como incomplete_no_response.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "meal_type": {
+              "type": "string",
+              "enum": ["cafe", "almoco", "lanche", "jantar", "ceia"],
+              "description": "Tipo da refeição que o paciente confirmou ter pulado"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": ["meal_type"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "reclassifica_refeicao",
+        "description": "Reclassifica refeição JÁ REGISTRADA mudando só o RÓTULO (meal_type), SEM mexer em kcal/macros/quantidade. Use quando paciente disser que uma refeição registrada tinha o tipo errado: \"aquele lanche das 17:48 era meu almoço\", \"troca o jantar pelo almoço\", \"o que eu mandei foi almoço, não jantar\". NÃO use pra correção de comida/quantidade (use registra_refeicao com replace=true). NÃO use quando paciente quer ADICIONAR refeição nova (use registra_refeicao normal). A tool busca meal_logs do dia (default hoje) com from_meal_type e troca pra to_meal_type. Se houver várias refeições do mesmo meal_type, use food_hint para localizar uma delas. Todos os itens do mesmo registro serão movidos juntos.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "from_meal_type": {
+              "type": "string",
+              "enum": ["cafe", "almoco", "lanche", "jantar", "ceia", "outro"],
+              "description": "Rótulo ATUAL (errado) que está no banco"
+            },
+            "to_meal_type": {
+              "type": "string",
+              "enum": ["cafe", "almoco", "lanche", "jantar", "ceia", "outro"],
+              "description": "Rótulo NOVO (correto) — deve ser diferente do from"
+            },
+            "food_hint": {
+              "type": "string"
+            },
+            "consumed_date": {
+              "type": "string"
+            }
+          },
+          "required": ["from_meal_type", "to_meal_type"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "atualiza_data_user",
+        "description": "Atualiza dados básicos do usuário: nome (preferido), timezone (IANA, ex: America/Sao_Paulo) e cidade.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "timezone": {
+              "type": "string"
+            },
+            "city": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "encerra_atendimento",
+        "description": "Sinaliza que o usuário pediu/precisa de atendimento humano. Marca o user com label \"humano\" e registra evento para a equipe ser notificada.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "motivo": {
+              "type": "string",
+              "description": "Razão pela qual está escalando"
+            }
+          },
+          "required": ["motivo"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "delete_user",
+        "description": "Agenda a exclusão completa dos dados do usuário (LGPD). Use APENAS quando o usuário pedir explicitamente \"apagar minha conta\" ou \"deletar meus dados\". A conta é desativada imediatamente e o purge físico ocorre depois da janela segura de entrega da confirmação. NÃO use para apenas reiniciar a conversa.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "confirmacao": {
+              "const": "confirmo"
+            }
+          },
+          "required": ["confirmacao"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "pausar_agente",
+        "description": "Pausa o agente para este usuário por N dias. Durante a pausa, mensagens recebidas são reagidas com 💤 e crons de engajamento são ignorados. Use quando o usuário pedir explicitamente \"férias\", \"pausar 1 semana\", \"parar por uns dias\", etc. NUNCA pause sem o usuário pedir.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "days": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 60,
+              "description": "Quantos dias pausar (1-60)"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": ["days"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "retomar_agente",
+        "description": "Remove uma pausa ativa e retoma o atendimento normal. Use quando o usuário pedir \"voltar\", \"destravar\", \"retomar agora\" antes do prazo da pausa.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "confirma_pais_residencia",
+        "description": "Grava país de RESIDÊNCIA + idioma + sistema de medidas preferidos. ⚠️ NÃO assuma idioma nem unidade pelo país (brasileiro nos EUA pode preferir PT/métrico; americano no Brasil pode preferir EN/imperial). USE APENAS depois que: (1) o paciente confirmar onde MORA explicitamente; (2) responder SE o idioma é o esperado ou outro (OBRIGATÓRIO se country != BR); (3) responder SE prefere métrico ou imperial (OBRIGATÓRIO se country é US/GB). Para países com múltiplos fusos (US, BR, CA, AU, MX etc.), pergunte cidade e estado/região e passe também o timezone IANA correspondente. NÃO USE com base só no DDI do WhatsApp — esse é palpite, precisa confirmação verbal. Se o paciente pedir TROCAR de idioma no meio da conversa, chame essa tool de novo com o language atualizado pra persistir a preferência (mantenha country).",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "country": {
+              "type": "string",
+              "description": "ISO 3166-1 alpha-2 em UPPERCASE: BR, US, PT, ES, AR, MX, etc."
+            },
+            "language": {
+              "type": "string",
+              "enum": ["pt-BR", "pt-PT", "en", "es", "fr", "de", "it"]
+            },
+            "unit_system": {
+              "type": "string",
+              "enum": ["metric", "imperial"]
+            },
+            "timezone": {
+              "type": "string"
+            },
+            "city": {
+              "type": "string"
+            },
+            "region": {
+              "type": "string"
+            }
+          },
+          "required": ["country"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "gera_dieta",
+        "description": "Gera uma prescrição de dieta personalizada + lista de compras pro paciente, baseada no perfil dele (meta calórica/proteica, protocolo, restrições) e no histórico de alimentos que ele já come. Use APENAS quando o paciente pedir EXPLICITAMENTE pra gerar/montar AGORA — frases imperativas diretas: \"monta um cardápio pra mim agora\", \"me gera a dieta\", \"preciso da lista de compras\". NÃO use quando paciente está só TIRANDO DÚVIDA ou EXPLORANDO (\"é possível ter uma dieta X?\", \"quero entender melhor sobre dieta\"). Nesse caso, responda a dúvida sem chamar a tool, e CONFIRME antes: \"Quer que eu gere agora um cardápio personalizado pra você?\". NÃO use quando ele só descreve o que come (isso é registra_refeicao). A dieta é referência (sugestão flexível), não rígida — paciente pode adaptar. Modo \"daily\" = 1 dia padrão (paciente repete/adapta). Modo \"weekly\" = 7 dias variados (mais completo, recomendado pra adesão). Se receber {success:false}, NÃO finja que gerou — explique que houve problema técnico e peça pra tentar daqui a alguns minutos.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "horizon": {
+              "type": "string",
+              "enum": ["daily", "weekly"],
+              "default": "daily"
+            },
+            "meals_per_day": {
+              "type": "integer",
+              "minimum": 2,
+              "maximum": 6,
+              "default": 4
+            },
+            "restrictions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "preferences": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "gera_treino",
+        "description": "Gera UM plano de treino semanal personalizado pro paciente. Use APENAS depois de PERGUNTAR E CONFIRMAR com o paciente OS TRÊS dados: (1) equipamentos disponíveis (lista detalhada ou foto), (2) quantos dias por semana topa treinar, (3) nível atual de musculação: iniciante (nunca treinou ou parou >6 meses), intermediário (1-2a treinando constante), ou avançado (3a+ com técnica). NUNCA chute training_level — pergunte explícito. O plano é ESPORÁDICO: gera UMA vez, sistema entrega o treino do dia automaticamente todo dia (cron determinístico, sem regerar com LLM). Paciente pode pedir regenerar se equipamentos/rotina mudarem. NÃO use pra \"vou fazer um treino agora\" (isso é registra_treino). Se receber {success:false}, NÃO finja que gerou — explique que houve problema técnico e peça pra tentar daqui a alguns minutos.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "available_equipment": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Lista de equipamentos identificados (ex: [\"halteres 5-30kg\", \"barra fixa\", \"elástico\"])"
+            },
+            "location": {
+              "type": "string",
+              "enum": ["academia_completa", "academia_limitada", "casa"],
+              "description": "Local onde o paciente vai treinar"
+            },
+            "days_per_week": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 7,
+              "description": "Dias por semana que o paciente topa treinar"
+            },
+            "training_days": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "training_level": {
+              "type": "string",
+              "enum": ["iniciante", "intermediario", "avancado"],
+              "description": "Nível atual de musculação do paciente"
+            },
+            "goes_to_failure": {
+              "type": "boolean"
+            },
+            "limitations": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "priority_muscles": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": ["available_equipment", "location", "days_per_week", "training_level"]
+        }
+      }
+    }
+  ],
+  "turns": {
+    "A_established_patient": {
+      "calls": [
+        {
+          "model": "anthropic/claude-sonnet-4.6",
+          "systemPrompt": [
+            {
+              "text": "## Persona\n\nVocê é o Dr. Roberto Menescal, médico nutrólogo. Direto, próximo, sem firula.\n\n## Markdown — uso parcimonioso\n**Bold** apenas para números do card.\n\n## Decisões\nNunca ajuste meta/protocolo sem confirmar.\n\n---\n\n## Balanço\n\nOs números vêm do sistema. Nunca recalcule meta, balanço ou bloco 7700 de cabeça.",
+              "cache": "ephemeral_1h"
+            },
+            {
+              "text": "\n\n## Método relevante (recuperado da base — siga estas regras)\n### Bloco 7700\nO bloco só credita no fechamento do dia. Exercício acelera o bloco, não libera comida.\n\n### Proteína\nDistribua a proteína ao longo das refeições do dia.\n\n## Contexto do usuário\n### Resumo do paciente\nPaciente em recomposição desde agosto. Treina musculação 4x por semana. Costuma pular o lanche da tarde.\n\n### Localização e preferências\nPaís: **BR** (confirmado). Idioma salvo: **pt-BR**. Unidades: **kg / cm (métrico)**. Persona: Dr. Roberto Menescal. NÃO pergunte país de novo. \n\n⚠️ **REGRA DE IDIOMA (inviolável):** responda no idioma que o paciente está usando AGORA na última mensagem. Se o paciente pedir explicitamente pra mudar de idioma (ex: \"fale em português\", \"switch to English\"), MUDE IMEDIATAMENTE e chame `confirma_pais_residencia` de novo com o `language` atualizado pra persistir. Mantenha o `country`. \n\n⚠️ O país BR tem múltiplos fusos e o timezone ainda não foi confirmado pela localização. Pergunte cidade e estado/região de residência e chame `confirma_pais_residencia` com city, region e timezone IANA. Não altere o fuso sem essa resposta.\n\n### Hora local do paciente AGORA (use pra meal_type — NÃO adivinhe pelos alimentos)\n**domingo, 04/10/2026 12:03** (timezone: America/Sao_Paulo, hora local = 12h)\n\n⚠️ Se o paciente registrar refeição AGORA, o `meal_type` é determinado pela HORA LOCAL, NÃO pelos alimentos:\n- 5h–10h59 → `cafe` (café da manhã)\n- 11h–14h59 → `almoco`\n- 15h–17h59 → `lanche`\n- 18h–22h59 → `jantar`\n- 23h–4h59 → `ceia`\n\n**Sugestão pra esta refeição: `almoco (almoço)`**.\n\n❌ NÃO use `replace=true` em foto NOVA recebida em momento diferente do dia. `replace=true` é APENAS quando o paciente disse explicitamente \"corrige\", \"errei\", \"na verdade era X\" etc. Foto enviada de manhã é refeição NOVA do dia, não correção do jantar de ontem.\n\n- Nome: Luciana\n- Sexo: feminino\n- Idade: 38\n- Altura: 165 cm\n- Peso: 78.4 kg\n- BF%: 34\n- Atividade: leve\n- Treinos/semana: 4\n- Protocolo atual: recomposicao\n- BMR estimado: 1488 kcal\n- TDEE estimado: 2046 kcal (apenas referência — NÃO é a meta na recomposição; meta = BMR × 1,2 − déficit, vide seção \"Dados numéricos REAIS\" abaixo)\n- IMC: 28.8\n- LBM (massa magra): 51.7 kg\n- Decisão automática: protocol=recomposicao canChoose=false blockers=[gordura corporal acima do limite para ganho de massa] goal=BF=24\n\n### Dados numéricos REAIS do paciente (use estes, NÃO INVENTE)\n⚠️ Estes valores são canônicos — calculados pelo sistema. NUNCA recalcule meta/balanço/streak na cabeça nem invente números diferentes destes.\n\n- Meta calórica de hoje: **1285 kcal**\n- Meta de proteína de hoje: **117.6 g**\n- Consumido hoje: 420 kcal | 31.5 g proteína | 48.2g carbo | 11.1g gordura\n- Exercício hoje: 280 kcal queimadas\n- Balanço calórico de hoje: -1510 kcal (negativo=déficit, positivo=superávit)\n- Déficit acumulado (bloco 7700): 3120 kcal de 7700 — falta 4580 pra fechar bloco\n- ⚠️ DIA PENDENTE: enviamos lembrete sobre refeição não registrada. Se o paciente acabou de mandar/confirmar, registre normal. Se ele falou \"pulei\", chame marca_refeicao_pulada(meal_type) com a refeição pulada.\n- Sequência atual: 6 dias consecutivos (recorde 11) | XP: 840 (nível 3) | Blocos 7700 fechados: 1\n- Bloco 7700 em andamento: **3120 kcal de 7700** (41%) — falta 4580 kcal pra fechar\n- Orçamento 14 dias: **9900 kcal de 9900 kcal (100%)** | DAM: 3/6 dias | janela: 6 dias fechados\n\n### Regras importantes\n1. NUNCA invente o conteúdo de uma foto. Se a análise visual vier vazia, com erro, ou contiver \"[falhou ao baixar/analisar]\", peça ao usuário pra reenviar ou descrever por texto.\n2. Cadência humana: 1 pergunta por turno. Se for resposta longa, separe em parágrafos com \\n\\n (o sistema quebra em chunks naturais).\n3. Não repita o nome do usuário no início de toda resposta — use vocativo no fim ou em momentos de validação emocional, não como prefixo automático.\n4. Se usuário pedir \"pausar / férias / parar uns dias\", chame a tool pausar_agente.\n5. Foto e legenda no mesmo turno descrevem a MESMA refeição. Use o texto para corrigir ou completar a análise visual, mas nunca some duas vezes o mesmo alimento só porque ele apareceu nas duas fontes.\n\n## Anti-repetição (CRÍTICO)\nSuas últimas respostas foram:\n[1] \"Almoço registrado.  🔥 Consumido: **1.240 / 1.650 kcal (75%)** 🎯 Restam: **410 kcal** 💪 Proteína: **96 / 130g (74%)** 📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**\"\n[2] \"Boa. Como foi o treino de hoje?\"\n\n→ NÃO repita aberturas, frases âncora ou bullets de balanço se já estão acima.\n→ Se nada de novo aconteceu (user só disse \"oi\" ou similar), responda CURTO. Não force conteúdo.\n→ Varie a saudação. Banco de aberturas curtas (escolha uma quando fizer sentido):\n   \"Boa.\", \"Show.\", \"Beleza.\", \"Pronto.\", \"Saquei.\", \"Recebi.\", \"Hmm.\", (sem nada/direto na resposta)"
+            }
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "Como foi minha semana?"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Almocei arroz, feijão e frango grelhado"
+            },
+            {
+              "role": "assistant",
+              "content": "Almoço registrado.\n\n🔥 Consumido: **1.240 / 1.650 kcal (75%)**\n🎯 Restam: **410 kcal**\n💪 Proteína: **96 / 130g (74%)**\n📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**"
+            },
+            {
+              "role": "user",
+              "content": "Fiz 40 min de musculação"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Quanto falta de proteína hoje?"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Jantei omelete de 3 ovos com queijo"
+            },
+            {
+              "role": "assistant",
+              "content": "Almoço registrado.\n\n🔥 Consumido: **1.240 / 1.650 kcal (75%)**\n🎯 Restam: **410 kcal**\n💪 Proteína: **96 / 130g (74%)**\n📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**"
+            },
+            {
+              "role": "user",
+              "content": "Bom dia"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Como foi minha semana?"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Almocei arroz, feijão e frango grelhado"
+            },
+            {
+              "role": "assistant",
+              "content": "Almoço registrado.\n\n🔥 Consumido: **1.240 / 1.650 kcal (75%)**\n🎯 Restam: **410 kcal**\n💪 Proteína: **96 / 130g (74%)**\n📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**"
+            },
+            {
+              "role": "user",
+              "content": "Fiz 40 min de musculação"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Quanto falta de proteína hoje?"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Jantei omelete de 3 ovos com queijo"
+            },
+            {
+              "role": "assistant",
+              "content": "Almoço registrado.\n\n🔥 Consumido: **1.240 / 1.650 kcal (75%)**\n🎯 Restam: **410 kcal**\n💪 Proteína: **96 / 130g (74%)**\n📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**"
+            },
+            {
+              "role": "user",
+              "content": "Bom dia"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Como foi minha semana?"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Almocei arroz, feijão e frango grelhado"
+            },
+            {
+              "role": "assistant",
+              "content": "Almoço registrado.\n\n🔥 Consumido: **1.240 / 1.650 kcal (75%)**\n🎯 Restam: **410 kcal**\n💪 Proteína: **96 / 130g (74%)**\n📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**"
+            },
+            {
+              "role": "user",
+              "content": "Fiz 40 min de musculação"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Quanto falta de proteína hoje?"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Jantei omelete de 3 ovos com queijo"
+            },
+            {
+              "role": "assistant",
+              "content": "Almoço registrado.\n\n🔥 Consumido: **1.240 / 1.650 kcal (75%)**\n🎯 Restam: **410 kcal**\n💪 Proteína: **96 / 130g (74%)**\n📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**"
+            },
+            {
+              "role": "user",
+              "content": "[Foto] Prato com arroz, feijão, bife e salada de alface"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Como foi minha semana?"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Almocei arroz, feijão e frango grelhado"
+            },
+            {
+              "role": "assistant",
+              "content": "Almoço registrado.\n\n🔥 Consumido: **1.240 / 1.650 kcal (75%)**\n🎯 Restam: **410 kcal**\n💪 Proteína: **96 / 130g (74%)**\n📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Quanto falta de proteína hoje?"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Jantei omelete de 3 ovos com queijo"
+            },
+            {
+              "role": "assistant",
+              "content": "Almoço registrado.\n\n🔥 Consumido: **1.240 / 1.650 kcal (75%)**\n🎯 Restam: **410 kcal**\n💪 Proteína: **96 / 130g (74%)**\n📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**"
+            },
+            {
+              "role": "user",
+              "content": "Bom dia"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Como foi minha semana?"
+            },
+            {
+              "role": "user",
+              "content": "Almocei 150g de arroz, 100g de feijão e 120g de frango grelhado"
+            }
+          ],
+          "temperature": 0.2,
+          "maxTokens": 1200,
+          "cacheTools": true,
+          "cacheToolsTtl": "ephemeral_1h",
+          "userId": "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f",
+          "metadata": {
+            "Stage": "recomposicao",
+            "Iteration": "0"
+          },
+          "tools": "<same as the top-level tools>"
+        },
+        {
+          "model": "anthropic/claude-sonnet-4.6",
+          "systemPrompt": [
+            {
+              "text": "## Persona\n\nVocê é o Dr. Roberto Menescal, médico nutrólogo. Direto, próximo, sem firula.\n\n## Markdown — uso parcimonioso\n**Bold** apenas para números do card.\n\n## Decisões\nNunca ajuste meta/protocolo sem confirmar.\n\n---\n\n## Balanço\n\nOs números vêm do sistema. Nunca recalcule meta, balanço ou bloco 7700 de cabeça.",
+              "cache": "ephemeral_1h"
+            },
+            {
+              "text": "\n\n## Método relevante (recuperado da base — siga estas regras)\n### Bloco 7700\nO bloco só credita no fechamento do dia. Exercício acelera o bloco, não libera comida.\n\n### Proteína\nDistribua a proteína ao longo das refeições do dia.\n\n## Contexto do usuário\n### Resumo do paciente\nPaciente em recomposição desde agosto. Treina musculação 4x por semana. Costuma pular o lanche da tarde.\n\n### Localização e preferências\nPaís: **BR** (confirmado). Idioma salvo: **pt-BR**. Unidades: **kg / cm (métrico)**. Persona: Dr. Roberto Menescal. NÃO pergunte país de novo. \n\n⚠️ **REGRA DE IDIOMA (inviolável):** responda no idioma que o paciente está usando AGORA na última mensagem. Se o paciente pedir explicitamente pra mudar de idioma (ex: \"fale em português\", \"switch to English\"), MUDE IMEDIATAMENTE e chame `confirma_pais_residencia` de novo com o `language` atualizado pra persistir. Mantenha o `country`. \n\n⚠️ O país BR tem múltiplos fusos e o timezone ainda não foi confirmado pela localização. Pergunte cidade e estado/região de residência e chame `confirma_pais_residencia` com city, region e timezone IANA. Não altere o fuso sem essa resposta.\n\n### Hora local do paciente AGORA (use pra meal_type — NÃO adivinhe pelos alimentos)\n**domingo, 04/10/2026 12:03** (timezone: America/Sao_Paulo, hora local = 12h)\n\n⚠️ Se o paciente registrar refeição AGORA, o `meal_type` é determinado pela HORA LOCAL, NÃO pelos alimentos:\n- 5h–10h59 → `cafe` (café da manhã)\n- 11h–14h59 → `almoco`\n- 15h–17h59 → `lanche`\n- 18h–22h59 → `jantar`\n- 23h–4h59 → `ceia`\n\n**Sugestão pra esta refeição: `almoco (almoço)`**.\n\n❌ NÃO use `replace=true` em foto NOVA recebida em momento diferente do dia. `replace=true` é APENAS quando o paciente disse explicitamente \"corrige\", \"errei\", \"na verdade era X\" etc. Foto enviada de manhã é refeição NOVA do dia, não correção do jantar de ontem.\n\n- Nome: Luciana\n- Sexo: feminino\n- Idade: 38\n- Altura: 165 cm\n- Peso: 78.4 kg\n- BF%: 34\n- Atividade: leve\n- Treinos/semana: 4\n- Protocolo atual: recomposicao\n- BMR estimado: 1488 kcal\n- TDEE estimado: 2046 kcal (apenas referência — NÃO é a meta na recomposição; meta = BMR × 1,2 − déficit, vide seção \"Dados numéricos REAIS\" abaixo)\n- IMC: 28.8\n- LBM (massa magra): 51.7 kg\n- Decisão automática: protocol=recomposicao canChoose=false blockers=[gordura corporal acima do limite para ganho de massa] goal=BF=24\n\n### Dados numéricos REAIS do paciente (use estes, NÃO INVENTE)\n⚠️ Estes valores são canônicos — calculados pelo sistema. NUNCA recalcule meta/balanço/streak na cabeça nem invente números diferentes destes.\n\n- Meta calórica de hoje: **1285 kcal**\n- Meta de proteína de hoje: **117.6 g**\n- Consumido hoje: 420 kcal | 31.5 g proteína | 48.2g carbo | 11.1g gordura\n- Exercício hoje: 280 kcal queimadas\n- Balanço calórico de hoje: -1510 kcal (negativo=déficit, positivo=superávit)\n- Déficit acumulado (bloco 7700): 3120 kcal de 7700 — falta 4580 pra fechar bloco\n- ⚠️ DIA PENDENTE: enviamos lembrete sobre refeição não registrada. Se o paciente acabou de mandar/confirmar, registre normal. Se ele falou \"pulei\", chame marca_refeicao_pulada(meal_type) com a refeição pulada.\n- Sequência atual: 6 dias consecutivos (recorde 11) | XP: 840 (nível 3) | Blocos 7700 fechados: 1\n- Bloco 7700 em andamento: **3120 kcal de 7700** (41%) — falta 4580 kcal pra fechar\n- Orçamento 14 dias: **9900 kcal de 9900 kcal (100%)** | DAM: 3/6 dias | janela: 6 dias fechados\n\n### Regras importantes\n1. NUNCA invente o conteúdo de uma foto. Se a análise visual vier vazia, com erro, ou contiver \"[falhou ao baixar/analisar]\", peça ao usuário pra reenviar ou descrever por texto.\n2. Cadência humana: 1 pergunta por turno. Se for resposta longa, separe em parágrafos com \\n\\n (o sistema quebra em chunks naturais).\n3. Não repita o nome do usuário no início de toda resposta — use vocativo no fim ou em momentos de validação emocional, não como prefixo automático.\n4. Se usuário pedir \"pausar / férias / parar uns dias\", chame a tool pausar_agente.\n5. Foto e legenda no mesmo turno descrevem a MESMA refeição. Use o texto para corrigir ou completar a análise visual, mas nunca some duas vezes o mesmo alimento só porque ele apareceu nas duas fontes.\n\n## Anti-repetição (CRÍTICO)\nSuas últimas respostas foram:\n[1] \"Almoço registrado.  🔥 Consumido: **1.240 / 1.650 kcal (75%)** 🎯 Restam: **410 kcal** 💪 Proteína: **96 / 130g (74%)** 📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**\"\n[2] \"Boa. Como foi o treino de hoje?\"\n\n→ NÃO repita aberturas, frases âncora ou bullets de balanço se já estão acima.\n→ Se nada de novo aconteceu (user só disse \"oi\" ou similar), responda CURTO. Não force conteúdo.\n→ Varie a saudação. Banco de aberturas curtas (escolha uma quando fizer sentido):\n   \"Boa.\", \"Show.\", \"Beleza.\", \"Pronto.\", \"Saquei.\", \"Recebi.\", \"Hmm.\", (sem nada/direto na resposta)"
+            }
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "Como foi minha semana?"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Almocei arroz, feijão e frango grelhado"
+            },
+            {
+              "role": "assistant",
+              "content": "Almoço registrado.\n\n🔥 Consumido: **1.240 / 1.650 kcal (75%)**\n🎯 Restam: **410 kcal**\n💪 Proteína: **96 / 130g (74%)**\n📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**"
+            },
+            {
+              "role": "user",
+              "content": "Fiz 40 min de musculação"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Quanto falta de proteína hoje?"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Jantei omelete de 3 ovos com queijo"
+            },
+            {
+              "role": "assistant",
+              "content": "Almoço registrado.\n\n🔥 Consumido: **1.240 / 1.650 kcal (75%)**\n🎯 Restam: **410 kcal**\n💪 Proteína: **96 / 130g (74%)**\n📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**"
+            },
+            {
+              "role": "user",
+              "content": "Bom dia"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Como foi minha semana?"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Almocei arroz, feijão e frango grelhado"
+            },
+            {
+              "role": "assistant",
+              "content": "Almoço registrado.\n\n🔥 Consumido: **1.240 / 1.650 kcal (75%)**\n🎯 Restam: **410 kcal**\n💪 Proteína: **96 / 130g (74%)**\n📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**"
+            },
+            {
+              "role": "user",
+              "content": "Fiz 40 min de musculação"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Quanto falta de proteína hoje?"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Jantei omelete de 3 ovos com queijo"
+            },
+            {
+              "role": "assistant",
+              "content": "Almoço registrado.\n\n🔥 Consumido: **1.240 / 1.650 kcal (75%)**\n🎯 Restam: **410 kcal**\n💪 Proteína: **96 / 130g (74%)**\n📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**"
+            },
+            {
+              "role": "user",
+              "content": "Bom dia"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Como foi minha semana?"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Almocei arroz, feijão e frango grelhado"
+            },
+            {
+              "role": "assistant",
+              "content": "Almoço registrado.\n\n🔥 Consumido: **1.240 / 1.650 kcal (75%)**\n🎯 Restam: **410 kcal**\n💪 Proteína: **96 / 130g (74%)**\n📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**"
+            },
+            {
+              "role": "user",
+              "content": "Fiz 40 min de musculação"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Quanto falta de proteína hoje?"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Jantei omelete de 3 ovos com queijo"
+            },
+            {
+              "role": "assistant",
+              "content": "Almoço registrado.\n\n🔥 Consumido: **1.240 / 1.650 kcal (75%)**\n🎯 Restam: **410 kcal**\n💪 Proteína: **96 / 130g (74%)**\n📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**"
+            },
+            {
+              "role": "user",
+              "content": "[Foto] Prato com arroz, feijão, bife e salada de alface"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Como foi minha semana?"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Almocei arroz, feijão e frango grelhado"
+            },
+            {
+              "role": "assistant",
+              "content": "Almoço registrado.\n\n🔥 Consumido: **1.240 / 1.650 kcal (75%)**\n🎯 Restam: **410 kcal**\n💪 Proteína: **96 / 130g (74%)**\n📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Quanto falta de proteína hoje?"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Jantei omelete de 3 ovos com queijo"
+            },
+            {
+              "role": "assistant",
+              "content": "Almoço registrado.\n\n🔥 Consumido: **1.240 / 1.650 kcal (75%)**\n🎯 Restam: **410 kcal**\n💪 Proteína: **96 / 130g (74%)**\n📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**"
+            },
+            {
+              "role": "user",
+              "content": "Bom dia"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Como foi minha semana?"
+            },
+            {
+              "role": "user",
+              "content": "Almocei 150g de arroz, 100g de feijão e 120g de frango grelhado"
+            },
+            {
+              "role": "assistant",
+              "content": "",
+              "tool_calls": [
+                {
+                  "id": "toolu_request_lock_01",
+                  "type": "function",
+                  "function": {
+                    "name": "consulta_metricas",
+                    "arguments": "{}"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "toolu_request_lock_01",
+              "content": "{\"age_years\":38,\"bmr_kcal\":1488,\"tdee_kcal\":2046,\"imc\":28.8,\"lbm_kg\":51.7,\"calories_target_today\":1285,\"protein_target_today_g\":117.6,\"activity_factor\":1.375,\"formula_used\":\"Katch-McArdle (com BF%)\"}"
+            }
+          ],
+          "temperature": 0.2,
+          "maxTokens": 1200,
+          "cacheTools": true,
+          "cacheToolsTtl": "ephemeral_1h",
+          "userId": "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f",
+          "metadata": {
+            "Stage": "recomposicao",
+            "Iteration": "1"
+          },
+          "tools": "<same as the top-level tools>"
+        },
+        {
+          "model": "anthropic/claude-sonnet-4.6",
+          "systemPrompt": [
+            {
+              "text": "## Persona\n\nVocê é o Dr. Roberto Menescal, médico nutrólogo. Direto, próximo, sem firula.\n\n## Markdown — uso parcimonioso\n**Bold** apenas para números do card.\n\n## Decisões\nNunca ajuste meta/protocolo sem confirmar.\n\n---\n\n## Balanço\n\nOs números vêm do sistema. Nunca recalcule meta, balanço ou bloco 7700 de cabeça.",
+              "cache": "ephemeral_1h"
+            },
+            {
+              "text": "\n\n## Método relevante (recuperado da base — siga estas regras)\n### Bloco 7700\nO bloco só credita no fechamento do dia. Exercício acelera o bloco, não libera comida.\n\n### Proteína\nDistribua a proteína ao longo das refeições do dia.\n\n## Contexto do usuário\n### Resumo do paciente\nPaciente em recomposição desde agosto. Treina musculação 4x por semana. Costuma pular o lanche da tarde.\n\n### Localização e preferências\nPaís: **BR** (confirmado). Idioma salvo: **pt-BR**. Unidades: **kg / cm (métrico)**. Persona: Dr. Roberto Menescal. NÃO pergunte país de novo. \n\n⚠️ **REGRA DE IDIOMA (inviolável):** responda no idioma que o paciente está usando AGORA na última mensagem. Se o paciente pedir explicitamente pra mudar de idioma (ex: \"fale em português\", \"switch to English\"), MUDE IMEDIATAMENTE e chame `confirma_pais_residencia` de novo com o `language` atualizado pra persistir. Mantenha o `country`. \n\n⚠️ O país BR tem múltiplos fusos e o timezone ainda não foi confirmado pela localização. Pergunte cidade e estado/região de residência e chame `confirma_pais_residencia` com city, region e timezone IANA. Não altere o fuso sem essa resposta.\n\n### Hora local do paciente AGORA (use pra meal_type — NÃO adivinhe pelos alimentos)\n**domingo, 04/10/2026 12:03** (timezone: America/Sao_Paulo, hora local = 12h)\n\n⚠️ Se o paciente registrar refeição AGORA, o `meal_type` é determinado pela HORA LOCAL, NÃO pelos alimentos:\n- 5h–10h59 → `cafe` (café da manhã)\n- 11h–14h59 → `almoco`\n- 15h–17h59 → `lanche`\n- 18h–22h59 → `jantar`\n- 23h–4h59 → `ceia`\n\n**Sugestão pra esta refeição: `almoco (almoço)`**.\n\n❌ NÃO use `replace=true` em foto NOVA recebida em momento diferente do dia. `replace=true` é APENAS quando o paciente disse explicitamente \"corrige\", \"errei\", \"na verdade era X\" etc. Foto enviada de manhã é refeição NOVA do dia, não correção do jantar de ontem.\n\n- Nome: Luciana\n- Sexo: feminino\n- Idade: 38\n- Altura: 165 cm\n- Peso: 78.4 kg\n- BF%: 34\n- Atividade: leve\n- Treinos/semana: 4\n- Protocolo atual: recomposicao\n- BMR estimado: 1488 kcal\n- TDEE estimado: 2046 kcal (apenas referência — NÃO é a meta na recomposição; meta = BMR × 1,2 − déficit, vide seção \"Dados numéricos REAIS\" abaixo)\n- IMC: 28.8\n- LBM (massa magra): 51.7 kg\n- Decisão automática: protocol=recomposicao canChoose=false blockers=[gordura corporal acima do limite para ganho de massa] goal=BF=24\n\n### Dados numéricos REAIS do paciente (use estes, NÃO INVENTE)\n⚠️ Estes valores são canônicos — calculados pelo sistema. NUNCA recalcule meta/balanço/streak na cabeça nem invente números diferentes destes.\n\n- Meta calórica de hoje: **1285 kcal**\n- Meta de proteína de hoje: **117.6 g**\n- Consumido hoje: 420 kcal | 31.5 g proteína | 48.2g carbo | 11.1g gordura\n- Exercício hoje: 280 kcal queimadas\n- Balanço calórico de hoje: -1510 kcal (negativo=déficit, positivo=superávit)\n- Déficit acumulado (bloco 7700): 3120 kcal de 7700 — falta 4580 pra fechar bloco\n- ⚠️ DIA PENDENTE: enviamos lembrete sobre refeição não registrada. Se o paciente acabou de mandar/confirmar, registre normal. Se ele falou \"pulei\", chame marca_refeicao_pulada(meal_type) com a refeição pulada.\n- Sequência atual: 6 dias consecutivos (recorde 11) | XP: 840 (nível 3) | Blocos 7700 fechados: 1\n- Bloco 7700 em andamento: **3120 kcal de 7700** (41%) — falta 4580 kcal pra fechar\n- Orçamento 14 dias: **9900 kcal de 9900 kcal (100%)** | DAM: 3/6 dias | janela: 6 dias fechados\n\n### Regras importantes\n1. NUNCA invente o conteúdo de uma foto. Se a análise visual vier vazia, com erro, ou contiver \"[falhou ao baixar/analisar]\", peça ao usuário pra reenviar ou descrever por texto.\n2. Cadência humana: 1 pergunta por turno. Se for resposta longa, separe em parágrafos com \\n\\n (o sistema quebra em chunks naturais).\n3. Não repita o nome do usuário no início de toda resposta — use vocativo no fim ou em momentos de validação emocional, não como prefixo automático.\n4. Se usuário pedir \"pausar / férias / parar uns dias\", chame a tool pausar_agente.\n5. Foto e legenda no mesmo turno descrevem a MESMA refeição. Use o texto para corrigir ou completar a análise visual, mas nunca some duas vezes o mesmo alimento só porque ele apareceu nas duas fontes.\n\n## Anti-repetição (CRÍTICO)\nSuas últimas respostas foram:\n[1] \"Almoço registrado.  🔥 Consumido: **1.240 / 1.650 kcal (75%)** 🎯 Restam: **410 kcal** 💪 Proteína: **96 / 130g (74%)** 📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**\"\n[2] \"Boa. Como foi o treino de hoje?\"\n\n→ NÃO repita aberturas, frases âncora ou bullets de balanço se já estão acima.\n→ Se nada de novo aconteceu (user só disse \"oi\" ou similar), responda CURTO. Não force conteúdo.\n→ Varie a saudação. Banco de aberturas curtas (escolha uma quando fizer sentido):\n   \"Boa.\", \"Show.\", \"Beleza.\", \"Pronto.\", \"Saquei.\", \"Recebi.\", \"Hmm.\", (sem nada/direto na resposta)"
+            }
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "Como foi minha semana?"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Almocei arroz, feijão e frango grelhado"
+            },
+            {
+              "role": "assistant",
+              "content": "Almoço registrado.\n\n🔥 Consumido: **1.240 / 1.650 kcal (75%)**\n🎯 Restam: **410 kcal**\n💪 Proteína: **96 / 130g (74%)**\n📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**"
+            },
+            {
+              "role": "user",
+              "content": "Fiz 40 min de musculação"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Quanto falta de proteína hoje?"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Jantei omelete de 3 ovos com queijo"
+            },
+            {
+              "role": "assistant",
+              "content": "Almoço registrado.\n\n🔥 Consumido: **1.240 / 1.650 kcal (75%)**\n🎯 Restam: **410 kcal**\n💪 Proteína: **96 / 130g (74%)**\n📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**"
+            },
+            {
+              "role": "user",
+              "content": "Bom dia"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Como foi minha semana?"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Almocei arroz, feijão e frango grelhado"
+            },
+            {
+              "role": "assistant",
+              "content": "Almoço registrado.\n\n🔥 Consumido: **1.240 / 1.650 kcal (75%)**\n🎯 Restam: **410 kcal**\n💪 Proteína: **96 / 130g (74%)**\n📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**"
+            },
+            {
+              "role": "user",
+              "content": "Fiz 40 min de musculação"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Quanto falta de proteína hoje?"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Jantei omelete de 3 ovos com queijo"
+            },
+            {
+              "role": "assistant",
+              "content": "Almoço registrado.\n\n🔥 Consumido: **1.240 / 1.650 kcal (75%)**\n🎯 Restam: **410 kcal**\n💪 Proteína: **96 / 130g (74%)**\n📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**"
+            },
+            {
+              "role": "user",
+              "content": "Bom dia"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Como foi minha semana?"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Almocei arroz, feijão e frango grelhado"
+            },
+            {
+              "role": "assistant",
+              "content": "Almoço registrado.\n\n🔥 Consumido: **1.240 / 1.650 kcal (75%)**\n🎯 Restam: **410 kcal**\n💪 Proteína: **96 / 130g (74%)**\n📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**"
+            },
+            {
+              "role": "user",
+              "content": "Fiz 40 min de musculação"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Quanto falta de proteína hoje?"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Jantei omelete de 3 ovos com queijo"
+            },
+            {
+              "role": "assistant",
+              "content": "Almoço registrado.\n\n🔥 Consumido: **1.240 / 1.650 kcal (75%)**\n🎯 Restam: **410 kcal**\n💪 Proteína: **96 / 130g (74%)**\n📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**"
+            },
+            {
+              "role": "user",
+              "content": "[Foto] Prato com arroz, feijão, bife e salada de alface"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Como foi minha semana?"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Almocei arroz, feijão e frango grelhado"
+            },
+            {
+              "role": "assistant",
+              "content": "Almoço registrado.\n\n🔥 Consumido: **1.240 / 1.650 kcal (75%)**\n🎯 Restam: **410 kcal**\n💪 Proteína: **96 / 130g (74%)**\n📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Quanto falta de proteína hoje?"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Jantei omelete de 3 ovos com queijo"
+            },
+            {
+              "role": "assistant",
+              "content": "Almoço registrado.\n\n🔥 Consumido: **1.240 / 1.650 kcal (75%)**\n🎯 Restam: **410 kcal**\n💪 Proteína: **96 / 130g (74%)**\n📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**"
+            },
+            {
+              "role": "user",
+              "content": "Bom dia"
+            },
+            {
+              "role": "assistant",
+              "content": "Boa. Como foi o treino de hoje?"
+            },
+            {
+              "role": "user",
+              "content": "Como foi minha semana?"
+            },
+            {
+              "role": "user",
+              "content": "Almocei 150g de arroz, 100g de feijão e 120g de frango grelhado"
+            },
+            {
+              "role": "assistant",
+              "content": "",
+              "tool_calls": [
+                {
+                  "id": "toolu_request_lock_01",
+                  "type": "function",
+                  "function": {
+                    "name": "consulta_metricas",
+                    "arguments": "{}"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "toolu_request_lock_01",
+              "content": "{\"age_years\":38,\"bmr_kcal\":1488,\"tdee_kcal\":2046,\"imc\":28.8,\"lbm_kg\":51.7,\"calories_target_today\":1285,\"protein_target_today_g\":117.6,\"activity_factor\":1.375,\"formula_used\":\"Katch-McArdle (com BF%)\"}"
+            },
+            {
+              "role": "assistant",
+              "content": "Almoço registrado! ✅\n\n- Arroz 150g\n- Feijão 100g\n- Frango grelhado 120g\n\nTotal refeição: 520 kcal"
+            },
+            {
+              "role": "user",
+              "content": "SISTEMA (não é o paciente): você afirmou ter registrado a refeição/treino MAS não chamou a tool `registra_refeicao` (ou `registra_treino`). Os dados NÃO foram salvos no banco — sua resposta foi inválida. Chame a tool AGORA com os itens corretos que o paciente informou. NÃO responda ao paciente de novo sem antes chamar a tool."
+            }
+          ],
+          "temperature": 0.2,
+          "maxTokens": 1200,
+          "cacheTools": true,
+          "cacheToolsTtl": "ephemeral_1h",
+          "userId": "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f",
+          "metadata": {
+            "Stage": "recomposicao",
+            "Iteration": "2"
+          },
+          "tools": "<same as the top-level tools>"
+        }
+      ],
+      "output": {
+        "text": "Pra eu anotar certinho: o frango era grelhado sem óleo?",
+        "preferAudio": false,
+        "singleMessage": false,
+        "toolCalls": [
+          {
+            "name": "consulta_metricas",
+            "arguments": {},
+            "result": {
+              "age_years": 38,
+              "bmr_kcal": 1488,
+              "tdee_kcal": 2046,
+              "imc": 28.8,
+              "lbm_kg": 51.7,
+              "calories_target_today": 1285,
+              "protein_target_today_g": 117.6,
+              "activity_factor": 1.375,
+              "formula_used": "Katch-McArdle (com BF%)"
+            }
+          }
+        ],
+        "stage": "recomposicao",
+        "modelUsed": "anthropic/claude-sonnet-4.6",
+        "promptTokens": 120006,
+        "completionTokens": 306,
+        "costUsd": 0.06,
+        "latencyMs": 0
+      },
+      "db": [
+        {
+          "target": "rpc:ensure_user_initialized",
+          "ops": [
+            {
+              "p_wpp": "5511988887777"
+            }
+          ]
+        },
+        {
+          "target": "subscriptions",
+          "ops": [
+            ["select", "status, current_period_end, trial_ends_at"],
+            ["eq", "user_id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"],
+            [
+              "order",
+              "created_at",
+              {
+                "ascending": false
+              }
+            ],
+            ["limit", 1],
+            ["maybeSingle"]
+          ]
+        },
+        {
+          "target": "users",
+          "ops": [
+            [
+              "select",
+              "id, name, summary, last_active_at, country, country_confirmed, country_detected_from_wpp, locale, metadata, timezone"
+            ],
+            ["eq", "id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"],
+            ["single"]
+          ]
+        },
+        {
+          "target": "user_profiles",
+          "ops": [
+            ["select", "*"],
+            ["eq", "user_id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"],
+            ["single"]
+          ]
+        },
+        {
+          "target": "messages",
+          "ops": [
+            ["select", "direction, content, content_type, created_at, provider_message_id"],
+            ["eq", "user_id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"],
+            [
+              "order",
+              "created_at",
+              {
+                "ascending": false
+              }
+            ],
+            ["limit", 50]
+          ]
+        },
+        {
+          "target": "global_config",
+          "ops": [["select", "key, value"], ["like", "key", "calc.%"]]
+        },
+        {
+          "target": "user_profiles",
+          "ops": [
+            [
+              "select",
+              "sex, birth_date, height_cm, weight_kg, body_fat_percent, activity_level, training_frequency, water_intake, hunger_level, current_protocol, goal_type, goal_value, deficit_level"
+            ],
+            ["eq", "user_id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"],
+            ["maybeSingle"]
+          ]
+        },
+        {
+          "target": "daily_snapshots",
+          "ops": [
+            [
+              "select",
+              "calories_consumed, protein_g, carbs_g, fat_g, exercise_calories, daily_balance, deficit_accumulated, day_status, gap_reminder_sent_at"
+            ],
+            ["eq", "user_id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"],
+            ["eq", "date", "2026-10-04"],
+            ["maybeSingle"]
+          ]
+        },
+        {
+          "target": "user_progress",
+          "ops": [
+            [
+              "select",
+              "current_streak, longest_streak, xp_total, level, blocks_completed, deficit_block, last_active_date"
+            ],
+            ["eq", "user_id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"],
+            ["maybeSingle"]
+          ]
+        },
+        {
+          "target": "daily_snapshots",
+          "ops": [
+            ["select", "calories_consumed, calories_target, day_closed"],
+            ["eq", "user_id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"],
+            ["gte", "date", "2026-09-20"],
+            ["eq", "day_closed", true]
+          ]
+        },
+        {
+          "target": "product_events",
+          "ops": [
+            ["select", "properties, occurred_at"],
+            ["eq", "user_id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"],
+            ["eq", "event", "vision.analyzed"],
+            ["gte", "occurred_at", "2026-10-02T15:03:40.503Z"],
+            [
+              "order",
+              "occurred_at",
+              {
+                "ascending": false
+              }
+            ],
+            ["limit", 50]
+          ]
+        },
+        {
+          "target": "product_events",
+          "ops": [
+            ["select", "id"],
+            ["eq", "user_id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"],
+            ["eq", "event", "reevaluation.due"],
+            ["gte", "occurred_at", "2026-10-02T15:03:40.503Z"],
+            ["limit", 1]
+          ]
+        },
+        {
+          "target": "product_events",
+          "ops": [
+            ["select", "properties, occurred_at"],
+            ["eq", "user_id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"],
+            ["eq", "event", "vision.analyzed"],
+            ["gte", "occurred_at", "2026-10-04T11:03:40.503Z"],
+            [
+              "order",
+              "occurred_at",
+              {
+                "ascending": false
+              }
+            ],
+            ["limit", 10]
+          ]
+        },
+        {
+          "target": "v_active_prompts",
+          "ops": [["select", "*"], ["eq", "stage", "recomposicao"], ["single"]]
+        },
+        {
+          "target": "agent_rules",
+          "ops": [
+            ["select", "topic, content, language"],
+            ["eq", "status", "active"],
+            ["or", "tipo.eq.regras_gerais,tipo.eq.recomposicao"],
+            [
+              "order",
+              "display_order",
+              {
+                "ascending": true
+              }
+            ]
+          ]
+        },
+        {
+          "target": "global_config",
+          "ops": [["select", "value"], ["eq", "key", "router.haiku_enabled"], ["maybeSingle"]]
+        },
+        {
+          "target": "pending_registrations",
+          "ops": [
+            ["select", "id"],
+            ["eq", "user_id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"],
+            ["eq", "status", "pending"],
+            ["limit", 1]
+          ]
+        },
+        {
+          "target": "rpc:match_method_chunks",
+          "ops": [
+            {
+              "query_embedding": [0.25, -0.5, 0.125],
+              "match_count": 5,
+              "filter_protocol": "recomposicao"
+            }
+          ]
+        },
+        {
+          "target": "user_profiles",
+          "ops": [
+            ["select", "*"],
+            ["eq", "user_id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"],
+            ["maybeSingle"]
+          ]
+        },
+        {
+          "target": "user_profiles",
+          "ops": [
+            [
+              "select",
+              "sex, birth_date, height_cm, weight_kg, body_fat_percent, activity_level, training_frequency, water_intake, hunger_level, current_protocol, goal_type, goal_value, deficit_level"
+            ],
+            ["eq", "user_id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"],
+            ["maybeSingle"]
+          ]
+        },
+        {
+          "target": "tools_audit",
+          "ops": [
+            [
+              "insert",
+              {
+                "user_id": "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f",
+                "tool_name": "consulta_metricas",
+                "arguments": {},
+                "result": {
+                  "age_years": 38,
+                  "bmr_kcal": 1488,
+                  "tdee_kcal": 2046,
+                  "imc": 28.8,
+                  "lbm_kg": 51.7,
+                  "calories_target_today": 1285,
+                  "protein_target_today_g": 117.6,
+                  "activity_factor": 1.375,
+                  "formula_used": "Katch-McArdle (com BF%)"
+                },
+                "duration_ms": 0,
+                "success": true
+              }
+            ]
+          ]
+        },
+        {
+          "target": "product_events",
+          "ops": [
+            [
+              "insert",
+              {
+                "user_id": "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f",
+                "event": "llm.fake_write_detected",
+                "properties": {
+                  "stage": "recomposicao",
+                  "kind": "registration",
+                  "model": "anthropic/claude-sonnet-4.6",
+                  "content_preview": "Almoço registrado! ✅\n\n- Arroz 150g\n- Feijão 100g\n- Frango grelhado 120g\n\nTotal refeição: 520 kcal",
+                  "inferred_meal_type": null
+                }
+              }
+            ]
+          ]
+        },
+        {
+          "target": "users",
+          "ops": [
+            [
+              "update",
+              {
+                "updated_at": "2026-10-04T15:03:40.503Z"
+              }
+            ],
+            ["eq", "id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"]
+          ]
+        },
+        {
+          "target": "global_config",
+          "ops": [["select", "key, value"], ["like", "key", "numeric_validator.%"]]
+        },
+        {
+          "target": "product_events",
+          "ops": [
+            [
+              "insert",
+              {
+                "user_id": "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f",
+                "event": "llm.cache_usage",
+                "properties": {
+                  "model": "anthropic/claude-sonnet-4.6",
+                  "stage": "recomposicao",
+                  "prompt_tokens": 120006,
+                  "cache_read_tokens": 76000,
+                  "cache_creation_tokens": 38000,
+                  "hit_rate": 0.633
+                }
+              }
+            ]
+          ]
+        }
+      ],
+      "embeddings": ["Almocei 150g de arroz, 100g de feijão e 120g de frango grelhado"]
+    },
+    "B_onboarding": {
+      "calls": [
+        {
+          "model": "anthropic/claude-sonnet-4.6",
+          "systemPrompt": [
+            {
+              "text": "## Persona\n\nVocê é o Dr. Roberto Menescal, médico nutrólogo. Direto, próximo, sem firula.\n\n## Markdown — uso parcimonioso\n**Bold** apenas para números do card.\n\n## Decisões\nNunca ajuste meta/protocolo sem confirmar.\n\n---\n\n## Balanço\n\nOs números vêm do sistema. Nunca recalcule meta, balanço ou bloco 7700 de cabeça.",
+              "cache": "ephemeral_1h"
+            },
+            {
+              "text": "\n\n## Contexto do usuário\n### País de residência (NÃO confirmado)\nStatus: palpite pelo DDI do WhatsApp: US. **Pergunte explicitamente** ao paciente onde ele mora (siga a rule \"Confirmação de país de residência\") e chame a tool `confirma_pais_residencia` com o ISO alpha-2 quando ele responder. Se o país tiver múltiplos fusos, pergunte também cidade e estado/região antes de gravar.\n\n### Hora local do paciente AGORA (use pra meal_type — NÃO adivinhe pelos alimentos)\n**domingo, 04/10/2026 11:03** (timezone: America/New_York, hora local = 11h)\n\n⚠️ Se o paciente registrar refeição AGORA, o `meal_type` é determinado pela HORA LOCAL, NÃO pelos alimentos:\n- 5h–10h59 → `cafe` (café da manhã)\n- 11h–14h59 → `almoco`\n- 15h–17h59 → `lanche`\n- 18h–22h59 → `jantar`\n- 23h–4h59 → `ceia`\n\n**Sugestão pra esta refeição: `almoco (almoço)`**.\n\n❌ NÃO use `replace=true` em foto NOVA recebida em momento diferente do dia. `replace=true` é APENAS quando o paciente disse explicitamente \"corrige\", \"errei\", \"na verdade era X\" etc. Foto enviada de manhã é refeição NOVA do dia, não correção do jantar de ontem.\n\n- Nome: (não informado ainda)\n- Sexo: desconhecido\n- Idade: ?\n- Altura: ? cm\n- Peso: ? kg\n- BF%: ?\n- Atividade: ?\n- Treinos/semana: ?\n- Protocolo atual: NÃO DEFINIDO (usuário em onboarding)\n\n### Dados numéricos REAIS do paciente (use estes, NÃO INVENTE)\n⚠️ Estes valores são canônicos — calculados pelo sistema. NUNCA recalcule meta/balanço/streak na cabeça nem invente números diferentes destes.\n\n- Consumo hoje: 0 kcal (nada registrado ainda)\n- Sequência atual: 0 dias consecutivos (recorde 0) | XP: 0 (nível 1) | Blocos 7700 fechados: 0\n- Bloco 7700 em andamento: **0 kcal de 7700** (0%)\n\n### Regras importantes\n1. NUNCA invente o conteúdo de uma foto. Se a análise visual vier vazia, com erro, ou contiver \"[falhou ao baixar/analisar]\", peça ao usuário pra reenviar ou descrever por texto.\n2. Cadência humana: 1 pergunta por turno. Se for resposta longa, separe em parágrafos com \\n\\n (o sistema quebra em chunks naturais).\n3. Não repita o nome do usuário no início de toda resposta — use vocativo no fim ou em momentos de validação emocional, não como prefixo automático.\n4. Se usuário pedir \"pausar / férias / parar uns dias\", chame a tool pausar_agente.\n5. Foto e legenda no mesmo turno descrevem a MESMA refeição. Use o texto para corrigir ou completar a análise visual, mas nunca some duas vezes o mesmo alimento só porque ele apareceu nas duas fontes."
+            }
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "Oi, quero começar"
+            }
+          ],
+          "temperature": 0.2,
+          "maxTokens": 1200,
+          "cacheTools": true,
+          "cacheToolsTtl": "ephemeral_1h",
+          "userId": "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f",
+          "metadata": {
+            "Stage": "coleta_dados",
+            "Iteration": "0"
+          },
+          "tools": "<same as the top-level tools>"
+        }
+      ],
+      "output": {
+        "text": "",
+        "preferAudio": false,
+        "singleMessage": false,
+        "interactive": {
+          "body": "Bem-vindo! Pra começar, qual é o seu sexo?",
+          "buttons": [
+            {
+              "id": "btn_sex_masculino",
+              "title": "Masculino"
+            },
+            {
+              "id": "btn_sex_feminino",
+              "title": "Feminino"
+            }
+          ],
+          "pendingId": ""
+        },
+        "toolCalls": [],
+        "stage": "coleta_dados",
+        "modelUsed": "anthropic/claude-sonnet-4.6",
+        "promptTokens": 40001,
+        "completionTokens": 101,
+        "costUsd": 0.01,
+        "latencyMs": 0
+      },
+      "db": [
+        {
+          "target": "rpc:ensure_user_initialized",
+          "ops": [
+            {
+              "p_wpp": "14155550123"
+            }
+          ]
+        },
+        {
+          "target": "subscriptions",
+          "ops": [
+            ["select", "status, current_period_end, trial_ends_at"],
+            ["eq", "user_id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"],
+            [
+              "order",
+              "created_at",
+              {
+                "ascending": false
+              }
+            ],
+            ["limit", 1],
+            ["maybeSingle"]
+          ]
+        },
+        {
+          "target": "users",
+          "ops": [
+            [
+              "select",
+              "id, name, summary, last_active_at, country, country_confirmed, country_detected_from_wpp, locale, metadata, timezone"
+            ],
+            ["eq", "id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"],
+            ["single"]
+          ]
+        },
+        {
+          "target": "user_profiles",
+          "ops": [
+            ["select", "*"],
+            ["eq", "user_id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"],
+            ["single"]
+          ]
+        },
+        {
+          "target": "messages",
+          "ops": [
+            ["select", "direction, content, content_type, created_at, provider_message_id"],
+            ["eq", "user_id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"],
+            [
+              "order",
+              "created_at",
+              {
+                "ascending": false
+              }
+            ],
+            ["limit", 50]
+          ]
+        },
+        {
+          "target": "global_config",
+          "ops": [["select", "key, value"], ["like", "key", "calc.%"]]
+        },
+        {
+          "target": "user_profiles",
+          "ops": [
+            [
+              "select",
+              "sex, birth_date, height_cm, weight_kg, body_fat_percent, activity_level, training_frequency, water_intake, hunger_level, current_protocol, goal_type, goal_value, deficit_level"
+            ],
+            ["eq", "user_id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"],
+            ["maybeSingle"]
+          ]
+        },
+        {
+          "target": "daily_snapshots",
+          "ops": [
+            [
+              "select",
+              "calories_consumed, protein_g, carbs_g, fat_g, exercise_calories, daily_balance, deficit_accumulated, day_status, gap_reminder_sent_at"
+            ],
+            ["eq", "user_id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"],
+            ["eq", "date", "2026-10-04"],
+            ["maybeSingle"]
+          ]
+        },
+        {
+          "target": "user_progress",
+          "ops": [
+            [
+              "select",
+              "current_streak, longest_streak, xp_total, level, blocks_completed, deficit_block, last_active_date"
+            ],
+            ["eq", "user_id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"],
+            ["maybeSingle"]
+          ]
+        },
+        {
+          "target": "daily_snapshots",
+          "ops": [
+            ["select", "calories_consumed, calories_target, day_closed"],
+            ["eq", "user_id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"],
+            ["gte", "date", "2026-09-20"],
+            ["eq", "day_closed", true]
+          ]
+        },
+        {
+          "target": "product_events",
+          "ops": [
+            ["select", "properties, occurred_at"],
+            ["eq", "user_id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"],
+            ["eq", "event", "vision.analyzed"],
+            ["gte", "occurred_at", "2026-10-02T15:03:40.503Z"],
+            [
+              "order",
+              "occurred_at",
+              {
+                "ascending": false
+              }
+            ],
+            ["limit", 50]
+          ]
+        },
+        {
+          "target": "product_events",
+          "ops": [
+            ["select", "id"],
+            ["eq", "user_id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"],
+            ["eq", "event", "reevaluation.due"],
+            ["gte", "occurred_at", "2026-10-02T15:03:40.503Z"],
+            ["limit", 1]
+          ]
+        },
+        {
+          "target": "product_events",
+          "ops": [
+            ["select", "properties, occurred_at"],
+            ["eq", "user_id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"],
+            ["eq", "event", "vision.analyzed"],
+            ["gte", "occurred_at", "2026-10-04T11:03:40.503Z"],
+            [
+              "order",
+              "occurred_at",
+              {
+                "ascending": false
+              }
+            ],
+            ["limit", 10]
+          ]
+        },
+        {
+          "target": "v_active_prompts",
+          "ops": [["select", "*"], ["eq", "stage", "coleta_dados"], ["single"]]
+        },
+        {
+          "target": "agent_rules",
+          "ops": [
+            ["select", "topic, content, language"],
+            ["eq", "status", "active"],
+            ["or", "tipo.eq.regras_gerais,tipo.eq.coleta_dados"],
+            [
+              "order",
+              "display_order",
+              {
+                "ascending": true
+              }
+            ]
+          ]
+        },
+        {
+          "target": "global_config",
+          "ops": [["select", "value"], ["eq", "key", "router.haiku_enabled"], ["maybeSingle"]]
+        },
+        {
+          "target": "pending_registrations",
+          "ops": [
+            ["select", "id"],
+            ["eq", "user_id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"],
+            ["eq", "status", "pending"],
+            ["limit", 1]
+          ]
+        },
+        {
+          "target": "rpc:match_method_chunks",
+          "ops": [
+            {
+              "query_embedding": [0.25, -0.5, 0.125],
+              "match_count": 5,
+              "filter_protocol": null
+            }
+          ]
+        },
+        {
+          "target": "product_events",
+          "ops": [
+            [
+              "insert",
+              {
+                "user_id": "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f",
+                "event": "pipeline.onboarding_button_sent",
+                "properties": {
+                  "field": "sex",
+                  "options": ["masculino", "feminino"]
+                }
+              }
+            ]
+          ]
+        },
+        {
+          "target": "users",
+          "ops": [
+            [
+              "update",
+              {
+                "updated_at": "2026-10-04T15:03:40.503Z"
+              }
+            ],
+            ["eq", "id", "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f"]
+          ]
+        },
+        {
+          "target": "product_events",
+          "ops": [
+            [
+              "insert",
+              {
+                "user_id": "7d0c2a44-5b1e-4c57-9a3e-0f6b1c2d3e4f",
+                "event": "llm.cache_usage",
+                "properties": {
+                  "model": "anthropic/claude-sonnet-4.6",
+                  "stage": "coleta_dados",
+                  "prompt_tokens": 40001,
+                  "cache_read_tokens": 0,
+                  "cache_creation_tokens": 38000,
+                  "hit_rate": 0
+                }
+              }
+            ]
+          ]
+        }
+      ],
+      "embeddings": ["Oi, quero começar"]
+    }
+  }
+}

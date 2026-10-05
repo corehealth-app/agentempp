@@ -84,13 +84,13 @@
  * > RC R4 — cenário metas já gravadas abaixo do piso NÃO coberto nesta PR (pendência da audit 2026-10-04).
  *   Sem backfill: seguem no banco e na pergunta da reavaliação.
  * > RC R4 — cenário piso feminino (mulher pedindo de 10% a 11,9%) NÃO coberto nesta PR (pendência da audit 2026-10-04).
- *   O cliente nunca disse piso separado para mulher. O 12% é valor do código: continua aviso e grava (caso abaixo). A recusa abaixo de 10% oferece "a partir de 12%" para não contradizer esse aviso.
+ *   O cliente nunca disse piso separado para mulher. O 12% é valor do código: continua aviso e grava (travado no golden). A recusa abaixo de 10% oferece "a partir de 12%" para não contradizer esse aviso.
  * > RC R4 — cenário meta de peso que ainda deixa o IMC abaixo de 18,5 GANHANDO peso (45 → 48 kg) NÃO coberto nesta PR (pendência da audit 2026-10-04).
- *   Inalterado: avisa e grava (caso abaixo).
+ *   Inalterado: avisa e grava (travado no golden).
  * > RC R4 — cenário meta de peso IGUAL ao peso atual, ou ganhando menos de 2% do peso, de quem já está abaixo de 18,5 (52 → 52 kg e 52 → 52,5 kg, 170 cm) NÃO coberto nesta PR (pendência da audit 2026-10-04).
- *   Inalterado: 'maintenance' e grava (caso abaixo). PERDENDO, qualquer variação é recusada (54 → 53, 52 → 51,5, 40 → 39,3).
+ *   Inalterado: 'maintenance' e grava (52 → 52 kg travado no golden; 52 → 52,5 kg em weight-goal-classifier.test.ts). PERDENDO, qualquer variação é recusada (54 → 53, 52 → 51,5, 40 → 39,3).
  * > RC R4 — cenário define_protocolo com meta de IMC abaixo de 18,5 de quem está GANHANDO peso (175 cm, 50 kg, ganho_massa, IMC 18) NÃO coberto nesta PR (pendência da audit 2026-10-04).
- *   A ferramenta não lê altura nem peso atual: descarta QUALQUER meta de IMC abaixo de 18,5 (o protocolo é gravado). A mesma pessoa em define_meta_peso (55,1 kg, ganhando) tem a meta gravada com aviso (caso abaixo).
+ *   A ferramenta não lê altura nem peso atual: descarta QUALQUER meta de IMC abaixo de 18,5 (o protocolo é gravado). A mesma pessoa em define_meta_peso (55,1 kg, ganhando) tem a meta gravada com aviso (travado no golden).
  * > RC R4 — cenário meta de peso GANHANDO com IMC bruto de 18,45 a 18,499 (50 → 53,4 kg, 170 cm) NÃO coberto nesta PR (pendência da audit 2026-10-04).
  *   Muda: era "Ótima meta — IMC 18.5", agora o aviso "IMC 18.4, abaixo do saudável … quer rever?"; continua gravada. Travado em weight-goal-classifier.test.ts; sem relato de paciente.
  * > RC R4 — cenário recusa da meta na reavaliação com fotos corporais ainda pendentes, e a redação do modelo nesse turno NÃO coberto nesta PR (pendência da audit 2026-10-04).
@@ -100,8 +100,44 @@
  * > RC R4 — cenário escada automática dar 10% a mulher com até 15% de gordura, e 20% a mulher fora da normalidade (manual de 22/05/2026: ≤ 27%) NÃO coberto nesta PR (pendência da audit 2026-10-04).
  * > RC R4 — cenário conversa real depois da recusa (o modelo dizer que registrou ou repetir a chamada) e redação da recusa aprovada pelo cliente (manual 3.5.2) NÃO coberto nesta PR (pendência da audit 2026-10-04).
  *   Os roteiros de cadastro e reavaliação ficam no banco; não há teste de conversa.
- * > RC R4 — cenário turno em que define_protocolo ou define_meta_peso gravou e o modelo TAMBÉM afirma uma refeição ou treino sem chamar a tool ("Almoço registrado … 521 kcal", sem o card "Total refeição") NÃO coberto nesta PR (pendência da audit 2026-10-04).
- *   Nesse turno a regra genérica do guard de escrita fantasma não dispara mais; o card "Total refeição", a proposta imitada, os bullets com kcal e o "pulei" continuam disparando (fake-write-detector.test.ts). Sem relato de paciente.
+ *
+ * Phantom-write guard in a goal turn (last blocks of this file). The rule,
+ * only when define_protocolo or define_meta_peso wrote or refused by the floor
+ * (success:true or refused:true) and the answer has no "Total refeição" card:
+ *  1. the answer is split into sentences;
+ *  2. a sentence is set aside only when it has a goal word, no meal-or-workout
+ *     word, no workout signature (duration + type), every registration or
+ *     correction verb in it bound to the goal noun (a participle also agreeing
+ *     with it in gender and number), no other word from outside the closed
+ *     list of fake-write-detector.ts, and no coordination right before a final
+ *     colon ("Registrei a meta e também:");
+ *  3. a registration or correction verb left in the remaining sentences fires
+ *     the guard;
+ *  4. when none is left and the patient's text of the turn (typed text, audio
+ *     transcription, photo analysis) has a meal-or-workout word, there is no
+ *     exemption: the whole answer is read, as in the parent commit 279ba09.
+ * Without such a tool, or with the card, the whole text is read as in the
+ * parent commit 279ba09. The rule reads words, not meaning. Left out:
+ *
+ * > RC R4 — cenário refeição ou treino mostrados SEM verbo de registro próprio na resposta em que o único verbo é o da meta ("Frango com arroz — 430 kcal. Meta registrada 💪", "Meta registrada. Arroz com frango também. 430 kcal 💪", "Arroz com frango: meta registrada — 430 kcal", "Registrei a meta e 430 kcal 💪", "Registrei a meta do dia: 520 kcal de arroz, feijão e frango.") NÃO coberto nesta PR (pendência da audit 2026-10-04).
+ *   O verbo é explicado pela tool de meta e nenhum outro sobra: quando o texto do paciente no turno não tem palavra de refeição ou treino ("Minha meta agora é 75 kg"), o guard não dispara (no commit pai 279ba09 disparava, pelo verbo da meta). Com a palavra ("Minha meta agora é 75 kg. Almocei arroz, feijão e frango grelhado.") dispara. Os dois lados estão em fake-write-detector.test.ts e no golden. Sem relato de paciente.
+ * > RC R4 — cenário particípio que concorda com o nome da meta numa frase sobre a refeição ("520 kcal da meta registrada 💪"), e particípio no plural depois de dois nomes de meta ligados por "e" ("520 kcal do protocolo e meta registradas 💪") NÃO coberto nesta PR (pendência da audit 2026-10-04).
+ *   A concordância com o nome da meta é o único sinal lido: quando o texto do paciente no turno não tem palavra de refeição ou treino ("Minha meta agora é 75 kg"), o guard não dispara (no commit pai 279ba09 disparava). Com a palavra ("Minha meta agora é 75 kg. Almocei arroz, feijão e frango grelhado.") dispara. Os dois lados estão em fake-write-detector.test.ts e no golden. Sem relato de paciente.
+ * > RC R4 — cenário paciente que relata a refeição ou o treino SEM palavra da lista ("Minha meta agora é 75 kg. Comi 2 fatias de pizza.", "Minha meta agora é 75 kg. Joguei 40 minutos de futsal.", "My goal is now 75 kg. I had rice, beans and chicken."), ou que relatou num turno anterior NÃO coberto nesta PR (pendência da audit 2026-10-04).
+ *   A isenção continua valendo nesse turno: a resposta é lida por frase, com as pendências desta lista (refeição mostrada sem verbo próprio; particípio que concorda com o nome da meta). A lista é a mesma usada na resposta (café, almoço/almocei, lanche, janta/jantar/jantei, ceia, refeição, treino, caminhada, corrida, musculação, bike, bicicleta, natação, alongamento, yoga, pilates, exercício, cross…): "comi", "tomei", nome de comida e nome de esporte não estão nela. Caracterizado em fake-write-detector.test.ts e no golden.
+ * > RC R4 — cenário resposta fiel cujo verbo de registro/correção está numa frase SEM palavra de meta ("Atualizado! Agora são 1.746 kcal por dia 💪", "Registrado! Sua meta agora é 1.746 kcal por dia."), incluída a recusa parafraseada ("Não registrei: 7% fica abaixo de 10%, o limite seguro. Você continua com 1.746 kcal por dia 💪", "Anotado o pedido, mas o percentual de 7% não foi registrado: está abaixo do mínimo de 10% para homens. Você segue com 1.746 kcal por dia 💪") NÃO coberto nesta PR (pendência da audit 2026-10-04).
+ *   O guard dispara como no commit pai 279ba09: 3ª chamada ao modelo com "chame registra_refeicao" num turno sem refeição. A isenção não foi alargada para esses textos. As duas recusas estão no golden (3 chamadas, 2 eventos); as outras em fake-write-detector.test.ts.
+ * > RC R4 — cenário resposta fiel cuja frase do verbo cita a meta mas tem verbo não ligado ao nome da meta ("Registrei 75 kg como sua nova meta 💪"), particípio que não concorda com o nome da meta ("Meta registrado: 75 kg. 1.746 kcal por dia 💪"), palavra fora da lista fechada ("Meta registrada, Roberto! 1.746 kcal por dia 💪"), palavra de refeição/treino ("Protocolo registrado com 4 treinos por semana: 1.746 kcal por dia 💪") ou coordenação antes dos dois-pontos ("Protocolo registrado e também: 1.746 kcal por dia 💪") NÃO coberto nesta PR (pendência da audit 2026-10-04).
+ *   O guard dispara como no commit pai 279ba09 (3ª chamada ao modelo). Na dúvida a frase não é isenta. Caracterizado em fake-write-detector.test.ts.
+ * > RC R4 — cenário resposta fiel (só meta ou protocolo) num turno em que o texto do paciente tem palavra de refeição ou treino SEM relatar refeição nem treino ("Peso 79 kg, treino 4 vezes por semana, fome moderada, não vou mandar fotos. Minha meta agora é 7% de gordura") NÃO coberto nesta PR (pendência da audit 2026-10-04).
+ *   A isenção não vale nesse turno e o guard dispara como no commit pai 279ba09 (3ª chamada ao modelo com "chame registra_refeicao"): a condição lê palavra, não sentido. É o caso de quem informa a frequência de treino junto com o peso e a fome na reavaliação. Travado no golden (3 chamadas, 2 eventos) e em fake-write-detector.test.ts. A frase do paciente é sintética: não há relato.
+ * > RC R4 — cenário retry do guard dirigido à META (define_meta_peso devolve success:false, o modelo afirma "Meta registrada … kcal 💪") NÃO coberto nesta PR (pendência da audit 2026-10-04).
+ *   O guard dispara e os dois eventos são gravados (golden), mas o retry manda chamar registra_refeicao/registra_treino, não define_meta_peso; se o modelo insiste, o texto chega ao paciente.
+ * > RC R4 — cenário "Meta registrada" SEM kcal, emoji de card ou treino depois de define_meta_peso com success:false ("Meta registrada: 15% de gordura corporal.") NÃO coberto nesta PR (pendência da audit 2026-10-04).
+ *   O guard só lê afirmação acompanhada de kcal/🔥/💪/📊 ou de duração de treino: esse texto nunca disparou, nem no commit pai.
+ *
+ * > RC R4 — cenário paciente que relata com forma conjugada ou diminutivo FORA da lista ("Treinei 40 minutos hoje", "Fui treinar", "Malhei", "Corri", "Caminhei", "Pedalei", "Nadei", "academia", "esteira", "Almoçamos arroz e frango", "Tomei um cafezinho com pão", "lanchinho", "Ceei"), e foto de equipamento cujo rótulo escrito pelo próprio worker ("Foto [equipamentos de treino]") contém "treino" NÃO coberto nesta PR (pendência da audit 2026-10-04).
+ *   No primeiro caso a palavra não está na lista e a isenção continua valendo: a resposta é lida por frase, com as pendências desta lista ("Fiz um treino de 40 minutos" tem a palavra e desliga a isenção). No segundo a isenção cai por uma palavra do pipeline, não do paciente: a resposta fiel custa a 3ª chamada, como no commit pai 279ba09. Medido pela quarta revisão de 04/10 (lente B); sem golden.
  */
 import {
   calcIMCGoal,
@@ -113,6 +149,12 @@ import {
 import type { ServiceClient } from '@mpp/db'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearCalcConfigCache, loadCalcConfig } from '../calc-config-loader.js'
+import {
+  AGREEMENT_ANSWERS,
+  OPEN_LIST_ANSWERS,
+  PHANTOM_ANSWERS,
+  P_GOAL_AND_MEAL as THIRD_CHECK_PATIENT_SENTENCE,
+} from './fixtures/audit-10-04-guard-answers.js'
 import type { PipelineDeps } from '../pipeline.js'
 import { processAuthenticatedMessage, processMessage } from '../pipeline.js'
 import { resetRouterFlagCacheForTests } from '../router-flag.js'
@@ -1344,6 +1386,7 @@ function reevalTurn(
   toolCalls: ScriptedToolCall[],
   reevaluationDue: boolean,
   answer: string = MODEL_ANSWER,
+  profileOverride: Row = {},
 ): ReevalTurn {
   let profile: Row = {
     ...MAN,
@@ -1352,6 +1395,7 @@ function reevalTurn(
     bedtime: '23:00',
     food_organization: 'sim',
     onboarding_completed: true,
+    ...profileOverride,
   }
   const modelCalls: ReevalTurn['modelCalls'] = []
   const events: string[] = []
@@ -1614,8 +1658,10 @@ describe('audit 2026-10-04 — R4: na reavaliação a recusa da meta chega ao pa
 // block above. The third answer joins the two signatures; the read tool of the
 // control (consulta_metricas) and the invalid argument are synthetic.
 //
-// A turn in which define_protocolo or define_meta_peso ran without error is no
-// longer read as a phantom MEAL write by that generic rule.
+// In a turn in which define_protocolo or define_meta_peso wrote (or refused the
+// goal by its floor), a sentence whose every claim is about the goal or the
+// protocol is no longer read as a phantom MEAL write by that generic rule. A
+// registration or correction verb anywhere else still fires: next two blocks.
 
 const ANSWER_WITH_KCAL =
   'Sua nova meta é 1.746 kcal e 118,5 g de proteína por dia. A meta de 7% de gordura corporal não foi registrada: fica abaixo de 10%, que é o limite inferior seguro do método. Posso registrar uma meta a partir de 10%. Qual você prefere?'
@@ -1731,5 +1777,759 @@ describe('audit 2026-10-04 — R4: a resposta fiel à recusa não é escrita fan
     expect(t.profile()).toEqual(before)
     expect(sawFakeWriteRetry(t)).toBe(true)
     expect(t.events).toContain('llm.fake_write_detected')
+  })
+})
+
+// ── R4: the exemption covers the goal sentences, not the whole answer ───────
+//
+// Independent check of 2026-10-04 on commit 9bc012b. No patient print exists
+// for a goal turn: every scenario below is the checker's probe, verbatim
+// (patient sentence, tool call and model answer), run through processMessage
+// with provider whatsapp — man, 80 kg, 12% body fat, recomposição, saved goal
+// BF 15, no reassessment due. The answers of H1, H2 and H3 are the historic
+// texts of fake-write-detector.test.ts (Luciana 20/05, Roberto 21/05, Paulo
+// 21/05); A7 is Paulo 28/05.
+//
+// MEDIUM — with a goal tool in the turn the generic rule was off for the whole
+// answer: on 9bc012b each of the ten turns took 2 model calls and wrote no
+// llm.fake_write_* event, while the parent 279ba09 took 3 calls and wrote both.
+// LOW — define_meta_peso answering {success:false, error} (nothing written,
+// not a floor refusal) also counted as "the goal tool ran": B2 and B3.
+
+const CARD = '🔥 Consumido: 1.433 / 1.843 kcal\n🎯 Restam: 410 kcal\n📊 Bloco 7700: 5.757 / 7.700'
+const MEAL_PROSE =
+  'Meta registrada: 75 kg. Almoço registrado: arroz, feijão e frango grelhado — 520 kcal. 💪'
+const CORRECTION_RETRY = 'você afirmou ter CORRIGIDO a refeição/treino MAS não chamou a tool'
+
+const metaPesoCall = (args: Row): ScriptedToolCall => ({
+  id: 'g1',
+  name: 'define_meta_peso',
+  arguments: JSON.stringify(args),
+})
+
+const sawRetry = (t: ReevalTurn, retry: string): boolean =>
+  t.modelCalls.some((messages) =>
+    messages.some((m) => m.role === 'user' && String(m.content).includes(retry)),
+  )
+
+interface PhantomScenario {
+  label: string
+  text: string
+  call: ScriptedToolCall
+  answer: string
+  retry: string
+  /** Fields of the goal tool's result in this turn. */
+  result: Row
+  /** goal_type / goal_value after the turn. */
+  goal: [string | null, number | null]
+  profile?: Row
+}
+
+const PHANTOM_IN_GOAL_TURN: PhantomScenario[] = [
+  {
+    label: 'H1 define_protocolo + "Almoço registrado." com o card',
+    text: 'Fome moderada, sigo na recomposição. Almocei arroz, feijão e frango.',
+    call: protocoloCall({}),
+    answer: `Almoço registrado.\n\n${CARD}`,
+    retry: FAKE_WRITE_RETRY,
+    result: { success: true },
+    goal: [null, null],
+  },
+  {
+    label: 'H2 define_protocolo + "Corrigido. … Feijão carioca (180 g): 137 kcal" com o card',
+    text: 'Fome moderada, sigo na recomposição. E corrige o feijão do almoço: eram 180 g.',
+    call: protocoloCall({}),
+    answer: `Corrigido.\n\n**Almoço:**\n• Feijão carioca (180 g): 137 kcal\n${CARD}`,
+    retry: CORRECTION_RETRY,
+    result: { success: true },
+    goal: [null, null],
+  },
+  {
+    label: 'H3 define_protocolo + "Jantar salvo, Paulo." com o card',
+    text: 'Fome moderada, sigo na recomposição. Jantei 2 bananas.',
+    call: protocoloCall({}),
+    answer: `Jantar salvo, Paulo.\n• Banana (2 un): 178 kcal\n${CARD}`,
+    retry: FAKE_WRITE_RETRY,
+    result: { success: true },
+    goal: [null, null],
+  },
+  {
+    label: 'A1 define_meta_peso 75 kg + "Almoço registrado … 520 kcal" em prosa',
+    text: 'Minha meta agora é 75 kg. Almocei arroz, feijão e frango grelhado.',
+    call: metaPesoCall({ target_weight_kg: 75 }),
+    answer: MEAL_PROSE,
+    retry: FAKE_WRITE_RETRY,
+    result: { success: true },
+    goal: ['peso_kg', 75],
+  },
+  {
+    label:
+      'A2 define_protocolo + "Protocolo registrado" + "Almoço registrado." com o card de balanço',
+    text: 'Quero recomposição, fome moderada. Almocei arroz, feijão e frango.',
+    call: protocoloCall({}),
+    answer:
+      'Protocolo registrado: recomposição.\n\nAlmoço registrado. ✅\n🔥 Consumido: 521 / 1.746 kcal\n💪 Proteína: 38 / 120 g',
+    retry: FAKE_WRITE_RETRY,
+    result: { success: true },
+    goal: [null, null],
+  },
+  {
+    label:
+      'A7 define_meta_peso 75 kg + "Registrei as duas caminhadas de 60 minutos cada." (treino, sem kcal)',
+    text: 'Minha meta agora é 75 kg. Fiz duas caminhadas de 60 minutos hoje.',
+    call: metaPesoCall({ target_weight_kg: 75 }),
+    answer: 'Meta registrada: 75 kg. Registrei as duas caminhadas de 60 minutos cada.',
+    retry: FAKE_WRITE_RETRY,
+    result: { success: true },
+    goal: ['peso_kg', 75],
+  },
+  {
+    label: 'A8 define_meta_peso 75 kg + "Corrigido. Feijão 180g … 610 kcal" em prosa',
+    text: 'Minha meta agora é 75 kg. Corrige o almoço: o feijão era 180g.',
+    call: metaPesoCall({ target_weight_kg: 75 }),
+    answer: 'Meta registrada: 75 kg. Corrigido. Feijão 180g — almoço agora com 610 kcal.',
+    retry: CORRECTION_RETRY,
+    result: { success: true },
+    goal: ['peso_kg', 75],
+  },
+  {
+    label: 'B1 define_meta_peso 7% RECUSADA pelo piso + refeição em prosa',
+    text: 'Minha meta agora é 7% de gordura. Almocei arroz, feijão e frango grelhado.',
+    call: metaPesoCall({ target_bf_percent: 7 }),
+    answer:
+      'Não registrei essa meta: 7% fica abaixo de 10%. Almoço registrado: arroz, feijão e frango grelhado — 520 kcal.',
+    retry: FAKE_WRITE_RETRY,
+    result: { success: false, refused: true },
+    goal: ['BF', 15],
+  },
+  {
+    label:
+      'B2 define_meta_peso success:false (gordura atual ausente) + "Meta registrada … kcal 💪"',
+    text: 'Minha meta agora é 15% de gordura',
+    call: metaPesoCall({ target_bf_percent: 15 }),
+    answer: 'Meta registrada: 15% de gordura corporal. Sua meta diária segue em 1.746 kcal 💪',
+    retry: FAKE_WRITE_RETRY,
+    result: { success: false },
+    goal: ['BF', 15],
+    profile: { body_fat_percent: null },
+  },
+  {
+    label: 'B3 define_meta_peso success:false (gordura atual ausente) + refeição em prosa',
+    text: 'Minha meta agora é 15% de gordura. Almocei arroz e frango.',
+    call: metaPesoCall({ target_bf_percent: 15 }),
+    answer:
+      'Preciso do seu percentual de gordura atual antes da meta. Almoço registrado: arroz e frango — 430 kcal.',
+    retry: FAKE_WRITE_RETRY,
+    result: { success: false },
+    goal: ['BF', 15],
+    profile: { body_fat_percent: null },
+  },
+]
+
+describe('audit 2026-10-04 — R4: com a tool de meta no turno, refeição, correção ou treino afirmados sem a tool de registro disparam o guard', () => {
+  it.each(
+    PHANTOM_IN_GOAL_TURN,
+  )('$label: retry forçado e os dois eventos (em 9bc012b: 2 chamadas e nenhum evento)', async ({
+    text,
+    call,
+    answer,
+    retry,
+    result,
+    goal,
+    profile,
+  }) => {
+    const t = reevalTurn(text, [call], false, answer, profile)
+    const out = await runReeval(t, text)
+
+    // Tool call, the claim, the forced retry.
+    expect(t.modelCalls).toHaveLength(3)
+    expect(sawRetry(t, retry)).toBe(true)
+    expect(t.events).toContain('llm.fake_write_detected')
+    expect(t.events).toContain('llm.fake_write_unresolved')
+
+    // The goal tool did run, with no exception: this is the turn of the finding.
+    expect(out.toolCalls.map((c) => c.name)).toEqual([call.name])
+    expect(out.toolCalls[0]?.error).toBeUndefined()
+    expect(out.toolCalls[0]?.result).toMatchObject(result)
+    expect([t.profile().goal_type ?? null, t.profile().goal_value ?? null]).toEqual(goal)
+  })
+
+  it('B2: a tool devolveu o erro do dado que falta, sem "refused" — nada gravado e não é recusa de piso', async () => {
+    const scenario = PHANTOM_IN_GOAL_TURN.find((s) => s.label.startsWith('B2'))
+    if (!scenario) throw new Error('scenario B2 missing')
+    const t = reevalTurn(scenario.text, [scenario.call], false, scenario.answer, scenario.profile)
+    const out = await runReeval(t, scenario.text)
+
+    const toolResult = out.toolCalls[0]?.result as Row
+    expect(toolResult.success).toBe(false)
+    expect(toolResult.refused).toBeUndefined()
+    expect(String(toolResult.error)).toContain('BF atual não cadastrado')
+  })
+
+  it('H1: o modelo insistiu, então o paciente ainda lê "Almoço registrado." — o evento llm.fake_write_unresolved é o que a auditoria vê', async () => {
+    const scenario = PHANTOM_IN_GOAL_TURN[0]
+    if (!scenario) throw new Error('scenario H1 missing')
+    const t = reevalTurn(scenario.text, [scenario.call], false, scenario.answer)
+    const out = await runReeval(t, scenario.text)
+
+    expect(out.text.startsWith('Almoço registrado.')).toBe(true)
+    expect(t.events.filter((e) => e.startsWith('llm.fake_write'))).toEqual([
+      'llm.fake_write_detected',
+      'llm.fake_write_unresolved',
+    ])
+  })
+
+  it.each([
+    {
+      label:
+        'define_meta_peso 7% recusada pelo piso (refused:true), resposta com as palavras da tool + kcal e 💪',
+      text: 'Minha meta agora é 7% de gordura',
+      call: metaPesoCall({ target_bf_percent: 7 }),
+      answer: `${refusalText(7, 10)} Sua meta diária segue em 1.746 kcal 💪`,
+      result: { success: false, refused: true },
+      goal: ['BF', 15],
+    },
+    {
+      label:
+        'define_meta_peso 75 kg aceita (success:true), "Meta registrada: 75 kg. Vamos focar! 💪"',
+      text: 'Minha meta agora é 75 kg',
+      call: metaPesoCall({ target_weight_kg: 75 }),
+      answer: 'Meta registrada: 75 kg. Vamos focar! 💪',
+      result: { success: true },
+      goal: ['peso_kg', 75],
+    },
+  ])('resposta fiel, $label: 2 chamadas ao modelo, sem evento, texto como foi escrito', async ({
+    text,
+    call,
+    answer,
+    result,
+    goal,
+  }) => {
+    const t = reevalTurn(text, [call], false, answer)
+    const out = await runReeval(t, text)
+
+    expect(t.modelCalls).toHaveLength(2)
+    expect(out.text).toBe(answer)
+    expect(t.events).not.toContain('llm.fake_write_detected')
+    expect(t.events).not.toContain('llm.fake_write_unresolved')
+    expect(out.toolCalls[0]?.result).toMatchObject(result)
+    expect([t.profile().goal_type ?? null, t.profile().goal_value ?? null]).toEqual(goal)
+  })
+
+  it('controle — só uma tool de LEITURA (consulta_metricas) com a mesma prosa de refeição: dispara como sempre', async () => {
+    const text = 'Minha meta agora é 75 kg. Almocei arroz, feijão e frango grelhado.'
+    const t = reevalTurn(
+      text,
+      [{ id: 'r1', name: 'consulta_metricas', arguments: '{}' }],
+      false,
+      MEAL_PROSE,
+    )
+    await runReeval(t, text)
+
+    expect(t.modelCalls).toHaveLength(3)
+    expect(sawRetry(t, FAKE_WRITE_RETRY)).toBe(true)
+    expect(t.events).toContain('llm.fake_write_detected')
+    expect(t.events).toContain('llm.fake_write_unresolved')
+  })
+})
+
+// ── R4: a sentence is not exempt just for naming the goal ───────────────────
+//
+// Second independent check of 2026-10-04 (lens B), HIGH, on the per-sentence
+// exemption of the block above. No patient print exists: every row is the
+// checker's probe, verbatim (patient sentence and model answer, scratchpad
+// reviewC/lensB/corpus.ts), run through processMessage with provider whatsapp —
+// man, 80 kg, 12% body fat, recomposição, saved goal BF 15.
+//
+// 16 of the checker's 45 phantom answers took 2 model calls and wrote no
+// llm.fake_write_* event in a turn with a goal tool, where the parent 279ba09
+// took 3 calls and wrote both — the same in the three tool modes below. Ten
+// were not declared: the verb's sentence names the foods, the sport or the
+// duration, and the only kcal/emoji sits in a sentence that names the goal
+// (two of them workouts lost because "peso" and "força" are not in the word
+// list). Six were of the two classes the previous round declared as pending
+// (bare verb; single sentence that names the goal and claims food).
+//
+// As in the checker's matrix, the patient sentence and the answer stay the
+// same across the three tool modes, so some rows pair a sentence about one
+// goal with a call about another: what is under test is the guard.
+
+const P_GOAL_AND_MEAL = 'Minha meta agora é 75 kg. Almocei arroz, feijão e frango grelhado.'
+const P_GOAL_AND_FIX = 'Minha meta agora é 75 kg. Corrige o almoço: o feijão era 180g.'
+
+interface SecondCheckAnswer {
+  id: string
+  text: string
+  answer: string
+  retry: string
+}
+
+const SECOND_CHECK_ANSWERS: SecondCheckAnswer[] = [
+  // Not declared in the previous round.
+  {
+    id: 'M08',
+    text: P_GOAL_AND_MEAL,
+    answer:
+      'Meta registrada: 75 kg. Registrei arroz, feijão e frango grelhado. Você está em 520 kcal da meta de 1.746.',
+    retry: FAKE_WRITE_RETRY,
+  },
+  {
+    id: 'M09',
+    text: 'Quero recomposição. Almocei arroz, feijão e frango.',
+    answer:
+      'Protocolo registrado: recomposição. Registrei: arroz (150 g), feijão (100 g) e frango (120 g) — 520 kcal, dentro da sua meta.',
+    retry: FAKE_WRITE_RETRY,
+  },
+  {
+    id: 'M12',
+    text: P_GOAL_AND_MEAL,
+    answer:
+      'Anotei os 2 ovos e o pão integral. Com isso você soma 780 kcal da meta de 1.746 kcal 💪',
+    retry: FAKE_WRITE_RETRY,
+  },
+  {
+    id: 'M22',
+    text: 'Minha meta agora é 75 kg. Comi 2 fatias de pizza.',
+    answer:
+      'Adicionei ao seu diário: 2 fatias de pizza. Isso dá 560 kcal, e você passa da meta em 120 kcal.',
+    retry: FAKE_WRITE_RETRY,
+  },
+  {
+    id: 'M27',
+    text: P_GOAL_AND_MEAL,
+    answer:
+      'Anotado: arroz, feijão e frango. Seu objetivo de hoje é 1.746 kcal e você já está em 520 kcal 💪',
+    retry: FAKE_WRITE_RETRY,
+  },
+  {
+    id: 'M28',
+    text: 'Quero manutenção. Almocei arroz, feijão e frango.',
+    answer:
+      'Protocolo de manutenção registrado. Também registrei o que você comeu: 520 kcal de 2.500 da manutenção.',
+    retry: FAKE_WRITE_RETRY,
+  },
+  {
+    id: 'C05',
+    text: P_GOAL_AND_FIX,
+    answer: 'Corrigido: feijão 180 g. Total do dia: 1.433 kcal de 1.843 da meta.',
+    retry: CORRECTION_RETRY,
+  },
+  {
+    id: 'W09',
+    text: 'Minha meta agora é 75 kg. Joguei 40 minutos de futsal.',
+    answer: 'Anotei os 40 minutos de futsal. Meta do dia mantida em 1.746 kcal.',
+    retry: FAKE_WRITE_RETRY,
+  },
+  {
+    id: 'W10',
+    text: 'Minha meta agora é 75 kg. Fiz 40 minutos de força hoje.',
+    answer: 'Meta registrada: 75 kg. Registrei 40 minutos de força, bom para a meta.',
+    retry: FAKE_WRITE_RETRY,
+  },
+  {
+    id: 'W11',
+    text: 'Minha meta agora é 75 kg. Levantei peso por 1 hora.',
+    answer: 'Registrei 1 hora de peso livre para a sua meta de 75 kg.',
+    retry: FAKE_WRITE_RETRY,
+  },
+  // Declared as pending in the previous round: bare verb.
+  {
+    id: 'M11',
+    text: P_GOAL_AND_MEAL,
+    answer: 'Registrado! Faltam 410 kcal para a meta.',
+    retry: FAKE_WRITE_RETRY,
+  },
+  {
+    id: 'C04',
+    text: P_GOAL_AND_FIX,
+    answer: 'Correção feita. O total de hoje fica em 1.433 kcal, dentro da meta de 1.843.',
+    retry: CORRECTION_RETRY,
+  },
+  // Declared as pending in the previous round: one sentence that names the
+  // goal and claims food. The checker's fix left these four open.
+  {
+    id: 'M10',
+    text: P_GOAL_AND_MEAL,
+    answer: 'Meta registrada e arroz com frango anotado — 430 kcal.',
+    retry: FAKE_WRITE_RETRY,
+  },
+  {
+    id: 'M18',
+    text: P_GOAL_AND_MEAL,
+    answer: 'Registrei o frango e o arroz na sua meta de hoje: 430 kcal 💪',
+    retry: FAKE_WRITE_RETRY,
+  },
+  {
+    id: 'M19',
+    text: P_GOAL_AND_MEAL,
+    answer:
+      'Sua meta foi registrada e o frango com arroz do meio-dia também foi anotado. Hoje você está com 430 kcal de 1.746 kcal da meta.',
+    retry: FAKE_WRITE_RETRY,
+  },
+  {
+    id: 'M20',
+    text: P_GOAL_AND_MEAL,
+    answer: 'Meta de 75 kg registrada, e já deixei anotado o pão com ovo de hoje cedo (310 kcal).',
+    retry: FAKE_WRITE_RETRY,
+  },
+]
+
+interface GoalToolMode {
+  mode: string
+  call: ScriptedToolCall
+  /** Fields of the goal tool's result in this turn. */
+  result: Row
+  /** goal_type / goal_value after the turn. */
+  goal: [string | null, number | null]
+}
+
+const GOAL_TOOL_MODES: GoalToolMode[] = [
+  {
+    mode: 'define_meta_peso{75 kg} aceita',
+    call: metaPesoCall({ target_weight_kg: 75 }),
+    result: { success: true },
+    goal: ['peso_kg', 75],
+  },
+  {
+    mode: 'define_meta_peso{7%} recusada pelo piso',
+    call: metaPesoCall({ target_bf_percent: 7 }),
+    result: { success: false, refused: true },
+    goal: ['BF', 15],
+  },
+  {
+    mode: 'define_protocolo',
+    call: protocoloCall({}),
+    result: { success: true },
+    goal: [null, null],
+  },
+]
+
+describe('audit 2026-10-04 — R4: segunda checagem — as 16 respostas que a isenção por frase deixava passar disparam o guard', () => {
+  it('são as 16 respostas do achado, nos três modos de tool de meta', () => {
+    expect(SECOND_CHECK_ANSWERS).toHaveLength(16)
+    expect(new Set(SECOND_CHECK_ANSWERS.map((a) => a.answer)).size).toBe(16)
+    expect(GOAL_TOOL_MODES).toHaveLength(3)
+  })
+
+  describe.each(GOAL_TOOL_MODES)('$mode', ({ call, result, goal }) => {
+    it.each(
+      SECOND_CHECK_ANSWERS,
+    )('$id "$answer": 3 chamadas ao modelo e os dois eventos, como no commit pai (antes: 2 chamadas e nenhum evento)', async ({
+      text,
+      answer,
+      retry,
+    }) => {
+      const t = reevalTurn(text, [call], false, answer)
+      const out = await runReeval(t, text)
+
+      // Tool call, the claim, the forced retry.
+      expect(t.modelCalls).toHaveLength(3)
+      expect(sawRetry(t, retry)).toBe(true)
+      expect(t.events.filter((e) => e.startsWith('llm.fake_write'))).toEqual([
+        'llm.fake_write_detected',
+        'llm.fake_write_unresolved',
+      ])
+
+      // The goal tool did run and wrote or refused: this is the turn of the finding.
+      expect(out.toolCalls.map((c) => c.name)).toEqual([call.name])
+      expect(out.toolCalls[0]?.error).toBeUndefined()
+      expect(out.toolCalls[0]?.result).toMatchObject(result)
+      expect([t.profile().goal_type ?? null, t.profile().goal_value ?? null]).toEqual(goal)
+    })
+
+    // docs/CALCULO-MPP.md said "the rest of the answer is read as always"
+    // while this answer passed in silence after define_meta_peso (LOW finding).
+    it('a frase que o doc dizia disparar ("Registrei arroz, feijão e frango grelhado. Você está em 520 kcal da meta de 1.746."): 3 chamadas e os dois eventos', async () => {
+      const answer =
+        'Registrei arroz, feijão e frango grelhado. Você está em 520 kcal da meta de 1.746.'
+      const t = reevalTurn(P_GOAL_AND_MEAL, [call], false, answer)
+      const out = await runReeval(t, P_GOAL_AND_MEAL)
+
+      expect(t.modelCalls).toHaveLength(3)
+      expect(sawRetry(t, FAKE_WRITE_RETRY)).toBe(true)
+      expect(t.events).toContain('llm.fake_write_detected')
+      expect(t.events).toContain('llm.fake_write_unresolved')
+      expect(out.toolCalls[0]?.result).toMatchObject(result)
+    })
+  })
+
+  // LOW finding of the same check, declared as pending (RC R4 above): a
+  // faithful refusal paraphrased with no goal word in the verb's sentence
+  // fires, as in the parent. The exemption was not widened for it.
+  it.each([
+    'Não registrei: 7% fica abaixo de 10%, o limite seguro. Você continua com 1.746 kcal por dia 💪',
+    'Anotado o pedido, mas o percentual de 7% não foi registrado: está abaixo do mínimo de 10% para homens. Você segue com 1.746 kcal por dia 💪',
+  ])('caracterização (pendência RC R4) — define_meta_peso{7%} recusada, recusa parafraseada "%s": 3 chamadas e os dois eventos, como no commit pai', async (answer) => {
+    const text = 'Minha meta agora é 7% de gordura'
+    const t = reevalTurn(text, [metaPesoCall({ target_bf_percent: 7 })], false, answer)
+    const out = await runReeval(t, text)
+
+    expect(t.modelCalls).toHaveLength(3)
+    expect(sawRetry(t, FAKE_WRITE_RETRY)).toBe(true)
+    expect(t.events).toContain('llm.fake_write_detected')
+    expect(t.events).toContain('llm.fake_write_unresolved')
+    expect(out.toolCalls[0]?.result).toMatchObject({ success: false, refused: true })
+    // Refused: the previous goal stays.
+    expect([t.profile().goal_type, t.profile().goal_value]).toEqual(['BF', 15])
+  })
+
+  // The faithful answers: the ones of the blocks above still take 2 calls and
+  // write no event (those tests are unchanged). Two more shapes, with two
+  // verbs both bound to the goal noun, in the three tool modes.
+  describe.each(GOAL_TOOL_MODES)('resposta fiel com dois verbos ligados à meta — $mode', ({
+    call,
+    result,
+  }) => {
+    it.each([
+      'Meta registrada: 75 kg e protocolo atualizado para recomposição. 1.746 kcal por dia 💪',
+      'Meta de 75 kg registrada e protocolo atualizado para recomposição 💪',
+    ])('"%s": 2 chamadas ao modelo, sem evento, texto como foi escrito', async (answer) => {
+      const text = 'Minha meta agora é 75 kg'
+      const t = reevalTurn(text, [call], false, answer)
+      const out = await runReeval(t, text)
+
+      expect(t.modelCalls).toHaveLength(2)
+      expect(out.text).toBe(answer)
+      expect(t.events.filter((e) => e.startsWith('llm.fake_write'))).toEqual([])
+      expect(out.toolCalls[0]?.result).toMatchObject(result)
+    })
+  })
+})
+
+// ── R4: third check — agreement, the list after the colon, the patient's text ─
+//
+// Third independent check of 2026-10-04 (lens B) on the rule of the block
+// above. No patient print exists: the patient sentence, the tool calls and
+// every answer are the checker's probes, verbatim
+// (fixtures/audit-10-04-guard-answers.ts), run through processMessage with
+// provider whatsapp — man, 80 kg, 12% body fat, recomposição, saved goal BF 15.
+//
+// HIGH — "Minha meta agora é 75 kg. Almocei arroz, feijão e frango grelhado.",
+// the model calls only the goal tool and answers "Almoço: 520 kcal da meta já
+// registradas ✅ 💪": 2 model calls and no llm.fake_write_* event, where the
+// parent 279ba09 took 3 and wrote both. The same for 10 more answers and in
+// the three tool modes: any participle after the goal noun counted as a claim
+// about the goal.
+// MEDIUM — the same turn with "Registrei a meta e também: arroz, feijão e
+// frango — 520 kcal 💪" and three list variants: the sentence break at ": " cut
+// the verb from its list.
+// STRUCTURAL — every answer that passed, in the three checks, came from a turn
+// in which the patient reported a meal or a workout next to the goal. With a
+// meal-or-workout word in the patient's text of the turn the exemption is off.
+
+const P_GOAL_ONLY = 'Minha meta agora é 75 kg'
+const FAITHFUL_GOAL_ONLY_ANSWER = 'Meta registrada: 75 kg. Vamos focar! 💪'
+
+const THIRD_CHECK_ANSWERS: Array<{ finding: 'HIGH' | 'MEDIUM'; answer: string }> = [
+  ...AGREEMENT_ANSWERS.map((answer) => ({ finding: 'HIGH' as const, answer })),
+  ...OPEN_LIST_ANSWERS.map((answer) => ({ finding: 'MEDIUM' as const, answer })),
+]
+
+/** Declared as pending (RC R4 in the header): the rule of the answer lets
+ * these through; the patient's text of the turn decides. */
+const SILENT_WITHOUT_A_MEAL_WORD_FROM_THE_PATIENT = [
+  'Frango com arroz — 430 kcal. Meta registrada 💪',
+  'Meta registrada. Arroz com frango também. 430 kcal 💪',
+  'Arroz com frango: meta registrada — 430 kcal',
+  'Registrei a meta e 430 kcal 💪',
+  'Registrei a meta do dia: 520 kcal de arroz, feijão e frango.',
+  '520 kcal da meta registrada 💪',
+  '520 kcal do protocolo e meta registradas 💪',
+]
+
+const retryOf = (kind: 'registration' | 'correction'): string =>
+  kind === 'correction' ? CORRECTION_RETRY : FAKE_WRITE_RETRY
+
+const guardEvents = (t: ReevalTurn): string[] =>
+  t.events.filter((e) => e.startsWith('llm.fake_write'))
+
+/** A WhatsApp turn in which what the patient typed or said (`patientText`)
+ * and what the model reads (`text`) differ: audio and photo turns. */
+async function runMediaTurn(
+  t: ReevalTurn,
+  input: { text: string; patientText: string; contentType: 'audio' | 'image' },
+) {
+  vi.useFakeTimers()
+  vi.setSystemTime(NOW)
+  return processMessage(t.deps, {
+    from: '5511999990003',
+    providerMessageId: 'audit-10-04-reeval',
+    provider: 'whatsapp',
+    timestamp: NOW,
+    ...input,
+  })
+}
+
+describe('audit 2026-10-04 — R4: terceira checagem — concordância do particípio, lista depois dos dois-pontos e o texto do paciente', () => {
+  it('são as 11 + 4 respostas dos dois achados, as 45 da segunda checagem e a frase do paciente do achado', () => {
+    expect(AGREEMENT_ANSWERS).toHaveLength(11)
+    expect(OPEN_LIST_ANSWERS).toHaveLength(4)
+    expect(PHANTOM_ANSWERS).toHaveLength(45)
+    expect(new Set(PHANTOM_ANSWERS.map((probe) => probe.answer)).size).toBe(45)
+    expect(THIRD_CHECK_PATIENT_SENTENCE).toBe(P_GOAL_AND_MEAL)
+    expect(GOAL_TOOL_MODES).toHaveLength(3)
+  })
+
+  describe.each(GOAL_TOOL_MODES)('$mode', ({ call, result, goal }) => {
+    const expectGuardFired = async (text: string, answer: string, retry: string) => {
+      const t = reevalTurn(text, [call], false, answer)
+      const out = await runReeval(t, text)
+
+      // Tool call, the claim, the forced retry.
+      expect(t.modelCalls).toHaveLength(3)
+      expect(sawRetry(t, retry)).toBe(true)
+      expect(guardEvents(t)).toEqual(['llm.fake_write_detected', 'llm.fake_write_unresolved'])
+
+      // The goal tool did run and wrote or refused: this is the turn of the finding.
+      expect(out.toolCalls.map((c) => c.name)).toEqual([call.name])
+      expect(out.toolCalls[0]?.error).toBeUndefined()
+      expect(out.toolCalls[0]?.result).toMatchObject(result)
+      expect([t.profile().goal_type ?? null, t.profile().goal_value ?? null]).toEqual(goal)
+    }
+    const expectGuardQuiet = async (text: string, answer: string) => {
+      const t = reevalTurn(text, [call], false, answer)
+      const out = await runReeval(t, text)
+
+      expect(t.modelCalls).toHaveLength(2)
+      expect(out.text).toBe(answer)
+      expect(guardEvents(t)).toEqual([])
+      expect(out.toolCalls[0]?.result).toMatchObject(result)
+    }
+
+    it.each(
+      THIRD_CHECK_ANSWERS,
+    )('$finding $answer — o turno do achado: 3 chamadas ao modelo e os dois eventos, como no commit pai (antes: 2 chamadas e nenhum evento)', async ({
+      answer,
+    }) => {
+      await expectGuardFired(P_GOAL_AND_MEAL, answer, FAKE_WRITE_RETRY)
+    })
+
+    // Not the reported turn: the same answers when the patient only states the
+    // goal. The patient's text is then no reason to fire; what fires is the
+    // rule of the answer (agreement of the participle; open list).
+    it.each(
+      THIRD_CHECK_ANSWERS,
+    )('$finding $answer — variante em que o paciente só fala da meta ("Minha meta agora é 75 kg"): a regra da resposta dispara sozinha', async ({
+      answer,
+    }) => {
+      await expectGuardFired(P_GOAL_ONLY, answer, FAKE_WRITE_RETRY)
+    })
+
+    it.each(
+      PHANTOM_ANSWERS,
+    )('segunda checagem, $id, com a frase do paciente daquela sonda: 3 chamadas e os dois eventos', async ({
+      patient,
+      answer,
+      kind,
+    }) => {
+      await expectGuardFired(patient, answer, retryOf(kind))
+    })
+
+    it.each(
+      PHANTOM_ANSWERS,
+    )('segunda checagem, $id, com a frase do paciente do achado (palavra de refeição): 3 chamadas, os dois eventos e o mesmo tipo de retry', async ({
+      answer,
+      kind,
+    }) => {
+      await expectGuardFired(P_GOAL_AND_MEAL, answer, retryOf(kind))
+    })
+
+    it.each(
+      SILENT_WITHOUT_A_MEAL_WORD_FROM_THE_PATIENT,
+    )('caracterização (pendência RC R4) — "%s": passa em silêncio quando o paciente só fala da meta; dispara quando ele relata a refeição', async (answer) => {
+      await expectGuardQuiet(P_GOAL_ONLY, answer)
+      await expectGuardFired(P_GOAL_AND_MEAL, answer, FAKE_WRITE_RETRY)
+    })
+
+    it.each([
+      'Minha meta agora é 75 kg. Comi 2 fatias de pizza.',
+      'Minha meta agora é 75 kg. Joguei 40 minutos de futsal.',
+      'My goal is now 75 kg. I had rice, beans and chicken.',
+    ])('caracterização (pendência RC R4) — relato sem palavra da lista ("%s"): "520 kcal da meta registrada 💪" passa em silêncio', async (text) => {
+      await expectGuardQuiet(text, '520 kcal da meta registrada 💪')
+    })
+
+    it('resposta fiel, só de meta, num turno em que o paciente relatou a refeição: dispara como no commit pai — nada foi registrado', async () => {
+      await expectGuardFired(P_GOAL_AND_MEAL, FAITHFUL_GOAL_ONLY_ANSWER, FAKE_WRITE_RETRY)
+      // The same answer when the patient only states the goal: unchanged.
+      await expectGuardQuiet(P_GOAL_ONLY, FAITHFUL_GOAL_ONLY_ANSWER)
+    })
+
+    it('o tipo do retry vem do que sobra fora das frases de meta, mesmo com a refeição no texto do paciente ("Protocolo atualizado: …" não vira retry de correção)', async () => {
+      const text = 'Quero recomposição. Almocei arroz, feijão e frango.'
+      const answer =
+        'Protocolo atualizado: recomposição. Almoço registrado: arroz, feijão e frango — 430 kcal.'
+      const t = reevalTurn(text, [call], false, answer)
+      await runReeval(t, text)
+
+      expect(t.modelCalls).toHaveLength(3)
+      expect(sawRetry(t, FAKE_WRITE_RETRY)).toBe(true)
+      expect(sawRetry(t, CORRECTION_RETRY)).toBe(false)
+    })
+  })
+
+  // The words of the patient in these three turns are synthetic (no print).
+  it('caracterização (pendência RC R4) — reavaliação em que o paciente cita "treino" sem relatar treino: a resposta fiel dispara, como no commit pai', async () => {
+    const text =
+      'Peso 79 kg, treino 4 vezes por semana, fome moderada, não vou mandar fotos. Minha meta agora é 7% de gordura'
+    const t = reevalTurn(
+      text,
+      [CADASTRA_CALL, protocoloCall({ goal_type: 'BF', goal_value: 7 })],
+      true,
+      ANSWER_WITH_BOTH,
+    )
+    await runReeval(t, text)
+
+    expect(t.modelCalls).toHaveLength(3)
+    expect(sawFakeWriteRetry(t)).toBe(true)
+    expect(guardEvents(t)).toEqual(['llm.fake_write_detected', 'llm.fake_write_unresolved'])
+    // Without "treino 4 vezes por semana" it is the turn of the block "a
+    // resposta fiel à recusa não é escrita fantasma de refeição": 2 calls.
+  })
+
+  it('foto de prato no turno: o texto digitado só fala da meta, a análise da foto traz "[refeição]" — a isenção não vale', async () => {
+    // What the WhatsApp worker hands over for one photo of a plate with a
+    // caption (process-message.ts). Vision items are synthetic.
+    const text =
+      '[1/1 foto(s) analisada(s) — análise visual automática abaixo]\n\n' +
+      'Foto [refeição]:\n  - arroz branco: 150g (conf 90%)\n  - frango grelhado: 120g (conf 88%)\n\n' +
+      `Relato do usuário: "${P_GOAL_ONLY}"\n\n` +
+      '[REGRA DE FUSÃO MULTIMODAL: a análise visual e o relato acima descrevem o mesmo consumo. O texto do paciente corrige/completa a foto; não some novamente um alimento presente nas duas fontes.]'
+    const answer = 'Frango com arroz — 430 kcal. Meta registrada 💪'
+    const t = reevalTurn(text, [metaPesoCall({ target_weight_kg: 75 })], false, answer)
+    await runMediaTurn(t, { text, patientText: P_GOAL_ONLY, contentType: 'image' })
+
+    expect(t.modelCalls).toHaveLength(3)
+    expect(sawRetry(t, FAKE_WRITE_RETRY)).toBe(true)
+    expect(guardEvents(t)).toEqual(['llm.fake_write_detected', 'llm.fake_write_unresolved'])
+  })
+
+  it('áudio transcrito no turno: a refeição está na transcrição — a isenção não vale', async () => {
+    const answer = 'Frango com arroz — 430 kcal. Meta registrada 💪'
+    const t = reevalTurn(P_GOAL_AND_MEAL, [metaPesoCall({ target_weight_kg: 75 })], false, answer)
+    await runMediaTurn(t, {
+      text: P_GOAL_AND_MEAL,
+      patientText: P_GOAL_AND_MEAL,
+      contentType: 'audio',
+    })
+
+    expect(t.modelCalls).toHaveLength(3)
+    expect(guardEvents(t)).toEqual(['llm.fake_write_detected', 'llm.fake_write_unresolved'])
+  })
+
+  it('foto corporal no turno (sem palavra de refeição ou treino): a resposta fiel continua com 2 chamadas', async () => {
+    const typed = 'Minha meta agora é 7% de gordura'
+    const text =
+      '[1/1 foto(s) analisada(s) — análise visual automática abaixo]\n\n' +
+      'Foto [corporal · frente]:\n  BF% estimado: 14 (conf 70%)\n  abdômen com definição moderada\n\n' +
+      `Relato do usuário: "${typed}"\n\n` +
+      '[REGRA DE FUSÃO MULTIMODAL: a análise visual e o relato acima descrevem o mesmo consumo. O texto do paciente corrige/completa a foto; não some novamente um alimento presente nas duas fontes.]'
+    const answer = `${refusalText(7, 10)} Sua meta diária segue em 1.746 kcal 💪`
+    const t = reevalTurn(text, [metaPesoCall({ target_bf_percent: 7 })], false, answer)
+    const out = await runMediaTurn(t, { text, patientText: typed, contentType: 'image' })
+
+    expect(t.modelCalls).toHaveLength(2)
+    expect(out.text).toBe(answer)
+    expect(guardEvents(t)).toEqual([])
   })
 })

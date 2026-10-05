@@ -465,12 +465,31 @@ describe('audit 09-30: the Flow reply shows the stored suggestion, never a summa
     }),
   }
 
-  function run(reply: string, recorded: Recorded, onComplete?: () => void) {
+  // Since 2026-10-04 a turn whose only tool is a plan suggestion ends without
+  // a second model call (__golden__/audit-10-04-flow-turn-calls.test.ts). The
+  // model still writes the reply when another tool ran in the same turn:
+  // `withReadTool` is that turn, and keeps the two guards below alive.
+  const readToolCall = { id: 'call-0', name: 'consulta_progresso', arguments: '{}' }
+
+  function run(
+    reply: string,
+    recorded: Recorded,
+    onComplete?: () => void,
+    withReadTool = false,
+  ) {
+    if (withReadTool) vi.spyOn(consultaProgresso, 'execute').mockResolvedValue({ success: true })
     return processAuthenticatedMessage(
-      makeScriptedDeps([{ toolCalls: [toolCall] }, { toolCalls: [], content: reply }], recorded, {
-        maxToolIterations: 2,
-        ...(onComplete ? { onComplete } : {}),
-      }),
+      makeScriptedDeps(
+        [
+          { toolCalls: withReadTool ? [readToolCall, toolCall] : [toolCall] },
+          { toolCalls: [], content: reply },
+        ],
+        recorded,
+        {
+          maxToolIterations: 2,
+          ...(onComplete ? { onComplete } : {}),
+        },
+      ),
       {
         userId: 'fixture-user',
         providerMessageId: 'mobile_flow/fixture-user/key-0932',
@@ -480,7 +499,10 @@ describe('audit 09-30: the Flow reply shows the stored suggestion, never a summa
     )
   }
 
-  it('a generic summary is replaced by the stored suggestion', async () => {
+  const events = (recorded: Recorded) =>
+    recorded.inserts.map((entry) => (entry.row as { event?: string }).event)
+
+  it('the device turn shows the stored suggestion and never reaches the generic summary', async () => {
     vi.spyOn(propoePlanoTreino, 'execute').mockResolvedValue({
       success: true,
       status: 'ready_for_review',
@@ -488,17 +510,36 @@ describe('audit 09-30: the Flow reply shows the stored suggestion, never a summa
       message: 'instrução',
     })
     const recorded: Recorded = { inserts: [] }
+    let calls = 0
 
-    const output = await run(genericReply, recorded)
+    const output = await run(genericReply, recorded, () => { calls += 1 })
 
+    expect(calls).toBe(1)
+    expect(output.text).toBe(
+      `Sua sugestão está pronta:\n\n${sugestao}\n\nÉ um rascunho: toque em "Revisar sugestão" para conferir, ajustar e confirmar. Ele só vale depois que você confirmar.`,
+    )
+    expect(output.text).not.toMatch(/6 exercícios|Revisar proposta/)
+    // Nothing was rewritten: the model was not asked to reproduce it.
+    expect(events(recorded)).not.toContain('llm.plan_suggestion_rewritten')
+  })
+
+  it('a generic summary is replaced by the stored suggestion (reply written by the model)', async () => {
+    vi.spyOn(propoePlanoTreino, 'execute').mockResolvedValue({
+      success: true,
+      status: 'ready_for_review',
+      sugestao,
+      message: 'instrução',
+    })
+    const recorded: Recorded = { inserts: [] }
+    let calls = 0
+
+    const output = await run(genericReply, recorded, () => { calls += 1 }, true)
+
+    expect(calls).toBe(2)
     expect(output.text).toContain(sugestao)
     expect(output.text).not.toMatch(/6 exercícios|Revisar proposta/)
     expect(output.text).toContain('Revisar sugestão')
-    expect(
-      recorded.inserts.some(
-        (entry) => (entry.row as { event?: string }).event === 'llm.plan_suggestion_rewritten',
-      ),
-    ).toBe(true)
+    expect(events(recorded)).toContain('llm.plan_suggestion_rewritten')
   })
 
   it('a diet reply that copies the suggestion stays as written, with no fake-write retry', async () => {
@@ -516,10 +557,17 @@ describe('audit 09-30: the Flow reply shows the stored suggestion, never a summa
     // CORRECTION_CLAIM and the retraction erased the suggestion (review M2).
     const faithful = `Sua sugestão está pronta!\n\n${dietSuggestion}\n\nToque em "Revisar sugestão" para conferir, ajustar, corrigir o que quiser e confirmar.`
 
+    // The read tool keeps this a turn the model answers (see `readToolCall`).
+    vi.spyOn(consultaProgresso, 'execute').mockResolvedValue({ success: true })
     const output = await processAuthenticatedMessage(
       makeScriptedDeps(
         [
-          { toolCalls: [{ id: 'call-1', name: 'propoe_plano_dieta', arguments: '{}' }] },
+          {
+            toolCalls: [
+              readToolCall,
+              { id: 'call-1', name: 'propoe_plano_dieta', arguments: '{}' },
+            ],
+          },
           { toolCalls: [], content: faithful },
           { toolCalls: [], content: 'retratação' },
         ],

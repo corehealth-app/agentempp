@@ -124,9 +124,21 @@ import {
 } from './reevaluation-body-photos.js'
 import type { AgentStage, UserProfile } from '@mpp/core'
 import type { Json, ServiceClient } from '@mpp/db'
-import type { OpenRouterEmbeddings, OpenRouterLLM, SystemPromptBlock } from '@mpp/providers'
+import type {
+  LLMCallParams,
+  LLMResult,
+  OpenRouterEmbeddings,
+  OpenRouterLLM,
+  SystemPromptBlock,
+} from '@mpp/providers'
 import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions'
-import { ensureSuggestionShown } from './plan-suggestion-text.js'
+import { flowPlainStatusText } from './flow-status-text.js'
+import {
+  ensureSuggestionShown,
+  isPurePlanSuggestionTurn,
+  isSingleRequestMessage,
+  turnSuggestions,
+} from './plan-suggestion-text.js'
 import { ALL_TOOLS, getToolByName } from './tools.js'
 import type { ToolContext, ToolDefinition } from './tools.js'
 import { zodToJsonSchema } from './tool-schema.js'
@@ -178,15 +190,42 @@ export const MOBILE_FLOW_TOOLS = [
 const MOBILE_ONLY_TOOLS = new Set<string>(MOBILE_FLOW_DRAFT_TOOLS)
 
 /**
- * Tools that write the protocol or the goal. When one of them ran without
- * error in the turn, "registrado / não foi registrada" in the answer is about
- * that write (or its refusal), not about a meal: the phantom MEAL-write guard
- * does not read the sentence as a registration claim (review 2026-10-04).
+ * Tools that write the protocol or the goal. When one of them wrote, or
+ * refused the goal by its floor, in the turn, "registrado / não foi
+ * registrada" in the sentences about the protocol or the goal is about that
+ * write (or its refusal), not about a meal: the phantom MEAL-write guard does
+ * not read those sentences as a registration claim (review 2026-10-04).
  */
 const GOAL_WRITE_TOOLS = new Set<string>(['define_protocolo', 'define_meta_peso'])
 
+/**
+ * A return without an exception is not enough: define_meta_peso answers
+ * {success:false, error} when sex, current body fat or weight/height are
+ * missing. Nothing was written and nothing was refused then, so "Meta
+ * registrada" has no tool behind it and the guard must still see it.
+ * define_protocolo with the goal dropped returns success:true + goal_saved:false
+ * (the protocol WAS written) and counts.
+ */
 function goalToolRanThisTurn(toolCalls: AgentOutput['toolCalls']): boolean {
-  return toolCalls.some((tc) => GOAL_WRITE_TOOLS.has(tc.name) && !tc.error)
+  return toolCalls.some((tc) => {
+    if (!GOAL_WRITE_TOOLS.has(tc.name) || tc.error) return false
+    const result = tc.result as { success?: unknown; refused?: unknown } | undefined
+    return result?.success === true || result?.refused === true
+  })
+}
+
+/**
+ * Everything the patient sent in the turn that the pipeline holds as text, for
+ * the phantom-write guard: what the patient typed or said (`patientText`,
+ * audio transcriptions included) and `text`, which on WhatsApp also carries
+ * the automatic analysis of the photos ("Foto [refeição]: …"). When it names a
+ * meal or a workout, the exemption of `goalToolRanThisTurn` is off: the goal
+ * tool explains nothing about a meal the patient reported in the same turn
+ * (third check of 2026-10-04, docs/CALCULO-MPP.md §8b).
+ */
+function patientTurnTextOf(input: AgentInput, semanticPatientText: string): string {
+  const text = input.text ?? ''
+  return text === semanticPatientText ? text : `${semanticPatientText}\n${text}`
 }
 
 /** Tools that produce a plan or a proposal of one (saved or drafted). */
@@ -197,6 +236,310 @@ const PRESCRIPTION_TOOLS = new Set<string>([
 ])
 
 export const MOBILE_FLOW_TELEMETRY_INCLUDES_CONTENT = false
+
+/**
+ * Flow only: how many history lines one model call carries when the patient's
+ * current session has fewer than that. The history is paid at full price on
+ * every call (it sits after the per-turn context, so it is never cached): 50
+ * lines were ~4,400 of the ~11,000 prompt tokens of a call (staging,
+ * 2026-10-04). Only the prompt is windowed — the table read stays at
+ * RECENT_MESSAGES_LIMIT, because the deterministic exercise/food answer, the
+ * re-entry gap and the body-photo state read the full list. WhatsApp sends
+ * everything it reads. See mobileFlowPromptHistory for what is cut.
+ */
+export const MOBILE_FLOW_PROMPT_HISTORY_LINES = 16
+
+/**
+ * Flow only: how far back the current session reaches when it started on the
+ * previous local day. A line of a previous calendar day said within this
+ * many hours of the turn is never cut from the model's history. With the
+ * local day alone as the session, a conversation that crosses midnight lost
+ * its lines at 00:00: at 00:05 the 49 lines said between 23:10 and 23:59
+ * were all "previous day" and only the newest 16 reached the model (review
+ * 2026-10-04: an allergy said 18 lines earlier gave the generator
+ * "(nenhuma)"). `0` gives the local-day-only rule back.
+ */
+export const MOBILE_FLOW_SESSION_HOURS = 6
+
+/**
+ * Flow only: the history lines one model call carries. Every line of the
+ * patient's current session stays, however many: an allergy or intolerance
+ * said earlier in the same session reaches the model only through these
+ * lines, and the diet generator receives restrictions only from the model's
+ * arguments (review 2026-10-04: with a flat 16-line cut, "sou intolerante a
+ * lactose e alérgico a castanhas" said 18 lines before the menu request gave
+ * the generator "(nenhuma)"). The session is the patient's current local day
+ * plus the MOBILE_FLOW_SESSION_HOURS before the turn (see
+ * promptHistoryOutsideSessionLines). What is cut is what came before it: the
+ * most recent of those lines fill the window only while the session has
+ * fewer than MOBILE_FLOW_PROMPT_HISTORY_LINES. `outsideSession[i]` says
+ * whether `lines[i]` is outside the session; the order of the lines is kept.
+ */
+export function mobileFlowPromptHistory<T>(
+  lines: readonly T[],
+  outsideSession: readonly boolean[],
+): T[] {
+  const session = lines.filter((_, index) => outsideSession[index] !== true).length
+  let room = Math.max(0, MOBILE_FLOW_PROMPT_HISTORY_LINES - session)
+  const kept: T[] = []
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    if (outsideSession[index] === true) {
+      if (room === 0) continue
+      room -= 1
+    }
+    kept.unshift(lines[index] as T)
+  }
+  return kept
+}
+
+/**
+ * Flow only: the per-turn context (never cached, paid at full price on every
+ * call) without what the Flow cannot use — see formatUserContext and the
+ * anti-repetition block. `false` gives the Flow the legacy context back.
+ */
+export const MOBILE_FLOW_LEAN_CONTEXT: boolean = true
+
+/** Event with the numbers of each model call of a Flow turn (no text). */
+export const MOBILE_FLOW_CALLS_EVENT = 'llm.flow_calls'
+
+/**
+ * Flow only: model iterations of one turn, guard retries apart. The number
+ * used to come only from agent_configs.max_tool_iterations, a row production
+ * shares with WhatsApp (database default 5): there the Flow would inherit up
+ * to 5 calls of the whole prompt. `Number.POSITIVE_INFINITY` gives the Flow
+ * the configured number back.
+ */
+export const MOBILE_FLOW_MAX_MODEL_ITERATIONS = 2
+
+/**
+ * Flow only: when the only tools of the turn are plan-suggestion tools, every
+ * one returned its text, the patient's message is a single request
+ * (isSingleRequestMessage) and the model wrote nothing next to the tool call,
+ * the turn ends there. The second model call only copied that text (~11,000
+ * prompt tokens, 500-600 of output, 8-12 s), and when it did not copy, the
+ * answer was already replaced by the fixed text of ensureSuggestionShown —
+ * the text such a turn now gets. A message that also asks something else
+ * keeps the second call: it is the only place that question is answered
+ * (review 2026-10-04). So does a message that names two plans or joins two
+ * requests, and a reply that names no plan and takes its meaning from the
+ * Flow's previous line (third review 2026-10-04). `false` brings the second
+ * call back for every turn.
+ */
+export const MOBILE_FLOW_DIRECT_PLAN_SUGGESTION: boolean = true
+
+/**
+ * Flow only: a turn does not end without words because the model spent its
+ * iterations asking for tools. When the last allowed iteration was a tool
+ * call, the model gets one more call with the tools switched off
+ * (tool_choice "none"), to answer with what the tools already returned. The
+ * tools stay in the request, so the cached prefix is read as on every call.
+ * Under the cap of 2 such a turn ended with an empty text (502 in the
+ * service) after two paid calls; where the stage config allows more than 2
+ * (database default and production: 5) the model used to answer on its third
+ * call (review 2026-10-04). The one turn that does not get the call is a
+ * single request (isSingleRequestMessage) with a suggestion already stored:
+ * that suggestion is the whole answer. A message that asks for something
+ * else too gets the call even with a suggestion stored — without it "Monte
+ * uma sugestão de cardápio para amanhã. E quanto falta de proteína hoje?"
+ * answered by tool, tool ended on the suggestion and the protein question
+ * was dropped (second review 2026-10-04). When the provider fails that call
+ * and a suggestion is stored, the suggestion is the answer and the turn does
+ * not fail (third review 2026-10-04). The tools being off, a plan the model
+ * only asks for on that call is not generated (RC PERF-C15).
+ * `false` ends such a turn empty again.
+ */
+export const MOBILE_FLOW_CLOSING_CALL: boolean = true
+
+/**
+ * Flow only: the "pure status" answer leaves as plain text. The app's bubble
+ * prints the string as is, so the WhatsApp card showed its asterisks and
+ * underscores. `false` gives the Flow the WhatsApp card back.
+ */
+export const MOBILE_FLOW_PLAIN_STATUS: boolean = true
+
+/**
+ * Flow only: time limits. The shared client allows 90 s and one retry per
+ * call (181 s, above the app's 180 s request timeout) and a turn had no
+ * limit at all: past the route's 300 s the function died with the turn left
+ * in "processing", answering 409 until its 10-minute lease ran out.
+ * `false` gives the Flow the client defaults back.
+ */
+export const MOBILE_FLOW_TIME_LIMITS: boolean = true
+/** One chat call of a Flow turn (single-call turns measured 6-13 s in all). */
+export const MOBILE_FLOW_CHAT_CALL_TIMEOUT_MS = 45_000
+/**
+ * The model work of a Flow turn, counted from the start of the pipeline.
+ * Under the app's request timeout (180 s, MobileFlowChatRepository.swift) and
+ * the route's maxDuration (300 s), with room for the reads and writes around
+ * the agent. No model call starts past it, and each attempt of a call is cut
+ * at it. One thing is not bounded here: the wait BETWEEN the two attempts of
+ * a chat call that kept its retry. The client sleeps ~0.5 s by default and up
+ * to 60 s when the provider answers 429 with Retry-After, so such a call can
+ * end after the deadline; the service's own limit (165 s) is what ends the
+ * turn then.
+ */
+export const MOBILE_FLOW_TURN_DEADLINE_MS = 150_000
+/**
+ * Message of the error a Flow turn ends with when its deadline has passed:
+ * before a call would start, or while a call was running (the client's own
+ * timeout error is then the `cause`).
+ */
+export const MOBILE_FLOW_DEADLINE_ERROR = 'flow turn deadline exceeded'
+/**
+ * Flow only: with a suggestion already stored in the turn and less than this
+ * left of the deadline, no further model call is made — the stored suggestion
+ * is the answer (ensureSuggestionShown). The call that copies a suggestion
+ * took 8-12 s on staging (2026-10-04): with less left it would be paid for
+ * and cut, the turn would fail with 502 and the draft would sit pending with
+ * no answer in the chat.
+ */
+export const MOBILE_FLOW_SUGGESTION_ANSWER_MIN_MS = 12_000
+/**
+ * A call that failed with no more than this left of the deadline was ended
+ * by the deadline: the client's timer and the wall clock are two clocks, and
+ * the timer may fire a few milliseconds before the instant computed here.
+ */
+const MOBILE_FLOW_DEADLINE_SLACK_MS = 250
+/** The client's own limit for a call that names none (openrouter.ts). */
+const LLM_CLIENT_TIMEOUT_MS = 90_000
+
+/** Milliseconds a Flow turn still has for model work; throws when none. */
+function flowTimeLeft(deadlineAt: number): number {
+  const left = deadlineAt - Date.now()
+  if (left <= 0) throw new Error(MOBILE_FLOW_DEADLINE_ERROR)
+  return left
+}
+
+/** One model call made inside a Flow tool (the plan generators): numbers only. */
+type FlowToolLlmCall = {
+  index: number
+  model: string
+  prompt_tokens: number
+  completion_tokens: number
+  cache_read_tokens: number
+  cache_write_tokens: number
+  cost_usd: number | null
+  ms: number
+  /** Present (1) when the call threw: its time was spent, nothing was read. */
+  failed?: 1
+}
+
+/**
+ * Flow only. The client handed to the tools of a Flow turn. Every model call
+ * a tool makes (today: the plan generators) is counted into the turn — it
+ * used to be absent from the turn's tokens and cost — and gets no more time
+ * than the turn has left. The call itself is not changed in any other way.
+ */
+function flowToolLlm(
+  llm: OpenRouterLLM,
+  deadlineAt: number | null,
+  calls: FlowToolLlmCall[],
+): OpenRouterLLM {
+  const complete = async (params: LLMCallParams): Promise<LLMResult> => {
+    const bounded =
+      deadlineAt === null
+        ? params
+        : {
+            ...params,
+            requestTimeoutMs: Math.min(
+              params.requestTimeoutMs ?? LLM_CLIENT_TIMEOUT_MS,
+              flowTimeLeft(deadlineAt),
+            ),
+          }
+    const startedAt = Date.now()
+    const entry = (result: LLMResult | null): FlowToolLlmCall => ({
+      index: calls.length,
+      model: result?.model ?? params.model,
+      prompt_tokens: result?.promptTokens ?? 0,
+      completion_tokens: result?.completionTokens ?? 0,
+      cache_read_tokens: result?.cacheReadInputTokens ?? 0,
+      cache_write_tokens: result?.cacheCreationInputTokens ?? 0,
+      cost_usd: result?.costUsd ?? null,
+      ms: Date.now() - startedAt,
+      ...(result ? {} : { failed: 1 as const }),
+    })
+    try {
+      const result = await llm.complete(bounded)
+      calls.push(entry(result))
+      return result
+    } catch (error) {
+      calls.push(entry(null))
+      throw error
+    }
+  }
+  return new Proxy(llm, {
+    get: (target, property, receiver) =>
+      property === 'complete' ? complete : Reflect.get(target, property, receiver),
+  })
+}
+
+/** One model call of a Flow turn: numbers and the model id, never text. */
+type FlowCallUsage = {
+  index: number
+  model: string
+  prompt_tokens: number
+  completion_tokens: number
+  cache_read_tokens: number
+  cache_write_tokens: number
+  cost_usd: number | null
+  ms: number
+  /** History lines sent (the current message and tool exchange excluded). */
+  history_lines: number
+  /** Characters of each system block, in order (stable, per-turn). */
+  system_chars: number[]
+  /** Messages sent in this call and the characters of their text. */
+  messages: number
+  messages_chars: number
+  /** Present (1) on the closing call, made with the tools switched off. */
+  closing?: 1
+  /** Present (1) when the call threw: its time was spent, nothing was read. */
+  failed?: 1
+}
+
+/** How a Flow turn ended, for its llm.flow_calls event (flags, no text). */
+type FlowTurnEnding = {
+  /** Answered with the stored suggestion and no second model call. */
+  planSuggestionDirect?: boolean
+  /** Answered with the stored suggestion because the deadline left no call. */
+  suggestionAtDeadline?: boolean
+  /** The turn threw: these are the numbers of what it had already spent. */
+  turnFailed?: boolean
+}
+
+/**
+ * Flow only. Writes the per-call numbers of the turn; a failure here never
+ * reaches the patient's answer.
+ */
+async function recordFlowCalls(
+  supabase: ServiceClient,
+  userId: string,
+  stage: string,
+  toolsChars: number,
+  calls: FlowCallUsage[],
+  generatorCalls: FlowToolLlmCall[],
+  ending: FlowTurnEnding,
+): Promise<void> {
+  if (calls.length === 0) return
+  try {
+    await supabase.from('product_events').insert({
+      user_id: userId,
+      event: MOBILE_FLOW_CALLS_EVENT,
+      properties: {
+        stage,
+        call_count: calls.length,
+        tools_chars: toolsChars,
+        calls,
+        // Only on the turns that have them, so every other event is unchanged.
+        ...(generatorCalls.length > 0 ? { generator_calls: generatorCalls } : {}),
+        ...(ending.planSuggestionDirect ? { plan_suggestion_direct: 1 } : {}),
+        ...(ending.suggestionAtDeadline ? { plan_suggestion_at_deadline: 1 } : {}),
+        ...(ending.turnFailed ? { turn_failed: 1 } : {}),
+      },
+    })
+  } catch {
+    // Telemetry only.
+  }
+}
 
 const LEGACY_PERSONA_NAME_PATTERN = /\bDr\.?\s+Robert(?:o)?(?:\s+Menescal)?\b/gi
 // Intro da persona master compartilhada (e sua tradução), não texto de resposta.
@@ -345,6 +688,13 @@ interface ResolvedPipelineOptions {
   toolNames?: readonly string[]
   systemPolicy?: string
   includeSensitiveTelemetry?: boolean
+  /**
+   * Flow only. The pipeline puts here how to write the turn's llm.flow_calls
+   * numbers while the turn is still running; the entry point calls it when
+   * the turn throws, so calls already paid for are recorded on the failure
+   * path too. Cleared once the turn has written them itself.
+   */
+  flowFailure?: { record: (() => Promise<void>) | null }
 }
 
 /**
@@ -382,6 +732,11 @@ interface UserContext {
   userName: string | null
   profile: UserProfile
   recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>
+  /** Flow only: for each line of recentMessages, whether it is outside the
+   * current session — before the turn's local day and more than
+   * MOBILE_FLOW_SESSION_HOURS before the turn (the history window cuts only
+   * those). Absent on the legacy channels. */
+  flowOutsideSessionLines?: boolean[]
   /** Resumo persistente do paciente (gerado periodicamente). */
   summary: string | null
   /** Tempo desde a última msg IN, em horas. */
@@ -474,29 +829,39 @@ export async function processMessage(
   return processResolvedMessage(deps, input, userId)
 }
 
-export function processAuthenticatedMessage(
+export async function processAuthenticatedMessage(
   deps: PipelineDeps,
   input: AuthenticatedAgentInput,
 ): Promise<AgentOutput> {
-  return processResolvedMessage(
-    deps,
-    {
-      from: '',
-      providerMessageId: input.providerMessageId,
-      text: input.text,
-      patientText: input.text,
-      contentType: 'text',
-      provider: 'mobile_flow',
-      timestamp: input.timestamp,
-    },
-    input.userId,
-    {
-      historyProvider: 'mobile_flow',
-      toolNames: MOBILE_FLOW_TOOLS,
-      systemPolicy: mobileFlowSystemPolicy,
-      includeSensitiveTelemetry: MOBILE_FLOW_TELEMETRY_INCLUDES_CONTENT,
-    },
-  )
+  const flowFailure: NonNullable<ResolvedPipelineOptions['flowFailure']> = { record: null }
+  try {
+    return await processResolvedMessage(
+      deps,
+      {
+        from: '',
+        providerMessageId: input.providerMessageId,
+        text: input.text,
+        patientText: input.text,
+        contentType: 'text',
+        provider: 'mobile_flow',
+        timestamp: input.timestamp,
+      },
+      input.userId,
+      {
+        historyProvider: 'mobile_flow',
+        toolNames: MOBILE_FLOW_TOOLS,
+        systemPolicy: mobileFlowSystemPolicy,
+        includeSensitiveTelemetry: MOBILE_FLOW_TELEMETRY_INCLUDES_CONTENT,
+        flowFailure,
+      },
+    )
+  } catch (error) {
+    // The turn failed (deadline, provider, anything after the first call):
+    // what it had already spent is still written, numbers only. The write
+    // never throws, and the turn fails with its own error.
+    await flowFailure.record?.()
+    throw error
+  }
 }
 
 async function processResolvedMessage(
@@ -665,9 +1030,21 @@ async function processResolvedMessage(
   const repetitionGuard =
     lastTwoOuts.length >= 1
       ? `\n\n## Anti-repetição (CRÍTICO)\n` +
-        `Suas últimas respostas foram:\n` +
-        lastTwoOuts.map((t, i) => `[${i + 1}] "${t.slice(0, 200).replace(/\n/g, ' ')}"`).join('\n') +
-        `\n\n→ NÃO repita aberturas, frases âncora ou bullets de balanço se já estão acima.\n` +
+        // Flow: the two quoted answers are the last lines of the history the
+        // model already receives; quoting them again was paid at full price
+        // on every call. The instructions below stay, word for word.
+        (MOBILE_FLOW_LEAN_CONTEXT && options.historyProvider === 'mobile_flow'
+          ? ''
+          : `Suas últimas respostas foram:\n` +
+            lastTwoOuts.map((t, i) => `[${i + 1}] "${t.slice(0, 200).replace(/\n/g, ' ')}"`).join('\n') +
+            `\n\n`) +
+        // Flow: with the quote gone, "acima" pointed at the numeric block and
+        // the rules, not at the answers; the instruction names where they are.
+        `→ NÃO repita aberturas, frases âncora ou bullets de balanço se já estão ${
+          MOBILE_FLOW_LEAN_CONTEXT && options.historyProvider === 'mobile_flow'
+            ? 'nas suas últimas respostas do histórico'
+            : 'acima'
+        }.\n` +
         `→ Se nada de novo aconteceu (user só disse "oi" ou similar), responda CURTO. Não force conteúdo.\n` +
         `→ Varie a saudação. Banco de aberturas curtas (escolha uma quando fizer sentido):\n` +
         `   "Boa.", "Show.", "Beleza.", "Pronto.", "Saquei.", "Recebi.", "Hmm.", (sem nada/direto na resposta)`
@@ -704,11 +1081,51 @@ async function processResolvedMessage(
       ]
     : stableSystem + variableSystem
 
-  const messages: ChatCompletionMessageParam[] = ctx.recentMessages.map((m) => ({
+  // Flow sends the current session's lines and only the newest of what came
+  // before it (see mobileFlowPromptHistory); the guards above and below keep
+  // reading the full ctx.recentMessages.
+  const promptHistory =
+    options.historyProvider === 'mobile_flow'
+      ? mobileFlowPromptHistory(ctx.recentMessages, ctx.flowOutsideSessionLines ?? [])
+      : ctx.recentMessages
+  const messages: ChatCompletionMessageParam[] = promptHistory.map((m) => ({
     role: m.role,
     content: m.content,
   }))
   messages.push({ role: 'user', content: input.text ?? '(mídia recebida)' })
+
+  // Flow only: numbers of each model call, written once at the end of the turn.
+  const flowCalls: FlowCallUsage[] | null =
+    options.historyProvider === 'mobile_flow' ? [] : null
+  // Flow only: the model calls made inside tools (plan generators), the
+  // deadline of the turn's model work, and how the turn was answered.
+  const flowToolLlmCalls: FlowToolLlmCall[] = []
+  const flowDeadlineAt =
+    MOBILE_FLOW_TIME_LIMITS && options.historyProvider === 'mobile_flow'
+      ? start + MOBILE_FLOW_TURN_DEADLINE_MS
+      : null
+  let planSuggestionDirect = false
+  let flowPlainStatus = false
+  // Flow only: the iteration that is the closing call (tools switched off),
+  // once one was granted, and whether the deadline ended the turn on a
+  // suggestion already stored (see the two constants).
+  let flowClosingIteration: number | null = null
+  let flowSuggestionAtDeadline = false
+  // Flow only: the closing call failed and the turn ended on a suggestion
+  // already stored (see the catch of the model call).
+  let flowSuggestionAfterFailedClosing = false
+  if (options.flowFailure && flowCalls) {
+    options.flowFailure.record = () =>
+      recordFlowCalls(
+        deps.supabase,
+        userId,
+        stage,
+        JSON.stringify(tools).length,
+        flowCalls,
+        flowToolLlmCalls,
+        { turnFailed: true },
+      )
+  }
 
   const toolCallsSummary: AgentOutput['toolCalls'] = []
   let totalPromptTokens = 0
@@ -721,7 +1138,12 @@ async function processResolvedMessage(
 
   // max_tool_iterations: prioriza config do DB, fallback pro deps, fallback pra 5
   const configMax = (promptRow as { max_tool_iterations?: number }).max_tool_iterations
-  const max = configMax ?? deps.maxToolIterations ?? 5
+  const configuredMax = configMax ?? deps.maxToolIterations ?? 5
+  // Flow: capped in code (see the constant). WhatsApp: the configured number.
+  const max =
+    options.historyProvider === 'mobile_flow'
+      ? Math.min(configuredMax, MOBILE_FLOW_MAX_MODEL_ITERATIONS)
+      : configuredMax
   // Flag pra evitar loop infinito no re-prompt de fake registration (1 retry só).
   let fakeWriteRetried = false
   let prematureBlockRetried = false
@@ -737,19 +1159,138 @@ async function processResolvedMessage(
   // max_tool_iterations 2, a tool call plus a guard retry left no iteration
   // and the mobile Flow turn ended with no text (502 empty_reply).
   let guardRetries = 0
-  for (let iter = 0; iter < max + guardRetries; iter++) {
-    const result = await deps.llm.complete({
-      model: promptRow.model,
-      systemPrompt,
-      messages,
-      temperature: promptRow.temperature,
-      maxTokens: promptRow.max_tokens,
-      tools,
-      cacheTools: isAnthropic, // marca último tool com cache_control pra Anthropic
-      cacheToolsTtl: isAnthropic ? 'ephemeral_1h' : undefined, // tools schema é estável, vale 1h
-      userId,
-      metadata: { Stage: stage, Iteration: String(iter) },
-    })
+  for (
+    let iter = 0;
+    iter < max + guardRetries + (flowClosingIteration === null ? 0 : 1);
+    iter++
+  ) {
+    // Flow only: a suggestion is already stored and the deadline leaves no
+    // room for a call that would answer (see the constant). The loop ends
+    // here and the stored suggestion is the answer, instead of a failed turn
+    // with a pending draft and nothing in the chat.
+    if (
+      flowDeadlineAt !== null &&
+      flowDeadlineAt - Date.now() < MOBILE_FLOW_SUGGESTION_ANSWER_MIN_MS &&
+      turnSuggestions(toolCallsSummary).length > 0
+    ) {
+      flowSuggestionAtDeadline = true
+      break
+    }
+    // Flow only: this iteration is the closing call — the model answers with
+    // what it has, and a tool call it still returns is not run.
+    const flowClosingNow = flowClosingIteration === iter
+    // Measured before the call: `messages` grows after it.
+    const flowCallSent = flowCalls
+      ? {
+          startedAt: Date.now(),
+          messages: messages.length,
+          messagesChars: messages.reduce(
+            (sum, m) => sum + (typeof m.content === 'string' ? m.content.length : 0),
+            0,
+          ),
+        }
+      : null
+    // Flow only: this call's own limit, never beyond what the turn has left
+    // (throws when the turn has nothing left; the service fails the turn).
+    const flowCallTimeoutMs =
+      flowDeadlineAt === null
+        ? null
+        : Math.min(MOBILE_FLOW_CHAT_CALL_TIMEOUT_MS, flowTimeLeft(flowDeadlineAt))
+    let result: LLMResult
+    try {
+      result = await deps.llm.complete({
+        model: promptRow.model,
+        systemPrompt,
+        messages,
+        temperature: promptRow.temperature,
+        maxTokens: promptRow.max_tokens,
+        tools,
+        cacheTools: isAnthropic, // marca último tool com cache_control pra Anthropic
+        cacheToolsTtl: isAnthropic ? 'ephemeral_1h' : undefined, // tools schema é estável, vale 1h
+        userId,
+        metadata: { Stage: stage, Iteration: String(iter) },
+        ...(flowDeadlineAt === null || flowCallTimeoutMs === null
+          ? {}
+          : {
+              requestTimeoutMs: flowCallTimeoutMs,
+              // The client's one retry, kept only while a second attempt
+              // fits. The client's wait between the two is not counted (see
+              // MOBILE_FLOW_TURN_DEADLINE_MS).
+              maxRetries: flowDeadlineAt - Date.now() >= 2 * flowCallTimeoutMs ? 1 : 0,
+            }),
+        ...(flowClosingNow ? { toolChoice: 'none' as const } : {}),
+      })
+    } catch (error) {
+      // WhatsApp: nothing below applies and the error leaves as it came.
+      if (flowCalls && flowCallSent) {
+        flowCalls.push({
+          index: iter,
+          model: promptRow.model,
+          prompt_tokens: 0,
+          completion_tokens: 0,
+          cache_read_tokens: 0,
+          cache_write_tokens: 0,
+          cost_usd: null,
+          ms: Date.now() - flowCallSent.startedAt,
+          history_lines: promptHistory.length,
+          system_chars: [stableSystem.length, variableSystem.length],
+          messages: flowCallSent.messages,
+          messages_chars: flowCallSent.messagesChars,
+          ...(flowClosingNow ? { closing: 1 as const } : {}),
+          failed: 1,
+        })
+      }
+      if (flowDeadlineAt !== null) {
+        const left = flowDeadlineAt - Date.now()
+        // Flow only: the call failed and a suggestion is already stored. With
+        // no room left for another call (the same floor as at the top of the
+        // loop) the turn answers with that suggestion instead of failing.
+        if (
+          left < MOBILE_FLOW_SUGGESTION_ANSWER_MIN_MS &&
+          turnSuggestions(toolCallsSummary).length > 0
+        ) {
+          flowSuggestionAtDeadline = true
+          break
+        }
+        // Flow only: the call was cut by the turn's deadline. The turn fails
+        // as a deadline — the client's "Request timed out." alone is what a
+        // slow provider gives too, and the log could not tell them apart.
+        if (left <= MOBILE_FLOW_DEADLINE_SLACK_MS) {
+          throw new Error(MOBILE_FLOW_DEADLINE_ERROR, { cause: error })
+        }
+      }
+      // Flow only: the closing call failed with time left and a suggestion is
+      // already stored. The call was an extra one, there only to answer what
+      // else the message asked; rethrowing failed the whole turn after three
+      // paid calls and left the draft pending with nothing in the chat, where
+      // the stage config of 2 used to end on the suggestion (third review
+      // 2026-10-04). The loop ends as it does at the deadline and the stored
+      // suggestion is the answer; the failed call is in llm.flow_calls
+      // (`closing` and `failed`). With no suggestion stored the turn has
+      // nothing to answer with and fails, as before.
+      if (flowClosingNow && turnSuggestions(toolCallsSummary).length > 0) {
+        flowSuggestionAfterFailedClosing = true
+        break
+      }
+      throw error
+    }
+    if (flowCalls && flowCallSent) {
+      flowCalls.push({
+        index: iter,
+        model: result.model,
+        prompt_tokens: result.promptTokens,
+        completion_tokens: result.completionTokens,
+        cache_read_tokens: result.cacheReadInputTokens ?? 0,
+        cache_write_tokens: result.cacheCreationInputTokens ?? 0,
+        cost_usd: result.costUsd ?? null,
+        ms: Date.now() - flowCallSent.startedAt,
+        history_lines: promptHistory.length,
+        system_chars: [stableSystem.length, variableSystem.length],
+        messages: flowCallSent.messages,
+        messages_chars: flowCallSent.messagesChars,
+        ...(flowClosingNow ? { closing: 1 as const } : {}),
+      })
+    }
     lastResult = result
     totalPromptTokens += result.promptTokens
     totalCacheRead += result.cacheReadInputTokens ?? 0
@@ -759,7 +1300,7 @@ async function processResolvedMessage(
       totalCost = (totalCost ?? 0) + result.costUsd
     }
 
-    if (result.toolCalls.length === 0) {
+    if (result.toolCalls.length === 0 || flowClosingNow) {
       const content = result.content ?? ''
 
       // GUARD DE ESCRITA FANTASMA — Camada 1 (retry forçado no turno).
@@ -789,6 +1330,7 @@ async function processResolvedMessage(
         prescriptionToolCalled,
         skipToolCalled,
         goalToolCalled: goalToolRanThisTurn(toolCallsSummary),
+        patientTurnText: patientTurnTextOf(input, semanticPatientText),
         mealTypeHint,
       })
 
@@ -985,6 +1527,9 @@ async function processResolvedMessage(
       // current identity everywhere else.
       ...(options.historyProvider === 'mobile_flow'
         ? {
+            // Tools' own model calls are counted into the turn and bounded
+            // by its deadline (see flowToolLlm).
+            llm: flowToolLlm(deps.llm, flowDeadlineAt, flowToolLlmCalls),
             assistantIdentity: 'flow' as const,
             flowDailyTargets: ctx.dailyTargets,
             // Same inputs as the context, so consulta_progresso and the
@@ -1874,6 +2419,27 @@ async function processResolvedMessage(
     // cai no fluxo normal (LLM responde). O card determinístico ainda passa pelo
     // FIX C pós-loop (idempotente) + auditorias.
     const iterEntries = toolCallsSummary.slice(-result.toolCalls.length)
+    // Flow only. Every tool of the turn was a plan-suggestion tool and each
+    // returned its text: the answer is that stored text between the fixed
+    // opening and closing, put in place after the loop by
+    // ensureSuggestionShown exactly as for a model that paraphrased. Another
+    // tool, a failed or refused one, a suggestion with no text, or a guard
+    // retry earlier in the turn: the model answers, as before. So it does
+    // when the patient's message is more than one request, or when the model
+    // wrote text next to the tool call — the second call is where the other
+    // question gets its answer (ensureSuggestionShown still guarantees the
+    // stored text is what the chat shows).
+    if (
+      MOBILE_FLOW_DIRECT_PLAN_SUGGESTION &&
+      options.historyProvider === 'mobile_flow' &&
+      guardRetries === 0 &&
+      isPurePlanSuggestionTurn(toolCallsSummary) &&
+      isSingleRequestMessage(semanticPatientText) &&
+      (result.content ?? '').trim() === ''
+    ) {
+      planSuggestionDirect = true
+      break
+    }
     if (isPureRegistrationTurn(iterEntries, input.text)) {
       const todayStr = getLocalDateString(ctx.timezone)
       const { snapshot: snapDet, progress: progDet } =
@@ -2020,6 +2586,9 @@ async function processResolvedMessage(
         )
         messages.push({ role: 'assistant', content: finalText })
         deterministicRegistration = true // reusa o flag de single-message (card não fragmenta)
+        // Flow: same card, same passes below; only the text handed to the
+        // app is rendered plain, at the very end.
+        flowPlainStatus = MOBILE_FLOW_PLAIN_STATUS && options.historyProvider === 'mobile_flow'
         await deps.supabase.from('product_events').insert({
           user_id: userId,
           event: 'pipeline.deterministic_status',
@@ -2075,6 +2644,25 @@ async function processResolvedMessage(
         })
         break
       }
+    }
+
+    // Flow only: this tool call used the last iteration the turn had. With
+    // no suggestion stored for ensureSuggestionShown to show, the turn would
+    // end with no words; with one stored and a message that is more than a
+    // single request, it would end on the suggestion and drop the other
+    // question. One more iteration is granted, once, and it is made with the
+    // tools switched off (MOBILE_FLOW_CLOSING_CALL). Its text goes through
+    // the same guards as any answer of the model. A single request with its
+    // suggestion stored needs no words from the model and gets no call.
+    if (
+      MOBILE_FLOW_CLOSING_CALL &&
+      options.historyProvider === 'mobile_flow' &&
+      flowClosingIteration === null &&
+      iter + 1 >= max + guardRetries &&
+      (turnSuggestions(toolCallsSummary).length === 0 ||
+        !isSingleRequestMessage(semanticPatientText))
+    ) {
+      flowClosingIteration = iter + 1
     }
   }
 
@@ -2232,11 +2820,21 @@ async function processResolvedMessage(
   {
     const shown = ensureSuggestionShown(finalText, toolCallsSummary)
     if (shown.replaced) {
-      await deps.supabase.from('product_events').insert({
-        user_id: userId,
-        event: 'llm.plan_suggestion_rewritten',
-        properties: { stage, model_reply_empty: finalText.trim().length === 0 },
-      })
+      // The event reports a model that did not reproduce the suggestion. On
+      // a direct turn, on a turn the deadline ended and on one whose closing
+      // call failed, the model was not asked to (or was cut while it did, or
+      // never answered): llm.flow_calls says so.
+      if (
+        !planSuggestionDirect &&
+        !flowSuggestionAtDeadline &&
+        !flowSuggestionAfterFailedClosing
+      ) {
+        await deps.supabase.from('product_events').insert({
+          user_id: userId,
+          event: 'llm.plan_suggestion_rewritten',
+          properties: { stage, model_reply_empty: finalText.trim().length === 0 },
+        })
+      }
       finalText = shown.text
     }
   }
@@ -2265,6 +2863,7 @@ async function processResolvedMessage(
       prescriptionToolCalled,
       skipToolCalled,
       goalToolCalled: goalToolRanThisTurn(toolCallsSummary),
+      patientTurnText: patientTurnTextOf(input, semanticPatientText),
       mealTypeHint,
     })
     if (fakeFinal.isFake) {
@@ -2359,6 +2958,23 @@ async function processResolvedMessage(
   // Métrica de prompt caching (Anthropic): loga evento se houve hit, pra
   // observabilidade da economia. Sem hit (1ª chamada do paciente nos últimos
   // 5min OU modelo não-Anthropic), não loga — evita ruído.
+  // Flow only: the per-call numbers go next to it. The write starts here and
+  // is awaited after the cache event, so both travel together and the turn
+  // gains no extra sequential round trip.
+  // From here the turn writes its own numbers: the failure path must not
+  // write them a second time.
+  if (options.flowFailure) options.flowFailure.record = null
+  const flowCallsWritten = flowCalls
+    ? recordFlowCalls(
+        deps.supabase,
+        userId,
+        stage,
+        JSON.stringify(tools).length,
+        flowCalls,
+        flowToolLlmCalls,
+        { planSuggestionDirect, suggestionAtDeadline: flowSuggestionAtDeadline },
+      )
+    : null
   if (totalCacheRead > 0 || totalCacheCreate > 0) {
     const hitRate = totalCacheRead / Math.max(totalPromptTokens, 1)
     await deps.supabase.from('product_events').insert({
@@ -2374,9 +2990,17 @@ async function processResolvedMessage(
       },
     })
   }
+  if (flowCallsWritten) await flowCallsWritten
+
+  // Flow only: the plan generators' calls belong to the turn's tokens and
+  // cost. WhatsApp never fills the list, so its totals are the loop's.
+  const toolLlmCost = flowToolLlmCalls.reduce<number | null>(
+    (sum, call) => (call.cost_usd == null ? sum : (sum ?? 0) + call.cost_usd),
+    null,
+  )
 
   return {
-    text: finalText,
+    text: flowPlainStatus ? flowPlainStatusText(finalText) : finalText,
     // Roberto pediu (2026-05-15): NÃO ecoar áudio de volta automaticamente quando
     // paciente manda áudio. Resposta sempre em texto. Áudio do agente só é usado
     // pelo cron de engajamento (random 25%) — não como espelho da entrada.
@@ -2389,9 +3013,12 @@ async function processResolvedMessage(
     toolCalls: toolCallsSummary,
     stage,
     modelUsed: lastResult.model,
-    promptTokens: totalPromptTokens,
-    completionTokens: totalCompletionTokens,
-    costUsd: totalCost,
+    promptTokens:
+      totalPromptTokens + flowToolLlmCalls.reduce((sum, call) => sum + call.prompt_tokens, 0),
+    completionTokens:
+      totalCompletionTokens +
+      flowToolLlmCalls.reduce((sum, call) => sum + call.completion_tokens, 0),
+    costUsd: toolLlmCost == null ? totalCost : (totalCost ?? 0) + toolLlmCost,
     latencyMs: Date.now() - start,
   }
 }
@@ -2503,16 +3130,27 @@ type RecentMessageRow = {
 /** Local day of the current turn, used to date older history rows. */
 export type PromptHistoryDay = { timeZone: string; today: string }
 
+/**
+ * The local day (YYYY-MM-DD) of a history row when it is BEFORE the turn's
+ * day; null for a row of today, of a later day (a concurrent turn across
+ * midnight) or with no usable timestamp. YYYY-MM-DD compares in date order.
+ */
+function previousLocalDay(
+  createdAt: string | null | undefined,
+  day: PromptHistoryDay,
+): string | null {
+  if (!createdAt) return null
+  const when = new Date(createdAt)
+  if (Number.isNaN(when.getTime())) return null
+  const rowDay = getLocalDateString(day.timeZone, when)
+  return rowDay >= day.today ? null : rowDay
+}
+
 // A history row from another local day carries its date, so "hoje" and the
 // hour said on that day are not read as today's (audit 2026-09-28, Flow).
 function datedHistoryContent(content: string, createdAt: string | null | undefined, day: PromptHistoryDay): string {
-  if (!createdAt) return content
-  const when = new Date(createdAt)
-  if (Number.isNaN(when.getTime())) return content
-  const rowDay = getLocalDateString(day.timeZone, when)
-  // YYYY-MM-DD compares in date order; a row from a later day (a concurrent
-  // turn across midnight) is not "dia anterior" and stays as it is.
-  if (rowDay >= day.today) return content
+  const rowDay = previousLocalDay(createdAt, day)
+  if (rowDay === null) return content
   const [year, month, dayOfMonth] = rowDay.split('-')
   return `[Mensagem de ${dayOfMonth}/${month}/${year}, dia anterior — números do dia e horário citados nela não valem para hoje]\n${content}`
 }
@@ -2533,11 +3171,11 @@ function isRawInteractiveTap(m: RecentMessageRow): boolean {
   return /^(confirm|edit)_[0-9a-f-]{36}$/i.test(m.content.trim())
 }
 
-export function buildPromptRecentMessages(
+/** The rows that become history lines, oldest first (the current turn excluded). */
+function promptHistoryRows(
   rows: RecentMessageRow[],
   currentProviderMessageIds: string | string[] | null | undefined,
-  historyDay?: PromptHistoryDay,
-): Array<{ role: 'user' | 'assistant'; content: string }> {
+): RecentMessageRow[] {
   const currentIds = normalizeCurrentProviderMessageIds(currentProviderMessageIds)
   return rows
     .slice()
@@ -2547,12 +3185,42 @@ export function buildPromptRecentMessages(
     .filter(
       (m) => !m.provider_message_id || !currentIds.has(m.provider_message_id),
     )
-    .map((m) => ({
-      role: m.direction === 'in' ? ('user' as const) : ('assistant' as const),
-      content: historyDay
-        ? datedHistoryContent(m.content as string, m.created_at, historyDay)
-        : (m.content as string),
-    }))
+}
+
+export function buildPromptRecentMessages(
+  rows: RecentMessageRow[],
+  currentProviderMessageIds: string | string[] | null | undefined,
+  historyDay?: PromptHistoryDay,
+): Array<{ role: 'user' | 'assistant'; content: string }> {
+  return promptHistoryRows(rows, currentProviderMessageIds).map((m) => ({
+    role: m.direction === 'in' ? ('user' as const) : ('assistant' as const),
+    content: historyDay
+      ? datedHistoryContent(m.content as string, m.created_at, historyDay)
+      : (m.content as string),
+  }))
+}
+
+/**
+ * Flow only. For each line buildPromptRecentMessages returns (same rows, same
+ * order): whether it is OUTSIDE the patient's current session — the only
+ * lines the Flow's history window may cut. A line is inside the session when
+ * it is of the turn's local day, or was said in the MOBILE_FLOW_SESSION_HOURS
+ * before `turnAt` (a conversation that crosses local midnight is one
+ * session). The date prefix is not decided here: every line of a previous
+ * calendar day keeps it, inside the session or not.
+ */
+export function promptHistoryOutsideSessionLines(
+  rows: RecentMessageRow[],
+  currentProviderMessageIds: string | string[] | null | undefined,
+  historyDay: PromptHistoryDay,
+  turnAt: Date,
+): boolean[] {
+  const sessionStart = turnAt.getTime() - MOBILE_FLOW_SESSION_HOURS * 3_600_000
+  return promptHistoryRows(rows, currentProviderMessageIds).map((m) => {
+    if (previousLocalDay(m.created_at, historyDay) === null) return false
+    // previousLocalDay returned a day, so created_at is a valid timestamp.
+    return new Date(m.created_at as string).getTime() < sessionStart
+  })
 }
 
 export async function loadContext(
@@ -2612,13 +3280,25 @@ export async function loadContext(
   // text→image e image→text).
   // Only the app's Flow channel dates older rows; WhatsApp history is unchanged.
   const historyTimeZone = (user as { timezone?: string | null }).timezone ?? 'America/Sao_Paulo'
+  const flowHistoryDay: PromptHistoryDay | undefined =
+    historyProvider === 'mobile_flow'
+      ? { timeZone: historyTimeZone, today: getLocalDateString(historyTimeZone, referenceTimestamp) }
+      : undefined
   const recentMessages = buildPromptRecentMessages(
     (msgs ?? []) as RecentMessageRow[],
     currentProviderMessageIds,
-    historyProvider === 'mobile_flow'
-      ? { timeZone: historyTimeZone, today: getLocalDateString(historyTimeZone, referenceTimestamp) }
-      : undefined,
+    flowHistoryDay,
   )
+  // Flow only: which of those lines are outside the current session (see
+  // mobileFlowPromptHistory). Absent on the legacy channels.
+  const flowOutsideSessionLines = flowHistoryDay
+    ? promptHistoryOutsideSessionLines(
+        (msgs ?? []) as RecentMessageRow[],
+        currentProviderMessageIds,
+        flowHistoryDay,
+        referenceTimestamp,
+      )
+    : undefined
 
   const userTyped = user as
     | {
@@ -2843,6 +3523,7 @@ export async function loadContext(
     userName: userTyped?.name ?? null,
     profile: profileTyped,
     recentMessages,
+    ...(flowOutsideSessionLines ? { flowOutsideSessionLines } : {}),
     summary: userTyped?.summary ?? null,
     hoursSinceLastIn,
     isReentry,
@@ -3028,6 +3709,13 @@ function formatUserContext(
 ): string {
   const m = computeMetrics(ctx.profile, referenceTimestamp, calcConfig)
   const sections: string[] = []
+  // Flow only (2026-10-04, cost): this block is never cached, so every
+  // character is paid at full price on every model call. The Flow gets the
+  // same context minus what it cannot use — instructions to call tools it
+  // does not have, the meal_type table and the photo rules. Profile, date/time
+  // and the numeric block are untouched. WhatsApp: legacy text, byte for byte
+  // (locked by __golden__/audit-10-04-whatsapp-request-lock.test.ts).
+  const flowLean = MOBILE_FLOW_LEAN_CONTEXT && historyProvider === 'mobile_flow'
 
   // FIX 4 (Roberto 2026-06-15): foto noturna perdida — LLM chamou
   // marca_refeicao_pulada depois de paciente responder disambiguação. Aviso
@@ -3118,34 +3806,63 @@ function formatUserContext(
       isMultiTimezoneCountry(country) && !timezoneConfirmed
         ? `\n\n⚠️ O país ${country} tem múltiplos fusos e o timezone ainda não foi confirmado pela localização. Pergunte cidade e estado/região de residência e chame \`confirma_pais_residencia\` com city, region e timezone IANA. Não altere o fuso sem essa resposta.`
         : ''
-    sections.push(
-      `### Localização e preferências\n` +
-        `País: **${country}** (confirmado). Idioma salvo: **${language}**. Unidades: **${unitsLabel}**. ` +
-        `Persona: ${personaName}. NÃO pergunte país de novo. ` +
-        `\n\n⚠️ **REGRA DE IDIOMA (inviolável):** responda no idioma que o paciente está usando AGORA na última mensagem. ` +
-        `Se o paciente pedir explicitamente pra mudar de idioma (ex: "fale em português", "switch to English"), MUDE IMEDIATAMENTE e chame \`confirma_pais_residencia\` de novo com o \`language\` atualizado pra persistir. Mantenha o \`country\`. ` +
-        (language !== 'pt-BR' && language !== 'pt-PT'
-          ? `Idioma salvo é ${language} — use esse por padrão se o paciente continuar nele. `
-          : '') +
-        (unitSystem === 'imperial'
-          ? `\n\n**Unidades imperial:** quando o paciente informar peso/altura, provavelmente usará lb/inch. Converta internamente pra kg/cm (1 lb=0.4536 kg, 1 inch=2.54 cm) antes de salvar via tool. Devolva metas/balanço em lb/inch. Se ele te der um valor em kg, ACEITE — não peça pra reconverter. `
-          : '') +
-        (country !== 'BR'
-          ? `\n\n⚠️ Sistema otimizado pra Brasil (TACO, alimentos locais BR). Comidas regionais de ${country} podem ter macros imprecisos.`
-          : '') +
-        locationInstruction,
-    )
+    if (flowLean) {
+      // The legacy text below minus what asks for `confirma_pais_residencia`
+      // (a tool the Flow does not have): the "persist the language" clause
+      // and the "ask city and state" paragraph. Every kept sentence is the
+      // legacy one, word for word.
+      sections.push(
+        `### Localização e preferências\n` +
+          `País: **${country}** (confirmado). Idioma salvo: **${language}**. Unidades: **${unitsLabel}**. ` +
+          `Persona: ${personaName}. NÃO pergunte país de novo. ` +
+          `\n\n⚠️ **REGRA DE IDIOMA (inviolável):** responda no idioma que o paciente está usando AGORA na última mensagem. ` +
+          `Se o paciente pedir explicitamente pra mudar de idioma (ex: "fale em português", "switch to English"), MUDE IMEDIATAMENTE. ` +
+          (language !== 'pt-BR' && language !== 'pt-PT'
+            ? `Idioma salvo é ${language} — use esse por padrão se o paciente continuar nele. `
+            : '') +
+          (unitSystem === 'imperial'
+            ? `\n\n**Unidades imperial:** quando o paciente informar peso/altura, provavelmente usará lb/inch. Converta internamente pra kg/cm (1 lb=0.4536 kg, 1 inch=2.54 cm) antes de salvar via tool. Devolva metas/balanço em lb/inch. Se ele te der um valor em kg, ACEITE — não peça pra reconverter. `
+            : '') +
+          (country !== 'BR'
+            ? `\n\n⚠️ Sistema otimizado pra Brasil (TACO, alimentos locais BR). Comidas regionais de ${country} podem ter macros imprecisos.`
+            : ''),
+      )
+    } else {
+      sections.push(
+        `### Localização e preferências\n` +
+          `País: **${country}** (confirmado). Idioma salvo: **${language}**. Unidades: **${unitsLabel}**. ` +
+          `Persona: ${personaName}. NÃO pergunte país de novo. ` +
+          `\n\n⚠️ **REGRA DE IDIOMA (inviolável):** responda no idioma que o paciente está usando AGORA na última mensagem. ` +
+          `Se o paciente pedir explicitamente pra mudar de idioma (ex: "fale em português", "switch to English"), MUDE IMEDIATAMENTE e chame \`confirma_pais_residencia\` de novo com o \`language\` atualizado pra persistir. Mantenha o \`country\`. ` +
+          (language !== 'pt-BR' && language !== 'pt-PT'
+            ? `Idioma salvo é ${language} — use esse por padrão se o paciente continuar nele. `
+            : '') +
+          (unitSystem === 'imperial'
+            ? `\n\n**Unidades imperial:** quando o paciente informar peso/altura, provavelmente usará lb/inch. Converta internamente pra kg/cm (1 lb=0.4536 kg, 1 inch=2.54 cm) antes de salvar via tool. Devolva metas/balanço em lb/inch. Se ele te der um valor em kg, ACEITE — não peça pra reconverter. `
+            : '') +
+          (country !== 'BR'
+            ? `\n\n⚠️ Sistema otimizado pra Brasil (TACO, alimentos locais BR). Comidas regionais de ${country} podem ter macros imprecisos.`
+            : '') +
+          locationInstruction,
+      )
+    }
   } else {
     const guess = ctx.countryDetectedFromWpp
       ? `palpite pelo DDI do WhatsApp: ${ctx.countryDetectedFromWpp}`
       : 'sem palpite (DDI desconhecido)'
-    sections.push(
-      `### País de residência (NÃO confirmado)\n` +
-        `Status: ${guess}. **Pergunte explicitamente** ao paciente onde ele mora ` +
-        `(siga a rule "Confirmação de país de residência") e chame a tool ` +
-        `\`confirma_pais_residencia\` com o ISO alpha-2 quando ele responder. ` +
-        `Se o país tiver múltiplos fusos, pergunte também cidade e estado/região antes de gravar.`,
-    )
+    if (flowLean) {
+      // The Flow cannot store the answer (no `confirma_pais_residencia`), so
+      // it is not told to ask: only the status line stays.
+      sections.push(`### País de residência (NÃO confirmado)\nStatus: ${guess}.`)
+    } else {
+      sections.push(
+        `### País de residência (NÃO confirmado)\n` +
+          `Status: ${guess}. **Pergunte explicitamente** ao paciente onde ele mora ` +
+          `(siga a rule "Confirmação de país de residência") e chame a tool ` +
+          `\`confirma_pais_residencia\` com o ISO alpha-2 quando ele responder. ` +
+          `Se o país tiver múltiplos fusos, pergunte também cidade e estado/região antes de gravar.`,
+      )
+    }
   }
 
   // Hora local do paciente — CRÍTICO pra meal_type correto.
@@ -3179,18 +3896,28 @@ function formatUserContext(
           : localHour >= 18 && localHour < 23
             ? 'jantar'
             : 'ceia'
-  sections.push(
-    `### Hora local do paciente AGORA (use pra meal_type — NÃO adivinhe pelos alimentos)\n` +
-      `**${localStr}** (timezone: ${tz}, hora local = ${localHour}h)\n\n` +
-      `⚠️ Se o paciente registrar refeição AGORA, o \`meal_type\` é determinado pela HORA LOCAL, NÃO pelos alimentos:\n` +
-      `- 5h–10h59 → \`cafe\` (café da manhã)\n` +
-      `- 11h–14h59 → \`almoco\`\n` +
-      `- 15h–17h59 → \`lanche\`\n` +
-      `- 18h–22h59 → \`jantar\`\n` +
-      `- 23h–4h59 → \`ceia\`\n\n` +
-      `**Sugestão pra esta refeição: \`${suggestedMeal}\`**.\n\n` +
-      `❌ NÃO use \`replace=true\` em foto NOVA recebida em momento diferente do dia. \`replace=true\` é APENAS quando o paciente disse explicitamente "corrige", "errei", "na verdade era X" etc. Foto enviada de manhã é refeição NOVA do dia, não correção do jantar de ontem.`,
-  )
+  if (flowLean) {
+    // The date/time line as it is; the meal_type table, the meal suggestion
+    // and the replace warning only serve meal registration, which the Flow
+    // chat does not do.
+    sections.push(
+      `### Hora local do paciente AGORA\n` +
+        `**${localStr}** (timezone: ${tz}, hora local = ${localHour}h)`,
+    )
+  } else {
+    sections.push(
+      `### Hora local do paciente AGORA (use pra meal_type — NÃO adivinhe pelos alimentos)\n` +
+        `**${localStr}** (timezone: ${tz}, hora local = ${localHour}h)\n\n` +
+        `⚠️ Se o paciente registrar refeição AGORA, o \`meal_type\` é determinado pela HORA LOCAL, NÃO pelos alimentos:\n` +
+        `- 5h–10h59 → \`cafe\` (café da manhã)\n` +
+        `- 11h–14h59 → \`almoco\`\n` +
+        `- 15h–17h59 → \`lanche\`\n` +
+        `- 18h–22h59 → \`jantar\`\n` +
+        `- 23h–4h59 → \`ceia\`\n\n` +
+        `**Sugestão pra esta refeição: \`${suggestedMeal}\`**.\n\n` +
+        `❌ NÃO use \`replace=true\` em foto NOVA recebida em momento diferente do dia. \`replace=true\` é APENAS quando o paciente disse explicitamente "corrige", "errei", "na verdade era X" etc. Foto enviada de manhã é refeição NOVA do dia, não correção do jantar de ontem.`,
+    )
+  }
 
   // Estado factual atual
   const lines = [
@@ -3340,17 +4067,30 @@ function formatUserContext(
   }
 
   // Regras hard sobre mídias e respostas
-  sections.push(
-    `### Regras importantes\n` +
-      `1. NUNCA invente o conteúdo de uma foto. Se a análise visual vier vazia, com erro, ` +
-      `ou contiver "[falhou ao baixar/analisar]", peça ao usuário pra reenviar ou descrever por texto.\n` +
-      `2. Cadência humana: 1 pergunta por turno. Se for resposta longa, separe em parágrafos com \\n\\n ` +
-      `(o sistema quebra em chunks naturais).\n` +
-      `3. Não repita o nome do usuário no início de toda resposta — use vocativo no fim ou em ` +
-      `momentos de validação emocional, não como prefixo automático.\n` +
-      `4. Se usuário pedir "pausar / férias / parar uns dias", chame a tool pausar_agente.\n` +
-      `5. Foto e legenda no mesmo turno descrevem a MESMA refeição. Use o texto para corrigir ou completar a análise visual, mas nunca some duas vezes o mesmo alimento só porque ele apareceu nas duas fontes.`,
-  )
+  if (flowLean) {
+    // Legacy rules 2 and 3, word for word. Rules 1 and 5 are about photos and
+    // rule 4 calls `pausar_agente`: the Flow chat has neither. The heading
+    // stays — the Flow goldens use it to delimit the numeric section.
+    sections.push(
+      `### Regras importantes\n` +
+        `1. Cadência humana: 1 pergunta por turno. Se for resposta longa, separe em parágrafos com \\n\\n ` +
+        `(o sistema quebra em chunks naturais).\n` +
+        `2. Não repita o nome do usuário no início de toda resposta — use vocativo no fim ou em ` +
+        `momentos de validação emocional, não como prefixo automático.`,
+    )
+  } else {
+    sections.push(
+      `### Regras importantes\n` +
+        `1. NUNCA invente o conteúdo de uma foto. Se a análise visual vier vazia, com erro, ` +
+        `ou contiver "[falhou ao baixar/analisar]", peça ao usuário pra reenviar ou descrever por texto.\n` +
+        `2. Cadência humana: 1 pergunta por turno. Se for resposta longa, separe em parágrafos com \\n\\n ` +
+        `(o sistema quebra em chunks naturais).\n` +
+        `3. Não repita o nome do usuário no início de toda resposta — use vocativo no fim ou em ` +
+        `momentos de validação emocional, não como prefixo automático.\n` +
+        `4. Se usuário pedir "pausar / férias / parar uns dias", chame a tool pausar_agente.\n` +
+        `5. Foto e legenda no mesmo turno descrevem a MESMA refeição. Use o texto para corrigir ou completar a análise visual, mas nunca some duas vezes o mesmo alimento só porque ele apareceu nas duas fontes.`,
+    )
+  }
 
   return sections.join('\n\n')
 }

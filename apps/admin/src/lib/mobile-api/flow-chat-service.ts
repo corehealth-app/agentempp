@@ -16,6 +16,43 @@ export const FLOW_EXECUTIONS_PER_MINUTE = 10
 export const FLOW_EXECUTION_LEASE_MS = 10 * 60_000
 
 /**
+ * The longest a turn waits for the agent, counted from the start of the turn
+ * in this service. It sits under the app's request timeout (180 s,
+ * MobileFlowChatRepository.swift) and the route's `maxDuration` (300 s), and
+ * above the agent's own deadline for model work (150 s), which normally ends
+ * the turn first. Without it a turn that outlived the function stayed
+ * `processing` and every retry got 409 until the lease above ran out.
+ * `null` removes the limit.
+ */
+export const FLOW_TURN_HARD_LIMIT_MS: number | null = 165_000
+
+/** Internal code logged when the limit above ends a turn. */
+const TURN_LIMIT_EXCEEDED = 'flow turn time limit exceeded'
+
+/**
+ * The agent's reply, or a rejection once the turn's time is over — whichever
+ * comes first. The turn then fails like any provider failure; a reply that
+ * arrives later is dropped (nothing was stored for it).
+ */
+function withinTurnLimit<T>(work: Promise<T>, elapsedMs: number): Promise<T> {
+  if (FLOW_TURN_HARD_LIMIT_MS === null) return work
+  const left = Math.max(0, FLOW_TURN_HARD_LIMIT_MS - elapsedMs)
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(TURN_LIMIT_EXCEEDED)), left)
+    work.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error: unknown) => {
+        clearTimeout(timer)
+        reject(error)
+      },
+    )
+  })
+}
+
+/**
  * The current execution attempt of an inbound turn, kept in its raw_payload.
  * `providerStartedAt` is written right before Flow (and so the paid provider)
  * is called: when an attempt died without it, nothing effective happened.
@@ -677,15 +714,20 @@ async function runFlowTurn(
   if (!owned) throw inProgress()
 
   let reply: Awaited<ReturnType<FlowAgent['reply']>>
-  marks.agentStartedAt = performance.now()
+  const agentStartedAt = performance.now()
+  marks.agentStartedAt = agentStartedAt
   try {
-    reply = await dependencies.agent.reply({
-      userId: input.userId,
-      // The stored id, so the agent excludes this turn from its own history.
-      providerMessageId: inboundProviderId,
-      text: input.text,
-      timestamp: input.now,
-    })
+    reply = await withinTurnLimit(
+      dependencies.agent.reply({
+        userId: input.userId,
+        // The stored id, so the agent excludes this turn from its own history.
+        providerMessageId: inboundProviderId,
+        text: input.text,
+        timestamp: input.now,
+      }),
+      // What the turn already spent before the agent (one clock reading).
+      agentStartedAt - marks.startedAt,
+    )
   } catch (error) {
     marks.agentEndedAt = performance.now()
     logTurnFailure(error)

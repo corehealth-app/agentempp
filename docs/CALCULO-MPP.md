@@ -1043,14 +1043,27 @@ Pendências declaradas (critério do CLAUDE.md):
   card mas NÃO chamou `registra_refeicao`/`registra_treino` → re-prompt forçado.
   Sem isso, refeições viram fantasma (card mostra, banco não tem). Eventos:
   `llm.fake_write_detected` / `llm.fake_write_unresolved`.
-  - **Turno em que `define_protocolo` ou `define_meta_peso` rodou sem erro**
-    (revisão de 2026-10-04): a regra genérica "verbo de registro + kcal ou
-    🔥/💪/📊" não dispara — "Protocolo registrado … a meta não foi registrada …
-    1.746 kcal" fala do protocolo e da meta, não de refeição (§8b). Continuam
-    disparando nesse turno: o card "Total refeição", a proposta imitada
-    ("Vi isso na sua foto … Confirma?"), os bullets com kcal, o "pulei" e o
-    cardápio/treino inventado. Sem tool nenhuma, só com tool de leitura, só com
-    `cadastra_dados_iniciais` ou com a tool em erro, nada mudou.
+  - **Turno em que `define_protocolo` ou `define_meta_peso` gravou, ou recusou
+    a meta pelo piso** (revisão de 2026-10-04): a resposta fica fora da regra
+    genérica "verbo de registro + kcal ou 🔥/💪/📊" só quando as duas coisas
+    valem: (1) todo verbo de registro ou correção dela está **ligado ao nome
+    da meta ou do protocolo**, pelas regras de palavra do §8b — "Protocolo
+    registrado … a meta não foi registrada … 1.746 kcal"; (2) o texto do
+    paciente no turno **não** tem palavra de refeição ou treino (se tem, a
+    resposta é lida inteira, como antes da isenção). A regra lê palavras, não
+    sentido: o que ainda passa em silêncio está declarado, frase por frase,
+    nas pendências RC R4 do §8c. Um verbo de registro ou correção que não
+    esteja ligado ao nome da meta dispara nesse turno também (com kcal,
+    🔥/💪/📊 ou duração de treino em qualquer lugar da resposta, como sempre):
+    "Almoço registrado." com o card, "Corrigido … kcal", "Registrei as
+    caminhadas de 60 minutos", "Registrei arroz, feijão e frango grelhado. Você
+    está em 520 kcal da meta de 1.746.", "Almoço: 520 kcal da meta já
+    registradas ✅ 💪". Continuam disparando: o card "Total refeição", a proposta
+    imitada ("Vi isso na sua foto … Confirma?"), os bullets com kcal, o "pulei"
+    e o cardápio/treino inventado. Sem tool nenhuma, só com tool de leitura, só
+    com `cadastra_dados_iniciais`, com a tool em erro ou com `define_meta_peso`
+    devolvendo `success:false` sem recusa (dado ausente), nada mudou em relação
+    a antes da isenção. O que fica de fora está nas pendências do §8c.
 - **Card canônico** substitui alucinação numérica do LLM (`llm.card_replaced`).
 - **reconcileBalanceProse** corrige rótulo déficit/superávit + magnitude na prosa.
   No Flow, a frase que cita o balanço do dia do §2c com o número exato não é
@@ -1508,13 +1521,276 @@ TERCEIRA chamada ao modelo com "você afirmou ter registrado a refeição/treino
 MAS não chamou a tool `registra_refeicao` … Chame a tool AGORA" (reproduzido na
 segunda revisão de 2026-10-04 pelo `processMessage` real: 3 chamadas, eventos
 `llm.fake_write_detected` e `llm.fake_write_unresolved`). Agora, no turno em
-que `define_protocolo` ou `define_meta_peso` rodou **sem erro**, a regra
-genérica do guard não dispara: 2 chamadas e o texto chega como o modelo
-escreveu. Vale também para a meta ACEITA ("Meta registrada: 12% … 💪" depois de
+que `define_protocolo` ou `define_meta_peso` **gravou, ou recusou a meta pelo
+piso**, a resposta em que todo verbo de registro está ligado ao nome da meta
+ou do protocolo (regras de palavra abaixo), num turno em que o texto do
+paciente não tem palavra de refeição ou treino, fica fora da regra genérica do
+guard: 2 chamadas e o texto chega como o modelo escreveu. Vale
+também para a meta ACEITA ("Meta registrada: 75 kg. Vamos focar! 💪" depois de
 `define_meta_peso` já disparava o guard antes desta PR) e não depende dos
-interruptores do piso. Código: `goalToolRanThisTurn` em
-`packages/agent/src/pipeline.ts` e `goalToolCalled` em
-`packages/agent/src/fake-write-detector.ts`.
+interruptores do piso.
+
+**A isenção vale por afirmação: nem o texto inteiro, nem toda frase que cita
+a meta** (três checagens independentes de 2026-10-04: a primeira sobre o commit
+9bc012b, que isentava a resposta toda; a segunda sobre a primeira versão por
+frase, que isentava qualquer frase que citasse a meta — 16 de 45 respostas de
+escrita fantasma ainda passavam; a terceira sobre a versão seguinte, que
+aceitava qualquer particípio depois do nome da meta e cortava a frase nos
+dois-pontos antes da lista — 11 + 4 respostas passavam). O que o código faz,
+em `packages/agent/src/fake-write-detector.ts` (`outsideGoalSentences` e
+`detectFakeWrite`):
+
+1. Só entra aqui a resposta de um turno em que a tool de meta conta (abaixo),
+   **sem** o card "Total refeição" e que tem kcal, 🔥/💪/📊 ou duração de
+   treino em algum lugar. Fora disso o texto inteiro é lido, como no commit pai
+   279ba09.
+2. A resposta é cortada em frases: depois de `.`, `!`, `?`, `…` ou `:` seguidos
+   de espaço, e a cada quebra de linha ("1.746 kcal" e "118,5 g" não cortam).
+3. Uma frase **sai da leitura** só quando tudo isto vale:
+   - cita um nome de meta: `protocolo`, `meta`, `objetivo`, `IMC`,
+     `gordura corporal` / `% de gordura` / `percentual de gordura`,
+     `recomposição`, `ganho de massa` ou `manutenção` ("gordura" sozinha não
+     conta: é também macro de refeição);
+   - não cita refeição nem treino (café, almoço/almocei, lanche, janta/jantar,
+     ceia, refeição, treino, caminhada, corrida, musculação, bike, bicicleta,
+     natação, alongamento, yoga, pilates, exercício, cross…) e não tem duração
+     com tipo de treino ("40 minutos de força", "1 hora de peso livre");
+   - todo verbo de registro ou correção dela está **ligado ao nome da meta**,
+     de uma destas duas formas:
+     - **particípio logo depois do nome da meta** (`registrado`,
+       `re-registrado`, `anotado`, `atualizado`, `corrigido`, `salvo`), **que
+       concorda com ele em gênero e número**: feminino depois de `meta`,
+       `gordura corporal`, `recomposição` e `manutenção`, masculino depois dos
+       outros; plural só depois de `metas`, `protocolos` e `objetivos`. Vale o
+       nome que abre o trecho ("Meta de recomposição atualizada" concorda com
+       "meta"). "520 kcal da meta já registradas" não está ligado: o plural é
+       das kcal (terceira checagem). Única exceção: particípio no plural
+       quando o trecho vem logo depois de outro nome de meta e de "e"
+       ("Protocolo e meta registrados", "O protocolo e a meta foram
+       registrados"); dois nomes de meta na frase sem esse "e" não bastam
+       ("520 kcal da meta de recomposição já registradas" dispara). Entre os
+       dois só cabem o valor da meta (`de`,
+       `do`, `da`, número com ou sem `%`, `kg` ou `kcal`, `kg`, `IMC`, `BF`,
+       `peso`, `gordura`, `corporal`, `diária`/`diário`, `recomposição`,
+       `manutenção`, `ganho de massa`) e `não`, `já`, `também`, `ainda`,
+       `agora`, `foi`, `foram`, `está`, `ficou`: "Protocolo registrado", "Meta
+       de 75 kg registrada", "A meta de 7% de gordura corporal não foi
+       registrada", "Protocolo de manutenção registrado";
+     - **verbo na primeira pessoa seguido do nome da meta** (`registrei`,
+       `re-registrei`, `anotei`, `salvei`, `salvamos`, `atualizei`, `corrigi`,
+       `troquei`). Entre os dois só cabem `também` ou `já` e `a`, `o`, `as`,
+       `os`, `seu(s)`, `sua(s)`, `essa`, `esse`, `esta`, `este`, `nova`,
+       `novo`: "Registrei sua meta", "Atualizei o protocolo", "Não registrei
+       essa meta";
+   - as demais palavras da frase são nomes de meta (os do primeiro item) ou
+     estão nesta lista fechada (números e símbolos não são palavras): `peso`,
+     `BF`, `kg`, `kcal`, `déficit`, `cadastro`; `a`, `o`, `as`, `os`, `um`,
+     `uma`, `seu(s)`, `sua(s)`, `essa`, `esse`, `esta`, `este`, `nova`, `novo`;
+     `de`, `do(s)`, `da(s)`, `em`, `no(s)`, `na(s)`, `para`, `pra`, `pro`,
+     `por`, `com`, `como`, `e`, `ao`, `à`; `não`, `já`, `também`, `ainda`,
+     `agora`, `foi`, `foram`, `está`, `ficou`; `segurança`, `nada`, `mudou`,
+     `dia`, `diária`/`diário`, `sucesso`; `pronto`, `perfeito`, `feito`,
+     `ótimo`, `certo`, `combinado`, `beleza`, `ok`, `vamos`, `focar`,
+     `seguimos`. Nome de comida ou de esporte não cabe numa lista; as palavras
+     em volta de uma afirmação de meta cabem. "massa" e "gordura" soltas ficam
+     de fora de propósito ("Registrei a meta e a massa: 430 kcal" dispara);
+   - não termina em coordenação antes dos dois-pontos (`e:`, `também:`,
+     `mais:`, `ainda:`). O corte do passo 2
+     separava o verbo da lista que ele rege: "Registrei a meta e também:
+     arroz, feijão e frango — 520 kcal 💪" virava uma frase só com palavras da
+     lista fechada e outra sem verbo (terceira checagem). "Meta registrada:
+     75 kg." e "Meta registrada também." continuam saindo.
+4. Se sobrar um verbo de registro ou correção nas frases que ficaram, o guard
+   dispara. A kcal ou o emoji não precisam estar nessas frases: já foram
+   conferidos na resposta inteira (passo 1).
+5. O tipo do retry (registro ou correção) vem das frases que ficaram:
+   "Protocolo atualizado: recomposição. Almoço registrado: … 430 kcal" pede
+   registro, não `replace=true`.
+6. **Se não sobrou verbo nenhum, entra o texto do paciente** (terceira
+   checagem). Quando o que o paciente mandou no turno tem uma palavra de
+   refeição ou treino — a mesma lista do passo 3: café, almoço/almocei,
+   lanche, janta/jantar/jantei, ceia, refeição, treino, caminhada, corrida,
+   musculação, bike, bicicleta, natação, alongamento, yoga, pilates,
+   exercício, cross… —, **a isenção não vale**: a resposta é lida inteira,
+   como no commit pai 279ba09, e o tipo do retry é o que o pai daria. O texto
+   do paciente é o que o pipeline tem em texto naquele ponto
+   (`patientTurnTextOf`, `packages/agent/src/pipeline.ts`): o que ele digitou,
+   a transcrição dos áudios e, no WhatsApp, a análise automática das fotos
+   (uma foto de prato entra como "Foto [refeição]: …"; os rótulos de foto
+   corporal e de balança não têm palavra da lista, mas a nota livre que a
+   visão escreve sobre a foto pode ter). Só o turno atual é lido.
+
+O passo 6 só pode fazer o guard disparar **mais**: o que dispara pelos passos
+1 a 5 continua disparando, com o mesmo tipo de retry, com ou sem o texto do
+paciente; sem palavra de refeição ou treino nesse texto, nada muda. Em todas
+as sondas das três checagens a resposta que passava em silêncio era de um
+turno em que o **paciente** relatava a refeição ou o treino junto com a meta
+("Minha meta agora é 75 kg. Almocei arroz, feijão e frango grelhado."). Nesse
+turno a tool de meta não explica nada sobre a refeição.
+
+**Consequência assumida:** a resposta fiel, só de meta ("Meta registrada:
+75 kg. Vamos focar! 💪"), num turno em que o paciente também relatou a
+refeição, dispara como no commit pai — 3ª chamada ao modelo com "chame
+registra_refeicao". É o esperado: o paciente relatou uma refeição e nada foi
+registrado. O mesmo acontece quando a palavra está no texto do paciente sem
+ser relato ("Peso 79 kg, treino 4 vezes por semana, fome moderada…" na
+reavaliação): aí a 3ª chamada é custo da regra, declarado no §8c.
+
+Na dúvida a frase **não** sai, e então o custo é o comportamento do commit pai
+(uma chamada a mais ao modelo). Isso não torna a isenção completa: ela lê
+palavras, não sentido, e o que se sabe que ainda passa em silêncio está
+declarado, frase por frase, nas pendências RC R4 do §8c — refeição mostrada
+sem verbo próprio ("Frango com arroz — 430 kcal. Meta registrada 💪",
+"Registrei a meta do dia: 520 kcal de arroz, feijão e frango.") e particípio
+que concorda com a meta numa frase sobre a refeição ("520 kcal da meta
+registrada 💪"), as duas só quando o texto do paciente não tem palavra de
+refeição ou treino ("Comi 2 fatias de pizza" não tem). As duas
+formas do passo 3 vêm das frases que as próprias ferramentas devolvem
+("Protocolo registrado. A meta de 7% de gordura corporal não foi registrada…",
+"Não registrei essa meta…", "Por segurança, não registrei essa meta e nada
+mudou no seu cadastro.", "Meta de 7% registrada."). Varredura travada em
+`fake-write-detector.test.ts`: 1.610 mensagens dos dois classificadores de meta
+e de `define_protocolo` × 6 molduras = 9.660 respostas fiéis; com a tool de
+meta nenhuma dispara, sem ela 6.536 disparam.
+
+A expressão regular da forma do particípio lê cada texto de um jeito só. Na
+versão anterior o espaço depois de um número podia ser do número ou do
+separador seguinte, e "75 kg" era um trecho ou dois: numa frase com verbo de
+registro, nome de meta, N números separados por dois espaços e nenhum
+particípio, o tempo dobrava a cada número (3,7 s com 28; terceira checagem,
+entrada montada pelo checador, nunca vista em resposta de modelo). Os textos
+aceitos são os mesmos (400.000 frases sorteadas com as palavras da regra,
+36.823 delas com algum trecho ligado, comparadas entre as duas versões fora do
+repositório: nenhuma diferença). Travado em `fake-write-detector.test.ts`: 60
+repetições de oito formatos em menos de 100 ms cada.
+
+O que essa regra faz com frases que citam a meta (sem palavra de refeição ou
+treino no texto do paciente):
+
+| Frase (com kcal/emoji na resposta) | Resultado |
+|---|---|
+| "Meta registrada: 75 kg e protocolo atualizado para recomposição." | isenta (dois verbos, os dois ligados à meta) |
+| "Registrei o frango e o arroz na sua meta de hoje: 430 kcal 💪" | dispara (o objeto de "registrei" é a comida) |
+| "Meta registrada e arroz com frango anotado — 430 kcal." | dispara ("anotado" não está ligado à meta) |
+| "Meta de 75 kg registrada, e já deixei anotado o pão com ovo de hoje cedo (310 kcal)." | dispara (idem) |
+| "Registrei a meta e o frango com arroz: 430 kcal 💪" | dispara ("frango", "arroz" fora da lista fechada) |
+| "Meta registrada: 75 kg. Registrei 40 minutos de força, bom para a meta." | dispara (o objeto de "registrei" é o treino; a frase tem duração + tipo de treino) |
+| "Registrado! Faltam 410 kcal para a meta." | dispara (o verbo está numa frase sem nome de meta) |
+| "Almoço: 520 kcal da meta já registradas ✅ 💪" | dispara ("registradas" não concorda com "meta": o plural é das kcal) |
+| "🔥 520 / 1.746 kcal da meta registradas" | dispara ("registradas" não concorda com "meta") |
+| "Almoço: 520 kcal da meta de recomposição já registradas ✅" | dispara (dois nomes de meta, sem "e" entre eles) |
+| "Protocolo e meta registrados. 1.746 kcal por dia 💪" | isenta (plural sobre dois nomes de meta ligados por "e") |
+| "Registrei a meta e também: arroz, feijão e frango — 520 kcal 💪" | dispara (a frase do verbo termina em coordenação antes dos dois-pontos) |
+| "Registrei a meta do dia: 520 kcal de arroz, feijão e frango." | **não dispara** (pendência do §8c: o verbo está ligado a "meta"; a comida vem depois dos dois-pontos, sem verbo próprio) |
+| "520 kcal da meta registrada 💪" | **não dispara** (pendência do §8c: o particípio concorda com "meta") |
+| "Frango com arroz — 430 kcal. Meta registrada 💪" | **não dispara** (pendência do §8c: a comida não tem verbo próprio) |
+
+As três últimas disparam quando o texto do paciente no turno tem palavra de
+refeição ou treino (passo 6).
+
+**Quando a tool de meta conta** (`goalToolRanThisTurn`,
+`packages/agent/src/pipeline.ts`): `define_protocolo` ou `define_meta_peso`
+sem exceção **e** com `success === true` ou `refused === true` no retorno.
+`define_protocolo` com a meta descartada devolve `success:true` +
+`goal_saved:false` e conta (o protocolo foi gravado). `define_meta_peso` que
+devolve `{success:false, error}` — sexo, gordura atual ou peso/altura ausentes
+— **não conta**: nada foi gravado nem recusado, e "Meta registrada … 1.746 kcal
+💪" dispara o guard como em qualquer turno sem tool.
+
+| Turno pelo `processMessage` (WhatsApp), homem 80 kg, 12%, recomposição | 279ba09 (pai) | 9bc012b | agora |
+|---|---|---|---|
+| `define_protocolo` + "Almoço registrado." com o card | 3 chamadas, 2 eventos | 2 chamadas, nenhum evento | 3 chamadas, 2 eventos |
+| `define_protocolo` + "Corrigido. … Feijão carioca (180 g): 137 kcal" com o card | 3, 2 eventos (retry de correção) | 2, nenhum | 3, 2 eventos (retry de correção) |
+| `define_meta_peso{75 kg}` + "Meta registrada: 75 kg. Registrei as duas caminhadas de 60 minutos cada." | 3, 2 eventos | 2, nenhum | 3, 2 eventos |
+| `define_meta_peso{7%}` + "Não registrei essa meta: 7% fica abaixo de 10%. Almoço registrado: … 520 kcal." | 3, 2 eventos ¹ | 2, nenhum | 3, 2 eventos |
+| `define_meta_peso{15%}` → `success:false` (gordura atual ausente) + "Meta registrada: 15% de gordura corporal. Sua meta diária segue em 1.746 kcal 💪" | 3, 2 eventos | 2, nenhum | 3, 2 eventos |
+| reavaliação, meta de 7% dentro de `define_protocolo`, "Protocolo registrado. Sua nova meta é 1.746 kcal por dia. … 💪" | não medido | 2, nenhum | 2, nenhum |
+| `define_meta_peso{7%}` + só as palavras da recusa da tool + "Sua meta diária segue em 1.746 kcal 💪" | 3, 2 eventos ¹ | 2, nenhum | 2, nenhum |
+| `define_meta_peso{75 kg}` + "Meta registrada: 75 kg. Vamos focar! 💪" | 3, 2 eventos | 2, nenhum | 2, nenhum |
+
+¹ No commit pai o piso não existia: a tool gravava a meta de 7% (`success:true`).
+A coluna mostra só o comportamento do guard para o mesmo texto.
+
+Colunas "279ba09" e "9bc012b": medidas em cópias dos dois commits, fora do
+repositório, com o mesmo banco e modelo falsos do golden (sem relato de
+paciente). Coluna "agora": os goldens.
+
+Segunda checagem (2026-10-04), mesma pessoa e mesmo `processMessage`, nos três
+modos de tool de meta (`define_meta_peso{75 kg}` aceita, `define_meta_peso{7%}`
+recusada pelo piso, `define_protocolo`) — o resultado é o mesmo nos três:
+
+| Resposta do modelo, sem tool de registro no turno | 279ba09 (pai) | 1ª versão por frase | agora |
+|---|---|---|---|
+| "Meta registrada: 75 kg. Registrei arroz, feijão e frango grelhado. Você está em 520 kcal da meta de 1.746." | 3 chamadas, 2 eventos | 2 chamadas, nenhum evento | 3 chamadas, 2 eventos |
+| "Anotei os 40 minutos de futsal. Meta do dia mantida em 1.746 kcal." | 3, 2 eventos | 2, nenhum | 3, 2 eventos |
+| "Registrei 1 hora de peso livre para a sua meta de 75 kg." | 3, 2 eventos | 2, nenhum | 3, 2 eventos |
+| "Corrigido: feijão 180 g. Total do dia: 1.433 kcal de 1.843 da meta." | 3, 2 eventos (retry de correção) | 2, nenhum | 3, 2 eventos (retry de correção) |
+| "Registrado! Faltam 410 kcal para a meta." | 3, 2 eventos | 2, nenhum | 3, 2 eventos |
+| "Meta registrada e arroz com frango anotado — 430 kcal." | 3, 2 eventos | 2, nenhum | 3, 2 eventos |
+| "Registrei o frango e o arroz na sua meta de hoje: 430 kcal 💪" | 3, 2 eventos | 2, nenhum | 3, 2 eventos |
+| as outras 9 das 16 respostas do achado (lista no golden) | 3, 2 eventos | 2, nenhum | 3, 2 eventos |
+| "Não registrei: 7% fica abaixo de 10%, o limite seguro. Você continua com 1.746 kcal por dia 💪" (recusa fiel parafraseada, `define_meta_peso{7%}`) | 3, 2 eventos | 3, 2 eventos | 3, 2 eventos (pendência) |
+| "Meta registrada: 75 kg e protocolo atualizado para recomposição. 1.746 kcal por dia 💪" | não medido | não medido | 2, nenhum |
+
+Colunas "279ba09" e "1ª versão por frase" desta tabela: medidas pelo segundo
+checador em cópias fora do repositório (45 respostas de escrita fantasma por
+modo: o pai disparava em 45, a 1ª versão por frase em 29). Coluna "agora": os
+goldens; a mesma matriz do checador, refeita sobre esta árvore, dispara nas 45
+de 45 por modo, e nas 17 respostas só de meta dispara em 5 (o pai em 16): as
+das pendências do §8c.
+
+Terceira checagem (2026-10-04), mesma pessoa, mesmo `processMessage` e os
+mesmos três modos de tool de meta — o resultado é o mesmo nos três. Sem relato
+de paciente: frase do paciente e respostas são as sondas do checador.
+
+| Paciente → resposta do modelo, sem tool de registro no turno | 279ba09 (pai) | versão da 2ª checagem | agora |
+|---|---|---|---|
+| "Minha meta agora é 75 kg. Almocei arroz, feijão e frango grelhado." → "Almoço: 520 kcal da meta já registradas ✅ 💪" | 3 chamadas, 2 eventos | 2 chamadas, nenhum evento | 3 chamadas, 2 eventos |
+| mesma frase → as outras 10 respostas do achado de concordância (lista no fixture) | 3, 2 eventos | 2, nenhum | 3, 2 eventos |
+| mesma frase → "Registrei a meta e também: arroz, feijão e frango — 520 kcal 💪" e as 3 variantes em lista | 3, 2 eventos | 2, nenhum | 3, 2 eventos |
+| "Minha meta agora é 75 kg" → as mesmas 11 + 4 respostas | 3, 2 eventos | 2, nenhum | 3, 2 eventos (pela regra da resposta) |
+| "Minha meta agora é 75 kg. Almocei arroz, feijão e frango grelhado." → "Frango com arroz — 430 kcal. Meta registrada 💪" | 3, 2 eventos | 2, nenhum | 3, 2 eventos (pela palavra "Almocei" do paciente) |
+| "Minha meta agora é 75 kg" → "Frango com arroz — 430 kcal. Meta registrada 💪" | 3, 2 eventos | 2, nenhum | 2, nenhum (pendência) |
+| "Minha meta agora é 75 kg. Almocei arroz, feijão e frango grelhado." → "Meta registrada: 75 kg. Vamos focar! 💪" | 3, 2 eventos | 2, nenhum | 3, 2 eventos (consequência assumida) |
+| "Minha meta agora é 75 kg" → "Meta registrada: 75 kg. Vamos focar! 💪" | 3, 2 eventos | 2, nenhum | 2, nenhum |
+
+Colunas "279ba09" e "versão da 2ª checagem" desta tabela: medidas fora do
+repositório, com a sonda do terceiro checador (banco e modelo falsos), numa
+cópia do commit pai e numa cópia desta árvore tirada antes da correção. Coluna
+"agora": os goldens. A matriz inteira refeita sobre as duas cópias e esta
+árvore — as 142 respostas dos dois checadores com a frase de cada sonda, com
+"…Almocei arroz, feijão e frango grelhado." e com "Minha meta agora é 75 kg",
+mais as 15 dos achados, em 7 modos de tool: 1.323 turnos com tool de meta que
+conta e 1.764 sem — deu: nenhum turno que disparava deixou de disparar; os
+que já disparavam ficaram byte a byte iguais (mesmo tipo de retry); 189
+passaram a disparar; os 1.764 turnos sem tool de meta que conta ficaram byte a
+byte iguais. Com palavra de refeição no texto do paciente o guard dispara
+exatamente onde o pai disparava (em 16 das 17 respostas só de meta, inclusive).
+
+"2 eventos" = `llm.fake_write_detected` + `llm.fake_write_unresolved`. Quando o
+modelo insiste na mesma resposta depois do retry, o texto **chega ao paciente**
+("Almoço registrado." incluso): o guard força uma nova chamada e deixa o evento
+para a auditoria, não apaga a frase. Isso é igual ao commit pai. Travado em
+`packages/agent/src/__golden__/audit-10-04-goal-ladder-floors.test.ts` (dez
+turnos de escrita fantasma com a tool de meta, dois de resposta fiel e os
+controles da primeira checagem; da segunda, as 16 respostas do achado e a
+frase que este doc dizia disparar nos três modos — 51 turnos —, as duas
+recusas parafraseadas e duas respostas fiéis de dois verbos nos três modos; da
+terceira, nos três modos, as 11 + 4 respostas dos dois achados com a frase do
+paciente do achado e com "Minha meta agora é 75 kg", as 45 respostas de
+escrita fantasma da segunda checagem com a frase de cada sonda e com a do
+achado, as sete respostas das pendências com e sem palavra de refeição no
+texto do paciente, os três relatos sem palavra da lista, a resposta fiel num
+turno com refeição relatada e o tipo do retry — 420 turnos —, e quatro turnos
+avulsos: a reavaliação com "treino" no texto do paciente, a foto de prato, o
+áudio e a foto corporal) e em
+`packages/agent/src/fake-write-detector.test.ts` (uma entrada por classe de
+frase, a varredura, e a prova, sobre 164 respostas — as 157 dos checadores e
+as 7 das pendências —, de que o texto do paciente só acrescenta disparos). As
+respostas dos checadores estão,
+palavra por palavra, em
+`packages/agent/src/__golden__/fixtures/audit-10-04-guard-answers.ts`. As
+pendências desta isenção estão no §8c.
 
 **O que o modelo lê.** As frases de piso nas descrições de `define_protocolo` e
 `define_meta_peso` (e no `.describe` de `target_bf_percent`, que hoje o
@@ -1548,45 +1824,63 @@ duas em `0`, as descrições voltam ao texto anterior a esta regra.
 
 ### 8c. Pendências declaradas
 
-> RC R3 — cenário passo de 10 pontos ("perder 10 pontos do imc", texto de 07/02/2026) NÃO coberto nesta PR (pendência da audit 2026-10-04).
+> RC R3 — cenário passo de 10 pontos ("perder 10 pontos do imc", texto de 07/02/2026) NÃO coberto nesta PR (pendência da audit 2026-10-04). Implementado o passo de 5 (26/01/2026 e manual). 32.7 daria 25 com passo 10; é uma troca de valor.
 
-> RC R3 — cenário metas de IMC já gravadas com 30 NÃO coberto nesta PR (pendência da audit 2026-10-04). Sem backfill.
+> RC R3 — cenário metas de IMC já gravadas com 30 NÃO coberto nesta PR (pendência da audit 2026-10-04). Sem backfill: seguem no banco e na pergunta da reavaliação.
 
-> RC R3 — cenário IMC de 25,0 a 25,9 (manual: meta 25; código: 23) e normalidade "menor que 25" / "IMC < 24" NÃO coberto nesta PR (pendência da audit 2026-10-04).
+> RC R3 — cenário IMC de 25,0 a 25,9 (manual: meta 25; código: 23) e normalidade "menor que 25" / "IMC < 24" NÃO coberto nesta PR (pendência da audit 2026-10-04). Inalterado: margem de 1 ponto e alvo 25.
 
-> RC R3 — cenário IMC de 30,95 a 30,99 (mostrado como 31.0) NÃO coberto nesta PR (pendência da audit 2026-10-04). Muda de 25 para 26; sem relato de paciente.
+> RC R3 — cenário IMC de 30,95 a 30,99 (mostrado como 31.0) NÃO coberto nesta PR (pendência da audit 2026-10-04). Muda de 25 para 26 (acompanha o valor mostrado); travado em packages/core/tests/protocol-router.test.ts, sem relato de paciente.
 
 > RC R3 — cenário peso e altura reais dos prints C3-03, C2-49 e C2-50 NÃO coberto nesta PR (pendência da audit 2026-10-04). Os prints só trazem o IMC.
 
-> RC R4 — cenário paciente que JÁ está abaixo do piso (gordura ≤ 10% ou IMC < 18,5) seguir em recomposição com déficit NÃO coberto nesta PR (pendência da audit 2026-10-04). Manual 3.5 e 9.3; exige mexer no cadastro do app.
+> RC R4 — cenário paciente que JÁ está abaixo do piso (gordura ≤ 10% ou IMC < 18,5) seguir em recomposição com déficit NÃO coberto nesta PR (pendência da audit 2026-10-04). Manual 3.5 e 9.3; exige mexer no cadastro do app (RPC e contrato).
 
 > RC R4 — cenário C3-05 (09/02/2026: gordura 12%, IMC 25.7, "Meta de BF definida: 10%" antes de escolher protocolo) NÃO coberto nesta PR (pendência da audit 2026-10-04).
 
-> RC R4 — cenário meta em kg que implica gordura abaixo de 10% (homem de 80 kg com 12% pedindo 76 kg) NÃO coberto nesta PR (pendência da audit 2026-10-04).
+> RC R4 — cenário meta em kg que implica gordura abaixo de 10% (homem de 80 kg com 12% pedindo 76 kg) NÃO coberto nesta PR (pendência da audit 2026-10-04). Continua "Ótima meta" e grava.
 
-> RC R4 — cenário metas já gravadas abaixo do piso NÃO coberto nesta PR (pendência da audit 2026-10-04). Sem backfill; seguem na pergunta da reavaliação.
+> RC R4 — cenário metas já gravadas abaixo do piso NÃO coberto nesta PR (pendência da audit 2026-10-04). Sem backfill: seguem no banco e na pergunta da reavaliação.
 
-> RC R4 — cenário piso feminino (mulher pedindo de 10% a 11,9%) NÃO coberto nesta PR (pendência da audit 2026-10-04). O cliente nunca disse piso separado para mulher; continua aviso e grava. A recusa abaixo de 10% oferece "a partir de 12%" para não contradizer esse aviso.
+> RC R4 — cenário piso feminino (mulher pedindo de 10% a 11,9%) NÃO coberto nesta PR (pendência da audit 2026-10-04). O cliente nunca disse piso separado para mulher. O 12% é valor do código: continua aviso e grava (travado no golden). A recusa abaixo de 10% oferece "a partir de 12%" para não contradizer esse aviso.
 
-> RC R4 — cenário meta de peso que ainda deixa o IMC abaixo de 18,5 GANHANDO peso (45 → 48 kg) NÃO coberto nesta PR (pendência da audit 2026-10-04). Inalterado.
+> RC R4 — cenário meta de peso que ainda deixa o IMC abaixo de 18,5 GANHANDO peso (45 → 48 kg) NÃO coberto nesta PR (pendência da audit 2026-10-04). Inalterado: avisa e grava (travado no golden).
 
-> RC R4 — cenário meta de peso IGUAL ao peso atual, ou ganhando menos de 2% do peso, de quem já está abaixo de 18,5 (52 → 52 kg e 52 → 52,5 kg, 170 cm) NÃO coberto nesta PR (pendência da audit 2026-10-04). Inalterado: "manter" e grava. Perdendo, qualquer variação é recusada (54 → 53, 52 → 51,5, 40 → 39,3).
+> RC R4 — cenário meta de peso IGUAL ao peso atual, ou ganhando menos de 2% do peso, de quem já está abaixo de 18,5 (52 → 52 kg e 52 → 52,5 kg, 170 cm) NÃO coberto nesta PR (pendência da audit 2026-10-04). Inalterado: 'maintenance' e grava (52 → 52 kg travado no golden; 52 → 52,5 kg em weight-goal-classifier.test.ts). PERDENDO, qualquer variação é recusada (54 → 53, 52 → 51,5, 40 → 39,3).
 
-> RC R4 — cenário define_protocolo com meta de IMC abaixo de 18,5 de quem está GANHANDO peso (175 cm, 50 kg, ganho_massa, IMC 18) NÃO coberto nesta PR (pendência da audit 2026-10-04). A ferramenta não lê altura nem peso atual: descarta qualquer meta de IMC abaixo de 18,5 (o protocolo é gravado). A mesma pessoa em define_meta_peso (55,1 kg, ganhando) tem a meta gravada com aviso.
+> RC R4 — cenário define_protocolo com meta de IMC abaixo de 18,5 de quem está GANHANDO peso (175 cm, 50 kg, ganho_massa, IMC 18) NÃO coberto nesta PR (pendência da audit 2026-10-04). A ferramenta não lê altura nem peso atual: descarta QUALQUER meta de IMC abaixo de 18,5 (o protocolo é gravado). A mesma pessoa em define_meta_peso (55,1 kg, ganhando) tem a meta gravada com aviso (travado no golden).
 
-> RC R4 — cenário meta de peso GANHANDO com IMC bruto de 18,45 a 18,499 (50 → 53,4 kg, 170 cm) NÃO coberto nesta PR (pendência da audit 2026-10-04). Muda: era "Ótima meta — IMC 18.5", agora o aviso "IMC 18.4, abaixo do saudável … quer rever?"; continua gravada. Travado em teste, sem relato de paciente.
+> RC R4 — cenário meta de peso GANHANDO com IMC bruto de 18,45 a 18,499 (50 → 53,4 kg, 170 cm) NÃO coberto nesta PR (pendência da audit 2026-10-04). Muda: era "Ótima meta — IMC 18.5", agora o aviso "IMC 18.4, abaixo do saudável … quer rever?"; continua gravada. Travado em weight-goal-classifier.test.ts; sem relato de paciente.
 
 > RC R4 — cenário recusa da meta na reavaliação com fotos corporais ainda pendentes, e a redação do modelo nesse turno NÃO coberto nesta PR (pendência da audit 2026-10-04). O golden cobre o turno "não vou mandar fotos": o modelo recebe o goal_message e redige; o que ele escreve não é testado. Com fotos pendentes, o texto fixo "ainda falta foto …" também deixa de sair nesse turno (o modelo redige).
 
 > RC R4 — cenário os dois classificadores executados com o piso em 0 dentro da suíte (o piso é uma constante do módulo; aqui só o que tools.ts importa é trocado) NÃO coberto nesta PR (pendência da audit 2026-10-04). Conferido à mão em 2026-10-04, numa cópia com as duas constantes em 0, contra o commit 55294c4.
 
-> RC R4 — cenário define_protocolo com meta abaixo do piso quando já existe meta gravada NÃO coberto nesta PR (pendência da audit 2026-10-04). A meta anterior é apagada, como quando a meta é omitida.
+> RC R4 — cenário define_protocolo com meta abaixo do piso quando já existe meta gravada NÃO coberto nesta PR (pendência da audit 2026-10-04). A meta anterior é apagada (null), como já acontece quando a meta é omitida; define_meta_peso, ao recusar, não toca na anterior.
 
 > RC R4 — cenário escada automática dar 10% a mulher com até 15% de gordura, e 20% a mulher fora da normalidade (manual de 22/05/2026: ≤ 27%) NÃO coberto nesta PR (pendência da audit 2026-10-04).
 
-> RC R4 — cenário conversa real depois da recusa (o modelo dizer que registrou ou repetir a chamada) e redação da recusa aprovada pelo cliente (manual 3.5.2) NÃO coberto nesta PR (pendência da audit 2026-10-04).
+> RC R4 — cenário conversa real depois da recusa (o modelo dizer que registrou ou repetir a chamada) e redação da recusa aprovada pelo cliente (manual 3.5.2) NÃO coberto nesta PR (pendência da audit 2026-10-04). Os roteiros de cadastro e reavaliação ficam no banco; não há teste de conversa.
 
-> RC R4 — cenário turno em que define_protocolo ou define_meta_peso gravou e o modelo TAMBÉM afirma uma refeição ou treino sem chamar a tool ("Almoço registrado … 521 kcal", sem o card "Total refeição") NÃO coberto nesta PR (pendência da audit 2026-10-04). Nesse turno a regra genérica do guard de escrita fantasma não dispara mais; o card "Total refeição", a proposta imitada, os bullets com kcal e o "pulei" continuam disparando. Sem relato de paciente.
+> RC R4 — cenário refeição ou treino mostrados SEM verbo de registro próprio na resposta em que o único verbo é o da meta ("Frango com arroz — 430 kcal. Meta registrada 💪", "Meta registrada. Arroz com frango também. 430 kcal 💪", "Arroz com frango: meta registrada — 430 kcal", "Registrei a meta e 430 kcal 💪", "Registrei a meta do dia: 520 kcal de arroz, feijão e frango.") NÃO coberto nesta PR (pendência da audit 2026-10-04). O verbo é explicado pela tool de meta e nenhum outro sobra: quando o texto do paciente no turno não tem palavra de refeição ou treino ("Minha meta agora é 75 kg"), o guard não dispara (no commit pai 279ba09 disparava, pelo verbo da meta). Com a palavra ("Minha meta agora é 75 kg. Almocei arroz, feijão e frango grelhado.") dispara. Os dois lados estão em fake-write-detector.test.ts e no golden. Sem relato de paciente.
+
+> RC R4 — cenário particípio que concorda com o nome da meta numa frase sobre a refeição ("520 kcal da meta registrada 💪"), e particípio no plural depois de dois nomes de meta ligados por "e" ("520 kcal do protocolo e meta registradas 💪") NÃO coberto nesta PR (pendência da audit 2026-10-04). A concordância com o nome da meta é o único sinal lido: quando o texto do paciente no turno não tem palavra de refeição ou treino ("Minha meta agora é 75 kg"), o guard não dispara (no commit pai 279ba09 disparava). Com a palavra ("Minha meta agora é 75 kg. Almocei arroz, feijão e frango grelhado.") dispara. Os dois lados estão em fake-write-detector.test.ts e no golden. Sem relato de paciente.
+
+> RC R4 — cenário paciente que relata a refeição ou o treino SEM palavra da lista ("Minha meta agora é 75 kg. Comi 2 fatias de pizza.", "Minha meta agora é 75 kg. Joguei 40 minutos de futsal.", "My goal is now 75 kg. I had rice, beans and chicken."), ou que relatou num turno anterior NÃO coberto nesta PR (pendência da audit 2026-10-04). A isenção continua valendo nesse turno: a resposta é lida por frase, com as pendências desta lista (refeição mostrada sem verbo próprio; particípio que concorda com o nome da meta). A lista é a mesma usada na resposta (café, almoço/almocei, lanche, janta/jantar/jantei, ceia, refeição, treino, caminhada, corrida, musculação, bike, bicicleta, natação, alongamento, yoga, pilates, exercício, cross…): "comi", "tomei", nome de comida e nome de esporte não estão nela. Caracterizado em fake-write-detector.test.ts e no golden.
+
+> RC R4 — cenário resposta fiel cujo verbo de registro/correção está numa frase SEM palavra de meta ("Atualizado! Agora são 1.746 kcal por dia 💪", "Registrado! Sua meta agora é 1.746 kcal por dia."), incluída a recusa parafraseada ("Não registrei: 7% fica abaixo de 10%, o limite seguro. Você continua com 1.746 kcal por dia 💪", "Anotado o pedido, mas o percentual de 7% não foi registrado: está abaixo do mínimo de 10% para homens. Você segue com 1.746 kcal por dia 💪") NÃO coberto nesta PR (pendência da audit 2026-10-04). O guard dispara como no commit pai 279ba09: 3ª chamada ao modelo com "chame registra_refeicao" num turno sem refeição. A isenção não foi alargada para esses textos. As duas recusas estão no golden (3 chamadas, 2 eventos); as outras em fake-write-detector.test.ts.
+
+> RC R4 — cenário resposta fiel cuja frase do verbo cita a meta mas tem verbo não ligado ao nome da meta ("Registrei 75 kg como sua nova meta 💪"), particípio que não concorda com o nome da meta ("Meta registrado: 75 kg. 1.746 kcal por dia 💪"), palavra fora da lista fechada ("Meta registrada, Roberto! 1.746 kcal por dia 💪"), palavra de refeição/treino ("Protocolo registrado com 4 treinos por semana: 1.746 kcal por dia 💪") ou coordenação antes dos dois-pontos ("Protocolo registrado e também: 1.746 kcal por dia 💪") NÃO coberto nesta PR (pendência da audit 2026-10-04). O guard dispara como no commit pai 279ba09 (3ª chamada ao modelo). Na dúvida a frase não é isenta. Caracterizado em fake-write-detector.test.ts.
+
+> RC R4 — cenário resposta fiel (só meta ou protocolo) num turno em que o texto do paciente tem palavra de refeição ou treino SEM relatar refeição nem treino ("Peso 79 kg, treino 4 vezes por semana, fome moderada, não vou mandar fotos. Minha meta agora é 7% de gordura") NÃO coberto nesta PR (pendência da audit 2026-10-04). A isenção não vale nesse turno e o guard dispara como no commit pai 279ba09 (3ª chamada ao modelo com "chame registra_refeicao"): a condição lê palavra, não sentido. É o caso de quem informa a frequência de treino junto com o peso e a fome na reavaliação. Travado no golden (3 chamadas, 2 eventos) e em fake-write-detector.test.ts. A frase do paciente é sintética: não há relato.
+
+> RC R4 — cenário retry do guard dirigido à META (define_meta_peso devolve success:false, o modelo afirma "Meta registrada … kcal 💪") NÃO coberto nesta PR (pendência da audit 2026-10-04). O guard dispara e os dois eventos são gravados (golden), mas o retry manda chamar registra_refeicao/registra_treino, não define_meta_peso; se o modelo insiste, o texto chega ao paciente.
+
+> RC R4 — cenário "Meta registrada" SEM kcal, emoji de card ou treino depois de define_meta_peso com success:false ("Meta registrada: 15% de gordura corporal.") NÃO coberto nesta PR (pendência da audit 2026-10-04). O guard só lê afirmação acompanhada de kcal/🔥/💪/📊 ou de duração de treino: esse texto nunca disparou, nem no commit pai.
+
+> RC R4 — cenário paciente que relata com forma conjugada ou diminutivo FORA da lista ("Treinei 40 minutos hoje", "Fui treinar", "Malhei", "Corri", "Caminhei", "Pedalei", "Nadei", "academia", "esteira", "Almoçamos arroz e frango", "Tomei um cafezinho com pão", "lanchinho", "Ceei"), e foto de equipamento cujo rótulo escrito pelo próprio worker ("Foto [equipamentos de treino]") contém "treino" NÃO coberto nesta PR (pendência da audit 2026-10-04). No primeiro caso a palavra não está na lista e a isenção continua valendo: a resposta é lida por frase, com as pendências desta lista ("Fiz um treino de 40 minutos" tem a palavra e desliga a isenção). No segundo a isenção cai por uma palavra do pipeline, não do paciente: a resposta fiel custa a 3ª chamada, como no commit pai 279ba09. Medido pela quarta revisão de 04/10 (lente B); sem golden.
+
+> **Pendência pré-existente, fora desta PR (sem linha RC):** a expressão `TRAINING_EXERCISE_LINE` de `fake-write-detector.ts` fica lenta com uma sequência longa de espaços depois de uma quebra de linha (400 espaços: cerca de 4 s; 800: mais de 30 s), igual no commit pai 279ba09, no HEAD e nesta árvore. Ela roda em toda resposta final sem tool de prescrição, no WhatsApp e no Flow. É entrada patológica, não vista em resposta de modelo. A reescrita candidata muda o veredito em 632 de 200.000 textos sintéticos de plano, então precisa de mudança própria com diferencial (quarta revisão de 04/10, lente B).
 
 ---
 

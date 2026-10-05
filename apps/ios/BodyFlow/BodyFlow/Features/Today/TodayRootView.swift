@@ -234,6 +234,9 @@ struct TodayRootView: View {
     let mascot: MascotExperienceViewModel?
     let week: TodayWeekViewModel?
     let invalidationCenter: FeatureInvalidationCenter
+    /// The closing "Resumo do dia" card opens a screen that holds only the
+    /// local demonstration notice, so it belongs to the demonstration alone.
+    let showsDemonstrationSummaryLink: Bool
     /// Absent in previews and unit renders; open meal slots are then inert.
     @Environment(AppRouter.self) private var router: AppRouter?
     @Environment(\.colorScheme) private var colorScheme
@@ -254,13 +257,23 @@ struct TodayRootView: View {
         recommendations: TodayRecommendationsViewModel? = nil,
         mascot: MascotExperienceViewModel? = nil,
         week: TodayWeekViewModel? = nil,
-        invalidationCenter: FeatureInvalidationCenter
+        invalidationCenter: FeatureInvalidationCenter,
+        showsDemonstrationSummaryLink: Bool = true
     ) {
         self.model = model
         self.recommendations = recommendations
         self.mascot = mascot
         self.week = week
         self.invalidationCenter = invalidationCenter
+        self.showsDemonstrationSummaryLink = showsDemonstrationSummaryLink
+    }
+
+    /// A real account never reaches the demonstration-only detail screen;
+    /// the demonstration (and the UI tests that walk it) keeps the card.
+    nonisolated static func showsDemonstrationSummaryLink(
+        presentsRealAccountIdentity: Bool
+    ) -> Bool {
+        !presentsRealAccountIdentity
     }
 
     var body: some View {
@@ -525,20 +538,22 @@ struct TodayRootView: View {
                     MascotCardView(model: mascot)
                 }
 
-                NavigationLink(
-                    value: AppRoute.detail(tab: .today, id: "daily-summary")
-                ) {
-                    BodyFlowCard {
-                        FeatureActionLabel(
-                            title: copy("today.summary.title"),
-                            detail: copy("today.summary.detail"),
-                            systemImage: BodyFlowSymbol.summary.systemName
-                        )
+                if showsDemonstrationSummaryLink {
+                    NavigationLink(
+                        value: AppRoute.detail(tab: .today, id: "daily-summary")
+                    ) {
+                        BodyFlowCard {
+                            FeatureActionLabel(
+                                title: copy("today.summary.title"),
+                                detail: copy("today.summary.detail"),
+                                systemImage: BodyFlowSymbol.summary.systemName
+                            )
+                        }
                     }
+                    .buttonStyle(.bodyFlowRow)
+                    .accessibilityIdentifier("today.next-action")
+                    .bodyFlowZoomSource(.detail(tab: .today, id: "daily-summary"))
                 }
-                .buttonStyle(.bodyFlowRow)
-                .accessibilityIdentifier("today.next-action")
-                .bodyFlowZoomSource(.detail(tab: .today, id: "daily-summary"))
             }
             .padding(BodyFlowSpacing.md)
             // The day is exactly as wide as the screen: whatever a value or

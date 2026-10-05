@@ -229,7 +229,7 @@ struct LocalizationContractTests {
         #expect(TodayNutritionProvenance.label(
             for: "user_correction",
             language: .portugueseBrazil
-        ) == "Informado pelo paciente")
+        ) == "Informado por você")
         #expect(BodyFlowMarkdownLinkPolicy.accessibilityAnnouncement(
             for: .englishUnitedStates
         ) == "External link")

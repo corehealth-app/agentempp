@@ -137,7 +137,8 @@ struct RegistrationSheet: View {
                             }
                         },
                         confirm: { perform(.confirm) { await workoutModel.confirm() } },
-                        cancel: { perform(.cancel) { await workoutModel.cancel() } }
+                        cancel: { perform(.cancel) { await workoutModel.cancel() } },
+                        presentsLocalDemonstration: presentsLocalDemonstration
                     )
                     .accessibilityIdentifier(sheet.id)
                 } else if kind == .hydration {
@@ -667,6 +668,8 @@ private struct WorkoutRegistrationContent: View {
     let retry: @MainActor () -> Void
     let confirm: @MainActor () -> Void
     let cancel: @MainActor () -> Void
+    /// Only the local demonstration opens the new-workout form prefilled.
+    let presentsLocalDemonstration: Bool
     @State private var showingEditor = false
     @AccessibilityFocusState private var operationFocus: RegistrationAccessibilityFocusTarget?
     @Environment(\.locale) private var locale
@@ -730,6 +733,7 @@ private struct WorkoutRegistrationContent: View {
         } else {
             WorkoutRegistrationView(
                 initialPerformedAt: model.initialPerformedAt,
+                presentsLocalDemonstration: presentsLocalDemonstration,
                 isSubmitting: model.isSubmitting, submit: propose
             )
         }

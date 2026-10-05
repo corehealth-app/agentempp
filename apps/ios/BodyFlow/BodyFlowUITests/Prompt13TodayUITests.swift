@@ -28,7 +28,7 @@ final class Prompt13TodayUITests: XCTestCase {
         XCTAssertTrue(protocolName.waitForExistence(timeout: 3))
         XCTAssertTrue(updatedAt.exists)
         XCTAssertLessThanOrEqual(energy.frame.minY, attention.frame.minY)
-        XCTAssertTrue(app.staticTexts["Data local: 2026-07-20"].exists)
+        XCTAssertTrue(app.staticTexts["segunda-feira, 20 de julho"].exists)
         XCTAssertTrue(app.staticTexts["Protocolo: Recomposição corporal"].exists)
         support.captureEvidence(named: "01-today.png", of: app)
     }

@@ -12,7 +12,7 @@ struct OnboardingCompletionView: View {
                 titleKey: "onboarding.completion.title",
                 titleFallback: "Revise suas escolhas",
                 messageKey: "onboarding.completion.message",
-                messageFallback: "Confira suas escolhas antes de concluir seu onboarding."
+                messageFallback: "Confira suas escolhas antes de concluir seu cadastro."
             )
 
             VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
@@ -23,7 +23,10 @@ struct OnboardingCompletionView: View {
                 )
                 reviewRow(
                     copy("onboarding.completion.country", fallback: "País"),
-                    value: model.draft.countryCode
+                    value: OnboardingCountryPresentation.name(
+                        for: model.draft.countryCode,
+                        language: language
+                    )
                 )
                 reviewRow(
                     copy("onboarding.completion.time-zone", fallback: "Fuso"),
@@ -61,7 +64,10 @@ struct OnboardingCompletionView: View {
                     )
                     ForEach(documentActions, id: \.self) { action in
                         reviewRow(
-                            action.documentKey,
+                            OnboardingLegalDocumentKind.title(
+                                forDocumentKey: action.documentKey,
+                                language: language
+                            ),
                             value: OnboardingCopy.format(
                                 "onboarding.completion.version-action-format",
                                 language: language,

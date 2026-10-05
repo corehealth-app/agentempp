@@ -22,6 +22,87 @@ enum OnboardingCopy {
     }
 }
 
+/// A legal document is named for the person by its kind, never by the
+/// server's key. The kind is read from the key by substring, so today's keys
+/// and the ones published later resolve alike; a key of no known kind reads
+/// as a plain document.
+enum OnboardingLegalDocumentKind: CaseIterable, Equatable, Sendable {
+    case terms
+    case privacy
+    case healthAI
+    case sensitiveData
+    case medication
+    case other
+
+    init(documentKey: String) {
+        let key = documentKey.lowercased()
+        if key.contains("terms") {
+            self = .terms
+        } else if key.contains("privacy") {
+            self = .privacy
+        } else if key.contains("health_ai") || key.contains("_ai_") {
+            self = .healthAI
+        } else if key.contains("sensitive") {
+            self = .sensitiveData
+        } else if key.contains("medication") {
+            self = .medication
+        } else {
+            self = .other
+        }
+    }
+
+    func title(for language: SupportedAppLanguage) -> String {
+        switch self {
+        case .terms:
+            OnboardingCopy.string("onboarding.legal.title.terms", language: language)
+        case .privacy:
+            OnboardingCopy.string("onboarding.legal.title.privacy", language: language)
+        case .healthAI:
+            OnboardingCopy.string("onboarding.legal.title.health-ai", language: language)
+        case .sensitiveData:
+            OnboardingCopy.string("onboarding.legal.title.sensitive-data", language: language)
+        case .medication:
+            OnboardingCopy.string("onboarding.legal.title.medication", language: language)
+        case .other:
+            OnboardingCopy.string("onboarding.legal.title.document", language: language)
+        }
+    }
+
+    /// The title the consent step and the review show for a document key.
+    static func title(
+        forDocumentKey documentKey: String,
+        language: SupportedAppLanguage
+    ) -> String {
+        OnboardingLegalDocumentKind(documentKey: documentKey).title(for: language)
+    }
+}
+
+/// What the consent card shows for one legal document. The server's purpose
+/// code is a storage value and is not part of it.
+struct OnboardingLegalDocumentPresentation: Equatable, Sendable {
+    let title: String
+    let body: String
+
+    init(document: OnboardingLegalDocument, language: SupportedAppLanguage) {
+        title = OnboardingLegalDocumentKind.title(
+            forDocumentKey: document.documentKey,
+            language: language
+        )
+        body = document.body ?? ""
+    }
+
+    /// Every text of the card that comes from the document itself.
+    var visibleText: [String] { [title, body] }
+}
+
+/// The country is shown by its name in the app's language; the ISO code is
+/// only the stored value.
+enum OnboardingCountryPresentation {
+    static func name(for code: String, language: SupportedAppLanguage) -> String {
+        language.formattingLocale.localizedString(forRegionCode: code) ?? code
+    }
+}
+
 @MainActor
 struct OnboardingStepHeader: View {
     let titleKey: String.LocalizationValue

@@ -94,11 +94,6 @@ struct Block7700DetailView: View {
                                     language: language
                                 )
                             )
-                            Divider()
-                            FixtureMetricRow(
-                                title: copy("progress.block.source"),
-                                value: descriptor.source
-                            )
                         }
                     }
                     .accessibilityIdentifier("block7700.summary")

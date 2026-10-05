@@ -62,9 +62,13 @@ struct ConsentStepView: View {
     private var officialDocuments: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
             ForEach(model.requirements.documents, id: \.documentKey) { document in
+                let presentation = OnboardingLegalDocumentPresentation(
+                    document: document,
+                    language: BodyFlowPresentationLanguage.resolve(locale)
+                )
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
                     HStack(alignment: .firstTextBaseline, spacing: BodyFlowSpacing.sm) {
-                        Text(document.documentKey)
+                        Text(presentation.title)
                             .font(BodyFlowTypography.headline)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 0)
@@ -75,11 +79,7 @@ struct ConsentStepView: View {
                             .fontWeight(.semibold)
                             .foregroundStyle(BodyFlowColor.color(.brandPrimary))
                     }
-                    Text(document.purpose)
-                        .font(BodyFlowTypography.callout)
-                        .foregroundStyle(BodyFlowColor.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(document.body ?? "")
+                    Text(presentation.body)
                         .font(BodyFlowTypography.body)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)

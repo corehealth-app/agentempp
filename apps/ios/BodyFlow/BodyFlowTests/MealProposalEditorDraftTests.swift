@@ -316,8 +316,8 @@ struct MealProposalEditorDraftTests {
         #expect(MealProposalEditorPresentation.officialKcalText(value, language: Self.en) == "155.4 kcal")
         #expect(MealProposalEditorPresentation.officialKcalText(1_250, language: Self.pt) == "1.250 kcal")
         #expect(MealProposalEditorPresentation.officialKcalText(1_250, language: Self.en) == "1,250 kcal")
-        #expect(MealProposalEditorPresentation.officialKcalText(nil, language: Self.pt) == "Sem valor do servidor")
-        #expect(MealProposalEditorPresentation.officialKcalText(nil, language: Self.en) == "No server value")
+        #expect(MealProposalEditorPresentation.officialKcalText(nil, language: Self.pt) == "Sem valor calculado")
+        #expect(MealProposalEditorPresentation.officialKcalText(nil, language: Self.en) == "No calculated value")
     }
 
     @Test("a proposal without a server value keeps the calculation on the server")

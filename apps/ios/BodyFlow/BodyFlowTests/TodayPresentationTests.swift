@@ -556,8 +556,8 @@ struct TodayPresentationTests {
         ("category_mismatch", "Estimativa"),
         ("protein_mismatch", "Estimativa"),
         ("composite_rejected", "Estimativa"),
-        ("user_kcal", "Informado pelo paciente"),
-        ("user_correction", "Informado pelo paciente"),
+        ("user_kcal", "Informado por você"),
+        ("user_correction", "Informado por você"),
         ("future_source", "Origem não informada"),
     ])
     func mapsNutritionProvenance(source: String, expected: String) {

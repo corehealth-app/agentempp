@@ -5,6 +5,29 @@ struct TodayHeaderDescriptor: Equatable, Sendable {
     let localDate: String
     let protocolName: String?
     let updatedAt: APITimestamp?
+
+    /// The patient's local day the way a person reads it: pt-BR "domingo,
+    /// 4 de outubro", en "Sunday, October 4". The value is already that
+    /// local day, so it is read and written on the UTC calendar and never
+    /// shifted by the device's time zone. A value that is not a calendar
+    /// date is shown as received.
+    func readableLocalDate(for language: SupportedAppLanguage) -> String {
+        let calendar = ProgressTrendsPresentation.calendar
+        guard let date = ProgressTrendsPresentation.date(from: localDate) else {
+            return localDate
+        }
+        let parts = calendar.dateComponents([.year, .month, .day], from: date)
+        guard localDate.split(separator: "-").compactMap({ Int($0) })
+            == [parts.year, parts.month, parts.day].compactMap({ $0 }) else {
+            return localDate
+        }
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.locale = language.formattingLocale
+        formatter.setLocalizedDateFormatFromTemplate("EEEEdMMMM")
+        return formatter.string(from: date)
+    }
 }
 
 enum TodayValueFormatter {
@@ -168,7 +191,7 @@ struct TodayHeaderSection: View {
 
     private var localDateLabel: some View {
         Label(
-            verbatim: "\(copy("today.header.local-date")): \(descriptor.localDate)",
+            verbatim: descriptor.readableLocalDate(for: language),
             symbol: .calendar
         )
         .accessibilityIdentifier("today.header.local-date")

@@ -249,7 +249,7 @@ private struct OnboardingDocumentsUnavailableView: View {
         } description: {
             Text(copy(
                 "onboarding.documents-unavailable.message",
-                fallback: "Não é possível concluir o onboarding sem os documentos oficiais atuais."
+                fallback: "Não é possível concluir o cadastro sem os documentos oficiais atuais."
             ))
         }
         .accessibilityIdentifier("screen.onboarding.consent-unavailable")

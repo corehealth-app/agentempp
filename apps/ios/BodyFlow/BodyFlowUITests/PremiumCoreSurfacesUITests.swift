@@ -231,7 +231,7 @@ final class PremiumCoreSurfacesUITests: XCTestCase {
         detail.tap()
 
         XCTAssertTrue(element("screen.block7700.detail", app: app).waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Reported percentage"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Block percentage"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["32%"].exists)
         XCTAssertFalse(app.staticTexts["Performance Score"].exists)
         support.capture("s6-block-official-percentage-en-light", app: app)

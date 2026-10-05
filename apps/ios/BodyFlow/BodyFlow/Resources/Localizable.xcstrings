@@ -542,13 +542,13 @@
     "en": {
       "stringUnit": {
         "state": "translated",
-        "value": "Try again to continue onboarding."
+        "value": "Try again to continue your setup."
       }
     },
     "pt-BR": {
       "stringUnit": {
         "state": "translated",
-        "value": "Tente novamente para continuar seu onboarding."
+        "value": "Tente novamente para continuar seu cadastro."
       }
     }
   }
@@ -574,13 +574,13 @@
     "en": {
       "stringUnit": {
         "state": "translated",
-        "value": "Loading onboarding"
+        "value": "Loading your setup"
       }
     },
     "pt-BR": {
       "stringUnit": {
         "state": "translated",
-        "value": "Carregando onboarding"
+        "value": "Carregando seu cadastro"
       }
     }
   }
@@ -1250,13 +1250,13 @@
     "en": {
       "stringUnit": {
         "state": "translated",
-        "value": "Review your choices before completing onboarding."
+        "value": "Review your choices before finishing your setup."
       }
     },
     "pt-BR": {
       "stringUnit": {
         "state": "translated",
-        "value": "Confira suas escolhas antes de concluir seu onboarding."
+        "value": "Confira suas escolhas antes de concluir seu cadastro."
       }
     }
   }
@@ -1611,8 +1611,8 @@
 },
 "onboarding.documents-unavailable.message" : {
   "localizations": {
-    "en": { "stringUnit": { "state": "translated", "value": "Onboarding cannot be completed without the current official documents." } },
-    "pt-BR": { "stringUnit": { "state": "translated", "value": "Não é possível concluir o onboarding sem os documentos oficiais atuais." } }
+    "en": { "stringUnit": { "state": "translated", "value": "Setup cannot be completed without the current official documents." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Não é possível concluir o cadastro sem os documentos oficiais atuais." } }
   }
 },
 "onboarding.documents-unavailable.title" : {
@@ -1743,8 +1743,8 @@
 },
 "onboarding.welcome.app-language.detail" : {
   "localizations" : {
-    "en" : { "stringUnit" : { "state" : "translated", "value" : "The service set this language for your account." } },
-    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Idioma definido pelo serviço para esta conta." } }
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Language set for this account." } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Idioma definido para esta conta." } }
   }
 },
 "onboarding.welcome.country.title" : {
@@ -1779,8 +1779,8 @@
 },
 "onboarding.welcome.time-zone-picker.search" : {
   "localizations" : {
-    "en" : { "stringUnit" : { "state" : "translated", "value" : "Search by IANA identifier" } },
-    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Buscar identificador IANA" } }
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Search city or region" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Buscar cidade ou região" } }
   }
 },
 "onboarding.body-data.biological-sex.title" : {
@@ -2069,6 +2069,42 @@
   "localizations" : {
     "en" : { "stringUnit" : { "state" : "translated", "value" : "I confirm the development Privacy notice (dev.privacy.v1)" } },
     "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Confirmo a Privacidade de desenvolvimento (dev.privacy.v1)" } }
+  }
+},
+"onboarding.legal.title.terms" : {
+  "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Terms of use" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Termos de uso" } }
+  }
+},
+"onboarding.legal.title.privacy" : {
+  "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Privacy policy" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Política de privacidade" } }
+  }
+},
+"onboarding.legal.title.health-ai" : {
+  "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Health and AI" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Saúde e inteligência artificial" } }
+  }
+},
+"onboarding.legal.title.sensitive-data" : {
+  "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Sensitive health data" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Dados sensíveis de saúde" } }
+  }
+},
+"onboarding.legal.title.medication" : {
+  "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Medication reminders" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Lembretes de medicamentos" } }
+  }
+},
+"onboarding.legal.title.document" : {
+  "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Document" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Documento" } }
   }
 },
 "onboarding.completion.name" : {
@@ -2826,8 +2862,8 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Isto é um rascunho. Ele só vira o seu plano depois que você confirmar." } }
     } },
     "plan.draft.notice.edits-dropped" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "The draft changed on the server and what you had typed was not applied. Review the current version." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O rascunho mudou no servidor e o que você tinha digitado não foi aplicado. Revise a versão atual." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The draft was updated and what you had typed was not applied. Review the current version." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O rascunho foi atualizado e o que você tinha digitado não foi aplicado. Revise a versão atual." } }
     } },
     "plan.draft.notice.medications" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Medications, supplements and doses are not imported. Talk to your professional." } },
@@ -3270,8 +3306,8 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Atualizar agora" } }
     } },
     "reminders.coverage.sync-note" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Reminders follow the app's last sync; nothing is sent by the server in this version. Focus modes and iPhone settings can silence or delay them." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Os lembretes seguem a última sincronização do app; nada é enviado pelo servidor nesta versão. Modos de Foco e ajustes do iPhone podem silenciá-los ou atrasá-los." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Reminders are scheduled on this iPhone using the times the app last loaded. Focus modes and iPhone settings can silence or delay them." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Os lembretes são agendados neste iPhone com os horários que o app carregou por último. Modos de Foco e ajustes do iPhone podem silenciá-los ou atrasá-los." } }
     } },
     "reminders.coverage.until" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Covered until %@. Open the app before then to keep receiving reminders." } },
@@ -3523,14 +3559,14 @@
     },
     "metric.reported-percentage" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reported percentage" } },
-        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Percentual informado" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Block percentage" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Percentual do bloco" } }
       }
     },
     "metric.reported-progress" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reported progress" } },
-        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Progresso informado" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Progress" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Progresso" } }
       }
     },
     "metric.status" : {
@@ -3841,8 +3877,8 @@
     },
     "today.summary.detail" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "View received details" } },
-        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Consultar detalhes recebidos" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "View the day's details" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ver os detalhes do dia" } }
       }
     },
     "today.summary.title" : {
@@ -3926,8 +3962,8 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Alimento" } }
     } },
     "registration.editor.kcal.calculated" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Calories calculated by the server" } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Calorias calculadas pelo servidor" } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Calories calculated by Performe AI" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Calorias calculadas pelo Performe AI" } }
     } },
     "registration.editor.kcal.reported" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Calories reported by you" } },
@@ -3938,16 +3974,16 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Refeição" } }
     } },
     "registration.editor.origin-unknown" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "The server did not confirm where this proposal's calories came from, so editing is paused to avoid losing a value you reported. You can still confirm or cancel the proposal." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O servidor não confirmou a origem das calorias desta proposta, então a edição está pausada para não perder um valor informado por você. Você ainda pode confirmar ou cancelar a proposta." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Where this proposal's calories came from could not be confirmed, so editing is paused to avoid losing a value you reported. You can still confirm or cancel the proposal." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não foi possível confirmar a origem das calorias desta proposta, então a edição está pausada para não perder um valor informado por você. Você ainda pode confirmar ou cancelar a proposta." } }
     } },
     "registration.editor.official-kcal" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Calories in the proposal" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Calorias na proposta" } }
     } },
     "registration.editor.official-kcal.unavailable" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "No server value" } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sem valor do servidor" } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "No calculated value" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sem valor calculado" } }
     } },
     "registration.editor.quantity" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Quantity (g)" } },
@@ -3970,8 +4006,8 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Editar proposta" } }
     } },
     "registration.editor.use-server-calculation" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Use server calculation" } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Usar cálculo do servidor" } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Use the Performe AI calculation" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Usar o cálculo do Performe AI" } }
     } },
     "registration.editor.user-kcal" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Calories you report (optional)" } },
@@ -3982,12 +4018,12 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Você mudou a quantidade; confira se as calorias informadas ainda valem." } }
     } },
     "registration.editor.user-kcal.cleared" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "To go back to the server calculation, tap “Use server calculation”." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Para voltar ao cálculo do servidor, toque em “Usar cálculo do servidor”." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "To go back to the Performe AI calculation, tap “Use the Performe AI calculation”." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Para voltar ao cálculo do Performe AI, toque em “Usar o cálculo do Performe AI”." } }
     } },
     "registration.editor.user-kcal.footer" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "A value typed here replaces the server calculation and is recorded as reported by you. With no value typed, the server calculates." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Um valor digitado aqui substitui o cálculo do servidor e fica registrado como informado por você. Sem valor digitado, o servidor calcula." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "A value typed here replaces the Performe AI calculation and is recorded as reported by you. With no value typed, Performe AI calculates." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Um valor digitado aqui substitui o cálculo do Performe AI e fica registrado como informado por você. Sem valor digitado, o Performe AI calcula." } }
     } },
     "registration.editor.user-kcal.invalid" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Enter calories from 0 to 20,000 using only the decimal separator, no thousands separator." } },
@@ -4154,8 +4190,8 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Proposta de refeição" } }
     } },
     "registration.proposal.service-values" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Values supplied by the service" } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Valores fornecidos pelo serviço" } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Values calculated by Performe AI" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Valores calculados pelo Performe AI" } }
     } },
     "registration.proposal.totals" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Totals" } },
@@ -4170,8 +4206,8 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Demonstração local. Disponibilidade não implica sincronização em Release." } }
     } },
     "registration.root.detail.live" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Log meals, workouts and hydration. Every figure is computed by the server." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Registre refeições, treinos e hidratação. Os valores são calculados no servidor." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Log meals, workouts and hydration. Every figure is calculated for you." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Registre refeições, treinos e hidratação. Os valores são calculados para você." } }
     } },
     "registration.root.detail" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Choose an option to open the local demonstration." } },
@@ -4390,8 +4426,8 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Conhecer o app" } }
     } },
     "progress.block.action.detail" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "View the block stored in today's summary" } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ver o bloco persistido no resumo de hoje" } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "See the block's progress" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ver o andamento do bloco" } }
     } },
     "progress.block.availability" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Availability" } },
@@ -4410,8 +4446,8 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Atual" } }
     } },
     "progress.block.percentage" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Reported percentage" } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Percentual informado" } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Block percentage" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Percentual do bloco" } }
     } },
     "progress.block.source" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Source" } },
@@ -4478,8 +4514,8 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Próxima reavaliação" } }
     } },
     "progress.metric.reported-deficit" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Reported deficit" } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Déficit informado" } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Block deficit" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Déficit do bloco" } }
     } },
     "progress.metric.updated-at" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Updated on" } },
@@ -4752,8 +4788,8 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Personalidade: %@" } }
     } },
     "mascot.provenance" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "State and personality come from Flow." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O estado e a personalidade vêm do Flow." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The mascot follows your Flow's state and personality." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O mascote acompanha o estado e a personalidade do seu Flow." } }
     } },
     "mascot.stale" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Saved data from this session" } },
@@ -4796,8 +4832,8 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sair da conta" } }
     } },
     "profile.account.sign-out.confirm" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Sign out of this account on this iPhone? Your data stays on the server." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sair desta conta neste iPhone? Seus dados continuam no servidor." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Sign out of this account on this iPhone? Your data stays saved in your account." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sair desta conta neste iPhone? Seus dados continuam salvos na sua conta." } }
     } },
     "profile.fixture.disclosure" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Demo data" } },
@@ -5064,8 +5100,8 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Estimativa" } }
     } },
     "today.provenance.user-provided" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Provided by patient" } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Informado pelo paciente" } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Provided by you" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Informado por você" } }
     } },
     "today.provenance.reference" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Approximate reference" } },

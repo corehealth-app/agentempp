@@ -52,7 +52,7 @@ final class PremiumRegistrationUITests: XCTestCase {
         XCTAssertEqual(cancel.label, "Cancel proposal")
         XCTAssertLessThan(confirm.frame.minY, edit.frame.minY)
         XCTAssertLessThan(edit.frame.minY, cancel.frame.minY)
-        XCTAssertTrue(app.staticTexts["Values supplied by the service"].exists)
+        XCTAssertTrue(app.staticTexts["Values calculated by Performe AI"].exists)
         XCTAssertTrue(app.staticTexts["389 kcal"].exists)
         XCTAssertFalse(app.staticTexts["kcal: 389 g"].exists)
         support.capture("s4-proposal-en-dark-axxxl", app: app)

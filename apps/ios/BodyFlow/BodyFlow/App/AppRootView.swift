@@ -144,7 +144,7 @@ struct AppRootView: View {
                 } else {
                     rootLoading(
                         "app.onboarding.loading",
-                        fallback: "Carregando onboarding"
+                        fallback: "Carregando seu cadastro"
                     )
                 }
             case .authenticated(let userID):
@@ -275,7 +275,7 @@ struct AppRootView: View {
         } description: {
             Text(rootCopy(
                 "app.onboarding.error.message",
-                fallback: "Tente novamente para continuar seu onboarding."
+                fallback: "Tente novamente para continuar seu cadastro."
             ))
         } actions: {
             Button(rootCopy("app.retry", fallback: "Tentar novamente")) {

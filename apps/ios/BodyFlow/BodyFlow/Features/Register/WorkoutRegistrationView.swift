@@ -1,6 +1,40 @@
 import SwiftUI
 import UIKit
 
+/// What the workout form opens with. A proposal being edited always shows
+/// its own values. A new proposal on a real account starts empty, so nothing
+/// the person did not type can be proposed; only the local demonstration
+/// keeps its sample workout.
+struct WorkoutRegistrationFormSeed: Equatable, Sendable {
+    let workoutType: String
+    let duration: String
+
+    init(
+        initialProposal: WorkoutProposalRequest?,
+        presentsLocalDemonstration: Bool
+    ) {
+        if let initialProposal {
+            workoutType = initialProposal.workoutType
+            duration = String(initialProposal.durationMin)
+        } else if presentsLocalDemonstration {
+            workoutType = "musculacao"
+            duration = "47"
+        } else {
+            workoutType = ""
+            duration = ""
+        }
+    }
+
+    /// The proposal action needs a type and a whole number of minutes.
+    static func canPropose(workoutType: String, duration: String) -> Bool {
+        !workoutType.isEmpty && Int(duration) != nil
+    }
+
+    var canPropose: Bool {
+        Self.canPropose(workoutType: workoutType, duration: duration)
+    }
+}
+
 struct WorkoutRegistrationView: View {
     private let submit: @MainActor (WorkoutProposalRequest) -> Void
     private let actionTitle: String
@@ -14,12 +48,17 @@ struct WorkoutRegistrationView: View {
     init(
         initialPerformedAt: Date,
         initialProposal: WorkoutProposalRequest? = nil,
+        presentsLocalDemonstration: Bool = false,
         actionTitle: String = "Propor treino",
         isSubmitting: Bool,
         submit: @escaping @MainActor (WorkoutProposalRequest) -> Void
     ) {
-        _workoutType = State(initialValue: initialProposal?.workoutType ?? "musculacao")
-        _duration = State(initialValue: initialProposal.map { String($0.durationMin) } ?? "47")
+        let seed = WorkoutRegistrationFormSeed(
+            initialProposal: initialProposal,
+            presentsLocalDemonstration: presentsLocalDemonstration
+        )
+        _workoutType = State(initialValue: seed.workoutType)
+        _duration = State(initialValue: seed.duration)
         _intensity = State(initialValue: initialProposal?.intensity ?? .moderate)
         _performedAt = State(initialValue: initialProposal?.performedAt?.value ?? initialPerformedAt)
         self.actionTitle = actionTitle
@@ -66,6 +105,10 @@ struct WorkoutRegistrationView: View {
                 identifier: "registration.workout.propose",
                 action: submitProposal
             )
+            // SwiftUI writes the environment's enabled state into a bridged
+            // UIControl after `updateUIView`, so an incomplete form has to be
+            // declared here for the button to be disabled at all.
+            .disabled(isSubmitting || !isValid)
         }
     }
 
@@ -80,10 +123,12 @@ struct WorkoutRegistrationView: View {
         BodyFlowPresentationLanguage.resolve(locale)
     }
 
-    private var isValid: Bool { !workoutType.isEmpty && Int(duration) != nil }
+    private var isValid: Bool {
+        WorkoutRegistrationFormSeed.canPropose(workoutType: workoutType, duration: duration)
+    }
 
     private func submitProposal() {
-        guard let durationMin = Int(duration) else { return }
+        guard isValid, let durationMin = Int(duration) else { return }
         submit(WorkoutProposalRequest(
             workoutType: workoutType, durationMin: durationMin,
             intensity: intensity, performedAt: APITimestamp(value: performedAt)

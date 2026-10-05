@@ -72,7 +72,7 @@ struct WelcomeStepView: View {
                         model.updateTimeZoneIdentifier($0)
                     }
                 } label: {
-                    selectionRow(model.draft.timeZoneIdentifier, detail: "IANA")
+                    selectionRow(model.draft.timeZoneIdentifier, detail: nil)
                 }
                 .buttonStyle(.bodyFlowRow)
                 .accessibilityHint(
@@ -102,15 +102,16 @@ struct WelcomeStepView: View {
     }
 
     private var countryName: String {
-        language.formattingLocale.localizedString(forRegionCode: model.draft.countryCode)
-            ?? model.draft.countryCode
+        OnboardingCountryPresentation.name(for: model.draft.countryCode, language: language)
     }
 
-    private func selectionRow(_ title: String, detail: String) -> some View {
+    private func selectionRow(_ title: String, detail: String?) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: BodyFlowSpacing.sm) {
             Text(title).foregroundStyle(BodyFlowColor.primaryText)
             Spacer(minLength: BodyFlowSpacing.sm)
-            Text(detail).foregroundStyle(BodyFlowColor.secondaryText)
+            if let detail {
+                Text(detail).foregroundStyle(BodyFlowColor.secondaryText)
+            }
             Image(symbol: .chevron)
                 .font(BodyFlowTypography.caption)
                 .foregroundStyle(BodyFlowColor.secondaryText)
@@ -172,7 +173,7 @@ private struct CountrySelectionView: View {
     }
 
     private func name(for code: String) -> String {
-        language.formattingLocale.localizedString(forRegionCode: code) ?? code
+        OnboardingCountryPresentation.name(for: code, language: language)
     }
 
     private func copy(_ key: String.LocalizationValue) -> String {

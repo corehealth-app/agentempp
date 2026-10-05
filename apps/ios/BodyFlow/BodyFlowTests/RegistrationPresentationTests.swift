@@ -121,7 +121,7 @@ struct RegistrationPresentationTests {
 
         #expect(!presentation.visibleText.contains("Referência confirmada"))
         #expect(!presentation.visibleText.contains("Estimativa"))
-        #expect(!presentation.visibleText.contains("Informado pelo paciente"))
+        #expect(!presentation.visibleText.contains("Informado por você"))
         #expect(!presentation.visibleText.contains("Origem não informada"))
     }
 
@@ -147,7 +147,7 @@ struct RegistrationPresentationTests {
         #expect(presentation.warnings.isEmpty)
         #expect(!presentation.visibleText.contains("Referência confirmada"))
         #expect(!presentation.visibleText.contains("Estimativa"))
-        #expect(!presentation.visibleText.contains("Informado pelo paciente"))
+        #expect(!presentation.visibleText.contains("Informado por você"))
     }
 
     @Test("only a pending proposal exposes edit confirm and cancel actions")

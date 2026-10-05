@@ -82,7 +82,9 @@ final class Prompt13PlanProgressHistoryUITests: XCTestCase {
                 .waitForExistence(timeout: 5)
         )
         XCTAssertTrue(app.staticTexts["2.500 kcal"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["user_progress"].waitForExistence(timeout: 3))
+        // The storage origin is not part of what the person reads.
+        XCTAssertFalse(app.staticTexts["user_progress"].exists)
+        XCTAssertFalse(app.staticTexts["Origem"].exists)
         XCTAssertFalse(app.staticTexts["6.999 kcal"].exists)
         support.captureEvidence(named: "07-progress-block.png", of: app)
     }

@@ -518,7 +518,10 @@ struct AppShellView: View {
                 recommendations: todayRecommendationsViewModel,
                 mascot: todayMascotViewModel,
                 week: todayWeekViewModel,
-                invalidationCenter: invalidationCenter
+                invalidationCenter: invalidationCenter,
+                showsDemonstrationSummaryLink: TodayRootView.showsDemonstrationSummaryLink(
+                    presentsRealAccountIdentity: dependencies.presentsRealAccountIdentity
+                )
             )
         case .register:
             RegisterRootView(

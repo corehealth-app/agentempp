@@ -45,6 +45,65 @@ enum RegistrationCopy {
             string("registration.workout-intensity.alta", language: language)
         }
     }
+
+    /// A stored workout intensity ("leve", "moderada", "alta") in the
+    /// reader's language; any other value is tidied, never translated.
+    static func workoutIntensityTitle(
+        stored: String,
+        language: SupportedAppLanguage
+    ) -> String {
+        switch storedValueKey(stored) {
+        case WorkoutIntensity.light.rawValue:
+            workoutIntensityTitle(.light, language: language)
+        case WorkoutIntensity.moderate.rawValue:
+            workoutIntensityTitle(.moderate, language: language)
+        case WorkoutIntensity.high.rawValue:
+            workoutIntensityTitle(.high, language: language)
+        case "intensa":
+            string("registration.workout-intensity.intensa", language: language)
+        default:
+            tidiedStoredValue(stored)
+        }
+    }
+
+    /// A stored workout type in the reader's language. The server keeps the
+    /// type as a code ("musculacao") or as the person typed it; a known code
+    /// gets its name, anything else is tidied and otherwise left as typed.
+    static func workoutTypeTitle(
+        stored: String,
+        language: SupportedAppLanguage
+    ) -> String {
+        guard let key = workoutTypeKeys[storedValueKey(stored)] else {
+            return tidiedStoredValue(stored)
+        }
+        return string(key, language: language)
+    }
+
+    private static let workoutTypeKeys: [String: String.LocalizationValue] = [
+        "musculacao": "registration.workout-type.musculacao",
+        "corrida": "registration.workout-type.corrida",
+        "caminhada": "registration.workout-type.caminhada",
+        "natacao": "registration.workout-type.natacao",
+        "ciclismo": "registration.workout-type.ciclismo",
+    ]
+
+    /// How a stored value is looked up: the way the server compares it
+    /// (lower case), and with "Natação" and "natacao" being the same word.
+    private static func storedValueKey(_ stored: String) -> String {
+        stored
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            .split { $0 == "_" || $0.isWhitespace }
+            .joined(separator: "_")
+    }
+
+    /// "corrida_leve" reads "Corrida leve": "_" becomes a space and the first
+    /// letter is upper case; nothing else of what was typed changes.
+    private static func tidiedStoredValue(_ stored: String) -> String {
+        let spaced = stored
+            .replacingOccurrences(of: "_", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return spaced.prefix(1).uppercased() + spaced.dropFirst()
+    }
 }
 
 enum MealCaptureChoice: Equatable {

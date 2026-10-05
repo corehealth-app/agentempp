@@ -56,12 +56,19 @@ struct TodayWorkoutDescriptor: Equatable, Sendable, Identifiable {
     let intensity: String?
     let performedAt: APITimestamp
 
-    /// Duration and intensity as received; an absent part is left out and
-    /// nothing is shown in its place.
+    /// The stored type as a label ("musculacao" reads "Musculação"); nil
+    /// when the record has none.
+    func typeTitle(language: SupportedAppLanguage) -> String? {
+        workoutType.map { RegistrationCopy.workoutTypeTitle(stored: $0, language: language) }
+    }
+
+    /// Duration and intensity; the intensity is shown as a label, never as
+    /// the stored code. An absent part is left out and nothing is shown in
+    /// its place.
     func detailText(language: SupportedAppLanguage) -> String {
         let parts = [
             durationMin.map { "\(TodayValueFormatter.integer($0, language: language)) min" },
-            intensity,
+            intensity.map { RegistrationCopy.workoutIntensityTitle(stored: $0, language: language) },
         ].compactMap { $0 }
         return parts.isEmpty
             ? TodayCopy.string("common.not-available", language: language)
@@ -93,7 +100,7 @@ struct TodayRecordsSection: View {
                         HStack(alignment: .top, spacing: BodyFlowSpacing.sm) {
                         BodyFlowDomainGlyph(domain: .exercise)
                         VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                            Text(workout.workoutType ?? copy("history.workout.fallback"))
+                            Text(workout.typeTitle(language: language) ?? copy("history.workout.fallback"))
                                 .font(BodyFlowTypography.headline)
                                 .foregroundStyle(BodyFlowColor.primaryText)
                             recordLine(

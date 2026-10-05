@@ -114,6 +114,10 @@ struct HydrationRegistrationView: View {
                 isEnabled: !isSubmitting,
                 identifier: "registration.hydration.submit"
             ) { submit(selectedQuickAmount, customAmount, occurredAt) }
+            // SwiftUI writes the environment's enabled state into a bridged
+            // UIControl after `updateUIView`, so a request in flight has to be
+            // declared here for the button to be disabled at all.
+            .disabled(isSubmitting)
             .frame(maxWidth: .infinity)
         }
     }
@@ -127,6 +131,7 @@ struct HydrationRegistrationView: View {
                         identifier: "registration.hydration.quick.\(amount)",
                         minimumWidth: BodyFlowSpacing.minimumTapTarget + 4
                     ) { selectedQuickAmount = amount }
+                    .disabled(isSubmitting)
                 }
     }
 
@@ -274,6 +279,7 @@ struct RegistrationBoundedButton: UIViewRepresentable {
     func updateUIView(_ button: UIButton, context: Context) {
         button.configuration?.title = title
         button.isEnabled = isEnabled
+        context.coordinator.isEnabled = isEnabled
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(action: action) }
@@ -290,7 +296,14 @@ struct RegistrationBoundedButton: UIViewRepresentable {
     @MainActor
     final class Coordinator: NSObject {
         private let action: @MainActor () -> Void
+        /// The coordinator outlives every value of the button, so it is told
+        /// the current state: a touch that still arrives while the button is
+        /// disabled (a second tap during a request) does nothing.
+        var isEnabled = true
         init(action: @escaping @MainActor () -> Void) { self.action = action }
-        @objc func tapped() { action() }
+        @objc func tapped() {
+            guard isEnabled else { return }
+            action()
+        }
     }
 }

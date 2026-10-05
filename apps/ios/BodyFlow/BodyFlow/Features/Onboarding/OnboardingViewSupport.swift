@@ -101,6 +101,103 @@ enum OnboardingCountryPresentation {
     static func name(for code: String, language: SupportedAppLanguage) -> String {
         language.formattingLocale.localizedString(forRegionCode: code) ?? code
     }
+
+    /// The picker's rows for a search. The code is never drawn, but typing it
+    /// still finds its country.
+    static func regions(
+        matching query: String,
+        language: SupportedAppLanguage
+    ) -> [Locale.Region] {
+        let needle = OnboardingSearchText.folded(query)
+        return Locale.Region.isoRegions
+            .filter { region in
+                needle.isEmpty
+                    || OnboardingSearchText.folded(region.identifier).contains(needle)
+                    || OnboardingSearchText.folded(name(for: region.identifier, language: language))
+                        .contains(needle)
+            }
+            .sorted {
+                name(for: $0.identifier, language: language)
+                    < name(for: $1.identifier, language: language)
+            }
+    }
+}
+
+/// A search is read the way a person types it: case and accents do not
+/// matter, and a space, "_" and "/" are one and the same separator.
+enum OnboardingSearchText {
+    static func folded(_ text: String) -> String {
+        text
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            .split { $0 == "_" || $0 == "/" || $0.isWhitespace }
+            .joined(separator: " ")
+    }
+}
+
+/// A time zone is shown by its city and by the system's name for the zone in
+/// the app's language; the identifier is only the stored value.
+struct OnboardingTimeZonePresentation: Equatable, Identifiable, Sendable {
+    let identifier: String
+    /// "America/Sao_Paulo" reads "Sao Paulo".
+    let city: String
+    /// The system's name for the zone; nil for an identifier it does not know.
+    let zoneName: String?
+    /// Everything a search reads, already folded. The system's short name is
+    /// never drawn: in some languages it is the only one that carries the
+    /// city as the person writes it.
+    private let searchText: [String]
+
+    var id: String { identifier }
+
+    init(identifier: String, language: SupportedAppLanguage) {
+        self.identifier = identifier
+        city = identifier.split(separator: "/").last
+            .map { $0.replacingOccurrences(of: "_", with: " ") } ?? identifier
+        let zone = TimeZone(identifier: identifier)
+        let locale = language.formattingLocale
+        zoneName = zone?.localizedName(for: .generic, locale: locale)
+        searchText = [
+            city,
+            identifier,
+            zoneName,
+            zone?.localizedName(for: .shortGeneric, locale: locale),
+        ].compactMap { $0 }.map(OnboardingSearchText.folded)
+    }
+
+    /// The review's single line.
+    var summary: String {
+        zoneName.map { "\(city) · \($0)" } ?? city
+    }
+
+    func matches(_ query: String) -> Bool {
+        let needle = OnboardingSearchText.folded(query)
+        return needle.isEmpty || searchText.contains { $0.contains(needle) }
+    }
+
+    /// Every zone the system knows, by city. Naming them asks the system once
+    /// per zone, so the list is built once per language and kept.
+    @MainActor
+    static func all(for language: SupportedAppLanguage) -> [OnboardingTimeZonePresentation] {
+        if let known = cache[language] { return known }
+        let named: [OnboardingTimeZonePresentation] = TimeZone.knownTimeZoneIdentifiers.map {
+            OnboardingTimeZonePresentation(identifier: $0, language: language)
+        }
+        let zones = named.sorted { first, second in
+            (first.city, first.identifier) < (second.city, second.identifier)
+        }
+        cache[language] = zones
+        return zones
+    }
+
+    @MainActor
+    static func zones(
+        matching query: String,
+        language: SupportedAppLanguage
+    ) -> [OnboardingTimeZonePresentation] {
+        all(for: language).filter { $0.matches(query) }
+    }
+
+    @MainActor private static var cache: [SupportedAppLanguage: [OnboardingTimeZonePresentation]] = [:]
 }
 
 @MainActor

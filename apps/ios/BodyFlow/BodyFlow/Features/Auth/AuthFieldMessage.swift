@@ -68,7 +68,7 @@ extension AppPresentationError {
         case .operationUnavailable:
             "Esta operação não está disponível agora."
         case .serviceUnavailable:
-            "O serviço está temporariamente indisponível. Tente novamente."
+            "Não foi possível conectar agora. Tente novamente."
         case .storageUnavailable:
             "Não foi possível acessar os dados locais. Tente novamente."
         }

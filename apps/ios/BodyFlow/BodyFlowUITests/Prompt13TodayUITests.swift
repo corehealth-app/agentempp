@@ -282,6 +282,28 @@ final class Prompt13TodayUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["tracked_without_target"].exists)
     }
 
+    // Review 2026-10-04: the confirmed workouts showed the stored codes
+    // "musculacao", "moderada" and "leve".
+    @MainActor
+    func testConfirmedWorkoutsShowNamesNotStoredCodes() {
+        let support = BodyFlowUITestSupport(testCase: self)
+        let app = support.launch(scenario: .loaded)
+
+        let strength = element("today.workout.workout-z", in: app)
+        XCTAssertTrue(strength.waitForExistence(timeout: 5))
+        XCTAssertTrue(strength.label.contains("Musculação"), strength.label)
+        XCTAssertTrue(strength.label.contains("40 min · Moderada"), strength.label)
+        XCTAssertFalse(strength.label.contains("musculacao"), strength.label)
+        XCTAssertFalse(strength.label.contains("moderada"), strength.label)
+
+        let walk = element("today.workout.workout-a", in: app)
+        XCTAssertTrue(walk.exists)
+        XCTAssertTrue(walk.label.contains("Caminhada"), walk.label)
+        XCTAssertTrue(walk.label.contains("25 min · Leve"), walk.label)
+        XCTAssertFalse(walk.label.contains("caminhada"), walk.label)
+        XCTAssertFalse(walk.label.contains("leve"), walk.label)
+    }
+
     @MainActor
     private func element(
         _ identifier: String,

@@ -20,6 +20,40 @@ struct MealProposalTotalsPresentation: Equatable, Sendable {
     let fatG: Decimal?
 }
 
+/// What a proposal may say about where its calories came from. It is said
+/// only when it is true of the whole proposal.
+enum MealProposalKcalProvenance: Equatable, Sendable {
+    /// Every item carries the official calculation.
+    case calculated
+    /// At least one item carries a value the person typed.
+    case includesPatientReported
+    /// An origin is unknown, or an item has no calculation yet: nothing is
+    /// claimed.
+    case unstated
+
+    init(items: [MealProposalItemSnapshot]) {
+        let typedByThePerson = items.contains {
+            if case .patientReported = $0.kcalOrigin { true } else { false }
+        }
+        if typedByThePerson {
+            self = .includesPatientReported
+        } else if !items.isEmpty,
+                  items.allSatisfy({ $0.kcalOrigin == .official && !$0.needsClarification }) {
+            self = .calculated
+        } else {
+            self = .unstated
+        }
+    }
+
+    var noteKey: String.LocalizationValue? {
+        switch self {
+        case .calculated: "registration.proposal.service-values"
+        case .includesPatientReported: "registration.proposal.includes-user-kcal"
+        case .unstated: nil
+        }
+    }
+}
+
 struct MealProposalPresentation: Equatable, Sendable {
     let registrationID: String
     let status: String
@@ -28,6 +62,7 @@ struct MealProposalPresentation: Equatable, Sendable {
     let totals: MealProposalTotalsPresentation?
     let warnings: [String]
     let expiresAt: APITimestamp
+    let kcalProvenance: MealProposalKcalProvenance
 
     var allowsEdit: Bool { status == "pending" }
     /// An item the server has not calculated blocks the confirmation (the
@@ -81,11 +116,13 @@ struct MealProposalPresentation: Equatable, Sendable {
                 )
             }
             warnings = proposal.warnings
+            kcalProvenance = MealProposalKcalProvenance(items: proposal.items)
         case .workout, .unknown:
             mealType = nil
             items = []
             totals = nil
             warnings = []
+            kcalProvenance = .unstated
         }
     }
 }
@@ -190,9 +227,16 @@ struct MealProposalView: View {
                 }
             }
 
-            Label(copy("registration.proposal.service-values"), systemImage: "checkmark.seal")
+            if let noteKey = proposal.kcalProvenance.noteKey {
+                Label(
+                    copy(noteKey),
+                    systemImage: proposal.kcalProvenance == .calculated
+                        ? "checkmark.seal" : BodyFlowSymbol.person.rawValue
+                )
                 .font(BodyFlowTypography.callout)
                 .foregroundStyle(BodyFlowColor.secondaryText)
+                .accessibilityIdentifier("registration.proposal.kcal-provenance")
+            }
 
             ForEach(proposal.warnings, id: \.self) { warning in
                 Text(warning)

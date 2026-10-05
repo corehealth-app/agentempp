@@ -30,7 +30,10 @@ struct OnboardingCompletionView: View {
                 )
                 reviewRow(
                     copy("onboarding.completion.time-zone", fallback: "Fuso"),
-                    value: model.draft.timeZoneIdentifier
+                    value: OnboardingTimeZonePresentation(
+                        identifier: model.draft.timeZoneIdentifier,
+                        language: language
+                    ).summary
                 )
                 reviewRow(
                     copy("onboarding.completion.objective", fallback: "Objetivo"),

@@ -290,6 +290,48 @@ final class Prompt13RegistrationUITests: XCTestCase {
         XCTAssertFalse(app.buttons["registration.proposal.cancel"].exists)
     }
 
+    // Review 2026-10-04: the proposal, Today and History showed the stored
+    // codes "musculacao" and "moderada".
+    @MainActor
+    func testConfirmedWorkoutIsNamedEverywhere() {
+        let app = reachWorkoutProposal(scenario: .loaded)
+        XCTAssertTrue(app.staticTexts["Musculação"].exists)
+        XCTAssertTrue(app.staticTexts["Moderada"].exists)
+        XCTAssertFalse(app.staticTexts["musculacao"].exists)
+        XCTAssertFalse(app.staticTexts["moderada"].exists)
+
+        app.buttons["registration.proposal.confirm"].tap()
+        XCTAssertTrue(
+            element("registration.proposal.confirmed", in: app)
+                .waitForExistence(timeout: 5)
+        )
+        app.buttons["sheet.fechar"].tap()
+        app.performeTabBar.buttons["tab.hoje"].tap()
+
+        let today = element("today.workout.demo-confirmed-workout-1", in: app)
+        XCTAssertTrue(today.waitForExistence(timeout: 5))
+        XCTAssertTrue(today.label.contains("Musculação"), today.label)
+        XCTAssertTrue(today.label.contains("47 min · Moderada"), today.label)
+        XCTAssertFalse(today.label.contains("musculacao"), today.label)
+        XCTAssertFalse(today.label.contains("moderada"), today.label)
+
+        let history = element("today.history", in: app)
+        XCTAssertTrue(history.waitForExistence(timeout: 5))
+        history.tap()
+        let row = element("history.workout.demo-confirmed-workout-1", in: app)
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        XCTAssertTrue(row.label.contains("Musculação"), row.label)
+        XCTAssertFalse(row.label.contains("musculacao"), row.label)
+
+        row.tap()
+        XCTAssertTrue(
+            element("screen.history.workout-detail", in: app)
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(app.staticTexts["Musculação"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["musculacao"].exists)
+    }
+
     @MainActor
     func testUnavailableWorkoutShowsNoSuccess() {
         let app = launchAndOpenWorkout(scenario: .unavailable)

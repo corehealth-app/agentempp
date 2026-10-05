@@ -116,6 +116,55 @@ struct RealAccountSampleDataTests {
         #expect(WorkoutRegistrationFormSeed.canPropose(workoutType: "corrida", duration: "30"))
     }
 
+    // The server's contract for a workout proposal: `workout_type` trimmed,
+    // 1 to 80 characters; `duration_min` a positive integer up to 1440.
+    @Test("the proposal action follows the server's limits for type and duration")
+    func proposalValidationMatchesTheServerContract() {
+        func canPropose(_ workoutType: String, _ duration: String) -> Bool {
+            WorkoutRegistrationFormSeed.canPropose(workoutType: workoutType, duration: duration)
+        }
+        #expect(!canPropose(" ", "30"))
+        #expect(!canPropose(" \n\t ", "30"))
+        #expect(canPropose("  corrida  ", "30"))
+        #expect(canPropose(String(repeating: "a", count: 80), "30"))
+        #expect(!canPropose(String(repeating: "a", count: 81), "30"))
+        // Surrounding spaces are not part of the 80.
+        #expect(canPropose(" " + String(repeating: "a", count: 80) + " ", "30"))
+        #expect(!canPropose("corrida", "0"))
+        #expect(!canPropose("corrida", "-30"))
+        #expect(canPropose("corrida", "1"))
+        #expect(canPropose("corrida", "1440"))
+        #expect(!canPropose("corrida", "1441"))
+        #expect(!canPropose("corrida", "2000"))
+        #expect(!canPropose("corrida", "30.5"))
+        #expect(!canPropose("corrida", "30 "))
+    }
+
+    @Test("the rendered action is disabled outside the server's limits", arguments: [
+        WorkoutFormCase(" ", 30, false),
+        WorkoutFormCase("corrida", 0, false),
+        WorkoutFormCase("corrida", -30, false),
+        WorkoutFormCase("corrida", 2_000, false),
+        WorkoutFormCase("corrida", 1_441, false),
+        WorkoutFormCase(String(repeating: "a", count: 81), 30, false),
+        WorkoutFormCase("corrida", 1_440, true),
+        WorkoutFormCase(String(repeating: "a", count: 80), 1, true),
+    ])
+    func renderedActionFollowsTheServerContract(_ form: WorkoutFormCase) throws {
+        let rendered = try Self.workoutForm(
+            presentsLocalDemonstration: false,
+            initialProposal: WorkoutProposalRequest(
+                workoutType: form.workoutType,
+                durationMin: form.durationMin,
+                intensity: .moderate,
+                performedAt: nil
+            )
+        )
+        #expect(rendered.type == form.workoutType)
+        #expect(rendered.duration == String(form.durationMin))
+        #expect(rendered.proposeEnabled == form.canPropose)
+    }
+
     @Test("the rendered form: empty fields and a disabled action on a real account")
     func realAccountWorkoutFormIsRenderedEmpty() throws {
         let form = try Self.workoutForm(presentsLocalDemonstration: false)
@@ -134,25 +183,32 @@ struct RealAccountSampleDataTests {
 
     @Test("the sheet hands the form the same account kind as the rest of Register")
     func sheetThreadsTheAccountKindIntoTheWorkoutForm() throws {
-        let sheet = try Self.source("BodyFlow/Features/Register/RegistrationSheet.swift")
-        #expect(sheet.contains(
-            "cancel: { perform(.cancel) { await workoutModel.cancel() } },\n"
-                + "                        presentsLocalDemonstration: presentsLocalDemonstration\n"
-        ))
-        #expect(sheet.contains(
-            "initialPerformedAt: model.initialPerformedAt,\n"
-                + "                presentsLocalDemonstration: presentsLocalDemonstration,\n"
-                + "                isSubmitting: model.isSubmitting, submit: propose"
-        ))
-        let form = try Self.source("BodyFlow/Features/Register/WorkoutRegistrationView.swift")
-        #expect(form.contains("presentsLocalDemonstration: Bool = false"))
+        // The whole Register sheet, drawn with each kind of dependencies.
+        let realAccount = try Self.workoutForm(inSheetWith: Self.realAccountDependencies())
+        #expect(realAccount.type == "")
+        #expect(realAccount.duration == "")
+        #expect(!realAccount.proposeEnabled)
+
+        let demonstration = try Self.workoutForm(inSheetWith: AppDependencies.scaffold())
+        #expect(demonstration.type == "musculacao")
+        #expect(demonstration.duration == "47")
+        #expect(demonstration.proposeEnabled)
     }
 
     // MARK: Onboarding · legal documents
 
     @Test("a legal document is titled by its kind, in both languages", arguments: [
         SampleDataBilingualCase("terms_of_service", "Termos de uso", "Terms of use"),
+        // The four keys published on staging on 2026-10-04, as published.
         SampleDataBilingualCase("qa_terms_notice", "Termos de uso", "Terms of use"),
+        SampleDataBilingualCase("qa_privacy_notice", "Política de privacidade", "Privacy policy"),
+        SampleDataBilingualCase("qa_health_ai_notice", "Saúde e inteligência artificial", "Health and AI"),
+        SampleDataBilingualCase("qa_sensitive_data_consent", "Dados sensíveis de saúde", "Sensitive health data"),
+        // The four that replace them.
+        SampleDataBilingualCase("evaluation_1_terms_notice", "Termos de uso", "Terms of use"),
+        SampleDataBilingualCase("evaluation_2_privacy_notice", "Política de privacidade", "Privacy policy"),
+        SampleDataBilingualCase("evaluation_3_health_ai_notice", "Saúde e inteligência artificial", "Health and AI"),
+        SampleDataBilingualCase("evaluation_4_sensitive_data_consent", "Dados sensíveis de saúde", "Sensitive health data"),
         SampleDataBilingualCase("privacy_policy", "Política de privacidade", "Privacy policy"),
         SampleDataBilingualCase("health_ai_consent", "Saúde e inteligência artificial", "Health and AI"),
         SampleDataBilingualCase("consent_ai_processing", "Saúde e inteligência artificial", "Health and AI"),
@@ -207,13 +263,18 @@ struct RealAccountSampleDataTests {
 
     @Test("the consent card shows the title and the body, never the key or the purpose")
     func consentCardHidesTheRawKeyAndPurpose() {
-        let document = Self.document(key: "terms_of_service", purpose: "account_terms_acceptance")
+        let document = Self.document(key: "qa_terms_notice", purpose: "account_terms_acceptance")
+        let model = Self.onboardingModel(step: .consent, documents: [document])
         for language in SupportedAppLanguage.allCases {
-            let presentation = OnboardingLegalDocumentPresentation(document: document, language: language)
-            #expect(presentation.title == (language == Self.pt ? "Termos de uso" : "Terms of use"))
-            #expect(presentation.body == "Corpo do documento para o teste.")
-            #expect(!presentation.visibleText.contains(document.purpose))
-            #expect(!presentation.visibleText.contains(document.documentKey))
+            // The card as drawn: everything VoiceOver can read on it.
+            let labels = Self.accessibilityTree(
+                ConsentStepView(model: model).environment(\.locale, language.formattingLocale),
+                height: 2_400
+            ).labels
+            #expect(labels.contains(language == Self.pt ? "Termos de uso" : "Terms of use"))
+            #expect(labels.contains("Corpo do documento para o teste."))
+            #expect(!labels.contains { $0.contains(document.purpose) })
+            #expect(!labels.contains { $0.contains(document.documentKey) })
         }
     }
 
@@ -301,7 +362,9 @@ struct RealAccountSampleDataTests {
                 .environment(\.locale, Locale(identifier: "pt_BR")),
             height: 2_400
         ).labels
-        #expect(labels.contains { $0.contains("America/New_York") })
+        // The zone is named by its city; the identifier is only stored.
+        #expect(labels.contains { $0.contains("New York") })
+        #expect(!labels.contains { $0.contains("America/New_York") || $0.contains("New_York") })
         #expect(!labels.contains { $0.contains("IANA") })
 
         for language in SupportedAppLanguage.allCases {
@@ -449,6 +512,12 @@ struct RealAccountSampleDataTests {
         SampleDataBilingualCase("plan.draft.notice.edits-dropped",
          "O rascunho foi atualizado e o que você tinha digitado não foi aplicado. Revise a versão atual.",
          "The draft was updated and what you had typed was not applied. Review the current version."),
+        SampleDataBilingualCase("auth.error.service-unavailable",
+         "Não foi possível conectar agora. Tente novamente.", "Could not connect right now. Try again."),
+        SampleDataBilingualCase("reminders.skipped.beyond_budget",
+         "Depois do último horário coberto (agendados na próxima vez que você abrir o app)",
+         "After the last covered time (scheduled the next time you open the app)"),
+        SampleDataBilingualCase("onboarding.welcome.country-picker.search", "Buscar país", "Search country"),
         SampleDataBilingualCase("profile.account.sign-out.confirm",
          "Sair desta conta neste iPhone? Seus dados continuam salvos na sua conta.",
          "Sign out of this account on this iPhone? Your data stays saved in your account."),
@@ -470,9 +539,10 @@ struct RealAccountSampleDataTests {
 
         let banned: [String: [String]] = [
             "pt-BR": ["servidor", "persistid", "detalhes recebidos", "onboarding",
-                      "fornecidos pelo serviço", "definido pelo serviço", "pelo paciente"],
+                      "fornecidos pelo serviço", "definido pelo serviço", "pelo paciente",
+                      "o serviço está", "próxima sincronização", "ou código"],
             "en": ["server", "received details", "by the service", "service set",
-                   "by patient"],
+                   "by patient", "the service is", "later sync", "or code"],
         ]
         var offenders: [String] = []
         for (key, entry) in strings {
@@ -499,7 +569,7 @@ struct RealAccountSampleDataTests {
         try String(contentsOf: projectRoot.appendingPathComponent(path), encoding: .utf8)
     }
 
-    private static func realAccountDependencies() throws -> AppDependencies {
+    static func realAccountDependencies() throws -> AppDependencies {
         AppDependencies.make(
             configuration: .resolve(arguments: [], buildFlavor: .release),
             mobileAPIConfigurationProvider: StaticMobileAPIConfigurationProvider(
@@ -518,7 +588,7 @@ struct RealAccountSampleDataTests {
         )
     }
 
-    private static func document(key: String, purpose: String) -> OnboardingLegalDocument {
+    static func document(key: String, purpose: String) -> OnboardingLegalDocument {
         OnboardingLegalDocument(
             documentKey: key,
             version: "2026-10-01.1",
@@ -533,13 +603,18 @@ struct RealAccountSampleDataTests {
         )
     }
 
-    private static func onboardingModel(
+    static func onboardingModel(
         step: OnboardingStep,
-        documents: [OnboardingLegalDocument]
+        documents: [OnboardingLegalDocument],
+        countryCode: String? = nil,
+        timeZoneIdentifier: String? = nil
     ) -> OnboardingFlowModel {
-        OnboardingFlowModel(
+        var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: step)
+        if let countryCode { draft.countryCode = countryCode }
+        if let timeZoneIdentifier { draft.timeZoneIdentifier = timeZoneIdentifier }
+        return OnboardingFlowModel(
             userID: "fixture-user",
-            initialDraft: BodyFlowTestFixtures.onboardingDraft(currentStep: step),
+            initialDraft: draft,
             repository: InertOnboardingRepository(),
             personaRepository: InertPersonaRepository(),
             developmentConsentAvailability: .unavailable,
@@ -579,20 +654,38 @@ struct RealAccountSampleDataTests {
         }
     }
 
-    private struct WorkoutForm {
+    struct WorkoutForm {
         let type: String
         let duration: String
         let proposeEnabled: Bool
     }
 
-    private static func workoutForm(presentsLocalDemonstration: Bool) throws -> WorkoutForm {
-        let view = WorkoutRegistrationView(
+    private static func workoutForm(
+        presentsLocalDemonstration: Bool,
+        initialProposal: WorkoutProposalRequest? = nil
+    ) throws -> WorkoutForm {
+        try workoutForm(in: WorkoutRegistrationView(
             initialPerformedAt: Date(timeIntervalSince1970: 1_790_000_000),
+            initialProposal: initialProposal,
             presentsLocalDemonstration: presentsLocalDemonstration,
             isSubmitting: false,
             submit: { _ in }
+        ))
+    }
+
+    /// The workout form as the Register sheet itself draws it.
+    private static func workoutForm(inSheetWith dependencies: AppDependencies) throws -> WorkoutForm {
+        try workoutForm(in: RegistrationSheet(
+            sheet: .registration(.training),
+            dependencies: dependencies,
+            invalidationCenter: FeatureInvalidationCenter()
         )
-        .environment(\.locale, Locale(identifier: "pt_BR"))
+        .environment(AppRouter())
+        .installAppDependencies(dependencies))
+    }
+
+    private static func workoutForm<V: View>(in view: V) throws -> WorkoutForm {
+        let view = view.environment(\.locale, Locale(identifier: "pt_BR"))
         return try hosted(view, height: 800) { root in
             var fields: [String: String] = [:]
             var proposeEnabled: Bool?
@@ -614,12 +707,12 @@ struct RealAccountSampleDataTests {
         }
     }
 
-    private struct AccessibilityTree {
+    struct AccessibilityTree {
         var labels: [String] = []
         var identifiers: Set<String> = []
     }
 
-    private static func accessibilityTree<V: View>(_ view: V, height: CGFloat) -> AccessibilityTree {
+    static func accessibilityTree<V: View>(_ view: V, height: CGFloat) -> AccessibilityTree {
         let result: AccessibilityTree? = try? hosted(
             view.environment(\.accessibilityEnabled, true),
             height: height
@@ -661,7 +754,7 @@ struct RealAccountSampleDataTests {
         return result ?? AccessibilityTree()
     }
 
-    private static func hosted<V: View, Result>(
+    static func hosted<V: View, Result>(
         _ view: V,
         height: CGFloat,
         _ read: @MainActor (UIView) throws -> Result
@@ -696,6 +789,21 @@ struct SampleDataBilingualCase: Sendable, CustomTestStringConvertible {
     }
 
     var testDescription: String { subject.isEmpty ? "(empty)" : subject }
+}
+
+/// A workout proposal opened in the form, and whether it may be proposed.
+struct WorkoutFormCase: Sendable, CustomTestStringConvertible {
+    let workoutType: String
+    let durationMin: Int
+    let canPropose: Bool
+
+    init(_ workoutType: String, _ durationMin: Int, _ canPropose: Bool) {
+        self.workoutType = workoutType
+        self.durationMin = durationMin
+        self.canPropose = canPropose
+    }
+
+    var testDescription: String { "\(workoutType.count) characters, \(durationMin) min" }
 }
 
 private struct FixedTodayProvider: TodayProviding {

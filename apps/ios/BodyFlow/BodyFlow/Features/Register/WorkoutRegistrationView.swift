@@ -25,9 +25,17 @@ struct WorkoutRegistrationFormSeed: Equatable, Sendable {
         }
     }
 
-    /// The proposal action needs a type and a whole number of minutes.
+    /// What the server accepts, so the action is offered only for a proposal
+    /// it will take: a type of 1 to 80 characters once trimmed (counted as the
+    /// server counts them) and a whole number of minutes from 1 to 1440.
+    static let workoutTypeLengthLimit = 80
+    static let durationRange = 1...1_440
+
     static func canPropose(workoutType: String, duration: String) -> Bool {
-        !workoutType.isEmpty && Int(duration) != nil
+        let type = workoutType.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !type.isEmpty, type.utf16.count <= workoutTypeLengthLimit,
+              let minutes = Int(duration) else { return false }
+        return durationRange.contains(minutes)
     }
 
     var canPropose: Bool {
@@ -178,6 +186,7 @@ private struct WorkoutActionButton: UIViewRepresentable {
     func updateUIView(_ button: UIButton, context: Context) {
         button.configuration?.title = title
         button.isEnabled = isEnabled
+        context.coordinator.isEnabled = isEnabled
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(action: action) }
@@ -197,10 +206,16 @@ private struct WorkoutActionButton: UIViewRepresentable {
     @MainActor
     final class Coordinator: NSObject {
         private let action: @MainActor () -> Void
+        /// Kept current by `updateUIView`, so a touch that still arrives
+        /// while a request is in flight does not propose twice.
+        var isEnabled = true
 
         init(action: @escaping @MainActor () -> Void) { self.action = action }
 
-        @objc func tapped() { action() }
+        @objc func tapped() {
+            guard isEnabled else { return }
+            action()
+        }
     }
 }
 

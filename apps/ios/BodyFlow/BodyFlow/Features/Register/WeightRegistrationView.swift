@@ -55,6 +55,9 @@ struct WeightRegistrationView: View {
                 isEnabled: !isSubmitting,
                 identifier: "registration.weight.submit"
             ) { submit(value, recordedAt) }
+            // See `HydrationRegistrationView`: only SwiftUI's own modifier
+            // really disables a bridged button.
+            .disabled(isSubmitting)
             .frame(maxWidth: .infinity)
         }
     }

@@ -13,6 +13,15 @@ struct WorkoutProposalPresentation: Equatable, Sendable {
 
     var allowsPendingActions: Bool { status == "pending" }
 
+    /// The stored type and intensity as labels, never as the stored codes.
+    func typeTitle(language: SupportedAppLanguage) -> String? {
+        workoutType.map { RegistrationCopy.workoutTypeTitle(stored: $0, language: language) }
+    }
+
+    func intensityTitle(language: SupportedAppLanguage) -> String? {
+        intensity.map { RegistrationCopy.workoutIntensityTitle(stored: $0, language: language) }
+    }
+
     init(registration: RegistrationSnapshot) {
         registrationID = registration.id
         status = registration.status
@@ -45,9 +54,9 @@ struct WorkoutProposalView: View {
             Text(copy("registration.proposal.workout-title"))
                 .font(BodyFlowTypography.title)
                 .fontWeight(.semibold)
-            if let workoutType = proposal.workoutType { Text(workoutType) }
+            if let workoutType = proposal.typeTitle(language: language) { Text(workoutType) }
             if let durationMin = proposal.durationMin { Text("\(decimalText(durationMin)) min") }
-            if let intensity = proposal.intensity { Text(intensity) }
+            if let intensity = proposal.intensityTitle(language: language) { Text(intensity) }
             if let estimatedKcal = proposal.estimatedKcal {
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
                     Text(copy("registration.workout.estimated-energy"))
@@ -67,6 +76,10 @@ struct WorkoutProposalView: View {
                     role: .primary,
                     action: confirm
                 )
+                // SwiftUI writes the environment's enabled state into a
+                // bridged UIControl after `updateUIView`, so a request in
+                // flight has to be declared here to disable the actions.
+                .disabled(isSubmitting)
                 WorkoutProposalActionButton(
                     title: copy("registration.proposal.edit"),
                     isEnabled: !isSubmitting,
@@ -74,6 +87,7 @@ struct WorkoutProposalView: View {
                     role: .secondary,
                     action: edit
                 )
+                .disabled(isSubmitting)
                 WorkoutProposalActionButton(
                     title: copy("registration.proposal.cancel"),
                     isEnabled: !isSubmitting,
@@ -81,6 +95,7 @@ struct WorkoutProposalView: View {
                     role: .tertiary,
                     action: cancel
                 )
+                .disabled(isSubmitting)
             }
         }
         .accessibilityElement(children: .contain)
@@ -146,6 +161,7 @@ private struct WorkoutProposalActionButton: UIViewRepresentable {
     func updateUIView(_ button: UIButton, context: Context) {
         button.configuration?.title = title
         button.isEnabled = isEnabled
+        context.coordinator.isEnabled = isEnabled
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(action: action) }
@@ -176,9 +192,15 @@ private struct WorkoutProposalActionButton: UIViewRepresentable {
     @MainActor
     final class Coordinator: NSObject {
         private let action: @MainActor () -> Void
+        /// Kept current by `updateUIView`, so a touch that still arrives
+        /// while a request is in flight does not act twice.
+        var isEnabled = true
 
         init(action: @escaping @MainActor () -> Void) { self.action = action }
 
-        @objc func tapped() { action() }
+        @objc func tapped() {
+            guard isEnabled else { return }
+            action()
+        }
     }
 }

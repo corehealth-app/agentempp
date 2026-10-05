@@ -12,7 +12,7 @@ struct HistoryWorkoutDetailView: View {
                     // One card: the workout's name, then its figures.
                     BodyFlowCard {
                         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-                            Text(row.workoutType ?? copy("history.workout.fallback"))
+                            Text(values.workoutType(row.workoutType) ?? copy("history.workout.fallback"))
                                 .font(BodyFlowTypography.screenTitle)
                                 .foregroundStyle(BodyFlowColor.primaryText)
                                 .fixedSize(horizontal: false, vertical: true)

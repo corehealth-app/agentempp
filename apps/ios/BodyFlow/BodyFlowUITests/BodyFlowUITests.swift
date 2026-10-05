@@ -601,7 +601,7 @@ final class BodyFlowUITests: XCTestCase {
         )
         XCTAssertTrue(
             app.staticTexts[
-                "O serviço está temporariamente indisponível. Tente novamente."
+                "Não foi possível conectar agora. Tente novamente."
             ]
             .waitForExistence(timeout: 3)
         )

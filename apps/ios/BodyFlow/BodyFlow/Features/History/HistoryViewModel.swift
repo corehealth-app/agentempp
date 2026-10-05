@@ -46,6 +46,11 @@ struct HistoryValuePresentation: Equatable, Sendable {
         integer(value, key: "history.workout.energy-format")
     }
 
+    /// The stored workout type as a label ("musculacao" reads "Musculação").
+    func workoutType(_ stored: String?) -> String? {
+        stored.map { RegistrationCopy.workoutTypeTitle(stored: $0, language: language) }
+    }
+
     private func decimal(
         _ value: Decimal?,
         key: String.LocalizationValue

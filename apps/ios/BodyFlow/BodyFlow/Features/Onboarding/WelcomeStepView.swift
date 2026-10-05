@@ -51,7 +51,7 @@ struct WelcomeStepView: View {
                         model.updateCountryCode($0)
                     }
                 } label: {
-                    selectionRow(countryName, detail: model.draft.countryCode)
+                    selectionRow(countryName, detail: nil)
                 }
                 .buttonStyle(.bodyFlowRow)
                 .accessibilityHint(
@@ -72,7 +72,7 @@ struct WelcomeStepView: View {
                         model.updateTimeZoneIdentifier($0)
                     }
                 } label: {
-                    selectionRow(model.draft.timeZoneIdentifier, detail: nil)
+                    selectionRow(timeZone.city, detail: timeZone.zoneName)
                 }
                 .buttonStyle(.bodyFlowRow)
                 .accessibilityHint(
@@ -105,13 +105,26 @@ struct WelcomeStepView: View {
         OnboardingCountryPresentation.name(for: model.draft.countryCode, language: language)
     }
 
+    private var timeZone: OnboardingTimeZonePresentation {
+        OnboardingTimeZonePresentation(
+            identifier: model.draft.timeZoneIdentifier,
+            language: language
+        )
+    }
+
     private func selectionRow(_ title: String, detail: String?) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: BodyFlowSpacing.sm) {
-            Text(title).foregroundStyle(BodyFlowColor.primaryText)
-            Spacer(minLength: BodyFlowSpacing.sm)
-            if let detail {
-                Text(detail).foregroundStyle(BodyFlowColor.secondaryText)
+            // The detail sits under the title, so a long zone name wraps
+            // instead of squeezing the city at large text sizes.
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
+                Text(title).foregroundStyle(BodyFlowColor.primaryText)
+                if let detail {
+                    Text(detail)
+                        .font(BodyFlowTypography.callout)
+                        .foregroundStyle(BodyFlowColor.secondaryText)
+                }
             }
+            Spacer(minLength: BodyFlowSpacing.sm)
             Image(symbol: .chevron)
                 .font(BodyFlowTypography.caption)
                 .foregroundStyle(BodyFlowColor.secondaryText)
@@ -126,15 +139,28 @@ struct WelcomeStepView: View {
 }
 
 @MainActor
-private struct CountrySelectionView: View {
+struct CountrySelectionView: View {
     let selectedCode: String
     let language: SupportedAppLanguage
     let onSelect: (String) -> Void
-    @State private var query = ""
+    @State private var query: String
     @Environment(\.dismiss) private var dismiss
 
+    init(
+        selectedCode: String,
+        language: SupportedAppLanguage,
+        initialQuery: String = "",
+        onSelect: @escaping (String) -> Void
+    ) {
+        self.selectedCode = selectedCode
+        self.language = language
+        self.onSelect = onSelect
+        _query = State(initialValue: initialQuery)
+    }
+
     var body: some View {
-        List(filteredRegions, id: \.identifier) { region in
+        let regions = OnboardingCountryPresentation.regions(matching: query, language: language)
+        List(regions, id: \.identifier) { region in
             Button {
                 onSelect(region.identifier)
                 dismiss()
@@ -142,7 +168,6 @@ private struct CountrySelectionView: View {
                 HStack {
                     Text(name(for: region.identifier))
                     Spacer()
-                    Text(region.identifier).foregroundStyle(BodyFlowColor.secondaryText)
                     if region.identifier == selectedCode {
                         Image(symbol: .confirm)
                             .accessibilityLabel(copy("onboarding.selection.selected"))
@@ -154,22 +179,20 @@ private struct CountrySelectionView: View {
             .bodyFlowListRow()
         }
         .bodyFlowList()
+        .overlay {
+            if regions.isEmpty {
+                OnboardingPickerEmptyMessage(
+                    copy("onboarding.welcome.country-picker.empty"),
+                    identifier: "onboarding.country-picker.empty"
+                )
+            }
+        }
         .navigationTitle(copy("onboarding.welcome.country-picker.title"))
         .navigationBarTitleDisplayMode(.inline)
         .searchable(
             text: $query,
             prompt: copy("onboarding.welcome.country-picker.search")
         )
-    }
-
-    private var filteredRegions: [Locale.Region] {
-        Locale.Region.isoRegions
-            .filter { region in
-                query.isEmpty
-                    || region.identifier.localizedCaseInsensitiveContains(query)
-                    || name(for: region.identifier).localizedCaseInsensitiveContains(query)
-            }
-            .sorted { name(for: $0.identifier) < name(for: $1.identifier) }
     }
 
     private func name(for code: String) -> String {
@@ -182,33 +205,61 @@ private struct CountrySelectionView: View {
 }
 
 @MainActor
-private struct TimeZoneSelectionView: View {
+struct TimeZoneSelectionView: View {
     let selectedIdentifier: String
     let language: SupportedAppLanguage
     let onSelect: (String) -> Void
-    @State private var query = ""
+    @State private var query: String
     @Environment(\.dismiss) private var dismiss
 
+    init(
+        selectedIdentifier: String,
+        language: SupportedAppLanguage,
+        initialQuery: String = "",
+        onSelect: @escaping (String) -> Void
+    ) {
+        self.selectedIdentifier = selectedIdentifier
+        self.language = language
+        self.onSelect = onSelect
+        _query = State(initialValue: initialQuery)
+    }
+
     var body: some View {
-        List(filteredIdentifiers, id: \.self) { identifier in
+        let zones = OnboardingTimeZonePresentation.zones(matching: query, language: language)
+        List(zones) { zone in
             Button {
-                onSelect(identifier)
+                onSelect(zone.identifier)
                 dismiss()
             } label: {
                 HStack {
-                    Text(identifier)
+                    VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
+                        Text(zone.city)
+                        if let zoneName = zone.zoneName {
+                            Text(zoneName)
+                                .font(BodyFlowTypography.callout)
+                                .foregroundStyle(BodyFlowColor.secondaryText)
+                        }
+                    }
                     Spacer()
-                    if identifier == selectedIdentifier {
+                    if zone.identifier == selectedIdentifier {
                         Image(symbol: .confirm)
                             .accessibilityLabel(copy("onboarding.selection.selected"))
                     }
                 }
             }
             .foregroundStyle(BodyFlowColor.primaryText)
-            .accessibilityAddTraits(identifier == selectedIdentifier ? .isSelected : [])
+            .accessibilityAddTraits(zone.identifier == selectedIdentifier ? .isSelected : [])
             .bodyFlowListRow()
         }
         .bodyFlowList()
+        .overlay {
+            if zones.isEmpty {
+                OnboardingPickerEmptyMessage(
+                    copy("onboarding.welcome.time-zone-picker.empty"),
+                    identifier: "onboarding.timezone-picker.empty"
+                )
+            }
+        }
         .navigationTitle(copy("onboarding.welcome.time-zone-picker.title"))
         .navigationBarTitleDisplayMode(.inline)
         .searchable(
@@ -217,14 +268,29 @@ private struct TimeZoneSelectionView: View {
         )
     }
 
-    private var filteredIdentifiers: [String] {
-        TimeZone.knownTimeZoneIdentifiers.filter {
-            query.isEmpty || $0.localizedCaseInsensitiveContains(query)
-        }
-    }
-
     private func copy(_ key: String.LocalizationValue) -> String {
         OnboardingCopy.string(key, language: language)
+    }
+}
+
+/// A search with no result says so instead of leaving a blank list.
+@MainActor
+private struct OnboardingPickerEmptyMessage: View {
+    let message: String
+    let identifier: String
+
+    init(_ message: String, identifier: String) {
+        self.message = message
+        self.identifier = identifier
+    }
+
+    var body: some View {
+        Text(message)
+            .font(BodyFlowTypography.body)
+            .foregroundStyle(BodyFlowColor.secondaryText)
+            .multilineTextAlignment(.center)
+            .padding(BodyFlowSpacing.lg)
+            .accessibilityIdentifier(identifier)
     }
 }
 

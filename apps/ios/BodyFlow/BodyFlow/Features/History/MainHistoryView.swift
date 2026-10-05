@@ -80,7 +80,7 @@ struct MainHistoryView: View {
                     BodyFlowCard {
                         HStack(alignment: .center, spacing: BodyFlowSpacing.sm) {
                             VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                                Text(row.workoutType ?? copy("history.workout.fallback"))
+                                Text(values.workoutType(row.workoutType) ?? copy("history.workout.fallback"))
                                     .font(BodyFlowTypography.headline)
                                     .foregroundStyle(BodyFlowColor.primaryText)
                                 if let duration = values.duration(row.durationMin) {

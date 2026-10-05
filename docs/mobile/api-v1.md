@@ -189,6 +189,10 @@ Erros específicos: `409 onboarding_requirements_changed` solicita novo GET;
 `503 onboarding_documents_unavailable`. Respostas não incluem detalhes internos do
 banco e usam `Cache-Control: no-store` e `Vary: Authorization`.
 
+No ambiente de avaliação, a primeira conclusão pode conceder um acesso de N
+dias sem mudar esta resposta: ver "Acesso de avaliação automático". Desligado
+por padrão.
+
 O campo `country_confirmed` de `/me` indica se o país operacional já foi
 confirmado. Propostas de refeição retornam `409 country_confirmation_required`
 enquanto ele for falso; a API não usa o `BR` provisório de contas novas para
@@ -433,6 +437,169 @@ referência sempre inteira, multiplicador lido como número) ficou dentro da v3:
 nenhum campo novo, e a parte que muda número tem interruptor próprio,
 `DAY_BALANCE_DAY_ROW_GUARD`
 (`packages/core/src/engine/day-balance-inputs.ts`).
+
+### Fechamento do dia sob demanda (ambiente de avaliação)
+
+Em produção o dia é fechado pelo worker, de madrugada, e estas duas rotas só
+leem. No ambiente de avaliação (staging) o worker serve só o processamento de
+mídia, então nenhum dia fechava e `block_7700`, sequência, XP, nível e medalhas
+ficavam parados. Para esse ambiente, `GET /today` e `GET /progress` podem
+fechar os dias passados da conta **antes** de ler. Regras e números:
+`docs/CALCULO-MPP.md` §3a.
+
+**Desligado por padrão.** São necessárias três travas, todas:
+
+| Trava | Onde | Valor |
+|---|---|---|
+| 1 | variável `MOBILE_DAY_CLOSE_FROM` | primeira data local que pode ser fechada, `YYYY-MM-DD`. Ausente, vazia ou fora do formato = desligado, e **nenhuma consulta é feita** |
+| 2 | variável `MOBILE_DAY_CLOSE_PROJECT_REF` | ref(s) de projeto permitidos, separados por vírgula. O ref é lido de `NEXT_PUBLIC_SUPABASE_URL` e precisa estar na lista. O ref de produção é recusado em código, mesmo se listado |
+| 3 | a conta | sem número de WhatsApp e com fuso preenchido |
+
+- **Nunca em produção.** As duas variáveis só devem existir no projeto Vercel
+  do BFF de staging. Se forem copiadas por engano para um projeto que aponta
+  para o banco de produção, a trava 2 recusa.
+- **Só estas duas rotas.** As outras 46 não chamam o fechamento; o invólucro
+  comum das rotas não o conhece.
+- **O formato das respostas não muda.** Nenhum campo novo, nenhuma versão
+  nova: os mesmos campos passam a trazer os valores de `user_progress` depois
+  do fechamento.
+- **Uma leitura que escreve.** Com as travas abertas, o primeiro pedido do dia
+  grava em `daily_snapshots`, `user_progress` e `product_events`. Custo por
+  pedido, além da leitura de sempre: uma consulta (a conta); mais uma quando
+  ontem já fechou; mais cinco, sem escrita, quando ontem não tem registro; e
+  cerca de quinze idas ao banco por dia fechado, até 3 dias ou 4 s por pedido
+  (o resto fecha no pedido seguinte, em ordem).
+- **Falha não derruba o pedido.** Um erro no fechamento é registrado sem dado
+  pessoal (`[mobile-api] day_close_failed`, com `request_id` e o nome do erro)
+  e a rota responde normalmente com o que está gravado.
+- **Não envia nada**: sem mensagem, sem push, sem evento, sem chamada a
+  modelo. A agenda de reavaliação de 14 dias não é avançada por este caminho.
+- Dia de **hoje** nunca fecha; **ontem** só fecha 30 minutos depois da
+  meia-noite no fuso da conta.
+- **Ontem fechado a partir das 05:00 locais mantém a meta já gravada no dia**
+  (o fechador de produção só fecha ontem até 04:59; um peso registrado hoje
+  de manhã não muda a meta de ontem). Entre 00:30 e 04:59 grava a meta do
+  perfil, como a produção.
+- **Em ordem, sem pular.** Se um dia muda enquanto é fechado (um registro
+  retroativo confirmado naquele instante, ou `GET /today` e `GET /progress`
+  chegando juntos num dia só com mensagem), o pedido para naquele dia e não
+  fecha os posteriores; um pedido seguinte fecha todos, em ordem.
+
+Para fechar os dias que já estavam abertos antes de ligar o interruptor, há o
+script de operador `scripts/close-open-days.ts` (simulação por padrão; recusa
+qualquer banco que não seja o de staging, e recusa URL que não seja https).
+Com `MOBILE_DAY_CLOSE_FROM` numa data posterior a esses dias, a API não toca
+neles. A partir da raiz do repositório, com `SUPABASE_URL` e
+`SUPABASE_SERVICE_ROLE_KEY` de staging já no shell (`tsx` só existe no pacote
+`scripts`, por isso `pnpm tsx scripts/...` não inicia):
+
+```
+TZ=UTC pnpm --dir scripts exec tsx close-open-days.ts --from 2026-09-22
+```
+
+Código: `apps/admin/src/lib/mobile-api/day-close-on-request.ts`. Testes:
+`day-close-on-request.test.ts`, `day-close-on-request.concurrent.test.ts` (as
+duas rotas ao mesmo tempo) e os `route.test.ts` de `today` e `progress`.
+Nenhuma rota nova: o manifesto de 48 rotas do BFF é o mesmo.
+
+## Acesso de avaliação automático (ambiente de avaliação)
+
+Sem entitlement, toda rota fora de conta, perfil, onboarding, entitlements,
+persona, devices e preferências de notificação responde
+`402 subscription_required`. O app não tem tela de compra, então até aqui cada
+conta nova dependia de um operador conceder um trial por SQL
+(`public.apply_entitlement_event`, `source = 'manual'`). Decisão do dono em
+2026-10-05: conta nova no ambiente de teste já nasce com 30 dias de acesso.
+
+Com o interruptor ligado, a **primeira** conclusão de onboarding da conta
+(`POST /onboarding` no formato com `document_actions`, logo depois de a RPC
+atômica `complete_mobile_onboarding_atomic` responder) concede um trial manual
+pela mesma RPC do domínio.
+
+**Desligado por padrão.** São necessárias quatro travas, todas:
+
+| Trava | Onde | Valor |
+|---|---|---|
+| a | variável `MOBILE_EVALUATION_ACCESS_DAYS` | número de dias de acesso, inteiro de `1` a `90`, só dígitos. Ausente, vazia, `0`, `91`, `30.0`, `030` ou qualquer outro texto = desligado, e **nenhuma consulta é feita** |
+| b | variável `MOBILE_EVALUATION_ACCESS_PROJECT_REF` | ref(s) de projeto permitidos, separados por vírgula. O ref é lido de `NEXT_PUBLIC_SUPABASE_URL` e precisa estar na lista. O ref de produção é recusado em código, mesmo se listado |
+| c | variável `MOBILE_EVALUATION_ACCESS_ACTOR_ID` | uuid do ator de auditoria que o domínio exige em entitlement manual (`actor_id`). Não é segredo. Ausente, fora do formato ou só zeros = desligado |
+| d | a conta | nenhum evento em `entitlement_events` (de qualquer chave) e decisão `no_entitlement` em `resolve_user_entitlement`. Acesso vencido ou bloqueado não é renovado, e conta que já tem acesso não é tocada |
+
+O que é gravado, uma vez por conta. Chave, origem, status, plano e ambiente
+são os dos quatro trials manuais ativos que já existem em staging (lidos lá em
+2026-10-05 — só colunas e enums); o tipo de evento é o de três deles (o quarto
+usa `grant`):
+
+| Campo | Valor |
+|---|---|
+| `entitlement_key` | `bodyflow_full` |
+| `source` | `manual` |
+| `event_type` | `manual.qa.grant` |
+| `status` / `plan` / `environment` | `active` / `trial` / `sandbox` |
+| `reason_code` | `closed_evaluation_auto` (é o que distingue esta concessão das manuais) |
+| `actor_id` | o uuid da trava c |
+| `source_reference` | `closed-evaluation-auto:<id da conta>` |
+| `provider_event_id` | `closed-evaluation-auto:<id da conta>:grant` |
+| `starts_at` = `occurred_at` | a hora do servidor logo depois da conclusão |
+| `access_expires_at` | `starts_at` + N × 24 h |
+| `grace_expires_at` / `cancel_at_period_end` | `null` / `false` |
+
+- **Nunca em produção.** As três variáveis só devem existir no projeto Vercel
+  do BFF de staging. Se forem copiadas por engano para um projeto que aponta
+  para o banco de produção, a trava b recusa.
+- **Uma vez só.** Só a primeira conclusão concede: antes de gravar a
+  conclusão, a API lê `user_profiles.onboarding_completed_at`, que precisa
+  estar vazio. Reenvio da mesma conclusão, os mesmos dados do cadastro com
+  outra `Idempotency-Key` e aceite posterior de documentos novos não concedem
+  de novo nem mudam o vencimento. Duas primeiras conclusões simultâneas terminam
+  em uma concessão: o id do evento é derivado do id da conta e o banco
+  responde `duplicate` à segunda.
+- **O formato das respostas não muda.** `POST /onboarding` devolve os mesmos
+  bytes com o interruptor ligado ou desligado. `GET /entitlements` passa a
+  devolver `has_active_access: true`, `status: "active"`, `source: "manual"`,
+  `plan: "trial"`, `reason: "valid_entitlement"` e o `access_expires_at`.
+- **Custo por conclusão**, com as travas a–c abertas: uma leitura antes da
+  conclusão (`user_profiles`); na primeira conclusão, mais uma leitura
+  (`entitlement_events`), uma chamada a `resolve_user_entitlement` e a chamada
+  a `apply_entitlement_event`. O formato parcial legado do mesmo POST não
+  conclui onboarding e não consulta nada.
+- **Falha não derruba o cadastro.** Um erro em qualquer uma dessas consultas é
+  registrado sem dado pessoal (`[mobile-api] evaluation_access_failed`, com
+  `request_id`, a etapa e o nome do erro) e o onboarding responde normalmente.
+  A conta fica criada, sem acesso, e a concessão passa a ser manual.
+- **Não envia nada**: sem mensagem, sem push, sem evento, sem chamada a
+  modelo. O único efeito é a linha em `entitlement_events` e a linha em
+  `user_entitlements`.
+- **Só o handler do onboarding chama.** As outras rotas, o invólucro comum e
+  o serviço de entitlement não conhecem o módulo.
+
+O que não está coberto:
+
+> RC EA — cenário conta que concluiu o onboarding ANTES de o interruptor ser ligado NÃO coberto nesta PR (pendência da audit 2026-10-04). Não recebe nada, nem reenviando a conclusão nem aceitando documentos novos depois: segue dependendo da concessão manual do operador. Travado em evaluation-access.test.ts.
+
+> RC EA — cenário acesso vencido (N dias depois) ou bloqueado NÃO coberto nesta PR (pendência da audit 2026-10-04). Não é renovado por este caminho: a conta volta a receber 402 e a renovação é manual. Travado em evaluation-access.test.ts.
+
+> RC EA — cenário compra ou assinatura pelo app NÃO coberto nesta PR (pendência da audit 2026-10-04). Não existe tela nem caminho de compra; `mobile_billing.available` segue `false`.
+
+> RC EA — cenário nova tentativa depois de uma concessão que falhou, ou de uma função encerrada entre a conclusão e a concessão NÃO coberto nesta PR (pendência da audit 2026-10-04). A conta fica criada e sem acesso; reenviar a conclusão não concede (a conta já tem data de conclusão). A falha fica no log `[mobile-api] evaluation_access_failed` e a concessão é manual.
+
+> RC EA — cenário funções `apply_entitlement_event` e `resolve_user_entitlement` REAIS do Postgres NÃO coberto nesta PR (pendência da audit 2026-10-04). Os testes usam um banco em memória que reproduz as duas; nada foi gravado em staging, e a primeira concessão real só acontece depois de ligar o interruptor.
+
+> RC EA — cenário ator de auditoria que não existe NÃO coberto nesta PR (pendência da audit 2026-10-04). `actor_id` não tem chave estrangeira: o código só confere que a variável é um uuid diferente de zero, não que ele seja de um operador cadastrado.
+
+> RC EA — cenário tela do iPhone (primeira tela depois do onboarding vista no aparelho com o interruptor ligado) NÃO coberto nesta PR (pendência da audit 2026-10-04). Nada foi executado no aparelho nem no simulador.
+
+> RC EA — cenário relógio de outra instância da API atrasado em relação à que concedeu NÃO coberto nesta PR (pendência da audit 2026-10-04). O início do acesso é a hora da instância que concedeu; outra instância com o relógio atrás responde 402 até alcançá-la.
+
+> RC EA — cenário a mesma pessoa criando outra conta (outro e-mail) NÃO coberto nesta PR (pendência da audit 2026-10-04). Cada conta nova que conclui o onboarding recebe os N dias; não há limite por pessoa nem por aparelho.
+
+Código: `apps/admin/src/lib/mobile-api/evaluation-access.ts`, chamado só por
+`apps/admin/src/app/api/mobile/v1/onboarding/handler.ts`. Testes:
+`evaluation-access.test.ts` (handler, idempotência, serviço e repositório
+reais sobre um banco em memória) e `evaluation-access.no-send.test.ts` (o
+módulo só importa o invólucro de rota, não chama rede e só faz as duas
+leituras e as duas RPCs acima). Nenhuma rota nova e nenhuma migration: o
+manifesto de 48 rotas do BFF é o mesmo.
 
 ## Suplementos, medicamentos e adesão de rotina
 
@@ -1920,6 +2087,21 @@ no app, e as propostas não existem no WhatsApp.
 As kcal são calculadas no servidor pelo tipo, duração, intensidade e peso do
 perfil, com fallback determinístico de 70 kg quando o peso ainda não existe.
 
+`workout_type` é texto livre (1 a 80 caracteres depois do trim). Desde
+2026-10-04, só para a consulta da taxa, o servidor normaliza o texto
+(minúsculas, sem acento, espaços, hífens e "_" viram um único "_") e o casa com
+um slug ativo do catálogo `workout_types` ou, na falta, com o nome de exibição
+de um único slug: "Natação", 40 min, moderada, 70 kg → 400 kcal (antes 240). O
+`workout_type` devolvido e gravado continua o texto enviado; o formato da
+resposta não mudou. Um tipo que o catálogo não tem ("Capoeira") ou escrito com
+outra palavra ("Bike") segue na taxa genérica (6,0 kcal/min), sem aviso na
+resposta. Proposta, edição e confirmação de treino leem o catálogo uma vez
+cada. Se essa leitura falha: um `workout_type` que já está em forma de slug
+(minúsculas, sem acento, sem espaço nem hífen, como `musculacao`) é calculado
+como antes da mudança; qualquer outro texto responde
+`500 workout_calculation_failed`. Regra, números e pendências:
+`docs/CALCULO-MPP.md` §2d.
+
 ## Ciclo do pending
 
 1. `propose` calcula e cria um pending; um novo pending cancela o anterior do
@@ -2022,6 +2204,9 @@ perfil, com fallback determinístico de 70 kg quando o peso ainda não existe.
 - O CMS educativo não inclui tela iOS, campanhas automáticas, comentários,
   busca textual, HTML rico, mídia inline ou geração/publicação por IA.
 - `entitlements` informa assinaturas existentes, mas declara StoreKit indisponível.
+  Não há caminho de compra; no ambiente de avaliação o acesso vem de concessão
+  manual ou, com o interruptor ligado, da concessão automática da primeira
+  conclusão de onboarding ("Acesso de avaliação automático").
 - Suplementos e medicamentos têm CRUD versionado, `dose_text` controlado pelo
   paciente, múltiplos horários e histórico de adesão. Orientação clínica,
   recomendação de dose e prescrição permanecem fora do escopo.

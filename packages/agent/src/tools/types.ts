@@ -64,6 +64,16 @@ export interface ToolContext {
    * context has no patient text, so a second identical lunch confirmed one
    * minute later silently replaced the first row (541 kcal instead of 780). */
   additiveConfirmation?: boolean
+  /** The catalogue slug `registra_treino` hands to `calc_workout_kcal` in
+   * place of `args.workout_type`, for the kcal lookup ONLY: the stored type,
+   * the idempotency and the 6 h dedup keep using `args.workout_type`. Set
+   * ONLY by the mobile BFF (`confirmRegistration`), and only when the type
+   * typed in the app resolves to another spelling in `workout_types`
+   * ("Natação" → `natacao`), so the confirmation writes the kcal the proposal
+   * showed. Absent = the tool sends `args.workout_type`, exactly as before
+   * the field existed. Never set by the WhatsApp pipeline or its button tap,
+   * and never read from a payload. docs/CALCULO-MPP.md §2d. */
+  workoutKcalLookupSlug?: string
   /** Set by the pipeline from the server-side channel only ('flow' on the
    * mobile Flow). Absent = the legacy identity. Never read from a payload. */
   assistantIdentity?: GeneratorIdentity

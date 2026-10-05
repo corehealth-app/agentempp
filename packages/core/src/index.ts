@@ -14,6 +14,7 @@ export {
   type DayStatus,
 } from './engine/bloco.js'
 export * from './engine/day-balance-inputs.js'
+export * from './engine/day-status.js'
 export * from './engine/protocols.js'
 export * from './engine/targets.js'
 export * from './entitlements.js'

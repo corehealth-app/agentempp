@@ -189,6 +189,22 @@ legacy migration requires a separate aggregate audit and explicit approval.
 - Provider outages do not revoke an already valid record before its known
   expiry; missing or unverifiable new claims do not grant access.
 
+### Closed evaluation on the test environment (added 2026-10-05)
+
+The rule above stands: nothing is inferred, and production grants nothing on
+its own. On the test environment only, and off by default, the mobile API can
+write the explicit record itself: the first onboarding completion of an
+account that has no entitlement event of any kind calls
+`apply_entitlement_event` once with `source = 'manual'`, status `active`, plan
+`trial`, environment `sandbox`, reason code `closed_evaluation_auto`, the
+audit actor configured in `MOBILE_EVALUATION_ACCESS_ACTOR_ID`, and an expiry
+of `MOBILE_EVALUATION_ACCESS_DAYS` × 24 hours (1 to 90). The project ref of
+the database must be listed in `MOBILE_EVALUATION_ACCESS_PROJECT_REF`, and the
+production ref is refused in code. It is never renewed, an account that
+completed onboarding before the switch was on gets nothing, and there is still
+no purchase path. Locks, written fields, costs and what is not covered:
+`docs/mobile/api-v1.md`, "Acesso de avaliação automático".
+
 ## API Contract
 
 `GET /api/mobile/v1/entitlements` returns:

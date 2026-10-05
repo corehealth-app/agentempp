@@ -41,7 +41,7 @@ const SAFE_UNEXPECTED_ERROR_NAMES = new Set([
   'AbortError',
 ])
 
-function safeUnexpectedErrorName(error: unknown): string {
+export function safeUnexpectedErrorName(error: unknown): string {
   return error instanceof Error && SAFE_UNEXPECTED_ERROR_NAMES.has(error.name)
     ? error.name
     : 'UnknownError'

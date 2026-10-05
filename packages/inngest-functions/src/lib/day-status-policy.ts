@@ -1,20 +1,4 @@
-import type { DayStatus } from '@mpp/core'
-
-interface ClosedDayStatusInput {
-  existingDayStatus: string | null
-  reminderSent: boolean
-  hasActivity: boolean
-  gapCount: number
-  skippedCount: number
-  fallbackPattern: boolean
-}
-
-export function resolveClosedDayStatus(input: ClosedDayStatusInput): DayStatus {
-  const unresolvedReminderGap =
-    input.hasActivity && input.reminderSent && input.gapCount > 0 && !input.fallbackPattern
-  if (unresolvedReminderGap) return 'incomplete_no_response'
-  if (input.skippedCount > 0 || input.existingDayStatus === 'user_skipped') {
-    return 'user_skipped'
-  }
-  return 'complete'
-}
+// The rule lives in @mpp/core (engine/day-status) since 2026-10-04, so the
+// shared close function of @mpp/agent calls the same function as this worker.
+// This file stays so the worker's imports and its test keep their path.
+export { resolveClosedDayStatus } from '@mpp/core'

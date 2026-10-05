@@ -57,7 +57,8 @@ export function getTzOffset(tz: string, when: Date = new Date()): string {
     .replace(/^([+-]\d{4})$/, (_, s) => `${s.slice(0, 3)}:${s.slice(3)}`) // -0400 → -04:00
 }
 
-function addIsoDateDays(date: string, days: number): string {
+/** Calendar arithmetic on a YYYY-MM-DD date; no time zone is involved. */
+export function addIsoDateDays(date: string, days: number): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`invalid ISO date: ${date}`)
   const parsed = new Date(`${date}T00:00:00.000Z`)
   if (!Number.isFinite(parsed.getTime())) throw new Error(`invalid ISO date: ${date}`)

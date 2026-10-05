@@ -569,6 +569,90 @@ Pendências declaradas (critério do CLAUDE.md):
 
 > RC R1/R2 — cenário painel admin (/users/[id] e /formulas, que mostram a coluna gerada e a fórmula antiga) NÃO coberto nesta PR (pendência da audit 2026-10-04).
 
+### 2d. kcal do exercício: o tipo digitado no app (regra W)
+
+De onde vem o kcal de um treino sem foto: `calc_workout_kcal` (SQL, migration
+`20260504165600`; lida no staging em 2026-10-04 — os testes a emulam, não a
+executam):
+
+```
+kcal = ROUND(kcal_per_min × duração_min × fator × peso_kg / 70)
+```
+- `kcal_per_min`: linha ativa de `workout_types` cujo slug é o `lower()` do
+  tipo recebido; se não houver, a linha 'outro' (6,0).
+- `fator`: leve 0,75 · moderada 1,0 · alta 1,25. Peso do perfil; 70 kg quando
+  o perfil não tem peso.
+
+**App, desde 2026-10-04.** No iPhone o tipo é texto livre e a API o passava
+como digitado: "Natação" não é o slug `natacao` e saía pela taxa genérica, sem
+aviso. Agora a API do app, **só para a consulta da taxa**, normaliza o texto
+(trim, minúsculas, sem acento, espaços, hífens e "_" viram um único "_") e usa
+o resultado quando ele é um slug ativo; senão, o único slug ativo cujo
+`display_name`, normalizado do mesmo jeito, é igual ("Polichinelos" →
+`jumping_jacks`); senão passa o texto como digitado e a função cai em 'outro',
+como antes. Sem sinônimo e sem busca aproximada. Vale na proposta, na edição e
+na confirmação (`registra_treino` recalcula ao gravar: só na proposta, a tela
+mostraria 400 e o banco gravaria 240). **O tipo gravado e mostrado continua o
+texto digitado** (`workoutType` do pending, `workout_logs.workout_type`); só o
+kcal muda.
+
+**Como a confirmação entrega o slug à ferramenta.** Por um campo opcional e
+tipado do contexto, `workoutKcalLookupSlug` (`packages/agent/src/tools/types.ts`),
+definido só pela confirmação do app e só quando o texto digitado resolve para
+outra grafia. `registra_treino` o lê em um único ponto, o argumento `p_slug` de
+`calc_workout_kcal` (`ctx.workoutKcalLookupSlug ?? args.workout_type`); o tipo
+gravado, a idempotência e o descarte de treino idêntico em 6 h continuam
+usando o texto recebido. O cliente de banco entregue à ferramenta é o próprio
+cliente, sem invólucro. **No WhatsApp o campo nunca é definido** (nem o
+pipeline nem o toque de botão o mencionam) e a ferramenta envia ao banco
+exatamente o que enviava: leituras, RPCs e argumentos travados em
+`packages/agent/src/tools-workout-kcal-lookup.test.ts`. Lá o modelo escolhe o
+slug pela lista da ferramenta.
+
+**Leitura do catálogo.** A consulta da taxa lê `workout_types` uma vez em toda
+proposta, edição e confirmação de treino do app, inclusive para slug exato e
+tipo desconhecido. Se essa leitura falha: texto que já está em forma de slug
+(igual à própria normalização, como `musculacao`) segue como digitado, como
+antes da mudança; qualquer outro texto ("Natação", "Capoeira") responde
+`500 workout_calculation_failed`, e nada é gravado nem alterado.
+
+Caso do revisor ("Natação", 40 min, moderada, 70 kg): antes 'outro'
+6,0 × 40 × 1,0 × 70/70 = **240**; agora `natacao` 10,0 × 40 × 1,0 × 70/70 =
+**400**. Com as taxas do staging, no mesmo treino: Tênis 7,5 → 300, Muay thai
+11,0 → 440, Jiu-jitsu 10,5 → 420, Elíptico 8,5 → 340, Corrida leve 8,0 → 320.
+
+- Código: `apps/admin/src/lib/mobile-api/registration-service.ts`
+  (`workoutLookupSlug`); `packages/agent/src/tools.ts` (`registra_treino`, o
+  `p_slug` da consulta) e `packages/agent/src/tools/types.ts`
+  (`workoutKcalLookupSlug`).
+- Testes: `apps/admin/src/lib/mobile-api/registration-service.workout-type.test.ts`
+  (serviço real e `registra_treino` real, banco em memória com o catálogo do
+  staging; compara o catálogo do teste com as duas migrations e as linhas
+  `RC W` abaixo com o cabeçalho do teste);
+  `packages/agent/src/tools-workout-kcal-lookup.test.ts` (o lado do WhatsApp).
+
+> RC W — cenário esporte que o catálogo não tem ("Capoeira", "Surfe") NÃO coberto nesta PR (pendência da audit 2026-10-04). Inalterado: taxa genérica 'outro' (6,0 kcal/min; 40 min, moderada, 70 kg = 240 kcal), sem aviso na resposta nem na tela, e o treino entra em `exercise_calories`. Travado no teste.
+
+> RC W — cenário outra palavra para uma atividade que o catálogo tem ("Bike" para `bicicleta`, "Academia", "Futsal", "Natação no mar", duas atividades no mesmo campo, travessão ou outro separador como "Jiu–jitsu" e "jiu.jitsu") NÃO coberto nesta PR (pendência da audit 2026-10-04). Sem sinônimo e sem busca aproximada: taxa genérica, em silêncio. No WhatsApp o modelo escolhe o slug; no app ninguém escolhe. "Bike" e "Natação no mar" travados no teste.
+
+> RC W — cenário WhatsApp (o modelo manda para `registra_treino` um tipo com acento, espaço ou fora do catálogo) NÃO coberto nesta PR (pendência da audit 2026-10-04). O pipeline não foi tocado e nunca define o campo `workoutKcalLookupSlug` do contexto: sem ele a ferramenta passa o tipo como veio e a função cai em 'outro'.
+
+> RC W — cenário treinos e propostas gravados antes desta mudança NÃO coberto nesta PR (pendência da audit 2026-10-04). Sem backfill: a "Natação" de 240 kcal segue em `workout_logs`, em `exercise_calories` do dia e no bloco já creditado.
+
+> RC W — cenário fechamento do dia (crédito do bloco 7.700) com o treino recalculado NÃO coberto nesta PR (pendência da audit 2026-10-04). O teste vai até `workout_logs.estimated_kcal` e `daily_snapshots.exercise_calories` (400); o closer não é executado e nenhum número de bloco é afirmado.
+
+> RC W — cenário catálogo `workout_types` de PRODUÇÃO NÃO coberto nesta PR (pendência da audit 2026-10-04). Não foi lido. Taxas e nomes são os do staging em 2026-10-04 (58 linhas ativas, iguais às migrations 20260504165600 e 20260504172500).
+
+> RC W — cenário tipo gravado como texto livre ("Natação" e "natacao" são tipos diferentes para a idempotência e para o descarte de treino idêntico em 6 h; histórico e tela mostram o que foi digitado) NÃO coberto nesta PR (pendência da audit 2026-10-04). Inalterado de propósito: o valor gravado não muda nesta PR.
+
+> RC W — cenário peso do perfil ou catálogo alterados entre a proposta e a confirmação NÃO coberto nesta PR (pendência da audit 2026-10-04). Inalterado: a confirmação recalcula, e o kcal gravado pode diferir do kcal mostrado na proposta.
+
+> RC W — cenário uma leitura a mais de `workout_types` em toda proposta, edição e confirmação de treino do app (inclusive slug exato e tipo desconhecido; sem cache) NÃO coberto nesta PR (pendência da audit 2026-10-04). Com a leitura funcionando, slug exato e tipo desconhecido saem como no HEAD; o custo é uma ida ao banco a mais por pedido. Travado no teste.
+
+> RC W — cenário leitura do catálogo falha NÃO coberto nesta PR (pendência da audit 2026-10-04). Texto já em forma de slug (igual à própria normalização: "musculacao", "natacao", "capoeira") segue como digitado, como no HEAD. Qualquer outro texto ("Natação", "Capoeira", "Bike") responde `500 workout_calculation_failed`, onde o HEAD respondia pela taxa genérica. E um texto em forma de slug que o catálogo só casa pelo nome de exibição sai pela taxa genérica enquanto a leitura falhar; no catálogo de staging são cinco: "polichinelos" (`jumping_jacks`) e, só se digitados com "_" no lugar dos espaços, "biceps_e_triceps", "costas_e_biceps", "ombro_e_trapezio" e "peito_e_triceps". Para "polichinelos": 240 em vez de 320 e, se a falha for só na confirmação, grava 240 sob uma proposta que mostrou 320. Travado no teste.
+
+> RC W — cenário tela do iPhone (tipo digitado e kcal da proposta vistos no aparelho) NÃO coberto nesta PR (pendência da audit 2026-10-04). Nada foi executado no aparelho nem no simulador.
+
 ## 3. Bloco 7700 (`user_progress.deficit_block`)
 
 1 kg de gordura = 7700 kcal. O bloco acumula o déficit creditado por dia.
@@ -598,7 +682,8 @@ newDeficit = designDeficit_efetivo − daily_balance   ← pode ser NEGATIVO
   em `creditDayToBloco`) → `computeProgress` clampa em 0 + log warning
   (audit 06-26 review HIGH 1). Evita propagar NaN pra `deficit_block`.
 - Código: `packages/core/src/engine/bloco.ts`. Chamado por `computeProgress`,
-  `daily-closer.ts` e `bloco-recompute.ts`.
+  `daily-closer.ts`, `bloco-recompute.ts` e, no fechamento sob demanda do
+  ambiente de teste (§3a), `packages/agent/src/day-close.ts`.
 - Recálculo do zero (auditoria/backfill): `lib/bloco-recompute.ts`.
 - **Fora da recomposição** (`designDeficit` 0) o fechamento credita
   `−daily_balance` = `meta + exercício − consumido`, em qualquer protocolo. O
@@ -618,6 +703,245 @@ newDeficit = designDeficit_efetivo − daily_balance   ← pode ser NEGATIVO
   *incomplete* credita 0 (`bloco7700.skipped_subregistro`).
 - **user_skipped** (paciente confirmou "pulei") → credita normal (déficit real).
 - **complete ≥50%** → `design_deficit + déficit_observado`.
+
+### 3a. Onde o dia fecha para uma conta do app no ambiente de teste (fechamento sob demanda)
+
+**Produção não mudou.** Lá o `daily-closer` fecha "ontem" de toda conta com
+`users.status = 'active'`, com ou sem WhatsApp; conta do app entra igual.
+`packages/inngest-functions/src/functions/daily-closer.ts` não foi tocado.
+
+**No ambiente de teste (staging) nenhum dia fechava.** O worker de lá serve só
+o processamento de mídia, de propósito, para que nenhum lembrete de WhatsApp
+possa sair. Lido em 2026-10-04 (somente leitura): 13 linhas de dia, 0 fechadas,
+11 linhas de `user_progress` zeradas. Para a conta do app, bloco, sequência,
+XP, nível e medalhas nunca andavam, e o resumo semanal do Flow não via dia
+nenhum.
+
+**O que existe agora.** `closeLocalDay` e `closePastOpenDays`
+(`packages/agent/src/day-close.ts`) seguem o roteiro do `daily-closer` para UMA
+data local explícita e chamam as MESMAS funções e a MESMA RPC: `calcDailyXP`,
+`creditDayToBloco`, `computeProgress`, `resolveClosedDayStatus` (movida para
+`@mpp/core`, `engine/day-status.ts`; o arquivo antigo do worker só a
+reexporta), `getGapForDate`, `loadCalcConfig`, `loadDailyTargets` e
+`finalize_daily_close_atomic`. Nenhuma regra dos §1 a §3 foi reescrita. O que
+existe em dobro é o roteiro de leituras e escritas; o teste de paridade
+compara, para o mesmo dia, os doze parâmetros da RPC, os campos gravados na
+linha do dia, o `user_progress` final e os eventos.
+
+Dois chamadores, e só eles:
+- **API do app**, em `GET /today` e `GET /progress`, antes da leitura, **só
+  com o interruptor ligado** (`docs/mobile/api-v1.md`, "Fechamento do dia sob
+  demanda"). Desligado por padrão: sem a variável, nenhuma consulta é feita.
+  Nunca em produção: o ref do projeto de produção é recusado em código.
+- **Script de operador** `scripts/close-open-days.ts`: simulação por padrão,
+  `--apply` para gravar, recusa qualquer banco que não seja o de staging.
+
+**Não envia nada.** O único I/O é o cliente de banco recebido por parâmetro.
+Sem provedor de mensagem, sem evento, sem chamada HTTP, sem modelo. Um teste
+estático lê o código e falha se aparecer qualquer um deles.
+
+#### Regras do caminho sob demanda
+
+Onde a produção passa (fechar ONTEM enquanto a hora local é de 0 a 4, isto é,
+de 00:30 a 04:59 neste caminho), o resultado é o mesmo da produção. As regras
+abaixo valem onde a produção nunca passa.
+
+1. **As datas vêm dos dados, em ordem crescente, e a ordem é estrita.**
+   Candidatas: linhas abertas de `daily_snapshots` com data anterior a hoje
+   (fuso da conta), mais datas locais com refeição, treino ou mensagem
+   recebida. O calendário não é percorrido: doze datas vazias antes de um dia
+   registrado não custam nada. Uma data só é tentada depois que todas as
+   candidatas anteriores foram resolvidas: fechadas (por esta chamada ou por
+   outra), sem atividade, ou atrás da fronteira. **Se uma data volta
+   `changed_concurrently`** (a linha do dia mudou ou surgiu entre a leitura e a
+   escrita: um registro confirmado no meio, ou outro pedido que criou a linha
+   de um dia só com mensagem), **a varredura para ali**: essa data e todas as
+   posteriores ficam pendentes (`pendingDates`) e o pedido seguinte recomeça
+   dela. Motivo (revisão de 2026-10-05): seguir adiante fechava o dia
+   posterior, a fronteira (regra 3) passava do dia anterior e ele nunca mais
+   fechava, perdendo XP, crédito do bloco e o dia de sequência.
+2. **Hoje nunca fecha. Ontem só fecha 30 minutos depois da meia-noite local**
+   (a pessoa pode estar confirmando a última refeição do dia). Decisão técnica
+   de 2026-10-04. Exceção declarada nas pendências: fuso de offset positivo
+   cuja troca de horário de verão cai à meia-noite, no dia da troca.
+3. **Fronteira monotônica.** Só fecha data posterior a
+   `user_progress.last_active_date` e posterior a todo dia já fechado da
+   conta. Uma data antiga aberta que receba registro depois fica aberta, como
+   em produção, e é só relatada. Motivo: `computeProgress` continua a
+   sequência apenas se `last_active_date` for a véspera, e a finalização grava
+   a data fechada como novo `last_active_date`; fechar um dia antigo depois
+   dos seguintes reiniciaria a sequência em 1 e andaria a data para trás.
+4. **Fechamento atrasado mantém a meta gravada no dia** — decisão técnica de
+   2026-10-04, ampliada em 2026-10-05; confirmação do cliente pendente. Um
+   fechamento é **atrasado** quando a data é anterior a ontem **ou** quando é
+   ontem e a hora local do fechamento é 5 ou mais (o `daily-closer` só fecha
+   ontem enquanto a hora local é de 0 a 4). O fechamento atrasado mantém
+   `calories_target` e `protein_target` já gravados na linha do dia quando
+   não são nulos e só usa a meta do perfil para o campo que estiver nulo (dia
+   só com mensagem não tem linha: usa o perfil). Dentro da janela da produção
+   (00:30 a 04:59 locais) ONTEM é fechado exatamente como o `daily-closer`:
+   grava a meta do perfil na hora do fechamento. **`current_protocol` e o
+   déficit programado do crédito vêm do perfil na hora do fechamento nos dois
+   casos, atrasado ou não**: a linha do dia não guarda o `deficit_level`, e uma
+   troca de protocolo antes de um fechamento atrasado é pendência declarada
+   abaixo (travada como está). Motivo: o §1 diz que "a meta do dia fica
+   gravada"; a produção nunca fecha fora da madrugada seguinte, então nunca
+   regrava a meta de um dia com um perfil alterado depois, e o crédito do
+   bloco sai da meta (§2b).
+   Caso do revisor (2026-10-05): recomposição, 80 kg, meta gravada 1576, 1500
+   kcal por dia, 4 dias sem abrir o app. 05/10 08:00: o primeiro pedido fecha
+   01, 02 e 03/10 (orçamento de 3). 08:01: pesagem, 82 kg (a meta do perfil
+   passa a 1600). 08:02: o pedido seguinte fecha 04/10. Antes: meta regravada
+   1600, crédito 600, bloco 2.328. Agora: atrasado, meta 1576, crédito 576,
+   bloco **2.304**, igual ao que quatro fechamentos às 00:30 gravariam.
+   O que esta regra NÃO iguala à produção, declarado abaixo: perfil alterado
+   no próprio dia depois do primeiro registro (a linha guarda a meta do
+   primeiro registro; a produção, às 00:30, regravaria com a do perfil).
+   Caso real (staging, conta QA de ganho de massa, 11 dias de 22/09 a 03/10,
+   lido em 2026-10-04): com a meta de cada dia o bloco soma **5.885**; com a
+   meta do perfil de hoje (2988) somaria 4.836. Os três dias que mudam: 27/09
+   gravada 3355 → crédito 3355 − 2683 = 672 (305 com 2988); 28/09 gravada 3361
+   → 3361 + 380 − 2810 = 931 (558); 01/10 gravada 3361 → 3361 + 380 − 2259 =
+   1.482 (1.109).
+5. **Inatividade, uma vez por varredura.** Depois de fechar o que havia, se a
+   última data fechável está 2 ou mais dias à frente de `last_active_date` e a
+   sequência é maior que zero, a sequência é zerada (mesma regra do
+   `daily-closer`: um dia vazio é tolerado, o segundo zera). A atualização é
+   condicional aos valores lidos, e o evento `streak.reset_inactive` só é
+   gravado quando uma linha mudou. Enquanto houver data com dado esperando
+   (orçamento da chamada), a sequência não é zerada.
+6. **Escritas condicionais.** A linha do dia é relida imediatamente antes da
+   escrita; se já fechou, nada é gravado. Onde a linha existe, a escrita é um
+   `update` condicionado a `day_closed = false` e ao `updated_at` lido: um
+   registro confirmado no meio faz a tentativa não gravar nada. Dia só com
+   mensagem (sem linha): a linha é criada sem sobrescrever uma que tenha
+   surgido no meio. Nos dois casos a data volta `changed_concurrently`, a
+   varredura para nela (regra 1) e um pedido seguinte a fecha com as somas
+   novas, seguida das posteriores.
+7. **Exatamente uma vez.** XP, sequência e bloco entram pela RPC atômica; quem
+   perde a corrida recebe `applied = false` e não grava evento nenhum (os
+   eventos são gravados depois da finalização, nunca antes).
+8. **Orçamento por chamada** (API: 3 dias ou 4 s) conta dias fechados e tempo
+   decorrido, nunca datas visitadas. O que sobra fecha no pedido seguinte, em
+   ordem. Uma segunda chamada sem nada a fazer não grava nada; quando ontem já
+   fechou, custa uma consulta. `pendingDates` traz o que ficou para depois,
+   pelo orçamento ou pela parada da regra 1.
+
+O que o caminho sob demanda **não faz**: não avança a agenda de reavaliação
+(opção `advanceReevaluation`, desligada por padrão); não grava
+`daily_closer.skipped`; não grava `daily_snapshots.deficit_accumulated`
+(ninguém grava: o gráfico "Bloco 7.700 acumulado" do app segue em zero); não
+cria regra para ganho de massa e manutenção (o crédito segue `meta + exercício
+− consumido`, pendência do §3); não fecha dia de conta com WhatsApp nem de
+conta sem fuso (API); não recredita dia já fechado.
+
+#### Conta de um dia em cada protocolo (golden)
+
+Pessoa do teste: homem, 80 kg, 180 cm, 40 anos, atividade leve. BMR 1730.
+XP pela regra gravada em staging (igual ao padrão do código): 10 + 5 com
+treino + 5 com proteína ≥ 100 g.
+
+| Protocolo | Meta | Dia | `daily_balance` | Crédito | XP |
+|---|---|---|---|---|---|
+| Recomposição (déficit 500) | 1730 × 1,2 − 500 = 1576 | 1809 kcal, treino 565, 100 g | 1809 − 1576 − 565 = −332 | 500 − (−332) = **832** | 20 |
+| Ganho de massa | 1730 × 1,375 × 1,05 = 2498 | 2600 kcal, treino 300, 140 g | 2600 − 2498 − 300 = −198 | 0 − (−198) = **198** | 20 |
+| Manutenção | 1730 × 1,375 = 2379 | 2100 kcal, treino 250, 100 g | 2100 − 2379 − 250 = −529 | 0 − (−529) = **529** | 20 |
+
+A linha da recomposição é o exemplo do cliente do §2b (500 − 233 + 565 = 832).
+Semana inteira fechando dia a dia: recomposição termina com 105 XP, nível 2,
+sequência 7, bloco 2.925 e a medalha "Primeira Semana"; ganho de massa, 100 XP
+e bloco 598; manutenção, 105 XP e bloco 587.
+
+#### O que a simulação deve imprimir para staging (lido em 2026-10-04)
+
+Só três contas ativas têm o que fechar. Com `--from 2026-09-17`, rodando depois
+de 00:30 de 05/10 e sem registro novo:
+- **conta-10 (ganho de massa):** 11 dias, de 22/09 a 03/10 (25/09 sem
+  registro), todos atrasados, meta gravada mantida. XP 20, 15, 20, 20, 15, 20,
+  20, 15, 20, 15, 20 = 200, nível 2 a partir de 28/09; crédito 300, 134, 35,
+  392, 672, 931, 219, 814, 1.482, −447, 1.353 = bloco **5.885**; sequência 1,
+  2, 3, 1, 2, 3, 4, 5, 6, 7, 8; "Primeira Semana" em 02/10. O dia 04/10 ainda
+  estava em andamento na leitura (1018 kcal, treino 322, meta gravada 2980):
+  se não mudou, entra como 12º dia com XP 20, crédito 0 (1018 < 50% da meta),
+  sequência 9, XP 220, bloco 5.885. **Mudou com a regra 4 de 2026-10-05:**
+  rodando em 05/10 entre 00:30 e 04:59 (horário de São Paulo) esse dia é
+  "ontem" dentro da janela e a meta do fechamento é a do perfil (2988); a
+  partir das 05:00 de 05/10 é atrasado e fica a gravada (2980) — antes, a
+  gravada só valia a partir de 06/10. O crédito é 0 nos dois casos, e os
+  outros números das três contas não mudam.
+- **conta-11 (ganho de massa):** 27/09 só com mensagem no Flow (linha criada;
+  meta do perfil, 2214 / 111,6 pela fórmula do §1 aplicada em SQL): XP 10,
+  crédito 0, sequência 1. 30/09: 383 kcal contra 2214 gravada, sub-registro:
+  XP 10, crédito 0, sequência 1. Sequência zerada por inatividade. Fim: 20 XP,
+  sequência 0, maior 1, bloco 0.
+- **conta-09 (recomposição):** 17/09 só com mensagem (meta do perfil 1563 /
+  112,5): XP 10, crédito 0, sequência 1; zerada por inatividade. Fim: 10 XP,
+  sequência 0, maior 1, bloco 0.
+- As outras quatro contas ativas não têm dado: nada a fechar, nada gravado.
+  As quatro contas bloqueadas são puladas.
+
+Esses números vêm de SELECTs e dos goldens; a simulação **não foi rodada**
+contra o banco e nada foi gravado. Gravar exige autorização nomeada do Eduardo.
+
+- Código: `packages/agent/src/day-close.ts`,
+  `packages/core/src/engine/day-status.ts`,
+  `apps/admin/src/lib/mobile-api/day-close-on-request.ts`,
+  `scripts/close-open-days.ts`.
+- Testes: `packages/agent/src/__golden__/audit-10-04-app-day-close.test.ts`
+  (semana por protocolo fechada às 00:30 e às 08:00, dias atrasados, registro
+  retroativo, três dias inativos, ontem fechado depois das 05:00 com pesagem
+  no meio, varreduras intercaladas com registro no último dia e no dia do
+  MEIO, dois pedidos simultâneos em conta com dia só de mensagem, regra dos
+  30 minutos em America/Sao_Paulo e Asia/Kolkata, caracterização de
+  Africa/Cairo e Asia/Beirut, dias abertos de staging);
+  `packages/agent/src/day-close.test.ts` (mecânica);
+  `packages/inngest-functions/src/functions/daily-closer.parity.test.ts`
+  (paridade com o fechador de produção, às 00:30 e às 04:59 locais, e a
+  borda das 05:00);
+  `apps/admin/src/lib/mobile-api/day-close-on-request.concurrent.test.ts`
+  (os handlers reais de `GET /today` e `GET /progress` ao mesmo tempo);
+  `packages/agent/src/day-close.no-send.test.ts` (prova estática de que não
+  envia); `packages/agent/src/day-close.operator-script.test.ts`;
+  `apps/admin/src/lib/mobile-api/day-close-on-request.test.ts` e os
+  `route.test.ts` de `today` e `progress`.
+
+> RC F — cenário gráfico "Bloco 7.700 acumulado" do app (lê `daily_snapshots.deficit_accumulated`, coluna que o fechamento não grava) NÃO coberto nesta PR (pendência da audit 2026-10-04). Continua em zero com os dias fechados, em qualquer ambiente.
+
+> RC F — cenário crédito do bloco em ganho de massa e manutenção (o fechamento credita meta + exercício − consumido; o cliente escreveu em 08/05/2026 que nesses protocolos o bloco de 7.700 "é substituido pelo bloco acumaldo de Kcal em 14 dias") NÃO coberto nesta PR (pendência da audit 2026-10-04). Inalterado, e agora visível no app de avaliação: comer abaixo da meta enche o bloco. Travado abaixo como está.
+
+> RC F — cenário agenda de reavaliação de 14 dias (`advance_reevaluation_schedule`) no caminho sob demanda NÃO coberto nesta PR (pendência da audit 2026-10-04). Desligada por padrão: o contexto de reavaliação do Flow nunca foi exercitado no app. `next_reevaluation` fica nulo em conta fechada só por este caminho.
+
+> RC F — cenário convergência dos dois roteiros (o worker de produção passar a chamar `closeLocalDay`) NÃO coberto nesta PR (pendência da audit 2026-10-04). `daily-closer.ts` não foi tocado; a igualdade entre os dois é travada pelo teste de paridade.
+
+> RC F — cenário dia antigo aberto que recebe registro depois de um dia posterior já ter fechado NÃO coberto nesta PR (pendência da audit 2026-10-04). Fica aberto, como em produção: não entra em sequência, XP nem bloco; a varredura só o relata.
+
+> RC F — cenário refeição ou treino registrado num dia JÁ fechado NÃO coberto nesta PR (pendência da audit 2026-10-04). Igual à produção: o dia não é recreditado e `calories_consumed` passa a divergir do que foi creditado.
+
+> RC F — cenário dia só com água, peso, suplemento ou medicamento (sem refeição, treino nem mensagem recebida) NÃO coberto nesta PR (pendência da audit 2026-10-04). Conta como dia inativo, como em produção: a linha fica aberta e a sequência quebra.
+
+> RC F — cenário status `incomplete_no_response` num fechamento atrasado (o padrão de refeições é o dos 14 dias anteriores a AGORA, não à data fechada) NÃO coberto nesta PR (pendência da audit 2026-10-04). Só alcança dia com lembrete de lacuna gravado, que conta do app em staging não tem.
+
+> RC F — cenário fechamento atrasado (data anterior a ontem, ou ontem a partir das 05:00 locais) depois de troca de protocolo ou de `deficit_level` NÃO coberto nesta PR (pendência da audit 2026-10-04). A meta gravada no dia é mantida; o déficit programado do crédito e o `current_protocol` gravado são os do perfil na hora do fechamento. Travado abaixo como está: recomposição trocada para ganho de massa às 08:01, ontem (1500 kcal, meta gravada 1576) fecha às 08:02 com meta 1576, protocolo `ganho_massa` e crédito 76; o fechador de produção teria gravado `recomposicao` e 576.
+
+> RC F — cenário perfil alterado no PRÓPRIO dia depois do primeiro registro (pesagem ao meio-dia) e dia fechado atrasado NÃO coberto nesta PR (pendência da audit 2026-10-04). O fechamento atrasado mantém a meta gravada na linha, que é a do primeiro registro do dia (a pesagem não regrava a linha); o fechador de produção, às 00:30, regravaria com a meta do perfil. Travado abaixo como está: 80 → 82 kg às 13:00 de ontem, 1500 kcal: fechado às 08:00 fica meta 1576 e crédito 576; fechado às 00:30 fica meta 1600 e crédito 600.
+
+> RC F — cenário duas varreduras simultâneas que enxergam datas diferentes (um registro retroativo entra entre as duas leituras) NÃO coberto nesta PR (pendência da audit 2026-10-04). A finalização grava valores absolutos: o progresso de um dos dois dias pode ser sobrescrito. Resolver exige a RPC conferir a versão anterior (migration).
+
+> RC F — cenário registro confirmado entre a gravação da linha do dia e a finalização NÃO coberto nesta PR (pendência da audit 2026-10-04). Mesma janela da produção, com uma ida ao banco de largura.
+
+> RC F — cenário eventos de telemetria intermediários (`streak.reset_inactive` de cada intervalo antigo e `daily_closer.skipped`) NÃO coberto nesta PR (pendência da audit 2026-10-04). O caminho sob demanda grava um zeramento por varredura e nunca grava "skipped"; o `user_progress` final é o mesmo.
+
+> RC F — cenário fechador de PRODUÇÃO em fuso de meia hora e em dia de troca de horário de verão NÃO coberto nesta PR (pendência da audit 2026-10-04). Não foi tocado: usa "agora − 24 h" e ticks no minuto 30 UTC. O caminho sob demanda usa a data do calendário e espera 30 min depois da meia-noite local (travado abaixo em America/Sao_Paulo e Asia/Kolkata), com a exceção da linha seguinte.
+
+> RC F — cenário fuso de offset positivo cuja troca de horário de verão cai à meia-noite (Africa/Cairo em 24/04/2026, Asia/Beirut em 29/03/2026) NÃO coberto nesta PR (pendência da audit 2026-10-04). `localMidnightUtc` (auxiliar antigo, usado também pelo fechador de produção e não tocado) devolve o início desse dia uma hora adiantado: a última hora da véspera é contada no dia da troca e, nesse dia, ontem fica fechável já no primeiro instante, sem a espera de 30 min. Hoje nunca fecha. Travado abaixo como está.
+
+> RC F — cenário botão "Fechar dia" do painel admin (marca o dia como fechado sem aplicar progresso) NÃO coberto nesta PR (pendência da audit 2026-10-04). Inalterado. Um dia fechado assim vira fronteira: os dias abertos anteriores a ele não fecham mais.
+
+> RC F — cenário banco real (cliente supabase-js contra o Postgres de staging: filtro por `updated_at`, `upsert` com `ignoreDuplicates`, a RPC e a coluna gerada de verdade) NÃO coberto nesta PR (pendência da audit 2026-10-04). Toda a suíte usa banco em memória; nada foi executado contra banco algum. O cliente supabase-js real foi conferido à mão em 2026-10-05 com `fetch` falso, sem rede e sem banco: a escrita da linha existente sai como `PATCH daily_snapshots?id=eq…&day_closed=eq.false&updated_at=eq…`, a criação como `upsert` com `resolution=ignore-duplicates`, e zero linhas devolvidas encerram a tentativa sem finalizar.
+
+> RC F — cenário dias abertos de staging fechados de fato NÃO coberto nesta PR (pendência da audit 2026-10-04). Nenhuma escrita foi feita e a simulação não foi rodada contra o banco; os números esperados vêm de SELECTs de 2026-10-04 e do último bloco deste arquivo.
+
+> RC F — cenário app no aparelho (Progresso, bloco e resumo semanal do Flow depois de um fechamento) NÃO coberto nesta PR (pendência da audit 2026-10-04). Nada foi executado no aparelho, no simulador nem no BFF publicado.
 
 ## 4. Card de balanço (renderizado pelo SISTEMA, não pelo LLM)
 

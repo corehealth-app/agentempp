@@ -2680,7 +2680,9 @@ export const registraTreino: ToolDefinition = {
         ) => Promise<{ data: number | null; error: { message?: string } | null }>
       }
     ).rpc('calc_workout_kcal', {
-      p_slug: args.workout_type,
+      // App confirm only (see `workoutKcalLookupSlug`): the slug the proposal
+      // was calculated with. WhatsApp never sets it and sends the type as is.
+      p_slug: ctx.workoutKcalLookupSlug ?? args.workout_type,
       p_duration_min: args.duration_min,
       p_intensity: args.intensity ?? 'moderada',
       p_weight_kg: weightKg,

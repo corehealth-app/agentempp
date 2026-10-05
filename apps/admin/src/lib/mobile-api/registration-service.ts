@@ -184,6 +184,57 @@ function buildWorkoutPendingProposal(
   }
 }
 
+/**
+ * A typed workout type spelled the way the catalogue spells a slug:
+ * "Natação" → "natacao", "Jiu-jitsu" → "jiu_jitsu", "Corrida leve" →
+ * "corrida_leve". For the kcal lookup only.
+ */
+function canonicalWorkoutType(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .trim()
+    .replace(/[\s_-]+/g, '_')
+}
+
+/**
+ * The slug `calc_workout_kcal` receives for a type typed in the app. The SQL
+ * function only lowercases its argument, so "Natação" missed `natacao` and
+ * was charged the generic 'outro' rate with no notice (reviewer, 2026-10-04:
+ * 40 min, moderate, 70 kg proposed 240 kcal instead of 400).
+ *
+ * Only the catalogue's own vocabulary is read: the canonical spelling when it
+ * is an active slug, else the one active slug whose display name has that
+ * spelling. No synonyms and no fuzzy match: anything else is handed over as
+ * typed, and the function falls back to 'outro' exactly as before. The typed
+ * text stays what is stored and shown as the workout's type.
+ */
+async function workoutLookupSlug(supabase: ServiceClient, typed: string): Promise<string> {
+  const { data, error } = await supabase
+    .from('workout_types')
+    .select('slug, display_name')
+    .eq('is_active', true)
+  const canonical = canonicalWorkoutType(typed)
+  if (error) {
+    // A text already spelled as a slug is what the function matches by
+    // itself: it is handed over as typed, as before this lookup existed, so
+    // a failed catalogue read does not turn a request that used to work into
+    // a 500. (What it loses is the match by display name: a lowercase
+    // "polichinelos" then gets the generic rate, declared in docs §2d.)
+    if (canonical === typed) return typed
+    // Any other text needs the catalogue. Refused rather than calculated
+    // blind: "Natação" would get 400 kcal on one request and 240 on the next.
+    throw new MobileApiError(500, 'workout_calculation_failed', 'Workout calculation failed')
+  }
+  const catalogue = data ?? []
+  if (catalogue.some((row) => row.slug === canonical)) return canonical
+  const named = catalogue.filter((row) => canonicalWorkoutType(row.display_name) === canonical)
+  // Two slugs under one name: the catalogue does not say which one was meant.
+  const [only] = named
+  return only && named.length === 1 ? only.slug : typed
+}
+
 function proposalTimestamp(input: RegistrationProposalInput, now: Date): Date {
   const supplied = input.kind === 'meal' ? input.consumed_at : input.performed_at
   return supplied ? new Date(supplied) : now
@@ -338,7 +389,7 @@ async function buildProposal(
     throw new MobileApiError(500, 'workout_calculation_failed', 'Workout calculation failed')
   }
   const { data: estimatedKcal, error: workoutError } = await supabase.rpc('calc_workout_kcal', {
-    p_slug: input.workout_type,
+    p_slug: await workoutLookupSlug(supabase, input.workout_type),
     p_duration_min: input.duration_min,
     p_intensity: input.intensity,
     p_weight_kg: profile?.weight_kg ?? 70,
@@ -673,6 +724,18 @@ export async function confirmRegistration(
       )
     }
     const proposal = parsedProposal.data
+    // The tool calculates again when it writes, with the type it is given,
+    // and that type is also what it stores and deduplicates by: handing it
+    // the slug would change the stored type, and the typed text alone would
+    // write the generic rate under a proposal that showed the catalogue one.
+    // So the slug travels in its own context field, read only by the kcal
+    // lookup. An exact slug and an unknown type resolve to themselves: the
+    // field is then absent and the tool runs exactly as on WhatsApp. The
+    // field is typed so a rename in the tool breaks the typecheck here (the
+    // context below is passed `as never`).
+    const lookupSlug = await workoutLookupSlug(supabase, proposal.workoutType)
+    const kcalLookup: Pick<ToolContext, 'workoutKcalLookupSlug'> =
+      lookupSlug === proposal.workoutType ? {} : { workoutKcalLookupSlug: lookupSlug }
     const result = await registraTreino.execute(
       {
         workout_type: proposal.workoutType,
@@ -681,6 +744,7 @@ export async function confirmRegistration(
       } as never,
       {
         ...commonContext,
+        ...kcalLookup,
         providerMessageId: proposal.source_provider_message_id,
         referenceTimestamp: new Date(proposal.source_timestamp),
       } as never,

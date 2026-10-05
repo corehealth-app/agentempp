@@ -1,6 +1,7 @@
 import type { ServiceClient } from '@mpp/db'
 import { saveOnboarding } from '@/lib/mobile-api/commands'
 import { onboardingCompletionInputSchema, onboardingInputSchema } from '@/lib/mobile-api/contracts'
+import { prepareEvaluationAccess } from '@/lib/mobile-api/evaluation-access'
 import { MobileApiError, mobileSuccess, readJsonBody } from '@/lib/mobile-api/http'
 import { executeSupabaseIdempotent } from '@/lib/mobile-api/idempotency'
 import {
@@ -74,11 +75,16 @@ export async function handleOnboardingPost(
 
   const input = onboardingCompletionInputSchema.parse(body)
   const repository = dependencies.createOnboardingRepository(context.supabase)
-  const createResponse = async () =>
-    mobileSuccess(
-      await completeOnboarding(repository, context.auth.userId, input),
-      context.requestId,
-    )
+  const createResponse = async () => {
+    // Evaluation access is off unless the test environment switched it on
+    // (see the module header); off, it reads nothing and the returned function
+    // does nothing. It is asked before the completion is recorded because
+    // only a first completion is eligible. Neither call can throw.
+    const grantEvaluationAccess = await prepareEvaluationAccess(context)
+    const data = await completeOnboarding(repository, context.auth.userId, input)
+    await grantEvaluationAccess()
+    return mobileSuccess(data, context.requestId)
+  }
   return dependencies.executeIdempotent(context, input, createResponse, {
     refreshReplay: createResponse,
   })

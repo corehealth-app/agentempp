@@ -1,13 +1,22 @@
-# Context — Agente MPP
+# Context — Performe AI (histórico do Agente MPP)
 
 > Documento vivo. Atualizar a cada fase e a cada decisão grande.
+
+> **Atualização 2026-10-05.** O produto hoje é **só o app iOS Performe AI**
+> (assistente Flow). O agente de WhatsApp descrito neste documento foi
+> **encerrado** por decisão do dono e é código legado; a produção antiga
+> (Supabase `xuxehkhdvjivitduarvb`) ainda existe e não deve ser acionada; a
+> avaliação fechada do app roda no staging (Supabase Branch
+> `xitugspwfxkcluxvrdeg`). O restante deste documento registra as fases do
+> agente de WhatsApp e não foi atualizado. Ver [`CLAUDE.md`](../CLAUDE.md) e
+> `docs/mobile/`.
 
 ---
 
 ## Cliente e produto
 
 - **Cliente:** CoreHealth (org GitHub: `corehealth-app`)
-- **Produto:** Agente MPP — coach nutricional via WhatsApp do método Muscular Power Plant (Dr. Roberto Menescal)
+- **Produto:** app iOS Performe AI (assistente Flow). Antes: Agente MPP — coach nutricional via WhatsApp do método Muscular Power Plant (Dr. Roberto Menescal), encerrado (legado)
 - **Repositório:** https://github.com/corehealth-app/agentempp
 - **Owner do código:** CoreHealth (work-for-hire)
 - **Pagamento das APIs:** CoreHealth
@@ -64,7 +73,7 @@ Ver [`adr/`](./adr/). Resumo:
 | Serviço | Status | Detalhes |
 |---|---|---|
 | GitHub repo | ✅ Existe (público) | `corehealth-app/agentempp` — `gestao-hub` precisa de write access |
-| Supabase | ✅ Linkado | project_ref `xuxehkhdvjivitduarvb` (plano Free, tier Nano) — sem staging separado por enquanto |
+| Supabase | ✅ Linkado | project_ref `xuxehkhdvjivitduarvb` (plano Free, tier Nano) — é a produção antiga; o staging do app é o Supabase Branch `xitugspwfxkcluxvrdeg` |
 | Vercel | ⏳ Pendente | Conta existe, projeto a criar |
 | Stripe | ⏳ Pendente | Conta existe, products a criar |
 | WhatsApp Cloud | ⏳ Pendente | Aguardando setup Meta Business |
@@ -83,7 +92,7 @@ Ver [`adr/`](./adr/). Resumo:
 | Risco | Mitigação | Status |
 |---|---|---|
 | Credenciais Supabase expostas em chat (sessão de setup inicial) | Rotacionar antes do go-live | ⚠️ Aceito temporariamente |
-| Sem ambiente staging separado (uma instância de Supabase serve dev e prod) | Criar staging antes de ter usuários reais | ⚠️ Aceito temporariamente |
+| Sem ambiente staging separado (uma instância de Supabase serve dev e prod) | Criar staging antes de ter usuários reais | ✅ Resolvido: staging `xitugspwfxkcluxvrdeg` (ver `CLAUDE.md`) |
 | Plano Free (sem PITR backup) | Migrar para Pro antes do go-live | ⚠️ Aceito durante desenvolvimento |
 | Repo público | Tornar privado quando contiver dados sensíveis ou credenciais | ⚠️ Monitorar |
 

@@ -1,15 +1,24 @@
-# Agente MPP
+# Performe AI
 
-Coach nutricional via WhatsApp baseado no método **Muscular Power Plant** (Dr. Roberto Menescal).
+> **Estado em 2026-10-05.** O produto deste repositório é **só o app iOS
+> Performe AI**, com o assistente Flow (`apps/ios/BodyFlow`; servidor do app em
+> `apps/admin/src/app/api/mobile/v1`). O agente de WhatsApp ("Agente MPP")
+> descrito abaixo foi **encerrado** por decisão do dono: é código legado, e a
+> produção antiga dele ainda existe e não deve ser acionada. A avaliação
+> fechada do app roda em **staging**. As regras do projeto estão em
+> [`CLAUDE.md`](CLAUDE.md) e a documentação do app em `docs/mobile/`; o resto
+> deste README é o histórico do agente de WhatsApp e não foi atualizado.
+
+Nasceu como coach nutricional via WhatsApp baseado no método **Muscular Power Plant** (Dr. Roberto Menescal).
 
 > **Cliente:** CoreHealth
-> **Status:** Em desenvolvimento (Fase 0 — Setup)
+> **Status do agente de WhatsApp:** encerrado (legado)
 
 ---
 
-## O que é
+## O que era o agente de WhatsApp (legado)
 
-SaaS conversacional que opera via WhatsApp:
+SaaS conversacional que operava via WhatsApp:
 
 - Onboarding em 11 perguntas, cálculo automático de protocolo (Recomposição / Ganho de Massa / Manutenção)
 - Registro de refeições por foto, áudio ou texto, com cálculo nutricional via base TACO

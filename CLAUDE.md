@@ -1,7 +1,34 @@
-# Agente MPP — instruções do projeto
+# Performe AI — instruções do projeto
 
-Agente de WhatsApp de coaching nutricional (Dr. Roberto Menescal). Monorepo
-pnpm + turbo; Supabase (projeto `xuxehkhdvjivitduarvb`); Inngest; Vercel.
+O produto hoje é **só o app iOS Performe AI**, com o assistente **Flow**
+(`apps/ios/BodyFlow`; a identidade técnica interna continua BodyFlow e não é
+renomeada). Monorepo pnpm + turbo; Supabase; Inngest; Vercel.
+
+- **Servidor do app:** rotas em `apps/admin/src/app/api/mobile/v1`, serviços em
+  `apps/admin/src/lib/mobile-api`; `apps/mobile-bff` publica as mesmas rotas.
+  O mesmo `apps/admin` é também o painel da equipe.
+- **Flow:** motor compartilhado `packages/agent`, entrada
+  `processAuthenticatedMessage` (`historyProvider: 'mobile_flow'`).
+- **Staging** (Supabase Branch `xitugspwfxkcluxvrdeg`) é onde roda a avaliação
+  fechada do app. É o ambiente de trabalho.
+
+**O agente de WhatsApp ("Agente MPP"), para o qual este código nasceu, foi
+encerrado por decisão do Eduardo (registrado em 2026-10-05).** Não o apresente
+como produto vivo. O código dele é **legado dentro do motor compartilhado** —
+a entrada `processMessage`, o Playground do painel, `apps/cli` e as funções
+Inngest de envio — e continua no repositório: não acionar, não evoluir e não
+apagar sem pedido explícito. O Flow passa pelo MESMO motor: mexer no legado
+pode mudar o app.
+
+**A produção antiga ainda existe** (Supabase `xuxehkhdvjivitduarvb`, Vercel
+`agentempp.vercel.app`) **e ainda roda rotinas agendadas no vazio**; o código
+de envio continua registrado lá. Nunca tocar nela — leitura de dado pessoal,
+escrita, migration, cron ou deploy — sem autorização explícita do Eduardo
+nomeando o alvo. Antes de qualquer comando contra banco, confira o ref.
+
+"MPP" continua sendo o nome do **método** das regras de cálculo
+(`docs/CALCULO-MPP.md`, pacotes `@mpp/*`): não é nome de produto, o app nunca
+o mostra, e nada disso é renomeado.
 
 ## ⚠️ Regras de cálculo — LEIA ANTES DE MEXER EM QUALQUER FÓRMULA
 
@@ -22,7 +49,11 @@ Exercício acelera o bloco, mas NÃO libera comer mais.
 ## Rodar / validar
 - Testes: `pnpm --filter @mpp/agent test` (regras de cálculo travadas aqui).
 - Typecheck: `pnpm typecheck`.
-- Deploy: `bash scripts/deploy.sh` (vercel --prod + sync Inngest). **Só com
+- Deploy: **`bash scripts/deploy.sh` É o deploy da PRODUÇÃO ANTIGA** (`vercel
+  --prod` + sync do Inngest em `agentempp.vercel.app`, que re-registra todas as
+  funções, inclusive as de envio por WhatsApp). O staging do app é publicado de
+  outro jeito: deployments de PREVIEW na Vercel do BFF mobile e do worker de
+  mídia (ver `docs/mobile/bff-region.md`). **Qualquer deploy só com
   autorização explícita do Eduardo.**
 
 ## ⚠️ Audit fecha com golden fixture do print real — não variante próxima
@@ -51,7 +82,7 @@ não obedece, Bug D replace soma tudo) ilustram exatamente o anti-padrão.
 ## Escrita em produção (dado de paciente)
 - Backfill/correção de `daily_snapshots`, `meal_logs`, `user_progress` exige
   **autorização explícita do Eduardo nomeando o alvo e os valores**.
-- Bloco: sempre recálculo fiel ao closer (`lib/bloco-recompute.ts`), nunca "no olho".
+- Bloco: sempre recálculo fiel ao closer (`packages/inngest-functions/src/lib/bloco-recompute.ts`), nunca "no olho".
 - SQL direto no banco: Management API
   `POST https://api.supabase.com/v1/projects/{ref}/database/query` com
   `SUPABASE_ACCESS_TOKEN` (psql direto é bloqueado; `db push` é arriscado por drift).

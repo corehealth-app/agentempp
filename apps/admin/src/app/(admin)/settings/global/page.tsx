@@ -1,10 +1,15 @@
+import { AdminAccessDenied } from '@/components/admin-access-denied'
 import { PageHeader } from '@/components/page-header'
+import { guardAdminPage } from '@/lib/admin-page-guard'
 import { createServiceClient } from '@/lib/supabase/server'
 import { GlobalConfigForm } from './form'
 
 export const dynamic = 'force-dynamic'
 
 export default async function GlobalConfigPage() {
+  const access = await guardAdminPage('/settings/global')
+  if (!access.ok) return <AdminAccessDenied access={access} />
+
   const svc = createServiceClient()
   const { data: rows } = await (svc as unknown as {
     from: (t: string) => {
@@ -31,7 +36,8 @@ export default async function GlobalConfigPage() {
         title="Config Global"
         description={
           <>
-            Rate limits, alertas, TTS, engagement, humanizer, buffer, attention.{' '}
+            Configurações gerais do motor: visão (leitura de fotos), validador numérico, alertas e
+            atenção. Os grupos do canal de WhatsApp, encerrado, aparecem rotulados como legado.{' '}
             <strong>Constantes de cálculo (BMR, IMC, badges, XP)</strong> ficam em{' '}
             <a href="/settings/calc" className="underline hover:text-foreground">
               /settings/calc

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1024" height="1024" viewBox="0 0 1024 1024" role="img">
+<title>Performe AI — Signal Spark — símbolo light — RC1</title><desc>Versão candidata RC1, sujeita à aprovação dos arquivos exatos.</desc>
+<defs>
+ <linearGradient id="ss-light-main" gradientUnits="userSpaceOnUse" x1="149" y1="80" x2="630" y2="265">
+  <stop offset="0" stop-color="#64CCC4"/><stop offset=".29" stop-color="#087F85"/><stop offset=".64" stop-color="#12B1AF"/><stop offset="1" stop-color="#00515A"/>
+ </linearGradient>
+ <linearGradient id="ss-light-shade" gradientUnits="userSpaceOnUse" x1="420" y1="140" x2="420" y2="485">
+  <stop offset="0" stop-color="#00363C" stop-opacity="0"/><stop offset="1" stop-color="#00363C" stop-opacity=".48"/>
+ </linearGradient>
+ <linearGradient id="ss-light-tail" gradientUnits="userSpaceOnUse" x1="285" y1="380" x2="75" y2="672">
+  <stop offset="0" stop-color="#01343D"/><stop offset=".54" stop-color="#07575D"/><stop offset="1" stop-color="#16B8B4"/>
+ </linearGradient>
+ <linearGradient id="ss-light-leaf" gradientUnits="userSpaceOnUse" x1="46" y1="459" x2="322" y2="264">
+  <stop offset="0" stop-color="#004B58"/><stop offset=".48" stop-color="#24BCB5"/><stop offset="1" stop-color="#BFEFDE"/>
+ </linearGradient>
+ <linearGradient id="ss-light-spark" gradientUnits="userSpaceOnUse" x1="365" y1="174" x2="439" y2="292">
+  <stop offset="0" stop-color="#FFB59A"/><stop offset=".52" stop-color="#FF7F6B"/><stop offset="1" stop-color="#F5684F"/>
+ </linearGradient>
+ </defs><g transform="translate(53.524106 35.048212) scale(1.36858476)">
+ <path fill="url(#ss-light-main)" d="M 149 27 L 396 27
+C 530 27 627 105 627 229
+C 627 355 525 447 373 447
+L 291 447 C 259 447 238 452 218 468
+C 202 509 192 548 165 578
+C 129 616 84 648 43 670
+L 43 595 C 43 522 93 463 166 427
+C 238 390 306 374 379 350
+C 458 326 509 292 509 230
+C 509 173 468 137 401 120
+C 306 98 247 98 149 27 Z"/>
+ <path fill="url(#ss-light-shade)" d="M 149 27 L 396 27
+C 530 27 627 105 627 229
+C 627 355 525 447 373 447
+L 291 447 C 259 447 238 452 218 468
+C 202 509 192 548 165 578
+C 129 616 84 648 43 670
+L 43 595 C 43 522 93 463 166 427
+C 238 390 306 374 379 350
+C 458 326 509 292 509 230
+C 509 173 468 137 401 120
+C 306 98 247 98 149 27 Z"/>
+ <path fill="url(#ss-light-tail)" d="M 319 369
+C 274 398 240 432 218 468
+C 202 509 192 548 165 578
+C 129 616 84 648 43 670
+L 43 595 C 43 522 93 463 166 427
+C 218 401 269 385 319 369 Z"/>
+ <path fill="url(#ss-light-leaf)" d="M 43 482
+C 38 355 116 266 248 253
+C 310 245 352 260 367 313
+C 278 331 211 347 143 376
+C 91 400 58 438 43 482 Z"/>
+ <path fill="url(#ss-light-spark)" d="M 394 158
+C 402 201 415 222 466 233
+C 418 243 402 264 394 309
+C 386 266 373 244 320 233
+C 373 221 386 202 394 158 Z"/>
+ </g>
+</svg>

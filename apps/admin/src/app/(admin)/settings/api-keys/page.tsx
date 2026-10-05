@@ -1,3 +1,5 @@
+import { AdminAccessDenied } from '@/components/admin-access-denied'
+import { guardAdminPage } from '@/lib/admin-page-guard'
 import { ContentCard, PageHeader } from '@/components/page-header'
 import { createServiceClient } from '@/lib/supabase/server'
 import { CredentialEditor } from './credential-editor'
@@ -17,42 +19,50 @@ interface ServiceDefinition {
     options?: string[]
   }>
   testable?: boolean
+  /** Só serve ao canal de WhatsApp, encerrado. O cartão fica; só ganha o rótulo. */
+  legacy?: boolean
 }
+
+const LEGACY_LABEL = 'legado (WhatsApp encerrado)'
 
 const SERVICE_CATALOG: ServiceDefinition[] = [
   {
     service: 'openrouter',
     label: 'OpenRouter',
-    description: 'LLM principal, batch e vision (Grok, DeepSeek, Gemini Flash).',
+    description:
+      'Usada aqui pela reescrita assistida das Mensagens do coach. O Flow, o rascunho de refeição e a leitura de fotos do app usam a chave do ambiente do servidor (OPENROUTER_API_KEY), não este campo.',
     fields: [{ key_name: 'api_key', label: 'API Key', placeholder: 'sk-or-v1-…', type: 'password' }],
     testable: true,
   },
   {
     service: 'groq',
     label: 'Groq',
-    description: 'STT (Whisper-large-v3-turbo) e classifier de intent.',
+    description:
+      'Transcrição de áudio (Whisper). O app usa a chave do ambiente do servidor (GROQ_API_KEY), não este campo.',
     fields: [{ key_name: 'api_key', label: 'API Key', placeholder: 'gsk_…', type: 'password' }],
     testable: true,
   },
   {
     service: 'elevenlabs',
     label: 'ElevenLabs',
-    description: 'TTS de mensagens-âncora (voz custom Dr. Roberto).',
+    description: 'Voz das respostas em áudio do canal de WhatsApp. O app não usa.',
     fields: [
       { key_name: 'api_key', label: 'API Key', placeholder: 'sk_…', type: 'password' },
       { key_name: 'voice_id', label: 'Voice ID', placeholder: 'oArP4WehPe3qjqvCwHNo', type: 'text' },
     ],
     testable: true,
+    legacy: true,
   },
   {
     service: 'cartesia',
     label: 'Cartesia',
-    description: 'TTS operacional (mensagens de alta frequência).',
+    description: 'Voz das mensagens de alta frequência do canal de WhatsApp. O app não usa.',
     fields: [
       { key_name: 'api_key', label: 'API Key', placeholder: 'sk_…', type: 'password' },
       { key_name: 'voice_id', label: 'Voice ID', placeholder: 'pt-BR voice ID', type: 'text' },
     ],
     testable: true,
+    legacy: true,
   },
   {
     service: 'helicone',
@@ -69,7 +79,7 @@ const SERVICE_CATALOG: ServiceDefinition[] = [
   {
     service: 'inngest',
     label: 'Inngest',
-    description: 'Workers durables: process-message, daily-closer, engagement.',
+    description: 'Funções em segundo plano: processamento de mídia do app e fechamento do dia.',
     fields: [
       { key_name: 'event_key', label: 'Event Key', type: 'password' },
       { key_name: 'signing_key', label: 'Signing Key', type: 'password' },
@@ -78,7 +88,7 @@ const SERVICE_CATALOG: ServiceDefinition[] = [
   {
     service: 'meta_whatsapp',
     label: 'Meta WhatsApp Cloud',
-    description: 'Canal oficial WhatsApp.',
+    description: 'Credenciais do canal de WhatsApp, encerrado. O app não usa.',
     fields: [
       { key_name: 'app_secret', label: 'App Secret', type: 'password' },
       { key_name: 'phone_number_id', label: 'Phone Number ID', type: 'text' },
@@ -87,6 +97,7 @@ const SERVICE_CATALOG: ServiceDefinition[] = [
       { key_name: 'verify_token', label: 'Webhook Verify Token', type: 'text' },
     ],
     testable: true,
+    legacy: true,
   },
   {
     service: 'stripe',
@@ -107,6 +118,9 @@ const SERVICE_CATALOG: ServiceDefinition[] = [
 ]
 
 export default async function ApiKeysPage() {
+  const access = await guardAdminPage('/settings/api-keys')
+  if (!access.ok) return <AdminAccessDenied access={access} />
+
   const supabase = createServiceClient()
   const { data: rows } = await supabase.from('service_credentials').select('*')
   const lookup = new Map<string, NonNullable<typeof rows>[number]>()
@@ -119,7 +133,7 @@ export default async function ApiKeysPage() {
       <PageHeader
         breadcrumbs={[{ label: 'Configuração' }, { label: 'API Keys' }]}
         title="API Keys"
-        description="Credenciais lidas em runtime pelos workers e Edge Functions. Mudanças têm efeito em até 60s."
+        description="Credenciais guardadas no banco e lidas em runtime por partes do painel e do servidor. Mudanças têm efeito em até 60s."
       />
 
       <div className="glass-card border-l-4 border-l-bronze p-4 flex items-start gap-3">
@@ -149,6 +163,11 @@ export default async function ApiKeysPage() {
               description={svc.description}
               actions={
                 <div className="flex items-center gap-2">
+                  {svc.legacy && (
+                    <span className="inline-flex items-center text-[10px] uppercase tracking-widest font-mono px-2 py-1 rounded-full bg-muted text-muted-foreground">
+                      {LEGACY_LABEL}
+                    </span>
+                  )}
                   <span
                     className={`inline-flex items-center gap-1.5 text-[10px] uppercase tracking-widest font-mono px-2 py-1 rounded-full ${
                       status === 'ok'

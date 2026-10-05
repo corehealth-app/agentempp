@@ -45,7 +45,7 @@ export async function addAdmin(input: AddInput) {
       .maybeSingle()
     if (patientError) return { error: patientError.message }
     if (patientAccount) {
-      return { error: 'Use uma conta de e-mail separada para paciente e administrador' }
+      return { error: 'Use uma conta de e-mail separada para usuário do app e administrador' }
     }
 
     const { error } = await svc.from('admin_users').upsert({

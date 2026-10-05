@@ -2,8 +2,6 @@
 import {
   Activity,
   Apple,
-  BookOpen,
-  Bot,
   Calculator,
   ChevronLeft,
   ChevronRight,
@@ -31,6 +29,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { BrandSymbol } from '@/components/brand-symbol'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,6 +38,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { canOpenAdminPath, canSeeAdminNavItem } from '@/lib/admin-access'
 import { type AdminRole, CONTENT_MODULE_ROLES } from '@/lib/admin-rbac'
 import { attemptContentSignOut } from '@/lib/content/navigation-guard'
 import { createClient } from '@/lib/supabase/client'
@@ -63,16 +63,15 @@ const NAV_CATEGORIES: NavCategory[] = [
     items: [
       { label: 'Hoje', href: '/dashboard', icon: LayoutDashboard },
       { label: 'Conversas', href: '/messages', icon: MessageSquare },
-      { label: 'Pacientes', href: '/users', icon: Users },
-      { label: 'Publicacoes', href: '/content', icon: Newspaper, roles: CONTENT_MODULE_ROLES },
+      { label: 'Usuários', href: '/users', icon: Users },
+      { label: 'Publicações', href: '/content', icon: Newspaper, roles: CONTENT_MODULE_ROLES },
       { label: 'Crescimento', href: '/crescimento', icon: TrendingUp },
     ],
   },
   {
-    label: 'AGENTE',
+    label: 'FLOW',
     items: [
       { label: 'Regras', href: '/prompts', icon: FileText },
-      { label: 'Playground', href: '/prompts/playground', icon: Bot },
       { label: 'Sub-agentes', href: '/settings/agents', icon: Cpu },
       { label: 'Tools', href: '/settings/tools', icon: Wrench },
       { label: 'Avaliações LLM', href: '/evaluations', icon: Sparkles },
@@ -93,11 +92,10 @@ const NAV_CATEGORIES: NavCategory[] = [
       { label: 'Admins', href: '/settings/admins', icon: UserCog },
     ],
   },
-  {
-    label: 'AJUDA',
-    items: [{ label: 'Tutorial', href: '/tutorial', icon: BookOpen }],
-  },
 ]
+// Playground (/prompts/playground) e Tutorial (/tutorial) saíram do menu em
+// 2026-10-05: os dois são do canal de WhatsApp, encerrado. As rotas continuam
+// existindo e abrem pela URL.
 
 export function Sidebar({
   userEmail,
@@ -124,6 +122,14 @@ export function Sidebar({
 
   const initials = (userName || userEmail || 'A').slice(0, 2).toUpperCase()
 
+  // O menu mostra só o que o papel pode abrir (mesma regra do guarda das
+  // páginas); categoria sem item visível some junto.
+  const visibleCategories = NAV_CATEGORIES.map((category) => ({
+    ...category,
+    items: category.items.filter((item) => canSeeAdminNavItem(role, item)),
+  })).filter((category) => category.items.length > 0)
+  const canOpenAdmins = canOpenAdminPath(role, '/settings/admins')
+
   const navContent = (isCollapsed: boolean) => (
     <div className="flex flex-col h-full">
       {/* Logo header */}
@@ -140,16 +146,14 @@ export function Sidebar({
             isCollapsed ? 'p-2' : 'px-3 py-2 flex-1 min-w-0',
           )}
         >
-          <div className="h-7 w-7 shrink-0 rounded-md bg-ink-900 dark:bg-moss-500 text-cream-100 flex items-center justify-center font-display text-base font-medium">
-            M
-          </div>
+          <BrandSymbol variant="light" size={28} className="h-7 w-7 shrink-0" />
           {!isCollapsed && (
             <div className="flex flex-col leading-none min-w-0">
               <span className="font-display text-sm tracking-tight text-foreground truncate">
-                Agente MPP
+                Performe AI
               </span>
               <span className="text-[9px] tracking-widest uppercase text-muted-foreground font-mono mt-0.5">
-                CoreHealth
+                Painel
               </span>
             </div>
           )}
@@ -158,7 +162,7 @@ export function Sidebar({
 
       {/* Navigation */}
       <nav className="flex-1 px-3 py-3 flex flex-col gap-1 overflow-y-auto nav-scroll">
-        {NAV_CATEGORIES.map((category) => (
+        {visibleCategories.map((category) => (
           <div key={category.label} className="mb-1">
             {!isCollapsed && (
               <div className="px-3.5 pt-3 pb-1.5 text-[10px] font-mono font-semibold uppercase tracking-widest text-muted-foreground/70">
@@ -167,40 +171,38 @@ export function Sidebar({
             )}
             {isCollapsed && <div className="my-1.5 mx-2 border-t border-sidebar-border/40" />}
             <div className="flex flex-col gap-0.5">
-              {category.items
-                .filter((item) => !item.roles || item.roles.includes(role))
-                .map((item) => {
-                  const active =
-                    pathname === item.href ||
-                    (item.href !== '/dashboard' && pathname.startsWith(item.href))
-                  const Icon = item.icon
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      aria-current={active ? 'page' : undefined}
-                      onClick={() => setMobileOpen(false)}
-                      className={cn(
-                        'nav-card-glass flex items-center gap-2.5 px-3.5 py-2.5 text-sm relative',
-                        active && 'nav-card-active',
-                        isCollapsed && 'justify-center px-2',
-                      )}
-                      title={isCollapsed ? item.label : undefined}
-                    >
-                      <Icon className="h-4 w-4 shrink-0" />
-                      {!isCollapsed && (
-                        <>
-                          <span className="flex-1 truncate">{item.label}</span>
-                          {item.badge && item.badge > 0 && (
-                            <span className="ml-auto h-5 min-w-[20px] px-1.5 text-[10px] font-mono rounded-full bg-destructive text-destructive-foreground flex items-center justify-center">
-                              {item.badge}
-                            </span>
-                          )}
-                        </>
-                      )}
-                    </Link>
-                  )
-                })}
+              {category.items.map((item) => {
+                const active =
+                  pathname === item.href ||
+                  (item.href !== '/dashboard' && pathname.startsWith(item.href))
+                const Icon = item.icon
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    aria-current={active ? 'page' : undefined}
+                    onClick={() => setMobileOpen(false)}
+                    className={cn(
+                      'nav-card-glass flex items-center gap-2.5 px-3.5 py-2.5 text-sm relative',
+                      active && 'nav-card-active',
+                      isCollapsed && 'justify-center px-2',
+                    )}
+                    title={isCollapsed ? item.label : undefined}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" />
+                    {!isCollapsed && (
+                      <>
+                        <span className="flex-1 truncate">{item.label}</span>
+                        {item.badge && item.badge > 0 && (
+                          <span className="ml-auto h-5 min-w-[20px] px-1.5 text-[10px] font-mono rounded-full bg-destructive text-destructive-foreground flex items-center justify-center">
+                            {item.badge}
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </Link>
+                )
+              })}
             </div>
           </div>
         ))}
@@ -233,7 +235,7 @@ export function Sidebar({
                 isCollapsed && 'justify-center',
               )}
             >
-              <div className="h-7 w-7 shrink-0 rounded-full bg-moss-700 text-cream-100 flex items-center justify-center text-[11px] font-medium font-display">
+              <div className="h-7 w-7 shrink-0 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[11px] font-medium font-display">
                 {initials}
               </div>
               {!isCollapsed && (
@@ -256,13 +258,17 @@ export function Sidebar({
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
-              <Link href="/settings/admins" className="cursor-pointer">
-                <Settings className="mr-2 h-4 w-4" />
-                Configurações
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
+            {canOpenAdmins && (
+              <>
+                <DropdownMenuItem asChild>
+                  <Link href="/settings/admins" className="cursor-pointer">
+                    <Settings className="mr-2 h-4 w-4" />
+                    Configurações
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            )}
             <DropdownMenuItem onClick={signOut} className="text-destructive cursor-pointer">
               <LogOut className="mr-2 h-4 w-4" />
               Sair
@@ -286,10 +292,8 @@ export function Sidebar({
           {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>
         <Link href="/dashboard" className="flex items-center gap-2">
-          <div className="h-7 w-7 rounded-md bg-ink-900 text-cream-100 flex items-center justify-center font-display text-base">
-            M
-          </div>
-          <span className="font-display text-base">Agente MPP</span>
+          <BrandSymbol variant="light" size={28} className="h-7 w-7" />
+          <span className="font-display text-base">Performe AI</span>
         </Link>
         <div className="w-9" />
       </header>

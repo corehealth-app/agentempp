@@ -49,7 +49,7 @@ export function CountryConfirmButton({
         onClick={() => setEditing(true)}
         disabled={pending}
         className="h-7 text-xs text-amber-700 border-amber-500/30 hover:bg-amber-500/10"
-        title="Marcar país como confirmado pelo paciente"
+        title="Marcar país como confirmado pelo usuário"
       >
         <Globe className="h-3 w-3 mr-1" />
         Confirmar país
@@ -73,7 +73,7 @@ export function CountryConfirmButton({
         size="sm"
         onClick={() => confirm(iso)}
         disabled={pending || iso.length !== 2}
-        className="h-7 text-xs bg-moss-700 hover:bg-moss-800 text-cream-100"
+        className="h-7 text-xs"
       >
         {pending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Check className="h-3 w-3 mr-1" />}
         Confirmar
@@ -87,7 +87,7 @@ export function CountryConfirmButton({
             disabled={pending}
             className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
               iso === c
-                ? 'border-moss-500 bg-moss-500/10 text-moss-700'
+                ? 'border-primary bg-primary/10 text-primary'
                 : 'border-border text-muted-foreground hover:bg-muted'
             }`}
           >

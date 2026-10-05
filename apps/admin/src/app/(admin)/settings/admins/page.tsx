@@ -1,3 +1,5 @@
+import { AdminAccessDenied } from '@/components/admin-access-denied'
+import { guardAdminPage } from '@/lib/admin-page-guard'
 import { ContentCard, PageHeader } from '@/components/page-header'
 import { createServiceClient } from '@/lib/supabase/server'
 import { formatDateTime } from '@/lib/utils'
@@ -11,6 +13,9 @@ const ROLE_BADGE: Record<string, { label: string; class: string; icon: React.Com
 }
 
 export default async function AdminsPage() {
+  const access = await guardAdminPage('/settings/admins')
+  if (!access.ok) return <AdminAccessDenied access={access} />
+
   const svc = createServiceClient()
   const { data: admins } = await svc
     .from('admin_users')
@@ -47,7 +52,7 @@ export default async function AdminsPage() {
                   className="flex items-center justify-between gap-3 px-5 py-3.5 hover:bg-muted/30 transition-colors"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="h-9 w-9 shrink-0 rounded-full bg-moss-700 text-cream-100 flex items-center justify-center text-xs font-medium font-display">
+                    <div className="h-9 w-9 shrink-0 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-medium font-display">
                       {(a.name ?? a.email ?? 'A').slice(0, 2).toUpperCase()}
                     </div>
                     <div className="min-w-0">

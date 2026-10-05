@@ -1,16 +1,19 @@
 /**
  * Status bar persistente no topo do admin.
- * 4 indicadores em tempo (quase) real:
- *   - Sistema (webhook + crons)
- *   - WhatsApp (quality rating)
- *   - Custo 24h
+ * 3 indicadores em tempo (quase) real:
+ *   - Sistema (crons)
+ *   - Custo 24h (inclui as respostas do Flow)
  *   - Atenção (top items)
+ *
+ * O indicador de qualidade do número de WhatsApp saiu em 2026-10-05 (canal
+ * encerrado). A tabela whatsapp_phone_status continua no banco; só não é
+ * mais lida aqui.
  *
  * Server component — re-renderiza a cada navegação. Para realtime,
  * dropar Supabase Realtime no client component (futuro).
  */
 import Link from 'next/link'
-import { AlertCircle, CheckCircle2, Circle, DollarSign, Phone } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Circle, DollarSign } from 'lucide-react'
 import { createServiceClient } from '@/lib/supabase/server'
 import { cn } from '@/lib/utils'
 
@@ -35,18 +38,7 @@ async function loadStatuses(): Promise<StatusItem[]> {
     (c) => (c.last_run as { status?: string } | null)?.status === 'failed',
   ).length
 
-  // 2. WhatsApp quality
-  const { data: phoneStatusRaw } = await svc
-    .from('whatsapp_phone_status')
-    .select('quality_rating, messaging_limit_tier, last_checked_at')
-    .order('last_checked_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-  const phoneStatus = phoneStatusRaw as
-    | { quality_rating: string | null; messaging_limit_tier: string | null }
-    | null
-
-  // 3. Custo 24h
+  // 2. Custo 24h
   const since24h = new Date(Date.now() - 24 * 3600_000).toISOString()
   const { data: costRows } = await svc
     .from('messages')
@@ -57,7 +49,7 @@ async function loadStatuses(): Promise<StatusItem[]> {
     0,
   )
 
-  // 4. Atenção pendente — view não tipada ainda, casting explícito
+  // 3. Atenção pendente — view não tipada ainda, casting explícito
   const { count: attentionCount } = await (svc as unknown as {
     from: (t: string) => {
       select: (s: string, opts?: { count: 'exact'; head: true }) => Promise<{ count: number | null }>
@@ -76,21 +68,6 @@ async function loadStatuses(): Promise<StatusItem[]> {
           ? `${cronsFailed} cron${cronsFailed > 1 ? 's' : ''} falhou`
           : `${cronsActive} crons ok`,
       tone: cronsFailed > 0 ? 'err' : 'ok',
-    },
-    {
-      icon: Phone,
-      label: 'WhatsApp',
-      value: phoneStatus?.quality_rating
-        ? `${phoneStatus.quality_rating} · tier ${phoneStatus.messaging_limit_tier ?? '?'}`
-        : 'sem leitura',
-      tone:
-        phoneStatus?.quality_rating === 'GREEN'
-          ? 'ok'
-          : phoneStatus?.quality_rating === 'YELLOW'
-            ? 'warn'
-            : phoneStatus?.quality_rating === 'RED'
-              ? 'err'
-              : 'info',
     },
     {
       href: '/messages',

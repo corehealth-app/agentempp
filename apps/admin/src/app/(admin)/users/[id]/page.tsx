@@ -1,7 +1,10 @@
 import { Bot, User as UserIcon } from 'lucide-react'
 import { notFound } from 'next/navigation'
+import { AdminAccessDenied } from '@/components/admin-access-denied'
 import { CountryBadge } from '@/components/country-badge'
 import { ContentCard, PageHeader } from '@/components/page-header'
+import { accountContact } from '@/lib/account-identity'
+import { guardAdminPage } from '@/lib/admin-page-guard'
 import { createServiceClient } from '@/lib/supabase/server'
 import { formatDateTime } from '@/lib/utils'
 import { DangerZone } from '../../messages/danger-zone'
@@ -15,6 +18,9 @@ const PROTOCOL_LABELS: Record<string, string> = {
 }
 
 export default async function UserDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const access = await guardAdminPage('/users')
+  if (!access.ok) return <AdminAccessDenied access={access} />
+
   const { id } = await params
   const svc = createServiceClient()
 
@@ -58,7 +64,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
     trial_ends_at: string | null
     cancel_at_period_end: boolean
   } | null
-  const identityLabel = user.name ?? user.email ?? user.wpp ?? 'Usuario app'
+  const identityLabel = user.name ?? user.email ?? user.wpp ?? 'Conta do app'
 
   return (
     <div className="space-y-4">
@@ -71,7 +77,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
         title={identityLabel}
         description={
           <span className="font-mono text-xs inline-flex items-center gap-2 flex-wrap">
-            {user.wpp} · {user.id.slice(0, 8)}…
+            {accountContact(user)} · {user.id.slice(0, 8)}…
             <CountryBadge
               country={(user as { country?: string | null }).country ?? null}
               confirmed={!!(user as { country_confirmed?: boolean }).country_confirmed}
@@ -271,7 +277,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
                   className={`shrink-0 h-7 w-7 rounded-md flex items-center justify-center ${
                     m.direction === 'in'
                       ? 'bg-ink-900 text-cream-100'
-                      : 'bg-moss-700 text-cream-100'
+                      : 'bg-primary text-primary-foreground'
                   }`}
                 >
                   {m.direction === 'in' ? (
@@ -282,7 +288,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest font-mono text-muted-foreground mb-1">
-                    <span>{m.direction === 'in' ? 'usuário' : 'agente'}</span>
+                    <span>{m.direction === 'in' ? 'usuário' : 'Flow'}</span>
                     {m.agent_stage && (
                       <>
                         <span>·</span>
@@ -310,7 +316,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
 
       <ContentCard
         title="Zona de perigo"
-        description="Resetar mantém o paciente e zera onboarding (testar fluxo do zero). Excluir apaga tudo permanentemente (cascade)."
+        description="Resetar mantém a conta e zera o onboarding (testar fluxo do zero). Excluir apaga tudo permanentemente (cascade)."
       >
         <DangerZone userId={user.id} userName={user.name} userWpp={user.wpp} layout="full" />
       </ContentCard>

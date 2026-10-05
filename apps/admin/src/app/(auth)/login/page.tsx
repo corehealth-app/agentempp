@@ -1,4 +1,5 @@
 'use client'
+import { BrandSymbol } from '@/components/brand-symbol'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { createClient } from '@/lib/supabase/client'
@@ -49,8 +50,8 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex">
-      {/* === Left: brand panel === */}
-      <aside className="hidden lg:flex lg:w-1/2 bg-ink-900 text-cream-100 relative overflow-hidden">
+      {/* === Left: brand panel (fundo de marca do app, #003B3B) === */}
+      <aside className="hidden lg:flex lg:w-1/2 bg-[#003B3B] text-cream-100 relative overflow-hidden">
         <div
           className="absolute inset-0 opacity-[0.04]"
           style={{
@@ -61,51 +62,33 @@ export default function LoginPage() {
           aria-hidden
         />
         <div
-          className="absolute -bottom-40 -right-40 w-[600px] h-[600px] rounded-full bg-moss-700/20 blur-3xl"
+          className="absolute -bottom-40 -right-40 w-[600px] h-[600px] rounded-full bg-primary/40 blur-3xl"
           aria-hidden
         />
 
         <div className="relative z-10 flex flex-col justify-between w-full p-12">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-sm bg-cream-100 text-ink-900 flex items-center justify-center font-display text-xl font-medium">
-              M
-            </div>
+            <BrandSymbol variant="negative" size={40} className="h-10 w-10 shrink-0" />
             <div className="flex flex-col leading-tight">
-              <span className="font-display text-lg tracking-tight">Agente MPP</span>
+              <span className="font-display text-lg tracking-tight">Performe AI</span>
               <span className="text-[10px] tracking-widest uppercase text-cream-100/50 font-mono">
-                CoreHealth · Painel
+                Painel
               </span>
             </div>
           </div>
 
-          <div className="space-y-8 max-w-md">
-            <div className="chapter-num text-cream-100/40">— Método Muscular Power Plant</div>
-            <blockquote className="font-display text-3xl leading-tight text-balance">
-              Não é dieta.
-              <br />
-              <span className="italic text-moss-300">É método.</span>
-            </blockquote>
+          <div className="space-y-6 max-w-md">
+            <p className="font-display text-4xl leading-tight text-balance">Melhor a cada dia.</p>
+            <p className="font-display text-xl leading-snug text-cream-100/80">
+              Flow, seu guia em cada etapa.
+            </p>
             <p className="text-cream-100/60 text-sm leading-relaxed max-w-sm">
-              Coach nutricional via WhatsApp. Cálculo determinístico via TACO,
-              gamificação por blocos de 7&thinsp;700&nbsp;kcal, voz custom do
-              Dr.&nbsp;Roberto&nbsp;Menescal.
+              Painel da equipe: conteúdo da Biblioteca, regras do Flow, cálculos e contas do app.
             </p>
           </div>
 
-          <div className="grid grid-cols-3 gap-6 text-xs font-mono text-cream-100/40 uppercase tracking-widest">
-            <div>
-              <div className="text-cream-100/80 num text-base mb-1">88</div>
-              regras de comportamento
-            </div>
-            <div>
-              <div className="text-cream-100/80 num text-base mb-1">06</div>
-              sub-agentes
-            </div>
-            <div>
-              <div className="text-cream-100/80 num text-base mb-1">7700</div>
-              kcal · 1 bloco
-            </div>
-          </div>
+          {/* Mantém a composição em três faixas (marca · mensagem · respiro). */}
+          <div aria-hidden />
         </div>
       </aside>
 
@@ -114,13 +97,11 @@ export default function LoginPage() {
         <div className="w-full max-w-md space-y-10 animate-fade-up">
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center gap-3 mb-8">
-            <div className="h-9 w-9 rounded-sm bg-ink-900 text-cream-100 flex items-center justify-center font-display text-lg font-medium">
-              M
-            </div>
+            <BrandSymbol variant="light" size={36} className="h-9 w-9 shrink-0" />
             <div className="flex flex-col leading-tight">
-              <span className="font-display text-base tracking-tight">Agente MPP</span>
+              <span className="font-display text-base tracking-tight">Performe AI</span>
               <span className="text-[10px] tracking-widest uppercase text-ink-500 font-mono">
-                CoreHealth
+                Painel
               </span>
             </div>
           </div>
@@ -196,7 +177,7 @@ export default function LoginPage() {
                   <Input
                     id="email"
                     type="email"
-                    placeholder="seu@corehealth.com"
+                    placeholder="voce@exemplo.com"
                     required
                     autoFocus
                     value={email}
@@ -245,11 +226,7 @@ export default function LoginPage() {
                 </Button>
 
                 <p className="text-xs text-ink-500 leading-relaxed pt-2">
-                  Apenas emails cadastrados em{' '}
-                  <code className="font-mono text-[11px] text-ink-700 bg-cream-200 px-1.5 py-0.5 rounded">
-                    admin_users
-                  </code>{' '}
-                  têm acesso ao painel. Pacientes conversam direto pelo WhatsApp.
+                  Apenas e-mails cadastrados como administradores têm acesso ao painel.
                 </p>
               </form>
             </>
@@ -258,7 +235,7 @@ export default function LoginPage() {
           <div className="hairline pt-6 flex items-center justify-between text-[10px] font-mono uppercase tracking-widest text-ink-500">
             <span>v1.0 · MMXXVI</span>
             <span>—</span>
-            <span>CoreHealth</span>
+            <span>Performe AI</span>
           </div>
         </div>
       </main>

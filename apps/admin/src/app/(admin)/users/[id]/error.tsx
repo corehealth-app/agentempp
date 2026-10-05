@@ -24,7 +24,7 @@ export default function UserDetailError({
     <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 text-center">
       <div className="glass-card p-8 max-w-lg space-y-4">
         <AlertTriangle className="h-10 w-10 text-amber-500 mx-auto" />
-        <h1 className="font-display text-2xl tracking-tight">Não foi possível carregar este paciente</h1>
+        <h1 className="font-display text-2xl tracking-tight">Não foi possível carregar este usuário</h1>
         <p className="text-sm text-muted-foreground">
           Houve um erro ao buscar ou renderizar os dados. Pode ser um estado
           inconsistente após reset/exclusão recente, ou uma query que retornou

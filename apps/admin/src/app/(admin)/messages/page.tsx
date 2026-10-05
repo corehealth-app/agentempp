@@ -1,6 +1,9 @@
 import Link from 'next/link'
 import { MessageSquare } from 'lucide-react'
+import { AdminAccessDenied } from '@/components/admin-access-denied'
 import { PageHeader } from '@/components/page-header'
+import { accountDisplayName } from '@/lib/account-identity'
+import { guardAdminPage } from '@/lib/admin-page-guard'
 import { createServiceClient } from '@/lib/supabase/server'
 import { ConversationThread } from './conversation-thread'
 import { ConversationSidebar } from './conversation-sidebar'
@@ -29,7 +32,8 @@ interface Message {
 interface User {
   id: string
   name: string | null
-  wpp: string
+  // Conta do app não tem número: `wpp` vem nulo.
+  wpp: string | null
   tags?: string[] | null
   admin_notes?: string | null
   metadata?: Record<string, unknown> | null
@@ -56,6 +60,11 @@ export default async function ConversasPage({
 }: {
   searchParams: Promise<{ user?: string; filter?: string }>
 }) {
+  // O texto das conversas do Flow é dado de usuário: o guarda vem antes de
+  // qualquer leitura.
+  const access = await guardAdminPage('/messages')
+  if (!access.ok) return <AdminAccessDenied access={access} />
+
   const svc = createServiceClient()
   const params = await searchParams
 
@@ -223,7 +232,7 @@ export default async function ConversasPage({
           title="Conversas"
           description={
             <span className="inline-flex items-center gap-2">
-              Observatório do agente em tempo real.
+              Conversas do Flow com os usuários do app, em tempo real.
               <span className="inline-flex items-center gap-1 text-[10px] font-mono text-moss-700">
                 <span className="relative inline-block h-1.5 w-1.5 rounded-full bg-moss-500">
                   <span className="absolute inset-0 rounded-full animate-ping opacity-60 bg-moss-500" />
@@ -287,7 +296,7 @@ export default async function ConversasPage({
                     <div className="flex-1 min-w-0">
                       <div className="flex items-baseline justify-between gap-2 mb-0.5">
                         <span className="font-medium text-sm text-foreground truncate">
-                          {c.user.name ?? c.user.wpp}
+                          {accountDisplayName(c.user)}
                         </span>
                         <span className="text-[10px] font-mono text-muted-foreground shrink-0">
                           {timeAgoCompact(c.lastMessage.created_at)}

@@ -1,5 +1,8 @@
+import { AdminAccessDenied } from '@/components/admin-access-denied'
 import { ContentCard, PageHeader } from '@/components/page-header'
 import { CountryBadge } from '@/components/country-badge'
+import { accountContact } from '@/lib/account-identity'
+import { guardAdminPage } from '@/lib/admin-page-guard'
 import { createServiceClient } from '@/lib/supabase/server'
 import { formatDateTime } from '@/lib/utils'
 import Link from 'next/link'
@@ -12,6 +15,9 @@ const PROTOCOL_LABELS: Record<string, string> = {
 }
 
 export default async function UsersPage() {
+  const access = await guardAdminPage('/users')
+  if (!access.ok) return <AdminAccessDenied access={access} />
+
   const svc = createServiceClient()
   const { data: rawUsers } = await (svc as unknown as {
     from: (t: string) => {
@@ -22,7 +28,8 @@ export default async function UsersPage() {
               | Array<{
                   id: string
                   name: string | null
-                  wpp: string
+                  // Conta do app não tem número: `wpp` vem nulo.
+                  wpp: string | null
                   status: string
                   country: string | null
                   country_confirmed: boolean | null
@@ -61,14 +68,14 @@ export default async function UsersPage() {
           compact
           breadcrumbs={[{ label: 'Operação' }, { label: 'Usuários' }]}
           title="Usuários"
-          description={`${users?.length ?? 0} pacientes — clique para detalhes.`}
+          description={`${users?.length ?? 0} usuários — clique para detalhes.`}
         />
       </div>
 
       <ContentCard className="flex-1 min-h-0 flex flex-col overflow-hidden !p-0">
         {!users || users.length === 0 ? (
           <p className="text-sm text-muted-foreground py-4 px-5">
-            Nenhum usuário ainda. Cadastre um pelo Playground.
+            Nenhum usuário ainda. As contas aparecem aqui quando alguém se cadastra no app.
           </p>
         ) : (
           <ul className="flex-1 overflow-y-auto divide-y divide-border">
@@ -82,7 +89,7 @@ export default async function UsersPage() {
                     href={`/users/${u.id}`}
                     className="group flex items-center gap-4 px-5 py-3.5 hover:bg-muted/40 transition-colors"
                   >
-                    <div className="h-10 w-10 shrink-0 rounded-full bg-moss-700 text-cream-100 flex items-center justify-center text-xs font-medium font-display">
+                    <div className="h-10 w-10 shrink-0 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-medium font-display">
                       {initials}
                     </div>
 
@@ -91,7 +98,9 @@ export default async function UsersPage() {
                         <span className="font-medium text-foreground">
                           {u.name ?? <span className="italic text-muted-foreground">sem nome</span>}
                         </span>
-                        <span className="text-xs font-mono text-muted-foreground">{u.wpp}</span>
+                        <span className="text-xs font-mono text-muted-foreground">
+                          {accountContact(u)}
+                        </span>
                         <CountryBadge
                           country={u.country}
                           confirmed={!!u.country_confirmed}

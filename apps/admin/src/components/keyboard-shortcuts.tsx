@@ -1,41 +1,52 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { canOpenAdminPath } from '@/lib/admin-access'
+import type { AdminRole } from '@/lib/admin-rbac'
 import { attemptContentNavigation } from '@/lib/content/navigation-guard'
 
 /**
  * Atalhos globais estilo Vim/Linear:
  *   g d  → /dashboard
  *   g c  → /messages (conversas)
- *   g p  → /users (pacientes)
+ *   g p  → /users (usuários)
  *   g r  → /prompts (regras)
- *   g $  → /crescimento/receita
- *   g k  → /crescimento/conquistas
+ *   g $  → /crescimento?tab=receita
+ *   g k  → /crescimento?tab=conquistas
+ *   g f  → /crescimento?tab=funil
  *   g s  → /settings/agents
+ *   g a  → /audit
  *   ?    → toggle help overlay
+ *
+ * Crescimento é uma tela só, com abas por `?tab=` (não existem rotas
+ * /crescimento/<aba>). Cada papel só tem os atalhos das telas que pode abrir.
  */
 const SHORTCUTS: Array<{ keys: string; path: string; label: string }> = [
   { keys: 'd', path: '/dashboard', label: 'dashboard' },
   { keys: 'c', path: '/messages', label: 'conversas' },
-  { keys: 'p', path: '/users', label: 'pacientes' },
+  { keys: 'p', path: '/users', label: 'usuários' },
   { keys: 'r', path: '/prompts', label: 'regras' },
-  { keys: '$', path: '/crescimento/receita', label: 'receita' },
-  { keys: 'k', path: '/crescimento/conquistas', label: 'conquistas' },
-  { keys: 'f', path: '/crescimento/funil', label: 'funil' },
+  { keys: '$', path: '/crescimento?tab=receita', label: 'receita' },
+  { keys: 'k', path: '/crescimento?tab=conquistas', label: 'conquistas' },
+  { keys: 'f', path: '/crescimento?tab=funil', label: 'funil' },
   { keys: 's', path: '/settings/agents', label: 'sub-agentes' },
   { keys: 'a', path: '/audit', label: 'auditoria' },
 ]
 
-const PATH_BY_KEY: Record<string, string> = Object.fromEntries(
-  SHORTCUTS.map((s) => [s.keys, s.path]),
-)
-
-export function KeyboardShortcuts() {
+export function KeyboardShortcuts({ role }: { role: AdminRole }) {
   const router = useRouter()
   const [helpOpen, setHelpOpen] = useState(false)
   const prefix = useRef<string | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const shortcuts = useMemo(
+    () => SHORTCUTS.filter((shortcut) => canOpenAdminPath(role, shortcut.path)),
+    [role],
+  )
+  const pathByKey = useMemo(
+    () => Object.fromEntries(shortcuts.map((shortcut) => [shortcut.keys, shortcut.path])),
+    [shortcuts],
+  )
 
   useEffect(() => {
     const isInputFocused = () => {
@@ -74,7 +85,7 @@ export function KeyboardShortcuts() {
       }
 
       if (prefix.current === 'g') {
-        const path = PATH_BY_KEY[e.key]
+        const path: string | undefined = pathByKey[e.key]
         if (path) {
           e.preventDefault()
           attemptContentNavigation(() => router.push(path))
@@ -86,7 +97,7 @@ export function KeyboardShortcuts() {
 
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [router, helpOpen])
+  }, [router, helpOpen, pathByKey])
 
   if (!helpOpen) return null
 
@@ -104,7 +115,7 @@ export function KeyboardShortcuts() {
           <kbd className="bg-muted/50 px-1.5 py-0.5 rounded text-xs font-mono">⌘K</kbd>
           <span>command palette</span>
         </div>
-        {SHORTCUTS.map((s) => (
+        {shortcuts.map((s) => (
           <div key={s.keys} className="flex items-center gap-2">
             <kbd className="bg-muted/50 px-1.5 py-0.5 rounded text-xs font-mono">g {s.keys}</kbd>
             <span>{s.label}</span>

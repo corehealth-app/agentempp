@@ -292,7 +292,7 @@ export function PackControls({ pack, role }: { pack: CoachContentPackSummary; ro
                 id="coach-clone-slug"
                 value={cloneSlug}
                 onChange={(event) => setCloneSlug(event.target.value.toLowerCase())}
-                placeholder="bodyflow-2026-08"
+                placeholder="catalogo-2026-08"
                 className="font-mono"
               />
             </div>

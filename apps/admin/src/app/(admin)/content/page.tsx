@@ -1,7 +1,9 @@
 import { LockKeyhole, Plus } from 'lucide-react'
 import Link from 'next/link'
+import { AdminAccessDenied } from '@/components/admin-access-denied'
 import { PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
+import { guardAdminPage } from '@/lib/admin-page-guard'
 import {
   CONTENT_AUTHOR_ROLES,
   CONTENT_MODULE_ROLES,
@@ -60,6 +62,9 @@ const SCHEDULES = ['unscheduled', 'scheduled', 'published'] as const
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export default async function ContentPage({ searchParams }: { searchParams: SearchParams }) {
+  const access = await guardAdminPage('/content')
+  if (!access.ok) return <AdminAccessDenied access={access} />
+
   const supabase = await createClient()
   const admin = await loadAdmin(supabase)
   if (!admin || !hasAdminRole(admin.role, CONTENT_MODULE_ROLES)) return <AccessDenied />
@@ -140,8 +145,8 @@ export default async function ContentPage({ searchParams }: { searchParams: Sear
     <div className="space-y-4">
       <PageHeader
         compact
-        breadcrumbs={[{ label: 'Publicacoes' }]}
-        title="Publicacoes"
+        breadcrumbs={[{ label: 'Publicações' }]}
+        title="Publicações"
         description={description}
         actions={
           admin.role === 'content_editor' ? (
@@ -272,7 +277,7 @@ function parseFilters(params: Awaited<SearchParams>): PublicationFilterState {
 function AccessDenied() {
   return (
     <div className="space-y-4">
-      <PageHeader breadcrumbs={[{ label: 'Publicacoes' }]} title="Publicacoes" />
+      <PageHeader breadcrumbs={[{ label: 'Publicações' }]} title="Publicações" />
       <section className="content-card flex min-h-64 flex-col items-center justify-center px-6 text-center">
         <LockKeyhole className="h-6 w-6 text-muted-foreground" />
         <p className="mt-3 text-sm font-medium">Acesso editorial necessario</p>
@@ -287,7 +292,7 @@ function AccessDenied() {
 function PageFailure({ message }: { message: string }) {
   return (
     <div className="space-y-4">
-      <PageHeader breadcrumbs={[{ label: 'Publicacoes' }]} title="Publicacoes" />
+      <PageHeader breadcrumbs={[{ label: 'Publicações' }]} title="Publicações" />
       <section className="content-card px-5 py-8 text-center">
         <p className="text-sm font-medium text-destructive">{message}</p>
       </section>

@@ -4,10 +4,14 @@
  * (raw_payload.image.id ou raw_payload.audio.id), e o admin precisa do
  * access_token pra resolver a URL real e baixar bytes.
  *
- * Apenas admin autenticado.
+ * Esta rota fica atrás da tela Conversas (é a prévia de mídia de uma
+ * mensagem): só passa quem pode abrir a tela, pela mesma regra do guarda da
+ * página. Até 2026-10-05 bastava ter uma linha em admin_users, com qualquer
+ * papel.
  */
 import type { NextRequest } from 'next/server'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { checkAdminPageAccess } from '@/lib/admin-page-guard'
+import { createServiceClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
 
@@ -32,20 +36,13 @@ export async function GET(
 ) {
   const { id } = await params
 
-  // Auth
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) return new Response('unauthenticated', { status: 401 })
-
-  const svc = createServiceClient()
-  const { data: admin } = await svc
-    .from('admin_users')
-    .select('id')
-    .eq('id', user.id)
-    .maybeSingle()
-  if (!admin) return new Response('forbidden', { status: 403 })
+  // Auth: quem pode abrir Conversas.
+  const access = await checkAdminPageAccess('/messages')
+  if (!access.ok) {
+    return access.reason === 'anonymous'
+      ? new Response('unauthenticated', { status: 401 })
+      : new Response('forbidden', { status: 403 })
+  }
 
   // Credenciais
   const { accessToken } = await loadMetaCredentials()

@@ -1,4 +1,6 @@
+import { AdminAccessDenied } from '@/components/admin-access-denied'
 import { PageHeader } from '@/components/page-header'
+import { guardAdminPage } from '@/lib/admin-page-guard'
 import { createServiceClient } from '@/lib/supabase/server'
 import { FoodsTable } from './table'
 
@@ -12,6 +14,9 @@ interface SearchParams {
 }
 
 export default async function FoodsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  const access = await guardAdminPage('/settings/foods')
+  if (!access.ok) return <AdminAccessDenied access={access} />
+
   const params = await searchParams
   const svc = createServiceClient()
 
@@ -89,9 +94,9 @@ export default async function FoodsPage({ searchParams }: { searchParams: Promis
         title="Banco de alimentos"
         description={
           <>
-            Base nutricional usada pelo agente quando registra refeições. Vision identifica os
-            itens, esta base fornece kcal/proteína/carb/gordura por 100g. {count ?? 0} alimentos
-            cadastrados. Referências manuais ficam em quarentena até receberem uma fonte auditável.
+            Base nutricional usada pelo app ao registrar refeições. Vision identifica os itens, esta
+            base fornece kcal/proteína/carb/gordura por 100g. {count ?? 0} alimentos cadastrados.
+            Referências manuais ficam em quarentena até receberem uma fonte auditável.
           </>
         }
       />

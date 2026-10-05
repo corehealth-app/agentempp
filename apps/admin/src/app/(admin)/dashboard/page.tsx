@@ -1,3 +1,5 @@
+import { AdminAccessDenied, AdminLanding } from '@/components/admin-access-denied'
+import { guardAdminPage } from '@/lib/admin-page-guard'
 import Link from 'next/link'
 import {
   Activity,
@@ -78,6 +80,15 @@ function avgLast(rows: DailyKpi[], n: number, key: keyof DailyKpi): number {
 }
 
 export default async function DashboardPage() {
+  // /dashboard é para onde o login e o logo levam. O papel que não abre o
+  // dashboard (content_editor) recebe aqui a tela inicial neutra — sem
+  // números e sem dado de usuário —, não o "Não autorizado".
+  const access = await guardAdminPage('/dashboard')
+  if (!access.ok) {
+    if (access.reason === 'role') return <AdminLanding admin={access.admin} />
+    return <AdminAccessDenied access={access} />
+  }
+
   const svc = createServiceClient()
 
   // KPIs diários (mv_kpis_daily — última 30d)
@@ -229,7 +240,7 @@ export default async function DashboardPage() {
           icon={Users}
         />
         <KpiCard
-          label="Msgs recebidas (7d)"
+          label="Mensagens ao Flow (7d)"
           value={formatNumber(messagesIn7)}
           series={inSeries}
           previousValue={messagesInPrev7}
@@ -285,7 +296,7 @@ export default async function DashboardPage() {
             icon={CreditCard}
           />
           <KpiCard
-            label="Novos pacientes (7d)"
+            label="Novos usuários (7d)"
             value={formatNumber(newUsers7)}
             previousValue={newUsersPrev7}
             currentValue={newUsers7}
@@ -302,9 +313,9 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* === Saúde do agente === */}
+      {/* === Saúde do Flow === */}
       <ContentCard
-        title="Saúde do agente"
+        title="Saúde do Flow"
         description="Tools, sucesso e modelos mais usados"
       >
         <div className="grid gap-4 md:grid-cols-3">
@@ -359,7 +370,7 @@ function FunnelRow({ f }: { f: FunnelRow }) {
   const max = Math.max(f.cohort_size, 1)
   const steps = [
     { label: 'Cohort', n: f.cohort_size, color: 'bg-muted-foreground/30' },
-    { label: 'Mensagem 1', n: f.s1_messaged, color: 'bg-moss-300' },
+    { label: 'Falou com o Flow', n: f.s1_messaged, color: 'bg-moss-300' },
     { label: 'Onboarding ✓', n: f.s2_onboarded, color: 'bg-moss-400' },
     { label: '1ª refeição', n: f.s3_logged_meal, color: 'bg-moss-500' },
     { label: '1º bloco', n: f.s4_closed_block, color: 'bg-moss-600' },
@@ -376,7 +387,7 @@ function FunnelRow({ f }: { f: FunnelRow }) {
           Semana {week}
         </span>
         <span className="text-[11px] font-mono text-muted-foreground">
-          {f.cohort_size} {f.cohort_size === 1 ? 'paciente' : 'pacientes'}
+          {f.cohort_size} {f.cohort_size === 1 ? 'usuário' : 'usuários'}
         </span>
       </div>
       <div className="space-y-1">

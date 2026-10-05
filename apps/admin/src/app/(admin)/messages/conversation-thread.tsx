@@ -5,16 +5,15 @@ import {
   Bot,
   Check,
   ChevronRight,
-  Edit3,
   Flag,
-  RefreshCw,
   Sparkles,
   User as UserIcon,
 } from 'lucide-react'
 import { useEffect, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { accountContact } from '@/lib/account-identity'
 import { formatUSD } from '@/lib/utils'
-import { flagMessageAction, reprocessMessageAction } from './actions'
+import { flagMessageAction } from './actions'
 import type { ReviewFlag } from './types'
 import { MediaPreview } from './media-preview'
 import { ToolCallBadge } from './tool-call-badge'
@@ -40,7 +39,8 @@ interface Message {
 interface User {
   id: string
   name: string | null
-  wpp: string
+  // Conta do app não tem número: `wpp` vem nulo.
+  wpp: string | null
 }
 
 const FLAG_OPTIONS: Array<{ value: ReviewFlag; label: string; icon: React.ReactNode }> = [
@@ -92,7 +92,7 @@ export function ConversationThread({
               {user.name ?? '(sem nome)'}
             </div>
             <div className="text-[10px] font-mono text-muted-foreground">
-              +{user.wpp} · {thread.length} msgs
+              {accountContact(user)} · {thread.length} msgs
             </div>
           </div>
         </div>
@@ -134,7 +134,7 @@ function DateSeparator({ date }: { date: string }) {
   )
 }
 
-function MessageBubble({ m, userWpp }: { m: Message; userWpp: string }) {
+function MessageBubble({ m, userWpp }: { m: Message; userWpp: string | null }) {
   const isOut = m.direction === 'out'
   const [showFlagMenu, setShowFlagMenu] = useState(false)
   const [pending, startTransition] = useTransition()
@@ -152,15 +152,6 @@ function MessageBubble({ m, userWpp }: { m: Message; userWpp: string }) {
     })
   }
 
-  function reprocess() {
-    if (!confirm('Forçar reprocessamento desta mensagem? Vai gerar nova resposta.')) return
-    startTransition(async () => {
-      const r = await reprocessMessageAction(m.id)
-      if (r.error) toast.error(r.error)
-      else toast.success('Reprocessamento disparado. Aguarde nova OUT no thread.')
-    })
-  }
-
   return (
     <div className={`group flex gap-2 ${isOut ? 'justify-end' : 'justify-start'}`}>
       {!isOut && (
@@ -172,7 +163,7 @@ function MessageBubble({ m, userWpp }: { m: Message; userWpp: string }) {
         <div
           className={`relative px-4 py-2.5 rounded-2xl text-sm whitespace-pre-wrap break-words ${
             isOut
-              ? 'bg-moss-700 text-cream-100 rounded-br-sm'
+              ? 'bg-primary text-primary-foreground rounded-br-sm'
               : 'bg-muted text-foreground rounded-bl-sm'
           } ${m.review_flag ? 'ring-2 ring-rose-400/50' : ''}`}
         >
@@ -196,7 +187,13 @@ function MessageBubble({ m, userWpp }: { m: Message; userWpp: string }) {
             </div>
           )}
 
-          {/* Ações flutuantes */}
+          {/* Ações flutuantes.
+              "Forçar reprocessamento" e "Fork to playground" saíram daqui em
+              2026-10-05, para TODA conta: os dois acionam o caminho do canal
+              de WhatsApp (encerrado) — o primeiro re-dispara message.received
+              para a conta com número. A ação de servidor
+              (reprocessMessageAction) e a rota do playground continuam
+              existindo. */}
           <div
             className={`absolute ${isOut ? '-left-2' : '-right-2'} top-2 opacity-0 group-hover:opacity-100 transition-opacity`}
           >
@@ -211,26 +208,6 @@ function MessageBubble({ m, userWpp }: { m: Message; userWpp: string }) {
                 >
                   <Flag className="h-3 w-3" />
                 </button>
-              )}
-              {!isOut && (
-                <button
-                  type="button"
-                  onClick={reprocess}
-                  className="h-6 w-6 rounded-full bg-background border border-border shadow-sm flex items-center justify-center hover:bg-muted"
-                  title="Forçar reprocessamento"
-                  disabled={pending}
-                >
-                  <RefreshCw className={`h-3 w-3 ${pending ? 'animate-spin' : ''}`} />
-                </button>
-              )}
-              {!isOut && m.content && (
-                <a
-                  href={`/prompts/playground?seed=${encodeURIComponent(m.content.slice(0, 200))}&wpp=${userWpp}`}
-                  className="h-6 w-6 rounded-full bg-background border border-border shadow-sm flex items-center justify-center hover:bg-muted"
-                  title="Fork to playground"
-                >
-                  <Edit3 className="h-3 w-3" />
-                </a>
               )}
             </div>
           </div>
@@ -279,7 +256,7 @@ function MessageBubble({ m, userWpp }: { m: Message; userWpp: string }) {
             })}
           </span>
           {m.agent_stage && (
-            <span className="text-moss-600 px-1 py-0.5 rounded bg-moss-500/10">
+            <span className="text-primary px-1 py-0.5 rounded bg-primary/10">
               {m.agent_stage}
             </span>
           )}
@@ -298,7 +275,7 @@ function MessageBubble({ m, userWpp }: { m: Message; userWpp: string }) {
         {isOut && m.id && <ToolCallBadge messageId={m.id} userId={m.user_id} createdAt={m.created_at} />}
       </div>
       {isOut && (
-        <div className="shrink-0 h-7 w-7 rounded-full bg-moss-700 text-cream-100 flex items-center justify-center mt-1">
+        <div className="shrink-0 h-7 w-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center mt-1">
           <Bot className="h-3 w-3" />
         </div>
       )}

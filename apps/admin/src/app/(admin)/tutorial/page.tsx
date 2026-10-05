@@ -1,3 +1,5 @@
+import { AdminAccessDenied } from '@/components/admin-access-denied'
+import { guardAdminPage } from '@/lib/admin-page-guard'
 import Link from 'next/link'
 import {
   Activity,
@@ -28,7 +30,10 @@ import {
 } from 'lucide-react'
 import { ContentCard, PageHeader } from '@/components/page-header'
 
-export default function TutorialPage() {
+export default async function TutorialPage() {
+  const access = await guardAdminPage('/tutorial')
+  if (!access.ok) return <AdminAccessDenied access={access} />
+
   return (
     <div className="space-y-6 max-w-4xl">
       <PageHeader

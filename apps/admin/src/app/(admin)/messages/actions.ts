@@ -261,7 +261,11 @@ export async function reprocessMessageAction(messageId: string) {
     .eq('id', msg.user_id)
     .maybeSingle()
   if (!user) return { error: 'user não encontrado' }
-  if (!user.wpp) return { error: 'reprocessamento WhatsApp exige identidade legada' }
+  if (!user.wpp) {
+    return {
+      error: 'reprocessamento é do canal de WhatsApp (encerrado): só vale para conta legada',
+    }
+  }
 
   // Dispara via RPC dispatch_inngest_event (event_key vem de global_config no SQL).
   const { error } = await (

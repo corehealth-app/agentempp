@@ -158,7 +158,7 @@ export function RuleEditor(props: Props) {
         <div className="space-y-1.5">
           <Label>Motivo da mudança (opcional, vai pro audit log)</Label>
           <Input
-            placeholder="ex: ajuste de tom após feedback do Dr. Roberto"
+            placeholder="ex: ajuste de tom após revisão clínica"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
           />

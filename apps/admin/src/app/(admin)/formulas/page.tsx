@@ -1,4 +1,6 @@
+import { AdminAccessDenied } from '@/components/admin-access-denied'
 import { ContentCard, PageHeader } from '@/components/page-header'
+import { guardAdminPage } from '@/lib/admin-page-guard'
 import { createServiceClient } from '@/lib/supabase/server'
 import { CalcField } from '../settings/calc/form'
 
@@ -32,7 +34,7 @@ const SECTIONS: FormulaSection[] = [
       'Manutenção:    meta = BMR × fator_atividade',
     ],
     explanation:
-      'A meta de ingestão do dia. Na recomposição o exercício NÃO entra na meta (o TDEE é só informativo). O déficit varia pela fome do paciente.',
+      'A meta de ingestão do dia. Na recomposição o exercício NÃO entra na meta (o TDEE é só informativo). O déficit varia pela fome do usuário.',
     keys: ['calc.recomp_bmr_multiplier', 'calc.ganho_massa_surplus_multiplier', 'calc.deficit_by_hunger'],
   },
   {
@@ -72,7 +74,7 @@ const SECTIONS: FormulaSection[] = [
     title: 'Balanço de comida — "Restam / Excedente" (card)',
     equation: ['balanço_comida = consumido − meta', '   < 0 → 🎯 Restam   ·   > 0 → 🎯 Excedente'],
     explanation:
-      'O que o paciente vê no card. O EXERCÍCIO NÃO ENTRA aqui — queimar no treino NÃO libera comer mais. Esta é regra de código (não tem número editável).',
+      'O que o usuário vê no card. O EXERCÍCIO NÃO ENTRA aqui — queimar no treino NÃO libera comer mais. Esta é regra de código (não tem número editável).',
     keys: [],
     note: 'Regra fixa (código + teste). Mudança só via deploy.',
   },
@@ -131,6 +133,9 @@ function num(map: Map<string, ConfigItem>, key: string, path?: string): number |
 }
 
 export default async function FormulasPage() {
+  const access = await guardAdminPage('/formulas')
+  if (!access.ok) return <AdminAccessDenied access={access} />
+
   const svc = createServiceClient()
   const { data: rows } = await (svc as unknown as {
     from: (t: string) => {
@@ -162,8 +167,8 @@ export default async function FormulasPage() {
     <div className="space-y-4">
       <PageHeader
         breadcrumbs={[{ label: 'Configuração' }, { label: 'Fórmulas' }]}
-        title="Fórmulas do método MPP"
-        description="Como o agente calcula tudo — demonstrado por extenso, com os números editáveis aqui mesmo. A estrutura da conta é código (travada por teste); os parâmetros (números) você ajusta aqui."
+        title="Fórmulas de cálculo"
+        description="Como o Performe AI calcula tudo — demonstrado por extenso, com os números editáveis aqui mesmo. A estrutura da conta é código (travada por teste); os parâmetros (números) você ajusta aqui."
       />
 
       <div className="glass-card border-l-4 border-l-emerald-500/60 p-4 text-xs space-y-1">
@@ -171,7 +176,7 @@ export default async function FormulasPage() {
           🧮 Exemplo ao vivo (parâmetros atuais)
         </p>
         <p className="text-muted-foreground">
-          Paciente exemplo: 70 kg · 170 cm · 30 anos · homem · sedentário · fome moderada ·
+          Usuário exemplo: 70 kg · 170 cm · 30 anos · homem · sedentário · fome moderada ·
           recomposição.
         </p>
         <p className="font-mono text-[12px] text-foreground">
@@ -182,7 +187,7 @@ export default async function FormulasPage() {
 
       <div className="glass-card border-l-4 border-l-amber-500/60 p-4 text-xs space-y-1">
         <p className="font-medium text-amber-700 uppercase tracking-widest text-[10px]">
-          ⚠️ Mudar um número afeta TODOS os pacientes em tempo real
+          ⚠️ Mudar um número afeta TODOS os usuários em tempo real
         </p>
         <p className="text-muted-foreground">
           Alterações aqui valem para novos cálculos em até ~1 min (sem deploy) e são registradas em

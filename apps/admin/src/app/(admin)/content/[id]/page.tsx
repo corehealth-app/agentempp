@@ -1,8 +1,10 @@
 import { ArrowLeft, LockKeyhole } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { AdminAccessDenied } from '@/components/admin-access-denied'
 import { PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
+import { guardAdminPage } from '@/lib/admin-page-guard'
 import { CONTENT_MODULE_ROLES, hasAdminRole, isAdminRole } from '@/lib/admin-rbac'
 import type { ContentPublicationDetail } from '@/lib/content/admin-service'
 import { createClient } from '@/lib/supabase/server'
@@ -21,6 +23,9 @@ export default async function ContentDetailPage({
   params: Params
   searchParams: SearchParams
 }) {
+  const access = await guardAdminPage('/content')
+  if (!access.ok) return <AdminAccessDenied access={access} />
+
   const admin = await loadAdmin()
   if (!admin || !hasAdminRole(admin.role, CONTENT_MODULE_ROLES)) return <AccessDenied />
   const { id } = await params
@@ -36,7 +41,7 @@ export default async function ContentDetailPage({
     <div className="space-y-4">
       <PageHeader
         compact
-        breadcrumbs={[{ label: 'Publicacoes', href: '/content' }, { label: publication.slug }]}
+        breadcrumbs={[{ label: 'Publicações', href: '/content' }, { label: publication.slug }]}
         title={publication.slug}
         description={`Criada por ${publication.createdBy.name ?? publication.createdBy.id.slice(0, 8)} · ${publication.versions.length} versoes${publication.historyTruncated ? ' recentes' : ''}`}
         actions={
@@ -100,7 +105,7 @@ function scalar(value: string | string[] | undefined): string | undefined {
 function AccessDenied() {
   return (
     <div className="space-y-4">
-      <PageHeader breadcrumbs={[{ label: 'Publicacoes' }]} title="Publicacoes" />
+      <PageHeader breadcrumbs={[{ label: 'Publicações' }]} title="Publicações" />
       <section className="content-card flex min-h-64 flex-col items-center justify-center px-6 text-center">
         <LockKeyhole className="h-6 w-6 text-muted-foreground" />
         <p className="mt-3 text-sm font-medium">Acesso editorial necessario</p>
@@ -112,7 +117,7 @@ function AccessDenied() {
 function PageFailure({ message }: { message: string }) {
   return (
     <div className="space-y-4">
-      <PageHeader breadcrumbs={[{ label: 'Publicacoes', href: '/content' }]} title="Publicacao" />
+      <PageHeader breadcrumbs={[{ label: 'Publicações', href: '/content' }]} title="Publicação" />
       <section className="content-card px-5 py-8 text-center">
         <p className="text-sm font-medium text-destructive">{message}</p>
       </section>

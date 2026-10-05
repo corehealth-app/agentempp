@@ -1,7 +1,8 @@
+import { AdminAccessDenied } from '@/components/admin-access-denied'
+import { guardAdminPage } from '@/lib/admin-page-guard'
 import { ContentCard, PageHeader } from '@/components/page-header'
-import { Button } from '@/components/ui/button'
 import { createServiceClient } from '@/lib/supabase/server'
-import { ChevronRight, Sparkles } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 
 const TIPO_LABELS: Record<string, string> = {
@@ -25,6 +26,9 @@ export default async function PromptsPage({
 }: {
   searchParams: Promise<{ tipo?: string }>
 }) {
+  const access = await guardAdminPage('/prompts')
+  if (!access.ok) return <AdminAccessDenied access={access} />
+
   const params = await searchParams
   const supabase = createServiceClient()
   let query = supabase
@@ -64,17 +68,9 @@ export default async function PromptsPage({
       <div className="shrink-0 mb-3">
         <PageHeader
           compact
-          breadcrumbs={[{ label: 'Persona' }, { label: 'Regras' }]}
-          title="Persona do agente"
-          description={`${totalRules} regras compõem o comportamento. Cada edição cria versão imutável.`}
-          actions={
-            <Link href="/prompts/playground">
-              <Button size="sm">
-                <Sparkles className="h-4 w-4 mr-2" />
-                Playground
-              </Button>
-            </Link>
-          }
+          breadcrumbs={[{ label: 'Flow' }, { label: 'Regras' }]}
+          title="Regras do Flow"
+          description={`${totalRules} regras compõem o comportamento do Flow. Cada edição cria versão imutável.`}
         />
       </div>
 

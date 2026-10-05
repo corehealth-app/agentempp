@@ -1,25 +1,23 @@
 'use server'
 import { processMessage } from '@mpp/agent'
 import { OpenRouterLLM } from '@mpp/providers'
-import { AI_PLAYGROUND_ROLES, hasAdminRole } from '@/lib/admin-rbac'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { checkAdminPageAccess } from '@/lib/admin-page-guard'
+import { AI_PLAYGROUND_ROLES } from '@/lib/admin-rbac'
+import { createServiceClient } from '@/lib/supabase/server'
 
+/**
+ * Estas ações ficam atrás da tela do Playground: só passa quem pode abri-la
+ * (mesma regra do guarda da página). A lista que elas já tinham
+ * (`AI_PLAYGROUND_ROLES`) continua valendo e nunca alarga: o resultado é a
+ * interseção. Até 2026-10-05 o `content_editor` passava aqui sem poder abrir
+ * a tela.
+ */
 async function requireAdmin() {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) throw new Error('Não autenticado')
-  const svc = createServiceClient()
-  const { data: admin } = await svc
-    .from('admin_users')
-    .select('id, role')
-    .eq('id', user.id)
-    .maybeSingle()
-  if (!admin || !hasAdminRole(admin.role, AI_PLAYGROUND_ROLES)) {
-    throw new Error('Acesso negado')
+  const access = await checkAdminPageAccess('/prompts/playground', AI_PLAYGROUND_ROLES)
+  if (!access.ok) {
+    throw new Error(access.reason === 'anonymous' ? 'Não autenticado' : 'Acesso negado')
   }
-  return user
+  return access.admin
 }
 
 export async function runPlayground(input: { from: string; text: string }) {

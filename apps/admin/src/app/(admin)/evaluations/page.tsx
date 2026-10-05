@@ -1,4 +1,6 @@
+import { AdminAccessDenied } from '@/components/admin-access-denied'
 import { ContentCard, PageHeader } from '@/components/page-header'
+import { guardAdminPage } from '@/lib/admin-page-guard'
 import { createServiceClient } from '@/lib/supabase/server'
 import { formatDateTime } from '@/lib/utils'
 
@@ -9,6 +11,9 @@ function scoreColor(score: number): string {
 }
 
 export default async function EvaluationsPage() {
+  const access = await guardAdminPage('/evaluations')
+  if (!access.ok) return <AdminAccessDenied access={access} />
+
   const svc = createServiceClient()
   const { data: evals } = await svc
     .from('llm_evaluations')
@@ -33,7 +38,7 @@ export default async function EvaluationsPage() {
       <div className="shrink-0 mb-3">
         <PageHeader
           compact
-          breadcrumbs={[{ label: 'Visão geral' }, { label: 'Avaliações LLM' }]}
+          breadcrumbs={[{ label: 'Flow' }, { label: 'Avaliações LLM' }]}
           title="Avaliações LLM"
           description="LLM-as-Judge avalia ~10% das respostas. Detecta regressões após mudanças de prompt."
         />
@@ -96,7 +101,7 @@ export default async function EvaluationsPage() {
 
       <ContentCard
         title="Últimas 50 avaliações"
-        description="Score, msg do user, resposta do agente e raciocínio do judge"
+        description="Score, mensagem do usuário, resposta do Flow e raciocínio do judge"
         className="flex-1 min-h-0 flex flex-col overflow-hidden"
         bodyClassName="flex-1 min-h-0 overflow-y-auto p-5"
       >

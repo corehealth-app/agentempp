@@ -8,7 +8,7 @@ export default function Loading() {
         { label: 'Usuários', href: '/users' },
         { label: 'Carregando…' },
       ]}
-      title="Paciente"
+      title="Usuário"
       cards={5}
       rows={5}
     />

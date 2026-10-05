@@ -22,27 +22,41 @@ const GROUP_LABELS: Record<string, string> = {
   engagement: 'Engajamento — Janelas e slots',
   humanizer: 'Humanizer — Delay de envio',
   buffer: 'Buffer — Debounce de mensagens',
-  attention: 'Atenção — Detecção de pacientes silenciosos',
+  attention: 'Atenção — Detecção de usuários silenciosos',
   numeric_validator: 'Validador anti-alucinação numérica',
   persona: 'Persona — Nomes/títulos por país',
   country_to_language: 'Mapping país → idioma',
 }
 
+/**
+ * Grupos que só valem para o canal de WhatsApp, encerrado: envios proativos
+ * (engagement), atraso de "digitando" (humanizer), debounce das mensagens
+ * recebidas (buffer) e áudio de resposta (tts). As chaves continuam no banco
+ * e editáveis; a tela só avisa que não mudam nada no app.
+ *
+ * `vision.*` NÃO entra aqui: é o que o app usa para ler foto de refeição.
+ */
+const LEGACY_GROUPS = new Set(['engagement', 'humanizer', 'buffer', 'tts'])
+const LEGACY_GROUP_LABEL = 'legado (WhatsApp encerrado)'
+
 const GROUP_DESCRIPTIONS: Record<string, string> = {
   engagement:
-    'Engajamento proativo (3-5x/dia). bed_offset_min: minutos antes de bedtime que para. wake_offset_min: minutos depois de wake_time que começa. fallbacks pra paciente sem horário no perfil. slots: array de janelas com hint de meal_type.',
+    'Era o engajamento proativo por WhatsApp (3-5x/dia): janelas, offsets de sono e slots por tipo de refeição. Sem efeito no app.',
   attention:
-    'Configura alertas pra paciente que ficou silencioso, travou em onboarding, ou teve pagamento falho. Aparece em /audit ou /attention.',
+    'Configura alertas pra usuário que ficou silencioso, travou em onboarding, ou teve pagamento falho. Aparece em /audit ou /attention.',
   humanizer:
-    'Simula tempo de digitação humano antes de enviar resposta. chars_per_second + min/max delay define o ritmo.',
+    'Simulava tempo de digitação antes de enviar a resposta por WhatsApp (chars_per_second + min/max delay). Sem efeito no app.',
   numeric_validator:
     'Validador pós-resposta que detecta alucinação numérica. enabled (on/off) + threshold_pct (% de erro tolerado).',
-  vision: 'Modelo de vision (default anthropic/claude-sonnet-4.5 desde 2026-05-30) e threshold de confiança pra meal logging.',
-  tts: 'Configurações ElevenLabs pra text-to-speech (similarity, speed, stability, style + se rewriter está ativo).',
+  vision:
+    'Modelo de vision (default anthropic/claude-sonnet-4.5 desde 2026-05-30) e threshold de confiança pra meal logging. O app usa este grupo para ler foto de refeição e rótulo.',
+  tts: 'Voz das respostas em áudio do WhatsApp (ElevenLabs: similarity, speed, stability, style). Sem efeito no app.',
+  buffer: 'Juntava mensagens seguidas recebidas pelo WhatsApp antes de responder. Sem efeito no app.',
   rate_limit: 'Limites por usuário (msgs/min e custo/dia em USD).',
   alerts:
     'Thresholds que disparam alertas em /audit (custo 24h, latência p95, taxa de falha de tools).',
-  persona: 'Nome e título do agente por país (BR/PT/ES/US). Ex: "Dr. Roberto Menescal" pra BR.',
+  persona:
+    'Nomes e títulos por país (BR/PT/ES/US) que serviam de referência à persona do canal de WhatsApp. No app o assistente é sempre o Flow.',
 }
 
 export function GlobalConfigForm({ items }: { items: ConfigItem[] }) {
@@ -71,8 +85,13 @@ export function GlobalConfigForm({ items }: { items: ConfigItem[] }) {
     <div className="space-y-6">
       {Object.entries(groups).map(([group, list]) => (
         <div key={group} className="content-card p-5 space-y-3">
-          <h3 className="font-display text-lg tracking-tight">
+          <h3 className="font-display text-lg tracking-tight flex items-center gap-2 flex-wrap">
             {GROUP_LABELS[group] ?? group}
+            {LEGACY_GROUPS.has(group) && (
+              <span className="inline-flex items-center text-[10px] uppercase tracking-widest font-mono font-normal px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                {LEGACY_GROUP_LABEL}
+              </span>
+            )}
           </h3>
           {GROUP_DESCRIPTIONS[group] && (
             <p className="text-xs text-muted-foreground -mt-2">{GROUP_DESCRIPTIONS[group]}</p>

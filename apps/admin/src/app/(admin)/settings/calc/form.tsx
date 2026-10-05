@@ -21,7 +21,7 @@ const GROUPS: Record<
   bmr: {
     title: '1️⃣ BMR — Metabolismo Basal',
     description:
-      'Fórmulas científicas de gasto calórico de repouso. Mifflin-St Jeor (sem %BF) e Katch-McArdle (com %BF, mais preciso). Notion: BMR = 370 + 21.6 × LBM (Katch).',
+      'Fórmulas científicas de gasto calórico de repouso. Mifflin-St Jeor (sem %BF) e Katch-McArdle (com %BF, mais preciso). Documento do método: BMR = 370 + 21.6 × LBM (Katch).',
     keys: ['calc.bmr_mifflin', 'calc.bmr_katch'],
   },
   factors: {

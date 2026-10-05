@@ -18,7 +18,7 @@ export function MediaPreview({
   kind,
   isOut,
 }: {
-  userWpp: string
+  userWpp: string | null
   mediaId: string
   kind: 'image' | 'audio'
   isOut: boolean
@@ -65,7 +65,7 @@ function MediaViewerModal({
   proxyUrl,
   onClose,
 }: {
-  userWpp: string
+  userWpp: string | null
   mediaId: string
   kind: 'image' | 'audio'
   proxyUrl: string

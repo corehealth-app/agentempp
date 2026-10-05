@@ -88,7 +88,7 @@ export async function ConquistasView() {
       {/* === KPIs de gamificação === */}
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
         <KpiCard
-          label="Pacientes engajados"
+          label="Usuários engajados"
           value={formatNumber(rows.length)}
           subtitle="com progresso"
           icon={Trophy}
@@ -115,9 +115,9 @@ export async function ConquistasView() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* === Distribuição por nível === */}
-        <ContentCard title="Distribuição por nível" description="Quantos pacientes em cada nível">
+        <ContentCard title="Distribuição por nível" description="Quantos usuários em cada nível">
           {levels.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nenhum paciente com progresso ainda.</p>
+            <p className="text-sm text-muted-foreground">Nenhum usuário com progresso ainda.</p>
           ) : (
             <div className="space-y-2">
               {levels.map(([lvl, count]) => {
@@ -146,7 +146,7 @@ export async function ConquistasView() {
         {/* === Próximos a fechar bloco === */}
         <ContentCard
           title="Próximos a fechar bloco"
-          description="Pacientes >50% do caminho — momento de empurrar"
+          description="Usuários >50% do caminho — momento de empurrar"
         >
           {closeToBlock.length === 0 ? (
             <p className="text-sm text-muted-foreground">Ninguém com bloco em progresso.</p>
@@ -259,7 +259,7 @@ export async function ConquistasView() {
       {/* === Badges concedidos === */}
       <ContentCard
         title="Badges concedidos recentemente"
-        description="Últimos pacientes a conquistar"
+        description="Últimos usuários a conquistar"
       >
         {(() => {
           const recent = [...rows]
@@ -273,7 +273,7 @@ export async function ConquistasView() {
           if (recent.length === 0) {
             return (
               <p className="text-sm text-muted-foreground py-2">
-                Ninguém conquistou badge ainda. Quando um paciente fechar o 1º bloco ou
+                Ninguém conquistou badge ainda. Quando um usuário fechar o 1º bloco ou
                 bater 1000 XP, aparece aqui.
               </p>
             )

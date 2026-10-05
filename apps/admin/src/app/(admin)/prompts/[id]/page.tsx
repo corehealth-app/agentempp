@@ -1,3 +1,5 @@
+import { AdminAccessDenied } from '@/components/admin-access-denied'
+import { guardAdminPage } from '@/lib/admin-page-guard'
 import { ContentCard, PageHeader } from '@/components/page-header'
 import { createServiceClient } from '@/lib/supabase/server'
 import { formatDateTime } from '@/lib/utils'
@@ -14,6 +16,9 @@ const TIPO_LABELS: Record<string, string> = {
 }
 
 export default async function RuleEditPage({ params }: { params: Promise<{ id: string }> }) {
+  const access = await guardAdminPage('/prompts')
+  if (!access.ok) return <AdminAccessDenied access={access} />
+
   const { id } = await params
   const supabase = createServiceClient()
   const { data: rule } = await supabase
@@ -35,7 +40,7 @@ export default async function RuleEditPage({ params }: { params: Promise<{ id: s
     <div className="space-y-4">
       <PageHeader
         breadcrumbs={[
-          { label: 'Persona', href: '/prompts' },
+          { label: 'Flow', href: '/prompts' },
           { label: TIPO_LABELS[rule.tipo] ?? rule.tipo, href: `/prompts?tipo=${rule.tipo}` },
           { label: rule.topic },
         ]}

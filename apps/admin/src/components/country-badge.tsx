@@ -52,8 +52,8 @@ export function CountryBadge({
     <span
       title={
         confirmed
-          ? `País confirmado pelo paciente: ${country}`
-          : `País palpitado pelo DDI: ${country} (não confirmado pelo paciente)`
+          ? `País confirmado pelo usuário: ${country}`
+          : `País ainda não confirmado pelo usuário: ${country}`
       }
       className={cn(
         'inline-flex items-center gap-1 font-mono uppercase tracking-widest rounded',

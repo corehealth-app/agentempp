@@ -1,6 +1,10 @@
+import { ALL_TOOLS, MOBILE_FLOW_TOOLS } from '@mpp/agent'
+import { AdminAccessDenied } from '@/components/admin-access-denied'
 import { ContentCard, PageHeader } from '@/components/page-header'
+import { guardAdminPage } from '@/lib/admin-page-guard'
 import { createServiceClient } from '@/lib/supabase/server'
 import { AgentConfigForm } from './form'
+import { buildAgentToolOptions } from './tool-options'
 
 const STAGE_LABELS: Record<string, { label: string; description: string }> = {
   coleta_dados: {
@@ -25,8 +29,9 @@ const STAGE_LABELS: Record<string, { label: string; description: string }> = {
       'Roda 1×/dia: lê histórico do dia, consolida daily_snapshots, atualiza progresso.',
   },
   engajamento: {
-    label: 'Engajamento (cron)',
-    description: 'Mensagens proativas ao longo do dia. 5 disparos.',
+    label: 'Engajamento — legado (WhatsApp encerrado)',
+    description:
+      'Era o estágio das mensagens proativas enviadas por WhatsApp. O Flow não lê esta configuração.',
   },
 }
 
@@ -43,6 +48,9 @@ const POPULAR_MODELS = [
 ]
 
 export default async function AgentsPage() {
+  const access = await guardAdminPage('/settings/agents')
+  if (!access.ok) return <AdminAccessDenied access={access} />
+
   const supabase = createServiceClient()
   const { data: configs } = await supabase
     .from('agent_configs')
@@ -50,12 +58,19 @@ export default async function AgentsPage() {
     .eq('status', 'active')
     .order('stage')
 
+  // A lista de tools vem do registro do motor (como a tela Tools já faz), não
+  // de uma lista fixa: primeiro as do Flow, depois as do canal legado.
+  const toolOptions = buildAgentToolOptions(
+    ALL_TOOLS.map((tool) => tool.name),
+    MOBILE_FLOW_TOOLS,
+  )
+
   return (
     <div className="space-y-4">
       <PageHeader
-        breadcrumbs={[{ label: 'Persona' }, { label: 'Sub-agentes' }]}
+        breadcrumbs={[{ label: 'Flow' }, { label: 'Sub-agentes' }]}
         title="Sub-agentes"
-        description="Configuração de modelo, temperatura e tokens por estágio. Cada mudança gera uma versão em agent_configs_versions."
+        description="Modelo, temperatura, tokens e tools do Flow por estágio. Cada mudança gera uma versão em agent_configs_versions."
       />
 
       <div className="grid gap-4">
@@ -66,7 +81,7 @@ export default async function AgentsPage() {
             description={STAGE_LABELS[cfg.stage]?.description}
             actions={
               <div className="flex flex-col items-end gap-1">
-                <span className="inline-flex items-center text-[10px] uppercase tracking-widest font-mono px-2 py-1 rounded-full bg-moss-100 text-moss-700">
+                <span className="inline-flex items-center text-[10px] uppercase tracking-widest font-mono px-2 py-1 rounded-full bg-primary/10 text-primary">
                   v{cfg.version}
                 </span>
                 <span className="text-[10px] text-muted-foreground font-mono">{cfg.name}</span>
@@ -81,6 +96,7 @@ export default async function AgentsPage() {
               maxTokens={cfg.max_tokens}
               waitSeconds={cfg.wait_seconds}
               modelOptions={POPULAR_MODELS}
+              toolOptions={toolOptions}
               {...(() => {
                 const c = cfg as unknown as {
                   top_p?: number | null

@@ -1,3 +1,5 @@
+import { AdminAccessDenied } from '@/components/admin-access-denied'
+import { guardAdminPage } from '@/lib/admin-page-guard'
 import Link from 'next/link'
 import { Suspense } from 'react'
 import { Award, CreditCard, TrendingUp } from 'lucide-react'
@@ -21,6 +23,9 @@ export default async function CrescimentoPage({
 }: {
   searchParams: Promise<{ tab?: string }>
 }) {
+  const access = await guardAdminPage('/crescimento')
+  if (!access.ok) return <AdminAccessDenied access={access} />
+
   const params = await searchParams
   const tab: Tab = (TABS.find((t) => t.key === params.tab)?.key ?? 'receita') as Tab
   const activeMeta = TABS.find((t) => t.key === tab)!
@@ -44,7 +49,7 @@ export default async function CrescimentoPage({
               href={t.key === 'receita' ? '/crescimento' : `/crescimento?tab=${t.key}`}
               className={`inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
                 active
-                  ? 'border-moss-700 text-moss-700'
+                  ? 'border-primary text-primary'
                   : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
               }`}
             >

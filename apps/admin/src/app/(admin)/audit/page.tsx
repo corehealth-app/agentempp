@@ -1,4 +1,6 @@
+import { AdminAccessDenied } from '@/components/admin-access-denied'
 import { ContentCard, PageHeader } from '@/components/page-header'
+import { guardAdminPage } from '@/lib/admin-page-guard'
 import { createServiceClient } from '@/lib/supabase/server'
 import { formatDateTime } from '@/lib/utils'
 
@@ -17,6 +19,9 @@ function actionVariant(action: string): string {
 }
 
 export default async function AuditPage() {
+  const access = await guardAdminPage('/audit')
+  if (!access.ok) return <AdminAccessDenied access={access} />
+
   const svc = createServiceClient()
   const { data: logs } = await svc
     .from('audit_log')
@@ -286,7 +291,7 @@ export default async function AuditPage() {
       <div className="shrink-0 mb-3">
         <PageHeader
           compact
-          breadcrumbs={[{ label: 'Operação' }, { label: 'Auditoria' }]}
+          breadcrumbs={[{ label: 'Flow' }, { label: 'Auditoria' }]}
           title="Auditoria"
           description={`${logs?.length ?? 0} ações sensíveis (credentials, regras, configs, admins).`}
         />
@@ -382,10 +387,7 @@ export default async function AuditPage() {
           ))}
         </div>
         <div className="text-[10px] text-muted-foreground">
-          Últimos 7 dias · pico: {maxBucket} ·{' '}
-          <a href="/tutorial#anti-alucinacao" className="underline hover:text-foreground">
-            como funciona
-          </a>
+          Últimos 7 dias · pico: {maxBucket}
         </div>
       </div>
 
@@ -532,7 +534,7 @@ export default async function AuditPage() {
           </div>
           <p className="text-xs text-muted-foreground mb-3">
             Itens em refeições que disparam sanity check: nome composto, densidade calórica
-            absurda, alimento proteico sem proteína, ou sem match. Calorias zeradas até paciente
+            absurda, alimento proteico sem proteína, ou sem match. Calorias zeradas até o usuário
             confirmar.
           </p>
           <ul className="space-y-2 text-xs font-mono max-h-60 overflow-auto">
@@ -576,7 +578,7 @@ export default async function AuditPage() {
             </span>
           </div>
           <p className="text-xs text-muted-foreground mb-3">
-            Validador parseou números na resposta do agente e achou divergência &gt;10% vs valor
+            Validador parseou números na resposta do Flow e achou divergência &gt;10% vs valor
             real. Não bloqueou a msg — apenas auditou.
           </p>
           <ul className="space-y-2 text-xs font-mono max-h-60 overflow-auto">

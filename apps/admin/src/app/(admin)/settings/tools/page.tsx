@@ -1,5 +1,7 @@
+import { AdminAccessDenied } from '@/components/admin-access-denied'
+import { guardAdminPage } from '@/lib/admin-page-guard'
 import { PageHeader } from '@/components/page-header'
-import { ALL_TOOLS } from '@mpp/agent'
+import { ALL_TOOLS, MOBILE_FLOW_TOOLS } from '@mpp/agent'
 import { createServiceClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
@@ -13,7 +15,13 @@ const STAGE_LABELS: Record<string, string> = {
   engajamento: 'Engaj.',
 }
 
+// O que o Flow pode chamar no app vem do conjunto do próprio motor.
+const FLOW_TOOL_NAMES = new Set<string>(MOBILE_FLOW_TOOLS)
+
 export default async function ToolsPage() {
+  const access = await guardAdminPage('/settings/tools')
+  if (!access.ok) return <AdminAccessDenied access={access} />
+
   const svc = createServiceClient()
 
   // Carrega allowed_tools por stage pra mostrar onde cada tool roda
@@ -40,13 +48,14 @@ export default async function ToolsPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        breadcrumbs={[{ label: 'Persona' }, { label: 'Tools' }]}
-        title="Tools (capabilities do agente)"
+        breadcrumbs={[{ label: 'Flow' }, { label: 'Tools' }]}
+        title="Tools do motor"
         description={
           <>
-            Todas as tools que o LLM pode chamar. Description = instrução de QUANDO usar (vai pro
-            modelo). Editar uma tool exige código + deploy. Pra ligar/desligar uma tool num stage,
-            use{' '}
+            Todas as tools do registro do motor. O Flow, no app, só pode chamar as marcadas{' '}
+            <strong>Flow</strong> (consultas e sugestões de plano); as demais só rodam no canal de
+            WhatsApp, encerrado. Description = instrução de QUANDO usar (vai pro modelo). Editar uma
+            tool exige código + deploy. Pra ligar/desligar uma tool num stage, use{' '}
             <a href="/settings/agents" className="underline">
               /settings/agents
             </a>{' '}
@@ -60,7 +69,18 @@ export default async function ToolsPage() {
           <div key={tool.name} className="content-card p-4">
             <div className="flex items-start justify-between gap-4 mb-2">
               <div>
-                <h3 className="font-mono text-sm font-bold">{tool.name}</h3>
+                <h3 className="font-mono text-sm font-bold flex items-center gap-2 flex-wrap">
+                  {tool.name}
+                  {FLOW_TOOL_NAMES.has(tool.name) ? (
+                    <span className="text-[10px] uppercase tracking-wide font-mono font-normal px-2 py-0.5 rounded bg-primary text-primary-foreground">
+                      Flow
+                    </span>
+                  ) : (
+                    <span className="text-[10px] uppercase tracking-wide font-mono font-normal px-2 py-0.5 rounded bg-muted text-muted-foreground">
+                      legado (WhatsApp)
+                    </span>
+                  )}
+                </h3>
                 <div className="flex flex-wrap gap-1 mt-1.5">
                   {(toolStages[tool.name] ?? []).length === 0 ? (
                     <span className="text-[10px] text-muted-foreground">
@@ -70,7 +90,7 @@ export default async function ToolsPage() {
                     (toolStages[tool.name] ?? []).map((stage) => (
                       <span
                         key={stage}
-                        className="text-[10px] uppercase tracking-wide font-mono px-2 py-0.5 rounded bg-moss-100 text-moss-700"
+                        className="text-[10px] uppercase tracking-wide font-mono px-2 py-0.5 rounded bg-primary/10 text-primary"
                       >
                         {STAGE_LABELS[stage] ?? stage}
                       </span>

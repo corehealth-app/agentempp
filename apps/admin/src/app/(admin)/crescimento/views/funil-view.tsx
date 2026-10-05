@@ -19,7 +19,7 @@ function buildSteps(kcalBlock: number): Array<{
 }> {
   return [
     { key: 'cohort_size', label: 'Cadastrou', description: 'criou conta' },
-    { key: 's1_messaged', label: 'Mandou msg', description: 'pelo menos 1 IN' },
+    { key: 's1_messaged', label: 'Falou com o Flow', description: 'pelo menos 1 mensagem' },
     { key: 's2_onboarded', label: 'Onboarding ✓', description: 'completou questionário' },
     { key: 's3_logged_meal', label: '1ª refeição', description: 'logou meal' },
     { key: 's4_closed_block', label: '1º bloco', description: `${kcalBlock} kcal de déficit` },

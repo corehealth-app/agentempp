@@ -14,28 +14,15 @@ import { ChevronDown, ChevronRight, Save } from 'lucide-react'
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { updateAgentConfig } from './actions'
-
-const ALL_TOOLS = [
-  'cadastra_dados_iniciais',
-  'define_protocolo',
-  'define_meta_peso',
-  'registra_refeicao',
-  'registra_treino',
-  'consulta_progresso',
-  'consulta_metricas',
-  'consulta_resumo_periodo',
-  'consulta_reavaliacao_protocolo',
-  'registra_metrica_diaria',
-  'marca_refeicao_pulada',
-  'atualiza_data_user',
-  'encerra_atendimento',
-  'delete_user',
-  'pausar_agente',
-  'retomar_agente',
-  'confirma_pais_residencia',
-  'gera_dieta',
-  'gera_treino',
-] as const
+import {
+  type AgentToolOptions,
+  allowedToolsForSave,
+  allToolNames,
+  initialAllowAll,
+  initialToolSelection,
+  missingFlowTools,
+  unknownToolNames,
+} from './tool-options'
 
 interface Props {
   id: string
@@ -56,6 +43,8 @@ interface Props {
   heliconeCache: boolean
   streaming: boolean
   modelOptions: string[]
+  /** Lista de tools do registro do motor, montada na página (servidor). */
+  toolOptions: AgentToolOptions
 }
 
 export function AgentConfigForm(props: Props) {
@@ -72,8 +61,14 @@ export function AgentConfigForm(props: Props) {
   const [llmTimeout, setLlmTimeout] = useState(props.llmTimeoutMs)
   const [visionTimeout, setVisionTimeout] = useState(props.visionTimeoutMs)
   const [sttTimeout, setSttTimeout] = useState(props.sttTimeoutMs)
-  const [allowAll, setAllowAll] = useState(props.allowedTools === null)
-  const [allowedTools, setAllowedTools] = useState<string[]>(props.allowedTools ?? [])
+  // "Todas" para o motor é null OU lista vazia: os dois abrem com o botão ligado.
+  const [allowAll, setAllowAll] = useState(() => initialAllowAll(props.allowedTools))
+  // Estágio salvo como "todas": a lista explícita abre com TODAS marcadas, para
+  // que desligar "Permitir todas" nunca tire uma tool do Flow sem a pessoa
+  // desmarcar (ver tool-options.ts).
+  const [allowedTools, setAllowedTools] = useState<string[]>(() =>
+    initialToolSelection(props.toolOptions, props.allowedTools),
+  )
   const [heliconeCache, setHeliconeCache] = useState(props.heliconeCache)
   const [streaming, setStreaming] = useState(props.streaming)
 
@@ -97,7 +92,7 @@ export function AgentConfigForm(props: Props) {
         llm_timeout_ms: llmTimeout,
         vision_timeout_ms: visionTimeout,
         stt_timeout_ms: sttTimeout,
-        allowed_tools: allowAll ? null : allowedTools,
+        allowed_tools: allowedToolsForSave({ allowAll, selected: allowedTools }),
         helicone_cache: heliconeCache,
         streaming,
       })
@@ -110,6 +105,46 @@ export function AgentConfigForm(props: Props) {
   }
 
   const knownModels = [...new Set([...props.modelOptions, props.model])]
+
+  const totalTools = allToolNames(props.toolOptions).length
+  const unknownTools = unknownToolNames(props.toolOptions, props.allowedTools)
+  const flowMissing = missingFlowTools(props.toolOptions, { allowAll, selected: allowedTools })
+
+  function toggleTool(name: string, checked: boolean) {
+    setAllowedTools((current) =>
+      checked ? [...new Set([...current, name])] : current.filter((x) => x !== name),
+    )
+  }
+
+  function toolGroup(title: string, hint: string, names: string[]) {
+    if (names.length === 0) return null
+    return (
+      <div className="space-y-1.5">
+        <div className="flex items-baseline gap-2">
+          <span className="text-[10px] font-mono uppercase tracking-widest text-foreground">
+            {title}
+          </span>
+          <span className="text-[10px] text-muted-foreground">{hint}</span>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+          {names.map((t) => (
+            <label
+              key={t}
+              className="flex items-center gap-2 p-2 rounded glass-subtle cursor-pointer hover:bg-muted/40"
+            >
+              <input
+                type="checkbox"
+                checked={allowedTools.includes(t)}
+                onChange={(e) => toggleTool(t, e.target.checked)}
+                disabled={pending}
+              />
+              <code className="text-[11px] font-mono">{t}</code>
+            </label>
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">
@@ -174,7 +209,7 @@ export function AgentConfigForm(props: Props) {
             {openTools ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
             Tools permitidas
             <span className="text-[10px] font-mono text-muted-foreground">
-              ({allowAll ? 'todas' : `${allowedTools.length}/${ALL_TOOLS.length}`})
+              ({allowAll ? 'todas' : `${allowedTools.length}/${totalTools}`})
             </span>
           </span>
         </button>
@@ -187,30 +222,33 @@ export function AgentConfigForm(props: Props) {
             </div>
 
             {!allowAll && (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                {ALL_TOOLS.map((t) => {
-                  const checked = allowedTools.includes(t)
-                  return (
-                    <label
-                      key={t}
-                      className="flex items-center gap-2 p-2 rounded glass-subtle cursor-pointer hover:bg-muted/40"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(e) =>
-                          setAllowedTools(
-                            e.target.checked
-                              ? [...allowedTools, t]
-                              : allowedTools.filter((x) => x !== t),
-                          )
-                        }
-                        disabled={pending}
-                      />
-                      <code className="text-[11px] font-mono">{t}</code>
-                    </label>
-                  )
-                })}
+              <div className="space-y-4">
+                {toolGroup(
+                  'Flow',
+                  'o que o Flow pode usar no app (consultas e sugestões de plano)',
+                  props.toolOptions.flow,
+                )}
+                {toolGroup(
+                  'legado (WhatsApp)',
+                  'só rodam no canal de WhatsApp, encerrado — sem efeito no Flow',
+                  props.toolOptions.legacy,
+                )}
+                {toolGroup(
+                  'fora do registro',
+                  'nomes salvos que o motor não conhece mais',
+                  unknownTools,
+                )}
+                {flowMissing.length > 0 && (
+                  <p className="text-xs text-amber-700 bg-amber-500/10 rounded px-3 py-2">
+                    Com esta lista o Flow fica, neste estágio, sem:{' '}
+                    <code className="font-mono">{flowMissing.join(', ')}</code>.
+                  </p>
+                )}
+                {allowedTools.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Lista vazia vale como “todas” para o motor.
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -239,6 +277,11 @@ export function AgentConfigForm(props: Props) {
 
         {openAdvanced && (
           <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            <p className="text-[11px] text-muted-foreground md:col-span-2 lg:col-span-3">
+              Para o Flow têm efeito o modelo, a temperatura, o máximo de tokens e as tools. O
+              número de iterações do Flow tem teto de 2 no código; os demais campos abaixo não são
+              lidos pelo Flow.
+            </p>
             <FieldNumber
               label={`top_p (${topP ?? 'auto'})`}
               help="Nucleus sampling. Vazio = não envia."

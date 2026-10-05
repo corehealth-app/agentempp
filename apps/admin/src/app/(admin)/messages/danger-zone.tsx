@@ -15,10 +15,11 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { accountDisplayName } from '@/lib/account-identity'
 import { deleteUserAction, resetUserConversationAction } from './actions'
 
 /**
- * Ações destrutivas: resetar conversa (mantém user) ou excluir paciente.
+ * Ações destrutivas: resetar conversa (mantém a conta) ou excluir a conta.
  * Ambas exigem confirmação textual ("RESETAR" / "EXCLUIR").
  */
 export function DangerZone({
@@ -65,7 +66,7 @@ function ResetDialog({
         toast.error(r.error)
       } else {
         toast.success(
-          `Conversa de ${userName ?? userWpp ?? 'usuario app'} resetada — pronto pra começar do zero`,
+          `Conversa de ${accountDisplayName({ name: userName, wpp: userWpp })} resetada — pronto pra começar do zero`,
         )
         setOpen(false)
         setConfirm('')
@@ -99,18 +100,18 @@ function ResetDialog({
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Resetar conversa de {userName ?? userWpp ?? 'usuario app'}?</DialogTitle>
+          <DialogTitle>Resetar conversa de {accountDisplayName({ name: userName, wpp: userWpp })}?</DialogTitle>
           <DialogDescription>
             <strong>Apaga:</strong> mensagens, refeições registradas, treinos registrados, progresso,
             snapshots, embeddings e pendências; zera o onboarding (nome, perfil clínico, badges).
             <br />
-            <strong>Mantém:</strong> o paciente cadastrado, assinaturas, auditoria, fotos, áudios e
+            <strong>Mantém:</strong> a conta cadastrada, assinaturas, auditoria, fotos, áudios e
             documentos enviados
             {deletePlans
               ? '.'
-              : ', e também o plano de treino, as prescrições, os rascunhos de plano e a entrega diária do treino pelo WhatsApp, se estava ligada.'}
+              : ', e também o plano de treino, as prescrições, os rascunhos de plano e a configuração legada de entrega diária do treino (canal de WhatsApp, encerrado), se estava ligada.'}
             <br />
-            <strong>Útil pra testar o fluxo do zero sem precisar criar paciente novo.</strong>
+            <strong>Útil pra testar o fluxo do zero sem precisar criar conta nova.</strong>
             <br />
             <br />
             Digite <code className="font-mono bg-muted px-1.5 py-0.5 rounded">RESETAR</code> pra
@@ -177,7 +178,7 @@ function DeleteDialog({
       if (r.error) {
         toast.error(r.error)
       } else {
-        toast.success(`${userName ?? userWpp ?? 'usuario app'} excluído permanentemente`)
+        toast.success(`${accountDisplayName({ name: userName, wpp: userWpp })} excluído permanentemente`)
         setOpen(false)
         setConfirm('')
         router.push('/users')
@@ -199,15 +200,15 @@ function DeleteDialog({
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Excluir {userName ?? userWpp ?? 'usuario app'} permanentemente?</DialogTitle>
+          <DialogTitle>Excluir {accountDisplayName({ name: userName, wpp: userWpp })} permanentemente?</DialogTitle>
           <DialogDescription>
-            Isso é <strong>irreversível</strong>. Apaga o paciente + todas as mensagens, tools,
+            Isso é <strong>irreversível</strong>. Apaga a conta + todas as mensagens, tools,
             refeições, treinos, snapshots, progresso, assinaturas Stripe locais e qualquer dado
             associado. Cascade total via FK.
             <br />
             <br />
-            Quando essa pessoa mandar nova msg pelo WhatsApp, vai ser tratado como paciente novo (1ª
-            interação, onboarding do zero).
+            Este botão apaga a linha da conta no banco. Ele não remove o login da pessoa no app nem
+            os arquivos enviados que estão no armazenamento.
             <br />
             <br />
             Digite <code className="font-mono bg-muted px-1.5 py-0.5 rounded">EXCLUIR</code> pra

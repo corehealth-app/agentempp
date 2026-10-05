@@ -5,7 +5,9 @@ import {
   coachPersonalitySchema,
 } from '@mpp/core'
 import { LockKeyhole } from 'lucide-react'
+import { AdminAccessDenied } from '@/components/admin-access-denied'
 import { PageHeader } from '@/components/page-header'
+import { guardAdminPage } from '@/lib/admin-page-guard'
 import { CONTENT_ADMIN_ROLES, hasAdminRole, isAdminRole } from '@/lib/admin-rbac'
 import type {
   CoachCatalogEntry,
@@ -32,6 +34,9 @@ const PACK_STATUSES = ['draft', 'scheduled', 'active', 'archived'] as const
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
 export default async function CoachMessagesPage({ searchParams }: { searchParams: SearchParams }) {
+  const access = await guardAdminPage('/settings/coach-messages')
+  if (!access.ok) return <AdminAccessDenied access={access} />
+
   const params = await searchParams
   const admin = await loadAdmin()
 

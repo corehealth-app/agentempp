@@ -57,7 +57,7 @@ const CATEGORY_OPTIONS = [
   ['hydration', 'Hidratacao'],
   ['supplementation', 'Suplementacao'],
   ['sleep', 'Sono'],
-  ['using_bodyflow', 'Uso do BodyFlow'],
+  ['using_bodyflow', 'Uso do Performe AI'],
 ] as const
 
 const STATUS_LABELS = Object.fromEntries(STATUS_OPTIONS) as Record<string, string>

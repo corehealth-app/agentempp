@@ -3,6 +3,7 @@
 import { Search, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { accountDisplayName } from '@/lib/account-identity'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,7 +12,8 @@ interface Hit {
   id: string
   user_id: string
   user_name: string | null
-  user_wpp: string
+  // Conta do app não tem número: vem nulo.
+  user_wpp: string | null
   direction: string
   content: string
   agent_stage: string | null
@@ -135,13 +137,13 @@ function SearchModal({ onClose }: { onClose: () => void }) {
                   className={`text-[10px] font-mono uppercase tracking-widest px-1.5 py-0.5 rounded ${
                     h.direction === 'in'
                       ? 'bg-ink-900/10 text-foreground'
-                      : 'bg-moss-500/10 text-moss-700'
+                      : 'bg-primary/10 text-primary'
                   }`}
                 >
-                  {h.direction === 'in' ? '← user' : '→ agente'}
+                  {h.direction === 'in' ? '← usuário' : '→ Flow'}
                 </span>
                 <span className="text-sm font-medium text-foreground">
-                  {h.user_name ?? h.user_wpp}
+                  {accountDisplayName({ name: h.user_name, wpp: h.user_wpp })}
                 </span>
                 {h.agent_stage && (
                   <span className="text-[10px] font-mono text-muted-foreground">

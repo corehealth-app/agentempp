@@ -1,24 +1,14 @@
 'use client'
 
-import {
-  CheckCircle2,
-  Edit2,
-  Flame,
-  Pause,
-  Play,
-  Tag,
-  Trophy,
-  X,
-} from 'lucide-react'
+import { CheckCircle2, Edit2, Flame, Tag, Trophy, X } from 'lucide-react'
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { CountryBadge } from '@/components/country-badge'
+import { accountContact } from '@/lib/account-identity'
 import { DangerZone } from './danger-zone'
 import {
-  pauseUserAction,
-  resumeUserAction,
   tagUserAction,
   untagUserAction,
   updateNotesAction,
@@ -28,7 +18,8 @@ import {
 interface User {
   id: string
   name: string | null
-  wpp: string
+  // Conta do app não tem número: `wpp` vem nulo.
+  wpp: string | null
   tags?: string[] | null
   admin_notes?: string | null
   metadata?: Record<string, unknown> | null
@@ -87,21 +78,12 @@ export function ConversationSidebar({
     !!user.metadata?.paused_until &&
     new Date(user.metadata.paused_until as string) > new Date()
 
-  function togglePause() {
-    startTransition(async () => {
-      if (isPaused) {
-        const r = await resumeUserAction(user.id)
-        if (r.error) toast.error(r.error)
-        else toast.success('Agente retomado')
-      } else {
-        const days = Number(prompt('Pausar por quantos dias?', '7'))
-        if (!days || days < 1 || days > 60) return
-        const r = await pauseUserAction(user.id, days)
-        if (r.error) toast.error(r.error)
-        else toast.success(`Pausado por ${days} dia(s)`)
-      }
-    })
-  }
+  // "Pausar agente" / "Retomar" saíram desta tela em 2026-10-05, para TODA
+  // conta: a pausa grava users.metadata.paused_until, que só o caminho do
+  // WhatsApp (encerrado) lê — o Flow continua respondendo, e retomar uma conta
+  // com número reativaria o canal antigo. As ações de servidor (pauseUserAction
+  // e resumeUserAction) continuam existindo. O aviso de pausa abaixo fica só
+  // como leitura do estado legado.
 
   function saveName() {
     startTransition(async () => {
@@ -147,29 +129,8 @@ export function ConversationSidebar({
     <div className="space-y-3 overflow-y-auto pr-1 -mr-1">
       {/* Identidade + ações */}
       <div className="content-card p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
-            Paciente
-          </div>
-          <Button
-            size="sm"
-            variant={isPaused ? 'default' : 'outline'}
-            onClick={togglePause}
-            disabled={pending}
-            className="h-7 text-xs"
-          >
-            {isPaused ? (
-              <>
-                <Play className="h-3 w-3 mr-1" />
-                Retomar
-              </>
-            ) : (
-              <>
-                <Pause className="h-3 w-3 mr-1" />
-                Pausar agente
-              </>
-            )}
-          </Button>
+        <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+          Usuário
         </div>
 
         {editingName ? (
@@ -209,7 +170,7 @@ export function ConversationSidebar({
           </div>
         )}
         <div className="text-[11px] font-mono text-muted-foreground inline-flex items-center gap-2">
-          +{user.wpp}
+          {accountContact(user)}
           <CountryBadge
             country={user.country ?? null}
             confirmed={!!user.country_confirmed}
@@ -218,7 +179,7 @@ export function ConversationSidebar({
         </div>
         {isPaused && user.metadata?.paused_until ? (
           <div className="text-[10px] font-mono text-amber-700 bg-amber-500/10 px-2 py-1 rounded">
-            💤 pausado até{' '}
+            💤 pausa legada (WhatsApp) até{' '}
             {new Date(user.metadata.paused_until as string).toLocaleDateString('pt-BR')}
           </div>
         ) : null}
@@ -244,7 +205,7 @@ export function ConversationSidebar({
           <button
             type="button"
             onClick={() => setShowTagInput(!showTagInput)}
-            className="text-[10px] font-mono text-moss-700 hover:text-moss-900"
+            className="text-[10px] font-mono text-primary hover:text-primary/80"
           >
             + adicionar
           </button>
@@ -318,7 +279,7 @@ export function ConversationSidebar({
             <button
               type="button"
               onClick={() => setEditingNotes(true)}
-              className="text-[10px] font-mono text-moss-700 hover:text-moss-900"
+              className="text-[10px] font-mono text-primary hover:text-primary/80"
             >
               editar
             </button>
@@ -329,7 +290,7 @@ export function ConversationSidebar({
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Anotações sobre este paciente..."
+              placeholder="Anotações sobre este usuário..."
               rows={4}
               className="w-full text-xs p-2 rounded border border-border bg-background resize-none"
             />
@@ -406,7 +367,7 @@ export function ConversationSidebar({
           </div>
           <a
             href={`/users/${user.id}`}
-            className="block mt-2 text-[10px] text-moss-700 hover:underline"
+            className="block mt-2 text-[10px] text-primary hover:underline"
           >
             ver perfil completo →
           </a>

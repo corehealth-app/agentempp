@@ -1,3 +1,5 @@
+import { AdminAccessDenied } from '@/components/admin-access-denied'
+import { guardAdminPage } from '@/lib/admin-page-guard'
 import { CheckCircle2, ExternalLink, XCircle } from 'lucide-react'
 import { ContentCard, PageHeader } from '@/components/page-header'
 import { STRIPE_CATALOG, getStripeStatus } from '@/lib/stripe'
@@ -6,6 +8,9 @@ import { SetupProductsButton } from './setup-button'
 export const dynamic = 'force-dynamic'
 
 export default async function StripeSettingsPage() {
+  const access = await guardAdminPage('/settings/stripe')
+  if (!access.ok) return <AdminAccessDenied access={access} />
+
   const status = await getStripeStatus()
 
   return (

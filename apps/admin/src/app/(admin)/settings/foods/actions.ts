@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { checkAdminPageAccess } from '@/lib/admin-page-guard'
 import { createServiceClient } from '@/lib/supabase/server'
 
 export interface FoodInput {
@@ -31,7 +32,21 @@ function unverifiedAdminWrite(input: FoodInput): FoodWrite {
   }
 }
 
+/**
+ * Estas ações ficam atrás da tela Banco de alimentos: só passa quem pode
+ * abri-la (mesma regra do guarda da página). Até 2026-10-05 elas não
+ * conferiam sessão nem papel. Devolve o texto do erro, ou null quando passa.
+ */
+async function foodsAccessError(): Promise<string | null> {
+  const access = await checkAdminPageAccess('/settings/foods')
+  if (access.ok) return null
+  return access.reason === 'anonymous' ? 'Não autenticado' : 'Acesso negado'
+}
+
 export async function upsertFood(input: FoodInput) {
+  const denied = await foodsAccessError()
+  if (denied) return { ok: false, error: denied }
+
   const write = unverifiedAdminWrite(input)
   const svc = createServiceClient()
 
@@ -69,6 +84,9 @@ export async function upsertFood(input: FoodInput) {
 }
 
 export async function deleteFood(id: number) {
+  const denied = await foodsAccessError()
+  if (denied) return { ok: false, error: denied }
+
   const svc = createServiceClient()
   const { data: existing, error: lookupError } = await svc
     .from('food_db')

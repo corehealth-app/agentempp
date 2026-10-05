@@ -3,13 +3,17 @@
 import { Command } from 'cmdk'
 import {
   Activity,
-  Bot,
+  Apple,
+  Calculator,
   Clock,
+  Cpu,
   CreditCard,
   FileText,
+  FunctionSquare,
   Key,
   LayoutDashboard,
   MessageSquare,
+  MessageSquareText,
   Newspaper,
   Search,
   Settings,
@@ -18,9 +22,12 @@ import {
   Trophy,
   UserCog,
   Users,
+  Wrench,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { accountContact } from '@/lib/account-identity'
+import { canOpenAdminPath, canSeeAdminNavItem } from '@/lib/admin-access'
 import { type AdminRole, CONTENT_MODULE_ROLES } from '@/lib/admin-rbac'
 import { attemptContentNavigation } from '@/lib/content/navigation-guard'
 import { createClient } from '@/lib/supabase/client'
@@ -28,7 +35,8 @@ import { createClient } from '@/lib/supabase/client'
 interface UserHit {
   id: string
   name: string | null
-  wpp: string
+  // Conta do app não tem número: `wpp` vem nulo.
+  wpp: string | null
 }
 
 interface CommandNavItem {
@@ -42,22 +50,44 @@ interface CommandNavItem {
 const NAV_ITEMS: CommandNavItem[] = [
   { label: 'Hoje (dashboard)', href: '/dashboard', icon: LayoutDashboard, group: 'Operação' },
   { label: 'Conversas', href: '/messages', icon: MessageSquare, group: 'Operação' },
-  { label: 'Pacientes', href: '/users', icon: Users, group: 'Operação' },
+  { label: 'Usuários', href: '/users', icon: Users, group: 'Operação' },
   {
-    label: 'Publicacoes',
+    label: 'Publicações',
     href: '/content',
     icon: Newspaper,
     group: 'Operação',
     roles: CONTENT_MODULE_ROLES,
   },
-  { label: 'Conquistas', href: '/crescimento/conquistas', icon: Trophy, group: 'Crescimento' },
-  { label: 'Funil & Cohorts', href: '/crescimento/funil', icon: TrendingUp, group: 'Crescimento' },
-  { label: 'Receita', href: '/crescimento/receita', icon: CreditCard, group: 'Crescimento' },
-  { label: 'Regras (prompts)', href: '/prompts', icon: FileText, group: 'Agente' },
-  { label: 'Playground', href: '/prompts/playground', icon: Bot, group: 'Agente' },
-  { label: 'Sub-agentes', href: '/settings/agents', icon: Settings, group: 'Agente' },
-  { label: 'Avaliações LLM', href: '/evaluations', icon: Sparkles, group: 'Agente' },
-  { label: 'Auditoria de tools', href: '/audit', icon: Activity, group: 'Agente' },
+  // A tela de Crescimento é uma só, com abas por `?tab=` (não existem rotas
+  // /crescimento/<aba>).
+  { label: 'Receita', href: '/crescimento?tab=receita', icon: CreditCard, group: 'Crescimento' },
+  {
+    label: 'Conquistas',
+    href: '/crescimento?tab=conquistas',
+    icon: Trophy,
+    group: 'Crescimento',
+  },
+  {
+    label: 'Funil & Cohorts',
+    href: '/crescimento?tab=funil',
+    icon: TrendingUp,
+    group: 'Crescimento',
+  },
+  { label: 'Regras', href: '/prompts', icon: FileText, group: 'Flow' },
+  { label: 'Sub-agentes', href: '/settings/agents', icon: Cpu, group: 'Flow' },
+  { label: 'Tools', href: '/settings/tools', icon: Wrench, group: 'Flow' },
+  { label: 'Avaliações LLM', href: '/evaluations', icon: Sparkles, group: 'Flow' },
+  { label: 'Auditoria', href: '/audit', icon: Activity, group: 'Flow' },
+  { label: 'Global', href: '/settings/global', icon: Settings, group: 'Configuração' },
+  { label: 'Cálculos', href: '/settings/calc', icon: Calculator, group: 'Configuração' },
+  { label: 'Fórmulas', href: '/formulas', icon: FunctionSquare, group: 'Configuração' },
+  { label: 'Banco de alimentos', href: '/settings/foods', icon: Apple, group: 'Configuração' },
+  {
+    label: 'Mensagens do coach',
+    href: '/settings/coach-messages',
+    icon: MessageSquareText,
+    group: 'Configuração',
+  },
   { label: 'API Keys', href: '/settings/api-keys', icon: Key, group: 'Configuração' },
   { label: 'Stripe', href: '/settings/stripe', icon: CreditCard, group: 'Configuração' },
   { label: 'Crons', href: '/settings/crons', icon: Clock, group: 'Configuração' },
@@ -71,6 +101,8 @@ export function CommandPalette({ role }: { role: AdminRole }) {
   const [users, setUsers] = useState<UserHit[]>([])
   const [searching, setSearching] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Só busca pessoas quem pode abrir a tela de Usuários.
+  const canSearchUsers = canOpenAdminPath(role, '/users')
 
   // Atalhos: Cmd/Ctrl+K abre/fecha
   useEffect(() => {
@@ -93,22 +125,27 @@ export function CommandPalette({ role }: { role: AdminRole }) {
     }
   }, [open])
 
-  // Search de pacientes (debounced 200ms)
-  const searchUsers = useCallback(async (q: string) => {
-    if (!q || q.length < 2) {
-      setUsers([])
-      return
-    }
-    setSearching(true)
-    const supabase = createClient()
-    const { data } = await supabase
-      .from('users')
-      .select('id, name, wpp')
-      .or(`name.ilike.%${q}%,wpp.ilike.%${q}%`)
-      .limit(8)
-    setUsers((data ?? []) as UserHit[])
-    setSearching(false)
-  }, [])
+  // Busca de usuários (debounced 200ms)
+  const searchUsers = useCallback(
+    async (q: string) => {
+      if (!canSearchUsers || !q || q.length < 2) {
+        setUsers([])
+        return
+      }
+      setSearching(true)
+      const supabase = createClient()
+      // A busca lê só o que já lia (id, name, wpp). O e-mail não é carregado
+      // aqui, então não é pesquisado: conta do app é achada pelo nome.
+      const { data } = await supabase
+        .from('users')
+        .select('id, name, wpp')
+        .or(`name.ilike.%${q}%,wpp.ilike.%${q}%`)
+        .limit(8)
+      setUsers((data ?? []) as UserHit[])
+      setSearching(false)
+    },
+    [canSearchUsers],
+  )
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -129,7 +166,7 @@ export function CommandPalette({ role }: { role: AdminRole }) {
 
   // Agrupa nav items
   const grouped: Record<string, typeof NAV_ITEMS> = {}
-  for (const item of NAV_ITEMS.filter((item) => !item.roles || item.roles.includes(role))) {
+  for (const item of NAV_ITEMS.filter((item) => canSeeAdminNavItem(role, item))) {
     grouped[item.group] = grouped[item.group] ?? []
     grouped[item.group]?.push(item)
   }
@@ -152,7 +189,7 @@ export function CommandPalette({ role }: { role: AdminRole }) {
           <Command.Input
             value={query}
             onValueChange={setQuery}
-            placeholder="Buscar pacientes, ir pra página..."
+            placeholder={canSearchUsers ? 'Buscar usuários, ir pra página...' : 'Ir pra página...'}
             className="flex-1 bg-transparent outline-none text-sm placeholder:text-muted-foreground"
             autoFocus
           />
@@ -168,13 +205,13 @@ export function CommandPalette({ role }: { role: AdminRole }) {
 
           {users.length > 0 && (
             <Command.Group
-              heading="Pacientes"
+              heading="Usuários"
               className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground/70 px-2 py-1"
             >
               {users.map((u) => (
                 <Command.Item
                   key={u.id}
-                  value={`paciente ${u.name ?? ''} ${u.wpp}`}
+                  value={`usuario ${u.name ?? ''} ${accountContact(u)}`}
                   onSelect={() => go(`/users/${u.id}`)}
                   className="flex items-center gap-3 px-2 py-2 rounded text-sm cursor-pointer aria-selected:bg-accent aria-selected:text-foreground"
                 >
@@ -184,7 +221,7 @@ export function CommandPalette({ role }: { role: AdminRole }) {
                   <div className="flex-1 min-w-0">
                     <div className="text-foreground truncate">{u.name ?? '(sem nome)'}</div>
                     <div className="text-[11px] font-mono text-muted-foreground truncate">
-                      +{u.wpp}
+                      {accountContact(u)}
                     </div>
                   </div>
                 </Command.Item>

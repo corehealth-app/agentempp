@@ -18,9 +18,10 @@ const outfit = Outfit({
 })
 
 export const metadata: Metadata = {
-  title: 'Agente MPP — Admin',
-  description: 'Painel de controle do Agente MPP — método Muscular Power Plant',
-  icons: { icon: '/favicon.ico' },
+  title: 'Performe AI — Painel',
+  description: 'Painel da equipe do Performe AI: Biblioteca, regras do Flow, cálculos e contas.',
+  // Símbolo aprovado, cópia idêntica do master (ver src/components/brand-symbol.md).
+  icons: { icon: [{ url: '/brand/symbol-light.svg', type: 'image/svg+xml' }] },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

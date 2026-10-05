@@ -1,12 +1,18 @@
+import { AdminAccessDenied } from '@/components/admin-access-denied'
+import { guardAdminPage } from '@/lib/admin-page-guard'
 import { ContentCard, PageHeader } from '@/components/page-header'
 import { createServiceClient } from '@/lib/supabase/server'
 import { formatDateTime } from '@/lib/utils'
 import { CheckCircle2, Clock, XCircle, Circle } from 'lucide-react'
 import { CronControls } from './cron-controls'
+import { isLegacyWhatsAppCron, LEGACY_CRON_LABEL } from './legacy-jobs'
 
 export const dynamic = 'force-dynamic'
 
 export default async function CronsPage() {
+  const access = await guardAdminPage('/settings/crons')
+  if (!access.ok) return <AdminAccessDenied access={access} />
+
   const supabase = createServiceClient()
   const { data: jobs, error } = await supabase.from('v_cron_jobs').select('*')
 
@@ -15,7 +21,7 @@ export default async function CronsPage() {
       <PageHeader
         breadcrumbs={[{ label: 'Configuração' }, { label: 'Crons' }]}
         title="Cron Jobs"
-        description="Agendamentos rodando via pg_cron. Cada job dispara um evento Inngest ou executa SQL direto."
+        description="Agendamentos rodando via pg_cron. Cada job dispara um evento Inngest ou executa SQL direto. Os jobs do canal de WhatsApp, encerrado, aparecem rotulados como legado."
       />
 
       {error && (
@@ -38,6 +44,7 @@ export default async function CronsPage() {
               const lastRun =
                 (j.last_run as { status?: string; start_time?: string; return_message?: string } | null) ??
                 null
+              const legacy = isLegacyWhatsAppCron(String(j.jobname))
               return (
                 <li
                   key={j.jobid as number}
@@ -59,6 +66,11 @@ export default async function CronsPage() {
                         />
                         {j.active ? 'ativo' : 'inativo'}
                       </span>
+                      {legacy && (
+                        <span className="inline-flex items-center text-[10px] uppercase tracking-widest font-mono px-2 py-0.5 rounded-full shrink-0 bg-muted text-muted-foreground">
+                          {LEGACY_CRON_LABEL}
+                        </span>
+                      )}
                     </div>
                     <code className="text-xs bg-muted text-foreground px-2 py-0.5 rounded inline-block mb-1.5 font-mono">
                       {j.schedule}
@@ -71,6 +83,7 @@ export default async function CronsPage() {
                       jobname={String(j.jobname)}
                       schedule={String(j.schedule)}
                       active={Boolean(j.active)}
+                      legacy={legacy}
                     />
                   </div>
                   <div className="text-right shrink-0 text-xs">

@@ -1,10 +1,12 @@
 import { ArrowLeft, FilePlus2, LockKeyhole } from 'lucide-react'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { AdminAccessDenied } from '@/components/admin-access-denied'
 import { PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { guardAdminPage } from '@/lib/admin-page-guard'
 import { CONTENT_AUTHOR_ROLES, hasAdminRole, isAdminRole } from '@/lib/admin-rbac'
 import { createClient } from '@/lib/supabase/server'
 import { createContentDraftAction, createContentPublicationAction } from '../actions'
@@ -14,6 +16,9 @@ export const dynamic = 'force-dynamic'
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
 export default async function NewContentPage({ searchParams }: { searchParams: SearchParams }) {
+  const access = await guardAdminPage('/content')
+  if (!access.ok) return <AdminAccessDenied access={access} />
+
   const admin = await loadAdmin()
   if (!admin || !hasAdminRole(admin.role, CONTENT_AUTHOR_ROLES)) return <AccessDenied />
   const params = await searchParams
@@ -55,7 +60,7 @@ export default async function NewContentPage({ searchParams }: { searchParams: S
     <div className="space-y-4">
       <PageHeader
         compact
-        breadcrumbs={[{ label: 'Publicacoes', href: '/content' }, { label: 'Nova' }]}
+        breadcrumbs={[{ label: 'Publicações', href: '/content' }, { label: 'Nova' }]}
         title="Nova publicacao"
         actions={
           <Button asChild size="sm" variant="outline">
@@ -146,7 +151,7 @@ function AccessDenied() {
   return (
     <div className="space-y-4">
       <PageHeader
-        breadcrumbs={[{ label: 'Publicacoes', href: '/content' }, { label: 'Nova' }]}
+        breadcrumbs={[{ label: 'Publicações', href: '/content' }, { label: 'Nova' }]}
         title="Nova publicacao"
       />
       <section className="content-card flex min-h-64 flex-col items-center justify-center px-6 text-center">

@@ -1,4 +1,6 @@
+import { AdminAccessDenied } from '@/components/admin-access-denied'
 import { ContentCard, PageHeader } from '@/components/page-header'
+import { guardAdminPage } from '@/lib/admin-page-guard'
 import { createServiceClient } from '@/lib/supabase/server'
 import { CalcConfigForm } from './form'
 
@@ -11,6 +13,9 @@ interface ConfigItem {
 }
 
 export default async function CalcConfigPage() {
+  const access = await guardAdminPage('/settings/calc')
+  if (!access.ok) return <AdminAccessDenied access={access} />
+
   const svc = createServiceClient()
   const { data: rows } = await (svc as unknown as {
     from: (t: string) => {
@@ -33,23 +38,23 @@ export default async function CalcConfigPage() {
       <PageHeader
         breadcrumbs={[{ label: 'Configuração' }, { label: 'Cálculos' }]}
         title="Constantes de cálculo"
-        description="Toda fórmula determinística do MPP — BMR, TDEE, proteína, IMC, %BF, sono mínimo, blocos 7700, XP, badges. Mudanças aqui afetam novos cálculos imediatamente."
+        description="Toda fórmula determinística do método — BMR, TDEE, proteína, IMC, %BF, sono mínimo, blocos 7700, XP, badges. Mudanças aqui afetam novos cálculos imediatamente."
       />
 
       <div className="glass-card border-l-4 border-l-blue-500/60 p-4 text-xs space-y-1">
         <p className="font-medium text-blue-700 uppercase tracking-widest text-[10px]">
-          📘 Fonte de verdade: doc MPP no Notion
+          📘 Fonte de verdade: documento do método
         </p>
         <p className="text-muted-foreground">
-          Todos os valores aqui seguem a documentação oficial do método MPP (Notion). As fórmulas
+          Todos os valores aqui seguem o documento do método (docs/CALCULO-MPP.md). As fórmulas
           incluem BMR Mifflin-St Jeor / Katch-McArdle, recomp = BMR × 1.2 − déficit, ganho = BMR ×
           atividade × 1.05, meta de IMC (5 pontos por vez até 25, depois 23 → 22 → 21; dito pelo
           cliente em 26/01/2026, confirmação pendente), escada BF, levels (8 níveis), 17
           badges, fatores de proteína em cascata por hunger + treino (a cascata vale para ganho de
           massa, manutenção e perfil sem protocolo; a recomposição é fixa em 1,5 g/kg — dito pelo
           cliente em 15/04 e 15/05/2026; confirmação pendente), e critérios de elegibilidade
-          (treino ≥ 3, sono ≥ 6h30, alimentação estruturada). Antes de alterar, verifique a doc
-          original.
+          (treino ≥ 3, sono ≥ 6h30, alimentação estruturada). Antes de alterar, verifique o
+          documento do método.
         </p>
       </div>
 
@@ -59,7 +64,7 @@ export default async function CalcConfigPage() {
         </p>
         <p className="text-muted-foreground">
           Mudanças nessas constantes afetam recomendações nutricionais e de treino de TODOS os
-          pacientes em tempo real (sem deploy). Os valores padrão seguem literatura científica.
+          usuários em tempo real (sem deploy). Os valores padrão seguem literatura científica.
           Toda mudança é registrada em{' '}
           <code className="font-mono bg-muted px-1 py-0.5 rounded">audit_log</code> e usa cache de
           60s — alteração reflete em até 1 minuto.

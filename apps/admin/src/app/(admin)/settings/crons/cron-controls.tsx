@@ -11,15 +11,19 @@ import {
   toggleCronAction,
   updateCronScheduleAction,
 } from './actions'
+import { alsoTriggersLegacyReminder } from './legacy-jobs'
 
 export function CronControls({
   jobname,
   schedule,
   active,
+  legacy = false,
 }: {
   jobname: string
   schedule: string
   active: boolean
+  /** Job só do canal de WhatsApp (encerrado): sem "Rodar agora" e sem "Ativar". */
+  legacy?: boolean
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -63,9 +67,14 @@ export function CronControls({
   }
 
   function runNow() {
+    // Job do canal encerrado: o botão fica desabilitado e a função não dispara.
+    if (legacy) return
+    const legacyReminderWarning = alsoTriggersLegacyReminder(jobname)
+      ? '\n\nAtenção: este evento também aciona o lembrete legado de dia sem registro, que envia WhatsApp onde o canal antigo ainda estiver ligado.'
+      : ''
     if (
       !confirm(
-        `Disparar "${jobname}" agora?\n\nIsso executa o command do cron imediatamente, fora do schedule.`,
+        `Disparar "${jobname}" agora?\n\nIsso executa o command do cron imediatamente, fora do schedule.${legacyReminderWarning}`,
       )
     )
       return
@@ -128,7 +137,14 @@ export function CronControls({
             size="sm"
             variant="outline"
             onClick={toggle}
-            disabled={pending}
+            // Job legado inativo não é reativado por aqui (reativar agendaria
+            // envios do canal encerrado). Desativar continua disponível.
+            disabled={pending || (legacy && !optimisticActive)}
+            title={
+              legacy && !optimisticActive
+                ? 'Job do canal de WhatsApp, encerrado: não é reativado pelo painel.'
+                : undefined
+            }
             className={`h-7 text-xs ${optimisticActive ? 'text-rose-700 hover:bg-rose-500/10' : 'text-moss-700 hover:bg-moss-500/10'}`}
           >
             <Power className="h-3 w-3 mr-1" />
@@ -138,7 +154,10 @@ export function CronControls({
             size="sm"
             variant="outline"
             onClick={runNow}
-            disabled={pending}
+            disabled={pending || legacy}
+            title={
+              legacy ? 'Job do canal de WhatsApp, encerrado: "Rodar agora" desabilitado.' : undefined
+            }
             className="h-7 text-xs text-amber-700 hover:bg-amber-500/10"
           >
             <Play className="h-3 w-3 mr-1" />

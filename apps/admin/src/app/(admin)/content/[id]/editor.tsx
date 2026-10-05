@@ -69,7 +69,7 @@ const CATEGORY_OPTIONS: Array<[ContentDraftInput['category'], string]> = [
   ['hydration', 'Hidratacao'],
   ['supplementation', 'Suplementacao'],
   ['sleep', 'Sono'],
-  ['using_bodyflow', 'Uso do BodyFlow'],
+  ['using_bodyflow', 'Uso do Performe AI'],
 ]
 
 const PROTOCOL_OPTIONS = [

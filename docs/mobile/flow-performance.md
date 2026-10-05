@@ -876,3 +876,72 @@ reversão.
 > RC PERF-T4 — cenário chamada de chat com 429 e `Retry-After` do provedor NÃO coberto nesta PR (pendência da audit 2026-10-04). A espera do SDK entre as duas tentativas (até 60 s) não entra na conta do prazo: uma chamada pode durar até 150 s e terminar depois dos 150 s do turno. Medido na revisão com o SDK real e tempo virtual: 429 com `Retry-After: 55` e segunda tentativa pendurada só falha aos 100 s. Quem encerra o turno é a trava de 165 s do serviço, com o agente ainda rodando (RC PERF-T3). No golden o modelo é roteirizado: sem SDK.
 
 > RC PERF-T3 — cenário agente que continua rodando DEPOIS que o serviço encerrou o turno NÃO coberto nesta PR (pendência da audit 2026-10-04). A resposta atrasada é descartada (travado em teste); uma ferramenta em andamento ainda pode gravar um rascunho, que a nova tentativa do mesmo turno reaproveita pela chave do turno.
+
+## Parte 3 — Medido com o modelo real em 2026-10-05, e duas pendências não corrigidas
+
+Primeira medição no staging depois do commit `426a214`, conta de ganho de
+massa, pelo iPhone (build `a95d357`, servidor `a12d11e`, função em São Paulo):
+
+| Turno | Chamadas ao modelo | Tokens de entrada | Custo | Tempo |
+|---|---|---|---|---|
+| "Como esta meu dia ate agora?" | 3 (consulta, resposta, repetição da trava de registro) | 25.563 | US$ 0,0675 (US$ 0,0407 é a primeira chamada gravando o cache) | 10,6 s |
+| "Sugira um cardapio completo para hoje" (o Flow perguntou as restrições) | 1 | 8.313, com 5.062 lidos do cache | US$ 0,0121 | 3,0 s |
+| "Sem restricoes" (o cardápio) | 2, mais o gerador 2 vezes | 7.943 e 8.782 | US$ 0,0878 | 44 s |
+
+Contra a linha de base de 04/10 (cerca de 11.000 tokens por chamada,
+US$ 0,035 por resposta, mediana de 14 s): cada chamada leva agora de 8.000 a
+8.700 tokens, e uma resposta de uma chamada custa US$ 0,012 e leva 3 s.
+
+### Pendência 1 — a trava de registro dispara em negações no Flow
+
+"Hoje ainda não tem nada registrado" é lido pela trava como afirmação de
+registro: uma chamada a mais ao modelo (US$ 0,0137 e 3,2 s no turno medido),
+os eventos `llm.fake_write_detected` e `llm.fake_write_unresolved`, e a
+repetição acrescentou um parágrafo redundante à resposta. Nos 8 dias até
+05/10, 5 de 37 respostas do Flow no staging passaram por isso, as cinco com
+negação ("nenhuma refeição foi registrada", "nada registrado", "sem treino
+registrado", "nenhum treino registrado"). O Flow não tem ferramenta de
+registro, então a repetição nunca consegue cumprir a instrução que recebe
+("chame registra_refeicao").
+
+Tentativa de correção em 05/10, só no Flow: tratar a negação como não
+afirmação, por formas de frase. Três rodadas de revisão adversarial
+reprovaram, cada uma com afirmações reais que passariam em silêncio perto de
+uma negação ("Pão com ovo sem café registrado: 320 kcal", "Não registrei o
+treino, só o almoço — 520 kcal", "Ainda não foi registrado. Agora foi 💪 520
+kcal"). A regra por palavras não converge. O código não foi commitado; está
+guardado fora do repositório (`handoff-20261004/flowguard-negation-wip/`,
+com o patch, o golden e os achados das revisões em `loteF-result.json`).
+
+Caminhos que ficaram para decidir, nenhum implementado:
+
+- no Flow, registrar o evento e não repetir a chamada (a repetição não tem
+  ferramenta para chamar); o preço é entregar sem tentativa de retratação
+  uma afirmação falsa de registro, se o modelo fizer uma;
+- manter como está e aceitar o custo medido (cerca de 13% dos turnos com uma
+  chamada a mais).
+
+O WhatsApp não entra nessa conta: lá a mesma frase também dispara, e mudar
+isso é decisão própria.
+
+### Pendência 2 — o gerador de cardápio quase sempre roda duas vezes
+
+Lido dos eventos do staging (uma conta, de 29/09 a 05/10): 14 tentativas do
+gerador, 10 recusadas; 6 por proteína, sempre ACIMA da meta (de +25% a +41%);
+4 por formato (três tipos já normalizados em commits posteriores; o campo de
+proteína ausente ainda só se resolve na segunda tentativa). De 7 primeiras
+tentativas com formato válido, 1 passou na proteína; as 3 repetições que
+receberam o erro medido passaram. Cada tentativa perdida custa cerca de 17 s
+e US$ 0,028.
+
+Dois fatos do código que importam para qualquer correção: o gerador não
+recebe catálogo de alimentos (o modelo escreve as calorias e a proteína de
+cada item de memória), e a faixa aceita é conferida sobre os totais que o
+modelo escreve em cada refeição — nenhum código soma os itens.
+
+O mapa de 05/10 propôs um teto de proteína por refeição nas instruções do
+gerador; a contraprova não aceitou a explicação causal nem a proposta (os
+quatro cardápios ACEITOS teriam estourado esse teto). O que as duas leituras
+concordam: é preciso medir com o modelo real antes de mexer, e isso é lento
+pelo app (limite de 2 sugestões por 2 horas por conta). Mapa e contraprova
+em `handoff-20261004/maps/readiness-result.json`.

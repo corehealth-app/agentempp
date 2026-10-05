@@ -2108,6 +2108,82 @@ lugar para guardar a proposta (menos de 20 rascunhos abertos e menos de 3
 falhas de gravação na última hora): sem lugar, nada é gerado. `gera_treino`/`gera_dieta` continuam recusadas
 no app, e as propostas não existem no WhatsApp.
 
+### Identidade pública do Flow
+
+No app o assistente é o **Flow, do Performe AI**, e nada mais: o nome do
+método das regras de cálculo ("MPP", "Muscular Power Plant") e o nome do
+médico que o escreveu são referências internas e não chegam à pessoa. Duas
+camadas cuidam disso, só no caminho do Flow (`processAuthenticatedMessage`;
+a entrada legada do WhatsApp não muda).
+
+1. **A instrução ao modelo é absoluta** (`mobileFlowSystemPolicy`, em
+   `packages/agent/src/pipeline.ts`): nunca escrever esses nomes nem "método
+   do Dr. …", nem quando a pessoa perguntar; perguntado qual é o método ou
+   quem está por trás, o Flow diz que as orientações seguem o programa do
+   Performe AI. Antes a regra só proibia citar "espontaneamente".
+2. **Uma última barreira determinística** no texto de `POST /flow/chat`
+   (`packages/agent/src/flow-public-names.ts`, aplicada a toda forma de um
+   turno terminar). É um **vocabulário fechado**: troca só as grafias
+   listadas em RC FN-4 e não lê a redação em volta do nome (não existe regra
+   de "assinatura" nem de "vocativo").
+   - O nome do método vira "Performe AI", menos quando está colado a
+     `/ . @ - _` ou a letra ou número: trecho de caminho, de subdomínio ou de
+     identificador fica como está. A consulta e a âncora de um endereço
+     (`?ref=mpp`, `#mpp`) ainda não: ali a sigla é trocada (limite declarado
+     em RC FN-4).
+   - O nome do médico só é trocado **quando vem com o sobrenome**: por "Flow"
+     logo depois de uma das aberturas de apresentação da lista, por
+     "Performe AI" no resto. "Dr. Roberto" ou "Roberto" sem o sobrenome nunca
+     são trocados (pode ser a pessoa que usa o app, ou um terceiro: RC FN-7),
+     nem outra pessoa com o mesmo sobrenome ("Dra. Roberta Menescal").
+   - **Conta com o sobrenome:** quando o nome cadastrado da conta
+     (`users.name`, o mesmo que o contexto do Flow já carrega; nenhuma
+     consulta a mais) contém "Menescal", sem diferença de maiúscula ou
+     acento, o nome do médico não é trocado naquele turno. Os nomes do método
+     continuam trocados.
+
+O turno grava `llm.flow_internal_name_replaced` em `product_events` só com
+contagens e o estágio, nunca com texto: `method_names`, `persona_self` e
+`persona_other` (nomes trocados) e `persona_first_name_only` (título +
+primeiro nome vistos sem o sobrenome e **não** trocados; o evento é gravado
+também quando só este contador é maior que zero). Uma resposta sem nada disso
+sai idêntica à que o modelo escreveu e não grava evento.
+
+Exemplos travados (entrada do modelo → o que o app recebe):
+
+| Resposta do modelo | O app recebe |
+|---|---|
+| `Bom treino, Dr. Roberto!` | igual |
+| `Fale com seu médico, o Dr. Roberto Silva.` | igual |
+| `Dra. Roberta Menescal` | igual |
+| `Bom dia, Roberto Menescal! Vamos registrar o almoço?` | igual, na conta cujo nome contém "Menescal"; `Bom dia, Performe AI! Vamos registrar o almoço?` nas outras |
+| `Sou o Dr. Roberto Menescal.` | `Sou o Flow.` |
+| `O método foi criado pelo Dr. Roberto Menescal.` | `O método foi criado pelo Performe AI.` |
+| `É o M.P.P., sim.` | `É o Performe AI, sim.` |
+| `MPP (Muscular Power Plant)` | `Performe AI (Performe AI)` |
+| `https://example.com/mpp/guia`, `docs/CALCULO-MPP.md`, `MPP-2`, `@mpp/agent` | iguais |
+
+Travado em
+`packages/agent/src/__golden__/audit-10-05-flow-never-names-the-method.test.ts`
+(as três perguntas "Qual é o método que vocês usam?", "Isso é o MPP?" e
+"Quem é o Dr. Roberto?", e cada frase da decisão de 2026-10-05, pelo pipeline
+real com modelo roteirizado) e em
+`packages/agent/src/flow-public-names.test.ts`.
+
+> RC FN-1 — cenário resposta do MODELO REAL às três perguntas ("Qual é o método que vocês usam?", "Isso é o MPP?", "Quem é o Dr. Roberto?") NÃO coberto nesta PR (pendência da audit 2026-10-05). O modelo é roteirizado: o golden prova que a instrução absoluta vai no pedido e o que o filtro troca e não troca quando um nome escapa, não que o modelo real obedece nem como ele redige a resposta. Em staging, `llm.flow_internal_name_replaced` conta quantas vezes o filtro agiu (`method_names`, `persona_self`, `persona_other`) e quantas vezes viu título + primeiro nome sem o sobrenome e não trocou (`persona_first_name_only`).
+
+> RC FN-2 — cenário frase SOBRE o médico em terceira pessoa NÃO coberto nesta PR (pendência da audit 2026-10-05). O filtro troca nomes, não afirmações nem a redação em volta: "O Dr. Roberto Menescal é o médico que criou o método." chega como "O Performe AI é o médico que criou o método." e "Método MPP (Muscular Power Plant)" chega como "Método Performe AI (Performe AI)". Sem os nomes, mas a frase fica estranha e continua dizendo que há um médico por trás. Travado como pendência no golden.
+
+> RC FN-3 — cenário nome dentro do RASCUNHO gravado de uma sugestão de plano (o que a tela "Revisar sugestão" mostra) NÃO coberto nesta PR (pendência da audit 2026-10-05). O filtro cobre o texto da sugestão que vai para o chat; o rascunho é gravado como o gerador escreveu. O prompt dos geradores no app já proíbe citar método e profissional. Travado como pendência no golden (treino com a regra de progressão citando o método).
+
+> RC FN-4 — cenário nome FORA do vocabulário fechado do filtro NÃO coberto nesta PR (pendência da audit 2026-10-05). O filtro troca só estas grafias. Do método, por "Performe AI": "MPP" e "MPPs" em qualquer caixa; as formas em maiúsculas "M.P.P.", "M. P. P." e "M P P"; "Muscular Power Plant" em qualquer caixa, com espaço, espaço não separável, hífen ou nada entre as palavras. Do médico, só com o sobrenome: título opcional (Dr., Dr, Dra., Doutor, Doctor) + primeiro nome opcional (Roberto, Robert) + "Menescal", por "Flow" logo depois de "sou o", "sou", "aqui é o", "aqui é", "me chamo", "meu nome é", "I am", "I'm" ou "this is", e por "Performe AI" no resto. Passam sem troca, de propósito: a grafia colada a / . @ - _ ou a letra ou número, que é trecho de endereço, caminho ou identificador ("https://example.com/mpp/guia", "https://mpp.example.com/guia", "docs/CALCULO-MPP.md", "MPP-2", "@mpp/agent", "mppx", "agentempp", "mpp_mensal_v1", e também "MPP/Muscular Power Plant" e "__MPP__"); outra pessoa com o sobrenome, isto é, "Menescal" logo depois de uma palavra capitalizada que não seja Roberto/Robert ("Dra. Roberta Menescal", "Ana Menescal", e também "Segundo Menescal, …" no começo de frase); e todo o nome do médico quando o nome cadastrado da conta contém "Menescal", sem diferença de maiúscula ou acento (a pessoa pode ser ele; os nomes do método continuam trocados). Passam sem troca por estarem fora da lista: "Menescau", "Dr. Róberto", "m.p.p.", "M P Pereira", "Método do Dr. Fulano"; e a apresentação com outra abertura ("Soy el Dr. Roberto Menescal." vira "Soy el Performe AI.", não "Soy el Flow."). Limites conhecidos, sem correção nesta PR: na consulta ou na âncora de um endereço, e em caminho com barra invertida, a sigla ainda é trocada e o link chega quebrado ("https://example.com/guia?ref=mpp" vira "https://example.com/guia?ref=Performe AI", "https://example.com/guia#mpp" vira "https://example.com/guia#Performe AI", "utm_source=mpp" vira "utm_source=Performe AI"); a sigla seguida de ponto e letra, sem espaço, passa ("É o MPP.Sim"); depois de "não", "nao", "nem", "nunca" ou "jamais" a abertura não conta como apresentação ("Não sou o Dr. Roberto Menescal." vira "Não sou o Performe AI."); o nome do médico colado a / - _ passa inteiro ("Dr. Roberto Menescal/CRM 123", "_Dr. Roberto Menescal_"); e "Menescal" sem uma palavra capitalizada logo antes é trocado mesmo sendo outra pessoa ("Sra. Menescal" vira "Sra. Performe AI"), enquanto qualquer palavra capitalizada logo antes o preserva ("Professor Menescal"). Travado no golden e em `packages/agent/src/flow-public-names.test.ts`.
+
+> RC FN-5 — cenário contexto ENVIADO ao modelo sem "MPP" NÃO coberto nesta PR (pendência da audit 2026-10-05). As regras do banco e os trechos do manual continuam chegando ao Flow com "MPP" e "Muscular Power Plant" no corpo (só a apresentação e o nome do médico já eram trocados). Reescrever essas regras é conteúdo clínico no banco e fica para decisão do dono.
+
+> RC FN-6 — cenário respostas JÁ gravadas no histórico antes desta mudança NÃO coberto nesta PR (pendência da audit 2026-10-05). O filtro age na resposta do turno; uma linha antiga com o nome continua como foi gravada e o app a mostra ao abrir a conversa. Nenhum banco foi lido para saber se existe alguma.
+
+> RC FN-7 — cenário "Flow escreve 'Dr. Roberto' sem o sobrenome" variante NÃO coberta pelo filtro nesta PR (fica só a instrução ao modelo; pendência da audit 2026-10-05). Título e/ou primeiro nome sem "Menescal" ("Dr. Roberto", "Doutor Roberto", "Roberto") nunca são trocados, porque podem ser o nome de quem usa o app ou de outra pessoa: "Bom treino, Dr. Roberto!" e "Fale com seu médico, o Dr. Roberto Silva." chegam como o modelo escreveu. Por isso "O Dr. Roberto é o médico que criou o método." (uma resposta possível a "Quem é o Dr. Roberto?") também chega inteira, com o título e o primeiro nome do médico. O turno só conta a ocorrência de título + primeiro nome em `persona_first_name_only`, sem texto. Travado como pendência no golden.
+
 ## Proposta de treino
 
 ```json

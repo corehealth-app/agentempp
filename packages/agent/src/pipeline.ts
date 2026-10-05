@@ -132,6 +132,7 @@ import type {
   SystemPromptBlock,
 } from '@mpp/providers'
 import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions'
+import { LEGACY_PERSONA_NAME_PATTERN, projectFlowPublicNames } from './flow-public-names.js'
 import { flowPlainStatusText } from './flow-status-text.js'
 import {
   ensureSuggestionShown,
@@ -301,6 +302,11 @@ export const MOBILE_FLOW_LEAN_CONTEXT: boolean = true
 
 /** Event with the numbers of each model call of a Flow turn (no text). */
 export const MOBILE_FLOW_CALLS_EVENT = 'llm.flow_calls'
+/** Flow only. The answer still carried a name the app never shows (the
+ * method's or the physician's): how many were replaced, and how many times
+ * the title + first name came without the surname and were NOT replaced.
+ * Counts only, no text. */
+export const MOBILE_FLOW_PUBLIC_NAMES_EVENT = 'llm.flow_internal_name_replaced'
 
 /**
  * Flow only: model iterations of one turn, guard retries apart. The number
@@ -541,7 +547,6 @@ async function recordFlowCalls(
   }
 }
 
-const LEGACY_PERSONA_NAME_PATTERN = /\bDr\.?\s+Robert(?:o)?(?:\s+Menescal)?\b/gi
 // Intro da persona master compartilhada (e sua tradução), não texto de resposta.
 const LEGACY_PERSONA_INTRODUCTION_PATTERN =
   /^(?:Você é|You are|Eres)\s+(?:o\s+|the\s+)?(?:\*\*)?Dr\.?\s+Robert(?:o)?(?:\s+Menescal)?(?:\*\*)?[^.\n]*(?:\.|$)/gim
@@ -556,7 +561,10 @@ das regras compartilhadas, contexto recuperado e apresentações no histórico.
 Não reivindique profissão regulamentada nem se apresente como médico,
 nutricionista, psicólogo, profissional de saúde ou profissional habilitado.
 Não use títulos Dr./Dra. ou a identidade de uma pessoa real como sua credencial.
-MPP é uma referência interna: não o apresente espontaneamente como método, marca, identidade ou credencial.
+Nunca escreva "MPP", "Muscular Power Plant", o nome de quem criou o método
+nem "método do Dr." seguido de nome, nem quando a pessoa perguntar: são
+referências internas. Se perguntarem qual é o método ou quem está por trás
+dele, diga só que as orientações seguem o programa do Performe AI.
 Responda em texto simples, sem Markdown decorativo, inclusive na apresentação curta.
 Não envolva nomes ou dados em asteriscos, underscores, headings ou crases de formatação.
 Uma mensagem enviada no chat não autoriza alteração de dados de saúde.
@@ -575,7 +583,9 @@ que uma ação foi concluída sem confirmação determinística do servidor.`
 
 function mobileFlowPromptContext(context: string): string {
   // Projeta somente a apresentação conhecida da persona; mantém tom, decisões,
-  // cálculos e referências internas. Não filtra ou mascara o output do modelo.
+  // cálculos e referências internas. O OUTPUT do modelo passa por outra troca,
+  // de vocabulário fechado, em processAuthenticatedMessage
+  // (projectFlowPublicNames, flow-public-names.ts).
   return context
     .replace(LEGACY_PERSONA_INTRODUCTION_PATTERN, 'Você é Flow, assistente de IA do Performe AI.')
     .replace(LEGACY_PERSONA_MARKDOWN_SECTION_PATTERN, '')
@@ -695,6 +705,15 @@ interface ResolvedPipelineOptions {
    * path too. Cleared once the turn has written them itself.
    */
   flowFailure?: { record: (() => Promise<void>) | null }
+  /**
+   * Flow only. The pipeline puts here the registered name of the account
+   * (users.name, the one the context already loads: no extra query) so the
+   * entry point can skip the physician's-name projection for an account that
+   * carries the surname itself (flow-public-names.ts). Stays null when the
+   * turn ends before the context is loaded: no model ran, the text is the
+   * system's.
+   */
+  flowAccount?: { name: string | null }
 }
 
 /**
@@ -834,8 +853,9 @@ export async function processAuthenticatedMessage(
   input: AuthenticatedAgentInput,
 ): Promise<AgentOutput> {
   const flowFailure: NonNullable<ResolvedPipelineOptions['flowFailure']> = { record: null }
+  const flowAccount: NonNullable<ResolvedPipelineOptions['flowAccount']> = { name: null }
   try {
-    return await processResolvedMessage(
+    const output = await processResolvedMessage(
       deps,
       {
         from: '',
@@ -853,8 +873,10 @@ export async function processAuthenticatedMessage(
         systemPolicy: mobileFlowSystemPolicy,
         includeSensitiveTelemetry: MOBILE_FLOW_TELEMETRY_INCLUDES_CONTENT,
         flowFailure,
+        flowAccount,
       },
     )
+    return await withFlowPublicNames(deps.supabase, input.userId, output, flowAccount.name)
   } catch (error) {
     // The turn failed (deadline, provider, anything after the first call):
     // what it had already spent is still written, numbers only. The write
@@ -862,6 +884,46 @@ export async function processAuthenticatedMessage(
     await flowFailure.record?.()
     throw error
   }
+}
+
+/**
+ * Flow only: the last line of defence on the text the app receives. The
+ * policy tells the model never to write the method's names or the
+ * physician's; if the answer still carries one of the spellings of the closed
+ * vocabulary (flow-public-names.ts), it is replaced. The physician's name is
+ * left alone for an account whose registered name carries the surname.
+ *
+ * The turn writes `llm.flow_internal_name_replaced` with numbers only, never
+ * a word of the answer: how many names were replaced, by kind, and how many
+ * times the title + first name came WITHOUT the surname — which the filter
+ * sees, counts and does not replace (`persona_first_name_only`). An answer
+ * with none of those is returned as it came, with no event.
+ */
+async function withFlowPublicNames(
+  supabase: ServiceClient,
+  userId: string,
+  output: AgentOutput,
+  accountName: string | null,
+): Promise<AgentOutput> {
+  const names = projectFlowPublicNames(output.text, { accountName })
+  const seen = names.method + names.personaSelf + names.personaOther + names.personaFirstNameOnly
+  if (seen === 0) return output
+  try {
+    await supabase.from('product_events').insert({
+      user_id: userId,
+      event: MOBILE_FLOW_PUBLIC_NAMES_EVENT,
+      properties: {
+        stage: output.stage,
+        method_names: names.method,
+        persona_self: names.personaSelf,
+        persona_other: names.personaOther,
+        persona_first_name_only: names.personaFirstNameOnly,
+      },
+    })
+  } catch {
+    // Telemetry only.
+  }
+  return names.text === output.text ? output : { ...output, text: names.text }
 }
 
 async function processResolvedMessage(
@@ -888,6 +950,9 @@ async function processResolvedMessage(
     input.timestamp,
     options.historyProvider,
   )
+  // Flow only (processMessage passes no holder): the name the context already
+  // carries, for the public-names guard of the entry point.
+  if (options.flowAccount) options.flowAccount.name = ctx.userName
 
   // 4. resolve stage
   const stage = resolveStage(ctx.profile)

@@ -256,12 +256,17 @@ describe('authenticated mobile Flow policy', () => {
     expect(prompt).toContain('Você é Flow, assistente de IA do Performe AI.')
   })
 
-  it('makes MPP internal rather than a spontaneous public method or credential', async () => {
+  it('never lets the Flow write the method or its author, not even when asked', async () => {
     const prompt = await captureMobileSystemPrompt({ systemPrompt: legacyPersonaPrompt })
 
-    expect(prompt).toContain('MPP é uma referência interna')
+    // Audit 2026-10-05: the instruction was "não o apresente espontaneamente",
+    // which let the name out when the person asked. It is absolute now.
+    expect(prompt).not.toContain('espontaneamente')
     expect(prompt).toContain(
-      'não o apresente espontaneamente como método, marca, identidade ou credencial',
+      'Nunca escreva "MPP", "Muscular Power Plant", o nome de quem criou o método\nnem "método do Dr." seguido de nome, nem quando a pessoa perguntar: são\nreferências internas.',
+    )
+    expect(prompt).toContain(
+      'Se perguntarem qual é o método ou quem está por trás\ndele, diga só que as orientações seguem o programa do Performe AI.',
     )
   })
 

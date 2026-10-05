@@ -201,3 +201,59 @@ Flow cost and speed at this point (staging, 34 answers in 14 days): about
 at the 90th percentile; the deterministic answer above still took 4.3 s
 because the function ran in Virginia while the database is in São Paulo
 (fixed in `e57806f`, not yet measured on the device).
+
+## Round 4 on the iPhone — the evaluation candidate (2026-10-05, 10:43–11:01 BRT)
+
+Build of `a95d357` installed over the previous one (Release staging, private
+configuration v28). From this build on the app talks to a fixed staging
+address, `performe-ai-staging-bff.vercel.app` (a Vercel alias, São Paulo
+region), so a server change no longer needs a new app build; the server
+behind it was `a12d11e` with the two evaluation switches on (day close from
+2026-10-04; 30 days of access for a new account). The 7-day signing profile
+had expired on 2026-10-04: the owner signed in to Xcode again, the build was
+re-signed (profile valid until 2026-10-12) and he trusted the developer on
+the phone. Release gates on `a95d357`: simulator Release, analyze (0
+warnings), signature, surface scan and its 25 tests all pass. QA account A
+(ganho de massa); the owner authorised, by a clicked answer, ticking the
+four notices on that test account.
+
+| Test | Result |
+|---|---|
+| Existing account opens after the four evaluation notices were published | PASS — the app stops at step 6 of 7 with the four notices, titled "Termos de uso", "Política de privacidade", "Saúde e inteligência artificial", "Dados sensíveis de saúde", each with the approved text, "Versão 04.10.2026" and its own checkbox; "Continuar" stays disabled until the four are ticked. The review step shows "Brasil", "São Paulo · Horário Padrão de Brasília" and "4 ações confirmadas". Database: four rows in `user_onboarding_legal_actions`, version `04.10.2026`, 10:46:23; profile untouched |
+| Day close on demand | PASS — opening Today closed 2026-10-04: `day_closed = true`, the target stored that day (2,980) kept, `xp_earned` 20; `user_progress` streak 1, XP 20. Progress shows "Sequência: 1 dia" and "20 XP · Nível 1" (both were 0). Block credit 0, as the closer's own rule gives for a day at 34% of the target |
+| Today, "Mais detalhes" | PASS — "Balanço do dia: Déficit de 2.846 kcal", caption "Exercício já contado no nível de atividade"; the date reads "segunda-feira, 5 de outubro"; no demonstration card |
+| Register > Treino | PASS — the form opens empty; "Natação", 40 min, moderate → 460 kcal proposed (10.0 × 40 × 80.5 / 70; the generic rate would give 276). Proposal cancelled |
+| Register > Refeição by text, "1 copo de leite com whey no jantar", 200 g and 30 g | PASS — "leite integral" 122 kcal (P 6.3 / C 9.6 / G 6.5) and "whey protein em pó" 105.6 kcal (P 23.44 / C 1.88 / G 0.47); badge "Valores calculados pelo Performe AI". Proposal cancelled |
+| Sign out | PASS — "Sair desta conta neste iPhone? Seus dados continuam salvos na sua conta."; the app returns to "Entrar" |
+
+### The Flow, measured with the real model for the first time after `426a214`
+
+| Turn | Model calls | Prompt tokens | Cost | Time |
+|---|---|---|---|---|
+| "Como esta meu dia ate agora?" | 3 (read tool, answer, guard retry) | 25,563 | US$ 0.0675 (US$ 0.0407 of it is the first call writing the cache) | 10.6 s |
+| "Sugira um cardapio completo para hoje" — the Flow asked about restrictions | 1 | 8,313 (5,062 from cache) | US$ 0.0121 | 3.0 s |
+| "Sem restricoes" — the menu | 2, plus the generator twice | 7,943 and 8,782 | US$ 0.0878 | 44 s |
+
+Against the baseline of the day before (about 11,000 prompt tokens per call,
+US$ 0.035 per answer, median 14 s): a call now carries 8,000–8,700 tokens
+and a one-call answer costs US$ 0.012 and takes 3 s.
+
+Two things found by measuring:
+
+- **The registration guard fires on negations in the Flow.** "Hoje ainda não
+  tem nada registrado" was read as a claim of registration: one more model
+  call (US$ 0.0137, 3.2 s), both guard events written, and the retry appended
+  a redundant paragraph to the answer. In the last 8 days 5 of 37 Flow
+  answers did this, all five negations. The Flow has no registration tool,
+  so the retry can never succeed there. A Flow-only fix is in review.
+- **The diet generator missed the protein band on its first attempt**
+  (`protein_drift_exceeded`, 37% above 144.9 g) and ran again: about 17 s and
+  US$ 0.028 for the wasted attempt. Being mapped.
+
+Not covered in this round: a NEW account (sign-up, the automatic 30 days,
+the Flow in recomposição) — the owner types the e-mail and the password, and
+it was left for the end; the full iOS suite on `a95d357`.
+
+One mistake of the tester during the round: "Começar de novo" was tapped
+instead of "Calcular refeição" (the button moves up once the quantity is
+filled); the meal was entered again.

@@ -36,7 +36,7 @@ struct RealAccountReadableValuesTests {
             #expect(!labels.contains { Self.parts(of: $0).contains("BR") }, seen)
 
             let zone = try #require(Self.systemZoneName("America/Sao_Paulo", language))
-            #expect(labels.contains { $0.contains("Sao Paulo") && $0.contains(zone) }, seen)
+            #expect(labels.contains { $0.contains("São Paulo") && $0.contains(zone) }, seen)
             #expect(!labels.contains { $0.contains("America/") || $0.contains("Sao_Paulo") }, seen)
         }
     }
@@ -73,8 +73,68 @@ struct RealAccountReadableValuesTests {
         #expect(found("mexico", Self.pt).contains("MX"))
         #expect(found("MÉXICO", Self.pt).contains("MX"))
         #expect(found("estados unidos", Self.pt).first == "US")
-        #expect(found("", Self.pt).count == Locale.Region.isoRegions.count)
+        // Was every ISO region, the world and the continents included.
+        let countries = Locale.Region.isoRegions.filter { $0.identifier.count == 2 && $0.subRegions.isEmpty }
+        #expect(found("", Self.pt).count == countries.count)
+        if #available(iOS 26, *) {
+            // The system's own word for the same list.
+            #expect(Set(found("", Self.pt)) == Set(Locale.Region.isoRegions(ofCategory: .territory).map(\.identifier)))
+        }
         #expect(found("xyzzy", Self.pt).isEmpty)
+    }
+
+    // Review 2026-10-04: the system's list of regions also has the world, the
+    // continents and other groupings. With no code beside the name, "Mundo"
+    // read as a country, and choosing it stored "001".
+    @Test("only countries are offered: no world, continent or grouping, by name or by code")
+    func countryPickerOffersOnlyCountries() {
+        let groupings = ["001", "013", "019", "150", "419", "EU", "UN"]
+        #expect(Set(groupings).isSubset(of: Locale.Region.isoRegions.map(\.identifier)))
+
+        for language in SupportedAppLanguage.allCases {
+            let offered = OnboardingCountryPresentation.regions(matching: "", language: language)
+            #expect(offered.count > 200 && offered.count < Locale.Region.isoRegions.count)
+            #expect(offered.allSatisfy { $0.identifier.count == 2 && $0.identifier.allSatisfy(\.isLetter) })
+            #expect(Set(offered.map(\.identifier)).isDisjoint(with: groupings))
+            #expect(Set(offered.map(\.identifier)).isSuperset(of: ["BR", "US", "PT", "DE", "JP"]))
+
+            let names = Set(offered.map {
+                OnboardingCountryPresentation.name(for: $0.identifier, language: language)
+            })
+            #expect(names.isDisjoint(with: language == Self.pt
+                ? ["Mundo", "América Central", "Américas", "Europa", "União Europeia"]
+                : ["World", "Central America", "Americas", "Europe", "European Union"]))
+            for query in language == Self.pt ? ["Mundo", "001", "América Central"] : ["World", "001", "Central America"] {
+                let found = OnboardingCountryPresentation.regions(matching: query, language: language)
+                #expect(found.isEmpty, "“\(query)” offers \(found.map(\.identifier))")
+            }
+        }
+
+        let labels = Support.accessibilityTree(
+            NavigationStack {
+                CountrySelectionView(selectedCode: "BR", language: Self.pt, initialQuery: "Mundo") { _ in }
+            }
+            .environment(\.locale, Self.pt.formattingLocale),
+            height: 800
+        ).labels
+        #expect(labels.contains("Nenhum país encontrado"), "\(labels)")
+        #expect(!labels.contains("Mundo"), "\(labels)")
+    }
+
+    @Test("a grouping's code is not a valid country", arguments: ["001", "013", "419", "EU", "UN"])
+    func groupingIsNotAValidCountry(code: String) {
+        #expect(!OnboardingCountryPolicy.isCountry(code))
+        func welcomeIssues(country: String) -> [OnboardingValidationIssue] {
+            var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .welcome)
+            draft.countryCode = country
+            return OnboardingStepValidator.issues(
+                for: .welcome, draft: draft,
+                developmentConsentAvailability: .unavailable, now: Self.instant
+            )
+        }
+        #expect(welcomeIssues(country: code) == [.countryInvalid])
+        #expect(OnboardingCountryPolicy.isCountry("BR"))
+        #expect(welcomeIssues(country: "BR").isEmpty)
     }
 
     @Test("a country search with no result says so")
@@ -105,10 +165,10 @@ struct RealAccountReadableValuesTests {
             let zone = OnboardingTimeZonePresentation(identifier: "America/Sao_Paulo", language: language)
             let name = try #require(Self.systemZoneName("America/Sao_Paulo", language))
             #expect(zone.identifier == "America/Sao_Paulo")
-            #expect(zone.city == "Sao Paulo")
+            #expect(zone.city == "São Paulo")
             #expect(zone.zoneName == name)
             #expect(OnboardingSearchText.folded(name).contains("brasilia"))
-            #expect(zone.summary == "Sao Paulo · \(name)")
+            #expect(zone.summary == "São Paulo · \(name)")
             #expect(!zone.summary.contains("/") && !zone.summary.contains("_"))
         }
         let nested = OnboardingTimeZonePresentation(
@@ -121,6 +181,59 @@ struct RealAccountReadableValuesTests {
         #expect(unknown.city == "Olympus Mons")
         #expect(unknown.zoneName == nil)
         #expect(unknown.summary == "Olympus Mons")
+    }
+
+    // Review 2026-10-04: the city was the identifier's last part, so pt-BR
+    // read "Sao Paulo", "Belem", "Lisbon", "London" and "New York".
+    @Test("the city is the system's, in the app's language", arguments: [
+        SampleDataBilingualCase("America/Sao_Paulo", "São Paulo", "São Paulo"),
+        SampleDataBilingualCase("America/Belem", "Belém", "Belém"),
+        SampleDataBilingualCase("America/Cuiaba", "Cuiabá", "Cuiabá"),
+        SampleDataBilingualCase("Europe/Lisbon", "Lisboa", "Lisbon"),
+        SampleDataBilingualCase("Europe/London", "Londres", "London"),
+        SampleDataBilingualCase("America/New_York", "Nova York", "New York"),
+        SampleDataBilingualCase("Asia/Tokyo", "Tóquio", "Tokyo"),
+        // The system has no city for it and says so in words; the row keeps
+        // the identifier's part instead.
+        SampleDataBilingualCase("GMT", "GMT", "GMT"),
+        // The system gives Toronto to Montreal as well: each keeps its own.
+        SampleDataBilingualCase("America/Toronto", "Toronto", "Toronto"),
+        SampleDataBilingualCase("America/Montreal", "Montreal", "Montreal"),
+    ])
+    func timeZoneCity(_ wording: SampleDataBilingualCase) {
+        #expect(OnboardingTimeZonePresentation(identifier: wording.subject, language: Self.pt).city == wording.portuguese)
+        #expect(OnboardingTimeZonePresentation(identifier: wording.subject, language: Self.en).city == wording.english)
+    }
+
+    @Test("no row shows the system's words for a zone without a city, and no two rows read alike")
+    func timeZoneRowsAreDistinct() {
+        for language in SupportedAppLanguage.allCases {
+            let all = OnboardingTimeZonePresentation.all(for: language)
+
+            // Asked of the system here, so the test assumes no wording either.
+            let formatter = DateFormatter()
+            formatter.locale = language.formattingLocale
+            formatter.dateFormat = "VVV"
+            formatter.timeZone = TimeZone(identifier: "GMT")
+            let noCity = formatter.string(from: Date(timeIntervalSinceReferenceDate: 0))
+            #expect(noCity == (language == Self.pt ? "Cidade desconhecida" : "Unknown Location"))
+            #expect(!all.contains { $0.city == noCity })
+
+            let alike = Dictionary(grouping: all) { "\($0.city) · \($0.zoneName ?? "")" }
+                .filter { $0.value.count > 1 }
+                .mapValues { $0.map(\.identifier) }
+            #expect(alike.isEmpty, "\(alike)")
+        }
+    }
+
+    @Test("the list is in the language's order, accents included")
+    func timeZoneOrder() throws {
+        let cities = OnboardingTimeZonePresentation.all(for: Self.pt).map(\.city)
+        let saoPaulo = try #require(cities.firstIndex(of: "São Paulo"))
+        #expect(try #require(cities.firstIndex(of: "Santiago")) < saoPaulo)
+        #expect(saoPaulo < (try #require(cities.firstIndex(of: "Sarajevo"))))
+        #expect(saoPaulo < (try #require(cities.firstIndex(of: "Sydney"))))
+        #expect(cities.first == "Abidjan")
     }
 
     // Review 2026-10-04: "São Paulo", "Sao Paulo" and "Belém" found nothing.
@@ -146,6 +259,79 @@ struct RealAccountReadableValuesTests {
         }
     }
 
+    // Review 2026-10-04: a search was read anywhere inside the zone's name
+    // too. Every name starts with "Horário" in pt-BR and ends in "Time" in
+    // en, so "Rio", "Ho", "Pa", "De" and "Hora" (and "Tim", "Me", "Dar",
+    // "And") listed all 443 zones.
+    @Test("a short search is read where a word starts and narrows the list", arguments: [
+        TimeZoneNarrowingCase(.portugueseBrazil, "Rio", ["America/Rio_Branco"]),
+        TimeZoneNarrowingCase(.portugueseBrazil, "Ho", ["Asia/Hong_Kong", "Pacific/Honolulu"]),
+        TimeZoneNarrowingCase(.portugueseBrazil, "De", ["America/Denver"]),
+        TimeZoneNarrowingCase(.portugueseBrazil, "Pa", ["Europe/Paris", "America/Panama"], fewerThan: 100),
+        TimeZoneNarrowingCase(.portugueseBrazil, "Hora", []),
+        TimeZoneNarrowingCase(.portugueseBrazil, "Horário", []),
+        TimeZoneNarrowingCase(.portugueseBrazil, "Padrão", []),
+        TimeZoneNarrowingCase(.englishUnitedStates, "Rio", ["America/Rio_Branco"]),
+        TimeZoneNarrowingCase(.englishUnitedStates, "Ho", ["Asia/Hong_Kong", "Pacific/Honolulu"]),
+        TimeZoneNarrowingCase(.englishUnitedStates, "Tim", []),
+        TimeZoneNarrowingCase(.englishUnitedStates, "Time", []),
+        TimeZoneNarrowingCase(.englishUnitedStates, "Me", ["America/Mexico_City"]),
+        TimeZoneNarrowingCase(.englishUnitedStates, "Dar", ["Australia/Darwin", "Africa/Dar_es_Salaam"]),
+        TimeZoneNarrowingCase(.englishUnitedStates, "And", ["Europe/Andorra"]),
+    ])
+    func timeZoneSearchNarrows(_ search: TimeZoneNarrowingCase) {
+        let found = OnboardingTimeZonePresentation.zones(matching: search.query, language: search.language)
+            .map(\.identifier)
+        #expect(Set(found).isSuperset(of: search.identifiers), "\(found)")
+        #expect(found.count < search.limit, "the search narrowed nothing: \(found.count) zones")
+    }
+
+    @Test("a city is found by its name in the app's language and by the identifier's", arguments: [
+        TimeZoneNarrowingCase(.portugueseBrazil, "Lisboa", ["Europe/Lisbon"]),
+        TimeZoneNarrowingCase(.portugueseBrazil, "lisbon", ["Europe/Lisbon"]),
+        TimeZoneNarrowingCase(.portugueseBrazil, "Londres", ["Europe/London"]),
+        TimeZoneNarrowingCase(.portugueseBrazil, "Nova York", ["America/New_York"]),
+        TimeZoneNarrowingCase(.portugueseBrazil, "nova yor", ["America/New_York"]),
+        TimeZoneNarrowingCase(.portugueseBrazil, "Tóquio", ["Asia/Tokyo"]),
+        TimeZoneNarrowingCase(.englishUnitedStates, "Lisbon", ["Europe/Lisbon"]),
+        TimeZoneNarrowingCase(.englishUnitedStates, "London", ["Europe/London"]),
+        // Punctuation only separates words.
+        TimeZoneNarrowingCase(.englishUnitedStates, "prince", ["America/Port-au-Prince"]),
+        TimeZoneNarrowingCase(.englishUnitedStates, "knox indiana", ["America/Indiana/Knox"]),
+        // A city the system shares between zones still finds every one of them.
+        TimeZoneNarrowingCase(.englishUnitedStates, "Toronto", ["America/Toronto", "America/Montreal"]),
+    ])
+    func timeZoneSearchReadsTheLocalizedCity(_ search: TimeZoneNarrowingCase) {
+        let found = OnboardingTimeZonePresentation.zones(matching: search.query, language: search.language)
+            .map(\.identifier)
+        #expect(Set(found).isSuperset(of: search.identifiers), "\(found)")
+        #expect(found.count < 10, "\(found)")
+    }
+
+    @Test("words are matched from their start, the last one as far as it was typed")
+    func wordStartMatching() {
+        func starts(_ typed: String, in text: String, ignoring common: Set<String> = []) -> Bool {
+            OnboardingSearchText.starts(
+                OnboardingSearchText.words(typed), in: OnboardingSearchText.words(text), ignoring: common
+            )
+        }
+        #expect(OnboardingSearchText.words("Horário Padrão de Brasília") == ["horario", "padrao", "de", "brasilia"])
+        #expect(OnboardingSearchText.words("America/Port-au-Prince") == ["america", "port", "au", "prince"])
+        #expect(!starts("rio", in: "Horário Padrão de Brasília"))
+        #expect(starts("rio", in: "Rio Branco"))
+        #expect(starts("rio", in: "America/Rio_Branco"))
+        #expect(starts("rio b", in: "America/Rio_Branco"))
+        #expect(!starts("ri branco", in: "America/Rio_Branco"))
+        #expect(!starts("branco rio", in: "America/Rio_Branco"))
+        #expect(!starts("", in: "America/Rio_Branco"))
+
+        let common: Set<String> = ["horario", "padrao", "de"]
+        #expect(!starts("ho", in: "Horário Padrão de Brasília", ignoring: common))
+        #expect(!starts("horario padrao", in: "Horário Padrão de Brasília", ignoring: common))
+        #expect(starts("horario padrao de b", in: "Horário Padrão de Brasília", ignoring: common))
+        #expect(starts("brasilia", in: "Horário Padrão de Brasília", ignoring: common))
+    }
+
     @Test("the search also reads the system's name for the zone")
     func timeZoneSearchReadsTheZoneName() throws {
         for language in SupportedAppLanguage.allCases {
@@ -165,6 +351,8 @@ struct RealAccountReadableValuesTests {
             #expect(OnboardingTimeZonePresentation.zones(matching: "", language: language) == all)
             #expect(OnboardingTimeZonePresentation.zones(matching: "   ", language: language) == all)
             #expect(OnboardingTimeZonePresentation.zones(matching: "xyzzy", language: language).isEmpty)
+            // Nothing to read in it: the same as a blank search.
+            #expect(OnboardingTimeZonePresentation.zones(matching: " - / ", language: language) == all)
         }
     }
 
@@ -184,7 +372,7 @@ struct RealAccountReadableValuesTests {
                     height: 2_400
                 ).labels
                 let seen: Comment = "query “\(query)”: \(labels)"
-                #expect(labels.contains { $0.hasPrefix(query.isEmpty ? "Abidjan" : "Sao Paulo") }, seen)
+                #expect(labels.contains { $0.hasPrefix(query.isEmpty ? "Abidjan" : "São Paulo") }, seen)
                 #expect(!labels.contains { $0.contains("/") || $0.contains("_") }, seen)
             }
         }
@@ -228,7 +416,7 @@ struct RealAccountReadableValuesTests {
             let seen: Comment = "\(labels)"
             let zone = try #require(Self.systemZoneName("America/Sao_Paulo", language))
             #expect(labels.contains(language == Self.pt ? "Fuso" : "Time zone"), seen)
-            #expect(labels.contains("Sao Paulo · \(zone)"), seen)
+            #expect(labels.contains("São Paulo · \(zone)"), seen)
             #expect(labels.contains(language == Self.pt ? "Brasil" : "Brazil"), seen)
             #expect(!labels.contains { $0.contains("America/") || $0.contains("Sao_Paulo") }, seen)
             #expect(!labels.contains { Self.parts(of: $0).contains("BR") }, seen)
@@ -838,6 +1026,29 @@ struct TimeZoneSearchCase: Sendable, CustomTestStringConvertible {
     }
 
     var testDescription: String { "“\(query)” finds \(identifier)" }
+}
+
+/// A search in one language, the zones it must find and how short the list
+/// must be.
+struct TimeZoneNarrowingCase: Sendable, CustomTestStringConvertible {
+    let language: SupportedAppLanguage
+    let query: String
+    let identifiers: [String]
+    let limit: Int
+
+    init(
+        _ language: SupportedAppLanguage,
+        _ query: String,
+        _ identifiers: [String],
+        fewerThan limit: Int = 40
+    ) {
+        self.language = language
+        self.query = query
+        self.identifiers = identifiers
+        self.limit = limit
+    }
+
+    var testDescription: String { "\(language.rawValue) “\(query)”" }
 }
 
 @MainActor

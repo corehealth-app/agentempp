@@ -101,12 +101,7 @@ enum OnboardingStepValidator {
             issues.append(.localeUnsupported)
         }
 
-        let country = draft.countryCode
-        let uppercaseLetters = country.count == 2
-            && country == country.uppercased()
-            && country.unicodeScalars.allSatisfy { (65...90).contains($0.value) }
-        let isoCountryCodes = Set(Locale.Region.isoRegions.map(\.identifier))
-        if !uppercaseLetters || !isoCountryCodes.contains(country) {
+        if !OnboardingCountryPolicy.isCountry(draft.countryCode) {
             issues.append(.countryInvalid)
         }
         if TimeZone(identifier: draft.timeZoneIdentifier) == nil {

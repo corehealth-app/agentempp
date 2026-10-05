@@ -41,6 +41,19 @@ struct WorkoutRegistrationFormSeed: Equatable, Sendable {
     var canPropose: Bool {
         Self.canPropose(workoutType: workoutType, duration: duration)
     }
+
+    /// The two limits a person cannot guess from a disabled action. A field
+    /// left empty needs no explanation, so neither is true for it.
+    static func typeExceedsLimit(_ workoutType: String) -> Bool {
+        workoutType.trimmingCharacters(in: .whitespacesAndNewlines).utf16.count > workoutTypeLengthLimit
+    }
+
+    static func durationIsOutsideRange(_ duration: String) -> Bool {
+        let typed = duration.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !typed.isEmpty else { return false }
+        // Anything that is not a whole number of minutes is outside it too.
+        return Int(duration).map { !durationRange.contains($0) } ?? true
+    }
 }
 
 struct WorkoutRegistrationView: View {
@@ -85,6 +98,12 @@ struct WorkoutRegistrationView: View {
                 identifier: "registration.workout.type",
                 accessibilityLabel: copy("registration.workout.type")
             )
+            if WorkoutRegistrationFormSeed.typeExceedsLimit(workoutType) {
+                WorkoutFieldHelp(
+                    copy("registration.workout.type.help"),
+                    identifier: "registration.workout.type.help"
+                )
+            }
             WorkoutFieldLabel(copy("registration.workout.duration"))
             WorkoutTextField(
                 placeholder: copy("registration.workout.duration"), text: $duration,
@@ -92,6 +111,12 @@ struct WorkoutRegistrationView: View {
                 identifier: "registration.workout.duration",
                 accessibilityLabel: copy("registration.workout.duration")
             )
+            if WorkoutRegistrationFormSeed.durationIsOutsideRange(duration) {
+                WorkoutFieldHelp(
+                    copy("registration.workout.duration.help"),
+                    identifier: "registration.workout.duration.help"
+                )
+            }
             WorkoutFieldLabel(copy("registration.workout.intensity"))
             WorkoutIntensityPicker(
                 intensity: $intensity,
@@ -153,6 +178,23 @@ private struct WorkoutFieldLabel: View {
         Text(title)
             .font(BodyFlowTypography.body)
             .foregroundStyle(BodyFlowColor.primaryText)
+    }
+}
+
+/// Says what a field accepts, under the field whose value keeps the action
+/// disabled.
+private struct WorkoutFieldHelp: View {
+    let message: String
+    let identifier: String
+
+    init(_ message: String, identifier: String) {
+        self.message = message
+        self.identifier = identifier
+    }
+
+    var body: some View {
+        BodyFlowStatusLine(message, kind: .warning, font: BodyFlowTypography.callout)
+            .accessibilityIdentifier(identifier)
     }
 }
 

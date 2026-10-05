@@ -173,6 +173,99 @@ struct RealAccountSampleDataTests {
         #expect(!form.proposeEnabled)
     }
 
+    // Review 2026-10-04: no test drew the form the way a caller that leaves
+    // the account kind out gets it, so the default could turn to the
+    // demonstration's unnoticed.
+    @Test("the rendered form with no account kind given is the real account's: empty and disabled")
+    func workoutFormDefaultsToTheRealAccount() throws {
+        let form = try Self.workoutForm(in: WorkoutRegistrationView(
+            initialPerformedAt: Date(timeIntervalSince1970: 1_790_000_000),
+            isSubmitting: false,
+            submit: { _ in }
+        ))
+        #expect(form.type == "")
+        #expect(form.duration == "")
+        #expect(!form.proposeEnabled)
+    }
+
+    // Review 2026-10-04: outside the server's limits the action was disabled
+    // and nothing on the screen said why.
+    @Test("a filled field outside the server's limits says what it accepts", arguments: [
+        WorkoutHelpCase("corrida", 0, duration: true),
+        WorkoutHelpCase("corrida", 1_441, duration: true),
+        WorkoutHelpCase("corrida", -30, duration: true),
+        WorkoutHelpCase(String(repeating: "a", count: 81), 30, type: true),
+        WorkoutHelpCase(String(repeating: "a", count: 81), 1_441, type: true, duration: true),
+        WorkoutHelpCase("corrida", 1, duration: false),
+        WorkoutHelpCase("corrida", 1_440, duration: false),
+        WorkoutHelpCase(String(repeating: "a", count: 80), 30, type: false),
+    ])
+    func workoutFormExplainsALimit(_ form: WorkoutHelpCase) {
+        for language in SupportedAppLanguage.allCases {
+            let tree = Self.workoutFormTree(
+                language: language,
+                initialProposal: WorkoutProposalRequest(
+                    workoutType: form.workoutType,
+                    durationMin: form.durationMin,
+                    intensity: .moderate,
+                    performedAt: nil
+                )
+            )
+            let seen: Comment = "\(tree.labels)"
+            let typeHelp = language == Self.pt ? "Use até 80 caracteres." : "Use up to 80 characters."
+            let durationHelp = language == Self.pt
+                ? "Informe de 1 a 1.440 minutos." : "Enter 1 to 1,440 minutes."
+            // The form itself was drawn, so an absent line is not a blank screen.
+            #expect(tree.labels.contains(language == Self.pt ? "Duração (min)" : "Duration (min)"), seen)
+            #expect(tree.labels.contains(typeHelp) == form.showsTypeHelp, seen)
+            #expect(tree.identifiers.contains("registration.workout.type.help") == form.showsTypeHelp)
+            #expect(tree.labels.contains(durationHelp) == form.showsDurationHelp, seen)
+            #expect(tree.identifiers.contains("registration.workout.duration.help") == form.showsDurationHelp)
+        }
+    }
+
+    @Test("an empty form shows no help line")
+    func emptyWorkoutFormShowsNoHelp() {
+        for language in SupportedAppLanguage.allCases {
+            let tree = Self.workoutFormTree(language: language, initialProposal: nil)
+            let seen: Comment = "\(tree.labels)"
+            #expect(tree.labels.contains(language == Self.pt ? "Duração (min)" : "Duration (min)"), seen)
+            #expect(Set(tree.labels).isDisjoint(with: [
+                "Informe de 1 a 1.440 minutos.", "Enter 1 to 1,440 minutes.",
+                "Use até 80 caracteres.", "Use up to 80 characters.",
+            ]), seen)
+            #expect(!tree.identifiers.contains("registration.workout.type.help"))
+            #expect(!tree.identifiers.contains("registration.workout.duration.help"))
+        }
+    }
+
+    @Test("a help line is for a filled field only, and for anything that is not 1 to 1440 whole minutes")
+    func workoutHelpRules() {
+        func duration(_ typed: String) -> Bool { WorkoutRegistrationFormSeed.durationIsOutsideRange(typed) }
+        func type(_ typed: String) -> Bool { WorkoutRegistrationFormSeed.typeExceedsLimit(typed) }
+        #expect(!duration("") && !duration("  "))
+        #expect(!duration("1") && !duration("47") && !duration("1440"))
+        #expect(duration("0") && duration("1441") && duration("-30") && duration("2000"))
+        #expect(duration("30.5") && duration("trinta") && duration("30 "))
+        #expect(!type("") && !type("   ") && !type("corrida"))
+        #expect(!type(String(repeating: "a", count: 80)))
+        #expect(type(String(repeating: "a", count: 81)))
+        // Surrounding spaces are not part of the 80, as in `canPropose`.
+        #expect(!type(" " + String(repeating: "a", count: 80) + " "))
+    }
+
+    @Test("the help lines exist in both languages", arguments: [
+        SampleDataBilingualCase("registration.workout.duration.help",
+         "Informe de 1 a 1.440 minutos.", "Enter 1 to 1,440 minutes."),
+        SampleDataBilingualCase("registration.workout.type.help",
+         "Use até 80 caracteres.", "Use up to 80 characters."),
+    ])
+    func workoutHelpCopy(_ wording: SampleDataBilingualCase) throws {
+        let key = String.LocalizationValue(wording.subject)
+        #expect(try AppLocalization.string(key, for: Self.pt) == wording.portuguese)
+        #expect(try AppLocalization.string(key, for: Self.en) == wording.english)
+    }
+
     @Test("the rendered form: sample values and an enabled action in the demonstration")
     func demonstrationWorkoutFormIsRenderedPrefilled() throws {
         let form = try Self.workoutForm(presentsLocalDemonstration: true)
@@ -362,8 +455,9 @@ struct RealAccountSampleDataTests {
                 .environment(\.locale, Locale(identifier: "pt_BR")),
             height: 2_400
         ).labels
-        // The zone is named by its city; the identifier is only stored.
-        #expect(labels.contains { $0.contains("New York") })
+        // The zone is named by its city, in the app's language; the
+        // identifier is only stored.
+        #expect(labels.contains { $0.contains("Nova York") })
         #expect(!labels.contains { $0.contains("America/New_York") || $0.contains("New_York") })
         #expect(!labels.contains { $0.contains("IANA") })
 
@@ -515,8 +609,8 @@ struct RealAccountSampleDataTests {
         SampleDataBilingualCase("auth.error.service-unavailable",
          "Não foi possível conectar agora. Tente novamente.", "Could not connect right now. Try again."),
         SampleDataBilingualCase("reminders.skipped.beyond_budget",
-         "Depois do último horário coberto (agendados na próxima vez que você abrir o app)",
-         "After the last covered time (scheduled the next time you open the app)"),
+         "Depois do último horário coberto (agendados quando você abrir o app depois dos lembretes anteriores)",
+         "After the last covered time (scheduled when you open the app after the earlier reminders)"),
         SampleDataBilingualCase("onboarding.welcome.country-picker.search", "Buscar país", "Search country"),
         SampleDataBilingualCase("profile.account.sign-out.confirm",
          "Sair desta conta neste iPhone? Seus dados continuam salvos na sua conta.",
@@ -673,6 +767,24 @@ struct RealAccountSampleDataTests {
         ))
     }
 
+    /// What the real account's workout form reads as, in one language.
+    private static func workoutFormTree(
+        language: SupportedAppLanguage,
+        initialProposal: WorkoutProposalRequest?
+    ) -> AccessibilityTree {
+        accessibilityTree(
+            WorkoutRegistrationView(
+                initialPerformedAt: Date(timeIntervalSince1970: 1_790_000_000),
+                initialProposal: initialProposal,
+                presentsLocalDemonstration: false,
+                isSubmitting: false,
+                submit: { _ in }
+            )
+            .environment(\.locale, language.formattingLocale),
+            height: 800
+        )
+    }
+
     /// The workout form as the Register sheet itself draws it.
     private static func workoutForm(inSheetWith dependencies: AppDependencies) throws -> WorkoutForm {
         try workoutForm(in: RegistrationSheet(
@@ -801,6 +913,23 @@ struct WorkoutFormCase: Sendable, CustomTestStringConvertible {
         self.workoutType = workoutType
         self.durationMin = durationMin
         self.canPropose = canPropose
+    }
+
+    var testDescription: String { "\(workoutType.count) characters, \(durationMin) min" }
+}
+
+/// A workout proposal opened in the form, and the help lines it must show.
+struct WorkoutHelpCase: Sendable, CustomTestStringConvertible {
+    let workoutType: String
+    let durationMin: Int
+    let showsTypeHelp: Bool
+    let showsDurationHelp: Bool
+
+    init(_ workoutType: String, _ durationMin: Int, type: Bool = false, duration: Bool = false) {
+        self.workoutType = workoutType
+        self.durationMin = durationMin
+        showsTypeHelp = type
+        showsDurationHelp = duration
     }
 
     var testDescription: String { "\(workoutType.count) characters, \(durationMin) min" }

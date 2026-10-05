@@ -26,7 +26,8 @@ struct OnboardingFlowModelTests {
         #expect(await repository.savedDrafts.isEmpty)
     }
 
-    @Test(arguments: ["B", "BRA", "br", "1R", "ZZ"])
+    // "001" (the world) and "EU" are regions the system names, not countries.
+    @Test(arguments: ["B", "BRA", "br", "1R", "ZZ", "001", "EU"])
     func rejectsInvalidCountryCodes(_ countryCode: String) async {
         let repository = RecordingOnboardingRepository()
         var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .welcome)

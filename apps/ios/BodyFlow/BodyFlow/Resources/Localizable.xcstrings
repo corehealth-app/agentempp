@@ -3390,8 +3390,8 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Um lembrete que não é enviado aqui não muda a sua rotina: o item continua como está em Hoje e na Rotina." } }
     } },
     "reminders.skipped.beyond_budget" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "After the last covered time (scheduled the next time you open the app)" } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Depois do último horário coberto (agendados na próxima vez que você abrir o app)" } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "After the last covered time (scheduled when you open the app after the earlier reminders)" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Depois do último horário coberto (agendados quando você abrir o app depois dos lembretes anteriores)" } }
     } },
     "reminders.skipped.daily_limit" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Above your daily limit" } },
@@ -4317,6 +4317,10 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Duration (min)" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Duração (min)" } }
     } },
+    "registration.workout.duration.help" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Enter 1 to 1,440 minutes." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Informe de 1 a 1.440 minutos." } }
+    } },
     "registration.workout.estimated-energy" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Estimated energy" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Energia estimada" } }
@@ -4372,6 +4376,10 @@
     "registration.workout.type" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Type" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Tipo" } }
+    } },
+    "registration.workout.type.help" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Use up to 80 characters." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Use até 80 caracteres." } }
     } },
     "plan.detail.action.detail" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Reload the current plan data" } },

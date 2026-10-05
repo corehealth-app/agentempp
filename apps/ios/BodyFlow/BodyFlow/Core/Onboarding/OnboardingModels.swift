@@ -59,6 +59,25 @@ enum OnboardingLocalePolicy {
     }
 }
 
+/// A country is an ISO region written with two letters that groups no other
+/// region. The system's list also carries groupings that have a name but are
+/// not a country: the numeric ones ("001" is the world, "013" Central
+/// America) and a few two-letter ones ("EU", "UN"). The picker and both
+/// validations read this one list, so what can be chosen is what is accepted.
+enum OnboardingCountryPolicy {
+    static let regions: [Locale.Region] = Locale.Region.isoRegions.filter { region in
+        region.identifier.count == 2
+            && region.identifier.unicodeScalars.allSatisfy { (65...90).contains($0.value) }
+            && region.subRegions.isEmpty
+    }
+
+    private static let codes = Set(regions.map(\.identifier))
+
+    static func isCountry(_ code: String) -> Bool {
+        codes.contains(code)
+    }
+}
+
 enum OnboardingCivilDate {
     static func date(
         from value: String,

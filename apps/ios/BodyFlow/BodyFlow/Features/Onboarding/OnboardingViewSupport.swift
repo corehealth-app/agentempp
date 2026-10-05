@@ -109,7 +109,7 @@ enum OnboardingCountryPresentation {
         language: SupportedAppLanguage
     ) -> [Locale.Region] {
         let needle = OnboardingSearchText.folded(query)
-        return Locale.Region.isoRegions
+        return OnboardingCountryPolicy.regions
             .filter { region in
                 needle.isEmpty
                     || OnboardingSearchText.folded(region.identifier).contains(needle)
@@ -132,36 +132,142 @@ enum OnboardingSearchText {
             .split { $0 == "_" || $0 == "/" || $0.isWhitespace }
             .joined(separator: " ")
     }
+
+    /// The folded words of a text. Punctuation only separates them, so
+    /// "Port-au-Prince" is found by "prince" and "Knox, Indiana" by
+    /// "knox indiana".
+    static func words(_ text: String) -> [String] {
+        folded(text).split { !$0.isLetter && !$0.isNumber }.map(String.init)
+    }
+
+    /// Whether the typed words are found where a word of the text starts:
+    /// each one whole, the last as far as it was typed. A match in the
+    /// middle of a word is not one: "rio" is inside "horário", and every
+    /// zone name in Portuguese starts with that word.
+    ///
+    /// A run made only of `commonWords` is not a match either, since those
+    /// words tell no row apart.
+    static func starts(
+        _ typed: [String],
+        in text: [String],
+        ignoring commonWords: Set<String> = []
+    ) -> Bool {
+        guard let last = typed.last, typed.count <= text.count else { return false }
+        return (0...(text.count - typed.count)).contains { start in
+            let run = text[start..<(start + typed.count)]
+            return run.dropLast().elementsEqual(typed.dropLast())
+                && run.last?.hasPrefix(last) == true
+                && !run.allSatisfy(commonWords.contains)
+        }
+    }
+}
+
+/// The system's city for a time zone, in one language ("São Paulo",
+/// "Lisboa", "Nova York"). The identifier's last part is the same place
+/// without accents and in English.
+private struct OnboardingTimeZoneCities: Sendable {
+    private let locale: Locale
+    /// What the system answers for a zone it has no city for ("Cidade
+    /// desconhecida"). Read from the system, so no wording is assumed.
+    private let noCity: String
+    private let cityByIdentifier: [String: String]
+    /// A city the system gives to a zone and to its older aliases (Toronto
+    /// for Montreal, Nipigon and Thunder Bay) tells none of them apart.
+    private let sharedCities: Set<String>
+
+    private init(language: SupportedAppLanguage) {
+        let locale = language.formattingLocale
+        let formatter = Self.formatter(locale: locale)
+        let noCity = TimeZone(identifier: "GMT").flatMap { Self.answer(for: $0, formatter) } ?? ""
+        var cityByIdentifier: [String: String] = [:]
+        var zonesByCity: [String: Int] = [:]
+        for identifier in TimeZone.knownTimeZoneIdentifiers {
+            guard let zone = TimeZone(identifier: identifier),
+                  let city = Self.answer(for: zone, formatter), city != noCity else { continue }
+            cityByIdentifier[identifier] = city
+            zonesByCity[city, default: 0] += 1
+        }
+        self.locale = locale
+        self.noCity = noCity
+        self.cityByIdentifier = cityByIdentifier
+        sharedCities = Set(zonesByCity.filter { $0.value > 1 }.keys)
+    }
+
+    /// The system's city for the zone, and whether it is that zone's alone.
+    /// nil when the system has none.
+    func city(for zone: TimeZone) -> (name: String, isShared: Bool)? {
+        let known = cityByIdentifier[zone.identifier]
+            // A valid zone outside the system's list is asked for directly.
+            ?? Self.answer(for: zone, Self.formatter(locale: locale))
+        guard let known, known != noCity else { return nil }
+        return (known, sharedCities.contains(known))
+    }
+
+    static func cities(for language: SupportedAppLanguage) -> OnboardingTimeZoneCities {
+        byLanguage[language] ?? OnboardingTimeZoneCities(language: language)
+    }
+
+    /// Asking the system costs a formatter, so every known zone is asked once.
+    private static let byLanguage = Dictionary(
+        uniqueKeysWithValues: SupportedAppLanguage.allCases.map {
+            ($0, OnboardingTimeZoneCities(language: $0))
+        }
+    )
+
+    private static func formatter(locale: Locale) -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        // "VVV" is the zone's exemplar city.
+        formatter.dateFormat = "VVV"
+        return formatter
+    }
+
+    private static func answer(for zone: TimeZone, _ formatter: DateFormatter) -> String? {
+        formatter.timeZone = zone
+        // The city does not depend on the date.
+        let city = formatter.string(from: Date(timeIntervalSinceReferenceDate: 0))
+        return city.isEmpty ? nil : city
+    }
 }
 
 /// A time zone is shown by its city and by the system's name for the zone in
 /// the app's language; the identifier is only the stored value.
 struct OnboardingTimeZonePresentation: Equatable, Identifiable, Sendable {
     let identifier: String
-    /// "America/Sao_Paulo" reads "Sao Paulo".
+    /// "America/Sao_Paulo" reads "São Paulo": the system's city for the zone
+    /// in the app's language. Where the system has none, or gives the same
+    /// one to several zones, it is the identifier's last part ("Montreal").
     let city: String
     /// The system's name for the zone; nil for an identifier it does not know.
     let zoneName: String?
-    /// Everything a search reads, already folded. The system's short name is
-    /// never drawn: in some languages it is the only one that carries the
+    /// The words a search reads of the place: the city as shown, the
+    /// identifier (so "sao paulo" and "new york" are found in any language)
+    /// and the system's city even where it is shared.
+    private let placeWords: [[String]]
+    /// The words a search reads of the zone's names. The system's short name
+    /// is never drawn: in some languages it is the only one that carries the
     /// city as the person writes it.
-    private let searchText: [String]
+    private let nameWords: [[String]]
 
     var id: String { identifier }
 
     init(identifier: String, language: SupportedAppLanguage) {
         self.identifier = identifier
-        city = identifier.split(separator: "/").last
-            .map { $0.replacingOccurrences(of: "_", with: " ") } ?? identifier
         let zone = TimeZone(identifier: identifier)
+        let systemCity = zone.flatMap { OnboardingTimeZoneCities.cities(for: language).city(for: $0) }
+        let identifierCity = identifier.split(separator: "/").last
+            .map { $0.replacingOccurrences(of: "_", with: " ") } ?? identifier
+        if let systemCity, !systemCity.isShared {
+            city = systemCity.name
+        } else {
+            city = identifierCity
+        }
         let locale = language.formattingLocale
         zoneName = zone?.localizedName(for: .generic, locale: locale)
-        searchText = [
-            city,
-            identifier,
-            zoneName,
-            zone?.localizedName(for: .shortGeneric, locale: locale),
-        ].compactMap { $0 }.map(OnboardingSearchText.folded)
+        placeWords = [city, identifier, systemCity?.name]
+            .compactMap { $0 }.map(OnboardingSearchText.words)
+        nameWords = [zoneName, zone?.localizedName(for: .shortGeneric, locale: locale)]
+            .compactMap { $0 }.map(OnboardingSearchText.words)
     }
 
     /// The review's single line.
@@ -169,35 +275,70 @@ struct OnboardingTimeZonePresentation: Equatable, Identifiable, Sendable {
         zoneName.map { "\(city) · \($0)" } ?? city
     }
 
-    func matches(_ query: String) -> Bool {
-        let needle = OnboardingSearchText.folded(query)
-        return needle.isEmpty || searchText.contains { $0.contains(needle) }
+    private func matches(_ typed: [String], ignoring commonWords: Set<String>) -> Bool {
+        placeWords.contains { OnboardingSearchText.starts(typed, in: $0) }
+            || nameWords.contains {
+                OnboardingSearchText.starts(typed, in: $0, ignoring: commonWords)
+            }
     }
 
     /// Every zone the system knows, by city. Naming them asks the system once
     /// per zone, so the list is built once per language and kept.
     @MainActor
     static func all(for language: SupportedAppLanguage) -> [OnboardingTimeZonePresentation] {
-        if let known = cache[language] { return known }
-        let named: [OnboardingTimeZonePresentation] = TimeZone.knownTimeZoneIdentifiers.map {
-            OnboardingTimeZonePresentation(identifier: $0, language: language)
-        }
-        let zones = named.sorted { first, second in
-            (first.city, first.identifier) < (second.city, second.identifier)
-        }
-        cache[language] = zones
-        return zones
+        catalogue(for: language).zones
     }
 
+    /// A blank search, or one with no letter or digit, lists every zone.
     @MainActor
     static func zones(
         matching query: String,
         language: SupportedAppLanguage
     ) -> [OnboardingTimeZonePresentation] {
-        all(for: language).filter { $0.matches(query) }
+        let catalogue = catalogue(for: language)
+        let typed = OnboardingSearchText.words(query)
+        guard !typed.isEmpty else { return catalogue.zones }
+        return catalogue.zones.filter { $0.matches(typed, ignoring: catalogue.commonNameWords) }
     }
 
-    @MainActor private static var cache: [SupportedAppLanguage: [OnboardingTimeZonePresentation]] = [:]
+    private struct Catalogue {
+        let zones: [OnboardingTimeZonePresentation]
+        /// Words in the names of more than a fifth of the zones ("Horário",
+        /// "Padrão", "de"; "Time", "Standard"). Typing one, or its start,
+        /// would list hundreds of zones, so alone they find nothing; a whole
+        /// name that contains them still does. Counted from the system's
+        /// names, so no vocabulary is assumed for a language.
+        let commonNameWords: Set<String>
+    }
+
+    @MainActor
+    private static func catalogue(for language: SupportedAppLanguage) -> Catalogue {
+        if let known = cache[language] { return known }
+        let locale = language.formattingLocale
+        let zones = TimeZone.knownTimeZoneIdentifiers
+            .map { OnboardingTimeZonePresentation(identifier: $0, language: language) }
+            .sorted { first, second in
+                // In the language's order, so "São Paulo" sits with the "Sa…"
+                // cities instead of after every unaccented one.
+                switch first.city.compare(second.city, options: .caseInsensitive, range: nil, locale: locale) {
+                case .orderedAscending: true
+                case .orderedDescending: false
+                case .orderedSame: first.identifier < second.identifier
+                }
+            }
+        var zonesByWord: [String: Int] = [:]
+        for zone in zones {
+            for word in Set(zone.nameWords.joined()) { zonesByWord[word, default: 0] += 1 }
+        }
+        let catalogue = Catalogue(
+            zones: zones,
+            commonNameWords: Set(zonesByWord.filter { $0.value * 5 > zones.count }.keys)
+        )
+        cache[language] = catalogue
+        return catalogue
+    }
+
+    @MainActor private static var cache: [SupportedAppLanguage: Catalogue] = [:]
 }
 
 @MainActor

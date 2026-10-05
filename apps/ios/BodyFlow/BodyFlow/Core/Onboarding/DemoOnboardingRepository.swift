@@ -140,7 +140,7 @@ actor DemoOnboardingRepository: OnboardingRepository {
         let developmentIDs = Set(DevelopmentConsentDocumentID.allCases)
         let hasIdentity = !(draft.displayName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
             && OnboardingLocalePolicy.isSupported(draft.localeIdentifier)
-            && isValidCountryCode(draft.countryCode)
+            && OnboardingCountryPolicy.isCountry(draft.countryCode)
             && TimeZone(identifier: draft.timeZoneIdentifier) != nil
         let hasBody = draft.biologicalSex != nil
             && isValidBirthDate(draft.birthDate)
@@ -178,13 +178,6 @@ actor DemoOnboardingRepository: OnboardingRepository {
            !consentIDs.isDisjoint(with: developmentIDs) {
             throw OnboardingRepositoryError.developmentConsentForbidden
         }
-    }
-
-    private func isValidCountryCode(_ countryCode: String) -> Bool {
-        countryCode.count == 2
-            && countryCode == countryCode.uppercased()
-            && countryCode.unicodeScalars.allSatisfy { (65...90).contains($0.value) }
-            && Locale.Region.isoRegions.map(\.identifier).contains(countryCode)
     }
 
     private func isValidBirthDate(_ birthDate: Date?) -> Bool {

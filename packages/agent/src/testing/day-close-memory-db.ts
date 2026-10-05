@@ -37,6 +37,10 @@ export interface MemoryOperation {
   values?: MemoryRow | MemoryRow[]
   filters?: Array<{ op: string; column: string; value: unknown }>
   params?: MemoryRow
+  /** Row limit of a read, when it has one. */
+  limit?: number
+  /** Whether a read asked for an ordering. */
+  ordered?: boolean
 }
 
 type Filter = { op: string; column: string; value: unknown }
@@ -685,6 +689,8 @@ class MemoryQuery implements PromiseLike<QueryResult> {
       target: this.table,
       filters: this.filters.map((filter) => ({ ...filter })),
       ...(this.values ? { values: structuredClone(this.values) } : {}),
+      ...(this.rowLimit !== null ? { limit: this.rowLimit } : {}),
+      ...(this.ordering.length > 0 ? { ordered: true } : {}),
     }
     const failure = await this.db.enter(operation, this.gate)
     if (failure) return { data: null, error: { message: failure } }

@@ -10,8 +10,9 @@
  * the test environment carry.
  *
  * OFF BY DEFAULT, and four locks must all hold:
- *  a. `MOBILE_EVALUATION_ACCESS_DAYS` is an integer from 1 to 90. Absent,
- *     empty or anything else = off, with not a single query;
+ *  a. `MOBILE_EVALUATION_ACCESS_DAYS` is an integer from 1 to 90, in plain
+ *     digits; spaces around it are ignored (" 30 " is 30). Absent, empty or
+ *     anything else = off, with not a single query;
  *  b. the project ref of the configured database URL is listed in
  *     `MOBILE_EVALUATION_ACCESS_PROJECT_REF`, and is never the production
  *     ref, which is refused here in code whatever the variables say;
@@ -22,15 +23,24 @@
  *     account that already has access is left alone.
  *
  * ONCE. Only a first completion is eligible: the profile is read BEFORE the
- * completion is recorded and must have no completion time yet, so a retry, a
- * replay or a later re-acceptance of new documents grants nothing, and
- * neither does an account that completed before the switch was on. The event
- * id is derived from the user id, so two first completions arriving together
- * end as one grant (the second is answered `duplicate` by the database).
+ * completion is recorded and must say both "not completed"
+ * (`onboarding_completed` false) and "no completion time"
+ * (`onboarding_completed_at` null). So a retry, a replay or a later
+ * re-acceptance of new documents grants nothing, and neither does an account
+ * that completed before the switch was on, including an older account marked
+ * completed with no completion time (the column was added without filling
+ * the accounts that already existed), which the completion RPC itself still
+ * records as a first completion. The event id is derived from the user id, so
+ * two first completions arriving together end as one grant (the second is
+ * answered `duplicate` by the database).
  *
  * It only calls the database it was handed, and sends nothing. A failure is
  * logged without personal data and the onboarding response goes on unchanged:
- * the account exists and an operator can still grant by hand.
+ * the account exists and an operator can still grant by hand. Unchanged, not
+ * on time: the two reads have no deadline, and the database client repeats a
+ * GET three times (after 1, 2 and 4 seconds) on a network error or HTTP
+ * 503/520, so one failing read delays the response about 7 seconds (declared
+ * in docs/mobile/api-v1.md, RC EA).
  */
 import type { MobileRouteContext } from './route'
 import { safeUnexpectedErrorName } from './route'
@@ -105,7 +115,8 @@ export function projectRefFromUrl(url: string | undefined): string | null {
 
 /** Locks a, b and c, from the environment alone. Null = off. */
 export function resolveEvaluationAccess(env: Environment): EvaluationAccessConfig | null {
-  // Plain decimal digits only: "30.0", "+30", "1e1" and "030" are a typo, not a number of days.
+  // Plain decimal digits only: "30.0", "+30", "1e1" and "030" are a typo, not
+  // a number of days. Spaces around the digits are dropped first.
   const rawDays = (env[EVALUATION_ACCESS_DAYS_ENV] ?? '').trim()
   if (!/^[1-9]\d?$/.test(rawDays)) return null
   const days = Number(rawDays)
@@ -277,13 +288,21 @@ export async function prepareEvaluationAccess(
 
     const profile = await client
       .from('user_profiles')
-      .select('onboarding_completed_at')
+      .select('onboarding_completed, onboarding_completed_at')
       .eq('user_id', userId)
       .maybeSingle()
     if (profile.error) throw new EvaluationAccessError('profile_lookup')
-    // Only a first completion is eligible; `null` is the same test the
-    // completion RPC uses to tell a first completion from a re-acceptance.
-    if (!isRecord(profile.data) || profile.data.onboarding_completed_at !== null) return NO_GRANT
+    // Only a first completion is eligible. A null completion time is the test
+    // the completion RPC uses to tell a first completion from a
+    // re-acceptance, but it is not enough here: an older account can be
+    // marked completed with no completion time. Both must say "never".
+    if (
+      !isRecord(profile.data) ||
+      profile.data.onboarding_completed !== false ||
+      profile.data.onboarding_completed_at !== null
+    ) {
+      return NO_GRANT
+    }
   } catch (error) {
     logFailure(context, error)
     return NO_GRANT

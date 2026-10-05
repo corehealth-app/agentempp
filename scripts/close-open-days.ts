@@ -153,6 +153,11 @@ export function formatAccountTail(result: ClosePastOpenDaysResult): string[] {
       `  ficam ABERTOS (anteriores ao último dia já fechado): ${result.staleOpenDates.join(', ')}`,
     )
   }
+  if (result.inactiveOpenDates.length > 0) {
+    lines.push(
+      `  linhas abertas sem refeição, treino nem mensagem (não visitadas, ficam abertas): ${result.inactiveOpenDates.join(', ')}`,
+    )
+  }
   if (result.pendingDates.length > 0) {
     lines.push(`  pendentes para a próxima rodada: ${result.pendingDates.join(', ')}`)
   }

@@ -364,6 +364,137 @@ describe('all three locks open', () => {
   })
 })
 
+describe('what one request costs in round trips to the database (docs/mobile/api-v1.md, docs/CALCULO-MPP.md §3a)', () => {
+  // Counted on the in-memory database, which records every query the real
+  // code makes. "Warm": the calculation config is already cached in the
+  // instance (one more read of `global_config` when it is not).
+  const MORNING = NOW // 08:00 of 05/10: yesterday is a late close
+  const IN_WINDOW = new Date('2026-10-05T03:30:00.000Z') // 00:30 of 05/10
+
+  function bare(progress?: Record<string, unknown>) {
+    const db = new DayCloseMemoryDb()
+    db.addAccount({ userId: USER, profile: PROFILE, progress })
+    return db
+  }
+  function meal(db: DayCloseMemoryDb, date: string) {
+    db.registerMeal({
+      userId: USER,
+      date,
+      consumedAt: `${date}T15:00:00.000Z`,
+      kcal: 1500,
+      proteinG: 110,
+      mealType: 'almoco',
+      caloriesTarget: 1576,
+      proteinTarget: 120,
+    })
+  }
+  function water(db: DayCloseMemoryDb, date: string) {
+    db.tables.daily_snapshots.push(
+      db.withDefaults('daily_snapshots', { user_id: USER, date, water_consumed_ml: 1500 }),
+    )
+  }
+  const closedUpTo = (date: string) => ({ current_streak: 1, xp_total: 15, last_active_date: date })
+
+  async function cost(db: DayCloseMemoryDb, now: Date, warm = true) {
+    vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    if (warm) {
+      // Any close loads the config; this one runs on a database of its own.
+      const other = bare()
+      meal(other, '2026-10-04')
+      await closeOpenDaysOnRequest(context(other), { env: ON, now: MORNING })
+    } else {
+      clearCalcConfigCache()
+    }
+    vi.setSystemTime(now)
+    await closeOpenDaysOnRequest(context(db), { env: ON, now })
+    return {
+      total: db.operations.length,
+      reads: db.operations.filter((operation) => operation.kind === 'select').length,
+      writes: db.writes.map((operation) => `${operation.kind} ${operation.target}`),
+    }
+  }
+
+  it('yesterday already closed: the account and one progress read', async () => {
+    expect(await cost(bare(closedUpTo('2026-10-04')), MORNING)).toEqual({
+      total: 2,
+      reads: 2,
+      writes: [],
+    })
+  })
+
+  it('nothing to close: the account, the progress and the four discovery reads', async () => {
+    expect(await cost(bare(closedUpTo('2026-10-03')), MORNING)).toEqual({
+      total: 6,
+      reads: 6,
+      writes: [],
+    })
+  })
+
+  it('thirty open rows with water only cost the same six reads (they were six more reads EACH)', async () => {
+    const db = bare(closedUpTo('2026-09-03'))
+    for (let day = 4; day <= 30; day++) water(db, `2026-09-${String(day).padStart(2, '0')}`)
+    for (const day of ['01', '02', '03']) water(db, `2026-10-${day}`)
+    expect(db.tables.daily_snapshots).toHaveLength(30)
+    const spent = await cost(db, MORNING)
+    // …plus the streak zeroed once (04/10 − 03/09 = 31 days): one update, one event.
+    expect(spent).toEqual({
+      total: 8,
+      reads: 6,
+      writes: ['update user_progress', 'insert product_events'],
+    })
+  })
+
+  it('yesterday with a meal, the day after the last closed one, late close: 25 (26 with a cold config)', async () => {
+    const seed = () => {
+      const db = bare(closedUpTo('2026-10-03'))
+      meal(db, '2026-10-04')
+      return db
+    }
+    const writes = [
+      'update daily_snapshots',
+      'rpc finalize_daily_close_atomic',
+      'insert product_events',
+    ]
+    // 1 account + 1 progress + 4 discovery + the day (15 reads, 3 writes) + 1 progress.
+    expect(await cost(seed(), MORNING)).toEqual({ total: 25, reads: 22, writes })
+    expect(await cost(seed(), MORNING, false)).toEqual({ total: 26, reads: 23, writes })
+  })
+
+  it("the same day inside production's window (00:30): one more read, the profile's targets", async () => {
+    const db = bare(closedUpTo('2026-10-03'))
+    meal(db, '2026-10-04')
+    expect(await cost(db, IN_WINDOW)).toMatchObject({ total: 26, reads: 23 })
+  })
+
+  it('empty dates between the last closed day and yesterday: three more reads, the re-check of earlier dates', async () => {
+    const db = bare(closedUpTo('2026-10-01'))
+    meal(db, '2026-10-04')
+    expect(await cost(db, MORNING)).toMatchObject({ total: 28, reads: 25 })
+  })
+
+  it('yesterday with only an inbound message: 20', async () => {
+    const db = bare(closedUpTo('2026-10-03'))
+    db.addInboundMessage(USER, '2026-10-04T13:00:00.000Z')
+    // 1 + 1 + 4 + the day (10 reads, 3 writes) + 1.
+    expect(await cost(db, MORNING)).toEqual({
+      total: 20,
+      reads: 17,
+      writes: [
+        'upsert daily_snapshots',
+        'rpc finalize_daily_close_atomic',
+        'insert product_events',
+      ],
+    })
+  })
+
+  it('three consecutive days, the budget of one request: 61', async () => {
+    const db = bare(closedUpTo('2026-10-01'))
+    for (const date of ['2026-10-02', '2026-10-03', '2026-10-04']) meal(db, date)
+    // 1 + 1 + 4 + 3 × 18 + 1.
+    expect(await cost(db, MORNING)).toMatchObject({ total: 61, reads: 52 })
+  })
+})
+
 describe('where the hook is called from', () => {
   const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 

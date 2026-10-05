@@ -611,10 +611,15 @@ slug pela lista da ferramenta.
 
 **Leitura do catálogo.** A consulta da taxa lê `workout_types` uma vez em toda
 proposta, edição e confirmação de treino do app, inclusive para slug exato e
-tipo desconhecido. Se essa leitura falha: texto que já está em forma de slug
-(igual à própria normalização, como `musculacao`) segue como digitado, como
-antes da mudança; qualquer outro texto ("Natação", "Capoeira") responde
-`500 workout_calculation_failed`, e nada é gravado nem alterado.
+tipo desconhecido. Se essa leitura falha: texto cujo minúsculo já é a própria
+normalização (sem acento, espaço nem hífen: `musculacao`, `MUSCULACAO`,
+`Capoeira`) segue como digitado, como antes da mudança, porque a função SQL
+faz `lower()` sozinha e devolve para ele o mesmo que devolveria para o slug;
+qualquer outro texto ("Natação", "jiu-jitsu", "corrida leve") responde
+`500 workout_calculation_failed`, e nada é gravado nem alterado. Corrigido em
+2026-10-05 (revisão, LOW): a primeira versão comparava o texto digitado com a
+normalização sem passar para minúsculas, e "MUSCULACAO" (40 min, moderada,
+70 kg) respondia 500 onde antes respondia 240 pela taxa do catálogo.
 
 Caso do revisor ("Natação", 40 min, moderada, 70 kg): antes 'outro'
 6,0 × 40 × 1,0 × 70/70 = **240**; agora `natacao` 10,0 × 40 × 1,0 × 70/70 =
@@ -649,7 +654,7 @@ Caso do revisor ("Natação", 40 min, moderada, 70 kg): antes 'outro'
 
 > RC W — cenário uma leitura a mais de `workout_types` em toda proposta, edição e confirmação de treino do app (inclusive slug exato e tipo desconhecido; sem cache) NÃO coberto nesta PR (pendência da audit 2026-10-04). Com a leitura funcionando, slug exato e tipo desconhecido saem como no HEAD; o custo é uma ida ao banco a mais por pedido. Travado no teste.
 
-> RC W — cenário leitura do catálogo falha NÃO coberto nesta PR (pendência da audit 2026-10-04). Texto já em forma de slug (igual à própria normalização: "musculacao", "natacao", "capoeira") segue como digitado, como no HEAD. Qualquer outro texto ("Natação", "Capoeira", "Bike") responde `500 workout_calculation_failed`, onde o HEAD respondia pela taxa genérica. E um texto em forma de slug que o catálogo só casa pelo nome de exibição sai pela taxa genérica enquanto a leitura falhar; no catálogo de staging são cinco: "polichinelos" (`jumping_jacks`) e, só se digitados com "_" no lugar dos espaços, "biceps_e_triceps", "costas_e_biceps", "ombro_e_trapezio" e "peito_e_triceps". Para "polichinelos": 240 em vez de 320 e, se a falha for só na confirmação, grava 240 sob uma proposta que mostrou 320. Travado no teste.
+> RC W — cenário leitura do catálogo falha NÃO coberto nesta PR (pendência da audit 2026-10-04). Texto cujo minúsculo já é a própria normalização (sem acento, espaço nem hífen: "musculacao", "MUSCULACAO", "natacao", "Capoeira", "Bike") segue como digitado, como antes da mudança: a função SQL faz `lower()` sozinha e responde pela taxa do catálogo quando o slug existe ("MUSCULACAO", 40 min, moderada, 70 kg = 240; "NATACAO" = 400) e pela genérica quando não existe. Qualquer outro texto ("Natação", "jiu-jitsu", "corrida leve") responde `500 workout_calculation_failed`, onde antes respondia pela taxa genérica (240 no mesmo treino). E um texto do primeiro grupo que o catálogo só casa pelo nome de exibição sai pela taxa genérica enquanto a leitura falhar; no catálogo de staging são cinco, em qualquer combinação de maiúsculas: "polichinelos" ou "Polichinelos" (`jumping_jacks`) e, só se digitados com "_" no lugar dos espaços, "biceps_e_triceps", "costas_e_biceps", "ombro_e_trapezio" e "peito_e_triceps". Para "polichinelos": 240 em vez de 320 e, se a falha for só na confirmação, grava 240 sob uma proposta que mostrou 320. Travado no teste.
 
 > RC W — cenário tela do iPhone (tipo digitado e kcal da proposta vistos no aparelho) NÃO coberto nesta PR (pendência da audit 2026-10-04). Nada foi executado no aparelho nem no simulador.
 
@@ -747,10 +752,19 @@ de 00:30 a 04:59 neste caminho), o resultado é o mesmo da produção. As regras
 abaixo valem onde a produção nunca passa.
 
 1. **As datas vêm dos dados, em ordem crescente, e a ordem é estrita.**
-   Candidatas: linhas abertas de `daily_snapshots` com data anterior a hoje
-   (fuso da conta), mais datas locais com refeição, treino ou mensagem
-   recebida. O calendário não é percorrido: doze datas vazias antes de um dia
-   registrado não custam nada. Uma data só é tentada depois que todas as
+   Candidatas: datas locais anteriores a hoje (fuso da conta) com refeição,
+   treino ou mensagem recebida. O calendário não é percorrido: doze datas
+   vazias antes de um dia registrado não custam nada. **Linha aberta de
+   `daily_snapshots` sem nenhum dos três** (dia só com água, peso, suplemento
+   ou medicamento) **não é candidata** (revisão de 2026-10-05): a varredura
+   decide isso com as leituras iniciais, pelo mesmo teste de `closeLocalDay`
+   (os limites do dia local), não a visita, não gasta consulta nem orçamento
+   com ela e a deixa aberta, como a produção; ela sai em `inactiveOpenDates`.
+   Antes, cada linha dessas custava 6 consultas em todo pedido, e 30 seguidas
+   esgotavam os 4 s antes de a varredura chegar ao dia registrado que vinha
+   depois. Exceção: com página cheia (1000 linhas numa das leituras iniciais)
+   as linhas lidas podem não ser todas, e toda linha aberta é visitada como
+   antes. Uma data só é tentada depois que todas as
    candidatas anteriores foram resolvidas: fechadas (por esta chamada ou por
    outra), sem atividade, ou atrás da fronteira. **Se uma data volta
    `changed_concurrently`** (a linha do dia mudou ou surgiu entre a leitura e a
@@ -822,10 +836,64 @@ abaixo valem onde a produção nunca passa.
    perde a corrida recebe `applied = false` e não grava evento nenhum (os
    eventos são gravados depois da finalização, nunca antes).
 8. **Orçamento por chamada** (API: 3 dias ou 4 s) conta dias fechados e tempo
-   decorrido, nunca datas visitadas. O que sobra fecha no pedido seguinte, em
-   ordem. Uma segunda chamada sem nada a fazer não grava nada; quando ontem já
-   fechou, custa uma consulta. `pendingDates` traz o que ficou para depois,
-   pelo orçamento ou pela parada da regra 1.
+   decorrido, nunca datas visitadas, e é conferido **só entre um dia e o
+   seguinte**: não interrompe um dia em andamento nem uma leitura em curso, e
+   por isso não é um teto do tempo do pedido (leitura que falha: pendência
+   declarada abaixo). O que sobra fecha no pedido seguinte, em ordem. Uma
+   segunda chamada sem nada a fazer não grava nada. `pendingDates` traz o que
+   ficou para depois, pelo orçamento ou pela parada das regras 1 e 9.
+   **Custo em idas ao banco, por chamada** (contado em
+   `day-close-on-request.test.ts`; a API soma uma, a leitura da conta):
+   - ontem já fechou: 1;
+   - nenhuma data candidata (ontem sem registro, ou só linhas abertas com
+     água, quantas forem): 5 leituras; mais 2 escritas se a sequência for
+     zerada;
+   - por dia fechado com refeição ou treino: até 18 no fechamento atrasado
+     com meta gravada (15 leituras, a escrita da linha, a RPC e a inserção dos
+     eventos); até 19 dentro da janela da produção ou sem meta gravada (mais a
+     leitura das metas do perfil);
+   - por dia fechado só com mensagem: 13;
+   - mais 3 leituras quando há data sem registro entre o último dia fechado e
+     o dia (regra 9);
+   - mais 1 na primeira vez que a instância carrega a configuração de cálculo;
+   - mais 1 leitura de progresso ao fim da chamada que fechou algum dia.
+   Três dias seguidos num pedido da API: 61.
+9. **Releitura das datas anteriores antes de finalizar** (revisão de
+   2026-10-05). As candidatas são fixadas pelas leituras iniciais. Na
+   varredura, junto com a última leitura de `user_progress` e imediatamente
+   antes da RPC de finalização de cada data, são relidos refeições, treinos e
+   mensagens recebidas entre a primeira data que ainda pode estar aberta (o dia
+   seguinte ao último dia fechado ou, sem dia fechado, a primeira data
+   permitida) e o início da data que está fechando. Se
+   aparece um instante que as leituras iniciais não devolveram, a data volta
+   `earlier_date_changed`, **não é finalizada**, a varredura para (como na
+   regra 1) e um pedido seguinte fecha a data anterior primeiro. A linha do
+   dia já foi gravada nesse ponto e segue aberta (o mesmo estado de uma
+   finalização que perde a corrida). Quando a data é o dia seguinte ao último
+   fechado não há nada no meio e nenhuma consulta é feita; senão são três
+   leituras. Não é feita em simulação, nem com página cheia, nem em
+   `closeLocalDay` chamada para uma data só.
+   Caso do revisor: 03/10 vazio, 04/10 com 2016 kcal, um pedido às 05:00 de
+   05/10 e um jantar de 500 kcal entrando em 03/10 logo depois do 18º acesso
+   ao banco desse pedido (04/10 gravado, ainda não finalizado). Antes: 04/10
+   fechava, a fronteira passava de 03/10 e ele ficava aberto para sempre (XP
+   10, sequência 1, bloco 60). Agora: o pedido para sem finalizar, e o
+   seguinte fecha 03/10 (500 < 50% de 1576, sub-registro: crédito 500, XP 10)
+   e 04/10 (500 − (2016 − 1576) = 60, XP 10): XP 20, sequência 2, bloco
+   **560**, igual à varredura que já enxergasse o jantar. O que sobra,
+   declarado abaixo: o registro que entra na última ida ao banco, depois da
+   releitura e antes da RPC.
+
+   **Pendência conhecida, sem linha RC (revisão de 2026-10-05, LOW):** uma
+   linha de dia aberta só com água não é mais visitada. Se a primeira
+   refeição desse dia entra logo depois das leituras iniciais do pedido e não
+   há dia posterior com registro, esse pedido zera a sequência por
+   inatividade e só o pedido seguinte fecha o dia, com sequência 1 (XP e
+   bloco iguais). Antes desta regra o dia fechava no mesmo pedido e a
+   sequência continuava. O caso é o mesmo que já acontecia quando o dia não
+   tinha linha nenhuma. Caso reproduzido: 02/10 fechado com sequência 5,
+   03/10 só com água, refeição de 1500 kcal entrando em 03/10 durante o
+   pedido das 08:00 de 05/10.
 
 O que o caminho sob demanda **não faz**: não avança a agenda de reavaliação
 (opção `advanceReevaluation`, desligada por padrão); não grava
@@ -833,7 +901,9 @@ O que o caminho sob demanda **não faz**: não avança a agenda de reavaliação
 (ninguém grava: o gráfico "Bloco 7.700 acumulado" do app segue em zero); não
 cria regra para ganho de massa e manutenção (o crédito segue `meta + exercício
 − consumido`, pendência do §3); não fecha dia de conta com WhatsApp nem de
-conta sem fuso (API); não recredita dia já fechado.
+conta sem fuso (API); não recredita dia já fechado; não visita nem fecha
+linha de dia sem refeição, treino ou mensagem recebida; não põe prazo nas
+próprias leituras.
 
 #### Conta de um dia em cada protocolo (golden)
 
@@ -893,17 +963,24 @@ contra o banco e nada foi gravado. Gravar exige autorização nomeada do Eduardo
   no meio, varreduras intercaladas com registro no último dia e no dia do
   MEIO, dois pedidos simultâneos em conta com dia só de mensagem, regra dos
   30 minutos em America/Sao_Paulo e Asia/Kolkata, caracterização de
-  Africa/Cairo e Asia/Beirut, dias abertos de staging);
-  `packages/agent/src/day-close.test.ts` (mecânica);
+  Africa/Cairo e Asia/Beirut, dias abertos de staging, e os dois casos da
+  revisão de 2026-10-05: 10, 30 e 45 linhas só com água antes de um dia com
+  refeição, e o jantar que entra em 03/10 depois do 18º acesso ao banco);
+  `packages/agent/src/day-close.test.ts` (mecânica, inclusive a releitura da
+  regra 9 e a linha só com água);
   `packages/inngest-functions/src/functions/daily-closer.parity.test.ts`
-  (paridade com o fechador de produção, às 00:30 e às 04:59 locais, e a
-  borda das 05:00);
+  (paridade com o fechador de produção, às 00:30 e às 04:59 locais, a borda
+  das 05:00 e a divergência declarada das 50 mensagens);
+  `apps/admin/src/lib/mobile-api/day-close-and-evaluation-access.read-retry.test.ts`
+  (cliente supabase-js real com `fetch` falso: os ~7 s de uma leitura que
+  falha);
   `apps/admin/src/lib/mobile-api/day-close-on-request.concurrent.test.ts`
   (os handlers reais de `GET /today` e `GET /progress` ao mesmo tempo);
   `packages/agent/src/day-close.no-send.test.ts` (prova estática de que não
   envia); `packages/agent/src/day-close.operator-script.test.ts`;
-  `apps/admin/src/lib/mobile-api/day-close-on-request.test.ts` e os
-  `route.test.ts` de `today` e `progress`.
+  `apps/admin/src/lib/mobile-api/day-close-on-request.test.ts` (travas e o
+  custo em idas ao banco de cada tipo de pedido) e os `route.test.ts` de
+  `today` e `progress`.
 
 > RC F — cenário gráfico "Bloco 7.700 acumulado" do app (lê `daily_snapshots.deficit_accumulated`, coluna que o fechamento não grava) NÃO coberto nesta PR (pendência da audit 2026-10-04). Continua em zero com os dias fechados, em qualquer ambiente.
 
@@ -915,9 +992,11 @@ contra o banco e nada foi gravado. Gravar exige autorização nomeada do Eduardo
 
 > RC F — cenário dia antigo aberto que recebe registro depois de um dia posterior já ter fechado NÃO coberto nesta PR (pendência da audit 2026-10-04). Fica aberto, como em produção: não entra em sequência, XP nem bloco; a varredura só o relata.
 
+> RC F — cenário primeiro registro retroativo num dia anterior aberto que entra na última ida ao banco antes da finalização do dia posterior (depois da releitura das datas anteriores, antes da RPC) NÃO coberto nesta PR (pendência da audit 2026-10-04). O dia posterior fecha, a fronteira passa do anterior e ele fica aberto para sempre, sem XP, bloco nem sequência, como na linha anterior. A releitura (regra 9) cobre o registro que entra antes dela, e não é feita com página cheia (1000 linhas numa leitura). Travado abaixo como está, com o caso do revisor deslocado para essa janela: 03/10 vazio, 04/10 com 2016 kcal, jantar de 500 kcal em 03/10 no instante da RPC: XP 10, sequência 1, bloco 60, e 03/10 aberto.
+
 > RC F — cenário refeição ou treino registrado num dia JÁ fechado NÃO coberto nesta PR (pendência da audit 2026-10-04). Igual à produção: o dia não é recreditado e `calories_consumed` passa a divergir do que foi creditado.
 
-> RC F — cenário dia só com água, peso, suplemento ou medicamento (sem refeição, treino nem mensagem recebida) NÃO coberto nesta PR (pendência da audit 2026-10-04). Conta como dia inativo, como em produção: a linha fica aberta e a sequência quebra.
+> RC F — cenário dia só com água, peso, suplemento ou medicamento (sem refeição, treino nem mensagem recebida) NÃO coberto nesta PR (pendência da audit 2026-10-04). Conta como dia inativo, como em produção: a linha fica aberta e a sequência quebra. A varredura não visita essa linha: ela não custa consulta, não gasta o orçamento e não segura o dia seguinte. Caso do revisor travado abaixo: 30 linhas só com água e depois 04/10 com refeição fecham 04/10 no primeiro pedido, com 28 idas ao banco; antes, com o relógio simulado do revisor (150 ms por linha visitada), eram 161 consultas por pedido, 26 linhas visitadas e 04/10 não fechava em nenhum de três pedidos seguidos. Com página cheia (1000 linhas numa leitura) toda linha aberta volta a ser visitada.
 
 > RC F — cenário status `incomplete_no_response` num fechamento atrasado (o padrão de refeições é o dos 14 dias anteriores a AGORA, não à data fechada) NÃO coberto nesta PR (pendência da audit 2026-10-04). Só alcança dia com lembrete de lacuna gravado, que conta do app em staging não tem.
 
@@ -930,6 +1009,10 @@ contra o banco e nada foi gravado. Gravar exige autorização nomeada do Eduardo
 > RC F — cenário registro confirmado entre a gravação da linha do dia e a finalização NÃO coberto nesta PR (pendência da audit 2026-10-04). Mesma janela da produção, com uma ida ao banco de largura.
 
 > RC F — cenário eventos de telemetria intermediários (`streak.reset_inactive` de cada intervalo antigo e `daily_closer.skipped`) NÃO coberto nesta PR (pendência da audit 2026-10-04). O caminho sob demanda grava um zeramento por varredura e nunca grava "skipped"; o `user_progress` final é o mesmo.
+
+> RC F — cenário dia sem refeição nem treino com mais de 50 mensagens em que as 50 lidas pelo fechador de produção são todas enviadas NÃO coberto nesta PR (pendência da audit 2026-10-04). Divergência DENTRO da janela da produção: o `daily-closer` lê até 50 mensagens do dia, sem filtro de direção e sem ordenação, e procura uma recebida entre elas; o caminho sob demanda pergunta por uma mensagem recebida com o filtro `direction = 'in'`. Travado como está no teste de paridade, com o caso do revisor: 04/10 com 50 mensagens enviadas seguidas de 3 recebidas, fechado às 00:30 de 05/10 (America/Sao_Paulo). Produção: dia inativo, nada gravado além de `daily_closer.skipped`. Caminho sob demanda: linha criada e fechada, XP 10, sequência 1, `last_active_date` 04/10. Com 49 enviadas e 1 recebida os dois voltam a concordar. A leitura da produção não foi copiada.
+
+> RC F — cenário leitura do fechamento sob demanda que falha por erro de rede ou HTTP 503 ou 520 NÃO coberto nesta PR (pendência da audit 2026-10-04). O orçamento de 4 s é conferido só entre um dia e o seguinte e nenhuma leitura tem prazo de cancelamento. O cliente de banco (supabase-js 2.105.1) repete todo GET três vezes, esperando 1, 2 e 4 s (ou o que o cabeçalho `Retry-After` de um 503 mandar), antes de devolver o erro: com o interruptor ligado, `GET /today` e `GET /progress` ficam cerca de 7 s parados e depois respondem com o que está gravado. Caso do revisor travado em day-close-and-evaluation-access.read-retry.test.ts (cliente real, `fetch` falso, relógio simulado): 503 sem `Retry-After` em `users`, em `user_progress` ou em `meal_logs`, 4 pedidos e 7 s cada. HTTP 500 não é repetido; a RPC e as escritas (POST e PATCH) também não. Com o interruptor ausente nenhuma consulta é feita.
 
 > RC F — cenário fechador de PRODUÇÃO em fuso de meia hora e em dia de troca de horário de verão NÃO coberto nesta PR (pendência da audit 2026-10-04). Não foi tocado: usa "agora − 24 h" e ticks no minuto 30 UTC. O caminho sob demanda usa a data do calendário e espera 30 min depois da meia-noite local (travado abaixo em America/Sao_Paulo e Asia/Kolkata), com a exceção da linha seguinte.
 

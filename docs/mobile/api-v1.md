@@ -465,10 +465,28 @@ fechar os dias passados da conta **antes** de ler. Regras e números:
   do fechamento.
 - **Uma leitura que escreve.** Com as travas abertas, o primeiro pedido do dia
   grava em `daily_snapshots`, `user_progress` e `product_events`. Custo por
-  pedido, além da leitura de sempre: uma consulta (a conta); mais uma quando
-  ontem já fechou; mais cinco, sem escrita, quando ontem não tem registro; e
-  cerca de quinze idas ao banco por dia fechado, até 3 dias ou 4 s por pedido
-  (o resto fecha no pedido seguinte, em ordem).
+  pedido em idas ao banco, além da leitura de sempre (contado em
+  `day-close-on-request.test.ts`): uma consulta (a conta); mais uma quando
+  ontem já fechou; mais cinco, sem escrita, quando não há dia a fechar — ontem
+  sem registro, ou só linhas de dia abertas com água, peso, suplemento ou
+  medicamento, quantas forem (essas linhas não são visitadas) —, e mais duas
+  escritas no pedido em que a sequência é zerada por inatividade; e, por dia
+  fechado, até 18 (até 19 entre 00:30 e 04:59 locais; 13 se o dia só tem
+  mensagem), mais 3 leituras quando há data sem registro entre o último dia
+  fechado e o dia, e mais uma leitura de progresso ao fim do pedido. Um pedido
+  fecha no máximo 3 dias (61 idas ao banco para três dias seguidos) e não
+  começa outro dia depois de 4 s; o resto fecha no pedido seguinte, em ordem.
+- **Os 4 s não são um teto do tempo do pedido.** O limite é conferido só
+  entre um dia e o seguinte: um dia em andamento termina e uma leitura em
+  curso não é interrompida (nenhuma leitura do fechamento tem prazo de
+  cancelamento). O cliente de banco (supabase-js 2.105.1) repete todo GET três
+  vezes, esperando 1, 2 e 4 s, em erro de rede ou HTTP 503 ou 520: uma leitura
+  do fechamento que falhe assim segura `GET /today` ou `GET /progress` por
+  cerca de 7 s, e depois a rota responde com o que está gravado. HTTP 500 não
+  é repetido; a RPC e as escritas também não. Pendência `RC F` em
+  `docs/CALCULO-MPP.md` §3a; travado em
+  `day-close-and-evaluation-access.read-retry.test.ts` (cliente real, `fetch`
+  falso).
 - **Falha não derruba o pedido.** Um erro no fechamento é registrado sem dado
   pessoal (`[mobile-api] day_close_failed`, com `request_id` e o nome do erro)
   e a rota responde normalmente com o que está gravado.
@@ -483,7 +501,10 @@ fechar os dias passados da conta **antes** de ler. Regras e números:
 - **Em ordem, sem pular.** Se um dia muda enquanto é fechado (um registro
   retroativo confirmado naquele instante, ou `GET /today` e `GET /progress`
   chegando juntos num dia só com mensagem), o pedido para naquele dia e não
-  fecha os posteriores; um pedido seguinte fecha todos, em ordem.
+  fecha os posteriores; um pedido seguinte fecha todos, em ordem. O mesmo
+  quando, durante o pedido, entra o primeiro registro de um dia ANTERIOR que
+  estava vazio: o dia que estava sendo fechado não é finalizado, e o pedido
+  seguinte fecha o anterior primeiro (`docs/CALCULO-MPP.md` §3a, regra 9).
 
 Para fechar os dias que já estavam abertos antes de ligar o interruptor, há o
 script de operador `scripts/close-open-days.ts` (simulação por padrão; recusa
@@ -498,8 +519,10 @@ TZ=UTC pnpm --dir scripts exec tsx close-open-days.ts --from 2026-09-22
 ```
 
 Código: `apps/admin/src/lib/mobile-api/day-close-on-request.ts`. Testes:
-`day-close-on-request.test.ts`, `day-close-on-request.concurrent.test.ts` (as
-duas rotas ao mesmo tempo) e os `route.test.ts` de `today` e `progress`.
+`day-close-on-request.test.ts` (travas e custo por pedido),
+`day-close-on-request.concurrent.test.ts` (as duas rotas ao mesmo tempo),
+`day-close-and-evaluation-access.read-retry.test.ts` (leitura que falha) e os
+`route.test.ts` de `today` e `progress`.
 Nenhuma rota nova: o manifesto de 48 rotas do BFF é o mesmo.
 
 ## Acesso de avaliação automático (ambiente de avaliação)
@@ -520,7 +543,7 @@ pela mesma RPC do domínio.
 
 | Trava | Onde | Valor |
 |---|---|---|
-| a | variável `MOBILE_EVALUATION_ACCESS_DAYS` | número de dias de acesso, inteiro de `1` a `90`, só dígitos. Ausente, vazia, `0`, `91`, `30.0`, `030` ou qualquer outro texto = desligado, e **nenhuma consulta é feita** |
+| a | variável `MOBILE_EVALUATION_ACCESS_DAYS` | número de dias de acesso, inteiro de `1` a `90`, só dígitos; espaços nas pontas são ignorados (`" 30 "` vale 30). Ausente, vazia, `0`, `91`, `30.0`, `030` ou qualquer outro texto = desligado, e **nenhuma consulta é feita** |
 | b | variável `MOBILE_EVALUATION_ACCESS_PROJECT_REF` | ref(s) de projeto permitidos, separados por vírgula. O ref é lido de `NEXT_PUBLIC_SUPABASE_URL` e precisa estar na lista. O ref de produção é recusado em código, mesmo se listado |
 | c | variável `MOBILE_EVALUATION_ACCESS_ACTOR_ID` | uuid do ator de auditoria que o domínio exige em entitlement manual (`actor_id`). Não é segredo. Ausente, fora do formato ou só zeros = desligado |
 | d | a conta | nenhum evento em `entitlement_events` (de qualquer chave) e decisão `no_entitlement` em `resolve_user_entitlement`. Acesso vencido ou bloqueado não é renovado, e conta que já tem acesso não é tocada |
@@ -548,8 +571,13 @@ usa `grant`):
   do BFF de staging. Se forem copiadas por engano para um projeto que aponta
   para o banco de produção, a trava b recusa.
 - **Uma vez só.** Só a primeira conclusão concede: antes de gravar a
-  conclusão, a API lê `user_profiles.onboarding_completed_at`, que precisa
-  estar vazio. Reenvio da mesma conclusão, os mesmos dados do cadastro com
+  conclusão, a API lê, numa só consulta, `user_profiles.onboarding_completed`,
+  que precisa ser `false`, e `onboarding_completed_at`, que precisa estar
+  vazio. Conta antiga marcada como concluída e sem data (a coluna da data foi
+  criada sem preencher as contas que já existiam) não conta como primeira
+  conclusão aqui, embora a RPC grave a data dela nessa hora (corrigido em
+  2026-10-05; antes só a data era lida). Reenvio da mesma conclusão, os mesmos
+  dados do cadastro com
   outra `Idempotency-Key` e aceite posterior de documentos novos não concedem
   de novo nem mudam o vencimento. Duas primeiras conclusões simultâneas terminam
   em uma concessão: o id do evento é derivado do id da conta e o banco
@@ -566,7 +594,11 @@ usa `grant`):
 - **Falha não derruba o cadastro.** Um erro em qualquer uma dessas consultas é
   registrado sem dado pessoal (`[mobile-api] evaluation_access_failed`, com
   `request_id`, a etapa e o nome do erro) e o onboarding responde normalmente.
-  A conta fica criada, sem acesso, e a concessão passa a ser manual.
+  A conta fica criada, sem acesso, e a concessão passa a ser manual. A
+  resposta pode demorar: uma das duas leituras (GET) que falhe por erro de
+  rede ou HTTP 503 ou 520 é repetida três vezes pelo cliente de banco (1, 2 e
+  4 s), e o onboarding só responde depois, cerca de 7 s mais tarde (pendência
+  `RC EA` abaixo).
 - **Não envia nada**: sem mensagem, sem push, sem evento, sem chamada a
   modelo. O único efeito é a linha em `entitlement_events` e a linha em
   `user_entitlements`.
@@ -575,7 +607,7 @@ usa `grant`):
 
 O que não está coberto:
 
-> RC EA — cenário conta que concluiu o onboarding ANTES de o interruptor ser ligado NÃO coberto nesta PR (pendência da audit 2026-10-04). Não recebe nada, nem reenviando a conclusão nem aceitando documentos novos depois: segue dependendo da concessão manual do operador. Travado em evaluation-access.test.ts.
+> RC EA — cenário conta que concluiu o onboarding ANTES de o interruptor ser ligado NÃO coberto nesta PR (pendência da audit 2026-10-04). Não recebe nada, nem reenviando a conclusão nem aceitando documentos novos depois: segue dependendo da concessão manual do operador. Vale também para a conta antiga marcada `onboarding_completed = true` com `onboarding_completed_at` nulo (2 contas em staging, contadas em 2026-10-05), que a RPC ainda grava como primeira conclusão. Travado em evaluation-access.test.ts.
 
 > RC EA — cenário acesso vencido (N dias depois) ou bloqueado NÃO coberto nesta PR (pendência da audit 2026-10-04). Não é renovado por este caminho: a conta volta a receber 402 e a renovação é manual. Travado em evaluation-access.test.ts.
 
@@ -593,10 +625,14 @@ O que não está coberto:
 
 > RC EA — cenário a mesma pessoa criando outra conta (outro e-mail) NÃO coberto nesta PR (pendência da audit 2026-10-04). Cada conta nova que conclui o onboarding recebe os N dias; não há limite por pessoa nem por aparelho.
 
+> RC EA — cenário leitura da concessão que falha por erro de rede ou HTTP 503 ou 520 NÃO coberto nesta PR (pendência da audit 2026-10-04). Nenhuma leitura tem prazo de cancelamento, e o cliente de banco (supabase-js 2.105.1) repete todo GET três vezes, esperando 1, 2 e 4 s: com o interruptor ligado, uma falha dessas na leitura de `user_profiles` (antes da conclusão) ou de `entitlement_events` (depois dela) atrasa a resposta de `POST /onboarding` em cerca de 7 s; a resposta sai com os mesmos bytes e nada é concedido. As duas RPCs (POST) não são repetidas. O atraso é travado no módulo, em day-close-and-evaluation-access.read-retry.test.ts (cliente real, `fetch` falso, erro de rede em cada uma das duas leituras); o handler aguarda as duas chamadas do módulo.
+
 Código: `apps/admin/src/lib/mobile-api/evaluation-access.ts`, chamado só por
 `apps/admin/src/app/api/mobile/v1/onboarding/handler.ts`. Testes:
 `evaluation-access.test.ts` (handler, idempotência, serviço e repositório
-reais sobre um banco em memória) e `evaluation-access.no-send.test.ts` (o
+reais sobre um banco em memória),
+`day-close-and-evaluation-access.read-retry.test.ts` (leitura que falha) e
+`evaluation-access.no-send.test.ts` (o
 módulo só importa o invólucro de rota, não chama rede e só faz as duas
 leituras e as duas RPCs acima). Nenhuma rota nova e nenhuma migration: o
 manifesto de 48 rotas do BFF é o mesmo.

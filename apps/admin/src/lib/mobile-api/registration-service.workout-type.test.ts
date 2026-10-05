@@ -51,7 +51,7 @@
  * > RC W — cenário tipo gravado como texto livre ("Natação" e "natacao" são tipos diferentes para a idempotência e para o descarte de treino idêntico em 6 h; histórico e tela mostram o que foi digitado) NÃO coberto nesta PR (pendência da audit 2026-10-04). Inalterado de propósito: o valor gravado não muda nesta PR.
  * > RC W — cenário peso do perfil ou catálogo alterados entre a proposta e a confirmação NÃO coberto nesta PR (pendência da audit 2026-10-04). Inalterado: a confirmação recalcula, e o kcal gravado pode diferir do kcal mostrado na proposta.
  * > RC W — cenário uma leitura a mais de `workout_types` em toda proposta, edição e confirmação de treino do app (inclusive slug exato e tipo desconhecido; sem cache) NÃO coberto nesta PR (pendência da audit 2026-10-04). Com a leitura funcionando, slug exato e tipo desconhecido saem como no HEAD; o custo é uma ida ao banco a mais por pedido. Travado no teste.
- * > RC W — cenário leitura do catálogo falha NÃO coberto nesta PR (pendência da audit 2026-10-04). Texto já em forma de slug (igual à própria normalização: "musculacao", "natacao", "capoeira") segue como digitado, como no HEAD. Qualquer outro texto ("Natação", "Capoeira", "Bike") responde `500 workout_calculation_failed`, onde o HEAD respondia pela taxa genérica. E um texto em forma de slug que o catálogo só casa pelo nome de exibição sai pela taxa genérica enquanto a leitura falhar; no catálogo de staging são cinco: "polichinelos" (`jumping_jacks`) e, só se digitados com "_" no lugar dos espaços, "biceps_e_triceps", "costas_e_biceps", "ombro_e_trapezio" e "peito_e_triceps". Para "polichinelos": 240 em vez de 320 e, se a falha for só na confirmação, grava 240 sob uma proposta que mostrou 320. Travado no teste.
+ * > RC W — cenário leitura do catálogo falha NÃO coberto nesta PR (pendência da audit 2026-10-04). Texto cujo minúsculo já é a própria normalização (sem acento, espaço nem hífen: "musculacao", "MUSCULACAO", "natacao", "Capoeira", "Bike") segue como digitado, como antes da mudança: a função SQL faz `lower()` sozinha e responde pela taxa do catálogo quando o slug existe ("MUSCULACAO", 40 min, moderada, 70 kg = 240; "NATACAO" = 400) e pela genérica quando não existe. Qualquer outro texto ("Natação", "jiu-jitsu", "corrida leve") responde `500 workout_calculation_failed`, onde antes respondia pela taxa genérica (240 no mesmo treino). E um texto do primeiro grupo que o catálogo só casa pelo nome de exibição sai pela taxa genérica enquanto a leitura falhar; no catálogo de staging são cinco, em qualquer combinação de maiúsculas: "polichinelos" ou "Polichinelos" (`jumping_jacks`) e, só se digitados com "_" no lugar dos espaços, "biceps_e_triceps", "costas_e_biceps", "ombro_e_trapezio" e "peito_e_triceps". Para "polichinelos": 240 em vez de 320 e, se a falha for só na confirmação, grava 240 sob uma proposta que mostrou 320. Travado no teste.
  * > RC W — cenário tela do iPhone (tipo digitado e kcal da proposta vistos no aparelho) NÃO coberto nesta PR (pendência da audit 2026-10-04). Nada foi executado no aparelho nem no simulador.
  */
 import { readFileSync } from 'node:fs'
@@ -951,8 +951,10 @@ describe('workout type typed in the app — what did not change', () => {
 describe('workout type typed in the app — a failed catalogue read (review of 2026-10-05, MEDIUM)', () => {
   // The lookup reads `workout_types` on every proposal, edit and confirm. At
   // HEAD nothing read it, so a failed read could not fail a workout. Now: a
-  // text already spelled as a slug goes on as typed (what HEAD sent); only a
-  // text that needs the catalogue is refused.
+  // text whose lower-cased form already is its canonical spelling goes on as
+  // typed (what HEAD sent, and the SQL function lowercases by itself); only a
+  // text that needs the catalogue (an accent, a space, a hyphen) is refused.
+  // "HEAD" in this block is the code before the lookup existed.
 
   it("the reviewer's case: 'musculacao', 40 min, moderada, 70 kg with the catalogue read failing → proposed 240 and confirmed, one row, as HEAD", async () => {
     const db = database()
@@ -973,13 +975,41 @@ describe('workout type typed in the app — a failed catalogue read (review of 2
     expect(db.pendings[0]?.status).toBe('confirmed')
   })
 
+  // Review of 2026-10-05 (LOW), the exact input: 'MUSCULACAO', 40 min,
+  // moderada, 70 kg, the read of `workout_types` failing. The first version of
+  // this fallback compared the typed text with its canonical form, so one
+  // capital letter answered 500 where HEAD answered the catalogue's rate.
+  it("the reviewer's case: 'MUSCULACAO' with the catalogue read failing → proposed 240 with p_slug 'MUSCULACAO', as HEAD, and confirmed", async () => {
+    const db = database()
+    db.failures.catalogueRead = true
+
+    const result = await register(db, { workout_type: 'MUSCULACAO' })
+
+    // The function's own lower(): musculacao 6.00 × 40 × 1.0 × 70/70 = 240.
+    expect(result.lookupSlugs).toEqual(['MUSCULACAO', 'MUSCULACAO'])
+    expect(result.proposed).toMatchObject({
+      status: 'pending',
+      proposal: { workout_type: 'MUSCULACAO', estimated_kcal: 240 },
+    })
+    expect(result.confirmed).toMatchObject({ status: 'confirmed', deduped: false })
+    expect(db.workouts.map((row) => [row.workout_type, row.estimated_kcal])).toEqual([
+      ['MUSCULACAO', 240],
+    ])
+    expect(db.pendings[0]?.status).toBe('confirmed')
+  })
+
   it.each([
-    // typed (equal to its own canonical form), kcal of 40 min at 70 kg
+    // typed (its lower-cased form equals its canonical form), kcal of 40 min at 70 kg
     ['natacao', 400], // 10.00 × 40: the function finds the slug by itself
+    ['NATACAO', 400], // the catalogue's rate, not the generic one: lower() in SQL
+    ['Musculacao', 240],
+    ['Corrida', 440], // corrida 11.00 × 40
     ['corrida_leve', 320],
     ['outro', 240],
     ['capoeira', 240], // not in the catalogue: generic rate, as HEAD
-  ])('"%s" is already spelled as a slug: handed over as typed with the read failing → %d kcal, proposed, edited and stored', async (typed, kcal) => {
+    ['Capoeira', 240],
+    ['Bike', 240],
+  ])('"%s" needs nothing but lower(): handed over as typed with the read failing → %d kcal, proposed, edited and stored', async (typed, kcal) => {
     const db = database()
     db.failures.catalogueRead = true
 
@@ -1003,12 +1033,12 @@ describe('workout type typed in the app — a failed catalogue read (review of 2
   })
 
   it.each([
-    ['Natação'],
-    ['Musculacao'], // one capital letter is enough: not its own canonical form
-    ['corrida leve'],
-    ['jiu-jitsu'],
-    ['Capoeira'],
-    ['Bike'],
+    // Declared (RC W): HEAD answered each of these with the generic 240.
+    ['Natação'], // an accent
+    ['jiu-jitsu'], // a hyphen where the slug has "_" (the reviewer's second input)
+    ['corrida leve'], // a space
+    ['NATAÇÃO'],
+    ['Muay thai'],
   ])('"%s" needs the catalogue: the proposal is refused with 500 workout_calculation_failed and nothing is created', async (typed) => {
     const db = database()
     db.failures.catalogueRead = true
@@ -1039,6 +1069,31 @@ describe('workout type typed in the app — a failed catalogue read (review of 2
     expect(db.workouts.map((row) => [row.workout_type, row.estimated_kcal])).toEqual([
       ['polichinelos', 240],
     ])
+  })
+
+  it('declared pendency, locked as it is: the display name itself, "Polichinelos", is in the same situation since letter case stopped mattering', async () => {
+    const db = database()
+    db.failures.catalogueRead = true
+
+    const result = await register(db, { workout_type: 'Polichinelos' })
+
+    // Handed over as typed; 'polichinelos' is not a slug → 'outro' 6.00 × 40.
+    expect(result.lookupSlugs).toEqual(['Polichinelos', 'Polichinelos'])
+    expect(result.stored).toEqual([{ workout_type: 'Polichinelos', estimated_kcal: 240 }])
+  })
+
+  it('every text the fallback refuses got the generic rate at HEAD: no slug of the catalogue differs from its own canonical form', () => {
+    const canonical = (value: string) =>
+      value
+        .normalize('NFD')
+        .replace(/\p{Diacritic}/gu, '')
+        .toLowerCase()
+        .trim()
+        .replace(/[\s_-]+/g, '_')
+    // HEAD matched lower(typed) against the slugs. A refused text has
+    // lower(typed) ≠ canonical(typed); it could only have matched a slug that
+    // is not canonical itself.
+    expect(STAGING_CATALOGUE.filter(([slug]) => canonical(slug) !== slug)).toEqual([])
   })
 
   it('in the catalogue of staging five slug-shaped texts are in that situation, one of them a plain word', () => {

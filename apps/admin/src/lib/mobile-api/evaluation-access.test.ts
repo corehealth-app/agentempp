@@ -5,8 +5,9 @@
  * What is locked here: the four locks (and that a closed lock costs not a
  * single query and leaves the response byte-identical), the hard refusal of
  * the production project, the exact event and entitlement a first completion
- * writes, that nothing is ever granted a second time, and that a failure of
- * the grant never reaches the onboarding response.
+ * writes, that nothing is ever granted a second time (nor to an older
+ * account marked completed with no completion time: review of 2026-10-05),
+ * and that a failure of the grant never reaches the onboarding response.
  *
  * Everything between the request and the database is the real code: the
  * onboarding handler with its default dependencies (idempotency, service,
@@ -18,7 +19,7 @@
  * identifiers of projects, not credentials); every URL here is only parsed,
  * never called.
  *
- * > RC EA — cenário conta que concluiu o onboarding ANTES de o interruptor ser ligado NÃO coberto nesta PR (pendência da audit 2026-10-04). Não recebe nada, nem reenviando a conclusão nem aceitando documentos novos depois: segue dependendo da concessão manual do operador. Travado em evaluation-access.test.ts.
+ * > RC EA — cenário conta que concluiu o onboarding ANTES de o interruptor ser ligado NÃO coberto nesta PR (pendência da audit 2026-10-04). Não recebe nada, nem reenviando a conclusão nem aceitando documentos novos depois: segue dependendo da concessão manual do operador. Vale também para a conta antiga marcada `onboarding_completed = true` com `onboarding_completed_at` nulo (2 contas em staging, contadas em 2026-10-05), que a RPC ainda grava como primeira conclusão. Travado em evaluation-access.test.ts.
  * > RC EA — cenário acesso vencido (N dias depois) ou bloqueado NÃO coberto nesta PR (pendência da audit 2026-10-04). Não é renovado por este caminho: a conta volta a receber 402 e a renovação é manual. Travado em evaluation-access.test.ts.
  * > RC EA — cenário compra ou assinatura pelo app NÃO coberto nesta PR (pendência da audit 2026-10-04). Não existe tela nem caminho de compra; `mobile_billing.available` segue `false`.
  * > RC EA — cenário nova tentativa depois de uma concessão que falhou, ou de uma função encerrada entre a conclusão e a concessão NÃO coberto nesta PR (pendência da audit 2026-10-04). A conta fica criada e sem acesso; reenviar a conclusão não concede (a conta já tem data de conclusão). A falha fica no log `[mobile-api] evaluation_access_failed` e a concessão é manual.
@@ -27,6 +28,7 @@
  * > RC EA — cenário tela do iPhone (primeira tela depois do onboarding vista no aparelho com o interruptor ligado) NÃO coberto nesta PR (pendência da audit 2026-10-04). Nada foi executado no aparelho nem no simulador.
  * > RC EA — cenário relógio de outra instância da API atrasado em relação à que concedeu NÃO coberto nesta PR (pendência da audit 2026-10-04). O início do acesso é a hora da instância que concedeu; outra instância com o relógio atrás responde 402 até alcançá-la.
  * > RC EA — cenário a mesma pessoa criando outra conta (outro e-mail) NÃO coberto nesta PR (pendência da audit 2026-10-04). Cada conta nova que conclui o onboarding recebe os N dias; não há limite por pessoa nem por aparelho.
+ * > RC EA — cenário leitura da concessão que falha por erro de rede ou HTTP 503 ou 520 NÃO coberto nesta PR (pendência da audit 2026-10-04). Nenhuma leitura tem prazo de cancelamento, e o cliente de banco (supabase-js 2.105.1) repete todo GET três vezes, esperando 1, 2 e 4 s: com o interruptor ligado, uma falha dessas na leitura de `user_profiles` (antes da conclusão) ou de `entitlement_events` (depois dela) atrasa a resposta de `POST /onboarding` em cerca de 7 s; a resposta sai com os mesmos bytes e nada é concedido. As duas RPCs (POST) não são repetidas. O atraso é travado no módulo, em day-close-and-evaluation-access.read-retry.test.ts (cliente real, `fetch` falso, erro de rede em cada uma das duas leituras); o handler aguarda as duas chamadas do módulo.
  */
 import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve, sep } from 'node:path'
@@ -225,7 +227,11 @@ class EvaluationMemoryDb {
 
   private readonly profiles = new Map<
     string,
-    { onboarding_completed_at: string | null; answers: string | null }
+    {
+      onboarding_completed: boolean
+      onboarding_completed_at: string | null
+      answers: string | null
+    }
   >()
   private readonly claims = new Map<
     string,
@@ -257,7 +263,27 @@ class EvaluationMemoryDb {
   }
 
   addAccount(userId = USER): this {
-    this.profiles.set(userId, { onboarding_completed_at: null, answers: null })
+    // `onboarding_completed boolean NOT NULL DEFAULT false` (migration
+    // 20260501120100; confirmed on staging on 2026-10-05, columns only).
+    this.profiles.set(userId, {
+      onboarding_completed: false,
+      onboarding_completed_at: null,
+      answers: null,
+    })
+    return this
+  }
+
+  /**
+   * An account from before `onboarding_completed_at` existed: marked
+   * completed, with no completion time (migration 20260915150739 added the
+   * column and did not fill the accounts that were already there).
+   */
+  addAccountCompletedWithoutDate(userId = USER): this {
+    this.profiles.set(userId, {
+      onboarding_completed: true,
+      onboarding_completed_at: null,
+      answers: null,
+    })
     return this
   }
 
@@ -313,6 +339,7 @@ class EvaluationMemoryDb {
     if (table === 'user_profiles') {
       return [...this.profiles].map(([userId, profile]) => ({
         user_id: userId,
+        onboarding_completed: profile.onboarding_completed,
         onboarding_completed_at: profile.onboarding_completed_at,
       }))
     }
@@ -452,6 +479,8 @@ class EvaluationMemoryDb {
       profile.onboarding_completed_at = now
       profile.answers = answers
     }
+    // `onboarding_completed = true` is set by every completion.
+    profile.onboarding_completed = true
     if (!this.legalActions.some((row) => row.user_id === userId && row.document === document)) {
       this.legalActions.push({ user_id: userId, document, at: now })
     }
@@ -1484,6 +1513,78 @@ describe('an account that completed onboarding before the switch was on (declare
       status: 402,
     })
   })
+
+  // Review of 2026-10-05, the exact shape: an active account with
+  // `onboarding_completed = true` and `onboarding_completed_at` null, no row
+  // in `user_entitlements` and none in `entitlement_events`, the switch on,
+  // POST /onboarding with document_actions. The completion RPC records it as
+  // a first completion (COALESCE writes the date now); reading the date alone
+  // made the grant module agree and hand out the N days. Two accounts of
+  // staging have this shape (counted there on 2026-10-05, columns only).
+  it('gets nothing when it is marked completed with no completion time, though the RPC writes the date now', async () => {
+    const log = logs()
+    switchOn()
+    const db = new EvaluationMemoryDb().addAccountCompletedWithoutDate()
+    expect(db.completedAt()).toBeNull()
+    expect(db.events).toEqual([])
+    expect(db.entitlements).toEqual([])
+
+    const response = await post(db)
+
+    expect(response.status).toBe(200)
+    // The RPC treated it as a first completion.
+    expect(db.completedAt()).toBe(NOW.toISOString())
+    // One read before the completion, and not one entitlement query after it.
+    expect(db.operations.filter((operation) => !operation.endsWith('_mobile_api_request'))).toEqual(
+      ['select:user_profiles', 'rpc:complete_mobile_onboarding_atomic'],
+    )
+    expect(db.events).toEqual([])
+    expect(db.entitlements).toEqual([])
+    expect(log.info).not.toHaveBeenCalled()
+    expect(log.error).not.toHaveBeenCalled()
+    await expect(authorizeMobileEntitlement(db.client, USER, GATED_PATH)).rejects.toMatchObject({
+      status: 402,
+    })
+  })
+
+  it('the same request on a new account (not completed, no completion time) still grants', async () => {
+    logs()
+    switchOn()
+    const db = new EvaluationMemoryDb().addAccount()
+
+    await post(db)
+
+    expect(db.operations).toEqual(FIRST_GRANT_OPERATIONS)
+    expect(db.entitlements).toHaveLength(1)
+  })
+
+  it('the single profile read asks for both columns', async () => {
+    logs()
+    switchOn()
+    const selected: string[] = []
+    const db = new EvaluationMemoryDb().addAccount()
+    const client = db.client as unknown as {
+      from: (table: string) => { select: (c: string) => unknown }
+    }
+    const from = client.from.bind(client)
+    client.from = (table: string) => {
+      const query = from(table)
+      const select = query.select.bind(query)
+      query.select = (columns: string) => {
+        if (table === 'user_profiles') selected.push(columns)
+        return select(columns)
+      }
+      return query
+    }
+
+    await prepareEvaluationAccess({
+      auth: { userId: USER },
+      requestId: REQUEST_ID,
+      supabase: db.client,
+    } as never)
+
+    expect(selected).toEqual(['onboarding_completed, onboarding_completed_at'])
+  })
 })
 
 describe('a failure of the grant never reaches the onboarding response', () => {
@@ -1739,7 +1840,7 @@ describe('declared pendencies', () => {
     )
     const fromHeader = Array.from(header.matchAll(/^ \* (> RC EA — .*)$/gm), (match) => match[1])
     const fromDoc = Array.from(doc.matchAll(/^(> RC EA — .*)$/gm), (match) => match[1])
-    expect(fromHeader).toHaveLength(9)
+    expect(fromHeader).toHaveLength(10)
     expect(fromDoc).toEqual(fromHeader)
   })
 })

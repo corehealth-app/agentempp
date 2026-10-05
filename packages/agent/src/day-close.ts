@@ -45,6 +45,12 @@
  *    before, so a close that lost the race writes nothing;
  *  - an inactive day writes nothing at all: the sweep handles inactivity once,
  *    with a conditional update, and never writes the "skipped" event;
+ *  - the sweep does not visit an open day row that has no meal, workout or
+ *    inbound message (a day with water only): it costs no query and stays
+ *    open, as in production;
+ *  - in the sweep, a date is not finalized when a record appeared, since the
+ *    sweep's first read, on an earlier date that is still open: the sweep
+ *    stops and the next call closes that earlier date first;
  *  - the reassessment schedule is not advanced unless asked for.
  */
 
@@ -95,6 +101,12 @@ export type DayCloseSkipReason =
   | 'changed_concurrently'
   /** Another close finalized the same day first; nothing was applied twice. */
   | 'closed_concurrently'
+  /**
+   * Sweep only. A meal, workout or inbound message appeared, after the sweep's
+   * first read, on an earlier date that is still open. This date was not
+   * finalized: closing it would move the frontier past the earlier one.
+   */
+  | 'earlier_date_changed'
 
 /** `user_progress` as the close reads and writes it. */
 export interface DayCloseProgress {
@@ -197,9 +209,16 @@ export interface ClosePastOpenDaysResult {
   /** Open dates with data at or behind the frontier: left open, as in production. */
   staleOpenDates: string[]
   /**
+   * Open day rows past the frontier with no meal, workout or inbound message
+   * (water, weight, supplement or medication only). Not visited: no query is
+   * spent on them, they stay open as in production, and they neither use the
+   * budget nor hold back a later date.
+   */
+  inactiveOpenDates: string[]
+  /**
    * Dates found and left for the next call, ascending: the ones the budget
-   * did not reach, or the date that changed while it was being closed (it is
-   * also in `days`, as `changed_concurrently`) and every later one.
+   * did not reach, or the date the sweep stopped at (it is also in `days`, as
+   * `changed_concurrently` or `earlier_date_changed`) and every later one.
    */
   pendingDates: string[]
   /** Every date found was resolved; only then is inactivity looked at. */
@@ -283,9 +302,22 @@ function skipped(
  * failed read or write, like the closer: the caller decides whether that
  * stops a request.
  */
-export async function closeLocalDay(
+export function closeLocalDay(
   supabase: ServiceClient,
   input: CloseLocalDayInput,
+): Promise<DayCloseResult> {
+  return closeDay(supabase, input, null)
+}
+
+/**
+ * `closeLocalDay`, plus the sweep's question asked right before the
+ * finalization: "did a record appear on an earlier open date?". Null outside
+ * the sweep: one explicit date has no earlier date to protect.
+ */
+async function closeDay(
+  supabase: ServiceClient,
+  input: CloseLocalDayInput,
+  earlierDateChanged: (() => Promise<boolean>) | null,
 ): Promise<DayCloseResult> {
   const { userId, timezone, date } = input
   const now = input.now ?? new Date()
@@ -540,21 +572,31 @@ export async function closeLocalDay(
   // Read as late as possible: the finalization writes absolute values
   // computed from this row, so the shorter the distance to it, the smaller
   // the window in which another close of the same account could be lost.
-  let previous: DayCloseProgress
-  if (dryRun && input.simulatedProgress) {
-    previous = input.simulatedProgress
-  } else {
+  const readPrevious = async (): Promise<DayCloseProgress> => {
+    if (dryRun && input.simulatedProgress) return input.simulatedProgress
     const { data: progressRow, error: progressError } = await supabase
       .from('user_progress')
       .select(PROGRESS_COLUMNS)
       .eq('user_id', userId)
       .maybeSingle()
     if (progressError) throw new Error(progressError.message ?? 'previous progress lookup failed')
-    previous = progressFromRow(progressRow)
+    return progressFromRow(progressRow)
   }
+  // The sweep's question travels with that read, so it is also asked one
+  // round trip before the finalization and adds none to the other window.
+  const [previous, earlierChanged] = await Promise.all([
+    readPrevious(),
+    !dryRun && earlierDateChanged ? earlierDateChanged() : false,
+  ])
   if (previous.lastActiveDate !== null && date <= previous.lastActiveDate) {
     // Another close moved the frontier past this date meanwhile.
     return skipped(input, late, 'behind_frontier')
+  }
+  if (earlierChanged) {
+    // Finalizing now would move the frontier past that earlier date, and it
+    // would stay open for good. The day row written above stays open and is
+    // read again by the next call.
+    return skipped(input, late, 'earlier_date_changed')
   }
 
   const prev: UserProgress = {
@@ -750,12 +792,15 @@ export async function closeLocalDay(
  * Strictly in order: a date is attempted only after every earlier candidate
  * was closed (by this call or by another one), found inactive or found behind
  * the frontier. A date that changed while it was being closed stops the
- * sweep; it and the later ones are reported as pending.
+ * sweep, and so does a record that appeared meanwhile on an earlier open
+ * date; that date and the later ones are reported as pending.
  *
- * The dates come from the data (open day rows, and local dates with a meal, a
- * workout or an inbound message), never from walking the calendar: an account
- * with twelve empty dates before one registered day reaches that day in the
- * first call, and a second call with nothing to do writes nothing.
+ * The dates come from the data (local dates with a meal, a workout or an
+ * inbound message), never from walking the calendar: an account with twelve
+ * empty dates before one registered day reaches that day in the first call,
+ * and a second call with nothing to do writes nothing. An open day row with
+ * none of the three is not a candidate: it is reported in
+ * `inactiveOpenDates` and costs nothing, however many there are.
  */
 export async function closePastOpenDays(
   supabase: ServiceClient,
@@ -774,6 +819,7 @@ export async function closePastOpenDays(
     latestClosableDate,
     days: [],
     staleOpenDates: [],
+    inactiveOpenDates: [],
     pendingDates: [],
     complete: true,
     streakReset: null,
@@ -864,39 +910,131 @@ export async function closePastOpenDays(
     .filter((date) => date >= from && date <= latestClosableDate && !closedDates.has(date))
     .sort()
   const frontierAtStart = frontier
-  const candidates = dates.filter((date) => frontierAtStart === null || date > frontierAtStart)
   result.staleOpenDates = dates.filter(
     (date) => frontierAtStart !== null && date <= frontierAtStart,
   )
+  // Every meal, workout and inbound message the reads above returned, as
+  // instants. Two uses: telling which open rows have none of them, and
+  // telling a record that appeared later from one already seen.
+  const seenActivityMs = new Set<number>()
+  for (const time of [...mealTimes, ...workoutTimes, ...messageTimes]) {
+    if (time) seenActivityMs.add(Date.parse(time))
+  }
+  // The same test `closeLocalDay` applies to one date (its local-day bounds),
+  // answered from the rows already read.
+  const hasActivity = (date: string): boolean => {
+    const bounds = getLocalDayUtcBounds(timezone, date)
+    const startMs = Date.parse(bounds.startIso)
+    const endMs = Date.parse(bounds.endExclusiveIso)
+    for (const ms of seenActivityMs) if (ms >= startMs && ms < endMs) return true
+    return false
+  }
+  const activityDates = new Set<string>()
+  for (const time of [...mealTimes, ...workoutTimes, ...messageTimes]) {
+    if (time) activityDates.add(getLocalDateString(timezone, new Date(time)))
+  }
+  const pastFrontier = dates.filter((date) => frontierAtStart === null || date > frontierAtStart)
+  // An open row with no meal, workout or inbound message (water only) is not
+  // visited: `closeLocalDay` would answer `inactive` after six queries, on
+  // every request, and thirty of them in a row used up the time budget before
+  // the day with a meal that follows them (review of 2026-10-05). On a full
+  // page the rows read may not be all of them, so every open row is visited,
+  // as before.
+  const candidates = pastFrontier.filter(
+    (date) => truncated || activityDates.has(date) || hasActivity(date),
+  )
+  result.inactiveOpenDates = pastFrontier.filter((date) => !candidates.includes(date))
 
   const maxDays = input.limits?.maxDays ?? Number.POSITIVE_INFINITY
   const maxMs = input.limits?.maxMs ?? Number.POSITIVE_INFINITY
   let closedCount = 0
   let unresolved = truncated
   let simulated: DayCloseProgress | null = null
+  // The latest date known closed: no date up to it can still be open and
+  // waiting. Moves as this call closes (or finds closed) one date after another.
+  let closedUpTo = frontierAtStart
+
+  // Asked right before each finalization (review of 2026-10-05): the dates
+  // were fixed by the reads above, so a FIRST record that lands meanwhile on
+  // an earlier date that had none (no row, or a row with water only) is not
+  // among them. Finalizing the later date would leave that one open for good.
+  // "Appeared" = an instant the reads above did not return, between the first
+  // date that may still be open and the start of the date being closed. When
+  // that date is the day after the frontier there is nothing in between and
+  // no query is made.
+  const earlierDateChangedBefore = (date: string) => async (): Promise<boolean> => {
+    const afterClosed = closedUpTo === null ? firstCandidateDate : addIsoDateDays(closedUpTo, 1)
+    const firstOpenDate = afterClosed > firstCandidateDate ? afterClosed : firstCandidateDate
+    if (firstOpenDate >= date) return false
+    const sinceIso = getLocalDayUtcBounds(timezone, firstOpenDate).startIso
+    const untilIso = getLocalDayUtcBounds(timezone, date).startIso
+    const [meals, workouts, messages] = await Promise.all([
+      supabase
+        .from('meal_logs')
+        .select('consumed_at')
+        .eq('user_id', userId)
+        .gte('consumed_at', sinceIso)
+        .lt('consumed_at', untilIso)
+        .limit(DISCOVERY_PAGE),
+      supabase
+        .from('workout_logs')
+        .select('performed_at')
+        .eq('user_id', userId)
+        .gte('performed_at', sinceIso)
+        .lt('performed_at', untilIso)
+        .limit(DISCOVERY_PAGE),
+      supabase
+        .from('messages')
+        .select('created_at')
+        .eq('user_id', userId)
+        .eq('direction', 'in')
+        .gte('created_at', sinceIso)
+        .lt('created_at', untilIso)
+        .limit(DISCOVERY_PAGE),
+    ])
+    const error = meals.error ?? workouts.error ?? messages.error
+    if (error) throw new Error(error.message ?? 'earlier dates re-check failed')
+    const times = [
+      ...(meals.data ?? []).map((row) => row.consumed_at),
+      ...(workouts.data ?? []).map((row) => row.performed_at),
+      ...(messages.data ?? []).map((row) => row.created_at),
+    ]
+    return times.some((time) => Boolean(time) && !seenActivityMs.has(Date.parse(time as string)))
+  }
+
   for (const [index, date] of candidates.entries()) {
     if (closedCount >= maxDays || clock() - startedAt >= maxMs) {
       result.pendingDates = candidates.slice(index)
       break
     }
-    const day = await closeLocalDay(supabase, {
-      userId,
-      timezone,
-      date,
-      now,
-      dryRun,
-      simulatedProgress: simulated,
-      advanceReevaluation: input.advanceReevaluation,
-    })
+    const day = await closeDay(
+      supabase,
+      {
+        userId,
+        timezone,
+        date,
+        now,
+        dryRun,
+        simulatedProgress: simulated,
+        advanceReevaluation: input.advanceReevaluation,
+      },
+      // On a full page "not returned" does not mean "appeared later".
+      truncated ? null : earlierDateChangedBefore(date),
+    )
     result.days.push(day)
     if (day.closed) {
       closedCount += 1
       if (dryRun && day.detail) simulated = day.detail.progress
-    } else if (day.reason === 'changed_concurrently') {
+      else closedUpTo = date
+    } else if (day.reason === 'already_closed' || day.reason === 'closed_concurrently') {
+      // Closed by another request: resolved, and nothing up to it is open.
+      closedUpTo = date
+    } else if (day.reason === 'changed_concurrently' || day.reason === 'earlier_date_changed') {
       // Still open, with data, and NOT closed by this call. The sweep stops
-      // here: closing a later date now would move the frontier past this one
-      // and it would never close again (its XP, block credit and streak day
-      // lost). The next call starts again from this date.
+      // here: closing a later date now would move the frontier past the date
+      // that changed (this one, or an earlier one) and it would never close
+      // again (its XP, block credit and streak day lost). The next call reads
+      // the dates again and starts from the earliest.
       unresolved = true
       result.pendingDates = candidates.slice(index)
       break

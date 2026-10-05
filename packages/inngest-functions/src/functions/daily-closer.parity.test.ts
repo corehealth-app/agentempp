@@ -37,6 +37,14 @@
  * are locked in packages/agent (day-close.test.ts and
  * __golden__/audit-10-04-app-day-close.test.ts).
  *
+ * ONE DECLARED DIVERGENCE INSIDE THE WINDOW (last block; RC F in
+ * docs/CALCULO-MPP.md §3a, "mais de 50 mensagens"): the production closer
+ * reads up to 50 messages of the day with no direction filter and no
+ * ordering and looks for an inbound one among them; the shared function asks
+ * for one inbound message. They disagree on a day with no meal and no
+ * workout whose 50 returned messages are all outbound. Locked as it is, not
+ * fixed: the production read is not copied.
+ *
  * Fixture person (synthetic): homem, 80 kg, 180 cm, born 1986-01-01,
  * atividade leve → BMR 1730. Targets: recomposição 1576, ganho de massa 2498,
  * manutenção 2379.
@@ -658,5 +666,84 @@ describe('a day with no record', () => {
     expect(production.progress(USER)).toMatchObject({ current_streak: 5 })
     expect(shared.progress(USER)).toMatchObject({ current_streak: 5 })
     expect(shared.writes).toEqual([])
+  })
+})
+
+describe('declared divergence inside the window (RC F): a message-only day with more than 50 messages', () => {
+  // Review of 2026-10-05 (LOW), the reviewer's exact case: 04/10 with 50
+  // outbound messages followed by 3 inbound ones, no meal and no workout,
+  // closed at 00:30 of 05/10 in America/Sao_Paulo. The in-memory database
+  // returns rows in insertion order, so the 50 the production closer reads are
+  // the 50 outbound ones (Postgres promises no order for that read).
+  function messages(db: DayCloseMemoryDb, outboundFirst: number, inboundAfter: number) {
+    for (let index = 0; index < outboundFirst + inboundAfter; index++) {
+      const createdAt = `${YESTERDAY}T15:${String(index).padStart(2, '0')}:00.000Z`
+      db.addInboundMessage(USER, createdAt)
+      if (index < outboundFirst) (db.tables.messages[index] as MemoryRow).direction = 'out'
+    }
+  }
+
+  it('50 outbound then 3 inbound: production sees an inactive day and writes only "skipped"; the shared function closes it', async () => {
+    const fixture: Fixture = { protocol: 'recomposicao', seed: (db) => messages(db, 50, 3) }
+    const production = build(fixture)
+    const shared = build(fixture)
+
+    const summary = await runProductionCloser(production)
+    const result = await closeLocalDay(shared.client, {
+      userId: USER,
+      timezone: TIMEZONE,
+      date: YESTERDAY,
+      now: new Date(),
+    })
+
+    // Production: inactive. Nothing but its "skipped" event.
+    expect(summary).toMatchObject({ processed: 0, skipped: 1, failed: 0 })
+    expect(finalizeCalls(production)).toEqual([])
+    expect(production.snapshot(USER, YESTERDAY)).toBeNull()
+    expect(production.progress(USER)).toMatchObject({
+      xp_total: 0,
+      current_streak: 0,
+      last_active_date: null,
+    })
+    expect(production.events(USER).map((event) => event.event)).toEqual(['daily_closer.skipped'])
+
+    // The shared function: a message-only day, inside the window (not late).
+    expect(result).toMatchObject({
+      closed: true,
+      late: false,
+      detail: { xpEarned: 10, blockCredit: 0 },
+    })
+    expect(shared.snapshot(USER, YESTERDAY)).toMatchObject({ day_closed: true, xp_earned: 10 })
+    expect(shared.progress(USER)).toMatchObject({
+      xp_total: 10,
+      current_streak: 1,
+      last_active_date: YESTERDAY,
+    })
+  })
+
+  it('49 outbound then 1 inbound (the inbound one is among the 50 read): the two agree again', async () => {
+    const fixture: Fixture = { protocol: 'recomposicao', seed: (db) => messages(db, 49, 1) }
+    const production = build(fixture)
+    const shared = build(fixture)
+
+    const summary = await runProductionCloser(production)
+    clearCalcConfigCache()
+    await closeLocalDay(shared.client, {
+      userId: USER,
+      timezone: TIMEZONE,
+      date: YESTERDAY,
+      now: new Date(),
+      // As the production closer does (the other parity blocks ask for it too).
+      advanceReevaluation: true,
+    })
+
+    expect(summary).toMatchObject({ processed: 1, skipped: 0, failed: 0 })
+    // Each database numbers its own rows: the snapshot id is left out.
+    const withoutSnapshotId = (db: DayCloseMemoryDb) =>
+      finalizeCalls(db).map((params) => ({ ...params, p_snapshot_id: undefined }))
+    expect(withoutSnapshotId(shared)).toHaveLength(1)
+    expect(withoutSnapshotId(shared)).toEqual(withoutSnapshotId(production))
+    expect(withoutClock(shared.progress(USER))).toEqual(withoutClock(production.progress(USER)))
+    expect(shared.progress(USER)).toMatchObject({ xp_total: 10, current_streak: 1 })
   })
 })

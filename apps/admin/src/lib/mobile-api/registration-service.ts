@@ -217,14 +217,18 @@ async function workoutLookupSlug(supabase: ServiceClient, typed: string): Promis
     .eq('is_active', true)
   const canonical = canonicalWorkoutType(typed)
   if (error) {
-    // A text already spelled as a slug is what the function matches by
-    // itself: it is handed over as typed, as before this lookup existed, so
-    // a failed catalogue read does not turn a request that used to work into
-    // a 500. (What it loses is the match by display name: a lowercase
-    // "polichinelos" then gets the generic rate, declared in docs §2d.)
-    if (canonical === typed) return typed
-    // Any other text needs the catalogue. Refused rather than calculated
-    // blind: "Natação" would get 400 kcal on one request and 240 on the next.
+    // The function lowercases its argument and nothing else. So a text whose
+    // lower-cased form already is its canonical spelling ("musculacao",
+    // "MUSCULACAO", "Capoeira") gets from the function, as typed, exactly
+    // what the canonical spelling would get: it is handed over as typed, as
+    // before this lookup existed, and a failed catalogue read does not turn a
+    // request that used to work into a 500. (What it loses is the match by
+    // display name: "polichinelos", in any letter case, then gets the generic
+    // rate, declared in docs §2d.)
+    if (canonical === typed.toLowerCase()) return typed
+    // Any other text (an accent, a space, a hyphen) needs the catalogue.
+    // Refused rather than calculated blind: "Natação" would get 400 kcal on
+    // one request and 240 on the next.
     throw new MobileApiError(500, 'workout_calculation_failed', 'Workout calculation failed')
   }
   const catalogue = data ?? []

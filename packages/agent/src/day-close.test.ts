@@ -88,6 +88,33 @@ function day(
   }
 }
 
+type Operation = DayCloseMemoryDb['operations'][number]
+
+/** The lower and upper instants of a read filtered by a time range. */
+function bounds(operation: Operation): unknown[] {
+  return (operation.filters ?? [])
+    .filter((filter) => filter.op === 'gte' || filter.op === 'lt')
+    .map((filter) => filter.value)
+}
+
+/**
+ * The sweep's re-check of earlier dates: the only read of a log table that
+ * has a row limit of a full page and no ordering. (The discovery reads are
+ * ordered; the reads of one date have no limit, or a limit of 1.)
+ */
+function isReCheck(operation: Operation): boolean {
+  return (
+    operation.kind === 'select' &&
+    ['meal_logs', 'workout_logs', 'messages'].includes(operation.target) &&
+    operation.limit === 1000 &&
+    operation.ordered !== true
+  )
+}
+
+function reChecks(db: DayCloseMemoryDb): Operation[] {
+  return db.operations.filter(isReCheck)
+}
+
 beforeEach(() => {
   vi.useFakeTimers()
   clearCalcConfigCache()
@@ -925,7 +952,7 @@ describe('closePastOpenDays — dates come from the data', () => {
     expect(db.snapshot(USER, '2026-10-02')).toBeNull()
   })
 
-  it('an open row with water only (no meal, workout or message) is visited, stays open, blocks nothing', async () => {
+  it('an open row with water only (no meal, workout or message) is not visited: no query on it, it stays open, blocks nothing', async () => {
     vi.setSystemTime(sp('2026-10-05', '08:00'))
     const db = setup()
     db.tables.daily_snapshots.push(
@@ -944,11 +971,98 @@ describe('closePastOpenDays — dates come from the data', () => {
       limits: { maxDays: 1 },
     })
     expect(result.days.map((entry) => [entry.date, entry.closed, entry.reason])).toEqual([
-      ['2026-10-03', false, 'inactive'],
       ['2026-10-04', true, undefined],
     ])
+    expect(result.inactiveOpenDates).toEqual(['2026-10-03'])
+    expect(result.staleOpenDates).toEqual([])
+    expect(result.pendingDates).toEqual([])
     expect(result.complete).toBe(true)
-    expect(db.snapshot(USER, '2026-10-03')).toMatchObject({ day_closed: false })
+    expect(db.snapshot(USER, '2026-10-03')).toMatchObject({ day_closed: false, xp_earned: 0 })
+    // Not one query names 03/10.
+    expect(
+      db.operations.filter((operation) =>
+        operation.filters?.some((filter) => filter.value === '2026-10-03'),
+      ),
+    ).toEqual([])
+  })
+
+  it('an open row with water only and nothing after it: five reads, no write, on every call', async () => {
+    const db = setup()
+    db.tables.daily_snapshots.push(
+      db.withDefaults('daily_snapshots', {
+        user_id: USER,
+        date: '2026-10-04',
+        water_consumed_ml: 500,
+      }),
+    )
+    const input = {
+      userId: USER,
+      timezone: SAO_PAULO,
+      now: sp('2026-10-05', '08:00'),
+      from: '2026-09-22',
+    }
+    const first = await closePastOpenDays(db.client, input)
+    const second = await closePastOpenDays(db.client, input)
+    expect(first).toMatchObject({ days: [], inactiveOpenDates: ['2026-10-04'], complete: true })
+    expect(second).toEqual(first)
+    expect(db.writes).toEqual([])
+    // Progress, then the four discovery reads, per call (it was eleven).
+    expect(db.operations).toHaveLength(10)
+  })
+
+  it('the row is judged by the same local-day bounds closeLocalDay uses: a meal at 23:59 is of that day, one at 00:00 is not', async () => {
+    vi.setSystemTime(sp('2026-10-05', '08:00'))
+    const db = setup()
+    for (const date of ['2026-10-02', '2026-10-03']) {
+      db.tables.daily_snapshots.push(
+        db.withDefaults('daily_snapshots', { user_id: USER, date, water_consumed_ml: 500 }),
+      )
+    }
+    // A meal row whose instant is inside 02/10 (local) with no link to that
+    // day row, and nothing inside 03/10: the instant decides, not the row.
+    db.tables.meal_logs.push(
+      db.withDefaults('meal_logs', {
+        user_id: USER,
+        snapshot_id: null,
+        consumed_at: sp('2026-10-02', '23:59').toISOString(),
+        meal_type: 'ceia',
+        kcal: 200,
+        protein_g: 10,
+        carbs_g: 0,
+        fat_g: 0,
+      }),
+    )
+    const result = await closePastOpenDays(db.client, {
+      userId: USER,
+      timezone: SAO_PAULO,
+      now: sp('2026-10-05', '08:00'),
+      from: '2026-09-22',
+    })
+    expect(result.days.map((entry) => [entry.date, entry.closed])).toEqual([['2026-10-02', true]])
+    expect(result.inactiveOpenDates).toEqual(['2026-10-03'])
+    expect(db.snapshot(USER, '2026-10-02')).toMatchObject({
+      day_closed: true,
+      calories_consumed: 200,
+    })
+  })
+
+  it('a water-only row behind the frontier is reported as stale, as before, not as inactive', async () => {
+    const db = setup(RECOMP, { current_streak: 1, last_active_date: '2026-10-03' })
+    db.tables.daily_snapshots.push(
+      db.withDefaults('daily_snapshots', {
+        user_id: USER,
+        date: '2026-10-02',
+        water_consumed_ml: 500,
+      }),
+    )
+    const result = await closePastOpenDays(db.client, {
+      userId: USER,
+      timezone: SAO_PAULO,
+      now: sp('2026-10-05', '08:00'),
+      from: '2026-09-22',
+    })
+    expect(result.staleOpenDates).toEqual(['2026-10-02'])
+    expect(result.inactiveOpenDates).toEqual([])
   })
 })
 
@@ -987,6 +1101,41 @@ describe('closePastOpenDays — a full page of rows', () => {
     // 03/10, 04/10 and 05/10 are empty: 05/10 − 02/10 = 3.
     expect(second.streakReset).toMatchObject({ applied: true, previousStreak: 4, gapDays: 3 })
     expect(db.progress(USER)).toMatchObject({ current_streak: 0, longest_streak: 4 })
+  })
+})
+
+describe('closePastOpenDays — a full page of rows (open rows with no activity seen)', () => {
+  it('on a full page every open row is still visited, as before: the rows read may not be all of them', async () => {
+    vi.setSystemTime(sp('2026-10-06', '08:00'))
+    const db = setup()
+    // A thousand inbound messages on 01/10 fill the page of that read…
+    for (let index = 0; index < 1000; index++) {
+      db.addInboundMessage(USER, sp('2026-10-01', '10:00').toISOString())
+    }
+    // …so the message of 02/10 was not returned, and its open row (water)
+    // looks like a row with no activity.
+    db.addInboundMessage(USER, sp('2026-10-02', '10:00').toISOString())
+    db.tables.daily_snapshots.push(
+      db.withDefaults('daily_snapshots', {
+        user_id: USER,
+        date: '2026-10-02',
+        water_consumed_ml: 500,
+      }),
+    )
+    const result = await closePastOpenDays(db.client, {
+      userId: USER,
+      timezone: SAO_PAULO,
+      now: sp('2026-10-06', '08:00'),
+      from: '2026-09-22',
+    })
+    expect(result.days.map((entry) => [entry.date, entry.closed])).toEqual([
+      ['2026-10-01', true],
+      ['2026-10-02', true],
+    ])
+    expect(result.inactiveOpenDates).toEqual([])
+    expect(result.complete).toBe(false)
+    // And the re-check of earlier dates is not asked on a partial view.
+    expect(reChecks(db)).toEqual([])
   })
 })
 
@@ -1264,6 +1413,271 @@ describe('closePastOpenDays — strictly in order: a date that changed while it 
       last_active_date: '2026-10-04',
     })
     expect(db.events(USER, 'daily_closer.completed')).toHaveLength(2)
+  })
+})
+
+describe('closePastOpenDays — a record that appears on an earlier open date stops the sweep before the finalization', () => {
+  // Review of 2026-10-05 (LOW): the dates are fixed by the sweep's first
+  // read. A FIRST record landing meanwhile on an earlier date that had none
+  // was not among them; the later day closed, the frontier passed the earlier
+  // one and it stayed open for good. The reviewer's exact case, with its
+  // numbers, is in the golden file.
+  const limits = { maxDays: 3, maxMs: 4000 }
+  const dinner = (db: DayCloseMemoryDb, date: string) =>
+    db.registerMeal({
+      userId: USER,
+      date,
+      consumedAt: sp(date, '21:00').toISOString(),
+      kcal: 500,
+      proteinG: 50,
+      mealType: 'jantar',
+      caloriesTarget: RECOMP_TARGET,
+      proteinTarget: PROTEIN_TARGET,
+    })
+
+  it('the date right after the frontier has nothing in between: the re-check costs no query', async () => {
+    vi.setSystemTime(sp('2026-10-05', '08:00'))
+    const db = setup(RECOMP, { current_streak: 1, last_active_date: '2026-10-03' })
+    day(db, '2026-10-04', { kcal: 1500 })
+    const result = await closePastOpenDays(db.client, {
+      userId: USER,
+      timezone: SAO_PAULO,
+      now: sp('2026-10-05', '08:00'),
+      from: '2026-09-22',
+      limits,
+    })
+    expect(result.days.map((entry) => [entry.date, entry.closed])).toEqual([['2026-10-04', true]])
+    expect(reChecks(db)).toEqual([])
+  })
+
+  it('consecutive days closed by one call: no re-check either (each is the day after the one just closed)', async () => {
+    vi.setSystemTime(sp('2026-10-05', '08:00'))
+    const db = setup(RECOMP, { current_streak: 1, last_active_date: '2026-10-01' })
+    for (const date of ['2026-10-02', '2026-10-03', '2026-10-04']) day(db, date, { kcal: 1500 })
+    const result = await closePastOpenDays(db.client, {
+      userId: USER,
+      timezone: SAO_PAULO,
+      now: sp('2026-10-05', '08:00'),
+      from: '2026-09-22',
+      limits,
+    })
+    expect(result.days.filter((entry) => entry.closed)).toHaveLength(3)
+    expect(reChecks(db)).toEqual([])
+  })
+
+  it('empty dates between the frontier and the day: three reads, bounded by those dates, right before the finalization', async () => {
+    vi.setSystemTime(sp('2026-10-05', '08:00'))
+    const db = setup(RECOMP, { current_streak: 1, last_active_date: '2026-10-01' })
+    day(db, '2026-10-04', { kcal: 1500 })
+    const result = await closePastOpenDays(db.client, {
+      userId: USER,
+      timezone: SAO_PAULO,
+      now: sp('2026-10-05', '08:00'),
+      from: '2026-09-22',
+      limits,
+    })
+    expect(result.days.map((entry) => [entry.date, entry.closed])).toEqual([['2026-10-04', true]])
+    // From the start of 02/10 (the day after the frontier) to the start of 04/10.
+    const since = sp('2026-10-02', '00:00').toISOString()
+    const until = sp('2026-10-04', '00:00').toISOString()
+    expect(reChecks(db).map((operation) => [operation.target, bounds(operation)])).toEqual([
+      ['meal_logs', [since, until]],
+      ['workout_logs', [since, until]],
+      ['messages', [since, until]],
+    ])
+    // They travel with the last progress read: only the RPC comes after them.
+    const targets = db.operations.map((operation) => operation.target)
+    const finalize = targets.indexOf('finalize_daily_close_atomic')
+    expect(targets.slice(finalize - 4, finalize)).toEqual([
+      'user_progress',
+      'meal_logs',
+      'workout_logs',
+      'messages',
+    ])
+  })
+
+  it('a record the first read already returned, on an earlier date that stays open, does not stop the sweep (Africa/Cairo, the night the clocks go forward)', async () => {
+    // "Appeared" means an instant the first read did not return, not "any
+    // record on an earlier open date". The one known case of a seen record
+    // that stays on an open date is the declared daylight-saving one: a meal
+    // at 23:30 of 23/04 is of 23/04 by the calendar and of 24/04 by the
+    // day-bounds helper, so 23/04 is inactive and 24/04 is not a candidate.
+    // Asking "is there any record before 25/04" would hold 25/04 back on
+    // every request, for good.
+    const now = new Date('2026-04-26T05:00:00.000Z') // 08:00 in Cairo (UTC+3)
+    vi.setSystemTime(now)
+    const db = setup()
+    db.registerMeal({
+      userId: USER,
+      date: '2026-04-23',
+      consumedAt: '2026-04-23T21:30:00.000Z', // 23:30 in Cairo (UTC+2)
+      kcal: 400,
+      proteinG: 20,
+      mealType: 'ceia',
+      caloriesTarget: RECOMP_TARGET,
+      proteinTarget: PROTEIN_TARGET,
+    })
+    db.registerMeal({
+      userId: USER,
+      date: '2026-04-25',
+      consumedAt: '2026-04-25T09:00:00.000Z', // 12:00 in Cairo
+      kcal: 1500,
+      proteinG: 110,
+      mealType: 'almoco',
+      caloriesTarget: RECOMP_TARGET,
+      proteinTarget: PROTEIN_TARGET,
+    })
+    const input = { userId: USER, timezone: 'Africa/Cairo', now, from: '2026-04-20', limits }
+
+    const first = await closePastOpenDays(db.client, input)
+
+    expect(first.days.map((entry) => [entry.date, entry.closed, entry.reason])).toEqual([
+      ['2026-04-23', false, 'inactive'],
+      ['2026-04-25', true, undefined],
+    ])
+    expect(first.complete).toBe(true)
+    // The re-check was asked for 25/04 and returned the 23:30 meal.
+    expect(reChecks(db)).toHaveLength(3)
+    expect(db.progress(USER)).toMatchObject({ last_active_date: '2026-04-25' })
+  })
+
+  it('a first dinner on an earlier EMPTY date while the later day is being closed: nothing is finalized, the next call closes both in order', async () => {
+    const now = sp('2026-10-05', '08:00')
+    vi.setSystemTime(now)
+    const db = setup()
+    day(db, '2026-10-04', { kcal: 1500, protein: 110 })
+    const input = { userId: USER, timezone: SAO_PAULO, now, from: '2026-09-22', limits }
+    let injected = false
+    db.before = (operation) => {
+      // After the day row of 04/10 was written, before its finalization.
+      if (!injected && operation.kind === 'select' && operation.target === 'product_events') {
+        injected = true
+        dinner(db, '2026-10-02')
+      }
+    }
+
+    const first = await closePastOpenDays(db.client, input)
+    db.before = null
+
+    expect(injected).toBe(true)
+    expect(first.days.map((entry) => [entry.date, entry.closed, entry.reason])).toEqual([
+      ['2026-10-04', false, 'earlier_date_changed'],
+    ])
+    expect(first.pendingDates).toEqual(['2026-10-04'])
+    expect(first.complete).toBe(false)
+    expect(first.streakReset).toBeNull()
+    // The day row was written (as when a finalization loses a race); no RPC, no event.
+    expect(db.writes.map((operation) => [operation.kind, operation.target])).toEqual([
+      ['update', 'daily_snapshots'],
+    ])
+    expect(db.snapshot(USER, '2026-10-04')).toMatchObject({ day_closed: false })
+    expect(db.progress(USER)).toMatchObject({ xp_total: 0, last_active_date: null })
+    expect(db.events(USER)).toEqual([])
+
+    const second = await closePastOpenDays(db.client, input)
+    expect(second.days.map((entry) => [entry.date, entry.closed])).toEqual([
+      ['2026-10-02', true],
+      ['2026-10-04', true],
+    ])
+    expect(second.complete).toBe(true)
+    expect(second.staleOpenDates).toEqual([])
+    expect(db.progress(USER)).toMatchObject({ last_active_date: '2026-10-04' })
+  })
+
+  it('the same on an earlier open row that had water only', async () => {
+    const now = sp('2026-10-05', '08:00')
+    vi.setSystemTime(now)
+    const db = setup()
+    db.tables.daily_snapshots.push(
+      db.withDefaults('daily_snapshots', {
+        user_id: USER,
+        date: '2026-10-02',
+        water_consumed_ml: 500,
+      }),
+    )
+    day(db, '2026-10-04', { kcal: 1500, protein: 110 })
+    const input = { userId: USER, timezone: SAO_PAULO, now, from: '2026-09-22', limits }
+    let injected = false
+    db.before = (operation) => {
+      if (!injected && operation.kind === 'select' && operation.target === 'product_events') {
+        injected = true
+        dinner(db, '2026-10-02')
+      }
+    }
+    const first = await closePastOpenDays(db.client, input)
+    db.before = null
+    expect(first.inactiveOpenDates).toEqual(['2026-10-02'])
+    expect(first.days.map((entry) => [entry.date, entry.reason])).toEqual([
+      ['2026-10-04', 'earlier_date_changed'],
+    ])
+    const second = await closePastOpenDays(db.client, input)
+    expect(second.days.map((entry) => [entry.date, entry.closed])).toEqual([
+      ['2026-10-02', true],
+      ['2026-10-04', true],
+    ])
+  })
+
+  it('a record on a date this call already closed, or on the date being closed, is not "earlier and open"', async () => {
+    const now = sp('2026-10-05', '08:00')
+    vi.setSystemTime(now)
+    const db = setup()
+    day(db, '2026-10-01', { kcal: 1500, protein: 110 })
+    day(db, '2026-10-04', { kcal: 1500, protein: 110 })
+    const input = { userId: USER, timezone: SAO_PAULO, now, from: '2026-09-22', limits }
+    let finalized = 0
+    db.before = (operation) => {
+      // Right after 01/10 was finalized: a late dinner on 01/10 (closed now).
+      if (operation.kind === 'rpc' && operation.target === 'finalize_daily_close_atomic') {
+        finalized += 1
+      } else if (finalized === 1) {
+        finalized = 99
+        dinner(db, '2026-10-01')
+      }
+    }
+    const result = await closePastOpenDays(db.client, input)
+    db.before = null
+    expect(result.days.map((entry) => [entry.date, entry.closed])).toEqual([
+      ['2026-10-01', true],
+      ['2026-10-04', true],
+    ])
+    expect(result.complete).toBe(true)
+  })
+
+  it('a failed re-check surfaces like any failed read, and nothing is finalized', async () => {
+    const now = sp('2026-10-05', '08:00')
+    vi.setSystemTime(now)
+    const db = setup(RECOMP, { current_streak: 1, last_active_date: '2026-10-01' })
+    day(db, '2026-10-04', { kcal: 1500 })
+    db.failWith = (operation) =>
+      operation.target === 'workout_logs' && isReCheck(operation) ? 'statement timeout' : null
+    await expect(
+      closePastOpenDays(db.client, { userId: USER, timezone: SAO_PAULO, now, from: '2026-09-22' }),
+    ).rejects.toThrow('statement timeout')
+    expect(db.operations.some((operation) => operation.kind === 'rpc')).toBe(false)
+    expect(db.snapshot(USER, '2026-10-04')).toMatchObject({ day_closed: false })
+  })
+
+  it('a dry run never asks, and neither does closeLocalDay on one explicit date', async () => {
+    const now = sp('2026-10-05', '08:00')
+    vi.setSystemTime(now)
+    const db = setup(RECOMP, { current_streak: 1, last_active_date: '2026-10-01' })
+    day(db, '2026-10-04', { kcal: 1500 })
+    await closePastOpenDays(db.client, {
+      userId: USER,
+      timezone: SAO_PAULO,
+      now,
+      from: '2026-09-22',
+      dryRun: true,
+    })
+    expect(reChecks(db)).toEqual([])
+    const single = await closeLocalDay(db.client, {
+      userId: USER,
+      timezone: SAO_PAULO,
+      date: '2026-10-04',
+      now,
+    })
+    expect(single.closed).toBe(true)
+    expect(reChecks(db)).toEqual([])
   })
 })
 

@@ -29,6 +29,20 @@
  *    of yesterday at local hour 5 or later is a late close and keeps the
  *    stored target (block "yesterday closed after 05:00 local").
  *
+ * LOW FINDINGS OF THAT REVIEW, closed on 2026-10-05 (block 6, the reviewers'
+ * own inputs):
+ *  - an open day row with water only was visited on every request (6 queries
+ *    each) and thirty of them used up the budget before a real day after
+ *    them. Now such a row is not a candidate;
+ *  - a first record landing on an earlier EMPTY day while the same request
+ *    was closing a later one left the earlier day open for good. Now the
+ *    sweep re-reads the earlier dates right before each finalization and
+ *    stops. The last round trip before the RPC stays open: declared, locked.
+ *  The two other LOW findings of the close are declared only (RC F below):
+ *  the production closer's read of 50 messages (locked in the parity test of
+ *  the worker package) and the seconds a failing read holds a request (locked
+ *  in apps/admin, day-close-and-evaluation-access.read-retry.test.ts).
+ *
  * EVERY NUMBER BELOW IS COMPUTED BY THE REAL FUNCTIONS (`loadDailyTargets`,
  * `calcDailyXP`, `creditDayToBloco`, `computeProgress`,
  * `resolveClosedDayStatus`, through `closePastOpenDays`) and checked against a
@@ -66,14 +80,17 @@
  * > RC F — cenário agenda de reavaliação de 14 dias (`advance_reevaluation_schedule`) no caminho sob demanda NÃO coberto nesta PR (pendência da audit 2026-10-04). Desligada por padrão: o contexto de reavaliação do Flow nunca foi exercitado no app. `next_reevaluation` fica nulo em conta fechada só por este caminho.
  * > RC F — cenário convergência dos dois roteiros (o worker de produção passar a chamar `closeLocalDay`) NÃO coberto nesta PR (pendência da audit 2026-10-04). `daily-closer.ts` não foi tocado; a igualdade entre os dois é travada pelo teste de paridade.
  * > RC F — cenário dia antigo aberto que recebe registro depois de um dia posterior já ter fechado NÃO coberto nesta PR (pendência da audit 2026-10-04). Fica aberto, como em produção: não entra em sequência, XP nem bloco; a varredura só o relata.
+ * > RC F — cenário primeiro registro retroativo num dia anterior aberto que entra na última ida ao banco antes da finalização do dia posterior (depois da releitura das datas anteriores, antes da RPC) NÃO coberto nesta PR (pendência da audit 2026-10-04). O dia posterior fecha, a fronteira passa do anterior e ele fica aberto para sempre, sem XP, bloco nem sequência, como na linha anterior. A releitura (regra 9) cobre o registro que entra antes dela, e não é feita com página cheia (1000 linhas numa leitura). Travado abaixo como está, com o caso do revisor deslocado para essa janela: 03/10 vazio, 04/10 com 2016 kcal, jantar de 500 kcal em 03/10 no instante da RPC: XP 10, sequência 1, bloco 60, e 03/10 aberto.
  * > RC F — cenário refeição ou treino registrado num dia JÁ fechado NÃO coberto nesta PR (pendência da audit 2026-10-04). Igual à produção: o dia não é recreditado e `calories_consumed` passa a divergir do que foi creditado.
- * > RC F — cenário dia só com água, peso, suplemento ou medicamento (sem refeição, treino nem mensagem recebida) NÃO coberto nesta PR (pendência da audit 2026-10-04). Conta como dia inativo, como em produção: a linha fica aberta e a sequência quebra.
+ * > RC F — cenário dia só com água, peso, suplemento ou medicamento (sem refeição, treino nem mensagem recebida) NÃO coberto nesta PR (pendência da audit 2026-10-04). Conta como dia inativo, como em produção: a linha fica aberta e a sequência quebra. A varredura não visita essa linha: ela não custa consulta, não gasta o orçamento e não segura o dia seguinte. Caso do revisor travado abaixo: 30 linhas só com água e depois 04/10 com refeição fecham 04/10 no primeiro pedido, com 28 idas ao banco; antes, com o relógio simulado do revisor (150 ms por linha visitada), eram 161 consultas por pedido, 26 linhas visitadas e 04/10 não fechava em nenhum de três pedidos seguidos. Com página cheia (1000 linhas numa leitura) toda linha aberta volta a ser visitada.
  * > RC F — cenário status `incomplete_no_response` num fechamento atrasado (o padrão de refeições é o dos 14 dias anteriores a AGORA, não à data fechada) NÃO coberto nesta PR (pendência da audit 2026-10-04). Só alcança dia com lembrete de lacuna gravado, que conta do app em staging não tem.
  * > RC F — cenário fechamento atrasado (data anterior a ontem, ou ontem a partir das 05:00 locais) depois de troca de protocolo ou de `deficit_level` NÃO coberto nesta PR (pendência da audit 2026-10-04). A meta gravada no dia é mantida; o déficit programado do crédito e o `current_protocol` gravado são os do perfil na hora do fechamento. Travado abaixo como está: recomposição trocada para ganho de massa às 08:01, ontem (1500 kcal, meta gravada 1576) fecha às 08:02 com meta 1576, protocolo `ganho_massa` e crédito 76; o fechador de produção teria gravado `recomposicao` e 576.
  * > RC F — cenário perfil alterado no PRÓPRIO dia depois do primeiro registro (pesagem ao meio-dia) e dia fechado atrasado NÃO coberto nesta PR (pendência da audit 2026-10-04). O fechamento atrasado mantém a meta gravada na linha, que é a do primeiro registro do dia (a pesagem não regrava a linha); o fechador de produção, às 00:30, regravaria com a meta do perfil. Travado abaixo como está: 80 → 82 kg às 13:00 de ontem, 1500 kcal: fechado às 08:00 fica meta 1576 e crédito 576; fechado às 00:30 fica meta 1600 e crédito 600.
  * > RC F — cenário duas varreduras simultâneas que enxergam datas diferentes (um registro retroativo entra entre as duas leituras) NÃO coberto nesta PR (pendência da audit 2026-10-04). A finalização grava valores absolutos: o progresso de um dos dois dias pode ser sobrescrito. Resolver exige a RPC conferir a versão anterior (migration).
  * > RC F — cenário registro confirmado entre a gravação da linha do dia e a finalização NÃO coberto nesta PR (pendência da audit 2026-10-04). Mesma janela da produção, com uma ida ao banco de largura.
  * > RC F — cenário eventos de telemetria intermediários (`streak.reset_inactive` de cada intervalo antigo e `daily_closer.skipped`) NÃO coberto nesta PR (pendência da audit 2026-10-04). O caminho sob demanda grava um zeramento por varredura e nunca grava "skipped"; o `user_progress` final é o mesmo.
+ * > RC F — cenário dia sem refeição nem treino com mais de 50 mensagens em que as 50 lidas pelo fechador de produção são todas enviadas NÃO coberto nesta PR (pendência da audit 2026-10-04). Divergência DENTRO da janela da produção: o `daily-closer` lê até 50 mensagens do dia, sem filtro de direção e sem ordenação, e procura uma recebida entre elas; o caminho sob demanda pergunta por uma mensagem recebida com o filtro `direction = 'in'`. Travado como está no teste de paridade, com o caso do revisor: 04/10 com 50 mensagens enviadas seguidas de 3 recebidas, fechado às 00:30 de 05/10 (America/Sao_Paulo). Produção: dia inativo, nada gravado além de `daily_closer.skipped`. Caminho sob demanda: linha criada e fechada, XP 10, sequência 1, `last_active_date` 04/10. Com 49 enviadas e 1 recebida os dois voltam a concordar. A leitura da produção não foi copiada.
+ * > RC F — cenário leitura do fechamento sob demanda que falha por erro de rede ou HTTP 503 ou 520 NÃO coberto nesta PR (pendência da audit 2026-10-04). O orçamento de 4 s é conferido só entre um dia e o seguinte e nenhuma leitura tem prazo de cancelamento. O cliente de banco (supabase-js 2.105.1) repete todo GET três vezes, esperando 1, 2 e 4 s (ou o que o cabeçalho `Retry-After` de um 503 mandar), antes de devolver o erro: com o interruptor ligado, `GET /today` e `GET /progress` ficam cerca de 7 s parados e depois respondem com o que está gravado. Caso do revisor travado em day-close-and-evaluation-access.read-retry.test.ts (cliente real, `fetch` falso, relógio simulado): 503 sem `Retry-After` em `users`, em `user_progress` ou em `meal_logs`, 4 pedidos e 7 s cada. HTTP 500 não é repetido; a RPC e as escritas (POST e PATCH) também não. Com o interruptor ausente nenhuma consulta é feita.
  * > RC F — cenário fechador de PRODUÇÃO em fuso de meia hora e em dia de troca de horário de verão NÃO coberto nesta PR (pendência da audit 2026-10-04). Não foi tocado: usa "agora − 24 h" e ticks no minuto 30 UTC. O caminho sob demanda usa a data do calendário e espera 30 min depois da meia-noite local (travado abaixo em America/Sao_Paulo e Asia/Kolkata), com a exceção da linha seguinte.
  * > RC F — cenário fuso de offset positivo cuja troca de horário de verão cai à meia-noite (Africa/Cairo em 24/04/2026, Asia/Beirut em 29/03/2026) NÃO coberto nesta PR (pendência da audit 2026-10-04). `localMidnightUtc` (auxiliar antigo, usado também pelo fechador de produção e não tocado) devolve o início desse dia uma hora adiantado: a última hora da véspera é contada no dia da troca e, nesse dia, ontem fica fechável já no primeiro instante, sem a espera de 30 min. Hoje nunca fecha. Travado abaixo como está.
  * > RC F — cenário botão "Fechar dia" do painel admin (marca o dia como fechado sem aplicar progresso) NÃO coberto nesta PR (pendência da audit 2026-10-04). Inalterado. Um dia fechado assim vira fronteira: os dias abertos anteriores a ele não fecham mais.
@@ -1667,6 +1684,282 @@ describe('the open days of staging (read on 2026-10-04): what the simulation mus
 // ───────────────────────────────────────────────────────────────────────────
 // 6. The declared pendencies are the same in the doc
 // ───────────────────────────────────────────────────────────────────────────
+
+// ───────────────────────────────────────────────────────────────────────────
+// 6. LOW findings of the review of 2026-10-05, with the reviewers' own inputs
+// ───────────────────────────────────────────────────────────────────────────
+
+describe('open day rows with water only, then a day with a meal (review of 2026-10-05, LOW)', () => {
+  // The reviewer's case, exact: N open rows carrying only water (the row is
+  // created by the hydration record) on the N days before 04/10, then 04/10
+  // with one meal of 1500 kcal and 110 g; requests at 08:00 of 05/10 with the
+  // API's budget (3 days, 4 s), `from` 2026-08-01, and a clock that advances
+  // 150 ms each time it is read (the reviewer's assumed cost of visiting one
+  // such row; the sweep reads the clock once at the start and once per date).
+  // BEFORE, with N = 30: every request visited 26 rows (6 queries each), ran
+  // out of the 4 s, made 161 queries, closed nothing, and the next request
+  // started from the same place: 04/10 never closed through the API.
+  //
+  // Hand calculation of 04/10 (recomposição, meta gravada 1576, late close):
+  //   daily_balance = 1500 − 1576 − 0 = −76 → crédito 500 − (−76) = 576
+  //   XP = 10 + 5 (110 g ≥ 100) = 15; sequência 1.
+  function seed(waterOnlyRows: number, progress?: MemoryRow) {
+    const db = account('recomposicao', progress)
+    for (let back = waterOnlyRows; back >= 1; back--) {
+      const date = new Date('2026-10-04T00:00:00.000Z')
+      date.setUTCDate(date.getUTCDate() - back)
+      db.tables.daily_snapshots.push(
+        db.withDefaults('daily_snapshots', {
+          user_id: USER,
+          date: date.toISOString().slice(0, 10),
+          water_consumed_ml: 1500,
+        }),
+      )
+    }
+    return db
+  }
+  function request(db: DayCloseMemoryDb) {
+    let elapsed = 0
+    return closePastOpenDays(db.client, {
+      userId: USER,
+      timezone: SAO_PAULO,
+      now: new Date('2026-10-05T11:00:00.000Z'),
+      from: '2026-08-01',
+      limits: { maxDays: 3, maxMs: 4000 },
+      clock: () => {
+        elapsed += 150
+        return elapsed
+      },
+    })
+  }
+
+  it.each([
+    10, 30, 45,
+  ])('%d water-only rows: 04/10 closes in the FIRST request, with the same number of queries', async (rows) => {
+    vi.setSystemTime(new Date('2026-10-05T11:00:00.000Z'))
+    const db = seed(rows)
+    db.registerMeal({
+      userId: USER,
+      date: '2026-10-04',
+      consumedAt: '2026-10-04T15:00:00.000Z',
+      kcal: 1500,
+      proteinG: 110,
+      mealType: 'almoco',
+      caloriesTarget: 1576,
+      proteinTarget: 120,
+    })
+
+    const first = await request(db)
+
+    expect(first.days.map((day) => [day.date, day.closed])).toEqual([['2026-10-04', true]])
+    expect(first.days[0]?.detail).toMatchObject({ xpEarned: 15, blockCredit: 576 })
+    expect(first.inactiveOpenDates).toHaveLength(rows)
+    expect(first.pendingDates).toEqual([])
+    expect(first.complete).toBe(true)
+    // 1 progress + 4 discovery; the day: 17 reads, the row update, the RPC,
+    // the events insert, and the 3 reads of the re-check (the water-only
+    // dates lie between the frontier and 04/10); 1 progress for inactivity.
+    expect(db.operations).toHaveLength(28)
+    expect(db.operations.filter((operation) => operation.kind !== 'select')).toHaveLength(3)
+    expect(db.progress(USER)).toMatchObject({
+      xp_total: 15,
+      current_streak: 1,
+      deficit_block: 576,
+      last_active_date: '2026-10-04',
+    })
+    // The water-only rows are as they were.
+    expect(
+      db.tables.daily_snapshots.filter((row) => row.date !== '2026-10-04' && row.day_closed),
+    ).toEqual([])
+
+    // The second and third requests: yesterday is closed, one query each.
+    await request(db)
+    await request(db)
+    expect(db.operations).toHaveLength(30)
+    expect(db.events(USER).map((event) => event.event)).toEqual(['daily_closer.completed'])
+  })
+
+  it('30 water-only rows and nothing after them: five reads per request, and inactivity is judged once', async () => {
+    vi.setSystemTime(new Date('2026-10-05T11:00:00.000Z'))
+    // A streak of 3 that ended on 03/09; 04/09 … 03/10 carry water only.
+    const db = seed(30, { current_streak: 3, longest_streak: 3, last_active_date: '2026-09-03' })
+
+    const first = await request(db)
+
+    expect(first.days).toEqual([])
+    expect(first.inactiveOpenDates).toHaveLength(30)
+    expect(first.complete).toBe(true)
+    // 04/10 − 03/09 = 31 days.
+    expect(first.streakReset).toMatchObject({ applied: true, previousStreak: 3, gapDays: 31 })
+    // 5 reads, the conditional update of the streak and its event.
+    expect(db.operations).toHaveLength(7)
+    expect(db.progress(USER)).toMatchObject({ current_streak: 0, longest_streak: 3 })
+
+    const second = await request(db)
+    expect(second.streakReset).toBeNull()
+    expect(db.operations).toHaveLength(12)
+    expect(db.events(USER).map((event) => event.event)).toEqual(['streak.reset_inactive'])
+  })
+})
+
+describe('a first retroactive record on an EARLIER EMPTY day while the later day is being closed (review of 2026-10-05, LOW)', () => {
+  // The reviewer's seed (fuzz, seed 100075), exact: recomposição; 03/10 with
+  // nothing at all; 04/10 with one meal of 2016 kcal; one request at 05:00 of
+  // 05/10 (America/Sao_Paulo). Right after the 18th database access of that
+  // request (04/10 written, not finalized yet) a dinner of 500 kcal, 50 g,
+  // enters 03/10. BEFORE: 04/10 closed, the frontier passed 03/10 and it
+  // stayed open for good: XP 10, sequência 1, bloco 60. The serial sweep that
+  // saw the dinner gives XP 20, sequência 2, bloco 560.
+  // ASSUMED, declared: 100 g of protein would add 5 XP; the seed's lunch has
+  // less (the reported XP of that day is 10), 90 g here.
+  //
+  // Hand calculation (both are late closes: 05:00 is past production's
+  // window; meta gravada 1576):
+  //   03/10: 500 < 0,5 × 1576 = 788 → sub-registro: só o déficit programado,
+  //          crédito 500; XP 10 (50 g < 100).
+  //   04/10: daily_balance = 2016 − 1576 = +440 → crédito 500 − 440 = 60; XP 10.
+  //   juntos: XP 20, sequência 2, bloco 560.
+  const NOW = sp('2026-10-05', '05:00')
+  function seed() {
+    const db = account('recomposicao')
+    register(db, 'recomposicao', '2026-10-04', { kcal: 2016, protein: 90 })
+    return db
+  }
+  function dinnerOn0310(db: DayCloseMemoryDb) {
+    db.registerMeal({
+      userId: USER,
+      date: '2026-10-03',
+      consumedAt: sp('2026-10-03', '21:00').toISOString(),
+      kcal: 500,
+      proteinG: 50,
+      mealType: 'jantar',
+      caloriesTarget: 1576,
+      proteinTarget: PROTEIN_TARGET,
+    })
+  }
+  const request = (db: DayCloseMemoryDb) =>
+    closePastOpenDays(db.client, {
+      userId: USER,
+      timezone: SAO_PAULO,
+      now: NOW,
+      from: '2026-09-01',
+    })
+
+  it("the reviewer's case: the dinner enters after the 18th access; 04/10 is not finalized and the next request closes both", async () => {
+    vi.setSystemTime(NOW)
+    const db = seed()
+    let entered = false
+    db.before = () => {
+      if (!entered && db.operations.length === 18) {
+        entered = true
+        dinnerOn0310(db)
+      }
+    }
+
+    const first = await request(db)
+    db.before = null
+
+    expect(entered).toBe(true)
+    // The 18th access is a read made after the day row was written (the
+    // update is the 15th) and before the finalization.
+    expect(db.operations[14]).toMatchObject({ kind: 'update', target: 'daily_snapshots' })
+    expect(db.operations[17]).toMatchObject({ kind: 'select' })
+    expect(first.days.map((day) => [day.date, day.closed, day.reason])).toEqual([
+      ['2026-10-04', false, 'earlier_date_changed'],
+    ])
+    expect(first.pendingDates).toEqual(['2026-10-04'])
+    expect(first.complete).toBe(false)
+    expect(first.streakReset).toBeNull()
+    expect(db.operations.some((operation) => operation.kind === 'rpc')).toBe(false)
+    expect(db.events(USER)).toEqual([])
+    expect(db.snapshot(USER, '2026-10-04')).toMatchObject({ day_closed: false })
+    expect(db.progress(USER)).toMatchObject({ xp_total: 0, current_streak: 0, deficit_block: 0 })
+
+    const second = await request(db)
+
+    expect(second.days.map((day) => [day.date, day.closed])).toEqual([
+      ['2026-10-03', true],
+      ['2026-10-04', true],
+    ])
+    expect(second.days.map((day) => day.detail?.blockCredit)).toEqual([500, 60])
+    expect(second.days.map((day) => day.detail?.xpEarned)).toEqual([10, 10])
+    expect(second.staleOpenDates).toEqual([])
+    expect(second.complete).toBe(true)
+    expect(db.snapshot(USER, '2026-10-03')).toMatchObject({
+      day_closed: true,
+      calories_consumed: 500,
+      calories_target: 1576,
+    })
+    expect(db.snapshot(USER, '2026-10-04')).toMatchObject({
+      day_closed: true,
+      calories_consumed: 2016,
+      calories_target: 1576,
+    })
+    expect(db.progress(USER)).toMatchObject({
+      xp_total: 20,
+      current_streak: 2,
+      deficit_block: 560,
+      last_active_date: '2026-10-04',
+    })
+    expect(
+      db.operations.filter((operation) => operation.target === 'finalize_daily_close_atomic'),
+    ).toHaveLength(2)
+  })
+
+  it('the same result as one request that saw the dinner from the start', async () => {
+    vi.setSystemTime(NOW)
+    const db = seed()
+    dinnerOn0310(db)
+    await request(db)
+    expect(db.progress(USER)).toMatchObject({
+      xp_total: 20,
+      current_streak: 2,
+      deficit_block: 560,
+      last_active_date: '2026-10-04',
+    })
+  })
+
+  it('declared pendency, locked as it is: the dinner enters in the last round trip, after the re-check and before the finalization', async () => {
+    vi.setSystemTime(NOW)
+    const db = seed()
+    let entered = false
+    db.before = (operation) => {
+      if (!entered && operation.target === 'finalize_daily_close_atomic') {
+        entered = true
+        dinnerOn0310(db)
+      }
+    }
+
+    const first = await request(db)
+    db.before = null
+    // The next morning (06/10, 08:00), with nothing new registered.
+    const nextMorning = sp('2026-10-06', '08:00')
+    vi.setSystemTime(nextMorning)
+    const later = await closePastOpenDays(db.client, {
+      userId: USER,
+      timezone: SAO_PAULO,
+      now: nextMorning,
+      from: '2026-09-01',
+    })
+
+    expect(entered).toBe(true)
+    expect(first.days.map((day) => [day.date, day.closed])).toEqual([['2026-10-04', true]])
+    // 03/10 is behind the frontier now: reported, never closed.
+    expect(later.days).toEqual([])
+    expect(later.staleOpenDates).toEqual(['2026-10-03'])
+    expect(db.snapshot(USER, '2026-10-03')).toMatchObject({
+      day_closed: false,
+      calories_consumed: 500,
+    })
+    // What the reviewer measured before the re-check existed.
+    expect(db.progress(USER)).toMatchObject({
+      xp_total: 10,
+      current_streak: 1,
+      deficit_block: 60,
+      last_active_date: '2026-10-04',
+    })
+  })
+})
 
 describe('declared pendencies', () => {
   it('every "RC F" line of this header is in docs/CALCULO-MPP.md, identical', () => {

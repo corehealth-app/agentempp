@@ -18,7 +18,9 @@
  *
  * It only writes to the database it was handed. It sends nothing. A failure
  * is logged without personal data and the request goes on: these numbers
- * being one request late is better than the screen not loading.
+ * being one request late is better than the screen not loading. (The request
+ * goes on LATE when the failure is a read the client retries: see
+ * `REQUEST_LIMITS`.)
  */
 import { closePastOpenDays } from '@mpp/agent'
 import type { MobileRouteContext } from './route'
@@ -33,6 +35,14 @@ const PRODUCTION_PROJECT_REF = 'xuxehkhdvjivitduarvb'
 /**
  * Budget of one request: a first visit after several days away closes the
  * oldest three and leaves the rest to the next request, in order.
+ *
+ * NOT A DEADLINE. The sweep checks it between one day and the next only: a
+ * day being closed finishes, and no read is cut short. The database client
+ * repeats a GET three times (after 1, 2 and 4 seconds) on a network error or
+ * HTTP 503/520, so one failing read keeps the request waiting about 7 seconds
+ * before the failure is logged below and the request goes on. Declared in
+ * docs/CALCULO-MPP.md §3a (RC F) and locked, as it is, in
+ * day-close-and-evaluation-access.read-retry.test.ts.
  */
 const REQUEST_LIMITS = { maxDays: 3, maxMs: 4000 } as const
 

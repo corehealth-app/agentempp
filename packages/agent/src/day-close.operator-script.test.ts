@@ -220,6 +220,28 @@ describe('run', () => {
     ])
   })
 
+  it('an open row with water only is not visited and is listed as left open', async () => {
+    const db = database()
+    db.tables.daily_snapshots.push(
+      db.withDefaults('daily_snapshots', {
+        user_id: APP_ACCOUNT,
+        date: '2026-10-02',
+        water_consumed_ml: 1500,
+      }),
+    )
+    const lines: string[] = []
+    await script.runCloseOpenDays(
+      db.client,
+      script.parseArguments(['--from', '2026-09-22']),
+      (line) => lines.push(line),
+      NOW,
+    )
+    expect(lines.filter((line) => line.includes('2026-10-02'))).toEqual([
+      '  linhas abertas sem refeição, treino nem mensagem (não visitadas, ficam abertas): 2026-10-02',
+    ])
+    expect(lines).toContain('conta-03: 2 dia(s) a fechar (até 2026-10-04)')
+  })
+
   it("inside the production closer's window (00:30 local) yesterday is not marked late", async () => {
     const db = database()
     const lines: string[] = []

@@ -88,6 +88,53 @@ struct PlanPresentationTests {
         ])
     }
 
+    @Test("notes are marked stacked while every short field stays a label/value row")
+    func notesAreStackedAndShortFieldsAreNot() {
+        for language in SupportedAppLanguage.allCases {
+            let presentation = PlanPresentation(snapshot: snapshot(), language: language)
+            let training = presentation.trainingFields
+            let nutrition = presentation.nutritionSections[0].fields
+
+            #expect(training.filter { $0.layout == .stacked }.map(\.id) == ["plan.training.notes"])
+            #expect(training.filter { $0.layout == .row }.map(\.id) == [
+                "plan.training.type", "plan.training.days", "plan.training.equipment",
+                "plan.training.generated", "plan.training.valid-until", "plan.training.version",
+            ])
+            #expect(nutrition.filter { $0.layout == .stacked }.map(\.id) == [
+                "plan.nutrition.nutrition-1.notes",
+            ])
+            #expect(nutrition.filter { $0.layout == .row }.map(\.id) == [
+                "plan.nutrition.nutrition-1.type", "plan.nutrition.nutrition-1.generated",
+                "plan.nutrition.nutrition-1.valid-until", "plan.nutrition.nutrition-1.version",
+            ])
+        }
+    }
+
+    @Test("the mark follows what a field is, never how long its text is")
+    func layoutDoesNotDependOnLength() {
+        let generated = APITimestamp(value: Date(timeIntervalSince1970: 1_784_589_300))
+        let presentation = PlanPresentation(snapshot: PlanSnapshot(
+            training: TrainingPlanSnapshot(
+                id: "training-1", planType: "full_body", daysPerWeek: 1,
+                equipmentSummary: String(repeating: "Halteres, banco, barra fixa e elásticos. ", count: 10),
+                generatedAt: generated, validUntil: nil, version: nil, notes: "Ok",
+                weeklySchedule: [TrainingDaySnapshot(
+                    day: "Treino A", focus: "Peito e tríceps", durationMin: 45,
+                    exercises: [TrainingExerciseSnapshot(
+                        name: "Supino reto com halteres", sets: 3, repsRange: "8-12", restSeconds: 90
+                    )]
+                )]
+            ),
+            nutrition: []
+        ))
+        let fields = presentation.trainingFields
+
+        #expect(fields.first { $0.id == "plan.training.equipment" }?.value.count == 410)
+        #expect(fields.first { $0.id == "plan.training.equipment" }?.layout == .row)
+        #expect(fields.first { $0.id == "plan.training.notes" }?.layout == .stacked)
+        #expect(presentation.trainingDays.flatMap(\.exercises).map(\.layout) == [.row])
+    }
+
     @Test("optional metadata stays omitted while literal zero remains visible")
     func optionalMetadataAndZeroRemainDistinct() {
         let generated = APITimestamp(value: Date(timeIntervalSince1970: 1_784_589_300))

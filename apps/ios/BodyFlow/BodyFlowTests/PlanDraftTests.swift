@@ -247,6 +247,57 @@ struct PlanDraftDocumentTests {
         #expect(training.shoppingList(language: language).isEmpty)
     }
 
+    @Test("Free text goes below its label; closed values, numbers and the equipment list stay beside it")
+    func freeTextIsStackedAndShortValuesAreNot() throws {
+        let language = SupportedAppLanguage.portugueseBrazil
+        func layouts(_ details: [PlanDraftDocument.Detail]) -> [String] {
+            details.map { "\($0.key)=\(PlanDraftCopy.detailLayout($0.key))" }
+        }
+
+        let training = PlanDraftDocument(
+            domain: .training,
+            payload: try DraftFixtures.payload("""
+            {"plan_type":"full_body","equipment_summary":"Halteres e banco",
+             "progression_rule":"subir carga a cada 2 semanas",
+             "notes":"Plano Full Body otimizado para 1x/semana","weekly_schedule":[
+              {"day":"Treino A","focus":"Peito","duration_min":45,"exercises":[
+               {"name":"Supino","muscle_group":"peito","sets":3,"reps_range":"8-12",
+                "rest_seconds":90,"rpe_target":"7-8","notes":"carga moderada",
+                "execution_steps":["descer devagar"],
+                "common_mistakes":["tirar o quadril do banco"]}
+              ]}]}
+            """)
+        )
+        #expect(layouts(training.planDetails(language: language)) == [
+            "plan_type=row", "equipment_summary=row", "progression_rule=stacked", "notes=stacked",
+        ])
+        #expect(layouts(training.sections[0].rows[0].details) == [
+            "rpe_target=row", "notes=stacked", "execution_steps=stacked", "common_mistakes=stacked",
+        ])
+
+        let nutrition = PlanDraftDocument(
+            domain: .nutrition,
+            payload: try DraftFixtures.payload("""
+            {"mode":"referencia","horizon":"weekly","meta_kcal":1200,"meta_protein_g":140,
+             "notes":"beber água","daily_meals":[
+              {"meal_type":"almoco","day_of_week":3,"total_kcal":390,"total_protein_g":48,
+               "notes":"comer devagar","items":[
+                {"food_name":"Arroz","quantity_g":120,"kcal":150,"protein_g":3,"carbs_g":33,"fat_g":0.3}
+               ]}]}
+            """)
+        )
+        #expect(layouts(nutrition.planDetails(language: language)) == [
+            "mode=row", "horizon=row", "meta_kcal=row", "meta_protein_g=row", "notes=stacked",
+        ])
+        #expect(layouts(nutrition.sections[0].details) == [
+            "day_of_week=row", "total_kcal=row", "total_protein_g=row", "notes=stacked",
+        ])
+        #expect(layouts(nutrition.sections[0].rows[0].details) == [
+            "kcal=row", "protein_g=row", "carbs_g=row", "fat_g=row",
+        ])
+        #expect(PlanDraftCopy.detailLayout("anything_else") == .row)
+    }
+
     @Test("A value of a shape the screen cannot show blocks the confirmation")
     func unreadableContent() throws {
         let document = PlanDraftDocument(

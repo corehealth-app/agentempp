@@ -5,6 +5,10 @@ struct PlanField: Equatable, Sendable, Identifiable {
     let id: String
     let title: String
     let value: String
+    /// How the card draws the field. Marked here, where the field is built:
+    /// the notes are free text and go below their label; everything else is
+    /// a short value beside it.
+    var layout: FeatureFieldLayout = .row
 }
 
 struct NutritionPlanSection: Equatable, Sendable, Identifiable {
@@ -61,7 +65,7 @@ struct PlanPresentation: Equatable, Sendable {
             PlanField(id: "plan.training.generated", title: copy("plan.generated", language), value: date(training.generatedAt, language: language)),
             optionalField("plan.training.valid-until", copy("plan.valid-until", language), training.validUntil.map { date($0, language: language) }),
             optionalField("plan.training.version", copy("plan.version", language), training.version.map(String.init)),
-            optionalField("plan.training.notes", copy("plan.notes", language), training.notes),
+            optionalField("plan.training.notes", copy("plan.notes", language), training.notes, layout: .stacked),
         ].compactMap { $0 }
     }
 
@@ -124,7 +128,7 @@ struct PlanPresentation: Equatable, Sendable {
                 PlanField(id: "plan.nutrition.\(prescription.id).generated", title: copy("plan.generated", language), value: date(prescription.generatedAt, language: language)),
                 optionalField("plan.nutrition.\(prescription.id).valid-until", copy("plan.valid-until", language), prescription.validUntil.map { date($0, language: language) }),
                 optionalField("plan.nutrition.\(prescription.id).version", copy("plan.version", language), prescription.version.map(String.init)),
-                optionalField("plan.nutrition.\(prescription.id).notes", copy("plan.notes", language), prescription.notes),
+                optionalField("plan.nutrition.\(prescription.id).notes", copy("plan.notes", language), prescription.notes, layout: .stacked),
             ].compactMap { $0 }
         )
     }
@@ -132,9 +136,10 @@ struct PlanPresentation: Equatable, Sendable {
     private static func optionalField(
         _ id: String,
         _ title: String,
-        _ value: String?
+        _ value: String?,
+        layout: FeatureFieldLayout = .row
     ) -> PlanField? {
-        value.map { PlanField(id: id, title: title, value: $0) }
+        value.map { PlanField(id: id, title: title, value: $0, layout: layout) }
     }
 
     private static func date(
@@ -200,7 +205,7 @@ struct PlanContentView: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .accessibilityAddTraits(.isHeader)
                         ForEach(day.exercises) { exercise in
-                            FixtureMetricRow(title: exercise.title, value: exercise.value)
+                            FixtureMetricRow(title: exercise.title, value: exercise.value, layout: exercise.layout)
                                 .accessibilityIdentifier(exercise.id)
                         }
                     }
@@ -241,7 +246,7 @@ private struct PlanMetadataCard: View {
                     .accessibilityAddTraits(.isHeader)
 
                 ForEach(primaryFields) { field in
-                    FixtureMetricRow(title: field.title, value: field.value)
+                    FixtureMetricRow(title: field.title, value: field.value, layout: field.layout)
                         .accessibilityIdentifier(field.id)
                     if field.id != primaryFields.last?.id { Divider() }
                 }

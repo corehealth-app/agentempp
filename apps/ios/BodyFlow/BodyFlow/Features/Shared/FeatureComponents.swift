@@ -126,6 +126,18 @@ struct BodyFlowCard<Content: View>: View {
     }
 }
 
+/// How a label/value row lays out its two texts. Chosen where the row's
+/// content is built, by what the value is — never by how long its text
+/// turns out to be on screen.
+enum FeatureFieldLayout: Equatable, Sendable {
+    /// Label on the left, short value on the right; stacked only at
+    /// accessibility text sizes.
+    case row
+    /// Free text: the label on its own line and the text below it, leading
+    /// and across the full width, at every text size.
+    case stacked
+}
+
 @MainActor
 struct FixtureMetricRow: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -133,10 +145,12 @@ struct FixtureMetricRow: View {
     let title: String
     let value: String
     var systemImage: String?
+    /// Opt-in: `.row`, the default, is the row as every caller has it.
+    var layout: FeatureFieldLayout = .row
 
     var body: some View {
         Group {
-            if dynamicTypeSize.isAccessibilitySize {
+            if layout == .stacked || dynamicTypeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
                     metricTitle
                     metricValue

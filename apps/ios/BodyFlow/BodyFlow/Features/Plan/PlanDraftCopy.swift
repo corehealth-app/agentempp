@@ -87,6 +87,18 @@ enum PlanDraftCopy {
         }
     }
 
+    /// How a value the screen shows without editing is drawn. Free text —
+    /// written by the generator or read from the patient's document, up to
+    /// hundreds of characters — goes below its label, across the card;
+    /// closed values, numbers and the equipment list stay beside it. Decided
+    /// by what the value is, never by its length on screen.
+    static func detailLayout(_ key: String) -> FeatureFieldLayout {
+        switch key {
+        case "notes", "progression_rule", "execution_steps", "common_mistakes": .stacked
+        default: .row
+        }
+    }
+
     static func detailValue(
         key: String,
         text: String,

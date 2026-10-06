@@ -400,7 +400,8 @@ struct PlanDraftReviewView: View {
                     key: detail.key,
                     text: detail.text,
                     language: language
-                )
+                ),
+                layout: PlanDraftCopy.detailLayout(detail.key)
             )
             .accessibilityIdentifier("plan.draft.detail\(detail.id)")
         }

@@ -257,3 +257,94 @@ it was left for the end; the full iOS suite on `a95d357`.
 One mistake of the tester during the round: "Começar de novo" was tapped
 instead of "Calcular refeição" (the button moves up once the quantity is
 filled); the meal was entered again.
+
+## Round 5 — the evening of 2026-10-05: panel, Flow names, the plan's notes, the demo video
+
+Simulator (iPhone 18 Pro, iOS 27, Release build with the staging settings,
+account QA A) and the iPhone. Staging only.
+
+### What changed and where it is
+
+| Commit | What | Where it runs |
+|---|---|---|
+| `d3a3116` | The Flow never shows the method's name nor its author's (instruction + closed-vocabulary projection of the final text) | staging BFF, preview `ap8ccfy5l` behind `performe-ai-staging-bff.vercel.app` (the previous one, `dme8ur037` = `a12d11e`, is the way back) |
+| `cd25815` | The panel becomes the Performe AI panel, with one server-side role matrix | staging panel, preview `agentempp-media-worker-staging-mhal48ijj` (behind Vercel login) |
+| `0db4741` | Project instructions: the product is the app; the WhatsApp agent is legacy | — |
+| `95dca3a` | The plan's notes use the card's width (they were a narrow right-aligned column of about twenty lines) | iPhone, installed over (way back: `release-gates-v3-a95d357`) |
+
+The owner authorised the staging publication by a clicked answer ("Sim, pode
+publicar"). Inngest was **not** re-synced: photo, audio and plan import still
+run on the previous worker preview (`dopnv6cx4`, `2be6370`); re-syncing asks
+for a re-test of the three.
+
+### The Flow on the real model, after the publication
+
+Three turns on the simulator, 21:07–21:09 BRT, answers as received:
+
+| Question | Answer |
+|---|---|
+| "Qual e o método que vocês usam?" | "As orientações seguem o programa do Performe AI. Não entro em detalhes sobre o método internamente, mas tudo que te passo — metas, protocolos, ajustes — vem dele." |
+| "Isso e o MPP?" | "Não consigo confirmar nem negar nomes internos do método. O que posso dizer é que tudo aqui segue o programa do Performe AI." |
+| "Quem e o Dr. Roberto?" | "Não tenho essa informação pra te passar. O que posso dizer é que o programa é do Performe AI — não trabalho com referências a pessoas específicas por trás do método." |
+
+`product_events` for the account in that window: 3 `llm.flow_calls`, 0
+`llm.flow_internal_name_replaced` — the model followed the instruction by
+itself and the projection did not have to act. One sample per question; it
+is the manual part of RC FN-1, not a measurement.
+
+### The plan's notes, on the real data
+
+The training plan of QA A carries a note of about 400 characters. Before:
+a right-aligned column beside the label. After `95dca3a`, on the simulator
+against staging: label on its own line, eleven lines of text across the card.
+
+### The full iOS suite on `95dca3a` (21:12–23:18 BRT, alone on the machine)
+
+FULL SUITE RESULT: 1,973 tests, 1,971 passed, **2 failed**.
+
+- `PerformeVoiceOverNavigationUITests/testVoiceOverReadsFiveTabsInOrderAndPreservesSelectionOnIOS27`
+  — the known one ("VoiceOver did not reach button Today within the bounded
+  search"); waits for the owner's decision on its budget.
+- `FlowChatUITests/testFiftyMessagesKeepUnsentComposerAndReadingPositionAcrossTabs`
+  — exceeded the 10-minute allowance. After each tap on `flow.send` XCTest
+  waited 60 s for the app to become idle and logged "App animations complete
+  notification not received", nine times.
+
+ISOLATED CHARACTERIZATION of the second one (same invocation, that test only,
+3 iterations asked, no retry-on-failure): iteration 1 passed in 178 s,
+iteration 2 exceeded the allowance, iteration 3 did not run. History of the
+same test in earlier full runs: passed on `e40bed3` (96.6 s), `d6278c2`
+(82.6 s) and `c2b2b40` (84.4 s); exceeded the allowance on `9624cd5`, on the
+interrupted run of `64a0e71` and now. It is intermittent, it predates this
+evening's commits (none of them touches the Flow screen), and its cause is
+not known: either the Flow screen with fifty messages sometimes keeps an
+animation running after a message is sent, or the test framework does not
+see the app settle. Under investigation.
+
+FINAL VERIFIED STATE: partially verified — 2 failures stand; no isolated
+pass is counted as a pass.
+
+### The demo video
+
+The owner asked for a video to send to the physician while Apple's approval
+is pending, in light mode, with the existing test accounts. Recorded on the
+simulator (`simctl io recordVideo`), 3 min 25 s, 13.9 MB: tour, Today, a
+meal by text, a workout, Today updated, one question to the Flow, Progress,
+Plan. Only the tester's pauses and one mistyped entry were cut; the app's
+own waits are in real time. It was recorded before `95dca3a`, so the Plan
+screen appears only in passing; the owner kept it as it is.
+
+Two mistakes of the tester while trying iPhone Mirroring first (abandoned
+for the simulator): a recording interrupted with SIGINT was not saved; and a
+paste landed the test account's password, still in the shared clipboard, in
+the meal-description field, and it was sent to the text extractor (no
+account attached to it; the server neither stores nor logs that text). The
+owner was told; rotating that test password is on the closing list.
+
+### Still open
+
+- The owner creates a NEW account (sign-up, automatic 30 days, the Flow in
+  recomposição): left for the end by his choice.
+- Apple's approval, then TestFlight (`docs/mobile/testflight-evaluation.md`).
+- The intermittent Flow test above; the VoiceOver budget.
+- "Equipamentos" of a plan still uses the two-column row (RC PN-2).

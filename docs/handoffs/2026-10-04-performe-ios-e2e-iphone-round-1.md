@@ -348,3 +348,60 @@ owner was told; rotating that test password is on the closing list.
 - Apple's approval, then TestFlight (`docs/mobile/testflight-evaluation.md`).
 - The intermittent Flow test above; the VoiceOver budget.
 - "Equipamentos" of a plan still uses the two-column row (RC PN-2).
+
+### The intermittent Flow test, investigated (2026-10-05 23:40 – 2026-10-06 02:10 BRT)
+
+Result: **the app is idle during the stalls; what gets stuck is XCTest's own
+animation counter.** Nothing was changed in the repository (app or tests).
+
+Two statements of the section above are corrected by the logs:
+
+- the stall does not begin after the tap on `flow.send`: it begins right
+  after `flow.composer` takes focus, when the keyboard rises (in 3 of the 5
+  stalls of the night at the first focus, before any message was sent);
+- the 178 s of the first isolated iteration carry no stall: about 95 s of
+  them are the sign-up and onboarding the test performs once per process.
+
+What was measured inside the app while XCTest reported "animating" (a
+temporary DEBUG-only probe, removed afterwards):
+
+- XCTest's indicator stayed on for 608 one-second samples in a row; in 586 of
+  them the main run loop woke at most 5 times a second (60–200 with a real
+  animation);
+- 61 sweeps of every layer found only two system animations, the text cursor
+  and the native tab bar's lens, both without a delegate and both present
+  when the test passes; no scroll view was moving; the typing dots appeared
+  once, while a reply was pending, and never after;
+- XCTest counts `-[UIViewAnimationState animationDidStart:]` against
+  `animationDidStop:finished:`; one keyboard rise left the counter one above
+  zero, and every later idle wait then costs 60 s.
+
+It is not specific to this test: 10 of the 15 suite logs since 2026-10-02
+carry such stalls (20 in the `c2b2b40` run, in tests that still passed), and
+in 25 of the 30 tests where one begins the last action is focus on a text
+field inside the tab shell (24 times `flow.composer`). Fields outside the
+shell (sign-in, sign-up, onboarding) never start one.
+
+| Binary | Iterations without the sign-up | Stalled |
+|---|---|---|
+| clean (`95dca3a`, `b5e6aa0`) | 6 | 3 |
+| with the first two versions of the probe | 2 | 2 |
+| with the later versions of the probe | 16, plus the whole class once (15 tests) | 0 |
+
+The probe changes the outcome, which points to a timing race inside UIKit and
+Core Animation rather than to something the app leaves running.
+
+Not proven: which call is left unbalanced; why the later probes hide it;
+whether removing the glass tab bar inside the keyboard animation
+(`AppShellView.swift`) is the trigger; and the behaviour on a physical
+iPhone (everything here is the simulator; in manual use on the iPhone and on
+the simulator the Flow screen behaved normally). Smallest next experiment,
+about 25 minutes: a DEBUG switch that keeps the tab bar mounted while the
+keyboard is up, 6 iterations with and 6 without, same binary.
+
+Decision for the owner: how the suite treats the signature "exceeded the
+allowance + `App animations complete notification not received` + zero
+failed assertions". Today it counts as a failure, and it stays counted.
+
+Evidence outside the repository:
+`~/.local/share/performe-ai/final-polish-20261001/handoff-20261004/flow-idle/`.

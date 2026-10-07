@@ -2494,15 +2494,18 @@ lidos da linha verificada do catálogo antes de ativar.
 A regra é UMA função pura, `decideSignupEligibility`
 (`packages/core/src/protocol-eligibility.ts`).
 
-**Onde ela é aplicada hoje.** Em um lugar só: a conferência do cadastro no
-servidor (`POST /api/mobile/v1/onboarding/eligibility`, §10l), que responde a
-decisão com os textos do §10m e **não grava nada**. Fora dela:
+**Onde ela é aplicada hoje.** Em dois lugares do servidor, pela mesma conta:
 
-- o cadastro do app continua gravando o objetivo que a pessoa tocou, sem
-  conferir (`supabase/migrations/20260915150739_bodyflow_server_owned_onboarding.sql`);
-  recusar na gravação o objetivo fora da regra é a próxima etapa do servidor;
-- o app publicado não chama a conferência nem lê os campos novos: nenhuma tela
-  mudou;
+- a conferência do cadastro (`POST /api/mobile/v1/onboarding/eligibility`,
+  §10l), que responde a decisão com os textos do §10m e **não grava nada**;
+- a conclusão do cadastro (`POST /api/mobile/v1/onboarding`, §10o), que na
+  **primeira conclusão** recusa o objetivo que a conferência não marcaria
+  disponível. Conta que já tem data de conclusão não é conferida.
+
+Fora deles:
+
+- o app publicado não chama a conferência, não lê os campos novos e não trata
+  a recusa: nenhuma tela mudou (pendências no §10j);
 - a linha `- Decisão automática: …` do contexto do turno (WhatsApp e Flow)
   continua vindo de `resolveProtocol` (`packages/core/src/protocol-router.ts`),
   que não foi tocada (§10h);
@@ -2788,11 +2791,12 @@ lido como estando no corte.
 
 ### 10h. O que NÃO mudou: `resolveProtocol`
 
-`resolveProtocol` segue idêntica e é a única das duas em uso (linha `- Decisão
-automática: …`, travada pelos goldens de 04/10). As duas contas diferem em
-quatro pontos, travados no golden desta seção:
+`resolveProtocol` segue idêntica e continua sendo a que alimenta a linha
+`- Decisão automática: …` (travada pelos goldens de 04/10). A função nova é
+usada pela conferência (§10l) e pela conclusão do cadastro (§10o). As duas
+contas diferem em quatro pontos, travados no golden desta seção:
 
-| Caso | `resolveProtocol` (antiga, em uso) | `decideSignupEligibility` (nova, sem uso) |
+| Caso | `resolveProtocol` (antiga, na linha do contexto) | `decideSignupEligibility` (nova, no cadastro do app) |
 |---|---|---|
 | 64 kg / 160 cm sem gordura | `canChoose=true` (compara sem tolerância) | recomposição sem perguntar |
 | dentro da faixa com 2 treinos | `canChoose=false` (tira toda a escolha) | escolhe; só o ganho barrado |
@@ -2847,14 +2851,74 @@ alimentação) que o cadastro novo não aplica (pendência).
   - `apps/admin/src/lib/mobile-api/protocol-service.test.ts` e
     `apps/admin/src/app/api/mobile/v1/protocol/route.test.ts` — a leitura do
     objetivo, com as metas iguais às de `GET /today` sobre o mesmo banco.
+- Recusa na conclusão (§10o):
+  - `apps/admin/src/app/api/mobile/v1/onboarding/route.test.ts` — os números do
+    cliente pela rota inteira (invólucro, idempotência, conferência, carregador
+    e função reais, sobre um banco em memória que reproduz os dois ramos da
+    função SQL e o registro de idempotência como a migration dele escreve: o
+    pedido que falha depois da reserva fica guardado como `failed`, com o hash,
+    e o hash é comparado antes do estado): cada caso da tabela do §10o; a
+    função SQL não é chamada na recusa; o pedido chega a ela inteiro; a
+    conclusão aceita exatamente o que a conferência marca disponível (grade em
+    volta de cada corte, os três objetivos); **o cenário do app publicado** —
+    homem com 20,0% pedindo manutenção (e pedindo ganho de massa) recebe 422,
+    repete e recebe 422, troca para recomposição e conclui, **tudo com a mesma
+    chave**, sem nenhuma linha no registro até a conclusão; a chave que já
+    estava presa a outro corpo por uma conclusão que falhou depois da reserva
+    (422 primeiro, 409 para outro corpo, conclui com o corpo dela); o mesmo
+    pedido enviado duas vezes ao mesmo tempo; a conferência antes das recusas
+    da função SQL; novo aceite e repetição sem conferência, mesmo com os cortes
+    mudados contra a conta; conta antiga sem data; conta que passou pelo reset;
+    leitura do perfil ou da configuração que falha (sem registro de
+    idempotência), data de conclusão que não é data, e leitura que dá certo sem
+    linha `calc.*` ou com corte que não é número.
+  - `apps/admin/src/lib/mobile-api/protocol-eligibility-service.test.ts` — a
+    decisão única (`decideOnboardingEligibility`) é a que a conferência
+    responde.
+  - `apps/admin/src/lib/mobile-api/evaluation-access.test.ts` — conclusão
+    recusada pelo objetivo não concede acesso de avaliação; as listas de
+    consultas de cada conclusão passaram a incluir as duas leituras da
+    conferência, antes da reserva da chave.
 
 ### 10j. Pendências declaradas
 
-> RC E — cenário cadastro pelo app (o servidor ainda grava o objetivo enviado, sem conferir) variante recusa na gravação do objetivo fora da regra e uso da conferência pela tela NÃO coberta nesta PR (pendência da audit 2026-10-07)
-> A conferência existe no servidor desde a etapa seguinte (§10l) e só responde.
-> `POST /onboarding` continua gravando qualquer um dos três objetivos, e o app
-> publicado não chama a conferência. A etapa que recusar na gravação precisa
-> decidir sobre o valor arredondado como o banco grava (`asStoredBodyValue`).
+> RC E — cenário cadastro pelo app publicado (a etapa do objetivo oferece os três objetivos e não chama a conferência) variante uso da conferência pela tela, com o aviso, os motivos e só os objetivos disponíveis NÃO coberta nesta PR (pendência da audit 2026-10-07)
+> O servidor já responde a conferência (§10l) e já recusa na gravação (§10o).
+> Falta a tela: o app publicado deixa a pessoa tocar em qualquer um dos três.
+
+> RC E — cenário versão do app anterior à etapa do app concluindo o cadastro com objetivo fora da regra variante explicação do motivo na tela e volta à etapa do objetivo (ela mostra só "Revise os dados informados.") NÃO coberta nesta PR (pendência da audit 2026-10-07)
+> O servidor responde `422 onboarding_objective_not_eligible`; essa versão trata
+> todo 422 da conclusão como dado inválido. A pessoa consegue voltar, tocar em
+> outro objetivo e concluir, mas ninguém diz a ela qual: essa versão reenvia com
+> a mesma chave de idempotência, e o servidor aceita porque a recusa é decidida
+> antes da reserva da chave e não deixa registro (§10o; travado no teste da
+> rota com o cenário exato). **Publicar a recusa junto com a versão do app que
+> chama a conferência**, não antes.
+
+> RC E — cenário conta antiga marcada como concluída sem data de conclusão que refaz o cadastro pelo app variante manter o protocolo antigo sem conferência NÃO coberta nesta PR (pendência da audit 2026-10-07)
+> A coluna da data foi criada sem preencher as contas que já existiam (2 contas
+> em staging, pela contagem de 2026-10-05 registrada no acesso de avaliação;
+> nenhum banco foi lido nesta etapa). **A contagem de produção não foi feita:
+> conferir antes de publicar**, porque para essa conta o resultado muda — antes
+> ela concluía com qualquer objetivo. A função SQL já trata essa conta como
+> primeira conclusão e regrava o protocolo dela; a conferência segue a função
+> SQL. Com objetivo fora da regra ela recebe 422 e o protocolo que tinha fica;
+> com objetivo permitido conclui e passa a ter data (travado no teste da rota).
+
+> RC E — cenário primeira conclusão e novo aceite de termos contra a função SQL real do Postgres variante teste com o banco real (os testes usam um banco em memória que reproduz os dois ramos da função; nenhum banco foi lido nem gravado) NÃO coberta nesta PR (pendência da audit 2026-10-07)
+
+> RC E — cenário recusa do objetivo seguida de novo envio com a mesma chave de idempotência contra as funções reais do registro de idempotência do Postgres variante teste com o banco real (a migration 20260720130537 foi lida, não executada; os testes usam um registro em memória que a segue) NÃO coberta nesta PR (pendência da audit 2026-10-07)
+> O que os testes travam: a recusa não chama nenhuma das três funções do
+> registro. O que só o banco real confirma: que um registro `failed` responde
+> conflito a outro corpo (é o motivo de a conferência rodar antes da reserva).
+
+> RC E — cenário conta que passou pelo reset (perfil vazio e marcada como não concluída, com a data de conclusão mantida) refazendo o cadastro pelo app variante concluir o cadastro de novo, com a conferência do objetivo NÃO coberta nesta PR (pendência da audit 2026-10-07)
+> Defeito anterior a esta mudança e igual depois dela
+> (`supabase/migrations/20260928150000_bodyflow_reset_keeps_plans.sql`): por ter
+> data, a conta não é conferida, e a função SQL responde
+> `409 onboarding_already_completed` (travado como está no teste da rota). Se o
+> reset passar a esvaziar a data, rever no §10o a nota sobre a leitura fora da
+> transação: hoje ela depende de nenhum código apagar uma data de conclusão.
 
 > RC E — cenário cadastro de pessoa com peso muito baixo (desnutrição) variante bloqueio da perda de gordura e condução ao ganho de massa (o número do limite não existe em nenhum documento do cliente) NÃO coberta nesta PR (pendência da audit 2026-10-07)
 > A função não faz nada especial: 45 kg / 180 cm (IMC 13,9) sem gordura escolhe
@@ -2898,15 +2962,26 @@ alimentação) que o cadastro novo não aplica (pendência).
 
 > RC E — cenário cortes em execução (linhas calc.bf_limits, calc.imc_limit_recomp e calc.training_min de global_config) variante leitura dos valores nos bancos de teste e de produção NÃO coberta nesta PR (pendência da audit 2026-10-07)
 > Nenhum banco foi lido. O golden usa as três linhas de staging registradas em
-> 04/10 (20/19, 28/27, 25 e 3). A conferência do servidor (§10l) já chama a
-> função com essas linhas: conferir antes de publicá-la.
+> 04/10 (20/19, 28/27, 25 e 3). A conferência (§10l) e, agora, a recusa na
+> conclusão (§10o) decidem com essas linhas: um valor errado em uma delas passa
+> a **recusar ou liberar cadastros**. Conferir antes de publicar. Conferir
+> também que as três linhas **existem e guardam número**: só a leitura que
+> falha responde 500; tabela sem linha `calc.*`, ou linha com texto no lugar do
+> número, decide em silêncio com o padrão do código (§10a, §10o).
 
 > RC E — cenário valor possível de calcular mas implausível (altura digitada em metros, musculação fracionária ou acima de 7) variante faixa de plausibilidade dentro da função NÃO coberta nesta PR (pendência da audit 2026-10-07)
 > Fica no contrato do cadastro (100 a 250 cm, 30 a 300 kg, 3 a 60%, inteiro de 0 a 7).
 
 > RC E — cenário contas que já concluíram o cadastro com objetivo fora desta regra variante conferir ou mover essas contas NÃO coberta nesta PR (pendência da audit 2026-10-07)
+> A recusa do §10o vale só para a primeira conclusão. Essas contas seguem no
+> objetivo que têm e continuam aceitando termos novos (travado no teste da rota).
 
 Fechadas na etapa do servidor (2026-10-07), e por isso fora da lista acima:
+
+- **Recusa, na gravação, do objetivo fora da regra**: a primeira conclusão do
+  cadastro só grava o objetivo que a conferência marca disponível, decidindo
+  sobre o valor arredondado como o banco grava (§10o). O que sobrou da
+  pendência antiga é a tela (primeira linha da lista).
 
 - **Texto mostrado à pessoa em cada resultado** (redação e tradução): os textos
   existem, travados por igualdade exata (§10m). O que falta é a aprovação, que
@@ -2962,14 +3037,17 @@ decisão desta seção com os textos do §10m. Código:
 - **Não grava nada.** Nenhuma linha de banco, nenhum registro de idempotência,
   nenhum valor da pessoa em log. A única leitura é a da configuração de cálculo
   (`loadCalcConfig`: as linhas `calc.*` de `global_config`, a mesma leitura que
-  o estado do dia faz). Se ela falha, a rota responde 500 e **não** decide com o
-  padrão do código. Antes dela roda só a autenticação comum a todas as rotas da
-  API (que, no primeiro pedido de uma conta, cria o registro da conta, sem dado
-  corporal — como em qualquer outra rota).
+  o estado do dia faz). Se ela **falha**, a rota responde 500 e **não** decide
+  com o padrão do código. Se ela dá certo e não traz nenhuma linha `calc.*`, ou
+  traz um corte que não guarda número, vale o padrão do código (§10a): isso não
+  é falha, nem aqui nem na conclusão (§10o). Antes dela roda só a autenticação
+  comum a todas as rotas da API (que, no primeiro pedido de uma conta, cria o
+  registro da conta, sem dado corporal — como em qualquer outra rota).
 - **Faixas de entrada: as do cadastro**, pela mesma definição no contrato
   (100 a 250 cm, 30 a 300 kg, 3 a 60%, inteiro de 0 a 7). Chave a mais → 422.
-- **A conclusão do cadastro ainda NÃO recusa objetivo fora da regra.**
-  `POST /onboarding` continua gravando o objetivo enviado (pendência no §10j).
+- **A conferência só responde; quem recusa é a conclusão.** Na primeira
+  conclusão, `POST /onboarding` só grava o objetivo que esta resposta marca
+  `available` (§10o).
 
 **Normalização antes de decidir.** `user_profiles` guarda altura e peso em
 `numeric(5,2)` e gordura em `numeric(4,2)`; o contrato não limita as casas
@@ -3220,5 +3298,195 @@ nem suavizar nada, e estão travados por igualdade exata como o português.
 > RC B — cenário app publicado hoje (ignora o campo novo e não chama as duas rotas novas) variante mensagem de entrada, conferência e objetivo no Perfil visíveis na tela NÃO coberta nesta PR (pendência da audit 2026-10-07)
 
 > RC B — cenário valor com mais de duas casas decimais variante conferência do arredondamento contra o banco real (o arredondamento do numeric foi reproduzido em código; nenhum banco foi lido nesta etapa) NÃO coberta nesta PR (pendência da audit 2026-10-07)
+> Desde o §10o a recusa na conclusão decide sobre esse mesmo arredondamento.
 
 > RC B — cenário repetição da conclusão do cadastro com altura, peso ou gordura de mais de duas casas decimais variante mesma resposta na repetição (a função SQL compara o valor gravado, arredondado, com o enviado, e a repetição vira 409 onboarding_already_completed; comportamento anterior a esta mudança) NÃO coberta nesta PR (pendência da audit 2026-10-07)
+
+### 10o. Onde a regra é aplicada na gravação: a conclusão do cadastro recusa objetivo fora da regra
+
+`POST /api/mobile/v1/onboarding`, no formato com `document_actions` (contrato em
+`docs/mobile/api-v1.md`, "Objetivo fora da regra na conclusão"), recusa na
+**primeira conclusão** o objetivo que a conferência do §10l não marcaria
+disponível. Assim a regra vale mesmo para um cliente que não chamou a
+conferência. Código:
+`apps/admin/src/lib/mobile-api/onboarding-eligibility-guard.ts`
+(`assertOnboardingObjectiveEligible`), chamado em
+`apps/admin/src/app/api/mobile/v1/onboarding/handler.ts` antes da reserva da
+chave de idempotência e antes da função SQL.
+
+> **Publicar junto com o app que chama a conferência.** A versão do app
+> anterior à etapa do app mostra só "Revise os dados informados." a quem tocar
+> em um objetivo fora da regra (pendência no §10j).
+
+**O que é "primeira conclusão".** Lido na função SQL
+`complete_mobile_onboarding_atomic`
+(`supabase/migrations/20260915150739_bodyflow_server_owned_onboarding.sql`), não
+suposto:
+
+- a função lê `onboarding_completed` e `onboarding_completed_at` do perfil
+  (linhas 347 a 353) e escolhe o caminho **só pela data**:
+  `IF v_existing_completion IS NOT NULL` (linha 468);
+- **com data** (linhas 468 a 562): confere que os dados reenviados são iguais
+  aos gravados, inclusive o objetivo (linha 492; senão,
+  `onboarding_already_completed`), grava só os aceites de documentos e devolve a
+  data antiga. Nenhuma coluna do perfil é escrita. É o novo aceite de termos e a
+  repetição de um pedido já concluído;
+- **sem data** (linhas 564 a 639): grava o perfil, com
+  `current_protocol = v_objective` (linha 622) e a data de conclusão (linha
+  633). É o único ponto em que o cadastro do app grava o objetivo.
+
+Por isso a conferência roda exatamente quando
+`user_profiles.onboarding_completed_at` é lido como vazio. O booleano
+`onboarding_completed` não entra, porque a função SQL também não o usa para
+escolher o caminho.
+
+**O que é decidido.**
+
+- A resposta da conferência, por construção: as duas passam por
+  `decideOnboardingEligibility`
+  (`apps/admin/src/lib/mobile-api/protocol-eligibility-service.ts`), que
+  arredonda altura, peso e gordura como o banco grava (`asStoredBodyValue`,
+  §10l) e chama `decideSignupEligibility`. A configuração vem do mesmo
+  `loadCalcConfig`.
+- Só segue o objetivo com `status` `available` (§10e). `blocked` (ganho de
+  massa barrado) e `not_offered` (manutenção de quem é colocado em
+  recomposição) são recusados do mesmo jeito:
+  `422 onboarding_objective_not_eligible`.
+- Entram os mesmos cinco dados do §10a. Sono, alimentação organizada e os
+  outros campos do cadastro não são lidos (C10).
+- A recusa não leva dado da pessoa, motivo nem corte, e nada vai para log. O
+  app pergunta de novo à conferência e mostra o que ela responder.
+
+Com os cortes padrão, na primeira conclusão:
+
+| Pessoa | Pede | Resultado |
+|---|---|---|
+| homem, gordura 20,0% | ganho de massa | 422; a função SQL não é chamada |
+| homem, gordura 20,0% | manutenção | 422 |
+| homem, gordura 20,0% | recomposição | conclui |
+| mulher, gordura 27,0%, 3 treinos | ganho de massa | conclui |
+| mulher, gordura 27,0%, 2 treinos | ganho de massa | 422 |
+| mulher, gordura 27,0%, 2 treinos | manutenção | conclui |
+| sem gordura, 64 kg / 160 cm (IMC 25,0) | manutenção | 422 |
+| sem gordura, 79,38 kg / 180 cm (IMC 24,5), 3 treinos | ganho de massa | conclui (o corte é "menor que 25", §10c) |
+| sem gordura, 81 kg / 180 cm (IMC 25,0), 3 treinos | ganho de massa | 422 |
+| homem, gordura 19,995% (gravada como 20,00%) | manutenção | 422 |
+| homem, gordura 19,994% (gravada como 19,99%) | manutenção | conclui; a função SQL recebe 19,994, como foi enviado |
+| sem gordura, 80,999 kg / 180 cm (gravado como 81,00 kg), 3 treinos | ganho de massa | 422 |
+| homem, gordura 15%, 3 treinos, dorme às 02:00, acorda às 07:00, alimentação "nao" | ganho de massa | conclui |
+
+**Quem não passa pela conferência.** Toda conta que já tem data de conclusão. O
+servidor lê a data, não carrega `calc.*` e entrega o pedido à função SQL, que se
+comporta como antes:
+
+| Conta com data de conclusão | Pedido | Resultado |
+|---|---|---|
+| em ganho de massa, homem com gordura 25% | novo aceite de termos, mesmos dados | conclui, com a data antiga |
+| em manutenção, mulher com gordura 30% | novo aceite de termos | conclui |
+| em ganho de massa, sem gordura, 81 kg / 180 cm, sem musculação | novo aceite de termos | conclui |
+| mulher com 27% e 3 treinos que concluiu em ganho de massa; depois o mínimo de musculação da configuração sobe para 4 | repetição do mesmo pedido, com a mesma chave | a mesma resposta |
+| homem com 19% e 3 treinos que concluiu em ganho de massa; depois o mínimo sobe para 4 | os mesmos dados com outra chave | conclui |
+| em recomposição, homem com gordura 25% | envia ganho de massa | `409 onboarding_already_completed`, da função SQL, como antes |
+
+Ninguém é movido: não há migration, correção de dados nem rotina que troque o
+objetivo de uma conta existente.
+
+**Falha fechada.** Se a data de conclusão não puder ser lida (erro, exceção,
+resposta sem a coluna ou com um valor que não é data nem vazio — número, texto
+em branco, texto que não é data) ou se a leitura de `calc.*` **falhar**, a
+resposta é `500 data_access_failed`: a função SQL não é chamada e nada é
+decidido no lugar da leitura que faltou — nem a recomposição, que a regra
+libera para todos. Vale também para a conta já concluída cuja leitura falha.
+Nenhum registro de idempotência é criado (a conferência roda antes da reserva
+da chave), e o mesmo pedido pode ser reenviado com a mesma chave.
+
+**Leitura que dá certo não é falha, mesmo sem os cortes.** Se `global_config`
+não tiver nenhuma linha `calc.*`, o carregador devolve o padrão do código
+(`packages/agent/src/calc-config-loader.ts`); se a linha de um corte guardar
+algo que não é número, vale o padrão do código para aquele corte (§10a). Nos
+dois casos a conclusão **decide** — com 20/19, 28/27, 25 e 3 —, igual à
+conferência do §10l, que passa pelo mesmo carregador e pela mesma função. Não é
+decisão desta etapa; o que muda com ela é que esse corte agora recusa ou libera
+cadastros (pendência dos cortes em execução, §10j).
+
+**Ressalva do cache.** Cada instância guarda as linhas `calc.*` por 60 segundos
+(`packages/agent/src/calc-config-loader.ts`). Nos 60 segundos seguintes a uma
+edição de um corte, a instância que responde a conferência e a que responde a
+conclusão podem decidir com cortes diferentes: a conferência marca disponível e
+a conclusão recusa, ou o contrário. Com a mesma configuração as duas nunca
+divergem. Não editar cortes enquanto houver cadastro em andamento.
+
+**Ordem dentro do pedido.** Validação do corpo → presença e formato da
+`Idempotency-Key` (só o cabeçalho; nada é lido do banco antes) → conferência do
+objetivo → reserva da chave no registro de idempotência → leitura do acesso de
+avaliação, quando ligado (`docs/mobile/api-v1.md`) → função SQL. O pedido chega
+à função SQL **inteiro e sem alteração**: o valor arredondado serve só para
+decidir.
+
+**Por que a conferência vem antes da reserva da chave.** O registro de
+idempotência não apaga o pedido que falha depois da reserva: a linha fica
+guardada como `failed`, com o hash do corpo, e a função de reserva compara o
+hash **antes** de olhar o estado
+(`supabase/migrations/20260720130537_mobile_api_idempotency.sql`, linhas 144 a
+148 e 219; lido, não executado). Se a recusa acontecesse depois da reserva, a
+chave ficaria presa ao corpo recusado por 24 horas, e o reenvio com o objetivo
+corrigido receberia `409 idempotency_key_conflict`. É exatamente o que o app
+publicado faz: ele reaproveita a chave da conclusão depois de um erro
+(`OnboardingFlowModel.swift`, `pendingCompletionKey`). Com a conferência antes
+da reserva:
+
+| Pedido, sempre com a mesma chave | Resposta | Registro de idempotência |
+|---|---|---|
+| homem, gordura 20,0%, pede manutenção (ou ganho de massa) | 422 | nenhuma linha |
+| o mesmo pedido de novo | 422, decidido de novo | nenhuma linha |
+| troca para recomposição | conclui | uma linha, concluída |
+
+Uma conclusão recusada pelo objetivo não grava perfil, aceite de documento,
+acesso de avaliação nem registro de idempotência.
+
+O que a ordem muda nas outras respostas, sempre em uma **primeira conclusão com
+objetivo fora da regra** (com objetivo permitido, e em toda conta com data de
+conclusão, a resposta é a de antes):
+
+- a conferência responde antes de **todas** as recusas da função SQL, não só da
+  de conta sem perfil: documento com versão antiga
+  (`409 onboarding_requirements_changed`), dados que a função rejeita
+  (`422 onboarding_rejected`), documentos indisponíveis (`503`) e conta sem
+  perfil (`404`). Nada é gravado em nenhum dos casos;
+- responde também antes dos dois `409` da chave (`idempotency_key_conflict` e
+  `idempotency_request_in_progress`).
+
+A chave que **já** estava presa a outro corpo — por uma conclusão que falhou
+depois da reserva, por exemplo um erro da função SQL — continua respondendo
+`409 idempotency_key_conflict` a um corpo diferente. Isso é anterior a esta
+mudança e não é causado pela conferência (travado no teste da rota).
+
+**A leitura fica fora da transação da função SQL.** É seguro no sentido que
+importa: se outra conclusão da mesma conta for gravada entre a leitura e a
+função, a função cai no caminho "com data", que não grava objetivo. O contrário
+exigiria apagar uma data de conclusão, o que nenhum código faz.
+
+**O que NÃO mudou.** A função SQL, o registro de idempotência e as migrations;
+as 50 rotas e os hashes do BFF; `decideSignupEligibility`; `resolveProtocol`
+(§10h); o formato parcial legado do mesmo POST, que não é conclusão, não grava
+objetivo e não é conferido; meta calórica, balanço, bloco e card (§1 a §4).
+
+**Custo.** Uma leitura de `user_profiles` (uma coluna) por conclusão. Na
+primeira conclusão, também a leitura de `calc.*`, guardada por 60 segundos em
+cada instância.
+
+**Casos de borda.**
+
+- Conta antiga marcada como concluída e sem data de conclusão: conferida como
+  primeira conclusão, porque é assim que a função SQL a grava. Para ela o
+  resultado muda (antes concluía com qualquer objetivo); a contagem de produção
+  não foi feita (pendência no §10j).
+- Conta sem linha de perfil: só uma data de conclusão LIDA dispensa a
+  conferência, então ela roda. Com objetivo permitido, a resposta é a que a
+  função SQL já dava (`404 patient_not_found`); nada é gravado nos dois casos.
+- Conta que passou pelo reset: fica marcada como não concluída, mas mantém a
+  data de conclusão. Por ter data, não é conferida, e a função SQL responde
+  `409 onboarding_already_completed`, antes e depois desta mudança. Defeito
+  anterior, declarado no §10j.
+
+Testes: §10i.

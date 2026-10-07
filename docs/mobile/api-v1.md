@@ -81,6 +81,15 @@ e da configuração de cálculo, e o registro guardaria dados corporais da pesso
 Repetir o pedido recalcula a resposta, sem `Idempotency-Replayed`; a mesma chave
 com outro corpo não é conflito.
 
+Um pedido que falha **depois** de a chave ser reservada não some do ledger: o
+registro fica guardado como `failed`, com o hash do corpo, pelas mesmas 24
+horas (lido em `supabase/migrations/20260720130537_mobile_api_idempotency.sql`;
+a função não foi executada para escrever este parágrafo). Repetir o mesmo corpo
+com a mesma chave executa de novo; outro corpo com a mesma chave continua sendo
+`409 idempotency_key_conflict`. Por isso a recusa de objetivo de
+`POST /onboarding` é decidida **antes** da reserva e não deixa registro (ver
+"Objetivo fora da regra na conclusão").
+
 ## Endpoints
 
 | Método | Rota | Contrato |
@@ -90,7 +99,7 @@ com outro corpo não é conflito.
 | `GET` | `/today` | estado diário oficial, determinístico e versionado |
 | `GET` | `/profile` | perfil corporal, rotina, objetivo e onboarding |
 | `GET` | `/onboarding` | retorna conclusão server-owned, documentos oficiais atuais e ações auditadas |
-| `POST` | `/onboarding` | conclui atomicamente o onboarding com payload completo e `Idempotency-Key`; usuário e horários são derivados pelo backend; devolve a mensagem de entrada do objetivo gravado |
+| `POST` | `/onboarding` | conclui atomicamente o onboarding com payload completo e `Idempotency-Key`; usuário e horários são derivados pelo backend; na primeira conclusão recusa objetivo fora da regra do cadastro (`422 onboarding_objective_not_eligible`); devolve a mensagem de entrada do objetivo gravado |
 | `POST` | `/onboarding/eligibility` | conferência de objetivo no cadastro: quais objetivos podem ser gravados para os dados corporais enviados, com o texto de cada um; não grava nada |
 | `GET` | `/protocol` | objetivo atual do perfil, metas do dia como em `/today` e a mensagem de entrada do objetivo; só leitura |
 | `GET` | `/plan` | plano de treino ativo e prescrições vigentes |
@@ -195,7 +204,9 @@ vigente mudou depois da primeira resposta.
 
 Erros específicos: `409 onboarding_requirements_changed` solicita novo GET;
 `409 onboarding_already_completed` protege perfil já concluído contra reescrita;
-`409 onboarding_locale_unsupported`; `422 onboarding_rejected`; e
+`409 onboarding_locale_unsupported`; `422 onboarding_rejected`;
+`422 onboarding_objective_not_eligible` (primeira conclusão com objetivo fora da
+regra do cadastro: ver "Objetivo fora da regra na conclusão"); e
 `503 onboarding_documents_unavailable`. Respostas não incluem detalhes internos do
 banco e usam `Cache-Control: no-store` e `Vary: Authorization`.
 
@@ -322,17 +333,171 @@ comum a todas as rotas.
 
 Erros: `400 missing_idempotency_key`, `400 invalid_idempotency_key`,
 `415 unsupported_media_type`, `400 invalid_json`, `422 validation_failed` e
-`500 data_access_failed` quando a configuração de cálculo não pôde ser lida (o
-servidor não decide com valores padrão).
+`500 data_access_failed` quando a leitura da configuração de cálculo falha (o
+servidor não decide no lugar dela). Leitura que dá certo sem nenhuma linha
+`calc.*`, ou com um corte que não guarda número, não é falha: vale o corte
+padrão do código (`docs/CALCULO-MPP.md` §10a).
 
-**O que a rota não faz:** não grava nem reserva o objetivo, e `POST /onboarding`
-ainda **não** recusa objetivo fora desta resposta (próxima etapa do servidor).
+**O que a rota não faz:** não grava nem reserva o objetivo. Quem recusa é a
+conclusão: na primeira conclusão, `POST /onboarding` só grava o objetivo que
+esta resposta marca `available` (ver "Objetivo fora da regra na conclusão").
 O app publicado não chama esta rota.
 
 Código: `apps/admin/src/app/api/mobile/v1/onboarding/eligibility/handler.ts` e
 `apps/admin/src/lib/mobile-api/protocol-eligibility-service.ts`. Testes:
 `onboarding/eligibility/route.test.ts` (rota inteira sobre um banco que falha em
 qualquer escrita) e `protocol-eligibility-service.test.ts`.
+
+### Objetivo fora da regra na conclusão
+
+`POST /onboarding` (formato com `document_actions`) recusa o objetivo que a
+regra do cadastro não permite para os dados corporais enviados. Assim a regra
+vale mesmo para um cliente que não chamou a conferência.
+
+**Quando acontece.** Só na **primeira conclusão** da conta: quando o perfil
+ainda não tem data de conclusão (`user_profiles.onboarding_completed_at` vazio).
+É a mesma condição em que a função SQL `complete_mobile_onboarding_atomic` grava
+o objetivo. Nesse caso o servidor decide com `sex`, `height_cm`, `weight_kg`,
+`body_fat_percent` e `training_frequency` do pedido, exatamente como
+`POST /onboarding/eligibility` decide (mesma função, mesmo arredondamento para
+o valor que o banco grava, mesma configuração `calc.*`), e só deixa seguir o
+objetivo que a conferência marcaria `available`. `blocked` e `not_offered` são
+recusados do mesmo jeito. Sono, alimentação e os demais campos não são lidos.
+
+Resposta `422`, sem `details`:
+
+```json
+{
+  "error": {
+    "code": "onboarding_objective_not_eligible",
+    "message": "The objective is not available for the data sent",
+    "request_id": "request-id"
+  }
+}
+```
+
+- A recusa não traz nenhum dado do pedido, nem o motivo, nem os cortes. Nada é
+  escrito em log.
+- **Nada é gravado**: a função SQL não é chamada, o perfil e os aceites de
+  documentos ficam como estavam, e nenhum acesso de avaliação é concedido.
+- **O que o cliente faz:** chama `POST /onboarding/eligibility` de novo com os
+  mesmos dados corporais, volta à etapa do objetivo e mostra o que a
+  conferência responder (as opções, o aviso e o texto de cada uma). Depois
+  reenvia a conclusão com um objetivo `available`.
+- A recusa **não cria registro de idempotência**: a conferência roda **antes**
+  de a chave ser reservada. A mesma `Idempotency-Key` pode ser reenviada com o
+  objetivo corrigido, e repetir o pedido recusado decide de novo (sem
+  `Idempotency-Replayed`). É o caminho do app publicado, que reaproveita a
+  chave da conclusão depois deste erro: a pessoa volta, toca em outro objetivo
+  e conclui com a mesma chave. Se a conferência rodasse depois da reserva, a
+  chave ficaria presa ao corpo recusado (registro `failed` com o hash dele) e o
+  reenvio corrigido viraria `409 idempotency_key_conflict` por 24 horas.
+- Isso vale para a chave que ainda não tinha registro. Uma chave que **já**
+  estava presa a outro corpo — por exemplo, por uma conclusão que falhou depois
+  da reserva — continua respondendo `409 idempotency_key_conflict` a um corpo
+  diferente, como sempre; o `422` desta conferência sai antes disso.
+
+**Quem não passa pela conferência.** Conta que já tem data de conclusão: o novo
+aceite de termos e a repetição de um pedido já concluído seguem como antes. O
+servidor lê a data, não carrega a configuração de cálculo e entrega o pedido à
+função SQL, que continua exigindo só que os dados reenviados sejam iguais aos
+gravados. Uma conta que concluiu em ganho de massa ou manutenção fora dos
+critérios continua aceitando termos novos, e nenhuma conta existente é movida
+ou recusada. Conta concluída que envia outro objetivo continua recebendo
+`409 onboarding_already_completed`, nunca este `422`.
+
+**Falha fechada.** Se a data de conclusão do perfil não puder ser lida, ou se a
+leitura da configuração de cálculo **falhar**, a resposta é
+`500 data_access_failed`: nada é concluído e nada é decidido no lugar da
+leitura que faltou. Vale também para a conta já concluída cuja leitura do
+perfil falha. "Não puder ser lida" inclui a coluna que volta com algo que não é
+data nem vazio (número, texto em branco, texto que não é data): só uma data
+lida dispensa a conferência. Como a conferência roda antes da reserva da chave,
+a falha também não cria registro de idempotência, e a mesma chave pode ser
+reenviada. O `500` pode demorar a sair: as duas leituras são GET, e o cliente
+de banco repete um GET que falha por erro de rede antes de desistir (o mesmo
+comportamento descrito em "Acesso de avaliação automático"; não foi medido para
+estas duas leituras).
+
+Leitura que **dá certo** não é falha, mesmo sem trazer os cortes: se
+`global_config` não tiver nenhuma linha `calc.*`, ou se a linha de um corte
+guardar algo que não é número, vale o corte padrão do código (20/19, 28/27, 25
+e 3; `docs/CALCULO-MPP.md` §10a). É o que o carregador e a regra já faziam, e a
+conferência (`POST /onboarding/eligibility`) decide igual, então as duas não
+divergem. A diferença é que agora esse corte recusa ou libera cadastros.
+
+Uma ressalva: cada instância guarda as linhas `calc.*` por 60 segundos. Nos 60
+segundos seguintes a uma edição de um corte, a instância que responde a
+conferência e a que responde a conclusão podem decidir com cortes diferentes (a
+conferência marca disponível e a conclusão recusa, ou o contrário). Não editar
+cortes enquanto houver cadastro em andamento.
+
+**Ordem das respostas.**
+
+1. Corpo, como antes: `415 unsupported_media_type`, `413 request_too_large`,
+   `400 invalid_json`, `422 validation_failed`.
+2. Presença e formato da `Idempotency-Key`: `400 missing_idempotency_key`,
+   `400 invalid_idempotency_key`. Nada é lido do banco antes disso.
+3. Conferência do objetivo: `422 onboarding_objective_not_eligible`, ou
+   `500 data_access_failed`.
+4. Reserva da chave: `409 idempotency_key_conflict`,
+   `409 idempotency_request_in_progress`, ou a repetição de um pedido concluído.
+5. Função SQL, com os erros de sempre.
+
+Consequências da ordem, todas em uma **primeira conclusão com objetivo fora da
+regra** (com objetivo permitido, e em toda conta com data de conclusão, a
+resposta é a de antes):
+
+- o `422` da conferência sai antes de **todas** as recusas da função SQL, não
+  só da de conta sem perfil: documento com versão antiga
+  (`409 onboarding_requirements_changed`), dados que a função rejeita
+  (`422 onboarding_rejected`), documentos indisponíveis
+  (`503 onboarding_documents_unavailable`) e conta sem perfil
+  (`404 patient_not_found`). Nada é gravado em nenhum dos casos;
+- sai também antes dos dois `409` da chave: um pedido fora da regra enviado com
+  uma chave já usada por outro corpo, ou em andamento, recebe o `422`.
+
+O pedido chega à função SQL inteiro e sem alteração: o valor arredondado serve
+só para decidir.
+
+**Custo.** Uma leitura de `user_profiles` (uma coluna) por conclusão. Na
+primeira conclusão, também a leitura de `calc.*`, que cada instância guarda por
+60 segundos. O formato parcial legado do mesmo POST não é uma conclusão e não
+lê nada disso.
+
+**Casos de borda, declarados em `docs/CALCULO-MPP.md` §10j:**
+
+- A versão do app publicada antes da etapa do app não trata este código: ao
+  receber o `422` mostra só "Revise os dados informados.", sem o motivo e sem
+  voltar à etapa do objetivo. A pessoa pode voltar por conta própria, tocar em
+  outro objetivo e concluir: o app reenvia com a mesma chave e o servidor
+  aceita, porque a recusa não criou registro. Esta mudança deve ir ao ar junto
+  com a versão do app que chama a conferência.
+- Conta antiga marcada como concluída mas sem data de conclusão: a função SQL já
+  a trata como primeira conclusão (regrava o protocolo), e a conferência segue a
+  função SQL. Se refizer o cadastro com um objetivo fora da regra, recebe `422`
+  onde antes concluía. Quantas contas de **produção** estão nessa situação não
+  foi contado: conferir antes de publicar.
+- Conta sem linha de perfil: a conferência roda do mesmo jeito; com objetivo
+  permitido, a resposta é a que a função SQL já dava (`404 patient_not_found`).
+
+Fora desta mudança, e igual antes e depois dela: a conta que passou pelo reset
+(`reset_user_conversation_atomic`) fica com o perfil vazio e marcada como não
+concluída, mas **mantém a data de conclusão**
+(`supabase/migrations/20260928150000_bodyflow_reset_keeps_plans.sql`). Por ter
+data, não é conferida, e a função SQL responde
+`409 onboarding_already_completed` ao cadastro que ela enviar: ela não consegue
+refazer o cadastro pelo app. É um defeito anterior, a tratar em separado
+(travado como está em `onboarding/route.test.ts`).
+
+Código: `apps/admin/src/lib/mobile-api/onboarding-eligibility-guard.ts`,
+chamado por `apps/admin/src/app/api/mobile/v1/onboarding/handler.ts` antes da
+reserva da `Idempotency-Key` e da função SQL. Nenhuma rota nova, nenhuma
+migration; a função SQL e o ledger de idempotência não mudaram. Testes:
+`onboarding/route.test.ts` (rota inteira, com a função e o carregador reais,
+sobre um banco em memória que segue as migrations da função de conclusão e do
+ledger de idempotência) e `evaluation-access.test.ts` (conclusão recusada não
+concede acesso).
 
 ### Objetivo atual
 
@@ -775,7 +940,10 @@ usa `grant`):
   conclusão (`user_profiles`); na primeira conclusão, mais uma leitura
   (`entitlement_events`), uma chamada a `resolve_user_entitlement` e a chamada
   a `apply_entitlement_event`. O formato parcial legado do mesmo POST não
-  conclui onboarding e não consulta nada.
+  conclui onboarding e não consulta nada. Essas são as consultas da concessão.
+  A conferência do objetivo ("Objetivo fora da regra na conclusão") faz as
+  dela antes, com o interruptor ligado ou desligado, e uma conclusão que ela
+  recusa não concede nada.
 - **Falha não derruba o cadastro.** Um erro em qualquer uma dessas consultas é
   registrado sem dado pessoal (`[mobile-api] evaluation_access_failed`, com
   `request_id`, a etapa e o nome do erro) e o onboarding responde normalmente.
@@ -2494,8 +2662,10 @@ como antes da mudança; qualquer outro texto responde
 
 - A conferência de objetivo (`POST /onboarding/eligibility`), o campo
   `protocol_welcome` e `GET /protocol` existem no servidor, mas o app publicado
-  ainda não os consome, e `POST /onboarding` ainda grava qualquer um dos três
-  objetivos. Não há troca de objetivo pelo app.
+  ainda não os consome. `POST /onboarding` já recusa, na primeira conclusão, o
+  objetivo fora da regra (`422 onboarding_objective_not_eligible`), e o app
+  publicado mostra só uma mensagem genérica nesse caso. Não há troca de
+  objetivo pelo app.
 - Não há chat nativo, envio APNs, StoreKit ou app iOS nesta entrega. Os backends de
   mídia, devices, regras e rotina ainda dependem de integração e QA no app nativo.
 - `persona` persiste a escolha e seleciona mensagens futuras, mas o app nativo

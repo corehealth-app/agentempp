@@ -1,9 +1,17 @@
+import { clearCalcConfigCache } from '@mpp/agent'
 import { protocolWelcomeMessage } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { authorizeMobileEntitlement } from '@/lib/mobile-api/entitlement-service'
+import { EVALUATION_ACCESS_DAYS_ENV } from '@/lib/mobile-api/evaluation-access'
 import { executeIdempotent, type MobileIdempotencyStore } from '@/lib/mobile-api/idempotency'
 import type { OnboardingRepository } from '@/lib/mobile-api/onboarding-service'
-import type { MobileRouteContext } from '@/lib/mobile-api/route'
+import {
+  createMobileRoute,
+  type MobileRouteContext,
+  type MobileRouteRuntime,
+} from '@/lib/mobile-api/route'
+import { handleOnboardingEligibilityPost } from './eligibility/handler'
 import {
   handleOnboardingGet,
   handleOnboardingPost,
@@ -12,16 +20,485 @@ import {
 
 const USER_ID = '00000000-0000-4000-8000-000000000951'
 const AUTH_USER_ID = '00000000-0000-4000-8000-000000000952'
+const REQUEST_ID = 'request-onboarding-951'
+const ENDPOINT = 'https://bodyflow.test/api/mobile/v1/onboarding'
+
+// ---------------------------------------------------------------------------
+// The database behind POST /onboarding, in memory
+// ---------------------------------------------------------------------------
+
+type ConfigRow = { key: string; value: unknown }
+
+/**
+ * `public.global_config`, the three rows the rule reads, as recorded for
+ * staging on 2026-10-04 (audit-10-04-goal-ladder-floors.test.ts). No database
+ * was read for this file.
+ */
+const STAGING_CALC_ROWS: ConfigRow[] = [
+  {
+    key: 'calc.bf_limits',
+    value: { feminino: { gain: 27, recomp: 28 }, masculino: { gain: 19, recomp: 20 } },
+  },
+  { key: 'calc.imc_limit_recomp', value: 25 },
+  { key: 'calc.training_min', value: 3 },
+]
+
+/** When the SQL function of this file records a first completion. */
+const COMPLETED_AT = '2026-10-07T15:00:00.000Z'
+/** The completion time of an account that signed up before this change. */
+const EARLIER_COMPLETION = '2026-09-20T12:00:00.000Z'
+
+/** The Idempotency-Key of a completion sent with no other key named. */
+const KEY = 'signup-objective-key-1'
+
+const CLAIM = 'rpc:claim_mobile_api_request'
+const PROFILE_READ = 'select:user_profiles'
+const CONFIG_READ = 'select:global_config'
+const SQL_FUNCTION = 'rpc:complete_mobile_onboarding_atomic'
+const RECORD = 'rpc:complete_mobile_api_request'
+const RELEASE = 'rpc:fail_mobile_api_request'
+
+interface DbResult {
+  data: unknown
+  error: { message: string } | null
+}
+
+type Failure = 'error' | 'throw' | { data: unknown }
+
+interface LegalDocument {
+  document_key: string
+  version: string
+  locale: string
+  content_hash: string
+  purpose: string
+  action_type: string
+}
+
+const DOCUMENT_V1: LegalDocument = {
+  document_key: 'terms_of_service',
+  version: '2026-09-15.1',
+  locale: 'pt-BR',
+  content_hash: 'a'.repeat(64),
+  purpose: 'terms_of_service_acceptance',
+  action_type: 'acceptance',
+}
+
+const DOCUMENT_V2: LegalDocument = {
+  ...DOCUMENT_V1,
+  version: '2026-10-07.1',
+  content_hash: 'b'.repeat(64),
+}
+
+function documentActions(document: LegalDocument) {
+  return [
+    {
+      document_key: document.document_key,
+      version: document.version,
+      locale: document.locale,
+      content_hash: document.content_hash,
+      action: document.action_type,
+    },
+  ]
+}
+
+interface StoredProfile {
+  onboarding_completed: boolean
+  onboarding_completed_at: string | null
+  current_protocol: string | null
+  /** What the first completion recorded, without `document_actions`. */
+  answers: string | null
+}
+
+interface IdempotencyRow {
+  id: string
+  user_id: string
+  idempotency_key: string
+  request_method: string
+  request_route: string
+  request_hash: string
+  state: 'processing' | 'completed' | 'failed'
+  response_status: number | null
+  response_body: unknown
+  attempt_count: number
+}
+
+interface IdempotencyRequest {
+  userId: string
+  idempotencyKey: string
+  method: string
+  route: string
+  requestHash: string
+}
+
+type IdempotencyAnswer =
+  | { action: 'claimed'; claim_id: string }
+  | { action: 'conflict' }
+  | { action: 'in_progress' }
+  | { action: 'replay'; response_status: number; response_body: unknown }
+
+/**
+ * `public.mobile_api_idempotency` and its three functions, as their migration
+ * writes them (20260720130537_mobile_api_idempotency.sql — read, not run):
+ *
+ * - one row for each (user, key): `UNIQUE (user_id, idempotency_key)`;
+ * - claim: with no row, inserts one as 'processing' and answers 'claimed'. With
+ *   a row of another method, route or hash it answers 'conflict' WHATEVER the
+ *   state of the row (lines 144-148, before the state is looked at). Then:
+ *   'completed' → 'replay'; 'processing' → 'in_progress'; 'failed' → the same
+ *   row goes back to 'processing' and is claimed again, under the same id;
+ * - complete and fail touch only a row that is 'processing', and answer
+ *   whether they found it. A failed request is NOT deleted: the row stays as
+ *   'failed', with its hash (line 219).
+ *
+ * Not reproduced: the 24 hours after which a key is claimed as new, and the 10
+ * minutes after which a 'processing' row is claimed again. No row gets that
+ * old in a test.
+ */
+class IdempotencyLedger {
+  readonly rows: IdempotencyRow[] = []
+
+  claim(request: IdempotencyRequest): IdempotencyAnswer {
+    const method = request.method.toUpperCase()
+    const hash = request.requestHash.toLowerCase()
+    const row = this.rows.find(
+      (entry) =>
+        entry.user_id === request.userId && entry.idempotency_key === request.idempotencyKey,
+    )
+    if (!row) {
+      const id = `00000000-0000-4000-8000-${String(this.rows.length + 1).padStart(12, '0')}`
+      this.rows.push({
+        id,
+        user_id: request.userId,
+        idempotency_key: request.idempotencyKey,
+        request_method: method,
+        request_route: request.route,
+        request_hash: hash,
+        state: 'processing',
+        response_status: null,
+        response_body: null,
+        attempt_count: 1,
+      })
+      return { action: 'claimed', claim_id: id }
+    }
+    if (
+      row.request_method !== method ||
+      row.request_route !== request.route ||
+      row.request_hash !== hash
+    ) {
+      return { action: 'conflict' }
+    }
+    if (row.state === 'completed') {
+      return {
+        action: 'replay',
+        response_status: row.response_status as number,
+        response_body: row.response_body,
+      }
+    }
+    if (row.state === 'processing') return { action: 'in_progress' }
+    row.state = 'processing'
+    row.response_status = null
+    row.response_body = null
+    row.attempt_count += 1
+    return { action: 'claimed', claim_id: row.id }
+  }
+
+  complete(claimId: unknown, userId: unknown, status: number, body: unknown): boolean {
+    const row = this.processing(claimId, userId)
+    if (!row) return false
+    row.state = 'completed'
+    row.response_status = status
+    row.response_body = body
+    return true
+  }
+
+  fail(claimId: unknown, userId: unknown): boolean {
+    const row = this.processing(claimId, userId)
+    if (!row) return false
+    row.state = 'failed'
+    row.response_status = null
+    row.response_body = null
+    return true
+  }
+
+  private processing(claimId: unknown, userId: unknown): IdempotencyRow | undefined {
+    return this.rows.find(
+      (entry) => entry.id === claimId && entry.user_id === userId && entry.state === 'processing',
+    )
+  }
+}
+
+/** A submission without its document actions, in one fixed key order. */
+function answersOf(submission: Record<string, unknown>): string {
+  return JSON.stringify(
+    Object.entries(submission)
+      .filter(([key]) => key !== 'document_actions')
+      .sort(([left], [right]) => left.localeCompare(right)),
+  )
+}
+
+/**
+ * It answers what the code asks on this path and nothing else: the two reads
+ * of the objective check (`user_profiles.onboarding_completed_at` and the
+ * `calc.*` rows), the three idempotency functions over the ledger above, and
+ * `complete_mobile_onboarding_atomic` reduced to the part that matters here,
+ * copied from its migration (20260915150739_bodyflow_server_owned_onboarding.sql):
+ * WITHOUT a completion time the function writes the profile, `current_protocol`
+ * included; WITH one it writes nothing of the profile and requires the data
+ * sent again to equal the data stored. Any other table or function throws.
+ * (How `numeric` rounds the stored values is not reproduced: no case here
+ * resends a value of more than two decimal places to a completed account.)
+ */
+class SignupMemoryDb {
+  readonly operations: string[] = []
+  /** Every `p_submission` that reached the SQL function, as it arrived. */
+  readonly submissions: unknown[] = []
+  /** The columns and the filter of every profile read. */
+  readonly profileReads: string[] = []
+  readonly failures = new Map<string, Failure>()
+  calcRows: ConfigRow[] = STAGING_CALC_ROWS
+  profile: StoredProfile | null = null
+  /** While set, the SQL function waits for it before it reads or writes anything. */
+  holdSqlFunction: Promise<void> | null = null
+  /** How many calls of the SQL function are waiting for `holdSqlFunction`. */
+  waitingSqlFunctions = 0
+  readonly client: ServiceClient
+
+  private readonly ledger = new IdempotencyLedger()
+  private currentDocument = DOCUMENT_V1
+
+  constructor() {
+    this.client = {
+      from: (table: string) => this.query(table),
+      rpc: (name: string, params: Record<string, unknown>) => this.rpc(name, params),
+    } as unknown as ServiceClient
+  }
+
+  /** A new account: not completed, no completion time, no protocol. */
+  addAccount(): this {
+    this.profile = {
+      onboarding_completed: false,
+      onboarding_completed_at: null,
+      current_protocol: null,
+      answers: null,
+    }
+    return this
+  }
+
+  /** An account that completed the sign-up with `submission`, at `completedAt`. */
+  addCompletedAccount(submission: Record<string, unknown>, completedAt: string): this {
+    this.profile = {
+      onboarding_completed: true,
+      onboarding_completed_at: completedAt,
+      current_protocol: String(submission.objective),
+      answers: answersOf(submission),
+    }
+    return this
+  }
+
+  /**
+   * An account from before `onboarding_completed_at` existed: marked completed
+   * and holding a protocol, with no completion time (migration 20260915150739
+   * added the column and did not fill the accounts that were already there).
+   */
+  addAccountCompletedWithoutDate(protocol: string): this {
+    this.profile = {
+      onboarding_completed: true,
+      onboarding_completed_at: null,
+      current_protocol: protocol,
+      answers: null,
+    }
+    return this
+  }
+
+  /** A new version of the required document is published: completion now needs it. */
+  publishNewDocumentVersion(): void {
+    this.currentDocument = DOCUMENT_V2
+  }
+
+  private answer(operation: string, rows: () => DbResult): DbResult {
+    this.operations.push(operation)
+    const failure = this.failures.get(operation)
+    if (failure === 'throw') throw new TypeError('network down for synthetic@example.invalid')
+    if (failure === 'error') {
+      return { data: null, error: { message: `permission denied for ${USER_ID}` } }
+    }
+    if (failure) return { data: failure.data, error: null }
+    return rows()
+  }
+
+  private query(table: string) {
+    if (table === 'user_profiles') {
+      let columns: string[] = []
+      const filters: Array<[string, unknown]> = []
+      const builder = {
+        select: (selected: string) => {
+          columns = selected.split(',').map((column) => column.trim())
+          return builder
+        },
+        eq: (column: string, value: unknown) => {
+          filters.push([column, value])
+          return builder
+        },
+        maybeSingle: async () =>
+          this.answer(PROFILE_READ, () => {
+            this.profileReads.push(
+              `${columns.join(', ')} where ${filters.map(([column, value]) => `${column} = ${String(value)}`).join(' and ')}`,
+            )
+            const row: Record<string, unknown> | null = this.profile && {
+              user_id: USER_ID,
+              ...this.profile,
+            }
+            const found = row && filters.every(([column, value]) => row[column] === value)
+            return {
+              data: found
+                ? Object.fromEntries(columns.map((column) => [column, row[column]]))
+                : null,
+              error: null,
+            }
+          }),
+      }
+      return builder
+    }
+    if (table === 'global_config') {
+      // The one statement of the calc-config loader.
+      return {
+        select: (_columns: string) => ({
+          like: async (_column: string, _pattern: string) =>
+            this.answer(CONFIG_READ, () => ({ data: this.calcRows, error: null })),
+        }),
+      }
+    }
+    throw new Error(`unexpected table ${table}`)
+  }
+
+  private async rpc(name: string, params: Record<string, unknown>): Promise<DbResult> {
+    if (name === 'complete_mobile_onboarding_atomic' && this.holdSqlFunction) {
+      this.waitingSqlFunctions += 1
+      await this.holdSqlFunction
+    }
+    return this.answer(`rpc:${name}`, () => {
+      if (name === 'claim_mobile_api_request') return this.claim(params)
+      if (name === 'complete_mobile_api_request') return this.completeClaim(params)
+      if (name === 'fail_mobile_api_request') return this.failClaim(params)
+      if (name === 'complete_mobile_onboarding_atomic') return this.completeOnboarding(params)
+      throw new Error(`unexpected rpc ${name}`)
+    })
+  }
+
+  /** The rows of the idempotency ledger: key, state and stored status. */
+  idempotencyRows(): Array<{ key: string; state: string; status: number | null }> {
+    return this.ledger.rows.map((row) => ({
+      key: row.idempotency_key,
+      state: row.state,
+      status: row.response_status,
+    }))
+  }
+
+  private claim(params: Record<string, unknown>): DbResult {
+    return {
+      data: this.ledger.claim({
+        userId: String(params.p_user_id),
+        idempotencyKey: String(params.p_idempotency_key),
+        method: String(params.p_request_method),
+        route: String(params.p_request_route),
+        requestHash: String(params.p_request_hash),
+      }),
+      error: null,
+    }
+  }
+
+  private completeClaim(params: Record<string, unknown>): DbResult {
+    return {
+      data: this.ledger.complete(
+        params.p_claim_id,
+        params.p_user_id,
+        Number(params.p_response_status),
+        params.p_response_body,
+      ),
+      error: null,
+    }
+  }
+
+  private failClaim(params: Record<string, unknown>): DbResult {
+    return { data: this.ledger.fail(params.p_claim_id, params.p_user_id), error: null }
+  }
+
+  private completeOnboarding(params: Record<string, unknown>): DbResult {
+    const submission = params.p_submission as Record<string, unknown>
+    this.submissions.push(structuredClone(submission))
+    const profile = this.profile
+    // IF NOT FOUND THEN RAISE EXCEPTION 'onboarding_user_not_found'
+    if (params.p_user_id !== USER_ID || !profile) {
+      return { data: null, error: { message: 'onboarding_user_not_found' } }
+    }
+
+    const document = this.currentDocument
+    const actions = submission.document_actions as Array<Record<string, unknown>>
+    const accepted =
+      actions.length === 1 &&
+      Object.entries(documentActions(document)[0]).every(
+        ([field, value]) => actions[0]?.[field] === value,
+      )
+    if (!accepted) {
+      return { data: null, error: { message: 'onboarding_document_version_mismatch' } }
+    }
+
+    const answers = answersOf(submission)
+    if (profile.onboarding_completed_at !== null) {
+      // IF v_existing_completion IS NOT NULL: no column of the profile is
+      // written; the data sent again must equal the data stored.
+      if (!profile.onboarding_completed || profile.answers !== answers) {
+        return { data: null, error: { message: 'onboarding_already_completed' } }
+      }
+    } else {
+      // The only branch that writes `current_protocol`.
+      profile.current_protocol = String(submission.objective)
+      profile.onboarding_completed = true
+      profile.onboarding_completed_at = COMPLETED_AT
+      profile.answers = answers
+    }
+
+    return {
+      data: {
+        user_id: USER_ID,
+        onboarding_completed: true,
+        completed_at: profile.onboarding_completed_at,
+        objective: submission.objective,
+        persona: submission.persona,
+        document_actions: [
+          {
+            document_key: document.document_key,
+            version: document.version,
+            locale: document.locale,
+            content_hash: document.content_hash,
+            purpose: document.purpose,
+            action: document.action_type,
+            acted_at: COMPLETED_AT,
+          },
+        ],
+      },
+      error: null,
+    }
+  }
+}
 
 function context(body?: unknown): MobileRouteContext {
   return {
-    request: new Request('https://bodyflow.test/api/mobile/v1/onboarding', {
+    request: new Request(ENDPOINT, {
       method: body === undefined ? 'GET' : 'POST',
-      headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+      // Every POST carries the key. A completion reads it in the handler,
+      // ahead of the objective check, and no longer only inside the
+      // idempotent execution these tests replace.
+      headers:
+        body === undefined
+          ? undefined
+          : { 'content-type': 'application/json', 'idempotency-key': 'onboarding-request-951' },
       body: body === undefined ? undefined : JSON.stringify(body),
     }),
-    requestId: 'request-onboarding-951',
-    supabase: {} as ServiceClient,
+    requestId: REQUEST_ID,
+    // The objective check of a completion reads the profile and the calc
+    // config from here: a new account and the cuts of staging.
+    supabase: new SignupMemoryDb().addAccount().client,
     auth: {
       accessToken: 'redacted-test-token',
       authUserId: AUTH_USER_ID,
@@ -128,29 +605,23 @@ function recordingRepository(): OnboardingRepository {
 
 /** The idempotency ledger in memory, behind the real `executeIdempotent`. */
 function ledger() {
-  const claims = new Map<string, { hash: string; status: number | null; body: unknown }>()
+  const rows = new IdempotencyLedger()
   const stored: Array<{ status: number; body: unknown }> = []
   const store: MobileIdempotencyStore = {
     async claim(input) {
-      const key = [input.userId, input.method, input.route, input.idempotencyKey].join('|')
-      const existing = claims.get(key)
-      if (!existing) {
-        claims.set(key, { hash: input.requestHash, status: null, body: null })
-        return { action: 'claimed', claimId: key }
+      const answer = rows.claim(input)
+      if (answer.action === 'claimed') return { action: 'claimed', claimId: answer.claim_id }
+      if (answer.action === 'replay') {
+        return { action: 'replay', status: answer.response_status, body: answer.response_body }
       }
-      if (existing.hash !== input.requestHash) return { action: 'conflict' }
-      if (existing.status === null) return { action: 'in_progress' }
-      return { action: 'replay', status: existing.status, body: existing.body }
+      return answer
     },
-    async complete(claimId, _userId, status, body) {
-      const claim = claims.get(claimId)
-      if (!claim) throw new Error('unknown claim')
-      claim.status = status
-      claim.body = body
+    async complete(claimId, userId, status, body) {
+      if (!rows.complete(claimId, userId, status, body)) throw new Error('unknown claim')
       stored.push({ status, body })
     },
-    async fail(claimId) {
-      claims.delete(claimId)
+    async fail(claimId, userId) {
+      rows.fail(claimId, userId)
     },
   }
   const execute: OnboardingRouteDependencies['executeIdempotent'] = (
@@ -171,6 +642,118 @@ function completionContext(body: unknown, idempotencyKey: string): MobileRouteCo
   })
   return requestContext
 }
+
+/** Only the authentication is a pass-through; the entitlement gate is the real one. */
+function runtime(db: SignupMemoryDb): MobileRouteRuntime {
+  return {
+    authenticate: async () => context().auth,
+    authorizeEntitlement: (auth, request, supabase) =>
+      authorizeMobileEntitlement(supabase, auth.userId, new URL(request.url).pathname),
+    createServiceClient: () => db.client,
+    createRequestId: () => REQUEST_ID,
+  }
+}
+
+/** The envelope of the route: `data` on success, `error` otherwise. */
+interface CompletionJson {
+  data: {
+    onboarding_completed: boolean
+    completed_at: string
+    objective: string
+    persona: string
+    document_actions: unknown[]
+    protocol_welcome: { protocol: string; paragraphs: string[] }
+  }
+  error: { code: string; message: string; request_id: string; details?: unknown }
+}
+
+/**
+ * POST /onboarding as route.ts builds it: the real wrapper (error mapping
+ * included) and the handler with its DEFAULT dependencies — idempotency,
+ * objective check, calc-config loader, repository and service are the real
+ * code, over the database in memory.
+ */
+async function complete(db: SignupMemoryDb, body: unknown, idempotencyKey: string | null = KEY) {
+  const headers = new Headers({ 'content-type': 'application/json' })
+  if (idempotencyKey !== null) headers.set('idempotency-key', idempotencyKey)
+  const response = await createMobileRoute(
+    handleOnboardingPost,
+    runtime(db),
+  )(new Request(ENDPOINT, { method: 'POST', headers, body: JSON.stringify(body) }))
+  return { response, json: (await response.json()) as CompletionJson }
+}
+
+/** What POST /onboarding/eligibility, the real route, answers for these body values. */
+async function eligibilityOptions(db: SignupMemoryDb, values: Record<string, unknown>) {
+  const response = await createMobileRoute(
+    handleOnboardingEligibilityPost,
+    runtime(db),
+  )(
+    new Request(`${ENDPOINT}/eligibility`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'idempotency-key': 'signup-eligibility-1' },
+      body: JSON.stringify({ locale: 'pt-BR', ...values }),
+    }),
+  )
+  expect(response.status).toBe(200)
+  const json = (await response.json()) as {
+    data: { options: Array<{ objective: string; status: string }> }
+  }
+  return json.data.options
+}
+
+/** Homem, 180 cm, 80 kg (IMC 24,69), sem gordura informada, musculação 4x: `validBody()`. */
+function man(patch: Record<string, unknown> = {}): Record<string, unknown> {
+  return { ...validBody(), ...patch }
+}
+
+/** Mulher, 165 cm, 62 kg (IMC 22,77), sem gordura informada, musculação 3x. */
+function woman(patch: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    ...validBody(),
+    sex: 'feminino',
+    height_cm: 165,
+    weight_kg: 62,
+    training_frequency: 3,
+    ...patch,
+  }
+}
+
+const NEW_ACCOUNT: StoredProfile = {
+  onboarding_completed: false,
+  onboarding_completed_at: null,
+  current_protocol: null,
+  answers: null,
+}
+
+/** The whole refusal: a code, a fixed sentence and the request id. */
+const REFUSED = {
+  error: {
+    code: 'onboarding_objective_not_eligible',
+    message: 'The objective is not available for the data sent',
+    request_id: REQUEST_ID,
+  },
+}
+
+function logs() {
+  return (['log', 'info', 'warn', 'error', 'debug'] as const).map((level) =>
+    vi.spyOn(console, level).mockImplementation(() => undefined),
+  )
+}
+
+beforeEach(() => {
+  // The calc-config loader keeps the rows for a minute.
+  clearCalcConfigCache()
+  // The grant of evaluation access is another module's subject (off by
+  // default): it stays off here whatever the shell holds.
+  vi.stubEnv(EVALUATION_ACCESS_DAYS_ENV, undefined)
+})
+
+afterEach(() => {
+  clearCalcConfigCache()
+  vi.restoreAllMocks()
+  vi.unstubAllEnvs()
+})
 
 describe('mobile onboarding route', () => {
   it('loads server-owned state for the authenticated user and locale', async () => {
@@ -392,5 +975,862 @@ describe('mobile onboarding route', () => {
       code: 'onboarding_locale_unsupported',
     })
     expect(repo.load).not.toHaveBeenCalled()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The objective check of the completion (docs/CALCULO-MPP.md §10o;
+// docs/mobile/api-v1.md "Objetivo fora da regra na conclusão").
+//
+// Everything between the request and the database is the real code: the route
+// wrapper, the handler with its default dependencies, the idempotency, the
+// check (onboarding-eligibility-guard.ts), the calc-config loader, the rule
+// (`decideSignupEligibility`) and the repository. The database is the one in
+// memory at the top of this file. No network.
+//
+// NUMBERS — the client's cuts and their neighbours (19 / 20 / 27 / 28 %, BMI
+// 25.0, 2 and 3 sessions), the same as the golden of the rule
+// (packages/agent/src/__golden__/audit-10-07-signup-eligibility.test.ts). No
+// patient: weights and heights are chosen to land on the BMI named in each
+// case.
+// ---------------------------------------------------------------------------
+
+describe('POST /onboarding — a first completion records only an objective the rule allows', () => {
+  const ACCEPTED: Array<[string, Record<string, unknown>]> = [
+    [
+      'man with 20.0% of body fat asking recomposição',
+      man({ body_fat_percent: 20, objective: 'recomposicao' }),
+    ],
+    [
+      'woman with 27.0% and 3 sessions asking ganho de massa',
+      woman({ body_fat_percent: 27, training_frequency: 3, objective: 'ganho_massa' }),
+    ],
+    [
+      'woman with 27.0% and 2 sessions asking manutenção',
+      woman({ body_fat_percent: 27, training_frequency: 2, objective: 'manutencao' }),
+    ],
+    [
+      'no body fat, 79.38 kg / 180 cm (BMI 24.5) and 3 sessions asking ganho de massa (the cut is "less than 25")',
+      man({ weight_kg: 79.38, training_frequency: 3, objective: 'ganho_massa' }),
+    ],
+    [
+      'man with 15%, 3 sessions, in bed at 02:00, up at 07:00, eating not organised, asking ganho de massa (sleep and eating are not read)',
+      man({
+        body_fat_percent: 15,
+        training_frequency: 3,
+        bedtime: '02:00',
+        wake_time: '07:00',
+        food_organization: 'nao',
+        objective: 'ganho_massa',
+      }),
+    ],
+  ]
+
+  it.each(ACCEPTED)('%s → completes', async (_case, body) => {
+    const db = new SignupMemoryDb().addAccount()
+
+    const { response, json } = await complete(db, body)
+
+    expect(response.status).toBe(200)
+    expect(json.data).toMatchObject({
+      onboarding_completed: true,
+      completed_at: COMPLETED_AT,
+      objective: body.objective,
+      protocol_welcome: { protocol: body.objective },
+    })
+    // The check first, and only then the key is claimed.
+    expect(db.operations).toEqual([PROFILE_READ, CONFIG_READ, CLAIM, SQL_FUNCTION, RECORD])
+    expect(db.idempotencyRows()).toEqual([{ key: KEY, state: 'completed', status: 200 }])
+    // The submission reaches the SQL function whole and unchanged.
+    expect(db.submissions).toEqual([body])
+    expect(db.profile).toMatchObject({
+      current_protocol: body.objective,
+      onboarding_completed_at: COMPLETED_AT,
+    })
+  })
+
+  const REFUSED_CASES: Array<[string, Record<string, unknown>]> = [
+    [
+      'man with 20.0% of body fat asking ganho de massa',
+      man({ body_fat_percent: 20, objective: 'ganho_massa' }),
+    ],
+    [
+      'man with 20.0% of body fat asking manutenção',
+      man({ body_fat_percent: 20, objective: 'manutencao' }),
+    ],
+    [
+      'woman with 27.0% and 2 sessions asking ganho de massa',
+      woman({ body_fat_percent: 27, training_frequency: 2, objective: 'ganho_massa' }),
+    ],
+    [
+      'no body fat, 64 kg / 160 cm (BMI 25.0) asking manutenção',
+      woman({ height_cm: 160, weight_kg: 64, objective: 'manutencao' }),
+    ],
+    [
+      'no body fat, 81 kg / 180 cm (BMI 25.0) and 3 sessions asking ganho de massa',
+      man({ weight_kg: 81, training_frequency: 3, objective: 'ganho_massa' }),
+    ],
+    [
+      'man with 19.995% of body fat (stored as 20.00%) asking manutenção',
+      man({ body_fat_percent: 19.995, objective: 'manutencao' }),
+    ],
+  ]
+
+  it.each(REFUSED_CASES)('%s → 422, and the SQL function is not called', async (_case, body) => {
+    const spies = logs()
+    const db = new SignupMemoryDb().addAccount()
+
+    const { response, json } = await complete(db, body)
+
+    expect(response.status).toBe(422)
+    expect(json).toEqual(REFUSED)
+    // Refused before the key is claimed: the two reads, and no row in the ledger.
+    expect(db.operations).toEqual([PROFILE_READ, CONFIG_READ])
+    expect(db.idempotencyRows()).toEqual([])
+    expect(db.submissions).toEqual([])
+    expect(db.profile).toEqual(NEW_ACCOUNT)
+    for (const spy of spies) expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('decides on the value as the profile stores it, and still hands the SQL function the value as it was sent', async () => {
+    // 19.994% is stored as 19.99%: below the cut of 20, so he chooses.
+    const db = new SignupMemoryDb().addAccount()
+    const body = man({ body_fat_percent: 19.994, objective: 'manutencao' })
+
+    const { response } = await complete(db, body)
+
+    expect(response.status).toBe(200)
+    expect(db.submissions).toEqual([body])
+    expect((db.submissions[0] as { body_fat_percent: number }).body_fat_percent).toBe(19.994)
+
+    // 80.999 kg is stored as 81.00 kg: BMI 25.0 at 180 cm.
+    const other = new SignupMemoryDb().addAccount()
+    const refused = await complete(
+      other,
+      man({ weight_kg: 80.999, training_frequency: 3, objective: 'ganho_massa' }),
+    )
+
+    expect(refused.response.status).toBe(422)
+    expect(refused.json).toEqual(REFUSED)
+    expect(other.submissions).toEqual([])
+  })
+
+  it('the cuts are the rows of the calc config, as in the eligibility check: with calc.training_min = 4, 3 sessions no longer do', async () => {
+    const rows = STAGING_CALC_ROWS.map((row) =>
+      row.key === 'calc.training_min' ? { key: row.key, value: 4 } : row,
+    )
+    const three = new SignupMemoryDb().addAccount()
+    three.calcRows = rows
+    const four = new SignupMemoryDb().addAccount()
+    four.calcRows = rows
+
+    const refused = await complete(
+      three,
+      woman({ body_fat_percent: 27, training_frequency: 3, objective: 'ganho_massa' }),
+    )
+    const accepted = await complete(
+      four,
+      woman({ body_fat_percent: 27, training_frequency: 4, objective: 'ganho_massa' }),
+    )
+
+    expect(refused.response.status).toBe(422)
+    expect(three.submissions).toEqual([])
+    expect(accepted.response.status).toBe(200)
+    expect(four.profile?.current_protocol).toBe('ganho_massa')
+  })
+
+  it('accepts exactly what the eligibility check marks available: every objective, around every cut', async () => {
+    const bodies: Array<Record<string, unknown>> = [
+      ...[18.99, 19, 19.004, 19.005, 19.5, 19.994, 19.995, 20, 25].flatMap((bodyFat) =>
+        [2, 3].map((sessions) => ({
+          sex: 'masculino',
+          height_cm: 180,
+          weight_kg: 80,
+          body_fat_percent: bodyFat,
+          training_frequency: sessions,
+        })),
+      ),
+      ...[26.99, 27, 27.004, 27.005, 27.5, 27.994, 27.995, 28].flatMap((bodyFat) =>
+        [2, 3].map((sessions) => ({
+          sex: 'feminino',
+          height_cm: 165,
+          weight_kg: 62,
+          body_fat_percent: bodyFat,
+          training_frequency: sessions,
+        })),
+      ),
+      // No body fat: the BMI decides (79.38, 80.99 and 81 kg at 180 cm; 64 kg at 160 cm).
+      ...[79.38, 80.994, 80.999, 81].flatMap((weight) =>
+        [2, 3].map((sessions) => ({
+          sex: 'masculino',
+          height_cm: 180,
+          weight_kg: weight,
+          training_frequency: sessions,
+        })),
+      ),
+      { sex: 'feminino', height_cm: 160, weight_kg: 64, training_frequency: 3 },
+      { sex: 'feminino', height_cm: 160, weight_kg: 63.99, training_frequency: 3 },
+    ]
+    const seen = new Set<string>()
+
+    for (const values of bodies) {
+      const options = await eligibilityOptions(new SignupMemoryDb(), values)
+      expect(options.map((option) => option.objective)).toEqual([
+        'recomposicao',
+        'ganho_massa',
+        'manutencao',
+      ])
+
+      for (const { objective, status } of options) {
+        seen.add(status)
+        const db = new SignupMemoryDb().addAccount()
+
+        const { response } = await complete(db, { ...validBody(), ...values, objective })
+
+        const label = `${JSON.stringify(values)} asking ${objective} (${status})`
+        expect(response.status, label).toBe(status === 'available' ? 200 : 422)
+        expect(db.submissions, label).toHaveLength(status === 'available' ? 1 : 0)
+        expect(db.profile?.current_protocol ?? null, label).toBe(
+          status === 'available' ? objective : null,
+        )
+      }
+    }
+    // The grid went through the three answers of the check.
+    expect([...seen].sort()).toEqual(['available', 'blocked', 'not_offered'])
+  })
+
+  it('the refusal carries no value of the request, no reason and no detail, and nothing is logged', async () => {
+    const spies = logs()
+    const db = new SignupMemoryDb().addAccount()
+
+    const { response, json } = await complete(
+      db,
+      man({
+        name: 'Marina Synthetic',
+        height_cm: 181.37,
+        weight_kg: 77.31,
+        body_fat_percent: 23.37,
+        training_frequency: 1,
+        objective: 'ganho_massa',
+      }),
+    )
+
+    expect(response.status).toBe(422)
+    expect(json).toEqual(REFUSED)
+    expect(Object.keys(json.error).sort()).toEqual(['code', 'message', 'request_id'])
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    expect(response.headers.get('vary')).toBe('Authorization')
+    const serialized = JSON.stringify(json)
+    for (const value of [
+      '181.37',
+      '77.31',
+      '23.37',
+      'Marina',
+      'ganho',
+      'gain',
+      'composition',
+      'training',
+      'recomp',
+    ]) {
+      expect(serialized).not.toContain(value)
+    }
+    for (const spy of spies) expect(spy).not.toHaveBeenCalled()
+  })
+
+  // THE SCENARIO OF THE PUBLISHED APP (adversarial review of 2026-10-07). The
+  // app keeps the Idempotency-Key of a completion until the server answers a
+  // success, a change of requirements or "already completed"
+  // (OnboardingFlowModel.swift, `pendingCompletionKey`). After this 422 the
+  // person goes back, touches another objective and concludes UNDER THE SAME
+  // KEY. The ledger here is the one of the migration: had the refusal claimed
+  // the key, its row would stay as 'failed' with the hash of the refused
+  // request, and the corrected request would be answered
+  // 409 idempotency_key_conflict — on every try, for 24 hours.
+  it.each<[string, Objective]>([
+    ['man with 20.0% of body fat asking manutenção', 'manutencao'],
+    ['man with 20.0% of body fat asking ganho de massa', 'ganho_massa'],
+  ])('%s, then the same request again, then recomposição, all under ONE Idempotency-Key → 422, 422, completes', async (_case, objective) => {
+    const db = new SignupMemoryDb().addAccount()
+    const key = 'signup-objective-retry-1'
+    const refusedBody = man({ body_fat_percent: 20, objective })
+    const correctedBody = man({ body_fat_percent: 20, objective: 'recomposicao' })
+
+    const refused = await complete(db, refusedBody, key)
+    const again = await complete(db, refusedBody, key)
+
+    expect(refused.response.status).toBe(422)
+    expect(refused.json).toEqual(REFUSED)
+    // Decided again, not read back from a stored answer.
+    expect(again.response.status).toBe(422)
+    expect(again.json).toEqual(REFUSED)
+    expect(again.response.headers.get('idempotency-replayed')).toBeNull()
+    // Neither refusal reached the ledger: the key is still free.
+    expect(db.operations).not.toContain(CLAIM)
+    expect(db.operations).not.toContain(RELEASE)
+    expect(db.idempotencyRows()).toEqual([])
+
+    const corrected = await complete(db, correctedBody, key)
+
+    expect(corrected.response.status).toBe(200)
+    expect(corrected.response.headers.get('idempotency-replayed')).toBeNull()
+    expect(corrected.json.data).toMatchObject({
+      onboarding_completed: true,
+      completed_at: COMPLETED_AT,
+      objective: 'recomposicao',
+    })
+    expect(db.idempotencyRows()).toEqual([{ key, state: 'completed', status: 200 }])
+    expect(db.submissions).toEqual([correctedBody])
+    expect(db.profile?.current_protocol).toBe('recomposicao')
+  })
+
+  // Why the order matters, on the ledger as the migration writes it. A
+  // completion that fails AFTER the claim leaves its key tied to its body: the
+  // row stays, 'failed', with its hash. That was so before this change and is
+  // not the check's doing; the check answers ahead of it and adds no such row.
+  it('a key tied to another body by a completion that failed after the claim: the refusal still comes first (422), and the key answers 409 to any other body, as before', async () => {
+    const db = new SignupMemoryDb().addAccount()
+    const key = 'signup-objective-failed-1'
+    const body = man({ body_fat_percent: 20, objective: 'recomposicao' })
+    db.failures.set(SQL_FUNCTION, 'error')
+
+    const failed = await complete(db, body, key)
+    db.failures.clear()
+
+    expect(failed.response.status).toBe(500)
+    expect(failed.json.error.code).toBe('onboarding_persistence_failed')
+    expect(db.idempotencyRows()).toEqual([{ key, state: 'failed', status: null }])
+
+    // The objective changed to one outside the rule: the check answers.
+    const refused = await complete(db, man({ body_fat_percent: 20, objective: 'manutencao' }), key)
+
+    expect(refused.response.status).toBe(422)
+    expect(refused.json).toEqual(REFUSED)
+    expect(db.idempotencyRows()).toEqual([{ key, state: 'failed', status: null }])
+
+    // Another body the rule allows: the ledger's own conflict, whatever the state.
+    const other = await complete(
+      db,
+      man({ body_fat_percent: 20, training_frequency: 5, objective: 'recomposicao' }),
+      key,
+    )
+
+    expect(other.response.status).toBe(409)
+    expect(other.json.error.code).toBe('idempotency_key_conflict')
+
+    // The body the key belongs to is claimed again, and completes.
+    const retried = await complete(db, body, key)
+
+    expect(retried.response.status).toBe(200)
+    expect(retried.response.headers.get('idempotency-replayed')).toBeNull()
+    expect(db.idempotencyRows()).toEqual([{ key, state: 'completed', status: 200 }])
+    expect(db.submissions).toEqual([body])
+    expect(db.profile?.current_protocol).toBe('recomposicao')
+  })
+
+  it('the same request sent twice at once: both pass the check, one is recorded and its twin is answered 409 in progress, as before', async () => {
+    const db = new SignupMemoryDb().addAccount()
+    const key = 'signup-objective-twin-1'
+    const body = man({ body_fat_percent: 20, objective: 'recomposicao' })
+    let release = () => {}
+    db.holdSqlFunction = new Promise<void>((resolve) => {
+      release = resolve
+    })
+
+    const first = complete(db, body, key)
+    await vi.waitFor(() => expect(db.waitingSqlFunctions).toBe(1))
+    // The first has claimed the key and recorded nothing yet.
+    const twin = await complete(db, body, key)
+    release()
+    const recorded = await first
+
+    expect(twin.response.status).toBe(409)
+    expect(twin.json.error.code).toBe('idempotency_request_in_progress')
+    expect(recorded.response.status).toBe(200)
+    expect(db.operations.filter((operation) => operation === PROFILE_READ)).toHaveLength(2)
+    expect(db.submissions).toEqual([body])
+    expect(db.idempotencyRows()).toEqual([{ key, state: 'completed', status: 200 }])
+  })
+
+  it('reads one column of the profile of the authenticated account, once', async () => {
+    const db = new SignupMemoryDb().addAccount()
+
+    await complete(db, man())
+
+    expect(db.profileReads).toEqual([`onboarding_completed_at where user_id = ${USER_ID}`])
+  })
+
+  it.each<[string, string | null, string]>([
+    ['without it', null, 'missing_idempotency_key'],
+    ['with one that is not valid', 'short', 'invalid_idempotency_key'],
+  ])('the Idempotency-Key is still asked for first: %s nothing is read and nothing is decided', async (_case, key, code) => {
+    const db = new SignupMemoryDb().addAccount()
+
+    const { response, json } = await complete(
+      db,
+      man({ body_fat_percent: 20, objective: 'ganho_massa' }),
+      key,
+    )
+
+    expect(response.status).toBe(400)
+    expect(json.error.code).toBe(code)
+    expect(db.operations).toEqual([])
+  })
+
+  // The check answers before every refusal of the SQL function, not only the
+  // one of an account with no profile row (last test of this file). Nothing is
+  // recorded either way.
+  it('a first completion outside the rule AND with a document version that is no longer the current one is answered by the check (422); inside the rule, by the SQL function as before (409)', async () => {
+    const db = new SignupMemoryDb().addAccount()
+    db.publishNewDocumentVersion()
+
+    const outside = await complete(
+      db,
+      man({ body_fat_percent: 20, objective: 'ganho_massa' }),
+      'signup-objective-old-document-1',
+    )
+    const inside = await complete(
+      db,
+      man({ body_fat_percent: 20, objective: 'recomposicao' }),
+      'signup-objective-old-document-2',
+    )
+
+    expect(outside.response.status).toBe(422)
+    expect(outside.json).toEqual(REFUSED)
+    expect(inside.response.status).toBe(409)
+    expect(inside.json.error.code).toBe('onboarding_requirements_changed')
+    expect(db.submissions).toHaveLength(1)
+    expect(db.profile).toEqual(NEW_ACCOUNT)
+  })
+
+  // "Nothing is decided on a default" is about a read that FAILS (last block
+  // of this file). A read that succeeds and brings no `calc.*` row, or a row
+  // that holds no number, gives the cut of the code — the loader and the rule
+  // do that for the eligibility check too, so the two still agree.
+  it('a calc config read that succeeds with no row decides on the cuts of the code, as the eligibility check does', async () => {
+    const refusing = new SignupMemoryDb().addAccount()
+    refusing.calcRows = []
+    const accepting = new SignupMemoryDb().addAccount()
+    accepting.calcRows = []
+
+    const options = await eligibilityOptions(refusing, {
+      sex: 'masculino',
+      height_cm: 180,
+      weight_kg: 80,
+      body_fat_percent: 20,
+      training_frequency: 4,
+    })
+    const refused = await complete(refusing, man({ body_fat_percent: 20, objective: 'manutencao' }))
+    const accepted = await complete(
+      accepting,
+      man({ body_fat_percent: 19.99, objective: 'manutencao' }),
+    )
+
+    expect(options.find((option) => option.objective === 'manutencao')?.status).toBe('not_offered')
+    expect(refused.response.status).toBe(422)
+    expect(refused.json).toEqual(REFUSED)
+    expect(refusing.operations).toEqual([CONFIG_READ, PROFILE_READ])
+    expect(accepted.response.status).toBe(200)
+    expect(accepting.profile?.current_protocol).toBe('manutencao')
+  })
+
+  it('a calc row that holds a text instead of a number gives the cut of the code for that cut: with calc.training_min = "4", 3 sessions still do', async () => {
+    const db = new SignupMemoryDb().addAccount()
+    db.calcRows = STAGING_CALC_ROWS.map((row) =>
+      row.key === 'calc.training_min' ? { key: row.key, value: '4' } : row,
+    )
+
+    const { response } = await complete(
+      db,
+      woman({ body_fat_percent: 27, training_frequency: 3, objective: 'ganho_massa' }),
+    )
+
+    expect(response.status).toBe(200)
+    expect(db.profile?.current_protocol).toBe('ganho_massa')
+  })
+
+  it('the legacy partial update is not a completion: nothing is read for the check', async () => {
+    const db = new SignupMemoryDb().addAccount()
+    const requestContext = context({ height_cm: 180 })
+    requestContext.supabase = db.client
+
+    const response = await handleOnboardingPost(requestContext, dependencies(repository()))
+
+    expect(response.status).toBe(200)
+    expect(db.operations).toEqual([])
+  })
+})
+
+describe('POST /onboarding — an account that already has a completion time is not checked', () => {
+  it('new terms re-accepted by an account already in ganho de massa outside the criteria (man, 25% of body fat) → completes, with no check', async () => {
+    const stored = man({ body_fat_percent: 25, objective: 'ganho_massa' })
+    const db = new SignupMemoryDb().addCompletedAccount(stored, EARLIER_COMPLETION)
+    db.publishNewDocumentVersion()
+    const body = { ...stored, document_actions: documentActions(DOCUMENT_V2) }
+
+    const { response, json } = await complete(db, body)
+
+    expect(response.status).toBe(200)
+    expect(json.data).toMatchObject({
+      onboarding_completed: true,
+      completed_at: EARLIER_COMPLETION,
+      objective: 'ganho_massa',
+      protocol_welcome: { protocol: 'ganho_massa' },
+    })
+    expect(json.data.document_actions).toMatchObject([{ version: DOCUMENT_V2.version }])
+    // One read of the profile; the calc config is not even loaded.
+    expect(db.operations).toEqual([PROFILE_READ, CLAIM, SQL_FUNCTION, RECORD])
+    expect(db.submissions).toEqual([body])
+    expect(db.profile).toMatchObject({
+      current_protocol: 'ganho_massa',
+      onboarding_completed_at: EARLIER_COMPLETION,
+    })
+  })
+
+  it.each<[string, Record<string, unknown>]>([
+    [
+      'a man with 25% of body fat in ganho de massa',
+      man({ body_fat_percent: 25, objective: 'ganho_massa' }),
+    ],
+    [
+      'a woman with 30% of body fat in manutenção',
+      woman({ body_fat_percent: 30, objective: 'manutencao' }),
+    ],
+    [
+      'a man with no body fat, 81 kg / 180 cm (BMI 25.0) and no strength training in ganho de massa',
+      man({ weight_kg: 81, training_frequency: 0, objective: 'ganho_massa' }),
+    ],
+  ])('%s re-accepts while the calc config cannot be read → completes all the same', async (_case, stored) => {
+    const db = new SignupMemoryDb().addCompletedAccount(stored, EARLIER_COMPLETION)
+    db.publishNewDocumentVersion()
+    db.failures.set(CONFIG_READ, 'error')
+
+    const { response, json } = await complete(db, {
+      ...stored,
+      document_actions: documentActions(DOCUMENT_V2),
+    })
+
+    expect(response.status).toBe(200)
+    expect(json.data.objective).toBe(stored.objective)
+    expect(json.data.completed_at).toBe(EARLIER_COMPLETION)
+    expect(db.operations).toEqual([PROFILE_READ, CLAIM, SQL_FUNCTION, RECORD])
+    expect(db.profile?.current_protocol).toBe(stored.objective)
+  })
+
+  it('replay of a completed request → the same response, with no check — even after the cuts changed against it', async () => {
+    const db = new SignupMemoryDb().addAccount()
+    const body = woman({ body_fat_percent: 27, training_frequency: 3, objective: 'ganho_massa' })
+    const key = 'signup-objective-replay-1'
+
+    const first = await complete(db, body, key)
+
+    expect(first.response.status).toBe(200)
+    expect(first.response.headers.get('idempotency-replayed')).toBeNull()
+    expect(first.json.data.protocol_welcome).toEqual({
+      protocol: 'ganho_massa',
+      paragraphs: protocolWelcomeMessage('ganho_massa', 'Synthetic User', 'pt-BR'),
+    })
+
+    // From here on the rule would refuse her: 3 sessions under a minimum of 4.
+    db.calcRows = STAGING_CALC_ROWS.map((row) =>
+      row.key === 'calc.training_min' ? { key: row.key, value: 4 } : row,
+    )
+    clearCalcConfigCache()
+    db.operations.length = 0
+
+    for (const _attempt of [2, 3]) {
+      const replay = await complete(db, body, key)
+
+      expect(replay.response.status).toBe(200)
+      expect(replay.response.headers.get('idempotency-replayed')).toBe('true')
+      expect(replay.json).toEqual(first.json)
+    }
+    // As before this change, the SQL function validates each replay again. The
+    // profile now has its completion time: one read of it, and no check.
+    expect(db.operations).toEqual([
+      PROFILE_READ,
+      CLAIM,
+      SQL_FUNCTION,
+      PROFILE_READ,
+      CLAIM,
+      SQL_FUNCTION,
+    ])
+    expect(db.idempotencyRows()).toEqual([{ key, state: 'completed', status: 200 }])
+    expect(db.submissions).toEqual([body, body, body])
+    expect(db.profile?.current_protocol).toBe('ganho_massa')
+  })
+
+  // The completion time as the database client hands it over: a text with an
+  // offset, with or without a fraction of a second.
+  it.each([
+    '2026-09-20T12:00:00+00:00',
+    '2026-09-20T12:00:00.123456+00:00',
+    '2026-09-20T09:00:00.5-03:00',
+  ])('a completion time written as %s is a completion time: the account is not checked', async (completedAt) => {
+    const stored = man({ body_fat_percent: 25, objective: 'ganho_massa' })
+    const db = new SignupMemoryDb().addCompletedAccount(stored, completedAt)
+
+    const { response, json } = await complete(db, stored)
+
+    expect(response.status).toBe(200)
+    expect(json.data.completed_at).toBe(completedAt)
+    expect(db.operations).toEqual([PROFILE_READ, CLAIM, SQL_FUNCTION, RECORD])
+  })
+
+  it('the same answers under a new Idempotency-Key, after the cuts changed against them → completes, with no check', async () => {
+    const db = new SignupMemoryDb().addAccount()
+    const body = man({ body_fat_percent: 19, training_frequency: 3, objective: 'ganho_massa' })
+    const first = await complete(db, body, 'signup-objective-first-1')
+    db.calcRows = STAGING_CALC_ROWS.map((row) =>
+      row.key === 'calc.training_min' ? { key: row.key, value: 4 } : row,
+    )
+    clearCalcConfigCache()
+    db.operations.length = 0
+
+    const second = await complete(db, body, 'signup-objective-second-1')
+
+    expect(first.response.status).toBe(200)
+    expect(second.response.status).toBe(200)
+    expect(second.json.data).toEqual(first.json.data)
+    expect(db.operations).toEqual([PROFILE_READ, CLAIM, SQL_FUNCTION, RECORD])
+  })
+
+  it('a completed account sending another objective is answered by the SQL function, as before: 409, never the 422 of the check', async () => {
+    const stored = man({ body_fat_percent: 25, objective: 'recomposicao' })
+    const db = new SignupMemoryDb().addCompletedAccount(stored, EARLIER_COMPLETION)
+
+    const { response, json } = await complete(db, { ...stored, objective: 'ganho_massa' })
+
+    expect(response.status).toBe(409)
+    expect(json.error.code).toBe('onboarding_already_completed')
+    expect(db.operations).toEqual([PROFILE_READ, CLAIM, SQL_FUNCTION, RELEASE])
+    expect(db.profile).toMatchObject({
+      current_protocol: 'recomposicao',
+      onboarding_completed_at: EARLIER_COMPLETION,
+    })
+  })
+
+  // `reset_user_conversation_atomic` empties the profile and marks it not
+  // completed, and leaves the completion time where it was (migration
+  // 20260928150000). The SQL function then takes its branch "with a completion
+  // time" and records nothing; the check follows it and does not run.
+  it('an account that was reset keeps its completion time: the SQL function answers as before (409), and the check does not run', async () => {
+    const db = new SignupMemoryDb()
+    db.profile = {
+      onboarding_completed: false,
+      onboarding_completed_at: EARLIER_COMPLETION,
+      current_protocol: null,
+      answers: null,
+    }
+
+    const { response, json } = await complete(
+      db,
+      man({ body_fat_percent: 20, objective: 'ganho_massa' }),
+    )
+
+    expect(response.status).toBe(409)
+    expect(json.error.code).toBe('onboarding_already_completed')
+    expect(db.operations).toEqual([PROFILE_READ, CLAIM, SQL_FUNCTION, RELEASE])
+    expect(db.profile.current_protocol).toBeNull()
+  })
+})
+
+describe('POST /onboarding — an older account marked completed with no completion time (declared as RC E)', () => {
+  // The SQL function tells a first completion by the completion time alone:
+  // it records this account as one and rewrites its protocol, as it did before
+  // this change. The check follows the SQL function.
+  it('is checked as a first completion: ganho de massa outside the criteria (man, 25% of body fat) → 422, and the protocol it holds stays', async () => {
+    const db = new SignupMemoryDb().addAccountCompletedWithoutDate('ganho_massa')
+
+    const { response, json } = await complete(
+      db,
+      man({ body_fat_percent: 25, objective: 'ganho_massa' }),
+    )
+
+    expect(response.status).toBe(422)
+    expect(json).toEqual(REFUSED)
+    expect(db.operations).toEqual([PROFILE_READ, CONFIG_READ])
+    expect(db.idempotencyRows()).toEqual([])
+    expect(db.submissions).toEqual([])
+    expect(db.profile).toMatchObject({
+      onboarding_completed: true,
+      onboarding_completed_at: null,
+      current_protocol: 'ganho_massa',
+    })
+  })
+
+  it('with an objective the rule allows it completes, and the SQL function records it as a first completion, as it already did', async () => {
+    const db = new SignupMemoryDb().addAccountCompletedWithoutDate('ganho_massa')
+
+    const { response } = await complete(
+      db,
+      man({ body_fat_percent: 25, objective: 'recomposicao' }),
+    )
+
+    expect(response.status).toBe(200)
+    expect(db.profile).toMatchObject({
+      onboarding_completed_at: COMPLETED_AT,
+      current_protocol: 'recomposicao',
+    })
+  })
+})
+
+describe('POST /onboarding — the objective check fails closed', () => {
+  it.each<[string, Failure]>([
+    ['answers an error', 'error'],
+    ['throws', 'throw'],
+    ['answers a row without the column', { data: {} }],
+    ['answers a completion time that is not a text', { data: { onboarding_completed_at: 0 } }],
+    ['answers an empty completion time', { data: { onboarding_completed_at: '' } }],
+    // A text that is not a date is not a completion time either: it does not
+    // exempt the request from the check, and nothing is assumed in its place.
+    ['answers a blank completion time', { data: { onboarding_completed_at: ' ' } }],
+    ['answers the text "null" as completion time', { data: { onboarding_completed_at: 'null' } }],
+    [
+      'answers a completion time that is not a date',
+      { data: { onboarding_completed_at: 'not-a-date' } },
+    ],
+    // Texts `Date.parse` would take for a date, and that are not a time with
+    // an offset as the database client writes it.
+    ['answers the text "1" as completion time', { data: { onboarding_completed_at: '1' } }],
+    ['answers a bare year as completion time', { data: { onboarding_completed_at: '2026' } }],
+    [
+      'answers a completion time with no offset',
+      { data: { onboarding_completed_at: '2026-09-20T12:00:00' } },
+    ],
+    ['answers a list of rows', { data: [{ onboarding_completed_at: null }] }],
+  ])('the profile read %s → 500 data_access_failed, and the SQL function is not called', async (_case, failure) => {
+    const spies = logs()
+    const db = new SignupMemoryDb().addAccount()
+    db.failures.set(PROFILE_READ, failure)
+
+    // Recomposição is available to everyone, and still nothing is assumed.
+    const { response, json } = await complete(db, man({ objective: 'recomposicao' }))
+
+    expect(response.status).toBe(500)
+    expect(json).toEqual({
+      error: {
+        code: 'data_access_failed',
+        message: 'Onboarding completion lookup failed',
+        request_id: REQUEST_ID,
+      },
+    })
+    // Before the key is claimed: one read, and no row in the ledger.
+    expect(db.operations).toEqual([PROFILE_READ])
+    expect(db.idempotencyRows()).toEqual([])
+    expect(db.submissions).toEqual([])
+    expect(db.profile).toEqual(NEW_ACCOUNT)
+    for (const spy of spies) expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('a text that is not a date in the place of the completion time never lets a first completion outside the rule be recorded', async () => {
+    const db = new SignupMemoryDb().addAccount()
+    db.failures.set(PROFILE_READ, { data: { onboarding_completed_at: 'not-a-date' } })
+
+    const { response, json } = await complete(
+      db,
+      man({ body_fat_percent: 20, objective: 'ganho_massa' }),
+    )
+
+    expect(response.status).toBe(500)
+    expect(json.error.code).toBe('data_access_failed')
+    expect(db.submissions).toEqual([])
+    expect(db.profile).toEqual(NEW_ACCOUNT)
+  })
+
+  it('a completed account whose profile cannot be read is not let through either', async () => {
+    const stored = man({ body_fat_percent: 25, objective: 'ganho_massa' })
+    const db = new SignupMemoryDb().addCompletedAccount(stored, EARLIER_COMPLETION)
+    db.failures.set(PROFILE_READ, 'error')
+
+    const { response, json } = await complete(db, stored)
+
+    expect(response.status).toBe(500)
+    expect(json.error.code).toBe('data_access_failed')
+    expect(db.submissions).toEqual([])
+  })
+
+  it.each<[string, Failure]>([
+    ['answers an error', 'error'],
+    ['throws', 'throw'],
+  ])('the calc config read %s → 500 data_access_failed: nothing is decided on the code defaults', async (_case, failure) => {
+    const spies = logs()
+    const db = new SignupMemoryDb().addAccount()
+    db.failures.set(CONFIG_READ, failure)
+
+    const { response, json } = await complete(db, man({ objective: 'recomposicao' }))
+
+    expect(response.status).toBe(500)
+    expect(json).toEqual({
+      error: {
+        code: 'data_access_failed',
+        message: 'Calculation config lookup failed',
+        request_id: REQUEST_ID,
+      },
+    })
+    expect(db.operations).toEqual([PROFILE_READ, CONFIG_READ])
+    expect(db.idempotencyRows()).toEqual([])
+    expect(db.submissions).toEqual([])
+    expect(db.profile).toEqual(NEW_ACCOUNT)
+    for (const spy of spies) expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('once the read answers again, the same request under the same key completes', async () => {
+    const db = new SignupMemoryDb().addAccount()
+    const body = man({ objective: 'recomposicao' })
+    const key = 'signup-objective-after-failure-1'
+    db.failures.set(PROFILE_READ, 'error')
+    const failed = await complete(db, body, key)
+    db.failures.clear()
+
+    const completed = await complete(db, body, key)
+
+    expect(failed.response.status).toBe(500)
+    expect(completed.response.status).toBe(200)
+    expect(completed.response.headers.get('idempotency-replayed')).toBeNull()
+    expect(db.submissions).toEqual([body])
+  })
+
+  it.each<[string, string]>([
+    ['the profile', PROFILE_READ],
+    ['the calc config', CONFIG_READ],
+  ])('a failed read of %s leaves no record either: once it answers again the same key completes even with another objective', async (_case, read) => {
+    const db = new SignupMemoryDb().addAccount()
+    const key = 'signup-objective-after-failure-2'
+    db.failures.set(read, 'error')
+    const failed = await complete(db, man({ objective: 'recomposicao' }), key)
+    db.failures.clear()
+    const body = man({ objective: 'manutencao' })
+
+    const completed = await complete(db, body, key)
+
+    expect(failed.response.status).toBe(500)
+    expect(failed.json.error.code).toBe('data_access_failed')
+    expect(completed.response.status).toBe(200)
+    expect(completed.response.headers.get('idempotency-replayed')).toBeNull()
+    expect(db.idempotencyRows()).toEqual([{ key, state: 'completed', status: 200 }])
+    expect(db.submissions).toEqual([body])
+  })
+
+  it('an account with no profile row: the check runs all the same, and an allowed objective gets the answer the SQL function already gave', async () => {
+    const db = new SignupMemoryDb()
+
+    const refused = await complete(
+      db,
+      man({ body_fat_percent: 20, objective: 'ganho_massa' }),
+      'signup-objective-no-profile-1',
+    )
+    const allowed = await complete(
+      db,
+      man({ body_fat_percent: 20, objective: 'recomposicao' }),
+      'signup-objective-no-profile-2',
+    )
+
+    expect(refused.response.status).toBe(422)
+    expect(refused.json).toEqual(REFUSED)
+    expect(allowed.response.status).toBe(404)
+    expect(allowed.json.error.code).toBe('patient_not_found')
+    // Only the allowed one reached the SQL function, which recorded nothing.
+    expect(db.submissions).toHaveLength(1)
+    expect(db.profile).toBeNull()
   })
 })

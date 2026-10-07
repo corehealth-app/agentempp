@@ -8,6 +8,10 @@
  * anything clinical: this file rounds the values to what the profile stores,
  * calls the rule and picks the texts. No I/O: the caller loads the calc config
  * and nothing is written anywhere.
+ *
+ * The completion of the sign-up (POST /onboarding) refuses an objective this
+ * check does not mark available, through the same `decideOnboardingEligibility`
+ * (onboarding-eligibility-guard.ts; doc §10o).
  */
 import {
   type CalcConfig,
@@ -114,10 +118,21 @@ function blockedMessage(
   )
 }
 
-export function resolveOnboardingEligibility(
-  input: OnboardingEligibilityInput,
-  config: CalcConfig,
-): OnboardingEligibilityResult {
+/** What the rule reads of a request: the same five fields in both callers. */
+export type SignupBodyValues = Pick<
+  OnboardingEligibilityInput,
+  'sex' | 'height_cm' | 'weight_kg' | 'body_fat_percent' | 'training_frequency'
+>
+
+/**
+ * The rule applied to the body values AS THE PROFILE WILL STORE THEM.
+ *
+ * The one place both callers go through — the eligibility check, which
+ * answers, and the completion of the sign-up, which refuses
+ * (onboarding-eligibility-guard.ts) — so that what the first marks available
+ * is exactly what the second lets be recorded.
+ */
+export function decideOnboardingEligibility(input: SignupBodyValues, config: CalcConfig): Decided {
   // Decided on what the profile will hold, so that the answer given here and
   // the stored profile can never disagree (a man with 19.995% is stored, and
   // decided, as 20.00%).
@@ -144,6 +159,15 @@ export function resolveOnboardingEligibility(
       })),
     })
   }
+
+  return decided
+}
+
+export function resolveOnboardingEligibility(
+  input: OnboardingEligibilityInput,
+  config: CalcConfig,
+): OnboardingEligibilityResult {
+  const decided = decideOnboardingEligibility(input, config)
 
   const assigned = decided.outcome === 'assigned'
   return {

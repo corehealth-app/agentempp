@@ -19,6 +19,14 @@
  * identifiers of projects, not credentials); every URL here is only parsed,
  * never called.
  *
+ * Since 2026-10-07 the handler also checks the objective of a completion
+ * (onboarding-eligibility-guard.ts; its own tests are in the onboarding
+ * route.test.ts). That check reads the profile's completion time on every
+ * completion and the calc config on a first one, whatever the switch says, so
+ * both reads are part of every list of operations below — ahead of the claim
+ * of the idempotency key, because the check runs before the key is claimed.
+ * The grant's own read of the profile is the one that asks for two columns.
+ *
  * > RC EA — cenário conta que concluiu o onboarding ANTES de o interruptor ser ligado NÃO coberto nesta PR (pendência da audit 2026-10-04). Não recebe nada, nem reenviando a conclusão nem aceitando documentos novos depois: segue dependendo da concessão manual do operador. Vale também para a conta antiga marcada `onboarding_completed = true` com `onboarding_completed_at` nulo (2 contas em staging, contadas em 2026-10-05), que a RPC ainda grava como primeira conclusão. Travado em evaluation-access.test.ts.
  * > RC EA — cenário acesso vencido (N dias depois) ou bloqueado NÃO coberto nesta PR (pendência da audit 2026-10-04). Não é renovado por este caminho: a conta volta a receber 402 e a renovação é manual. Travado em evaluation-access.test.ts.
  * > RC EA — cenário compra ou assinatura pelo app NÃO coberto nesta PR (pendência da audit 2026-10-04). Não existe tela nem caminho de compra; `mobile_billing.available` segue `false`.
@@ -33,6 +41,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { clearCalcConfigCache } from '@mpp/agent'
 import { protocolWelcomeMessage } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -78,14 +87,33 @@ const ON = {
   NEXT_PUBLIC_SUPABASE_URL: STAGING_URL,
 }
 
-/** What the handler asked the database before this change, for one completion. */
+/**
+ * The two reads of the objective check on a first completion: the profile's
+ * completion time, then the calc config (a completed account gets only the
+ * first). They are not the grant's, happen with the switch on or off, and
+ * come before the idempotency key is claimed.
+ */
+const OBJECTIVE_CHECK_PROFILE_READ = 'select:user_profiles'
+const OBJECTIVE_CHECK_CONFIG_READ = 'select:global_config'
+
+/**
+ * The grant's own read of the profile, as a failure is aimed at it: the
+ * objective check reads the same table, asking for one column.
+ */
+const GRANT_PROFILE_READ = 'select:user_profiles(onboarding_completed, onboarding_completed_at)'
+
+/** What the handler asks the database without the grant, for one first completion. */
 const BASELINE_OPERATIONS = [
+  OBJECTIVE_CHECK_PROFILE_READ,
+  OBJECTIVE_CHECK_CONFIG_READ,
   'rpc:claim_mobile_api_request',
   'rpc:complete_mobile_onboarding_atomic',
   'rpc:complete_mobile_api_request',
 ]
 
 const FIRST_GRANT_OPERATIONS = [
+  OBJECTIVE_CHECK_PROFILE_READ,
+  OBJECTIVE_CHECK_CONFIG_READ,
   'rpc:claim_mobile_api_request',
   'select:user_profiles',
   'rpc:complete_mobile_onboarding_atomic',
@@ -118,6 +146,7 @@ type Failure = 'error' | 'throw' | { data: unknown }
 interface MemoryQuery {
   select(columns: string): MemoryQuery
   eq(column: string, value: unknown): MemoryQuery
+  like(column: string, pattern: string): MemoryQuery
   limit(count: number): MemoryQuery
   maybeSingle(): Promise<DbResult>
   then(
@@ -236,7 +265,13 @@ class EvaluationMemoryDb {
   >()
   private readonly claims = new Map<
     string,
-    { id: string; hash: unknown; done: boolean; status: unknown; body: unknown }
+    {
+      id: string
+      request: string
+      state: 'processing' | 'completed' | 'failed'
+      status: unknown
+      body: unknown
+    }
   >()
   private readonly legalActions: Array<{ user_id: string; document: LegalDocument; at: string }> =
     []
@@ -345,20 +380,38 @@ class EvaluationMemoryDb {
       }))
     }
     if (table === 'entitlement_events') return this.events.map((event) => ({ ...event }))
+    // The `calc.*` rows the objective check loads: the three its rule reads,
+    // as recorded for staging on 2026-10-04 (no database was read here).
+    if (table === 'global_config') {
+      return [
+        {
+          key: 'calc.bf_limits',
+          value: { feminino: { gain: 27, recomp: 28 }, masculino: { gain: 19, recomp: 20 } },
+        },
+        { key: 'calc.imc_limit_recomp', value: 25 },
+        { key: 'calc.training_min', value: 3 },
+      ]
+    }
     throw new Error(`unexpected table ${table}`)
   }
 
   private query(table: string): MemoryQuery {
     const filters: Array<[string, unknown]> = []
+    const prefixes: Array<[string, string]> = []
     let columns: string[] = []
     let limit = Number.POSITIVE_INFINITY
     const run = async (single: boolean): Promise<DbResult> => {
       const operation = `select:${table}`
       this.operations.push(operation)
-      const injected = this.injected(operation)
+      // A failure may be aimed at one read of a table, by its columns.
+      const injected =
+        this.injected(`${operation}(${columns.join(', ')})`) ?? this.injected(operation)
       if (injected) return injected
       const found = this.rows(table)
         .filter((row) => filters.every(([column, value]) => row[column] === value))
+        .filter((row) =>
+          prefixes.every(([column, prefix]) => String(row[column]).startsWith(prefix)),
+        )
         .slice(0, limit)
         .map((row) => Object.fromEntries(columns.map((column) => [column, row[column]])))
       return { data: single ? (found[0] ?? null) : found, error: null }
@@ -370,6 +423,12 @@ class EvaluationMemoryDb {
       },
       eq: (column: string, value: unknown) => {
         filters.push([column, value])
+        return builder
+      },
+      // Only the form the calc-config loader uses: a prefix and `%`.
+      like: (column: string, pattern: string) => {
+        if (!/^[^%_]+%$/.test(pattern)) throw new Error(`unexpected pattern ${pattern}`)
+        prefixes.push([column, pattern.slice(0, -1)])
         return builder
       },
       limit: (count: number) => {
@@ -398,52 +457,63 @@ class EvaluationMemoryDb {
     throw new Error(`unexpected rpc ${name}`)
   }
 
-  private claimKey(params: Record<string, unknown>): string {
-    return [
-      params.p_user_id,
-      params.p_request_method,
-      params.p_request_route,
-      params.p_idempotency_key,
-    ].join('|')
-  }
-
+  /**
+   * The three idempotency functions as their migration writes them
+   * (20260720130537_mobile_api_idempotency.sql — read, not run): one row for
+   * each (user, key); another method, route or hash is a conflict WHATEVER the
+   * state of the row; a request that fails is NOT deleted — its row stays as
+   * 'failed', with its hash, and the same request claims it again. Not
+   * reproduced: the 24 hours and the 10 minutes after which a row is claimed
+   * as new.
+   */
   private claim(params: Record<string, unknown>): DbResult {
-    const key = this.claimKey(params)
+    const key = `${String(params.p_user_id)}|${String(params.p_idempotency_key)}`
+    const request = [params.p_request_method, params.p_request_route, params.p_request_hash].join(
+      '|',
+    )
     const existing = this.claims.get(key)
     if (!existing) {
       const id = this.nextId()
-      this.claims.set(key, {
-        id,
-        hash: params.p_request_hash,
-        done: false,
-        status: null,
-        body: null,
-      })
+      this.claims.set(key, { id, request, state: 'processing', status: null, body: null })
       return { data: { action: 'claimed', claim_id: id }, error: null }
     }
-    if (existing.hash !== params.p_request_hash)
-      return { data: { action: 'conflict' }, error: null }
-    if (!existing.done) return { data: { action: 'in_progress' }, error: null }
-    return {
-      data: { action: 'replay', response_status: existing.status, response_body: existing.body },
-      error: null,
+    if (existing.request !== request) return { data: { action: 'conflict' }, error: null }
+    if (existing.state === 'completed') {
+      return {
+        data: { action: 'replay', response_status: existing.status, response_body: existing.body },
+        error: null,
+      }
     }
+    if (existing.state === 'processing') return { data: { action: 'in_progress' }, error: null }
+    existing.state = 'processing'
+    return { data: { action: 'claimed', claim_id: existing.id }, error: null }
+  }
+
+  private processingClaim(params: Record<string, unknown>) {
+    return [...this.claims.entries()].find(
+      ([key, entry]) =>
+        entry.id === params.p_claim_id &&
+        key.startsWith(`${String(params.p_user_id)}|`) &&
+        entry.state === 'processing',
+    )?.[1]
   }
 
   private completeClaim(params: Record<string, unknown>): DbResult {
-    const claim = [...this.claims.values()].find((entry) => entry.id === params.p_claim_id)
+    const claim = this.processingClaim(params)
     if (!claim) return { data: false, error: null }
-    claim.done = true
+    claim.state = 'completed'
     claim.status = params.p_response_status
     claim.body = params.p_response_body
     return { data: true, error: null }
   }
 
   private failClaim(params: Record<string, unknown>): DbResult {
-    for (const [key, claim] of this.claims) {
-      if (claim.id === params.p_claim_id) this.claims.delete(key)
-    }
-    return { data: null, error: null }
+    const claim = this.processingClaim(params)
+    if (!claim) return { data: false, error: null }
+    claim.state = 'failed'
+    claim.status = null
+    claim.body = null
+    return { data: true, error: null }
   }
 
   /** supabase/migrations/20260915150739_bodyflow_server_owned_onboarding.sql */
@@ -914,6 +984,9 @@ beforeEach(() => {
   // Only the clock: the request body is read through a stream.
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(NOW)
+  // The calc-config loader keeps the rows for a minute: each test starts
+  // without them, so the objective check's config read is always in the list.
+  clearCalcConfigCache()
   vi.stubEnv(EVALUATION_ACCESS_DAYS_ENV, undefined)
   vi.stubEnv(EVALUATION_ACCESS_PROJECT_REF_ENV, undefined)
   vi.stubEnv(EVALUATION_ACCESS_ACTOR_ID_ENV, undefined)
@@ -921,6 +994,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  clearCalcConfigCache()
   vi.useRealTimers()
   vi.restoreAllMocks()
   vi.unstubAllEnvs()
@@ -1324,8 +1398,11 @@ describe('never twice', () => {
 
     expect(replay.status).toBe(200)
     expect(replay.headers.get('idempotency-replayed')).toBe('true')
-    // One read (the profile already has its completion time) and no entitlement query.
+    // The profile already has its completion time: the objective check reads
+    // it and checks nothing (no calc config read), the grant reads it once and
+    // asks no entitlement query.
     expect(db.operations).toEqual([
+      OBJECTIVE_CHECK_PROFILE_READ,
       'rpc:claim_mobile_api_request',
       'select:user_profiles',
       'rpc:complete_mobile_onboarding_atomic',
@@ -1342,6 +1419,7 @@ describe('never twice', () => {
 
     expect(response.status).toBe(200)
     expect(db.operations).toEqual([
+      OBJECTIVE_CHECK_PROFILE_READ,
       'rpc:claim_mobile_api_request',
       'select:user_profiles',
       'rpc:complete_mobile_onboarding_atomic',
@@ -1511,7 +1589,11 @@ describe('an account that completed onboarding before the switch was on (declare
 
     expect(response.status).toBe(200)
     expect(db.operations.filter((operation) => !operation.endsWith('_mobile_api_request'))).toEqual(
-      ['select:user_profiles', 'rpc:complete_mobile_onboarding_atomic'],
+      [
+        OBJECTIVE_CHECK_PROFILE_READ,
+        'select:user_profiles',
+        'rpc:complete_mobile_onboarding_atomic',
+      ],
     )
     expect(db.events).toEqual([])
     expect(db.entitlements).toEqual([])
@@ -1542,9 +1624,16 @@ describe('an account that completed onboarding before the switch was on (declare
     expect(response.status).toBe(200)
     // The RPC treated it as a first completion.
     expect(db.completedAt()).toBe(NOW.toISOString())
-    // One read before the completion, and not one entitlement query after it.
+    // With no completion time the objective check takes it for a first
+    // completion too (its two reads). The grant: one read before the
+    // completion, and not one entitlement query after it.
     expect(db.operations.filter((operation) => !operation.endsWith('_mobile_api_request'))).toEqual(
-      ['select:user_profiles', 'rpc:complete_mobile_onboarding_atomic'],
+      [
+        OBJECTIVE_CHECK_PROFILE_READ,
+        OBJECTIVE_CHECK_CONFIG_READ,
+        'select:user_profiles',
+        'rpc:complete_mobile_onboarding_atomic',
+      ],
     )
     expect(db.events).toEqual([])
     expect(db.entitlements).toEqual([])
@@ -1597,14 +1686,8 @@ describe('an account that completed onboarding before the switch was on (declare
 
 describe('a failure of the grant never reaches the onboarding response', () => {
   const FAILURES: Array<[string, string, Failure, string, string]> = [
-    [
-      'the profile read answers an error',
-      'select:user_profiles',
-      'error',
-      'profile_lookup',
-      'Error',
-    ],
-    ['the profile read throws', 'select:user_profiles', 'throw', 'unexpected', 'TypeError'],
+    ['the profile read answers an error', GRANT_PROFILE_READ, 'error', 'profile_lookup', 'Error'],
+    ['the profile read throws', GRANT_PROFILE_READ, 'throw', 'unexpected', 'TypeError'],
     [
       'the event read answers an error',
       'select:entitlement_events',
@@ -1686,11 +1769,13 @@ describe('a failure of the grant never reaches the onboarding response', () => {
     logs()
     switchOn()
     const db = new EvaluationMemoryDb().addAccount()
-    db.failures.set('select:user_profiles', 'error')
+    db.failures.set(GRANT_PROFILE_READ, 'error')
 
     await post(db)
 
     expect(db.operations).toEqual([
+      OBJECTIVE_CHECK_PROFILE_READ,
+      OBJECTIVE_CHECK_CONFIG_READ,
       'rpc:claim_mobile_api_request',
       'select:user_profiles',
       'rpc:complete_mobile_onboarding_atomic',
@@ -1747,6 +1832,8 @@ describe('a failure of the grant never reaches the onboarding response', () => {
     })
 
     expect(db.operations).toEqual([
+      OBJECTIVE_CHECK_PROFILE_READ,
+      OBJECTIVE_CHECK_CONFIG_READ,
       'rpc:claim_mobile_api_request',
       'select:user_profiles',
       'rpc:complete_mobile_onboarding_atomic',
@@ -1767,10 +1854,33 @@ describe('a failure of the grant never reaches the onboarding response', () => {
       code: 'onboarding_requirements_changed',
     })
     expect(db.operations).toEqual([
+      OBJECTIVE_CHECK_PROFILE_READ,
+      OBJECTIVE_CHECK_CONFIG_READ,
       'rpc:claim_mobile_api_request',
       'rpc:complete_mobile_onboarding_atomic',
       'rpc:fail_mobile_api_request',
     ])
+  })
+
+  // The objective check of the completion (onboarding-eligibility-guard.ts)
+  // runs before the idempotency key is claimed and before the grant asks
+  // anything: a man with 20.0% of body fat asking ganho de massa is refused
+  // on its two reads alone, and the grant module never reads the profile.
+  it('a completion refused for its objective grants nothing', async () => {
+    const log = logs()
+    switchOn()
+    const db = new EvaluationMemoryDb().addAccount()
+
+    await expect(
+      post(db, { ...completionBody(), body_fat_percent: 20, objective: 'ganho_massa' }),
+    ).rejects.toMatchObject({ status: 422, code: 'onboarding_objective_not_eligible' })
+
+    expect(db.operations).toEqual([OBJECTIVE_CHECK_PROFILE_READ, OBJECTIVE_CHECK_CONFIG_READ])
+    expect(db.completedAt()).toBeNull()
+    expect(db.events).toEqual([])
+    expect(db.entitlements).toEqual([])
+    expect(log.info).not.toHaveBeenCalled()
+    expect(log.error).not.toHaveBeenCalled()
   })
 })
 

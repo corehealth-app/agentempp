@@ -4,11 +4,15 @@
  * pendencies: docs/CALCULO-MPP.md §10. Code: `decideSignupEligibility`,
  * packages/core/src/protocol-eligibility.ts.
  *
- * WHO CALLS THE FUNCTION. Since the server stage of the same audit, one place:
- * the sign-up eligibility check of the app (POST /onboarding/eligibility, doc
- * §10l), which rounds the body values to what the profile stores, answers and
- * writes nothing. The sign-up of the app still records the objective that was
- * sent, with no check, and no screen changed. This file pins the pure function.
+ * WHO CALLS THE FUNCTION. Since the server stages of the same audit, two
+ * places, through one shared decision that rounds the body values to what the
+ * profile stores: the sign-up eligibility check of the app (POST
+ * /onboarding/eligibility, doc §10l), which answers and writes nothing, and
+ * the completion of the sign-up (POST /onboarding, doc §10o), which on a FIRST
+ * completion refuses an objective the check does not mark available. An
+ * account that already has a completion time is never checked. No screen
+ * changed. This file pins the pure function; the refusal is pinned through
+ * the route in apps/admin/src/app/api/mobile/v1/onboarding/route.test.ts.
  *
  * THE RULE, as the client (Dr. Roberto) wrote it — it is NOT a new decision:
  *   Rule "Regra de Decisão Automática de Protocolo — Quando NÃO perguntar ao
@@ -75,8 +79,17 @@
  *
  * Declared pendencies (CLAUDE.md criterion 2; same lines in docs/CALCULO-MPP.md §10j):
  *
- * > RC E — cenário cadastro pelo app (o servidor ainda grava o objetivo enviado, sem conferir) variante recusa na gravação do objetivo fora da regra e uso da conferência pela tela NÃO coberta nesta PR (pendência da audit 2026-10-07)
- *   A conferência existe no servidor (§10l) e só responde. `POST /onboarding` continua gravando qualquer um dos três objetivos, e o app publicado não chama a conferência.
+ * > RC E — cenário cadastro pelo app publicado (a etapa do objetivo oferece os três objetivos e não chama a conferência) variante uso da conferência pela tela, com o aviso, os motivos e só os objetivos disponíveis NÃO coberta nesta PR (pendência da audit 2026-10-07)
+ *   O servidor já responde a conferência (§10l) e já recusa na gravação (§10o). Falta a tela.
+ * > RC E — cenário versão do app anterior à etapa do app concluindo o cadastro com objetivo fora da regra variante explicação do motivo na tela e volta à etapa do objetivo (ela mostra só "Revise os dados informados.") NÃO coberta nesta PR (pendência da audit 2026-10-07)
+ *   O servidor responde 422 onboarding_objective_not_eligible. Publicar a recusa junto com a versão do app que chama a conferência.
+ *   Essa versão reenvia com a mesma chave de idempotência depois da recusa; o servidor aceita, porque a recusa é decidida antes da reserva da chave e não deixa registro (travado no teste da rota com o cenário exato: 422, 422, conclui).
+ * > RC E — cenário conta antiga marcada como concluída sem data de conclusão que refaz o cadastro pelo app variante manter o protocolo antigo sem conferência NÃO coberta nesta PR (pendência da audit 2026-10-07)
+ *   A função SQL já a trata como primeira conclusão (regrava o protocolo); a conferência segue a função SQL (travado no teste da rota). A contagem de produção não foi feita: conferir antes de publicar.
+ * > RC E — cenário primeira conclusão e novo aceite de termos contra a função SQL real do Postgres variante teste com o banco real (os testes usam um banco em memória que reproduz os dois ramos da função; nenhum banco foi lido nem gravado) NÃO coberta nesta PR (pendência da audit 2026-10-07)
+ * > RC E — cenário recusa do objetivo seguida de novo envio com a mesma chave de idempotência contra as funções reais do registro de idempotência do Postgres variante teste com o banco real (a migration 20260720130537 foi lida, não executada; os testes usam um registro em memória que a segue) NÃO coberta nesta PR (pendência da audit 2026-10-07)
+ * > RC E — cenário conta que passou pelo reset (perfil vazio e marcada como não concluída, com a data de conclusão mantida) refazendo o cadastro pelo app variante concluir o cadastro de novo, com a conferência do objetivo NÃO coberta nesta PR (pendência da audit 2026-10-07)
+ *   Defeito anterior a esta mudança e igual depois dela: por ter data, a conta não é conferida e a função SQL responde 409 onboarding_already_completed (travado como está no teste da rota).
  * > RC E — cenário cadastro de pessoa com peso muito baixo (desnutrição) variante bloqueio da perda de gordura e condução ao ganho de massa (o número do limite não existe em nenhum documento do cliente) NÃO coberta nesta PR (pendência da audit 2026-10-07)
  *   A função não faz nada especial: 45 kg / 180 cm (IMC 13,9) sem gordura escolhe entre os três (travado abaixo). Redeclara a pendência R4 de 04/10 (§8c).
  * > RC E — cenário cadastro com gordura informada de até 10% escolhendo recomposição variante piso de redução aplicado na entrada, e piso separado para mulher NÃO coberta nesta PR (pendência da audit 2026-10-07)
@@ -101,11 +114,12 @@
  *   Fica no contrato do cadastro (100 a 250 cm, 30 a 300 kg, 3 a 60%, inteiro de 0 a 7).
  * > RC E — cenário contas que já concluíram o cadastro com objetivo fora desta regra variante conferir ou mover essas contas NÃO coberta nesta PR (pendência da audit 2026-10-07)
  *
- * Closed by the server stage of the same audit, and so no longer in the list
+ * Closed by the server stages of the same audit, and so no longer in the list
  * (doc §10j): the wording and the translation of the texts shown for each
  * result (packages/core/src/protocol-messages.ts; their approval is in §10n),
- * and the value with more than two decimal places (the eligibility check
- * rounds as the database stores before calling this function, §10l).
+ * the value with more than two decimal places (the eligibility check rounds as
+ * the database stores before calling this function, §10l), and the refusal,
+ * at the recording, of an objective outside the rule (§10o).
  */
 
 import { readFileSync } from 'node:fs'
@@ -781,7 +795,7 @@ describe('declared pendencies', () => {
     const doc = readFileSync(resolve(here, '../../../../docs/CALCULO-MPP.md'), 'utf8')
     const fromHeader = Array.from(header.matchAll(/^ \* (> RC E — .*)$/gm), (match) => match[1])
     const fromDoc = Array.from(doc.matchAll(/^(> RC E — .*)$/gm), (match) => match[1])
-    expect(fromHeader).toHaveLength(17)
+    expect(fromHeader).toHaveLength(22)
     expect(fromDoc).toEqual(fromHeader)
     for (const line of fromHeader) {
       expect(line).toMatch(

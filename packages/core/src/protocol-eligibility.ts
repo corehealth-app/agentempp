@@ -5,8 +5,10 @@
  * Pure, no I/O, no text. Called by the sign-up eligibility check of the app
  * (apps/admin/src/lib/mobile-api/protocol-eligibility-service.ts), which
  * rounds the body values to what the profile stores before calling and writes
- * nothing. The completion of the sign-up still records the objective that was
- * sent, with no check. `resolveProtocol` (protocol-router.ts) is the legacy
+ * nothing. The completion of the sign-up goes through the same rounded
+ * decision and, on a first completion only, refuses an objective it does not
+ * mark available (apps/admin/src/lib/mobile-api/onboarding-eligibility-guard.ts,
+ * doc §10o). `resolveProtocol` (protocol-router.ts) is the legacy
  * path, still feeds the "Decisão automática" context line, and is not
  * touched: the two share no code on purpose.
  *

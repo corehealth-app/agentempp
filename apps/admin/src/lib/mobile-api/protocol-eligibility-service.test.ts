@@ -16,7 +16,11 @@ import {
 } from '@mpp/core'
 import { describe, expect, it } from 'vitest'
 import type { OnboardingEligibilityInput } from './contracts'
-import { asStoredBodyValue, resolveOnboardingEligibility } from './protocol-eligibility-service'
+import {
+  asStoredBodyValue,
+  decideOnboardingEligibility,
+  resolveOnboardingEligibility,
+} from './protocol-eligibility-service'
 
 /** Homem, 180 cm, 80 kg (IMC 24,69), sem gordura informada, musculação 3x. */
 function man(patch: Partial<OnboardingEligibilityInput> = {}): OnboardingEligibilityInput {
@@ -348,5 +352,58 @@ describe('resolveOnboardingEligibility: what it never does', () => {
         },
       }),
     )
+  })
+})
+
+describe('decideOnboardingEligibility: the one decision behind the check and the completion', () => {
+  const PUBLIC_REASON = { composition: 'gain_composition', training: 'gain_training' } as const
+
+  it('is what the check answers, objective by objective, on the value the profile will store', () => {
+    for (const input of [
+      man({ body_fat_percent: 19 }),
+      man({ body_fat_percent: 19.5, training_frequency: 2 }),
+      man({ body_fat_percent: 19.994 }),
+      man({ body_fat_percent: 19.995 }),
+      man({ weight_kg: 80.999 }),
+      woman({ body_fat_percent: 27.004 }),
+      woman({ body_fat_percent: 27.005 }),
+      woman({ height_cm: 160.004, weight_kg: 64 }),
+      woman({ training_frequency: 2 }),
+    ]) {
+      const decided = decideOnboardingEligibility(input, DEFAULT_CALC_CONFIG)
+      const answered = resolve(input)
+
+      expect(answered.decision).toBe(decided.outcome)
+      for (const option of answered.options) {
+        expect({ status: option.status, reasons: option.reasons }).toEqual({
+          status: decided.objectives[option.objective].status,
+          reasons: decided.objectives[option.objective].reasons.map(
+            (reason) => PUBLIC_REASON[reason],
+          ),
+        })
+      }
+    }
+  })
+
+  it('reads only the five body values: a whole completion decides like its five values alone', () => {
+    const values = man({ body_fat_percent: 19.995, training_frequency: 2 })
+    const completion = {
+      ...values,
+      name: 'Synthetic User',
+      objective: 'ganho_massa',
+      bedtime: '02:00',
+      wake_time: '07:00',
+      food_organization: 'nao',
+    }
+
+    expect(decideOnboardingEligibility(completion, DEFAULT_CALC_CONFIG)).toEqual(
+      decideOnboardingEligibility(values, DEFAULT_CALC_CONFIG),
+    )
+  })
+
+  it('a value the rule cannot read is refused, never answered with a guess', () => {
+    expect(() =>
+      decideOnboardingEligibility(man({ weight_kg: 0 }), DEFAULT_CALC_CONFIG),
+    ).toThrowError(expect.objectContaining({ status: 422, code: 'validation_failed' }))
   })
 })

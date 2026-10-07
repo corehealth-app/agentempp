@@ -3,7 +3,8 @@ import { saveOnboarding } from '@/lib/mobile-api/commands'
 import { onboardingCompletionInputSchema, onboardingInputSchema } from '@/lib/mobile-api/contracts'
 import { prepareEvaluationAccess } from '@/lib/mobile-api/evaluation-access'
 import { MobileApiError, mobileSuccess, readJsonBody } from '@/lib/mobile-api/http'
-import { executeSupabaseIdempotent } from '@/lib/mobile-api/idempotency'
+import { executeSupabaseIdempotent, requireIdempotencyKey } from '@/lib/mobile-api/idempotency'
+import { assertOnboardingObjectiveEligible } from '@/lib/mobile-api/onboarding-eligibility-guard'
 import {
   completeOnboarding,
   getOnboardingState,
@@ -88,6 +89,23 @@ export async function handleOnboardingPost(
   }
 
   const input = onboardingCompletionInputSchema.parse(body)
+  // A first completion asking for an objective the rule does not allow is
+  // refused here (422, or 500 when the profile or the calc config cannot be
+  // read), before anything is read for the grant or recorded. An account that
+  // already has a completion time — a re-acceptance of documents, a replay —
+  // is not checked and goes on as before. The submission reaches the SQL
+  // function whole either way.
+  //
+  // It runs BEFORE the Idempotency-Key is claimed, on purpose. A claim that is
+  // released stays in the ledger as 'failed', with the hash of the refused
+  // request, and the ledger compares the hash before it looks at the state
+  // (20260720130537_mobile_api_idempotency.sql): the same key sent again with
+  // the objective corrected would be answered 409 idempotency_key_conflict,
+  // and the published app keeps its key after a refusal. So the header is only
+  // read here (without it the answer is still 400, before anything is read),
+  // and a refusal leaves no record at all.
+  requireIdempotencyKey(context.request)
+  await assertOnboardingObjectiveEligible(context, input)
   const repository = dependencies.createOnboardingRepository(context.supabase)
   const createResponse = async () => {
     // Evaluation access is off unless the test environment switched it on

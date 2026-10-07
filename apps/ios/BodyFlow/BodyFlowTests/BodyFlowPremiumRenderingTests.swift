@@ -5,6 +5,74 @@ import XCTest
 
 @MainActor
 final class BodyFlowPremiumRenderingTests: XCTestCase {
+    func testObjectiveWithoutServerDecisionExposesNoSelectableButtons() {
+        let model = OnboardingFlowModel.preview(step: .objective, decision: nil)
+        let probe = PremiumRenderingTestSupport.accessibilityProbe(
+            ObjectiveStepView(model: model), width: 375, size: .accessibility5
+        )
+        XCTAssertFalse(probe.contains { $0.isButton },
+            "No objective is selectable before a server decision: \(probe)")
+    }
+
+    func testServerAssignedObjectiveKeepsStaticSelectionAndClosedDisclosure() async throws {
+        let model = await E3Fixtures.model(repository: E3Repository(decision: E3Fixtures.assigned))
+        await model.continueFromCurrentStep()
+        for language in SupportedAppLanguage.allCases {
+            for dark in [false, true] {
+                for width: CGFloat in [375, 393, 430] {
+                    let view = ObjectiveStepView(model: model).environment(\.locale, language.formattingLocale)
+                    let probe = PremiumRenderingTestSupport.accessibilityProbe(view, width: width, size: .accessibility5)
+                    XCTAssertTrue(probe.contains { $0.label.contains("Server assigned notice") })
+                    XCTAssertFalse(probe.contains { $0.isButton && ($0.label.contains("Recomposição") || $0.label.contains("recomposition")) })
+                    XCTAssertFalse(probe.contains { $0.label.contains("Server gain blocked") }, "Disclosure starts closed")
+                    let image = PremiumRenderingTestSupport.nativeImage(view, width: width, dark: dark,
+                        size: .accessibility5, locale: language.formattingLocale)
+                    let attachment = XCTAttachment(data: try XCTUnwrap(image.pngData()), uniformTypeIdentifier: "public.png")
+                    attachment.name = "e3-assigned-native-\(language.rawValue)-\(dark ? "dark" : "light")-\(Int(width))-axxxl"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
+                }
+            }
+        }
+    }
+
+    func testLongProtocolMessagePreservesAllParagraphsAndScales() {
+        for language in SupportedAppLanguage.allCases {
+            let paragraphs = OnboardingPreviewRepository.welcomeParagraphs(locale: language.rawValue)
+            XCTAssertGreaterThanOrEqual(paragraphs.joined(separator: "\n\n").count, 2850)
+            XCTAssertLessThanOrEqual(paragraphs.joined(separator: "\n\n").count, 2900)
+            let view = ProtocolMessageView(welcome: .init(protocol: .maintenance, paragraphs: paragraphs), onContinue: {})
+            for dark in [false, true] {
+                for width: CGFloat in [375, 393, 430] {
+                    let large = PremiumRenderingTestSupport.fittingSize(view, width: width, dark: dark,
+                        size: .large, locale: language.formattingLocale)
+                    let ax = PremiumRenderingTestSupport.fittingSize(view, width: width, dark: dark,
+                        size: .accessibility5, locale: language.formattingLocale)
+                    XCTAssertLessThanOrEqual(ax.width, width + 1)
+                    XCTAssertGreaterThan(ax.height, large.height)
+                }
+            }
+            let probe = PremiumRenderingTestSupport.accessibilityProbe(view, width: 375)
+            XCTAssertTrue(probe.contains { $0.label == paragraphs.first! })
+            XCTAssertTrue(probe.contains { $0.label == paragraphs.last! })
+            XCTAssertEqual(probe.filter { $0.label == paragraphs[1] }.count, 10, "Repeated paragraphs must not be deduplicated")
+        }
+    }
+
+    func testNewProtocolSurfacesKeepVerbatimTextAndScalableTokens() throws {
+        for file in ["ObjectiveStepView.swift", "ProtocolMessageView.swift"] {
+            let source = try reviewedSource("BodyFlow/Features/Onboarding/" + file)
+            XCTAssertTrue(source.contains("Text(verbatim:"))
+            XCTAssertTrue(source.contains(".fixedSize(horizontal: false, vertical: true)"))
+            for forbidden in [".lineLimit(", ".minimumScaleFactor(", ".font(.system(size:", ".shadow(", ".blur(", ".glassEffect("] {
+                XCTAssertFalse(source.contains(forbidden), "\(file): \(forbidden)")
+            }
+        }
+        let container = try reviewedSource("BodyFlow/Features/Onboarding/OnboardingContainerView.swift")
+        XCTAssertTrue(container.contains("model.visibleSteps"))
+        XCTAssertTrue(container.contains(".onChange(of: model.pendingProtocolWelcome != nil)"))
+    }
+
     private let sizes: [DynamicTypeSize] = [
         .xSmall, .small, .medium, .large, .xLarge, .xxLarge, .xxxLarge,
         .accessibility1, .accessibility2, .accessibility3, .accessibility4, .accessibility5,
@@ -757,6 +825,7 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
             "BodyFlow/Features/Onboarding/OnboardingContainerView.swift",
             "BodyFlow/Features/Onboarding/WelcomeStepView.swift",
             "BodyFlow/Features/Onboarding/ObjectiveStepView.swift",
+            "BodyFlow/Features/Onboarding/ProtocolMessageView.swift",
             "BodyFlow/Features/Onboarding/PersonaStepView.swift",
             "BodyFlow/Features/Onboarding/ConsentStepView.swift",
             "BodyFlow/Features/Onboarding/OnboardingCompletionView.swift",

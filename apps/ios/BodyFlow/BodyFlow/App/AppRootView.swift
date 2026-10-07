@@ -133,6 +133,7 @@ struct AppRootView: View {
                 )
             case .onboarding(let userID, _):
                 if let onboardingFlowModel = onboardingCoordinator.flowModel,
+                   onboardingCoordinator.canRender(ownerToken: model.onboardingOwnerToken),
                    OnboardingRootLoadState.canRender(
                        modelUserID: onboardingFlowModel.userID,
                        activeUserID: userID
@@ -214,6 +215,7 @@ struct AppRootView: View {
         case .awaitingEmailConfirmation: return .awaitingEmailConfirmation
         case .onboarding(let userID, _):
             if let onboardingFlowModel = onboardingCoordinator.flowModel,
+               onboardingCoordinator.canRender(ownerToken: model.onboardingOwnerToken),
                OnboardingRootLoadState.canRender(
                    modelUserID: onboardingFlowModel.userID,
                    activeUserID: userID
@@ -307,9 +309,12 @@ struct AppRootView: View {
 
     private func synchronizeOnboardingModel() async {
         let activeUserID = onboardingUserID
+        let ownerToken = model.onboardingOwnerToken
         onboardingCoordinator.synchronize(
             activeUserID: activeUserID,
             restoredDraft: model.restoredOnboardingDraft,
+            restoreGeneration: model.onboardingRestoreGeneration,
+            historicalCompletedAt: model.restoredHistoricalCompletedAt,
             requirements: model.restoredOnboardingRequirements,
             onboarding: dependencies.onboarding,
             persona: dependencies.coachPersona,
@@ -317,13 +322,15 @@ struct AppRootView: View {
             idempotencyKeyProvider: dependencies.idempotencyKeyProvider,
             telemetry: dependencies.telemetry,
             onStepChanged: { step in
-                guard onboardingUserID == activeUserID else { return }
-                model.updateOnboardingStep(step)
+                guard ownerToken != nil, model.onboardingOwnerToken == ownerToken else { return }
+                guard let ownerToken else { return }
+                model.updateOnboardingStep(step, ownerToken: ownerToken)
             },
             onCompleted: {
                 guard let userID = activeUserID,
-                      onboardingUserID == userID else { return }
-                model.completeOnboarding(for: userID)
+                      onboardingUserID == userID, model.onboardingOwnerToken == ownerToken else { return }
+                guard let ownerToken else { return }
+                model.completeOnboarding(ownerToken: ownerToken)
             }
         )
     }
@@ -372,6 +379,11 @@ private struct OnboardingRootTaskID: Equatable {
 struct OnboardingRootCoordinator {
     private(set) var flowModel: OnboardingFlowModel?
     private(set) var loadFailed = false
+    private(set) var ownerToken: OnboardingOwnerToken?
+
+    func canRender(ownerToken: OnboardingOwnerToken?) -> Bool {
+        ownerToken != nil && self.ownerToken == ownerToken && flowModel?.isActive == true
+    }
 
     mutating func prepareForRetry() {
         loadFailed = false
@@ -380,6 +392,8 @@ struct OnboardingRootCoordinator {
     mutating func synchronize(
         activeUserID: String?,
         restoredDraft: OnboardingDraft?,
+        restoreGeneration: Int = 0,
+        historicalCompletedAt: String? = nil,
         requirements: OnboardingRequirements = .unavailable,
         onboarding: any OnboardingRepository,
         persona: any CoachPersonaRepository,
@@ -390,13 +404,18 @@ struct OnboardingRootCoordinator {
         onCompleted: @escaping @MainActor () -> Void
     ) {
         guard let activeUserID else {
+            flowModel?.invalidate()
             flowModel = nil
+            ownerToken = nil
             loadFailed = false
             return
         }
-        guard flowModel?.userID != activeUserID else { return }
+        let requestedOwner = OnboardingOwnerToken(userID: activeUserID, restoreGeneration: restoreGeneration)
+        guard ownerToken != requestedOwner || flowModel?.isActive != true else { return }
 
+        flowModel?.invalidate()
         flowModel = nil
+        ownerToken = requestedOwner
         loadFailed = false
         guard let restoredDraft else {
             loadFailed = true
@@ -410,6 +429,7 @@ struct OnboardingRootCoordinator {
             personaRepository: persona,
             developmentConsentAvailability: developmentConsentAvailability,
             requirements: requirements,
+            historicalCompletedAt: historicalCompletedAt,
             idempotencyKeyProvider: idempotencyKeyProvider,
             telemetry: telemetry,
             onStepChanged: onStepChanged,

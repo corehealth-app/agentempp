@@ -6,6 +6,16 @@ import Testing
 
 @Suite("Onboarding presentation policies")
 struct OnboardingPresentationTests {
+    @MainActor @Test("completion preview uses an explicit valid decision, while missing decision remains closed")
+    func explicitPreviewDecisionPreservesRequestedStep() {
+        let model = OnboardingFlowModel.preview(step: .completion)
+        #expect(model.step == .completion)
+        #expect(model.hasCurrentEligibilityDecision)
+        let closed = OnboardingFlowModel.preview(step: .objective, decision: nil)
+        #expect(!closed.hasCurrentEligibilityDecision)
+        #expect(closed.eligibilityDecision == nil)
+    }
+
     @Test("release resolves synthetic consent presentation as unavailable")
     func releaseHidesSyntheticConsentPresentation() {
         let configuration = AppLaunchConfiguration.resolve(

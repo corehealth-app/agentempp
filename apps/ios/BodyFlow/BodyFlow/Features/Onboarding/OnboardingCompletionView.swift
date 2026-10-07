@@ -109,10 +109,15 @@ struct OnboardingCompletionView: View {
             .foregroundStyle(BodyFlowColor.secondaryText)
             .fixedSize(horizontal: false, vertical: true)
 
+            if model.unresolvedCompletion {
+                BodyFlowStatusLine(copy("onboarding.completion.unresolved", fallback: "O envio anterior ainda precisa ser confirmado. Tente novamente para conferir o resultado."), kind: .pending)
+                    .accessibilityIdentifier("onboarding.completion.unresolved")
+            }
+
             Button(action: onComplete) {
                 Text(model.operationState.isFailure
                      ? copy("onboarding.retry", fallback: "Tentar novamente")
-                     : copy("onboarding.completion.finish", fallback: "Ir para Hoje"))
+                     : copy("onboarding.completion.finish", fallback: "Concluir cadastro"))
             }
             .buttonStyle(BodyFlowButtonStyle(
                 role: .primary,

@@ -483,6 +483,13 @@ extension HungerLevel {
 
 #if DEBUG
 private actor PreviewOnboardingRepository: OnboardingRepository {
+    let decision: OnboardingEligibilityDecision?
+    init(decision: OnboardingEligibilityDecision?) { self.decision = decision }
+    func checkEligibility(_ input: OnboardingEligibilityInput, for userID: String,
+        idempotencyKey: IdempotencyKey) async throws -> OnboardingEligibilityDecision {
+        guard let decision else { throw OnboardingRepositoryError.serviceUnavailable }
+        return try decision.validated()
+    }
     func loadDraft(for userID: String) async throws -> OnboardingDraft? { nil }
     func saveDraft(_ draft: OnboardingDraft, for userID: String) async throws {}
     func complete(_ draft: OnboardingDraft, for userID: String) async throws {}
@@ -501,13 +508,23 @@ private actor PreviewCoachPersonaRepository: CoachPersonaRepository {
     }
 }
 
+extension OnboardingEligibilityDecision {
+    static let previewChoice = OnboardingEligibilityDecision(
+        decision: .choice, basis: .bodyFat, objective: nil, notice: nil,
+        options: BodyFlowObjective.allCases.map {
+            .init(objective: $0, status: .available, reasons: [], message: [])
+        }
+    )
+}
+
 extension OnboardingFlowModel {
     static func preview(
         step: OnboardingStep,
+        decision: OnboardingEligibilityDecision? = OnboardingEligibilityDecision.previewChoice,
         operationState: OnboardingOperationState = .idle,
         validationIssues: [OnboardingValidationIssue] = []
     ) -> OnboardingFlowModel {
-        OnboardingFlowModel(
+        let model = OnboardingFlowModel(
             userID: "preview-user",
             initialDraft: OnboardingDraft(
                 displayName: "Pessoa de exemplo",
@@ -534,7 +551,7 @@ extension OnboardingFlowModel {
                 ),
                 currentStep: step
             ),
-            repository: PreviewOnboardingRepository(),
+            repository: PreviewOnboardingRepository(decision: decision),
             personaRepository: PreviewCoachPersonaRepository(),
             developmentConsentAvailability: .syntheticDevelopment,
             onStepChanged: { _ in },
@@ -542,6 +559,8 @@ extension OnboardingFlowModel {
             initialOperationState: operationState,
             initialValidationIssues: validationIssues
         )
+        if let decision { model.installDecisionForPreview(decision, requestedStep: step) }
+        return model
     }
 }
 #endif

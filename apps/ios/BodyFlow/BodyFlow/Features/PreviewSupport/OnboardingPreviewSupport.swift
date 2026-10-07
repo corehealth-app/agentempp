@@ -6,10 +6,13 @@ import Foundation
 actor OnboardingPreviewRepository: OnboardingRepository {
     private let stateStore: DemoStateStore
     private let drafts: DemoOnboardingRepository
+    private let buildFlavor: AppBuildFlavor
+    private let eligibilityScenario: OnboardingEligibilityPreviewScenario
     private let preloadsCompletedFixture: Bool
     let receiptNamespace: String
     private let persistsReceipts: Bool
     private let resetsReceipts: Bool
+    private var didSimulateUncertainCompletion = false
     private var resetTasks: [String: Task<Void, Error>] = [:]
 
     init(
@@ -19,9 +22,12 @@ actor OnboardingPreviewRepository: OnboardingRepository {
         preloadsCompletedFixture: Bool = false,
         receiptNamespace: String = DemoStorageService.development,
         persistsReceipts: Bool = false,
-        resetsReceipts: Bool = false
+        resetsReceipts: Bool = false,
+        eligibilityScenario: OnboardingEligibilityPreviewScenario = .choice
     ) {
         self.stateStore = stateStore
+        self.buildFlavor = buildFlavor
+        self.eligibilityScenario = eligibilityScenario
         self.preloadsCompletedFixture = preloadsCompletedFixture
         self.receiptNamespace = receiptNamespace
         self.persistsReceipts = persistsReceipts
@@ -36,7 +42,7 @@ actor OnboardingPreviewRepository: OnboardingRepository {
     func loadDraft(for userID: String) async throws -> OnboardingDraft? {
         try await requireActiveLocalUser(userID)
         if let receipt = try await receipt(for: userID) { return receipt.draft }
-        return try await drafts.loadDraft(for: userID)
+        return localizedFreshDraft(try await drafts.loadDraft(for: userID))
     }
 
     func loadState(for userID: String) async throws -> OnboardingServerState {
@@ -44,7 +50,7 @@ actor OnboardingPreviewRepository: OnboardingRepository {
         let stored = try await receipt(for: userID)
         let draft: OnboardingDraft?
         if let stored { draft = stored.draft }
-        else { draft = try await drafts.loadDraft(for: userID) }
+        else { draft = localizedFreshDraft(try await drafts.loadDraft(for: userID)) }
         let receipt = stored?.acknowledgement
         return OnboardingServerState(
             locale: draft?.localeIdentifier ?? "pt-BR",
@@ -56,6 +62,35 @@ actor OnboardingPreviewRepository: OnboardingRepository {
             acceptedActions: receipt?.documentActions ?? [],
             draft: draft
         )
+    }
+
+    private func localizedFreshDraft(_ source: OnboardingDraft?) -> OnboardingDraft? {
+        guard var draft = source, draft.currentStep == .welcome, draft.displayName == nil else { return source }
+        draft.localeIdentifier = DemoOnboardingSuggestions.currentDevice.localeIdentifier
+        return draft
+    }
+
+    func checkEligibility(
+        _ input: OnboardingEligibilityInput, for userID: String,
+        idempotencyKey: IdempotencyKey
+    ) async throws -> OnboardingEligibilityDecision {
+        guard buildFlavor == .debug else { throw OnboardingRepositoryError.serviceUnavailable }
+        try await requireActiveLocalUser(userID)
+        if eligibilityScenario == .failure { throw OnboardingRepositoryError.serviceUnavailable }
+        let assigned = eligibilityScenario == .assigned
+        let blocked = assigned || eligibilityScenario == .gainBlocked
+        let portuguese = input.locale == "pt-BR"
+        return OnboardingEligibilityDecision(
+            decision: assigned ? .assigned : .choice, basis: .bodyFat,
+            objective: assigned ? .bodyRecomposition : nil,
+            notice: assigned ? [portuguese ? "Nesta simulação local, seu objetivo inicial é recomposição corporal." : "In this local simulation, your starting objective is body recomposition."] : nil,
+            options: [
+                .init(objective: .bodyRecomposition, status: .available, reasons: [], message: []),
+                .init(objective: .muscleGain, status: blocked ? .blocked : .available,
+                    reasons: blocked ? [.composition] : [],
+                    message: blocked ? [portuguese ? "O ganho de massa está indisponível nesta simulação local." : "Muscle gain is unavailable in this local simulation."] : []),
+                .init(objective: .maintenance, status: assigned ? .notOffered : .available, reasons: [], message: [])
+            ])
     }
 
     func saveDraft(_ draft: OnboardingDraft, for userID: String) async throws {
@@ -112,7 +147,10 @@ actor OnboardingPreviewRepository: OnboardingRepository {
                         action: document.action,
                         actedAt: timestamp
                     )
-                }
+                },
+            protocolWelcome: eligibilityScenario == .welcome
+                ? ProtocolWelcome(protocol: objective, paragraphs: Self.welcomeParagraphs(locale: draft.localeIdentifier))
+                : nil
         )
         guard acknowledgement.matches(draft) else {
             throw OnboardingRepositoryError.invalidDraft
@@ -127,6 +165,10 @@ actor OnboardingPreviewRepository: OnboardingRepository {
             ),
             namespace: receiptNamespace, persistent: persistsReceipts, userID: userID
         )
+        if eligibilityScenario == .completionUncertain && !didSimulateUncertainCompletion {
+            didSimulateUncertainCompletion = true
+            throw OnboardingRepositoryError.serviceUnavailable
+        }
         return committed.acknowledgement
     }
 
@@ -236,6 +278,16 @@ actor OnboardingPreviewRepository: OnboardingRepository {
             try await task.value
         }
         try Task.checkCancellation()
+    }
+
+    static func welcomeParagraphs(locale: String) -> [String] {
+        let pt = locale == "pt-BR"
+        let first = pt ? "Esta é uma mensagem sintética do Flow para testar a entrada no objetivo." : "This is a synthetic Flow message for testing entry into an objective."
+        let body = pt
+            ? "Este parágrafo sintético verifica a leitura completa da mensagem recebida. O texto permanece integral, com os espaços e a ordem originais, para que você consiga ler cada orientação até o fim. A demonstração local não altera informações clínicas nem publica dados. Leia bem."
+            : "This synthetic paragraph checks complete reading of the received message. The text remains intact, with its original spacing and order, so you can read every instruction through to the end. This local demonstration changes no clinical information and publishes no data..."
+        let last = pt ? "Fim da mensagem sintética. A próxima tela será Hoje." : "End of the synthetic message. The next screen will be Today."
+        return [first] + Array(repeating: body, count: 10) + [last]
     }
 
     private static func requirements(locale: String) -> OnboardingRequirements {

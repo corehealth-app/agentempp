@@ -3,10 +3,10 @@ import Foundation
 enum OnboardingStep: CaseIterable, Codable, Equatable, Sendable {
     case welcome
     case bodyData
-    case objective
     case routine
     case persona
     case consent
+    case objective
     case completion
 }
 
@@ -446,6 +446,7 @@ struct OnboardingCompletionAcknowledgement: Codable, Equatable, Sendable {
     let objective: BodyFlowObjective
     let persona: CoachPersona
     let documentActions: [OnboardingAcceptedAction]
+    let protocolWelcome: ProtocolWelcome?
 
     private enum CodingKeys: String, CodingKey {
         case onboardingCompleted = "onboarding_completed"
@@ -453,6 +454,7 @@ struct OnboardingCompletionAcknowledgement: Codable, Equatable, Sendable {
         case objective
         case persona
         case documentActions = "document_actions"
+        case protocolWelcome = "protocol_welcome"
     }
 
     init(
@@ -460,13 +462,15 @@ struct OnboardingCompletionAcknowledgement: Codable, Equatable, Sendable {
         completedAt: String,
         objective: BodyFlowObjective,
         persona: CoachPersona,
-        documentActions: [OnboardingAcceptedAction]
+        documentActions: [OnboardingAcceptedAction],
+        protocolWelcome: ProtocolWelcome? = nil
     ) {
         self.onboardingCompleted = onboardingCompleted
         self.completedAt = completedAt
         self.objective = objective
         self.persona = persona
         self.documentActions = documentActions
+        self.protocolWelcome = protocolWelcome
     }
 
     init(from decoder: any Decoder) throws {
@@ -483,6 +487,7 @@ struct OnboardingCompletionAcknowledgement: Codable, Equatable, Sendable {
             )
         }
         persona = decodedPersona
+        protocolWelcome = try values.decodeIfPresent(ProtocolWelcome.self, forKey: .protocolWelcome)
         documentActions = try values.decode(
             [OnboardingAcceptedAction].self,
             forKey: .documentActions
@@ -495,6 +500,7 @@ struct OnboardingCompletionAcknowledgement: Codable, Equatable, Sendable {
         try values.encode(completedAt, forKey: .completedAt)
         try values.encode(objective, forKey: .objective)
         try values.encode(Self.code(for: persona), forKey: .persona)
+        try values.encodeIfPresent(protocolWelcome, forKey: .protocolWelcome)
         try values.encode(documentActions, forKey: .documentActions)
     }
 
@@ -519,6 +525,7 @@ struct OnboardingCompletionAcknowledgement: Codable, Equatable, Sendable {
         guard onboardingCompleted,
               Self.isServerTimestamp(completedAt),
               objective == draft.objective,
+              protocolWelcome == nil || protocolWelcome?.protocol == objective,
               persona == draft.persona,
               let submittedActions = draft.documentActions,
               !submittedActions.isEmpty,

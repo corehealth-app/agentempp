@@ -13,7 +13,7 @@ struct OnboardingFlowModelTests {
         draft.displayName = "  "
         draft.countryCode = "br"
         draft.timeZoneIdentifier = "Brazil/East/Invalid"
-        let model = makeModel(draft: draft, repository: repository)
+        let model = await makeModel(draft: draft, repository: repository)
 
         await model.continueFromCurrentStep()
 
@@ -32,7 +32,7 @@ struct OnboardingFlowModelTests {
         let repository = RecordingOnboardingRepository()
         var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .welcome)
         draft.countryCode = countryCode
-        let model = makeModel(draft: draft, repository: repository)
+        let model = await makeModel(draft: draft, repository: repository)
 
         await model.continueFromCurrentStep()
 
@@ -46,7 +46,7 @@ struct OnboardingFlowModelTests {
         var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .welcome)
         draft.countryCode = "BR"
         draft.timeZoneIdentifier = "America/Sao_Paulo"
-        let model = makeModel(draft: draft, repository: repository)
+        let model = await makeModel(draft: draft, repository: repository)
 
         await model.continueFromCurrentStep()
 
@@ -55,14 +55,14 @@ struct OnboardingFlowModelTests {
     }
 
     @Test("changing timezone preserves the selected civil birth date")
-    func changingTimeZonePreservesCivilBirthDate() throws {
+    func changingTimeZonePreservesCivilBirthDate() async throws {
         var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .welcome)
         draft.timeZoneIdentifier = "Pacific/Kiritimati"
         draft.birthDate = try #require(OnboardingCivilDate.date(
             from: "1990-01-01",
             timeZoneIdentifier: draft.timeZoneIdentifier
         ))
-        let model = makeModel(draft: draft)
+        let model = await makeModel(draft: draft)
 
         model.updateTimeZoneIdentifier("Etc/GMT+12")
 
@@ -82,7 +82,7 @@ struct OnboardingFlowModelTests {
         draft.birthDate = nil
         draft.heightCM = nil
         draft.weightKG = nil
-        let model = makeModel(draft: draft, repository: repository)
+        let model = await makeModel(draft: draft, repository: repository)
 
         await model.continueFromCurrentStep()
 
@@ -100,7 +100,7 @@ struct OnboardingFlowModelTests {
         let now = Date(timeIntervalSince1970: 1_000_000)
         var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .bodyData)
         draft.birthDate = now.addingTimeInterval(1)
-        let model = makeModel(draft: draft, now: now)
+        let model = await makeModel(draft: draft, now: now)
 
         await model.continueFromCurrentStep()
 
@@ -112,7 +112,7 @@ struct OnboardingFlowModelTests {
     func rejectsHeightOutsideContract(_ height: Double) async {
         var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .bodyData)
         draft.heightCM = height
-        let model = makeModel(draft: draft)
+        let model = await makeModel(draft: draft)
 
         await model.continueFromCurrentStep()
 
@@ -123,19 +123,19 @@ struct OnboardingFlowModelTests {
     func acceptsHeightContractBounds(_ height: Double) async {
         var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .bodyData)
         draft.heightCM = height
-        let model = makeModel(draft: draft)
+        let model = await makeModel(draft: draft)
 
         await model.continueFromCurrentStep()
 
         #expect(model.validationIssues.isEmpty)
-        #expect(model.step == .objective)
+        #expect(model.step == .routine)
     }
 
     @Test(arguments: [29.99, 300.01])
     func rejectsWeightOutsideContract(_ weight: Double) async {
         var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .bodyData)
         draft.weightKG = weight
-        let model = makeModel(draft: draft)
+        let model = await makeModel(draft: draft)
 
         await model.continueFromCurrentStep()
 
@@ -146,19 +146,19 @@ struct OnboardingFlowModelTests {
     func acceptsWeightContractBounds(_ weight: Double) async {
         var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .bodyData)
         draft.weightKG = weight
-        let model = makeModel(draft: draft)
+        let model = await makeModel(draft: draft)
 
         await model.continueFromCurrentStep()
 
         #expect(model.validationIssues.isEmpty)
-        #expect(model.step == .objective)
+        #expect(model.step == .routine)
     }
 
     @Test(arguments: [2.99, 60.01])
     func rejectsBodyFatOutsideContract(_ bodyFat: Double) async {
         var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .bodyData)
         draft.bodyFatPercent = bodyFat
-        let model = makeModel(draft: draft)
+        let model = await makeModel(draft: draft)
 
         await model.continueFromCurrentStep()
 
@@ -169,24 +169,24 @@ struct OnboardingFlowModelTests {
     func acceptsBodyFatContractBounds(_ bodyFat: Double) async {
         var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .bodyData)
         draft.bodyFatPercent = bodyFat
-        let model = makeModel(draft: draft)
+        let model = await makeModel(draft: draft)
 
         await model.continueFromCurrentStep()
 
         #expect(model.validationIssues.isEmpty)
-        #expect(model.step == .objective)
+        #expect(model.step == .routine)
     }
 
     @Test("body fat is optional")
     func acceptsMissingBodyFat() async {
         var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .bodyData)
         draft.bodyFatPercent = nil
-        let model = makeModel(draft: draft)
+        let model = await makeModel(draft: draft)
 
         await model.continueFromCurrentStep()
 
         #expect(model.validationIssues.isEmpty)
-        #expect(model.step == .objective)
+        #expect(model.step == .routine)
     }
 
     @Test("objective is required only on the objective step")
@@ -194,8 +194,7 @@ struct OnboardingFlowModelTests {
         let repository = RecordingOnboardingRepository()
         var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .objective)
         draft.objective = nil
-        draft.activityLevel = nil
-        let model = makeModel(draft: draft, repository: repository)
+        let model = await makeModel(draft: draft, repository: repository)
 
         await model.continueFromCurrentStep()
 
@@ -214,7 +213,7 @@ struct OnboardingFlowModelTests {
         draft.wakeTime = nil
         draft.bedtime = nil
         draft.foodOrganization = nil
-        let model = makeModel(draft: draft)
+        let model = await makeModel(draft: draft)
 
         await model.continueFromCurrentStep()
 
@@ -234,7 +233,7 @@ struct OnboardingFlowModelTests {
     func rejectsTrainingFrequencyOutsideContract(_ frequency: Int) async {
         var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .routine)
         draft.trainingFrequency = frequency
-        let model = makeModel(draft: draft)
+        let model = await makeModel(draft: draft)
 
         await model.continueFromCurrentStep()
 
@@ -245,7 +244,7 @@ struct OnboardingFlowModelTests {
     func acceptsTrainingFrequencyContractBounds(_ frequency: Int) async {
         var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .routine)
         draft.trainingFrequency = frequency
-        let model = makeModel(draft: draft)
+        let model = await makeModel(draft: draft)
 
         await model.continueFromCurrentStep()
 
@@ -258,7 +257,7 @@ struct OnboardingFlowModelTests {
         var personaDraft = BodyFlowTestFixtures.onboardingDraft(currentStep: .persona)
         personaDraft.persona = nil
         personaDraft.consent = nil
-        let personaModel = makeModel(draft: personaDraft)
+        let personaModel = await makeModel(draft: personaDraft)
 
         await personaModel.continueFromCurrentStep()
 
@@ -267,7 +266,7 @@ struct OnboardingFlowModelTests {
         var consentDraft = BodyFlowTestFixtures.onboardingDraft(currentStep: .consent)
         consentDraft.consent = nil
         consentDraft.persona = nil
-        let consentModel = makeModel(
+        let consentModel = await makeModel(
             draft: consentDraft,
             requirements: officialRequirements
         )
@@ -280,7 +279,7 @@ struct OnboardingFlowModelTests {
     @Test("unavailable synthetic consent is neither presented nor advanced")
     func unavailableSyntheticConsentDoesNotAdvance() async {
         let repository = RecordingOnboardingRepository()
-        let model = makeModel(
+        let model = await makeModel(
             draft: .fixture(step: .consent),
             repository: repository,
             developmentConsentAvailability: .unavailable
@@ -297,8 +296,8 @@ struct OnboardingFlowModelTests {
     }
 
     @Test("unavailable synthetic consent hides a stale completion presentation")
-    func unavailableSyntheticConsentHidesStaleCompletion() {
-        let model = makeModel(
+    func unavailableSyntheticConsentHidesStaleCompletion() async {
+        let model = await makeModel(
             draft: .fixture(step: .completion),
             developmentConsentAvailability: .unavailable
         )
@@ -310,7 +309,7 @@ struct OnboardingFlowModelTests {
     @Test("synthetic development consent retains the debug journey")
     func syntheticDevelopmentConsentAdvances() async {
         let repository = RecordingOnboardingRepository()
-        let model = makeModel(
+        let model = await makeModel(
             draft: .fixture(step: .consent),
             repository: repository,
             developmentConsentAvailability: .syntheticDevelopment
@@ -321,8 +320,8 @@ struct OnboardingFlowModelTests {
         await model.continueFromCurrentStep()
 
         #expect(model.validationIssues.isEmpty)
-        #expect(model.step == .completion)
-        #expect(await repository.savedDrafts.map(\.currentStep) == [.completion])
+        #expect(model.step == .objective)
+        #expect(await repository.savedDrafts.map(\.currentStep) == [.objective])
     }
     #endif
 
@@ -332,7 +331,7 @@ struct OnboardingFlowModelTests {
         let repository = RecordingOnboardingRepository(onSave: {
             events.append("save")
         })
-        let model = makeModel(draft: .fixture(step: .welcome), repository: repository) { step in
+        let model = await makeModel(draft: .fixture(step: .welcome), repository: repository) { step in
             events.append("callback-\(step)")
         }
 
@@ -347,21 +346,21 @@ struct OnboardingFlowModelTests {
     @Test("back preserves typed field updates")
     func backPreservesDraft() async {
         var changedSteps: [OnboardingStep] = []
-        let model = makeModel(draft: .fixture(step: .objective)) {
+        let model = await makeModel(draft: .fixture(step: .objective)) {
             changedSteps.append($0)
         }
         model.updateDisplayName("Nome preservado")
-        model.updateHeightCM(181.5)
         model.updateObjective(.muscleGain)
+        model.updateHeightCM(181.5)
 
         await model.back()
 
-        #expect(model.step == .bodyData)
-        #expect(model.draft.currentStep == .bodyData)
+        #expect(model.step == .consent)
+        #expect(model.draft.currentStep == .consent)
         #expect(model.draft.displayName == "Nome preservado")
         #expect(model.draft.heightCM == 181.5)
         #expect(model.draft.objective == .muscleGain)
-        #expect(changedSteps == [.bodyData])
+        #expect(changedSteps == [.consent])
     }
 
     @Test("save failure keeps the step visible and retry can advance")
@@ -370,7 +369,7 @@ struct OnboardingFlowModelTests {
             saveResults: [.failure(.serviceUnavailable), .success(())]
         )
         var changedSteps: [OnboardingStep] = []
-        let model = makeModel(draft: .fixture(step: .welcome), repository: repository) {
+        let model = await makeModel(draft: .fixture(step: .welcome), repository: repository) {
             changedSteps.append($0)
         }
 
@@ -393,7 +392,7 @@ struct OnboardingFlowModelTests {
     func suppressesConcurrentSubmission() async {
         let repository = SuspendedOnboardingRepository()
         var changedSteps: [OnboardingStep] = []
-        let model = makeModel(draft: .fixture(step: .welcome), repository: repository) {
+        let model = await makeModel(draft: .fixture(step: .welcome), repository: repository) {
             changedSteps.append($0)
         }
         let first = Task { await model.continueFromCurrentStep() }
@@ -415,7 +414,7 @@ struct OnboardingFlowModelTests {
     func cancellationPreventsLateTransition() async {
         let repository = CancellationIgnoringOnboardingRepository()
         var changedSteps: [OnboardingStep] = []
-        let model = makeModel(draft: .fixture(step: .welcome), repository: repository) {
+        let model = await makeModel(draft: .fixture(step: .welcome), repository: repository) {
             changedSteps.append($0)
         }
         let submission = Task { await model.continueFromCurrentStep() }
@@ -434,7 +433,7 @@ struct OnboardingFlowModelTests {
     @Test("a cancelled failing save does not publish a late error")
     func cancellationPreventsLateFailure() async {
         let repository = CancellationIgnoringFailingOnboardingRepository()
-        let model = makeModel(draft: .fixture(step: .welcome), repository: repository)
+        let model = await makeModel(draft: .fixture(step: .welcome), repository: repository)
         let submission = Task { await model.continueFromCurrentStep() }
         await repository.waitUntilSaveSuspends()
 
@@ -474,8 +473,8 @@ struct OnboardingFlowModelTests {
         requirements: OnboardingRequirements = .unavailable,
         now: Date = Date(timeIntervalSince1970: 2_000_000_000),
         onStepChanged: @escaping @MainActor (OnboardingStep) -> Void = { _ in }
-    ) -> OnboardingFlowModel {
-        OnboardingFlowModel(
+    ) async -> OnboardingFlowModel {
+        let model = OnboardingFlowModel(
             userID: "fixture-user",
             initialDraft: draft,
             repository: repository,
@@ -486,6 +485,8 @@ struct OnboardingFlowModelTests {
             onCompleted: {},
             now: { now }
         )
+        if model.step == .objective { await model.prepareObjectiveIfNeeded() }
+        return model
     }
 
     private var officialRequirements: OnboardingRequirements {
@@ -516,6 +517,9 @@ private extension OnboardingDraft {
 }
 
 private actor RecordingOnboardingRepository: OnboardingRepository {
+    func checkEligibility(_ input: OnboardingEligibilityInput, for userID: String,
+                          idempotencyKey: IdempotencyKey) async throws -> OnboardingEligibilityDecision { E3Fixtures.choice }
+
     private(set) var savedDrafts: [OnboardingDraft] = []
     private(set) var completeCount = 0
     private var saveResults: [Result<Void, OnboardingRepositoryError>]
@@ -551,6 +555,9 @@ private actor OnboardingPersonaRepository: CoachPersonaRepository {
 }
 
 private actor SuspendedOnboardingRepository: OnboardingRepository {
+    func checkEligibility(_ input: OnboardingEligibilityInput, for userID: String,
+                          idempotencyKey: IdempotencyKey) async throws -> OnboardingEligibilityDecision { E3Fixtures.choice }
+
     private var continuation: CheckedContinuation<Void, Never>?
     private(set) var saveCount = 0
 
@@ -577,6 +584,9 @@ private actor SuspendedOnboardingRepository: OnboardingRepository {
 }
 
 private actor CancellationIgnoringOnboardingRepository: OnboardingRepository {
+    func checkEligibility(_ input: OnboardingEligibilityInput, for userID: String,
+                          idempotencyKey: IdempotencyKey) async throws -> OnboardingEligibilityDecision { E3Fixtures.choice }
+
     private var continuation: CheckedContinuation<Void, Never>?
 
     func loadDraft(for userID: String) async throws -> OnboardingDraft? { nil }
@@ -601,6 +611,9 @@ private actor CancellationIgnoringOnboardingRepository: OnboardingRepository {
 }
 
 private actor CancellationIgnoringFailingOnboardingRepository: OnboardingRepository {
+    func checkEligibility(_ input: OnboardingEligibilityInput, for userID: String,
+                          idempotencyKey: IdempotencyKey) async throws -> OnboardingEligibilityDecision { E3Fixtures.choice }
+
     private var continuation: CheckedContinuation<Void, Never>?
 
     func loadDraft(for userID: String) async throws -> OnboardingDraft? { nil }

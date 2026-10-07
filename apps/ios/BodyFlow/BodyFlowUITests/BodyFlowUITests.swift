@@ -432,16 +432,6 @@ final class BodyFlowUITests: XCTestCase {
         continueButton.tap()
 
         XCTAssertTrue(
-            element("screen.onboarding.objective", in: app)
-                .waitForExistence(timeout: 3)
-        )
-        let objective = app.buttons["onboarding.objective.recomposicao"]
-        assertMinimumTapTarget(objective)
-        objective.tap()
-        XCTAssertTrue(objective.isSelected)
-        continueButton.tap()
-
-        XCTAssertTrue(
             element("screen.onboarding.routine", in: app)
                 .waitForExistence(timeout: 3)
         )
@@ -475,6 +465,16 @@ final class BodyFlowUITests: XCTestCase {
             XCTAssertTrue(action.isSelected)
             assertMinimumTapTarget(action)
         }
+        continueButton.tap()
+
+        XCTAssertTrue(
+            element("screen.onboarding.objective", in: app)
+                .waitForExistence(timeout: 3)
+        )
+        let objective = app.buttons["onboarding.objective.recomposicao"]
+        assertMinimumTapTarget(objective)
+        objective.tap()
+        XCTAssertTrue(objective.isSelected)
         continueButton.tap()
 
         XCTAssertTrue(

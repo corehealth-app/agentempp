@@ -16,8 +16,8 @@ struct OnboardingModelsTests {
     @Test("onboarding follows the approved seven-step order")
     func onboardingOrder() {
         #expect(OnboardingStep.allCases == [
-            .welcome, .bodyData, .objective, .routine,
-            .persona, .consent, .completion,
+            .welcome, .bodyData, .routine, .persona,
+            .consent, .objective, .completion,
         ])
     }
 

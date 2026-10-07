@@ -195,7 +195,8 @@ struct TelemetryTests {
                 )
             ),
             persona: TelemetryPersonaRepository(),
-            telemetry: telemetry
+            telemetry: telemetry,
+            developmentConsentAvailability: .syntheticDevelopment
         )
         await telemetry.observe { model.state }
 
@@ -215,6 +216,34 @@ struct TelemetryTests {
                 state: publishedState
             ),
         ])
+    }
+
+    @MainActor
+    @Test("legacy restoration normalizes before the only initial viewed event", arguments: [OnboardingStep.objective, .completion])
+    func legacyRestorePublishesOnlyNormalizedStep(step: OnboardingStep) async {
+        var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: step)
+        if step == .objective { draft.trainingFrequency = nil } else { draft.consent = nil }
+        let expected: OnboardingStep = step == .objective ? .routine : .consent
+        let telemetry = StateObservingTelemetryClient<AppFlowState>()
+        let session = AuthSession(userID: "fixture-user", email: "qa@example.invalid",
+            isEmailConfirmed: true, isOnboardingCompleted: false)
+        let model = AppFlowModel(authentication: RestoringTelemetryAuthenticationService(restoredSession: session),
+            onboarding: RestoringTelemetryOnboardingRepository(loadResult: .success(draft)),
+            persona: TelemetryPersonaRepository(), telemetry: telemetry,
+            developmentConsentAvailability: .syntheticDevelopment)
+        await telemetry.observe { model.state }
+        await model.start()
+        let published = AppFlowState.onboarding(userID: session.userID, step: expected)
+        #expect(model.state == published)
+        #expect(model.restoredOnboardingDraft?.currentStep == expected)
+        #expect(await telemetry.snapshot() == [ObservedTelemetryRecord(event:
+            TelemetryEvent(name: .onboardingStepViewed, metadata: ["step": expected == .routine ? "routine" : "consent"]),
+            state: published)])
+        let direct = OnboardingFlowModel(userID: session.userID, initialDraft: draft,
+            repository: RestoringTelemetryOnboardingRepository(loadResult: .success(draft)),
+            personaRepository: TelemetryPersonaRepository(), developmentConsentAvailability: .syntheticDevelopment,
+            onStepChanged: { _ in }, onCompleted: {})
+        #expect(direct.step == expected)
     }
 
     @MainActor
@@ -404,16 +433,16 @@ struct TelemetryTests {
         await model.back()
 
         let publishedState = OnboardingTelemetryState(
-            step: .bodyData,
-            draftStep: .bodyData
+            step: .consent,
+            draftStep: .consent
         )
-        #expect(model.step == .bodyData)
-        #expect(model.draft.currentStep == .bodyData)
+        #expect(model.step == .consent)
+        #expect(model.draft.currentStep == .consent)
         #expect(await telemetry.snapshot() == [
             ObservedTelemetryRecord(
                 event: TelemetryEvent(
                     name: .onboardingStepViewed,
-                    metadata: ["step": "body_data"]
+                    metadata: ["step": "consent"]
                 ),
                 state: publishedState
             ),
@@ -546,6 +575,8 @@ struct TelemetryTests {
             }
         )
 
+        await prepareE3Review(model)
+        order.clear()
         await model.complete()
 
         #expect(order.values == [
@@ -580,6 +611,8 @@ struct TelemetryTests {
             }
         )
 
+        await prepareE3Review(model)
+        order.clear()
         await model.complete()
 
         #expect(model.step == .completion)
@@ -687,6 +720,9 @@ private struct RestoringTelemetryAuthenticationService: AuthenticationService {
 }
 
 private struct TelemetryOnboardingRepository: OnboardingRepository {
+    func checkEligibility(_ input: OnboardingEligibilityInput, for userID: String,
+                          idempotencyKey: IdempotencyKey) async throws -> OnboardingEligibilityDecision { E3Fixtures.choice }
+
     func loadDraft(for userID: String) async throws -> OnboardingDraft? { nil }
     func loadState(for userID: String) async throws -> OnboardingServerState {
         OnboardingServerState(
@@ -704,6 +740,9 @@ private struct TelemetryOnboardingRepository: OnboardingRepository {
 }
 
 private struct RestoringTelemetryOnboardingRepository: OnboardingRepository {
+    func checkEligibility(_ input: OnboardingEligibilityInput, for userID: String,
+                          idempotencyKey: IdempotencyKey) async throws -> OnboardingEligibilityDecision { E3Fixtures.choice }
+
     let loadResult: Result<OnboardingDraft?, OnboardingRepositoryError>
 
     func loadDraft(for userID: String) async throws -> OnboardingDraft? {
@@ -771,6 +810,9 @@ private actor OrderedTelemetryClient: TelemetryClient {
 }
 
 private actor OrderedTelemetryOnboardingRepository: OnboardingRepository {
+    func checkEligibility(_ input: OnboardingEligibilityInput, for userID: String,
+                          idempotencyKey: IdempotencyKey) async throws -> OnboardingEligibilityDecision { E3Fixtures.choice }
+
     let order: TelemetryOrderRecorder
     let completionError: OnboardingRepositoryError?
 
@@ -799,6 +841,9 @@ private actor OrderedTelemetryOnboardingRepository: OnboardingRepository {
 }
 
 private struct CancelledTelemetryOnboardingRepository: OnboardingRepository {
+    func checkEligibility(_ input: OnboardingEligibilityInput, for userID: String,
+                          idempotencyKey: IdempotencyKey) async throws -> OnboardingEligibilityDecision { E3Fixtures.choice }
+
     func loadDraft(for userID: String) async throws -> OnboardingDraft? { nil }
 
     func saveDraft(_ draft: OnboardingDraft, for userID: String) async throws {
@@ -832,6 +877,8 @@ private final class TelemetryOrderRecorder: @unchecked Sendable {
         storage.append(value)
         lock.unlock()
     }
+
+    func clear() { lock.lock(); storage.removeAll(); lock.unlock() }
 
     var values: [String] {
         lock.lock()

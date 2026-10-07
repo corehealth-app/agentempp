@@ -90,6 +90,8 @@ struct OnboardingPreviewSupportTests {
             model.updateDocumentAction(document.explicitAction, selected: true)
         }
         await model.continueFromCurrentStep()
+        #expect(model.step == .objective)
+        await model.continueFromCurrentStep()
         #expect(model.step == .completion)
         #expect(completions == 0)
         #expect(try await dependencies.onboarding.loadState(for: session.userID)
@@ -314,14 +316,37 @@ struct OnboardingPreviewSupportTests {
             .completion.completed == false)
     }
 
-    @Test("Release ignores UI fixture arguments and retains unavailable onboarding")
-    func releaseDoesNotSelectSyntheticOnboarding() async {
+    @Test("scripted eligibility requires the active local account and never persists a decision")
+    func eligibilityRequiresLocalOwnerWithoutSaving() async throws {
+        let dependencies = try await debugDependencies()
+        let session = try #require(await dependencies.authentication.restoreSession())
+        let before = try await dependencies.onboarding.loadState(for: session.userID)
+        let input = try OnboardingEligibilityInput(draft: E3Fixtures.draft())
+        let key = try IdempotencyKey(validating: "e3-local-owner")
+        #expect(try await dependencies.onboarding.checkEligibility(input, for: session.userID,
+            idempotencyKey: key) == E3Fixtures.choice)
+        #expect(try await dependencies.onboarding.loadState(for: session.userID) == before)
+        await #expect(throws: OnboardingRepositoryError.invalidDraft) {
+            try await dependencies.onboarding.checkEligibility(input, for: "another-local-account", idempotencyKey: key)
+        }
+        try await dependencies.authentication.signOut()
+        await #expect(throws: OnboardingRepositoryError.invalidDraft) {
+            try await dependencies.onboarding.checkEligibility(input, for: session.userID, idempotencyKey: key)
+        }
+    }
+
+    @Test("Release ignores all E3 UI fixture arguments and retains unavailable onboarding", arguments: [
+        "--ui-testing-fresh-auth", "--ui-testing-onboarding-assigned", "--ui-testing-onboarding-gain-blocked",
+        "--ui-testing-onboarding-welcome", "--ui-testing-onboarding-eligibility-failure",
+        "--ui-testing-onboarding-completion-uncertain"])
+    func releaseDoesNotSelectSyntheticOnboarding(flag: String) async {
         let configuration = AppLaunchConfiguration.resolve(
-            arguments: ["--ui-testing", "--ui-testing-fresh-auth"],
+            arguments: ["--ui-testing", flag],
             buildFlavor: .release
         )
         let dependencies = AppDependencies.make(configuration: configuration)
         #expect(configuration.mode == .releaseUnavailable)
+        #expect(configuration.onboardingEligibilityScenario == nil)
         await #expect(throws: OnboardingRepositoryError.serviceUnavailable) {
             try await dependencies.onboarding.loadState(for: "qa-release-boundary")
         }

@@ -2681,3 +2681,15 @@ como antes da mudança; qualquer outro texto responde
 - Suplementos e medicamentos têm CRUD versionado, `dose_text` controlado pelo
   paciente, múltiplos horários e histórico de adesão. Orientação clínica,
   recomendação de dose e prescrição permanecem fora do escopo.
+
+### Cliente iOS E3 — candidato local de entrada nos objetivos (2026-10-07)
+
+Ordem do cadastro: boas-vindas → dados corporais → rotina → estilo do Flow → documentos → objetivo → revisão. A conferência só ocorre após todos os documentos exigidos estarem válidos. A decisão e os textos pertencem ao servidor: o cliente não calcula critérios de entrada. Na decisão `assigned`, recomposição aparece marcada como leitura, com aviso integral e detalhe de ganho fechado; em `choice`, somente opções `available` são botões. Os motivos bloqueados ficam visíveis como texto.
+
+Rascunhos retomados conferem os pré-requisitos e buscam uma decisão nova; alterações nos dados invalidam a decisão anterior. Reaceite com `completed_at` histórico mostra apenas documentos/revisão, sem conferência, alteração de objetivo ou mensagem de entrada.
+
+Depois da conclusão confirmada, `protocol_welcome` é apresentado como mensagem do Flow, preservando parágrafos, repetições e quebras de linha. A raiz recebe a conclusão somente no CTA “Ir para Hoje”; o tutorial existente continua pertencendo ao AppShell. Sem mensagem, mantém-se a conclusão imediata. O detalhe de bloqueio e os motivos são recebidos integralmente do servidor; não são textos clínicos locais.
+
+O 422 `onboarding_objective_not_eligible` retorna ao objetivo, pede decisão nova e usa uma chave nova na conclusão seguinte. Uma resposta incerta de conclusão mantém o par chave/corpo original e bloqueia edição enquanto o retry confere esse envio. A interface mostra esse estado explicitamente.
+
+Validação desta etapa é local no simulador e com respostas sintéticas DEBUG, incluindo mensagem de aproximadamente 2.900 caracteres. Não comprova chamada API ao vivo, publicação, aceite visual humano ou protocolos completos. O staging e o cliente publicado continuam exigindo a promoção conjunta autorizada descrita no handoff; E3 entrega somente a entrada. Fechar o app durante a mensagem não a reapresenta automaticamente: leitura posterior em Perfil pertence à E6.

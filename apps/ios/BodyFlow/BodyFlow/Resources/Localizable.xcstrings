@@ -1,6 +1,134 @@
 {
   "sourceLanguage" : "pt-BR",
   "strings" : {
+  "onboarding.completion.unresolved": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "O envio anterior ainda precisa ser confirmado. Tente novamente para conferir o resultado."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Your previous submission still needs confirmation. Try again to check the result."
+        }
+      }
+    }
+  },
+  "onboarding.protocol-welcome.continue": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Ir para Hoje"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Go to Today"
+        }
+      }
+    }
+  },
+  "onboarding.protocol-welcome.title": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Mensagem do Flow"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Message from Flow"
+        }
+      }
+    }
+  },
+  "onboarding.objective.retry": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Conferir novamente"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Check again"
+        }
+      }
+    }
+  },
+  "onboarding.objective.checking": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Conferindo os objetivos disponíveis…"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Checking available objectives…"
+        }
+      }
+    }
+  },
+  "onboarding.objective.unavailable": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Indisponível"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Unavailable"
+        }
+      }
+    }
+  },
+  "onboarding.objective.about-gain": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Sobre o ganho de massa muscular"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "About muscle gain"
+        }
+      }
+    }
+  },
+  "onboarding.objective.assigned.title": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Seu objetivo inicial"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Your starting objective"
+        }
+      }
+    }
+  },
   "brand.confirmed": {
     "localizations": {
       "pt-BR": {
@@ -1230,21 +1358,21 @@
   }
 },
 "onboarding.completion.finish" : {
-  "localizations": {
-    "en": {
-      "stringUnit": {
-        "state": "translated",
-        "value": "Go to Today"
-      }
-    },
-    "pt-BR": {
-      "stringUnit": {
-        "state": "translated",
-        "value": "Ir para Hoje"
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Concluir cadastro"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Finish sign-up"
+        }
       }
     }
-  }
-},
+  },
 "onboarding.completion.message" : {
   "localizations": {
     "en": {
@@ -1868,11 +1996,21 @@
   }
 },
 "onboarding.objective.body-recomposition.detail" : {
-  "localizations" : {
-    "en" : { "stringUnit" : { "state" : "translated", "value" : "Support gradual changes in body composition." } },
-    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Apoiar mudanças graduais na composição corporal." } }
-  }
-},
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Perder gordura com preservação ou ganho de massa muscular."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Lose fat while preserving or gaining muscle."
+        }
+      }
+    }
+  },
 "onboarding.objective.muscle-gain.title" : {
   "localizations" : {
     "en" : { "stringUnit" : { "state" : "translated", "value" : "Muscle gain" } },
@@ -1892,11 +2030,21 @@
   }
 },
 "onboarding.objective.maintenance.detail" : {
-  "localizations" : {
-    "en" : { "stringUnit" : { "state" : "translated", "value" : "Maintain your habits and measurements consistently." } },
-    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Manter hábitos e medidas com consistência." } }
-  }
-},
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Manter o corpo atual."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Maintain your current body."
+        }
+      }
+    }
+  },
 "onboarding.routine.activity-level.title" : {
   "localizations" : {
     "en" : { "stringUnit" : { "state" : "translated", "value" : "Activity level" } },

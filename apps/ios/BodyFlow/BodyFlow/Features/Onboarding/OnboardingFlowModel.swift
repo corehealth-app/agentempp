@@ -217,9 +217,23 @@ final class OnboardingFlowModel {
     private let now: @MainActor () -> Date
     private let cancellationCheck: @MainActor () -> Bool
     private var activeSubmissionID: UUID?
-    private var pendingCompletionKey: IdempotencyKey?
+    private struct PendingCompletion {
+        let key: IdempotencyKey
+        let submittedDraft: OnboardingDraft
+    }
+    private struct EligibilitySnapshot: Equatable {
+        let input: OnboardingEligibilityInput
+        let actions: Set<OnboardingDocumentAction>
+        let developmentConsent: DevelopmentConsentAcceptance?
+    }
+    private var pendingCompletion: PendingCompletion?
+    private var eligibilitySnapshot: EligibilitySnapshot?
     private var didComplete = false
-
+    private var didNotifyRoot = false
+    private(set) var isActive = true
+    private(set) var historicalCompletedAt: String?
+    private(set) var eligibilityDecision: OnboardingEligibilityDecision?
+    private(set) var pendingProtocolWelcome: ProtocolWelcome?
     private(set) var draft: OnboardingDraft
     private(set) var step: OnboardingStep
     private(set) var operationState: OnboardingOperationState
@@ -229,12 +243,12 @@ final class OnboardingFlowModel {
     let onCompleted: @MainActor () -> Void
 
     init(
-        userID: String,
-        initialDraft: OnboardingDraft,
+        userID: String, initialDraft: OnboardingDraft,
         repository: any OnboardingRepository,
         personaRepository: any CoachPersonaRepository,
         developmentConsentAvailability: DevelopmentConsentAvailability,
         requirements: OnboardingRequirements = .unavailable,
+        historicalCompletedAt: String? = nil,
         idempotencyKeyProvider: any IdempotencyKeyProviding = RandomIdempotencyKeyProvider(),
         telemetry: any TelemetryClient = DisabledTelemetryClient(),
         onStepChanged: @escaping @MainActor (OnboardingStep) -> Void,
@@ -249,71 +263,122 @@ final class OnboardingFlowModel {
         self.personaRepository = personaRepository
         self.developmentConsentAvailability = developmentConsentAvailability
         self.requirements = requirements
+        self.historicalCompletedAt = historicalCompletedAt
         self.idempotencyKeyProvider = idempotencyKeyProvider
         self.telemetry = telemetry
-        draft = initialDraft
-        step = initialDraft.currentStep
+        let normalized = OnboardingResumePolicy.normalizedDraft(initialDraft, requirements: requirements,
+            developmentConsentAvailability: developmentConsentAvailability,
+            historicalCompletedAt: historicalCompletedAt, now: now())
+        draft = normalized
+        step = normalized.currentStep
         operationState = initialOperationState
         validationIssues = initialValidationIssues
+        if normalized.currentStep != initialDraft.currentStep {
+            validationIssues = OnboardingStepValidator.issues(for: normalized.currentStep, draft: normalized,
+                developmentConsentAvailability: developmentConsentAvailability, requirements: requirements, now: now())
+        }
         self.onStepChanged = onStepChanged
         self.onCompleted = onCompleted
         self.now = now
         self.cancellationCheck = cancellationCheck
     }
 
+    #if DEBUG
+    /// Only the local preview factory uses this explicit, validated fixture.
+    /// Normal initialization and the repository default retain fail-closed behavior.
+    func installDecisionForPreview(_ decision: OnboardingEligibilityDecision, requestedStep: OnboardingStep) {
+        guard requestedStep == .objective || requestedStep == .completion,
+              prerequisiteIssues().isEmpty, let snapshot = currentEligibilitySnapshot(),
+              let validated = try? decision.validated() else { return }
+        var candidate = draft
+        apply(validated, to: &candidate)
+        guard validated.permits(candidate.objective),
+              OnboardingStepValidator.issues(for: requestedStep, draft: candidate,
+                developmentConsentAvailability: developmentConsentAvailability,
+                requirements: requirements, now: now()).isEmpty else { return }
+        candidate.currentStep = requestedStep
+        draft = candidate
+        eligibilityDecision = validated
+        eligibilitySnapshot = snapshot
+        step = requestedStep
+    }
+    #endif
+
+    var isReacceptance: Bool { historicalCompletedAt != nil }
+    var visibleSteps: [OnboardingStep] { isReacceptance ? [.consent, .completion] : OnboardingStep.allCases }
+    var unresolvedCompletion: Bool { pendingCompletion != nil }
+    var allowsDraftEditing: Bool { isActive && !didComplete && pendingCompletion == nil }
+    var hasCurrentEligibilityDecision: Bool {
+        eligibilityDecision != nil && eligibilitySnapshot == currentEligibilitySnapshot()
+    }
+
+    /// Teardown affects local ownership only. It cannot undo a server request.
+    func invalidate() {
+        isActive = false
+        activeSubmissionID = nil
+        eligibilitySnapshot = nil
+        eligibilityDecision = nil
+        pendingProtocolWelcome = nil
+        operationState = .idle
+    }
+
     func back() async {
-        guard !isCancellationRequested,
-              operationState != .saving,
-              let index = OnboardingStep.allCases.firstIndex(of: step),
-              index > OnboardingStep.allCases.startIndex else {
-            return
-        }
+        guard allowsDraftEditing, !isCancellationRequested, operationState != .saving,
+              let index = visibleSteps.firstIndex(of: step), index > 0 else { return }
         validationIssues = []
         operationState = .idle
-        let previousStep = OnboardingStep.allCases[index - 1]
-        step = previousStep
-        draft.currentStep = previousStep
-        onStepChanged(previousStep)
-        await telemetry.record(.onboardingStepViewed(previousStep.telemetryValue))
+        let previous = visibleSteps[index - 1]
+        step = previous
+        draft.currentStep = previous
+        onStepChanged(previous)
+        await telemetry.record(.onboardingStepViewed(previous.telemetryValue))
     }
 
     func continueFromCurrentStep() async {
-        guard operationState != .saving else { return }
-
-        let issues = OnboardingStepValidator.issues(
-            for: step,
-            draft: draft,
-            developmentConsentAvailability: developmentConsentAvailability,
-            requirements: requirements,
-            now: now()
-        )
+        guard allowsDraftEditing, operationState != .saving, !isCancellationRequested else { return }
+        let issues = issues(for: step)
         validationIssues = issues
-        guard issues.isEmpty else {
-            operationState = .idle
-            return
-        }
-
-        guard let index = OnboardingStep.allCases.firstIndex(of: step),
-              index < OnboardingStep.allCases.index(before: OnboardingStep.allCases.endIndex) else {
-            return
-        }
-
-        let completedStep = step
-        let nextStep = OnboardingStep.allCases[index + 1]
-        var advancedDraft = draft
-        advancedDraft.currentStep = nextStep
-        let submissionID = UUID()
-        activeSubmissionID = submissionID
-        operationState = .saving
-
-        do {
-            try await repository.saveDraft(advancedDraft, for: userID)
-            guard activeSubmissionID == submissionID,
-                  !isCancellationRequested else {
-                finishCancelledSubmission(submissionID)
+        guard issues.isEmpty else { operationState = .idle; return }
+        guard let index = visibleSteps.firstIndex(of: step), index + 1 < visibleSteps.count else { return }
+        if step == .objective, !isReacceptance {
+            guard hasCurrentEligibilityDecision else {
+                await prepareObjectiveIfNeeded()
                 return
             }
+            guard eligibilityDecision?.permits(draft.objective) == true else {
+                validationIssues = [.objectiveRequired]
+                return
+            }
+        }
+        let completedStep = step
+        let nextStep = visibleSteps[index + 1]
+        var advancedDraft = draft
+        advancedDraft.currentStep = nextStep
+        let id = UUID()
+        activeSubmissionID = id
+        operationState = .saving
+        do {
+            var freshDecision: OnboardingEligibilityDecision?
+            var snapshot: EligibilitySnapshot?
+            if completedStep == .consent, !isReacceptance {
+                guard let captured = currentEligibilitySnapshot() else {
+                    throw OnboardingRepositoryError.invalidDraft
+                }
+                snapshot = captured
+                let answer = try await repository.checkEligibility(captured.input, for: userID,
+                    idempotencyKey: idempotencyKeyProvider.nextKey())
+                guard canPublish(id), currentEligibilitySnapshot() == captured else {
+                    finishCancelledSubmission(id); return
+                }
+                freshDecision = try answer.validated()
+                apply(answer, to: &advancedDraft)
+            }
+            try await repository.saveDraft(advancedDraft, for: userID)
+            guard canPublish(id), snapshot == nil || snapshot == currentEligibilitySnapshot() else {
+                finishCancelledSubmission(id); return
+            }
             draft = advancedDraft
+            if let freshDecision { eligibilityDecision = freshDecision; eligibilitySnapshot = snapshot }
             step = nextStep
             operationState = .idle
             activeSubmissionID = nil
@@ -321,114 +386,141 @@ final class OnboardingFlowModel {
             await telemetry.record(.onboardingStepCompleted(completedStep.telemetryValue))
             await telemetry.record(.onboardingStepViewed(nextStep.telemetryValue))
         } catch is CancellationError {
-            finishCancelledSubmission(submissionID)
+            finishCancelledSubmission(id)
         } catch {
-            guard activeSubmissionID == submissionID else { return }
-            guard !isCancellationRequested else {
-                finishCancelledSubmission(submissionID)
-                return
+            publishFailure(error, for: id)
+        }
+    }
+
+    /// Called on objective appearance after a resumed draft or a definitive refusal.
+    func prepareObjectiveIfNeeded() async {
+        guard step == .objective, !isReacceptance, allowsDraftEditing,
+              operationState != .saving, !isCancellationRequested, !hasCurrentEligibilityDecision else { return }
+        let prerequisite = prerequisiteIssues()
+        guard prerequisite.isEmpty, let captured = currentEligibilitySnapshot() else {
+            validationIssues = prerequisite
+            return
+        }
+        let id = UUID()
+        activeSubmissionID = id
+        operationState = .saving
+        do {
+            let answer = try await repository.checkEligibility(captured.input, for: userID,
+                idempotencyKey: idempotencyKeyProvider.nextKey()).validated()
+            guard canPublish(id), currentEligibilitySnapshot() == captured else {
+                finishCancelledSubmission(id); return
             }
+            apply(answer, to: &draft)
+            eligibilityDecision = answer
+            eligibilitySnapshot = captured
+            validationIssues = []
             activeSubmissionID = nil
-            operationState = .failed(presentationError(for: error))
+            operationState = .idle
+        } catch is CancellationError {
+            finishCancelledSubmission(id)
+        } catch {
+            publishFailure(error, for: id)
         }
     }
 
     func complete() async {
-        guard step == .completion,
-              draft.currentStep == .completion,
-              operationState != .saving,
-              !didComplete else {
-            return
-        }
-
-        let issues = OnboardingStepValidator.completionIssues(
-            draft: draft,
-            developmentConsentAvailability: developmentConsentAvailability,
-            requirements: requirements,
-            now: now()
-        )
-        validationIssues = issues
-        guard issues.isEmpty, let selectedPersona = draft.persona else {
-            operationState = .idle
-            return
-        }
-
-        let idempotencyKey: IdempotencyKey
-        do {
-            if let pendingCompletionKey {
-                idempotencyKey = pendingCompletionKey
-            } else {
-                let generated = try idempotencyKeyProvider.nextKey()
-                pendingCompletionKey = generated
-                idempotencyKey = generated
-            }
-        } catch {
-            operationState = .failed(presentationError(for: error))
-            return
-        }
-
-        let submittedDraft = draft
-        let submissionID = UUID()
-        activeSubmissionID = submissionID
-        operationState = .saving
-
-        do {
-            let acknowledgement = try await repository.completeOfficial(
-                submittedDraft,
-                for: userID,
-                idempotencyKey: idempotencyKey
-            )
-            guard acknowledgement.matches(submittedDraft) else {
-                throw OnboardingRepositoryError.serviceUnavailable
-            }
-        } catch is CancellationError {
-            finishCancelledSubmission(submissionID)
-            return
-        } catch {
-            guard activeSubmissionID == submissionID else { return }
-            guard !isCancellationRequested else {
-                finishCancelledSubmission(submissionID)
+        guard isActive, step == .completion, draft.currentStep == .completion,
+              operationState != .saving, !didComplete, !isCancellationRequested else { return }
+        let submittedDraft: OnboardingDraft
+        let key: IdempotencyKey
+        if let pendingCompletion {
+            submittedDraft = pendingCompletion.submittedDraft
+            key = pendingCompletion.key
+        } else {
+            validationIssues = OnboardingStepValidator.completionIssues(draft: draft,
+                developmentConsentAvailability: developmentConsentAvailability, requirements: requirements, now: now())
+            guard validationIssues.isEmpty else { operationState = .idle; return }
+            if !isReacceptance, !hasCurrentEligibilityDecision || eligibilityDecision?.permits(draft.objective) != true {
+                moveToObjective()
+                await prepareObjectiveIfNeeded()
                 return
             }
-            let repositoryError = error as? OnboardingRepositoryError
-            if repositoryError == .requirementsChanged || repositoryError == .alreadyCompleted {
-                let completedElsewhere: Bool
+            do { key = try idempotencyKeyProvider.nextKey() }
+            catch { operationState = .failed(presentationError(for: error)); return }
+            submittedDraft = draft
+            pendingCompletion = PendingCompletion(key: key, submittedDraft: submittedDraft)
+        }
+        let id = UUID()
+        activeSubmissionID = id
+        operationState = .saving
+        let acknowledgement: OnboardingCompletionAcknowledgement
+        do {
+            acknowledgement = try await repository.completeOfficial(submittedDraft, for: userID, idempotencyKey: key)
+            guard acknowledgement.matches(submittedDraft) else { throw OnboardingRepositoryError.serviceUnavailable }
+        } catch is CancellationError {
+            finishCancelledSubmission(id); return
+        } catch {
+            guard canPublish(id) else { finishCancelledSubmission(id); return }
+            if error as? OnboardingRepositoryError == .objectiveNotEligible, !isReacceptance {
+                pendingCompletion = nil
+                activeSubmissionID = nil
+                operationState = .idle
+                moveToObjective()
+                await prepareObjectiveIfNeeded()
+                return
+            }
+            if error as? OnboardingRepositoryError == .requirementsChanged || error as? OnboardingRepositoryError == .alreadyCompleted {
                 do {
-                    completedElsewhere = try await reloadRequirementsAfterConflict()
+                    let state = try await repository.loadState(for: userID)
+                    guard canPublish(id) else { finishCancelledSubmission(id); return }
+                    if state.completion.completed {
+                        pendingCompletion = nil
+                        didComplete = true
+                        activeSubmissionID = nil
+                        operationState = .idle
+                        notifyRootOnce()
+                        return
+                    }
+                    if state.completion.completedAt != nil, state.draft == nil {
+                        throw OnboardingRepositoryError.serviceUnavailable
+                    }
+                    pendingCompletion = nil
+                    requirements = state.requirements
+                    historicalCompletedAt = state.completion.completedAt
+                    if isReacceptance, let authoritativeDraft = state.draft { draft = authoritativeDraft }
+                    draft.localeIdentifier = state.locale
+                    draft.documentActions = nil
+                    eligibilityDecision = nil
+                    eligibilitySnapshot = nil
+                    draft.currentStep = .consent
+                    step = .consent
+                    onStepChanged(.consent)
                 } catch {
-                    guard activeSubmissionID == submissionID else { return }
-                    activeSubmissionID = nil
-                    operationState = .failed(presentationError(for: error))
-                    return
-                }
-                guard activeSubmissionID == submissionID else { return }
-                pendingCompletionKey = nil
-                if completedElsewhere {
-                    didComplete = true
-                    activeSubmissionID = nil
-                    operationState = .idle
-                    onCompleted()
+                    publishFailure(error, for: id)
                     return
                 }
             }
-            activeSubmissionID = nil
-            operationState = .failed(presentationError(for: error))
+            publishFailure(error, for: id)
             return
         }
-
-        guard canPublish(submissionID) else {
-            finishCancelledSubmission(submissionID)
-            return
-        }
-
+        guard canPublish(id) else { finishCancelledSubmission(id); return }
         didComplete = true
-        pendingCompletionKey = nil
+        pendingCompletion = nil
         activeSubmissionID = nil
         operationState = .idle
-        onCompleted()
-        await telemetry.record(.coachPersonaSelected(selectedPersona.telemetryValue))
+        if !isReacceptance, let welcome = acknowledgement.protocolWelcome {
+            pendingProtocolWelcome = welcome
+        } else {
+            notifyRootOnce()
+        }
+        if let selectedPersona = submittedDraft.persona {
+            await telemetry.record(.coachPersonaSelected(selectedPersona.telemetryValue))
+        }
+        // The accepted record keeps its success telemetry even when its callback
+        // tears down this owner. Late, unaccepted responses are guarded above.
         await telemetry.record(.onboardingStepCompleted(.completion))
         await telemetry.record(.onboardingCompleted)
+    }
+
+    func finishProtocolWelcome() {
+        guard isActive, !isCancellationRequested, didComplete, pendingProtocolWelcome != nil else { return }
+        pendingProtocolWelcome = nil
+        notifyRootOnce()
     }
 
     func cancelActiveSubmission() {
@@ -437,127 +529,104 @@ final class OnboardingFlowModel {
         operationState = .idle
     }
 
-    func updateDisplayName(_ value: String?) { draft.displayName = value }
-    func updateLocaleIdentifier(_ value: String) { draft.localeIdentifier = value }
-    func updateCountryCode(_ value: String) { draft.countryCode = value.uppercased() }
+    func updateDisplayName(_ value: String?) { guard allowsDraftEditing else { return }; draft.displayName = value }
+    func updateLocaleIdentifier(_ value: String) { guard allowsDraftEditing else { return }; draft.localeIdentifier = value; clearEligibility() }
+    func updateCountryCode(_ value: String) { guard allowsDraftEditing else { return }; draft.countryCode = value.uppercased() }
     func updateTimeZoneIdentifier(_ value: String) {
-        let civilBirthDate = draft.birthDate.flatMap {
-            OnboardingCivilDate.string(
-                from: $0,
-                timeZoneIdentifier: draft.timeZoneIdentifier
-            )
-        }
+        guard allowsDraftEditing else { return }
+        let civil = draft.birthDate.flatMap { OnboardingCivilDate.string(from: $0, timeZoneIdentifier: draft.timeZoneIdentifier) }
         draft.timeZoneIdentifier = value
-        if let civilBirthDate,
-           let rebasedBirthDate = OnboardingCivilDate.date(
-               from: civilBirthDate,
-               timeZoneIdentifier: value
-           ) {
-            draft.birthDate = rebasedBirthDate
-        }
+        if let civil, let date = OnboardingCivilDate.date(from: civil, timeZoneIdentifier: value) { draft.birthDate = date }
     }
-    func updateBiologicalSex(_ value: BiologicalSex?) { draft.biologicalSex = value }
-    func updateBirthDate(_ value: Date?) { draft.birthDate = value }
-    func updateHeightCM(_ value: Double?) { draft.heightCM = value }
-    func updateWeightKG(_ value: Double?) { draft.weightKG = value }
-    func updateBodyFatPercent(_ value: Double?) { draft.bodyFatPercent = value }
-    func updateObjective(_ value: BodyFlowObjective?) { draft.objective = value }
-    func updateActivityLevel(_ value: ActivityLevel?) { draft.activityLevel = value }
-    func updateTrainingFrequency(_ value: Int?) { draft.trainingFrequency = value }
-    func updateWaterIntake(_ value: WaterIntake?) { draft.waterIntake = value }
-    func updateHungerLevel(_ value: HungerLevel?) { draft.hungerLevel = value }
-    func updateWakeTime(_ value: LocalTime?) { draft.wakeTime = value }
-    func updateBedtime(_ value: LocalTime?) { draft.bedtime = value }
-    func updateFoodOrganization(_ value: FoodOrganization?) { draft.foodOrganization = value }
-    func updatePersona(_ value: CoachPersona?) { draft.persona = value }
-    func updateConsent(_ value: DevelopmentConsentAcceptance?) { draft.consent = value }
+    func updateBiologicalSex(_ value: BiologicalSex?) { guard allowsDraftEditing else { return }; draft.biologicalSex = value; clearEligibility() }
+    func updateBirthDate(_ value: Date?) { guard allowsDraftEditing else { return }; draft.birthDate = value }
+    func updateHeightCM(_ value: Double?) { guard allowsDraftEditing else { return }; draft.heightCM = value; clearEligibility() }
+    func updateWeightKG(_ value: Double?) { guard allowsDraftEditing else { return }; draft.weightKG = value; clearEligibility() }
+    func updateBodyFatPercent(_ value: Double?) { guard allowsDraftEditing else { return }; draft.bodyFatPercent = value; clearEligibility() }
+    func updateObjective(_ value: BodyFlowObjective?) {
+        guard allowsDraftEditing, !isReacceptance, hasCurrentEligibilityDecision,
+              value == nil || eligibilityDecision?.permits(value) == true else { return }
+        draft.objective = value
+    }
+    func updateActivityLevel(_ value: ActivityLevel?) { guard allowsDraftEditing else { return }; draft.activityLevel = value }
+    func updateTrainingFrequency(_ value: Int?) { guard allowsDraftEditing else { return }; draft.trainingFrequency = value; clearEligibility() }
+    func updateWaterIntake(_ value: WaterIntake?) { guard allowsDraftEditing else { return }; draft.waterIntake = value }
+    func updateHungerLevel(_ value: HungerLevel?) { guard allowsDraftEditing else { return }; draft.hungerLevel = value }
+    func updateWakeTime(_ value: LocalTime?) { guard allowsDraftEditing else { return }; draft.wakeTime = value }
+    func updateBedtime(_ value: LocalTime?) { guard allowsDraftEditing else { return }; draft.bedtime = value }
+    func updateFoodOrganization(_ value: FoodOrganization?) { guard allowsDraftEditing else { return }; draft.foodOrganization = value }
+    func updatePersona(_ value: CoachPersona?) { guard allowsDraftEditing else { return }; draft.persona = value }
+    func updateConsent(_ value: DevelopmentConsentAcceptance?) { guard allowsDraftEditing else { return }; draft.consent = value; clearEligibility() }
     func updateDocumentAction(_ action: OnboardingDocumentAction, selected: Bool) {
+        guard allowsDraftEditing else { return }
         var actions = Set(draft.documentActions ?? [])
-        if selected {
-            actions.insert(action)
-        } else {
-            actions.remove(action)
-        }
-        draft.documentActions = actions.isEmpty
-            ? nil
-            : requirements.documents
-                .map(\.explicitAction)
-                .filter(actions.contains)
+        if selected { actions.insert(action) } else { actions.remove(action) }
+        draft.documentActions = actions.isEmpty ? nil : requirements.documents.map(\.explicitAction).filter(actions.contains)
+        clearEligibility()
     }
 
-    var hasRequiredDevelopmentConsent: Bool {
-        OnboardingStepValidator.issues(
-            for: .consent,
-            draft: draft,
-            developmentConsentAvailability: developmentConsentAvailability,
-            requirements: requirements,
-            now: now()
-        ).isEmpty
-    }
-
+    var hasRequiredDevelopmentConsent: Bool { issues(for: .consent).isEmpty }
     var stepPresentation: OnboardingStepPresentation {
-        if !requirements.available,
-           !developmentConsentAvailability.allowsSyntheticDevelopmentConsent,
-           step == .consent || step == .completion {
-            return .developmentConsentUnavailable
-        }
+        if !requirements.available, !developmentConsentAvailability.allowsSyntheticDevelopmentConsent,
+           step == .consent || step == .objective || step == .completion { return .developmentConsentUnavailable }
         return .step(step)
     }
 
-    private func reloadRequirementsAfterConflict() async throws -> Bool {
-        let state = try await repository.loadState(for: userID)
-        if state.completion.completed {
-            return true
-        }
-        requirements = state.requirements
-        if state.completion.completedAt != nil {
-            guard let authoritativeDraft = state.draft else {
-                throw OnboardingRepositoryError.serviceUnavailable
-            }
-            draft = authoritativeDraft
-        }
-        draft.localeIdentifier = state.locale
-        draft.documentActions = nil
-        draft.currentStep = .consent
-        step = .consent
-        onStepChanged(.consent)
-        return false
+    private func issues(for step: OnboardingStep) -> [OnboardingValidationIssue] {
+        OnboardingStepValidator.issues(for: step, draft: draft,
+            developmentConsentAvailability: developmentConsentAvailability, requirements: requirements, now: now())
     }
-
-    private var isCancellationRequested: Bool {
-        Task.isCancelled || cancellationCheck()
+    private func prerequisiteIssues() -> [OnboardingValidationIssue] {
+        OnboardingStep.allCases.prefix(while: { $0 != .objective }).flatMap { issues(for: $0) }
     }
-
-    private func canPublish(_ submissionID: UUID) -> Bool {
-        activeSubmissionID == submissionID && !isCancellationRequested
+    private func currentEligibilitySnapshot() -> EligibilitySnapshot? {
+        guard prerequisiteIssues().isEmpty, let input = try? OnboardingEligibilityInput(draft: draft) else { return nil }
+        return EligibilitySnapshot(input: input, actions: Set(draft.documentActions ?? []), developmentConsent: draft.consent)
     }
-
-    private func finishCancelledSubmission(_ submissionID: UUID) {
-        guard activeSubmissionID == submissionID else { return }
+    private func apply(_ answer: OnboardingEligibilityDecision, to draft: inout OnboardingDraft) {
+        if answer.decision == .assigned { draft.objective = answer.objective }
+        else if !answer.permits(draft.objective) { draft.objective = nil }
+    }
+    private func clearEligibility() {
+        eligibilityDecision = nil
+        eligibilitySnapshot = nil
+        if pendingCompletion == nil, activeSubmissionID != nil { cancelActiveSubmission() }
+    }
+    private func moveToObjective() {
+        clearEligibility()
+        step = .objective
+        draft.currentStep = .objective
+        validationIssues = []
+        onStepChanged(.objective)
+    }
+    private func notifyRootOnce() {
+        guard isActive, !isCancellationRequested, !didNotifyRoot else { return }
+        didNotifyRoot = true
+        onCompleted()
+    }
+    private var isCancellationRequested: Bool { !isActive || Task.isCancelled || cancellationCheck() }
+    private func canPublish(_ id: UUID) -> Bool { activeSubmissionID == id && !isCancellationRequested }
+    private func finishCancelledSubmission(_ id: UUID) {
+        guard activeSubmissionID == id else { return }
         activeSubmissionID = nil
         operationState = .idle
     }
-
+    private func publishFailure(_ error: Error, for id: UUID) {
+        guard canPublish(id) else { finishCancelledSubmission(id); return }
+        activeSubmissionID = nil
+        operationState = .failed(presentationError(for: error))
+    }
     private func presentationError(for error: Error) -> AppPresentationError {
         switch error {
-        case OnboardingRepositoryError.invalidDraft:
-            .invalidInput
-        case OnboardingRepositoryError.developmentConsentForbidden:
-            .operationUnavailable
-        case OnboardingRepositoryError.documentsUnavailable,
+        case OnboardingRepositoryError.invalidDraft: .invalidInput
+        case OnboardingRepositoryError.objectiveNotEligible,
+             OnboardingRepositoryError.documentsUnavailable,
              OnboardingRepositoryError.requirementsChanged,
-             OnboardingRepositoryError.alreadyCompleted:
-            .operationUnavailable
-        case OnboardingRepositoryError.serviceUnavailable:
-            .serviceUnavailable
-        case OnboardingRepositoryError.storageUnavailable:
-            .storageUnavailable
-        case CoachPersonaRepositoryError.serviceUnavailable:
-            .serviceUnavailable
-        case CoachPersonaRepositoryError.storageUnavailable:
-            .storageUnavailable
-        default:
-            .operationUnavailable
+             OnboardingRepositoryError.alreadyCompleted,
+             OnboardingRepositoryError.developmentConsentForbidden: .operationUnavailable
+        case OnboardingRepositoryError.serviceUnavailable, CoachPersonaRepositoryError.serviceUnavailable: .serviceUnavailable
+        case OnboardingRepositoryError.storageUnavailable, CoachPersonaRepositoryError.storageUnavailable: .storageUnavailable
+        default: .operationUnavailable
         }
     }
 }

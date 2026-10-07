@@ -131,3 +131,11 @@ envio. Em 2026-10-05 a inscrição estava parada na verificação de identidade
 - **Antes de convidar alguém** (parte do cadastro, deixada para o fim): criar
   uma conta nova pelo build Release no staging, conferir o acesso automático de
   avaliação e a entrega de e-mail; hoje só há avisos publicados em pt-BR.
+
+### E3 — roteiro candidato local, sem publicação (2026-10-07)
+
+Verificar a ordem boas-vindas/dados corporais/rotina/estilo do Flow/documentos/objetivo/revisão. Confirmar que cada documento exige sua ação antes da conferência; recomposição definida é uma seleção estática, o detalhe de ganho começa fechado e opções bloqueadas mostram o motivo sem botão. A decisão padrão com três opções ainda exige seleção.
+
+Revisar pt-BR/en, claro/escuro e AXXXL, incluindo mensagem sintética de aproximadamente 2.900 caracteres: primeiro e último parágrafos devem permanecer completos, repetições preservadas e CTA alcançável. “Concluir cadastro” salva a revisão; “Ir para Hoje” encerra a mensagem. Hoje/tutorial não podem aparecer antes desse último CTA. Reaceite de documentos deve preservar o objetivo e omitir conferência/mensagem. Falha de conferência conserva documentos; conclusão incerta oferece retry com edição bloqueada.
+
+Argumentos DEBUG locais: `--ui-testing-onboarding-assigned`, `--ui-testing-onboarding-gain-blocked`, `--ui-testing-onboarding-welcome`, `--ui-testing-onboarding-eligibility-failure` e `--ui-testing-onboarding-completion-uncertain`. A versão Release ignora esses cenários. Esta validação não equivale a TestFlight, API ao vivo, instalação física, avaliação clínica ou aceite do Eduardo.

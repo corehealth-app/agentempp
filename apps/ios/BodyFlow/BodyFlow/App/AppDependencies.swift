@@ -593,7 +593,8 @@ struct AppDependencies: Sendable {
                 receiptNamespace: configuration.demoStorageBoundary == .keychain
                     ? configuration.demoKeychainService : UUID().uuidString,
                 persistsReceipts: configuration.demoStorageBoundary == .keychain,
-                resetsReceipts: configuration.shouldResetDemoState
+                resetsReceipts: configuration.shouldResetDemoState,
+                eligibilityScenario: configuration.onboardingEligibilityScenario ?? .choice
             )
         } else if let transport = apiClient as? MobileAPITransport {
             onboarding = MobileOnboardingRepository(transport: transport)

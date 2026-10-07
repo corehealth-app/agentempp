@@ -2976,6 +2976,10 @@ alimentação) que o cadastro novo não aplica (pendência).
 > A recusa do §10o vale só para a primeira conclusão. Essas contas seguem no
 > objetivo que têm e continuam aceitando termos novos (travado no teste da rota).
 
+> RC E — cenário app fechado na tela da mensagem de entrada variante mensagem mostrada de novo na abertura seguinte (só volta a ser lida em Perfil, na E6) NÃO coberta nesta PR (pendência da audit 2026-10-07)
+
+> RC E — cenário pessoa definida em recomposição que pede ganho de massa variante conversa de bloqueio (na tela, a frase fica num detalhe que ela abre) NÃO coberta nesta PR (pendência da audit 2026-10-07)
+
 Fechadas na etapa do servidor (2026-10-07), e por isso fora da lista acima:
 
 - **Recusa, na gravação, do objetivo fora da regra**: a primeira conclusão do

@@ -244,6 +244,74 @@ struct MobileOnboardingRepositoryTests {
         }
     }
 
+    @Test("eligibility sends only the strict contract and omits unknown fat")
+    func eligibilityStrictBody() async throws {
+        let transport = OnboardingTransportSpy(state: emptyState, completion: completionAcknowledgement)
+        let repository = MobileOnboardingRepository(transport: transport)
+        var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .completion); draft.bodyFatPercent = nil
+        let key = try IdempotencyKey(validating: "e3-strict-contract")
+        #expect(try await repository.checkEligibility(OnboardingEligibilityInput(draft: draft),
+            for: "never-in-body", idempotencyKey: key) == E3Fixtures.choice)
+        let request = try #require(await transport.requests.first)
+        #expect(request.method == .post)
+        #expect(request.path == "/api/mobile/v1/onboarding/eligibility")
+        #expect(request.idempotency == .required(key))
+        let body = try #require(request.body)
+        let object = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect(Set(object.keys) == ["locale", "sex", "height_cm", "weight_kg", "training_frequency"])
+        #expect(object["locale"] as? String == "pt-BR")
+        #expect(object["sex"] as? String == draft.biologicalSex?.rawValue)
+        #expect(object["height_cm"] as? Double == draft.heightCM)
+        #expect(object["weight_kg"] as? Double == draft.weightKG)
+        #expect(object["training_frequency"] as? Int == draft.trainingFrequency)
+    }
+
+    @Test("only the explicit objective refusal changes generic validation behavior")
+    func objectiveRefusalMapping() async throws {
+        for (code, expected) in [("onboarding_objective_not_eligible", OnboardingRepositoryError.objectiveNotEligible),
+                                  ("another_validation", OnboardingRepositoryError.invalidDraft)] {
+            let repository = MobileOnboardingRepository(transport: OnboardingTransportSpy(state: emptyState,
+                completion: completionAcknowledgement, completionError: .validation(code: code, requestID: "e3-qa")))
+            var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .completion); draft.documentActions = [termsDocument.explicitAction]
+            await #expect(throws: expected) {
+                try await repository.completeOfficial(draft, for: "qa-a", idempotencyKey: IdempotencyKey(validating: "e3-refusal"))
+            }
+        }
+    }
+
+    @Test("invalid server availability never becomes client authority")
+    func malformedEligibilityFailsClosed() async throws {
+        let invalid = OnboardingEligibilityDecision(decision: .choice, basis: .bmi, objective: .muscleGain,
+            notice: nil, options: E3Fixtures.choice.options)
+        let transport = OnboardingTransportSpy(state: emptyState, completion: completionAcknowledgement, eligibility: invalid)
+        let repository = MobileOnboardingRepository(transport: transport)
+        await #expect(throws: OnboardingRepositoryError.serviceUnavailable) {
+            try await repository.checkEligibility(OnboardingEligibilityInput(draft: E3Fixtures.draft()),
+                for: "qa-a", idempotencyKey: IdempotencyKey(validating: "e3-invalid-decision"))
+        }
+    }
+
+    @Test("welcome protocol must match the acknowledgement and preserves exact paragraphs")
+    func welcomeContract() throws {
+        let welcome = ProtocolWelcome(protocol: .bodyRecomposition, paragraphs: ["First\nexact newline", "Second paragraph"])
+        let encoded = try JSONEncoder().encode(welcome)
+        #expect(try JSONDecoder().decode(ProtocolWelcome.self, from: encoded) == welcome)
+        var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .completion); draft.documentActions = [termsDocument.explicitAction]
+        let invalid = OnboardingCompletionAcknowledgement(onboardingCompleted: true,
+            completedAt: completionAcknowledgement.completedAt, objective: .bodyRecomposition, persona: .focus,
+            documentActions: completionAcknowledgement.documentActions,
+            protocolWelcome: ProtocolWelcome(protocol: .muscleGain, paragraphs: welcome.paragraphs))
+        #expect(!invalid.matches(draft))
+        #expect(completionAcknowledgement.matches(draft))
+    }
+
+    @Test("partial save never transmits personal data")
+    func partialSaveDoesNotTransmit() async throws {
+        let transport = OnboardingTransportSpy(state: emptyState, completion: completionAcknowledgement)
+        try await MobileOnboardingRepository(transport: transport).saveDraft(BodyFlowTestFixtures.onboardingDraft(currentStep: .completion), for: "qa-a")
+        #expect(await transport.requests.isEmpty)
+    }
+
     private var termsDocument: OnboardingLegalDocument {
         OnboardingLegalDocument(
             documentKey: "terms_of_service",
@@ -305,16 +373,19 @@ private actor OnboardingTransportSpy: MobileAPIExecuting {
     private let state: OnboardingServerState
     private let completion: OnboardingCompletionAcknowledgement
     private let completionError: MobileAPITransportError?
+    private let eligibility: OnboardingEligibilityDecision
     private(set) var requests: [RecordedOnboardingRequest] = []
 
     init(
         state: OnboardingServerState,
         completion: OnboardingCompletionAcknowledgement,
-        completionError: MobileAPITransportError? = nil
+        completionError: MobileAPITransportError? = nil,
+        eligibility: OnboardingEligibilityDecision = E3Fixtures.choice
     ) {
         self.state = state
         self.completion = completion
         self.completionError = completionError
+        self.eligibility = eligibility
     }
 
     func execute<Response: Decodable & Sendable>(
@@ -330,6 +401,7 @@ private actor OnboardingTransportSpy: MobileAPIExecuting {
             return state as! Response
         }
         if let completionError { throw completionError }
+        if request.path.hasSuffix("/eligibility") { return eligibility as! Response }
         return completion as! Response
     }
 }

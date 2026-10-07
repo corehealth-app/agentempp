@@ -12,16 +12,17 @@ struct OnboardingCompletionTests {
         draft.persona = nil
         let onboarding = CompletionOnboardingRepository()
         let persona = CompletionPersonaRepository()
-        let model = makeModel(
+        let model = await makeModel(
             draft: draft,
             onboarding: onboarding,
             persona: persona
         )
 
+        await prepareE3Review(model)
         await model.complete()
 
         #expect(model.validationIssues.contains(.personaRequired))
-        #expect(model.step == .completion)
+        #expect(model.step == .persona)
         #expect(await persona.writes.isEmpty)
         #expect(await onboarding.completedDrafts.isEmpty)
     }
@@ -39,16 +40,17 @@ struct OnboardingCompletionTests {
         }
         let onboarding = CompletionOnboardingRepository()
         let persona = CompletionPersonaRepository()
-        let model = makeModel(
+        let model = await makeModel(
             draft: draft,
             onboarding: onboarding,
             persona: persona
         )
 
+        await prepareE3Review(model)
         await model.complete()
 
         #expect(model.validationIssues.contains(.consentRequired))
-        #expect(model.step == .completion)
+        #expect(model.step == .consent)
         #expect(await persona.writes.isEmpty)
         #expect(await onboarding.completedDrafts.isEmpty)
     }
@@ -60,17 +62,18 @@ struct OnboardingCompletionTests {
         let onboarding = CompletionOnboardingRepository()
         let persona = CompletionPersonaRepository()
         var callbackCount = 0
-        let model = makeModel(
+        let model = await makeModel(
             draft: draft,
             onboarding: onboarding,
             persona: persona,
             onCompleted: { callbackCount += 1 }
         )
 
+        await prepareE3Review(model)
         await model.complete()
 
         #expect(model.validationIssues == [.localeUnsupported])
-        #expect(model.step == .completion)
+        #expect(model.step == .welcome)
         #expect(await persona.writes.isEmpty)
         #expect(await onboarding.completedDrafts.isEmpty)
         #expect(callbackCount == 0)
@@ -82,7 +85,7 @@ struct OnboardingCompletionTests {
         let onboarding = CompletionOnboardingRepository(events: events)
         let persona = CompletionPersonaRepository(events: events)
         var callbackCount = 0
-        let model = makeModel(
+        let model = await makeModel(
             onboarding: onboarding,
             persona: persona,
             onCompleted: {
@@ -91,6 +94,7 @@ struct OnboardingCompletionTests {
             }
         )
 
+        await prepareE3Review(model)
         await model.complete()
 
         #expect(events.values == ["complete", "callback"])
@@ -105,12 +109,13 @@ struct OnboardingCompletionTests {
         draft.currentStep = .consent
         let onboarding = CompletionOnboardingRepository()
         let persona = CompletionPersonaRepository()
-        let model = makeModel(
+        let model = await makeModel(
             draft: draft,
             onboarding: onboarding,
             persona: persona
         )
 
+        await prepareE3Review(model)
         await model.complete()
 
         #expect(await persona.writes.isEmpty)
@@ -122,7 +127,7 @@ struct OnboardingCompletionTests {
         let onboarding = CompletionOnboardingRepository()
         let persona = CompletionPersonaRepository()
         var callbackCount = 0
-        let model = makeModel(
+        let model = await makeModel(
             onboarding: onboarding,
             persona: persona,
             developmentConsentAvailability: .unavailable,
@@ -130,10 +135,11 @@ struct OnboardingCompletionTests {
             onCompleted: { callbackCount += 1 }
         )
 
+        await prepareE3Review(model)
         await model.complete()
 
         #expect(model.validationIssues == [.developmentConsentUnavailable])
-        #expect(model.step == .completion)
+        #expect(model.step == .consent)
         #expect(await persona.writes.isEmpty)
         #expect(await onboarding.completedDrafts.isEmpty)
         #expect(callbackCount == 0)
@@ -145,13 +151,14 @@ struct OnboardingCompletionTests {
         draft.consent = nil
         draft.documentActions = nil
         let onboarding = CompletionOnboardingRepository()
-        let model = makeModel(
+        let model = await makeModel(
             draft: draft,
             onboarding: onboarding,
             developmentConsentAvailability: .unavailable,
             requirements: officialRequirements
         )
 
+        await prepareE3Review(model)
         await model.complete()
 
         #expect(model.validationIssues.contains(.consentRequired))
@@ -184,7 +191,7 @@ struct OnboardingCompletionTests {
         draft.documentActions = completeDocumentActions
         var changedSteps: [OnboardingStep] = []
         var completionCount = 0
-        let model = makeModel(
+        let model = await makeModel(
             draft: draft,
             onboarding: onboarding,
             developmentConsentAvailability: .unavailable,
@@ -193,6 +200,7 @@ struct OnboardingCompletionTests {
             onCompleted: { completionCount += 1 }
         )
 
+        await prepareE3Review(model)
         await model.complete()
 
         #expect(model.step == .consent)
@@ -203,6 +211,7 @@ struct OnboardingCompletionTests {
 
         model.updateDocumentAction(changedDocument.explicitAction, selected: true)
         await model.continueFromCurrentStep()
+        await prepareE3Review(model)
         await model.complete()
 
         #expect(Set(await onboarding.completionKeys).count == 2)
@@ -214,11 +223,12 @@ struct OnboardingCompletionTests {
     func requirementsReloadHonorsConcurrentCompletion() async {
         let onboarding = ConcurrentlyCompletedOnboardingRepository()
         var completionCount = 0
-        let model = makeModel(
+        let model = await makeModel(
             onboarding: onboarding,
             onCompleted: { completionCount += 1 }
         )
 
+        await prepareE3Review(model)
         await model.complete()
 
         #expect(completionCount == 1)
@@ -232,11 +242,12 @@ struct OnboardingCompletionTests {
             completionError: .alreadyCompleted
         )
         var completionCount = 0
-        let model = makeModel(
+        let model = await makeModel(
             onboarding: onboarding,
             onCompleted: { completionCount += 1 }
         )
 
+        await prepareE3Review(model)
         await model.complete()
 
         #expect(completionCount == 1)
@@ -277,12 +288,13 @@ struct OnboardingCompletionTests {
         localDraft.objective = .muscleGain
         localDraft.persona = .impulse
         var completionCount = 0
-        let model = makeModel(
+        let model = await makeModel(
             draft: localDraft,
             onboarding: onboarding,
             onCompleted: { completionCount += 1 }
         )
 
+        await prepareE3Review(model)
         await model.complete()
 
         #expect(model.step == .consent)
@@ -314,8 +326,9 @@ struct OnboardingCompletionTests {
                 documents: [changedDocument]
             )
         )
-        let model = makeModel(onboarding: onboarding)
+        let model = await makeModel(onboarding: onboarding)
 
+        await prepareE3Review(model)
         await model.complete()
 
         #expect(model.step == .completion)
@@ -323,6 +336,7 @@ struct OnboardingCompletionTests {
         #expect(model.requirements == officialRequirements)
         #expect(model.operationState == .failed(.serviceUnavailable))
 
+        await prepareE3Review(model)
         await model.complete()
 
         #expect(model.step == .consent)
@@ -339,12 +353,13 @@ struct OnboardingCompletionTests {
             results: [.failure(.serviceUnavailable)]
         )
         var callbackCount = 0
-        let model = makeModel(
+        let model = await makeModel(
             onboarding: onboarding,
             persona: persona,
             onCompleted: { callbackCount += 1 }
         )
 
+        await prepareE3Review(model)
         await model.complete()
 
         #expect(model.step == .completion)
@@ -364,13 +379,14 @@ struct OnboardingCompletionTests {
         let persona = CompletionPersonaRepository()
         var callbackCount = 0
         var changedSteps: [OnboardingStep] = []
-        let model = makeModel(
+        let model = await makeModel(
             onboarding: onboarding,
             persona: persona,
             onStepChanged: { changedSteps.append($0) },
             onCompleted: { callbackCount += 1 }
         )
 
+        await prepareE3Review(model)
         await model.complete()
 
         #expect(model.step == .completion)
@@ -382,6 +398,7 @@ struct OnboardingCompletionTests {
         #expect(changedSteps.isEmpty)
         #expect(callbackCount == 0)
 
+        await prepareE3Review(model)
         await model.complete()
 
         #expect(await persona.writes.isEmpty)
@@ -396,7 +413,7 @@ struct OnboardingCompletionTests {
         let onboarding = SuspendedCompletionOnboardingRepository()
         let persona = CompletionPersonaRepository()
         var callbackCount = 0
-        let model = makeModel(
+        let model = await makeModel(
             onboarding: onboarding,
             persona: persona,
             onCompleted: { callbackCount += 1 }
@@ -404,6 +421,7 @@ struct OnboardingCompletionTests {
         let first = Task { await model.complete() }
         await onboarding.waitUntilCompleteSuspends()
 
+        await prepareE3Review(model)
         await model.complete()
 
         #expect(await persona.writes.isEmpty)
@@ -421,13 +439,15 @@ struct OnboardingCompletionTests {
         let onboarding = CompletionOnboardingRepository()
         let persona = CompletionPersonaRepository()
         var callbackCount = 0
-        let model = makeModel(
+        let model = await makeModel(
             onboarding: onboarding,
             persona: persona,
             onCompleted: { callbackCount += 1 }
         )
 
+        await prepareE3Review(model)
         await model.complete()
+        await prepareE3Review(model)
         await model.complete()
 
         #expect(await persona.writes.isEmpty)
@@ -440,7 +460,7 @@ struct OnboardingCompletionTests {
         let onboarding = CancellationIgnoringCompletionRepository()
         let persona = CompletionPersonaRepository()
         var callbackCount = 0
-        let model = makeModel(
+        let model = await makeModel(
             onboarding: onboarding,
             persona: persona,
             onCompleted: { callbackCount += 1 }
@@ -461,7 +481,7 @@ struct OnboardingCompletionTests {
     func cancellationPreventsLateError() async {
         let onboarding = CancellationIgnoringFailingCompletionRepository()
         let persona = CompletionPersonaRepository()
-        let model = makeModel(onboarding: onboarding, persona: persona)
+        let model = await makeModel(onboarding: onboarding, persona: persona)
         let submission = Task { await model.complete() }
         await onboarding.waitUntilCompleteSuspends()
 
@@ -521,7 +541,7 @@ struct OnboardingCompletionTests {
 
         #expect(model.state == .onboarding(
             userID: "fixture-user",
-            step: .completion
+            step: .consent
         ))
         #expect(model.currentSession?.isOnboardingCompleted == false)
         #expect(model.restoredOnboardingDraft != nil)
@@ -566,9 +586,30 @@ struct OnboardingCompletionTests {
 
         #expect(model.state == .onboarding(
             userID: "fixture-user",
-            step: .completion
+            step: .consent
         ))
         #expect(model.currentSession?.isOnboardingCompleted == false)
+    }
+
+    @Test("uncertain completion locks edits and retries the exact original body with its key")
+    func uncertainCompletionPreservesImmutableAttempt() async throws {
+        let repository = CompletionOnboardingRepository(results: [.failure(.serviceUnavailable), .success(())])
+        let model = await makeModel(onboarding: repository)
+        let original = model.draft
+        await prepareE3Review(model)
+        await model.complete()
+        model.updateWeightKG(90)
+        model.updateObjective(.muscleGain)
+        model.updateDocumentAction(officialDocument.explicitAction, selected: false)
+        await model.back()
+        #expect(model.draft == original)
+        #expect(model.step == .completion)
+        await prepareE3Review(model)
+        await model.complete()
+        #expect(await repository.completedDrafts == [original, original])
+        let keys = await repository.completionKeys
+        #expect(keys.count == 2)
+        #expect(Set(keys).count == 1)
     }
 
     private func makeModel(
@@ -579,18 +620,25 @@ struct OnboardingCompletionTests {
         requirements: OnboardingRequirements? = nil,
         onStepChanged: @escaping @MainActor (OnboardingStep) -> Void = { _ in },
         onCompleted: @escaping @MainActor () -> Void = {}
-    ) -> OnboardingFlowModel {
-        OnboardingFlowModel(
+    ) async -> OnboardingFlowModel {
+        let setup = CompletionSetupState()
+        let model = OnboardingFlowModel(
             userID: "fixture-user",
             initialDraft: draft ?? completeDraft(),
             repository: onboarding,
             personaRepository: persona,
             developmentConsentAvailability: developmentConsentAvailability,
             requirements: requirements ?? officialRequirements,
-            onStepChanged: onStepChanged,
+            onStepChanged: { if setup.finished { onStepChanged($0) } },
             onCompleted: onCompleted,
             now: { fixtureDate }
         )
+        // Establish the current server decision before observing the completion operation.
+        if (draft ?? completeDraft()).currentStep == .completion {
+            await prepareE3Review(model)
+        }
+        setup.finished = true
+        return model
     }
 
     private func makeAppFlowModel(session: AuthSession) -> AppFlowModel {
@@ -671,6 +719,11 @@ struct OnboardingCompletionTests {
 }
 
 private actor RequirementsChangingOnboardingRepository: OnboardingRepository {
+    func checkEligibility(_ input: OnboardingEligibilityInput, for userID: String,
+                          idempotencyKey: IdempotencyKey) async throws -> OnboardingEligibilityDecision {
+        E3Fixtures.choice
+    }
+
     let changedRequirements: OnboardingRequirements
     private var hasRejected = false
     private(set) var completionKeys: [IdempotencyKey] = []
@@ -731,6 +784,11 @@ private actor RequirementsChangingOnboardingRepository: OnboardingRepository {
 }
 
 private actor ConcurrentlyCompletedOnboardingRepository: OnboardingRepository {
+    func checkEligibility(_ input: OnboardingEligibilityInput, for userID: String,
+                          idempotencyKey: IdempotencyKey) async throws -> OnboardingEligibilityDecision {
+        E3Fixtures.choice
+    }
+
     let completionError: OnboardingRepositoryError
 
     init(completionError: OnboardingRepositoryError = .requirementsChanged) {
@@ -768,6 +826,11 @@ private actor ConcurrentlyCompletedOnboardingRepository: OnboardingRepository {
 }
 
 private actor HistoricalReconsentOnboardingRepository: OnboardingRepository {
+    func checkEligibility(_ input: OnboardingEligibilityInput, for userID: String,
+                          idempotencyKey: IdempotencyKey) async throws -> OnboardingEligibilityDecision {
+        E3Fixtures.choice
+    }
+
     let authoritativeDraft: OnboardingDraft
     let changedRequirements: OnboardingRequirements
 
@@ -810,6 +873,11 @@ private actor HistoricalReconsentOnboardingRepository: OnboardingRepository {
 }
 
 private actor TransientReloadFailureOnboardingRepository: OnboardingRepository {
+    func checkEligibility(_ input: OnboardingEligibilityInput, for userID: String,
+                          idempotencyKey: IdempotencyKey) async throws -> OnboardingEligibilityDecision {
+        E3Fixtures.choice
+    }
+
     let changedRequirements: OnboardingRequirements
     private var loadCount = 0
     private(set) var completionKeys: [IdempotencyKey] = []
@@ -867,6 +935,11 @@ private final class CompletionEventRecorder: @unchecked Sendable {
 }
 
 private actor CompletionOnboardingRepository: OnboardingRepository {
+    func checkEligibility(_ input: OnboardingEligibilityInput, for userID: String,
+                          idempotencyKey: IdempotencyKey) async throws -> OnboardingEligibilityDecision {
+        E3Fixtures.choice
+    }
+
     private let loadedDraft: OnboardingDraft?
     private let events: CompletionEventRecorder?
     private var results: [Result<Void, OnboardingRepositoryError>]
@@ -957,6 +1030,11 @@ private actor CompletionPersonaRepository: CoachPersonaRepository {
 }
 
 private actor SuspendedCompletionOnboardingRepository: OnboardingRepository {
+    func checkEligibility(_ input: OnboardingEligibilityInput, for userID: String,
+                          idempotencyKey: IdempotencyKey) async throws -> OnboardingEligibilityDecision {
+        E3Fixtures.choice
+    }
+
     private var continuation: CheckedContinuation<Void, Never>?
     private(set) var completeCount = 0
 
@@ -983,6 +1061,11 @@ private actor SuspendedCompletionOnboardingRepository: OnboardingRepository {
 }
 
 private actor CancellationIgnoringCompletionRepository: OnboardingRepository {
+    func checkEligibility(_ input: OnboardingEligibilityInput, for userID: String,
+                          idempotencyKey: IdempotencyKey) async throws -> OnboardingEligibilityDecision {
+        E3Fixtures.choice
+    }
+
     private var continuation: CheckedContinuation<Void, Never>?
 
     func loadDraft(for userID: String) async throws -> OnboardingDraft? { nil }
@@ -1007,6 +1090,11 @@ private actor CancellationIgnoringCompletionRepository: OnboardingRepository {
 }
 
 private actor CancellationIgnoringFailingCompletionRepository: OnboardingRepository {
+    func checkEligibility(_ input: OnboardingEligibilityInput, for userID: String,
+                          idempotencyKey: IdempotencyKey) async throws -> OnboardingEligibilityDecision {
+        E3Fixtures.choice
+    }
+
     private var continuation: CheckedContinuation<Void, Never>?
 
     func loadDraft(for userID: String) async throws -> OnboardingDraft? { nil }
@@ -1055,4 +1143,9 @@ private final class CompletionCancellationCheck {
     func isCancelled() -> Bool {
         cancelled
     }
+}
+
+@MainActor
+private final class CompletionSetupState {
+    var finished = false
 }

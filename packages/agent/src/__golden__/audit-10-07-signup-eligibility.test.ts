@@ -114,6 +114,10 @@
  *   Fica no contrato do cadastro (100 a 250 cm, 30 a 300 kg, 3 a 60%, inteiro de 0 a 7).
  * > RC E — cenário contas que já concluíram o cadastro com objetivo fora desta regra variante conferir ou mover essas contas NÃO coberta nesta PR (pendência da audit 2026-10-07)
  *
+ * > RC E — cenário app fechado na tela da mensagem de entrada variante mensagem mostrada de novo na abertura seguinte (só volta a ser lida em Perfil, na E6) NÃO coberta nesta PR (pendência da audit 2026-10-07)
+ *
+ * > RC E — cenário pessoa definida em recomposição que pede ganho de massa variante conversa de bloqueio (na tela, a frase fica num detalhe que ela abre) NÃO coberta nesta PR (pendência da audit 2026-10-07)
+ *
  * Closed by the server stages of the same audit, and so no longer in the list
  * (doc §10j): the wording and the translation of the texts shown for each
  * result (packages/core/src/protocol-messages.ts; their approval is in §10n),
@@ -795,7 +799,7 @@ describe('declared pendencies', () => {
     const doc = readFileSync(resolve(here, '../../../../docs/CALCULO-MPP.md'), 'utf8')
     const fromHeader = Array.from(header.matchAll(/^ \* (> RC E — .*)$/gm), (match) => match[1])
     const fromDoc = Array.from(doc.matchAll(/^(> RC E — .*)$/gm), (match) => match[1])
-    expect(fromHeader).toHaveLength(22)
+    expect(fromHeader).toHaveLength(24)
     expect(fromDoc).toEqual(fromHeader)
     for (const line of fromHeader) {
       expect(line).toMatch(

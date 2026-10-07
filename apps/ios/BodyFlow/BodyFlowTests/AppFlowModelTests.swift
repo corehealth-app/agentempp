@@ -36,13 +36,43 @@ struct AppFlowModelTests {
             authentication: AuthenticationServiceSpy(restoredSession: session),
             onboarding: OnboardingRepositorySpy(loadedDraft: draft),
             persona: CoachPersonaRepositorySpy(),
-            telemetry: InMemoryTelemetryClient()
+            telemetry: InMemoryTelemetryClient(),
+            developmentConsentAvailability: .syntheticDevelopment
         )
 
         await model.start()
 
         #expect(model.state == .onboarding(userID: "fixture-user", step: .objective))
         #expect(model.currentSession == session)
+    }
+
+    @Test("A to B to A rejects old generation callbacks even when the identity returns")
+    func returnedAccountRejectsOldOwner() async throws {
+        let a = AuthSession(userID: "qa-a", email: "a@example.invalid", isEmailConfirmed: true, isOnboardingCompleted: false)
+        let b = AuthSession(userID: "qa-b", email: "b@example.invalid", isEmailConfirmed: true, isOnboardingCompleted: false)
+        let model = AppFlowModel(authentication: AuthenticationServiceSpy(restoredSession: a, signedInSession: b),
+            onboarding: OnboardingRepositorySpy(loadedDraft: BodyFlowTestFixtures.onboardingDraft(currentStep: .routine)),
+            persona: CoachPersonaRepositorySpy(), telemetry: DisabledTelemetryClient())
+        await model.start()
+        let firstA = try #require(model.onboardingOwnerToken)
+        await model.signOut()
+        #expect(model.onboardingOwnerToken == nil)
+        await model.signIn(email: b.email, password: "synthetic")
+        let ownerB = try #require(model.onboardingOwnerToken)
+        await model.signOut()
+        await model.start()
+        let returnedA = try #require(model.onboardingOwnerToken)
+        #expect(returnedA.userID == firstA.userID)
+        #expect(returnedA.restoreGeneration != firstA.restoreGeneration)
+        model.updateOnboardingStep(.completion, ownerToken: firstA)
+        model.completeOnboarding(ownerToken: firstA)
+        model.completeOnboarding(ownerToken: ownerB)
+        #expect(model.state == .onboarding(userID: a.userID, step: .routine))
+        #expect(model.currentSession?.isOnboardingCompleted == false)
+        model.updateOnboardingStep(.completion, ownerToken: returnedA)
+        #expect(model.state == .onboarding(userID: a.userID, step: .completion))
+        model.completeOnboarding(ownerToken: returnedA)
+        #expect(model.state == .authenticated(userID: a.userID))
     }
 
     @Test("a successful restore retains the authoritative draft without a second read")
@@ -64,7 +94,8 @@ struct AppFlowModelTests {
             authentication: AuthenticationServiceSpy(restoredSession: session),
             onboarding: onboarding,
             persona: CoachPersonaRepositorySpy(),
-            telemetry: InMemoryTelemetryClient()
+            telemetry: InMemoryTelemetryClient(),
+            developmentConsentAvailability: .syntheticDevelopment
         )
 
         await model.start()
@@ -107,7 +138,8 @@ struct AppFlowModelTests {
             authentication: AuthenticationServiceSpy(restoredSession: session),
             onboarding: onboarding,
             persona: CoachPersonaRepositorySpy(),
-            telemetry: telemetry
+            telemetry: telemetry,
+            developmentConsentAvailability: .syntheticDevelopment
         )
 
         await model.start()
@@ -163,7 +195,8 @@ struct AppFlowModelTests {
             authentication: AuthenticationServiceSpy(restoredSession: session),
             onboarding: onboarding,
             persona: CoachPersonaRepositorySpy(),
-            telemetry: telemetry
+            telemetry: telemetry,
+            developmentConsentAvailability: .syntheticDevelopment
         )
 
         await model.start()
@@ -199,7 +232,8 @@ struct AppFlowModelTests {
             authentication: AuthenticationServiceSpy(restoredSession: session),
             onboarding: onboarding,
             persona: CoachPersonaRepositorySpy(),
-            telemetry: telemetry
+            telemetry: telemetry,
+            developmentConsentAvailability: .syntheticDevelopment
         )
         await model.start()
 
@@ -232,7 +266,8 @@ struct AppFlowModelTests {
             authentication: AuthenticationServiceSpy(restoredSession: session),
             onboarding: onboarding,
             persona: CoachPersonaRepositorySpy(),
-            telemetry: telemetry
+            telemetry: telemetry,
+            developmentConsentAvailability: .syntheticDevelopment
         )
         await model.start()
 
@@ -264,7 +299,8 @@ struct AppFlowModelTests {
             authentication: AuthenticationServiceSpy(restoredSession: session),
             onboarding: onboarding,
             persona: CoachPersonaRepositorySpy(),
-            telemetry: telemetry
+            telemetry: telemetry,
+            developmentConsentAvailability: .syntheticDevelopment
         )
         await model.start()
 
@@ -303,7 +339,8 @@ struct AppFlowModelTests {
             authentication: AuthenticationServiceSpy(restoredSession: session),
             onboarding: OnboardingRepositorySpy(serverCompleted: true),
             persona: CoachPersonaRepositorySpy(),
-            telemetry: InMemoryTelemetryClient()
+            telemetry: InMemoryTelemetryClient(),
+            developmentConsentAvailability: .syntheticDevelopment
         )
 
         await model.start()
@@ -319,7 +356,8 @@ struct AppFlowModelTests {
             authentication: AuthenticationServiceSpy(restoredSession: session),
             onboarding: OnboardingRepositorySpy(serverCompleted: true),
             persona: CoachPersonaRepositorySpy(),
-            telemetry: InMemoryTelemetryClient()
+            telemetry: InMemoryTelemetryClient(),
+            developmentConsentAvailability: .syntheticDevelopment
         )
 
         await model.start()
@@ -335,7 +373,8 @@ struct AppFlowModelTests {
             authentication: AuthenticationServiceSpy(restoredSession: session),
             onboarding: OnboardingRepositorySpy(serverCompleted: false),
             persona: CoachPersonaRepositorySpy(),
-            telemetry: InMemoryTelemetryClient()
+            telemetry: InMemoryTelemetryClient(),
+            developmentConsentAvailability: .syntheticDevelopment
         )
 
         await model.start()
@@ -371,7 +410,8 @@ struct AppFlowModelTests {
                 requirements: requirements
             ),
             persona: CoachPersonaRepositorySpy(),
-            telemetry: InMemoryTelemetryClient()
+            telemetry: InMemoryTelemetryClient(),
+            developmentConsentAvailability: .syntheticDevelopment
         )
 
         await model.start()
@@ -419,7 +459,8 @@ struct AppFlowModelTests {
                 requirements: requirements
             ),
             persona: CoachPersonaRepositorySpy(),
-            telemetry: InMemoryTelemetryClient()
+            telemetry: InMemoryTelemetryClient(),
+            developmentConsentAvailability: .syntheticDevelopment
         )
 
         await model.start()
@@ -444,7 +485,8 @@ struct AppFlowModelTests {
             ),
             onboarding: OnboardingRepositorySpy(),
             persona: CoachPersonaRepositorySpy(),
-            telemetry: InMemoryTelemetryClient()
+            telemetry: InMemoryTelemetryClient(),
+            developmentConsentAvailability: .syntheticDevelopment
         )
 
         await model.start()
@@ -465,7 +507,8 @@ struct AppFlowModelTests {
             ),
             onboarding: OnboardingRepositorySpy(),
             persona: CoachPersonaRepositorySpy(),
-            telemetry: InMemoryTelemetryClient()
+            telemetry: InMemoryTelemetryClient(),
+            developmentConsentAvailability: .syntheticDevelopment
         )
 
         await model.start()
@@ -484,7 +527,8 @@ struct AppFlowModelTests {
             authentication: AuthenticationServiceSpy(restoredSession: session),
             onboarding: OnboardingRepositorySpy(serverCompleted: true),
             persona: CoachPersonaRepositorySpy(),
-            telemetry: telemetry
+            telemetry: telemetry,
+            developmentConsentAvailability: .syntheticDevelopment
         )
 
         await model.start()
@@ -509,7 +553,8 @@ struct AppFlowModelTests {
             ),
             onboarding: OnboardingRepositorySpy(serverCompleted: true),
             persona: CoachPersonaRepositorySpy(),
-            telemetry: InMemoryTelemetryClient()
+            telemetry: InMemoryTelemetryClient(),
+            developmentConsentAvailability: .syntheticDevelopment
         )
 
         await model.start()
@@ -532,7 +577,8 @@ struct AppFlowModelTests {
             ),
             onboarding: OnboardingRepositorySpy(loadedDraft: draft),
             persona: CoachPersonaRepositorySpy(),
-            telemetry: InMemoryTelemetryClient()
+            telemetry: InMemoryTelemetryClient(),
+            developmentConsentAvailability: .syntheticDevelopment
         )
 
         await model.start()
@@ -559,7 +605,8 @@ struct AppFlowModelTests {
             ),
             onboarding: onboarding,
             persona: CoachPersonaRepositorySpy(),
-            telemetry: telemetry
+            telemetry: telemetry,
+            developmentConsentAvailability: .syntheticDevelopment
         )
         await model.start()
 
@@ -644,7 +691,8 @@ struct AppFlowModelTests {
                 )
             ),
             persona: CoachPersonaRepositorySpy(),
-            telemetry: InMemoryTelemetryClient()
+            telemetry: InMemoryTelemetryClient(),
+            developmentConsentAvailability: .syntheticDevelopment
         )
 
         await model.signIn(
@@ -672,7 +720,8 @@ struct AppFlowModelTests {
             ),
             onboarding: OnboardingRepositorySpy(serverCompleted: true),
             persona: CoachPersonaRepositorySpy(),
-            telemetry: InMemoryTelemetryClient()
+            telemetry: InMemoryTelemetryClient(),
+            developmentConsentAvailability: .syntheticDevelopment
         )
 
         await model.signIn(
@@ -696,7 +745,8 @@ struct AppFlowModelTests {
             ),
             onboarding: OnboardingRepositorySpy(),
             persona: CoachPersonaRepositorySpy(),
-            telemetry: InMemoryTelemetryClient()
+            telemetry: InMemoryTelemetryClient(),
+            developmentConsentAvailability: .syntheticDevelopment
         )
 
         await model.signUp(
@@ -728,7 +778,8 @@ struct AppFlowModelTests {
             ),
             onboarding: OnboardingRepositorySpy(),
             persona: CoachPersonaRepositorySpy(),
-            telemetry: InMemoryTelemetryClient()
+            telemetry: InMemoryTelemetryClient(),
+            developmentConsentAvailability: .syntheticDevelopment
         )
 
         await model.confirmEmailForDevelopment()
@@ -779,7 +830,8 @@ struct AppFlowModelTests {
             authentication: authentication,
             onboarding: OnboardingRepositorySpy(serverCompleted: true),
             persona: CoachPersonaRepositorySpy(),
-            telemetry: InMemoryTelemetryClient()
+            telemetry: InMemoryTelemetryClient(),
+            developmentConsentAvailability: .syntheticDevelopment
         )
         await model.start()
 
@@ -812,7 +864,8 @@ struct AppFlowModelTests {
             authentication: authentication,
             onboarding: OnboardingRepositorySpy(),
             persona: CoachPersonaRepositorySpy(),
-            telemetry: InMemoryTelemetryClient()
+            telemetry: InMemoryTelemetryClient(),
+            developmentConsentAvailability: .syntheticDevelopment
         )
         await model.start()
 
@@ -838,7 +891,8 @@ struct AppFlowModelTests {
             authentication: AuthenticationServiceSpy(restoredSession: nil),
             onboarding: OnboardingRepositorySpy(),
             persona: CoachPersonaRepositorySpy(),
-            telemetry: InMemoryTelemetryClient()
+            telemetry: InMemoryTelemetryClient(),
+            developmentConsentAvailability: .syntheticDevelopment
         )
     }
 

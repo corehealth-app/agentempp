@@ -270,6 +270,20 @@ enum DemoPrompt14ScenarioSelection: Equatable, Sendable {
 }
 #endif
 
+#if DEBUG
+enum OnboardingEligibilityPreviewScenario: Sendable {
+    case choice, assigned, gainBlocked, welcome, failure, completionUncertain
+    static func resolve(arguments: [String]) -> Self? {
+        if arguments.contains("--ui-testing-onboarding-assigned") { return .assigned }
+        if arguments.contains("--ui-testing-onboarding-gain-blocked") { return .gainBlocked }
+        if arguments.contains("--ui-testing-onboarding-completion-uncertain") { return .completionUncertain }
+        if arguments.contains("--ui-testing-onboarding-welcome") { return .welcome }
+        if arguments.contains("--ui-testing-onboarding-eligibility-failure") { return .failure }
+        return nil
+    }
+}
+#endif
+
 enum DemoStorageService {
     static let development = "com.bodyflow.app.development.demo-state.v1"
     static let uiTesting = "com.bodyflow.app.ui-testing.demo-state.v1"
@@ -284,6 +298,7 @@ struct AppLaunchConfiguration: Sendable {
     let demoStorageBoundary: DemoStorageBoundary
     let demoKeychainService: String
     #if DEBUG
+    let onboardingEligibilityScenario: OnboardingEligibilityPreviewScenario?
     let prompt13Scenario: DemoBodyFlowScenario?
     let prompt14Scenario: DemoPrompt14Scenario?
     let prompt14ScenarioSelection: DemoPrompt14ScenarioSelection?
@@ -298,6 +313,7 @@ struct AppLaunchConfiguration: Sendable {
         authBehavior: DemoOperationBehavior<AuthenticationError>,
         demoStorageBoundary: DemoStorageBoundary = .memory,
         demoKeychainService: String = DemoStorageService.development,
+        onboardingEligibilityScenario: OnboardingEligibilityPreviewScenario? = nil,
         prompt13Scenario: DemoBodyFlowScenario? = nil,
         prompt14Scenario: DemoPrompt14Scenario? = nil,
         prompt14ScenarioSelection: DemoPrompt14ScenarioSelection? = nil
@@ -309,6 +325,7 @@ struct AppLaunchConfiguration: Sendable {
         self.authBehavior = authBehavior
         self.demoStorageBoundary = demoStorageBoundary
         self.demoKeychainService = demoKeychainService
+        self.onboardingEligibilityScenario = mode == .demo ? onboardingEligibilityScenario : nil
         self.prompt13Scenario = mode == .demo ? prompt13Scenario : nil
         self.prompt14Scenario = mode == .demo ? prompt14Scenario : nil
         self.prompt14ScenarioSelection = mode == .demo
@@ -417,6 +434,14 @@ struct AppLaunchConfiguration: Sendable {
         #if DEBUG
         guard buildFlavor == .debug else {
             return releaseConfiguration()
+        }
+
+        if let scenario = OnboardingEligibilityPreviewScenario.resolve(arguments: arguments) {
+            return AppLaunchConfiguration(mode: .demo, shouldResetDemoState: true,
+                startsWithCompletedFixture: false, preloadsSyntheticOnboardingValues: true,
+                authBehavior: .succeed(after: nil), demoStorageBoundary: .keychain,
+                demoKeychainService: DemoStorageService.uiTesting,
+                onboardingEligibilityScenario: scenario)
         }
 
         if let scenario = DemoBodyFlowScenario.resolve(arguments: arguments) {

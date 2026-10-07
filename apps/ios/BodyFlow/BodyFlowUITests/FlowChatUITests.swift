@@ -539,12 +539,6 @@ final class FlowChatUITests: XCTestCase {
         tapVisible(next, app: app)
         XCTAssertTrue(element("screen.onboarding.body-data", app: app).waitForExistence(timeout: 3))
         tapVisible(next, app: app)
-        XCTAssertTrue(element("screen.onboarding.objective", app: app).waitForExistence(timeout: 3))
-        waitUntilEnabled(next)
-        let objective = app.buttons["onboarding.objective.recomposicao"]
-        tapVisible(objective, app: app)
-        XCTAssertTrue(objective.isSelected)
-        tapVisible(next, app: app)
         XCTAssertTrue(element("screen.onboarding.routine", app: app).waitForExistence(timeout: 3))
         tapVisible(next, app: app)
         XCTAssertTrue(element("screen.onboarding.persona", app: app).waitForExistence(timeout: 3))
@@ -561,6 +555,12 @@ final class FlowChatUITests: XCTestCase {
             tapVisible(action, app: app)
             XCTAssertTrue(action.isSelected)
         }
+        tapVisible(next, app: app)
+        XCTAssertTrue(element("screen.onboarding.objective", app: app).waitForExistence(timeout: 3))
+        waitUntilEnabled(next)
+        let objective = app.buttons["onboarding.objective.recomposicao"]
+        tapVisible(objective, app: app)
+        XCTAssertTrue(objective.isSelected)
         tapVisible(next, app: app)
         XCTAssertTrue(element("screen.onboarding.completion", app: app).waitForExistence(timeout: 3))
         XCTAssertFalse(element("screen.hoje", app: app).exists)

@@ -22,6 +22,27 @@ struct MobileOnboardingRepository: OnboardingRepository {
         }
     }
 
+    func checkEligibility(
+        _ input: OnboardingEligibilityInput, for userID: String,
+        idempotencyKey: IdempotencyKey
+    ) async throws -> OnboardingEligibilityDecision {
+        do {
+            let result: OnboardingEligibilityDecision = try await transport.execute(MobileAPIRequest(
+                method: .post, path: "/api/mobile/v1/onboarding/eligibility",
+                body: try JSONEncoder().encode(input), idempotencyKey: idempotencyKey
+            ))
+            return try result.validated()
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as OnboardingRepositoryError {
+            throw error
+        } catch let error as MobileAPITransportError {
+            throw map(error)
+        } catch {
+            throw OnboardingRepositoryError.serviceUnavailable
+        }
+    }
+
     func saveDraft(_ draft: OnboardingDraft, for userID: String) async throws {
         try Task.checkCancellation()
     }
@@ -82,6 +103,8 @@ struct MobileOnboardingRepository: OnboardingRepository {
         case .server(_, let code, _)
             where code == "onboarding_documents_unavailable":
             .documentsUnavailable
+        case .validation(let code, _) where code == "onboarding_objective_not_eligible":
+            .objectiveNotEligible
         case .validation:
             .invalidDraft
         default:

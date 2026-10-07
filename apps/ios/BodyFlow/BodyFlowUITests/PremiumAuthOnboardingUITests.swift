@@ -98,6 +98,13 @@ final class PremiumAuthOnboardingUITests: XCTestCase {
         let continueButton = app.buttons["onboarding.continue"]
         reach(continueButton, in: app, attempts: 30)
         continueButton.tap()
+        XCTAssertTrue(support.element("screen.onboarding.objective", app: app).waitForExistence(timeout: 5))
+        let objective = app.buttons["onboarding.objective.recomposicao"]
+        reach(objective, in: app, attempts: 30)
+        support.assertTarget(objective)
+        objective.tap()
+        XCTAssertTrue(objective.isSelected)
+        advance(app)
         XCTAssertTrue(
             support.element("screen.onboarding.completion", app: app)
                 .waitForExistence(timeout: 5)
@@ -132,10 +139,6 @@ final class PremiumAuthOnboardingUITests: XCTestCase {
         advance(app)
 
         XCTAssertTrue(support.element("screen.onboarding.body-data", app: app).waitForExistence(timeout: 5))
-        advance(app)
-        let objective = app.buttons["onboarding.objective.recomposicao"]
-        reach(objective, in: app)
-        objective.tap()
         advance(app)
         XCTAssertTrue(support.element("screen.onboarding.routine", app: app).waitForExistence(timeout: 5))
         advance(app)

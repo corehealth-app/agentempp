@@ -2,6 +2,7 @@ import Foundation
 
 enum OnboardingRepositoryError: Error, Equatable, Sendable {
     case invalidDraft
+    case objectiveNotEligible
     case developmentConsentForbidden
     case documentsUnavailable
     case requirementsChanged
@@ -20,10 +21,21 @@ protocol OnboardingRepository: Sendable {
         for userID: String,
         idempotencyKey: IdempotencyKey
     ) async throws -> OnboardingCompletionAcknowledgement
+    func checkEligibility(
+        _ input: OnboardingEligibilityInput, for userID: String,
+        idempotencyKey: IdempotencyKey
+    ) async throws -> OnboardingEligibilityDecision
     func clear(for userID: String) async throws
 }
 
 extension OnboardingRepository {
+    func checkEligibility(
+        _ input: OnboardingEligibilityInput, for userID: String,
+        idempotencyKey: IdempotencyKey
+    ) async throws -> OnboardingEligibilityDecision {
+        throw OnboardingRepositoryError.serviceUnavailable
+    }
+
     func loadState(for userID: String) async throws -> OnboardingServerState {
         let draft = try await loadDraft(for: userID)
         return OnboardingServerState(

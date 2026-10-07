@@ -20,8 +20,11 @@ struct OnboardingContainerView: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
                             BodyFlowBrandIdentityView()
-                            progress
+                            if model.pendingProtocolWelcome == nil { progress }
                             OnboardingOperationMessage(state: model.operationState)
+                            if model.operationState == .saving && isCheckingEligibility {
+                                BodyFlowStatusLine(copy("onboarding.objective.checking", fallback: "Conferindo os objetivos disponíveis…"), kind: .pending)
+                            }
                             OnboardingValidationSummary(issues: model.validationIssues)
                             stepContent
                                 .transition(BodyFlowMotion.stateTransition(reduceMotion: reduceMotion))
@@ -41,28 +44,34 @@ struct OnboardingContainerView: View {
                     .scrollDismissesKeyboard(.interactively)
                     // One ScrollView serves every step: without this, the offset
                     // a long step leaves behind carries into the next one.
+                    .onChange(of: model.pendingProtocolWelcome != nil) {
+                        proxy.scrollTo(OnboardingScrollAnchor.top, anchor: .top)
+                    }
                     .onChange(of: model.step) {
                         proxy.scrollTo(OnboardingScrollAnchor.top, anchor: .top)
                     }
                 }
             }
         }
+        .task(id: model.step) {
+            if model.step == .objective { await model.prepareObjectiveIfNeeded() }
+        }
         .onDisappear(perform: cancelSubmission)
     }
 
     private var progress: some View {
-        let position = (OnboardingStep.allCases.firstIndex(of: model.step) ?? 0) + 1
+        let position = (model.visibleSteps.firstIndex(of: model.step) ?? 0) + 1
         return VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
             Text(PremiumPresentationCopy.format(
                 "onboarding.progress.format",
                 locale: locale,
                 fallback: "Etapa %lld de %lld",
                 position,
-                OnboardingStep.allCases.count
+                model.visibleSteps.count
             ))
                 .font(BodyFlowTypography.callout)
                 .fontWeight(.semibold)
-            ProgressView(value: Double(position), total: Double(OnboardingStep.allCases.count))
+            ProgressView(value: Double(position), total: Double(model.visibleSteps.count))
                 .frame(height: BodyFlowSpacing.sm)
         }
         .accessibilityElement(children: .combine)
@@ -71,29 +80,33 @@ struct OnboardingContainerView: View {
 
     @ViewBuilder
     private var stepContent: some View {
-        switch model.stepPresentation {
-        case .step(.welcome):
-            WelcomeStepView(model: model)
-        case .step(.bodyData):
-            BodyDataStepView(model: model)
-        case .step(.objective):
-            ObjectiveStepView(model: model)
-        case .step(.routine):
-            RoutineStepView(model: model)
-        case .step(.persona):
-            PersonaStepView(model: model)
-        case .step(.consent):
-            ConsentStepView(model: model)
-        case .step(.completion):
-            OnboardingCompletionView(model: model, onComplete: submitCompletion)
-        case .developmentConsentUnavailable:
-            OnboardingDocumentsUnavailableView()
+        if let welcome = model.pendingProtocolWelcome {
+            ProtocolMessageView(welcome: welcome, onContinue: model.finishProtocolWelcome)
+        } else {
+            switch model.stepPresentation {
+            case .step(.welcome):
+                WelcomeStepView(model: model)
+            case .step(.bodyData):
+                BodyDataStepView(model: model)
+            case .step(.objective):
+                ObjectiveStepView(model: model)
+            case .step(.routine):
+                RoutineStepView(model: model)
+            case .step(.persona):
+                PersonaStepView(model: model)
+            case .step(.consent):
+                ConsentStepView(model: model)
+            case .step(.completion):
+                OnboardingCompletionView(model: model, onComplete: submitCompletion)
+            case .developmentConsentUnavailable:
+                OnboardingDocumentsUnavailableView()
+            }
         }
     }
 
     private var commands: some View {
         VStack(spacing: BodyFlowSpacing.sm) {
-            if model.step != .completion {
+            if model.step != .completion && model.pendingProtocolWelcome == nil {
                 if model.stepPresentation != .developmentConsentUnavailable {
                     Button(action: submit) {
                         Text(continueTitle)
@@ -103,13 +116,13 @@ struct OnboardingContainerView: View {
                         isLoading: model.operationState == .saving
                     ))
                     .disabled(
-                        model.operationState == .saving
+                        !model.allowsDraftEditing || model.operationState == .saving
                             || (model.step == .consent && !model.hasRequiredDevelopmentConsent)
                     )
                     .accessibilityIdentifier("onboarding.continue")
                 }
 
-                if model.step != .welcome {
+                if model.step != model.visibleSteps.first {
                     Button {
                         Task { await model.back() }
                     } label: {
@@ -121,25 +134,37 @@ struct OnboardingContainerView: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(BodyFlowButtonStyle(role: .secondary))
-                        .disabled(model.operationState == .saving)
+                        .disabled(!model.allowsDraftEditing || model.operationState == .saving)
                         .accessibilityIdentifier("onboarding.back")
                 }
             }
         }
     }
 
+    private var isCheckingEligibility: Bool {
+        !model.isReacceptance && (model.step == .consent || (model.step == .objective && !model.hasCurrentEligibilityDecision))
+    }
+
     private var continueTitle: String {
         switch model.operationState {
         case .idle: copy("onboarding.continue", fallback: "Continuar")
-        case .saving: copy("onboarding.saving", fallback: "Salvando")
-        case .failed: copy("onboarding.retry", fallback: "Tentar novamente")
+        case .saving: isCheckingEligibility
+            ? copy("onboarding.objective.checking", fallback: "Conferindo os objetivos disponíveis…")
+            : copy("onboarding.saving", fallback: "Salvando")
+        case .failed: model.step == .objective && !model.hasCurrentEligibilityDecision
+            ? copy("onboarding.objective.retry", fallback: "Conferir novamente")
+            : copy("onboarding.retry", fallback: "Tentar novamente")
         }
     }
 
     private func submit() {
         guard submissionTask == nil else { return }
         submissionTask = Task {
-            await model.continueFromCurrentStep()
+            if model.step == .objective && !model.hasCurrentEligibilityDecision {
+                await model.prepareObjectiveIfNeeded()
+            } else {
+                await model.continueFromCurrentStep()
+            }
             announceOperationResultIfNeeded()
             submissionTask = nil
         }

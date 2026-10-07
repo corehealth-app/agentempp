@@ -31,6 +31,8 @@ final class AppFlowModel {
     private let onboarding: any OnboardingRepository
     private let persona: any CoachPersonaRepository
     private let telemetry: any TelemetryClient
+    private let developmentConsentAvailability: DevelopmentConsentAvailability
+    private let now: @MainActor () -> Date
     private let cancellationCheck: @MainActor () -> Bool
     private var activeOnboardingRestoreID: UUID?
 
@@ -41,6 +43,12 @@ final class AppFlowModel {
     private(set) var restoredOnboardingDraft: OnboardingDraft?
     private(set) var restoredOnboardingRequirements: OnboardingRequirements = .unavailable
     private(set) var onboardingRestoreGeneration = 0
+    private(set) var restoredHistoricalCompletedAt: String?
+
+    var onboardingOwnerToken: OnboardingOwnerToken? {
+        guard case .onboarding(let userID, _) = state else { return nil }
+        return OnboardingOwnerToken(userID: userID, restoreGeneration: onboardingRestoreGeneration)
+    }
 
     init(
         authentication: any AuthenticationService,
@@ -49,12 +57,16 @@ final class AppFlowModel {
         telemetry: any TelemetryClient,
         initialState: AppFlowState = .launching,
         initialAuthOperationState: AuthOperationState = .idle,
+        developmentConsentAvailability: DevelopmentConsentAvailability = .unavailable,
+        now: @escaping @MainActor () -> Date = Date.init,
         cancellationCheck: @escaping @MainActor () -> Bool = { false }
     ) {
         self.authentication = authentication
         self.onboarding = onboarding
         self.persona = persona
         self.telemetry = telemetry
+        self.developmentConsentAvailability = developmentConsentAvailability
+        self.now = now
         state = initialState
         authOperationState = initialAuthOperationState
         self.cancellationCheck = cancellationCheck
@@ -122,6 +134,16 @@ final class AppFlowModel {
         await telemetry.record(.authScreenViewed(.signIn))
     }
 
+    func updateOnboardingStep(_ step: OnboardingStep, ownerToken: OnboardingOwnerToken) {
+        guard onboardingOwnerToken == ownerToken else { return }
+        updateOnboardingStep(step)
+    }
+
+    func completeOnboarding(ownerToken: OnboardingOwnerToken) {
+        guard onboardingOwnerToken == ownerToken else { return }
+        completeOnboarding(for: ownerToken.userID)
+    }
+
     func updateOnboardingStep(_ step: OnboardingStep) {
         guard case .onboarding(let userID, _) = state else { return }
         state = .onboarding(userID: userID, step: step)
@@ -147,6 +169,7 @@ final class AppFlowModel {
         invalidateOnboardingRestore()
         restoredOnboardingDraft = nil
         restoredOnboardingRequirements = .unavailable
+        restoredHistoricalCompletedAt = nil
         state = .authenticated(userID: userID)
     }
 
@@ -274,6 +297,7 @@ final class AppFlowModel {
             invalidateOnboardingRestore()
             restoredOnboardingDraft = nil
             restoredOnboardingRequirements = .unavailable
+            restoredHistoricalCompletedAt = nil
             currentSession = session
             guard !isCancellationRequested else {
                 currentSession = nil
@@ -314,10 +338,14 @@ final class AppFlowModel {
                 draft = serverState.draft ?? .currentDeviceWelcome
             }
             draft.localeIdentifier = serverState.locale
+            draft = OnboardingResumePolicy.normalizedDraft(draft, requirements: serverState.requirements,
+                developmentConsentAvailability: developmentConsentAvailability,
+                historicalCompletedAt: serverState.completion.completedAt, now: now())
             publishOnboardingRestore(
                 session: session,
                 draft: draft,
-                requirements: serverState.requirements
+                requirements: serverState.requirements,
+                historicalCompletedAt: serverState.completion.completedAt
             )
             finishOnboardingRestoreIfCurrent(restoreID)
             let step = draft.currentStep
@@ -360,6 +388,7 @@ final class AppFlowModel {
         session: AuthSession,
         draft: OnboardingDraft?,
         requirements: OnboardingRequirements = .unavailable,
+        historicalCompletedAt: String? = nil,
         error: AppPresentationError? = nil
     ) {
         currentSession = AuthSession(
@@ -375,6 +404,7 @@ final class AppFlowModel {
 
         restoredOnboardingDraft = draft
         restoredOnboardingRequirements = requirements
+        restoredHistoricalCompletedAt = historicalCompletedAt
         presentationError = error
         onboardingRestoreGeneration += 1
         state = .onboarding(
@@ -392,6 +422,7 @@ final class AppFlowModel {
         )
         restoredOnboardingDraft = nil
         restoredOnboardingRequirements = .unavailable
+        restoredHistoricalCompletedAt = nil
         presentationError = nil
         state = .authenticated(userID: session.userID)
     }
@@ -401,6 +432,7 @@ final class AppFlowModel {
         invalidateOnboardingRestore()
         restoredOnboardingDraft = nil
         restoredOnboardingRequirements = .unavailable
+        restoredHistoricalCompletedAt = nil
         currentSession = nil
         state = .signedOut(.signIn)
         if let error {
@@ -421,6 +453,7 @@ final class AppFlowModel {
         invalidateOnboardingRestore()
         restoredOnboardingDraft = nil
         restoredOnboardingRequirements = .unavailable
+        restoredHistoricalCompletedAt = nil
         currentSession = nil
         state = .signedOut(destination)
         presentationError = nil

@@ -6,10 +6,42 @@ import Testing
 @Suite
 struct LocalizationContractTests {
     @Test(arguments: SupportedAppLanguage.allCases)
+    func reviewedE3CatalogCopyIsExact(_ language: SupportedAppLanguage) throws {
+        let expected: [(String, String, String)] = [
+            ("onboarding.objective.assigned.title", "Seu objetivo inicial", "Your starting objective"),
+            ("onboarding.objective.about-gain", "Sobre o ganho de massa muscular", "About muscle gain"),
+            ("onboarding.objective.unavailable", "Indisponível", "Unavailable"),
+            ("onboarding.objective.checking", "Conferindo os objetivos disponíveis…", "Checking available objectives…"),
+            ("onboarding.objective.retry", "Conferir novamente", "Check again"),
+            ("onboarding.protocol-welcome.title", "Mensagem do Flow", "Message from Flow"),
+            ("onboarding.protocol-welcome.continue", "Ir para Hoje", "Go to Today"),
+            ("onboarding.objective.body-recomposition.detail", "Perder gordura com preservação ou ganho de massa muscular.", "Lose fat while preserving or gaining muscle."),
+            ("onboarding.objective.maintenance.detail", "Manter o corpo atual.", "Maintain your current body."),
+            ("onboarding.completion.unresolved", "O envio anterior ainda precisa ser confirmado. Tente novamente para conferir o resultado.", "Your previous submission still needs confirmation. Try again to check the result."),
+            ("onboarding.completion.finish", "Concluir cadastro", "Finish sign-up"),
+        ]
+        for (key, pt, en) in expected {
+            #expect(try AppLocalization.string(String.LocalizationValue(key), for: language) ==
+                (language == .portugueseBrazil ? pt : en))
+        }
+    }
+
+    @Test(arguments: SupportedAppLanguage.allCases)
     func testEveryReviewedPublicCatalogKeyHasBothLanguages(
         _ language: SupportedAppLanguage
     ) throws {
         let reviewedKeys = [
+            "onboarding.objective.assigned.title",
+            "onboarding.objective.about-gain",
+            "onboarding.objective.unavailable",
+            "onboarding.objective.checking",
+            "onboarding.objective.retry",
+            "onboarding.protocol-welcome.title",
+            "onboarding.protocol-welcome.continue",
+            "onboarding.objective.body-recomposition.detail",
+            "onboarding.objective.maintenance.detail",
+            "onboarding.completion.unresolved",
+            "onboarding.completion.finish",
             "onboarding.selection.placeholder",
             "onboarding.selection.selected",
             "onboarding.selection.not-selected",

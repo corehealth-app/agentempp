@@ -34,6 +34,20 @@ function onboardingLocale(locale: string | null): 'pt-BR' | 'en-US' {
   )
 }
 
+/**
+ * What the idempotency record keeps of a completion: the response without
+ * `protocol_welcome`. That text carries the person's name and is never read
+ * back, because a replay rebuilds the whole response (`refreshReplay`).
+ */
+function completionBodyForStorage(body: unknown): unknown {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return body
+  const envelope = body as Record<string, unknown>
+  const data = envelope.data
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return body
+  const { protocol_welcome: _welcome, ...stored } = data as Record<string, unknown>
+  return { ...envelope, data: stored }
+}
+
 export async function handleOnboardingGet(
   context: MobileRouteContext,
   dependencies: OnboardingRouteDependencies = defaultDependencies,
@@ -87,5 +101,6 @@ export async function handleOnboardingPost(
   }
   return dependencies.executeIdempotent(context, input, createResponse, {
     refreshReplay: createResponse,
+    responseBodyForStorage: completionBodyForStorage,
   })
 }

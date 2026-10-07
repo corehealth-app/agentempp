@@ -3,6 +3,7 @@ import {
   executeIdempotent,
   type IdempotencyClaim,
   type MobileIdempotencyStore,
+  requireIdempotencyKey,
 } from './idempotency'
 import type { MobileRouteContext } from './route'
 
@@ -54,6 +55,32 @@ describe('mobile mutation idempotency', () => {
       executeIdempotent(context(), { name: 'New name' }, persistence, vi.fn()),
     ).rejects.toMatchObject({ status: 400, code: 'missing_idempotency_key' })
     expect(persistence.claim).not.toHaveBeenCalled()
+  })
+
+  it('rejects a malformed idempotency key before claiming anything', async () => {
+    const persistence = store({ action: 'claimed', claimId: 'claim-1' })
+
+    for (const key of ['short', 'has spaces in it', 'x'.repeat(129), 'acentuação-não-vale']) {
+      await expect(
+        executeIdempotent(context(key), { name: 'New name' }, persistence, vi.fn()),
+      ).rejects.toMatchObject({ status: 400, code: 'invalid_idempotency_key' })
+    }
+    expect(persistence.claim).not.toHaveBeenCalled()
+  })
+
+  it('reads the key of a request on its own, with the same two refusals and no store', () => {
+    expect(requireIdempotencyKey(context('mobile-request-0001').request)).toBe(
+      'mobile-request-0001',
+    )
+    expect(requireIdempotencyKey(context('  mobile-request-0001  ').request)).toBe(
+      'mobile-request-0001',
+    )
+    expect(() => requireIdempotencyKey(context().request)).toThrowError(
+      expect.objectContaining({ status: 400, code: 'missing_idempotency_key' }),
+    )
+    expect(() => requireIdempotencyKey(context('short').request)).toThrowError(
+      expect.objectContaining({ status: 400, code: 'invalid_idempotency_key' }),
+    )
   })
 
   it('claims and stores the first deterministic response', async () => {

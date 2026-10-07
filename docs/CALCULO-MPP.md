@@ -2487,23 +2487,31 @@ lidos da linha verificada do catálogo antes de ativar.
 > **Situação da regra:** escrita pelo cliente (Dr. Roberto) nas regras do método
 > e dita por ele no grupo do projeto nas datas indicadas; **implementada em
 > 2026-10-07 a pedido do Eduardo; confirmação do cliente pendente.** Não é
-> decisão nova do cliente. A contradição do corte de IMC (§10c) e cada leitura
-> natural (§10d) estão marcadas uma a uma.
+> decisão nova do cliente. A contradição do corte de IMC (§10c), cada leitura
+> natural (§10d) e cada edição feita nos textos dele (§10m) estão marcadas uma a
+> uma.
 
-**Nada chama esta função ainda.** Esta etapa acrescenta ao motor UMA função
-pura, `decideSignupEligibility` (`packages/core/src/protocol-eligibility.ts`),
-os testes dela e esta seção. Nenhuma rota, tela, linha de banco ou texto mudou:
+A regra é UMA função pura, `decideSignupEligibility`
+(`packages/core/src/protocol-eligibility.ts`).
+
+**Onde ela é aplicada hoje.** Em um lugar só: a conferência do cadastro no
+servidor (`POST /api/mobile/v1/onboarding/eligibility`, §10l), que responde a
+decisão com os textos do §10m e **não grava nada**. Fora dela:
 
 - o cadastro do app continua gravando o objetivo que a pessoa tocou, sem
   conferir (`supabase/migrations/20260915150739_bodyflow_server_owned_onboarding.sql`);
+  recusar na gravação o objetivo fora da regra é a próxima etapa do servidor;
+- o app publicado não chama a conferência nem lê os campos novos: nenhuma tela
+  mudou;
 - a linha `- Decisão automática: …` do contexto do turno (WhatsApp e Flow)
   continua vindo de `resolveProtocol` (`packages/core/src/protocol-router.ts`),
   que não foi tocada (§10h);
 - a regra não entra em meta calórica, balanço, bloco nem card (§1 a §4).
 
-O servidor e depois o app passam a chamar a função em etapas seguintes. A troca
-de fase não faz parte desta regra: o cliente disse em 02/07/2026 que a troca de
-protocolo "teria q ser feita em uma reavaliação"; ela fica para a reavaliação.
+A troca de fase não faz parte desta regra: o cliente disse em 02/07/2026 que a
+troca de protocolo "teria q ser feita em uma reavaliação"; ela fica para a
+reavaliação. O servidor só LÊ o objetivo atual (`GET /api/mobile/v1/protocol`,
+§10l).
 
 ### 10a. Entradas e cortes
 
@@ -2522,7 +2530,7 @@ Os cortes são os que já existem na configuração de cálculo
 
 - Em execução essas chaves vêm de `global_config` (`calc.bf_limits`,
   `calc.imc_limit_recomp`, `calc.training_min`) e a linha substitui o padrão do
-  código. Os valores dos bancos não foram lidos nesta etapa (pendência).
+  código. Os valores dos bancos não foram lidos (pendência).
 - **Linha que não guarda número** (texto como `"25"`, `null`, sexo ausente em
   `calc.bf_limits`): vale o padrão do código para aquele corte, e só para ele.
   A função lê cada corte como valor desconhecido, como `imcGoalStepPoints`
@@ -2551,8 +2559,8 @@ Os cortes são os que já existem na configuração de cálculo
 | C5 | em C4, recomposição | disponível | opção 1 da pergunta; áudio de 28/12/2025 16:02 |
 | C6 | em C4, manutenção | disponível, também quando o ganho de massa está barrado | opção 3 da pergunta; 3.3; áudio de 28/12/2025 16:02. Leitura natural 2 |
 | C7 | em C4, ganho de massa | disponível só com (a) composição — gordura ≤ 19% (homem) / ≤ 27% (mulher) quando informada; sem gordura, nada além do IMC < 25 que C4 já exigiu — e (b) musculação ≥ 3 vezes por semana. Faltando (a) ou (b): barrado, com o motivo | regra "Ganho de massa muscular - Critérios de entrada" (o mesmo texto na tabela de 02/02/2026 e na lista de 01/06/2026); áudio de 28/12/2025 14:07 (musculação pelo menos 3 vezes por semana; na transcrição, "pelo -3 vezes por semana de musculação"). Corte de IMC: contradição do §10c. Leituras naturais 3, 4 e 5 |
-| C8 | texto para quem é colocado em recomposição (frase de bloqueio 3.4.1) | **fora desta etapa.** A função devolve o motivo `composition` | regra "Bloqueio de ganho de massa para quem está acima do peso" |
-| C9 | texto para quem escolhe e tem o ganho barrado | **fora desta etapa.** A função devolve `composition` e/ou `training` e os cortes aplicados | não existe frase do cliente para este caso |
+| C8 | texto para quem é colocado em recomposição | a função devolve o motivo `composition`; o servidor mostra o aviso de recomposição definida (redação nossa) e, no ganho de massa, a frase de bloqueio 3.4.1 do cliente, adaptada (§10l, §10m) | regra "Bloqueio de ganho de massa para quem está acima do peso"; áudio de 24/01/2026 (conteúdo do aviso) |
+| C9 | texto para quem escolhe e tem o ganho barrado | a função devolve `composition` e/ou `training` e os cortes aplicados; o servidor mostra um motivo curto por critério, com o corte (redação nossa, §10m). A frase 3.4.1 **não** é usada aqui: ela termina conduzindo à recomposição, e esta pessoa pode escolher manutenção | não existe frase do cliente para este caso |
 | C10 | sono ≥ 6h30 e alimentação organizada | não são lidos: não liberam nem barram | leitura natural 6 |
 | C11 | peso muito baixo | nada especial acontece (pendência) | o cliente manda bloquear a perda de gordura (3.5), mas o número não existe em nenhum documento dele |
 | C12 | gordura informada de até 10% | nada especial acontece (pendência) | o piso de 10% (§8b) é de redução; não há regra para a entrada |
@@ -2707,7 +2715,7 @@ aproximado" e os cortes operacionais estão escritos à parte (3.1).
 
 ### 10e. O que a função devolve
 
-Nenhum texto. O suficiente para quem chama escolher o texto e conferir o
+Nenhum texto. O suficiente para quem chama escolher o texto (§10m) e conferir o
 objetivo enviado:
 
 ```
@@ -2769,7 +2777,10 @@ regra (o 25,0 entra na recomposição). A função compara com uma tolerância d
 lido como estando no corte.
 
 - **É correção de arredondamento do computador, não número clínico** e não foi
-  dito pelo cliente. 80,999 kg / 180 cm (IMC 24,9997) escolhe.
+  dito pelo cliente. 80,999 kg / 180 cm (IMC 24,9997) escolhe — na função, que
+  decide sobre o valor que recebe. A conferência do servidor arredonda antes
+  para o valor que o banco grava (81,00 kg, IMC 25,0) e responde recomposição
+  sem perguntar (§10l).
 - Vale só para o IMC, que é calculado. A gordura é digitada e é comparada como
   está.
 - A tolerância acompanha o corte da configuração.
@@ -2808,16 +2819,42 @@ alimentação) que o cadastro novo não aplica (pendência).
   constam nos documentos e foram escolhidos no teste); a configuração no formato
   do banco pelo carregador real (`loadCalcConfig`), com texto igual e diferente
   do padrão; entrada inválida; os casos omissos (peso muito baixo, gordura até
-  10%); os dois exemplos da pendência das casas decimais; as quatro diferenças
-  para `resolveProtocol`.
-- Nenhum teste existente foi editado: `packages/core/tests/protocol-router.test.ts`,
-  `sleep-food-criteria.test.ts` e os goldens `audit-10-04-*` seguem travando o
-  caminho antigo.
+  10%); os dois exemplos das casas decimais (a função decide sobre o valor que
+  recebe; quem arredonda é o servidor, §10l); as quatro diferenças para
+  `resolveProtocol`.
+- `packages/core/tests/protocol-router.test.ts`, `sleep-food-criteria.test.ts`
+  e os goldens `audit-10-04-*` seguem travando o caminho antigo, sem edição.
+- Etapa do servidor (§10l a §10n):
+  - `packages/agent/src/__golden__/audit-10-07-protocol-messages.test.ts` —
+    cada texto por igualdade exata em pt-BR e en-US; cada texto de entrada e a
+    frase de bloqueio refeitos a partir do texto original do cliente com as
+    edições do §10m, e só elas; nenhum nome proibido nem emoji, nos dois idiomas
+    e nos dois sexos; a projeção de nomes do Flow devolve cada texto sem troca;
+    o nome onde se espera; os únicos números dentro das frases do cliente são os
+    que ele escreveu; as pendências do §10n.
+  - `packages/core/tests/protocol-messages.test.ts` — parágrafos e linhas iguais
+    nos dois idiomas, nome ausente, o corte e o mínimo vindos de quem chama.
+  - `apps/admin/src/lib/mobile-api/protocol-eligibility-service.test.ts` — o
+    arredondamento como o banco grava e os textos de cada resultado.
+  - `apps/admin/src/app/api/mobile/v1/onboarding/eligibility/route.test.ts` — os
+    números do cliente pela rota, com a função e o carregador reais; inglês;
+    chave a mais recusada; **nenhuma escrita** (o banco de teste falha em
+    qualquer insert, update, upsert, delete ou rpc); nada em log.
+  - `apps/admin/src/lib/mobile-api/onboarding-service.test.ts` e
+    `apps/admin/src/app/api/mobile/v1/onboarding/route.test.ts` — a mensagem de
+    entrada dos três objetivos na conclusão, igual na repetição do pedido e fora
+    do registro de idempotência.
+  - `apps/admin/src/lib/mobile-api/protocol-service.test.ts` e
+    `apps/admin/src/app/api/mobile/v1/protocol/route.test.ts` — a leitura do
+    objetivo, com as metas iguais às de `GET /today` sobre o mesmo banco.
 
 ### 10j. Pendências declaradas
 
-> RC E — cenário cadastro pelo app (o servidor ainda grava o objetivo enviado, sem conferir) variante aplicação desta regra na rota, na gravação e na tela NÃO coberta nesta PR (pendência da audit 2026-10-07)
-> Nada chama `decideSignupEligibility`. Fica para as etapas do servidor e do app.
+> RC E — cenário cadastro pelo app (o servidor ainda grava o objetivo enviado, sem conferir) variante recusa na gravação do objetivo fora da regra e uso da conferência pela tela NÃO coberta nesta PR (pendência da audit 2026-10-07)
+> A conferência existe no servidor desde a etapa seguinte (§10l) e só responde.
+> `POST /onboarding` continua gravando qualquer um dos três objetivos, e o app
+> publicado não chama a conferência. A etapa que recusar na gravação precisa
+> decidir sobre o valor arredondado como o banco grava (`asStoredBodyValue`).
 
 > RC E — cenário cadastro de pessoa com peso muito baixo (desnutrição) variante bloqueio da perda de gordura e condução ao ganho de massa (o número do limite não existe em nenhum documento do cliente) NÃO coberta nesta PR (pendência da audit 2026-10-07)
 > A função não faz nada especial: 45 kg / 180 cm (IMC 13,9) sem gordura escolhe
@@ -2860,29 +2897,25 @@ alimentação) que o cadastro novo não aplica (pendência).
 > RC E — cenário IMC de 25,0 exato no caminho antigo (64 kg / 1,60 m dá 24,999999999999996; resolveProtocol compara sem tolerância) variante correção da conta antiga NÃO coberta nesta PR (pendência da audit 2026-10-07)
 
 > RC E — cenário cortes em execução (linhas calc.bf_limits, calc.imc_limit_recomp e calc.training_min de global_config) variante leitura dos valores nos bancos de teste e de produção NÃO coberta nesta PR (pendência da audit 2026-10-07)
-> Nenhum banco foi lido nesta etapa. O golden usa as três linhas de staging
-> registradas em 04/10 (20/19, 28/27, 25 e 3). Conferir antes de publicar a
-> etapa que passar a chamar a função.
-
-> RC E — cenário texto mostrado à pessoa em cada resultado (frase de bloqueio 3.4.1 para quem é colocado em recomposição; aviso com o corte para quem fica com o ganho indisponível; aviso de enquadramento) variante redação, tradução e aprovação NÃO coberta nesta PR (pendência da audit 2026-10-07)
-> A frase 3.4.1 termina conduzindo à recomposição: serve só para quem é
-> colocado nela. Para quem escolhe e tem o ganho barrado o texto será redação
-> nossa, a aprovar.
+> Nenhum banco foi lido. O golden usa as três linhas de staging registradas em
+> 04/10 (20/19, 28/27, 25 e 3). A conferência do servidor (§10l) já chama a
+> função com essas linhas: conferir antes de publicá-la.
 
 > RC E — cenário valor possível de calcular mas implausível (altura digitada em metros, musculação fracionária ou acima de 7) variante faixa de plausibilidade dentro da função NÃO coberta nesta PR (pendência da audit 2026-10-07)
 > Fica no contrato do cadastro (100 a 250 cm, 30 a 300 kg, 3 a 60%, inteiro de 0 a 7).
 
-> RC E — cenário valor com mais de duas casas decimais (gordura 19,995% de um homem; 80,999 kg com 180 cm) variante decidir sobre o valor como o banco grava (o banco arredonda o que a função decide sem arredondar: 20,00% e 81,00 kg) NÃO coberta nesta PR (pendência da audit 2026-10-07)
-> `user_profiles` guarda a gordura em `numeric(4,2)` e o peso e a altura em
-> `numeric(5,2)`; o contrato do cadastro não limita as casas decimais. Homem com
-> 19,995%: a função decide "escolhe, ganho barrado por composição"; gravado como
-> 20,00, o mesmo homem seria "recomposição sem perguntar". 80,999 kg / 180 cm
-> sem gordura: a função decide "escolhe"; gravado como 81,00 kg (IMC 25,0),
-> seria "recomposição sem perguntar" (os dois travados no golden). Nesta etapa
-> nada grava. Resolver na etapa do servidor: decidir sobre o valor como será
-> gravado, ou limitar as casas no contrato.
-
 > RC E — cenário contas que já concluíram o cadastro com objetivo fora desta regra variante conferir ou mover essas contas NÃO coberta nesta PR (pendência da audit 2026-10-07)
+
+Fechadas na etapa do servidor (2026-10-07), e por isso fora da lista acima:
+
+- **Texto mostrado à pessoa em cada resultado** (redação e tradução): os textos
+  existem, travados por igualdade exata (§10m). O que falta é a aprovação, que
+  passou para o §10n.
+- **Valor com mais de duas casas decimais**: a conferência arredonda altura,
+  peso e gordura como o banco grava antes de decidir (§10l). Homem com 19,995%
+  → recomposição sem perguntar; 80,999 kg / 180 cm sem gordura → recomposição
+  sem perguntar (travados no teste da rota). A função pura segue decidindo sobre
+  o valor que recebe (travado no golden do §10i).
 
 ### 10k. Para o cliente confirmar
 
@@ -2915,3 +2948,277 @@ leitura acima ou fecha um caso declarado.
    vezes por semana?
 9. Quem chega ao cadastro com gordura de até 10% pode escolher recomposição?
    Existe piso separado para mulher?
+
+### 10l. Onde a regra é aplicada no servidor: a conferência do cadastro
+
+`POST /api/mobile/v1/onboarding/eligibility` (contrato em
+`docs/mobile/api-v1.md`, "Conferência de objetivo no cadastro") recebe sexo,
+altura, peso, gordura (opcional), musculação por semana e o idioma, e devolve a
+decisão desta seção com os textos do §10m. Código:
+`apps/admin/src/lib/mobile-api/protocol-eligibility-service.ts`
+(`resolveOnboardingEligibility`) e
+`apps/admin/src/app/api/mobile/v1/onboarding/eligibility/handler.ts`.
+
+- **Não grava nada.** Nenhuma linha de banco, nenhum registro de idempotência,
+  nenhum valor da pessoa em log. A única leitura é a da configuração de cálculo
+  (`loadCalcConfig`: as linhas `calc.*` de `global_config`, a mesma leitura que
+  o estado do dia faz). Se ela falha, a rota responde 500 e **não** decide com o
+  padrão do código. Antes dela roda só a autenticação comum a todas as rotas da
+  API (que, no primeiro pedido de uma conta, cria o registro da conta, sem dado
+  corporal — como em qualquer outra rota).
+- **Faixas de entrada: as do cadastro**, pela mesma definição no contrato
+  (100 a 250 cm, 30 a 300 kg, 3 a 60%, inteiro de 0 a 7). Chave a mais → 422.
+- **A conclusão do cadastro ainda NÃO recusa objetivo fora da regra.**
+  `POST /onboarding` continua gravando o objetivo enviado (pendência no §10j).
+
+**Normalização antes de decidir.** `user_profiles` guarda altura e peso em
+`numeric(5,2)` e gordura em `numeric(4,2)`; o contrato não limita as casas
+decimais. A conclusão entrega o número ao banco como texto decimal, e o Postgres
+arredonda `numeric` com a metade para longe do zero. Antes de chamar a função, o
+servidor arredonda altura, peso e gordura a duas casas do mesmo jeito
+(`asStoredBodyValue`), sobre o texto decimal do número e nunca em ponto
+flutuante: 19,025 é gravado como 19,03, e tanto `Math.round(19.025 × 100) / 100`
+quanto `toFixed(2)` dão 19,02; 27,005 é gravado como 27,01 — acima do corte de
+27 — e `toFixed(2)` dá 27,00. Assim a resposta da conferência e o perfil gravado
+não podem discordar.
+
+| Enviado | Decidido sobre | Pela rota | A função, sem normalizar |
+|---|---|---|---|
+| homem, gordura 19,995% | 20,00% | recomposição sem perguntar | escolhe; ganho barrado por composição |
+| homem, gordura 19,994% | 19,99% | escolhe; ganho barrado por composição | o mesmo |
+| sem gordura, 80,999 kg / 180 cm | 81,00 kg (IMC 25,0) | recomposição sem perguntar | escolhe; três |
+| sem gordura, 80,994 kg / 180 cm | 80,99 kg (IMC 24,997) | escolhe; três | o mesmo |
+
+- Não é regra clínica nem número do cliente: é o arredondamento do banco,
+  reproduzido em código. Nenhum banco foi lido para conferi-lo (pendência no
+  §10n).
+- A função pura continua decidindo sobre o valor que recebe (§10g; travado no
+  golden do §10i). Quem normaliza é quem chama.
+
+**O que a rota devolve.** Os nomes públicos do resultado do §10e:
+
+| Função (§10e) | Rota |
+|---|---|
+| `outcome` `'assigned'` / `'choice'` | `decision` `"assigned"` / `"choice"` |
+| `basis` `'BF'` / `'IMC'` | `basis` `"body_fat"` / `"bmi"` |
+| `assignedProtocol` | `objective`: `"recomposicao"` quando `assigned`, senão `null` |
+| — | `notice`: o aviso de recomposição definida quando `assigned`, senão `null` |
+| `objectives` | `options`, sempre na ordem recomposição, ganho de massa, manutenção, cada uma com `status`, `reasons` e `message` |
+| `'composition'` / `'training'` | `"gain_composition"` / `"gain_training"` |
+| `limits` | não são devolvidos; o corte aparece dentro do texto do motivo |
+
+Qual texto vai em cada resultado:
+
+| Situação | `notice` | `message` do ganho de massa |
+|---|---|---|
+| colocada em recomposição (C1 a C3) | aviso de recomposição definida | a frase de bloqueio 3.4.1 adaptada, com "seu percentual de gordura atual" quando decidiu a gordura ou "seu IMC atual" quando decidiu o IMC. Só ela, mesmo quando a musculação também é menor que o mínimo (§10b) |
+| escolhe, ganho disponível | `null` | vazio |
+| escolhe, ganho barrado por composição | `null` | motivo da gordura, com o corte `bodyFatGain` do sexo |
+| escolhe, ganho barrado por musculação | `null` | motivo da musculação, com `trainingMin` e o número informado |
+| escolhe, ganho barrado pelos dois | `null` | os dois motivos, nessa ordem |
+
+Recomposição e manutenção nunca trazem texto (`message` vazio).
+
+**Mensagem de entrada na conclusão.** `POST /onboarding` devolve também
+`protocol_welcome { protocol, paragraphs }`: o texto de entrada (§10m) do
+objetivo GRAVADO, no idioma e com o nome do pedido. É a ordem do cliente (regra
+"Gravação do Protocolo Escolhido pelo Usuário": "Somente APÓS confirmação da
+gravação, apresentar a frase de boas-vindas do protocolo"): o texto é montado
+depois que a função SQL responde. Sai igual em toda repetição do pedido (com a
+ressalva dos valores de mais de duas casas decimais, declarada abaixo) e não
+fica no registro de idempotência. A função SQL e o leitor do retorno dela não
+mudaram.
+
+**Leitura do objetivo atual.** `GET /api/mobile/v1/protocol` devolve o protocolo
+do perfil, as metas do dia e a mesma mensagem de entrada. As metas são as da
+tela Hoje, lidas do mesmo estado do dia (§4a) e não recalculadas: a meta gravada
+na linha de hoje quando o dia já tem uma, senão a calculada do perfil. Só
+leitura; não há troca de fase.
+
+### 10m. Textos mostrados à pessoa: o que é do cliente, o que foi editado e o que é redação nossa
+
+> **Confirmação do cliente pendente** para cada edição abaixo, para as três
+> redações nossas e para a tradução. Implementado em 2026-10-07 a pedido do
+> Eduardo.
+
+Código: `packages/core/src/protocol-messages.ts` (funções puras, sem leitura nem
+escrita). Os textos completos, nos dois idiomas, estão no código e travados por
+igualdade exata no golden `audit-10-07-protocol-messages`. O golden também
+refaz cada texto do cliente a partir do original com as edições desta seção, e
+só elas.
+
+Vale para todos os textos:
+
+- nenhum traz o nome do método, o nome do médico, "BodyFlow", "BMR", "TDEE",
+  "BF" como sigla nem emoji;
+- nenhum número foi colocado dentro de frase do cliente;
+- falam em primeira pessoa, como ele escreveu;
+- cada função devolve parágrafos; um parágrafo pode ter quebras de linha simples.
+
+**Edições comuns aos três textos de entrada**
+
+- O cabeçalho interno de cada regra (título, "Esta seção descreve…", "Frase …
+  de entrada…") não vai para a tela: é instrução para o agente.
+- Só formato: os separadores de linha do arquivo exportado viram parágrafos e
+  quebras de linha; `{nome}` é preenchido pelo servidor.
+- Conta sem nome gravado: o vocativo ("{nome}, ") sai e a frase começa com
+  maiúscula; nada mais muda. Na conclusão do cadastro o nome é obrigatório.
+
+**Recomposição corporal** — regra "Recomposição corporal - Introdução e frase de
+boas vindas ao protocolo".
+
+1. TROCADO (nome do método): "na fase de recomposição corporal do MPP." →
+   "na fase de recomposição corporal."
+2. TROCADO (nome do método): "Para o MPP, cada bloco completo representa" →
+   "Cada bloco completo representa".
+3. CORTADO: "A cada 14 dias, fazemos uma reavaliação rápida para ajustar o
+   plano, confirmar que tudo está no ritmo certo e manter o processo confortável
+   e eficiente." Por quê: o app não tem reavaliação.
+4. TROCADO: "A estratégia, os ajustes e a leitura dos dados ficam comigo." →
+   "A estratégia e a leitura dos dados ficam comigo." Por quê: nada no app
+   ajusta a meta sozinho.
+
+Mantido: a palavra "método" sozinha, nas duas vezes em que ele a escreveu; os
+blocos de 7.700 kcal (a tela de Progresso mostra o bloco); a meta diária.
+
+**Ganho de massa muscular** — regra "Ganho de massa muscular - introdução de
+boas vindas ao protocolo".
+
+1. TROCADO (nome do método): "na fase de ganho de massa muscular do MPP." →
+   "na fase de ganho de massa muscular."
+2. CORTADO, com o emoji: "👉 Se houver qualquer mudança na sua frequência de
+   treino — aumento ou redução — isso precisa ser informado." Por quê: no app
+   não há onde informar.
+3. CORTADO: "A cada 15 dias, fazemos reavaliações para confirmar que: o treino
+   está progredindo, as calorias estão adequadas ao seu nível de treino, e a
+   gordura segue dentro dos limites do método. Se algo sair do eixo, o plano é
+   ajustado antes que vire problema." Por quê: o app não tem reavaliação. O
+   "15 dias" dele some com o trecho; não foi trocado por 14.
+4. TROCADO: "Eu cuido dos ajustes, dos limites e da estratégia, para garantir"
+   → "Eu cuido da estratégia, para garantir". Por quê: não há ajuste, e os
+   tetos de gordura e de IMC do ganho existem só como conta que nada aciona.
+
+Mantido, com ressalva declarada (§10n): o parágrafo "Importante: a sua meta
+calórica diária está diretamente ligada à frequência semanal de treino que você
+informou…". No app a meta de calorias do ganho usa o nível de atividade,
+perguntado à parte (§1); a musculação por semana entra na proteína (§1b). Com a
+frase do item 2 cortada, o parágrafo alerta para o risco de treinar menos sem
+dizer o que fazer. Mantido também: "sem musculação, não é possível prosseguir no
+protocolo de ganho" — é a regra dele; ninguém é retirado do ganho sozinho
+(pendência do §10j).
+
+**Manutenção** — regra "Manutenção - Frase de boas vindas ao protocolo de
+manutenção".
+
+1. TROCADO (nome do método): "na fase de manutenção MPP —" → "na fase de
+   manutenção —".
+2. CORTADO: "Nesta fase, a gente também faz ajustes pequenos e inteligentes: se
+   o peso começar a derivar, a correção é leve (geralmente ±100 kcal), baseada
+   em tendência — não em um dia isolado." Por quê: o app não ajusta a meta.
+3. CORTADO: "As reavaliações acontecem a cada 14 dias (ou antes, se sua rotina
+   mudar, principalmente rotina de treinos), justamente para garantir que você
+   continue no controle sem precisar ficar obcecado por números." Por quê: o app
+   não tem reavaliação nem onde avisar que a rotina mudou. Com o trecho sai a
+   única palavra no masculino ("obcecado").
+4. TROCADO: "Eu cuido do monitoramento, dos ajustes e de manter o processo
+   estável" → "Eu cuido do monitoramento e de manter o processo estável".
+
+NÃO corrigido, fica como ele escreveu: "porque elas que sustentam sua composição
+corporal e evita" (concordância) e as duas linhas que começam em minúscula
+("muito abaixo disso…", "muito acima disso…").
+
+**Frase de bloqueio do ganho de massa (3.4.1)** — regra "Bloqueio de ganho de
+massa para quem está acima do peso". Usada SÓ para quem é colocado em
+recomposição (C1 a C3), que é o caso para o qual ele a escreveu.
+
+1. TROCADO: "seu percentual de gordura/IMC atual o coloca" → "seu percentual de
+   gordura atual coloca você" quando decidiu a gordura, "seu IMC atual coloca
+   você" quando decidiu o IMC. Por quê: o servidor escreve só o que decidiu, e
+   "o coloca" está no masculino.
+2. TROCADO, a última frase: "Assim que seus índices estiverem em uma faixa mais
+   adequada, eu mesmo irei te conduzir para o protocolo de ganho de massa
+   muscular, caso esse ainda seja o seu objetivo." → "O ganho de massa muscular
+   não foi negado, apenas adiado: ele volta a ser considerado quando seus
+   índices estiverem em uma faixa mais adequada, caso esse ainda seja o seu
+   objetivo." Por quê: o app não percebe a mudança de faixa nem conduz ninguém,
+   e a regra dele exige que a pessoa saia sabendo que existe um caminho até o
+   ganho. "Não foi negado, apenas adiado" são palavras da instrução dele ao
+   agente ("o ganho de massa não foi negado, apenas adiado estrategicamente").
+   A frase nova ainda promete o que o app não faz (pendência no §10n).
+
+As instruções ao agente da mesma regra não vão para a tela.
+
+**Redações nossas** (não existe frase do cliente):
+
+- Aviso de recomposição definida sem pergunta. Ele deu só o conteúdo, em áudio
+  de 24/01/2026: dizer que a pessoa está fora da faixa da normalidade e que está
+  sendo enquadrada automaticamente na recomposição. Usa "acima da faixa
+  saudável" (palavras dele na regra de decisão), sem "acima do peso" e sem
+  flexão de gênero.
+  - pt-BR: "Pelos dados que você informou, você está acima da faixa saudável
+    neste momento. Por isso, o seu protocolo é definido automaticamente:
+    recomposição corporal."
+  - en-US: "Based on the data you reported, you are above the healthy range at
+    this moment. For that reason, your protocol is set automatically: body
+    recomposition."
+- Motivo da gordura entre os cortes (pessoa que escolhe, §10d leitura 4). Cita o
+  corte de entrada do ganho, lido da decisão (`limits.bodyFatGain`: 19 para
+  homem, 27 para mulher no padrão do código); nunca escrito no texto.
+  - pt-BR: "O protocolo de ganho de massa muscular exige percentual de gordura
+    corporal de até 19%. O percentual que você informou está acima desse
+    limite."
+  - en-US: "The muscle gain protocol requires a body fat percentage of 19% or
+    less. The percentage you reported is above that limit."
+- Motivo da musculação abaixo do mínimo (pessoa que escolhe). Montado com
+  palavras dele do critério de entrada ("musculação ≥ 3x por semana"; "Sem esse
+  critério, superávit calórico vira gordura."). O mínimo é lido da decisão
+  (`limits.trainingMin`) e o segundo número é o que a pessoa informou.
+  - pt-BR: "O protocolo de ganho de massa muscular exige musculação pelo menos 3
+    vezes por semana. Sem esse critério, superávit calórico vira gordura. Você
+    informou 2 por semana."
+  - en-US: "The muscle gain protocol requires strength training at least 3 times
+    a week. Without this criterion, a calorie surplus turns into fat. You
+    reported 2 a week."
+
+**Inglês: tradução nossa.** O cliente não escreveu nenhum texto em inglês. Os
+três textos de entrada, a frase de bloqueio e as três redações acima foram
+traduzidos por nós com os mesmos parágrafos e as mesmas linhas, sem acrescentar
+nem suavizar nada, e estão travados por igualdade exata como o português.
+"7.700 kcal" vira "7,700 kcal"; "IMC" vira "BMI".
+
+**Para o cliente aprovar** (nenhum item impediu construir):
+
+1. As edições acima nos três textos de entrada e na frase de bloqueio.
+2. As três redações nossas.
+3. A tradução em inglês.
+4. No texto do ganho de massa, o parágrafo que liga a meta de calorias à
+   frequência semanal de treino fica como está? E como treinos por semana viram
+   nível de atividade?
+5. No texto da manutenção, corrigir a concordância ("porque são elas que
+   sustentam sua composição corporal e evitam que você perca…")?
+
+### 10n. Pendências declaradas da etapa do servidor (textos, conferência e leitura do objetivo)
+
+> RC B — cenário texto de entrada dos três protocolos variante promessa de reavaliação a cada 14 (ou 15) dias e de ajustes do plano (frases cortadas até a reavaliação existir no app) NÃO coberta nesta PR (pendência da audit 2026-10-07)
+
+> RC B — cenário texto de entrada do ganho de massa variante avisar mudança de frequência de treino (frase cortada: no app não há onde informar) NÃO coberta nesta PR (pendência da audit 2026-10-07)
+
+> RC B — cenário texto de entrada do ganho de massa variante meta de calorias ligada à frequência semanal de treino, como o texto diz (no app a meta de calorias usa o nível de atividade; a musculação por semana entra na proteína) NÃO coberta nesta PR (pendência da audit 2026-10-07)
+
+> RC B — cenário frase de bloqueio do ganho de massa para quem é colocado em recomposição variante promessa de voltar a considerar o ganho quando os índices melhorarem (o app não percebe a mudança de faixa e não tem saída da recomposição) NÃO coberta nesta PR (pendência da audit 2026-10-07)
+
+> RC B — cenário textos em inglês variante tradução aprovada pelo cliente (ele não escreveu nenhum texto em inglês; a tradução é nossa) NÃO coberta nesta PR (pendência da audit 2026-10-07)
+
+> RC B — cenário edições nos textos do cliente e redações nossas (aviso de recomposição definida, motivo da gordura entre os cortes, motivo da musculação abaixo do mínimo) variante aprovação do cliente e do Eduardo NÃO coberta nesta PR (pendência da audit 2026-10-07)
+
+> RC B — cenário frase de entrega das metas do cliente ("plano inicial … organizado", com água, sono e passos) variante uso depois do cadastro NÃO coberta nesta PR (pendência da audit 2026-10-07)
+> A conclusão devolve a mensagem de entrada; as metas continuam vindo de
+> `GET /today`, sem a frase dele.
+
+> RC B — cenário conferência do objetivo chamada antes do aceite dos documentos variante recusa no servidor (a ordem das telas é do app; a rota responde a qualquer conta autenticada e não guarda nada) NÃO coberta nesta PR (pendência da audit 2026-10-07)
+
+> RC B — cenário app publicado hoje (ignora o campo novo e não chama as duas rotas novas) variante mensagem de entrada, conferência e objetivo no Perfil visíveis na tela NÃO coberta nesta PR (pendência da audit 2026-10-07)
+
+> RC B — cenário valor com mais de duas casas decimais variante conferência do arredondamento contra o banco real (o arredondamento do numeric foi reproduzido em código; nenhum banco foi lido nesta etapa) NÃO coberta nesta PR (pendência da audit 2026-10-07)
+
+> RC B — cenário repetição da conclusão do cadastro com altura, peso ou gordura de mais de duas casas decimais variante mesma resposta na repetição (a função SQL compara o valor gravado, arredondado, com o enviado, e a repetição vira 409 onboarding_already_completed; comportamento anterior a esta mudança) NÃO coberta nesta PR (pendência da audit 2026-10-07)

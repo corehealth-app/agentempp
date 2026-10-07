@@ -4,9 +4,11 @@
  * pendencies: docs/CALCULO-MPP.md §10. Code: `decideSignupEligibility`,
  * packages/core/src/protocol-eligibility.ts.
  *
- * NOTHING CALLS THE FUNCTION YET. This stage adds the pure function, these
- * numbers and the document. The sign-up of the app still records the objective
- * that was sent, with no check; no route, screen or database row changed.
+ * WHO CALLS THE FUNCTION. Since the server stage of the same audit, one place:
+ * the sign-up eligibility check of the app (POST /onboarding/eligibility, doc
+ * §10l), which rounds the body values to what the profile stores, answers and
+ * writes nothing. The sign-up of the app still records the objective that was
+ * sent, with no check, and no screen changed. This file pins the pure function.
  *
  * THE RULE, as the client (Dr. Roberto) wrote it — it is NOT a new decision:
  *   Rule "Regra de Decisão Automática de Protocolo — Quando NÃO perguntar ao
@@ -73,8 +75,8 @@
  *
  * Declared pendencies (CLAUDE.md criterion 2; same lines in docs/CALCULO-MPP.md §10j):
  *
- * > RC E — cenário cadastro pelo app (o servidor ainda grava o objetivo enviado, sem conferir) variante aplicação desta regra na rota, na gravação e na tela NÃO coberta nesta PR (pendência da audit 2026-10-07)
- *   Nada chama `decideSignupEligibility`. Fica para as etapas do servidor e do app.
+ * > RC E — cenário cadastro pelo app (o servidor ainda grava o objetivo enviado, sem conferir) variante recusa na gravação do objetivo fora da regra e uso da conferência pela tela NÃO coberta nesta PR (pendência da audit 2026-10-07)
+ *   A conferência existe no servidor (§10l) e só responde. `POST /onboarding` continua gravando qualquer um dos três objetivos, e o app publicado não chama a conferência.
  * > RC E — cenário cadastro de pessoa com peso muito baixo (desnutrição) variante bloqueio da perda de gordura e condução ao ganho de massa (o número do limite não existe em nenhum documento do cliente) NÃO coberta nesta PR (pendência da audit 2026-10-07)
  *   A função não faz nada especial: 45 kg / 180 cm (IMC 13,9) sem gordura escolhe entre os três (travado abaixo). Redeclara a pendência R4 de 04/10 (§8c).
  * > RC E — cenário cadastro com gordura informada de até 10% escolhendo recomposição variante piso de redução aplicado na entrada, e piso separado para mulher NÃO coberta nesta PR (pendência da audit 2026-10-07)
@@ -95,12 +97,15 @@
  * > RC E — cenário linha "Decisão automática" do contexto do Flow e do WhatsApp (resolveProtocol, ainda com sono e alimentação) variante mesma decisão do cadastro novo NÃO coberta nesta PR (pendência da audit 2026-10-07)
  * > RC E — cenário IMC de 25,0 exato no caminho antigo (64 kg / 1,60 m dá 24,999999999999996; resolveProtocol compara sem tolerância) variante correção da conta antiga NÃO coberta nesta PR (pendência da audit 2026-10-07)
  * > RC E — cenário cortes em execução (linhas calc.bf_limits, calc.imc_limit_recomp e calc.training_min de global_config) variante leitura dos valores nos bancos de teste e de produção NÃO coberta nesta PR (pendência da audit 2026-10-07)
- * > RC E — cenário texto mostrado à pessoa em cada resultado (frase de bloqueio 3.4.1 para quem é colocado em recomposição; aviso com o corte para quem fica com o ganho indisponível; aviso de enquadramento) variante redação, tradução e aprovação NÃO coberta nesta PR (pendência da audit 2026-10-07)
  * > RC E — cenário valor possível de calcular mas implausível (altura digitada em metros, musculação fracionária ou acima de 7) variante faixa de plausibilidade dentro da função NÃO coberta nesta PR (pendência da audit 2026-10-07)
  *   Fica no contrato do cadastro (100 a 250 cm, 30 a 300 kg, 3 a 60%, inteiro de 0 a 7).
- * > RC E — cenário valor com mais de duas casas decimais (gordura 19,995% de um homem; 80,999 kg com 180 cm) variante decidir sobre o valor como o banco grava (o banco arredonda o que a função decide sem arredondar: 20,00% e 81,00 kg) NÃO coberta nesta PR (pendência da audit 2026-10-07)
- *   A função decide "escolhe" para os dois; com o valor gravado seria "recomposição sem perguntar" (travado abaixo). Resolver na etapa do servidor.
  * > RC E — cenário contas que já concluíram o cadastro com objetivo fora desta regra variante conferir ou mover essas contas NÃO coberta nesta PR (pendência da audit 2026-10-07)
+ *
+ * Closed by the server stage of the same audit, and so no longer in the list
+ * (doc §10j): the wording and the translation of the texts shown for each
+ * result (packages/core/src/protocol-messages.ts; their approval is in §10n),
+ * and the value with more than two decimal places (the eligibility check
+ * rounds as the database stores before calling this function, §10l).
  */
 
 import { readFileSync } from 'node:fs'
@@ -662,16 +667,19 @@ describe('audit 2026-10-07 — E: casos em que o documento do cliente é omisso 
   })
 })
 
-describe('audit 2026-10-07 — E: pendência declarada — valor com mais de duas casas decimais (o banco arredonda)', () => {
+describe('audit 2026-10-07 — E: valor com mais de duas casas decimais — a função decide sobre o valor que recebe; quem arredonda como o banco é o servidor', () => {
   // `user_profiles` guarda gordura em numeric(4,2) e peso em numeric(5,2); o
   // contrato do cadastro não limita as casas. Nenhum banco é lido aqui: o valor
-  // "gravado" abaixo é o arredondamento a duas casas, escrito à mão.
-  it('RC E, homem com 19,995% de gordura: a função decide "escolhe, ganho barrado"; com o valor gravado (20,00) seria recomposição sem perguntar', () => {
+  // "gravado" abaixo é o arredondamento a duas casas, escrito à mão. A
+  // conferência do servidor arredonda antes de chamar a função (doc §10l,
+  // travado em onboarding/eligibility/route.test.ts): por ela, os dois casos
+  // abaixo dão recomposição sem perguntar.
+  it('homem com 19,995% de gordura: a função decide "escolhe, ganho barrado"; com o valor gravado (20,00) é recomposição sem perguntar', () => {
     expect(verdict(man({ bodyFatPercent: 19.995 }))).toEqual(gainBlocked('BF', 'composition'))
     expect(verdict(man({ bodyFatPercent: 20 }))).toEqual(assigned('BF'))
   })
 
-  it('RC E, homem sem gordura com 80,999 kg / 180 cm: a função decide "escolhe"; com o valor gravado (81,00 kg, IMC 25,0) seria recomposição sem perguntar', () => {
+  it('homem sem gordura com 80,999 kg / 180 cm: a função decide "escolhe"; com o valor gravado (81,00 kg, IMC 25,0) é recomposição sem perguntar', () => {
     expect(verdict(man({ weightKg: 80.999 }))).toEqual(three('IMC'))
     expect(verdict(man({ weightKg: 81 }))).toEqual(assigned('IMC'))
   })
@@ -773,7 +781,7 @@ describe('declared pendencies', () => {
     const doc = readFileSync(resolve(here, '../../../../docs/CALCULO-MPP.md'), 'utf8')
     const fromHeader = Array.from(header.matchAll(/^ \* (> RC E — .*)$/gm), (match) => match[1])
     const fromDoc = Array.from(doc.matchAll(/^(> RC E — .*)$/gm), (match) => match[1])
-    expect(fromHeader).toHaveLength(19)
+    expect(fromHeader).toHaveLength(17)
     expect(fromDoc).toEqual(fromHeader)
     for (const line of fromHeader) {
       expect(line).toMatch(

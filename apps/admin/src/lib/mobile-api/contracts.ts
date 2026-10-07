@@ -53,6 +53,14 @@ const onboardingDocumentKeySchema = z
 
 const onboardingDocumentActionSchema = z.enum(['acceptance', 'acknowledgement', 'consent'])
 
+// The body values the objective is decided on. One definition for the sign-up
+// and for its eligibility check, so the two can never accept different ranges.
+const signupSexSchema = z.enum(['masculino', 'feminino'])
+const signupHeightCmSchema = z.number().min(100).max(250)
+const signupWeightKgSchema = z.number().min(30).max(300)
+const signupBodyFatPercentSchema = z.number().min(3).max(60)
+const signupTrainingFrequencySchema = z.number().int().min(0).max(7)
+
 export const onboardingDocumentActionInputSchema = z
   .object({
     document_key: onboardingDocumentKeySchema,
@@ -73,14 +81,14 @@ export const onboardingCompletionInputSchema = z
     locale: onboardingLocaleSchema,
     country: z.string().regex(/^[A-Z]{2}$/),
     timezone: timezoneSchema,
-    sex: z.enum(['masculino', 'feminino']),
+    sex: signupSexSchema,
     birth_date: z.string().date(),
-    height_cm: z.number().min(100).max(250),
-    weight_kg: z.number().min(30).max(300),
-    body_fat_percent: z.number().min(3).max(60).optional(),
+    height_cm: signupHeightCmSchema,
+    weight_kg: signupWeightKgSchema,
+    body_fat_percent: signupBodyFatPercentSchema.optional(),
     objective: z.enum(['recomposicao', 'ganho_massa', 'manutencao']),
     activity_level: z.enum(['sedentario', 'leve', 'moderado', 'alto', 'atleta']),
-    training_frequency: z.number().int().min(0).max(7),
+    training_frequency: signupTrainingFrequencySchema,
     water_intake: z.enum(['pouco', 'moderado', 'bastante']),
     hunger_level: z.enum(['pouca', 'moderada', 'muita']),
     wake_time: timeSchema,
@@ -104,6 +112,20 @@ export const onboardingCompletionInputSchema = z
       identities.add(identity)
     }
   })
+
+// Sign-up eligibility check (POST /onboarding/eligibility): only what the
+// rule reads, plus the language of the texts. No name, no birth date, no
+// objective: the answer says which objectives may be recorded.
+export const onboardingEligibilityInputSchema = z
+  .object({
+    locale: onboardingLocaleSchema,
+    sex: signupSexSchema,
+    height_cm: signupHeightCmSchema,
+    weight_kg: signupWeightKgSchema,
+    body_fat_percent: signupBodyFatPercentSchema.optional(),
+    training_frequency: signupTrainingFrequencySchema,
+  })
+  .strict()
 
 export const onboardingInputSchema = z
   .object({
@@ -438,6 +460,7 @@ export const markRoutineTakenInputSchema = z
 export type PatchMeInput = z.infer<typeof patchMeInputSchema>
 export type OnboardingInput = z.infer<typeof onboardingInputSchema>
 export type OnboardingCompletionInput = z.infer<typeof onboardingCompletionInputSchema>
+export type OnboardingEligibilityInput = z.infer<typeof onboardingEligibilityInputSchema>
 export type OnboardingDocumentActionInput = z.infer<typeof onboardingDocumentActionInputSchema>
 export type RegistrationProposalInput = z.infer<typeof registrationProposalInputSchema>
 export type HistoryQuery = z.infer<typeof historyQuerySchema>

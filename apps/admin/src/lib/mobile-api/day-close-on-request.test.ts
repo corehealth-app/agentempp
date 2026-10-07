@@ -518,7 +518,7 @@ describe('where the hook is called from', () => {
     ])
   })
 
-  it('the route wrapper shared by the 48 routes does not know it', () => {
+  it('the route wrapper shared by the 50 routes does not know it', () => {
     const wrapper = readFileSync(resolve(sourceRoot, 'lib/mobile-api/route.ts'), 'utf8')
     expect(wrapper).not.toContain('closeOpenDaysOnRequest')
     expect(wrapper).not.toContain('closePastOpenDays')

@@ -74,6 +74,13 @@ retorna `409 idempotency_key_conflict`. Uma operação simultânea retorna
 `409 idempotency_request_in_progress`. O ledger expira em 24 horas e é acessível
 somente ao backend.
 
+Exceção: `POST /onboarding/eligibility` exige o cabeçalho, com as mesmas recusas
+(`400 missing_idempotency_key`, `400 invalid_idempotency_key`), mas **não guarda
+a chave nem a resposta**. A rota não grava nada, a resposta depende só do corpo
+e da configuração de cálculo, e o registro guardaria dados corporais da pessoa.
+Repetir o pedido recalcula a resposta, sem `Idempotency-Replayed`; a mesma chave
+com outro corpo não é conflito.
+
 ## Endpoints
 
 | Método | Rota | Contrato |
@@ -83,7 +90,9 @@ somente ao backend.
 | `GET` | `/today` | estado diário oficial, determinístico e versionado |
 | `GET` | `/profile` | perfil corporal, rotina, objetivo e onboarding |
 | `GET` | `/onboarding` | retorna conclusão server-owned, documentos oficiais atuais e ações auditadas |
-| `POST` | `/onboarding` | conclui atomicamente o onboarding com payload completo e `Idempotency-Key`; usuário e horários são derivados pelo backend |
+| `POST` | `/onboarding` | conclui atomicamente o onboarding com payload completo e `Idempotency-Key`; usuário e horários são derivados pelo backend; devolve a mensagem de entrada do objetivo gravado |
+| `POST` | `/onboarding/eligibility` | conferência de objetivo no cadastro: quais objetivos podem ser gravados para os dados corporais enviados, com o texto de cada um; não grava nada |
+| `GET` | `/protocol` | objetivo atual do perfil, metas do dia como em `/today` e a mensagem de entrada do objetivo; só leitura |
 | `GET` | `/plan` | plano de treino ativo e prescrições vigentes |
 | `GET` | `/progress` | nível, streak, bloco 7700, peso, BF e reavaliação |
 | `GET` | `/history` | histórico próprio; aceita `before` ISO e `limit` 1..100 |
@@ -165,8 +174,9 @@ O novo formato de `POST /onboarding` é identificado pela presença de
 `document_actions`. Ele exige o perfil completo, `objective`, `persona`, locale
 autoritativo e uma ação explícita para cada documento vigente. O payload não aceita
 `user_id`, `onboarding_completed`, horário oficial ou estado de publicação. A
-resposta contém `onboarding_completed`, `completed_at`, objetivo, persona e as
-ações confirmadas; o UUID interno de domínio não integra o contrato público. Uma
+resposta contém `onboarding_completed`, `completed_at`, objetivo, persona, as
+ações confirmadas e `protocol_welcome` (ver "Mensagem de entrada do objetivo");
+o UUID interno de domínio não integra o contrato público. Uma
 nova versão obrigatória devolvida pelo GET exige nova ação explícita e pode ser
 reconsentida atomicamente sem reescrever o timestamp da primeira conclusão. Quando
 há uma conclusão histórica que precisa de uma versão legal nova, `draft` contém o
@@ -192,6 +202,180 @@ banco e usam `Cache-Control: no-store` e `Vary: Authorization`.
 No ambiente de avaliação, a primeira conclusão pode conceder um acesso de N
 dias sem mudar esta resposta: ver "Acesso de avaliação automático". Desligado
 por padrão.
+
+### Mensagem de entrada do objetivo
+
+`POST /onboarding`, no formato com `document_actions`, devolve também:
+
+```json
+{
+  "protocol_welcome": {
+    "protocol": "recomposicao",
+    "paragraphs": ["Marina, a partir de agora você entra oficialmente na fase de recomposição corporal.\nIsso significa…", "…"]
+  }
+}
+```
+
+- `protocol`: o objetivo **gravado** (o mesmo de `objective`).
+- `paragraphs`: o texto de entrada daquele protocolo, no `locale` do pedido
+  (`pt-BR` ou `en-US`) e com o `name` do pedido. São 4 parágrafos na
+  recomposição e na manutenção e 7 no ganho de massa. Um parágrafo pode trazer
+  quebras de linha simples (`\n`); o cliente não divide nem junta parágrafos.
+- É montado no servidor depois que a gravação responde (a função SQL não
+  mudou). Sai **igual em toda repetição** do mesmo pedido, inclusive no novo
+  aceite de termos de uma conta já concluída. Ressalva, anterior a esta
+  mudança: um pedido com altura, peso ou gordura de mais de duas casas
+  decimais não se repete igual (o banco grava o valor arredondado, a função
+  SQL compara com o enviado e a repetição vira `409
+  onboarding_already_completed`); o app envia no máximo duas casas.
+- No novo aceite de termos (conta que já tinha data de conclusão) o cliente
+  **não apresenta** `protocol_welcome` como entrada no objetivo: a pessoa já
+  estava nele.
+- **Não fica no registro de idempotência**: o que o ledger guarda é a resposta
+  sem `protocol_welcome` (o texto leva o nome da pessoa e nunca é lido de volta,
+  porque o replay refaz a resposta).
+- Os textos, cada edição feita nos textos do cliente e a tradução estão em
+  `docs/CALCULO-MPP.md` §10m. Nenhum traz o nome do método nem do médico.
+- O formato parcial legado não devolve o campo.
+
+Um cliente que ignora campos desconhecidos continua funcionando.
+
+### Conferência de objetivo no cadastro
+
+`POST /api/mobile/v1/onboarding/eligibility` responde, **sem gravar nada**, quais
+objetivos o cadastro pode gravar para os dados corporais informados, pela regra
+de `docs/CALCULO-MPP.md` §10. Não exige entitlement (fica sob `/onboarding`).
+Exige `Idempotency-Key`, mas não guarda a chave (ver "Idempotência").
+
+Pedido (objeto estrito; qualquer chave a mais → `422 validation_failed`):
+
+```json
+{
+  "locale": "pt-BR",
+  "sex": "masculino",
+  "height_cm": 180,
+  "weight_kg": 80,
+  "body_fat_percent": 19,
+  "training_frequency": 2
+}
+```
+
+- `locale`: `pt-BR` ou `en-US` — o idioma dos textos da resposta.
+- `sex`, `height_cm` (100–250), `weight_kg` (30–300), `body_fat_percent`
+  (3–60, opcional: ausente = não informada; `null` é recusado) e
+  `training_frequency` (inteiro de 0 a 7, musculação por semana): as mesmas
+  faixas de `POST /onboarding`, pela mesma definição no contrato.
+- Não aceita nome, data de nascimento, objetivo nem identificador.
+
+Antes de decidir, o servidor arredonda altura, peso e gordura a duas casas, como
+o banco grava (`numeric`, metade para longe do zero): gordura `19.995` é decidida
+como `20.00`. A resposta e o perfil que a conclusão vai gravar não podem
+discordar.
+
+Resposta `200`:
+
+```json
+{
+  "decision": "choice",
+  "basis": "body_fat",
+  "objective": null,
+  "notice": null,
+  "options": [
+    { "objective": "recomposicao", "status": "available", "reasons": [], "message": [] },
+    {
+      "objective": "ganho_massa",
+      "status": "blocked",
+      "reasons": ["gain_training"],
+      "message": [
+        "O protocolo de ganho de massa muscular exige musculação pelo menos 3 vezes por semana. Sem esse critério, superávit calórico vira gordura. Você informou 2 por semana."
+      ]
+    },
+    { "objective": "manutencao", "status": "available", "reasons": [], "message": [] }
+  ]
+}
+```
+
+| Campo | Valores |
+|---|---|
+| `decision` | `"assigned"`: a pessoa é colocada em recomposição, sem pergunta. `"choice"`: a pessoa escolhe |
+| `basis` | o que decidiu: `"body_fat"` (gordura informada) ou `"bmi"` (sem gordura, o IMC) |
+| `objective` | `"recomposicao"` quando `assigned`; `null` quando `choice` |
+| `notice` | parágrafos do aviso de recomposição definida quando `assigned`; `null` quando `choice` |
+| `options` | sempre os três objetivos, nesta ordem: `recomposicao`, `ganho_massa`, `manutencao` |
+| `options[].status` | `"available"` (pode ser gravado), `"blocked"` (a regra barra; `reasons` diz por quê) ou `"not_offered"` (manutenção de quem foi colocado em recomposição) |
+| `options[].reasons` | vazio, ou, só em `blocked`, `"gain_composition"` e/ou `"gain_training"`, nessa ordem |
+| `options[].message` | parágrafos do texto a mostrar junto da opção; vazio quando não há o que dizer |
+
+Texto do ganho de massa quando `blocked`:
+
+- `assigned`: a frase de bloqueio do cliente, adaptada, citando "seu percentual
+  de gordura atual" ou "seu IMC atual" conforme `basis`. Só ela, mesmo quando
+  `reasons` também traz `gain_training`.
+- `choice`: um parágrafo por motivo, na ordem de `reasons` — o motivo da gordura
+  cita o corte aplicado; o da musculação cita o mínimo e o número informado.
+
+Os cortes vêm da configuração de cálculo do servidor (`calc.*`) e aparecem
+dentro do texto; o cliente não conhece nem recebe os limiares. A resposta não
+devolve nenhum dado corporal do pedido. Nada é escrito em log. O único acesso
+ao banco da rota é a leitura de `calc.*`; antes dela roda só a autenticação
+comum a todas as rotas.
+
+Erros: `400 missing_idempotency_key`, `400 invalid_idempotency_key`,
+`415 unsupported_media_type`, `400 invalid_json`, `422 validation_failed` e
+`500 data_access_failed` quando a configuração de cálculo não pôde ser lida (o
+servidor não decide com valores padrão).
+
+**O que a rota não faz:** não grava nem reserva o objetivo, e `POST /onboarding`
+ainda **não** recusa objetivo fora desta resposta (próxima etapa do servidor).
+O app publicado não chama esta rota.
+
+Código: `apps/admin/src/app/api/mobile/v1/onboarding/eligibility/handler.ts` e
+`apps/admin/src/lib/mobile-api/protocol-eligibility-service.ts`. Testes:
+`onboarding/eligibility/route.test.ts` (rota inteira sobre um banco que falha em
+qualquer escrita) e `protocol-eligibility-service.test.ts`.
+
+### Objetivo atual
+
+`GET /api/mobile/v1/protocol` é a leitura do objetivo para a tela de Perfil.
+Exige entitlement, como `/today` (devolve as metas do dia).
+
+```json
+{
+  "current_protocol": "recomposicao",
+  "targets": { "calories": 1564, "protein_g": 121.5 },
+  "welcome": {
+    "protocol": "recomposicao",
+    "paragraphs": ["Marina, a partir de agora você entra oficialmente na fase de recomposição corporal.\nIsso significa…", "…"]
+  }
+}
+```
+
+- `current_protocol`: o protocolo gravado no perfil (`recomposicao`,
+  `ganho_massa` ou `manutencao`), o mesmo de `GET /profile`.
+- `targets`: as metas da tela Hoje, lidas do mesmo estado diário de `GET /today`
+  (`targets.calories_kcal` e `targets.protein_g`) e não recalculadas: a meta
+  gravada na linha de hoje quando o dia já tem uma, senão a calculada do perfil.
+  `null` quando `/today` também não tem meta.
+- `welcome`: a mensagem de entrada do protocolo atual, igual à de
+  `protocol_welcome`, no idioma da conta (`locale` de `/me`: `pt-BR`, `en-US` ou
+  ausente = `pt-BR`) e com o nome da conta. Conta sem nome gravado recebe o
+  texto sem o vocativo.
+- **Conta sem protocolo** (cadastro ainda não concluído, ou perfil inexistente):
+  `200` com `current_protocol: null` e `welcome: null`, como as outras leituras
+  respondem o que ainda não existe. `targets` continua sendo o que `/today`
+  responde para a conta. A rota não consulta a conclusão do cadastro: informa o
+  que o perfil guarda.
+- Idioma da conta fora de `pt-BR`/`en-US` → `409 protocol_locale_unsupported`
+  (mesma convenção de `onboarding_locale_unsupported` e
+  `coach_locale_unsupported`).
+- Sem acesso ativo → `402 subscription_required`. Falha de leitura →
+  `500 data_access_failed`.
+- **Só leitura.** Não existe `POST`, `PATCH` nem campo de troca: a troca de
+  objetivo não faz parte desta entrega (`docs/CALCULO-MPP.md` §10).
+
+Código: `apps/admin/src/app/api/mobile/v1/protocol/handler.ts` e
+`apps/admin/src/lib/mobile-api/protocol-service.ts`. Testes:
+`protocol/route.test.ts` e `protocol-service.test.ts`.
 
 O campo `country_confirmed` de `/me` indica se o país operacional já foi
 confirmado. Propostas de refeição retornam `409 country_confirmation_required`
@@ -523,7 +707,8 @@ Código: `apps/admin/src/lib/mobile-api/day-close-on-request.ts`. Testes:
 `day-close-on-request.concurrent.test.ts` (as duas rotas ao mesmo tempo),
 `day-close-and-evaluation-access.read-retry.test.ts` (leitura que falha) e os
 `route.test.ts` de `today` e `progress`.
-Nenhuma rota nova: o manifesto de 48 rotas do BFF é o mesmo.
+Nenhuma rota nova: esta peça não mudou o manifesto de rotas do BFF (48 na
+época; 50 desde a conferência do cadastro e `GET /protocol`).
 
 ## Acesso de avaliação automático (ambiente de avaliação)
 
@@ -634,8 +819,8 @@ reais sobre um banco em memória),
 `day-close-and-evaluation-access.read-retry.test.ts` (leitura que falha) e
 `evaluation-access.no-send.test.ts` (o
 módulo só importa o invólucro de rota, não chama rede e só faz as duas
-leituras e as duas RPCs acima). Nenhuma rota nova e nenhuma migration: o
-manifesto de 48 rotas do BFF é o mesmo.
+leituras e as duas RPCs acima). Nenhuma rota nova e nenhuma migration: esta
+peça não mudou o manifesto de rotas do BFF (48 na época; 50 hoje).
 
 ## Suplementos, medicamentos e adesão de rotina
 
@@ -2307,6 +2492,10 @@ como antes da mudança; qualquer outro texto responde
 
 ## Limites desta fase
 
+- A conferência de objetivo (`POST /onboarding/eligibility`), o campo
+  `protocol_welcome` e `GET /protocol` existem no servidor, mas o app publicado
+  ainda não os consome, e `POST /onboarding` ainda grava qualquer um dos três
+  objetivos. Não há troca de objetivo pelo app.
 - Não há chat nativo, envio APNs, StoreKit ou app iOS nesta entrega. Os backends de
   mídia, devices, regras e rotina ainda dependem de integração e QA no app nativo.
 - `persona` persiste a escolha e seleciona mensagens futuras, mas o app nativo

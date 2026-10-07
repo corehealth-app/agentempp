@@ -1,9 +1,11 @@
+import { protocolWelcomeMessage } from '@mpp/core'
 import { describe, expect, it, vi } from 'vitest'
 import type { OnboardingCompletionInput } from './contracts'
 import {
   completeOnboarding,
   getOnboardingState,
   type OnboardingRepository,
+  OnboardingRepositoryError,
 } from './onboarding-service'
 
 const USER_ID = '00000000-0000-4000-8000-000000000951'
@@ -168,6 +170,91 @@ describe('server-owned onboarding service', () => {
       completed_at: '2026-09-15T15:00:00.000Z',
     })
     expect(result).not.toHaveProperty('user_id')
+  })
+
+  // The words of each entry message are pinned, in both languages, in
+  // packages/agent/src/__golden__/audit-10-07-protocol-messages.test.ts.
+  it.each([
+    'recomposicao',
+    'ganho_massa',
+    'manutencao',
+  ] as const)('returns the entry message of the recorded objective, with the name of the request: %s', async (objective) => {
+    const repo = repository({
+      complete: vi.fn(async () => ({
+        userId: USER_ID,
+        completed: true as const,
+        completedAt: '2026-09-15T15:00:00.000Z',
+        objective,
+        persona: 'focus' as const,
+        documentActions: [],
+      })),
+    })
+
+    const result = await completeOnboarding(repo, USER_ID, { ...input(), objective })
+
+    expect(result).toEqual({
+      onboarding_completed: true,
+      completed_at: '2026-09-15T15:00:00.000Z',
+      objective,
+      persona: 'focus',
+      document_actions: [],
+      protocol_welcome: {
+        protocol: objective,
+        paragraphs: protocolWelcomeMessage(objective, 'Synthetic User', 'pt-BR'),
+      },
+    })
+    expect(result.protocol_welcome.paragraphs[0]).toMatch(
+      /^Synthetic User, (?:a partir de )?agora você entra /,
+    )
+    expect(result.protocol_welcome.paragraphs).toHaveLength(objective === 'ganho_massa' ? 7 : 4)
+  })
+
+  it('writes the entry message in the language of the request', async () => {
+    const result = await completeOnboarding(repository(), USER_ID, { ...input(), locale: 'en-US' })
+
+    expect(result.protocol_welcome).toEqual({
+      protocol: 'recomposicao',
+      paragraphs: protocolWelcomeMessage('recomposicao', 'Synthetic User', 'en-US'),
+    })
+    expect(result.protocol_welcome.paragraphs[0]).toMatch(
+      /^Synthetic User, as of now you are officially entering the body recomposition phase\./,
+    )
+  })
+
+  it('takes the protocol of the entry message from what was RECORDED, never from the request', async () => {
+    // The SQL function never records another objective; this pins the source.
+    const repo = repository()
+
+    const result = await completeOnboarding(repo, USER_ID, { ...input(), objective: 'ganho_massa' })
+
+    expect(result.objective).toBe('recomposicao')
+    expect(result.protocol_welcome.protocol).toBe('recomposicao')
+    expect(result.protocol_welcome.paragraphs).toEqual(
+      protocolWelcomeMessage('recomposicao', 'Synthetic User', 'pt-BR'),
+    )
+  })
+
+  it('returns the same entry message every time the same request is completed', async () => {
+    const repo = repository()
+
+    const first = await completeOnboarding(repo, USER_ID, input())
+    const second = await completeOnboarding(repo, USER_ID, input())
+
+    expect(second).toEqual(first)
+    expect(repo.complete).toHaveBeenCalledTimes(2)
+  })
+
+  it('returns no entry message when the completion is refused', async () => {
+    const repo = repository({
+      complete: vi.fn(async () => {
+        throw new OnboardingRepositoryError('already_completed')
+      }),
+    })
+
+    await expect(completeOnboarding(repo, USER_ID, input())).rejects.toMatchObject({
+      status: 409,
+      code: 'onboarding_already_completed',
+    })
   })
 
   it('fails closed before returning a bootstrap larger than the mobile transport limit', async () => {

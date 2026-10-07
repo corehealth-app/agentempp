@@ -154,14 +154,12 @@ async function releaseClaim(
   }
 }
 
-export async function executeIdempotent(
-  context: MobileRouteContext,
-  validatedPayload: unknown,
-  store: MobileIdempotencyStore,
-  operation: (idempotencyKey: string) => Promise<Response>,
-  options: ExecuteIdempotentOptions = {},
-): Promise<Response> {
-  const rawKey = context.request.headers.get('idempotency-key')
+/**
+ * The `Idempotency-Key` header every POST, PATCH and DELETE must carry, in its
+ * normalized form. Reads the header only: nothing is claimed or stored here.
+ */
+export function requireIdempotencyKey(request: Request): string {
+  const rawKey = request.headers.get('idempotency-key')
   if (!rawKey) {
     throw new MobileApiError(400, 'missing_idempotency_key', 'Idempotency-Key is required')
   }
@@ -170,9 +168,20 @@ export async function executeIdempotent(
   if (!parsedKey.success) {
     throw new MobileApiError(400, 'invalid_idempotency_key', 'Idempotency-Key is invalid')
   }
+  return parsedKey.data
+}
+
+export async function executeIdempotent(
+  context: MobileRouteContext,
+  validatedPayload: unknown,
+  store: MobileIdempotencyStore,
+  operation: (idempotencyKey: string) => Promise<Response>,
+  options: ExecuteIdempotentOptions = {},
+): Promise<Response> {
+  const idempotencyKey = requireIdempotencyKey(context.request)
 
   const claim = await store.claim({
-    idempotencyKey: parsedKey.data,
+    idempotencyKey,
     method: context.request.method.toUpperCase(),
     route: new URL(context.request.url).pathname,
     requestHash: hashMobileRequest(validatedPayload),
@@ -201,7 +210,7 @@ export async function executeIdempotent(
   }
 
   try {
-    const response = await operation(parsedKey.data)
+    const response = await operation(idempotencyKey)
     if (response.status >= 500) {
       await releaseClaim(store, claim.claimId, context.auth.userId)
       return response

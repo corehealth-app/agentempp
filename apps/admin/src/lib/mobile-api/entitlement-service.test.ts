@@ -97,6 +97,12 @@ describe('mobile entitlement service', () => {
     expect(mobilePathRequiresEntitlement('/api/mobile/v1/me-not-really')).toBe(true)
   })
 
+  it('keeps the sign-up eligibility check open with the sign-up, and the objective behind the access', () => {
+    expect(mobilePathRequiresEntitlement('/api/mobile/v1/onboarding/eligibility')).toBe(false)
+    expect(mobilePathRequiresEntitlement('/api/mobile/v1/protocol')).toBe(true)
+    expect(mobilePathRequiresEntitlement('/api/mobile/v1/onboarding-eligibility')).toBe(true)
+  })
+
   it('blocks a protected route when the central decision denies access', async () => {
     const supabase = serviceClient({
       data: {

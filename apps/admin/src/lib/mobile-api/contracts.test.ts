@@ -15,6 +15,7 @@ import {
   mobileDeviceInputSchema,
   notificationPreferencesPatchSchema,
   onboardingCompletionInputSchema,
+  onboardingEligibilityInputSchema,
   onboardingInputSchema,
   patchMeInputSchema,
   patchReminderInputSchema,
@@ -286,6 +287,122 @@ describe('mobile API v1 contracts', () => {
     })
     expect(() => onboardingInputSchema.parse({ onboarding_completed: true })).toThrow()
     expect(() => onboardingInputSchema.parse({ document_actions: [] })).toThrow()
+  })
+
+  it('accepts the sign-up eligibility check with only the body values and the locale', () => {
+    const input = {
+      locale: 'en-US',
+      sex: 'feminino',
+      height_cm: 165,
+      weight_kg: 62,
+      body_fat_percent: 27,
+      training_frequency: 3,
+    } as const
+
+    expect(onboardingEligibilityInputSchema.parse(input)).toEqual(input)
+    const { body_fat_percent: _bodyFat, ...withoutBodyFat } = input
+    expect(onboardingEligibilityInputSchema.parse(withoutBodyFat)).toEqual(withoutBodyFat)
+  })
+
+  it('rejects anything else in the sign-up eligibility check: extra keys, missing fields, other locales', () => {
+    const input = {
+      locale: 'pt-BR',
+      sex: 'masculino',
+      height_cm: 180,
+      weight_kg: 80,
+      training_frequency: 3,
+    }
+
+    for (const extra of [
+      { name: 'Paciente Teste' },
+      { birth_date: '1990-06-15' },
+      { objective: 'ganho_massa' },
+      { user_id: '00000000-0000-0000-0000-000000000001' },
+      { bmi: 24.7 },
+    ]) {
+      expect(() => onboardingEligibilityInputSchema.parse({ ...input, ...extra })).toThrow()
+    }
+    for (const missing of ['locale', 'sex', 'height_cm', 'weight_kg', 'training_frequency']) {
+      const partial: Record<string, unknown> = { ...input }
+      delete partial[missing]
+      expect(() => onboardingEligibilityInputSchema.parse(partial), missing).toThrow()
+    }
+    expect(() => onboardingEligibilityInputSchema.parse({ ...input, locale: 'es-ES' })).toThrow()
+    expect(() => onboardingEligibilityInputSchema.parse({ ...input, locale: 'en' })).toThrow()
+    expect(() => onboardingEligibilityInputSchema.parse({ ...input, sex: 'outro' })).toThrow()
+    expect(() =>
+      onboardingEligibilityInputSchema.parse({ ...input, body_fat_percent: null }),
+    ).toThrow()
+    expect(() => onboardingEligibilityInputSchema.parse({ ...input, height_cm: '180' })).toThrow()
+  })
+
+  it('bounds the sign-up eligibility check with the very ranges of the sign-up', () => {
+    const eligibility = {
+      locale: 'pt-BR',
+      sex: 'masculino',
+      height_cm: 180,
+      weight_kg: 80,
+      training_frequency: 3,
+    }
+    const completion = {
+      name: 'Paciente Teste',
+      locale: 'pt-BR',
+      country: 'BR',
+      timezone: 'America/Sao_Paulo',
+      sex: 'masculino',
+      birth_date: '1990-06-15',
+      height_cm: 180,
+      weight_kg: 80,
+      objective: 'recomposicao',
+      activity_level: 'moderado',
+      training_frequency: 3,
+      water_intake: 'moderado',
+      hunger_level: 'moderada',
+      wake_time: '07:30',
+      bedtime: '23:00',
+      food_organization: 'sim',
+      persona: 'focus',
+      document_actions: [
+        {
+          document_key: 'terms_of_service',
+          version: '2026-09-15.1',
+          locale: 'pt-BR',
+          content_hash: 'a'.repeat(64),
+          action: 'acceptance',
+        },
+      ],
+    }
+    const cases: Array<[string, number, boolean]> = [
+      ['height_cm', 99.99, false],
+      ['height_cm', 100, true],
+      ['height_cm', 250, true],
+      ['height_cm', 250.01, false],
+      ['weight_kg', 29.99, false],
+      ['weight_kg', 30, true],
+      ['weight_kg', 300, true],
+      ['weight_kg', 300.01, false],
+      ['body_fat_percent', 2.99, false],
+      ['body_fat_percent', 3, true],
+      ['body_fat_percent', 60, true],
+      ['body_fat_percent', 60.01, false],
+      ['training_frequency', -1, false],
+      ['training_frequency', 0, true],
+      ['training_frequency', 7, true],
+      ['training_frequency', 8, false],
+      ['training_frequency', 2.5, false],
+    ]
+
+    for (const [field, value, accepted] of cases) {
+      const label = `${field} = ${value}`
+      expect(
+        onboardingEligibilityInputSchema.safeParse({ ...eligibility, [field]: value }).success,
+        label,
+      ).toBe(accepted)
+      expect(
+        onboardingCompletionInputSchema.safeParse({ ...completion, [field]: value }).success,
+        label,
+      ).toBe(accepted)
+    }
   })
 
   it('accepts bounded patient media uploads with optional photo context', () => {

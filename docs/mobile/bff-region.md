@@ -83,7 +83,7 @@ O preview novo tem endereço novo: o iPhone precisa de novo xcconfig.
   WhatsApp e o Inngest; a região dele é decisão separada do dono.
 - Em plano pago da Vercel, o preço por unidade em gru1 é maior que em iad1
   (valor não conferido).
-- Não usar `preferredRegion` por rota: quebra os espelhos congelados das 48
+- Não usar `preferredRegion` por rota: quebra os espelhos congelados das
   rotas (`verify:routes`).
 
 ## Como reverter

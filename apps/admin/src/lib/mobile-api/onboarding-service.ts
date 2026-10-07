@@ -1,3 +1,4 @@
+import { protocolWelcomeMessage } from '@mpp/core'
 import type { OnboardingCompletionInput } from './contracts'
 import { MobileApiError } from './http'
 
@@ -225,5 +226,14 @@ export async function completeOnboarding(
     objective: completion.objective,
     persona: completion.persona,
     document_actions: completion.documentActions.map(acceptedActionDto),
+    // The entry message of the objective that was RECORDED, in the language of
+    // the request and with the name it carried. Built here, after the
+    // repository answered: the SQL function and the strict reader of its
+    // result know nothing about it. It depends only on the request and on the
+    // recorded objective, so a replay of the same request returns the same.
+    protocol_welcome: {
+      protocol: completion.objective,
+      paragraphs: protocolWelcomeMessage(completion.objective, input.name, input.locale),
+    },
   }
 }

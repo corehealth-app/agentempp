@@ -33,6 +33,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { protocolWelcomeMessage } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -1197,6 +1198,13 @@ describe('first completion with the four locks open', () => {
             acted_at: NOW.toISOString(),
           },
         ],
+        // The entry message of the recorded objective (docs/mobile/api-v1.md,
+        // "Mensagem de entrada do objetivo"); its words are pinned in
+        // packages/agent/src/__golden__/audit-10-07-protocol-messages.test.ts.
+        protocol_welcome: {
+          protocol: 'recomposicao',
+          paragraphs: protocolWelcomeMessage('recomposicao', NAME, 'pt-BR'),
+        },
       },
       meta: { api_version: 'v1', request_id: REQUEST_ID },
     })
@@ -1824,7 +1832,7 @@ describe('where the grant is called from', () => {
     expect(granted).toBeGreaterThan(completed)
   })
 
-  it('the route wrapper shared by the 48 routes and the entitlement gate do not know it', () => {
+  it('the route wrapper shared by the 50 routes and the entitlement gate do not know it', () => {
     for (const file of ['route.ts', 'entitlement-service.ts', 'onboarding-service.ts']) {
       expect(readFileSync(resolve(here, file), 'utf8'), file).not.toMatch(/evaluation/i)
     }

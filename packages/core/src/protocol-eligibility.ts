@@ -2,10 +2,12 @@
  * Sign-up eligibility: who is placed in recomposição without being asked and
  * who may choose among the three objectives (docs/CALCULO-MPP.md §10).
  *
- * Pure, no I/O, no text. NOTHING CALLS IT YET: the sign-up still records the
- * objective that was sent, with no check. The server and then the app will
- * call it in later stages. `resolveProtocol` (protocol-router.ts) is the
- * legacy path, still feeds the "Decisão automática" context line, and is not
+ * Pure, no I/O, no text. Called by the sign-up eligibility check of the app
+ * (apps/admin/src/lib/mobile-api/protocol-eligibility-service.ts), which
+ * rounds the body values to what the profile stores before calling and writes
+ * nothing. The completion of the sign-up still records the objective that was
+ * sent, with no check. `resolveProtocol` (protocol-router.ts) is the legacy
+ * path, still feeds the "Decisão automática" context line, and is not
  * touched: the two share no code on purpose.
  *
  * THE RULE, as the client (Dr. Roberto) wrote it — it is NOT a new decision.
@@ -40,8 +42,9 @@
  *      entrada" (the same text in the table of 02/02/2026 and in the list of
  *      01/06/2026); audio of 28/12/2025 ("pelo [menos] 3 vezes por semana de
  *      musculação").
- *  C8, C9  Which text each result shows: NOT in this stage. The caller picks
- *      it from `outcome`, `basis` and the `reasons` of ganho de massa.
+ *  C8, C9  Which text each result shows is not decided here: the caller
+ *      picks it (protocol-messages.ts) from `outcome`, `basis`, the `reasons`
+ *      of ganho de massa and `limits`.
  *  C10 Sleep (≥ 6h30) and organised eating are not read: they neither open
  *      nor block anything here.
  *  C11 Very low weight and C12 body fat of 10% or less: no rule, nothing

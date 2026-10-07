@@ -88,7 +88,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
     const wrappers = wrapperRecords()
 
     console.info(`WRAPPER_ROUTE_EXPORT_COUNT=${wrappers.length}`)
-    expect(wrappers, `expected 48 wrappers but observed ${wrappers.length}`).toHaveLength(48)
+    expect(wrappers, `expected 50 wrappers but observed ${wrappers.length}`).toHaveLength(50)
 
     expect(wrappers.map(({ path, exports }) => ({ path, exports }))).toEqual(sources)
 
@@ -99,7 +99,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
 
     const hash = hashRecords(wrappers)
     console.info(`WRAPPER_ROUTE_EXPORT_STREAM_SHA256=${hash}`)
-    expect(hash).toBe('53b80aa24ea9e566ff5eaa789313cbac8331afb77a8a3adca8c567e8db5f0de0')
+    expect(hash).toBe('ee2a18aad458cec3f202e03d618dceede806a4f934c4f6a4680e08007932d50b')
   })
 
   test('declares Flow route runtime limits locally for Next static analysis', () => {

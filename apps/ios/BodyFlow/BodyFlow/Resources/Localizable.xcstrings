@@ -1,6 +1,150 @@
 {
   "sourceLanguage" : "pt-BR",
   "strings" : {
+  "current-objective.refreshing": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Atualizando…"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Refreshing…"
+        }
+      }
+    }
+  },
+  "current-objective.title": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Seu objetivo"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Your objective"
+        }
+      }
+    }
+  },
+  "profile.current-objective.detail": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Veja seu objetivo, as metas do dia e a mensagem do Flow."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "View your objective, daily targets and message from Flow."
+        }
+      }
+    }
+  },
+  "current-objective.targets": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Metas do dia"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Daily targets"
+        }
+      }
+    }
+  },
+  "current-objective.calories": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Calorias"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Calories"
+        }
+      }
+    }
+  },
+  "current-objective.protein": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Proteína"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Protein"
+        }
+      }
+    }
+  },
+  "current-objective.message": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Ler a mensagem de entrada"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Read the entry message"
+        }
+      }
+    }
+  },
+  "current-objective.refresh": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Atualizar"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Refresh"
+        }
+      }
+    }
+  },
+  "current-objective.welcome.close": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Fechar"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Close"
+        }
+      }
+    }
+  },
   "onboarding.completion.unresolved": {
     "localizations": {
       "pt-BR": {

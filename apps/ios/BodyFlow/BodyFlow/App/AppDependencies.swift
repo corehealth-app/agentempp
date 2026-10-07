@@ -36,6 +36,8 @@ struct AppDependencies: Sendable {
     /// Plan drafts (Flow proposals and imported documents); nil where no
     /// server keeps them.
     var planDrafts: PlanDraftCapability? = nil
+    /// Current objective, official daily targets and entry message; read only.
+    var currentObjective: (any CurrentObjectiveProviding)? = nil
     /// The guided tour's per-account answer on this iPhone and whether it
     /// offers itself on the first entry.
     var guidedTutorial = GuidedTutorialCapability(
@@ -560,6 +562,17 @@ struct AppDependencies: Sendable {
         }
         #endif
 
+        var currentObjective: (any CurrentObjectiveProviding)? =
+            (apiClient as? MobileAPITransport).map { MobileCurrentObjectiveRepository(transport: $0) }
+        #if DEBUG
+        if configuration.mode == .demo,
+           let scenario = DemoCurrentObjectiveProvider.scenario(arguments: ProcessInfo.processInfo.arguments) {
+            currentObjective = DemoCurrentObjectiveProvider(
+                scenario: scenario, locale: DemoOnboardingSuggestions.currentDevice.localeIdentifier
+            )
+        }
+        #endif
+
         var guidedTutorial = GuidedTutorialCapability(
             store: InMemoryGuidedTutorialStore(),
             offersOnFirstEntry: false
@@ -636,6 +649,7 @@ struct AppDependencies: Sendable {
             localReminders: localReminders,
             mealCapture: mealCapture,
             planDrafts: planDrafts,
+            currentObjective: currentObjective,
             guidedTutorial: guidedTutorial
         )
     }

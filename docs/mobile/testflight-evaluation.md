@@ -139,3 +139,7 @@ Verificar a ordem boas-vindas/dados corporais/rotina/estilo do Flow/documentos/o
 Revisar pt-BR/en, claro/escuro e AXXXL, incluindo mensagem sintética de aproximadamente 2.900 caracteres: primeiro e último parágrafos devem permanecer completos, repetições preservadas e CTA alcançável. “Concluir cadastro” salva a revisão; “Ir para Hoje” encerra a mensagem. Hoje/tutorial não podem aparecer antes desse último CTA. Reaceite de documentos deve preservar o objetivo e omitir conferência/mensagem. Falha de conferência conserva documentos; conclusão incerta oferece retry com edição bloqueada.
 
 Argumentos DEBUG locais: `--ui-testing-onboarding-assigned`, `--ui-testing-onboarding-gain-blocked`, `--ui-testing-onboarding-welcome`, `--ui-testing-onboarding-eligibility-failure` e `--ui-testing-onboarding-completion-uncertain`. A versão Release ignora esses cenários. Esta validação não equivale a TestFlight, API ao vivo, instalação física, avaliação clínica ou aceite do Eduardo.
+
+### E6 — consulta de objetivo em Perfil
+
+“Seu objetivo” mostra o objetivo registrado, metas oficiais e mensagem do Flow, sem ação de troca. Conferir PT/EN, claro/escuro, valores decimais/unidades, ausência de metas sem zeros inventados, offline/retry e texto longo em AXXXL. A mensagem fecha de volta à consulta; não reabre o tutorial ou conclui cadastro. Logout deve limpar a sessão; leitura tardia não pode preencher outra conta. Esta consulta depende do `GET /protocol` que ainda requer promoção conjunta autorizada no staging.

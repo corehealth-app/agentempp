@@ -5,6 +5,29 @@ import XCTest
 
 @MainActor
 final class BodyFlowPremiumRenderingTests: XCTestCase {
+    func testReadOnlyProtocolMessageClosesWithoutTheOnboardingAction() {
+        let paragraphs = ["First server paragraph", "Same", "Same", "Last server paragraph"]
+        let welcome = ProtocolWelcome(protocol: .maintenance, paragraphs: paragraphs)
+        for language in SupportedAppLanguage.allCases {
+            let view = ProtocolMessageView(welcome: welcome, context: .currentObjective, onContinue: {})
+                .environment(\.locale, language.formattingLocale)
+            let probe = PremiumRenderingTestSupport.accessibilityProbe(view, width: 375)
+            let close = language == .portugueseBrazil ? "Fechar" : "Close"
+            XCTAssertTrue(probe.contains { $0.isButton && $0.label == close })
+            XCTAssertFalse(probe.contains { $0.isButton && ($0.label == "Ir para Hoje" || $0.label == "Go to Today") })
+            XCTAssertEqual(probe.filter { $0.label == "Same" }.count, 2)
+            XCTAssertTrue(probe.contains { $0.label == "Last server paragraph" })
+            for width: CGFloat in [375, 393, 430] {
+                for dark in [false, true] {
+                    let regular = PremiumRenderingTestSupport.fittingSize(view, width: width, dark: dark, size: .large, locale: language.formattingLocale)
+                    let large = PremiumRenderingTestSupport.fittingSize(view, width: width, dark: dark, size: .accessibility5, locale: language.formattingLocale)
+                    XCTAssertLessThanOrEqual(large.width, width + 1)
+                    XCTAssertGreaterThan(large.height, regular.height)
+                }
+            }
+        }
+    }
+
     func testObjectiveWithoutServerDecisionExposesNoSelectableButtons() {
         let model = OnboardingFlowModel.preview(step: .objective, decision: nil)
         let probe = PremiumRenderingTestSupport.accessibilityProbe(
@@ -548,6 +571,7 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
     /// destination falls back to a large-title band.
     func testReviewedPushedScreensUseTheSharedChrome() throws {
         let reviewedSources = [
+            "BodyFlow/Features/Profile/CurrentObjectiveView.swift",
             "BodyFlow/Features/Progress/Block7700DetailView.swift",
             "BodyFlow/Features/Plan/PlanDetailView.swift",
             "BodyFlow/Features/Routine/RoutineListView.swift",
@@ -614,6 +638,7 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
     /// before this contract existed.
     func testReviewedSourcesNeverPassALocalizationKeyAsVerbatimText() throws {
         let reviewedSources = [
+            "BodyFlow/Features/Profile/CurrentObjectiveView.swift",
             "BodyFlow/Features/Today/TodayRootView.swift",
             "BodyFlow/Features/Today/TodayHeaderSection.swift",
             "BodyFlow/Features/Today/TodayEnergySection.swift",
@@ -721,6 +746,7 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
     /// SF Symbol literals belong to `BodyFlowSymbol` only.
     func testReviewedI5SourcesUseTheSymbolVocabulary() throws {
         let reviewedSources = [
+            "BodyFlow/Features/Profile/CurrentObjectiveView.swift",
             "BodyFlow/Features/Progress/ProgressComponents.swift",
             "BodyFlow/Features/Progress/ProgressRootView.swift",
             "BodyFlow/Features/Progress/Block7700DetailView.swift",

@@ -520,7 +520,8 @@ Exige entitlement, como `/today` (devolve as metas do dia).
 - `targets`: as metas da tela Hoje, lidas do mesmo estado diário de `GET /today`
   (`targets.calories_kcal` e `targets.protein_g`) e não recalculadas: a meta
   gravada na linha de hoje quando o dia já tem uma, senão a calculada do perfil.
-  `null` quando `/today` também não tem meta.
+  O objeto permanece presente; cada campo é `null` quando `/today` também não
+  tem a respectiva meta. No fio, calorias usa `calories` (não `calories_kcal`).
 - `welcome`: a mensagem de entrada do protocolo atual, igual à de
   `protocol_welcome`, no idioma da conta (`locale` de `/me`: `pt-BR`, `en-US` ou
   ausente = `pt-BR`) e com o nome da conta. Conta sem nome gravado recebe o
@@ -2693,3 +2694,9 @@ Depois da conclusão confirmada, `protocol_welcome` é apresentado como mensagem
 O 422 `onboarding_objective_not_eligible` retorna ao objetivo, pede decisão nova e usa uma chave nova na conclusão seguinte. Uma resposta incerta de conclusão mantém o par chave/corpo original e bloqueia edição enquanto o retry confere esse envio. A interface mostra esse estado explicitamente.
 
 Validação desta etapa é local no simulador e com respostas sintéticas DEBUG, incluindo mensagem de aproximadamente 2.900 caracteres. Não comprova chamada API ao vivo, publicação, aceite visual humano ou protocolos completos. O staging e o cliente publicado continuam exigindo a promoção conjunta autorizada descrita no handoff; E3 entrega somente a entrada. Fechar o app durante a mensagem não a reapresenta automaticamente: leitura posterior em Perfil pertence à E6.
+
+### Cliente iOS E6 — objetivo em Perfil, somente leitura (candidato local)
+
+A entrada “Seu objetivo” consome somente `GET /api/mobile/v1/protocol`, sem envio de dados corporais, escolha ou chave de mutação. Mostra o objetivo armazenado e os números oficiais recebidos; não recalcula, não inventa zero e aceita metas ausentes. A mensagem de entrada abre para leitura integral, com parágrafos e repetições preservados; “Fechar” retorna à consulta, sem concluir cadastro, oferecer tutorial ou trocar o objetivo.
+
+Cada sessão possui seu modelo. Logout invalida leituras pendentes; respostas antigas/canceladas não substituem o estado atual. Atualização conserva o conteúdo e erros oferecem leitura novamente. Sem capacidade, a entrada fica oculta. As variantes sintéticas `--ui-testing-current-objective`, `--ui-testing-current-objective-empty`, `--ui-testing-current-objective-offline` e `--ui-testing-current-objective-long` são restritas a DEBUG; Release usa transporte real ou fica indisponível. Validação ao vivo e publicação permanecem gates próprios.

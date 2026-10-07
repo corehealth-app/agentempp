@@ -18,6 +18,7 @@ struct AppShellView: View {
     @State private var contentCoverEnvironment: ContentCoverEnvironment
     @State private var localReminders: LocalReminderModel?
     @State private var planDraftsModel: PlanDraftsModel?
+    @State private var currentObjectiveModel: CurrentObjectiveModel?
     @State private var tutorialPresentation: GuidedTutorialPresentation?
     @State private var tour: GuidedTourModel?
     @State private var tipsShownThisSession = 0
@@ -102,6 +103,9 @@ struct AppShellView: View {
         _planDraftsModel = State(initialValue: dependencies.planDrafts.map {
             PlanDraftsModel(provider: $0.drafts)
         })
+        _currentObjectiveModel = State(initialValue: dependencies.currentObjective.map {
+            CurrentObjectiveModel(userID: userID, provider: $0)
+        })
         let timeZoneStore = dependencies.patientTimeZoneStore
         _localReminders = State(initialValue: dependencies.localReminders.map { capability in
             LocalReminderModel(
@@ -178,6 +182,7 @@ struct AppShellView: View {
         .onDisappear {
             flowChatModel.invalidate()
             planDraftsModel?.invalidate()
+            currentObjectiveModel?.invalidate()
             sessionOwner.invalidateSynchronously()
             localReminders?.endSession()
         }
@@ -548,6 +553,7 @@ struct AppShellView: View {
                 invalidationCenter: invalidationCenter,
                 localReminders: localReminders,
                 showTutorial: { presentTutorialFromProfile() },
+                showsCurrentObjective: currentObjectiveModel != nil,
                 signOut: signOut
             )
         }
@@ -667,6 +673,12 @@ struct AppShellView: View {
         case .localReminders:
             if let localReminders {
                 LocalRemindersView(model: localReminders)
+            } else {
+                ScreenStateView(state: .unavailable, retryAction: {})
+            }
+        case .currentObjective:
+            if let currentObjectiveModel {
+                CurrentObjectiveView(model: currentObjectiveModel)
             } else {
                 ScreenStateView(state: .unavailable, retryAction: {})
             }

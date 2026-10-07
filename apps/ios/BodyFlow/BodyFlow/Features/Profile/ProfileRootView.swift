@@ -21,6 +21,7 @@ struct ProfileRootView: View {
     private let localReminders: LocalReminderModel?
     /// Opens the guided tour again; nil where the shell offers no tour.
     private let showTutorial: (@MainActor () -> Void)?
+    private let showsCurrentObjective: Bool
 
     @State private var selectedPersona: CoachPersona?
     @State private var personaEditor: CoachPersonaEditorModel?
@@ -40,6 +41,7 @@ struct ProfileRootView: View {
         retryAction: @escaping @MainActor () -> Void = {},
         localReminders: LocalReminderModel? = nil,
         showTutorial: (@MainActor () -> Void)? = nil,
+        showsCurrentObjective: Bool = false,
         signOut: (@MainActor () async -> Void)? = nil
     ) {
         self.userID = userID
@@ -52,6 +54,7 @@ struct ProfileRootView: View {
         self.signOut = signOut
         self.localReminders = localReminders
         self.showTutorial = showTutorial
+        self.showsCurrentObjective = showsCurrentObjective
         _selectedPersona = State(initialValue: nil)
         _personaEditor = State(initialValue: nil)
     }
@@ -187,6 +190,23 @@ struct ProfileRootView: View {
                     .buttonStyle(.bodyFlowRow)
                     .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                     .accessibilityIdentifier("profile.tutorial")
+                }
+                .bodyFlowListRow()
+            }
+
+            if showsCurrentObjective {
+                Section {
+                    NavigationLink(value: AppRoute.currentObjective) {
+                        FeatureActionLabel(
+                            title: copy("current-objective.title"),
+                            detail: copy("profile.current-objective.detail"),
+                            systemImage: BodyFlowSymbol.protocolDocument.systemName,
+                            showsDisclosureIndicator: false
+                        )
+                    }
+                    .buttonStyle(.bodyFlowRow)
+                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                    .accessibilityIdentifier("profile.current-objective")
                 }
                 .bodyFlowListRow()
             }

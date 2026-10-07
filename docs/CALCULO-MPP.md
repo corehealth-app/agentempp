@@ -5,7 +5,7 @@
 > (1) o código, (2) o teste que a trava, (3) este documento — na mesma PR.
 > Nunca mude uma fórmula "no susto" por um print de paciente sem checar aqui.
 
-Última revisão: 2026-10-04.
+Última revisão: 2026-10-07.
 
 ---
 
@@ -2479,3 +2479,439 @@ Candidatos NÃO ativos, para ele dizer se entram e com qual item: leite
 desnatado, leite semidesnatado, leite de vaca, whey protein, leite com whey
 (precisa de receita padrão), café com leite. Os valores de cada um têm de ser
 lidos da linha verificada do catálogo antes de ativar.
+
+---
+
+## 10. Cadastro: quem escolhe o objetivo e quem entra direto na recomposição (regra E)
+
+> **Situação da regra:** escrita pelo cliente (Dr. Roberto) nas regras do método
+> e dita por ele no grupo do projeto nas datas indicadas; **implementada em
+> 2026-10-07 a pedido do Eduardo; confirmação do cliente pendente.** Não é
+> decisão nova do cliente. A contradição do corte de IMC (§10c) e cada leitura
+> natural (§10d) estão marcadas uma a uma.
+
+**Nada chama esta função ainda.** Esta etapa acrescenta ao motor UMA função
+pura, `decideSignupEligibility` (`packages/core/src/protocol-eligibility.ts`),
+os testes dela e esta seção. Nenhuma rota, tela, linha de banco ou texto mudou:
+
+- o cadastro do app continua gravando o objetivo que a pessoa tocou, sem
+  conferir (`supabase/migrations/20260915150739_bodyflow_server_owned_onboarding.sql`);
+- a linha `- Decisão automática: …` do contexto do turno (WhatsApp e Flow)
+  continua vindo de `resolveProtocol` (`packages/core/src/protocol-router.ts`),
+  que não foi tocada (§10h);
+- a regra não entra em meta calórica, balanço, bloco nem card (§1 a §4).
+
+O servidor e depois o app passam a chamar a função em etapas seguintes. A troca
+de fase não faz parte desta regra: o cliente disse em 02/07/2026 que a troca de
+protocolo "teria q ser feita em uma reavaliação"; ela fica para a reavaliação.
+
+### 10a. Entradas e cortes
+
+Entram: sexo, altura, peso, gordura corporal (opcional) e musculação por semana.
+**Não entram:** sono, alimentação organizada, idade, nível de atividade, fome.
+
+Os cortes são os que já existem na configuração de cálculo
+(`packages/core/src/calc-config.ts`). Nenhum número novo foi criado.
+
+| Corte | Chave | Padrão do código |
+|---|---|---|
+| gordura a partir da qual a pessoa entra direto na recomposição | `bf_limits[sexo].recomp` | homem 20 · mulher 28 |
+| gordura até a qual a composição do ganho de massa está cumprida | `bf_limits[sexo].gain` | homem 19 · mulher 27 |
+| IMC a partir do qual, sem gordura, a pessoa entra direto na recomposição | `imc_limit_recomp` | 25 |
+| musculação mínima por semana para o ganho de massa | `training_min` | 3 |
+
+- Em execução essas chaves vêm de `global_config` (`calc.bf_limits`,
+  `calc.imc_limit_recomp`, `calc.training_min`) e a linha substitui o padrão do
+  código. Os valores dos bancos não foram lidos nesta etapa (pendência).
+- **Linha que não guarda número** (texto como `"25"`, `null`, sexo ausente em
+  `calc.bf_limits`): vale o padrão do código para aquele corte, e só para ele.
+  A função lê cada corte como valor desconhecido, como `imcGoalStepPoints`
+  (§8a). Um erro de digitação na linha não abre a escolha nem derruba a função.
+  Não é regra clínica. Um número, qualquer que seja, é obedecido.
+- **Texto não é convertido em número**, mesmo quando é diferente do padrão: com
+  `calc.imc_limit_recomp = "26"` (texto) o corte continua 25 e 81 kg / 180 cm
+  entra direto na recomposição; com `calc.training_min = "4"` (texto) o mínimo
+  continua 3 e 3 treinos bastam. Com os números 26 e 4 os dois resultados mudam.
+- **Configuração passada como `null`** (fora do tipo declarado; o carregador
+  real sempre devolve um objeto): vale o padrão do código inteiro, como quando
+  nenhuma configuração é passada. A função não lança.
+- O IMC é o de `calcIMC` (`packages/core/src/nutrition.ts`): peso ÷ altura²,
+  sem arredondar.
+
+### 10b. A tabela como implementada
+
+| # | Caso | Resultado | Fonte |
+|---|---|---|---|
+| C0 | gordura informada | decide a gordura; o IMC não é conferido | regra "Regra de Decisão Automática de Protocolo — Quando NÃO perguntar ao usuário" ("IMC ≥ 25 (quando BF não disponível)"), na lista de regras ativas de 01/06/2026; manual 9.4.1 (gordura "padrão-ouro"; IMC "ferramenta substituta temporária"). Leitura natural 1 (§10d) |
+| C0 | gordura não informada | decide o IMC | as mesmas |
+| C1 | homem com gordura ≥ 20% | recomposição, sem perguntar | mesma regra ("BF ≥ 20% (homens)"; "conduzir automaticamente para o protocolo de Recomposição Corporal, sem oferecer opção de escolha"); regra "Decisão de objetivo - critérios internos antes de deixar o usuário decidir" (3.1); regra "Recomposição - critérios de entrada" (8.2); áudio de 24/01/2026 18:42 |
+| C2 | mulher com gordura ≥ 28% | recomposição, sem perguntar | as mesmas ("BF ≥ 28% (mulheres)") |
+| C3 | sem gordura e IMC ≥ 25 (o 25,0 exato entra) | recomposição, sem perguntar | as mesmas ("IMC ≥ 25 (quando BF não disponível)"); texto de 01/02/2026 ("o IMC de 25 entra mesmo na recomposiçõa corporal"); texto e áudio de 25/03/2026 ("menor q 25", "Sem o igual") |
+| C4 | homem com gordura < 20%, mulher < 28%, ou sem gordura e IMC < 25 | a pessoa escolhe; as três opções são apresentadas | mesma regra, parte "Quando perguntar" ("apresentar as 3 opções"); regra "Pergunta de qual objetivo, se usuário dentro da faixa saudável"; áudio de 24/01/2026 18:42; texto de 15/05/2026 07:24 |
+| C5 | em C4, recomposição | disponível | opção 1 da pergunta; áudio de 28/12/2025 16:02 |
+| C6 | em C4, manutenção | disponível, também quando o ganho de massa está barrado | opção 3 da pergunta; 3.3; áudio de 28/12/2025 16:02. Leitura natural 2 |
+| C7 | em C4, ganho de massa | disponível só com (a) composição — gordura ≤ 19% (homem) / ≤ 27% (mulher) quando informada; sem gordura, nada além do IMC < 25 que C4 já exigiu — e (b) musculação ≥ 3 vezes por semana. Faltando (a) ou (b): barrado, com o motivo | regra "Ganho de massa muscular - Critérios de entrada" (o mesmo texto na tabela de 02/02/2026 e na lista de 01/06/2026); áudio de 28/12/2025 14:07 (musculação pelo menos 3 vezes por semana; na transcrição, "pelo -3 vezes por semana de musculação"). Corte de IMC: contradição do §10c. Leituras naturais 3, 4 e 5 |
+| C8 | texto para quem é colocado em recomposição (frase de bloqueio 3.4.1) | **fora desta etapa.** A função devolve o motivo `composition` | regra "Bloqueio de ganho de massa para quem está acima do peso" |
+| C9 | texto para quem escolhe e tem o ganho barrado | **fora desta etapa.** A função devolve `composition` e/ou `training` e os cortes aplicados | não existe frase do cliente para este caso |
+| C10 | sono ≥ 6h30 e alimentação organizada | não são lidos: não liberam nem barram | leitura natural 6 |
+| C11 | peso muito baixo | nada especial acontece (pendência) | o cliente manda bloquear a perda de gordura (3.5), mas o número não existe em nenhum documento dele |
+| C12 | gordura informada de até 10% | nada especial acontece (pendência) | o piso de 10% (§8b) é de redução; não há regra para a entrada |
+
+Para quem é colocado em recomposição (C1 a C3) a função devolve manutenção
+`not_offered` ("sem oferecer opção de escolha") e ganho de massa `blocked` com
+`composition` sempre entre os motivos ("se o usuário solicitar ganho de massa,
+aplicar a frase de bloqueio educada"). `training` entra junto quando a
+musculação é menor que o mínimo: é um fato a mais, não um segundo aviso.
+
+Com os cortes padrão (IMC entre parênteses; "três" = recomposição, ganho de
+massa e manutenção disponíveis):
+
+| Pessoa | Resultado |
+|---|---|
+| homem, gordura 20,0% | recomposição sem perguntar |
+| homem, gordura 19,99%, 5 treinos | escolhe; ganho barrado por composição |
+| homem, gordura 19,0%, 3 treinos | escolhe; três |
+| homem, gordura 19,0%, 2 treinos | escolhe; ganho barrado por musculação |
+| homem, gordura 19,5%, 2 treinos | escolhe; ganho barrado pelos dois motivos |
+| mulher, gordura 28,0% | recomposição sem perguntar |
+| mulher, gordura 27,0%, 3 treinos | escolhe; três |
+| mulher, gordura 27,5%, 3 treinos | escolhe; ganho barrado por composição |
+| sem gordura, 81 kg / 180 cm (25,0) | recomposição sem perguntar |
+| sem gordura, 64 kg / 160 cm (25,0; no computador 24,999999999999996) | recomposição sem perguntar |
+| sem gordura, 99,96 kg / 200 cm (24,99), 3 treinos | escolhe; três |
+| sem gordura, 79,38 kg / 180 cm (24,5), 3 treinos | escolhe; três |
+| sem gordura, 79,38 kg / 180 cm (24,5), 2 treinos | escolhe; ganho barrado por musculação |
+| sem gordura, 77,76 kg / 180 cm (24,0), 3 treinos | escolhe; três |
+| homem, gordura 15%, 84,24 kg / 180 cm (26,0), 3 treinos | escolhe; três (decide a gordura) |
+| homem, gordura 22%, 74,52 kg / 180 cm (23,0) | recomposição sem perguntar (decide a gordura) |
+| homem, gordura 19,5%, 71,28 kg / 180 cm (22,0), 5 treinos | escolhe; ganho barrado por composição |
+| o mesmo corpo sem gordura informada | escolhe; três |
+
+### 10c. Contradição texto × fala posterior: o corte de IMC do ganho de massa sem gordura
+
+- **Texto escrito:** o critério de entrada do ganho diz "IMC ≤ 24 com aparência
+  funcional adequada" (regra "Ganho de massa muscular - Critérios de entrada":
+  tabela de 02/02/2026 e, sem mudança, lista de regras ativas de 01/06/2026). A
+  regra 3.2 diz "IMC ≤ 24 ou aparência funcional adequada".
+- **História do número no critério de entrada:** no manual de 27/12/2025 o
+  critério dizia "IMC ≤ 25 com aparência funcional adequada" (a 3.2 do mesmo
+  manual já dizia "IMC ≤ 24 ou aparência funcional adequada"). Na tabela de
+  02/02/2026 passou a "IMC ≤ 24 com aparência funcional adequada"; nesse dia, às
+  15:48, o cliente escreveu "aqui eu modifiquei o valor pra que não haja
+  interseção" (a mensagem não diz qual valor). É o que existe a favor da leitura
+  implementada: o número deste critério já foi 25, e "menor que 25" também não
+  tem interseção com a faixa de quem entra direto na recomposição (IMC ≥ 25).
+- **Fala posterior:** em 25/03/2026, sobre um print das regras (o print não foi
+  relido; o "menor ou igual a 24" só existe neste critério e na 3.2), o cliente
+  escreveu (19:42) "Acho q aqui poderia retirar esse menor ou igual do 24 e
+  deixar só menor"; perguntado se era menor que 25 ou menor que 24, respondeu
+  (19:43)
+  "Isso, menor q 25", "Sem o igual", "Q aí o 25 não estaria na faixa da
+  normalidade". No áudio das 19:43: "No que tá aí menor = 24 aí você tira o
+  igual … menor que 25 na verdade … incluiria o 24 e não o 25 … o 25 estaria
+  fora da faixa da normalidade".
+- **Do que a conversa daquela noite tratava** (duas frases do cliente, do mesmo
+  dia): no áudio das 19:16 ele pede para conferir "se a faixa da normalidade é
+  menor do que 25 ou se o 25 já entra … na faixa da normalidade pra poder
+  escolher o protocolo"; no texto das 19:42:59, logo depois de propor tirar o
+  "menor ou igual do 24", escreve "Pq aí el na daria a opção de manutenção pro
+  25 e retiraria esse conflito" (lemos "ele não daria"). O assunto era a faixa
+  de quem ESCOLHE o protocolo — se o IMC de 25 fica dentro ou fora da
+  normalidade e a opção de manutenção para o 25 (C3 e C4). Nos áudios e nos
+  textos do cliente daquela noite, das 19:16 às 19:43, o ganho de massa não é
+  citado.
+- **Aplicar o "menor que 25" ao critério de ENTRADA do ganho de massa (C7) é
+  leitura nossa, não frase do cliente.** Ela se apoia só em que o "menor ou
+  igual a 24" não existe em nenhuma outra regra além deste critério e da 3.2.
+  **Confirmação do cliente pendente** (pergunta 1 do §10k).
+- **Implementado: a fala posterior, lida assim**, um único corte de IMC
+  (`imc_limit_recomp`, 25). Sem gordura, IMC ≥ 25 entra direto na recomposição;
+  IMC < 25 escolhe, e o ganho de massa depende só da musculação. Não existe
+  constante "IMC ≤ 24" no código. **Implementada em 2026-10-07 a pedido do
+  Eduardo; confirmação do cliente pendente.**
+- O que muda entre os dois lados: sem gordura, IMC acima de 24 e abaixo de 25.
+  Exemplo: 79,38 kg / 180 cm (IMC 24,5) com 3 treinos tem o ganho disponível;
+  pelo texto escrito estaria barrado.
+- Existe uma terceira redação, fora desta regra: a reavaliação da recomposição
+  usa "IMC < 24" como entrada na normalidade sem fotos (já citada na pendência
+  R3 do §8c).
+
+### 10d. Leituras naturais
+
+Onde o texto do cliente não fecha, a função segue a leitura abaixo. **Cada uma
+foi implementada em 2026-10-07 a pedido do Eduardo; confirmação do cliente
+pendente.**
+
+1. **A gordura digitada pela pessoa vale como gordura disponível (C0).** No
+   método a gordura vem das fotos avaliadas ou de medida confiável; o cadastro
+   do app só tem o número digitado. Implementada em 2026-10-07 a pedido do
+   Eduardo; confirmação do cliente pendente.
+2. **Manutenção continua disponível quando o ganho de massa está barrado (C6).**
+   A regra de prioridade máxima dá as três opções a quem está na faixa; a regra
+   8.2 ("ausência dos critérios mínimos para ganho de massa muscular") e a frase
+   de bloqueio 3.4.1 levariam à recomposição. Em 15/05/2026 o cliente reclamou
+   de pessoa dentro da normalidade que não pôde escolher "entre os 3 possiveis".
+   Implementada em 2026-10-07 a pedido do Eduardo; confirmação do cliente
+   pendente.
+3. **Com gordura informada, o IMC não é conferido para o ganho de massa (C7).**
+   O critério de entrada diz composição "pelo menos um"; a regra 3.2 diz
+   "cumprir todos". Homem com 15% e IMC 26 tem o ganho disponível. Implementada
+   em 2026-10-07 a pedido do Eduardo; confirmação do cliente pendente.
+4. **Faixa entre os cortes de gordura (C7): homem acima de 19% e abaixo de 20%,
+   mulher acima de 27% e abaixo de 28%.** Essas pessoas estão na faixa em que se
+   pergunta ("< 20%", "< 28%") e fora do critério de composição do ganho
+   ("≤ 19%", "≤ 27%"): escolhem entre recomposição e manutenção, com o ganho de
+   massa indisponível. O "pelo menos um" do critério de entrada permitiria
+   liberar o ganho pelo IMC (homem com 19,5% e IMC 22); a função **não** faz
+   isso, porque com gordura informada decide a gordura (C0). O mesmo corpo sem
+   gordura informada tem o ganho disponível. Em 02/02/2026 o cliente escreveu
+   "aqui eu modifiquei o valor pra que não haja interseção" (lemos como pensado
+   em números inteiros); o app aceita decimais. A favor de barrar: a regra ATIVA
+   "Ganho de massa muscular - Critérios de bloqueio do protocolo" (lista de
+   01/06/2026) manda "bloquear ou pausar a fase de ganho" com "BF acima dos
+   limites de entrada", e os limites de entrada são "≤ 19%" e "≤ 27%". Ela fala
+   da fase em andamento, não do cadastro (leitura 6, fonte v). Implementada em
+   2026-10-07 a pedido do Eduardo; confirmação do cliente pendente.
+5. **Sem gordura, só o IMC conta para a composição do ganho (C7).** A "aparência
+   funcional adequada" depende de fotos, que o cadastro do app não tem; não é
+   avaliada. Implementada em 2026-10-07 a pedido do Eduardo; confirmação do
+   cliente pendente.
+6. **Sono e alimentação organizada não barram o ganho de massa (C10).** Cinco
+   fontes: (i) o manual de 27/12/2025 exigia "sono médio ≥ 6h30" e "alimentação
+   estruturada (não intuitiva solta)"; (ii) o critério de entrada atual (tabela
+   de 02/02/2026, igual na lista de 01/06/2026) só tem composição e musculação
+   e termina no singular, "Sem esse critério, superávit calórico vira gordura";
+   (iii) a regra de coleta de dados da lista de 01/06/2026 ainda chama a
+   alimentação estruturada de critério para o ganho; (iv) em 15/05/2026 07:50 o
+   cliente escreveu que a pergunta de estruturação alimentar "atrapalhou a
+   confirmação do protocolo e as frases q falam sobre o protocolo"; (v) a regra
+   ATIVA "Ganho de massa muscular - Critérios de bloqueio do protocolo" (manual
+   de 27/12/2025 e, com o mesmo texto, lista de regras ativas de 01/06/2026),
+   que vai contra esta leitura: "O agente deve bloquear ou pausar a fase de
+   ganho quando ocorrer qualquer um dos itens abaixo: BF acima dos limites de
+   entrada / ausência de progressão no treino / alimentação inconsistente /
+   histórico recente de perda de controle alimentar". Ela fala de bloquear ou
+   pausar uma fase em andamento e não traz medida para o cadastro: não diz como
+   medir "alimentação inconsistente" nem "histórico recente de perda de controle
+   alimentar" na entrada, e "ausência de progressão no treino" só existe com a
+   fase já em curso. Não cita sono. O único item com medida no cadastro, "BF
+   acima dos limites de entrada", já é aplicado quando a gordura é informada (C7
+   e leitura 4). Bloquear ou pausar a fase em andamento por esses quatro
+   critérios fica fora desta regra (pendência no §10j). A conta antiga
+   (`resolveProtocol`) continua exigindo sono e alimentação. Implementada em
+   2026-10-07 a pedido do Eduardo; confirmação do cliente pendente.
+
+A tabela de referência gordura × IMC da regra de decisão de objetivo (homem
+"Normal / Saudável" com IMC 23–26) não é usada como corte: a coluna dela é "IMC
+aproximado" e os cortes operacionais estão escritos à parte (3.1).
+
+### 10e. O que a função devolve
+
+Nenhum texto. O suficiente para quem chama escolher o texto e conferir o
+objetivo enviado:
+
+```
+outcome            'assigned'      colocado em recomposição, sem perguntar (C1 a C3)
+                   'choice'        a pessoa escolhe (C4)
+                   'invalid_input' a regra não consegue ler a entrada; nada é decidido (§10f)
+assignedProtocol   'recomposicao'  só quando outcome = 'assigned'
+basis              'BF' | 'IMC'    o que decidiu: a gordura informada ou, sem ela, o IMC
+imc                número          como calcIMC devolve, sem arredondar
+objectives         recomposicao / ganho_massa / manutencao, cada um com
+                     status   'available' | 'blocked' | 'not_offered'
+                     reasons  [] ou, só em 'blocked', 'composition' e/ou 'training', nessa ordem
+limits             bodyFatRecomp, bodyFatGain (do sexo informado), imcRecomp, trainingMin:
+                   os cortes aplicados, para o texto que precisar citar um
+invalidFields      só em 'invalid_input': os campos com problema
+```
+
+| Situação | recomposição | ganho de massa | manutenção |
+|---|---|---|---|
+| `assigned` | `available` | `blocked` (`composition`; mais `training` se musculação < mínimo) | `not_offered` |
+| `choice`, critérios do ganho cumpridos | `available` | `available` | `available` |
+| `choice`, algum critério do ganho não cumprido | `available` | `blocked` (`composition` e/ou `training`) | `available` |
+
+### 10f. Entrada inválida
+
+A função devolve `outcome: 'invalid_input'` com `invalidFields` (na ordem
+`sex`, `heightCm`, `weightKg`, `bodyFatPercent`, `trainingFrequency`) e **não
+decide nada**: nenhum objetivo vem na resposta. É inválido:
+
+- sexo que não é `masculino` nem `feminino`;
+- altura ou peso ausente, que não é número, zero ou negativo (o IMC ficaria
+  indefinido) — exigidos mesmo quando a gordura decidiria;
+- dois números válidos cuja divisão não fecha (altura quase zero): `heightCm` e
+  `weightKg`;
+- gordura informada que não é um número maior que 0 e menor que 100 (não vira
+  "sem gordura");
+- musculação ausente, negativa ou que não é número;
+- a própria entrada quando não é um objeto (ausente, `null`, um número, um
+  texto — fora do tipo declarado): os cinco campos vêm em `invalidFields`,
+  porque nenhum pôde ser lido, e a função não lança. Um objeto sem os campos
+  (`{}`) continua lido campo a campo: a gordura ausente é "não informada", e
+  os campos listados são os outros quatro.
+
+Por quê: "recomposição" seria uma decisão clínica sobre dado que a regra não
+consegue ler, e "pode escolher" abriria o ganho de massa sem conferência. O
+documento do cliente não tem regra para dado ilegível; a função não inventa uma.
+
+O que **não** é inválido: valor possível de calcular mas implausível (altura
+digitada em metros, musculação fracionária ou acima de 7). É comparado como
+está; a faixa de digitação fica no contrato do cadastro (100 a 250 cm, 30 a
+300 kg, 3 a 60%, inteiro de 0 a 7).
+
+### 10g. Tolerância numérica do IMC
+
+`calcIMC` divide em ponto flutuante: 64 kg com 1,60 m dá 24,999999999999996, e
+não 25. Uma comparação direta (`>= 25`) deixaria essa pessoa escolher, contra a
+regra (o 25,0 entra na recomposição). A função compara com uma tolerância de
+0,000000001 (`SIGNUP_IMC_ROUNDING_TOLERANCE`): IMC a menos disso do corte é
+lido como estando no corte.
+
+- **É correção de arredondamento do computador, não número clínico** e não foi
+  dito pelo cliente. 80,999 kg / 180 cm (IMC 24,9997) escolhe.
+- Vale só para o IMC, que é calculado. A gordura é digitada e é comparada como
+  está.
+- A tolerância acompanha o corte da configuração.
+- `resolveProtocol` continua comparando sem tolerância (pendência).
+
+### 10h. O que NÃO mudou: `resolveProtocol`
+
+`resolveProtocol` segue idêntica e é a única das duas em uso (linha `- Decisão
+automática: …`, travada pelos goldens de 04/10). As duas contas diferem em
+quatro pontos, travados no golden desta seção:
+
+| Caso | `resolveProtocol` (antiga, em uso) | `decideSignupEligibility` (nova, sem uso) |
+|---|---|---|
+| 64 kg / 160 cm sem gordura | `canChoose=true` (compara sem tolerância) | recomposição sem perguntar |
+| dentro da faixa com 2 treinos | `canChoose=false` (tira toda a escolha) | escolhe; só o ganho barrado |
+| homem com 19,5% e tudo em ordem | `canChoose=false`, sem motivo listado | escolhe; ganho barrado por composição |
+| 17%, 5 treinos, sono de 5h, alimentação não organizada | `canChoose=false` por sono e alimentação | escolhe; três |
+
+Enquanto o Flow ler a linha antiga, ele pode repetir um bloqueio (sono,
+alimentação) que o cadastro novo não aplica (pendência).
+
+### 10i. Testes que travam
+
+- `packages/core/tests/protocol-eligibility.test.ts` — forma da saída (objeto
+  inteiro em cada resultado), cortes lidos da configuração (outra configuração
+  muda cada corte; linha que não guarda número cai no padrão, inclusive texto
+  diferente do padrão: `"26"` com 81 kg / 180 cm e `"4"` com 3 treinos),
+  tolerância (64 kg / 160 cm; IMC 25,0 em toda altura de 140 a 210 cm; não é
+  faixa), musculação 0, 1, 2, 3, 4 e 7, gordura em cada corte por sexo, gordura
+  × IMC, entrada inválida campo a campo, entrada que não é objeto e
+  configuração `null` (não lança), função pura.
+- `packages/agent/src/__golden__/audit-10-07-signup-eligibility.test.ts` — os
+  números do cliente, cada caso com a regra de onde vem; os dois casos do
+  episódio real de 15/05/2026 como a lista de 01/06/2026 o registra (mulher com
+  gordura 25%; mulher sem gordura com IMC 24,9 — peso, altura e musculação não
+  constam nos documentos e foram escolhidos no teste); a configuração no formato
+  do banco pelo carregador real (`loadCalcConfig`), com texto igual e diferente
+  do padrão; entrada inválida; os casos omissos (peso muito baixo, gordura até
+  10%); os dois exemplos da pendência das casas decimais; as quatro diferenças
+  para `resolveProtocol`.
+- Nenhum teste existente foi editado: `packages/core/tests/protocol-router.test.ts`,
+  `sleep-food-criteria.test.ts` e os goldens `audit-10-04-*` seguem travando o
+  caminho antigo.
+
+### 10j. Pendências declaradas
+
+> RC E — cenário cadastro pelo app (o servidor ainda grava o objetivo enviado, sem conferir) variante aplicação desta regra na rota, na gravação e na tela NÃO coberta nesta PR (pendência da audit 2026-10-07)
+> Nada chama `decideSignupEligibility`. Fica para as etapas do servidor e do app.
+
+> RC E — cenário cadastro de pessoa com peso muito baixo (desnutrição) variante bloqueio da perda de gordura e condução ao ganho de massa (o número do limite não existe em nenhum documento do cliente) NÃO coberta nesta PR (pendência da audit 2026-10-07)
+> A função não faz nada especial: 45 kg / 180 cm (IMC 13,9) sem gordura escolhe
+> entre os três (travado no golden). O 18,5 do §8b é piso de META de peso, não
+> este número. Redeclara a pendência R4 de 04/10 (§8c). Também sem resposta: a
+> pessoa muito magra que não faz musculação 3 vezes por semana.
+
+> RC E — cenário cadastro com gordura informada de até 10% escolhendo recomposição variante piso de redução aplicado na entrada, e piso separado para mulher NÃO coberta nesta PR (pendência da audit 2026-10-07)
+> Homem com 8% e mulher com 10% escolhem entre os três (travado no golden).
+
+> RC E — cenário ganho de massa sem gordura informada variante "aparência funcional adequada" (avaliação por fotos, que o cadastro do app não tem) NÃO coberta nesta PR (pendência da audit 2026-10-07)
+
+> RC E — cenário ganho de massa sem gordura informada com IMC acima de 24 e abaixo de 25 variante barrar o ganho pelo texto escrito "IMC ≤ 24" (critério de entrada, ainda na lista de 01/06/2026) NÃO coberta nesta PR (pendência da audit 2026-10-07)
+> Implementada a fala posterior (áudio de 25/03/2026 19:43, "menor que 25"); ver §10c.
+
+> RC E — cenário gordura informada entre os cortes (homem acima de 19% e abaixo de 20%; mulher acima de 27% e abaixo de 28%) variante liberar o ganho de massa pelo IMC ("pelo menos um" do critério de entrada) NÃO coberta nesta PR (pendência da audit 2026-10-07)
+> Implementado: escolhe entre recomposição e manutenção, ganho barrado por
+> composição. Homem 19,5% com IMC 22: barrado; o mesmo corpo sem gordura
+> informada: liberado (travado no golden). Ver §10d, leitura 4.
+
+> RC E — cenário gordura dentro do critério com IMC acima do corte (homem 15% e IMC 26) variante exigir também o IMC para o ganho de massa ("cumprir todos", regra 3.2) NÃO coberta nesta PR (pendência da audit 2026-10-07)
+
+> RC E — cenário pessoa dentro da faixa barrada no ganho de massa variante condução direta à recomposição, sem a opção de manutenção (regra 8.2 e frase de bloqueio 3.4.1) NÃO coberta nesta PR (pendência da audit 2026-10-07)
+
+> RC E — cenário sono abaixo de 6h30 ou alimentação não organizada variante barrar o ganho de massa por esses dois critérios (manual de 27/12/2025; regra de coleta de dados da lista de 01/06/2026) NÃO coberta nesta PR (pendência da audit 2026-10-07)
+> A função não recebe sono nem alimentação. Ver §10d, leitura 6.
+
+> RC E — cenário fase de ganho de massa em andamento variante bloquear ou pausar a fase pelos quatro critérios da regra "Ganho de massa muscular - Critérios de bloqueio do protocolo" ("BF acima dos limites de entrada", "ausência de progressão no treino", "alimentação inconsistente", "histórico recente de perda de controle alimentar") NÃO coberta nesta PR (pendência da audit 2026-10-07)
+> Regra ATIVA do cliente (manual de 27/12/2025; lista de 01/06/2026). Esta
+> função só decide a entrada no cadastro e não recebe progressão de treino nem
+> histórico alimentar. Ver §10d, leituras 4 e 6, e a pergunta 7 do §10k.
+
+> RC E — cenário gordura digitada pela pessoa (sem fotos e sem medida conferida) variante tratar a gordura digitada como não disponível e decidir pelo IMC NÃO coberta nesta PR (pendência da audit 2026-10-07)
+
+> RC E — cenário tabela de referência gordura × IMC da regra de decisão de objetivo (homem "Normal / Saudável" com IMC 23–26) variante usar as faixas da tabela como corte NÃO coberta nesta PR (pendência da audit 2026-10-07)
+
+> RC E — cenário linha "Decisão automática" do contexto do Flow e do WhatsApp (resolveProtocol, ainda com sono e alimentação) variante mesma decisão do cadastro novo NÃO coberta nesta PR (pendência da audit 2026-10-07)
+> Alinhar mexe nos goldens de 04/10 e no caminho antigo; ver §10h.
+
+> RC E — cenário IMC de 25,0 exato no caminho antigo (64 kg / 1,60 m dá 24,999999999999996; resolveProtocol compara sem tolerância) variante correção da conta antiga NÃO coberta nesta PR (pendência da audit 2026-10-07)
+
+> RC E — cenário cortes em execução (linhas calc.bf_limits, calc.imc_limit_recomp e calc.training_min de global_config) variante leitura dos valores nos bancos de teste e de produção NÃO coberta nesta PR (pendência da audit 2026-10-07)
+> Nenhum banco foi lido nesta etapa. O golden usa as três linhas de staging
+> registradas em 04/10 (20/19, 28/27, 25 e 3). Conferir antes de publicar a
+> etapa que passar a chamar a função.
+
+> RC E — cenário texto mostrado à pessoa em cada resultado (frase de bloqueio 3.4.1 para quem é colocado em recomposição; aviso com o corte para quem fica com o ganho indisponível; aviso de enquadramento) variante redação, tradução e aprovação NÃO coberta nesta PR (pendência da audit 2026-10-07)
+> A frase 3.4.1 termina conduzindo à recomposição: serve só para quem é
+> colocado nela. Para quem escolhe e tem o ganho barrado o texto será redação
+> nossa, a aprovar.
+
+> RC E — cenário valor possível de calcular mas implausível (altura digitada em metros, musculação fracionária ou acima de 7) variante faixa de plausibilidade dentro da função NÃO coberta nesta PR (pendência da audit 2026-10-07)
+> Fica no contrato do cadastro (100 a 250 cm, 30 a 300 kg, 3 a 60%, inteiro de 0 a 7).
+
+> RC E — cenário valor com mais de duas casas decimais (gordura 19,995% de um homem; 80,999 kg com 180 cm) variante decidir sobre o valor como o banco grava (o banco arredonda o que a função decide sem arredondar: 20,00% e 81,00 kg) NÃO coberta nesta PR (pendência da audit 2026-10-07)
+> `user_profiles` guarda a gordura em `numeric(4,2)` e o peso e a altura em
+> `numeric(5,2)`; o contrato do cadastro não limita as casas decimais. Homem com
+> 19,995%: a função decide "escolhe, ganho barrado por composição"; gravado como
+> 20,00, o mesmo homem seria "recomposição sem perguntar". 80,999 kg / 180 cm
+> sem gordura: a função decide "escolhe"; gravado como 81,00 kg (IMC 25,0),
+> seria "recomposição sem perguntar" (os dois travados no golden). Nesta etapa
+> nada grava. Resolver na etapa do servidor: decidir sobre o valor como será
+> gravado, ou limitar as casas no contrato.
+
+> RC E — cenário contas que já concluíram o cadastro com objetivo fora desta regra variante conferir ou mover essas contas NÃO coberta nesta PR (pendência da audit 2026-10-07)
+
+### 10k. Para o cliente confirmar
+
+Nenhuma destas perguntas impediu construir a função; cada uma confirma uma
+leitura acima ou fecha um caso declarado.
+
+1. Ganho de massa sem gordura informada: IMC até 24 (texto) ou menor que 25?
+   A fala de 25/03/2026 ("menor que 25", "sem o igual") tratava da faixa de quem
+   escolhe o protocolo; ela vale também para o critério de entrada do ganho de
+   massa? Implementado: menor que 25 (leitura nossa, §10c).
+2. Homem acima de 19% e abaixo de 20%, mulher acima de 27% e abaixo de 28%:
+   pode entrar no ganho de massa quando o IMC está abaixo de 25? Implementado:
+   escolhe entre recomposição e manutenção; ganho indisponível.
+3. Quem está dentro da faixa e é barrado no ganho pode escolher manutenção
+   (implementado) ou vai obrigatoriamente para a recomposição?
+4. Com a gordura dentro do critério, o IMC ainda precisa estar abaixo do corte
+   para o ganho? Implementado: a gordura basta.
+5. Sem fotos, o IMC sozinho basta para o ganho, sem a "aparência funcional
+   adequada"? Implementado: basta.
+6. A gordura que a pessoa digita vale como gordura conhecida para decidir o
+   protocolo? Implementado: vale.
+7. Sono de pelo menos 6h30 e alimentação organizada ainda são critério para o
+   ganho de massa? Implementado: não barram. A regra ativa "Ganho de massa
+   muscular - Critérios de bloqueio do protocolo" ainda manda bloquear ou pausar
+   a fase de ganho por "alimentação inconsistente" e "histórico recente de perda
+   de controle alimentar": ela vale também na entrada (e medida como?) ou só
+   para a fase em andamento?
+8. Qual número (IMC e/ou gordura) define peso muito baixo para barrar a perda
+   de gordura? E para onde vai a pessoa muito magra que não faz musculação 3
+   vezes por semana?
+9. Quem chega ao cadastro com gordura de até 10% pode escolher recomposição?
+   Existe piso separado para mulher?

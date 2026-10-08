@@ -1940,6 +1940,34 @@ A identidade vem exclusivamente do bearer token verificado. Campos extras,
 resposta sem escrever novamente. A mudança vale para seleções futuras e não
 reescreve mensagens já escolhidas.
 
+### Preferência no prompt conversacional do Flow (C9, 2026-10-08)
+
+Cada contexto de uma nova execução autenticada `mobile_flow` lê somente
+`user_id, personality_code` de `user_coach_preferences`, filtrado pelo paciente
+autenticado. O owner retornado também precisa coincidir. Os códigos válidos
+continuam sendo `focus`, `impulse` e `zen`, pelo enum público existente.
+
+Nos turnos que usam modelo, uma linha de tom entra apenas no bloco variável do
+prompt. Prefixo fixo/cache, idioma, ferramentas, fatos, metas, restrições e
+confirmações permanecem iguais. Focus é direto sem bronca, Impulse positivo sem
+pressão, Zen acolhedor e preciso. Copy e amostras reais ainda têm aceite próprio;
+o teste de composição não prova obediência do modelo.
+
+Sem escolha, não se atribui Focus nem outro estilo ao paciente: permanece o tom
+base, sem linha adicional. Forma/código/owner inválido ou falha dessa leitura
+opcional também não acrescentam estilo, mas são distinguíveis internamente;
+diagnóstico usa somente motivos fechados, sem IDs, row ou erro bruto. Leituras
+essenciais de usuário/perfil continuam interrompendo a execução quando falham,
+inclusive enquanto a leitura opcional está pendente. Não há timeout novo desta
+consulta; uma consulta que não conclui continua sujeita ao limite geral do turno.
+
+A preferência não tem cache entre contas/turnos nem escrita de reparo. Uma
+execução posterior recebe a escolha atual; replay idempotente e histórico não
+recebem personalização retroativa. Respostas determinísticas existentes não
+chamam modelo para mudar o tom. O canal legado não consulta essa preferência.
+API/UI/catálogo de mensagens recorrentes não mudam. C2 e a comparação das seis
+regras live permanecem em seu próprio gate; nenhuma regra clínica foi incluída.
+
 ### Seleção determinística
 
 Mensagens recorrentes são escolhidas no PostgreSQL a partir de versões imutáveis

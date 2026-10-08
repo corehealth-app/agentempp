@@ -20,6 +20,7 @@ import {
 import { loadCalcConfig } from './calc-config-loader.js'
 import { loadDailyTargets } from './calc-targets.js'
 import { throwIfQueryFailed } from './db-query-error.js'
+import { type FlowCoachStyle, flowCoachStyleLine, loadFlowCoachStyle } from './flow-coach-style.js'
 import {
   auditNumericClaims,
   detectDeficitRealMismatch,
@@ -770,6 +771,8 @@ interface UserContext {
    * MOBILE_FLOW_SESSION_HOURS before the turn (the history window cuts only
    * those). Absent on the legacy channels. */
   flowOutsideSessionLines?: boolean[]
+  /** Flow only: optional conversation style, scoped to this authenticated turn. */
+  flowCoachStyle?: FlowCoachStyle
   /** Resumo persistente do paciente (gerado periodicamente). */
   summary: string | null
   /** Tempo desde a última msg IN, em horas. */
@@ -1186,7 +1189,9 @@ async function processResolvedMessage(
   const methodContext = await retrieveMethodContext(deps, input.text, ctx.profile.currentProtocol)
   const channelMethodContext =
     options.historyProvider === 'mobile_flow' ? mobileFlowPromptContext(methodContext) : methodContext
-  const variableSystem = `${channelMethodContext}\n\n## Contexto do usuário\n${formatUserContext(ctx, calcConfig, input.timestamp, options.historyProvider)}${repetitionGuard}`
+  const styleLine =
+    options.historyProvider === 'mobile_flow' ? flowCoachStyleLine(ctx.flowCoachStyle) : ''
+  const variableSystem = `${channelMethodContext}\n\n## Contexto do usuário\n${formatUserContext(ctx, calcConfig, input.timestamp, options.historyProvider)}${repetitionGuard}${styleLine ? `\n${styleLine}` : ''}`
   const isAnthropic = /^anthropic\//.test(promptRow.model)
   // TTL 1h em vez de 5min — observado em produção (2026-05-18) hit rate caiu
   // pra 36% pq turnos esparsos (paciente manda msg, espera 30min+, manda
@@ -3371,13 +3376,20 @@ export async function loadContext(
   throwIfQueryFailed(userError, 'user context lookup failed')
   if (!user) throw new Error('user context missing')
 
-  const { data: profile, error: profileError } = await supabase
-    .from('user_profiles')
-    .select('*')
-    .eq('user_id', userId)
-    .single()
-  throwIfQueryFailed(profileError, 'user profile lookup failed')
-  if (!profile) throw new Error('user profile missing')
+  const readProfile = async () => {
+    const { data: profile, error: profileError } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('user_id', userId)
+      .single()
+    throwIfQueryFailed(profileError, 'user profile lookup failed')
+    if (!profile) throw new Error('user profile missing')
+    return profile
+  }
+  const [profile, flowCoachStyle] =
+    historyProvider === 'mobile_flow'
+      ? await Promise.all([readProfile(), loadFlowCoachStyle(supabase, userId)])
+      : [await readProfile(), undefined]
 
   const messagesQuery = supabase
     .from('messages')
@@ -3644,6 +3656,7 @@ export async function loadContext(
     profile: profileTyped,
     recentMessages,
     ...(flowOutsideSessionLines ? { flowOutsideSessionLines } : {}),
+    ...(flowCoachStyle ? { flowCoachStyle } : {}),
     summary: userTyped?.summary ?? null,
     hoursSinceLastIn,
     isReentry,

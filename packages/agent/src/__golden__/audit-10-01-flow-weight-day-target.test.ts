@@ -56,6 +56,10 @@ function harness(day: Record<string, unknown> | null = snapshot) {
           case 'user_profiles':
             data = profile
             break
+          case 'user_coach_preferences':
+            // This target fixture has no selected conversation style.
+            data = null
+            break
           case 'global_config':
             // Staging override observed on 2026-10-01, not the core default (1.5).
             data = [

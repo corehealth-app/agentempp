@@ -1,0 +1,121 @@
+{
+  "_source": "Banco de educação alimentar.pdf — Roberto 2026-06-13 (FASE G: fecha 50 frases nos 8 blocos top)",
+  "_curated_by": "roberto-2026-06-13",
+  "_language": "pt-BR",
+  "_note": "Últimas frases dos 8 blocos prioritários pra fechar 50/bloco do PDF.",
+  "blocks": [
+    {
+      "bloco_id": "ruim_fritos_imersao",
+      "polaridade": "ruim",
+      "categoria_label": "Fritos imersão (FASE G)",
+      "alimentos": ["batata frita", "frango frito", "nuggets", "coxinha", "pastel", "kibe frito", "bolinho de queijo", "mandioca frita", "polenta frita", "peixe frito", "torresmo", "onion rings", "salgados fritos", "banana frita", "aipim frito"],
+      "frases": [
+        "{alimento} pode continuar fazendo parte da alimentação com equilíbrio. Conhecer o impacto do método de preparo permite escolhas mais conscientes.",
+        "{alimento} é uma escolha tradicional em muitas culturas, e isso é respeitável. Apenas vale lembrar que a fritura concentra calorias na gordura absorvida.",
+        "{alimento} oferece uma experiência sensorial intensa graças ao óleo e à crocância. Reservar pra ocasiões especiais é uma forma de manter o prazer e o equilíbrio.",
+        "{alimento} fica especialmente atrativo pela combinação de texturas, mas seu valor calórico merece atenção quando o objetivo envolve controle de peso.",
+        "{alimento} costuma despertar memórias afetivas, e isso também faz parte da alimentação. Quando aparecer, aproveitar sem pressa pode aumentar a satisfação.",
+        "{alimento} pode aparecer eventualmente sem comprometer o equilíbrio geral. O fundamental é a consistência das escolhas no resto da semana.",
+        "{alimento} é um exemplo claro de como o método de preparo transforma a densidade calórica de um alimento que poderia ser leve em sua versão original."
+      ]
+    },
+    {
+      "bloco_id": "ruim_doces_sobremesas",
+      "polaridade": "ruim",
+      "categoria_label": "Doces (FASE G)",
+      "alimentos": ["chocolate", "brigadeiro", "bolo", "pudim", "torta", "brownie", "cookie", "donut", "sonho", "rocambole", "paçoca", "pé de moleque", "bala", "caramelo", "doce de leite", "leite condensado", "bombom", "mousse", "pavê", "cheesecake"],
+      "frases": [
+        "{alimento} faz parte de tradições culturais e momentos afetivos. Quando consumido conscientemente, pode coexistir com uma alimentação equilibrada.",
+        "{alimento} é uma escolha que envolve mais prazer que necessidade. Reconhecer isso ajuda a apreciar com calma quando aparece.",
+        "{alimento} costuma ser muito doce e a sensação de saciedade demora a chegar. Saborear devagar pode reduzir a quantidade consumida sem perder o prazer.",
+        "{alimento} é fácil de comer em excesso justamente pela combinação de açúcar e gordura. Conhecer esse efeito é o primeiro passo para fazer escolhas conscientes."
+      ]
+    },
+    {
+      "bloco_id": "ruim_bebidas_adocadas",
+      "polaridade": "ruim",
+      "categoria_label": "Bebidas adoçadas (FASE G)",
+      "alimentos": ["refrigerante", "suco industrializado", "néctar", "achocolatado", "milkshake", "energético", "chá adoçado", "café com açúcar", "cappuccino adoçado", "vitamina adoçada"],
+      "frases": [
+        "{alimento} pode aparecer ocasionalmente, mas trocar parte do consumo por água é uma das mudanças mais simples e impactantes pra reduzir calorias.",
+        "{alimento} ganha apelo pelo sabor doce e pela praticidade, mas a forma líquida faz com que essas calorias raramente reduzam a fome.",
+        "{alimento} costuma acompanhar refeições por hábito. Experimentar substituir gradualmente pode trazer surpresas positivas no controle de peso.",
+        "{alimento} pode ser apreciado ocasionalmente. A frequência habitual é o que mais impacta a ingestão calórica diária a longo prazo.",
+        "{alimento} é uma bebida que reúne sabor e familiaridade. Equilibrar com água ou versões sem açúcar permite manter o prazer sem excessos."
+      ]
+    },
+    {
+      "bloco_id": "ruim_sorvetes",
+      "polaridade": "ruim",
+      "categoria_label": "Sorvetes (FASE G)",
+      "alimentos": ["sorvete", "gelato", "milkshake", "sundae", "casquinha", "picolé cremoso", "frozen dessert"],
+      "frases": [
+        "{alimento} é uma escolha tradicional em momentos de descontração. Aproveitar com porções menores costuma trazer mais satisfação prolongada do que excessos rápidos.",
+        "{alimento} pode aparecer eventualmente sem comprometer o equilíbrio geral da alimentação. A frequência é o que mais importa.",
+        "{alimento} combina temperatura, doçura e cremosidade — três fatores que dificultam a percepção de saciedade. Comer devagar ajuda.",
+        "{alimento} é uma escolha afetiva pra muitas pessoas. Aproveitar com consciência ajuda a manter uma boa relação com esse tipo de alimento.",
+        "{alimento} é altamente palatável por unir açúcar e gordura. Reconhecer isso permite tomar decisões mais alinhadas com seus objetivos.",
+        "{alimento} pode fazer parte de momentos especiais sem culpa. O equilíbrio na frequência é o segredo de uma alimentação sustentável.",
+        "{alimento} oferece prazer imediato mas pouca saciedade. Combinar com refeições mais nutritivas no resto do dia mantém o balanço."
+      ]
+    },
+    {
+      "bloco_id": "bom_ovos",
+      "polaridade": "bom",
+      "categoria_label": "Ovos (FASE G)",
+      "alimentos": ["ovo cozido", "ovo mexido", "omelete", "clara de ovo"],
+      "frases": [
+        "{alimento} é uma das fontes proteicas mais completas e versáteis disponíveis na alimentação cotidiana.",
+        "{alimento} fornece proteínas de alto valor biológico, com perfil de aminoácidos quase ideal para o organismo.",
+        "{alimento} é prático, acessível e nutritivo — uma combinação difícil de encontrar em outros alimentos.",
+        "{alimento} pode ser preparado de diversas formas, mantendo seu excelente perfil nutricional em quase todas elas.",
+        "{alimento} é uma das opções mais econômicas pra incluir proteína de qualidade na rotina, especialmente em quem busca controlar custos sem abrir mão de nutrição.",
+        "{alimento} costuma ser bem aceito por diferentes paladares e combina bem com vegetais, cereais integrais e outras fontes proteicas."
+      ]
+    },
+    {
+      "bloco_id": "bom_verduras",
+      "polaridade": "bom",
+      "categoria_label": "Verduras (FASE G)",
+      "alimentos": ["alface", "rúcula", "agrião", "espinafre", "acelga", "couve", "almeirão", "chicória", "escarola"],
+      "frases": [
+        "{alimento} é uma das fontes mais baratas e acessíveis de fibras e micronutrientes disponíveis o ano inteiro.",
+        "{alimento} pode aparecer em quase todas as refeições principais — almoço, jantar, e até em vitaminas verdes no café da manhã.",
+        "{alimento} é uma escolha que costuma agradar pela leveza e pela versatilidade na preparação.",
+        "{alimento} fornece compostos bioativos que vão além das vitaminas tradicionais, contribuindo pra saúde de forma ampla.",
+        "{alimento} pode ser consumido cru ou cozido, mantendo bons níveis de nutrientes em ambas as preparações."
+      ]
+    },
+    {
+      "bloco_id": "bom_frutas",
+      "polaridade": "bom",
+      "categoria_label": "Frutas (FASE G)",
+      "alimentos": ["maçã", "pera", "laranja", "mexerica", "kiwi", "morango", "melão", "melancia", "mamão", "manga", "abacaxi", "ameixa", "pêssego"],
+      "frases": [
+        "{alimento} é uma das melhores formas de incluir doçura natural na alimentação, com nutrientes que dificilmente aparecem em alimentos processados.",
+        "{alimento} pode ser uma alternativa saudável pra momentos de vontade de doce, oferecendo prazer e nutrição em uma única escolha.",
+        "{alimento} fornece compostos antioxidantes que vão muito além das vitaminas conhecidas, contribuindo pra saúde de longo prazo.",
+        "{alimento} é prática, portátil e nutritiva — características que facilitam a inclusão no dia a dia mesmo com rotina corrida.",
+        "{alimento} pode ser combinada com iogurte, aveia ou sementes pra criar lanches mais completos e nutritivos.",
+        "{alimento} é uma escolha que costuma agradar por sabor e textura, especialmente quando consumida na safra.",
+        "{alimento} ajuda a aumentar a variedade alimentar de forma natural e saborosa."
+      ]
+    },
+    {
+      "bloco_id": "bom_legumes",
+      "polaridade": "bom",
+      "categoria_label": "Legumes (FASE G)",
+      "alimentos": ["brócolis", "couve-flor", "abobrinha", "chuchu", "berinjela", "cenoura", "pepino", "tomate", "quiabo", "vagem", "abóbora", "repolho"],
+      "frases": [
+        "{alimento} é uma das estratégias mais eficazes pra aumentar a saciedade da refeição sem aumentar a carga calórica.",
+        "{alimento} pode ser preparado de diferentes formas — refogado, assado, cozido, em sopas — mantendo bons níveis de nutrientes.",
+        "{alimento} fornece fibras e compostos bioativos que contribuem pra saúde intestinal e geral.",
+        "{alimento} é uma escolha versátil que combina bem com proteínas, cereais e até em sopas e cremes.",
+        "{alimento} é acessível na maior parte do ano, especialmente quando consumido na safra, o que reduz custo e aumenta qualidade.",
+        "{alimento} contribui pra colorir o prato — característica importante porque a variedade de cores indica diversidade de nutrientes.",
+        "{alimento} pode ser parte tanto de refeições principais quanto de lanches mais leves, oferecendo flexibilidade no cardápio.",
+        "{alimento} ajuda a tornar a alimentação mais sustentável e econômica sem abrir mão de qualidade nutricional."
+      ]
+    }
+  ]
+}

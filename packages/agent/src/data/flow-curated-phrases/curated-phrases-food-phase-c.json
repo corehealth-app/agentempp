@@ -1,0 +1,146 @@
+{
+  "_source": "Banco de educação alimentar.pdf — Roberto 2026-06-13 (FASE C: +15 frases por bloco do PDF original)",
+  "_curated_by": "roberto-2026-06-13",
+  "_language": "pt-BR",
+  "_note": "Combinada com Fase A+B (15 cada) dá ~30 frases/bloco = 60% das 50 do PDF. Suficiente pra rotação LRU sem repetição.",
+  "blocks": [
+    {
+      "bloco_id": "ruim_fritos_imersao",
+      "polaridade": "ruim",
+      "categoria_label": "Fritos por imersão (continuação)",
+      "alimentos": ["batata frita", "frango frito", "nuggets", "coxinha", "pastel", "kibe frito", "bolinho de queijo", "mandioca frita", "polenta frita", "peixe frito", "torresmo", "onion rings", "salgados fritos", "banana frita", "aipim frito"],
+      "frases": [
+        "{alimento} é um exemplo clássico de preparação em que o método de cozimento influencia bastante o valor nutricional. A fritura aumenta a quantidade de gordura incorporada ao alimento.",
+        "{alimento} desperta muito prazer ao paladar, mas também merece atenção pelo aumento de gordura decorrente da fritura. Pequenos ajustes na frequência podem trazer grandes benefícios.",
+        "{alimento} oferece uma experiência muito agradável ao comer, porém a absorção de óleo durante o preparo aumenta bastante seu valor energético.",
+        "{alimento} reúne características que naturalmente estimulam o prazer ao comer. O ponto de atenção é que a fritura faz com que o alimento absorva gordura adicional.",
+        "{alimento} é uma escolha muito prazerosa, mas seu método de preparo faz com que concentre mais calorias. Alternar com outras formas de preparo pode favorecer seus objetivos.",
+        "{alimento} costuma ser uma opção muito saborosa. O cuidado está no fato de que alimentos fritos apresentam maior densidade calórica, exigindo atenção às porções.",
+        "{alimento} pode fazer parte de uma alimentação saudável quando consumido com equilíbrio. Ainda assim, vale considerar que a fritura aumenta significativamente seu valor calórico.",
+        "{alimento} desperta prazer imediato por sua textura e sabor. Em contrapartida, absorve óleo durante o preparo e acaba fornecendo mais calorias.",
+        "{alimento} é uma preparação bastante apreciada e não precisa ser eliminada da alimentação. Apenas reduzir a frequência ou escolher versões menos gordurosas pode fazer diferença.",
+        "{alimento} conquista pelo sabor marcante, mas também concentra mais calorias devido ao óleo absorvido na fritura. O equilíbrio continua sendo a melhor estratégia.",
+        "{alimento} é uma escolha que costuma trazer bastante satisfação. Saber que a fritura aumenta sua densidade calórica permite fazer escolhas mais conscientes no dia a dia.",
+        "{alimento} combina sabor, aroma e crocância de uma forma muito atrativa. Ao mesmo tempo, a fritura aumenta significativamente a quantidade de gordura presente na preparação.",
+        "{alimento} é muito saboroso e faz parte da cultura alimentar de muitas pessoas. Quando possível, optar por preparações assadas ou na air fryer pode reduzir calorias sem comprometer tanto o sabor.",
+        "{alimento} costuma ser irresistível justamente pela combinação entre gordura e textura crocante. Consumir com moderação pode facilitar o controle da ingestão energética.",
+        "{alimento} é uma preparação prazerosa, mas merece atenção porque a fritura aumenta sua concentração de calorias. Pequenas mudanças de hábito costumam gerar grandes benefícios."
+      ]
+    },
+    {
+      "bloco_id": "ruim_doces_sobremesas",
+      "polaridade": "ruim",
+      "categoria_label": "Doces e sobremesas (continuação)",
+      "alimentos": ["chocolate", "brigadeiro", "bolo", "pudim", "torta", "brownie", "cookie", "donut", "sonho", "rocambole", "paçoca", "pé de moleque", "bala", "caramelo", "doce de leite", "leite condensado", "bombom", "mousse", "pavê", "cheesecake"],
+      "frases": [
+        "{alimento} costuma ser muito apreciado pelo sabor doce e pela sensação de bem-estar que proporciona. Apesar disso, normalmente apresenta muitas calorias e pouca capacidade de manter a saciedade por longos períodos.",
+        "{alimento} ativa naturalmente o desejo por mais uma porção. Isso acontece porque alimentos doces estimulam mecanismos de recompensa que favorecem o consumo repetido.",
+        "{alimento} é extremamente saboroso e isso ajuda a explicar sua popularidade. Porém, também costuma apresentar alta densidade calórica e baixa saciedade.",
+        "{alimento} reúne características que naturalmente aumentam sua atratividade, como sabor doce e textura agradável. O equilíbrio continua sendo a melhor estratégia.",
+        "{alimento} costuma ser uma escolha muito prazerosa, mas também uma fonte importante de calorias. Reduzir um pouco a quantidade já pode representar uma grande diferença.",
+        "{alimento} desperta satisfação imediata, porém costuma oferecer pouca saciedade. Combinar momentos de prazer com moderação favorece uma relação saudável com a alimentação.",
+        "{alimento} é um daqueles alimentos que muitas pessoas gostam, e isso é perfeitamente natural. Apenas tenha em mente que seu consumo frequente pode aumentar significativamente a ingestão calórica.",
+        "{alimento} oferece muito sabor em pequenas porções, mas também concentra bastante energia. Observar a frequência de consumo pode ser uma estratégia interessante.",
+        "{alimento} é naturalmente atrativo ao cérebro humano. Por isso, consumir com consciência e sem exageros tende a trazer melhores resultados.",
+        "{alimento} faz parte de momentos especiais para muitas pessoas. Manter esse consumo em ocasiões planejadas pode facilitar o equilíbrio da alimentação.",
+        "{alimento} costuma fornecer muito prazer em poucas mordidas, mas também muitas calorias. Saborear lentamente pode aumentar a satisfação sem necessidade de grandes quantidades.",
+        "{alimento} é um alimento que merece atenção principalmente pelo potencial de estimular o consumo excessivo antes que a saciedade apareça.",
+        "{alimento} costuma ser muito saboroso justamente por sua composição rica em açúcares e outros ingredientes altamente palatáveis. Moderação continua sendo a palavra-chave.",
+        "{alimento} desperta prazer rapidamente, mas normalmente não reduz a fome por muito tempo. Esse é um dos motivos pelos quais vale atenção às quantidades.",
+        "{alimento} faz parte dos alimentos que despertam maior sensação de recompensa. Equilibrar essas escolhas com alimentos ricos em proteínas e fibras pode favorecer maior saciedade."
+      ]
+    },
+    {
+      "bloco_id": "ruim_bebidas_adocadas",
+      "polaridade": "ruim",
+      "categoria_label": "Bebidas adoçadas (continuação)",
+      "alimentos": ["refrigerante", "suco industrializado", "néctar", "achocolatado", "milkshake", "energético", "chá adoçado", "café com açúcar", "cappuccino adoçado", "vitamina adoçada"],
+      "frases": [
+        "{alimento} oferece muito sabor, porém tende a gerar pouca saciedade. Alternar seu consumo com água ou bebidas sem açúcar pode ser uma estratégia simples para equilibrar a alimentação.",
+        "{alimento} costuma ser refrescante e agradável, mas calorias líquidas geralmente não reduzem a fome da mesma forma que alimentos sólidos.",
+        "{alimento} é uma bebida que muitas pessoas apreciam, porém sua capacidade de saciar costuma ser pequena diante da quantidade de calorias fornecida.",
+        "{alimento} adiciona sabor ao momento da refeição, mas dificilmente proporciona uma saciedade duradoura. Essa característica faz das bebidas adoçadas uma fonte importante de calorias extras.",
+        "{alimento} costuma ser escolhida pelo sabor agradável, mas as calorias presentes nas bebidas adoçadas raramente diminuem a fome na mesma intensidade que aumentam a ingestão energética.",
+        "{alimento} faz parte de muitos hábitos alimentares. Ainda assim, substituir parte do consumo por água pode ser uma estratégia simples para reduzir calorias ao longo da semana.",
+        "{alimento} pode parecer inofensiva, mas bebidas adoçadas frequentemente acrescentam calorias sem promover uma sensação significativa de saciedade.",
+        "{alimento} é muito saborosa, porém bebidas com açúcar costumam fornecer energia rapidamente sem ajudar muito no controle da fome.",
+        "{alimento} é apreciada pelo sabor, mas dificilmente substitui a saciedade proporcionada por alimentos ricos em proteínas ou fibras.",
+        "{alimento} pode ser uma escolha prazerosa, porém reduzir seu consumo habitual costuma ser uma maneira simples de economizar calorias sem grandes mudanças na alimentação.",
+        "{alimento} entrega sabor e refrescância, mas também adiciona calorias que muitas vezes não são percebidas durante o dia.",
+        "{alimento} costuma ser consumida rapidamente e oferece pouca resistência ao apetite, favorecendo a ingestão de calorias sem grande impacto na saciedade.",
+        "{alimento} é uma bebida agradável, mas vale lembrar que líquidos adoçados normalmente não promovem a mesma sensação de satisfação que refeições completas.",
+        "{alimento} desperta prazer pelo sabor, mas suas calorias dificilmente prolongam a sensação de saciedade. Pequenas mudanças nesse hábito podem trazer bons resultados.",
+        "{alimento} pode ser apreciada ocasionalmente, mas fazer da água sua principal bebida é uma estratégia simples para favorecer uma alimentação equilibrada."
+      ]
+    },
+    {
+      "bloco_id": "ruim_carnes_gordurosas",
+      "polaridade": "ruim",
+      "categoria_label": "Carnes gordurosas (continuação)",
+      "alimentos": ["picanha com gordura", "costela bovina", "costela suína", "cupim", "panceta", "fraldinha gordurosa", "cordeiro gordo", "pernil gorduroso", "pele de frango"],
+      "frases": [
+        "{alimento} costuma ser escolhido pelo sabor diferenciado e pela textura macia. Como possui maior teor de gordura, também fornece mais calorias.",
+        "{alimento} costuma ser uma escolha muito prazerosa por sua textura e sabor. Apesar disso, apresenta uma quantidade maior de gordura e, consequentemente, mais calorias do que cortes magros.",
+        "{alimento} oferece uma experiência gastronômica bastante agradável, principalmente pela gordura presente em sua composição.",
+        "{alimento} é naturalmente mais gorduroso, característica que contribui para seu sabor marcante. Em contrapartida, também adiciona mais calorias à refeição.",
+        "{alimento} costuma conquistar pelo sabor e pela suculência. Porém, a maior quantidade de gordura faz com que essa escolha seja também mais calórica.",
+        "{alimento} apresenta uma textura muito agradável graças ao seu teor de gordura. Essa mesma característica aumenta a quantidade de calorias consumidas.",
+        "{alimento} é uma carne muito apreciada por seu sabor intenso. No entanto, a gordura presente em maior quantidade faz com que seu valor calórico também seja mais elevado.",
+        "{alimento} chama atenção pelo sabor rico e pela maciez. Como consequência da maior quantidade de gordura, também concentra mais calorias na refeição.",
+        "{alimento} oferece muito sabor e pode ser apreciado sem culpa. Apenas é interessante equilibrar seu consumo com cortes mais magros para favorecer uma alimentação variada.",
+        "{alimento} é naturalmente mais suculento devido ao teor de gordura. Isso melhora a experiência ao comer, mas também aumenta a quantidade de calorias ingeridas.",
+        "{alimento} apresenta características que o tornam muito saboroso, especialmente sua gordura natural.",
+        "{alimento} é uma escolha muito comum entre quem aprecia carnes suculentas. Como possui mais gordura, acaba fornecendo também uma quantidade maior de calorias.",
+        "{alimento} reúne características que tornam seu consumo muito prazeroso. Ainda assim, moderar a frequência ou alternar com cortes magros pode ser uma estratégia interessante.",
+        "{alimento} possui um perfil naturalmente mais gorduroso, responsável por boa parte de sua suculência. Em compensação, também concentra mais calorias.",
+        "{alimento} entrega muito sabor graças à gordura presente em sua composição. Essa mesma característica aumenta significativamente seu valor calórico."
+      ]
+    },
+    {
+      "bloco_id": "ruim_embutidos",
+      "polaridade": "ruim",
+      "categoria_label": "Embutidos (continuação)",
+      "alimentos": ["bacon", "linguiça", "calabresa", "mortadela", "salame", "pepperoni", "salsicha", "apresuntado", "presunto", "hambúrguer industrializado", "fiambre"],
+      "frases": [
+        "{alimento} costuma agradar pelo sabor intenso, resultado de um processamento que também aumenta sua quantidade de sódio. Consumir com equilíbrio e valorizar alimentos frescos pode favorecer melhores escolhas.",
+        "{alimento} reúne características que o tornam muito saboroso, mas também mais rico em gordura e sal. Encontrar um equilíbrio entre praticidade e qualidade nutricional pode trazer benefícios importantes.",
+        "{alimento} costuma ser muito apetitoso por causa da combinação de temperos e gordura. Em compensação, tende a oferecer menos proteína e mais calorias do que diversas carnes frescas.",
+        "{alimento} é conhecido pelo sabor marcante, mas também costuma apresentar alto teor de sódio e gordura.",
+        "{alimento} pode tornar uma refeição mais saborosa, porém alimentos processados normalmente concentram mais sal e gordura.",
+        "{alimento} oferece muito sabor, mas também costuma conter ingredientes que aumentam sua densidade calórica. Pequenos ajustes na frequência de consumo podem trazer benefícios importantes.",
+        "{alimento} agrada pelo sabor intenso e pela praticidade, mas normalmente possui composição nutricional menos favorável do que carnes frescas.",
+        "{alimento} costuma ser bastante saboroso porque combina gordura, sal e temperos intensos. Apesar disso, geralmente apresenta mais calorias e menos proteína proporcionalmente do que carnes frescas.",
+        "{alimento} pode fazer parte da alimentação, mas vale lembrar que alimentos embutidos costumam concentrar maior quantidade de sódio e gordura.",
+        "{alimento} é uma escolha comum e muito apreciada, principalmente pelo sabor marcante. Ainda assim, alimentos menos processados tendem a oferecer melhor qualidade nutricional.",
+        "{alimento} desperta prazer ao comer justamente pela intensidade do sabor. O ponto de atenção é que normalmente apresenta mais gordura e sódio do que proteínas frescas.",
+        "{alimento} costuma ser muito atrativo ao paladar, mas também concentra quantidades elevadas de sódio. Alternar com carnes frescas é uma estratégia simples para enriquecer a alimentação.",
+        "{alimento} combina praticidade e sabor, porém alimentos desse grupo normalmente possuem maior teor de gordura e sal. Pequenas substituições podem fazer diferença ao longo do tempo.",
+        "{alimento} oferece uma experiência muito saborosa, mas merece atenção pela quantidade de sódio e calorias presente em sua composição.",
+        "{alimento} costuma agradar bastante, mas alimentos embutidos geralmente fornecem menos proteína proporcionalmente às calorias do que carnes frescas. Variar as escolhas é sempre positivo."
+      ]
+    },
+    {
+      "bloco_id": "ruim_molhos_caloricos",
+      "polaridade": "ruim",
+      "categoria_label": "Molhos calóricos (continuação)",
+      "alimentos": ["maionese", "molho cheddar", "catupiry", "cream cheese", "molho quatro queijos", "molho branco", "molho rosé", "molho ranch", "molho caesar", "molho de queijo", "requeijão"],
+      "frases": [
+        "{alimento} é uma opção muito saborosa e pode fazer parte da alimentação. Apenas é interessante lembrar que seu alto teor de gordura faz com que pequenas quantidades já tenham impacto importante nas calorias da refeição.",
+        "{alimento} deixa a refeição mais prazerosa e pode enriquecer o sabor dos alimentos. Ao mesmo tempo, é um ingrediente bastante calórico.",
+        "{alimento} é conhecido por deixar as preparações mais cremosas e saborosas. Por ser rico em gordura, pequenas porções já acrescentam muitas calorias.",
+        "{alimento} oferece uma textura agradável e um sabor marcante, características que naturalmente aumentam o prazer ao comer.",
+        "{alimento} faz parte da rotina alimentar de muitas pessoas e realmente deixa os pratos mais gostosos. Ainda assim, vale atenção ao seu elevado teor de gordura.",
+        "{alimento} é uma escolha saborosa e pode compor uma alimentação equilibrada. O segredo está em utilizá-lo com moderação.",
+        "{alimento} aumenta a cremosidade e intensifica o sabor das refeições, mas também concentra muitas calorias.",
+        "{alimento} proporciona uma experiência muito agradável ao paladar. Como é rico em gordura, pequenas porções já representam um aumento importante no valor energético da refeição.",
+        "{alimento} deixa os alimentos ainda mais saborosos, mas merece atenção pelo alto teor calórico.",
+        "{alimento} é um ingrediente que costuma agradar bastante pelo sabor e textura. Apesar disso, contém grande quantidade de gordura e calorias concentradas.",
+        "{alimento} traz cremosidade e muito sabor para o prato. Como também é bastante calórico, vale utilizá-lo de forma consciente.",
+        "{alimento} combina muito bem com diversas preparações e costuma aumentar o prazer ao comer. Porém, seu alto teor de gordura faz com que pequenas quantidades já adicionem muitas calorias.",
+        "{alimento} é uma escolha bastante saborosa e pode fazer parte da alimentação sem necessidade de exclusão. O mais importante é prestar atenção ao tamanho da porção.",
+        "{alimento} intensifica sabores e deixa muitos pratos ainda mais apetitosos. Em contrapartida, concentra muitas calorias devido ao elevado teor de gordura.",
+        "{alimento} é um ingrediente muito apreciado justamente por proporcionar uma textura diferenciada e sabor intenso."
+      ]
+    }
+  ]
+}

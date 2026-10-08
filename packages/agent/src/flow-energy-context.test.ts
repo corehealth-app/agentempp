@@ -324,7 +324,7 @@ describe('flowEnergyContextLines', () => {
     expect(flowEnergyContextLines({ ...REPORT, ...GANHO, hasSnapshot: true })).toEqual([
       '- Para COMIDA hoje (meta − consumido, SEM exercício): restam 2439 kcal',
       '- Exercício hoje: 322 kcal queimadas — NÃO aumenta a meta e NÃO entra no que resta para comida',
-      '- Balanço calórico de hoje (consumido − gasto de referência de 2838 kcal; o exercício já está no fator de atividade e não é somado): -2297 kcal (negativo=déficit, positivo=superávit) — NÃO é o que resta para comer',
+      '- Balanço calórico de hoje (consumido − gasto de referência de 2838 kcal; o exercício já está considerado neste valor e não é somado): -2297 kcal (negativo=déficit, positivo=superávit) — NÃO é o que resta para comer',
       '- REGRA: exercício NÃO libera comida nem apaga excedente. A meta de hoje é a mesma com ou sem treino; o que o paciente pode comer é só o que está na linha "Para COMIDA". Se ele perguntar se pode comer a mais porque treinou, diga que o treino não muda isso e mostre meta, consumido e o que resta para comida; o gasto do treino fica à parte.',
     ])
   })
@@ -355,7 +355,7 @@ describe('flowEnergyContextLines', () => {
     // 2026-10-04 (§2c): was "COM exercício (…): -102 kcal" — a deficit shown
     // to someone 220 kcal over the target. Against 2838, no exercise: +362.
     expect(lines[2]).toBe(
-      '- Balanço calórico de hoje (consumido − gasto de referência de 2838 kcal; o exercício já está no fator de atividade e não é somado): 362 kcal (negativo=déficit, positivo=superávit) — NÃO é o que resta para comer',
+      '- Balanço calórico de hoje (consumido − gasto de referência de 2838 kcal; o exercício já está considerado neste valor e não é somado): 362 kcal (negativo=déficit, positivo=superávit) — NÃO é o que resta para comer',
     )
   })
 
@@ -400,7 +400,7 @@ describe('flowEnergyContextLines', () => {
     })
 
     expect(lines[2]).toBe(
-      '- Balanço calórico de hoje (consumido − gasto de referência de 3044 kcal; o exercício já está no fator de atividade e não é somado): 0 kcal (negativo=déficit, positivo=superávit) — NÃO é o que resta para comer',
+      '- Balanço calórico de hoje (consumido − gasto de referência de 3044 kcal; o exercício já está considerado neste valor e não é somado): 0 kcal (negativo=déficit, positivo=superávit) — NÃO é o que resta para comer',
     )
     expect(lines.join('\n')).not.toContain('-400')
     expect(lines.join('\n')).not.toContain('-0')

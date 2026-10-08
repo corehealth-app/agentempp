@@ -596,7 +596,7 @@ describe('audit 2026-10-04 RC A — what the Flow model reads on the same day', 
       '- Exercício hoje: 322 kcal queimadas — NÃO aumenta a meta e NÃO entra no que resta para comida',
       // §2c (2026-10-04): was "COM exercício (consumido − meta − exercício):
       // -2761 kcal". Ganho de massa: 541 − 2838 (2980 ÷ 1,05), no exercise.
-      '- Balanço calórico de hoje (consumido − gasto de referência de 2838 kcal; o exercício já está no fator de atividade e não é somado): -2297 kcal (negativo=déficit, positivo=superávit) — NÃO é o que resta para comer',
+      '- Balanço calórico de hoje (consumido − gasto de referência de 2838 kcal; o exercício já está considerado neste valor e não é somado): -2297 kcal (negativo=déficit, positivo=superávit) — NÃO é o que resta para comer',
       RULE_LINE,
       '- Sequência atual: 0 dias consecutivos (recorde 0) | XP: 0 (nível 1) | Blocos 7700 fechados: 0',
       '- Bloco 7700 em andamento: **0 kcal de 7700** (0%)',
@@ -621,7 +621,7 @@ describe('audit 2026-10-04 RC A — what the Flow model reads on the same day', 
     )
     // §2c: was "COM exercício (…): -3000 kcal". 302 − 2838, no exercise.
     expect(lines).toContain(
-      '- Balanço calórico de hoje (consumido − gasto de referência de 2838 kcal; o exercício já está no fator de atividade e não é somado): -2536 kcal (negativo=déficit, positivo=superávit) — NÃO é o que resta para comer',
+      '- Balanço calórico de hoje (consumido − gasto de referência de 2838 kcal; o exercício já está considerado neste valor e não é somado): -2536 kcal (negativo=déficit, positivo=superávit) — NÃO é o que resta para comer',
     )
     expect(lines.join('\n')).not.toContain('-3000')
   })
@@ -733,7 +733,7 @@ describe('audit 2026-10-04 RC A — neighbours on the Flow (context and system a
     // §2c: was "COM exercício (…): -102 kcal", a deficit shown to someone 220
     // kcal over the target. Against 2838, no exercise: a surplus of 362.
     expect(lines.find((line) => line.startsWith('- Balanço calórico de hoje'))).toContain(
-      'gasto de referência de 2838 kcal; o exercício já está no fator de atividade e não é somado): 362 kcal',
+      'gasto de referência de 2838 kcal; o exercício já está considerado neste valor e não é somado): 362 kcal',
     )
     expect(lines.join('\n')).not.toContain('-102')
     // Review round 2: with an excess the rule asked for "o que resta para
@@ -877,7 +877,7 @@ describe('audit 2026-10-04 RC A — neighbours on the Flow (context and system a
     // §2c: was "COM exercício … : -2769 kcal" (541 − 2988 − 322). The
     // reference follows the target printed: 2988 ÷ 1,05 = 2846; 541 − 2846.
     expect(lines.find((line) => line.startsWith('- Balanço calórico de hoje'))).toContain(
-      'gasto de referência de 2846 kcal; o exercício já está no fator de atividade e não é somado): -2305 kcal',
+      'gasto de referência de 2846 kcal; o exercício já está considerado neste valor e não é somado): -2305 kcal',
     )
     expect(prompt).not.toContain('219 kcal')
   })
@@ -1519,7 +1519,7 @@ describe('audit 2026-10-04 RC A — consulta_progresso', () => {
         gasto_de_referencia_kcal: 2838,
         balanco_do_dia_sem_exercicio_kcal: -2297,
         regra:
-          'Exercício não libera comida nem apaga excedente: a meta é a mesma com ou sem treino e o que resta para comida é meta − consumido, sem exercício. O gasto do treino fica à parte; balanco_do_dia_sem_exercicio_kcal é consumido − gasto_de_referencia_kcal (negativo = déficit, positivo = superávit): o exercício já está no fator de atividade e não é somado. Não é o que resta para comer.',
+          'Exercício não libera comida nem apaga excedente: a meta é a mesma com ou sem treino e o que resta para comida é meta − consumido, sem exercício. O gasto do treino fica à parte; balanco_do_dia_sem_exercicio_kcal é consumido − gasto_de_referencia_kcal (negativo = déficit, positivo = superávit): o exercício já está considerado neste valor e não é somado. Não é o que resta para comer.',
       },
     })
     expect(output.hoje).not.toHaveProperty('daily_balance')

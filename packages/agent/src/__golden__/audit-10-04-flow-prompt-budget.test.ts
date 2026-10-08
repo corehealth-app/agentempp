@@ -36,7 +36,7 @@
  *  3. one `llm.flow_calls` event per turn with the numbers of each model call
  *     (no text of the patient or of the answer), next to `llm.cache_usage`;
  *     written for a turn that fails too, once.
- * Nothing in the cached prefix changed (same tools, same stable block), no
+ * Historical performance baseline (before C1): same tools/stable block, no
  * calculation rule changed, and WhatsApp is byte-identical
  * (audit-10-04-whatsapp-request-lock.test.ts).
  *
@@ -542,7 +542,7 @@ describe('audit 2026-10-04 Flow cost — history window: 16 lines to the model w
     })
     const output = await flow(h)
 
-    expect(output.text).toBe('Sua taxa basal estimada é de 1.836 kcal.')
+    expect(output.text).toBe('As metas oficiais de hoje são 2.980 kcal e 144 g de proteína. Você pode acompanhá-las em Hoje.')
     expect(h.llmCalls).toHaveLength(2)
     const [first, second] = h.llmCalls as [LlmCall, LlmCall]
     expect(second.messages).toHaveLength(19)
@@ -792,14 +792,11 @@ const LEAN_CONTEXT = [
   '- Idade: 26',
   '- Altura: 185 cm',
   '- Peso: 80.5 kg',
-  '- BF%: ?',
+  '- Gordura corporal: ?',
   '- Atividade: moderado',
   '- Treinos/semana: 4',
   '- Protocolo atual: ganho_massa',
-  '- BMR estimado: 1836 kcal',
-  '- TDEE estimado: 2846 kcal',
   '- IMC: 23.5',
-  '- LBM (massa magra): 80.5 kg',
   '- Decisão automática: protocol=recomposicao canChoose=false blockers=[horários de sono não informados; estruturação alimentar não informada] goal=IMC=22',
   '',
   '### Dados numéricos REAIS do paciente (use estes, NÃO INVENTE)',
@@ -810,7 +807,7 @@ const LEAN_CONTEXT = [
   '- Consumido hoje: 541 kcal | 59.03 g proteína | 47.32g carbo | 10.27g gordura',
   '- Para COMIDA hoje (meta − consumido, SEM exercício): restam 2439 kcal',
   '- Exercício hoje: 322 kcal queimadas — NÃO aumenta a meta e NÃO entra no que resta para comida',
-  '- Balanço calórico de hoje (consumido − gasto de referência de 2838 kcal; o exercício já está no fator de atividade e não é somado): -2297 kcal (negativo=déficit, positivo=superávit) — NÃO é o que resta para comer',
+  '- Balanço calórico de hoje (consumido − gasto de referência de 2838 kcal; o exercício já está considerado neste valor e não é somado): -2297 kcal (negativo=déficit, positivo=superávit) — NÃO é o que resta para comer',
   '- REGRA: exercício NÃO libera comida nem apaga excedente. A meta de hoje é a mesma com ou sem treino; o que o paciente pode comer é só o que está na linha "Para COMIDA". Se ele perguntar se pode comer a mais porque treinou, diga que o treino não muda isso e mostre meta, consumido e o que resta para comida; o gasto do treino fica à parte.',
   '- Sequência atual: 0 dias consecutivos (recorde 0) | XP: 0 (nível 1) | Blocos 7700 fechados: 0',
   '- Bloco 7700 em andamento: **0 kcal de 7700** (0%)',
@@ -841,17 +838,17 @@ const DROPPED = [
 ]
 
 describe('audit 2026-10-04 Flow cost — lean per-turn context', () => {
-  it('the baseline turn: the per-turn block is exactly this text (2,894 characters; it was 4,719)', async () => {
+  it('the baseline turn: the per-turn block is exactly this text (2,827 characters after C1; initially 4,719)', async () => {
     const h = harness({ history: longHistory() })
     await flow(h)
 
     const variable = variableBlock(h.llmCalls[0])
     expect(variable).toBe(LEAN_CONTEXT)
-    expect(variable).toHaveLength(2894)
+    expect(variable).toHaveLength(2827)
     for (const dropped of DROPPED) expect(variable, dropped).not.toContain(dropped)
   })
 
-  it('the cached prefix did not change: same stable block, same 6 tools', async () => {
+  it('the cached prefix follows the current Flow policy with the same 6 tools', async () => {
     const h = harness({ history: longHistory() })
     await flow(h)
 
@@ -889,7 +886,7 @@ describe('audit 2026-10-04 Flow cost — lean per-turn context', () => {
     ])
   })
 
-  it('nothing was written anew: every line is a line WhatsApp gets for the same patient, or one cut at a known point', async () => {
+  it('every context change from the legacy channel is accounted for, including C1 public terminology', async () => {
     const flowRun = harness({ history: longHistory() })
     await flow(flowRun)
     const legacyRun = harness({ channel: 'whatsapp', history: longHistory() })
@@ -914,6 +911,8 @@ describe('audit 2026-10-04 Flow cost — lean per-turn context', () => {
 
     // The lines cut or reworded from a legacy line, each checked against its origin.
     const cut: Record<string, (line: string) => boolean> = {
+      // C1 public terminology, only on Flow; the legacy field is unchanged.
+      '- Gordura corporal:': (line) => legacyLines.includes(line.replace('Gordura corporal:', 'BF%:')),
       // Anti-repetition: the legacy instruction, with "acima" (the quoted
       // answers the Flow no longer repeats) named as where they are now.
       '→ NÃO repita aberturas': (line) =>
@@ -963,7 +962,7 @@ describe('audit 2026-10-04 Flow cost — lean per-turn context', () => {
       '- Consumido hoje: 541 kcal | 59.03 g proteína | 47.32g carbo | 10.27g gordura',
       '- Para COMIDA hoje (meta − consumido, SEM exercício): restam 2439 kcal',
       '- Exercício hoje: 322 kcal queimadas — NÃO aumenta a meta e NÃO entra no que resta para comida',
-      '- Balanço calórico de hoje (consumido − gasto de referência de 2838 kcal; o exercício já está no fator de atividade e não é somado): -2297 kcal (negativo=déficit, positivo=superávit) — NÃO é o que resta para comer',
+      '- Balanço calórico de hoje (consumido − gasto de referência de 2838 kcal; o exercício já está considerado neste valor e não é somado): -2297 kcal (negativo=déficit, positivo=superávit) — NÃO é o que resta para comer',
       '- REGRA: exercício NÃO libera comida nem apaga excedente. A meta de hoje é a mesma com ou sem treino; o que o paciente pode comer é só o que está na linha "Para COMIDA". Se ele perguntar se pode comer a mais porque treinou, diga que o treino não muda isso e mostre meta, consumido e o que resta para comida; o gasto do treino fica à parte.',
       '- Sequência atual: 0 dias consecutivos (recorde 0) | XP: 0 (nível 1) | Blocos 7700 fechados: 0',
       '- Bloco 7700 em andamento: **0 kcal de 7700** (0%)',
@@ -1066,7 +1065,7 @@ describe('audit 2026-10-04 Flow cost — per-call telemetry, numbers only', () =
     const [first, second] = h.llmCalls as [LlmCall, LlmCall]
     const blocks = systemBlocks(first)
     const systemChars = [blocks[0]?.text.length, blocks[1]?.text.length]
-    expect(systemChars).toEqual([`REGRAS COMPARTILHADAS${mobileFlowSystemPolicy}`.length, 2894])
+    expect(systemChars).toEqual([`REGRAS COMPARTILHADAS${mobileFlowSystemPolicy}`.length, 2827])
 
     expect(events(h, MOBILE_FLOW_CALLS_EVENT)).toEqual([
       {
@@ -1241,7 +1240,7 @@ describe('audit 2026-10-04 Flow cost — per-call telemetry, numbers only', () =
               cost_usd: null,
               ms: 700,
               history_lines: 16,
-              system_chars: [`REGRAS COMPARTILHADAS${mobileFlowSystemPolicy}`.length, 2894],
+              system_chars: [`REGRAS COMPARTILHADAS${mobileFlowSystemPolicy}`.length, 2827],
               messages: 17,
               messages_chars: expect.any(Number),
               failed: 1,

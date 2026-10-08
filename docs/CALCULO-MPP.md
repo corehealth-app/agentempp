@@ -1131,6 +1131,35 @@ contra o banco e nada foi gravado. Gravar exige autorização nomeada do Eduardo
 
 ### 4b. Estado do dia que o MODELO lê no Flow (contexto e tool)
 
+**C1 — apresentação pública do Flow (2026-10-08, somente alteração local).**
+O contexto factual e `consulta_metricas` do canal autenticado não entregam
+metabolismo basal, gasto energético total, massa magra estimada, fator ou nome
+de fórmula ao modelo. Gordura corporal mantém o percentual, com rótulo público.
+As contas internas, metas oficiais do snapshot, sinais e balanços dos §§2a–2c
+continuam iguais; o valor de referência desses balanços não vira uma meta.
+O schema da ferramenta é projetado em cópia, sem mudar o objeto compartilhado.
+
+As perguntas isoladas `qual é o meu BMR?` e `qual fórmula você usa?`, e seus
+equivalentes reconhecidos em inglês, recebem as metas oficiais sem chamar o
+modelo. Perguntas mistas seguem para o modelo e ferramentas. Sem meta disponível,
+o Flow informa a ausência; não calcula nem inventa substituto. O idioma da
+pergunta reconhecida prevalece sobre o locale salvo.
+
+As cópias de regras/RAG, resumo e mensagens anteriores do assistente omitem
+afirmações técnicas conhecidas, preservando dados públicos e restrições adjacentes.
+As falas do paciente e o histórico persistido ficam intactos. A política proíbe
+reconstruir as contas. Após nomes públicos e reconstrução de sugestões, a saída
+passa pelo filtro de vocabulário/equações conhecidas; não se troca um número
+basal pelo rótulo de meta. Sugestões mantêm identificadores, itens públicos e
+instrução de revisão, sem alterar o rascunho gravado. Isso não equivale à validação
+de qualquer redação possível do modelo; smoke de staging continua necessário.
+
+Não há backfill de mensagens, resumos ou planos. Replay direto de uma mensagem
+já persistida no serviço pode devolver texto anterior sem passar pelo pipeline;
+eventual saneamento retroativo exige escopo próprio. O canal WhatsApp permanece
+legado, com seus fixtures/hash de request e contexto preservados. Copy pública
+e confirmação clínica seguem seus gates; testes locais não os substituem.
+
 A regra do §2 vale também para o texto entregue ao modelo. Um balanço sem
 rótulo vira "o treino já foi descontado, pode comer mais".
 

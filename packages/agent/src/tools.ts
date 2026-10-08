@@ -2388,7 +2388,7 @@ export const consultaProgresso: ToolDefinition = {
                   gasto_de_referencia_kcal: energy.reference,
                   balanco_do_dia_sem_exercicio_kcal: energy.net,
                 },
-                rule: `${foodRule} O gasto do treino fica à parte; balanco_do_dia_sem_exercicio_kcal é consumido − gasto_de_referencia_kcal (negativo = déficit, positivo = superávit): o exercício já está no fator de atividade e não é somado. Não é o que resta para comer.`,
+                rule: `${foodRule} O gasto do treino fica à parte; balanco_do_dia_sem_exercicio_kcal é consumido − gasto_de_referencia_kcal (negativo = déficit, positivo = superávit): o exercício já está considerado neste valor e não é somado. Não é o que resta para comer.`,
               }
       const showsDayBalance = Boolean(snap) && energy.net != null
       const { daily_balance: _net, ...todayWithoutNet } = (snap ?? {}) as Record<string, unknown>
@@ -2482,6 +2482,16 @@ export const consultaMetricas: ToolDefinition = {
 
     const tdee =
       m.bmr != null && m.activityFactor != null ? Math.round(m.bmr * m.activityFactor) : null
+
+    if (ctx.assistantIdentity === 'flow') {
+      return {
+        age_years: m.age,
+        imc: m.imc != null ? +m.imc.toFixed(1) : null,
+        body_fat_percent: profileTyped.body_fat_percent,
+        calories_target_today: todayTargets.calories_target,
+        protein_target_today_g: todayTargets.protein_target,
+      }
+    }
 
     return {
       age_years: m.age,

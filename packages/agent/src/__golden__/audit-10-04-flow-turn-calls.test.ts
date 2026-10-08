@@ -3757,3 +3757,29 @@ describe('audit 2026-10-04 Flow calls — every pendency of the Flow work reads 
     },
   )
 })
+
+
+// C1: the final public boundary runs after direct suggestion reconstruction.
+describe('C1 — direct suggestion and retry replay preserve the stored draft', () => {
+  it.each([false, true])('keeps exercises, sets, rest, review CTA and identifiers (replay=%s)', async replay => {
+    const generated = WORKOUT_OUTPUT.replace('Agachamento livre', 'Agachamento livre (BMR: 1836 kcal)')
+    const payload = JSON.parse(generated) as Row
+    const h = harness({
+      text: WORKOUT_PHRASE,
+      chat: [WORKOUT_CALL],
+      generator: [{ ...WORKOUT_GENERATION, content: generated }],
+      ...(replay ? { drafts: { [`${TURN_ID}:propoe_plano_treino`]: { id: 'draft-earlier', status: 'ready_for_review', payload } } } : {}),
+    })
+    const output = await flow(h, WORKOUT_PHRASE)
+    expect(output.text).toContain('• Agachamento livre')
+    expect(output.text).toContain('3×12-15, descanso 90 s')
+    expect(output.text).toContain('• Supino reto com barra — 3×12-15, descanso 90 s')
+    expect(output.text).toContain(CLOSING)
+    expect(output.text).not.toMatch(/BMR|1836/)
+    expect(output.toolCalls[0]?.result).toMatchObject({ success: true, draft_id: replay ? 'draft-earlier' : 'draft-0001', status: 'ready_for_review' })
+    expect(h.generatorCalls).toHaveLength(replay ? 0 : 1)
+    expect(drafts(h)).toHaveLength(replay ? 0 : 1)
+    // The display projection never rewrites the stored plan to hide a word.
+    if (!replay) expect(JSON.stringify(drafts(h)[0]?.p_payload)).toContain('Agachamento livre (BMR: 1836 kcal)')
+  })
+})

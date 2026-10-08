@@ -228,5 +228,5 @@ function dayBalanceLine(n: FlowEnergyNumbers, recomp: boolean): string {
   // Ganho de massa / manutenção: no exercise, and no block wording (the
   // client wrote on 08/05/2026 that a 14-day block replaces the 7700 block
   // in these protocols; that block is not defined yet).
-  return `- Balanço calórico de hoje (consumido − gasto de referência de ${n.reference} kcal; o exercício já está no fator de atividade e não é somado): ${n.net} kcal ${sign} — NÃO é o que resta para comer`
+  return `- Balanço calórico de hoje (consumido − gasto de referência de ${n.reference} kcal; o exercício já está considerado neste valor e não é somado): ${n.net} kcal ${sign} — NÃO é o que resta para comer`
 }

@@ -133,6 +133,13 @@ import type {
 } from '@mpp/providers'
 import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions'
 import { LEGACY_PERSONA_NAME_PATTERN, projectFlowPublicNames } from './flow-public-names.js'
+import {
+  asksPrivateMetricQuestion,
+  flowMetricLocale,
+  projectFlowMetricAnswer,
+  projectFlowMetricContext,
+  renderOfficialTargets,
+} from './flow-public-metrics.js'
 import { flowPlainStatusText } from './flow-status-text.js'
 import {
   ensureSuggestionShown,
@@ -579,17 +586,20 @@ revisão de um profissional. Não proponha medicamentos, suplementos ou doses.
 Para qualquer outra mutação sensível, explique que é necessária confirmação
 explícita no fluxo estruturado do app.
 Não diagnostique, não prometa cura, não substitua profissional e não afirme
-que uma ação foi concluída sem confirmação determinística do servidor.`
+que uma ação foi concluída sem confirmação determinística do servidor.
+Não divulgue metabolismo basal, gasto energético total, massa magra estimada,
+fatores de atividade, nomes ou equações de cálculo das metas. Não reconstrua
+esses valores a partir do histórico ou de regras recuperadas. Use apenas as
+metas oficiais e os balanços públicos fornecidos pelo servidor. Diga
+"Gordura corporal" em vez da sigla interna.`
 
 function mobileFlowPromptContext(context: string): string {
-  // Projeta somente a apresentação conhecida da persona; mantém tom, decisões,
-  // cálculos e referências internas. O OUTPUT do modelo passa por outra troca,
-  // de vocabulário fechado, em processAuthenticatedMessage
-  // (projectFlowPublicNames, flow-public-names.ts).
-  return context
+  // Only prompt copies: preserve adjacent health restrictions and never
+  // mutate shared rules, the patient history or the legacy channel.
+  return projectFlowMetricContext(context
     .replace(LEGACY_PERSONA_INTRODUCTION_PATTERN, 'Você é Flow, assistente de IA do Performe AI.')
     .replace(LEGACY_PERSONA_MARKDOWN_SECTION_PATTERN, '')
-    .replace(LEGACY_PERSONA_NAME_PATTERN, 'Flow')
+    .replace(LEGACY_PERSONA_NAME_PATTERN, 'Flow'))
 }
 
 export function selectPipelineTools(
@@ -713,7 +723,11 @@ interface ResolvedPipelineOptions {
    * turn ends before the context is loaded: no model ran, the text is the
    * system's.
    */
-  flowAccount?: { name: string | null }
+  flowAccount?: {
+    name: string | null
+    locale: string | null
+    dailyTargets: UserContext['dailyTargets'] | null
+  }
 }
 
 /**
@@ -853,7 +867,11 @@ export async function processAuthenticatedMessage(
   input: AuthenticatedAgentInput,
 ): Promise<AgentOutput> {
   const flowFailure: NonNullable<ResolvedPipelineOptions['flowFailure']> = { record: null }
-  const flowAccount: NonNullable<ResolvedPipelineOptions['flowAccount']> = { name: null }
+  const flowAccount: NonNullable<ResolvedPipelineOptions['flowAccount']> = {
+    name: null,
+    locale: null,
+    dailyTargets: null,
+  }
   try {
     const output = await processResolvedMessage(
       deps,
@@ -876,7 +894,14 @@ export async function processAuthenticatedMessage(
         flowAccount,
       },
     )
-    return await withFlowPublicNames(deps.supabase, input.userId, output, flowAccount.name)
+    const publicOutput = await withFlowPublicNames(deps.supabase, input.userId, output, flowAccount.name)
+    const text = projectFlowMetricAnswer(
+      publicOutput.text,
+      flowAccount.dailyTargets,
+      flowAccount.locale,
+      draftCreatedThisTurn(publicOutput.toolCalls),
+    )
+    return text === publicOutput.text ? publicOutput : { ...publicOutput, text }
   } catch (error) {
     // The turn failed (deadline, provider, anything after the first call):
     // what it had already spent is still written, numbers only. The write
@@ -952,7 +977,11 @@ async function processResolvedMessage(
   )
   // Flow only (processMessage passes no holder): the name the context already
   // carries, for the public-names guard of the entry point.
-  if (options.flowAccount) options.flowAccount.name = ctx.userName
+  if (options.flowAccount) {
+    options.flowAccount.name = ctx.userName
+    options.flowAccount.locale = flowMetricLocale(semanticPatientText, ctx.locale)
+    options.flowAccount.dailyTargets = ctx.dailyTargets
+  }
 
   // 4. resolve stage
   const stage = resolveStage(ctx.profile)
@@ -988,6 +1017,23 @@ async function processResolvedMessage(
         : 'Recebi essas mensagens atravessando a meia-noite no seu horário local. Quais itens foram de ontem e quais foram de hoje?'
     return {
       text,
+      preferAudio: false,
+      singleMessage: true,
+      toolCalls: [],
+      stage,
+      modelUsed: promptRow.model,
+      promptTokens: 0,
+      completionTokens: 0,
+      costUsd: 0,
+      latencyMs: Date.now() - start,
+    }
+  }
+
+  // C1: exact technical questions use official targets, with no model call
+  // or sensitive mutation. Mixed questions keep their other intentions.
+  if (options.historyProvider === 'mobile_flow' && asksPrivateMetricQuestion(semanticPatientText)) {
+    return {
+      text: renderOfficialTargets(ctx.dailyTargets, flowMetricLocale(semanticPatientText, ctx.locale)),
       preferAudio: false,
       singleMessage: true,
       toolCalls: [],
@@ -1082,7 +1128,14 @@ async function processResolvedMessage(
   // 5. call agent (with tool loop)
   // Filtra tools pelo allowed_tools do config (se NULL = todas)
   const allowedTools = (promptRow as { allowed_tools?: string[] | null }).allowed_tools
-  const filteredTools = selectPipelineTools(allowedTools, options.toolNames)
+  const filteredTools = selectPipelineTools(allowedTools, options.toolNames).map((tool) =>
+    options.historyProvider === 'mobile_flow' && tool.name === 'consulta_metricas'
+      ? {
+          ...tool,
+          description: 'Consulta idade, IMC, gordura corporal e metas oficiais de calorias e proteína. Use somente se o dado público necessário não estiver no contexto. Não estime nem recalcule metas.',
+        }
+      : tool,
+  )
   const tools = buildToolSchemas(filteredTools)
 
   // Detector de repetição: pega últimas 2 OUTs e marca pro LLM evitar
@@ -1155,7 +1208,9 @@ async function processResolvedMessage(
       : ctx.recentMessages
   const messages: ChatCompletionMessageParam[] = promptHistory.map((m) => ({
     role: m.role,
-    content: m.content,
+    content: options.historyProvider === 'mobile_flow' && m.role === 'assistant'
+      ? projectFlowMetricContext(m.content)
+      : m.content,
   }))
   messages.push({ role: 'user', content: input.text ?? '(mídia recebida)' })
 
@@ -3781,6 +3836,7 @@ function formatUserContext(
   // and the numeric block are untouched. WhatsApp: legacy text, byte for byte
   // (locked by __golden__/audit-10-04-whatsapp-request-lock.test.ts).
   const flowLean = MOBILE_FLOW_LEAN_CONTEXT && historyProvider === 'mobile_flow'
+  const flowPublicMetrics = historyProvider === 'mobile_flow'
 
   // FIX 4 (Roberto 2026-06-15): foto noturna perdida — LLM chamou
   // marca_refeicao_pulada depois de paciente responder disambiguação. Aviso
@@ -3824,7 +3880,7 @@ function formatUserContext(
 
   // Resumo persistente do paciente (gerado por cron LLM)
   if (ctx.summary && ctx.summary.trim().length > 0) {
-    sections.push(`### Resumo do paciente\n${ctx.summary}`)
+    sections.push(`### Resumo do paciente\n${flowPublicMetrics ? projectFlowMetricContext(ctx.summary) : ctx.summary}`)
   }
 
   // País — instrução explícita pro LLM saber se já tem confirmação
@@ -3991,13 +4047,15 @@ function formatUserContext(
     `- Idade: ${m.age ?? '?'}`,
     `- Altura: ${ctx.profile.heightCm ?? '?'} cm`,
     `- Peso: ${ctx.profile.weightKg ?? '?'} kg`,
-    `- BF%: ${ctx.profile.bodyFatPercent ?? '?'}`,
+    flowPublicMetrics
+      ? `- Gordura corporal: ${ctx.profile.bodyFatPercent == null ? '?' : `${ctx.profile.bodyFatPercent}%`}`
+      : `- BF%: ${ctx.profile.bodyFatPercent ?? '?'}`,
     `- Atividade: ${ctx.profile.activityLevel ?? '?'}`,
     `- Treinos/semana: ${ctx.profile.trainingFrequency ?? '?'}`,
     `- Protocolo atual: ${ctx.profile.currentProtocol ?? 'NÃO DEFINIDO (usuário em onboarding)'}`,
   ]
-  if (m.bmr != null) lines.push(`- BMR estimado: ${Math.round(m.bmr)} kcal`)
-  if (m.bmr != null && m.activityFactor != null) {
+  if (!flowPublicMetrics && m.bmr != null) lines.push(`- BMR estimado: ${Math.round(m.bmr)} kcal`)
+  if (!flowPublicMetrics && m.bmr != null && m.activityFactor != null) {
     const tdeeVal = Math.round(m.bmr * m.activityFactor)
     // ⚠️ Pra recomposição, TDEE é INFORMATIVO — meta usa BMR×1.2 − déficit (doc MPP).
     // Mostrar com aviso explícito pra LLM não confundir TDEE com meta.
@@ -4010,7 +4068,7 @@ function formatUserContext(
     }
   }
   if (m.imc != null) lines.push(`- IMC: ${m.imc.toFixed(1)}`)
-  if (m.lbm != null) lines.push(`- LBM (massa magra): ${m.lbm.toFixed(1)} kg`)
+  if (!flowPublicMetrics && m.lbm != null) lines.push(`- LBM (massa magra): ${m.lbm.toFixed(1)} kg`)
 
   if (ctx.profile.sex && (ctx.profile.bodyFatPercent != null || m.imc != null)) {
     try {

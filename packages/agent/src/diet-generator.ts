@@ -429,7 +429,7 @@ Altura: ${input.profile.height_cm ?? '?'}cm
 Protocolo: ${input.profile.protocol ?? '?'}
 Meta calórica diária: ${input.profile.meta_kcal ?? '?'} kcal
 Meta proteica diária: ${input.profile.meta_protein_g ?? '?'} g
-BF estimado: ${input.profile.bf_percent ?? '?'}%
+${input.identity === 'flow' ? 'Gordura corporal' : 'BF estimado'}: ${input.profile.bf_percent ?? '?'}%
 </paciente_perfil>
 
 <configuracao>

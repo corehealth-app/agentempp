@@ -657,7 +657,7 @@ async function flowTool(s: Scenario, config?: Row[]): Promise<Row> {
 const expenditureLine = (s: Scenario): string =>
   s.includesExercise
     ? `- Balanço calórico de hoje COM exercício (consumido − gasto do dia; gasto do dia = ${s.reference} kcal de gasto de referência + ${s.exercise} kcal de exercício): ${s.after} kcal (negativo=déficit, positivo=superávit) — é o déficit ou superávit real do dia até agora, provisório até o dia fechar; o crédito no bloco 7700 só acontece no fechamento do dia e este número NÃO é o que resta para comer`
-    : `- Balanço calórico de hoje (consumido − gasto de referência de ${s.reference} kcal; o exercício já está no fator de atividade e não é somado): ${s.after} kcal (negativo=déficit, positivo=superávit) — NÃO é o que resta para comer`
+    : `- Balanço calórico de hoje (consumido − gasto de referência de ${s.reference} kcal; o exercício já está considerado neste valor e não é somado): ${s.after} kcal (negativo=déficit, positivo=superávit) — NÃO é o que resta para comer`
 const legacyLine = (s: Scenario, protocol: Protocol): string =>
   `- Balanço calórico de hoje COM exercício (consumido − meta − exercício): ${s.before} kcal (negativo=déficit, positivo=superávit) — ${
     protocol === 'recomposicao'
@@ -943,7 +943,7 @@ describe('audit 2026-10-04 R1/R2 — Flow context (real processAuthenticatedMess
     vi.setSystemTime(new Date(GAIN_AT_1_10.now))
 
     expect(balanceLine(await flowContext(GAIN_AT_1_10, CONFIG_1_10))).toContain(
-      'gasto de referência de 2709 kcal; o exercício já está no fator de atividade e não é somado): -2168 kcal',
+      'gasto de referência de 2709 kcal; o exercício já está considerado neste valor e não é somado): -2168 kcal',
     )
   })
 })
@@ -991,7 +991,7 @@ describe('audit 2026-10-04 R1/R2 — consulta_progresso called by the model on t
       exercicio_kcal: s.exercise,
       gasto_de_referencia_kcal: s.reference,
       balanco_do_dia_sem_exercicio_kcal: s.after,
-      regra: `${FOOD_RULE} O gasto do treino fica à parte; balanco_do_dia_sem_exercicio_kcal é consumido − gasto_de_referencia_kcal (negativo = déficit, positivo = superávit): o exercício já está no fator de atividade e não é somado. Não é o que resta para comer.`,
+      regra: `${FOOD_RULE} O gasto do treino fica à parte; balanco_do_dia_sem_exercicio_kcal é consumido − gasto_de_referencia_kcal (negativo = déficit, positivo = superávit): o exercício já está considerado neste valor e não é somado. Não é o que resta para comer.`,
     })
     expect(JSON.stringify(energy)).not.toMatch(/7\.?700|bloco/i)
   })
@@ -1507,7 +1507,7 @@ describe('review 2026-10-04 — closed day whose row carries another protocol th
     expect(state.daily_balance_reference_kcal).toBe(1843)
     clearCalcConfigCache()
     expect(balanceLine(await flowContext(CLOSED_RECOMP_ROW))).toContain(
-      'gasto de referência de 1755 kcal; o exercício já está no fator de atividade e não é somado): 321 kcal',
+      'gasto de referência de 1755 kcal; o exercício já está considerado neste valor e não é somado): 321 kcal',
     )
 
     clearCalcConfigCache()

@@ -213,7 +213,7 @@ final class PremiumCoreSurfacesUITests: XCTestCase {
     @MainActor
     func testProgressUsesOfficialValuesAndBlockPercentage() {
         let app = support.launch(
-            arguments: ["--ui-testing", "--ui-testing-prompt13-loaded"],
+            arguments: ["--ui-testing", "--ui-testing-prompt13-loaded", "--ui-testing-block-currentRecomposition"],
             language: "en-US",
             dark: false
         )

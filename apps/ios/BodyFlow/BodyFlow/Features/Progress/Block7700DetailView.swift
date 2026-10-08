@@ -5,10 +5,14 @@ struct Block7700DetailPresentation: Equatable, Sendable {
     let fullScreenState: ScreenState?
     let showsStaleBanner: Bool
     let showsRetry: Bool
+    let policy: Block7700PresentationPolicy
+    let hasContext: Bool
 
-    init(state: FeatureReadState<Block7700Descriptor>) {
+    init(state: FeatureReadState<Block7700ReadValue>) {
         let presentation = state.presentation
-        descriptor = presentation.value
+        descriptor = presentation.value?.descriptor
+        policy = presentation.value?.policy ?? .unknown
+        hasContext = presentation.value != nil
         fullScreenState = presentation.fullScreenState
         showsStaleBanner = presentation.showsStaleBanner
         showsRetry = presentation.value != nil && presentation.showsStaleBanner
@@ -44,6 +48,33 @@ struct Block7700DetailView: View {
                         ? "block7700.unavailable"
                         : fullScreenState.accessibilityIdentifier
                 )
+        } else if presentation.hasContext, presentation.descriptor == nil {
+            ScrollView {
+                VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
+                    if presentation.showsStaleBanner {
+                        FeatureStaleRecovery(retry: staleRetry(presentation))
+                    }
+                    BodyFlowCard {
+                        VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+                            Text(verbatim: copy(presentation.policy.showsExplanation
+                                ? "progress.block.ineligible" : "progress.block.context-unavailable"))
+                                .font(BodyFlowTypography.body)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier(presentation.policy.showsExplanation
+                                    ? "block7700.ineligible" : "block7700.context-unavailable")
+                            if !presentation.showsStaleBanner {
+                                Button(action: retry) {
+                                    Text(copy("state.retry"))
+                                }
+                                .buttonStyle(BodyFlowButtonStyle(role: .secondary))
+                                .accessibilityIdentifier("block7700.retry")
+                            }
+                        }
+                    }
+                }
+                .padding(BodyFlowSpacing.md)
+            }
+            .refreshable { await model.retry() }
         } else if let descriptor = presentation.descriptor {
             // The bar carries the title; the card holds only the received
             // figures. Stale recovery scrolls with the content.

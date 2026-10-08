@@ -54,7 +54,7 @@ final class Prompt13PlanProgressHistoryUITests: XCTestCase {
     @MainActor
     func testProgressShowsReceivedValues() {
         let support = BodyFlowUITestSupport(testCase: self)
-        let app = support.launch(scenario: .loaded)
+        let app = support.launch(scenario: .loaded, additionalArguments: ["--ui-testing-block-currentRecomposition"])
 
         app.performeTabBar.buttons["Progresso"].tap()
         XCTAssertTrue(
@@ -69,7 +69,7 @@ final class Prompt13PlanProgressHistoryUITests: XCTestCase {
     @MainActor
     func testBlockDetailUsesTodaySnapshot() {
         let support = BodyFlowUITestSupport(testCase: self)
-        let app = support.launch(scenario: .loaded)
+        let app = support.launch(scenario: .loaded, additionalArguments: ["--ui-testing-block-currentRecomposition"])
 
         app.performeTabBar.buttons["Progresso"].tap()
         let detail = element("progress.block.detail", in: app)
@@ -92,7 +92,7 @@ final class Prompt13PlanProgressHistoryUITests: XCTestCase {
     @MainActor
     func testUnavailableBlockDoesNotShowZero() {
         let support = BodyFlowUITestSupport(testCase: self)
-        let app = support.launch(scenario: .incomplete)
+        let app = support.launch(scenario: .incomplete, additionalArguments: ["--ui-testing-block-currentRecomposition"])
 
         app.performeTabBar.buttons["Progresso"].tap()
         let detail = element("progress.block.detail", in: app)

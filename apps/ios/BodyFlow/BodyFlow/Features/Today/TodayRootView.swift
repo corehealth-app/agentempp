@@ -13,6 +13,7 @@ struct TodayPresentation: Equatable, Sendable {
     let hydration: TodayHydrationDescriptor
     let routineCollections: [TodayRoutineCollectionDescriptor]
     let block: TodayBlockDescriptor
+    let blockPolicy: Block7700PresentationPolicy
     let completionStatus: String
     let sectionOrder: [TodaySectionKind]
 
@@ -20,6 +21,7 @@ struct TodayPresentation: Equatable, Sendable {
         snapshot: TodaySnapshot,
         language: SupportedAppLanguage = .portugueseBrazil
     ) {
+        blockPolicy = snapshot.blockPresentationPolicy
         header = TodayHeaderDescriptor(
             localDate: snapshot.localDate,
             protocolName: snapshot.protocolName.map { code in
@@ -134,7 +136,7 @@ struct TodayPresentation: Equatable, Sendable {
             )
         }
         completionStatus = snapshot.completionStatus.status
-        sectionOrder = [
+        let sections: [TodaySectionKind] = [
             .energy,
             .protein,
             .hydration,
@@ -143,9 +145,10 @@ struct TodayPresentation: Equatable, Sendable {
             .meals,
             .workouts,
             .routines,
-            .block,
             .history,
         ]
+        sectionOrder = blockPolicy.showsBlock
+            ? Array(sections.dropLast()) + [.block, .history] : sections
     }
 
     var completionMessage: String? {
@@ -500,6 +503,7 @@ struct TodayRootView: View {
                         TodayValueFormatter.kcal($0, language: language)
                     },
                     blockPercentage: presentation.block.percentage,
+                    showsBlock7700: presentation.blockPolicy.showsBlock,
                     language: language
                 ))
                 .bodyFlowArrival(index: 3)
@@ -533,7 +537,15 @@ struct TodayRootView: View {
                 .accessibilityIdentifier("today.history")
                 .bodyFlowZoomSource(.mainHistory)
 
-                TodayBlockCard(descriptor: presentation.block)
+                if presentation.blockPolicy.showsBlock {
+                    TodayBlockCard(descriptor: presentation.block)
+                } else if presentation.blockPolicy.showsExplanation {
+                    Text(verbatim: copy("progress.block.ineligible"))
+                        .font(BodyFlowTypography.supporting)
+                        .foregroundStyle(BodyFlowColor.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("today.block.explanation")
+                }
                 if let mascot {
                     MascotCardView(model: mascot)
                 }

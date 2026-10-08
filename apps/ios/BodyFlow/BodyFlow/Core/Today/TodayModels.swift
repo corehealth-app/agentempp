@@ -5,6 +5,8 @@ typealias TodayResponse = MobileResponse<TodaySnapshot>
 struct TodaySnapshot: Codable, Equatable, Sendable {
     let localDate: String
     let protocolName: String?
+    /// Official current objective, independent of the historical day's protocol.
+    var currentProtocol: String? = nil
     let targets: TodayTargets
     let consumed: TodayConsumed
     /// Null when the day has no calorie target (contract); never shown as 0.
@@ -38,6 +40,7 @@ struct TodaySnapshot: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case localDate = "local_date"
         case protocolName = "protocol"
+        case currentProtocol = "current_protocol"
         case targets
         case consumed
         case remainingFoodKcal = "remaining_food_kcal"
@@ -64,6 +67,10 @@ struct TodaySnapshot: Codable, Equatable, Sendable {
 }
 
 extension TodaySnapshot {
+    var blockPresentationPolicy: Block7700PresentationPolicy {
+        Block7700PresentationPolicy(currentProtocol: currentProtocol, enabled: block7700?.enabled)
+    }
+
     /// A response without `daily_balance_includes_exercise` comes from a
     /// server that always subtracted exercise from the balance.
     var dailyBalanceCountsExercise: Bool {

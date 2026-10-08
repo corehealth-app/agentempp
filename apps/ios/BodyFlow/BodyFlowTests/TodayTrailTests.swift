@@ -8,7 +8,7 @@ struct TodayTrailTests {
     @Test("Nodes carry only official figures; nothing is invented")
     func nodesAreHonest() {
         let trail = TodayTrailDescriptor(
-            recordCount: 3, remainingFood: "731 kcal", blockPercentage: 32, language: .portugueseBrazil
+            recordCount: 3, remainingFood: "731 kcal", blockPercentage: 32, showsBlock7700: true, language: .portugueseBrazil
         )
         #expect(trail.nodes.map(\.kind) == [.register, .today, .block, .progress])
         #expect(trail.nodes[0].detail == "3 registros" && trail.nodes[0].reached)
@@ -18,13 +18,13 @@ struct TodayTrailTests {
         #expect(trail.nodes[3].detail == "Resultado ao longo das semanas" && !trail.nodes[3].reached)
 
         let empty = TodayTrailDescriptor(
-            recordCount: 0, remainingFood: nil, blockPercentage: nil, language: .englishUnitedStates
+            recordCount: 0, remainingFood: nil, blockPercentage: nil, showsBlock7700: true, language: .englishUnitedStates
         )
         #expect(empty.nodes[0].detail == "0 entries" && !empty.nodes[0].reached)
         #expect(empty.nodes[1].detail == nil && !empty.nodes[1].reached)
         #expect(empty.nodes[2].detail == nil && !empty.nodes[2].reached)
         // A target without any record today is not a reached "Hoje".
-        let noRecords = TodayTrailDescriptor(recordCount: 0, remainingFood: "731 kcal", blockPercentage: 0, language: .portugueseBrazil)
+        let noRecords = TodayTrailDescriptor(recordCount: 0, remainingFood: "731 kcal", blockPercentage: 0, showsBlock7700: true, language: .portugueseBrazil)
         #expect(noRecords.nodes[1].detail == "731 kcal" && !noRecords.nodes[1].reached)
         #expect(noRecords.nodes[2].detail == "0% acumulado" && !noRecords.nodes[2].reached)
     }

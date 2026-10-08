@@ -45,7 +45,7 @@ final class Prompt14ProgressUITests: XCTestCase {
     @MainActor
     func testMinimumOfficialProgressRemainsLoadedData() {
         let support = Prompt14UITestSupport(testCase: self)
-        let app = support.launch(scenario: .progressMinimum)
+        let app = support.launch(scenario: .progressMinimum, additionalArguments: ["--ui-testing-block-currentRecomposition"])
 
         support.openProgress(in: app)
         XCTAssertTrue(

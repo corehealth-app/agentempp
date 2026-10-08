@@ -53,6 +53,7 @@ struct GuidedTourStep: Identifiable, Equatable, Sendable {
     let tab: AppTab
     let titleKey: String
     let bodyKey: String
+    var showsBlock7700: Bool = false
 
     var target: GuidedTourTarget? {
         if case let .spotlight(target) = kind { return target }
@@ -78,12 +79,15 @@ enum GuidedTourContent {
                            titleKey: "tour.plan.title",
                            bodyKey: facts.planImport ? "tour.plan.body.import" : "tour.plan.body"),
             GuidedTourStep(id: "progress", kind: .spotlight(.progressTab), tab: .today,
-                           titleKey: "tour.progress.title", bodyKey: "tour.progress.body"),
+                           titleKey: "tour.progress.title",
+                           bodyKey: facts.showsBlock7700 ? "tour.progress.body" : "tour.progress.body.without-block"),
             GuidedTourStep(id: "profile", kind: .spotlight(.profileTab), tab: .today,
                            titleKey: "tour.profile.title",
                            bodyKey: facts.reminders ? "tour.profile.body.reminders" : "tour.profile.body"),
             GuidedTourStep(id: "trail", kind: .trail, tab: .today,
-                           titleKey: "tour.trail.title", bodyKey: "tour.trail.body"),
+                           titleKey: "tour.trail.title",
+                           bodyKey: facts.showsBlock7700 ? "tour.trail.body" : "tour.trail.body.without-block",
+                           showsBlock7700: facts.showsBlock7700),
         ]
     }
 
@@ -158,19 +162,22 @@ enum GuidedTourPlacement {
 final class GuidedTourModel {
     enum Origin: Equatable { case firstEntry, profile, tip }
 
-    let steps: [GuidedTourStep]
+    private(set) var steps: [GuidedTourStep]
     let origin: Origin
     let ownerKey: String
     /// Where the user was before a replay from Profile; restored at the end.
     let returnTab: AppTab
+    let isSessionActive: @MainActor () -> Bool
     private(set) var progress: GuidedTutorialProgress
 
-    init(steps: [GuidedTourStep], origin: Origin, ownerKey: String, returnTab: AppTab) {
+    init(steps: [GuidedTourStep], origin: Origin, ownerKey: String, returnTab: AppTab,
+         isSessionActive: @escaping @MainActor () -> Bool = { false }) {
         precondition(!steps.isEmpty)
         self.steps = steps
         self.origin = origin
         self.ownerKey = ownerKey
         self.returnTab = returnTab
+        self.isSessionActive = isSessionActive
         progress = GuidedTutorialProgress(stepCount: steps.count)
     }
 
@@ -182,4 +189,11 @@ final class GuidedTourModel {
 
     func next() { progress.next() }
     func back() { progress.back() }
+
+    func updateFacts(_ facts: GuidedTutorialFacts, ownerKey: String) {
+        guard isSessionActive(), !isTip, self.ownerKey == ownerKey else { return }
+        let updated = GuidedTourContent.steps(facts: facts)
+        guard updated.map(\.id) == steps.map(\.id) else { return }
+        steps = updated
+    }
 }

@@ -32,14 +32,17 @@ struct TodayTrailDescriptor: Equatable, Sendable {
     }
 
     let nodes: [Node]
+    let showsBlock7700: Bool
 
     init(
         recordCount: Int,
         remainingFood: String?,
         blockPercentage: Int?,
+        showsBlock7700: Bool = false,
         language: SupportedAppLanguage
     ) {
-        nodes = [
+        self.showsBlock7700 = showsBlock7700
+        var nodes = [
             Node(
                 kind: .register,
                 detail: String(
@@ -65,6 +68,8 @@ struct TodayTrailDescriptor: Equatable, Sendable {
                 reached: false
             ),
         ]
+        if !showsBlock7700 { nodes.removeAll { $0.kind == .block } }
+        self.nodes = nodes
     }
 }
 
@@ -87,7 +92,7 @@ struct TodayTrailSection: View {
                         timelineRow(node, isLast: index == descriptor.nodes.count - 1)
                     }
                 }
-                Text(copy("today.trail.detail"))
+                Text(copy(descriptor.showsBlock7700 ? "today.trail.detail" : "today.trail.detail.without-block"))
                     .font(BodyFlowTypography.caption)
                     .foregroundStyle(BodyFlowColor.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)

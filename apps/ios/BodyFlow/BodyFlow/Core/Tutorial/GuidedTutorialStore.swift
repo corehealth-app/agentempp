@@ -107,9 +107,22 @@ struct GuidedTutorialFacts: Equatable, Sendable {
     var reminders: Bool
     /// A real account whose Profile shows "Sair da conta".
     var realAccount: Bool
+    /// Only a current official response can enable the block in the tour.
+    var showsBlock7700: Bool = false
 }
 
 enum GuidedTutorialOffer {
+    /// A closed shell cannot update the preference of a later session,
+    /// including a new session for the same account.
+    @MainActor
+    @discardableResult
+    static func record(_ outcome: GuidedTutorialOutcome, ownerKey: String,
+                       store: any GuidedTutorialStoring, sessionIsActive: Bool) -> Bool {
+        guard sessionIsActive else { return false }
+        store.setStatus(status(after: outcome, from: store.status(ownerKey: ownerKey)), ownerKey: ownerKey)
+        return true
+    }
+
     /// Offers the tour on its own only on the first eligible entry, never
     /// over a sheet or a reminder that is being opened.
     static func shouldOffer(

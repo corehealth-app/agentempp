@@ -5529,6 +5529,18 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "%@ so far" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "%@ acumulado" } }
     } },
+    "progress.block.ineligible" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The 7,700 Block is displayed only for body recomposition." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O Bloco 7.700 é exibido apenas na recomposição corporal." } }
+    } },
+    "progress.block.context-unavailable" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Couldn't verify whether the block is available for your current objective. Try again." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não foi possível verificar se o bloco está disponível para seu objetivo atual. Tente novamente." } }
+    } },
+    "today.trail.detail.without-block" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Each entry updates Today. Progress shows your recorded measurements and consistency over time." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Cada registro atualiza o Hoje. O Progresso mostra suas medidas registradas e a constância ao longo do tempo." } }
+    } },
     "today.trail.detail" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Each entry updates Today. When the day closes, meeting your food target credits the deficit to the 7,700 kcal Block (exercise speeds it up; going over subtracts), and Progress shows the weeks." } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Cada registro atualiza o Hoje. Ao fechar o dia, bater a meta de comida credita o déficit no Bloco 7.700 kcal (o exercício acelera; passar da meta desconta), e o Progresso mostra as semanas." } }
@@ -5617,6 +5629,10 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Profile" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Perfil" } }
     } },
+    "tour.progress.body.without-block" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Weight, measurements, consistency and achievements, with the dates of your records." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Peso, medidas, consistência e conquistas, com as datas dos seus registros." } }
+    } },
     "tour.progress.body" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Weight, measurements, consistency, achievements and the 7,700 kcal Block, always with the date of each value." } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Peso, medidas, consistência, conquistas e o Bloco 7.700 kcal, sempre com a data de cada dado." } }
@@ -5656,6 +5672,10 @@
     "tour.tip.meal.title" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Start with a meal" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Comece pela refeição" } }
+    } },
+    "tour.trail.body.without-block" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Each entry updates Today. Progress shows your recorded measurements and consistency over time." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Cada registro atualiza o Hoje. O Progresso mostra suas medidas registradas e a constância ao longo do tempo." } }
     } },
     "tour.trail.body" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Each entry updates Today. When the day closes, meeting your food target credits the deficit to the 7,700 kcal Block: exercise speeds it up, going over subtracts. Progress shows the result over the weeks." } },
@@ -5796,6 +5816,10 @@
     "tutorial.profile.title" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Profile" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Perfil" } }
+    } },
+    "tutorial.progress.body.without-block" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Progress brings together weight, measurements, consistency and achievements, with the dates of your records." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Progresso reúne peso, medidas, consistência e conquistas, com as datas dos seus registros." } }
     } },
     "tutorial.progress.body" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Progress brings together weight, measurements, consistency, achievements and the 7,700 kcal Block, with the date of each value." } },

@@ -258,6 +258,8 @@ struct PlanProgressContractTests {
                 "lastActiveDate",
                 "nextReevaluation",
                 "updatedAt",
+                "currentProtocol",
+                "block7700Enabled",
             ]
         )
         #expect(!labels.contains("percentage"))

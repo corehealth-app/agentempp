@@ -52,6 +52,7 @@ enum BodyFlowTestFixtures {
             data: TodaySnapshot(
                 localDate: response.data.localDate,
                 protocolName: response.data.protocolName,
+                currentProtocol: "recomposicao",
                 targets: response.data.targets,
                 consumed: response.data.consumed,
                 remainingFoodKcal: response.data.remainingFoodKcal,

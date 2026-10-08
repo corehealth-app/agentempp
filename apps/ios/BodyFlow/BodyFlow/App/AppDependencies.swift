@@ -228,10 +228,10 @@ struct AppDependencies: Sendable {
         #if DEBUG
         let timeProvider: any TimeProviding
         let idempotencyKeyProvider: any IdempotencyKeyProviding
-        let today: any TodayProviding
+        var today: any TodayProviding
         let history: any HistoryProviding
         let plan: any PlanProviding
-        let progress: any ProgressProviding
+        var progress: any ProgressProviding
         let mealDetection: any MealDetectionProviding
         let registration: any RegistrationProviding
         let hydration: any HydrationRecording
@@ -367,6 +367,10 @@ struct AppDependencies: Sendable {
                 routine = unavailable
                 weight = unavailable
             }
+        }
+        if configuration.mode == .demo, let scenario = configuration.block7700Scenario {
+            today = DemoBlock7700TodayProvider(base: today, scenario: scenario)
+            progress = DemoBlock7700ProgressProvider(base: progress, scenario: scenario)
         }
         #else
         let timeProvider: any TimeProviding = SystemTimeProvider()

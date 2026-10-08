@@ -27,7 +27,10 @@ struct ProgressRootView: View {
                         }
                         // The charts sit beside the snapshot: a day with
                         // records has trends even before any gamification.
-                        ProgressTrendsSection(model: model.trends)
+                        ProgressTrendsSection(
+                            model: model.trends,
+                            showsBlock7700: model.state.presentation.value?.blockPresentationPolicy.showsBlock ?? false
+                        )
                         FeatureReadStateView(state: model.state, retryAction: retry) { snapshot in
                             let presentation = ProgressPresentation(snapshot: snapshot, language: language)
                             VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
@@ -37,18 +40,20 @@ struct ProgressRootView: View {
                                     profileWeightState: model.profileWeight.state,
                                     retryProfileWeight: retry
                                 )
-                                NavigationLink(value: AppRoute.progress(.block7700)) {
-                                    BodyFlowCard(surface: .card) {
-                                        FeatureActionLabel(
-                                            title: copy("progress.block.title"),
-                                            detail: copy("progress.block.action.detail"),
-                                            systemImage: BodyFlowSymbol.block.systemName
-                                        )
+                                if presentation.blockPolicy.showsBlock {
+                                    NavigationLink(value: AppRoute.progress(.block7700)) {
+                                        BodyFlowCard(surface: .card) {
+                                            FeatureActionLabel(
+                                                title: copy("progress.block.title"),
+                                                detail: copy("progress.block.action.detail"),
+                                                systemImage: BodyFlowSymbol.block.systemName
+                                            )
+                                        }
                                     }
+                                    .buttonStyle(.bodyFlowRow)
+                                    .accessibilityIdentifier("progress.block.detail")
+                                    .bodyFlowZoomSource(.progress(.block7700))
                                 }
-                                .buttonStyle(.bodyFlowRow)
-                                .accessibilityIdentifier("progress.block.detail")
-                                .bodyFlowZoomSource(.progress(.block7700))
                             }
                         }
                     }

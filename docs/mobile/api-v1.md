@@ -829,6 +829,30 @@ reexportam as rotas oficiais; métodos/auth/envelopes/headers não mudam.
 Gates: `verify:routes`, `verify:imports`, testes e build do BFF, e
 `verify:build-surface`. Este contrato não comprova UI física nem fecha C3 inteiro.
 
+**Consumo iOS (2026-10-08, alteração local).** Os dois decoders aceitam os
+campos aditivos opcionais. A política de apresentação usa somente os dois
+campos da mesma resposta: `recomposicao` + flag `true` habilita; `ganho_massa`
+ou `manutencao` + flag `false` oculta e explica uma vez; ausência, `null`,
+valor inválido ou combinação contraditória oculta sem inferir o objetivo.
+Flag com tipo inválido continua erro de decoding, sem coerção.
+
+Hoje oculta o card/nó do bloco; Progresso oculta suas métricas, gráfico,
+link de detalhe e somente a medalha literal `Primeiro Bloco`. Os demais
+dados e a identidade posicional das medalhas continuam intactos. Séries
+antigas não autorizam o gráfico se o progresso atual for `data:null`.
+O detalhe direto lê Hoje e publica política e valores como uma unidade;
+retry/erro conserva essa unidade, e uma leitura antiga não restaura números
+de recomposição após uma leitura atual inelegível. O contexto desconhecido
+oferece recuperação sem apresentar números de bloco como válidos.
+
+O tutorial usa o snapshot publicado de Hoje deste shell, sem leitura extra
+nem persistência de objetivo. Atualizar fatos conserva oito etapas e posição;
+um owner invalidado não atualiza fatos nem grava conclusão na nova sessão da
+mesma conta. Preferência de tutorial continua separada dos dados de saúde.
+Testes locais: `Block7700EligibilityBoundaryTests`, `Block7700TutorialTests`
+e `Block7700EligibilityRenderingTests`, além das suítes vizinhas. Isso não
+substitui a suíte integral, o UI runner, staging integrado e o smoke físico.
+
 ### Fechamento do dia sob demanda (ambiente de avaliação)
 
 Em produção o dia é fechado pelo worker, de madrugada, e estas duas rotas só

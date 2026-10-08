@@ -127,6 +127,7 @@ struct ProgressTrendsPresentation: Equatable, Sendable {
 @MainActor
 struct ProgressTrendsSection: View {
     let model: ProgressTrendsViewModel
+    let showsBlock7700: Bool
     @Environment(\.locale) private var locale
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var selectedDate: Date?
@@ -176,7 +177,7 @@ struct ProgressTrendsSection: View {
             if !presentation.weights.isEmpty { weightCard(presentation) }
             if !presentation.calories.isEmpty {
                 caloriesCard(presentation)
-                blockCard(presentation)
+                if showsBlock7700 { blockCard(presentation) }
                 daysCard(presentation)
             }
         }

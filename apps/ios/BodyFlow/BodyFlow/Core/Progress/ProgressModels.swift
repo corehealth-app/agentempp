@@ -31,6 +31,12 @@ struct ProgressSnapshot: Codable, Equatable, Sendable {
     let lastActiveDate: String?
     let nextReevaluation: String?
     let updatedAt: APITimestamp
+    var currentProtocol: String? = nil
+    var block7700Enabled: Bool? = nil
+
+    var blockPresentationPolicy: Block7700PresentationPolicy {
+        Block7700PresentationPolicy(currentProtocol: currentProtocol, enabled: block7700Enabled)
+    }
 
     private enum CodingKeys: String, CodingKey {
         case xpTotal = "xp_total"
@@ -45,5 +51,7 @@ struct ProgressSnapshot: Codable, Equatable, Sendable {
         case lastActiveDate = "last_active_date"
         case nextReevaluation = "next_reevaluation"
         case updatedAt = "updated_at"
+        case currentProtocol = "current_protocol"
+        case block7700Enabled = "block_7700_enabled"
     }
 }

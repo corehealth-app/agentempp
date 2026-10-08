@@ -302,6 +302,7 @@ struct AppLaunchConfiguration: Sendable {
     let prompt13Scenario: DemoBodyFlowScenario?
     let prompt14Scenario: DemoPrompt14Scenario?
     let prompt14ScenarioSelection: DemoPrompt14ScenarioSelection?
+    let block7700Scenario: DemoBlock7700Scenario?
     #endif
 
     #if DEBUG
@@ -316,7 +317,8 @@ struct AppLaunchConfiguration: Sendable {
         onboardingEligibilityScenario: OnboardingEligibilityPreviewScenario? = nil,
         prompt13Scenario: DemoBodyFlowScenario? = nil,
         prompt14Scenario: DemoPrompt14Scenario? = nil,
-        prompt14ScenarioSelection: DemoPrompt14ScenarioSelection? = nil
+        prompt14ScenarioSelection: DemoPrompt14ScenarioSelection? = nil,
+        block7700Scenario: DemoBlock7700Scenario? = nil
     ) {
         self.mode = mode
         self.shouldResetDemoState = shouldResetDemoState
@@ -328,6 +330,7 @@ struct AppLaunchConfiguration: Sendable {
         self.onboardingEligibilityScenario = mode == .demo ? onboardingEligibilityScenario : nil
         self.prompt13Scenario = mode == .demo ? prompt13Scenario : nil
         self.prompt14Scenario = mode == .demo ? prompt14Scenario : nil
+        self.block7700Scenario = mode == .demo ? block7700Scenario : nil
         self.prompt14ScenarioSelection = mode == .demo
             ? prompt14ScenarioSelection
                 ?? prompt14Scenario.map {
@@ -448,7 +451,8 @@ struct AppLaunchConfiguration: Sendable {
             return uiTestingConfiguration(
                 startsWithCompletedFixture: true,
                 authBehavior: .succeed(after: nil),
-                prompt13Scenario: scenario
+                prompt13Scenario: scenario,
+                block7700Scenario: DemoBlock7700Scenario.resolve(arguments: arguments)
             )
         }
 
@@ -459,7 +463,8 @@ struct AppLaunchConfiguration: Sendable {
                 startsWithCompletedFixture: true,
                 authBehavior: .succeed(after: nil),
                 prompt14Scenario: selection.legacyScenario,
-                prompt14ScenarioSelection: selection
+                prompt14ScenarioSelection: selection,
+                block7700Scenario: DemoBlock7700Scenario.resolve(arguments: arguments)
             )
         }
 
@@ -524,7 +529,8 @@ struct AppLaunchConfiguration: Sendable {
         authBehavior: DemoOperationBehavior<AuthenticationError>,
         prompt13Scenario: DemoBodyFlowScenario? = nil,
         prompt14Scenario: DemoPrompt14Scenario? = nil,
-        prompt14ScenarioSelection: DemoPrompt14ScenarioSelection? = nil
+        prompt14ScenarioSelection: DemoPrompt14ScenarioSelection? = nil,
+        block7700Scenario: DemoBlock7700Scenario? = nil
     ) -> AppLaunchConfiguration {
         AppLaunchConfiguration(
             mode: .demo,
@@ -536,7 +542,8 @@ struct AppLaunchConfiguration: Sendable {
             demoKeychainService: DemoStorageService.uiTesting,
             prompt13Scenario: prompt13Scenario,
             prompt14Scenario: prompt14Scenario,
-            prompt14ScenarioSelection: prompt14ScenarioSelection
+            prompt14ScenarioSelection: prompt14ScenarioSelection,
+            block7700Scenario: block7700Scenario
         )
     }
     #endif

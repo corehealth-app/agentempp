@@ -75,7 +75,8 @@ enum GuidedTutorialContent {
             GuidedTutorialStep(
                 area: .progress,
                 titleKey: "tutorial.progress.title",
-                lineKeys: ["tutorial.progress.body", "tutorial.progress.empty"],
+                lineKeys: [facts.showsBlock7700 ? "tutorial.progress.body" : "tutorial.progress.body.without-block",
+                    "tutorial.progress.empty"],
                 symbol: .weight
             ),
             GuidedTutorialStep(

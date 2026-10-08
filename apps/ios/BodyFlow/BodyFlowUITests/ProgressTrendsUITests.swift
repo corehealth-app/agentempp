@@ -11,7 +11,7 @@ final class ProgressTrendsUITests: XCTestCase {
     @MainActor
     func testLoadedAccountShowsTheFourTrendCards() {
         let support = BodyFlowUITestSupport(testCase: self)
-        let app = support.launch(scenario: .loaded)
+        let app = support.launch(scenario: .loaded, additionalArguments: ["--ui-testing-block-currentRecomposition"])
         app.buttons["tab.progresso"].tap()
         XCTAssertTrue(element("progress.trends", in: app).waitForExistence(timeout: 8))
         for id in ["progress.trends.weight", "progress.trends.calories", "progress.trends.block", "progress.trends.days"] {

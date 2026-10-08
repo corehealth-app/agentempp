@@ -52,6 +52,16 @@ struct AppShellView: View {
         self.sessionOwner = sessionOwner
         self.accountEmail = accountEmail
         self.signOut = signOut
+        #if DEBUG
+        let launch = AppLaunchConfiguration.current()
+        if launch.mode == .demo, launch.block7700Scenario != nil,
+           ProcessInfo.processInfo.arguments.contains("--ui-testing-block-direct-detail") {
+            let fixtureRouter = AppRouter()
+            fixtureRouter.navigate(to: .progress(.block7700), in: .progress)
+            _router = State(initialValue: fixtureRouter)
+            _selectedTab = State(initialValue: .progress)
+        }
+        #endif
         let invalidationCenter = FeatureInvalidationCenter()
         _invalidationCenter = State(initialValue: invalidationCenter)
         _todayViewModel = State(
@@ -178,6 +188,10 @@ struct AppShellView: View {
         }
         .onChange(of: LocalReminderRouteInbox.shared.pending) {
             routePendingReminderTap()
+        }
+        .onChange(of: tutorialFacts) {
+            guard !sessionOwner.isInvalidated else { return }
+            tour?.updateFacts(tutorialFacts, ownerKey: tutorialOwnerKey)
         }
         .onDisappear {
             flowChatModel.invalidate()
@@ -312,7 +326,9 @@ struct AppShellView: View {
             planImport: dependencies.planDrafts?.supportsImport == true,
             reminders: localReminders != nil,
             // Profile shows "Sair da conta" only with both.
-            realAccount: accountEmail != nil && signOut != nil
+            realAccount: accountEmail != nil && signOut != nil,
+            showsBlock7700: !sessionOwner.isInvalidated
+                && (todayViewModel.state.presentation.value?.blockPresentationPolicy.showsBlock ?? false)
         )
     }
 
@@ -368,7 +384,10 @@ struct AppShellView: View {
             steps: GuidedTourContent.steps(facts: tutorialFacts),
             origin: origin,
             ownerKey: tutorialOwnerKey,
-            returnTab: selectedTab
+            returnTab: selectedTab,
+            isSessionActive: { [weak owner = sessionOwner] in
+                owner?.isInvalidated == false
+            }
         )
         if origin == .profile {
             router.popToRoot(in: .today)
@@ -399,7 +418,12 @@ struct AppShellView: View {
             }
             tipsShownThisSession += 1
             capability.store.markTipShown(target, ownerKey: ownerKey)
-            tour = GuidedTourModel(steps: [step], origin: .tip, ownerKey: ownerKey, returnTab: selectedTab)
+            tour = GuidedTourModel(
+                steps: [step], origin: .tip, ownerKey: ownerKey, returnTab: selectedTab,
+                isSessionActive: { [weak owner = sessionOwner] in
+                    owner?.isInvalidated == false
+                }
+            )
         }
     }
 
@@ -407,13 +431,13 @@ struct AppShellView: View {
     /// records nothing beyond having been shown. A replay returns to the
     /// tab it started from.
     private func endTour(_ model: GuidedTourModel, outcome: GuidedTutorialOutcome) {
-        guard tour === model else { return }
+        guard !sessionOwner.isInvalidated, model.isSessionActive(), tour === model else { return }
         if model.origin != .tip {
-            let store = dependencies.guidedTutorial.store
-            store.setStatus(
-                GuidedTutorialOffer.status(after: outcome, from: store.status(ownerKey: model.ownerKey)),
-                ownerKey: model.ownerKey
-            )
+            guard GuidedTutorialOffer.record(
+                outcome, ownerKey: model.ownerKey,
+                store: dependencies.guidedTutorial.store,
+                sessionIsActive: model.isSessionActive()
+            ) else { return }
         }
         tour = nil
         if outcome == .finished { tourFinishes += 1 }
@@ -428,15 +452,12 @@ struct AppShellView: View {
         _ outcome: GuidedTutorialOutcome,
         for presentation: GuidedTutorialPresentation
     ) {
-        guard tutorialPresentation?.id == presentation.id else { return }
-        let store = dependencies.guidedTutorial.store
-        store.setStatus(
-            GuidedTutorialOffer.status(
-                after: outcome,
-                from: store.status(ownerKey: presentation.ownerKey)
-            ),
-            ownerKey: presentation.ownerKey
-        )
+        guard !sessionOwner.isInvalidated, tutorialPresentation?.id == presentation.id else { return }
+        guard GuidedTutorialOffer.record(
+            outcome, ownerKey: presentation.ownerKey,
+            store: dependencies.guidedTutorial.store,
+            sessionIsActive: !sessionOwner.isInvalidated
+        ) else { return }
         tutorialPresentation = nil
     }
 

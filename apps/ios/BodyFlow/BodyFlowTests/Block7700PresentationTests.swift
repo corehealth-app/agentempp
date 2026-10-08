@@ -54,8 +54,8 @@ struct Block7700PresentationTests {
         await model.retry()
 
         let presentation = Block7700DetailPresentation(state: model.state)
-        #expect(model.state == .offline(previousValue: Block7700Descriptor(
-            block: BodyFlowTestFixtures.todayBlock
+        #expect(model.state == .offline(previousValue: Block7700ReadValue(
+            snapshot: BodyFlowTestFixtures.todayResponseWithBlock.data
         )))
         #expect(presentation.descriptor?.source == "today-user-progress-snapshot")
         #expect(presentation.showsStaleBanner)
@@ -75,7 +75,7 @@ struct Block7700PresentationTests {
 
         let presentation = Block7700DetailPresentation(state: model.state)
         #expect(model.state == .failed(
-            previousValue: Block7700Descriptor(block: BodyFlowTestFixtures.todayBlock),
+            previousValue: Block7700ReadValue(snapshot: BodyFlowTestFixtures.todayResponseWithBlock.data),
             error: .serviceUnavailable
         ))
         #expect(presentation.descriptor?.currentText == "2.500 kcal")
@@ -85,7 +85,7 @@ struct Block7700PresentationTests {
 
     @Test("only retained stale block details offer an inline retry")
     func staleDetailRetryPresentation() {
-        let descriptor = Block7700Descriptor(block: BodyFlowTestFixtures.todayBlock)
+        let descriptor = Block7700ReadValue(snapshot: BodyFlowTestFixtures.todayResponseWithBlock.data)
         let staleOffline = Block7700DetailPresentation(
             state: .offline(previousValue: descriptor)
         )

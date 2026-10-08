@@ -1192,7 +1192,14 @@ saldo anterior, sem consultar nem gravar staging.
   O fechamento sob demanda continua anterior à leitura, com suas travas.
   Sem transação/versão, as duas leituras não garantem atomicidade entre perfil
   e progresso. O contrato aditivo conserva `bodyflow.daily-state.v3` e não
-  comprova que o cliente iOS já consome a flag ou que staging foi publicado.
+  comprova por si só que staging foi publicado. O consumo iOS local de
+  2026-10-08 exige objetivo e flag concordantes na mesma resposta, oculta
+  card/métricas/gráfico/link/nó e a medalha literal `Primeiro Bloco` quando
+  inelegível, preservando os dados recebidos. Contexto ausente/contraditório
+  não habilita o bloco; o tutorial acompanha somente o Hoje publicado da
+  sessão atual. Contrato e limites de validação em `docs/mobile/api-v1.md`
+  §Elegibilidade do Bloco 7.700. Sem nova fórmula, débito, backfill ou
+  aprovação clínica; staging e app ainda requerem integração/QA juntos.
 - Snapshot, refeições e treinos são lidos juntos. Uma releitura da versão do
   snapshot evita misturar totais anteriores com logs de uma confirmação
   concorrente; após duas leituras instáveis, a API falha sem publicar estado

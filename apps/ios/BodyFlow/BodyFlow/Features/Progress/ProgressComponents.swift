@@ -82,6 +82,7 @@ enum ProgressGamificationSection: Identifiable, Equatable, Sendable {
 }
 
 struct ProgressPresentation: Equatable, Sendable {
+    let blockPolicy: Block7700PresentationPolicy
     let xpText: String
     let levelText: String
     let currentStreakText: String
@@ -105,6 +106,8 @@ struct ProgressPresentation: Equatable, Sendable {
         snapshot: ProgressSnapshot,
         language: SupportedAppLanguage = .portugueseBrazil
     ) {
+        let policy = snapshot.blockPresentationPolicy
+        blockPolicy = policy
         xpText = "\(Self.integer(snapshot.xpTotal, language: language)) XP"
         levelText = "\(Self.copy("progress.level", language)) \(Self.integer(snapshot.level, language: language))"
         currentStreakText = Self.days(snapshot.currentStreak, language: language)
@@ -117,8 +120,11 @@ struct ProgressPresentation: Equatable, Sendable {
         bodyFatText = snapshot.currentBodyFatPercent.map {
             "\(Self.decimal($0, language: language))%"
         } ?? Self.copy("progress.not-available", language)
-        badges = snapshot.badgesEarned
-        medalRows = snapshot.badgesEarned.enumerated().map { offset, text in
+        let visibleMedals = snapshot.badgesEarned.enumerated().filter { _, text in
+            policy.showsBlock || text != "Primeiro Bloco"
+        }
+        badges = visibleMedals.map(\.element)
+        medalRows = visibleMedals.map { offset, text in
             ProgressMedalRow(offset: offset, text: text)
         }
         if snapshot.currentStreak == 0 {
@@ -350,18 +356,29 @@ struct ProgressContentView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(presentation.levelText)
-                Divider()
-                metricRow(
-                    copy("progress.metric.completed-blocks"),
-                    presentation.completedBlocksText,
-                    symbol: .completedBlocks
-                )
-                Divider()
-                metricRow(
-                    copy("progress.metric.reported-deficit"),
-                    presentation.deficitBlockText,
-                    symbol: .deficit
-                )
+                if presentation.blockPolicy.showsBlock {
+                    Divider()
+                    metricRow(
+                        copy("progress.metric.completed-blocks"),
+                        presentation.completedBlocksText,
+                        symbol: .completedBlocks
+                    )
+                    .accessibilityIdentifier("progress.metric.completed-blocks")
+                    Divider()
+                    metricRow(
+                        copy("progress.metric.reported-deficit"),
+                        presentation.deficitBlockText,
+                        symbol: .deficit
+                    )
+                    .accessibilityIdentifier("progress.metric.reported-deficit")
+                } else if presentation.blockPolicy.showsExplanation {
+                    Divider()
+                    Text(verbatim: copy("progress.block.ineligible"))
+                        .font(BodyFlowTypography.supporting)
+                        .foregroundStyle(BodyFlowColor.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("progress.block.explanation")
+                }
             }
         }
         .accessibilityElement(children: .contain)

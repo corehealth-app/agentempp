@@ -137,21 +137,21 @@ struct GuidedTourOverlay: View {
                 .foregroundStyle(BodyFlowColor.primaryText)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("tour.body.\(step.id)")
-            if step.kind == .trail { trail }
+            if step.kind == .trail { trail(showsBlock7700: step.showsBlock7700) }
         }
         .padding(BodyFlowSpacing.md)
     }
 
     /// The day's trail: register → Today updates → 7,700 kcal block →
     /// Progress. The plan line says how Plano and Flow fit around it.
-    private var trail: some View {
+    private func trail(showsBlock7700: Bool) -> some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
             let nodes: [(BodyFlowSymbol, String)] = [
                 (.meals, "tour.trail.node.register"),
                 (.energy, "tour.trail.node.today"),
                 (.block, "tour.trail.node.block"),
                 (.weight, "tour.trail.node.progress"),
-            ]
+            ].filter { showsBlock7700 || $0.0 != .block }
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: BodyFlowSpacing.xs) { trailNodes(nodes, vertical: false) }
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) { trailNodes(nodes, vertical: true) }

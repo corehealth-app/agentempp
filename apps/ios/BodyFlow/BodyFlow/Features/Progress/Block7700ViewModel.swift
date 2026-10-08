@@ -35,27 +35,43 @@ struct Block7700Descriptor: Equatable, Sendable {
     }
 }
 
+/// Policy and figures share the same read identity, including stale recovery.
+struct Block7700ReadValue: Equatable, Sendable {
+    let policy: Block7700PresentationPolicy
+    let descriptor: Block7700Descriptor?
+
+    init(snapshot: TodaySnapshot) {
+        policy = snapshot.blockPresentationPolicy
+        descriptor = policy.showsBlock
+            ? snapshot.block7700.map(Block7700Descriptor.init) : nil
+    }
+}
+
 @MainActor
 @Observable
 final class Block7700ViewModel {
     private struct LoadIdentity {
         let sequence: Int
         let ownership: FeatureLoadOwnership
-        let previousState: FeatureReadState<Block7700Descriptor>
+        let previousState: FeatureReadState<Block7700ReadValue>
     }
 
     private let today: any TodayProviding
     private var activeLoad: LoadIdentity?
     private var sequence = 0
 
-    private(set) var state: FeatureReadState<Block7700Descriptor> = .idle
+    private(set) var state: FeatureReadState<Block7700ReadValue> = .idle
 
     init(today: any TodayProviding) {
         self.today = today
     }
 
     var descriptor: Block7700Descriptor? {
-        state.presentation.value
+        state.presentation.value?.descriptor
+    }
+
+    var blockPolicy: Block7700PresentationPolicy {
+        state.presentation.value?.policy ?? .unknown
     }
 
     func load() async {
@@ -80,7 +96,7 @@ final class Block7700ViewModel {
             )
             activeLoad?.ownership.invalidate()
             activeLoad = identity
-            state = descriptor.map(FeatureReadState.loaded) ?? .loading
+            state = state.presentation.value.map(FeatureReadState.loaded) ?? .loading
             await perform(identity)
         } onCancel: {
             ownership.invalidate()
@@ -101,16 +117,16 @@ final class Block7700ViewModel {
             let response = try await today.today()
             try Task.checkCancellation()
             guard canPublish(identity) else { return }
-            guard let block = response.data.block7700 else {
+            guard response.data.block7700 != nil else {
                 state = .unavailable
                 return
             }
-            state = .loaded(Block7700Descriptor(block: block))
+            state = .loaded(Block7700ReadValue(snapshot: response.data))
         } catch is CancellationError {
             restoreCancelledLoad(identity)
         } catch {
             guard !Task.isCancelled, canPublish(identity) else { return }
-            publish(error: error, previousValue: descriptor)
+            publish(error: error, previousValue: state.presentation.value)
         }
     }
 
@@ -132,7 +148,7 @@ final class Block7700ViewModel {
 
     private func publish(
         error: any Error,
-        previousValue: Block7700Descriptor?
+        previousValue: Block7700ReadValue?
     ) {
         let capabilityError = error as? BodyFlowCapabilityError
             ?? .serviceUnavailable

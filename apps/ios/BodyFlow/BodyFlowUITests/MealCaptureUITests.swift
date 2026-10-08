@@ -45,6 +45,7 @@ final class MealCaptureUITests: XCTestCase {
 
         let confirmEggs = app.switches["registration.review.item.c1-0a1b2c3d.confirm"]
         reveal(confirmEggs, app: app, direction: .down)
+        support.assertTarget(confirmEggs)
         turnOn(confirmEggs)
         reveal(submit, app: app)
         XCTAssertFalse(submit.isEnabled, "granola still has no quantity")
@@ -54,7 +55,9 @@ final class MealCaptureUITests: XCTestCase {
         XCTAssertFalse(app.switches["registration.review.item.c2-1b2c3d4e.confirm"].exists)
         granola.tap()
         granola.typeText("30")
-        dismissKeyboard(app)
+        finishNumericEntry(app, expectedLabel: "Concluído")
+        XCTAssertEqual(granola.value as? String, "30")
+        XCTAssertFalse(element("registration.proposal", app: app).exists)
 
         reveal(submit, app: app)
         XCTAssertTrue(submit.isEnabled)
@@ -127,6 +130,38 @@ final class MealCaptureUITests: XCTestCase {
         support.capture("c1-review-en-dark-axxxl", app: app)
         remove.tap()
         XCTAssertFalse(app.textFields["registration.review.item.c2-1b2c3d4e.name"].exists)
+    }
+
+    @MainActor
+    func testQuantityDonePreservesInputAndCreatesNoProposalInEnglishAtAXXXL() {
+        let app = launchCapture(
+            language: "en-US",
+            dark: true,
+            category: "UICTContentSizeCategoryAccessibilityXXXL"
+        )
+        app.buttons["registration.meal.source.text"].tap()
+        let field = app.textFields["registration.meal.text"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("2 eggs")
+        dismissKeyboard(app)
+        let read = app.buttons["registration.meal.detect"]
+        reveal(read, app: app)
+        read.tap()
+
+        let granola = app.textFields["registration.review.item.c2-1b2c3d4e.quantity"]
+        XCTAssertTrue(granola.waitForExistence(timeout: 8))
+        reveal(granola, app: app)
+        granola.tap()
+        granola.typeText("30")
+        XCTAssertTrue(app.buttons["keyboard.done"].waitForExistence(timeout: 3))
+        support.capture("c1-quantity-keyboard-en-dark-axxxl", app: app)
+        finishNumericEntry(app, expectedLabel: "Done")
+        XCTAssertEqual(granola.value as? String, "30")
+        XCTAssertFalse(element("registration.proposal", app: app).exists)
+        let submit = app.buttons["registration.review.submit"]
+        reveal(submit, app: app)
+        XCTAssertFalse(submit.isEnabled, "Closing the keyboard does not confirm the eggs")
     }
 
     @MainActor
@@ -260,10 +295,12 @@ final class MealCaptureUITests: XCTestCase {
             from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .slow,
                        thenHoldForDuration: 0.1)
         }
-        for _ in 0..<20 where !isReachable(target, app: app) {
+        for _ in 0..<20 {
+            if isReachable(target, app: app) { break }
             scroll(direction)
         }
-        for _ in 0..<40 where !isReachable(target, app: app) {
+        for _ in 0..<40 {
+            if isReachable(target, app: app) { break }
             scroll(direction == .up ? .down : .up)
         }
         let window = visibleWindow(app)
@@ -277,9 +314,13 @@ final class MealCaptureUITests: XCTestCase {
     /// The part of the sheet between its header and the keyboard.
     @MainActor
     private func visibleWindow(_ app: XCUIApplication) -> (top: CGFloat, bottom: CGFloat) {
-        let bars = app.navigationBars
-        let header = bars.element(boundBy: max(bars.count - 1, 0))
-        let top = header.exists ? header.frame.maxY : 0
+        // The sheet and underlying tab both expose bars. Query order does
+        // not identify the sheet's visible header, as in detect geometry.
+        let bars = app.navigationBars.containing(.button, identifier: "sheet.fechar")
+        XCTAssertEqual(bars.count, 1)
+        let header = bars.firstMatch
+        XCTAssertTrue(header.exists)
+        let top = header.frame.maxY
         let keyboard = app.keyboards.firstMatch
         let keyboardIsUp = keyboard.exists && keyboard.frame.height > 0
             && keyboard.frame.minY > top && keyboard.frame.minY < app.frame.maxY
@@ -317,6 +358,21 @@ final class MealCaptureUITests: XCTestCase {
         if app.keyboards.count > 0, app.keyboards.buttons["Return"].exists {
             app.keyboards.buttons["Return"].tap()
         }
+    }
+
+    @MainActor
+    private func finishNumericEntry(_ app: XCUIApplication, expectedLabel: String) {
+        let done = app.buttons["keyboard.done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 3),
+                      "The meal quantity needs an accessible keyboard completion control")
+        XCTAssertEqual(done.label, expectedLabel)
+        support.assertTarget(done)
+        done.tap()
+        let dismissed = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in !app.keyboards.firstMatch.exists },
+            object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 3), .completed)
     }
 
     @MainActor

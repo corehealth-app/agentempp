@@ -4,11 +4,17 @@ import SwiftUI
 /// No calorie appears here: the calculation happens only after this list is
 /// sent, on the server.
 struct MealDraftReviewView: View {
+    private enum Field: Hashable {
+        case name(String)
+        case quantity(String)
+    }
+
     @Binding var review: MealDraftReview
     let isSubmitting: Bool
     let submit: @MainActor () -> Void
     let startOver: @MainActor () -> Void
     @Environment(\.locale) private var locale
+    @FocusState private var focusedField: Field?
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
@@ -77,6 +83,21 @@ struct MealDraftReviewView: View {
             .disabled(isSubmitting)
             .accessibilityIdentifier("registration.review.start-over")
         }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button { focusedField = nil } label: {
+                    Text(copy("keyboard.done"))
+                        .frame(
+                            minWidth: BodyFlowSpacing.minimumTapTarget,
+                            minHeight: BodyFlowSpacing.minimumTapTarget
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("keyboard.done")
+            }
+        }
     }
 
     private func itemCard(_ item: Binding<MealDraftReview.Item>) -> some View {
@@ -85,6 +106,7 @@ struct MealDraftReviewView: View {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
                 fieldCaption("registration.review.item.name")
                 TextField(copy("registration.review.item.name"), text: item.name, axis: .vertical)
+                    .focused($focusedField, equals: .name(value.id))
                     .lineLimit(1...3)
                     .textInputAutocapitalization(.sentences)
                     .bodyFlowField()
@@ -109,6 +131,7 @@ struct MealDraftReviewView: View {
                     )
                 )
                 .keyboardType(.decimalPad)
+                .focused($focusedField, equals: .quantity(value.id))
                 .bodyFlowField()
                 .accessibilityLabel(copy("registration.review.item.quantity"))
                 .accessibilityIdentifier("registration.review.item.\(value.id).quantity")
@@ -126,7 +149,8 @@ struct MealDraftReviewView: View {
                         Text(copy("registration.review.confirm-item"))
                             .font(BodyFlowTypography.callout)
                     }
-                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget + 4)
+                    .contentShape(Rectangle())
                     .accessibilityLabel(
                         copy("registration.review.confirm-item") + ": " + value.trimmedName
                     )

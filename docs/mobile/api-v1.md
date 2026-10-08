@@ -2510,6 +2510,31 @@ lugar para guardar a proposta (menos de 20 rascunhos abertos e menos de 3
 falhas de gravação na última hora): sem lugar, nada é gerado. `gera_treino`/`gera_dieta` continuam recusadas
 no app, e as propostas não existem no WhatsApp.
 
+#### Status determinístico por objetivo (recorte C3/C4, 2026-10-08)
+
+Quando a pergunta pura de status recebe `consulta_progresso` e há snapshot,
+o Flow compõe o card com os mesmos valores oficiais do dia. Comida, proteína,
+exercício, sequência, nível e XP permanecem iguais. A contagem de blocos
+concluídos só aparece quando o objetivo ativo do perfil é recomposição;
+ganho/manutenção recebem a explicação “O Bloco 7.700 é exibido apenas na
+recomposição corporal.”, uma vez ao final da apresentação.
+
+O adapter desse status Flow não fornece `last14d` ao renderer, inclusive na
+reconstrução canônica desse caminho após o loop. Orçamento de 14 dias/DAM fica
+oculto nesse caminho até a decisão
+documentada do médico. Os valores originais não são zerados ou removidos do
+contexto/persistência: não mudam cálculo, crédito, fechamento ou medalhas.
+O renderer e compositor compartilhados preservam seus defaults legados.
+
+Esse recorte não muda detector, permissões de ferramentas, consultas, schema,
+rotas ou contrato nativo. `/flow/chat` mantém seu espelho BFF e verificadores.
+Golden exato de ganho e manutenção com bloco histórico não zero, recomposição
+com as mesmas cifras, inputs congelados e trava WhatsApp validam o caminho
+local. Copy/publicação/staging permanecem gates próprios. Prompt, JSON de
+ferramenta, texto livre, histórico/replay e Hoje/Progresso ainda exigem a
+política completa C3/C4; essa correção não fecha esses pacotes. O status
+determinístico ainda é em português, como antes (RC PERF-C6).
+
 ### Identidade pública do Flow
 
 No app o assistente é o **Flow, do Performe AI**, e nada mais: o nome do

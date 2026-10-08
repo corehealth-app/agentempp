@@ -7,8 +7,9 @@
  * prints the string as it is (FlowMessageBubble, Text(message.content)), so
  * the patient saw the asterisks and underscores.
  *
- * This is formatting only. The input is the finished WhatsApp text, so every
- * number, its order and its unit are the ones WhatsApp sends; nothing is
+ * This is formatting only. The input is the finished status presentation;
+ * Flow's goal/budget visibility adapter runs separately before this step.
+ * Every received number, its order and its unit are preserved; nothing is
  * computed, rounded or added here. A line loses its leading pictograph and
  * its emphasis marks, and three labels take the wording the app's Today
  * screen uses for the same number (Localizable.xcstrings, pt-BR). The note of

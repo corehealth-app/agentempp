@@ -49,7 +49,9 @@
  *     service adds a hard 165 s limit
  *     (apps/admin/src/lib/mobile-api/flow-chat-service.turn-limit.test.ts);
  *  4. the status answer leaves as plain text with the Today screen's labels
- *     (MOBILE_FLOW_PLAIN_STATUS). Same numbers, same order, same lines;
+ *     (MOBILE_FLOW_PLAIN_STATUS). The day values and order are preserved;
+ *     decisions-v1 item5 subsequently hides block progress outside
+ *     recomposition and the pending 14-day budget/DAM on the Flow;
  *  5. the generator's tokens, cost and milliseconds are in `llm.flow_calls`
  *     and in the turn's totals, and the event is written for a turn that
  *     fails too;
@@ -3470,13 +3472,14 @@ describe('audit 2026-10-04 Flow calls — the status answer reaches the app as p
   ].join('\n')
 
   const FLOW_STATUS = [
-    'Sequência: 3 dias consecutivos · Nível 2 (1.240 XP) · 0 bloco(s) de 7.700 completo(s)',
+    'Sequência: 3 dias consecutivos · Nível 2 (1.240 XP)',
     '',
     'Consumido: 541 / 2.980 kcal (18%)',
     'Restam para comida: 2.439 kcal',
     'Proteína: 59.0 / 144g (41%)',
     'Exercício: 322 kcal',
-    'Orçamento 14d: 5.850 / 5.960 kcal (98%) · DAM: 1/2',
+    '',
+    'O Bloco 7.700 é exibido apenas na recomposição corporal.',
   ].join('\n')
 
   const digits = (text: string) => text.replace(/\D/g, '')
@@ -3495,7 +3498,7 @@ describe('audit 2026-10-04 Flow calls — the status answer reaches the app as p
     expect(output.singleMessage).toBe(true)
   })
 
-  it('"Como está meu dia até agora?" on the Flow: the same lines and numbers, no pictograph and no Markdown', async () => {
+  it('"Como está meu dia até agora?" on the Flow: preserved day values, no block progress or pending budget in gain', async () => {
     const h = harness({ text: STATUS_PHRASE, chat: STATUS_SCRIPT, closedDays: CLOSED })
     const output = await flow(h, STATUS_PHRASE)
 
@@ -3503,9 +3506,15 @@ describe('audit 2026-10-04 Flow calls — the status answer reaches the app as p
     expect(output.text).toBe(FLOW_STATUS)
     expect(output.text).not.toMatch(/[*_]/)
     expect(output.text).not.toMatch(/\p{Extended_Pictographic}/u)
-    // Formatting only: every digit, in the same order, as on WhatsApp.
-    expect(digits(output.text)).toBe(digits(WHATSAPP_STATUS))
-    expect(output.text.split('\n')).toHaveLength(WHATSAPP_STATUS.split('\n').length)
+    // decisions-v1 item5 supersedes formatting-only parity for Flow. Pin
+    // each preserved day line; the complete WhatsApp golden above is intact.
+    expect(output.text.split('\n').slice(2, 6)).toEqual([
+      'Consumido: 541 / 2.980 kcal (18%)',
+      'Restam para comida: 2.439 kcal',
+      'Proteína: 59.0 / 144g (41%)',
+      'Exercício: 322 kcal',
+    ])
+    expect(output.text).not.toMatch(/bloco\(s\)|Orçamento|DAM/)
     expect(output.singleMessage).toBe(true)
     // The same events as before: the path itself did not change.
     expect(eventNames(h)).toEqual([
@@ -3514,6 +3523,65 @@ describe('audit 2026-10-04 Flow calls — the status answer reaches the app as p
       MOBILE_FLOW_CALLS_EVENT,
       'llm.cache_usage',
     ])
+  })
+
+  it.each(['ganho_massa', 'manutencao'])('%s with historical nonzero block keeps the day and progress values without exposing block or budget', async (protocol) => {
+    const h = harness({
+      text: STATUS_PHRASE,
+      chat: STATUS_SCRIPT,
+      closedDays: CLOSED,
+      profile: { ...PROFILE, current_protocol: protocol },
+      progress: { ...PROGRESS, blocks_completed: 4, deficit_block: 3120 },
+    })
+    const output = await flow(h, STATUS_PHRASE)
+
+    expect(output.text).toBe(FLOW_STATUS)
+    expect(output.text).not.toMatch(/bloco\(s\)|3\.120|Orçamento|DAM/)
+    expect(output.text.match(/O Bloco 7\.700 é exibido apenas/g)).toHaveLength(1)
+    expect(h.chatCalls).toHaveLength(1)
+    expect(output.singleMessage).toBe(true)
+  })
+
+  it('spoofed mobile_flow provider on the legacy entry does not opt into Flow status presentation', async () => {
+    const h = harness({ channel: 'whatsapp', text: STATUS_PHRASE, chat: STATUS_SCRIPT, closedDays: CLOSED })
+    const output = await processMessage(h.deps, {
+      from: '5511999999999',
+      providerMessageId: TURN_ID,
+      text: STATUS_PHRASE,
+      contentType: 'text',
+      provider: 'mobile_flow',
+      timestamp: NOW,
+    })
+
+    expect(output.text).toBe(WHATSAPP_STATUS)
+    expect(h.chatCalls).toHaveLength(1)
+    expect(output.singleMessage).toBe(true)
+    expect(eventNames(h)).not.toContain(MOBILE_FLOW_CALLS_EVENT)
+  })
+
+  it('recomposition keeps a completed block and its unchanged balance even with closed budget days', async () => {
+    const h = harness({
+      text: STATUS_PHRASE,
+      chat: STATUS_SCRIPT,
+      closedDays: CLOSED,
+      profile: { ...PROFILE, current_protocol: 'recomposicao', deficit_level: 500 },
+      progress: { ...PROGRESS, blocks_completed: 4, deficit_block: 3120 },
+      day: { ...DAY, calories_target: 2200, calories_consumed: 2330, protein_g: 150, protein_target: 180 },
+    })
+    const output = await flow(h, STATUS_PHRASE)
+
+    expect(output.text).toBe([
+      'Sequência: 3 dias consecutivos · Nível 2 (1.240 XP) · 4 bloco(s) de 7.700 completo(s)',
+      '',
+      'Consumido: 2.330 / 2.200 kcal (106%)',
+      'Excesso alimentar: 130 kcal',
+      'Proteína: 150 / 180g (83%)',
+      'Exercício: 322 kcal (acelera o bloco 7.700)',
+      'Bloco 7.700: 3.120 / 7.700 kcal (41%)',
+    ].join('\n'))
+    expect(output.text).not.toMatch(/Orçamento|DAM|é exibido apenas/)
+    expect(h.chatCalls).toHaveLength(1)
+    expect(output.singleMessage).toBe(true)
   })
 
   it('recomposição above the target with a workout: "Excesso alimentar", the block note and "Bloco 7.700"', async () => {
@@ -3575,6 +3643,20 @@ describe('audit 2026-10-04 Flow calls — the status answer reaches the app as p
     const output = await flow(h, STATUS_PHRASE)
 
     expect(output.text).toBe(reply)
+  })
+
+  it('a non-deterministic Flow reply with a canonical card retains its existing presentation in this limited group', async () => {
+    const h = harness({
+      text: STATUS_PHRASE,
+      chat: [{ content: WHATSAPP_STATUS }],
+      closedDays: CLOSED,
+    })
+    const output = await flow(h, STATUS_PHRASE)
+
+    expect(output.text).toBe(WHATSAPP_STATUS)
+    expect(h.chatCalls).toHaveLength(1)
+    expect(output.singleMessage).toBe(false)
+    expect(eventNames(h)).not.toContain('pipeline.deterministic_status')
   })
 
   it('the renderer only removes marks, renames three labels and spells the block one way', () => {

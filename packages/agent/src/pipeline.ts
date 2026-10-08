@@ -143,6 +143,11 @@ import {
 } from './flow-public-metrics.js'
 import { flowPlainStatusText } from './flow-status-text.js'
 import {
+  composeFlowStatusMessage,
+  flowStatusExplanation,
+  renderFlowStatusCard,
+} from './flow-status-presentation.js'
+import {
   ensureSuggestionShown,
   isPurePlanSuggestionTurn,
   isSingleRequestMessage,
@@ -2686,7 +2691,11 @@ async function processResolvedMessage(
       if (snapDet) {
         const s = snapDet
         const p = progDet
-        finalText = composeStatusMessage(
+        const composeStatus =
+          options.historyProvider === 'mobile_flow'
+            ? composeFlowStatusMessage
+            : composeStatusMessage
+        finalText = composeStatus(
           {
             caloriesConsumed: s.calories_consumed,
             caloriesTarget: s.calories_target,
@@ -2711,8 +2720,8 @@ async function processResolvedMessage(
         )
         messages.push({ role: 'assistant', content: finalText })
         deterministicRegistration = true // reusa o flag de single-message (card não fragmenta)
-        // Flow: same card, same passes below; only the text handed to the
-        // app is rendered plain, at the very end.
+        // Flow: presentation by active goal, same values/passes below;
+        // plain text and the visibility explanation are applied at the end.
         flowPlainStatus = MOBILE_FLOW_PLAIN_STATUS && options.historyProvider === 'mobile_flow'
         await deps.supabase.from('product_events').insert({
           user_id: userId,
@@ -2826,7 +2835,8 @@ async function processResolvedMessage(
     if (snapFresh) {
       const snapTyped = snapFresh
       freshConsumed = snapTyped.calories_consumed
-      const canonicalCard = renderBalanceCard({
+      const renderCard = flowPlainStatus ? renderFlowStatusCard : renderBalanceCard
+      const canonicalCard = renderCard({
         caloriesConsumed: snapTyped.calories_consumed,
         caloriesTarget: snapTyped.calories_target,
         proteinG: Number(snapTyped.protein_g),
@@ -3125,7 +3135,11 @@ async function processResolvedMessage(
   )
 
   return {
-    text: flowPlainStatus ? flowPlainStatusText(finalText) : finalText,
+    text: flowPlainStatus
+      ? [flowPlainStatusText(finalText), flowStatusExplanation(ctx.profile.currentProtocol)]
+          .filter(Boolean)
+          .join('\n\n')
+      : finalText,
     // Roberto pediu (2026-05-15): NÃO ecoar áudio de volta automaticamente quando
     // paciente manda áudio. Resposta sempre em texto. Áudio do agente só é usado
     // pelo cron de engajamento (random 25%) — não como espelho da entrada.

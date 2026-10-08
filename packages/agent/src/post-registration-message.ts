@@ -298,12 +298,22 @@ export interface StatusProgress {
 /**
  * Compõe a resposta de status, sem LLM: card de balanço canônico + 1 linha de
  * progresso (sequência/nível/blocos). Mesmos números do registro/engajamento.
+ * O default preserva o legado. O adapter Flow omite só a contagem de blocos
+ * fora da recomposição; os valores calculados/gravados não são modificados.
  */
-export function composeStatusMessage(card: BalanceCardData, progress: StatusProgress): string {
+export function composeStatusMessage(
+  card: BalanceCardData,
+  progress: StatusProgress,
+  options: { includeBlockProgress?: boolean } = {},
+): string {
   const c = renderBalanceCard(card)
   const seq =
     progress.currentStreak === 1 ? '1 dia consecutivo' : `${progress.currentStreak} dias consecutivos`
-  const line = `🏅 Sequência: **${seq}** · Nível ${progress.level} (${fmt(progress.xpTotal)} XP) · ${progress.blocksCompleted} bloco(s) de 7.700 completo(s)`
+  const blocks =
+    options.includeBlockProgress === false
+      ? ''
+      : ` · ${progress.blocksCompleted} bloco(s) de 7.700 completo(s)`
+  const line = `🏅 Sequência: **${seq}** · Nível ${progress.level} (${fmt(progress.xpTotal)} XP)${blocks}`
   return `${c}\n\n${line}`
 }
 

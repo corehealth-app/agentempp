@@ -1,3 +1,4 @@
+import { projectStoredFlowMetricAnswer } from '@mpp/agent/flow-public-metrics'
 import { flowChatInputSchema, flowChatLimitSchema } from '@/lib/mobile-api/contracts'
 import type {
   FlowChatDependencies,
@@ -22,6 +23,33 @@ export interface FlowChatRouteDependencies {
   now(): Date
 }
 
+function record(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function invalidResponse(): MobileApiError {
+  return new MobileApiError(500, 'flow_response_invalid', 'Flow returned an invalid response')
+}
+
+/** Public route boundary; stored rows and HTTP idempotency bodies stay intact. */
+function publicMessage(value: unknown, locale: string | null, hasSuggestion = false) {
+  if (
+    !record(value) ||
+    value.conversation_id !== 'flow' ||
+    (value.role !== 'assistant' && value.role !== 'user') ||
+    typeof value.content !== 'string' ||
+    typeof value.id !== 'string' ||
+    typeof value.request_id !== 'string' ||
+    typeof value.created_at !== 'string' ||
+    typeof value.state !== 'string' ||
+    !['processing', 'completed', 'failed'].includes(value.state)
+  )
+    throw invalidResponse()
+  return value.role === 'user'
+    ? value
+    : { ...value, content: projectStoredFlowMetricAnswer(value.content, locale, hasSuggestion) }
+}
+
 export async function handleFlowChatGet(
   context: MobileRouteContext,
   dependencies: FlowChatRouteDependencies,
@@ -33,8 +61,14 @@ export async function handleFlowChatGet(
   }
   const limit = flowChatLimitSchema.parse(url.searchParams.get('limit') ?? '50')
   const chat = dependencies.createChatDependencies(context)
+  const history = await dependencies.loadHistory(chat, context.auth.userId, limit)
   return mobileSuccess(
-    await dependencies.loadHistory(chat, context.auth.userId, limit),
+    {
+      ...history,
+      messages: history.messages.map((message) =>
+        publicMessage(message, context.auth.patient.locale),
+      ),
+    },
     context.requestId,
   )
 }
@@ -45,7 +79,7 @@ export async function handleFlowChatPost(
 ): Promise<Response> {
   const input = flowChatInputSchema.parse(await readJsonBody(context.request, 16 * 1024))
   const chat = dependencies.createChatDependencies(context)
-  return dependencies.executeIdempotent(context, input, async (idempotencyKey) => {
+  const response = await dependencies.executeIdempotent(context, input, async (idempotencyKey) => {
     const sendInput: SendFlowMessageInput = {
       userId: context.auth.userId,
       text: input.text,
@@ -55,4 +89,42 @@ export async function handleFlowChatPost(
     }
     return mobileSuccess(await dependencies.sendMessage(chat, sendInput), context.requestId, 201)
   })
+  // This must run AFTER idempotency: a cached HTTP reply bypasses sendMessage.
+  if (!response.ok) return response
+  let body: unknown
+  try {
+    body = await response.clone().json()
+  } catch {
+    throw invalidResponse()
+  }
+  if (
+    !record(body) ||
+    !record(body.data) ||
+    body.data.conversation_id !== 'flow' ||
+    !record(body.meta) ||
+    body.meta.api_version !== 'v1' ||
+    typeof body.meta.request_id !== 'string' ||
+    !record(body.data.message) ||
+    body.data.message.role !== 'assistant'
+  ) {
+    throw invalidResponse()
+  }
+  const data = body.data
+  const hasSuggestion =
+    record(data.draft) &&
+    typeof data.draft.id === 'string' &&
+    (data.draft.domain === 'nutrition' || data.draft.domain === 'training')
+  const headers = new Headers(response.headers)
+  // A cached body can have a length for its original, unprojected bytes.
+  headers.delete('Content-Length')
+  return Response.json(
+    {
+      ...body,
+      data: {
+        ...data,
+        message: publicMessage(data.message, context.auth.patient.locale, hasSuggestion),
+      },
+    },
+    { status: response.status, statusText: response.statusText, headers },
+  )
 }

@@ -2453,6 +2453,26 @@ do paciente.
 
 ### Proposta pelo Flow
 
+#### Apresentação de mensagens antigas (C1, 2026-10-08)
+
+`GET/POST /flow/chat` aplica a projeção pública de métricas conhecidas apenas a
+`assistant.content`. O GET mantém a janela, ordem e identificadores; o POST
+projeta **após** a idempotência, incluindo respostas antigas guardadas no ledger
+HTTP. As rotas espelhadas do BFF reexportam o mesmo handler. Texto do usuário,
+metas públicas históricas, timestamps, request IDs, estados e `draft` não mudam.
+Não há busca de metas atuais, backfill ou nova escrita de conteúdo/cache.
+
+Se a projeção remove todo o conteúdo técnico, mantém-se o ID com orientação
+neutra para Hoje/Perfil, sem alegar falta de metas ou inventar números. Idioma
+reconhecível da mensagem é preservado; texto ambíguo usa o locale autenticado.
+JSON/envelope/mensagem 2xx malformados retornam erro tipado
+`500 flow_response_invalid`; respostas de erro existentes permanecem intactas.
+Status, headers de replay/recuperação e metadados externos são preservados;
+`Content-Length` antigo é removido ao reserializar. Conteúdo já em memória do
+cliente sem nova leitura continua fora desta projeção. Verificação local:
+testes do handler/serviço/idempotência e `verify:routes`/`verify:imports` do BFF;
+isso não substitui publicação e smoke de staging.
+
 `POST /flow/chat` responde com `draft: { "id", "domain" } | null`: o rascunho
 que aquele turno criou (lido do banco, preso ao paciente e ao turno). O Flow
 só tem as ferramentas `propoe_plano_treino` e `propoe_plano_dieta`, com os

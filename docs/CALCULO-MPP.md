@@ -1154,11 +1154,26 @@ basal pelo rótulo de meta. Sugestões mantêm identificadores, itens públicos 
 instrução de revisão, sem alterar o rascunho gravado. Isso não equivale à validação
 de qualquer redação possível do modelo; smoke de staging continua necessário.
 
-Não há backfill de mensagens, resumos ou planos. Replay direto de uma mensagem
-já persistida no serviço pode devolver texto anterior sem passar pelo pipeline;
-eventual saneamento retroativo exige escopo próprio. O canal WhatsApp permanece
-legado, com seus fixtures/hash de request e contexto preservados. Copy pública
-e confirmação clínica seguem seus gates; testes locais não os substituem.
+Não há backfill de mensagens, resumos ou planos. As rotas mobile `GET/POST
+/flow/chat` também projetam o texto do assistente: no GET depois da leitura e,
+no POST, **depois da idempotência**, cobrindo replay de mensagem e de resposta
+HTTP antiga. O texto do usuário, IDs, ordem, quantidade, datas, estados, metas
+públicas históricas e ponteiro do rascunho permanecem iguais. Nenhuma busca de
+metas atuais nem escrita de saneamento é acrescentada. O POST mantém suas
+gravações/transições normais; o cache HTTP original continua intacto.
+
+Uma mensagem antiga inteiramente técnica recebe orientação neutra para Hoje e
+Perfil, com o mesmo ID; não informa que a meta está ausente nem insere números
+de outro dia. Idioma histórico reconhecível é preservado; grafias ambíguas usam
+o locale já autenticado. Resposta HTTP 2xx malformada é recusada com
+`500 flow_response_invalid`, sem devolver o corpo bruto; erros existentes
+mantêm status e headers. A janela GET continua limitada a 50 mensagens.
+
+Conteúdo antigo já em memória do iOS, fora de uma nova leitura, não recebe
+atualização retroativa nesta mudança. O canal WhatsApp permanece legado, com
+seus fixtures/hash de request e contexto preservados. Copy pública,
+confirmação clínica e smoke de staging seguem seus gates; testes locais não os
+substituem.
 
 A regra do §2 vale também para o texto entregue ao modelo. Um balanço sem
 rótulo vira "o treino já foi descontado, pode comer mais".

@@ -164,11 +164,36 @@ export function projectFlowMetricAnswer(
   targets: Targets | null,
   locale: string | null,
   hasSuggestion: boolean,
+  fallback?: string,
 ): string {
   const publicText = publicBodyFatLabel(text, locale)
   if (!hasPrivateMetric(publicText)) return publicText
   const kept = projectStatements(publicText, '').trim()
-  const result = kept || renderOfficialTargets(targets, locale)
+  const result = kept || fallback || renderOfficialTargets(targets, locale)
   if (!hasSuggestion || /Revisar sugestão|Review suggestion/i.test(result)) return result
   return `${result}\n\n${locale?.startsWith('en') ? 'Your suggestion is ready to review in the app.' : 'Sua sugestão está pronta em "Revisar sugestão".'}`
+}
+
+/** Read projection only: a historical reply cannot imply today's target is absent. */
+export function projectStoredFlowMetricAnswer(
+  text: string,
+  locale: string | null,
+  hasSuggestion: boolean,
+): string {
+  // Keep a recognizable historical language; ambiguous labels such as BMR
+  // alone use the already authenticated locale. This is not translation.
+  const value = normalized(text)
+  const pt =
+    /\b(?:seu|sua|gordura corporal|(?:metabolismo|taxa(?: metabolica)?) basal|massa magra|fator(?:es)? de atividade|metas? oficia(?:l|is)|gasto (?:energetico total|total diario)|estimad[oa]|aproximad[oa]|aproximadamente|cerca de|entre)\b/u.test(
+      value,
+    )
+  const en =
+    /\b(?:your|my|body fat|basal (?:metabolism|metabolic rate|rate)|lean body mass|activity factors?|official targets?|total (?:daily )?energy expenditure|estimated|approximately|about|around|roughly|between)\b/u.test(
+      value,
+    )
+  const storedLocale = pt !== en ? (en ? 'en' : 'pt-BR') : locale
+  const fallback = storedLocale?.startsWith('en')
+    ? 'Check your official targets in Today and your objective details in Profile.'
+    : 'Confira suas metas oficiais em Hoje e os dados do seu objetivo em Perfil.'
+  return projectFlowMetricAnswer(text, null, storedLocale, hasSuggestion, fallback)
 }

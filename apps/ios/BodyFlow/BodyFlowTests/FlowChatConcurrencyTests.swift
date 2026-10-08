@@ -6,6 +6,178 @@ import Testing
 @MainActor
 @Suite("Flow Chat exact concurrency regressions")
 struct FlowChatConcurrencyTests {
+    @Test("same-key replay replaces the full official DTO before a failed GET and preserves composer B",
+          arguments: [FlowMessageState.processing, .completed])
+    func idempotentReplayUpsertsOfficialDTOBeforeFailedHistory(oldState: FlowMessageState) async {
+        let provider = ControlledFlowProvider(suspendsHistory: true)
+        let model = makeModel(provider)
+        let user = message(id: "official-user-a", role: .user, text: "Mensagem A", requestID: "official-request-a")
+        let old = replayMessage("Bloco 7700: 3120 kcal. Orçamento 14d: 5850 kcal.", state: oldState)
+        let current = replayMessage("Evite amendoim por sua alergia. Consumido: 541 / 2.980 kcal.")
+        let response = FlowSendResponse(conversationID: "conversation", message: current,
+                                        draft: FlowTurnDraft(id: "official-draft-a", domain: .nutrition))
+        model.composer = "Mensagem A"
+        let first = Task { await model.send() }
+        await provider.waitForSends(1)
+        await provider.completeSend(0, with: .failure(URLError(.timedOut)))
+        await first.value
+        let pendingID = model.outbox.first?.id
+        let originalKeys = await provider.sentKeys
+        #expect(originalKeys.count == 1)
+        #expect(model.outbox.map(\.state) == [.unconfirmed])
+        #expect(model.outbox.first?.serverReply == nil)
+
+        let load = Task { await model.load() }
+        await provider.waitForHistories(1)
+        await provider.completeHistory(0, with: .success(history([user, old])))
+        await load.value
+        #expect(model.messages == [user, old])
+        #expect(model.outbox.map(\.state) == [.unconfirmed])
+        #expect(model.outbox.first?.serverReply == nil)
+        let draftB = "Rascunho B: bloco 7700 / orçamento 14d"
+        model.composer = draftB
+        let retry = Task {
+            await model.retry()
+            await provider.sendAttemptReturned(expectedCount: 2)
+        }
+        let started = await provider.waitForSendOrReturnedAttempt(2)
+        #expect(started)
+        guard started else { await retry.value; return }
+        #expect(await provider.sentKeys == originalKeys + originalKeys)
+        await provider.completeSend(1, with: .success(response))
+        await provider.waitForHistories(2)
+        // Full equality catches stale content/state despite an unchanged ID.
+        #expect(model.messages == [user, current])
+        #expect(model.messages.filter { $0.id == current.id }.count == 1)
+        #expect(model.composer == draftB)
+        #expect(model.turnDraft == response.draft)
+        #expect(model.outbox.count == 1)
+        #expect(model.outbox.first?.id == pendingID)
+        #expect(model.outbox.first?.state == .accepted)
+        #expect(model.outbox.first?.serverReply == current)
+        #expect(!model.isSending && model.isLoading)
+        await provider.completeHistory(1, with: .failure(URLError(.notConnectedToInternet)))
+        await retry.value
+        #expect(model.messages == [user, current])
+        #expect(model.errorMessage == String(localized: "flow.error.history"))
+        #expect(model.turnDraft == response.draft)
+        #expect(model.composer == draftB)
+        #expect(!model.isSending && !model.isLoading)
+
+        // Drain a wrong extra POST rather than hanging a RED on the double.
+        await provider.automaticallyReply(with: response)
+        let readRetry = Task { await model.retry() }
+        await provider.waitForHistories(3)
+        #expect(await provider.sentKeys == originalKeys + originalKeys)
+        await provider.completeHistory(2, with: .success(history([user, current])))
+        await readRetry.value
+        #expect(model.messages == [user, current])
+        #expect(model.outbox.isEmpty && model.errorMessage == nil)
+        let stale = Task { await model.load() }
+        await provider.waitForHistories(4)
+        await provider.completeHistory(3, with: .success(history([])))
+        await stale.value
+        #expect(model.messages == [user, current])
+        #expect(model.composer == draftB)
+        #expect(model.turnDraft == response.draft)
+        #expect(model.outbox.isEmpty)
+        #expect(await provider.sentKeys == originalKeys + originalKeys)
+        #expect(await provider.historyCount == 4)
+    }
+
+    @Test("a latest GET refreshes the acknowledged full DTO before an empty GET")
+    func latestHistoryDTORefreshesAcknowledgedCacheBeforeEmptyHistory() async {
+        let provider = ControlledFlowProvider(suspendsHistory: true)
+        let model = makeModel(provider)
+        let user = message(id: "official-user-a", role: .user, text: "Mensagem A", requestID: "official-request-a")
+        let old = replayMessage("Bloco 7700: 3120 kcal.", state: .processing)
+        let current = replayMessage("Evite amendoim por sua alergia. Consumido: 541 / 2.980 kcal.")
+        let response = FlowSendResponse(conversationID: "conversation", message: old,
+                                        draft: FlowTurnDraft(id: "official-draft-a", domain: .nutrition))
+        model.composer = "Mensagem A"
+        let send = Task { await model.send() }
+        await provider.waitForSends(1)
+        await provider.completeSend(0, with: .success(response))
+        await provider.waitForHistories(1)
+        await provider.completeHistory(0, with: .success(history([user, old])))
+        await send.value
+        #expect(model.messages == [user, old])
+        #expect(model.outbox.isEmpty)
+        model.composer = "Rascunho B: bloco 7700 / orçamento 14d"
+        let load = Task { await model.load() }
+        await provider.waitForHistories(2)
+        await provider.completeHistory(1, with: .success(history([user, current])))
+        await load.value
+        #expect(model.messages == [user, current])
+        let empty = Task { await model.load() }
+        await provider.waitForHistories(3)
+        await provider.completeHistory(2, with: .success(history([])))
+        await empty.value
+        #expect(model.messages == [user, current])
+        #expect(model.messages.filter { $0.id == current.id }.count == 1)
+        #expect(model.composer == "Rascunho B: bloco 7700 / orçamento 14d")
+        #expect(model.turnDraft == response.draft)
+        #expect(model.outbox.isEmpty && model.errorMessage == nil)
+        #expect(await provider.sentKeys.count == 1)
+        #expect(await provider.historyCount == 3)
+    }
+
+    @Test("cancelled A1 cannot revert the same official ID after retry A2 receives its current DTO")
+    func cancelledReplayCannotRevertSameOfficialMessageDTO() async {
+        let provider = ControlledFlowProvider(suspendsHistory: true)
+        let model = makeModel(provider)
+        let user = message(id: "official-user-a", role: .user, text: "Mensagem A", requestID: "official-request-a")
+        let current = replayMessage("Evite amendoim por sua alergia. Consumido: 541 / 2.980 kcal.")
+        let response = FlowSendResponse(conversationID: "conversation", message: current,
+                                        draft: FlowTurnDraft(id: "official-draft-a", domain: .nutrition))
+        let old = FlowSendResponse(conversationID: "conversation", message: replayMessage("Bloco 7700: 3120 kcal."),
+                                  draft: FlowTurnDraft(id: "old-draft-a", domain: .training))
+        model.composer = "Mensagem A"
+        let first = Task { await model.send() }
+        await provider.waitForSends(1)
+        let originalKeys = await provider.sentKeys
+        model.cancel()
+        #expect(model.outbox.map(\.state) == [.unconfirmed])
+        #expect(model.messages.isEmpty && !model.isSending)
+        model.composer = "Rascunho B: bloco 7700 / orçamento 14d"
+        let retry = Task {
+            await model.retry()
+            await provider.sendAttemptReturned(expectedCount: 2)
+        }
+        let started = await provider.waitForSendOrReturnedAttempt(2)
+        #expect(started)
+        guard started else {
+            await provider.completeSend(0, with: .success(old))
+            await first.value
+            await retry.value
+            return
+        }
+        #expect(await provider.sentKeys == originalKeys + originalKeys)
+        await provider.completeSend(1, with: .success(response))
+        await provider.waitForHistories(1)
+        #expect(model.messages == [current])
+        #expect(model.turnDraft == response.draft)
+        await provider.completeSend(0, with: .success(old))
+        await first.value
+        #expect(model.messages == [current])
+        #expect(model.turnDraft == response.draft)
+        #expect(model.composer == "Rascunho B: bloco 7700 / orçamento 14d")
+        #expect(model.outbox.map(\.state) == [.accepted])
+        #expect(model.outbox.first?.serverReply == current)
+        #expect(model.errorMessage == nil)
+        #expect(model.isLoading && !model.isSending)
+        #expect(await provider.historyCount == 1)
+        await provider.completeHistory(0, with: .success(history([user, current])))
+        await retry.value
+        #expect(model.messages == [user, current])
+        #expect(model.outbox.isEmpty && model.errorMessage == nil)
+        #expect(!model.isLoading && !model.isSending)
+        #expect(model.turnDraft == response.draft)
+        #expect(model.composer == "Rascunho B: bloco 7700 / orçamento 14d")
+        #expect(await provider.sentKeys == originalKeys + originalKeys)
+        #expect(await provider.historyCount == 1)
+    }
+
     @Test("sending A and typing B preserves B when A completes")
     func preservesNewComposer() async {
         let provider = ControlledFlowProvider()
@@ -803,6 +975,12 @@ struct FlowChatConcurrencyTests {
     private func reply(_ suffix: String) -> FlowSendResponse {
         FlowSendResponse(conversationID: "conversation", message:
             message(id: "reply-\(suffix)", role: .assistant, text: "Resposta \(suffix)", requestID: "request-\(suffix)"))
+    }
+
+    private func replayMessage(_ content: String, state: FlowMessageState = .completed) -> FlowMessage {
+        FlowMessage(id: "official-reply-a", conversationID: "conversation", role: .assistant,
+                    content: content, state: state, requestID: "official-request-a",
+                    createdAt: Date(timeIntervalSince1970: 1_000))
     }
 
     private func message(id: String, role: FlowMessageRole, text: String, requestID: String) -> FlowMessage {

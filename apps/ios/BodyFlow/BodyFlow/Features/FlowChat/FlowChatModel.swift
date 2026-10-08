@@ -230,13 +230,26 @@ final class FlowChatModel {
             outbox[index].serverReply = response.message
         }
         keys.removeValue(forKey: outboxID) // An acknowledged send is never POSTed again.
-        if !messages.contains(where: { $0.id == response.message.id }) {
-            messages = Self.orderedWindow(messages + [response.message])
+        // A same-key replay can return the current representation of an ID
+        // already read from history. Publish the complete official DTO now,
+        // preserving its position among groups with equal timestamps.
+        if let index = messages.firstIndex(where: { $0.id == response.message.id }) {
+            messages[index] = response.message
+        } else {
+            messages.append(response.message)
         }
-        if !acknowledgedTurns.contains(where: { $0.reply.id == response.message.id }) {
+        messages = Self.orderedWindow(messages)
+        if let index = acknowledgedTurns.firstIndex(where: { $0.reply.id == response.message.id }) {
+            acknowledgedTurns[index].reply = response.message
+            if let user = acknowledgedTurns[index].user,
+               user.conversationID != response.message.conversationID
+                || user.requestID != response.message.requestID {
+                acknowledgedTurns[index].user = nil
+            }
+        } else {
             acknowledgedTurns.append(FlowAcknowledgedTurn(reply: response.message, user: nil))
-            pruneAcknowledgedTurns()
         }
+        pruneAcknowledgedTurns()
         pruneWindowEvictedAcknowledgements()
         turnDraft = response.draft
     }

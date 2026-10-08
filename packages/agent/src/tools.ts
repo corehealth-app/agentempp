@@ -8,6 +8,7 @@
 import { createPlanProposalTools } from './tools/plan-proposal-tools.js'
 import {
   computeMaintenanceAdjustment,
+  DEFAULT_CALC_CONFIG,
   computeMetrics,
   computePeriodSummary,
   evaluateGainSafety,
@@ -56,6 +57,7 @@ import {
 } from './location-timezone.js'
 import { dedupeMealItems } from './meal-item-dedup.js'
 import { flowEnergyNumbers } from './flow-energy-context.js'
+import { projectFlowObjectiveText } from './flow-objective-presentation.js'
 
 // Audit 06-26 Layer 2.1: ToolContext e ToolDefinition movidos pra
 // packages/agent/src/tools/types.ts pra permitir split incremental de tools
@@ -2355,6 +2357,11 @@ export const consultaProgresso: ToolDefinition = {
     // docs/CALCULO-MPP.md) through the same core function as the context and
     // the Today screen; without `flowDayBalance` it is the legacy net balance.
     if (ctx.assistantIdentity === 'flow') {
+      const objective = ctx.flowPresentationObjective ?? { currentProtocol: null }
+      const includeBlock = objective.currentProtocol === 'recomposicao'
+      const blockBadgeKeys = new Set(ctx.flowBlockBadgeKeys
+        ?? DEFAULT_CALC_CONFIG.badges.filter((badge) => badge.type === 'blocks').map((badge) => badge.key))
+      const { blocos_7700_completos: _blocks, deficit_no_bloco_atual: _deficit, ...publicProgress } = progressoPt ?? {}
       const day = (snap ?? null) as {
         calories_consumed?: number | null
         calories_target?: number | null
@@ -2391,9 +2398,13 @@ export const consultaProgresso: ToolDefinition = {
                 rule: `${foodRule} O gasto do treino fica à parte; balanco_do_dia_sem_exercicio_kcal é consumido − gasto_de_referencia_kcal (negativo = déficit, positivo = superávit): o exercício já está considerado neste valor e não é somado. Não é o que resta para comer.`,
               }
       const showsDayBalance = Boolean(snap) && energy.net != null
-      const { daily_balance: _net, ...todayWithoutNet } = (snap ?? {}) as Record<string, unknown>
+      const { daily_balance: _net, deficit_accumulated: _accumulated, ...todayWithoutBlock } = (snap ?? {}) as Record<string, unknown>
+      const todayWithoutNet = includeBlock ? { ...todayWithoutBlock, deficit_accumulated: _accumulated } : todayWithoutBlock
       return {
-        progresso: progressoPt,
+        progresso: progressoPt == null ? null : includeBlock ? progressoPt : {
+          ...publicProgress,
+          conquistas: progressoPt.conquistas.filter((badge) => !blockBadgeKeys.has(badge)),
+        },
         hoje: snap ? todayWithoutNet : null,
         energia_hoje: {
           meta_kcal: energy.target,
@@ -2407,10 +2418,12 @@ export const consultaProgresso: ToolDefinition = {
           // No day balance before the day has a row (same as the context);
           // then the per-protocol rule does not cite keys that are not there.
           ...(showsDayBalance ? dayBalance.keys : {}),
-          regra:
+          regra: projectFlowObjectiveText(
             showsDayBalance || energy.netBasis === 'target'
               ? dayBalance.rule
               : `${foodRule} O gasto do treino fica à parte.`,
+            objective, '',
+          ).text,
         },
       }
     }

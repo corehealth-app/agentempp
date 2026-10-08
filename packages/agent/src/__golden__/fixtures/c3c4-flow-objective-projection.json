@@ -1,0 +1,868 @@
+{
+  "source": "decisions-v1.md item 5; independently prepared exact text oracles, 2026-10-08",
+  "cases": [
+    {
+      "id": "central-pt-gain",
+      "input": {
+        "role": "assistant",
+        "text": "Evite amendoim por sua alergia.\nConsumido: 541 / 2.980 kcal (18%)\nRestam para comida: 2.439 kcal\nProteína: 59.0 / 144g (41%)\nExercício: 322 kcal\nBloco 7700: 3.120 / 7.700 kcal (41%)\n4 bloco(s) de 7.700 completo(s)\nOrçamento 14d: 5.850 / 5.960 kcal (98%) · DAM: 1/2\nReavaliação em 14 dias.\nArroz: 150 g, 195 kcal.\nRevisar sugestão",
+        "raw_protocol": "ganho_massa",
+        "locale": "pt-BR",
+        "has_suggestion": true
+      },
+      "expected_context": "Evite amendoim por sua alergia.\nConsumido: 541 / 2.980 kcal (18%)\nRestam para comida: 2.439 kcal\nProteína: 59.0 / 144g (41%)\nExercício: 322 kcal\n[referência interna omitida]\n[referência interna omitida]\n[referência interna omitida]\nReavaliação em 14 dias.\nArroz: 150 g, 195 kcal.\nRevisar sugestão",
+      "expected_answer": "Evite amendoim por sua alergia.\nConsumido: 541 / 2.980 kcal (18%)\nRestam para comida: 2.439 kcal\nProteína: 59.0 / 144g (41%)\nExercício: 322 kcal\nReavaliação em 14 dias.\nArroz: 150 g, 195 kcal.\nRevisar sugestão\n\nO Bloco 7.700 é exibido apenas na recomposição corporal."
+    },
+    {
+      "id": "central-en-gain",
+      "input": {
+        "role": "assistant",
+        "text": "Avoid peanuts because of your allergy.\nConsumed: 541 / 2,980 kcal (18%)\nRemaining for food: 2,439 kcal\nProtein: 59.0 / 144g (41%)\nExercise: 322 kcal\n7,700 Block: 3,120 / 7,700 kcal (41%)\n4 completed 7,700 blocks\n14-day budget: 5,850 / 5,960 kcal (98%) · DAM: 1/2\nReevaluation in 14 days.\nRice: 150 g, 195 kcal.\nReview suggestion",
+        "raw_protocol": "ganho_massa",
+        "locale": "en",
+        "has_suggestion": true
+      },
+      "expected_context": "Avoid peanuts because of your allergy.\nConsumed: 541 / 2,980 kcal (18%)\nRemaining for food: 2,439 kcal\nProtein: 59.0 / 144g (41%)\nExercise: 322 kcal\n[referência interna omitida]\n[referência interna omitida]\n[referência interna omitida]\nReevaluation in 14 days.\nRice: 150 g, 195 kcal.\nReview suggestion",
+      "expected_answer": "Avoid peanuts because of your allergy.\nConsumed: 541 / 2,980 kcal (18%)\nRemaining for food: 2,439 kcal\nProtein: 59.0 / 144g (41%)\nExercise: 322 kcal\nReevaluation in 14 days.\nRice: 150 g, 195 kcal.\nReview suggestion\n\nThe 7,700 Block is displayed only for body recomposition."
+    },
+    {
+      "id": "central-pt-maintenance",
+      "input": {
+        "role": "assistant",
+        "text": "Evite amendoim por sua alergia.\nConsumido: 541 / 2.980 kcal (18%)\nRestam para comida: 2.439 kcal\nProteína: 59.0 / 144g (41%)\nExercício: 322 kcal\nBloco 7700: 3.120 / 7.700 kcal (41%)\n4 bloco(s) de 7.700 completo(s)\nOrçamento 14d: 5.850 / 5.960 kcal (98%) · DAM: 1/2\nReavaliação em 14 dias.\nArroz: 150 g, 195 kcal.\nRevisar sugestão",
+        "raw_protocol": "manutencao",
+        "locale": "pt-BR",
+        "has_suggestion": true
+      },
+      "expected_context": "Evite amendoim por sua alergia.\nConsumido: 541 / 2.980 kcal (18%)\nRestam para comida: 2.439 kcal\nProteína: 59.0 / 144g (41%)\nExercício: 322 kcal\n[referência interna omitida]\n[referência interna omitida]\n[referência interna omitida]\nReavaliação em 14 dias.\nArroz: 150 g, 195 kcal.\nRevisar sugestão",
+      "expected_answer": "Evite amendoim por sua alergia.\nConsumido: 541 / 2.980 kcal (18%)\nRestam para comida: 2.439 kcal\nProteína: 59.0 / 144g (41%)\nExercício: 322 kcal\nReavaliação em 14 dias.\nArroz: 150 g, 195 kcal.\nRevisar sugestão\n\nO Bloco 7.700 é exibido apenas na recomposição corporal."
+    },
+    {
+      "id": "central-en-maintenance",
+      "input": {
+        "role": "assistant",
+        "text": "Avoid peanuts because of your allergy.\nConsumed: 541 / 2,980 kcal (18%)\nRemaining for food: 2,439 kcal\nProtein: 59.0 / 144g (41%)\nExercise: 322 kcal\n7,700 Block: 3,120 / 7,700 kcal (41%)\n4 completed 7,700 blocks\n14-day budget: 5,850 / 5,960 kcal (98%) · DAM: 1/2\nReevaluation in 14 days.\nRice: 150 g, 195 kcal.\nReview suggestion",
+        "raw_protocol": "manutencao",
+        "locale": "en",
+        "has_suggestion": true
+      },
+      "expected_context": "Avoid peanuts because of your allergy.\nConsumed: 541 / 2,980 kcal (18%)\nRemaining for food: 2,439 kcal\nProtein: 59.0 / 144g (41%)\nExercise: 322 kcal\n[referência interna omitida]\n[referência interna omitida]\n[referência interna omitida]\nReevaluation in 14 days.\nRice: 150 g, 195 kcal.\nReview suggestion",
+      "expected_answer": "Avoid peanuts because of your allergy.\nConsumed: 541 / 2,980 kcal (18%)\nRemaining for food: 2,439 kcal\nProtein: 59.0 / 144g (41%)\nExercise: 322 kcal\nReevaluation in 14 days.\nRice: 150 g, 195 kcal.\nReview suggestion\n\nThe 7,700 Block is displayed only for body recomposition."
+    },
+    {
+      "id": "central-pt-unknown",
+      "input": {
+        "role": "assistant",
+        "text": "Evite amendoim por sua alergia.\nConsumido: 541 / 2.980 kcal (18%)\nRestam para comida: 2.439 kcal\nProteína: 59.0 / 144g (41%)\nExercício: 322 kcal\nBloco 7700: 3.120 / 7.700 kcal (41%)\n4 bloco(s) de 7.700 completo(s)\nOrçamento 14d: 5.850 / 5.960 kcal (98%) · DAM: 1/2\nReavaliação em 14 dias.\nArroz: 150 g, 195 kcal.\nRevisar sugestão",
+        "raw_protocol": null,
+        "locale": "pt-BR",
+        "has_suggestion": true
+      },
+      "expected_context": "Evite amendoim por sua alergia.\nConsumido: 541 / 2.980 kcal (18%)\nRestam para comida: 2.439 kcal\nProteína: 59.0 / 144g (41%)\nExercício: 322 kcal\n[referência interna omitida]\n[referência interna omitida]\n[referência interna omitida]\nReavaliação em 14 dias.\nArroz: 150 g, 195 kcal.\nRevisar sugestão",
+      "expected_answer": "Evite amendoim por sua alergia.\nConsumido: 541 / 2.980 kcal (18%)\nRestam para comida: 2.439 kcal\nProteína: 59.0 / 144g (41%)\nExercício: 322 kcal\nReavaliação em 14 dias.\nArroz: 150 g, 195 kcal.\nRevisar sugestão"
+    },
+    {
+      "id": "central-en-unknown",
+      "input": {
+        "role": "assistant",
+        "text": "Avoid peanuts because of your allergy.\nConsumed: 541 / 2,980 kcal (18%)\nRemaining for food: 2,439 kcal\nProtein: 59.0 / 144g (41%)\nExercise: 322 kcal\n7,700 Block: 3,120 / 7,700 kcal (41%)\n4 completed 7,700 blocks\n14-day budget: 5,850 / 5,960 kcal (98%) · DAM: 1/2\nReevaluation in 14 days.\nRice: 150 g, 195 kcal.\nReview suggestion",
+        "raw_protocol": null,
+        "locale": "en",
+        "has_suggestion": true
+      },
+      "expected_context": "Avoid peanuts because of your allergy.\nConsumed: 541 / 2,980 kcal (18%)\nRemaining for food: 2,439 kcal\nProtein: 59.0 / 144g (41%)\nExercise: 322 kcal\n[referência interna omitida]\n[referência interna omitida]\n[referência interna omitida]\nReevaluation in 14 days.\nRice: 150 g, 195 kcal.\nReview suggestion",
+      "expected_answer": "Avoid peanuts because of your allergy.\nConsumed: 541 / 2,980 kcal (18%)\nRemaining for food: 2,439 kcal\nProtein: 59.0 / 144g (41%)\nExercise: 322 kcal\nReevaluation in 14 days.\nRice: 150 g, 195 kcal.\nReview suggestion"
+    },
+    {
+      "id": "central-pt-recomposition",
+      "input": {
+        "role": "assistant",
+        "text": "Evite amendoim por sua alergia.\nConsumido: 541 / 2.980 kcal (18%)\nRestam para comida: 2.439 kcal\nProteína: 59.0 / 144g (41%)\nExercício: 322 kcal\nBloco 7700: 3.120 / 7.700 kcal (41%)\n4 bloco(s) de 7.700 completo(s)\nOrçamento 14d: 5.850 / 5.960 kcal (98%) · DAM: 1/2\nReavaliação em 14 dias.\nArroz: 150 g, 195 kcal.\nRevisar sugestão",
+        "raw_protocol": "recomposicao",
+        "locale": "pt-BR",
+        "has_suggestion": true
+      },
+      "expected_context": "Evite amendoim por sua alergia.\nConsumido: 541 / 2.980 kcal (18%)\nRestam para comida: 2.439 kcal\nProteína: 59.0 / 144g (41%)\nExercício: 322 kcal\nBloco 7700: 3.120 / 7.700 kcal (41%)\n4 bloco(s) de 7.700 completo(s)\n[referência interna omitida]\nReavaliação em 14 dias.\nArroz: 150 g, 195 kcal.\nRevisar sugestão",
+      "expected_answer": "Evite amendoim por sua alergia.\nConsumido: 541 / 2.980 kcal (18%)\nRestam para comida: 2.439 kcal\nProteína: 59.0 / 144g (41%)\nExercício: 322 kcal\nBloco 7700: 3.120 / 7.700 kcal (41%)\n4 bloco(s) de 7.700 completo(s)\nReavaliação em 14 dias.\nArroz: 150 g, 195 kcal.\nRevisar sugestão"
+    },
+    {
+      "id": "central-en-recomposition",
+      "input": {
+        "role": "assistant",
+        "text": "Avoid peanuts because of your allergy.\nConsumed: 541 / 2,980 kcal (18%)\nRemaining for food: 2,439 kcal\nProtein: 59.0 / 144g (41%)\nExercise: 322 kcal\n7,700 Block: 3,120 / 7,700 kcal (41%)\n4 completed 7,700 blocks\n14-day budget: 5,850 / 5,960 kcal (98%) · DAM: 1/2\nReevaluation in 14 days.\nRice: 150 g, 195 kcal.\nReview suggestion",
+        "raw_protocol": "recomposicao",
+        "locale": "en",
+        "has_suggestion": true
+      },
+      "expected_context": "Avoid peanuts because of your allergy.\nConsumed: 541 / 2,980 kcal (18%)\nRemaining for food: 2,439 kcal\nProtein: 59.0 / 144g (41%)\nExercise: 322 kcal\n7,700 Block: 3,120 / 7,700 kcal (41%)\n4 completed 7,700 blocks\n[referência interna omitida]\nReevaluation in 14 days.\nRice: 150 g, 195 kcal.\nReview suggestion",
+      "expected_answer": "Avoid peanuts because of your allergy.\nConsumed: 541 / 2,980 kcal (18%)\nRemaining for food: 2,439 kcal\nProtein: 59.0 / 144g (41%)\nExercise: 322 kcal\n7,700 Block: 3,120 / 7,700 kcal (41%)\n4 completed 7,700 blocks\nReevaluation in 14 days.\nRice: 150 g, 195 kcal.\nReview suggestion"
+    },
+    {
+      "id": "pt-block-before-allergy",
+      "input": {
+        "role": "assistant",
+        "text": "Bloco 7700: 3120 kcal — evite amendoim.",
+        "raw_protocol": "ganho_massa",
+        "locale": "pt-BR",
+        "has_suggestion": false
+      },
+      "expected_context": "[referência interna omitida] — evite amendoim.",
+      "expected_answer": "evite amendoim.\n\nO Bloco 7.700 é exibido apenas na recomposição corporal."
+    },
+    {
+      "id": "pt-allergy-before-budget",
+      "input": {
+        "role": "assistant",
+        "text": "Evite amendoim: orçamento de 14 dias 5850/5960 kcal.",
+        "raw_protocol": "ganho_massa",
+        "locale": "pt-BR",
+        "has_suggestion": false
+      },
+      "expected_context": "Evite amendoim: [referência interna omitida]",
+      "expected_answer": "Evite amendoim"
+    },
+    {
+      "id": "pt-allergy-before-budget-recomposition",
+      "input": {
+        "role": "assistant",
+        "text": "Evite amendoim: orçamento de 14 dias 5850/5960 kcal.",
+        "raw_protocol": "recomposicao",
+        "locale": "pt-BR",
+        "has_suggestion": false
+      },
+      "expected_context": "Evite amendoim: [referência interna omitida]",
+      "expected_answer": "Evite amendoim"
+    },
+    {
+      "id": "pt-block-after-allergy",
+      "input": {
+        "role": "assistant",
+        "text": "Evite amendoim — Bloco 7700: 3120 kcal.",
+        "raw_protocol": "manutencao",
+        "locale": "pt-BR",
+        "has_suggestion": false
+      },
+      "expected_context": "Evite amendoim — [referência interna omitida]",
+      "expected_answer": "Evite amendoim\n\nO Bloco 7.700 é exibido apenas na recomposição corporal."
+    },
+    {
+      "id": "pt-conjunction-block",
+      "input": {
+        "role": "assistant",
+        "text": "Evite amendoim e Bloco 7700: 3120 kcal.",
+        "raw_protocol": "ganho_massa",
+        "locale": "pt-BR",
+        "has_suggestion": false
+      },
+      "expected_context": "Evite amendoim e [referência interna omitida]",
+      "expected_answer": "Evite amendoim\n\nO Bloco 7.700 é exibido apenas na recomposição corporal."
+    },
+    {
+      "id": "pt-two-public-neighbors",
+      "input": {
+        "role": "assistant",
+        "text": "Proteína: 59,03 / 144g — Bloco 7.700: 3.120 / 7.700 kcal (41%) — evite amendoim.",
+        "raw_protocol": "ganho_massa",
+        "locale": "pt-BR",
+        "has_suggestion": false
+      },
+      "expected_context": "Proteína: 59,03 / 144g — [referência interna omitida] — evite amendoim.",
+      "expected_answer": "Proteína: 59,03 / 144g — evite amendoim.\n\nO Bloco 7.700 é exibido apenas na recomposição corporal."
+    },
+    {
+      "id": "pt-food-parenthetical",
+      "input": {
+        "role": "assistant",
+        "text": "Arroz: 150 g, 195 kcal (Bloco 7700:3120).",
+        "raw_protocol": "ganho_massa",
+        "locale": "pt-BR",
+        "has_suggestion": false
+      },
+      "expected_context": "Arroz: 150 g, 195 kcal ([referência interna omitida]).",
+      "expected_answer": "Arroz: 150 g, 195 kcal.\n\nO Bloco 7.700 é exibido apenas na recomposição corporal."
+    },
+    {
+      "id": "pt-food-parenthetical-recomposition",
+      "input": {
+        "role": "assistant",
+        "text": "Arroz: 150 g, 195 kcal (Bloco 7700:3120).",
+        "raw_protocol": "recomposicao",
+        "locale": "pt-BR",
+        "has_suggestion": false
+      },
+      "expected_context": "Arroz: 150 g, 195 kcal (Bloco 7700:3120).",
+      "expected_answer": "Arroz: 150 g, 195 kcal (Bloco 7700:3120)."
+    },
+    {
+      "id": "pt-public-in-mixed-parenthetical",
+      "input": {
+        "role": "assistant",
+        "text": "Arroz: 150 g, 195 kcal (Bloco 7700: 3120 kcal; evite amendoim).",
+        "raw_protocol": "ganho_massa",
+        "locale": "pt-BR",
+        "has_suggestion": false
+      },
+      "expected_context": "Arroz: 150 g, 195 kcal ([referência interna omitida]; evite amendoim).",
+      "expected_answer": "Arroz: 150 g, 195 kcal (evite amendoim).\n\nO Bloco 7.700 é exibido apenas na recomposição corporal."
+    },
+    {
+      "id": "pt-allergy-in-mixed-parenthetical",
+      "input": {
+        "role": "assistant",
+        "text": "Arroz: 150 g, 195 kcal (evite amendoim; orçamento de 14 dias: 5850/5960 kcal).",
+        "raw_protocol": "recomposicao",
+        "locale": "pt-BR",
+        "has_suggestion": false
+      },
+      "expected_context": "Arroz: 150 g, 195 kcal (evite amendoim; [referência interna omitida]).",
+      "expected_answer": "Arroz: 150 g, 195 kcal (evite amendoim)."
+    },
+    {
+      "id": "pt-contextual-energy-clause",
+      "input": {
+        "role": "assistant",
+        "text": "Balanço do dia: −832 kcal; o crédito no bloco 7700 só acontece no fechamento do dia; evite amendoim.",
+        "raw_protocol": "ganho_massa",
+        "locale": "pt-BR",
+        "has_suggestion": false
+      },
+      "expected_context": "Balanço do dia: −832 kcal; [referência interna omitida]; evite amendoim.",
+      "expected_answer": "Balanço do dia: −832 kcal; evite amendoim.\n\nO Bloco 7.700 é exibido apenas na recomposição corporal."
+    },
+    {
+      "id": "pt-contextual-energy-clause-recomposition",
+      "input": {
+        "role": "assistant",
+        "text": "Balanço do dia: −832 kcal; o crédito no bloco 7700 só acontece no fechamento do dia; evite amendoim.",
+        "raw_protocol": "recomposicao",
+        "locale": "pt-BR",
+        "has_suggestion": false
+      },
+      "expected_context": "Balanço do dia: −832 kcal; o crédito no bloco 7700 só acontece no fechamento do dia; evite amendoim.",
+      "expected_answer": "Balanço do dia: −832 kcal; o crédito no bloco 7700 só acontece no fechamento do dia; evite amendoim."
+    },
+    {
+      "id": "en-block-before-allergy",
+      "input": {
+        "role": "assistant",
+        "text": "7,700 Block: 3,120 kcal — avoid peanuts because of your allergy.",
+        "raw_protocol": "ganho_massa",
+        "locale": "en",
+        "has_suggestion": false
+      },
+      "expected_context": "[referência interna omitida] — avoid peanuts because of your allergy.",
+      "expected_answer": "avoid peanuts because of your allergy.\n\nThe 7,700 Block is displayed only for body recomposition."
+    },
+    {
+      "id": "en-allergy-before-budget",
+      "input": {
+        "role": "assistant",
+        "text": "Avoid peanuts: 14-day budget 5,850/5,960 kcal.",
+        "raw_protocol": "recomposicao",
+        "locale": "en",
+        "has_suggestion": false
+      },
+      "expected_context": "Avoid peanuts: [referência interna omitida]",
+      "expected_answer": "Avoid peanuts"
+    },
+    {
+      "id": "en-food-parenthetical",
+      "input": {
+        "role": "assistant",
+        "text": "Rice: 150 g, 195 kcal (7,700 Block: 3,120).",
+        "raw_protocol": "manutencao",
+        "locale": "en",
+        "has_suggestion": false
+      },
+      "expected_context": "Rice: 150 g, 195 kcal ([referência interna omitida]).",
+      "expected_answer": "Rice: 150 g, 195 kcal.\n\nThe 7,700 Block is displayed only for body recomposition."
+    },
+    {
+      "id": "en-public-in-parenthetical",
+      "input": {
+        "role": "assistant",
+        "text": "Rice: 150 g, 195 kcal (7,700 Block: 3,120 kcal; avoid peanuts).",
+        "raw_protocol": null,
+        "locale": "en",
+        "has_suggestion": false
+      },
+      "expected_context": "Rice: 150 g, 195 kcal ([referência interna omitida]; avoid peanuts).",
+      "expected_answer": "Rice: 150 g, 195 kcal (avoid peanuts)."
+    },
+    {
+      "id": "pt-snapshot-deficit-bound-to-block",
+      "input": {
+        "role": "assistant",
+        "text": "Déficit acumulado (bloco 7700): 3120 kcal.",
+        "raw_protocol": "ganho_massa",
+        "locale": "pt-BR",
+        "has_suggestion": false,
+        "surface": "stored",
+        "fallback_language": "pt-BR"
+      },
+      "expected_context": "[referência interna omitida]",
+      "expected_answer": "Confira suas metas oficiais em Hoje e os dados do seu objetivo em Perfil.\n\nO Bloco 7.700 é exibido apenas na recomposição corporal."
+    },
+    {
+      "id": "pt-c4-dam-standalone",
+      "input": {
+        "role": "assistant",
+        "text": "DAM: 1/2",
+        "raw_protocol": "recomposicao",
+        "locale": "pt-BR",
+        "has_suggestion": false,
+        "surface": "stored"
+      },
+      "expected_context": "[referência interna omitida]",
+      "expected_answer": "Confira suas metas oficiais em Hoje e os dados do seu objetivo em Perfil."
+    },
+    {
+      "id": "en-c4-days-above-target",
+      "input": {
+        "role": "assistant",
+        "text": "Days above target (DAM): 1/2",
+        "raw_protocol": "recomposicao",
+        "locale": "en",
+        "has_suggestion": false,
+        "surface": "stored"
+      },
+      "expected_context": "[referência interna omitida]",
+      "expected_answer": "Check your official targets in Today and your objective details in Profile."
+    },
+    {
+      "id": "protected-url-only",
+      "input": {
+        "role": "assistant",
+        "text": "https://example.invalid/Bloco7700/3120?Orcamento14d=5850/5960&DAM=1/2#Bloco7700",
+        "raw_protocol": "ganho_massa",
+        "locale": "pt-BR",
+        "has_suggestion": false
+      },
+      "expected_context": "https://example.invalid/Bloco7700/3120?Orcamento14d=5850/5960&DAM=1/2#Bloco7700",
+      "expected_answer": "https://example.invalid/Bloco7700/3120?Orcamento14d=5850/5960&DAM=1/2#Bloco7700"
+    },
+    {
+      "id": "protected-markdown-target-only",
+      "input": {
+        "role": "assistant",
+        "text": "[Ajuda](../Bloco7700.md?Orcamento14d=5850%2F5960&DAM=1%2F2#Bloco7700)",
+        "raw_protocol": "manutencao",
+        "locale": "pt-BR",
+        "has_suggestion": false
+      },
+      "expected_context": "[Ajuda](../Bloco7700.md?Orcamento14d=5850%2F5960&DAM=1%2F2#Bloco7700)",
+      "expected_answer": "[Ajuda](../Bloco7700.md?Orcamento14d=5850%2F5960&DAM=1%2F2#Bloco7700)"
+    },
+    {
+      "id": "protected-query-anchor",
+      "input": {
+        "role": "assistant",
+        "text": "Veja https://example.invalid/help?label=Bloco%207700&value=3120&DAM=1%2F2#Orcamento14d.",
+        "raw_protocol": null,
+        "locale": "pt-BR",
+        "has_suggestion": false
+      },
+      "expected_context": "Veja https://example.invalid/help?label=Bloco%207700&value=3120&DAM=1%2F2#Orcamento14d.",
+      "expected_answer": "Veja https://example.invalid/help?label=Bloco%207700&value=3120&DAM=1%2F2#Orcamento14d."
+    },
+    {
+      "id": "protected-url-and-actual-block",
+      "input": {
+        "role": "assistant",
+        "text": "https://example.invalid/Bloco7700/3120?Orcamento14d=5850/5960&DAM=1/2#Bloco7700\nBloco 7700: 3120 kcal.\nEvite amendoim.",
+        "raw_protocol": "ganho_massa",
+        "locale": "pt-BR",
+        "has_suggestion": false
+      },
+      "expected_context": "https://example.invalid/Bloco7700/3120?Orcamento14d=5850/5960&DAM=1/2#Bloco7700\n[referência interna omitida]\nEvite amendoim.",
+      "expected_answer": "https://example.invalid/Bloco7700/3120?Orcamento14d=5850/5960&DAM=1/2#Bloco7700\nEvite amendoim.\n\nO Bloco 7.700 é exibido apenas na recomposição corporal."
+    },
+    {
+      "id": "en-protected-target-and-c4",
+      "input": {
+        "role": "assistant",
+        "text": "[Help](https://example.invalid/7,700-Block?budget14d=5850/5960&DAM=1/2#block3120)\n14-day budget: 5,850 / 5,960 kcal (98%) · DAM: 1/2\nAvoid peanuts.",
+        "raw_protocol": "recomposicao",
+        "locale": "en",
+        "has_suggestion": false
+      },
+      "expected_context": "[Help](https://example.invalid/7,700-Block?budget14d=5850/5960&DAM=1/2#block3120)\n[referência interna omitida]\nAvoid peanuts.",
+      "expected_answer": "[Help](https://example.invalid/7,700-Block?budget14d=5850/5960&DAM=1/2#block3120)\nAvoid peanuts."
+    },
+    {
+      "id": "pt-training-block",
+      "input": {
+        "role": "assistant",
+        "text": "Bloco de treino: 3 séries de 12 repetições. Reavaliação em 14 dias.",
+        "raw_protocol": "ganho_massa",
+        "locale": "pt-BR",
+        "has_suggestion": false
+      },
+      "expected_context": "Bloco de treino: 3 séries de 12 repetições. Reavaliação em 14 dias.",
+      "expected_answer": "Bloco de treino: 3 séries de 12 repetições. Reavaliação em 14 dias."
+    },
+    {
+      "id": "en-training-block",
+      "input": {
+        "role": "assistant",
+        "text": "Training block: 3 sets of 12 repetitions. Reevaluation in 14 days.",
+        "raw_protocol": "ganho_massa",
+        "locale": "en",
+        "has_suggestion": false
+      },
+      "expected_context": "Training block: 3 sets of 12 repetitions. Reevaluation in 14 days.",
+      "expected_answer": "Training block: 3 sets of 12 repetitions. Reevaluation in 14 days."
+    },
+    {
+      "id": "pt-daily-balance",
+      "input": {
+        "role": "assistant",
+        "text": "Balanço do dia: −832 kcal. Restam para comida: 2.439 kcal. Evite amendoim.",
+        "raw_protocol": "ganho_massa",
+        "locale": "pt-BR",
+        "has_suggestion": false
+      },
+      "expected_context": "Balanço do dia: −832 kcal. Restam para comida: 2.439 kcal. Evite amendoim.",
+      "expected_answer": "Balanço do dia: −832 kcal. Restam para comida: 2.439 kcal. Evite amendoim."
+    },
+    {
+      "id": "en-daily-balance",
+      "input": {
+        "role": "assistant",
+        "text": "Day balance: −832 kcal. Remaining for food: 2,439 kcal. Avoid peanuts.",
+        "raw_protocol": "ganho_massa",
+        "locale": "en",
+        "has_suggestion": false
+      },
+      "expected_context": "Day balance: −832 kcal. Remaining for food: 2,439 kcal. Avoid peanuts.",
+      "expected_answer": "Day balance: −832 kcal. Remaining for food: 2,439 kcal. Avoid peanuts."
+    },
+    {
+      "id": "pt-decimal-food",
+      "input": {
+        "role": "assistant",
+        "text": "Arroz: 150 g, 195 kcal. Proteína: 59,03 / 144g.",
+        "raw_protocol": "ganho_massa",
+        "locale": "pt-BR",
+        "has_suggestion": false
+      },
+      "expected_context": "Arroz: 150 g, 195 kcal. Proteína: 59,03 / 144g.",
+      "expected_answer": "Arroz: 150 g, 195 kcal. Proteína: 59,03 / 144g."
+    },
+    {
+      "id": "pt-budget-tokens",
+      "input": {
+        "role": "assistant",
+        "text": "Orçamento de tokens: 2.000. Reavaliação em 14 dias.",
+        "raw_protocol": "ganho_massa",
+        "locale": "pt-BR",
+        "has_suggestion": false
+      },
+      "expected_context": "Orçamento de tokens: 2.000. Reavaliação em 14 dias.",
+      "expected_answer": "Orçamento de tokens: 2.000. Reavaliação em 14 dias."
+    },
+    {
+      "id": "en-budget-tokens",
+      "input": {
+        "role": "assistant",
+        "text": "Token budget: 2,000. Reevaluation in 14 days.",
+        "raw_protocol": "ganho_massa",
+        "locale": "en",
+        "has_suggestion": false
+      },
+      "expected_context": "Token budget: 2,000. Reevaluation in 14 days.",
+      "expected_answer": "Token budget: 2,000. Reevaluation in 14 days."
+    },
+    {
+      "id": "pt-whitespace-no-restriction",
+      "input": {
+        "role": "assistant",
+        "text": "  Evite amendoim.\n\nArroz: 150 g, 195 kcal.  \n",
+        "raw_protocol": "ganho_massa",
+        "locale": "pt-BR",
+        "has_suggestion": false
+      },
+      "expected_context": "  Evite amendoim.\n\nArroz: 150 g, 195 kcal.  \n",
+      "expected_answer": "  Evite amendoim.\n\nArroz: 150 g, 195 kcal.  \n"
+    },
+    {
+      "id": "pt-greeting",
+      "input": {
+        "role": "assistant",
+        "text": "Oi. Como posso ajudar?",
+        "raw_protocol": "ganho_massa",
+        "locale": "pt-BR",
+        "has_suggestion": false
+      },
+      "expected_context": "Oi. Como posso ajudar?",
+      "expected_answer": "Oi. Como posso ajudar?"
+    },
+    {
+      "id": "pt-approved-explanation-preserved",
+      "input": {
+        "role": "assistant",
+        "text": "O Bloco 7.700 é exibido apenas na recomposição corporal.",
+        "raw_protocol": "ganho_massa",
+        "locale": "pt-BR",
+        "has_suggestion": false
+      },
+      "expected_context": "O Bloco 7.700 é exibido apenas na recomposição corporal.",
+      "expected_answer": "O Bloco 7.700 é exibido apenas na recomposição corporal."
+    },
+    {
+      "id": "en-approved-explanation-preserved",
+      "input": {
+        "role": "assistant",
+        "text": "The 7,700 Block is displayed only for body recomposition.",
+        "raw_protocol": "manutencao",
+        "locale": "en",
+        "has_suggestion": false
+      },
+      "expected_context": "The 7,700 Block is displayed only for body recomposition.",
+      "expected_answer": "The 7,700 Block is displayed only for body recomposition."
+    },
+    {
+      "id": "pt-existing-explanation-no-second-copy",
+      "input": {
+        "role": "assistant",
+        "text": "Evite amendoim.\nBloco 7700: 3120 kcal.\n\nO Bloco 7.700 é exibido apenas na recomposição corporal.",
+        "raw_protocol": "ganho_massa",
+        "locale": "pt-BR",
+        "has_suggestion": false,
+        "idempotent_public_output": true
+      },
+      "expected_context": "Evite amendoim.\n[referência interna omitida]\n\nO Bloco 7.700 é exibido apenas na recomposição corporal.",
+      "expected_answer": "Evite amendoim.\n\nO Bloco 7.700 é exibido apenas na recomposição corporal."
+    },
+    {
+      "id": "en-existing-explanation-no-second-copy",
+      "input": {
+        "role": "assistant",
+        "text": "Avoid peanuts.\n7,700 Block: 3,120 kcal.\n\nThe 7,700 Block is displayed only for body recomposition.",
+        "raw_protocol": "manutencao",
+        "locale": "en",
+        "has_suggestion": false,
+        "idempotent_public_output": true
+      },
+      "expected_context": "Avoid peanuts.\n[referência interna omitida]\n\nThe 7,700 Block is displayed only for body recomposition.",
+      "expected_answer": "Avoid peanuts.\n\nThe 7,700 Block is displayed only for body recomposition."
+    },
+    {
+      "id": "pt-negative-policy-not-a-metric",
+      "input": {
+        "role": "assistant",
+        "text": "Não exiba o Bloco 7700 fora da recomposição. Evite amendoim por sua alergia.",
+        "raw_protocol": "ganho_massa",
+        "locale": "pt-BR",
+        "has_suggestion": false
+      },
+      "expected_context": "Não exiba o Bloco 7700 fora da recomposição. Evite amendoim por sua alergia.",
+      "expected_answer": "Não exiba o Bloco 7700 fora da recomposição. Evite amendoim por sua alergia."
+    },
+    {
+      "id": "en-negative-policy-not-a-metric",
+      "input": {
+        "role": "assistant",
+        "text": "Do not show the 7,700 Block outside body recomposition. Avoid peanuts because of your allergy.",
+        "raw_protocol": null,
+        "locale": "en",
+        "has_suggestion": false
+      },
+      "expected_context": "Do not show the 7,700 Block outside body recomposition. Avoid peanuts because of your allergy.",
+      "expected_answer": "Do not show the 7,700 Block outside body recomposition. Avoid peanuts because of your allergy."
+    },
+    {
+      "id": "stored-pt-budget-only-neutral",
+      "input": {
+        "role": "assistant",
+        "text": "Orçamento 14d: 5.850 / 5.960 kcal (98%) · DAM: 1/2",
+        "raw_protocol": "ganho_massa",
+        "locale": "pt-BR",
+        "has_suggestion": false,
+        "surface": "stored"
+      },
+      "expected_context": "[referência interna omitida]",
+      "expected_answer": "Confira suas metas oficiais em Hoje e os dados do seu objetivo em Perfil."
+    },
+    {
+      "id": "stored-en-budget-only-neutral",
+      "input": {
+        "role": "assistant",
+        "text": "14-day budget: 5,850 / 5,960 kcal (98%) · DAM: 1/2",
+        "raw_protocol": "recomposicao",
+        "locale": "en",
+        "has_suggestion": false,
+        "surface": "stored"
+      },
+      "expected_context": "[referência interna omitida]",
+      "expected_answer": "Check your official targets in Today and your objective details in Profile."
+    },
+    {
+      "id": "stored-pt-unknown-block-neutral",
+      "input": {
+        "role": "assistant",
+        "text": "Bloco 7700: 3120 kcal.",
+        "raw_protocol": null,
+        "locale": "pt-BR",
+        "has_suggestion": false,
+        "surface": "stored"
+      },
+      "expected_context": "[referência interna omitida]",
+      "expected_answer": "Confira suas metas oficiais em Hoje e os dados do seu objetivo em Perfil."
+    },
+    {
+      "id": "stored-en-unknown-block-neutral",
+      "input": {
+        "role": "assistant",
+        "text": "7,700 Block: 3,120 kcal.",
+        "raw_protocol": null,
+        "locale": "en",
+        "has_suggestion": false,
+        "surface": "stored"
+      },
+      "expected_context": "[referência interna omitida]",
+      "expected_answer": "Check your official targets in Today and your objective details in Profile."
+    },
+    {
+      "id": "stored-pt-gain-block-explanation",
+      "input": {
+        "role": "assistant",
+        "text": "Bloco 7700: 3120 kcal.",
+        "raw_protocol": "ganho_massa",
+        "locale": "pt-BR",
+        "has_suggestion": false,
+        "surface": "stored"
+      },
+      "expected_context": "[referência interna omitida]",
+      "expected_answer": "Confira suas metas oficiais em Hoje e os dados do seu objetivo em Perfil.\n\nO Bloco 7.700 é exibido apenas na recomposição corporal."
+    },
+    {
+      "id": "stored-pt-budget-only-cta",
+      "input": {
+        "role": "assistant",
+        "text": "Orçamento 14d: 5850/5960 kcal · DAM: 1/2",
+        "raw_protocol": "manutencao",
+        "locale": "pt-BR",
+        "has_suggestion": true,
+        "surface": "stored"
+      },
+      "expected_context": "[referência interna omitida]",
+      "expected_answer": "Confira suas metas oficiais em Hoje e os dados do seu objetivo em Perfil.\n\nSua sugestão está pronta em \"Revisar sugestão\"."
+    },
+    {
+      "id": "stored-en-budget-only-cta",
+      "input": {
+        "role": "assistant",
+        "text": "14-day budget: 5,850/5,960 kcal · DAM: 1/2",
+        "raw_protocol": "ganho_massa",
+        "locale": "en",
+        "has_suggestion": true,
+        "surface": "stored"
+      },
+      "expected_context": "[referência interna omitida]",
+      "expected_answer": "Check your official targets in Today and your objective details in Profile.\n\nYour suggestion is ready to review in the app."
+    },
+    {
+      "id": "stored-pt-block-only-cta",
+      "input": {
+        "role": "assistant",
+        "text": "Bloco 7700: 3120 kcal.",
+        "raw_protocol": "ganho_massa",
+        "locale": "pt-BR",
+        "has_suggestion": true,
+        "surface": "stored"
+      },
+      "expected_context": "[referência interna omitida]",
+      "expected_answer": "Confira suas metas oficiais em Hoje e os dados do seu objetivo em Perfil.\n\nO Bloco 7.700 é exibido apenas na recomposição corporal.\n\nSua sugestão está pronta em \"Revisar sugestão\"."
+    },
+    {
+      "id": "stored-en-block-only-cta",
+      "input": {
+        "role": "assistant",
+        "text": "7,700 Block: 3,120 kcal.",
+        "raw_protocol": "manutencao",
+        "locale": "en",
+        "has_suggestion": true,
+        "surface": "stored"
+      },
+      "expected_context": "[referência interna omitida]",
+      "expected_answer": "Check your official targets in Today and your objective details in Profile.\n\nThe 7,700 Block is displayed only for body recomposition.\n\nYour suggestion is ready to review in the app."
+    },
+    {
+      "id": "stored-en-text-pt-account",
+      "input": {
+        "role": "assistant",
+        "text": "Your 7,700 Block: 3,120 kcal.",
+        "raw_protocol": null,
+        "locale": "pt-BR",
+        "has_suggestion": false,
+        "surface": "stored",
+        "fallback_language": "en",
+        "historical_language_recognized_in_original": true
+      },
+      "expected_context": "[referência interna omitida]",
+      "expected_answer": "Check your official targets in Today and your objective details in Profile."
+    },
+    {
+      "id": "stored-pt-text-en-account",
+      "input": {
+        "role": "assistant",
+        "text": "Seu Bloco 7700: 3120 kcal.",
+        "raw_protocol": null,
+        "locale": "en",
+        "has_suggestion": false,
+        "surface": "stored",
+        "fallback_language": "pt-BR",
+        "historical_language_recognized_in_original": true
+      },
+      "expected_context": "[referência interna omitida]",
+      "expected_answer": "Confira suas metas oficiais em Hoje e os dados do seu objetivo em Perfil."
+    },
+    {
+      "id": "stored-en-text-pt-account-cta",
+      "input": {
+        "role": "assistant",
+        "text": "Your 7,700 Block: 3,120 kcal.",
+        "raw_protocol": null,
+        "locale": "pt-BR",
+        "has_suggestion": true,
+        "surface": "stored",
+        "fallback_language": "en",
+        "historical_language_recognized_in_original": true
+      },
+      "expected_context": "[referência interna omitida]",
+      "expected_answer": "Check your official targets in Today and your objective details in Profile.\n\nYour suggestion is ready to review in the app."
+    },
+    {
+      "id": "new-pt-budget-verified-targets",
+      "input": {
+        "role": "assistant",
+        "text": "Orçamento 14d: 5850/5960 kcal · DAM: 1/2",
+        "raw_protocol": "recomposicao",
+        "locale": "pt-BR",
+        "has_suggestion": false,
+        "surface": "new",
+        "official_targets": {
+          "calories_target": 2980,
+          "protein_target": 144
+        }
+      },
+      "expected_context": "[referência interna omitida]",
+      "expected_answer": "As metas oficiais de hoje são 2.980 kcal e 144 g de proteína. Você pode acompanhá-las em Hoje."
+    },
+    {
+      "id": "new-en-budget-verified-targets-cta",
+      "input": {
+        "role": "assistant",
+        "text": "14-day budget: 5,850/5,960 kcal · DAM: 1/2",
+        "raw_protocol": "recomposicao",
+        "locale": "en",
+        "has_suggestion": true,
+        "surface": "new",
+        "official_targets": {
+          "calories_target": 2980,
+          "protein_target": 144
+        }
+      },
+      "expected_context": "[referência interna omitida]",
+      "expected_answer": "Today’s official targets are 2,980 kcal and 144 g of protein. You can follow them in Today.\n\nYour suggestion is ready to review in the app."
+    },
+    {
+      "id": "existing-pt-review-cta-not-duplicated",
+      "input": {
+        "role": "assistant",
+        "text": "Bloco 7700: 3120 kcal.\nRevisar sugestão",
+        "raw_protocol": "ganho_massa",
+        "locale": "pt-BR",
+        "has_suggestion": true
+      },
+      "expected_context": "[referência interna omitida]\nRevisar sugestão",
+      "expected_answer": "Revisar sugestão\n\nO Bloco 7.700 é exibido apenas na recomposição corporal."
+    },
+    {
+      "id": "existing-en-review-cta-not-duplicated",
+      "input": {
+        "role": "assistant",
+        "text": "7,700 Block: 3,120 kcal.\nReview suggestion",
+        "raw_protocol": "manutencao",
+        "locale": "en",
+        "has_suggestion": true
+      },
+      "expected_context": "[referência interna omitida]\nReview suggestion",
+      "expected_answer": "Review suggestion\n\nThe 7,700 Block is displayed only for body recomposition."
+    },
+    {
+      "id": "existing-pt-canonical-cta-not-duplicated",
+      "input": {
+        "role": "assistant",
+        "text": "Bloco 7700: 3120 kcal.\nSua sugestão está pronta em \"Revisar sugestão\".",
+        "raw_protocol": "ganho_massa",
+        "locale": "pt-BR",
+        "has_suggestion": true,
+        "idempotent_public_output": true
+      },
+      "expected_context": "[referência interna omitida]\nSua sugestão está pronta em \"Revisar sugestão\".",
+      "expected_answer": "Sua sugestão está pronta em \"Revisar sugestão\".\n\nO Bloco 7.700 é exibido apenas na recomposição corporal."
+    },
+    {
+      "id": "existing-en-canonical-cta-not-duplicated",
+      "input": {
+        "role": "assistant",
+        "text": "7,700 Block: 3,120 kcal.\nYour suggestion is ready to review in the app.",
+        "raw_protocol": "ganho_massa",
+        "locale": "en",
+        "has_suggestion": true,
+        "idempotent_public_output": true
+      },
+      "expected_context": "[referência interna omitida]\nYour suggestion is ready to review in the app.",
+      "expected_answer": "Your suggestion is ready to review in the app.\n\nThe 7,700 Block is displayed only for body recomposition."
+    }
+  ],
+  "c1_composition": [
+    {
+      "id": "stored-pt-c1-private-only-with-cta",
+      "input": {
+        "text": "BMR: 1.800 kcal.",
+        "raw_protocol": null,
+        "locale": "pt-BR",
+        "has_suggestion": true,
+        "surface": "stored"
+      },
+      "expected": {
+        "objective_projected_answer": "BMR: 1.800 kcal.",
+        "public_answer": "Confira suas metas oficiais em Hoje e os dados do seu objetivo em Perfil.\n\nSua sugestão está pronta em \"Revisar sugestão\"."
+      },
+      "reason": "Vocabulário privado pertence ao C1 existente, não inferido como C3; fallback/CTA devem ser reutilizados."
+    },
+    {
+      "id": "stored-en-c1-private-only-with-cta",
+      "input": {
+        "text": "BMR: 1,800 kcal.",
+        "raw_protocol": null,
+        "locale": "en",
+        "has_suggestion": true,
+        "surface": "stored"
+      },
+      "expected": {
+        "objective_projected_answer": "BMR: 1,800 kcal.",
+        "public_answer": "Check your official targets in Today and your objective details in Profile.\n\nYour suggestion is ready to review in the app."
+      },
+      "reason": "C1 existente mantém fallback neutro/CTA EN."
+    },
+    {
+      "id": "mixed-c1-c3-food-allergy-cta",
+      "input": {
+        "text": "BMR: 1800 kcal.\nBloco 7700: 3120 kcal.\nArroz: 150 g, 195 kcal.\nEvite amendoim.\nRevisar sugestão",
+        "raw_protocol": "ganho_massa",
+        "locale": "pt-BR",
+        "has_suggestion": true,
+        "surface": "stored"
+      },
+      "expected": {
+        "objective_projected_answer": "BMR: 1800 kcal.\nArroz: 150 g, 195 kcal.\nEvite amendoim.\nRevisar sugestão",
+        "public_answer": "Arroz: 150 g, 195 kcal.\nEvite amendoim.\nRevisar sugestão\n\nO Bloco 7.700 é exibido apenas na recomposição corporal."
+      },
+      "reason": "Composição final C1 + C3/C4 conserva alimento e CTA; dado privado é retirado por C1."
+    }
+  ]
+}

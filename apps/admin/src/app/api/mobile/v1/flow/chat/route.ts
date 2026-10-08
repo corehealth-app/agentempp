@@ -8,6 +8,7 @@ import {
   summarizeFlowToolCalls,
 } from '@/lib/mobile-api/flow-chat-service'
 import { executeSupabaseIdempotent } from '@/lib/mobile-api/idempotency'
+import { loadFlowPresentationContext } from '@/lib/mobile-api/flow-presentation-context'
 import { createMobileRoute } from '@/lib/mobile-api/route'
 import { type FlowChatRouteDependencies, handleFlowChatGet, handleFlowChatPost } from './handler'
 
@@ -59,6 +60,7 @@ const dependencies: FlowChatRouteDependencies = {
   loadHistory: loadFlowHistory,
   sendMessage: sendFlowMessage,
   executeIdempotent: executeSupabaseIdempotent,
+  loadPresentationContext: loadFlowPresentationContext,
   now: () => new Date(),
 }
 

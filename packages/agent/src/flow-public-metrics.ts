@@ -1,4 +1,13 @@
 /** C1: presentation boundary only. No calculation, persisted data or legacy changes. */
+import {
+  type FlowPresentationObjective,
+  flowBlockExplanation,
+  flowObjectiveLanguageSample,
+  projectFlowObjectiveText,
+} from './flow-objective-presentation.js'
+
+export type { FlowPresentationObjective } from './flow-objective-presentation.js'
+
 type Targets = { calories_target: number | null; protein_target: number | null }
 
 function normalized(text: string): string {
@@ -154,8 +163,14 @@ function projectStatements(text: string, replacement: string): string {
 }
 
 /** Only derived copies; the user's utterances and persisted data stay intact. */
-export function projectFlowMetricContext(text: string): string {
-  return projectStatements(publicBodyFatLabel(text), '[referência interna omitida]')
+export function projectFlowMetricContext(
+  text: string,
+  objective?: FlowPresentationObjective,
+): string {
+  const copy = objective
+    ? projectFlowObjectiveText(text, objective, '[referência interna omitida]').text
+    : text
+  return projectStatements(publicBodyFatLabel(copy), '[referência interna omitida]')
 }
 
 /** Last boundary, after suggestion reconstruction and the public-name guard. */
@@ -165,12 +180,24 @@ export function projectFlowMetricAnswer(
   locale: string | null,
   hasSuggestion: boolean,
   fallback?: string,
+  objective?: FlowPresentationObjective,
 ): string {
-  const publicText = publicBodyFatLabel(text, locale)
-  if (!hasPrivateMetric(publicText)) return publicText
-  const kept = projectStatements(publicText, '').trim()
-  const result = kept || fallback || renderOfficialTargets(targets, locale)
-  if (!hasSuggestion || /Revisar sugestão|Review suggestion/i.test(result)) return result
+  const projection = objective ? projectFlowObjectiveText(text, objective, '') : null
+  const publicText = publicBodyFatLabel(projection?.text ?? text, locale)
+  const privateMetric = hasPrivateMetric(publicText)
+  if (!privateMetric && !projection?.changed) return publicText
+  const kept = privateMetric ? projectStatements(publicText, '').trim() : publicText
+  let result = kept.trim() ? kept : fallback || renderOfficialTargets(targets, locale)
+  const explanation =
+    objective && projection?.removedBlock ? flowBlockExplanation(objective, locale) : ''
+  if (explanation && !result.includes(explanation)) result += `\n\n${explanation}`
+  if (
+    !hasSuggestion ||
+    /Revisar sugestão|Review suggestion|Your suggestion is ready to review in the app\./i.test(
+      result,
+    )
+  )
+    return result
   return `${result}\n\n${locale?.startsWith('en') ? 'Your suggestion is ready to review in the app.' : 'Sua sugestão está pronta em "Revisar sugestão".'}`
 }
 
@@ -179,15 +206,28 @@ export function projectStoredFlowMetricAnswer(
   text: string,
   locale: string | null,
   hasSuggestion: boolean,
+  objective?: FlowPresentationObjective,
 ): string {
   // Keep a recognizable historical language; ambiguous labels such as BMR
   // alone use the already authenticated locale. This is not translation.
-  const value = normalized(text)
+  const value = normalized(objective ? flowObjectiveLanguageSample(text) : text)
+  const objectivePt =
+    !!objective &&
+    /\b(?:bloco(?:\(s\)|s)?(?:\s+de)?\s*7[.,]?700|orcamento(?:\s+(?:de|para))?\s+(?:14\s*(?:dias?|d)|quatorze dias)|dias acima da meta)\b/u.test(
+      value,
+    )
+  const objectiveEn =
+    !!objective &&
+    /\b(?:7[.,]?700[ -]*blocks?|14[ -]*days?[ -]*budget|budget(?:\s+(?:of|for))?\s+14\s*days?|days above target)\b/u.test(
+      value,
+    )
   const pt =
+    objectivePt ||
     /\b(?:seu|sua|gordura corporal|(?:metabolismo|taxa(?: metabolica)?) basal|massa magra|fator(?:es)? de atividade|metas? oficia(?:l|is)|gasto (?:energetico total|total diario)|estimad[oa]|aproximad[oa]|aproximadamente|cerca de|entre)\b/u.test(
       value,
     )
   const en =
+    objectiveEn ||
     /\b(?:your|my|body fat|basal (?:metabolism|metabolic rate|rate)|lean body mass|activity factors?|official targets?|total (?:daily )?energy expenditure|estimated|approximately|about|around|roughly|between)\b/u.test(
       value,
     )
@@ -195,5 +235,5 @@ export function projectStoredFlowMetricAnswer(
   const fallback = storedLocale?.startsWith('en')
     ? 'Check your official targets in Today and your objective details in Profile.'
     : 'Confira suas metas oficiais em Hoje e os dados do seu objetivo em Perfil.'
-  return projectFlowMetricAnswer(text, null, storedLocale, hasSuggestion, fallback)
+  return projectFlowMetricAnswer(text, null, storedLocale, hasSuggestion, fallback, objective)
 }

@@ -8,9 +8,9 @@ import {
   scopedFlowProviderMessageId,
   sendFlowMessage,
 } from '@/lib/mobile-api/flow-chat-service'
-import type { MobileApiError } from '@/lib/mobile-api/http'
+import { MobileApiError } from '@/lib/mobile-api/http'
 import { executeIdempotent, type MobileIdempotencyStore } from '@/lib/mobile-api/idempotency'
-import type { MobileRouteContext } from '@/lib/mobile-api/route'
+import { createMobileRoute, type MobileRouteContext } from '@/lib/mobile-api/route'
 import { type FlowChatRouteDependencies, handleFlowChatGet, handleFlowChatPost } from './handler'
 
 const userId = '00000000-0000-0000-0000-000000000511'
@@ -70,6 +70,7 @@ function dependencies(): FlowChatRouteDependencies {
       draft: null,
     })),
     executeIdempotent: vi.fn(async (_context, _payload, operation) => operation('flow-key-0001')),
+    loadPresentationContext: vi.fn(async () => ({ currentProtocol: null })),
     now: () => new Date('2026-09-14T20:00:00.000Z'),
   }
 }
@@ -126,8 +127,6 @@ describe('mobile Flow chat route', () => {
   })
 })
 
-// C1 replay: exercise the real handler, turn service and HTTP idempotency;
-// only the external storage/provider boundaries are synthetic.
 const oldAssistant: FlowMessageDTO = Object.freeze({
   id: 'assistant-old',
   conversation_id: 'flow',
@@ -137,6 +136,209 @@ const oldAssistant: FlowMessageDTO = Object.freeze({
   request_id: 'request-original',
   created_at: '2026-09-13T20:00:00.000Z',
 })
+
+const objectiveAssistant = Object.freeze({ ...oldAssistant,
+  content: [
+    'Evite amendoim por sua alergia.', 'Consumido: 541 / 2.980 kcal (18%)',
+    'Restam para comida: 2.439 kcal', 'Proteína: 59.0 / 144g (41%)', 'Exercício: 322 kcal',
+    'Bloco 7700: 3.120 / 7.700 kcal (41%)', '4 bloco(s) de 7.700 completo(s)',
+    'Orçamento 14d: 5.850 / 5.960 kcal (98%) · DAM: 1/2',
+    'Reavaliação em 14 dias.', 'Arroz: 150 g, 195 kcal.', 'Revisar sugestão',
+  ].join('\n'),
+})
+function projectedObjectiveAnswer(protocol: string | null) {
+  return [
+    'Evite amendoim por sua alergia.', 'Consumido: 541 / 2.980 kcal (18%)',
+    'Restam para comida: 2.439 kcal', 'Proteína: 59.0 / 144g (41%)', 'Exercício: 322 kcal',
+    ...(protocol === 'recomposicao' ? ['Bloco 7700: 3.120 / 7.700 kcal (41%)', '4 bloco(s) de 7.700 completo(s)'] : []),
+    'Reavaliação em 14 dias.', 'Arroz: 150 g, 195 kcal.', 'Revisar sugestão',
+  ].join('\n') + (protocol === 'ganho_massa' || protocol === 'manutencao'
+    ? '\n\nO Bloco 7.700 é exibido apenas na recomposição corporal.' : '')
+}
+
+describe('C3/C4 current authenticated objective on Flow reads and replay', () => {
+  it.each(['recomposicao', 'ganho_massa', 'manutencao', null] as const)(
+    'keeps a relative destination opaque in HTTP replay with objective %s', async (currentProtocol) => {
+      const content = 'Veja docs/Bloco7700.md?DAM=1/2#help.'
+      const assistant = Object.freeze({ ...oldAssistant, content })
+      const { deps, chat, output } = replayDependencies(assistant)
+      deps.loadPresentationContext = vi.fn(async () => ({ currentProtocol }))
+      const agent = vi.fn(chat.agent.reply); chat.agent.reply = agent
+      const response = await handleFlowChatPost(replayContext(), deps)
+      const body = await response.json()
+      expect(body.data.message).toEqual(assistant)
+      expect(body.data.draft).toEqual({ id: 'draft-original', domain: 'nutrition' })
+      expect(body.meta.request_id).toBe('request-flow-0511')
+      expect(response.headers.get('x-request-id')).toBe('request-flow-0511')
+      expect(response.headers.get('cache-control')).toBe('no-store')
+      expect(response.headers.get('vary')).toBe('Authorization')
+      expect(agent).not.toHaveBeenCalled()
+      expect(output.content).toBe(content)
+    },
+  )
+  it('keeps historical English feedback when a replay URL contains a Portuguese block token', async () => {
+    const content = '7,700 Block: 3,120 kcal.\nhttps://example.invalid/Bloco7700'
+    const assistant = Object.freeze({ ...oldAssistant, content })
+    const { deps, chat, output } = replayDependencies(assistant)
+    deps.loadPresentationContext = vi.fn(async () => ({ currentProtocol: 'ganho_massa' as const }))
+    const agent = vi.fn(chat.agent.reply); chat.agent.reply = agent
+    const response = await handleFlowChatPost(replayContext('pt-BR'), deps)
+    const body = await response.json()
+    expect(body.data.message).toEqual({ ...assistant,
+      content: 'https://example.invalid/Bloco7700\n\nThe 7,700 Block is displayed only for body recomposition.\n\nYour suggestion is ready to review in the app.',
+    })
+    expect(body.data.draft).toEqual({ id: 'draft-original', domain: 'nutrition' })
+    expect(body.meta.request_id).toBe('request-flow-0511')
+    expect(response.headers.get('x-request-id')).toBe('request-flow-0511')
+    expect(agent).not.toHaveBeenCalled()
+    expect(output.content).toBe(content)
+  })
+  it.each([
+    ['Déficit acumulado (bloco 7700): 3120 kcal — evite amendoim por sua alergia.', 'ganho_massa', 'pt-BR', 'evite amendoim por sua alergia.\n\nO Bloco 7.700 é exibido apenas na recomposição corporal.\n\nSua sugestão está pronta em "Revisar sugestão".'],
+    ['Days above target (DAM): 1/2; avoid peanuts because of your allergy.', 'recomposicao', 'en', 'avoid peanuts because of your allergy.\n\nYour suggestion is ready to review in the app.'],
+    ['Evite amendoim por sua alergia (Dias acima da meta (dam): 1/2).', 'ganho_massa', 'pt-BR', 'Evite amendoim por sua alergia.\n\nSua sugestão está pronta em "Revisar sugestão".'],
+    ['Avoid peanuts because of your allergy (Days above target (dam): 1/2).', 'recomposicao', 'en', 'Avoid peanuts because of your allergy.\n\nYour suggestion is ready to review in the app.'],
+    ['Dias acima da meta (dam): **1/2**; evite amendoim por sua alergia.', 'manutencao', 'pt-BR', 'evite amendoim por sua alergia.\n\nSua sugestão está pronta em "Revisar sugestão".'],
+    ['Days above target (dam): **1/2**; avoid peanuts because of your allergy.', 'recomposicao', 'en', 'avoid peanuts because of your allergy.\n\nYour suggestion is ready to review in the app.'],
+    ['Déficit acumulado (bloco 7700): **3120** kcal — evite amendoim por sua alergia.', 'ganho_massa', 'pt-BR', 'evite amendoim por sua alergia.\n\nO Bloco 7.700 é exibido apenas na recomposição corporal.\n\nSua sugestão está pronta em "Revisar sugestão".'],
+    ['Bloco 7700: (3120 kcal). Evite amendoim.', 'ganho_massa', 'pt-BR', 'Evite amendoim.\n\nO Bloco 7.700 é exibido apenas na recomposição corporal.\n\nSua sugestão está pronta em "Revisar sugestão".'],
+    ['Orçamento 14 dias: (5850 / 5960 kcal). Evite amendoim.', 'recomposicao', 'pt-BR', 'Evite amendoim.\n\nSua sugestão está pronta em "Revisar sugestão".'],
+    ['- Dias acima da meta (DAM): 1/2; evite amendoim por sua alergia.', 'ganho_massa', 'pt-BR', 'evite amendoim por sua alergia.\n\nSua sugestão está pronta em "Revisar sugestão".'],
+    ['| Dias acima da meta (DAM) | **1/2** |\nEvite amendoim por sua alergia.', 'recomposicao', 'pt-BR', 'Evite amendoim por sua alergia.\n\nSua sugestão está pronta em "Revisar sugestão".'],
+  ] as const)('keeps the adjacent allergy in HTTP turn-service replay: %s', async (content, currentProtocol, locale, expected) => {
+    const assistant = Object.freeze({ ...oldAssistant, content })
+    const { deps, chat, output } = replayDependencies(assistant)
+    deps.loadPresentationContext = vi.fn(async () => ({ currentProtocol }))
+    const agent = vi.fn(chat.agent.reply); chat.agent.reply = agent
+    const response = await handleFlowChatPost(replayContext(locale), deps)
+    const body = await response.json()
+    expect(body.data.message).toEqual({ ...assistant, content: expected })
+    expect(body.data.draft).toEqual({ id: 'draft-original', domain: 'nutrition' })
+    expect(body.meta.request_id).toBe('request-flow-0511')
+    expect(response.headers.get('x-request-id')).toBe('request-flow-0511')
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    expect(agent).not.toHaveBeenCalled()
+    expect(output.content).toBe(content)
+  })
+  it.each([false, true])('projects the %s legacy turn-service replay with today’s objective and no provider work', async (legacy) => {
+    const { deps, chat, output } = replayDependencies(objectiveAssistant, legacy)
+    deps.loadPresentationContext = vi.fn(async () => ({ currentProtocol: 'ganho_massa' as const }))
+    const agent = vi.fn(chat.agent.reply); chat.agent.reply = agent
+    const response = await handleFlowChatPost(replayContext(), deps)
+    const body = await response.json()
+    expect(body.data.message).toEqual({ ...objectiveAssistant, content: projectedObjectiveAnswer('ganho_massa') })
+    expect(body.data.draft).toEqual({ id: 'draft-original', domain: 'nutrition' })
+    expect(agent).not.toHaveBeenCalled()
+    expect(output.content).toBe(objectiveAssistant.content)
+  })
+  it.each(['recomposicao', 'ganho_massa', 'manutencao', null] as const)(
+    'projects GET with current objective %s while preserving every DTO field and user text', async (currentProtocol) => {
+      const { deps, chat } = replayDependencies(objectiveAssistant)
+      const literal = 'Meu bloco 7700 está em 3120? Tenho alergia a amendoim e reavaliação em 14 dias.'
+      const rows = [stored(objectiveAssistant), stored({ ...objectiveAssistant, id: 'user-old', role: 'user', content: literal,
+        created_at: '2026-09-13T19:59:00.000Z' })]
+      const original = JSON.stringify(rows)
+      chat.store.loadHistory = async (owner, limit) => {
+        expect(owner).toBe(userId); expect(limit).toBe(50); return rows
+      }
+      const load = vi.fn(async () => ({ currentProtocol }))
+      deps.loadPresentationContext = load
+      const ctx = context('GET')
+      const response = await handleFlowChatGet(ctx, deps)
+      const body = await response.json()
+      expect(body.data.messages).toEqual([
+        { ...objectiveAssistant, id: 'user-old', role: 'user', content: literal, created_at: '2026-09-13T19:59:00.000Z' },
+        { ...objectiveAssistant, content: projectedObjectiveAnswer(currentProtocol) },
+      ])
+      expect(load).toHaveBeenCalledTimes(1)
+      expect(load).toHaveBeenCalledWith(ctx)
+      expect(JSON.stringify(rows)).toBe(original)
+      expect(response.headers.get('cache-control')).toBe('no-store')
+      expect(response.headers.get('vary')).toBe('Authorization')
+    },
+  )
+
+  it('reprojects the same HTTP cache from recomp to gain to recomp without changing cache or repeating provider work', async () => {
+    const { deps, cache } = replayDependencies(objectiveAssistant)
+    const cached = Object.freeze({
+      data: Object.freeze({ conversation_id: 'flow', message: objectiveAssistant,
+        draft: Object.freeze({ id: 'draft-original', domain: 'nutrition' }) }),
+      meta: Object.freeze({ api_version: 'v1', request_id: 'request-original' }),
+    })
+    const original = JSON.stringify(cached)
+    const send = vi.fn(deps.sendMessage); deps.sendMessage = send
+    cache.claim = async () => ({ action: 'replay', status: 201, body: cached })
+    let currentProtocol: 'recomposicao' | 'ganho_massa' = 'recomposicao'
+    const load = vi.fn(async () => ({ currentProtocol })); deps.loadPresentationContext = load
+    for (const protocol of ['recomposicao', 'ganho_massa', 'recomposicao'] as const) {
+      currentProtocol = protocol
+      const response = await handleFlowChatPost(replayContext(), deps)
+      const body = await response.json()
+      expect(body.data.message).toEqual({ ...objectiveAssistant, content: projectedObjectiveAnswer(protocol) })
+      expect(body.data.draft).toEqual({ id: 'draft-original', domain: 'nutrition' })
+      expect(response.headers.get('idempotency-replayed')).toBe('true')
+      expect(response.headers.get('cache-control')).toBe('no-store')
+      expect(body.meta.request_id).toBe('request-flow-0511')
+    }
+    expect(load).toHaveBeenCalledTimes(3)
+    expect(send).not.toHaveBeenCalled()
+    expect(JSON.stringify(cached)).toBe(original)
+  })
+
+  it('keeps a completed HTTP claim when the later objective read fails, then retries only the read with the same key', async () => {
+    const { deps, chat, cache } = replayDependencies(objectiveAssistant)
+    let cached: unknown
+    const complete = vi.fn(async (_claim, _owner, _status, body) => { cached = body })
+    const fail = vi.fn(async () => {})
+    cache.complete = complete; cache.fail = fail
+    chat.store.findInbound = async () => null; chat.store.findAssistant = async () => null
+    chat.store.insertInbound = async (input) => stored({ ...objectiveAssistant, role: 'user', content: input.content })
+    chat.store.transitionInbound = async () => true
+    const agent = vi.fn(async () => ({ text: objectiveAssistant.content, metadata: {} }))
+    chat.agent.reply = agent
+    const write = vi.fn(async () => stored(objectiveAssistant)); chat.store.insertAssistant = write
+    const load = vi.fn(async () => ({ currentProtocol: 'ganho_massa' as const }))
+      .mockRejectedValueOnce(new MobileApiError(500, 'data_access_failed', 'Unable to read Flow presentation context'))
+    deps.loadPresentationContext = load
+    const ctx = replayContext()
+    let nextRequestId = ctx.requestId
+    const route = createMobileRoute((requestContext) => handleFlowChatPost(requestContext, deps), {
+      authenticate: async () => ctx.auth, authorizeEntitlement: async () => {},
+      createServiceClient: () => ctx.supabase, createRequestId: () => nextRequestId,
+    })
+    const failed = await route(ctx.request)
+    expect(failed.status).toBe(500)
+    expect(failed.headers.get('cache-control')).toBe('no-store')
+    expect(failed.headers.get('vary')).toBe('Authorization')
+    const error = await failed.json()
+    expect(error.error.code).toBe('data_access_failed')
+    expect(error).not.toHaveProperty('data')
+    expect(JSON.stringify(error)).not.toContain('3.120')
+    expect(complete).toHaveBeenCalledTimes(1)
+    expect(agent).toHaveBeenCalledTimes(1)
+    expect(write).toHaveBeenCalledTimes(1)
+    expect(fail).not.toHaveBeenCalled()
+    cache.claim = async () => ({ action: 'replay', status: 201, body: cached })
+    nextRequestId = 'request-flow-retry'
+    const retry = await route(replayContext().request)
+    expect(retry.status).toBe(201)
+    const retryBody = await retry.json()
+    expect(retryBody.data.message.content).toBe(projectedObjectiveAnswer('ganho_massa'))
+    expect(retryBody.data.message).toEqual({ ...objectiveAssistant, content: projectedObjectiveAnswer('ganho_massa') })
+    expect(retryBody.meta.request_id).toBe('request-flow-retry')
+    expect(retry.headers.get('x-request-id')).toBe('request-flow-retry')
+    expect(retry.headers.get('idempotency-replayed')).toBe('true')
+    expect(load).toHaveBeenCalledTimes(2)
+    expect(agent).toHaveBeenCalledTimes(1)
+    expect(write).toHaveBeenCalledTimes(1)
+    expect(complete).toHaveBeenCalledTimes(1)
+    expect(fail).not.toHaveBeenCalled()
+  })
+})
+
+// C1 replay: exercise the real handler, turn service and HTTP idempotency;
+// only the external storage/provider boundaries are synthetic.
+
 
 function stored(dto: FlowMessageDTO): StoredFlowMessage {
   return Object.freeze({
@@ -365,6 +567,7 @@ describe('C1 public presentation of stored Flow messages', () => {
     expect(response.status).toBe(429)
     expect(response.headers.get('retry-after')).toBe('60')
     expect(await response.text()).toBe('{"error":{"code":"flow_rate_limited"}}')
+    expect(deps.loadPresentationContext).not.toHaveBeenCalled()
   })
 
   it.each([

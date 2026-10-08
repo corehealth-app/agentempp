@@ -1,4 +1,4 @@
-import { projectStoredFlowMetricAnswer } from '@mpp/agent/flow-public-metrics'
+import { type FlowPresentationObjective, projectStoredFlowMetricAnswer } from '@mpp/agent/flow-public-metrics'
 import { flowChatInputSchema, flowChatLimitSchema } from '@/lib/mobile-api/contracts'
 import type {
   FlowChatDependencies,
@@ -20,6 +20,7 @@ export interface FlowChatRouteDependencies {
   loadHistory: typeof loadFlowHistory
   sendMessage: typeof sendFlowMessage
   executeIdempotent: ExecuteIdempotent
+  loadPresentationContext(context: MobileRouteContext): Promise<FlowPresentationObjective>
   now(): Date
 }
 
@@ -32,7 +33,7 @@ function invalidResponse(): MobileApiError {
 }
 
 /** Public route boundary; stored rows and HTTP idempotency bodies stay intact. */
-function publicMessage(value: unknown, locale: string | null, hasSuggestion = false) {
+function validateMessage(value: unknown): asserts value is Record<string, unknown> {
   if (
     !record(value) ||
     value.conversation_id !== 'flow' ||
@@ -45,9 +46,13 @@ function publicMessage(value: unknown, locale: string | null, hasSuggestion = fa
     !['processing', 'completed', 'failed'].includes(value.state)
   )
     throw invalidResponse()
+}
+
+function publicMessage(value: unknown, locale: string | null, objective: FlowPresentationObjective, hasSuggestion = false) {
+  validateMessage(value)
   return value.role === 'user'
     ? value
-    : { ...value, content: projectStoredFlowMetricAnswer(value.content, locale, hasSuggestion) }
+    : { ...value, content: projectStoredFlowMetricAnswer(value.content as string, locale, hasSuggestion, objective) }
 }
 
 export async function handleFlowChatGet(
@@ -61,12 +66,15 @@ export async function handleFlowChatGet(
   }
   const limit = flowChatLimitSchema.parse(url.searchParams.get('limit') ?? '50')
   const chat = dependencies.createChatDependencies(context)
-  const history = await dependencies.loadHistory(chat, context.auth.userId, limit)
+  const [history, objective] = await Promise.all([
+    dependencies.loadHistory(chat, context.auth.userId, limit),
+    dependencies.loadPresentationContext(context),
+  ])
   return mobileSuccess(
     {
       ...history,
       messages: history.messages.map((message) =>
-        publicMessage(message, context.auth.patient.locale),
+        publicMessage(message, context.auth.patient.locale, objective),
       ),
     },
     context.requestId,
@@ -110,6 +118,9 @@ export async function handleFlowChatPost(
     throw invalidResponse()
   }
   const data = body.data
+  validateMessage(data.message)
+  // Outside the mutation/cache callback: retry can reuse a saved turn after a read failure.
+  const objective = await dependencies.loadPresentationContext(context)
   const hasSuggestion =
     record(data.draft) &&
     typeof data.draft.id === 'string' &&
@@ -122,7 +133,7 @@ export async function handleFlowChatPost(
       ...body,
       data: {
         ...data,
-        message: publicMessage(data.message, context.auth.patient.locale, hasSuggestion),
+        message: publicMessage(data.message, context.auth.patient.locale, objective, hasSuggestion),
       },
     },
     { status: response.status, statusText: response.statusText, headers },

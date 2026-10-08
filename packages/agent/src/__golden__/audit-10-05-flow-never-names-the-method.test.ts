@@ -482,7 +482,10 @@ describe('audit 2026-10-05 Flow names — the instruction the model receives', (
 
     const prompt = h.systemPrompts[0] ?? ''
     expect(prompt).toContain('MPP: cálculos oficiais permanecem no servidor.')
-    expect(prompt).toContain(`### ${METHOD_CHUNK.page_title}\n${METHOD_CHUNK.content}`)
+    // C3 projects the block-only body for gain; the raw RAG remains unchanged.
+    expect(prompt).toContain(`### ${METHOD_CHUNK.page_title}\n[referência interna omitida]`)
+    expect(prompt).not.toContain(METHOD_CHUNK.content)
+    expect(METHOD_CHUNK.content).toBe('O Método MPP (Muscular Power Plant) organiza a alimentação em blocos de 7700 kcal.')
   })
 })
 

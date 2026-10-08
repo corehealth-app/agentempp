@@ -1472,7 +1472,11 @@ describe('review 2026-10-04 — closed day whose row carries another protocol th
     expect(state.daily_balance_kcal).toBe(-832)
     expect(state.daily_balance_reference_kcal).toBe(2343)
     expect(state.daily_balance_includes_exercise).toBe(true)
-    expect(balanceLine(await flowContext(s))).toBe(expenditureLine(s))
+    // Historical energy stays official; today's objective controls C3 visibility.
+    expect(balanceLine(await flowContext(s))).toBe(expenditureLine(s).replace(
+      'o crédito no bloco 7700 só acontece no fechamento do dia',
+      '[referência interna omitida]',
+    ))
     expect(await flowTool(s)).toMatchObject({
       gasto_de_referencia_kcal: 2343,
       balanco_do_dia_com_exercicio_kcal: -832,

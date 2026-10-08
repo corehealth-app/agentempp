@@ -8,6 +8,7 @@ import type { DailyTargets } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import type { z } from 'zod'
 import type { FlowDayBalanceInputs } from '../flow-energy-context.js'
+import type { FlowPresentationObjective } from '../flow-objective-presentation.js'
 
 /** Who a plan generator speaks as. 'legacy' is the current WhatsApp identity. */
 export type GeneratorIdentity = 'legacy' | 'flow'
@@ -86,6 +87,10 @@ export interface ToolContext {
    * (docs/CALCULO-MPP.md §2c). Server-owned; set only by the pipeline on the
    * Flow channel. Absent = the legacy net balance against the target. */
   flowDayBalance?: FlowDayBalanceInputs
+  /** Current authenticated objective, separate from the historical energy protocol. */
+  flowPresentationObjective?: FlowPresentationObjective
+  /** Block medal keys from the already loaded server configuration. */
+  flowBlockBadgeKeys?: readonly string[]
 }
 
 export interface ToolDefinition<T extends z.ZodTypeAny = z.ZodTypeAny> {

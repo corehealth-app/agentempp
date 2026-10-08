@@ -332,9 +332,11 @@ describe('authoritative Mobile API source surface', () => {
     expect(surface.forbiddenWorkerTraceReferences).toEqual([])
     expect(surface.forbiddenAdministrativeBundleReferences).toEqual([])
     expect(surface.forbiddenAdministrativeTraceReferences).toEqual([])
-    expect(surface.nftReferenceCount).toBe(5311)
-    expect(surface.nftUniqueTargetCount).toBe(166)
-    expect(surface.nftRegularFileTargetCount).toBe(164)
+    // Reviewed C3/C4 builds factor existing day-close/read-model code into
+    // one shared chunk referenced by Today and Progress (+2 refs, +1 file).
+    expect(surface.nftReferenceCount).toBe(5313)
+    expect(surface.nftUniqueTargetCount).toBe(167)
+    expect(surface.nftRegularFileTargetCount).toBe(165)
     expect(surface.nftDirectoryTargetCount).toBe(2)
   })
 

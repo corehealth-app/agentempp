@@ -598,8 +598,8 @@ describe('audit 2026-10-04 RC A — what the Flow model reads on the same day', 
       // -2761 kcal". Ganho de massa: 541 − 2838 (2980 ÷ 1,05), no exercise.
       '- Balanço calórico de hoje (consumido − gasto de referência de 2838 kcal; o exercício já está considerado neste valor e não é somado): -2297 kcal (negativo=déficit, positivo=superávit) — NÃO é o que resta para comer',
       RULE_LINE,
-      '- Sequência atual: 0 dias consecutivos (recorde 0) | XP: 0 (nível 1) | Blocos 7700 fechados: 0',
-      '- Bloco 7700 em andamento: **0 kcal de 7700** (0%)',
+      // C3 omits only block data for the current muscle-gain objective.
+      '- Sequência atual: 0 dias consecutivos (recorde 0) | XP: 0 (nível 1)',
     ])
     // The legacy line (colon right after "hoje") is what misled the model.
     expect(prompt).not.toContain('- Balanço calórico de hoje: ')
@@ -1502,14 +1502,21 @@ describe('audit 2026-10-04 RC A — consulta_progresso', () => {
         assistantIdentity: 'flow',
         flowDailyTargets: { calories_target: 2980, protein_target: 144 },
         flowDayBalance,
+        flowPresentationObjective: { currentProtocol: 'ganho_massa' },
       },
     )
-    const { daily_balance: _net, ...dayWithoutNet } = S541
+    const { daily_balance: _net, deficit_accumulated: _blockCredit, ...dayWithoutNet } = S541
 
     // §2c: was balanco_do_dia_com_exercicio_kcal: -2761 and a rule ending in
     // "balanco_do_dia_com_exercicio_kcal não é o que resta para comer.".
     expect(output).toEqual({
-      progresso,
+      progresso: {
+        xp: 0,
+        nivel: 1,
+        sequencia_dias_consecutivos: 0,
+        recorde_sequencia: 0,
+        conquistas: [],
+      },
       hoje: dayWithoutNet,
       energia_hoje: {
         meta_kcal: 2980,
@@ -1523,6 +1530,9 @@ describe('audit 2026-10-04 RC A — consulta_progresso', () => {
       },
     })
     expect(output.hoje).not.toHaveProperty('daily_balance')
+    expect(output.hoje).not.toHaveProperty('deficit_accumulated')
+    expect(output.progresso).not.toHaveProperty('blocos_7700_completos')
+    expect(output.progresso).not.toHaveProperty('deficit_no_bloco_atual')
     expect(JSON.stringify(output)).not.toContain('daily_balance')
     expect(JSON.stringify(output)).not.toContain('-2761')
     expect(JSON.stringify(output.energia_hoje)).not.toMatch(/7\.?700|bloco/)

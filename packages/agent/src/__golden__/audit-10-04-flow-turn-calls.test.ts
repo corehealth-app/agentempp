@@ -3645,7 +3645,7 @@ describe('audit 2026-10-04 Flow calls — the status answer reaches the app as p
     expect(output.text).toBe(reply)
   })
 
-  it('a non-deterministic Flow reply with a canonical card retains its existing presentation in this limited group', async () => {
+  it('a non-deterministic Flow card preserves public values and omits only C3/C4 metrics', async () => {
     const h = harness({
       text: STATUS_PHRASE,
       chat: [{ content: WHATSAPP_STATUS }],
@@ -3653,7 +3653,16 @@ describe('audit 2026-10-04 Flow calls — the status answer reaches the app as p
     })
     const output = await flow(h, STATUS_PHRASE)
 
-    expect(output.text).toBe(WHATSAPP_STATUS)
+    expect(output.text).toBe([
+      '🏅 Sequência: **3 dias consecutivos** · Nível 2 (1.240 XP)',
+      '',
+      '🔥 Consumido: **541 / 2.980 kcal (18%)**',
+      '🎯 Restam: **2.439 kcal**',
+      '💪 Proteína: **59.0 / 144g (41%)**',
+      '🏃🏻 Exercício: **322 kcal**',
+      '',
+      'O Bloco 7.700 é exibido apenas na recomposição corporal.',
+    ].join('\n'))
     expect(h.chatCalls).toHaveLength(1)
     expect(output.singleMessage).toBe(false)
     expect(eventNames(h)).not.toContain('pipeline.deterministic_status')

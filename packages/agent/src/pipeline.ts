@@ -14,6 +14,7 @@ import {
   dailyTargetByProtocol,
   dayEnergyBalance,
   eatingBalance,
+  normalizeProtocol,
   type ProfileRow,
   resolveProtocol,
 } from '@mpp/core'
@@ -138,6 +139,7 @@ import { LEGACY_PERSONA_NAME_PATTERN, projectFlowPublicNames } from './flow-publ
 import {
   asksPrivateMetricQuestion,
   flowMetricLocale,
+  type FlowPresentationObjective,
   projectFlowMetricAnswer,
   projectFlowMetricContext,
   renderOfficialTargets,
@@ -598,15 +600,16 @@ Não divulgue metabolismo basal, gasto energético total, massa magra estimada,
 fatores de atividade, nomes ou equações de cálculo das metas. Não reconstrua
 esses valores a partir do histórico ou de regras recuperadas. Use apenas as
 metas oficiais e os balanços públicos fornecidos pelo servidor. Diga
-"Gordura corporal" em vez da sigla interna.`
+"Gordura corporal" em vez da sigla interna.
+Não apresente orçamento de 14 dias nem DAM. Use o Bloco 7.700 somente quando o objetivo oficial atual for recomposição; nunca deduza esse objetivo da energia de um dia antigo.`
 
-function mobileFlowPromptContext(context: string): string {
+function mobileFlowPromptContext(context: string, objective: FlowPresentationObjective): string {
   // Only prompt copies: preserve adjacent health restrictions and never
   // mutate shared rules, the patient history or the legacy channel.
   return projectFlowMetricContext(context
     .replace(LEGACY_PERSONA_INTRODUCTION_PATTERN, 'Você é Flow, assistente de IA do Performe AI.')
     .replace(LEGACY_PERSONA_MARKDOWN_SECTION_PATTERN, '')
-    .replace(LEGACY_PERSONA_NAME_PATTERN, 'Flow'))
+    .replace(LEGACY_PERSONA_NAME_PATTERN, 'Flow'), objective)
 }
 
 export function selectPipelineTools(
@@ -734,6 +737,7 @@ interface ResolvedPipelineOptions {
     name: string | null
     locale: string | null
     dailyTargets: UserContext['dailyTargets'] | null
+    currentProtocol: FlowPresentationObjective['currentProtocol']
   }
 }
 
@@ -880,6 +884,7 @@ export async function processAuthenticatedMessage(
     name: null,
     locale: null,
     dailyTargets: null,
+    currentProtocol: null,
   }
   try {
     const output = await processResolvedMessage(
@@ -909,6 +914,8 @@ export async function processAuthenticatedMessage(
       flowAccount.dailyTargets,
       flowAccount.locale,
       draftCreatedThisTurn(publicOutput.toolCalls),
+      undefined,
+      { currentProtocol: flowAccount.currentProtocol },
     )
     return text === publicOutput.text ? publicOutput : { ...publicOutput, text }
   } catch (error) {
@@ -990,7 +997,11 @@ async function processResolvedMessage(
     options.flowAccount.name = ctx.userName
     options.flowAccount.locale = flowMetricLocale(semanticPatientText, ctx.locale)
     options.flowAccount.dailyTargets = ctx.dailyTargets
+    options.flowAccount.currentProtocol = normalizeProtocol(ctx.profile.currentProtocol)
   }
+  const flowObjective: FlowPresentationObjective = { currentProtocol: normalizeProtocol(ctx.profile.currentProtocol) }
+  const assistantCopy = (text: string) => options.historyProvider === 'mobile_flow'
+    ? projectFlowMetricContext(text, flowObjective) : text
 
   // 4. resolve stage
   const stage = resolveStage(ctx.profile)
@@ -1143,7 +1154,10 @@ async function processResolvedMessage(
           ...tool,
           description: 'Consulta idade, IMC, gordura corporal e metas oficiais de calorias e proteína. Use somente se o dado público necessário não estiver no contexto. Não estime nem recalcule metas.',
         }
-      : tool,
+      : options.historyProvider === 'mobile_flow' && tool.name === 'consulta_progresso'
+        && flowObjective.currentProtocol !== 'recomposicao'
+        ? { ...tool, description: 'Retorna o painel de progresso do usuário (XP, nível, sequência de dias, conquistas e registro de hoje). Use quando ele perguntar como está indo.' }
+        : tool,
   )
   const tools = buildToolSchemas(filteredTools)
 
@@ -1195,7 +1209,7 @@ async function processResolvedMessage(
   // Modelos não-Anthropic recebem string concatenada normal (caching ignorado).
   const channelSystemPrompt =
     options.historyProvider === 'mobile_flow'
-      ? mobileFlowPromptContext(promptRow.system_prompt)
+      ? mobileFlowPromptContext(promptRow.system_prompt, flowObjective)
       : promptRow.system_prompt
   const stableSystem =
     channelSystemPrompt + (options.systemPolicy ?? '') +
@@ -1203,7 +1217,7 @@ async function processResolvedMessage(
   // RAG (D): método relevante recuperado por turno — bloco VARIÁVEL (não cacheado).
   const methodContext = await retrieveMethodContext(deps, input.text, ctx.profile.currentProtocol)
   const channelMethodContext =
-    options.historyProvider === 'mobile_flow' ? mobileFlowPromptContext(methodContext) : methodContext
+    options.historyProvider === 'mobile_flow' ? mobileFlowPromptContext(methodContext, flowObjective) : methodContext
   const styleLine =
     options.historyProvider === 'mobile_flow' ? flowCoachStyleLine(ctx.flowCoachStyle) : ''
   const variableSystem = `${channelMethodContext}\n\n## Contexto do usuário\n${formatUserContext(ctx, calcConfig, input.timestamp, options.historyProvider)}${repetitionGuard}${styleLine ? `\n${styleLine}` : ''}`
@@ -1229,7 +1243,7 @@ async function processResolvedMessage(
   const messages: ChatCompletionMessageParam[] = promptHistory.map((m) => ({
     role: m.role,
     content: options.historyProvider === 'mobile_flow' && m.role === 'assistant'
-      ? projectFlowMetricContext(m.content)
+      ? assistantCopy(m.content)
       : m.content,
   }))
   messages.push({ role: 'user', content: input.text ?? '(mídia recebida)' })
@@ -1490,7 +1504,7 @@ async function processResolvedMessage(
             inferred_meal_type: fake.inferredMealType ?? null,
           },
         })
-        messages.push({ role: 'assistant', content })
+        messages.push({ role: 'assistant', content: assistantCopy(content) })
         const retryMsg = !fakeWriteRetryAllowed(fake.kind, filteredTools)
           ? options.historyProvider === 'mobile_flow'
             ? CHAT_WRITE_RETRACTION
@@ -1530,11 +1544,13 @@ async function processResolvedMessage(
               : { content_preview: content.slice(0, 140) }),
           },
         })
-        messages.push({ role: 'assistant', content })
+        messages.push({ role: 'assistant', content: assistantCopy(content) })
         messages.push({
           role: 'user',
           content:
-            'SISTEMA (não é o paciente): você afirmou que o bloco 7700 fechou/completou. ERRADO — o bloco só credita no FECHAMENTO do dia (à noite); durante o dia ele NÃO fecha (o déficit do meio do dia ainda vai mudar conforme o paciente come). Reescreva SEM dizer que o bloco fechou/completou hoje/agora. Reporte o bloco exatamente como está no card (ex: "X / 7.700, Y%") e, se faltar pouco, diga "faltam Z kcal pra fechar".',
+            options.historyProvider === 'mobile_flow' && flowObjective.currentProtocol !== 'recomposicao'
+              ? 'SISTEMA (não é o paciente): não apresente saldo, percentual, contagem ou conclusão do Bloco 7.700. Responda à pergunta com os dados públicos fornecidos e preserve as restrições alimentares. Não invente um objetivo nem uma confirmação.'
+              : 'SISTEMA (não é o paciente): você afirmou que o bloco 7700 fechou/completou. ERRADO — o bloco só credita no FECHAMENTO do dia (à noite); durante o dia ele NÃO fecha (o déficit do meio do dia ainda vai mudar conforme o paciente come). Reescreva SEM dizer que o bloco fechou/completou hoje/agora. Reporte o bloco exatamente como está no card (ex: "X / 7.700, Y%") e, se faltar pouco, diga "faltam Z kcal pra fechar".',
         })
         continue
       }
@@ -1562,7 +1578,7 @@ async function processResolvedMessage(
                 }),
           },
         })
-        messages.push({ role: 'assistant', content })
+        messages.push({ role: 'assistant', content: assistantCopy(content) })
         messages.push({
           role: 'user',
           content: `SISTEMA (não é o paciente): o paciente NÃO mandou mensagem duplicada. O texto original recebido foi: "${input.text}". Processe COMO VEIO, SEM acusar duplicação. Se há múltiplos itens conectados (ex: "X e Y", "X, Y, Z" ou em linhas separadas), são itens DISTINTOS — ${authorizeToolCall('registra_refeicao', filteredTools).status === 'authorized' ? 'registre TODOS' : 'trate TODOS como itens distintos, sem afirmar que foram registrados'}. Refaça a resposta agora.`,
@@ -1575,7 +1591,7 @@ async function processResolvedMessage(
       // payload the app would drop, leaving an empty reply.
       if (options.historyProvider === 'mobile_flow') {
         finalText = flattenLegacyTagsForApp(content)
-        messages.push({ role: 'assistant', content })
+        messages.push({ role: 'assistant', content: assistantCopy(content) })
         break
       }
 
@@ -1598,7 +1614,7 @@ async function processResolvedMessage(
             options: onbProposal.options.map((o) => o.value),
           },
         })
-        messages.push({ role: 'assistant', content })
+        messages.push({ role: 'assistant', content: assistantCopy(content) })
         finalText = '' // envio via interactive, não via sendHumanized
         break
       }
@@ -1626,20 +1642,20 @@ async function processResolvedMessage(
             options: onbListProposal.options.map((o) => o.value),
           },
         })
-        messages.push({ role: 'assistant', content })
+        messages.push({ role: 'assistant', content: assistantCopy(content) })
         finalText = ''
         break
       }
 
       finalText = content
-      messages.push({ role: 'assistant', content })
+      messages.push({ role: 'assistant', content: assistantCopy(content) })
       break
     }
 
     // Push assistant message com tool_calls (reconstrução simplificada)
     messages.push({
       role: 'assistant',
-      content: result.content ?? '',
+      content: assistantCopy(result.content ?? ''),
       tool_calls: result.toolCalls.map((tc) => ({
         id: tc.id,
         type: 'function',
@@ -1672,6 +1688,8 @@ async function processResolvedMessage(
             llm: flowToolLlm(deps.llm, flowDeadlineAt, flowToolLlmCalls),
             assistantIdentity: 'flow' as const,
             flowDailyTargets: ctx.dailyTargets,
+            flowPresentationObjective: flowObjective,
+            flowBlockBadgeKeys: calcConfig.badges.filter((badge) => badge.type === 'blocks').map((badge) => badge.key),
             // Same inputs as the context, so consulta_progresso and the
             // per-turn context give the model the same day's balance.
             flowDayBalance: flowDayBalanceInputs(ctx.profile, calcConfig, ctx.flowDayRow),
@@ -2680,7 +2698,7 @@ async function processResolvedMessage(
         // sem comentário em prod e não havia teste do invariante.
         finalText = embedEduComment(finalText, eduComment)
 
-        messages.push({ role: 'assistant', content: finalText })
+        messages.push({ role: 'assistant', content: assistantCopy(finalText) })
         deterministicRegistration = true
         await deps.supabase.from('product_events').insert({
           user_id: userId,
@@ -2728,7 +2746,7 @@ async function processResolvedMessage(
             blocksCompleted: p.blocks_completed,
           },
         )
-        messages.push({ role: 'assistant', content: finalText })
+        messages.push({ role: 'assistant', content: assistantCopy(finalText) })
         deterministicRegistration = true // reusa o flag de single-message (card não fragmenta)
         // Flow: presentation by active goal, same values/passes below;
         // plain text and the visibility explanation are applied at the end.
@@ -2751,7 +2769,7 @@ async function processResolvedMessage(
         const bodyPhotoState = ctx.bodyPhotoState ?? deriveBodyPhotoState([], [input.text])
         if (shouldWaitForBodyPhotosBeforeReeval(bodyPhotoState, true)) {
           finalText = composeReevalBodyPhotoWaitMessage(bodyPhotoState)
-          messages.push({ role: 'assistant', content: finalText })
+          messages.push({ role: 'assistant', content: assistantCopy(finalText) })
           deterministicRegistration = true
           await deps.supabase.from('product_events').insert({
             user_id: userId,
@@ -2779,7 +2797,7 @@ async function processResolvedMessage(
             ctx.profile.currentProtocol ??
             null,
         })
-        messages.push({ role: 'assistant', content: finalText })
+        messages.push({ role: 'assistant', content: assistantCopy(finalText) })
         deterministicRegistration = true // reusa o flag de single-message
         await deps.supabase.from('product_events').insert({
           user_id: userId,
@@ -3886,6 +3904,8 @@ function formatUserContext(
   // (locked by __golden__/audit-10-04-whatsapp-request-lock.test.ts).
   const flowLean = MOBILE_FLOW_LEAN_CONTEXT && historyProvider === 'mobile_flow'
   const flowPublicMetrics = historyProvider === 'mobile_flow'
+  const flowObjective: FlowPresentationObjective = { currentProtocol: normalizeProtocol(ctx.profile.currentProtocol) }
+  const includeBlock = !flowPublicMetrics || flowObjective.currentProtocol === 'recomposicao'
 
   // FIX 4 (Roberto 2026-06-15): foto noturna perdida — LLM chamou
   // marca_refeicao_pulada depois de paciente responder disambiguação. Aviso
@@ -3929,7 +3949,7 @@ function formatUserContext(
 
   // Resumo persistente do paciente (gerado por cron LLM)
   if (ctx.summary && ctx.summary.trim().length > 0) {
-    sections.push(`### Resumo do paciente\n${flowPublicMetrics ? projectFlowMetricContext(ctx.summary) : ctx.summary}`)
+    sections.push(`### Resumo do paciente\n${flowPublicMetrics ? projectFlowMetricContext(ctx.summary, flowObjective) : ctx.summary}`)
   }
 
   // País — instrução explícita pro LLM saber se já tem confirmação
@@ -4163,7 +4183,7 @@ function formatUserContext(
           // The day's balance per protocol (docs/CALCULO-MPP.md §2c).
           ...flowDayBalanceInputs(ctx.profile, calcConfig, ctx.flowDayRow),
           hasSnapshot: true,
-        }),
+        }).map((line) => projectFlowMetricContext(line, flowObjective)),
       )
     } else {
       // LEGACY (WhatsApp in production): byte for byte. Locked by
@@ -4173,7 +4193,7 @@ function formatUserContext(
         `- Balanço calórico de hoje: ${s.daily_balance} kcal (negativo=déficit, positivo=superávit)`,
       )
     }
-    if (s.deficit_accumulated > 0) {
+    if (includeBlock && s.deficit_accumulated > 0) {
       numericLines.push(
         `- Déficit acumulado (bloco 7700): ${s.deficit_accumulated} kcal de 7700 — falta ${7700 - s.deficit_accumulated} pra fechar bloco`,
       )
@@ -4188,7 +4208,9 @@ function formatUserContext(
       )
     } else if (s.day_status === 'incomplete_no_response') {
       numericLines.push(
-        `- ⚠️ DIA INCOMPLETO: paciente não respondeu ao lembrete de refeição faltante. Bloco 7700 NÃO foi creditado por esse dia. Pra creditar retroativo, paciente precisa registrar a refeição que faltou OU confirmar "pulei".`,
+        includeBlock
+          ? `- ⚠️ DIA INCOMPLETO: paciente não respondeu ao lembrete de refeição faltante. Bloco 7700 NÃO foi creditado por esse dia. Pra creditar retroativo, paciente precisa registrar a refeição que faltou OU confirmar "pulei".`
+          : '- ⚠️ DIA INCOMPLETO: paciente não respondeu ao lembrete de refeição faltante.',
       )
     }
   } else {
@@ -4203,14 +4225,14 @@ function formatUserContext(
           exerciseCalories: 0,
           ...flowDayBalanceInputs(ctx.profile, calcConfig, ctx.flowDayRow),
           hasSnapshot: false,
-        }),
+        }).map((line) => projectFlowMetricContext(line, flowObjective)),
       )
     }
   }
   if (ctx.userProgress) {
     const p = ctx.userProgress
     numericLines.push(
-      `- Sequência atual: ${p.current_streak} dias consecutivos (recorde ${p.longest_streak}) | XP: ${p.xp_total} (nível ${p.level}) | Blocos 7700 fechados: ${p.blocks_completed}`,
+      `- Sequência atual: ${p.current_streak} dias consecutivos (recorde ${p.longest_streak}) | XP: ${p.xp_total} (nível ${p.level})${includeBlock ? ` | Blocos 7700 fechados: ${p.blocks_completed}` : ''}`,
     )
     // Bloco 7700 EM ANDAMENTO — usado pelo card pós-registro (recomp)
     // pra mostrar 📊 Bloco 7700: {N} / 7700 kcal ({pct}%).
@@ -4218,12 +4240,12 @@ function formatUserContext(
     // viu "Bloco 7700: 57/7700" enquanto real era 0; Paulo viu "0/7700" enquanto
     // real era 874). Validator pega, mas paciente já viu o número errado.
     const pct = Math.round((p.deficit_block / 7700) * 100)
-    numericLines.push(
+    if (includeBlock) numericLines.push(
       `- Bloco 7700 em andamento: **${p.deficit_block} kcal de 7700** (${pct}%)${p.deficit_block > 0 ? ` — falta ${7700 - p.deficit_block} kcal pra fechar` : ''}`,
     )
   }
   // Janela 14d — pra manutenção e ganho_massa (Notion: métrica principal).
-  if (ctx.last14d && ctx.last14d.target_total > 0) {
+  if (!flowPublicMetrics && ctx.last14d && ctx.last14d.target_total > 0) {
     const l = ctx.last14d
     const pct = Math.round((l.consumed_total / l.target_total) * 100)
     numericLines.push(

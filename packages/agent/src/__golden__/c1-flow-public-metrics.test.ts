@@ -90,6 +90,8 @@ interface Fixture {
   day?: Row | null
   history?: Row[]
   profile?: Row
+  progress?: Row | null
+  closedDays?: Row[]
   prompt?: string
   rag?: string
   text?: string
@@ -152,7 +154,7 @@ function harness(fixture: Fixture = {}): Harness {
       case 'user_profiles':
         return fixture.profile ?? PROFILE
       case 'user_progress':
-        return PROGRESS
+        return fixture.progress === undefined ? PROGRESS : fixture.progress
       case 'messages': {
         messageReads.push({ provider: read.filters.provider ?? null, limit: read.limit })
         const rows = stored
@@ -161,7 +163,7 @@ function harness(fixture: Fixture = {}): Harness {
         return read.limit == null ? rows : rows.slice(0, read.limit)
       }
       case 'daily_snapshots': {
-        if (read.filters.day_closed === true) return []
+        if (read.filters.day_closed === true) return fixture.closedDays ?? []
         if (!day || read.filters.date !== '2026-10-04') return null
         if (read.columns.trim() === '*') return day
         return Object.fromEntries(
@@ -353,6 +355,152 @@ function systemText(h: Harness) {
     ? prompt
     : (prompt as Array<{ text: string }>).map((b) => b.text).join('\n')
 }
+
+/** C3/C4: this same stored text must be safe in every public Flow boundary. */
+const OBJECTIVE_PRESENTATION_FIXTURE = [
+  'Evite amendoim por sua alergia.',
+  'Consumido: 541 / 2.980 kcal (18%)',
+  'Restam para comida: 2.439 kcal',
+  'Proteína: 59.0 / 144g (41%)',
+  'Exercício: 322 kcal',
+  'Bloco 7700: 3.120 / 7.700 kcal (41%)',
+  '4 bloco(s) de 7.700 completo(s)',
+  'Orçamento 14d: 5.850 / 5.960 kcal (98%) · DAM: 1/2',
+  'Reavaliação em 14 dias.',
+  'Arroz: 150 g, 195 kcal.',
+  'Revisar sugestão',
+].join('\n')
+
+describe('C3/C4 — general Flow objective presentation', () => {
+  const objectives = ['recomposicao', 'ganho_massa', 'manutencao', null] as const
+  const progress = Object.freeze({ ...PROGRESS, xp_total: 1240, level: 2,
+    current_streak: 3, longest_streak: 7, blocks_completed: 4, deficit_block: 3120,
+    badges_earned: Object.freeze(['Primeiro Bloco', 'Primeira Semana', 'XP Master']) })
+  const closedDays = [
+    { date: '2026-10-02', calories_consumed: 3100, calories_target: 2980, day_closed: true },
+    { date: '2026-10-03', calories_consumed: 2750, calories_target: 2980, day_closed: true },
+  ]
+  it.each(objectives)('filters structured progress and factual context for %s without changing historical energy', async (currentProtocol) => {
+    const text = 'Tenho alergia a amendoim e reavaliação em 14 dias. Explique meus dados.'
+    const day: Readonly<Row> = Object.freeze({ ...S541, current_protocol: 'ganho_massa', deficit_accumulated: 3120 })
+    const h = harness({ text, day, progress, closedDays,
+      profile: { ...PROFILE, current_protocol: currentProtocol },
+      script: [
+        { content: OBJECTIVE_PRESENTATION_FIXTURE, toolCalls: [{ id: 'progress-1', name: 'consulta_progresso', arguments: '{}' }] },
+        { content: 'Evite amendoim. Reavaliação em 14 dias.' },
+      ],
+    })
+    await flow(h, text)
+    const lastCall = h.llmCalls.at(-1)
+    const toolReply = lastCall?.messages.find((m) => m.role === 'tool')
+    expect(toolReply).toBeDefined()
+    const { daily_balance: _legacy, deficit_accumulated: _block, ...publicDay } = day
+    const expectedProgress = { xp: 1240, nivel: 2, sequencia_dias_consecutivos: 3,
+      recorde_sequencia: 7, conquistas: ['Primeira Semana', 'XP Master'],
+      ...(currentProtocol === 'recomposicao' ? {
+        blocos_7700_completos: 4, deficit_no_bloco_atual: 3120,
+        conquistas: ['Primeiro Bloco', 'Primeira Semana', 'XP Master'],
+      } : {}),
+    }
+    expect(JSON.parse(toolReply?.content ?? '')).toEqual({
+      progresso: expectedProgress,
+      hoje: currentProtocol === 'recomposicao' ? { ...publicDay, deficit_accumulated: 3120 } : publicDay,
+      energia_hoje: {
+        meta_kcal: 2980, consumido_kcal: 541, restam_para_comida_kcal: 2439,
+        exercicio_kcal: 322, gasto_de_referencia_kcal: 2838, balanco_do_dia_sem_exercicio_kcal: -2297,
+        regra: 'Exercício não libera comida nem apaga excedente: a meta é a mesma com ou sem treino e o que resta para comida é meta − consumido, sem exercício. O gasto do treino fica à parte; balanco_do_dia_sem_exercicio_kcal é consumido − gasto_de_referencia_kcal (negativo = déficit, positivo = superávit): o exercício já está considerado neste valor e não é somado. Não é o que resta para comer.',
+      },
+    })
+    const context = systemText(h)
+    expect(context).toContain('XP: 1240 (nível 2)')
+    expect(context).toContain('3 dias consecutivos (recorde 7)')
+    expect(context).not.toMatch(/Orçamento 14 dias:|5850 kcal|5960 kcal|DAM: 1\/2/)
+    if (currentProtocol !== 'recomposicao') expect(context).not.toMatch(/3120|Blocos 7700 fechados/)
+    for (const call of h.llmCalls) {
+      expect(call.messages).toContainEqual({ role: 'user', content: text })
+      const copies = call.messages.filter((m) => m.role === 'assistant').map((m) => m.content).join('\n')
+      expect(copies).not.toMatch(/Orçamento 14d:|DAM: 1\/2|5\.850|5\.960/)
+      if (currentProtocol !== 'recomposicao') expect(copies).not.toContain('3.120')
+    }
+    expect(day.deficit_accumulated).toBe(3120)
+    expect(progress.badges_earned).toEqual(['Primeiro Bloco', 'Primeira Semana', 'XP Master'])
+  })
+
+  it.each(objectives)('projects the final reconstructed answer for %s', async (currentProtocol) => {
+    const text = 'Tenho alergia a amendoim. Explique minhas informações.'
+    const h = harness({ text, progress, profile: { ...PROFILE, current_protocol: currentProtocol },
+      script: [{ content: OBJECTIVE_PRESENTATION_FIXTURE }] })
+    const output = await flow(h, text)
+    const kept = [
+      'Evite amendoim por sua alergia.', 'Consumido: 541 / 2.980 kcal (18%)',
+      'Restam para comida: 2.439 kcal', 'Proteína: 59.0 / 144g (41%)', 'Exercício: 322 kcal',
+      ...(currentProtocol === 'recomposicao' ? ['Bloco 7700: 3.120 / 7.700 kcal (41%)', '4 bloco(s) de 7.700 completo(s)'] : []),
+      'Reavaliação em 14 dias.', 'Arroz: 150 g, 195 kcal.', 'Revisar sugestão',
+    ].join('\n')
+    const explanation = currentProtocol === 'ganho_massa' || currentProtocol === 'manutencao'
+      ? '\n\nO Bloco 7.700 é exibido apenas na recomposição corporal.' : ''
+    expect(output.text).toBe(kept + explanation)
+    expect(h.inserts.filter((e) => e.table !== 'product_events')).toEqual([])
+  })
+
+  it('does not ask a gain account to report block figures after a premature-completion retry', async () => {
+    const text = 'Tenho alergia a amendoim. Explique meu progresso.'
+    const h = harness({ text, script: [
+      { content: 'Seu bloco 7700 fechou hoje! Bloco 7700: 3120 kcal. Evite amendoim.' },
+      { content: 'Evite amendoim. Reavaliação em 14 dias.' },
+    ] })
+    expect((await flow(h, text)).text).toBe('Evite amendoim. Reavaliação em 14 dias.')
+    expect(h.llmCalls).toHaveLength(2)
+    const retry = h.llmCalls[1]?.messages.at(-1)?.content ?? ''
+    expect(retry).not.toMatch(/X \/ 7\.700|Y%|faltam Z|Reporte o bloco/)
+    const copied = h.llmCalls[1]?.messages.filter((m) => m.role === 'assistant').map((m) => m.content).join('\n') ?? ''
+    expect(copied).toContain('Evite amendoim.')
+    expect(copied).not.toContain('3120')
+  })
+
+  it.each(['recomposicao', 'ganho_massa', 'manutencao', null])(
+    'projects rules, RAG, summary and assistant copies for the current objective %s',
+    async (currentProtocol) => {
+      const text = 'Meu bloco 7700 está em 3120? Tenho alergia a amendoim e reavaliação em 14 dias.'
+      const profile = Object.freeze({ ...PROFILE, current_protocol: currentProtocol })
+      const source = Object.freeze({ ...USER, summary: OBJECTIVE_PRESENTATION_FIXTURE })
+      const h = harness({
+        text,
+        profile,
+        user: source,
+        prompt: OBJECTIVE_PRESENTATION_FIXTURE,
+        rag: OBJECTIVE_PRESENTATION_FIXTURE,
+        history: [{
+          direction: 'out',
+          content: OBJECTIVE_PRESENTATION_FIXTURE,
+          created_at: '2026-10-04T14:01:00Z',
+        }],
+        script: [{ content: 'Evite amendoim por sua alergia. Reavaliação em 14 dias.' }],
+      })
+      await flow(h, text)
+      const context = systemText(h)
+      // C4 remains withheld in recomposition too; this is not a formula change.
+      expect(context).not.toMatch(/Orçamento 14d:|DAM: 1\/2|5\.850|5\.960/)
+      expect(context).toContain('Evite amendoim por sua alergia.')
+      expect(context).toContain('Reavaliação em 14 dias.')
+      expect(context).toContain('Arroz: 150 g, 195 kcal.')
+      expect(context).toContain('Restam para comida: 2.439 kcal')
+      expect(context).toContain('Exercício: 322 kcal')
+      for (const call of h.llmCalls) {
+        expect(call.messages).toContainEqual({ role: 'user', content: text })
+        const assistant = call.messages.filter((m) => m.role === 'assistant').map((m) => m.content).join('\n')
+        expect(assistant).not.toMatch(/Orçamento 14d:|DAM: 1\/2|5\.850|5\.960/)
+        expect(assistant).toContain('Evite amendoim por sua alergia.')
+        if (currentProtocol !== 'recomposicao') expect(assistant).not.toContain('3.120')
+      }
+      if (currentProtocol === 'recomposicao') expect(context).toContain('3.120 / 7.700 kcal (41%)')
+      else expect(context).not.toContain('3.120')
+      expect(profile.current_protocol).toBe(currentProtocol)
+      expect(source.summary).toBe(OBJECTIVE_PRESENTATION_FIXTURE)
+      expect(h.inserts.filter((e) => e.table !== 'product_events')).toEqual([])
+    },
+  )
+})
 
 describe('C1 — public Flow metrics', () => {
   it.each([

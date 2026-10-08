@@ -2581,6 +2581,51 @@ cliente sem nova leitura continua fora desta projeção. Verificação local:
 testes do handler/serviço/idempotência e `verify:routes`/`verify:imports` do BFF;
 isso não substitui publicação e smoke de staging.
 
+#### Objetivo atual na apresentação Flow (C3/C4, 2026-10-08)
+
+O pipeline do Flow usa o `user_profiles.current_protocol` autenticado para
+projetar cópias de regras, RAG, resumo, histórico assistant, tentativas do modelo
+e resposta final após reconstrução de cards/rascunhos. A mensagem do usuário
+permanece literal. Somente `recomposicao` permite saldo, percentual e contagem
+do Bloco 7.700. Ganho/manutenção usam uma única linha explicativa quando dados
+de bloco foram retirados. Fonte ausente/inválida não atribui objetivo. O
+orçamento de 14 dias e DAM ficam ocultos em **todos** os objetivos, conforme a
+decisão C4, até validação clínica; reavaliação em 14 dias permanece visível.
+
+O JSON de `consulta_progresso` conserva XP, nível, sequência, demais conquistas,
+valores do dia e energia histórica. Fora da recomposição omite apenas os campos
+de bloco e medalhas classificadas como `blocks` na configuração. Isso não
+apaga saldo/medalhas persistidos nem altera fórmulas, créditos ou o protocolo
+histórico usado no balanço de energia. A portadora de apresentação é interna,
+definida pelo servidor; body/query não podem fornecê-la.
+
+`GET/POST /flow/chat` consulta uma vez por requisição somente
+`user_profiles.current_protocol`, com `user_id` do paciente autenticado. GET
+paraleliza essa leitura com o histórico limitado; POST lê depois da idempotência
+e da validação do contrato de sucesso, incluindo replay do serviço e HTTP.
+O objetivo não entra no payload/hash nem no corpo salvo do cache. Uma nova
+requisição pode projetar a mesma mensagem pelo objetivo atual, conservando ID,
+data, estado, draft e metadados. Um conteúdo que nunca foi salvo não é recriado.
+
+Falha dessa leitura retorna `500 data_access_failed`, sem assistant bruto ou
+detalhe de consulta. Se o POST já concluiu e guardou sua resposta, esse erro
+posterior não desfaz o claim: retry com **a mesma chave e o mesmo payload**
+reutiliza o turno salvo e repete a leitura/projeção, sem novo LLM. Isso não é
+garantia de cancelamento no servidor, nem se aplica a todo erro de envio.
+Perfil ausente/null/inválido difere de erro de leitura e resulta em objetivo
+desconhecido seguro. Não há cache global de objetivo nem promessa de snapshot
+transacional entre histórico e perfil.
+
+A projeção textual reconhece vocabulário qualificado PT/EN; preserva alergias,
+comida, números oficiais, URLs e caminhos. Um link cujo rótulo inteiro seja uma
+métrica restrita vira seu destino original legível; rótulos mistos conservam
+palavras públicas. Não é uma classificação universal de qualquer prosa ambígua.
+O legado/default WhatsApp não recebe essa portadora. O espelho BFF continua
+reexportando a rota admin; gates: testes do loader/handler/serviço/idempotência,
+`verify:routes`, `verify:imports`, build e `verify:build-surface`.
+Conteúdo já residente no cliente sem nova leitura tem gate nativo próprio;
+esses testes locais não comprovam publicação, smoke ou aceite clínico.
+
 `POST /flow/chat` responde com `draft: { "id", "domain" } | null`: o rascunho
 que aquele turno criou (lido do banco, preso ao paciente e ao turno). O Flow
 só tem as ferramentas `propoe_plano_treino` e `propoe_plano_dieta`, com os

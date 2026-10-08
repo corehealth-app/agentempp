@@ -21,6 +21,7 @@ import { loadCalcConfig } from './calc-config-loader.js'
 import { loadDailyTargets } from './calc-targets.js'
 import { throwIfQueryFailed } from './db-query-error.js'
 import { type FlowCoachStyle, flowCoachStyleLine, loadFlowCoachStyle } from './flow-coach-style.js'
+import { flowLanguageCards, loadFlowLanguageRules } from './flow-language-policy.js'
 import {
   auditNumericClaims,
   detectDeficitRealMismatch,
@@ -995,7 +996,7 @@ async function processResolvedMessage(
   const stage = resolveStage(ctx.profile)
 
   // 4. load active prompt + config (filtra regras pelo idioma do paciente — #1)
-  const promptRow = await loadActivePrompt(deps.supabase, stage, ctx.locale)
+  const promptRow = await loadActivePrompt(deps.supabase, stage, ctx.locale, options.historyProvider)
   if (!promptRow) {
     throw new Error(`No active prompt found for stage ${stage}`)
   }
@@ -1153,8 +1154,15 @@ async function processResolvedMessage(
     .slice(-2)
     .map((m) => m.content)
 
+  const languageCards =
+    options.historyProvider === 'mobile_flow' && promptRow.flow_language_applied
+      ? flowLanguageCards(ctx.profile.currentProtocol, lastTwoOuts.length > 0)
+      : null
+
   const repetitionGuard =
-    lastTwoOuts.length >= 1
+    languageCards
+      ? (languageCards.situation ? `\n\n${languageCards.situation}` : '')
+      : lastTwoOuts.length >= 1
       ? `\n\n## Anti-repetição (CRÍTICO)\n` +
         // Flow: the two quoted answers are the last lines of the history the
         // model already receives; quoting them again was paid at full price
@@ -1189,7 +1197,9 @@ async function processResolvedMessage(
     options.historyProvider === 'mobile_flow'
       ? mobileFlowPromptContext(promptRow.system_prompt)
       : promptRow.system_prompt
-  const stableSystem = channelSystemPrompt + (options.systemPolicy ?? '')
+  const stableSystem =
+    channelSystemPrompt + (options.systemPolicy ?? '') +
+    (languageCards ? `\n\n${languageCards.stable}` : '')
   // RAG (D): método relevante recuperado por turno — bloco VARIÁVEL (não cacheado).
   const methodContext = await retrieveMethodContext(deps, input.text, ctx.profile.currentProtocol)
   const channelMethodContext =
@@ -3782,6 +3792,7 @@ async function loadActivePrompt(
   supabase: ServiceClient,
   stage: AgentStage,
   locale?: string | null,
+  historyProvider?: string,
 ) {
   // Config (model/temp/max_tokens/…) vem da view, que já escolhe a config ativa.
   const { data, error } = await supabase
@@ -3795,15 +3806,26 @@ async function loadActivePrompt(
   // ECONOMIA DE TOKEN #1: re-agrega o system_prompt filtrando pelo idioma do
   // paciente (helper compartilhado com o engajamento). Fallback pro prompt cheio
   // da view se a query falhar / não retornar regras.
-  const filtered = await loadFilteredSystemPrompt(supabase, stage, locale)
+  const flowRules =
+    historyProvider === 'mobile_flow'
+      ? await loadFlowLanguageRules(supabase, stage, locale)
+      : null
+  const filtered = flowRules
+    ? flowRules.systemPrompt
+    : await loadFilteredSystemPrompt(supabase, stage, locale)
   const system_prompt = filtered ?? (data as { system_prompt: string }).system_prompt
 
-  return { ...data, system_prompt } as {
+  return {
+    ...data,
+    system_prompt,
+    ...(flowRules ? { flow_language_applied: flowRules.applied } : {}),
+  } as {
     stage: AgentStage
     model: string
     temperature: number
     max_tokens: number
     system_prompt: string
+    flow_language_applied?: boolean
   }
 }
 

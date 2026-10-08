@@ -23,6 +23,10 @@
  *       "M P P";
  *     - "Muscular Power Plant", in any case, with spaces, non-breaking spaces,
  *       hyphens or nothing between the words.
+ *     - C2: "Usina muscular", the full brand expression, with the same case
+ *       and joining variants. This expression additionally guards query,
+ *       anchor and backslash glue, and preserves full URL spans; isolated
+ *       words are not replaced.
  *     Never when the match is glued to `/`, `.`, `@`, `-`, `_` or to a word
  *     character: a segment of a URL, of a path or of an identifier is not the
  *     method's name ("https://example.com/mpp/guia", "docs/CALCULO-MPP.md",
@@ -82,6 +86,13 @@ const METHOD_NAME = new RegExp(
   `${NOT_GLUED_BEFORE}(?:MPPs?|Muscular${JOIN}Power${JOIN}Plant)${NOT_GLUED_AFTER}`,
   'giu',
 )
+/** C2 brand expression only; extra glue guards preserve URL queries/anchors. */
+const MUSCULAR_BRAND_NAME = new RegExp(
+  String.raw`(?<![${WORD}/\\.@\-?&#=])Usina${JOIN}Muscular(?![${WORD}/\\@\-&#=])(?!\?[${WORD}])(?!\.[${WORD}])`,
+  'giu',
+)
+/** C2 only: URL/path delimiters (including relative link targets) are not prose. */
+const BRAND_URL_SPAN = /(?:[a-z][a-z0-9+.-]*:\/\/|www\.|[a-z]:\\|\.?\.?\/|(?<=\]\())[^\s<>"`]+/giu
 /**
  * The last dot of "M.P.P." belongs to the abbreviation when the sentence goes
  * on (other punctuation, a closing mark, or a lower-case word follows): it
@@ -164,6 +175,20 @@ export function projectFlowPublicNames(
   let personaFirstNameOnly = 0
   let projected = text
 
+  // Protect spans in the original text, before legacy projections can change
+  // their offsets or introduce spaces. The legacy replacements stay intact.
+  const brandUrls = Array.from(text.matchAll(BRAND_URL_SPAN), (match) => ({
+    start: match.index,
+    end: match.index + match[0].length,
+  }))
+  projected = projected.replace(MUSCULAR_BRAND_NAME, (match: string, offset: number) => {
+    if (brandUrls.some((url) => offset < url.end && offset + match.length > url.start)) {
+      return match
+    }
+    method += 1
+    return FLOW_PUBLIC_PRODUCT_NAME
+  })
+
   if (!accountNameCarriesPhysicianSurname(options.accountName)) {
     personaFirstNameOnly = Array.from(text.matchAll(TITLE_AND_FIRST_NAME_ONLY)).length
     projected = projected.replace(
@@ -206,7 +231,6 @@ export function projectFlowPublicNames(
     method += 1
     return FLOW_PUBLIC_PRODUCT_NAME
   })
-
   if (method + personaSelf + personaOther === 0) {
     return { text, method: 0, personaSelf: 0, personaOther: 0, personaFirstNameOnly }
   }

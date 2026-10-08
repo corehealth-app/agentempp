@@ -12,6 +12,8 @@ export {
   creditDayToBloco,
   type DayCreditInput,
   type DayStatus,
+  type FlowBloco7700Policy,
+  resolveFlowBloco7700Policy,
 } from './engine/bloco.js'
 export * from './engine/day-balance-inputs.js'
 export * from './engine/day-status.js'

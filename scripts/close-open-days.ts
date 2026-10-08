@@ -217,6 +217,7 @@ export async function runCloseOpenDays(
       now,
       from: options.from,
       dryRun: !options.apply,
+      block7700Policy: 'flow-recomposition-v1',
       advanceReevaluation: options.advanceReevaluation,
     })
     summary.accounts += 1

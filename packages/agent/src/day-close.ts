@@ -54,13 +54,14 @@
  *  - the reassessment schedule is not advanced unless asked for.
  */
 
-import type { DailySnapshot, DayStatus, UserProgress } from '@mpp/core'
+import type { DailySnapshot, DayStatus, FlowBloco7700Policy, UserProgress } from '@mpp/core'
 import {
   calcDailyXP,
   computeProgress,
   creditDayToBloco,
   netBalance,
   resolveClosedDayStatus,
+  resolveFlowBloco7700Policy,
 } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import { loadCalcConfig } from './calc-config-loader.js'
@@ -162,6 +163,8 @@ export interface CloseLocalDayInput {
   now?: Date
   /** Read and compute, write nothing. */
   dryRun?: boolean
+  /** Servidor Flow opt-in; ausente mantém o crédito/progresso legado. */
+  block7700Policy?: FlowBloco7700Policy['version']
   /**
    * Dry run only: the progress left by the previous simulated day, so a
    * simulated week carries streak, XP and block from one day to the next.
@@ -190,6 +193,7 @@ export interface ClosePastOpenDaysInput {
   /** Milliseconds clock for the time budget; replaced in tests. */
   clock?: () => number
   dryRun?: boolean
+  block7700Policy?: FlowBloco7700Policy['version']
   advanceReevaluation?: boolean
 }
 
@@ -543,8 +547,13 @@ async function closeDay(
     dailyBalance = written.data.daily_balance ?? 0
   }
 
-  // Design deficit: recomposição only. Outside it the credit is −daily_balance
-  // (docs §3, declared pending for ganho de massa and manutenção).
+  // O default legado credita −daily_balance fora da recomposição. Os callers
+  // Flow elegíveis pedem explicitamente o gate C3 (docs §3/§3a).
+  const blockPolicy =
+    input.block7700Policy === 'flow-recomposition-v1'
+      ? resolveFlowBloco7700Policy(profile?.current_protocol)
+      : undefined
+  const blockEnabled = blockPolicy?.enabled !== false
   const designDeficit =
     profile?.current_protocol === 'recomposicao' ? (profile.deficit_level ?? 500) : 0
   // A message is not evidence of consumption: no meal and no workout = no credit.
@@ -560,14 +569,17 @@ async function closeDay(
     fallbackPattern: gapInfo?.pattern.fallbackUsed ?? false,
   })
 
-  const blockCredit = creditDayToBloco({
-    hasActivity,
-    dayStatus,
-    caloriesConsumed: kcalConsumed,
-    caloriesTarget: targets.calories_target,
-    dailyBalance,
-    designDeficit,
-  })
+  const blockCredit = creditDayToBloco(
+    {
+      hasActivity,
+      dayStatus,
+      caloriesConsumed: kcalConsumed,
+      caloriesTarget: targets.calories_target,
+      dailyBalance,
+      designDeficit,
+    },
+    blockPolicy,
+  )
 
   // Read as late as possible: the finalization writes absolute values
   // computed from this row, so the shorter the distance to it, the smaller
@@ -620,7 +632,7 @@ async function closeDay(
     xpEarned: dayFields.xp_earned,
     dailyBalance,
   }
-  const next = computeProgress(daySnapshot, prev, calcConfig, blockCredit)
+  const next = computeProgress(daySnapshot, prev, calcConfig, blockCredit, blockPolicy)
   const newBadges = next.badgesEarned.filter((badge) => !prev.badgesEarned.includes(badge))
 
   const result: DayCloseResult = {
@@ -688,7 +700,7 @@ async function closeDay(
     event: string
     properties: Record<string, string | number | boolean | string[] | null>
   }> = []
-  if (dayStatus === 'incomplete_no_response') {
+  if (blockEnabled && dayStatus === 'incomplete_no_response') {
     events.push({
       user_id: userId,
       event: 'bloco7700.skipped_incomplete_day',
@@ -699,13 +711,14 @@ async function closeDay(
       },
     })
   }
-  if (!hasActivity) {
+  if (blockEnabled && !hasActivity) {
     events.push({
       user_id: userId,
       event: 'bloco7700.skipped_inactive_day',
       properties: { date, calories_target: targets.calories_target },
     })
   } else if (
+    blockEnabled &&
     dayStatus !== 'user_skipped' &&
     targets.calories_target != null &&
     targets.calories_target > 0 &&
@@ -732,7 +745,7 @@ async function closeDay(
       properties: { badges: newBadges, snapshot_date: date },
     })
   }
-  if (next.blocksCompleted > prev.blocksCompleted) {
+  if (blockEnabled && next.blocksCompleted > prev.blocksCompleted) {
     events.push({
       user_id: userId,
       event: 'bloco7700.block_completed',
@@ -1015,6 +1028,7 @@ export async function closePastOpenDays(
         date,
         now,
         dryRun,
+        block7700Policy: input.block7700Policy,
         simulatedProgress: simulated,
         advanceReevaluation: input.advanceReevaluation,
       },

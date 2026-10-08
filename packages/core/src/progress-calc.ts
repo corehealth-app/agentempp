@@ -5,13 +5,15 @@
  * Todas as funções aceitam um CalcConfig opcional. Sem ele usa
  * DEFAULT_CALC_CONFIG.
  */
-import type { DailySnapshot, UserProgress } from './types.js'
+
 import {
-  DEFAULT_CALC_CONFIG,
   type BadgeDef,
   type CalcConfig,
+  DEFAULT_CALC_CONFIG,
   type LevelDef,
 } from './calc-config.js'
+import type { FlowBloco7700Policy } from './engine/bloco.js'
+import type { DailySnapshot, UserProgress } from './types.js'
 
 /** @deprecated use config.kcal_block */
 export const KCAL_BLOCK = DEFAULT_CALC_CONFIG.kcal_block
@@ -70,6 +72,7 @@ export function computeProgress(
   prev: UserProgress,
   config: CalcConfig = DEFAULT_CALC_CONFIG,
   dayCredit = 0,
+  blockPolicy?: FlowBloco7700Policy,
 ): UserProgress {
   // XP e level
   const xpTotal = prev.xpTotal + snapshot.xpEarned
@@ -77,8 +80,7 @@ export function computeProgress(
 
   // Streak
   const yesterday = subDays(snapshot.date, 1)
-  const continuesStreak =
-    prev.lastActiveDate !== null && isSameDay(prev.lastActiveDate, yesterday)
+  const continuesStreak = prev.lastActiveDate !== null && isSameDay(prev.lastActiveDate, yesterday)
   const currentStreak = continuesStreak ? prev.currentStreak + 1 : 1
   const longestStreak = Math.max(currentStreak, prev.longestStreak)
 
@@ -105,18 +107,24 @@ export function computeProgress(
   // sempre retorna finite, mas snapshot do DB pode ter NULL → arithmetic vira
   // NaN → deficitBlock/blocksCompleted corrompidos silenciosamente em prod
   // (não há type guard no caller). Fallback p/ 0 + telemetry stub.
-  const safeDayCredit = Number.isFinite(dayCredit) ? dayCredit : 0
-  if (!Number.isFinite(dayCredit)) {
-    // eslint-disable-next-line no-console
-    console.warn('[progress-calc] dayCredit não-finito recebido — clampando p/ 0:', dayCredit)
+  // Fora da recomposição sob política Flow, copiar exatamente o saldo antigo:
+  // nem arredondar, normalizar, debitar ou conceder uma medalha de bloco nova.
+  let blocksCompleted = prev.blocksCompleted
+  let deficitBlock = prev.deficitBlock
+  if (blockPolicy?.enabled !== false) {
+    const safeDayCredit = Number.isFinite(dayCredit) ? dayCredit : 0
+    if (!Number.isFinite(dayCredit)) {
+      // eslint-disable-next-line no-console
+      console.warn('[progress-calc] dayCredit não-finito recebido — clampando p/ 0:', dayCredit)
+    }
+    const tentativeTotal = Math.round(prev.deficitBlock + safeDayCredit)
+    const totalDeficit = Math.max(0, tentativeTotal)
+    const blocksDelta =
+      Math.floor(totalDeficit / config.kcal_block) -
+      Math.floor(prev.deficitBlock / config.kcal_block)
+    blocksCompleted = Math.max(0, prev.blocksCompleted + blocksDelta)
+    deficitBlock = totalDeficit % config.kcal_block
   }
-  const tentativeTotal = Math.round(prev.deficitBlock + safeDayCredit)
-  const totalDeficit = Math.max(0, tentativeTotal)
-  const blocksDelta =
-    Math.floor(totalDeficit / config.kcal_block) -
-    Math.floor(prev.deficitBlock / config.kcal_block)
-  const blocksCompleted = Math.max(0, prev.blocksCompleted + blocksDelta)
-  const deficitBlock = totalDeficit % config.kcal_block
 
   // Badges
   const next: UserProgress = {
@@ -131,6 +139,7 @@ export function computeProgress(
   }
 
   for (const badge of config.badges) {
+    if (blockPolicy?.enabled === false && badge.type === 'blocks') continue
     if (!next.badgesEarned.includes(badge.key) && badgeMatches(badge, next)) {
       next.badgesEarned.push(badge.key)
     }

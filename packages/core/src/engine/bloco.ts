@@ -11,6 +11,19 @@ export const KCAL_BLOCK = 7700
 
 export type DayStatus = 'complete' | 'incomplete_no_response' | 'user_skipped'
 
+/** Política nova opt-in do Flow. Ausência preserva todos os callers legados. */
+export interface FlowBloco7700Policy {
+  readonly version: 'flow-recomposition-v1'
+  readonly enabled: boolean
+}
+
+/** O perfil oficial no fechamento decide; nunca inferir protocolo da meta. */
+export function resolveFlowBloco7700Policy(
+  protocol: string | null | undefined,
+): FlowBloco7700Policy {
+  return { version: 'flow-recomposition-v1', enabled: protocol === 'recomposicao' }
+}
+
 export interface DayCreditInput {
   hasActivity: boolean
   dayStatus: DayStatus | null
@@ -20,7 +33,8 @@ export interface DayCreditInput {
   designDeficit: number
 }
 
-export function creditDayToBloco(d: DayCreditInput): number {
+export function creditDayToBloco(d: DayCreditInput, policy?: FlowBloco7700Policy): number {
+  if (policy?.enabled === false) return 0
   if (!d.hasActivity) return 0
   // user_skipped: paciente confirmou pulou uma refeição — dailyBalance reflete o
   // que ELE comeu nas outras (dado real). Pode ser negativo (superávit).

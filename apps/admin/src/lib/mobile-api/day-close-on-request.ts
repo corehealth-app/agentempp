@@ -124,6 +124,7 @@ export async function closeOpenDaysOnRequest(
       now: options.now ?? new Date(),
       from,
       limits: REQUEST_LIMITS,
+      block7700Policy: 'flow-recomposition-v1',
     })
     const closed = result.days.filter((day) => day.closed).length
     if (closed > 0 || result.pendingDates.length > 0 || result.streakReset?.applied) {

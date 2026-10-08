@@ -797,6 +797,21 @@ ficavam parados. Para esse ambiente, `GET /today` e `GET /progress` podem
 fechar os dias passados da conta **antes** de ler. Regras e números:
 `docs/CALCULO-MPP.md` §3a.
 
+**Política Flow C3 do fechamento (2026-10-08).** Depois das três travas abaixo,
+o wrapper passa a opção interna `block7700Policy: 'flow-recomposition-v1'`.
+O fechamento lê o protocolo oficial do perfil: somente recomposição habilita
+crédito e nova conquista de bloco. Ganho, manutenção e protocolo ausente ou
+desconhecido recebem crédito zero, sem debitar ou normalizar os saldos antigos,
+sem apagar medalhas antigas e sem adquirir uma medalha de bloco pendente.
+XP, nível, sequência e outras medalhas permanecem. Nenhum DTO, parâmetro do
+paciente, RPC ou migration muda. O script de staging aplica a mesma política
+após seus filtros em simulação e aplicação; os callers sem opção e o worker
+legado preservam o comportamento anterior. Dias já fechados não são refeitos.
+Isso altera os números futuros de bloco após o fechamento; **não comprova
+ocultação completa do bloco nas telas nem aceitação clínica**. O servidor
+compartilhado do BFF importa este mesmo wrapper, sem cópia de rota nova;
+verificar `verify:routes`, import closure e build antes de publicar.
+
 **Desligado por padrão.** São necessárias três travas, todas:
 
 | Trava | Onde | Valor |

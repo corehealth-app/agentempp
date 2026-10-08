@@ -101,6 +101,45 @@ function context(
   }
 }
 
+describe('C3 Flow — política somente depois das travas existentes', () => {
+  it.each([
+    'ganho_massa',
+    'manutencao',
+  ])('%s fecha com XP e preserva saldo300/blocos1 sem adquirir medalha antiga', async (protocol) => {
+    const db = new DayCloseMemoryDb()
+    db.addAccount({
+      userId: USER,
+      profile: { ...PROFILE, current_protocol: protocol, deficit_level: null },
+      progress: { deficit_block: 300, blocks_completed: 1, badges_earned: [] },
+    })
+    db.registerMeal({
+      userId: USER,
+      date: '2026-10-04',
+      consumedAt: '2026-10-04T15:00:00.000Z',
+      kcal: 2100,
+      proteinG: 100,
+      caloriesTarget: protocol === 'ganho_massa' ? 2498 : 2379,
+      proteinTarget: 120,
+    })
+    vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    await closeOpenDaysOnRequest(context(db), { env: ON, now: NOW })
+    expect(db.snapshot(USER, '2026-10-04')).toMatchObject({
+      day_closed: true,
+      current_protocol: protocol,
+      xp_earned: 15,
+    })
+    expect(db.progress(USER)).toMatchObject({
+      deficit_block: 300,
+      blocks_completed: 1,
+      badges_earned: [],
+      xp_total: 15,
+      current_streak: 1,
+    })
+    expect(db.events(USER, 'bloco7700.block_completed')).toEqual([])
+    expect(db.events(USER, 'badge.earned')).toEqual([])
+  })
+})
+
 beforeEach(() => {
   vi.useFakeTimers()
   vi.setSystemTime(NOW)

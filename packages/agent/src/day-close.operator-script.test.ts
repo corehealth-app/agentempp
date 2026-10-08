@@ -99,6 +99,54 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+describe('C3 — simulador e aplicação usam política Flow sem alcançar conta WhatsApp', () => {
+  it.each([
+    false,
+    true,
+  ])('apply=%s mantém saldo300/blocos1 na manutenção e bloqueia nova medalha', async (apply) => {
+    const db = new DayCloseMemoryDb()
+    const profile = { ...PROFILE, current_protocol: 'manutencao', deficit_level: null }
+    for (const userId of [APP_ACCOUNT, WHATSAPP_ACCOUNT]) {
+      db.addAccount({
+        userId,
+        wpp: userId === WHATSAPP_ACCOUNT ? PHONE : null,
+        profile,
+        progress: { deficit_block: 300, blocks_completed: 1, badges_earned: [] },
+      })
+      db.registerMeal({
+        userId,
+        date: '2026-10-04',
+        consumedAt: '2026-10-04T15:00:00.000Z',
+        kcal: 2100,
+        proteinG: 100,
+        caloriesTarget: 2379,
+        proteinTarget: 120,
+      })
+    }
+    const before = structuredClone(db.progress(WHATSAPP_ACCOUNT))
+    const lines: string[] = []
+    const args = ['--from', '2026-10-04', ...(apply ? ['--apply'] : [])]
+    const result = await script.runCloseOpenDays(
+      db.client,
+      script.parseArguments(args),
+      (line) => lines.push(line),
+      NOW,
+    )
+    expect(result).toMatchObject({ accounts: 1, skippedAccounts: 1, daysClosed: 1 })
+    expect(lines.some((line) => line.includes('bloco +0 (300/7700, 1 completo(s))'))).toBe(true)
+    expect(db.progress(WHATSAPP_ACCOUNT)).toEqual(before)
+    expect(db.snapshot(WHATSAPP_ACCOUNT, '2026-10-04')).toMatchObject({ day_closed: false })
+    if (apply)
+      expect(db.progress(APP_ACCOUNT)).toMatchObject({
+        deficit_block: 300,
+        blocks_completed: 1,
+        badges_earned: [],
+        xp_total: 15,
+      })
+    else expect(db.writes).toEqual([])
+  })
+})
+
 describe('arguments', () => {
   it('is a dry run unless --apply is given', () => {
     expect(script.parseArguments(['--from', '2026-09-22'])).toEqual({

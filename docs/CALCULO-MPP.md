@@ -690,13 +690,67 @@ newDeficit = designDeficit_efetivo − daily_balance   ← pode ser NEGATIVO
   `daily-closer.ts`, `bloco-recompute.ts` e, no fechamento sob demanda do
   ambiente de teste (§3a), `packages/agent/src/day-close.ts`.
 - Recálculo do zero (auditoria/backfill): `lib/bloco-recompute.ts`.
-- **Fora da recomposição** (`designDeficit` 0) o fechamento credita
+- **Default legado fora da recomposição** (`designDeficit` 0) o fechamento credita
   `−daily_balance` = `meta + exercício − consumido`, em qualquer protocolo. O
   cliente escreveu em 08/05/2026 que em ganho de massa e manutenção "o bloco de
   7.700 kcal é substituido pelo bloco acumaldo de Kcal em 14 dias", e em
   09/03/2026 que o exercício não entra no balanço desses protocolos. Isso
-  **não está implementado no fechamento**: é pendência declarada no §2c, não
-  regra nova. O balanço por protocolo do §2c não é lido aqui.
+  não está implementado como orçamento de 14 dias: é pendência declarada no
+  §2c. O balanço por protocolo do §2c não é lido aqui. O fechamento Flow tem
+  o gate opt-in C3 descrito abaixo; o worker e o recálculo antigos continuam
+  com esse default, sem alteração.
+
+### Política opt-in do Flow: bloco somente na recomposição (C3, 2026-10-08)
+
+`resolveFlowBloco7700Policy` (`@mpp/core/engine/bloco`) resolve a política
+versionada `flow-recomposition-v1` a partir do **protocolo oficial do perfil
+lido no fechamento**. Somente `recomposicao` exata habilita o bloco. Ganho,
+manutenção, protocolo nulo ou desconhecido não habilitam; não inferir da
+meta calórica, do snapshot antigo ou do déficit programado.
+
+- `creditDayToBloco` recebe a política como segundo argumento opcional:
+  desabilitada retorna **0**, antes de qualquer ramo de status/sub-registro.
+  Não há novo crédito positivo nem débito por excedente fora da recomposição.
+- `computeProgress` recebe a mesma política no quinto argumento opcional:
+  desabilitada **copia exatamente** `deficitBlock` e `blocksCompleted`
+  anteriores, sem zerar, normalizar, arredondar ou recalcular saldo antigo.
+  Medalhas já salvas permanecem, inclusive `Primeiro Bloco`. Nenhuma medalha
+  nova do tipo `blocks` é concedida, mesmo com um bloco concluído no passado
+  ainda sem medalha. XP, nível, sequência e demais conquistas seguem a regra
+  existente. Recomposição mantém o cálculo e as conquistas anteriores.
+- `CloseLocalDayInput` e `ClosePastOpenDaysInput` têm opção interna
+  `block7700Policy`. O sweep a propaga a cada dia; cada fechamento resolve o
+  protocolo com sua leitura existente. Não é argumento controlado pelo
+  paciente nem campo novo de resposta HTTP.
+- O wrapper mobile (§3a) passa a versão **depois** das travas de ambiente,
+  conta sem WhatsApp e fuso. O script de staging passa a mesma versão em
+  simulação e aplicação após seus filtros. Sem a opção, os callers mantêm
+  comportamento legado; `daily-closer`, `daily-audit` e `bloco-recompute`
+  não foram alterados. Conta mista continua excluída pelo wrapper/script.
+- Fora da recomposição Flow não emite eventos `bloco7700.*`; a finalização
+  diária e os eventos de outras medalhas continuam. A RPC conserva os 12
+  parâmetros e a idempotência por data. Dia já fechado não é reaberto nem
+  recalculado; não há backfill, alteração de coluna gerada ou migration.
+
+Golden exato: semana 28/09–04/10 de §3a, fechamento 00:30 e 08:00, ganho/manutenção
+com crédito 0 em cada dia, saldo final 0, XP100/105 e sequência7; sem opção
+continuam os saldos598/587. Recomposição mantém créditos
+`[576,676,-724,500,0,1065,832]`, saldo2925 e XP105. Saldo7600 fora da
+recomposição não cruza o bloco; saldo300/blocos1 não adquire medalha antiga;
+7600+832 na recomposição mantém resto732/blocos1. Testes em
+`audit-10-08-flow-block-credit.test.ts`, `flow-bloco-policy.test.ts`, wrapper
+mobile e script (banco em memória, sem rede). A mudança local não comprova
+ativação no staging nem apresentação completa em Hoje/Progresso/Flow.
+
+O snapshot não guarda a política/crédito aplicado por data. Um worker ou
+auditor futuro para Flow precisa conhecer esse histórico para não restabelecer
+créditos bloqueados nem apagar créditos antigos. As pendências de reclose,
+datas concorrentes e apresentação/gráfico de §3a continuam próprias. Os RC F
+históricos abaixo caracterizam o default legado, inclusive crédito76 no
+fechamento atrasado após troca para ganho; com política Flow explícita esse
+caso agora recebe0, preservando a meta1576 e o saldo anterior.
+
+> RC C3 — cenário bloco acumulado antes de entrar em ganho ou manutenção variante volta para a recomposição NÃO coberta nesta PR (pendência da audit 2026-10-07).
 
 ### Quando um dia CREDITA o bloco (regras de integridade)
 - **Sem atividade** (0 refeição E 0 treino) → crédito **0** (`bloco7700.skipped_inactive_day`).
@@ -730,7 +784,7 @@ data local explícita e chamam as MESMAS funções e a MESMA RPC: `calcDailyXP`,
 reexporta), `getGapForDate`, `loadCalcConfig`, `loadDailyTargets` e
 `finalize_daily_close_atomic`. Nenhuma regra dos §1 a §3 foi reescrita. O que
 existe em dobro é o roteiro de leituras e escritas; o teste de paridade
-compara, para o mesmo dia, os doze parâmetros da RPC, os campos gravados na
+compara, para o mesmo dia sem opção Flow, os doze parâmetros da RPC, os campos gravados na
 linha do dia, o `user_progress` final e os eventos.
 
 Dois chamadores, e só eles:
@@ -748,7 +802,9 @@ estático lê o código e falha se aparecer qualquer um deles.
 #### Regras do caminho sob demanda
 
 Onde a produção passa (fechar ONTEM enquanto a hora local é de 0 a 4, isto é,
-de 00:30 a 04:59 neste caminho), o resultado é o mesmo da produção. As regras
+de 00:30 a 04:59 neste caminho), o default sem opção Flow é o mesmo da produção.
+Os callers elegíveis do app usam a política C3 acima para crédito/conquistas
+de bloco; os demais cálculos e a persistência seguem o roteiro existente. As regras
 abaixo valem onde a produção nunca passa.
 
 1. **As datas vêm dos dados, em ordem crescente, e a ordem é estrita.**
@@ -811,12 +867,15 @@ abaixo valem onde a produção nunca passa.
    O que esta regra NÃO iguala à produção, declarado abaixo: perfil alterado
    no próprio dia depois do primeiro registro (a linha guarda a meta do
    primeiro registro; a produção, às 00:30, regravaria com a do perfil).
-   Caso real (staging, conta QA de ganho de massa, 11 dias de 22/09 a 03/10,
-   lido em 2026-10-04): com a meta de cada dia o bloco soma **5.885**; com a
+   Caso histórico do **default legado, sem `block7700Policy`** (dados de
+   staging, conta QA de ganho de massa, 11 dias de 22/09 a 03/10, lidos em
+   2026-10-04): com a meta de cada dia o bloco soma **5.885**; com a
    meta do perfil de hoje (2988) somaria 4.836. Os três dias que mudam: 27/09
    gravada 3355 → crédito 3355 − 2683 = 672 (305 com 2988); 28/09 gravada 3361
    → 3361 + 380 − 2810 = 931 (558); 01/10 gravada 3361 → 3361 + 380 − 2259 =
-   1.482 (1.109).
+   1.482 (1.109). Com a política Flow explícita, o novo crédito desses dias
+   é 0 e o saldo anterior é preservado; as metas gravadas continuam sendo
+   mantidas. Esses dados históricos não determinam o saldo atual de staging.
 5. **Inatividade, uma vez por varredura.** Depois de fechar o que havia, se a
    última data fechável está 2 ou mais dias à frente de `last_active_date` e a
    sequência é maior que zero, a sequência é zerada (mesma regra do
@@ -899,13 +958,16 @@ O que o caminho sob demanda **não faz**: não avança a agenda de reavaliação
 (opção `advanceReevaluation`, desligada por padrão); não grava
 `daily_closer.skipped`; não grava `daily_snapshots.deficit_accumulated`
 (ninguém grava: o gráfico "Bloco 7.700 acumulado" do app segue em zero); não
-cria regra para ganho de massa e manutenção (o crédito segue `meta + exercício
-− consumido`, pendência do §3); não fecha dia de conta com WhatsApp nem de
+implementa o orçamento de 14 dias de ganho de massa e manutenção. O wrapper
+mobile e o script de staging usam `flow-recomposition-v1`: nesses protocolos
+o novo crédito do bloco é 0 e o saldo anterior é preservado (§3). Chamadas sem
+essa opção mantêm o default legado `meta + exercício − consumido`. Não fecha
+dia de conta com WhatsApp nem de
 conta sem fuso (API); não recredita dia já fechado; não visita nem fecha
 linha de dia sem refeição, treino ou mensagem recebida; não põe prazo nas
 próprias leituras.
 
-#### Conta de um dia em cada protocolo (golden)
+#### Conta de um dia em cada protocolo (golden do default legado, sem opção Flow)
 
 Pessoa do teste: homem, 80 kg, 180 cm, 40 anos, atividade leve. BMR 1730.
 XP pela regra gravada em staging (igual ao padrão do código): 10 + 5 com
@@ -922,7 +984,18 @@ Semana inteira fechando dia a dia: recomposição termina com 105 XP, nível 2,
 sequência 7, bloco 2.925 e a medalha "Primeira Semana"; ganho de massa, 100 XP
 e bloco 598; manutenção, 105 XP e bloco 587.
 
-#### O que a simulação deve imprimir para staging (lido em 2026-10-04)
+Esses números caracterizam as chamadas **sem** `block7700Policy`; continuam
+travados pelos goldens de 2026-10-04. Com a política Flow explícita, ganho e
+manutenção recebem crédito 0 por dia, preservando o saldo e os blocos que já
+existiam. Partindo do progresso zerado desses fixtures, ambos terminam com
+saldo 0; XP e sequência permanecem iguais. Recomposição continua com saldo
+2.925. O golden `audit-10-08-flow-block-credit.test.ts` trava os dois modos.
+
+#### Simulação histórica do default legado (dados lidos em 2026-10-04)
+
+Os números abaixo caracterizam a chamada sem a opção Flow sobre os dados
+daquela leitura. **Não são a previsão do script atual**: ele agora passa
+`flow-recomposition-v1`. Não houve nova leitura nem execução contra staging.
 
 Só três contas ativas têm o que fechar. Com `--from 2026-09-17`, rodando depois
 de 00:30 de 05/10 e sem registro novo:
@@ -952,6 +1025,16 @@ de 00:30 de 05/10 e sem registro novo:
 
 Esses números vêm de SELECTs e dos goldens; a simulação **não foi rodada**
 contra o banco e nada foi gravado. Gravar exige autorização nomeada do Eduardo.
+
+No script atual, se os mesmos dias ainda estivessem abertos e os mesmos dados
+continuassem presentes, cada dia de ganho de massa dessas duas contas teria
+novo crédito 0. O saldo e os blocos anteriores seriam preservados, inclusive
+se já tivessem sido creditados antes. Não se pode inferir o saldo atual do
+staging (0, 5.885 ou outro) a partir dessa leitura histórica. XP, sequência,
+metas gravadas e a regra da janela de fechamento continuam com os mesmos
+resultados para aqueles fixtures; a recomposição conserva o cálculo do bloco.
+Os testes do script usam banco em memória e cobrem simulação e aplicação com
+saldo anterior, sem consultar nem gravar staging.
 
 - Código: `packages/agent/src/day-close.ts`,
   `packages/core/src/engine/day-status.ts`,

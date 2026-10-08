@@ -13,6 +13,13 @@ export type HungerLevel = 'pouca' | 'moderada' | 'muita'
 
 export type Protocol = 'recomposicao' | 'ganho_massa' | 'manutencao'
 
+/** Official protocol values only; unknown or absent data never assigns an objective. */
+export function normalizeProtocol(value: unknown): Protocol | null {
+  return value === 'recomposicao' || value === 'ganho_massa' || value === 'manutencao'
+    ? value
+    : null
+}
+
 export type GoalType = 'BF' | 'IMC' | 'peso_kg'
 
 export type AgentStage =

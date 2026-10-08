@@ -1175,6 +1175,24 @@ saldo anterior, sem consultar nem gravar staging.
   suficiente. O bloco exposto é sempre o progresso persistido em `user_progress`;
   o cliente não projeta crédito para o dia aberto. Sem uma linha persistida de
   progresso, o bloco é `unavailable` e seus números são `null`, não zero.
+- **Elegibilidade atual do bloco (Flow C3, 2026-10-08, alteração local):**
+  `current_protocol` é um campo aditivo do estado diário, obtido exclusivamente
+  do protocolo oficial do perfil já lido. Só os três valores exatos são aceitos;
+  ausente/inválido é `null`. `block_7700.enabled` segue esse objetivo atual,
+  habilitando somente `recomposicao`. O campo `protocol` continua sendo o
+  protocolo efetivo do dia e conserva todas as regras energéticas acima.
+  Snapshot antigo de recomposição com perfil em ganho não habilita o bloco;
+  snapshot antigo de ganho com perfil em recomposição não o desabilita.
+  Os saldos, percentuais, blocos e fontes persistidos continuam intactos.
+- `GET /progress` acrescenta `current_protocol` e `block_7700_enabled` à cópia
+  dos 12 campos existentes. Lê somente o protocolo de `user_profiles` em
+  paralelo ao progresso, ambos pelo usuário autenticado. Sem progresso mantém
+  `data:null`; perfil ausente/inválido oculta, erro de leitura falha com
+  `500 data_access_failed`. Não escreve dados nem faz leitura do worker legado.
+  O fechamento sob demanda continua anterior à leitura, com suas travas.
+  Sem transação/versão, as duas leituras não garantem atomicidade entre perfil
+  e progresso. O contrato aditivo conserva `bodyflow.daily-state.v3` e não
+  comprova que o cliente iOS já consome a flag ou que staging foi publicado.
 - Snapshot, refeições e treinos são lidos juntos. Uma releitura da versão do
   snapshot evita misturar totais anteriores com logs de uma confirmação
   concorrente; após duas leituras instáveis, a API falha sem publicar estado

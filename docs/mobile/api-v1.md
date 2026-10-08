@@ -788,6 +788,47 @@ nenhum campo novo, e a parte que muda número tem interruptor próprio,
 `DAY_BALANCE_DAY_ROW_GUARD`
 (`packages/core/src/engine/day-balance-inputs.ts`).
 
+### Elegibilidade do Bloco 7.700 em Hoje e Progresso (Flow C3)
+
+Alteração local de 2026-10-08, sem publicação nem migration. O objetivo atual
+oficial é separado do protocolo histórico usado para calcular a energia do dia.
+
+- `GET /today` acrescenta `current_protocol` do perfil já lido. Só os valores
+  exatos `recomposicao`, `ganho_massa` e `manutencao` são reconhecidos; ausente
+  ou inválido é `null`. `block_7700.enabled` passa a seguir esse campo: somente
+  recomposição habilita. `protocol` mantém o significado do dia histórico.
+  Nenhuma query nova em Hoje, nenhuma fórmula ou valor energético alterado.
+- `GET /progress`, quando `data` existe, conserva os 12 campos persistidos e
+  acrescenta `current_protocol: Protocol | null` e `block_7700_enabled: boolean`.
+  A leitura seletiva de `user_profiles.current_protocol` e a de `user_progress`
+  ocorrem em paralelo, com `user_id` autenticado nas duas. Não se aceita um
+  objetivo vindo de body, mensagem ou snapshot para decidir a apresentação.
+- Ausência de progresso mantém `data:null`. Perfil ausente/nulo/inválido
+  produz `current_protocol:null` e flag `false`. Erro em qualquer query produz
+  `500 data_access_failed`, inclusive com progresso ausente; não é fallback de
+  objetivo. A rota conserva fechamento sob demanda antes dessas leituras.
+- Flag desabilitada não zera saldo, percentual, contagem nem medalha histórica
+  na resposta ou banco. O cliente deve esconder as apresentações do bloco.
+  Não inferir elegibilidade do saldo ou de `protocol` histórico; servidor antigo
+  sem os campos novos não prova elegibilidade. Decoders devem tolerar ausência,
+  e app/servidor requerem integração e publicação conjunta para o aceite final.
+- As fontes de perfil/progresso não são uma transação nem revalidadas juntas;
+  não há garantia de atomicidade entre as leituras. A versão de cálculo continua
+  `bodyflow.daily-state.v3`, pois as fórmulas e a energia histórica são iguais.
+
+Oráculos: perfil ganho/snapshot recomposição conserva −832/ref2343/treino
+incluído e oculta o bloco; o perfil recomposição com snapshot ganho o habilita
+sem mudar a energia histórica. Saldo3850/blocos2/50%/total19250 e os 12 valores
+de progresso (XP1240/nível2/seq3/recorde7/peso80/saldo3120/blocos4 e medalhas)
+permanecem intactos nos fixtures. Testes: `flow-block-presentation.test.ts`,
+`daily-state.test.ts`, `daily-state-service.test.ts`, `progress/route.test.ts`
+e os vizinhos de `today`/fechamento concorrente.
+
+Espelhos BFF em `apps/mobile-bff/src/app/api/mobile/v1/{today,progress}/route.ts`
+reexportam as rotas oficiais; métodos/auth/envelopes/headers não mudam.
+Gates: `verify:routes`, `verify:imports`, testes e build do BFF, e
+`verify:build-surface`. Este contrato não comprova UI física nem fecha C3 inteiro.
+
 ### Fechamento do dia sob demanda (ambiente de avaliação)
 
 Em produção o dia é fechado pelo worker, de madrugada, e estas duas rotas só

@@ -1,9 +1,10 @@
 import { DEFAULT_CALC_CONFIG } from './calc-config.js'
 import { dayEnergyBalance, eatingBalance } from './engine/balance.js'
+import { resolveFlowBloco7700Policy } from './engine/bloco.js'
 import type { DailyTargets } from './engine/targets.js'
 import { KCAL_BLOCK } from './progress-calc.js'
 import type { RoutineItemType, RoutineOrigin, RoutinePublicStatus } from './routine.js'
-import type { Protocol } from './types.js'
+import { normalizeProtocol, type Protocol } from './types.js'
 
 // v3 (2026-10-04): `daily_balance_kcal` is measured against the day's
 // expenditure, per protocol (engine/balance.ts `dayEnergyBalance`), and two
@@ -304,6 +305,9 @@ export function buildDailyState(input: DailyStateInput) {
   const foodBalance =
     caloriesTarget === null ? null : eatingBalance(caloriesConsumed, caloriesTarget)
   const protocol = snapshot?.protocol ?? input.protocol
+  // Presentation follows the current profile; historical day energy keeps
+  // its own protocol and targets below. Saved block values are not rewritten.
+  const currentProtocol = normalizeProtocol(input.protocol)
   // "Balanço do dia" per protocol (docs/CALCULO-MPP.md §2c). The food line
   // above never goes through this: it stays against the target, no exercise.
   const dayBalance =
@@ -369,6 +373,7 @@ export function buildDailyState(input: DailyStateInput) {
   return {
     local_date: input.localDate,
     protocol,
+    current_protocol: currentProtocol,
     targets: {
       calories_kcal: caloriesTarget,
       protein_g: proteinTarget,
@@ -428,7 +433,7 @@ export function buildDailyState(input: DailyStateInput) {
       },
     },
     block_7700: {
-      enabled: protocol === 'recomposicao',
+      enabled: resolveFlowBloco7700Policy(currentProtocol).enabled,
       availability: input.progress ? ('available' as const) : ('unavailable' as const),
       target_kcal: KCAL_BLOCK,
       current_kcal: blockCurrent,

@@ -1,8 +1,8 @@
 /**
  * GET /progress with the on-request day close (docs/mobile/api-v1.md,
  * "Fechamento do dia sob demanda"): the close runs BEFORE the read, the
- * response keeps its shape, and with the switch absent the handler does
- * exactly the one read it always did.
+ * response preserves its saved fields and adds presentation eligibility.
+ * With the switch absent, the handler only reads progress and its objective.
  *
  * The authentication wrapper is replaced by a pass-through so the handler
  * can be called with a context; the handler, the hook, the read model and
@@ -85,8 +85,10 @@ function context(db: DayCloseMemoryDb): MobileRouteContext {
 
 const PROGRESS_KEYS = [
   'badges_earned',
+  'block_7700_enabled',
   'blocks_completed',
   'current_bf_percent',
+  'current_protocol',
   'current_streak',
   'current_weight',
   'deficit_block',
@@ -114,16 +116,158 @@ afterEach(() => {
 })
 
 describe('GET /api/mobile/v1/progress', () => {
-  it('switch absent: one read, no write, the progress row as it is', async () => {
+  it.each([
+    ['recomposicao', true],
+    ['ganho_massa', false],
+    ['manutencao', false],
+    [null, false],
+    ['RECOMPOSICAO', false],
+    ['desconhecido', false],
+  ] as const)('current official protocol %s projects eligibility %s without rewriting saved progress', async (protocol, enabled) => {
+    const db = database()
+    const profile = db.tables.user_profiles[0]
+    const saved = db.tables.user_progress[0]
+    if (!profile || !saved) throw new Error('Missing fixture account')
+    profile.current_protocol = protocol
+    Object.assign(saved, {
+      deficit_block: 3_120,
+      blocks_completed: 4,
+      xp_total: 1_240,
+      level: 2,
+      current_streak: 3,
+      longest_streak: 7,
+      current_weight: 80,
+      current_bf_percent: null,
+      last_active_date: '2026-10-04',
+      next_reevaluation: '2026-10-18',
+      badges_earned: ['Primeiro Bloco', 'Primeira Semana'],
+    })
+    const original = structuredClone(saved)
+    // Another patient's profile must not decide this patient's presentation.
+    db.addAccount({
+      userId: '0b9f6f0e-0000-4000-8000-00000000ffff',
+      profile: { current_protocol: enabled ? 'ganho_massa' : 'recomposicao' },
+    })
+
+    const response = await handler(context(db))
+    const body = await response.json()
+    expect(response.status).toBe(200)
+    expect(body.data).toEqual({
+      ...Object.fromEntries(PROGRESS_KEYS.map((key) => [key, original[key]])),
+      current_protocol:
+        protocol === 'recomposicao' || protocol === 'ganho_massa' || protocol === 'manutencao'
+          ? protocol
+          : null,
+      block_7700_enabled: enabled,
+    })
+    expect(db.progress(USER)).toEqual(original)
+    expect(db.writes).toEqual([])
+    expect(db.operations.find((op) => op.target === 'user_profiles')?.filters).toEqual([
+      { op: 'eq', column: 'user_id', value: USER },
+    ])
+  })
+
+  it('a missing profile hides block presentation without deleting the saved balance', async () => {
+    const db = database()
+    db.tables.user_profiles.length = 0
+    const body = await (await handler(context(db))).json()
+    expect(body.data).toMatchObject({
+      current_protocol: null,
+      block_7700_enabled: false,
+      deficit_block: 0,
+    })
+    expect(db.writes).toEqual([])
+  })
+
+  it('a missing progress row remains data:null, even with an official recomposition profile', async () => {
+    const db = database()
+    db.tables.user_progress.length = 0
+    const body = await (await handler(context(db))).json()
+    expect(body.data).toBeNull()
+    expect(db.writes).toEqual([])
+  })
+
+  it('profile read failure remains a typed error even when the progress row is missing', async () => {
+    const db = database()
+    db.tables.user_progress.length = 0
+    db.failWith = (operation) =>
+      operation.target === 'user_profiles' ? 'database unavailable' : null
+    await expect(handler(context(db))).rejects.toMatchObject({
+      status: 500,
+      code: 'data_access_failed',
+    })
+    expect(db.writes).toEqual([])
+  })
+
+  it('starts the independent profile read while the progress read is still held', async () => {
+    const db = database()
+    let releaseProgress: () => void = () => {
+      throw new Error('Missing progress release')
+    }
+    const progressGate = new Promise<void>((resolve) => {
+      releaseProgress = resolve
+    })
+    let markProgressStarted: () => void = () => {
+      throw new Error('Missing progress marker')
+    }
+    const progressStarted = new Promise<void>((resolve) => {
+      markProgressStarted = resolve
+    })
+    let profileReads = 0
+    const requestContext = context(db)
+    requestContext.supabase = db.session(async (operation) => {
+      if (operation.kind === 'select' && operation.target === 'user_progress') {
+        markProgressStarted()
+        await progressGate
+      }
+      if (operation.kind === 'select' && operation.target === 'user_profiles') profileReads += 1
+    })
+    const pendingResponse = handler(requestContext)
+    await progressStarted
+    try {
+      expect(profileReads).toBe(1)
+      expect(db.writes).toEqual([])
+    } finally {
+      releaseProgress()
+    }
+    const response = await pendingResponse
+    expect(response.status).toBe(200)
+    expect((await response.json()).data).toMatchObject({
+      current_protocol: 'recomposicao',
+      block_7700_enabled: true,
+    })
+  })
+
+  it.each([
+    'user_profiles',
+    'user_progress',
+  ])('query failure in %s is a typed error, not a silent eligibility fallback', async (table) => {
+    const db = database()
+    db.failWith = (operation) => (operation.target === table ? 'database unavailable' : null)
+    await expect(handler(context(db))).rejects.toMatchObject({
+      status: 500,
+      code: 'data_access_failed',
+    })
+    expect(db.writes).toEqual([])
+  })
+
+  it('switch absent: two scoped reads, no write, saved progress plus presentation eligibility', async () => {
     const db = database()
     const response = await handler(context(db))
     const body = await response.json()
 
     expect(response.status).toBe(200)
-    expect(db.operations).toHaveLength(1)
+    expect(db.operations).toHaveLength(2)
     expect(db.operations[0]).toMatchObject({ kind: 'select', target: 'user_progress' })
+    expect(db.operations[1]).toMatchObject({ kind: 'select', target: 'user_profiles' })
     expect(Object.keys(body.data).sort()).toEqual(PROGRESS_KEYS)
-    expect(body.data).toMatchObject({ xp_total: 0, current_streak: 0, deficit_block: 0 })
+    expect(body.data).toMatchObject({
+      xp_total: 0,
+      current_streak: 0,
+      deficit_block: 0,
+      current_protocol: 'recomposicao',
+      block_7700_enabled: true,
+    })
   })
 
   it('switch on: yesterday is closed first, and the same shape carries the new numbers', async () => {

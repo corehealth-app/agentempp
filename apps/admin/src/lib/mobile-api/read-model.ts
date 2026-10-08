@@ -3,6 +3,7 @@ import {
   isUnresolvedNutritionSource,
   loadOfficialDailyState,
 } from '@mpp/agent'
+import { normalizeProtocol, resolveFlowBloco7700Policy } from '@mpp/core'
 import type { Json, ServiceClient } from '@mpp/db'
 import type { MobileAuthContext } from './auth'
 import type { HistoryQuery, TrendsQuery } from './contracts'
@@ -40,9 +41,7 @@ export function meDto(auth: MobileAuthContext) {
   }
 }
 
-function safePendingItem(
-  value: Json,
-): Record<string, string | number | string[] | null> | null {
+function safePendingItem(value: Json): Record<string, string | number | string[] | null> | null {
   const item = record(value)
   if (!item) return null
   const name = stringValue(item.name) ?? stringValue(item.food_name)
@@ -212,15 +211,25 @@ export async function loadPlan(supabase: ServiceClient, userId: string) {
 }
 
 export async function loadProgress(supabase: ServiceClient, userId: string) {
-  const { data, error } = await supabase
-    .from('user_progress')
-    .select(
-      'xp_total, level, current_streak, longest_streak, blocks_completed, deficit_block, current_weight, current_bf_percent, badges_earned, last_active_date, next_reevaluation, updated_at',
-    )
-    .eq('user_id', userId)
-    .maybeSingle()
-  throwQueryError(error, 'Progress lookup')
-  return data
+  const [progress, profile] = await Promise.all([
+    supabase
+      .from('user_progress')
+      .select(
+        'xp_total, level, current_streak, longest_streak, blocks_completed, deficit_block, current_weight, current_bf_percent, badges_earned, last_active_date, next_reevaluation, updated_at',
+      )
+      .eq('user_id', userId)
+      .maybeSingle(),
+    supabase.from('user_profiles').select('current_protocol').eq('user_id', userId).maybeSingle(),
+  ])
+  throwQueryError(progress.error, 'Progress lookup')
+  throwQueryError(profile.error, 'Progress objective lookup')
+  if (!progress.data) return null
+  const currentProtocol = normalizeProtocol(profile.data?.current_protocol)
+  return {
+    ...progress.data,
+    current_protocol: currentProtocol,
+    block_7700_enabled: resolveFlowBloco7700Policy(currentProtocol).enabled,
+  }
 }
 
 export interface TrendsSnapshotRow {
@@ -303,7 +312,10 @@ export function shapeTrends(
     const value = Number(profile.weight_kg)
     const latest = datedWeights.at(-1)?.date
     if (date && Number.isFinite(value) && (latest === undefined || date >= latest)) {
-      datedWeights = [...datedWeights.filter((row) => row.date !== date), { date, weight_kg: value }]
+      datedWeights = [
+        ...datedWeights.filter((row) => row.date !== date),
+        { date, weight_kg: value },
+      ]
     }
   }
   return {

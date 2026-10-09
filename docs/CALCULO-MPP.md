@@ -658,6 +658,64 @@ Caso do revisor ("Natação", 40 min, moderada, 70 kg): antes 'outro'
 
 > RC W — cenário tela do iPhone (tipo digitado e kcal da proposta vistos no aparelho) NÃO coberto nesta PR (pendência da audit 2026-10-04). Nada foi executado no aparelho nem no simulador.
 
+## 2d. Orçamento de 14 dias — função C4 DRAFT, sem consumidor
+
+`packages/core/src/engine/budget-14d.ts` calcula somente fixtures e entradas
+históricas explícitas. Não está ligado ao app, Flow, API, fechador, banco ou
+WhatsApp; não exportado pelos barrels públicos. `draft: true` e
+`displayEnabled: false` são constantes de saída, não autorização de exibição.
+O item 5 de `method-backlog/decisions-v1.md` manda construir e testar a função,
+sem mostrar resultados às pessoas até validação clínica. C4 como produto
+continua pendente.
+
+A política `c4-draft-v1` é obrigatória, completa e sem default. Suporta somente
+as leituras DRAFT: janela móvel de **14 datas locais inclusivas**, denominador
+dos dias incluídos, base do ganho pelo gasto, arredondamento da base por dia,
+DAM com tolerância zero/limite 4, exclusão de incompletos e de consumo abaixo
+de 50% (inclusive `user_skipped`). Ausência, versão/valor ou campo extra
+desconhecido recusa o cálculo. Essas escolhas ainda dependem das respostas
+clínicas; a exceção de crédito7700 para `user_skipped` não decide o orçamento.
+Aberto e `pending` ficam fora; exatamente 50% pode entrar.
+O limiar usa a meta congelada somente depois de provar fase e regra vigentes.
+Uma meta antiga reetiquetada não permite excluir um dia como abaixo de 50%:
+falta de prova retém as métricas, inclusive quando há outros dias válidos.
+
+Para cada dia elegível, C é consumo, T é a meta alimentar congelada, A é o
+ajuste histórico explícito (0 quando comprovadamente ausente), M é o
+multiplicador histórico positivo do ganho:
+
+- Manutenção: `B = round(T − A)`.
+- Ganho: `B = round((T − A) / M)`.
+- Orçamento = soma de B; consumo = soma de C;
+  percentual = `100 × consumo / orçamento`, sem limitar a 100%.
+- DAM manutenção conta `C > T`, com a meta congelada, não a base B.
+  Ganho não tem DAM/limite; este módulo não altera metas nem conduta.
+
+Exemplos travados: 14 bases de 2600 → 36400; seis consumos2601 e oito2600
+→ 36406 consumidos e DAM6/limite4, sem reduzir6 para4. Ganho T2900/M1,05/A0
+→ base diária2762, orçamento38668 e consumo40600; percentual aproximadamente
+104,9964%, **não105 exato**, devido ao arredondamento diário já usado no balanço.
+Três dias2600 → 7800/7800 com cobertura3/14; não preencher as onze datas
+ausentes nem apresentar esse parcial como quatorze dias completos.
+
+Owner, fase e vigência resolvida, janela e registro são entradas do caller.
+Datas são civis estritas, com aritmética UTC sem relógio atual. O módulo
+recusa owner misto/duplicata e ordena cópias por data antes das somas. Exclui
+fora da janela, aberto, sem registro, protocolo/fase conhecidos diferentes
+e dias anteriores à vigência. Desconhecido não prova protocolo/fase antiga.
+Qualquer candidato sem regra histórica válida, número inválido ou resultado
+não finito retém **todas** as métricas; cobertura separa calendário completo
+de dados válidos. Vazio não tem percentual. Fase futura à janela é inválida.
+
+`daily_snapshots` hoje não fornece fase, ajuste/multiplicador históricos nem
+prova de registro completos. `cycle_start_at` e perfil atual não substituem
+esse histórico: um dia de troca pode ter meta antiga e protocolo novo.
+O futuro loader precisa provar owner/autorização, data local, fase/regra por
+data e consistência/freshness antes de integrar a função. Nenhuma query,
+migração, export público, mudança de legado ou integração foi feita aqui.
+Rolling versus bloco fixo, denominador de conta curta, qualidade dos dias,
+base do ganho, arredondamento e limite/tolerância de DAM permanecem DRAFT.
+
 ## 3. Bloco 7700 (`user_progress.deficit_block`)
 
 1 kg de gordura = 7700 kcal. O bloco acumula o déficit creditado por dia.

@@ -55,62 +55,65 @@ struct TodayBlockCard: View {
                     domain: .block
                 )
 
-                FixtureMetricRow(
-                    title: copy("metric.target"),
-                    value: TodayValueFormatter.optionalKcal(
-                        descriptor.targetKcal,
-                        language: language
-                    )
-                )
-                Divider()
-                FixtureMetricRow(
-                    title: copy("metric.current"),
-                    value: TodayValueFormatter.optionalKcal(
-                        descriptor.currentKcal,
-                        language: language
-                    )
-                )
-                if let percentage = descriptor.percentage {
-                    Divider()
+                // These are passive values for one block. Keep its heading
+                // separate and let the existing localized rows read together.
+                VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
                     FixtureMetricRow(
-                        title: copy("metric.reported-percentage"),
-                        value: "\(percentage)%"
-                    )
-                }
-                if let completedBlocks = descriptor.completedBlocks {
-                    Divider()
-                    FixtureMetricRow(
-                        title: copy("today.block.completed"),
-                        value: TodayValueFormatter.integer(
-                            completedBlocks,
+                        title: copy("metric.target"),
+                        value: TodayValueFormatter.optionalKcal(
+                            descriptor.targetKcal,
                             language: language
                         )
                     )
-                }
-                if let totalCreditedKcal = descriptor.totalCreditedKcal {
                     Divider()
                     FixtureMetricRow(
-                        title: copy("today.block.credited"),
-                        value: TodayValueFormatter.kcal(
-                            totalCreditedKcal,
+                        title: copy("metric.current"),
+                        value: TodayValueFormatter.optionalKcal(
+                            descriptor.currentKcal,
                             language: language
                         )
                     )
+                    if let percentage = descriptor.percentage {
+                        Divider()
+                        FixtureMetricRow(
+                            title: copy("metric.reported-percentage"),
+                            value: "\(percentage)%"
+                        )
+                    }
+                    if let completedBlocks = descriptor.completedBlocks {
+                        Divider()
+                        FixtureMetricRow(
+                            title: copy("today.block.completed"),
+                            value: TodayValueFormatter.integer(
+                                completedBlocks,
+                                language: language
+                            )
+                        )
+                    }
+                    if let totalCreditedKcal = descriptor.totalCreditedKcal {
+                        Divider()
+                        FixtureMetricRow(
+                            title: copy("today.block.credited"),
+                            value: TodayValueFormatter.kcal(
+                                totalCreditedKcal,
+                                language: language
+                            )
+                        )
+                    }
+                    BodyFlowStatusLine(
+                        TodayBlockDescriptor.availabilityText(
+                            descriptor.availability,
+                            language: language
+                        ),
+                        kind: descriptor.enabled == true ? .success : .info,
+                        font: BodyFlowTypography.callout
+                    )
                 }
-                BodyFlowStatusLine(
-                    TodayBlockDescriptor.availabilityText(
-                        descriptor.availability,
-                        language: language
-                    ),
-                    kind: descriptor.enabled == true ? .success : .info,
-                    font: BodyFlowTypography.callout
-                )
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("today.block.metrics")
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityValue(
-            "\(copy("metric.target")) \(TodayValueFormatter.optionalKcal(descriptor.targetKcal, language: language)); \(copy("metric.current").lowercased()) \(TodayValueFormatter.optionalKcal(descriptor.currentKcal, language: language))"
-        )
         .accessibilityIdentifier("today.block")
     }
 

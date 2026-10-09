@@ -150,6 +150,10 @@ struct Prompt14UITestSupport {
             file: file,
             line: line
         )
+        // Hittable can be true while the element lies behind floating chrome.
+        // Reveal the complete control before selecting a physical hit point.
+        reveal(library, in: app)
+        XCTAssertTrue(library.isHittable, file: file, line: line)
         assertMinimumTapTarget(library, file: file, line: line)
         library.tap()
         XCTAssertTrue(

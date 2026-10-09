@@ -570,6 +570,14 @@ final class Prompt14AccessibilityUITests: XCTestCase {
             file: file,
             line: line
         )
+        for identifier in ["tab.hoje", "tab.plano", "tab.registrar", "tab.progresso", "tab.perfil"] {
+            XCTAssertTrue(
+                app.performeTabBar.buttons[identifier].isHittable,
+                "\(identifier) must remain hittable on the active root",
+                file: file,
+                line: line
+            )
+        }
     }
 
     @MainActor

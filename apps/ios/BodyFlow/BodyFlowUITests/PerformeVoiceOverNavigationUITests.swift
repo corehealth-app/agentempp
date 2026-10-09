@@ -73,35 +73,96 @@ final class PerformeVoiceOverNavigationUITests: XCTestCase {
             throw XCTSkip("XCUIVoiceOverService is available on iOS 27 or later; the dedicated iOS 27 focus gate requires one passed native test and zero skips")
         }
         try withVoiceOver { app, voiceOver in
-            let today = Self.destinations[0]
+            try self.assertVoiceOverNavigation(app: app, voiceOver: voiceOver)
+        }
+    }
+
+    @MainActor
+    func testBlockMetricsRemainCompleteAndLocalized() throws {
+        let cases: [(language: String, locale: String, statements: [String])] = [
+            ("en-US", "en_US", [
+                "Target 7 700 kcal", "Current 2 500 kcal", "Block percentage 32%",
+                "Completed blocks 1", "Total credited 10 200 kcal", "Available",
+            ]),
+            ("pt-BR", "pt_BR", [
+                "Meta 7 700 kcal", "Atual 2 500 kcal", "Percentual do bloco 32%",
+                "Blocos concluídos 1", "Total creditado 10 200 kcal", "Disponível",
+            ]),
+        ]
+        let app = XCUIApplication()
+        defer { app.terminate() }
+        for fixture in cases {
+            app.launchArguments = [
+                "--ui-testing", "--ui-testing-prompt13-loaded",
+                "--ui-testing-block-currentRecomposition",
+                "-AppleLanguages", "(\(fixture.language))", "-AppleLocale", fixture.locale,
+                "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryL",
+            ]
+            app.launch()
+            let metrics = app.descendants(matching: .any)
+                .matching(identifier: "today.block.metrics")
+            try require(metrics.firstMatch.waitForExistence(timeout: 8),
+                        "The block must expose its complete passive metrics as one reading group")
+            try require(metrics.count == 1, "Block metrics must not be duplicated")
+            let label = metrics.firstMatch.label
+            attach("block-metrics-\(fixture.language)", label)
+            let words: (String) -> String = { value in
+                value.lowercased().split {
+                    !$0.isLetter && !$0.isNumber && $0 != "%" && $0 != "-" && $0 != "−"
+                }
+                    .joined(separator: " ")
+            }
+            try require(words(label) == words(fixture.statements.joined(separator: " ")),
+                        "Block metrics must preserve every exact value and status in \(fixture.language); label=\(label)")
+            app.terminate()
+        }
+    }
+
+    @MainActor
+    func testVoiceOverReadsFiveTabsInRichRecompositionAndPreservesSelectionOnIOS27() throws {
+        guard #available(iOS 27.0, *) else {
+            throw XCTSkip("XCUIVoiceOverService is available on iOS 27 or later; the dedicated iOS 27 focus gate requires one passed native test and zero skips")
+        }
+        try withVoiceOver(launchArguments: ["--ui-testing-block-currentRecomposition"]) { app, voiceOver in
+            // Prove this is the richer tree from the historical failure, not
+            // the legacy fixture that now hides the recomposition block.
+            try self.require(app.descendants(matching: .any).matching(identifier: "today.block").firstMatch.exists,
+                             "The recomposition fixture must expose the 7,700 block")
+            try self.assertVoiceOverNavigation(app: app, voiceOver: voiceOver)
+        }
+    }
+
+    @available(iOS 27.0, *)
+    @MainActor
+    private func assertVoiceOverNavigation(app: XCUIApplication, voiceOver: XCUIVoiceOverService) throws {
+        let today = Self.destinations[0]
+        try self.assertNavigation(app, selected: today)
+        let first = try self.seekButton(today, voiceOver: voiceOver)
+        try self.require(self.hasSelectedAnnouncement(first),
+                         "VoiceOver must announce the selected Today button")
+
+        // Once the first button is reached, no unexpected nodes may be
+        // filtered out: the next four focus moves must be these buttons.
+        for destination in Self.destinations.dropFirst() {
+            let speech = try voiceOver.moveForward().utterance
+            self.record("forward-\(destination.id)", speech: speech, app: app)
+            try self.require(self.isButtonSpeech(speech, for: destination),
+                             "Unexpected next VoiceOver node before \(destination.id): \(speech)")
             try self.assertNavigation(app, selected: today)
-            let first = try self.seekButton(today, voiceOver: voiceOver)
-            try self.require(self.hasSelectedAnnouncement(first),
-                             "VoiceOver must announce the selected Today button")
-
-            // Once the first button is reached, no unexpected nodes may be
-            // filtered out: the next four focus moves must be these buttons.
-            for destination in Self.destinations.dropFirst() {
-                let speech = try voiceOver.moveForward().utterance
-                self.record("forward-\(destination.id)", speech: speech, app: app)
-                try self.require(self.isButtonSpeech(speech, for: destination),
-                                 "Unexpected next VoiceOver node before \(destination.id): \(speech)")
-                try self.assertNavigation(app, selected: today)
-            }
-            for destination in Self.destinations.dropLast().reversed() {
-                let speech = try voiceOver.moveBackward().utterance
-                self.record("backward-\(destination.id)", speech: speech, app: app)
-                try self.require(self.isButtonSpeech(speech, for: destination),
-                                 "Unexpected previous VoiceOver node before \(destination.id): \(speech)")
-                try self.assertNavigation(app, selected: today)
-            }
-
+        }
+        for destination in Self.destinations.dropLast().reversed() {
+            let speech = try voiceOver.moveBackward().utterance
+            self.record("backward-\(destination.id)", speech: speech, app: app)
+            try self.require(self.isButtonSpeech(speech, for: destination),
+                             "Unexpected previous VoiceOver node before \(destination.id): \(speech)")
+            try self.assertNavigation(app, selected: today)
         }
     }
 
     @available(iOS 27.0, *)
     @MainActor
     private func withVoiceOver(
+        launchArguments: [String] = [],
         _ operation: (XCUIApplication, XCUIVoiceOverService) throws -> Void
     ) throws {
         let device = XCUIDevice.shared
@@ -142,6 +203,7 @@ final class PerformeVoiceOverNavigationUITests: XCTestCase {
             "-AppleLanguages", "(en-US)", "-AppleLocale", "en_US",
             "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryL",
         ]
+        app.launchArguments += launchArguments
         app.launch()
         try require(screen(Self.destinations[0], in: app).waitForExistence(timeout: 8),
                     "The local Today fixture must load")

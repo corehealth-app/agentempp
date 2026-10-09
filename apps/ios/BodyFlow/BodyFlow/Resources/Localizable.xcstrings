@@ -5621,9 +5621,17 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Flow’s style, your account and “Get to know the app” to see this tour again." } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O estilo do Flow, a sua conta e “Conhecer o app” para rever este passeio." } }
     } },
+    "tour.profile.body.objective" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Flow’s style, your account and “Get to know the app” to see this tour again. In “Your objective” you can view the objective and targets available for this account." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O estilo do Flow, a sua conta e “Conhecer o app” para rever este passeio. Em “Seu objetivo” você consulta o objetivo e as metas disponíveis para esta conta." } }
+    } },
     "tour.profile.body.reminders" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Flow’s style, reminders on this iPhone, your account and “Get to know the app” to see this tour again." } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O estilo do Flow, os lembretes neste iPhone, a sua conta e “Conhecer o app” para rever este passeio." } }
+    } },
+    "tour.profile.body.reminders.objective" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Flow’s style, reminders on this iPhone, your account and “Get to know the app” to see this tour again. In “Your objective” you can view the objective and targets available for this account." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O estilo do Flow, os lembretes neste iPhone, a sua conta e “Conhecer o app” para rever este passeio. Em “Seu objetivo” você consulta o objetivo e as metas disponíveis para esta conta." } }
     } },
     "tour.profile.title" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Profile" } },
@@ -5796,6 +5804,10 @@
     "tutorial.position" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Step %1$lld of %2$lld" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Etapa %1$lld de %2$lld" } }
+    } },
+    "tutorial.profile.objective" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "In “Your objective” you can view the objective and targets available for this account." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Em “Seu objetivo” você consulta o objetivo e as metas disponíveis para esta conta." } }
     } },
     "tutorial.profile.persona" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "In Flow’s style you choose how Flow talks to you." } },

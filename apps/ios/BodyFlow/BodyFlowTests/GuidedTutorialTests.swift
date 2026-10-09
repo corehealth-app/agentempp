@@ -23,10 +23,17 @@ struct GuidedTutorialTests {
 
     private func everyKey() -> Set<String> {
         var keys = Set(chromeKeys)
-        for facts in [allFacts, noFacts] {
-            for step in GuidedTutorialContent.steps(facts: facts) {
-                keys.insert(step.titleKey)
-                keys.formUnion(step.lineKeys)
+        for base in [allFacts, noFacts] {
+            for objective in [false, true] {
+                for reminders in [false, true] {
+                    var facts = base
+                    facts.currentObjective = objective
+                    facts.reminders = reminders
+                    for step in GuidedTutorialContent.steps(facts: facts) {
+                        keys.insert(step.titleKey)
+                        keys.formUnion(step.lineKeys)
+                    }
+                }
             }
         }
         return keys
@@ -45,6 +52,92 @@ struct GuidedTutorialTests {
         }
         let position = GuidedTutorialCopy.stepPosition(2, of: 8, language: language)
         #expect(position == (language == .portugueseBrazil ? "Etapa 2 de 8" : "Step 2 of 8"))
+    }
+
+    @Test("Profile explains the available current objective in both tutorial presentations",
+          arguments: [
+            TutorialObjectiveCase(false, false, .portugueseBrazil, .textual),
+            TutorialObjectiveCase(false, false, .portugueseBrazil, .spotlight, "tour.profile.body"),
+            TutorialObjectiveCase(false, false, .englishUnitedStates, .textual),
+            TutorialObjectiveCase(false, false, .englishUnitedStates, .spotlight, "tour.profile.body"),
+            TutorialObjectiveCase(false, true, .portugueseBrazil, .textual),
+            TutorialObjectiveCase(false, true, .portugueseBrazil, .spotlight, "tour.profile.body.reminders"),
+            TutorialObjectiveCase(false, true, .englishUnitedStates, .textual),
+            TutorialObjectiveCase(false, true, .englishUnitedStates, .spotlight, "tour.profile.body.reminders"),
+            TutorialObjectiveCase(true, false, .portugueseBrazil, .textual),
+            TutorialObjectiveCase(true, false, .portugueseBrazil, .spotlight, "tour.profile.body.objective"),
+            TutorialObjectiveCase(true, false, .englishUnitedStates, .textual),
+            TutorialObjectiveCase(true, false, .englishUnitedStates, .spotlight, "tour.profile.body.objective"),
+            TutorialObjectiveCase(true, true, .portugueseBrazil, .textual),
+            TutorialObjectiveCase(true, true, .portugueseBrazil, .spotlight, "tour.profile.body.reminders.objective"),
+            TutorialObjectiveCase(true, true, .englishUnitedStates, .textual),
+            TutorialObjectiveCase(true, true, .englishUnitedStates, .spotlight, "tour.profile.body.reminders.objective"),
+          ])
+    func profileObjectiveFollowsCapability(_ scenario: TutorialObjectiveCase) throws {
+        let facts = GuidedTutorialFacts(
+            mealMedia: true, planDrafts: true, planImport: true,
+            reminders: scenario.reminders, realAccount: true,
+            currentObjective: scenario.objective
+        )
+        let language = scenario.language
+        let title = try AppLocalization.string("current-objective.title", for: language)
+        #expect(title == (language == .portugueseBrazil ? "Seu objetivo" : "Your objective"))
+        let consultation = language == .portugueseBrazil
+            ? "Em “Seu objetivo” você consulta o objetivo e as metas disponíveis para esta conta."
+            : "In “Your objective” you can view the objective and targets available for this account."
+        let rendered: String
+
+        switch scenario.presentation {
+        case .textual:
+            let steps = GuidedTutorialContent.steps(facts: facts)
+            #expect(steps.map(\.area) == [.welcome, .today, .flow, .plan, .register, .progress, .routineLibrary, .profile])
+            #expect(Set(steps.map(\.id)).count == 8)
+            let profile = try #require(steps.first { $0.area == .profile })
+            let objectiveKeys = profile.lineKeys.filter { $0 == "tutorial.profile.objective" }
+            #expect(objectiveKeys.count == (scenario.objective ? 1 : 0))
+            var expectedKeys = ["tutorial.profile.persona"]
+            if scenario.objective { expectedKeys.append("tutorial.profile.objective") }
+            if scenario.reminders { expectedKeys.append("tutorial.profile.reminders") }
+            expectedKeys += ["tutorial.profile.replay", "tutorial.profile.sign-out"]
+            #expect(profile.lineKeys == expectedKeys)
+            let texts = try profile.lineKeys.map { key in
+                let value = try AppLocalization.string(String.LocalizationValue(key), for: language)
+                #expect(value != key && !value.isEmpty, "\(key) / \(language)")
+                return value
+            }
+            rendered = texts.joined(separator: " ")
+            #expect(profile.lineKeys.contains("tutorial.profile.reminders") == scenario.reminders)
+            #expect(profile.lineKeys.contains("tutorial.profile.replay"))
+            #expect(profile.lineKeys.contains("tutorial.profile.sign-out"))
+        case .spotlight:
+            let steps = GuidedTourContent.steps(facts: facts)
+            #expect(steps.map(\.id) == ["welcome", "flow", "library", "register", "plan", "progress", "profile", "trail"])
+            #expect(steps.map(\.target) == [nil, .flow, .library, .register, .planTab, .progressTab, .profileTab, nil])
+            #expect(steps.allSatisfy { $0.tab == .today })
+            let profile = try #require(steps.first { $0.id == "profile" })
+            #expect(profile.target == .profileTab)
+            #expect(profile.kind == .spotlight(.profileTab))
+            let expectedBodyKey = try #require(scenario.expectedBodyKey)
+            #expect(profile.bodyKey == expectedBodyKey)
+            rendered = try AppLocalization.string(String.LocalizationValue(profile.bodyKey), for: language)
+            #expect(rendered != profile.bodyKey && !rendered.isEmpty)
+            let originalBody: String
+            if language == .portugueseBrazil {
+                originalBody = scenario.reminders
+                    ? "O estilo do Flow, os lembretes neste iPhone, a sua conta e “Conhecer o app” para rever este passeio."
+                    : "O estilo do Flow, a sua conta e “Conhecer o app” para rever este passeio."
+            } else {
+                originalBody = scenario.reminders
+                    ? "Flow’s style, reminders on this iPhone, your account and “Get to know the app” to see this tour again."
+                    : "Flow’s style, your account and “Get to know the app” to see this tour again."
+            }
+            #expect(rendered == originalBody + (scenario.objective ? " " + consultation : ""))
+        }
+
+        #expect(rendered.components(separatedBy: title).count - 1 == (scenario.objective ? 1 : 0))
+        #expect(rendered.contains(consultation) == scenario.objective)
+        let reminderMention = language == .portugueseBrazil ? "lembretes neste iPhone" : "reminders on this iPhone"
+        #expect(rendered.localizedCaseInsensitiveContains(reminderMention) == scenario.reminders)
     }
 
     @Test("The tour covers the five areas and what lives inside Today, in a short order")
@@ -178,5 +271,31 @@ struct GuidedTutorialTests {
         #expect(progress.index == 2)
         progress.jump(to: -1)
         #expect(progress.index == 0)
+    }
+}
+
+/// Explicit cases keep the contract oracle independent from both content builders.
+enum TutorialObjectivePresentation: String, Sendable {
+    case textual, spotlight
+}
+
+struct TutorialObjectiveCase: Sendable, CustomTestStringConvertible {
+    let objective: Bool
+    let reminders: Bool
+    let language: SupportedAppLanguage
+    let presentation: TutorialObjectivePresentation
+    let expectedBodyKey: String?
+
+    init(_ objective: Bool, _ reminders: Bool, _ language: SupportedAppLanguage,
+         _ presentation: TutorialObjectivePresentation, _ expectedBodyKey: String? = nil) {
+        self.objective = objective
+        self.reminders = reminders
+        self.language = language
+        self.presentation = presentation
+        self.expectedBodyKey = expectedBodyKey
+    }
+
+    var testDescription: String {
+        "objective-\(objective ? 1 : 0)_reminders-\(reminders ? 1 : 0)_\(language.rawValue)_\(presentation.rawValue)"
     }
 }

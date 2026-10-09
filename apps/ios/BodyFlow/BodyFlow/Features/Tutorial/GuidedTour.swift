@@ -83,7 +83,9 @@ enum GuidedTourContent {
                            bodyKey: facts.showsBlock7700 ? "tour.progress.body" : "tour.progress.body.without-block"),
             GuidedTourStep(id: "profile", kind: .spotlight(.profileTab), tab: .today,
                            titleKey: "tour.profile.title",
-                           bodyKey: facts.reminders ? "tour.profile.body.reminders" : "tour.profile.body"),
+                           bodyKey: facts.currentObjective
+                               ? (facts.reminders ? "tour.profile.body.reminders.objective" : "tour.profile.body.objective")
+                               : (facts.reminders ? "tour.profile.body.reminders" : "tour.profile.body")),
             GuidedTourStep(id: "trail", kind: .trail, tab: .today,
                            titleKey: "tour.trail.title",
                            bodyKey: facts.showsBlock7700 ? "tour.trail.body" : "tour.trail.body.without-block",

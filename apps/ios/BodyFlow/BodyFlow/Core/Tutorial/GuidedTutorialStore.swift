@@ -109,6 +109,8 @@ struct GuidedTutorialFacts: Equatable, Sendable {
     var realAccount: Bool
     /// Only a current official response can enable the block in the tour.
     var showsBlock7700: Bool = false
+    /// The current-objective screen is available; its values may still be unavailable.
+    var currentObjective: Bool = false
 }
 
 enum GuidedTutorialOffer {

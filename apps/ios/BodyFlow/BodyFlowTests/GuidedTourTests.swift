@@ -44,9 +44,16 @@ struct GuidedTourTests {
         var keys: Set<String> = ["tour.skip", "tour.got-it", "tour.trail.plan",
                                  "tour.trail.node.register", "tour.trail.node.today",
                                  "tour.trail.node.block", "tour.trail.node.progress"]
-        for facts in [allFacts, noFacts] {
-            for step in GuidedTourContent.steps(facts: facts) {
-                keys.insert(step.titleKey); keys.insert(step.bodyKey)
+        for base in [allFacts, noFacts] {
+            for objective in [false, true] {
+                for reminders in [false, true] {
+                    var facts = base
+                    facts.currentObjective = objective
+                    facts.reminders = reminders
+                    for step in GuidedTourContent.steps(facts: facts) {
+                        keys.insert(step.titleKey); keys.insert(step.bodyKey)
+                    }
+                }
             }
         }
         for target in [GuidedTourTarget.mealCommand, .flowComposer] {

@@ -14,6 +14,43 @@ final class GuidedTutorialUITests: XCTestCase {
     }
 
     @MainActor
+    func testAvailableCurrentObjectiveIsExplainedWithoutOpeningIt() {
+        for (language, consultation, position) in [
+            ("pt-BR", "Em “Seu objetivo” você consulta o objetivo e as metas disponíveis para esta conta.", "Etapa 8 de 8"),
+            ("en-US", "In “Your objective” you can view the objective and targets available for this account.", "Step 8 of 8"),
+        ] {
+            // A provider exists with an empty snapshot: screen availability is
+            // independent of loaded values, and comes from the real factory.
+            let app = support.launch(arguments: eligible + ["--ui-testing-current-objective-empty"], language: language, dark: false)
+            XCTAssertTrue(support.element("tutorial.step.welcome", app: app).waitForExistence(timeout: 10))
+            app.buttons["tutorial.start"].tap()
+            XCTAssertTrue(support.element("tutorial.step.today", app: app).waitForExistence(timeout: 5))
+            for area in ["flow", "plan", "register", "progress", "routineLibrary", "profile"] {
+                app.buttons["tutorial.next"].tap()
+                XCTAssertTrue(support.element("tutorial.step.\(area)", app: app).waitForExistence(timeout: 5), area)
+            }
+            let line = support.element("tutorial.line.tutorial.profile.objective", app: app)
+            XCTAssertTrue(line.waitForExistence(timeout: 5))
+            XCTAssertEqual(line.label, consultation)
+            XCTAssertTrue(app.staticTexts[position].exists)
+            XCTAssertTrue(app.buttons["tutorial.finish"].isHittable)
+            XCTAssertFalse(support.element("screen.current-objective", app: app).exists)
+            support.capture("tutorial-current-objective-\(language)-empty-capability", app: app)
+            app.buttons["tutorial.close"].tap()
+            XCTAssertTrue(support.element(AppTabIdentifiers.todayScreen, app: app).waitForExistence(timeout: 5))
+            XCTAssertFalse(support.element("sheet.fechar", app: app).exists)
+            app.buttons["tab.perfil"].tap()
+            let entry = support.element("profile.current-objective", app: app)
+            for _ in 0..<12 where !entry.isHittable { app.swipeUp() }
+            XCTAssertTrue(entry.waitForExistence(timeout: 5))
+            XCTAssertTrue(entry.isHittable)
+            support.assertTarget(entry)
+            XCTAssertFalse(support.element("screen.current-objective", app: app).exists)
+            app.terminate()
+        }
+    }
+
+    @MainActor
     func testDefaultUITestLaunchNeverOffersTheTour() {
         let app = support.launch(arguments: ["--ui-testing"], language: "pt-BR", dark: false)
         XCTAssertTrue(app.buttons["tab.hoje"].waitForExistence(timeout: 10))

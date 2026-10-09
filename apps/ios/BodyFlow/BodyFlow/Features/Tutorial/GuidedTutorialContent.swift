@@ -90,6 +90,7 @@ enum GuidedTutorialContent {
                 titleKey: "tutorial.profile.title",
                 lineKeys: [
                     "tutorial.profile.persona",
+                    facts.currentObjective ? "tutorial.profile.objective" : nil,
                     facts.reminders ? "tutorial.profile.reminders" : nil,
                     "tutorial.profile.replay",
                     facts.realAccount ? "tutorial.profile.sign-out" : nil,

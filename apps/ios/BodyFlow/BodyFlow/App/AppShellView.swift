@@ -328,7 +328,9 @@ struct AppShellView: View {
             // Profile shows "Sair da conta" only with both.
             realAccount: accountEmail != nil && signOut != nil,
             showsBlock7700: !sessionOwner.isInvalidated
-                && (todayViewModel.state.presentation.value?.blockPresentationPolicy.showsBlock ?? false)
+                && (todayViewModel.state.presentation.value?.blockPresentationPolicy.showsBlock ?? false),
+            // Same availability as Profile's row and the route's model.
+            currentObjective: currentObjectiveModel != nil
         )
     }
 

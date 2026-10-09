@@ -29,6 +29,42 @@ final class GuidedTourUITests: XCTestCase {
     }
 
     @MainActor
+    func testAvailableCurrentObjectiveIsExplainedWithoutOpeningIt() {
+        for (language, title, consultation, position) in [
+            ("pt-BR", "Seu objetivo", "Em “Seu objetivo” você consulta o objetivo e as metas disponíveis para esta conta.", "Etapa 7 de 8"),
+            ("en-US", "Your objective", "In “Your objective” you can view the objective and targets available for this account.", "Step 7 of 8"),
+        ] {
+            let app = support.launch(arguments: eligible + ["--ui-testing-current-objective-empty"], language: language, dark: false)
+            XCTAssertTrue(support.element("tour.step.welcome", app: app).waitForExistence(timeout: 10))
+            app.buttons["tour.start"].tap()
+            for step in ["flow", "library", "register", "plan", "progress", "profile"] {
+                XCTAssertTrue(support.element("tour.step.\(step)", app: app).waitForExistence(timeout: 5), step)
+                if step != "profile" { app.buttons["tour.next"].tap() }
+            }
+            let body = support.element("tour.body.profile", app: app)
+            XCTAssertTrue(body.waitForExistence(timeout: 5))
+            XCTAssertTrue(body.label.contains(consultation))
+            XCTAssertEqual(body.label.components(separatedBy: title).count - 1, 1)
+            XCTAssertTrue(app.staticTexts[position].exists)
+            assertCalloutClearOf(app.buttons["tab.perfil"].firstMatch, app: app)
+            XCTAssertTrue(app.buttons["tour.next"].isHittable)
+            XCTAssertFalse(support.element("screen.current-objective", app: app).exists)
+            support.capture("tour-current-objective-\(language)-empty-capability", app: app)
+            app.buttons["tour.skip"].tap()
+            XCTAssertTrue(support.element("screen.hoje", app: app).waitForExistence(timeout: 5))
+            XCTAssertFalse(support.element("sheet.fechar", app: app).exists)
+            app.buttons["tab.perfil"].tap()
+            let entry = support.element("profile.current-objective", app: app)
+            for _ in 0..<12 where !entry.isHittable { app.swipeUp() }
+            XCTAssertTrue(entry.waitForExistence(timeout: 5))
+            XCTAssertTrue(entry.isHittable)
+            support.assertTarget(entry)
+            XCTAssertFalse(support.element("screen.current-objective", app: app).exists)
+            app.terminate()
+        }
+    }
+
+    @MainActor
     func testFirstEntryLightsEachRealControlAndFinishes() {
         let app = support.launch(arguments: eligible, language: "pt-BR", dark: false)
         XCTAssertTrue(support.element("tour.step.welcome", app: app).waitForExistence(timeout: 10))

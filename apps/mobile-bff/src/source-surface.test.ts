@@ -133,15 +133,15 @@ function withSyntheticBuild<T>(
 }
 
 describe('authoritative Mobile API source surface', () => {
-  test('keeps the frozen 50-route path and named-export manifest', () => {
+  test('keeps the frozen 51-route path and named-export manifest', () => {
     const records = sourceRecords()
     const hash = hashRecords(records)
 
     console.info(`SOURCE_ROUTE_EXPORT_COUNT=${records.length}`)
     console.info(`SOURCE_ROUTE_EXPORT_STREAM_SHA256=${hash}`)
 
-    expect(records).toHaveLength(50)
-    expect(hash).toBe('ee2a18aad458cec3f202e03d618dceede806a4f934c4f6a4680e08007932d50b')
+    expect(records).toHaveLength(51)
+    expect(hash).toBe('d45eb47710802dd4c1d36f4ff60730187266e41fc67620e7a7c3fa09b436031d')
   })
 
   test('contains no export outside the Next Route Handler allowlist', () => {
@@ -194,7 +194,7 @@ describe('authoritative Mobile API source surface', () => {
     expect(hasServerActionDirective(inlineServerAction)).toBe(true)
   })
 
-  test('keeps the structured Next build surface limited to the 50 Mobile API routes', () => {
+  test('keeps the structured Next build surface limited to the 51 Mobile API routes', () => {
     const surface = inspectBuildSurface(buildRoot)
 
     console.info(`BUILD_ROUTE_PATH_COUNT=${surface.routePaths.length}`)
@@ -209,9 +209,9 @@ describe('authoritative Mobile API source surface', () => {
     console.info(`BUILD_MIDDLEWARE_COUNT=${surface.middlewareEntries.length}`)
     console.info(`BUILD_SERVER_ACTION_REFERENCE_COUNT=${surface.serverActionReferences.length}`)
 
-    expect(surface.routePaths).toHaveLength(50)
+    expect(surface.routePaths).toHaveLength(51)
     expect(surface.routePathHash).toBe(
-      '009d9541ba69baac2e8b08f161d103ba4306474cda4380034ac9f85ae1b1da6e',
+      '9617b85b2016b0f5081d71e8f92b47daa36784a6e614b331fc0537d97b769a4d',
     )
     expect(surface.routesOutsideMobilePrefix).toEqual([])
     expect(surface.forbiddenAdminRoutes).toEqual([])
@@ -257,14 +257,14 @@ describe('authoritative Mobile API source surface', () => {
       mutate: (appPaths: Record<string, string>) => ({ ...appPaths }),
       omittedTargets: ['app/api/mobile/v1/today/route.js'],
     },
-  ])('rejects $name while the same 50 URL keys remain', ({
+  ])('rejects $name while the same 51 URL keys remain', ({
     expectedError,
     mutate,
     omittedTargets,
   }) => {
     const appPaths = mutate(currentAppPathsManifest())
 
-    expect(Object.keys(appPaths)).toHaveLength(50)
+    expect(Object.keys(appPaths)).toHaveLength(51)
     expect(() => withSyntheticBuild(appPaths, inspectBuildSurface, omittedTargets)).toThrow(
       expectedError,
     )
@@ -333,12 +333,44 @@ describe('authoritative Mobile API source surface', () => {
     expect(surface.forbiddenWorkerTraceReferences).toEqual([])
     expect(surface.forbiddenAdministrativeBundleReferences).toEqual([])
     expect(surface.forbiddenAdministrativeTraceReferences).toEqual([])
-    // Reviewed C5 inventory includes the nine approved catalog JSONs only
-    // in Flow. Keep exact totals and the worker/admin negative guards.
-    expect(surface.nftReferenceCount).toBe(5303)
-    expect(surface.nftUniqueTargetCount).toBe(175)
-    expect(surface.nftRegularFileTargetCount).toBe(173)
+    // Original50 traces retain5303 references/175 targets. C11 adds107 references,
+    // with only its route client-reference manifest as one extra unique file.
+    // Keep exact totals, the byte-exact Flow catalogs and worker/admin guards.
+    expect(surface.nftReferenceCount).toBe(5410)
+    expect(surface.nftUniqueTargetCount).toBe(176)
+    expect(surface.nftRegularFileTargetCount).toBe(174)
     expect(surface.nftDirectoryTargetCount).toBe(2)
+
+    const baselineTargets = new Set<string>()
+    let baselineReferences = 0
+    const addedRoute = '/api/mobile/v1/meal-records/[id]/route'
+    for (const [route, target] of Object.entries(currentAppPathsManifest())) {
+      if (route === addedRoute) continue
+      const tracePath = resolve(buildRoot, 'server', `${target}.nft.json`)
+      const trace: { files: string[] } = JSON.parse(readFileSync(tracePath, 'utf8'))
+      baselineReferences += trace.files.length
+      for (const reference of trace.files)
+        baselineTargets.add(realpathSync(resolve(dirname(tracePath), reference)))
+    }
+    expect(baselineReferences).toBe(5303)
+    expect(baselineTargets.size).toBe(175)
+    const addedTarget = currentAppPathsManifest()[addedRoute]
+    const addedTracePath = resolve(buildRoot, 'server', `${addedTarget}.nft.json`)
+    const addedTrace: { files: string[] } = JSON.parse(readFileSync(addedTracePath, 'utf8'))
+    expect(addedTrace.files).toHaveLength(107)
+    const addedPhysicalTargets = new Set(
+      addedTrace.files.map((reference) =>
+        realpathSync(resolve(dirname(addedTracePath), reference)),
+      ),
+    )
+    expect([...addedPhysicalTargets].filter((target) => !baselineTargets.has(target))).toEqual([
+      realpathSync(
+        resolve(
+          buildRoot,
+          'server/app/api/mobile/v1/meal-records/[id]/route_client-reference-manifest.js',
+        ),
+      ),
+    ])
   })
 
   test('traces the nine byte-exact approved catalogs only from the Flow route', () => {

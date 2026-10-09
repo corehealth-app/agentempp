@@ -109,6 +109,9 @@ com a mesma chave executa de novo; outro corpo com a mesma chave continua sendo
 | `POST` | `/registrations/:id/confirm` | grava deterministicamente o pending aprovado; proposta de refeição criada pelo app é sempre um registro novo e reenviar a confirmação da mesma proposta não duplica (ver "Ciclo do pending") |
 | `PATCH` | `/registrations/:id` | recalcula e edita um pending ainda aberto; `409 registration_already_confirmed` se o registro desse pending já foi gravado (ver "Ciclo do pending") |
 | `DELETE` | `/registrations/:id` | cancela um pending ainda aberto; `409 registration_already_confirmed` se o registro desse pending já foi gravado (ver "Ciclo do pending") |
+| `GET` | `/meal-records/:id` | lê alimento confirmado, conjunto oficial, versão opaca e elegibilidade do dia |
+| `PATCH` | `/meal-records/:id` | substitui um alimento confirmado selecionado, com versão e recibo transacional |
+| `DELETE` | `/meal-records/:id` | apaga seleção explícita finita de alimentos confirmados, com versão e recibo transacional |
 | `GET` | `/pending` | lista pendings válidos do paciente, sem payload interno |
 | `GET` | `/coach/persona` | preferência, personalidade efetiva, opções localizadas e estado do mascote |
 | `PATCH` | `/coach/persona` | altera a preferência futura para `focus`, `impulse` ou `zen` |
@@ -2792,6 +2795,72 @@ cada. Se essa leitura falha: um `workout_type` que já está em forma de slug
 como antes da mudança; qualquer outro texto responde
 `500 workout_calculation_failed`. Regra, números e pendências:
 `docs/CALCULO-MPP.md` §2d.
+
+## Edição e exclusão de alimentos confirmados
+
+As rotas `/meal-records/:id` usam um `meal_logs.id` pertencente à conta
+autenticada. `/registrations/:id` continua usando `pending_registrations.id` e
+recusando alterações de propostas já confirmadas. O DTO e a leitura de `/history`
+permanecem iguais.
+
+`GET` devolve somente `record_id`, `scope`, `expected_version`, `item_ids`,
+`items`, `local_date`, `timezone`, `day_closed`, `editable` e `edit_block_reason`.
+Cada item contém `id`, `food_name`, `quantity_g`, `kcal`, `protein_g`, `carbs_g`,
+`fat_g`, `consumed_at`, `meal_type` e `source`, preservando os valores nulos
+persistidos. Evidência privada, mídia e contexto completo nunca saem do servidor.
+Origem não nula resolve o conjunto pelo proprietário, snapshot e marcador exatos;
+origem nula significa apenas o alimento âncora (`scope: "item"`). Não se infere
+uma refeição pelo nome, categoria ou horário. Grupos acima de 30 alimentos são
+recusados, sem truncar a seleção silenciosamente.
+
+A versão `v1:<sha256>` representa contexto operacional atual, snapshot completo e
+linhas completas do grupo. O cliente guarda o token recebido. Somente o dia
+local atual, aberto, pode ser alterado; as datas persistidas e horários de
+todos os alimentos do grupo devem concordar com o fuso oficial, mesmo quando
+a seleção altera apenas um deles. O cache de autenticação não define
+o fuso ou o país. Um dia fechado ou diferente continua legível, com
+`editable: false` e `MEAL_DAY_NOT_EDITABLE`.
+
+`PATCH` recebe `{expected_version, item_ids: [id], items: [...]}`. Edita somente
+o alimento âncora; a resolução existente pode produzir até 30 ingredientes,
+respeitando o limite de 30 do conjunto resultante. `DELETE` recebe
+`{expected_version, item_ids: [...]}`, de 1 a 30 UUIDs únicos do conjunto oficial.
+Ambos exigem `Idempotency-Key`. Não aceitam macros, estado privado, modo de
+cálculo ou mudança de dia/categoria enviados pelo cliente.
+
+Mudar apenas a quantidade do mesmo nome normalizado, sem nova `user_kcal`, usa
+`reconcilePendingMealEdit` sobre a linha oficial: calorias com uma casa e macros
+com duas, preservando fonte, referência, confiança e origem, inclusive nulos e
+fontes legadas. Não consulta catálogo ou mídia nesse caminho, nem exige país
+confirmado para essa proporção. Nutrientes ausentes não viram zero. A quantidade
+precisa caber na precisão persistida de duas casas. Trocar o alimento ou fornecer
+uma nova `user_kcal` usa o cálculo existente e exige país oficial confirmado;
+esse preparo pode registrar `product_events` fora da transação de gravação.
+Não se reconstrói a precisão antiga nem a entrada independente de calorias que
+não foi persistida.
+
+A RPC mobile compara linhas completas sob locks, confere relógio após os locks,
+substitui UUIDs finitos ou apaga a seleção, recalcula os totais oficiais e conclui
+o ledger na mesma transação. Preserva itens restantes, meta, treino, água, XP e
+progresso. Apagar o último alimento publica consumo/macros zero; o registro
+normal continua proibindo uma lista vazia. Colisões e falhas de conclusão
+desfazem a gravação. Um recibo concluído mantém identidade e resultado mesmo
+após expiração, remoção do alvo ou mudança de dia/contexto; outras rotas conservam
+a política de expiração anterior.
+
+Resposta `200`: envelope habitual `data/meta`; `data` contém somente `record_id`,
+`operation` (`updated`/`deleted`), `removed_item_ids`, `new_item_ids`,
+`next_record_id` e `snapshot` com `id`, `date`, `calories_consumed`, `protein_g`,
+`carbs_g`, `fat_g`, `daily_balance`. No replay, dados originais são mantidos e
+somente o request ID atual e o header `Idempotency-Replayed: true` são aplicados.
+Um resultado novo deve corresponder ao snapshot preparado; na exclusão, o
+próximo registro deve pertencer ao grupo sobrevivente, ou ser nulo se o grupo
+ficou vazio. Essas verificações não comparam um replay ao estado atual.
+Falha da leitura posterior conserva esse recibo: recuperação usa GET do
+`next_record_id`, sem reenviar a mutação. Todos os retornos são `no-store` com
+`Vary: Authorization`.
+
+> RC C11 — cenário corrigir refeição de dia já fechado NÃO coberta nesta PR (pendência da audit 2026-10-07).
 
 ## Ciclo do pending
 

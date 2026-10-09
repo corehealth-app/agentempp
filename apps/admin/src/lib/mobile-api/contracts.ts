@@ -479,4 +479,48 @@ export type PlanDraftListQuery = z.infer<typeof planDraftListQuerySchema>
 export type WeightInput = z.infer<typeof weightInputSchema>
 export type MarkRoutineTakenInput = z.infer<typeof markRoutineTakenInputSchema>
 
+const confirmedMealSelectionSchema = z
+  .array(resourceIdSchema.transform((id) => id.toLowerCase()))
+  .min(1)
+  .max(30)
+  .superRefine((ids, context) => {
+    if (new Set(ids).size !== ids.length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: 'Meal item ids must be unique' })
+    }
+  })
+
+export const confirmedMealPatchInputSchema = z
+  .object({
+    expected_version: z.string().regex(/^v1:[0-9a-f]{64}$/),
+    item_ids: confirmedMealSelectionSchema,
+    items: z.array(mealItemInputSchema).min(1).max(30),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (input.item_ids.length !== 1) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['item_ids'],
+        message: 'Edit one confirmed food item per operation',
+      })
+    }
+    if (input.items.some((item) => item.use_nutrition_label === true)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['items'],
+        message: 'This operation does not accept a new nutrition-label source',
+      })
+    }
+  })
+
+export const confirmedMealDeleteInputSchema = z
+  .object({
+    expected_version: z.string().regex(/^v1:[0-9a-f]{64}$/),
+    item_ids: confirmedMealSelectionSchema,
+  })
+  .strict()
+
+export type ConfirmedMealPatchInput = z.infer<typeof confirmedMealPatchInputSchema>
+export type ConfirmedMealDeleteInput = z.infer<typeof confirmedMealDeleteInputSchema>
+
 export { localeSchema, timezoneSchema }

@@ -10,7 +10,7 @@ Somente `processAuthenticatedMessage` / `historyProvider: mobile_flow` usa
 loader, regras, consultas, tools e prompts anteriores. Não há alteração de API,
 banco, cálculo, preferência persistida, histórico, confirmação ou app iOS.
 
-- Base: 2.602 caracteres UTF-16, cabeçalho e LF incluídos, limite de 2.700.
+- Base C8: 2.348 caracteres UTF-16, cabeçalho e separador de fase incluídos, limite de 2.700.
 - Fase: apenas o nome do objetivo atual registrado; enum ausente/desconhecido
   não ganha objetivo presumido. Não é decisão de elegibilidade ou troca de fase.
 - Situação: anti-repetição somente com saída de assistant no histórico já
@@ -128,3 +128,46 @@ fase, limites, prefixo/cache, C9/locale e nomes. Locks de números/histórico e
 WhatsApp continuam próprios. Tom/qualidade do modelo real, aceite de redação,
 persistência/QA no staging e entrega completa dos protocolos não são provados
 por esses testes locais.
+
+## C8 — capacidades atuais e definições educativas
+
+A pergunta inteira “O que você faz?” ou “O que você pode fazer?”, e suas
+versões inglesas “What do you do?” / “What can you do?”, recebe uma resposta
+estática no idioma da própria pergunta. Acentos, caixa, espaços e pontuação
+final .!? são normalizados; relato, sintoma, alergia, instrução ou segunda
+pergunta seguem completos no caminho normal. A entrada autenticada continua
+passando pelos gates de assinatura, conta, prompt e meia-noite local. O retorno
+puro não chama modelo, router ou tool, não faz touch de atividade e não altera
+preferências ou saúde. O legado `processMessage`, inclusive com provider
+`mobile_flow` declarado no input, não ativa essa resposta.
+
+`flow-capabilities.ts` conserva as 11 famílias da origem, com apenas seis
+anunciadas. Recursos parciais não habilitam a promessa de uma família inteira.
+
+| Família anunciada | Implementação e limite |
+| --- | --- |
+| 1 — Estimativas/metas oficiais | `consulta_metricas` / `renderOfficialTargets`; somente dados disponíveis, sem criar ou mudar meta. |
+| 2 — Refeição por texto/foto | `MobileMealDraftRepository` / `MealDraftModel` em Registrar; mídia requer disponibilidade e permissão; revisar e confirmar antes de registrar. |
+| 3 — Balanço/resumo do dia | `loadOfficialDailyState` / `renderFlowDayStatus`; registros confirmados e valores oficiais; exercício não aumenta comida restante. |
+| 4 — Cardápio | `propoe_plano_dieta` / `confirmPlanDraft`; rascunho em Plano com preferências/restrições; confirmar plano não registra consumo. |
+| 8 — Treino | `propoe_plano_treino`; rascunho com dias/equipamentos/nível informados, revisão e confirmação; não registra execução. |
+| 9 — Educação no chat | `processAuthenticatedMessage`; assistente de IA, sem substituir avaliação profissional, diagnóstico ou tratamento. |
+
+Receitas completas (5), gordura corporal por foto (6), transições automáticas
+(7), relatórios amplos com ajuste automático (10) e dicas proativas (11) ficam
+fora dessa lista pública.
+
+HIIT, proteína e EPOC entram uma vez no cartão estável C2, somente com as seis
+tuplas conferidas e o canal autenticado. A base foi condensada conservando as
+12 obrigações, a linha de quatro proibições, os digests, o fallback integral e
+os cartões de fase/situação. A distribuição de proteína em 3–5 refeições é
+texto educativo do método, não prescrição individual ou obrigação universal.
+EPOC não adiciona uma parcela ao balanço, muda fórmula ou libera calorias.
+
+O golden `audit-10-09-flow-capabilities.test.ts` exercita as entradas reais com
+DB/modelo externos sintéticos: perguntas puras/mistas, idioma oposto ao perfil,
+A→B→A, isolamento do legado, gates, autorização de tools, regras desconhecidas,
+limites UTF-16 e preservação dos valores oficiais. Não prova obediência de um
+modelo vivo, persistência no staging ou aceite clínico.
+
+> RC C8 — cenário EPOC variante contado no balanço NÃO coberta nesta PR (pendência da audit 2026-10-07).

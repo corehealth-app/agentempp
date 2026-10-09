@@ -238,6 +238,8 @@ describe('audit 2026-10-08 C2: exact reviewed staging rules at the real Flow bou
     expect(prompt).toContain(
       'Quatro proibições: não transferir cálculos ao usuário; não julgar ou moralizar; não encher a resposta de termos técnicos; não ameaçar nem fazer terrorismo.',
     )
+    // C8 copy review: shortening the base must preserve this exact safeguard.
+    expect(prompt).toContain('não repita perguntas já respondidas')
     expect(prompt).not.toContain('VIEW_MUST_NOT_RETURN')
     for (const legacy of [
       'country_detected_from_wpp',

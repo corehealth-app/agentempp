@@ -21,6 +21,7 @@ import {
 import { loadCalcConfig } from './calc-config-loader.js'
 import { loadDailyTargets } from './calc-targets.js'
 import { throwIfQueryFailed } from './db-query-error.js'
+import { flowCapabilitiesQuestionLocale, renderFlowCapabilities } from './flow-capabilities.js'
 import { type FlowCoachStyle, flowCoachStyleLine, loadFlowCoachStyle } from './flow-coach-style.js'
 import { flowLanguageCards, loadFlowLanguageRules } from './flow-language-policy.js'
 import {
@@ -1107,6 +1108,28 @@ async function processResolvedMessage(
       toolCalls: [],
       stage,
       modelUsed: promptRow.model,
+      promptTokens: 0,
+      completionTokens: 0,
+      costUsd: 0,
+      latencyMs: Date.now() - start,
+    }
+  }
+
+  // C8: only a whole capabilities question on the authenticated Flow path.
+  // Access, account context, prompt and local-midnight guards already ran.
+  // The language comes from this question, without changing the account locale.
+  const capabilitiesLocale =
+    options.historyProvider === 'mobile_flow'
+      ? flowCapabilitiesQuestionLocale(semanticPatientText)
+      : null
+  if (capabilitiesLocale) {
+    return {
+      text: renderFlowCapabilities(capabilitiesLocale),
+      preferAudio: false,
+      singleMessage: true,
+      toolCalls: [],
+      stage,
+      modelUsed: 'none',
       promptTokens: 0,
       completionTokens: 0,
       costUsd: 0,

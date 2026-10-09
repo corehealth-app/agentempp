@@ -545,7 +545,7 @@ describe('where the hook is called from', () => {
     })
   }
 
-  it('only the read handlers of GET /today and GET /progress import it', () => {
+  it('only Today, Progress and the guarded whole-message Flow status adapter import it', () => {
     const importers = sourceFiles(sourceRoot)
       .filter((path) => !/\.test\.tsx?$/.test(path))
       .filter((path) => readFileSync(path, 'utf8').includes('day-close-on-request'))
@@ -554,6 +554,7 @@ describe('where the hook is called from', () => {
     expect(importers).toEqual([
       'app/api/mobile/v1/progress/route.ts',
       'app/api/mobile/v1/today/route.ts',
+      'lib/mobile-api/flow-agent-factory.ts',
     ])
   })
 

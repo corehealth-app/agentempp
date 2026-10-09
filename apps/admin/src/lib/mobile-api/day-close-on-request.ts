@@ -3,9 +3,11 @@
  *
  * WHY. There the worker serves media processing only, so no day is ever
  * closed and block, streak, XP, level and medals never move for an app
- * account. With the switch on, the two read handlers that show those numbers
- * (GET /today and GET /progress) first close the account's past open days
- * with the shared close function, then read as before. Production needs none
+ * account. With the switch on, GET /today, GET /progress and the authenticated
+ * whole-message Flow day-status adapter first close the account's past open
+ * days with the shared close function, then read. The Flow adapter runs only
+ * after the subscription gate; ordinary chat and completed replay do not call
+ * it. Production needs none
  * of this: its closer already covers app accounts.
  *
  * OFF BY DEFAULT, and three locks must all hold before anything is read:

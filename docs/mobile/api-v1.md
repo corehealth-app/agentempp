@@ -855,10 +855,11 @@ substitui a suíte integral, o UI runner, staging integrado e o smoke físico.
 
 ### Fechamento do dia sob demanda (ambiente de avaliação)
 
-Em produção o dia é fechado pelo worker, de madrugada, e estas duas rotas só
+Em produção o dia é fechado pelo worker, de madrugada, e estas rotas só
 leem. No ambiente de avaliação (staging) o worker serve só o processamento de
 mídia, então nenhum dia fechava e `block_7700`, sequência, XP, nível e medalhas
-ficavam parados. Para esse ambiente, `GET /today` e `GET /progress` podem
+ficavam parados. Para esse ambiente, `GET /today`, `GET /progress` e a consulta
+inteira de status no Flow autenticado (C7, `docs/CALCULO-MPP.md` §10q) podem
 fechar os dias passados da conta **antes** de ler. Regras e números:
 `docs/CALCULO-MPP.md` §3a.
 
@@ -888,8 +889,10 @@ verificar `verify:routes`, import closure e build antes de publicar.
 - **Nunca em produção.** As duas variáveis só devem existir no projeto Vercel
   do BFF de staging. Se forem copiadas por engano para um projeto que aponta
   para o banco de produção, a trava 2 recusa.
-- **Só estas duas rotas.** As outras 46 não chamam o fechamento; o invólucro
-  comum das rotas não o conhece.
+- **Chamadores exatos.** Today, Progress e o adapter autenticado de status
+  Flow; este último somente após o gate de assinatura e a pergunta inteira
+  reconhecida. Conversa normal, GET/history, replay publicado/cache HTTP e
+  o invólucro comum das50rotas não chamam o fechamento.
 - **O formato das respostas não muda.** Nenhum campo novo, nenhuma versão
   nova: os mesmos campos passam a trazer os valores de `user_progress` depois
   do fechamento.
@@ -911,7 +914,7 @@ verificar `verify:routes`, import closure e build antes de publicar.
   curso não é interrompida (nenhuma leitura do fechamento tem prazo de
   cancelamento). O cliente de banco (supabase-js 2.105.1) repete todo GET três
   vezes, esperando 1, 2 e 4 s, em erro de rede ou HTTP 503 ou 520: uma leitura
-  do fechamento que falhe assim segura `GET /today` ou `GET /progress` por
+  do fechamento que falhe assim segura Today, Progress ou o status Flow por
   cerca de 7 s, e depois a rota responde com o que está gravado. HTTP 500 não
   é repetido; a RPC e as escritas também não. Pendência `RC F` em
   `docs/CALCULO-MPP.md` §3a; travado em

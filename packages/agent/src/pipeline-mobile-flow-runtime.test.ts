@@ -57,6 +57,7 @@ function makeScriptedDeps(
   recorded: Recorded,
   overrides: {
     messages?: unknown[]
+    dailySnapshots?: unknown[]
     onComplete?: (input: { messages: unknown[] }) => void
     maxToolIterations?: number
   } = {},
@@ -90,7 +91,7 @@ function makeScriptedDeps(
       deficit_level: null,
     },
     messages: overrides.messages ?? [],
-    daily_snapshots: [],
+    daily_snapshots: overrides.dailySnapshots ?? [],
     user_progress: {
       current_streak: 0,
       longest_streak: 0,
@@ -164,6 +165,71 @@ const listReply =
 
 afterEach(() => {
   vi.restoreAllMocks()
+})
+
+describe('C7 compound status requests retain the normal Flow reply after progress tools', () => {
+  it.each([
+    'Como está meu dia? Estou com tontura.',
+    'Como está meu dia? Tenho alergia a amendoim.',
+    'How is my day? I feel dizzy.',
+    'How is my day? I have a peanut allergy.',
+    'Como tô?',
+    'Quanto falta?',
+    'Meu bloco',
+  ])('does not replace the complete request with a status card: %s', async (text) => {
+    const recorded: Recorded = { inserts: [] }
+    const tool = vi.spyOn(consultaProgresso, 'execute').mockResolvedValue({ success: true })
+    const complete = vi.fn()
+    const sentinel = 'Sua mensagem completa será considerada nesta conversa.'
+    const deps = makeScriptedDeps(
+      [
+        { toolCalls: [{ id: 'call-c7-progress', name: 'consulta_progresso', arguments: '{}' }] },
+        { toolCalls: [], content: sentinel },
+      ],
+      recorded,
+      {
+        onComplete: complete,
+        dailySnapshots: [
+          {
+            calories_consumed: 1785,
+            calories_target: 2400,
+            protein_g: 126,
+            protein_target: 150,
+            carbs_g: 180,
+            fat_g: 45,
+            exercise_calories: 0,
+            current_protocol: 'manutencao',
+          },
+        ],
+      },
+    )
+    const output = await processAuthenticatedMessage(deps, {
+      userId: 'fixture-user',
+      providerMessageId: 'mobile_flow/fixture-user/c7-composite',
+      text,
+      timestamp,
+    })
+    expect(output.text).toBe(sentinel)
+    expect(complete).toHaveBeenCalledTimes(2)
+    expect(tool).toHaveBeenCalledTimes(1)
+    const secondInput = complete.mock.calls[1]?.[0] as {
+      messages: Array<{ role: string; content?: unknown; tool_call_id?: string }>
+    }
+    expect(secondInput.messages).toContainEqual(
+      expect.objectContaining({ role: 'user', content: text }),
+    )
+    expect(secondInput.messages).toContainEqual(
+      expect.objectContaining({ role: 'tool', tool_call_id: 'call-c7-progress' }),
+    )
+    expect(output.toolCalls).toContainEqual(
+      expect.objectContaining({ name: 'consulta_progresso', result: { success: true } }),
+    )
+    expect(
+      recorded.inserts
+        .filter((entry) => entry.table === 'product_events')
+        .map((entry) => (entry.row as { event: string }).event),
+    ).not.toContain('pipeline.deterministic_status')
+  })
 })
 
 describe('3.2 legacy [BTN:]/[LIST:] tags on the mobile Flow', () => {

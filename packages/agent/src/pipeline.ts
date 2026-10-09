@@ -145,6 +145,9 @@ import {
   renderOfficialTargets,
 } from './flow-public-metrics.js'
 import { flowPlainStatusText } from './flow-status-text.js'
+import { type LoadFlowDayStatusContext, loadFlowDayStatusContext } from './flow-day-status-context.js'
+import { classifyFlowDayStatusIntent } from './flow-day-status-intent.js'
+import { renderFlowDayStatus } from './flow-day-status-message.js'
 import {
   composeFlowStatusMessage,
   flowStatusExplanation,
@@ -169,6 +172,11 @@ export interface PipelineDeps {
   maxToolIterations?: number
   /** Embeddings p/ RAG do método (sub-projeto D). Opcional: sem ele, sem retrieval. */
   embeddings?: OpenRouterEmbeddings
+}
+
+/** An App adapter can reuse Today's existing request hooks; legacy deps stay intact. */
+export interface AuthenticatedPipelineDeps extends PipelineDeps {
+  loadFlowDayStatus?: LoadFlowDayStatusContext
 }
 
 export const MOBILE_FLOW_READ_ONLY_TOOLS = [
@@ -876,7 +884,7 @@ export async function processMessage(
 }
 
 export async function processAuthenticatedMessage(
-  deps: PipelineDeps,
+  deps: AuthenticatedPipelineDeps,
   input: AuthenticatedAgentInput,
 ): Promise<AgentOutput> {
   const flowFailure: NonNullable<ResolvedPipelineOptions['flowFailure']> = { record: null }
@@ -887,28 +895,75 @@ export async function processAuthenticatedMessage(
     currentProtocol: null,
   }
   try {
-    const output = await processResolvedMessage(
-      deps,
-      {
-        from: '',
-        providerMessageId: input.providerMessageId,
-        text: input.text,
-        patientText: input.text,
-        contentType: 'text',
-        provider: 'mobile_flow',
-        timestamp: input.timestamp,
-      },
+    let output: AgentOutput
+    if (classifyFlowDayStatusIntent(input.text)) {
+      const start = Date.now()
+      const subscription = await checkSubscription(deps.supabase, input.userId)
+      if (!subscription.canAccess) {
+        output = buildBlockedResponse(
+          {
+            from: '',
+            providerMessageId: input.providerMessageId,
+            text: input.text,
+            contentType: 'text',
+            provider: 'mobile_flow',
+            timestamp: input.timestamp,
+          },
+          subscription.reason ?? 'sem assinatura ativa',
+        )
+      } else {
+        const context = deps.loadFlowDayStatus
+          ? await deps.loadFlowDayStatus(input.userId, input.text, input.timestamp)
+          : await loadFlowDayStatusContext(deps.supabase, input.userId, input.text, input.timestamp)
+        flowAccount.name = context.accountName
+        flowAccount.locale = context.locale
+        flowAccount.dailyTargets = {
+          calories_target: context.today.targets.calories_kcal,
+          protein_target: context.today.targets.protein_g,
+        }
+        flowAccount.currentProtocol = context.today.current_protocol
+        output = {
+          text: renderFlowDayStatus(context.today, context.locale, context.progress),
+          preferAudio: false,
+          singleMessage: true,
+          toolCalls: [],
+          stage: context.today.current_protocol ?? 'coleta_dados',
+          modelUsed: 'none',
+          promptTokens: 0,
+          completionTokens: 0,
+          costUsd: 0,
+          latencyMs: Date.now() - start,
+        }
+      }
+    } else {
+      output = await processResolvedMessage(
+        deps,
+        {
+          from: '',
+          providerMessageId: input.providerMessageId,
+          text: input.text,
+          patientText: input.text,
+          contentType: 'text',
+          provider: 'mobile_flow',
+          timestamp: input.timestamp,
+        },
+        input.userId,
+        {
+          historyProvider: 'mobile_flow',
+          toolNames: MOBILE_FLOW_TOOLS,
+          systemPolicy: mobileFlowSystemPolicy,
+          includeSensitiveTelemetry: MOBILE_FLOW_TELEMETRY_INCLUDES_CONTENT,
+          flowFailure,
+          flowAccount,
+        },
+      )
+    }
+    const publicOutput = await withFlowPublicNames(
+      deps.supabase,
       input.userId,
-      {
-        historyProvider: 'mobile_flow',
-        toolNames: MOBILE_FLOW_TOOLS,
-        systemPolicy: mobileFlowSystemPolicy,
-        includeSensitiveTelemetry: MOBILE_FLOW_TELEMETRY_INCLUDES_CONTENT,
-        flowFailure,
-        flowAccount,
-      },
+      output,
+      flowAccount.name,
     )
-    const publicOutput = await withFlowPublicNames(deps.supabase, input.userId, output, flowAccount.name)
     const text = projectFlowMetricAnswer(
       publicOutput.text,
       flowAccount.dailyTargets,
@@ -2707,7 +2762,11 @@ async function processResolvedMessage(
         })
         break
       }
-    } else if (isPureStatusQueryTurn(iterEntries, input.text)) {
+    } else if (
+      isPureStatusQueryTurn(iterEntries, input.text) &&
+      (options.historyProvider !== 'mobile_flow' ||
+        classifyFlowDayStatusIntent(semanticPatientText) !== null)
+    ) {
       // ── #1 STATUS PURO (Roberto 2026-05-27): "como tô / quanto falta / meu
       // bloco" → o sistema responde com o card canônico + linha de progresso,
       // SEM a 2ª chamada do LLM. Mesma fonte de números do registro/FIX C.

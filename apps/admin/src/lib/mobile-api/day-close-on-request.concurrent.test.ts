@@ -1,5 +1,5 @@
 /**
- * GET /today and GET /progress arriving at the same time, with the on-request
+ * GET /today, GET /progress or authenticated Flow status arriving in pairs, with the on-request
  * day close switched on (review of 2026-10-05, HIGH; docs/CALCULO-MPP.md §3a,
  * rule 1).
  *
@@ -30,8 +30,10 @@
  */
 import { clearCalcConfigCache } from '@mpp/agent'
 import { DayCloseMemoryDb, type MemoryOperation } from '@mpp/agent/testing/day-close-memory-db'
+import { buildDailyState } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createFlowAgent } from './flow-agent-factory'
 import type { MobileRouteContext } from './route'
 
 const readModel = vi.hoisted(() => ({ loadToday: vi.fn() }))
@@ -53,12 +55,27 @@ const USER = '0b9f6f0e-0000-4000-8000-00000000d0c8'
 const STAGING_REF = 'xitugspwfxkcluxvrdeg'
 /** 08:00 of 2026-10-05 in America/Sao_Paulo. */
 const NOW = new Date('2026-10-05T11:00:00.000Z')
-const STATE = { local_date: '2026-10-05', calculation_version: 'bodyflow.daily-state.v3' }
+// The official-day read remains an external marker in this closer test.
+const STATE = buildDailyState({
+  localDate: '2026-10-05',
+  generatedAt: NOW.toISOString(),
+  protocol: 'recomposicao',
+  calculatedTargets: { calories_target: 1576, protein_target: 120 },
+  snapshot: null,
+  meals: [],
+  workouts: [],
+  pendingRegistrations: [],
+  hydrationTarget: null,
+  routineItems: [],
+  progress: null,
+  mealGap: { expected: [], registered: [], skipped: [], open: [], reliable: false, activeDays: 0 },
+})
 
-function stagingShapedAccount() {
+function stagingShapedAccount(wpp: string | null = null) {
   const db = new DayCloseMemoryDb()
   db.addAccount({
     userId: USER,
+    wpp,
     profile: {
       sex: 'masculino',
       birth_date: '1986-01-01',
@@ -91,7 +108,10 @@ function stagingShapedAccount() {
   return db
 }
 
-function context(path: 'today' | 'progress', supabase: ServiceClient): MobileRouteContext {
+function context(
+  path: 'today' | 'progress' | 'flow/chat',
+  supabase: ServiceClient,
+): MobileRouteContext {
   return {
     request: new Request(`https://bodyflow.test/api/mobile/v1/${path}`),
     requestId: `request-${path}`,
@@ -180,7 +200,44 @@ afterEach(() => {
   vi.unstubAllEnvs()
 })
 
-describe('GET /today and GET /progress at the same time, a message-only day then a day with a meal', () => {
+describe('Today, Progress and Flow status in concurrent pairs, a message-only day then a day with a meal', () => {
+  it.each([
+    'off',
+    'production-ref',
+    'whatsapp',
+    'enabled',
+  ] as const)('uses the real hook guards in the Flow factory: %s', async (mode) => {
+    const db = stagingShapedAccount(mode === 'whatsapp' ? '5511999999999' : null)
+    if (mode === 'off') vi.stubEnv('MOBILE_DAY_CLOSE_FROM', '')
+    if (mode === 'production-ref') {
+      // A local fake client only: this tests the literal refusal, never a connection.
+      vi.stubEnv('MOBILE_DAY_CLOSE_PROJECT_REF', 'xuxehkhdvjivitduarvb')
+      vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://xuxehkhdvjivitduarvb.supabase.co')
+    }
+    const reply = await createFlowAgent(context('flow/chat', db.client)).reply({
+      userId: USER,
+      providerMessageId: `mobile_flow/${USER}/synthetic-close-guard`,
+      text: 'Como está meu dia?',
+      timestamp: NOW,
+    })
+    expect(reply.metadata).toMatchObject({
+      modelUsed: 'none',
+      promptTokens: 0,
+      completionTokens: 0,
+      costUsd: 0,
+    })
+    expect(db.snapshot(USER, '2026-10-05')).toBeNull()
+    if (mode === 'enabled') {
+      expect(state(db)).toEqual(SERIAL)
+      expect(reply.text).toContain('Sequência: 0 dias · Nível: 1 · XP: 25.')
+    } else {
+      expect(db.writes).toEqual([])
+      expect(db.snapshot(USER, '2026-09-27')).toBeNull()
+      expect(db.snapshot(USER, '2026-09-30')).toMatchObject({ day_closed: false })
+      expect(reply.text).toContain('Sequência: 0 dias · Nível: 1 · XP: 0.')
+    }
+  })
+
   it('one request alone: both days close, 25 XP, bloco 576, the streak zeroed once', async () => {
     const db = stagingShapedAccount()
     const response = await progress(context('progress', db.client))
@@ -192,12 +249,26 @@ describe('GET /today and GET /progress at the same time, a message-only day then
   it.each([
     ['GET /progress', 'GET /today'],
     ['GET /today', 'GET /progress'],
+    ['Flow status', 'GET /today'],
+    ['GET /today', 'Flow status'],
+    ['Flow status', 'GET /progress'],
+    ['GET /progress', 'Flow status'],
   ] as const)('%s creates the row of 27/09 and stalls; %s runs whole meanwhile: the account ends as with one request', async (slow, fast) => {
     const db = stagingShapedAccount()
-    const run = (name: 'GET /progress' | 'GET /today', client: ServiceClient) =>
-      name === 'GET /today'
-        ? today(context('today', client))
-        : progress(context('progress', client))
+    const run = async (
+      name: 'GET /progress' | 'GET /today' | 'Flow status',
+      client: ServiceClient,
+    ) => {
+      if (name === 'GET /today') return today(context('today', client))
+      if (name === 'GET /progress') return progress(context('progress', client))
+      const reply = await createFlowAgent(context('flow/chat', client)).reply({
+        userId: USER,
+        providerMessageId: `mobile_flow/${USER}/synthetic-close-race`,
+        text: 'Como está meu dia?',
+        timestamp: NOW,
+      })
+      return Response.json({ data: reply })
+    }
 
     // The slow request: a long round trip right after it created the row of
     // 27/09, before it reads the progress it will finalize from.
@@ -246,14 +317,30 @@ describe('GET /today and GET /progress at the same time, a message-only day then
     // The response of whichever request was GET /progress is one read of the
     // row: the finished numbers when it was the slow one, the numbers of
     // before the close when it was the fast one (one request late, by design).
-    const progressBody = await (slow === 'GET /progress' ? slowResult : fastResult).json()
-    expect(progressBody.data).toMatchObject(
-      slow === 'GET /progress'
-        ? { xp_total: 25, deficit_block: 576, current_streak: 0, longest_streak: 1 }
-        : { xp_total: 0, deficit_block: 0, current_streak: 0, longest_streak: 0 },
-    )
-    const todayBody = await (slow === 'GET /today' ? slowResult : fastResult).json()
-    expect(todayBody.data).toEqual(STATE)
+    if (slow === 'GET /progress' || fast === 'GET /progress') {
+      const progressBody = await (slow === 'GET /progress' ? slowResult : fastResult).json()
+      expect(progressBody.data).toMatchObject(
+        slow === 'GET /progress'
+          ? { xp_total: 25, deficit_block: 576, current_streak: 0, longest_streak: 1 }
+          : { xp_total: 0, deficit_block: 0, current_streak: 0, longest_streak: 0 },
+      )
+    }
+    if (slow === 'GET /today' || fast === 'GET /today') {
+      const todayBody = await (slow === 'GET /today' ? slowResult : fastResult).json()
+      expect(todayBody.data).toEqual(STATE)
+    }
+    if (slow === 'Flow status' || fast === 'Flow status') {
+      const flowBody = await (slow === 'Flow status' ? slowResult : fastResult).json()
+      expect(flowBody.data.metadata).toMatchObject({
+        modelUsed: 'none',
+        promptTokens: 0,
+        completionTokens: 0,
+        costUsd: 0,
+      })
+      expect(flowBody.data.text).toContain(
+        `Sequência: 0 dias · Nível: 1 · XP: ${slow === 'Flow status' ? 25 : 0}.`,
+      )
+    }
 
     // The next GET /progress shows the serial numbers and writes nothing.
     const writes = db.writes.length

@@ -267,6 +267,8 @@ const GENERIC_REPLY =
   'Proposta pronta! Ficou assim:\n\nSegunda — Full Body A (6 exercícios)\nQuarta — Full Body B (6 exercícios)\nSexta — Full Body C (6 exercícios)\n\nPra iniciante, full body 3x por semana é o formato ideal — trabalha o corpo todo com frequência alta e dá tempo de recuperação entre os dias.\n\nÉ um rascunho ainda. Abre o app, toca em "Revisar proposta", confere os exercícios e confirma pra valer.'
 /** The first ready-made question of the app (FlowChatPresentation, flow.suggestion.day). */
 const STATUS_PHRASE = 'Como está meu dia até agora?'
+/** Model cost/timeout fixtures need a request outside the deterministic status allowlist. */
+const NORMAL_CHAT_PHRASE = 'Explique como organizar minha rotina.'
 
 /** The fixed text around a suggestion, as ensureSuggestionShown writes it today. */
 const OPENING = 'Sua sugestão está pronta:'
@@ -583,6 +585,8 @@ function harness(fixture: Fixture = {}): Harness {
   }
 
   const rowsFor = (read: Read): unknown => {
+    if (read.filters.user_id != null && read.filters.user_id !== USER_ID) return null
+    if (read.table === 'users' && read.filters.id != null && read.filters.id !== USER_ID) return null
     switch (read.table) {
       case 'users':
         return fixture.user ?? USER
@@ -605,6 +609,26 @@ function harness(fixture: Fixture = {}): Harness {
         if (read.filters.day_closed === true) return fixture.closedDays ?? []
         if (!day || read.filters.date !== (fixture.now ? today : '2026-10-04')) return null
         if (read.columns.trim() === '*') return day
+        if (read.columns.includes('calories_consumed') && read.columns.includes('updated_at')) {
+          // The historical fixture keeps its raw strings for legacy tools;
+          // PostgREST returns numeric DB columns as JSON numbers to Today.
+          const numeric = (key: string) =>
+            typeof day[key] === 'string' ? Number(day[key]) : (day[key] ?? null)
+          return {
+            ...day,
+            id: 'snapshot-qa-a-2026-10-04',
+            user_id: USER_ID,
+            date: fixture.now ? today : '2026-10-04',
+            protein_target: numeric('protein_target'),
+            protein_g: numeric('protein_g'),
+            carbs_g: numeric('carbs_g'),
+            fat_g: numeric('fat_g'),
+            current_protocol: day.current_protocol ?? null,
+            updated_at: now.toISOString(),
+            meal_logs: [],
+            workout_logs: [],
+          }
+        }
         return Object.fromEntries(
           read.columns.split(',').map((key) => [key.trim(), day[key.trim()] ?? null]),
         )
@@ -690,6 +714,11 @@ function harness(fixture: Fixture = {}): Harness {
         read.filters[key] = value
         return chain
       }
+      chain.filter = (key: string, operator: string, value: unknown) => {
+        if (operator !== 'eq') throw new Error(`Unsupported fake filter: ${operator}`)
+        read.filters[key] = value
+        return chain
+      }
       chain.in = (key: string, values: unknown[]) => {
         read.within[key] = values
         return chain
@@ -708,6 +737,10 @@ function harness(fixture: Fixture = {}): Harness {
     },
     rpc: async (name: string, params: Row = {}) => {
       rpcs.push({ name, params })
+      if (name === 'list_mobile_routine_items') {
+        if (params.p_user_id !== USER_ID) return { data: null, error: { message: 'Wrong owner' } }
+        return { data: { local_date: today, items: [] }, error: null }
+      }
       if (name === 'create_plan_draft_atomic') {
         return { data: { id: 'draft-0001', status: params.p_status, inserted: true }, error: null }
       }
@@ -2567,8 +2600,8 @@ describe('audit 2026-10-04 Flow calls — a chat call has 45 s and the turn 150 
   })
 
   it('a Flow chat call carries its own limit and the one retry the client already made', async () => {
-    const h = harness({ text: STATUS_PHRASE })
-    await flow(h, STATUS_PHRASE)
+    const h = harness({ text: NORMAL_CHAT_PHRASE })
+    await flow(h, NORMAL_CHAT_PHRASE)
 
     expect(h.chatCalls).toHaveLength(1)
     expect(h.chatCalls[0]).toMatchObject({ requestTimeoutMs: 45_000, maxRetries: 1 })
@@ -2638,10 +2671,10 @@ describe('audit 2026-10-04 Flow calls — a chat call has 45 s and the turn 150 
   })
 
   it('a chat call that times out with turn time left fails the turn, as a provider failure always did', async () => {
-    const h = harness({ text: STATUS_PHRASE, chat: [{ timesOut: true }] })
+    const h = harness({ text: NORMAL_CHAT_PHRASE, chat: [{ timesOut: true }] })
 
     // 45 s gone of 150: this is the call's own limit, not the turn's.
-    await expect(flow(h, STATUS_PHRASE)).rejects.toThrow(new Error('Request timed out.'))
+    await expect(flow(h, NORMAL_CHAT_PHRASE)).rejects.toThrow(new Error('Request timed out.'))
     expect(h.chatCalls).toHaveLength(1)
   })
 
@@ -3023,8 +3056,8 @@ describe('audit 2026-10-04 Flow calls — the plan generator is in the turn’s 
   })
 
   it('a turn with no tool model call has the event it had: no generator field, no direct flag', async () => {
-    const h = harness({ text: STATUS_PHRASE })
-    const output = await flow(h, STATUS_PHRASE)
+    const h = harness({ text: NORMAL_CHAT_PHRASE })
+    const output = await flow(h, NORMAL_CHAT_PHRASE)
 
     const [event] = events(h, MOBILE_FLOW_CALLS_EVENT)
     expect(Object.keys(event?.properties as Row).sort()).toEqual([
@@ -3095,9 +3128,9 @@ describe('audit 2026-10-04 Flow calls — a turn that ends in an error still wri
   })
 
   it('a first chat call that times out: its 45 s are recorded, with no tokens', async () => {
-    const h = harness({ text: STATUS_PHRASE, chat: [{ timesOut: true }] })
+    const h = harness({ text: NORMAL_CHAT_PHRASE, chat: [{ timesOut: true }] })
 
-    await expect(flow(h, STATUS_PHRASE)).rejects.toThrow(new Error('Request timed out.'))
+    await expect(flow(h, NORMAL_CHAT_PHRASE)).rejects.toThrow(new Error('Request timed out.'))
     const [event] = events(h, MOBILE_FLOW_CALLS_EVENT)
     expect(event?.properties).toMatchObject({
       call_count: 1,
@@ -3170,8 +3203,8 @@ describe('audit 2026-10-04 Flow calls — a turn that ends in an error still wri
   })
 
   it('a turn that answers writes the event once, and never as a failed turn', async () => {
-    const h = harness({ text: STATUS_PHRASE })
-    await flow(h, STATUS_PHRASE)
+    const h = harness({ text: NORMAL_CHAT_PHRASE })
+    await flow(h, NORMAL_CHAT_PHRASE)
 
     const written = events(h, MOBILE_FLOW_CALLS_EVENT)
     expect(written).toHaveLength(1)
@@ -3471,7 +3504,7 @@ describe('audit 2026-10-04 Flow calls — the status answer reaches the app as p
     '📊 Orçamento 14d: **5.850 / 5.960 kcal (98%)** · DAM: 1/2',
   ].join('\n')
 
-  const FLOW_STATUS = [
+  const LEGACY_PLAIN_STATUS = [
     'Sequência: 3 dias consecutivos · Nível 2 (1.240 XP)',
     '',
     'Consumido: 541 / 2.980 kcal (18%)',
@@ -3480,6 +3513,50 @@ describe('audit 2026-10-04 Flow calls — the status answer reaches the app as p
     'Exercício: 322 kcal',
     '',
     'O Bloco 7.700 é exibido apenas na recomposição corporal.',
+  ].join('\n')
+
+  // C7 intentionally replaces model status with the actual Today reader.
+  // Expected balance is derived from the existing per-protocol rules:
+  // gain: 541 - round(2980 / 1.05) = -2297 (exercise already in activity factor).
+  // maintenance after gain: target guard keeps 541 - 2980 - 322 = -2761.
+  // recomp: 2330 - (2200 + 500) - 322 = -692; food excess remains 130.
+  const STATUS_OPENING =
+    'Antes de atualizar seu status: teve alguma refeição, belisco ou atividade física que você fez e não registrou? Sem cobrança — é só pra manter tudo preciso. Use Registrar para incluir o que faltou.'
+  const FLOW_STATUS = [
+    STATUS_OPENING,
+    '',
+    'Status do dia: 2026-10-04',
+    'Consumido: 541 / 2.980 kcal (18%).',
+    'Restam: 2.439 kcal para comida.',
+    'Exercício registrado: 322 kcal. Esse gasto não aumenta o que resta para comida.',
+    'Proteína: 59,03 / 144 g (41%). Faltam 84,97 g.',
+    'Balanço do dia (parcial): Déficit de 2.297 kcal.',
+    'O Bloco 7.700 é exibido apenas na recomposição corporal.',
+    'Sequência: 3 dias · Nível: 2 · XP: 1.240.',
+    '',
+    'Aqui, o progresso vem da repetição consistente do estímulo — não da balança.',
+  ].join('\n')
+  const FLOW_MAINTENANCE_STATUS = FLOW_STATUS.replace(
+    'Balanço do dia (parcial): Déficit de 2.297 kcal.',
+    'Balanço do dia (parcial): Déficit de 2.761 kcal.',
+  ).replace(
+    'Aqui, o progresso vem da repetição consistente do estímulo — não da balança.',
+    'Na manutenção, o corpo responde à média — não a um dia isolado.',
+  )
+  const FLOW_RECOMP_STATUS = [
+    STATUS_OPENING,
+    '',
+    'Status do dia: 2026-10-04',
+    'Consumido: 2.330 / 2.200 kcal (106%).',
+    'Excedente: 130 kcal de comida.',
+    'Exercício registrado: 322 kcal. Esse gasto não aumenta o que resta para comida.',
+    'Proteína: 150 / 180 g (83%). Faltam 30 g.',
+    'Balanço do dia (parcial): Déficit de 692 kcal.',
+    'Bloco 7.700: 3.120 / 7.700 kcal (41%). Referência teórica de déficit acumulado.',
+    'Blocos concluídos: 0.',
+    'Sequência: 3 dias · Nível: 2 · XP: 1.240.',
+    '',
+    'Nesta fase, o foco é repetir dias bem executados até fechar o bloco.',
   ].join('\n')
 
   const digits = (text: string) => text.replace(/\D/g, '')
@@ -3502,27 +3579,28 @@ describe('audit 2026-10-04 Flow calls — the status answer reaches the app as p
     const h = harness({ text: STATUS_PHRASE, chat: STATUS_SCRIPT, closedDays: CLOSED })
     const output = await flow(h, STATUS_PHRASE)
 
-    expect(h.chatCalls).toHaveLength(1)
+    expect(h.chatCalls).toHaveLength(0)
     expect(output.text).toBe(FLOW_STATUS)
     expect(output.text).not.toMatch(/[*_]/)
     expect(output.text).not.toMatch(/\p{Extended_Pictographic}/u)
     // decisions-v1 item5 supersedes formatting-only parity for Flow. Pin
     // each preserved day line; the complete WhatsApp golden above is intact.
-    expect(output.text.split('\n').slice(2, 6)).toEqual([
-      'Consumido: 541 / 2.980 kcal (18%)',
-      'Restam para comida: 2.439 kcal',
-      'Proteína: 59.0 / 144g (41%)',
-      'Exercício: 322 kcal',
+    expect(output.text.split('\n').slice(3, 7)).toEqual([
+      'Consumido: 541 / 2.980 kcal (18%).',
+      'Restam: 2.439 kcal para comida.',
+      'Exercício registrado: 322 kcal. Esse gasto não aumenta o que resta para comida.',
+      'Proteína: 59,03 / 144 g (41%). Faltam 84,97 g.',
     ])
     expect(output.text).not.toMatch(/bloco\(s\)|Orçamento|DAM/)
     expect(output.singleMessage).toBe(true)
-    // The same events as before: the path itself did not change.
-    expect(eventNames(h)).toEqual([
-      'pipeline.deterministic_status',
-      'llm.card_replaced',
-      MOBILE_FLOW_CALLS_EVENT,
-      'llm.cache_usage',
-    ])
+    // Pure status has no model call, tool or model-usage event.
+    expect(output.modelUsed).toBe('none')
+    expect(output.toolCalls).toEqual([])
+    expect(output.promptTokens).toBe(0)
+    expect(output.completionTokens).toBe(0)
+    expect(output.costUsd).toBe(0)
+    expect(h.generatorCalls).toHaveLength(0)
+    expect(eventNames(h)).toEqual([])
   })
 
   it.each(['ganho_massa', 'manutencao'])('%s with historical nonzero block keeps the day and progress values without exposing block or budget', async (protocol) => {
@@ -3535,10 +3613,10 @@ describe('audit 2026-10-04 Flow calls — the status answer reaches the app as p
     })
     const output = await flow(h, STATUS_PHRASE)
 
-    expect(output.text).toBe(FLOW_STATUS)
+    expect(output.text).toBe(protocol === 'ganho_massa' ? FLOW_STATUS : FLOW_MAINTENANCE_STATUS)
     expect(output.text).not.toMatch(/bloco\(s\)|3\.120|Orçamento|DAM/)
     expect(output.text.match(/O Bloco 7\.700 é exibido apenas/g)).toHaveLength(1)
-    expect(h.chatCalls).toHaveLength(1)
+    expect(h.chatCalls).toHaveLength(0)
     expect(output.singleMessage).toBe(true)
   })
 
@@ -3570,17 +3648,9 @@ describe('audit 2026-10-04 Flow calls — the status answer reaches the app as p
     })
     const output = await flow(h, STATUS_PHRASE)
 
-    expect(output.text).toBe([
-      'Sequência: 3 dias consecutivos · Nível 2 (1.240 XP) · 4 bloco(s) de 7.700 completo(s)',
-      '',
-      'Consumido: 2.330 / 2.200 kcal (106%)',
-      'Excesso alimentar: 130 kcal',
-      'Proteína: 150 / 180g (83%)',
-      'Exercício: 322 kcal (acelera o bloco 7.700)',
-      'Bloco 7.700: 3.120 / 7.700 kcal (41%)',
-    ].join('\n'))
+    expect(output.text).toBe(FLOW_RECOMP_STATUS.replace('Blocos concluídos: 0.', 'Blocos concluídos: 4.'))
     expect(output.text).not.toMatch(/Orçamento|DAM|é exibido apenas/)
-    expect(h.chatCalls).toHaveLength(1)
+    expect(h.chatCalls).toHaveLength(0)
     expect(output.singleMessage).toBe(true)
   })
 
@@ -3598,7 +3668,8 @@ describe('audit 2026-10-04 Flow calls — the status answer reaches the app as p
       },
     }
     const legacy = await whatsapp(harness({ ...fixture, channel: 'whatsapp' }), STATUS_PHRASE)
-    const mobile = await flow(harness(fixture), STATUS_PHRASE)
+    const mobileHarness = harness(fixture)
+    const mobile = await flow(mobileHarness, STATUS_PHRASE)
 
     expect(legacy.text).toBe(
       [
@@ -3611,21 +3682,20 @@ describe('audit 2026-10-04 Flow calls — the status answer reaches the app as p
         '📊 Bloco 7700: **3.120 / 7.700 kcal (41%)**',
       ].join('\n'),
     )
-    expect(mobile.text).toBe(
-      [
-        'Sequência: 3 dias consecutivos · Nível 2 (1.240 XP) · 0 bloco(s) de 7.700 completo(s)',
-        '',
-        'Consumido: 2.330 / 2.200 kcal (106%)',
-        'Excesso alimentar: 130 kcal',
-        'Proteína: 150 / 180g (83%)',
-        // One spelling of the block in the whole answer (review 2026-10-04:
-        // the note said "7700" right above the label "7.700").
-        'Exercício: 322 kcal (acelera o bloco 7.700)',
-        'Bloco 7.700: 3.120 / 7.700 kcal (41%)',
-      ].join('\n'),
-    )
+    expect(mobile.text).toBe(FLOW_RECOMP_STATUS)
+    expect(mobileHarness.chatCalls).toHaveLength(0)
     expect(mobile.text).not.toContain('7700')
-    expect(digits(mobile.text)).toBe(digits(legacy.text))
+    // Whole-string digit parity no longer applies: C7 adds the date, balance
+    // and remaining protein. Both literal goldens above pin every amount;
+    // explicitly preserve their corresponding day/block quantities here.
+    expect(mobile.text.split('\n').slice(3, 9)).toEqual([
+      'Consumido: 2.330 / 2.200 kcal (106%).',
+      'Excedente: 130 kcal de comida.',
+      'Exercício registrado: 322 kcal. Esse gasto não aumenta o que resta para comida.',
+      'Proteína: 150 / 180 g (83%). Faltam 30 g.',
+      'Balanço do dia (parcial): Déficit de 692 kcal.',
+      'Bloco 7.700: 3.120 / 7.700 kcal (41%). Referência teórica de déficit acumulado.',
+    ])
   })
 
   it('the food line keeps its meaning: target minus consumed, with no exercise in it (docs/CALCULO-MPP.md §2a)', async () => {
@@ -3633,25 +3703,28 @@ describe('audit 2026-10-04 Flow calls — the status answer reaches the app as p
     const output = await flow(h, STATUS_PHRASE)
 
     // 2,980 − 541 = 2,439. With the 322 kcal of exercise it would read 2,761.
-    expect(output.text).toContain('Restam para comida: 2.439 kcal')
+    expect(output.text).toContain('Restam: 2.439 kcal para comida.')
     expect(output.text).not.toContain('2.761')
   })
 
-  it('a status question the MODEL answers is not touched', async () => {
+  it('a compound status question answered by the MODEL is not touched', async () => {
     const reply = 'Você consumiu 541 de 2.980 kcal; *restam* 2.439 kcal para comida.'
-    const h = harness({ text: STATUS_PHRASE, chat: [{ content: reply }] })
-    const output = await flow(h, STATUS_PHRASE)
+    const text = `${STATUS_PHRASE} Quero conversar sobre minha rotina.`
+    const h = harness({ text, chat: [{ content: reply }] })
+    const output = await flow(h, text)
 
     expect(output.text).toBe(reply)
+    expect(h.chatCalls).toHaveLength(1)
   })
 
   it('a non-deterministic Flow card preserves public values and omits only C3/C4 metrics', async () => {
+    const text = `${STATUS_PHRASE} Quero conversar sobre minha rotina.`
     const h = harness({
-      text: STATUS_PHRASE,
+      text,
       chat: [{ content: WHATSAPP_STATUS }],
       closedDays: CLOSED,
     })
-    const output = await flow(h, STATUS_PHRASE)
+    const output = await flow(h, text)
 
     expect(output.text).toBe([
       '🏅 Sequência: **3 dias consecutivos** · Nível 2 (1.240 XP)',
@@ -3723,7 +3796,7 @@ describe('audit 2026-10-04 Flow calls — the status answer reaches the app as p
         }
       ).strings
       const label = (key: string) => strings[key]?.localizations?.['pt-BR']?.stringUnit?.value
-      const lines = FLOW_STATUS.split('\n')
+      const lines = LEGACY_PLAIN_STATUS.split('\n')
       const recomp = flowPlainStatusText(
         '🎯 Excedente: **130 kcal**\n📊 Bloco 7700: **0 / 7.700 kcal (0%)**',
       )

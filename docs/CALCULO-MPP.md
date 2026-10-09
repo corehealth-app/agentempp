@@ -845,8 +845,9 @@ existe em dobro é o roteiro de leituras e escritas; o teste de paridade
 compara, para o mesmo dia sem opção Flow, os doze parâmetros da RPC, os campos gravados na
 linha do dia, o `user_progress` final e os eventos.
 
-Dois chamadores, e só eles:
-- **API do app**, em `GET /today` e `GET /progress`, antes da leitura, **só
+Dois caminhos, e só eles:
+- **API do app**, em `GET /today`, `GET /progress` e no status do dia inteiro
+  reconhecido pelo Flow autenticado (C7, §10q), antes da leitura, **só
   com o interruptor ligado** (`docs/mobile/api-v1.md`, "Fechamento do dia sob
   demanda"). Desligado por padrão: sem a variável, nenhuma consulta é feita.
   Nunca em produção: o ref do projeto de produção é recusado em código.
@@ -3770,3 +3771,60 @@ contexto; não é prova de economia nem C6 inteiro concluído. Testes sintético
 provam contexto/seleção/guardas, não a qualidade clínica do modelo real.
 
 > RC C6 — cenário pergunta sobre bloco de hipertrofia ou mini-cut variante ganho de massa NÃO coberta nesta PR (pendência da audit 2026-10-07).
+
+### 10q. Consulta inteira de status no Flow sem modelo (C7, grupo A)
+
+O entry autenticado reconhece uma allowlist de perguntas inteiras PT/EN,
+incluindo os dois prefills atuais do app (“Como está meu dia até agora?” e
+“How is my day so far?”). Acentos, caixa, espaços e pontuação final não mudam
+a intenção. Pedidos compostos, sintomas, alergias, outro dia e instruções de
+idioma continuam no fluxo normal; uma consulta de progresso por ferramenta
+não autoriza apagar esses trechos com um status determinístico.
+
+Depois do gate de assinatura, a consulta reconhecida usa o mesmo leitor
+oficial de Hoje, sem carregar prompt, regras, RAG, histórico completo,
+provider ou ferramentas. A factory materializa o provider somente quando
+o ramo normal precisar dele. As métricas dessa consulta são modelUsed=none,
+tokens/custo zero; a latência continua medida, sem economia monetária
+estimada como observação de produção.
+
+O adapter do app aguarda o fechamento sob demanda do §3a com o instante do
+turno e as três travas existentes; nenhuma variável é habilitada por código.
+Esse novo chamador pode fechar dias PASSADOS quando já configurado no
+staging. Não fecha hoje. Conversa normal, acesso bloqueado, GET de histórico
+e replay publicado/cache HTTP não chamam o adapter. Sem o adapter admin, o
+entry agent só lê o estado oficial. Falha no fechamento conserva o tratamento
+anterior; falha no estado oficial permanece erro, sem resposta zerada ou LLM
+de emergência. O limite/retry existentes do §3a não foram ampliados.
+
+O contexto é local a cada invocação. Datas usam o instante do turno e o fuso
+oficial (UTC quando ausente no app). A fence do leitor oficial mantém suas
+duas tentativas para snapshot/hidratação/rotina; não é uma transação global
+com perfil e progresso. Sequência/nível/XP opcionais vêm de leitura própria
+owner-scoped; ausência omite a linha, erro/dado inválido falha. O layout usa
+a fase ATUAL do perfil; energia/metas históricas do dia permanecem oficiais.
+
+**Apresentação.** Consumido/meta, Restam/Excedente para comida, proteína,
+exercício separado e balanço parcial/final/indisponível vêm de Hoje. O rótulo
+Déficit/Superávit e magnitude absoluta seguem a origem FL4; não recalculam
+o balanço. Dia sem refeição/treino confirmado não significa ausência de
+comida/atividade na vida real ou de outros registros. Rascunhos não entram
+nos totais; a lista é limitada a20, por isso vários pendentes não recebem
+contagem apresentada como total. Bloco só aparece com disponibilidade e
+recomposição oficiais; zero válido difere de ausência. Orçamento14dias/DAM
+e bloco de hipertrofia não são inventados.
+
+**Fontes.** A abertura literal vem de `spec-todos-b.json` itens5/7; os fechos
+de `spec-recomposicao-b.json` item10, `spec-ganho_massa.json` item14 e
+`spec-manutencao.json` item8, com índices começando em zero. CTA Registrar,
+rótulos e traduções estáticas EN são redação nossa, revisável, sem chamada
+ao modelo. Abertura junto dos números e rótulos seguem como confirmação do
+cliente pendente. Não representam aprovação clínica/editorial.
+
+**Entrega parcial.** Este grupo não seleciona incentivo C5. Persistência,
+concorrência/replay e recuperação durável do rodízio, fonte/tradução EN,
+staging e smoke no app continuam gates próprios do C7 completo. Nenhuma
+migration ou dado remoto foi alterado. O caminho legado/WhatsApp preserva
+detector, renderer, writer e contratos; esta branch é somente mobile_flow.
+
+> RC C7 — cenário status do ganho de massa variante com bloco de hipertrofia NÃO coberta nesta PR (pendência da audit 2026-10-07).

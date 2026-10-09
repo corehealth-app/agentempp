@@ -636,7 +636,10 @@ describe('audit 2026-10-05 Flow names — an ordinary answer is the string the m
       chat: [{ content: answer }],
       user: { ...USER, name: 'Roberto' },
     })
-    const output = await flow(h, 'Como está meu dia até agora?')
+    // This fixture exercises the model's public-name projection, not the status shortcut.
+    const output = await flow(h, 'Explique como organizar minha rotina.')
+
+    expect(h.chatCalls).toBe(1)
 
     expect(output.text).toBe(answer)
     expect(events(h, MOBILE_FLOW_PUBLIC_NAMES_EVENT)).toHaveLength(0)
@@ -681,7 +684,10 @@ describe('audit 2026-10-05 Flow names — the closed vocabulary, on the real ent
     { answer: 'mpp_mensal_v1', counts: null },
   ])('$answer is delivered as the model wrote it', async ({ answer, counts }) => {
     const h = harness({ chat: [{ content: answer }] })
-    const output = await flow(h, 'Como está meu dia até agora?')
+    // This fixture exercises the model's public-name projection, not the status shortcut.
+    const output = await flow(h, 'Explique como organizar minha rotina.')
+
+    expect(h.chatCalls).toBe(1)
 
     expect(output.text).toBe(answer)
     expect(events(h, MOBILE_FLOW_PUBLIC_NAMES_EVENT).map((event) => event.properties)).toEqual(
@@ -738,7 +744,10 @@ describe('audit 2026-10-05 Flow names — the closed vocabulary, on the real ent
     },
   ])('$answer is delivered as $delivered', async ({ answer, delivered, counts }) => {
     const h = harness({ chat: [{ content: answer }] })
-    const output = await flow(h, 'Como está meu dia até agora?')
+    // This fixture exercises the model's public-name projection, not the status shortcut.
+    const output = await flow(h, 'Explique como organizar minha rotina.')
+
+    expect(h.chatCalls).toBe(1)
 
     expect(output.text).toBe(delivered)
     expect(events(h, MOBILE_FLOW_PUBLIC_NAMES_EVENT).map((event) => event.properties)).toEqual([

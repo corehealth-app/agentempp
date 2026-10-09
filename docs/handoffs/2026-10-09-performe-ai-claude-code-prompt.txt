@@ -1,0 +1,11 @@
+Continue o Performe AI neste checkout: /Users/eduardohenrique/Developer/performe-ai-client-beta-flow-v1.
+
+Leia integralmente CLAUDE.md e docs/handoffs/2026-10-09-performe-ai-claude-code-handoff.md. Leia também /Users/eduardohenrique/.local/share/performe-ai/final-polish-20261001/claude-code-handoff-20261009/SESSION-STATE.json e confira o pacote com verification/verify-handoff.py. O Codex foi pausado para você ser o único escritor.
+
+Não recomece E3/cadastro, tutorial, C8, M5 ou testes privados C5 já encerrados. O último commit técnico é 0b9986f37e913f7f6e7e9149a15f9b1c9ea29fb1; o HEAD final documental está no SESSION-STATE.json. Revalide HEAD/árvore/hashes antes de mudar fontes.
+
+Comece pela seção 5 do handoff: integração/TDD nativo do candidato C11 iOS R4 para editar/excluir refeições confirmadas. A revisão de fonte passou; as 27 declarações ainda NÃO compilaram/rodaram. Preserve os testes, observe RED por assertion com scaffold legítimo, aplique o delta mínimo, execute GREEN/vizinhos e peça revisão independente do diff antes do commit local. Não copie Wiring completo de uma base antiga.
+
+Depois continue o plano inteiro: 63 pacotes/89 regras, ativação integrada C5, reavaliação/fases, refinamento/tutorial atualizado e todos os gates finais iOS/acessibilidade/performance/assinatura/iPhone/Biblioteca/aceite/distribuição. Roberto ainda não está liberado. As 44 recomendações provisórias não são respostas nem aceite clínico do médico; recursos que dependem disso ficam testados e OFF/ocultos conforme decisões documentadas.
+
+Somente commits locais por caminhos explícitos, um build pesado por vez. Nada de push, merge, publicação, staging write, TestFlight/App Store ou produção antiga sem OK específico. Nunca scripts/deploy.sh, reset/clean/stash, segredo no chat ou desinstalação do app. Todo bug relatado vira teste exato; revisão independente antes do commit; avise quando afetar WhatsApp/motor compartilhado. Português curto e direto. Continue autonomamente as partes já autorizadas, sem repetir trabalho fechado ou afirmar verificação que não existe.

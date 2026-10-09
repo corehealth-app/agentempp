@@ -735,8 +735,10 @@ reversão.
     ("Qual e o meu gasto diario, e como foi minha semana?", "Como foi minha
     semana comparada com hoje?", "Como foi minha semana e qual minha taxa
     basal?"), com config 5, 3 e 2: ferramenta, ferramenta, resposta — 3
-    chamadas, texto presente, a terceira com `tool_choice: none` e as mesmas 6
-    ferramentas no pedido. A resposta de fechamento passa pelas guardas; no
+    chamadas, texto presente, a terceira com `tool_choice: none` e as mesmas 5
+    ferramentas no pedido (eram 6 até 2026-10-09, quando a ferramenta legada
+    de reavaliação saiu do canal do app: `docs/CALCULO-MPP.md` §10r). A
+    resposta de fechamento passa pelas guardas; no
     pedido único com sugestão gravada não há fechamento; com o prazo vencido
     não há fechamento e o turno falha como prazo. As três pendências de RC
     PERF-C8 travadas: fechamento respondido só com ferramenta (texto vazio);

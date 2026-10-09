@@ -848,7 +848,9 @@ describe('audit 2026-10-04 Flow cost — lean per-turn context', () => {
     for (const dropped of DROPPED) expect(variable, dropped).not.toContain(dropped)
   })
 
-  it('the cached prefix follows the current Flow policy with the same 6 tools', async () => {
+  // C26a (audit 2026-10-09): 6 tools until then; the legacy reassessment tool
+  // left the app's channel — docs/CALCULO-MPP.md §10r.
+  it('the cached prefix follows the current Flow policy with the same 5 tools', async () => {
     const h = harness({ history: longHistory() })
     await flow(h)
 
@@ -863,7 +865,6 @@ describe('audit 2026-10-04 Flow cost — lean per-turn context', () => {
       'consulta_progresso',
       'consulta_metricas',
       'consulta_resumo_periodo',
-      'consulta_reavaliacao_protocolo',
       'propoe_plano_treino',
       'propoe_plano_dieta',
     ])

@@ -180,11 +180,20 @@ export interface AuthenticatedPipelineDeps extends PipelineDeps {
   loadFlowDayStatus?: LoadFlowDayStatusContext
 }
 
+/**
+ * What the mobile Flow may read. `consulta_reavaliacao_protocolo` is NOT here
+ * (C26a, audit 2026-10-09; docs/CALCULO-MPP.md §10r): its raw result handed
+ * the Flow model the gain ceilings, the pause / phase-review verdict and the
+ * maintenance calorie cut, which the owner's decisions of 2026-10-07 (items
+ * 2, 3 and 4) keep switched off. The tool stays in `ALL_TOOLS`, so the legacy
+ * entry keeps it as it was; a call by name from the Flow is refused at the
+ * dispatch boundary below. Do not put it back as it is: the app gets a
+ * reassessment reading only over stored reassessment state (C26b / C22).
+ */
 export const MOBILE_FLOW_READ_ONLY_TOOLS = [
   'consulta_progresso',
   'consulta_metricas',
   'consulta_resumo_periodo',
-  'consulta_reavaliacao_protocolo',
 ] as const
 
 /**

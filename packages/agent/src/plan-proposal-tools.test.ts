@@ -179,12 +179,13 @@ afterEach(() => {
 })
 
 describe('canal do app: o que o Flow pode chamar', () => {
-  it('são as 4 consultas e as 2 propostas, e nada mais', () => {
+  // C26a (audit 2026-10-09): eram 4 consultas; a ferramenta legada de
+  // reavaliação saiu do canal do app — docs/CALCULO-MPP.md §10r.
+  it('são as 3 consultas e as 2 propostas, e nada mais', () => {
     expect([...MOBILE_FLOW_TOOLS]).toEqual([
       'consulta_progresso',
       'consulta_metricas',
       'consulta_resumo_periodo',
-      'consulta_reavaliacao_protocolo',
       'propoe_plano_treino',
       'propoe_plano_dieta',
     ])

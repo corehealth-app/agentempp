@@ -2132,14 +2132,16 @@ describe('audit 2026-10-04 Flow calls — two tool iterations at most, then one 
     const [first, middle, closing] = h.chatCalls as [LlmCall, LlmCall, LlmCall]
     expect(first.keys).not.toContain('toolChoice')
     expect(middle.keys).not.toContain('toolChoice')
-    // The closing call: tools switched off, the same 6 schemas still sent
+    // The closing call: tools switched off, the same 5 schemas still sent
     // (the cached prefix is the one every call reads), its own time limit.
+    // C26a (audit 2026-10-09): 6 until the legacy reassessment tool left the
+    // app's channel — docs/CALCULO-MPP.md §10r.
     expect(closing).toMatchObject({
       toolChoice: 'none',
       tools: first.tools,
       requestTimeoutMs: 45_000,
     })
-    expect(first.tools).toBe(6)
+    expect(first.tools).toBe(5)
     // It answers with what the two tools returned.
     expect(closing.messages.filter((message) => message.role === 'tool')).toHaveLength(2)
   })

@@ -3851,3 +3851,128 @@ migration ou dado remoto foi alterado. O caminho legado/WhatsApp preserva
 detector, renderer, writer e contratos; esta branch é somente mobile_flow.
 
 > RC C7 — cenário status do ganho de massa variante com bloco de hipertrofia NÃO coberta nesta PR (pendência da audit 2026-10-07).
+
+### 10r. Cerca da reavaliação no Flow (C26a)
+
+**O que era.** `consulta_reavaliacao_protocolo` (`packages/agent/src/tools.ts`)
+é a ferramenta do agente legado que roda as três contas de
+`packages/core/src/engine/protocols.ts`: ritmo de ganho
+(`evaluateGainVelocity`), tetos de gordura e de IMC do ganho
+(`evaluateGainSafety`) e ajuste de calorias da manutenção por treino a menos
+(`computeMaintenanceAdjustment`). Até 2026-10-09 ela era o quarto nome de
+`MOBILE_FLOW_READ_ONLY_TOOLS`. Num turno do Flow de quem está em ganho de massa
+ou manutenção, o modelo podia chamá-la com um peso, uma gordura ou um número de
+treinos digitados no chat e recebia o resultado bruto: `action` com
+`pausar_ganho` ou `revisar_fase`, as marcas de teto estourado, o veredito do
+ritmo e, na manutenção, `adjustmentKcal` de −150 ou −300 com o texto da regra.
+A descrição da ferramenta ("teto de gordura/IMC, ajuste calórico") ia também no
+pedido de todo turno do Flow, nos três objetivos. Não há print de pessoa: o
+achado veio da leitura do código (auditoria de 2026-10-09).
+
+**Por que é defeito.** As decisões do Eduardo de 2026-10-07 (itens 2, 3 e 4)
+mantêm desligados, até a resposta do médico: os tetos do ganho e a pausa (C28),
+qualquer mudança de calorias no ganho (C29) e os gatilhos da manutenção, o de
+−150 kcal por treino incluído (C30). O app ainda não tem reavaliação; pausa e
+troca de fase só existem dentro dela, com confirmação.
+
+**A regra, desde 2026-10-09.** No canal do app a ferramenta não está em
+`MOBILE_FLOW_READ_ONLY_TOOLS` (`packages/agent/src/pipeline.ts`). Por isso:
+
+- o pedido do Flow leva 5 ferramentas (`consulta_progresso`,
+  `consulta_metricas`, `consulta_resumo_periodo`, `propoe_plano_treino`,
+  `propoe_plano_dieta`), nos três objetivos, e nenhuma descrição fala de teto
+  ou de ajuste calórico;
+- se o modelo chamar a ferramenta pelo nome, a fronteira de despacho que já
+  existia (`authorizeToolCall`) responde
+  `{"success":false,"error":"tool_not_authorized","retry_tool":false}`. Nada da
+  ferramenta roda, e fica gravado um `pipeline.tool_call_denied` com nome,
+  motivo e canal, sem os argumentos;
+- a lista `allowed_tools` do banco só restringe: nomear a ferramenta lá não a
+  devolve ao Flow;
+- a leitura própria da ferramenta deixa de ser feita; o turno continua
+  carregando a linha inteira do perfil, como antes.
+
+Nenhuma fórmula, corte ou texto do método mudou: `tools.ts`,
+`packages/core/src/engine/protocols.ts` e os testes das três contas não foram
+tocados. Não há chave de reversão, porque recolocar a ferramenta legada no Flow
+não é o destino: o Flow só volta a ler reavaliação sobre o estado gravado dela
+(C26b / C22). No painel da equipe, que monta a lista a partir de
+`MOBILE_FLOW_TOOLS`, a ferramenta passa a aparecer no grupo legado; uma lista
+salva que a nomeie fica como está.
+
+**Caminho legado: igual, byte a byte.** `processMessage` não lê a lista do
+canal do app e continua com a ferramenta, o esquema e o resultado. Provas: o
+request lock do WhatsApp (`audit-10-04-whatsapp-request-lock.test.ts`, com o
+hash da fixture, não regerado) e o bloco "legado: idêntico" do golden desta
+cerca, que roda a ferramenta pelo caminho legado com as cinco entradas, trava
+os cinco resultados e confere as 20 ferramentas, na ordem, com os 20 esquemas
+do lock. Antes deste golden nenhum teste executava a ferramenta.
+
+**O que o Flow deixa de ter.** Junto com os tetos e o ajuste sai o ritmo de
+ganho (0,25% a 0,5% do peso por semana, a faixa em quilos e o veredito lento,
+ideal ou rápido): ele vinha no mesmo resultado. Trazê-lo de volta antes do C28
+é outra mudança, e é decisão do Eduardo (pendência abaixo).
+
+**O que a cerca NÃO fecha.** Ela fecha a ferramenta, não o que o modelo diz.
+Continuam chegando ao modelo do Flow. O golden trava os itens 1 e 2 como
+estão; o item 3 não tem teste e está só declarado nas pendências abaixo:
+
+1. A linha `- Decisão automática: …` do contexto por turno. Para quem está em
+   ganho de massa ou manutenção ela diz `protocol=recomposicao`, `canChoose` e
+   os `blockers` de `resolveProtocol` (§10h), ao lado de "Protocolo atual".
+   Tirar a linha do Flow ou trocá-la pelo estado gravado da fase é o C26b.
+2. Qualquer linha ativa de `agent_rules` com o tipo da fase: entra inteira no
+   bloco estável, antes da política do Flow, com as seis regras gerais
+   revisadas ou não. Quando a leitura das regras não devolve nada, entra o
+   prompt inteiro da view. O cabeçalho de `protocols.ts` diz que os tetos, a
+   pausa e os −150 kcal por treino foram extraídos das regras do método. Se o
+   banco do ambiente de teste tem regras ativas de ganho de massa ou de
+   manutenção **não foi conferido**, e os dois registros locais se
+   contradizem: o handoff de 2026-10-07 diz "`agent_rules` tem só 6 regras
+   gerais"; a auditoria de 2026-10-09 diz, sobre o C6, que as 24 regras de
+   recomposição continuam carregadas ao lado do cartão (§10p). A fixture lida
+   em 2026-10-08 traz só as seis gerais e não diz nada sobre as de fase.
+3. O que o modelo conclui sozinho, e as respostas antigas que ele relê no
+   histórico.
+
+Não foi acrescentada frase de proibição à política do Flow: a redação é do
+Eduardo, e ela mandaria a pessoa a uma reavaliação que o app ainda não tem.
+
+**O que continua desligado, e o que espera.** Nenhuma das 44 perguntas ao
+médico foi respondida (proposta reconciliada de 2026-10-08). C28, tetos, pausa
+e revisão da fase: perguntas 17 e 36, e 41 para a gordura digitada. C29,
+calorias no ganho: perguntas 1 e 16, com 22 e 3. C30, gatilhos da manutenção,
+o de −150 kcal por treino incluído: pergunta 4, com 3, 16 (parte 3), 7 e 8.
+Nada disso foi construído nem ligado aqui.
+
+O §10m continua dizendo que os tetos do ganho "existem só como conta que nada
+aciona". Com a cerca, isso volta a valer para o app.
+
+Testes: `packages/agent/src/__golden__/audit-10-09-flow-reassessment-fence.test.ts`
+(o legado idêntico; a cerca, vermelha antes da mudança; o que a cerca não
+fecha; e estas linhas). Quatro testes que travavam a lista antiga foram
+atualizados de propósito, só no nome da ferramenta e na contagem:
+`mobile-authenticated-pipeline.test.ts`, `plan-proposal-tools.test.ts`,
+`audit-10-04-flow-prompt-budget.test.ts` e
+`audit-10-04-flow-turn-calls.test.ts`.
+
+Pendências declaradas (as mesmas linhas, na mesma ordem, no cabeçalho do
+golden):
+
+> RC C26a — cenário pessoa em ganho de massa ou manutenção perguntando ao Flow se deve pausar o ganho, revisar a fase ou cortar calorias variante frase real de uma conversa (não há print: as frases do golden são sintéticas e os números são os dos testes que travam as três contas) NÃO coberta nesta PR (pendência da audit 2026-10-09)
+
+> RC C26a — cenário modelo real afirmando por conta própria pausa do ganho, revisão de fase ou corte de 150 ou 300 kcal, sem a ferramenta variante filtro determinístico na resposta do Flow e rodada com o modelo real no ambiente de teste NÃO coberta nesta PR (pendência da audit 2026-10-09)
+
+> RC C26a — cenário modelo do Flow, já sem a ferramenta, raciocinando sozinho sobre pausa do ganho, troca de fase ou mudança de calorias no ganho de massa ou na manutenção variante instrução só do Flow proibindo isso (a redação é do Eduardo e mandaria a pessoa a uma reavaliação que o app ainda não tem) NÃO coberta nesta PR (pendência da audit 2026-10-09)
+
+> RC C26a — cenário linha "Decisão automática" do contexto do Flow (protocol=recomposicao, canChoose e blockers de resolveProtocol) lida pelo modelo de quem está em ganho de massa ou manutenção variante retirar a linha do Flow ou trocá-la pelo estado gravado da fase (C26b) NÃO coberta nesta PR (pendência da audit 2026-10-09)
+
+> RC C26a — cenário regras ativas de fase em agent_rules (tipo ganho_massa ou manutencao) entrando inteiras no bloco estável do Flow, e o prompt inteiro da view quando a leitura das regras falha variante leitura dessas regras no banco do ambiente de teste e projeção delas só no Flow (o cabeçalho de packages/core/src/engine/protocols.ts diz que os tetos, a pausa e os −150 kcal por treino vieram das regras do método; nenhum banco foi lido) NÃO coberta nesta PR (pendência da audit 2026-10-09)
+
+> RC C26a — cenário respostas antigas do Flow já gravadas que mandaram pausar o ganho ou cortar 150 ou 300 kcal variante correção do histórico que o app mostra e que o modelo relê NÃO coberta nesta PR (pendência da audit 2026-10-09)
+
+> RC C26a — cenário ritmo de ganho (0,25% a 0,5% do peso por semana) pedido ao Flow variante resposta com o número calculado (sai do Flow junto com a ferramenta; a volta depende da decisão do Eduardo no C28) NÃO coberta nesta PR (pendência da audit 2026-10-09)
+
+> RC C26a — cenário lista allowed_tools dos estágios de ganho de massa e de manutenção no banco do ambiente de teste variante leitura do valor gravado (a cerca vale com qualquer valor; o valor não foi lido, e um estágio que liste só esta ferramenta deixa o Flow sem ferramenta nenhuma) NÃO coberta nesta PR (pendência da audit 2026-10-09)
+
+> RC C26a — cenário caminho legado (processMessage) chamando consulta_reavaliacao_protocolo variante deixar de devolver pausar_ganho, revisar_fase e −150 ou −300 kcal (o legado fica igual, byte a byte, por decisão) NÃO coberta nesta PR (pendência da audit 2026-10-09)

@@ -209,11 +209,12 @@ describe('authenticated mobile Flow policy', () => {
   it('exposes only reviewed read-only tools even when the database allows every tool', () => {
     const tools = selectPipelineTools(null, MOBILE_FLOW_READ_ONLY_TOOLS)
 
+    // C26a (audit 2026-10-09): the legacy reassessment tool left the app's
+    // channel — docs/CALCULO-MPP.md §10r.
     expect(tools.map((tool) => tool.name)).toEqual([
       'consulta_progresso',
       'consulta_metricas',
       'consulta_resumo_periodo',
-      'consulta_reavaliacao_protocolo',
     ])
     expect(tools.some((tool) => tool.name.startsWith('registra_'))).toBe(false)
   })

@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./flow-public-metrics": "./src/flow-public-metrics.ts",
+    "./flow-curated-phrases": "./src/flow-curated-phrases.ts",
     "./testing/day-close-memory-db": "./src/testing/day-close-memory-db.ts"
   },
   "scripts": {

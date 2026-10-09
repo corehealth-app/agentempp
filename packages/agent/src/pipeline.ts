@@ -1170,7 +1170,7 @@ async function processResolvedMessage(
 
   const languageCards =
     options.historyProvider === 'mobile_flow' && promptRow.flow_language_applied
-      ? flowLanguageCards(ctx.profile.currentProtocol, lastTwoOuts.length > 0)
+      ? flowLanguageCards(flowObjective.currentProtocol, lastTwoOuts.length > 0)
       : null
 
   const repetitionGuard =

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { protocolPhaseExplanation } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import { filterAndFormatRules, normalizeRuleLang, type RuleRow } from './prompt-rules.js'
 
@@ -106,18 +107,23 @@ Metáforas curtas e ocasionais podem ajudar; não as confunda com fatos. Disting
 Explique resumos, marcos e convites já confirmados com linguagem simples e previsível. O tom não cria agenda, aviso, comemoração, foto, reavaliação ou mudança de dados; não antecipe esses eventos.
 Respeite o idioma da conversa e as guardas do canal. Focus, Impulse e Zen mudam só o tom: fatos, metas, restrições e confirmações permanecem. Flexibilidade é acolhimento, sem culpa ou promessa vazia; não é liberação de calorias.`
 
-/** A phase label, not a protocol rule, transition or eligibility decision. */
+/** Fixed source facts, never a transition, target change or eligibility decision. */
 function phaseCard(protocol: unknown): string {
+  let label: string
   switch (protocol) {
     case 'recomposicao':
-      return '### Fase atual do Flow\nObjetivo registrado: recomposição corporal.'
+      label = 'recomposição corporal.'
+      break
     case 'ganho_massa':
-      return '### Fase atual do Flow\nObjetivo registrado: ganho de massa.'
+      label = 'ganho de massa.'
+      break
     case 'manutencao':
-      return '### Fase atual do Flow\nObjetivo registrado: manutenção.'
+      label = 'manutenção.'
+      break
     default:
       return ''
   }
+  return `### Fase atual do Flow\nObjetivo registrado: ${label}\n\n${protocolPhaseExplanation(protocol).join('\n\n')}`
 }
 
 /** Single composition path, only after the versioned rules were reviewed. */

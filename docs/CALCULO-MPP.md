@@ -3704,3 +3704,69 @@ cada instância.
   anterior, declarado no §10j.
 
 Testes: §10i.
+
+
+### 10p. Cartões explicativos da fase atual no Flow (C6)
+
+O Flow recebe um cartão fixo por objetivo oficial deste turno. O perfil é lido
+por `user_profiles.user_id` autenticado; o cartão usa o protocolo normalizado
+em `flowObjective`, nunca a fase de um snapshot, história, RAG ou pedido de
+troca escrito no chat. Fase desconhecida não ganha cartão. Falha/ausência do
+perfil interrompe o turno antes do modelo, como já ocorria.
+
+`protocolPhaseExplanation` é um leitor puro em `protocol-messages.ts`.
+Os IDs de `SHARED_PT` definem uma única vez os trechos comuns: objetivo da
+recomposição; meta em leve superávit, treino, proteína e progresso do ganho; manutenção ativa, meta e
+consistência. Esses mesmos literais compõem as boas-vindas B0. Todas as
+boas-vindas completas PT/EN, parágrafos, vocativo e edições do §10m continuam
+iguais. O cartão recorrente omite a abertura de entrada e as frases que
+prometem acompanhamento ou controle garantido.
+
+| Cartão | Origem editorial compartilhada/complementar | Explicação, sem operação nova |
+| --- | --- | --- |
+| Recomposição | Introdução/objetivo/bloco, `spec-recomposicao-a.json` itens1,2,11; atividade/projeção/ajustes, `spec-recomposicao-b.json` itens1,2,7 | Redução progressiva de gordura, preservação muscular, consistência; bloco como referência teórica e aproximada; exercício não libera comida; prazo como referência; calibração apenas de ajuste confirmado |
+| Ganho | Introdução/definição/métricas/erros, `spec-ganho_massa.json` itens0,1,4,7 | Treino de força, proteína e progressão do treino; peso/medidas como apoio; treino antes de dieta, sem gatilho automático por peso isolado |
+| Manutenção | Introdução/definição/meta, `spec-manutencao.json` itens1,2,4 | Fase ativa, estabilidade, consolidação de hábitos e flexibilidade com consistência; meta conceitual sem déficit/superávit, sem ajuste/pausa/troca anunciado |
+
+Os índices acima começam em zero e referem-se aos JSON editoriais extraídos,
+não a uma consulta nova ao banco. Trechos adicionais do cartão são nossa
+redação a partir dessas fontes: não alegamos que já constavam literalmente
+nas boas-vindas. Edições, redações e tradução do B0 continuam aguardando
+confirmação do cliente. Isso não registra resposta às 44 perguntas clínicas.
+
+O bloco não mede a perda individual de gordura nem promete um resultado.
+Essa ressalva é coerente com a regra editorial de marco teórico e com a
+limitação dos modelos energéticos estáticos frente às adaptações dinâmicas
+[descrita por Hall et al. (Lancet, 2011)](https://pmc.ncbi.nlm.nih.gov/articles/PMC3880593/).
+Nenhuma fórmula, crédito histórico ou unidade de acompanhamento foi alterada.
+
+**Cache e fronteiras.** O cartão canônico PT é instrução interna; o idioma da
+resposta e Focus/Impulse/Zen continuam no bloco variável. Para a mesma fase,
+o segmento novo é byte igual entre idiomas, estilos e história vazia/presente.
+Regras clínicas antigas continuam filtradas por idioma como antes; isso não
+promete igualdade de todo o prefixo entre PT/EN. O limite final do cartão
+inclui título/rótulo/separadores: 1.800 unidades UTF-16; linguagem C2 mantém
+seu limite de2.700 e situação de200. Não há truncamento, nova leitura, cache
+por pessoa, mensagem persistida, notificação, agenda ou evento de entrada.
+
+O gate permanece `mobile_flow && flow_language_applied`; drift das seis
+regras gerais, erro ou fonte desconhecida conserva o fallback anterior.
+O caminho legado/WhatsApp, aposentado, não recebe o cartão. O leitor comum
+não muda B0 nem a consulta/API do objetivo. Orçamento14dias/DAM continuam
+ocultos; sem proteína numérica, faixa de superávit, pausa, mini-cut, fotos ou
+reavaliação automática. Uma explicação não concede autorização de alteração.
+
+**Cobertura ainda parcial.** A orientação de não transferir cálculos e fazer
+uma pergunta necessária pertence ao C2. A fonte “o que não pedir nas
+reavaliações” diz “salvo exceções”; relatos, sintomas, alergias e dados ausentes
+continuam podendo exigir perguntas abertas. Este cartão não implementa a
+reavaliação nem transforma aquela orientação em proibição universal.
+
+C6 também exige substituir as24 regras integrais (~26mil caracteres). Este
+grupo não as elimina: regras desconhecidas da fase continuam preservadas.
+Removê-las exige mapa versionado de cada fonte/digest/destino/restrição e
+medição do prompt correspondente. Acrescentar o cartão, sozinho, aumenta o
+contexto; não é prova de economia nem C6 inteiro concluído. Testes sintéticos
+provam contexto/seleção/guardas, não a qualidade clínica do modelo real.
+
+> RC C6 — cenário pergunta sobre bloco de hipertrofia ou mini-cut variante ganho de massa NÃO coberta nesta PR (pendência da audit 2026-10-07).

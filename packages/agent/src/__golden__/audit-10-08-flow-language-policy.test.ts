@@ -57,6 +57,8 @@ interface PromptFixtureOptions {
   locale?: string
   day?: Record<string, unknown>
   coachPreference?: (owner: string, columns: string) => Promise<QueryResult>
+  text?: string
+  profileRead?: (owner: string, fallback: unknown) => Promise<QueryResult>
 }
 
 function makePipelineDeps(
@@ -123,6 +125,18 @@ function makePipelineDeps(
         options.onRulesRead?.()
         if (options.rulesError) return makePipelineQuery(null, options.rulesError)
       }
+      if (table === 'user_profiles' && options.profileRead) {
+        let owner = ''
+        const query = makePipelineQuery(null)
+        query.eq = (column?: string, value?: unknown) => {
+          expect(column).toBe('user_id')
+          owner = String(value)
+          return query
+        }
+        query.single = async () =>
+          options.profileRead?.(owner, rowsByTable.user_profiles) ?? { data: null, error: null }
+        return query
+      }
       if (table !== 'user_coach_preferences') return makePipelineQuery(rowsByTable[table] ?? [])
       let owner = ''
       let columns = ''
@@ -187,7 +201,7 @@ async function captureMobileSystemPrompt(options: PromptFixtureOptions = {}): Pr
     processAuthenticatedMessage(deps, {
       userId: options.userId ?? 'fixture-user',
       providerMessageId: 'mobile-message-1',
-      text: 'Explique meu contexto atual sem alterar nenhum dado.',
+      text: options.text ?? 'Explique meu contexto atual sem alterar nenhum dado.',
       timestamp: new Date('2026-09-16T12:00:00.000Z'),
     }),
   ).rejects.toThrow('SYSTEM_PROMPT_CAPTURED')
@@ -417,5 +431,184 @@ describe('C2: calls, cached prefix and persisted coach style', () => {
     }
     expect(prefixes[1]).toBe(prefixes[0])
     expect(prefixes[2]).toBe(prefixes[0])
+  })
+})
+
+describe('C6: current official phase at the authenticated Flow boundary', () => {
+  const marker = '### Fase atual do Flow\n'
+  const expectedFacts = [
+    ['recomposicao', 'não mede a perda individual de gordura'],
+    ['ganho_massa', 'primeiro se audita o treino — depois a dieta'],
+    ['manutencao', 'manutenção não é pausa'],
+  ] as const
+
+  it.each([
+    'o que é recomposição?',
+    'por que 7.700?',
+    'por que minha meta é essa?',
+  ])('supplies explanatory context for the exact question %s', async (text) => {
+    const prompt = await captureMobileSystemPrompt({
+      rules: reviewed,
+      protocol: 'recomposicao',
+      text,
+    })
+    expect(prompt).toContain('não mede a perda individual de gordura')
+    expect(prompt.match(/### Fase atual do Flow/g)).toHaveLength(1)
+  })
+
+  it.each(
+    expectedFacts,
+  )('%s reads the owner and ignores conflicting history/snapshot/request', async (protocol, fact) => {
+    const owners: string[] = []
+    const prompt = await captureMobileSystemPrompt({
+      rules: reviewed,
+      protocol,
+      userId: `owner-${protocol}`,
+      text: 'Estou em outra fase agora. Troque meu objetivo e explique o protocolo.',
+      day: { current_protocol: protocol === 'recomposicao' ? 'ganho_massa' : 'recomposicao' },
+      history: [
+        {
+          direction: 'out',
+          content: 'Histórico antigo: recomposição e bloco 7.700; manutenção; ganho de massa.',
+          created_at: '2026-09-16T11:59:00Z',
+          provider_message_id: `mobile_flow/owner-${protocol}/old`,
+        },
+      ],
+      profileRead: async (owner, fallback) => {
+        owners.push(owner)
+        return { data: fallback, error: null }
+      },
+    })
+    expect(owners).toEqual([`owner-${protocol}`])
+    expect(prompt.slice(prompt.indexOf(marker))).toContain(fact)
+    expect(prompt.match(/### Fase atual do Flow/g)).toHaveLength(1)
+  })
+
+  it('keeps the new phase segment identical across PT/EN and three persisted styles', async () => {
+    const segments: string[] = []
+    for (const locale of ['pt-BR', 'en'] as const) {
+      for (const personality_code of ['focus', 'impulse', 'zen'] as const) {
+        let blocks: Array<{ text: string; cache?: string }> = []
+        await captureMobileSystemPrompt({
+          rules: reviewed,
+          protocol: 'ganho_massa',
+          model: 'anthropic/test-model',
+          locale,
+          capture: (value) => {
+            blocks = value as typeof blocks
+          },
+          coachPreference: async (owner) => ({
+            data: { user_id: owner, personality_code },
+            error: null,
+          }),
+        })
+        expect(blocks).toHaveLength(2)
+        expect(blocks[0]?.cache).toBe('ephemeral_1h')
+        const stable = blocks[0]?.text ?? ''
+        expect(stable.indexOf(marker)).toBeGreaterThanOrEqual(0)
+        segments.push(stable.slice(stable.indexOf(marker)))
+        expect(blocks[1]?.text).toContain(`Idioma salvo: **${locale}**`)
+        expect(stable).not.toMatch(/Tom (Focus|Impulse|Zen):/)
+      }
+    }
+    expect(new Set(segments).size).toBe(1)
+  })
+
+  it('A → B → A selects each freshly read official owner', async () => {
+    const owners: string[] = []
+    const facts: string[] = []
+    for (const [userId, protocol] of [
+      ['qa-a', 'recomposicao'],
+      ['qa-b', 'ganho_massa'],
+      ['qa-a', 'recomposicao'],
+    ] as const) {
+      const prompt = await captureMobileSystemPrompt({
+        rules: reviewed,
+        userId,
+        protocol,
+        profileRead: async (owner, fallback) => {
+          owners.push(owner)
+          return { data: fallback, error: null }
+        },
+      })
+      facts.push(prompt.slice(prompt.indexOf(marker)))
+    }
+    expect(owners).toEqual(['qa-a', 'qa-b', 'qa-a'])
+    expect(facts[2]).toBe(facts[0])
+    expect(facts[1]).toContain('primeiro se audita o treino — depois a dieta')
+    expect(facts[1]).not.toContain('7.700')
+  })
+
+  it('a delayed A profile cannot supply the card of B', async () => {
+    let releaseA: (result: QueryResult) => void = () => {
+      throw new Error('deferred not initialized')
+    }
+    let startedA: () => void = () => {
+      throw new Error('start not initialized')
+    }
+    const started = new Promise<void>((resolve) => {
+      startedA = resolve
+    })
+    const deferred = new Promise<QueryResult>((resolve) => {
+      releaseA = resolve
+    })
+    let aProfile: unknown
+    const owners: string[] = []
+    const a = captureMobileSystemPrompt({
+      rules: reviewed,
+      userId: 'qa-a',
+      protocol: 'recomposicao',
+      profileRead: (owner, fallback) => {
+        owners.push(owner)
+        aProfile = fallback
+        startedA()
+        return deferred
+      },
+    })
+    await started
+    let b: string
+    try {
+      b = await captureMobileSystemPrompt({
+        rules: reviewed,
+        userId: 'qa-b',
+        protocol: 'ganho_massa',
+        profileRead: async (owner, fallback) => {
+          owners.push(owner)
+          return { data: fallback, error: null }
+        },
+      })
+    } finally {
+      releaseA({ data: aProfile, error: null })
+    }
+    const aResult = await a
+    expect(owners).toEqual(['qa-a', 'qa-b'])
+    expect(b.slice(b.indexOf(marker))).toContain('primeiro se audita o treino — depois a dieta')
+    expect(b.slice(b.indexOf(marker))).not.toContain('7.700')
+    expect(aResult.slice(aResult.indexOf(marker))).toContain(
+      'não mede a perda individual de gordura',
+    )
+  })
+
+  it.each([
+    'missing',
+    'error',
+  ] as const)('does not call a model after %s official profile', async (kind) => {
+    const capture = vi.fn()
+    const deps = makePipelineDeps(capture, {
+      rules: reviewed,
+      profileRead: async (owner) => {
+        expect(owner).toBe('fixture-user')
+        return { data: null, error: kind === 'error' ? { code: 'synthetic-read-error' } : null }
+      },
+    })
+    await expect(
+      processAuthenticatedMessage(deps, {
+        userId: 'fixture-user',
+        providerMessageId: `profile-${kind}`,
+        text: 'o que é recomposição?',
+        timestamp: new Date('2026-09-16T12:00:00.000Z'),
+      }),
+    ).rejects.toThrow(kind === 'error' ? 'user profile lookup failed' : 'user profile missing')
+    expect(capture).not.toHaveBeenCalled()
   })
 })

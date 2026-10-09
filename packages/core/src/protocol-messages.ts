@@ -38,12 +38,33 @@ export type ProtocolMessageLocale = 'pt-BR' | 'en-US'
 /** Paragraph → its lines. The first line of the first paragraph follows the name. */
 type MessageLines = readonly (readonly string[])[]
 
+// Editorial IDs used by both the original welcome and recurring Flow facts.
+// Exact PT source phrases; EN welcomes remain their original translations.
+const SHARED_PT = {
+  recompositionGoal:
+    'Isso significa reduzir gordura de forma progressiva, preservando ao máximo ou, idealmente, ganhando massa muscular e manter um processo sustentável no dia a dia — sem extremos e sem improviso.',
+  gainTraining:
+    'Neste protocolo, a musculação não é opcional. O ganho de massa muscular só acontece quando existe estímulo mecânico consistente. Sem treino de força regular, o superávit calórico perde a função construtiva e o risco de ganho de gordura aumenta significativamente — por isso, sem musculação, não é possível prosseguir no protocolo de ganho.',
+  gainTarget:
+    'Todos os dias você terá uma meta de calorias definida em leve superávit, ou seja, sobrando. O ideal é terminar o dia o mais próximo possível desse valor:',
+  gainProtein:
+    'Nesta fase, a meta de proteína é fundamental. Bater proteína todos os dias é o que fornece ao corpo o material necessário para construir músculo, sustentar a recuperação e transformar o estímulo do treino em resultado. Sem proteína consistente, não há hipertrofia relevante — mesmo com mais calorias.',
+  gainProgress:
+    'O progresso aqui não é medido apenas pela balança. A principal referência é a evolução no treino: mais carga, mais repetições, mais volume ao longo das semanas. Peso e medidas entram como apoio, nunca como decisão isolada.',
+  maintenanceTarget:
+    'Nesta etapa, você terá uma meta de calorias de manutenção (sem déficit e sem superávit). A regra é simples: terminar o dia o mais próximo possível da meta.',
+  maintenanceConsistency:
+    'O objetivo aqui não é “acertar perfeito todo dia”, é manter estabilidade semanal com consistência real.',
+  maintenanceActive:
+    'manutenção não é pausa e não é “soltar o plano”. É a fase que protege o que você conquistou, reduz o risco de efeito sanfona e consolida seus hábitos para o próximo ciclo, se necessário.',
+} as const
+
 const WELCOME: Record<ProtocolMessageLocale, Record<Protocol, MessageLines>> = {
   'pt-BR': {
     recomposicao: [
       [
         'a partir de agora você entra oficialmente na fase de recomposição corporal.',
-        'Isso significa reduzir gordura de forma progressiva, preservando ao máximo ou, idealmente, ganhando massa muscular e manter um processo sustentável no dia a dia — sem extremos e sem improviso.',
+        SHARED_PT.recompositionGoal,
       ],
       [
         'Todos os dias você terá uma meta de calorias clara. A ideia é terminar o dia o mais próximo possível desse valor:',
@@ -62,11 +83,9 @@ const WELCOME: Record<ProtocolMessageLocale, Record<Protocol, MessageLines>> = {
       [
         'agora você entra na fase de ganho de massa muscular. Aqui o objetivo é claro: fazer o músculo ganhar a corrida, com controle total do ganho de gordura e foco em performance no treino.',
       ],
+      [SHARED_PT.gainTraining],
       [
-        'Neste protocolo, a musculação não é opcional. O ganho de massa muscular só acontece quando existe estímulo mecânico consistente. Sem treino de força regular, o superávit calórico perde a função construtiva e o risco de ganho de gordura aumenta significativamente — por isso, sem musculação, não é possível prosseguir no protocolo de ganho.',
-      ],
-      [
-        'Todos os dias você terá uma meta de calorias definida em leve superávit, ou seja, sobrando. O ideal é terminar o dia o mais próximo possível desse valor:',
+        SHARED_PT.gainTarget,
         'abaixo da meta, pode faltar energia para treinar bem e sustentar a construção muscular;',
         'acima da meta, o risco é acelerar ganho de gordura sem benefício real.',
         'O equilíbrio diário é o que mantém o ganho limpo, previsível e sob controle.',
@@ -76,12 +95,8 @@ const WELCOME: Record<ProtocolMessageLocale, Record<Protocol, MessageLines>> = {
         'Se você treinar mais vezes do que o combinado sem ajuste, as calorias podem se tornar insuficientes e limitar o ganho muscular.',
         'Se você treinar menos vezes do que o informado, o excesso calórico deixa de ser utilizado pelo músculo e tende a virar gordura.',
       ],
-      [
-        'Nesta fase, a meta de proteína é fundamental. Bater proteína todos os dias é o que fornece ao corpo o material necessário para construir músculo, sustentar a recuperação e transformar o estímulo do treino em resultado. Sem proteína consistente, não há hipertrofia relevante — mesmo com mais calorias.',
-      ],
-      [
-        'O progresso aqui não é medido apenas pela balança. A principal referência é a evolução no treino: mais carga, mais repetições, mais volume ao longo das semanas. Peso e medidas entram como apoio, nunca como decisão isolada.',
-      ],
+      [SHARED_PT.gainProtein],
+      [SHARED_PT.gainProgress],
       [
         'Sua missão é simples: treinar com consistência, bater proteína e respeitar a meta calórica alinhada à sua frequência real de treino.',
         'Eu cuido da estratégia, para garantir que o ganho seja real, controlado e sustentável.',
@@ -89,13 +104,13 @@ const WELCOME: Record<ProtocolMessageLocale, Record<Protocol, MessageLines>> = {
     ],
     manutencao: [
       [
-        'agora você entra na fase de manutenção — e aqui vai um ponto importante: manutenção não é pausa e não é “soltar o plano”. É a fase que protege o que você conquistou, reduz o risco de efeito sanfona e consolida seus hábitos para o próximo ciclo, se necessário.',
+        `agora você entra na fase de manutenção — e aqui vai um ponto importante: ${SHARED_PT.maintenanceActive}`,
       ],
       [
-        'Nesta etapa, você terá uma meta de calorias de manutenção (sem déficit e sem superávit). A regra é simples: terminar o dia o mais próximo possível da meta.',
+        SHARED_PT.maintenanceTarget,
         'muito abaixo disso costuma gerar fome, compulsão e instabilidade;',
         'muito acima disso tende a virar ganho de gordura ao longo das semanas.',
-        'O objetivo aqui não é “acertar perfeito todo dia”, é manter estabilidade semanal com consistência real.',
+        SHARED_PT.maintenanceConsistency,
       ],
       [
         'A proteína e a atividade física continuam obrigatórias porque elas que sustentam sua composição corporal e evita que você perca qualidade muscular enquanto aumenta a flexibilidade alimentar. Manutenção com proteína baixa e sem atividade física vira manutenção fraca — e isso abre brecha para regressão silenciosa.',
@@ -203,6 +218,43 @@ export function protocolWelcomeMessage(
     const [opening = '', ...rest] = lines
     return [person ? `${person}, ${opening}` : capitalised(opening), ...rest].join('\n')
   })
+}
+
+/**
+ * Canonical PT instructions for Flow, independent of response locale/style.
+ * Common fragments come from B0's SHARED_PT above. Additional explanatory
+ * wording comes from the same editorial sources, explicitly mapped in
+ * docs/CALCULO-MPP.md; it is not an approved clinical decision or a capability.
+ * Pure selection, fresh array, no owner/cache/I/O; never changes a phase/target.
+ */
+export function protocolPhaseExplanation(protocol: unknown): readonly string[] {
+  switch (protocol) {
+    case 'recomposicao':
+      return [
+        SHARED_PT.recompositionGoal,
+        'O bloco de 7.700 kcal é uma referência teórica e aproximada do processo, associada em modelos populacionais a cerca de 1 kg de gordura; não mede a perda individual de gordura nem garante um resultado.',
+        'O exercício registrado participa do balanço do dia e do bloco, mas não altera a meta de calorias nem libera comida extra.',
+        'Um prazo estimado é referência de planejamento, nunca promessa individual. Não crie uma data ou projeção sem dados oficiais.',
+        'Explique um ajuste confirmado como calibração natural do processo, nunca como correção de erro. Não apresente sugestão como ajuste realizado.',
+      ]
+    case 'ganho_massa':
+      return [
+        SHARED_PT.gainTarget,
+        SHARED_PT.gainTraining,
+        SHARED_PT.gainProtein,
+        SHARED_PT.gainProgress,
+        'Hipertrofia não é comer mais indiscriminadamente: primeiro se audita o treino — depois a dieta. Não use peso semanal isolado como gatilho nem anuncie ajuste sem confirmação.',
+      ]
+    case 'manutencao':
+      return [
+        SHARED_PT.maintenanceActive,
+        SHARED_PT.maintenanceTarget,
+        SHARED_PT.maintenanceConsistency,
+        'Manutenção é uma fase ativa: estabilizar peso e composição corporal, consolidar hábitos e aumentar flexibilidade com consistência. Não anuncie pausa, troca de fase ou ajuste sem confirmação.',
+      ]
+    default:
+      return []
+  }
 }
 
 /**

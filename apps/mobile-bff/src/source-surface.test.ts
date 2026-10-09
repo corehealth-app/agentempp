@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -332,12 +333,53 @@ describe('authoritative Mobile API source surface', () => {
     expect(surface.forbiddenWorkerTraceReferences).toEqual([])
     expect(surface.forbiddenAdministrativeBundleReferences).toEqual([])
     expect(surface.forbiddenAdministrativeTraceReferences).toEqual([])
-    // Reviewed C3/C4 builds factor existing day-close/read-model code into
-    // one shared chunk referenced by Today and Progress (+2 refs, +1 file).
-    expect(surface.nftReferenceCount).toBe(5313)
-    expect(surface.nftUniqueTargetCount).toBe(167)
-    expect(surface.nftRegularFileTargetCount).toBe(165)
+    // Reviewed C5 inventory includes the nine approved catalog JSONs only
+    // in Flow. Keep exact totals and the worker/admin negative guards.
+    expect(surface.nftReferenceCount).toBe(5303)
+    expect(surface.nftUniqueTargetCount).toBe(175)
+    expect(surface.nftRegularFileTargetCount).toBe(173)
     expect(surface.nftDirectoryTargetCount).toBe(2)
+  })
+
+  test('traces the nine byte-exact approved catalogs only from the Flow route', () => {
+    const repositoryRoot = resolve(appRoot, '../..')
+    const catalogPrefix = 'packages/agent/src/data/flow-curated-phrases/'
+    const actual: Record<string, Record<string, string>> = {}
+    for (const [route, target] of Object.entries(currentAppPathsManifest())) {
+      const tracePath = resolve(buildRoot, 'server', `${target}.nft.json`)
+      const trace: { files: string[] } = JSON.parse(readFileSync(tracePath, 'utf8'))
+      for (const reference of trace.files) {
+        const physical = realpathSync(resolve(dirname(tracePath), reference))
+        const repositoryPath = relative(repositoryRoot, physical).split(sep).join('/')
+        if (!repositoryPath.startsWith(catalogPrefix)) continue
+        actual[route] ??= {}
+        const name = repositoryPath.slice(catalogPrefix.length)
+        expect(Object.hasOwn(actual[route], name)).toBe(false)
+        actual[route][name] = createHash('sha256').update(readFileSync(physical)).digest('hex')
+      }
+    }
+    expect(actual).toEqual({
+      '/api/mobile/v1/flow/chat/route': {
+        'curated-phrases-engagement.json':
+          'f8df3c9b1be8f40ead0bff1f97888cfe3d2534c05d928fd50892487f8f61f54c',
+        'curated-phrases-food-phase-b.json':
+          '90ed182a90681cdec3d8e6d83f3340645ee645570e3fd9d4530386551cacf222',
+        'curated-phrases-food-phase-c.json':
+          '56905ce0fd4438534587b025adb423ece63edb515f07d417af45966709036d70',
+        'curated-phrases-food-phase-c2.json':
+          '246c9650e28788ef6b9181986a04a04894dea5a8da8ee52fd9ed25b1e982a304',
+        'curated-phrases-food-phase-d.json':
+          '1f1ffc4c83bbda18db2b4966fb7a2275f2321ef5c4f09b8dfe53afa31ab73577',
+        'curated-phrases-food-phase-e.json':
+          '1048d3e3fba17d5f667270ae5d80973c2f2031c27fd78b2dee2418ca6847af33',
+        'curated-phrases-food-phase-f.json':
+          '991d1a9e3af61a5ef0b11914b1abdeebb6042df242d67681fc0cc85df4554af0',
+        'curated-phrases-food-phase-g.json':
+          'ce31c1e42ffdb715ed38b0961efb341ac730a2c4c809e13027576cb1fa172923',
+        'curated-phrases-food.json':
+          'd411b0afce13b8f3bc5fba7cb970e7edf49780cc79eca7b312071fc24b7612ca',
+      },
+    })
   })
 
   test('rejects an NFT target that is absent', () => {

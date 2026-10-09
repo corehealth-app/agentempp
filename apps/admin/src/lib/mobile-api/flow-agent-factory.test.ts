@@ -191,6 +191,34 @@ afterEach(() => vi.unstubAllEnvs())
 describe('Flow-only factory, real authenticated entry and lazy provider', () => {
   it.each([
     'Como está meu dia?',
+    'How is my day so far?',
+  ])('carries private status eligibility and the same official authority for %s', async (text) => {
+    const reply = await createFlowAgent(context()).reply(input(text))
+    expect(reply).toMatchObject({
+      flowStatusPhrase: {
+        kind: 'incentive',
+        slot: 'any',
+        locale: text.startsWith('How') ? 'en' : 'pt-BR',
+        accountName: 'Synthetic',
+        authority: {
+          currentProtocol: 'manutencao',
+          dailyTargets: { calories_target: 2400, protein_target: 150 },
+        },
+      },
+    })
+    expect(Object.keys(reply.metadata).sort()).toEqual([
+      'completionTokens',
+      'costUsd',
+      'latencyMs',
+      'modelUsed',
+      'promptTokens',
+      'stage',
+    ])
+    expect(controlled.today).toHaveBeenCalledTimes(1)
+    expect(controlled.constructors).not.toHaveBeenCalled()
+  })
+  it.each([
+    'Como está meu dia?',
     'Como está meu dia até agora?',
     'How is my day so far?',
   ])('answers %s without a provider key or constructing a provider', async (text) => {
@@ -235,6 +263,7 @@ describe('Flow-only factory, real authenticated entry and lazy provider', () => 
       input('Quero conversar sobre minha rotina.'),
     )
     expect(reply.text).toBe('Resposta normal do Flow.')
+    expect(reply).not.toHaveProperty('flowStatusPhrase')
     expect(controlled.constructors).toHaveBeenCalledTimes(1)
     expect(controlled.constructors).toHaveBeenCalledWith({
       apiKey: 'synthetic-test-key',
@@ -302,6 +331,7 @@ describe('Flow-only factory, real authenticated entry and lazy provider', () => 
       input('Como está meu dia?'),
     )
     expect(reply.text).toContain('assinatura precisa ser renovada')
+    expect(reply).not.toHaveProperty('flowStatusPhrase')
     expect(controlled.close).not.toHaveBeenCalled()
     expect(controlled.today).not.toHaveBeenCalled()
     expect(controlled.constructors).not.toHaveBeenCalled()
@@ -314,6 +344,7 @@ describe('Flow-only factory, real authenticated entry and lazy provider', () => 
     vi.stubEnv('OPENROUTER_API_KEY', 'synthetic-test-key')
     const reply = await createFlowAgent(context()).reply(input(text))
     expect(reply.text).toBe('Resposta normal do Flow.')
+    expect(reply).not.toHaveProperty('flowStatusPhrase')
     expect(controlled.constructors).toHaveBeenCalledTimes(1)
     expect(controlled.complete).toHaveBeenCalledTimes(1)
     expect(controlled.close).not.toHaveBeenCalled()

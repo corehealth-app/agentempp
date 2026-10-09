@@ -933,6 +933,16 @@ export async function processAuthenticatedMessage(
           completionTokens: 0,
           costUsd: 0,
           latencyMs: Date.now() - start,
+          flowStatusPhrase: {
+            kind: 'incentive',
+            slot: 'any',
+            locale: context.locale,
+            accountName: context.accountName,
+            authority: {
+              currentProtocol: context.today.current_protocol,
+              dailyTargets: { ...flowAccount.dailyTargets },
+            },
+          },
         }
       }
     } else {

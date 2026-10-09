@@ -1,4 +1,4 @@
-import type { AgentStage } from '@mpp/core'
+import type { AgentStage, Protocol } from '@mpp/core'
 
 export interface TrustedVisionNutritionLabel {
   productName: string | null
@@ -59,8 +59,21 @@ export interface AuthenticatedAgentInput {
 /**
  * Resposta do agente após processar.
  */
+/** Internal Flow-only request; never part of public metadata or telemetry. */
+export interface FlowStatusPhraseContext {
+  kind: 'incentive'
+  slot: 'any'
+  locale: string | null
+  accountName: string | null
+  authority: {
+    currentProtocol: Protocol | null
+    dailyTargets: { calories_target: number | null; protein_target: number | null }
+  }
+}
+
 export interface AgentOutput {
   text: string
+  flowStatusPhrase?: FlowStatusPhraseContext
   /** Se houve sugestão de output em áudio. */
   preferAudio: boolean
   /** Enviar como UMA mensagem só (sem split do humanizer) — usado no card

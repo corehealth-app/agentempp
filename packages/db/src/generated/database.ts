@@ -4137,6 +4137,31 @@ export type Database = {
         }
         Returns: Json
       }
+      commit_flow_phrase_reply: {
+        Args: {
+          p_user_id: string
+          p_event_key: string
+          p_expected_inbound_id: string
+          p_inbound_provider_message_id: string
+          p_assistant_provider_message_id: string
+          p_expected_inbound_content: string
+          p_expected_request_id: string
+          p_expected_attempt_started_at: string
+          p_expected_anchor_assistant_id: string | null
+          p_expected_cursor_revision: string
+          p_expected_cursor: Json
+          p_next_cursor: Json
+          p_receipt: Json
+          p_content: string
+          p_created_at: string
+          p_metadata: Json
+        }
+        Returns: Json
+      }
+      read_flow_phrase_cursor: {
+        Args: { p_user_id: string }
+        Returns: Json
+      }
       activate_coach_content_pack: {
         Args: { p_activated_by: string; p_now: string; p_pack_id: string }
         Returns: Json

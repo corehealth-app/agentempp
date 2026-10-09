@@ -45,6 +45,7 @@ export function createFlowAgent(context: MobileRouteContext): FlowAgent {
       }
       return {
         text: output.text,
+        ...(output.flowStatusPhrase ? { flowStatusPhrase: output.flowStatusPhrase } : {}),
         metadata: {
           stage: output.stage,
           modelUsed: output.modelUsed,

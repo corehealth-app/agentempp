@@ -475,11 +475,11 @@ describe('what one request costs in round trips to the database (docs/mobile/api
     for (const day of ['01', '02', '03']) water(db, `2026-10-${day}`)
     expect(db.tables.daily_snapshots).toHaveLength(30)
     const spent = await cost(db, MORNING)
-    // …plus the streak zeroed once (04/10 − 03/09 = 31 days): one update, one event.
+    // …plus the streak zeroed once (04/10 − 03/09 = 31 days): one fenced RPC, one event.
     expect(spent).toEqual({
       total: 8,
       reads: 6,
-      writes: ['update user_progress', 'insert product_events'],
+      writes: ['rpc reset_mobile_inactive_streak_atomic', 'insert product_events'],
     })
   })
 
@@ -491,7 +491,7 @@ describe('what one request costs in round trips to the database (docs/mobile/api
     }
     const writes = [
       'update daily_snapshots',
-      'rpc finalize_daily_close_atomic',
+      'rpc finalize_mobile_daily_close_atomic',
       'insert product_events',
     ]
     // 1 account + 1 progress + 4 discovery + the day (15 reads, 3 writes) + 1 progress.
@@ -499,10 +499,10 @@ describe('what one request costs in round trips to the database (docs/mobile/api
     expect(await cost(seed(), MORNING, false)).toEqual({ total: 26, reads: 23, writes })
   })
 
-  it("the same day inside production's window (00:30): one more read, the profile's targets", async () => {
+  it("the same day inside production's window (00:30): targets use the captured profile without another read", async () => {
     const db = bare(closedUpTo('2026-10-03'))
     meal(db, '2026-10-04')
-    expect(await cost(db, IN_WINDOW)).toMatchObject({ total: 26, reads: 23 })
+    expect(await cost(db, IN_WINDOW)).toMatchObject({ total: 25, reads: 22 })
   })
 
   it('empty dates between the last closed day and yesterday: three more reads, the re-check of earlier dates', async () => {
@@ -511,16 +511,16 @@ describe('what one request costs in round trips to the database (docs/mobile/api
     expect(await cost(db, MORNING)).toMatchObject({ total: 28, reads: 25 })
   })
 
-  it('yesterday with only an inbound message: 20', async () => {
+  it('yesterday with only an inbound message: 19', async () => {
     const db = bare(closedUpTo('2026-10-03'))
     db.addInboundMessage(USER, '2026-10-04T13:00:00.000Z')
-    // 1 + 1 + 4 + the day (10 reads, 3 writes) + 1.
+    // 1 + 1 + 4 + the day (9 reads, 3 writes) + 1.
     expect(await cost(db, MORNING)).toEqual({
-      total: 20,
-      reads: 17,
+      total: 19,
+      reads: 16,
       writes: [
         'upsert daily_snapshots',
-        'rpc finalize_daily_close_atomic',
+        'rpc finalize_mobile_daily_close_atomic',
         'insert product_events',
       ],
     })

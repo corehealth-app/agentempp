@@ -866,6 +866,28 @@ Os callers elegíveis do app usam a política C3 acima para crédito/conquistas
 de bloco; os demais cálculos e a persistência seguem o roteiro existente. As regras
 abaixo valem onde a produção nunca passa.
 
+**Conferência mobile de estado vigente (2026-10-09, local).** O hook do app
+seleciona explicitamente `finalizationFence: 'mobile-current-v1'`. Metas,
+protocolo e déficit vêm da mesma leitura completa do perfil. A nova RPC
+backend-only compara esse perfil, o snapshot completo retornado pela escrita
+CAS e o progresso/`updated_at` lido para `computeProgress`; os valores não são
+relidos para fabricar uma versão esperada. Confere também usuário ativo,
+sem WhatsApp, fuso oficial válido e data elegível pelo relógio do banco depois
+dos locks. Se mudaram, a data fica aberta/pendente e a varredura para sem
+avançar a fronteira, zerar sequência ou publicar evento de fechamento.
+Perfil ausente recusa; progresso ausente só é criado pela própria transação
+depois dos guards. Conflito de inicialização ou falha delegada desfaz essa
+criação e a finalização. A escrita preparatória do snapshot é anterior à RPC
+e pode permanecer em uma linha aberta após recusa. O finalizador legado e as
+fórmulas continuam intactos. Este contrato requer a migration nova antes da
+integração do servidor; não é evidência de staging publicado.
+
+Mesmo com candidatas vazias, o reset de inatividade mobile passa pela RPC
+`reset_mobile_inactive_streak_atomic`, com fuso oficial, progresso/versão e
+última data fechável conferidos sob locks. Mudança de contexto não zera a
+sequência nem gera evento. A tolerância continua sendo um dia vazio; o
+segundo zera. O UPDATE default legado permanece inalterado.
+
 1. **As datas vêm dos dados, em ordem crescente, e a ordem é estrita.**
    Candidatas: datas locais anteriores a hoje (fuso da conta) com refeição,
    treino ou mensagem recebida. O calendário não é percorrido: doze datas
@@ -968,9 +990,10 @@ abaixo valem onde a produção nunca passa.
      zerada;
    - por dia fechado com refeição ou treino: até 18 no fechamento atrasado
      com meta gravada (15 leituras, a escrita da linha, a RPC e a inserção dos
-     eventos); até 19 dentro da janela da produção ou sem meta gravada (mais a
-     leitura das metas do perfil);
-   - por dia fechado só com mensagem: 13;
+     eventos); no default legado, até 19 dentro da janela da produção ou sem
+     meta gravada (mais a leitura das metas do perfil). O opt-in mobile usa a
+     mesma leitura de perfil para os alvos, mantendo até 18 nesses casos;
+   - por dia fechado só com mensagem: 13 no default, 12 no opt-in mobile;
    - mais 3 leituras quando há data sem registro entre o último dia fechado e
      o dia (regra 9);
    - mais 1 na primeira vez que a instância carrega a configuração de cálculo;

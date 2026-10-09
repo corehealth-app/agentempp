@@ -54,16 +54,23 @@
  *  - the reassessment schedule is not advanced unless asked for.
  */
 
-import type { DailySnapshot, DayStatus, FlowBloco7700Policy, UserProgress } from '@mpp/core'
+import type {
+  DailySnapshot,
+  DayStatus,
+  FlowBloco7700Policy,
+  ProfileRow,
+  UserProgress,
+} from '@mpp/core'
 import {
   calcDailyXP,
+  computeDailyTargets,
   computeProgress,
   creditDayToBloco,
   netBalance,
   resolveClosedDayStatus,
   resolveFlowBloco7700Policy,
 } from '@mpp/core'
-import type { ServiceClient } from '@mpp/db'
+import type { Json, ServiceClient } from '@mpp/db'
 import { loadCalcConfig } from './calc-config-loader.js'
 import { loadDailyTargets } from './calc-targets.js'
 import { getGapForDate } from './meal-patterns.js'
@@ -165,6 +172,8 @@ export interface CloseLocalDayInput {
   dryRun?: boolean
   /** Servidor Flow opt-in; ausente mantém o crédito/progresso legado. */
   block7700Policy?: FlowBloco7700Policy['version']
+  /** Explicit mobile caller: finalize only against the same official state. */
+  finalizationFence?: 'mobile-current-v1'
   /**
    * Dry run only: the progress left by the previous simulated day, so a
    * simulated week carries streak, XP and block from one day to the next.
@@ -194,6 +203,7 @@ export interface ClosePastOpenDaysInput {
   clock?: () => number
   dryRun?: boolean
   block7700Policy?: FlowBloco7700Policy['version']
+  finalizationFence?: 'mobile-current-v1'
   advanceReevaluation?: boolean
 }
 
@@ -244,6 +254,13 @@ interface ProgressRow {
 const PROGRESS_COLUMNS =
   'xp_total, level, current_streak, longest_streak, blocks_completed, deficit_block, badges_earned, last_active_date'
 
+function mobileDayCloseRpc(supabase: ServiceClient) {
+  return supabase.rpc.bind(supabase) as unknown as (
+    name: 'finalize_mobile_daily_close_atomic' | 'reset_mobile_inactive_streak_atomic',
+    params: Record<string, unknown>,
+  ) => Promise<{ data: Json | null; error: { message: string } | null }>
+}
+
 function assertIsoDate(value: string, name: string): void {
   if (!ISO_DATE.test(value)) throw new Error(`${name} must be YYYY-MM-DD`)
 }
@@ -292,6 +309,42 @@ function wasApplied(value: unknown): boolean {
   )
 }
 
+function mobileFinalizationRefusal(
+  value: unknown,
+  snapshotId: string,
+  dayStatus: DayStatus,
+): DayCloseSkipReason | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('invalid mobile daily close result')
+  }
+  const result = value as Record<string, unknown>
+  if (result.snapshot_id !== snapshotId) throw new Error('mobile daily close identity mismatch')
+  if (result.applied === true && result.already_closed === false) {
+    if (result.day_status !== dayStatus) throw new Error('invalid mobile daily close result')
+    return null
+  }
+  if (result.applied !== false) throw new Error('invalid mobile daily close result')
+  if (result.already_closed === true && result.reason === 'already_closed') {
+    return 'closed_concurrently'
+  }
+  if (
+    result.already_closed === false &&
+    typeof result.reason === 'string' &&
+    [
+      'context_changed',
+      'snapshot_changed',
+      'profile_changed',
+      'progress_changed',
+      'not_closable',
+    ].includes(result.reason)
+  ) {
+    // A refusal is still an OPEN date. The sweep must stop without advancing
+    // its frontier or resetting inactivity as if a peer had closed this day.
+    return 'changed_concurrently'
+  }
+  throw new Error('unknown mobile daily close refusal')
+}
+
 function skipped(
   input: CloseLocalDayInput,
   late: boolean,
@@ -326,6 +379,7 @@ async function closeDay(
   const { userId, timezone, date } = input
   const now = input.now ?? new Date()
   const dryRun = input.dryRun === true
+  const fenced = input.finalizationFence === 'mobile-current-v1'
   assertIsoDate(date, 'date')
   if (!timezone) throw new Error('timezone is required')
 
@@ -444,9 +498,10 @@ async function closeDay(
   const needsProfileTargets = !late || storedCaloriesTarget === null || storedProteinTarget === null
 
   const [profileResult, calcConfig] = await Promise.all([
-    supabase
-      .from('user_profiles')
-      .select('current_protocol, deficit_level')
+    (fenced
+      ? supabase.from('user_profiles').select('*')
+      : supabase.from('user_profiles').select('current_protocol, deficit_level')
+    )
       .eq('user_id', userId)
       .maybeSingle(),
     loadCalcConfig(supabase),
@@ -456,7 +511,9 @@ async function closeDay(
   }
   const profile = profileResult.data
   const profileTargets = needsProfileTargets
-    ? await loadDailyTargets(supabase, userId, calcConfig)
+    ? fenced
+      ? computeDailyTargets(profile as ProfileRow | null, calcConfig)
+      : await loadDailyTargets(supabase, userId, calcConfig)
     : { calories_target: null, protein_target: null }
   const targets = late
     ? {
@@ -494,6 +551,7 @@ async function closeDay(
   }
 
   let snapshotId: string | null = existing?.id ?? null
+  let expectedSnapshot: unknown = null
   // The generated column, as the database computes it (docs §2b). Only the dry
   // run uses this value; a real close reads the column back from the row.
   let dailyBalance = netBalance(
@@ -522,16 +580,14 @@ async function closeDay(
       return skipped(input, late, 'changed_concurrently')
     }
 
-    const written = fresh
-      ? await supabase
+    const write = fresh
+      ? supabase
           .from('daily_snapshots')
           .update(dayFields)
           .eq('id', fresh.id)
           .eq('day_closed', false)
           .eq('updated_at', fresh.updated_at)
-          .select('id, daily_balance')
-          .maybeSingle()
-      : await supabase
+      : supabase
           .from('daily_snapshots')
           // A day with messages only has no row yet. If one appears meanwhile
           // (a registration), it is left alone instead of being overwritten.
@@ -539,12 +595,14 @@ async function closeDay(
             { user_id: userId, date, ...dayFields },
             { onConflict: 'user_id,date', ignoreDuplicates: true },
           )
-          .select('id, daily_balance')
-          .maybeSingle()
+    const written = fenced
+      ? await write.select('*').maybeSingle()
+      : await write.select('id, daily_balance').maybeSingle()
     if (written.error) throw new Error(written.error.message ?? 'failed to write snapshot')
     if (!written.data) return skipped(input, late, 'changed_concurrently')
     snapshotId = written.data.id
     dailyBalance = written.data.daily_balance ?? 0
+    expectedSnapshot = written.data
   }
 
   // O default legado credita −daily_balance fora da recomposição. Os callers
@@ -584,14 +642,17 @@ async function closeDay(
   // Read as late as possible: the finalization writes absolute values
   // computed from this row, so the shorter the distance to it, the smaller
   // the window in which another close of the same account could be lost.
+  let expectedProgress: unknown = null
   const readPrevious = async (): Promise<DayCloseProgress> => {
     if (dryRun && input.simulatedProgress) return input.simulatedProgress
-    const { data: progressRow, error: progressError } = await supabase
-      .from('user_progress')
-      .select(PROGRESS_COLUMNS)
+    const { data: progressRow, error: progressError } = await (fenced
+      ? supabase.from('user_progress').select(`${PROGRESS_COLUMNS}, updated_at`)
+      : supabase.from('user_progress').select(PROGRESS_COLUMNS)
+    )
       .eq('user_id', userId)
       .maybeSingle()
     if (progressError) throw new Error(progressError.message ?? 'previous progress lookup failed')
+    expectedProgress = progressRow
     return progressFromRow(progressRow)
   }
   // The sweep's question travels with that read, so it is also asked one
@@ -670,26 +731,35 @@ async function closeDay(
   // was closed meanwhile comes back with applied=false and nothing is applied
   // twice. The twelve parameters are compared with the production closer's by
   // the parity test.
-  const { data: finalized, error: finalizeError } = await supabase.rpc(
-    'finalize_daily_close_atomic',
-    {
-      p_user_id: userId,
-      p_snapshot_id: snapshotId,
-      p_day_status: dayStatus,
-      p_xp_total: next.xpTotal,
-      p_level: next.level,
-      p_current_streak: next.currentStreak,
-      p_longest_streak: next.longestStreak,
-      p_blocks_completed: next.blocksCompleted,
-      p_deficit_block: next.deficitBlock,
-      p_badges_earned: next.badgesEarned,
-      p_last_active_date: date,
-      p_closed_at: now.toISOString(),
-    },
-  )
+  const payload = {
+    p_user_id: userId,
+    p_snapshot_id: snapshotId,
+    p_day_status: dayStatus,
+    p_xp_total: next.xpTotal,
+    p_level: next.level,
+    p_current_streak: next.currentStreak,
+    p_longest_streak: next.longestStreak,
+    p_blocks_completed: next.blocksCompleted,
+    p_deficit_block: next.deficitBlock,
+    p_badges_earned: next.badgesEarned,
+    p_last_active_date: date,
+    p_closed_at: now.toISOString(),
+  }
+  const { data: finalized, error: finalizeError } = fenced
+    ? await mobileDayCloseRpc(supabase)('finalize_mobile_daily_close_atomic', {
+        ...payload,
+        p_expected_timezone: timezone,
+        p_expected_snapshot: expectedSnapshot,
+        p_expected_profile: profile,
+        p_expected_progress: expectedProgress,
+      })
+    : await supabase.rpc('finalize_daily_close_atomic', payload)
   if (finalizeError) throw new Error(finalizeError.message ?? 'atomic daily close failed')
   if (!finalized) throw new Error('atomic daily close returned null')
-  if (!wasApplied(finalized)) return skipped(input, late, 'closed_concurrently')
+  if (fenced) {
+    const refusal = mobileFinalizationRefusal(finalized, snapshotId, dayStatus)
+    if (refusal) return skipped(input, late, refusal)
+  } else if (!wasApplied(finalized)) return skipped(input, late, 'closed_concurrently')
 
   // Telemetry, with the names and properties the production closer writes.
   // Written only now, in one insert: a close that lost the race above has
@@ -840,9 +910,11 @@ export async function closePastOpenDays(
   // Nothing may be closed yet: not a single query.
   if (latestClosableDate < from) return result
 
-  const { data: progressRow, error: progressError } = await supabase
-    .from('user_progress')
-    .select('current_streak, last_active_date')
+  const fenced = input.finalizationFence === 'mobile-current-v1'
+  const { data: progressRow, error: progressError } = await (fenced
+    ? supabase.from('user_progress').select('current_streak, last_active_date, updated_at')
+    : supabase.from('user_progress').select('current_streak, last_active_date')
+  )
     .eq('user_id', userId)
     .maybeSingle()
   if (progressError) throw new Error(progressError.message ?? 'progress lookup failed')
@@ -1029,6 +1101,7 @@ export async function closePastOpenDays(
         now,
         dryRun,
         block7700Policy: input.block7700Policy,
+        finalizationFence: input.finalizationFence,
         simulatedProgress: simulated,
         advanceReevaluation: input.advanceReevaluation,
       },
@@ -1061,15 +1134,18 @@ export async function closePastOpenDays(
   if (!result.complete) return result
 
   let current: { currentStreak: number; lastActiveDate: string | null }
+  let expectedResetProgress: unknown = progressRow
   if (simulated) {
     current = simulated
   } else if (closedCount > 0) {
-    const { data: afterRow, error: afterError } = await supabase
-      .from('user_progress')
-      .select('current_streak, last_active_date')
+    const { data: afterRow, error: afterError } = await (fenced
+      ? supabase.from('user_progress').select('current_streak, last_active_date, updated_at')
+      : supabase.from('user_progress').select('current_streak, last_active_date')
+    )
       .eq('user_id', userId)
       .maybeSingle()
     if (afterError) throw new Error(afterError.message ?? 'inactive progress lookup failed')
+    expectedResetProgress = afterRow
     current = {
       currentStreak: afterRow?.current_streak ?? 0,
       lastActiveDate: afterRow?.last_active_date ?? null,
@@ -1095,15 +1171,48 @@ export async function closePastOpenDays(
 
   // Conditional on the values read: a close that finished in between has
   // written a new streak and a new date, and this update then changes nothing.
-  const { data: resetRows, error: resetError } = await supabase
-    .from('user_progress')
-    .update({ current_streak: 0, updated_at: now.toISOString() })
-    .eq('user_id', userId)
-    .eq('current_streak', current.currentStreak)
-    .eq('last_active_date', current.lastActiveDate)
-    .select('user_id')
-  if (resetError) throw new Error(resetError.message ?? 'inactive streak reset failed')
-  if ((resetRows ?? []).length === 0) return result
+  if (fenced) {
+    const { data: reset, error } = await mobileDayCloseRpc(supabase)(
+      'reset_mobile_inactive_streak_atomic',
+      {
+        p_user_id: userId,
+        p_expected_timezone: timezone,
+        p_expected_progress: expectedResetProgress,
+        p_expected_latest_date: latestClosableDate,
+      },
+    )
+    if (error) throw new Error(error.message ?? 'inactive streak reset failed')
+    if (typeof reset !== 'object' || reset === null || Array.isArray(reset)) {
+      throw new Error('invalid mobile inactivity result')
+    }
+    if (reset.user_id !== userId) throw new Error('mobile inactivity identity mismatch')
+    if (reset.applied === false) {
+      if (
+        typeof reset.reason !== 'string' ||
+        !['context_changed', 'progress_changed', 'not_inactive'].includes(reset.reason)
+      )
+        throw new Error('unknown mobile inactivity refusal')
+      return result
+    }
+    if (
+      reset.applied !== true ||
+      reset.previous_streak !== current.currentStreak ||
+      reset.last_active_date !== current.lastActiveDate ||
+      reset.gap_days !== gapDays ||
+      reset.latest_closable_date !== latestClosableDate
+    )
+      throw new Error('invalid mobile inactivity result')
+  } else {
+    const { data: resetRows, error: resetError } = await supabase
+      .from('user_progress')
+      .update({ current_streak: 0, updated_at: now.toISOString() })
+      .eq('user_id', userId)
+      .eq('current_streak', current.currentStreak)
+      .eq('last_active_date', current.lastActiveDate)
+      .select('user_id')
+    if (resetError) throw new Error(resetError.message ?? 'inactive streak reset failed')
+    if ((resetRows ?? []).length === 0) return result
+  }
 
   streakReset.applied = true
   await supabase.from('product_events').insert({

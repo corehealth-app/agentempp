@@ -878,6 +878,30 @@ ocultação completa do bloco nas telas nem aceitação clínica**. O servidor
 compartilhado do BFF importa este mesmo wrapper, sem cópia de rota nova;
 verificar `verify:routes`, import closure e build antes de publicar.
 
+**Conferência transacional mobile (2026-10-09, local).** O wrapper também passa
+`finalizationFence: 'mobile-current-v1'`. A nova RPC backend-only
+`finalize_mobile_daily_close_atomic` confere o fuso oficial, o perfil completo
+usado no cálculo, a linha completa devolvida pela escrita condicional e os
+campos/versão de progresso usados para calcular o próximo estado. Sob locks,
+o relógio do banco decide se a data continua fechável; hora enviada pelo
+cliente não autoriza fechar hoje. Mudança de contexto deixa a data pendente,
+interrompe a varredura e não gera XP, zeramento de sequência ou telemetria de
+fechamento. Somente uma linha realmente fechada é tratada como resolvida.
+Ausência de progresso permite criar a linha padrão na mesma transação, sem
+adotar ou sobrescrever a inicialização concorrente. Locks de linha são NOWAIT,
+advisories são try-lock e a espera residual de conflito unique tem
+`lock_timeout` de 2 s; isso não impõe um teto ao pedido HTTP inteiro.
+A escrita preparatória do snapshot ocorre antes desta RPC e pode permanecer
+na linha ainda aberta quando há recusa. O worker/finalizador legado e os
+callers sem opção mantêm o contrato anterior. Migration e servidor devem ser
+integrados juntos; testes locais não comprovam publicação no staging.
+
+O caminho sem candidatos também usa uma RPC backend-only,
+`reset_mobile_inactive_streak_atomic`: compara fuso, progresso/versão e a
+última data fechável pelo relógio do banco antes de zerar a sequência. Uma
+mudança de fuso/calendário ou progresso recusa sem evento. A atualização
+legada continua igual; esta RPC não inicializa progresso ausente.
+
 **Desligado por padrão.** São necessárias três travas, todas:
 
 | Trava | Onde | Valor |
@@ -904,7 +928,7 @@ verificar `verify:routes`, import closure e build antes de publicar.
   sem registro, ou só linhas de dia abertas com água, peso, suplemento ou
   medicamento, quantas forem (essas linhas não são visitadas) —, e mais duas
   escritas no pedido em que a sequência é zerada por inatividade; e, por dia
-  fechado, até 18 (até 19 entre 00:30 e 04:59 locais; 13 se o dia só tem
+  fechado, até 18 (também entre 00:30 e 04:59 locais; 12 se o dia só tem
   mensagem), mais 3 leituras quando há data sem registro entre o último dia
   fechado e o dia, e mais uma leitura de progresso ao fim do pedido. Um pedido
   fecha no máximo 3 dias (61 idas ao banco para três dias seguidos) e não

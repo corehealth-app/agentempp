@@ -25,7 +25,9 @@
  * The advisory locks of those functions are not emulated; each emulated RPC
  * runs to completion without yielding, which is what the locks guarantee.
  */
+import { isDeepStrictEqual } from 'node:util'
 import type { ServiceClient } from '@mpp/db'
+import { addIsoDateDays, getLocalDateString, getLocalDayUtcBounds } from '../timezone-utils.js'
 
 export type MemoryRow = Record<string, unknown>
 
@@ -198,6 +200,12 @@ export class DayCloseMemoryDb {
     try {
       if (name === 'finalize_daily_close_atomic') {
         return { data: this.finalizeDailyClose(params), error: null }
+      }
+      if (name === 'finalize_mobile_daily_close_atomic') {
+        return { data: this.finalizeMobileDailyClose(params), error: null }
+      }
+      if (name === 'reset_mobile_inactive_streak_atomic') {
+        return { data: this.resetMobileInactiveStreak(params), error: null }
       }
       if (name === 'advance_reevaluation_schedule') {
         return { data: this.advanceReevaluationSchedule(params), error: null }
@@ -433,6 +441,116 @@ export class DayCloseMemoryDb {
   }
 
   // ------------------------------------------------------------------- RPCs
+
+  private resetMobileInactiveStreak(params: MemoryRow): MemoryRow {
+    const refusal = (reason: string) => ({ applied: false, user_id: params.p_user_id, reason })
+    const user = this.tables.users.find((row) => row.id === params.p_user_id)
+    if (
+      !user ||
+      user.status !== 'active' ||
+      user.wpp !== null ||
+      user.timezone !== params.p_expected_timezone ||
+      typeof user.timezone !== 'string'
+    ) {
+      return refusal('context_changed')
+    }
+    const progress = this.tables.user_progress.find((row) => row.user_id === params.p_user_id)
+    if (
+      !progress ||
+      !isDeepStrictEqual(
+        {
+          current_streak: progress.current_streak,
+          last_active_date: progress.last_active_date,
+          updated_at: progress.updated_at,
+        },
+        params.p_expected_progress,
+      )
+    )
+      return refusal('progress_changed')
+    const now = new Date()
+    const today = getLocalDateString(user.timezone, now)
+    const start = Date.parse(getLocalDayUtcBounds(user.timezone, today).startIso)
+    const latest = addIsoDateDays(today, now.getTime() - start >= 30 * 60 * 1000 ? -1 : -2)
+    if (latest !== params.p_expected_latest_date) return refusal('context_changed')
+    const gap = (Date.parse(latest) - Date.parse(String(progress.last_active_date))) / 86_400_000
+    if (Number(progress.current_streak) <= 0 || !progress.last_active_date || gap < 2) {
+      return refusal('not_inactive')
+    }
+    const previous = progress.current_streak
+    progress.current_streak = 0
+    progress.updated_at = now.toISOString()
+    return {
+      applied: true,
+      user_id: user.id,
+      previous_streak: previous,
+      last_active_date: progress.last_active_date,
+      gap_days: gap,
+      latest_closable_date: latest,
+    }
+  }
+
+  /** New mobile guards only. Locks/SQL rollback still require physical PG tests. */
+  private finalizeMobileDailyClose(params: MemoryRow): MemoryRow {
+    const refusal = (reason: string) => ({
+      applied: false,
+      already_closed: false,
+      snapshot_id: params.p_snapshot_id,
+      reason,
+    })
+    const user = this.tables.users.find((row) => row.id === params.p_user_id)
+    if (
+      !user ||
+      user.wpp !== null ||
+      user.status !== 'active' ||
+      user.timezone !== params.p_expected_timezone ||
+      typeof user.timezone !== 'string'
+    ) {
+      return refusal('context_changed')
+    }
+    const profile = this.tables.user_profiles.find((row) => row.user_id === params.p_user_id)
+    if (!profile || !isDeepStrictEqual(profile, params.p_expected_profile)) {
+      return refusal('profile_changed')
+    }
+    const snapshot = this.tables.daily_snapshots.find(
+      (row) => row.id === params.p_snapshot_id && row.user_id === params.p_user_id,
+    )
+    if (!snapshot || snapshot.date !== params.p_last_active_date) return refusal('snapshot_changed')
+    if (snapshot.day_closed)
+      return {
+        applied: false,
+        already_closed: true,
+        snapshot_id: snapshot.id,
+        reason: 'already_closed',
+      }
+    if (!isDeepStrictEqual(this.present('daily_snapshots', snapshot), params.p_expected_snapshot)) {
+      return refusal('snapshot_changed')
+    }
+    const progress = this.tables.user_progress.find((row) => row.user_id === params.p_user_id)
+    const progressFields = progress
+      ? Object.fromEntries(
+          [
+            'xp_total',
+            'level',
+            'current_streak',
+            'longest_streak',
+            'blocks_completed',
+            'deficit_block',
+            'badges_earned',
+            'last_active_date',
+            'updated_at',
+          ].map((key) => [key, progress[key]]),
+        )
+      : null
+    if (!isDeepStrictEqual(progressFields, params.p_expected_progress)) {
+      return refusal('progress_changed')
+    }
+    const now = new Date()
+    const today = getLocalDateString(user.timezone, now)
+    const start = Date.parse(getLocalDayUtcBounds(user.timezone, today).startIso)
+    const latest = addIsoDateDays(today, now.getTime() - start >= 30 * 60 * 1000 ? -1 : -2)
+    if (String(params.p_last_active_date) > latest) return refusal('not_closable')
+    return this.finalizeDailyClose(params)
+  }
 
   private finalizeDailyClose(params: MemoryRow): MemoryRow {
     const status = params.p_day_status

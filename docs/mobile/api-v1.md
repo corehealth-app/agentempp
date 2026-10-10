@@ -123,7 +123,7 @@ com a mesma chave executa de novo; outro corpo com a mesma chave continua sendo
 | `POST` | `/media` | cria ativo privado e devolve URL temporária de upload |
 | `POST` | `/media/:id/complete` | verifica tipo/tamanho reais e conclui o upload |
 | `GET` | `/media/:id` | metadados próprios, resultado e download temporário quando disponível |
-| `POST` | `/media/:id/process` | solicita Vision/STT idempotente para um upload concluído |
+| `POST` | `/media/:id/process` | solicita Vision/STT idempotente para um upload concluído; recusa `plan_document` e `body_checkin_photo` |
 | `DELETE` | `/media/:id` | remove o objeto físico antes de encerrar o catálogo |
 | `GET` | `/devices` | lista instalações iOS próprias sem token APNs |
 | `POST` | `/devices` | registra ou atualiza uma instalação iOS e seu token no backend |
@@ -2427,7 +2427,9 @@ upload do paciente, e só é lido no mobile pelo proxy de capability descrito em
 5. Quando houver análise, o app chama `POST /media/:id/process`. O evento contém
    apenas IDs técnicos; a legenda permanece no catálogo privado e é carregada
    pelo worker junto da foto. Foto e texto formam um único contexto e não viram
-   dois registros de refeição.
+   dois registros de refeição. Foto do corpo (`body_checkin_photo`) nunca é
+   analisada: a rota recusa o pedido (ver “Foto do corpo nunca vai à leitura
+   por IA”).
 6. O app consulta `GET /media/:id` até `processed` ou `failed`. A resposta inclui
    `result` somente depois de `processed` e uma URL curta de download apenas nos
    estados em que o objeto já foi validado.
@@ -2467,7 +2469,120 @@ Enquanto o ativo está em `processing`, nenhum outro evento toma o claim ativo.
 - `DELETE /media/:id` segue a mesma ordem. URLs já emitidas têm TTL máximo de 60
   ou 300 segundos; clientes não devem reutilizá-las nem mantê-las em cache.
 - Fotos corporais são tratadas como mídia sensível: bucket separado, TTL de 60
-  segundos e nenhuma URL pública permanente.
+  segundos e nenhuma URL pública permanente. O servidor do app nunca as manda
+  para leitura por IA (seção seguinte).
+
+### Foto do corpo nunca vai à leitura por IA
+
+O servidor do app nunca manda uma foto do corpo (`body_checkin_photo`) para
+leitura por IA. `POST /media/:id/process` recusa esse tipo com `422
+media_kind_not_supported` — a mesma resposta que já dá para documento de
+plano — e não envia o evento de leitura. Motivo: ainda não está definido quem
+avalia fotos do corpo nem o que a pessoa vê a partir delas. Enquanto isso, o
+servidor do app não pede a leitura de nenhuma imagem desse tipo.
+
+Até esta mudança (2026-10-09) a rota aceitava o pedido (`202`) e enviava o
+evento. A função de leitura, que não mudou, pega o tipo da linha do catálogo
+e lê a imagem com o prompt de foto corporal, cujo texto padrão pede uma
+estimativa de percentual de gordura; o resultado fica em `GET /media/:id`.
+Nenhuma tela do app faz esse pedido: o app não cria `body_checkin_photo` e só
+chama `/process` para foto de refeição e áudio.
+
+- **Vale para qualquer pedido.** A rota lê do pedido só o id e a
+  `Idempotency-Key`. Corpo ou query com outro `kind`, `hint` ou `force` não
+  chegam ao serviço: o tipo é o gravado no envio (`POST /media`).
+- **Vale em qualquer estado.** O tipo é recusado antes de o estado ser olhado.
+  `uploaded`, `processing` e `failed` na leitura — que antes despachavam —,
+  e `pending_upload`, `processed`, `failed` no upload e `deleted` — que antes
+  respondiam `409 media_not_processable` — respondem todos `422
+  media_kind_not_supported`.
+- **A posse vem antes.** Foto de outra conta continua `404
+  media_asset_not_found`: a recusa não revela que o ativo existe.
+- **Nada é gravado.** A recusa não altera a linha do catálogo nem o objeto
+  guardado.
+- **Sem interruptor.** Não há variável de ambiente nem configuração que
+  reabra o caminho. Reabrir é mudança de código, com o teste do cenário
+  alterado de propósito.
+
+O que não mudou:
+
+- `meal_photo`, `gym_photo` e `audio_note` seguem com o mesmo `202` e o mesmo
+  evento `{ assetId, userId, requestId }`. Em `processing` ou com falha na
+  leitura o pedido é enviado de novo; sem upload concluído segue `409
+  media_not_processable`.
+- `plan_document` segue recusado nesta rota e lido só pela importação.
+- `POST /plan-imports` — o outro ponto do servidor do app que envia o evento
+  de leitura — já recusava tudo que não é `plan_document`: uma foto do corpo
+  oferecida ali recebe `422 media_kind_not_supported`, sem rascunho e sem
+  evento. O evento tem um emissor e esses dois chamadores no servidor do app.
+- Envio, conclusão, consulta e exclusão de foto do corpo (`POST /media`,
+  `/complete`, `GET` e `DELETE`): mesmo bucket, guarda de 730 dias e link de
+  60 segundos.
+- O contrato: nenhuma rota, formato ou código de erro novo.
+
+Onde fica: a recusa está em `requestMediaProcessing`
+(`apps/admin/src/lib/mobile-api/media-service.ts`), ao lado da recusa do
+documento de plano. A função de leitura (`media-asset-processing`) não foi
+editada: ela está na lista de funções que a produção antiga também publica e
+não recusa por tipo. O cenário exato da auditoria de 2026-10-09 e os casos
+acima estão travados em
+`apps/admin/src/lib/mobile-api/media-service.body-photo-ai-guard.test.ts` e em
+`apps/admin/src/app/api/mobile/v1/media/[id]/process/route.test.ts`, com
+repositório, armazenamento e fila em memória.
+
+O que a recusa espera: a definição de quem avalia fotos do corpo e do que a
+pessoa vê, e a aprovação do aceite específico e do prazo de guarda dessas
+imagens. Nenhuma das duas existe; esta seção não decide nenhuma.
+
+O que não está coberto:
+
+> RC C24a — cenário foto do corpo enviada com outro tipo declarado (meal_photo, gym_photo ou plan_document) variante o servidor reconhecer pelo conteúdo que a imagem é do corpo e recusar a leitura NÃO coberta nesta PR (pendência da audit 2026-10-09)
+> O tipo é o gravado no envio. `meal_photo` e `gym_photo` vão à leitura de
+> refeição ou de equipamento por `POST /media/:id/process`; `plan_document` em
+> imagem vai à transcrição de documento por `POST /plan-imports`. Em nenhum
+> dos três a imagem passa pelo prompt de foto corporal: a leitura de foto
+> sempre informa ao provedor o tipo declarado, e a transcrição de documento
+> usa o prompt próprio. Os seletores de galeria do app (refeição e plano)
+> aceitam qualquer imagem que a pessoa escolher.
+
+> RC C24a — cenário evento media.asset.process.requested publicado direto na fila para uma foto do corpo (fora do servidor do app) variante recusa também na função de leitura NÃO coberta nesta PR (pendência da audit 2026-10-09)
+> A função de leitura e a função `claim_media_asset_processing` do banco não
+> recusam por tipo. A função está na lista que a produção antiga publica e
+> não foi editada.
+
+> RC C24a — cenário pedido de leitura de foto do corpo aceito antes desta mudança e ainda na fila ou em andamento variante cancelar a leitura já despachada NÃO coberta nesta PR (pendência da audit 2026-10-09)
+
+> RC C24a — cenário foto do corpo lida antes desta mudança (resultado gravado em media_assets.processing_result) variante as respostas de mídia (GET /media/:id, POST /media repetido e POST /media/:id/complete) deixarem de devolver o resultado e apagar o que foi gravado NÃO coberta nesta PR (pendência da audit 2026-10-09)
+> As três respostas devolvem `result` quando o ativo está `processed`.
+> Nenhum banco foi lido: não se sabe quantas linhas assim existem no ambiente
+> de teste.
+
+> RC C24a — cenário envio e guarda da foto do corpo (POST /media segue aceitando body_checkin_photo, com guarda de 730 dias) variante recusar o envio enquanto não houver avaliador, aceite específico e prazo aprovados NÃO coberta nesta PR (pendência da audit 2026-10-09)
+
+> RC C24a — cenário código legado do agente de WhatsApp, encerrado (process-message.ts ainda contém a leitura da imagem e a gravação da estimativa de gordura) variante retirar essa leitura do código legado NÃO coberta nesta PR (pendência da audit 2026-10-09)
+> Código legado, mantido idêntico por regra do projeto: não é acionado,
+> evoluído nem apagado sem pedido explícito.
+
+> RC C24a — cenário rota contra o banco e a fila reais do ambiente de teste variante teste com Supabase e Inngest reais (os testes usam repositório, armazenamento e fila em memória; nenhum banco foi lido nem gravado) NÃO coberta nesta PR (pendência da audit 2026-10-09)
+
+> RC C24a — cenário app instalado no iPhone registrando refeição por foto e por áudio e importando plano depois da mudança variante conferência no aparelho NÃO coberta nesta PR (pendência da audit 2026-10-09)
+
+> RC C24a — cenário servidores já publicados (o ambiente de teste do app e a produção antiga, que publica o mesmo apps/admin no commit em que está) variante recusa em vigor neles NÃO coberta nesta PR (pendência da audit 2026-10-09)
+> Nada foi publicado. A recusa só vale num servidor depois de publicada nele;
+> a produção antiga não é tocada.
+
+> RC C24a — cenário pedido de leitura de foto do corpo aceito antes desta mudança e repetido com a mesma Idempotency-Key em até 24 horas variante resposta 202 gravada devolvida de novo no lugar da recusa (sem novo evento) NÃO coberta nesta PR (pendência da audit 2026-10-09)
+> A repetição devolve a resposta gravada sem executar a operação, então não
+> sai evento novo; uma chave nova recebe a recusa, e uma chave recusada é
+> liberada e recusada de novo. Esse mecanismo é genérico e está travado em
+> `apps/admin/src/lib/mobile-api/idempotency.test.ts` (“replays a completed
+> response without running the mutation again” e “marks an interrupted
+> operation as failed before propagating the error”); não foi executado de
+> novo com uma foto do corpo.
+
+Linha trazida do plano do backlog (pacote C24), como está escrita lá:
+
+> RC C24 — cenário fotos enviadas variante gordura estimada a partir delas NÃO coberta nesta PR (pendência da audit 2026-10-07).
 
 ## Rascunhos de plano (treino e plano alimentar)
 

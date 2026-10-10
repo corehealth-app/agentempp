@@ -333,6 +333,12 @@ export async function requestMediaProcessing(
   if (asset.kind === 'plan_document') {
     throw new MobileApiError(422, 'media_kind_not_supported', 'Plan documents are read on import')
   }
+  // A body photo is never sent to AI reading by the app's server, whatever
+  // the request carries and whatever state the asset is in: who evaluates it
+  // is not defined yet. The kind is the one recorded at upload.
+  if (asset.kind === 'body_checkin_photo') {
+    throw new MobileApiError(422, 'media_kind_not_supported', 'Body photos are not read by AI')
+  }
   const retryableFailure = asset.status === 'failed' && asset.failure_stage === 'processing'
   if (asset.status !== 'uploaded' && asset.status !== 'processing' && !retryableFailure) {
     throw new MobileApiError(409, 'media_not_processable', 'Media asset is not processable')

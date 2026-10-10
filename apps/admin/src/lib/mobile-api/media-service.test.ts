@@ -338,7 +338,14 @@ describe('mobile media service', () => {
   })
 
   it('dispatches processing without leaking caption text into the event', async () => {
-    const deps = makeDeps(asset({ status: 'uploaded', context_text: 'Sensitive meal caption' }))
+    const deps = makeDeps(
+      asset({
+        kind: 'meal_photo',
+        bucket_id: 'meal-photos',
+        status: 'uploaded',
+        context_text: 'Sensitive meal caption',
+      }),
+    )
 
     const result = await requestMediaProcessing(
       deps,

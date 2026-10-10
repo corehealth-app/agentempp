@@ -273,7 +273,12 @@ enum DemoPrompt14ScenarioSelection: Equatable, Sendable {
 #if DEBUG
 enum OnboardingEligibilityPreviewScenario: Sendable {
     case choice, assigned, gainBlocked, welcome, failure, completionUncertain
+    /// The read of the sign-up is refused: the e-mail administers the team's
+    /// panel (`adminAccountConflict`), or it simply fails (`loadFailure`).
+    case adminAccountConflict, loadFailure
     static func resolve(arguments: [String]) -> Self? {
+        if arguments.contains("--ui-testing-onboarding-admin-conflict") { return .adminAccountConflict }
+        if arguments.contains("--ui-testing-onboarding-load-failure") { return .loadFailure }
         if arguments.contains("--ui-testing-onboarding-assigned") { return .assigned }
         if arguments.contains("--ui-testing-onboarding-gain-blocked") { return .gainBlocked }
         if arguments.contains("--ui-testing-onboarding-completion-uncertain") { return .completionUncertain }

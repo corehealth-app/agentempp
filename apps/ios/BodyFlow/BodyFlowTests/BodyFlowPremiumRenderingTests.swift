@@ -856,6 +856,9 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
             "BodyFlow/Features/Onboarding/ConsentStepView.swift",
             "BodyFlow/Features/Onboarding/OnboardingCompletionView.swift",
             "BodyFlow/App/AppRootView.swift",
+            // First update (2026-10-10): the load-error screen left
+            // AppRootView for its own file and stays under the same rule.
+            "BodyFlow/Features/Onboarding/OnboardingLoadErrorView.swift",
         ]
         var offenders: [String] = []
         for path in reviewedSources {
@@ -1031,6 +1034,78 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
             offenders.append("Localizable: no \(key)")
         }
         XCTAssertTrue(offenders.isEmpty, "Sign-out not wired for real accounts: \(offenders)")
+    }
+
+    /// First update (2026-10-10). The liquid loader is a layer loop handed to
+    /// the render server once: no per-frame SwiftUI loop (it would stall
+    /// XCTest's idle wait and re-evaluate the view every frame), no timer,
+    /// no fixed font, no dependency — and the block that hosts it can take
+    /// the VoiceOver focus.
+    func testLiquidLoaderIsALayerLoopWithNoTimerOrFixedFont() throws {
+        let projectRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let liquidPath = "BodyFlow/DesignSystem/Components/BodyFlowLiquidLoader.swift"
+        let stagedPath = "BodyFlow/DesignSystem/Components/BodyFlowStagedLoader.swift"
+        for path in [liquidPath, stagedPath] {
+            XCTAssertTrue(
+                FileManager.default.fileExists(atPath: projectRoot.appendingPathComponent(path).path),
+                "\(path) does not exist"
+            )
+        }
+        var offenders: [String] = []
+        for path in [liquidPath, stagedPath] {
+            let source = try reviewedSource(path)
+            for forbidden in [
+                "TimelineView", "repeatForever", "Task.sleep", "asyncAfter",
+                ".font(.system(size:", "Lottie", "Timer", "DispatchQueue",
+            ] where source.contains(forbidden) {
+                offenders.append("\(path): \(forbidden)")
+            }
+        }
+        let liquid = try reviewedSource(liquidPath)
+        if !liquid.contains("BodyFlowLoopingView") { offenders.append("liquid loader: not a BodyFlowLoopingView") }
+        let staged = try reviewedSource(stagedPath)
+        if !staged.contains("BodyFlowLiquidLoader()") { offenders.append("staged loader: no liquid loader") }
+        if !staged.contains(".accessibilityFocused(") { offenders.append("staged loader: cannot take VoiceOver focus") }
+        if !staged.contains(".accessibilityValue(") { offenders.append("staged loader: the stage is not the status value") }
+        XCTAssertTrue(offenders.isEmpty, "Liquid loader contract: \(offenders)")
+    }
+
+    /// The meal analysis shows the one shared loading block, told its stage
+    /// by the sheet's single decision — which the brand mark reads too — and
+    /// nothing in it waits before appearing.
+    func testMealAnalysisUsesTheOneSharedLoaderAndNothingWaits() throws {
+        var offenders: [String] = []
+        let capture = try reviewedSource("BodyFlow/Features/Register/Media/MealLiveCaptureView.swift")
+        for required in ["BodyFlowStagedLoader(", "MealAnalysisFocus.takesFocus(", "model.beginPreparing()"]
+        where !capture.contains(required) {
+            offenders.append("MealLiveCaptureView: no \(required)")
+        }
+        for forbidden in ["BodyFlowDelayedProgress(", "ProgressView(", "isStaging", "Task.sleep", "asyncAfter"]
+        where capture.contains(forbidden) {
+            offenders.append("MealLiveCaptureView: still has \(forbidden)")
+        }
+        let sheet = try reviewedSource("BodyFlow/Features/Register/RegistrationSheet.swift")
+        for required in [
+            "Self.mealAnalysisStage(",
+            "hasProposal: mealModel.currentProposal != nil",
+            "registrationPhase: mealModel.phase",
+            "isSubmitting: mealModel.isSubmitting",
+            "showsProgress: analysisStage == nil",
+            "analysisStage: analysisStage",
+        ] where !sheet.contains(required) {
+            offenders.append("RegistrationSheet: no \(required)")
+        }
+        let brand = try reviewedSource("BodyFlow/DesignSystem/Components/PerformeBrandAction.swift")
+        if !brand.contains("state == .processing && showsProgress") {
+            offenders.append("PerformeBrandAction: the spinner ignores showsProgress")
+        }
+        let catalog = try reviewedSource("BodyFlow/Resources/Localizable.xcstrings")
+        for key in ["registration.live.analysis.title", "registration.live.phase.calculating"]
+        where !catalog.contains("\"\(key)\"") {
+            offenders.append("Localizable: no \(key)")
+        }
+        XCTAssertTrue(offenders.isEmpty, "Meal analysis loader contract: \(offenders)")
     }
 
     /// The root and the onboarding container each key their own motion to

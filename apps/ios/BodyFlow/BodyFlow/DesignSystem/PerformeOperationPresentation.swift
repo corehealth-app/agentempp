@@ -113,7 +113,7 @@ enum PerformeRegistrationProjection {
             switch draft {
             case .review: return .ready
             case .failed: return .failed
-            case .idle, .uploading, .processing, .reading: return .cancelled
+            case .idle, .preparing, .uploading, .processing, .reading: return .cancelled
             }
         default:
             return registration(mutation, captureError: captureError)

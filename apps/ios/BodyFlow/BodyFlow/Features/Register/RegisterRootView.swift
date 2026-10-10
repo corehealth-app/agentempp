@@ -65,8 +65,12 @@ struct RegisterRootView: View {
                 if let mealCommand = fixture.commands.first(where: {
                     RegistrationKind(rawValue: $0.kindID) == .meal
                 }) {
-                    mealTile(mealCommand)
-                        .guidedTourTarget(.mealCommand)
+                    // The card's own action opens the full choice; each of
+                    // its three ways opens that capture at once.
+                    RegisterMealCard { entry in
+                        present(mealCommand, mealEntry: entry)
+                    }
+                    .guidedTourTarget(.mealCommand)
                 }
 
                 if presentsLocalDemonstration {
@@ -123,58 +127,6 @@ struct RegisterRootView: View {
         copy(presentsLocalDemonstration ? "registration.root.open-demo" : "registration.root.open")
     }
 
-    /// The meal is the one primary action: a brand tile that names the three
-    /// ways to tell the app what was eaten. The ways are a hint, not three
-    /// buttons — the sheet that opens offers them.
-    private func mealTile(_ command: RegistrationCommandFixture) -> some View {
-        Button { present(command) } label: {
-            VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-                VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
-                    Text(verbatim: commandTitle(for: command))
-                        .font(BodyFlowTypography.screenTitle)
-                    Text(verbatim: copy("registration.root.meal.detail"))
-                        .font(BodyFlowTypography.callout)
-                }
-                .foregroundStyle(BodyFlowColor.color(.onPrimary))
-                .fixedSize(horizontal: false, vertical: true)
-                if dynamicTypeSize <= .xLarge {
-                    HStack(spacing: BodyFlowSpacing.xs) {
-                        way(.camera, copy("registration.root.way.photo"))
-                        way(.compose, copy("registration.root.way.text"))
-                        way(.microphone, copy("registration.root.way.audio"))
-                    }
-                    .accessibilityHidden(true)
-                }
-            }
-            .padding(BodyFlowSpacing.md)
-            .frame(maxWidth: .infinity, minHeight: BodyFlowSpacing.minimumTapTarget, alignment: .leading)
-            .background(
-                BodyFlowColor.color(.brandPrimary),
-                in: RoundedRectangle(cornerRadius: BodyFlowRadius.card, style: .continuous)
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.bodyFlowRowAction)
-        .disabled(RegistrationKind(rawValue: command.kindID) == nil)
-        .accessibilityLabel(commandTitle(for: command))
-        .accessibilityHint(copy("registration.root.meal.detail"))
-        .accessibilityIdentifier(identifier(for: command))
-    }
-
-    private func way(_ symbol: BodyFlowSymbol, _ title: String) -> some View {
-        VStack(spacing: BodyFlowSpacing.xxs) {
-            Image(symbol: symbol).font(.system(size: 17, weight: .semibold)).frame(height: 22)
-            Text(verbatim: title).font(BodyFlowTypography.caption.weight(.semibold))
-        }
-        .foregroundStyle(BodyFlowColor.color(.brandPrimary))
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, BodyFlowSpacing.xs)
-        .background(
-            BodyFlowColor.color(.surfaceElevated),
-            in: RoundedRectangle(cornerRadius: BodyFlowRadius.field, style: .continuous)
-        )
-    }
-
     private func otherTile(_ command: RegistrationCommandFixture) -> some View {
         Button { present(command) } label: {
             BodyFlowCard(surface: .elevated, padding: BodyFlowSpacing.sm) {
@@ -209,11 +161,17 @@ struct RegisterRootView: View {
         }
     }
 
-    private func present(_ command: RegistrationCommandFixture) {
+    private func present(
+        _ command: RegistrationCommandFixture,
+        mealEntry: MealCaptureEntry? = nil
+    ) {
         guard let kind = RegistrationKind(rawValue: command.kindID) else {
             return
         }
-        router.presentedSheet = .registration(kind)
+        router.presentedSheet = .registration(
+            kind,
+            mealEntry: kind == .meal ? mealEntry : nil
+        )
     }
 
     private func identifier(for command: RegistrationCommandFixture) -> String {

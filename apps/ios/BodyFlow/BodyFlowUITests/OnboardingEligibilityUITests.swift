@@ -155,6 +155,111 @@ final class OnboardingEligibilityUITests: XCTestCase {
         XCTAssertTrue(element("screen.hoje", app).waitForExistence(timeout: 5))
     }
 
+    /// Reported on 2026-10-10 11:55: a person signs in with an account that
+    /// administers the team's panel; the read of the sign-up is refused for
+    /// that reason and the screen offered only "Tentar novamente", forever.
+    func testTeamPanelAccountSeesWhyAndSignsOutToSignIn() {
+        let app = start("--ui-testing-onboarding-admin-conflict")
+        signIn(app)
+        XCTAssertTrue(element("screen.onboarding.load-error", app).waitForExistence(timeout: 10))
+        let signOut = app.buttons["onboarding.load-error.sign-out"]
+        XCTAssertTrue(signOut.waitForExistence(timeout: 5), "A team-panel account needs a way out of the screen")
+        let message = element("onboarding.load-error.message", app)
+        XCTAssertTrue(message.waitForExistence(timeout: 5))
+        XCTAssertEqual(message.label,
+            "Este e-mail é do painel da equipe. O app precisa de um e-mail diferente. Saia desta conta e entre com outro e-mail.")
+        XCTAssertTrue(app.staticTexts["Use outro e-mail no app"].exists)
+        XCTAssertFalse(app.buttons["onboarding.load-error.retry"].exists)
+        XCTAssertEqual(signOut.label, "Sair da conta")
+        reach(signOut, app)
+        support.assertTarget(signOut)
+        support.capture("u1-load-error-team-panel-pt-light", app: app)
+        signOut.tap()
+        XCTAssertTrue(element("screen.auth.sign-in", app).waitForExistence(timeout: 10))
+        XCTAssertFalse(element("screen.onboarding.load-error", app).exists)
+    }
+
+    func testLoadFailureKeepsRetryAndGainsSignOutInEnglishAtAXXXL() {
+        let app = start("--ui-testing-onboarding-load-failure", language: "en-US", dark: true,
+                        category: "UICTContentSizeCategoryAccessibilityXXXL")
+        signIn(app)
+        XCTAssertTrue(element("screen.onboarding.load-error", app).waitForExistence(timeout: 10))
+        let signOut = app.buttons["onboarding.load-error.sign-out"]
+        XCTAssertTrue(signOut.waitForExistence(timeout: 5), "Every load failure needs a way out of the screen")
+        let message = element("onboarding.load-error.message", app)
+        XCTAssertTrue(message.waitForExistence(timeout: 5))
+        XCTAssertEqual(message.label, "Try again to continue your setup.")
+        XCTAssertTrue(app.staticTexts["Could not load"].exists)
+        let retry = app.buttons["onboarding.load-error.retry"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 5))
+        XCTAssertEqual(retry.label, "Try again")
+        reach(retry, app)
+        support.assertTarget(retry)
+        XCTAssertEqual(signOut.label, "Sign out")
+        reach(signOut, app)
+        support.assertTarget(signOut)
+        support.capture("u1-load-error-temporary-en-dark-axxxl", app: app)
+        signOut.tap()
+        XCTAssertTrue(element("screen.auth.sign-in", app).waitForExistence(timeout: 10))
+        XCTAssertFalse(element("screen.onboarding.load-error", app).exists)
+    }
+
+    /// Signs in with the file's synthetic values (the local fixture accepts
+    /// any well-formed pair). The keyboard carries the form: Return on the
+    /// e-mail moves to the password and Return there submits (the sign-in
+    /// screen's own `onSubmit`), so no field has to be scrolled under a
+    /// finger at the largest text size.
+    private func signIn(_ app: XCUIApplication) {
+        XCTAssertTrue(element("screen.auth.sign-in", app).waitForExistence(timeout: 10))
+        enter("person@example.invalid\n", in: app.textFields["auth.email"], app: app)
+        let password = app.secureTextFields["auth.password"]
+        XCTAssertTrue(password.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForKeyboardFocus(password), "Return on the e-mail moves to the password")
+        password.typeText("local-pass\n")
+        declineSystemPasswordSave(app)
+    }
+
+    /// After a sign-in typed into a password field the simulator's own
+    /// "Salvar Senha?" sheet covers the screen (seen in the first green
+    /// attempt of these tests). It is the system's, not the app's: it is
+    /// declined, so nothing is saved, and the screen under test is reached.
+    /// The sheet is still sliding in when its button first exists, so the one
+    /// tap waits for the button to stop moving.
+    private func declineSystemPasswordSave(_ app: XCUIApplication) {
+        let decline = app.buttons.matching(
+            NSPredicate(format: "label IN %@", ["Agora Não", "Not Now"])
+        ).firstMatch
+        guard decline.waitForExistence(timeout: 5) else { return }
+        var lastFrame: CGRect?
+        var unchangedSince: TimeInterval?
+        let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            guard decline.exists, decline.isHittable else {
+                lastFrame = nil
+                unchangedSince = nil
+                return false
+            }
+            let now = ProcessInfo.processInfo.systemUptime
+            guard decline.frame == lastFrame, let since = unchangedSince else {
+                lastFrame = decline.frame
+                unchangedSince = now
+                return false
+            }
+            return now - since >= 0.5
+        }, object: nil)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [settled], timeout: 8), .completed,
+            "The system's password sheet never settled"
+        )
+        decline.tap()
+        let gone = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: decline
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [gone], timeout: 5), .completed,
+            "The system's password sheet stayed on screen"
+        )
+    }
+
     private let documentKeys = ["qa_onboarding_required", "qa_onboarding_notice", "qa_onboarding_consent"]
     private func start(_ scenario: String = "--ui-testing-fresh-auth", language: String = "pt-BR",
                        dark: Bool = false, category: String = "UICTContentSizeCategoryL", extraArguments: [String] = []) -> XCUIApplication {

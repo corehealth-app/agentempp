@@ -80,6 +80,65 @@ final class Prompt13RegistrationUITests: XCTestCase {
         XCTAssertTrue(app.buttons["registration.proposal.confirm"].exists)
     }
 
+    // MARK: First update (2026-10-10) — the ways of the meal card open directly
+
+    @MainActor
+    func testPhotoWayOpensTheLocalPhotoSampleAtOnce() {
+        let app = launchRegistration(scenario: .loaded)
+        let way = app.buttons["register.refeicao.foto"]
+        XCTAssertTrue(way.waitForExistence(timeout: 5), "Foto must be a real button on the meal card")
+        way.tap()
+        XCTAssertTrue(element("sheet.registrar.refeicao", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(element("registration.meal.photo", in: app).waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["registration.meal.source.photo"].exists)
+        XCTAssertFalse(app.buttons["registration.meal.source.text"].exists)
+        XCTAssertEqual(app.alerts.count, 0)
+        app.buttons["registration.meal.detect"].tap()
+
+        XCTAssertTrue(element("registration.proposal", in: app).waitForExistence(timeout: 5))
+        XCTAssertEqual(app.alerts.count, 0)
+        XCTAssertTrue(app.buttons["registration.proposal.confirm"].exists)
+    }
+
+    @MainActor
+    func testAudioWayOpensTheLocalAudioSampleAtOnce() {
+        let app = launchRegistration(scenario: .loaded)
+        let way = app.buttons["register.refeicao.audio"]
+        XCTAssertTrue(way.waitForExistence(timeout: 5), "Áudio must be a real button on the meal card")
+        way.tap()
+        XCTAssertTrue(element("sheet.registrar.refeicao", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(element("registration.meal.audio", in: app).waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["registration.meal.source.audio"].exists)
+        XCTAssertFalse(app.buttons["registration.meal.source.text"].exists)
+        XCTAssertEqual(app.alerts.count, 0)
+        app.buttons["registration.meal.detect"].tap()
+
+        XCTAssertTrue(element("registration.proposal", in: app).waitForExistence(timeout: 5))
+        XCTAssertEqual(app.alerts.count, 0)
+        XCTAssertTrue(app.buttons["registration.proposal.confirm"].exists)
+    }
+
+    @MainActor
+    func testTextWayFocusesTheLocalTextFieldAtOnce() {
+        let app = launchRegistration(scenario: .loaded)
+        let way = app.buttons["register.refeicao.texto"]
+        XCTAssertTrue(way.waitForExistence(timeout: 5), "Texto must be a real button on the meal card")
+        way.tap()
+        XCTAssertTrue(element("sheet.registrar.refeicao", in: app).waitForExistence(timeout: 5))
+        let draft = app.textFields["registration.meal.text"]
+        XCTAssertTrue(draft.waitForExistence(timeout: 3))
+        let focused = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "hasKeyboardFocus == true"),
+            object: draft
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [focused], timeout: 3), .completed,
+            "The field takes the keyboard without a touch"
+        )
+        XCTAssertFalse(app.buttons["registration.meal.source.text"].exists)
+        XCTAssertFalse(app.buttons["registration.meal.source.photo"].exists)
+    }
+
     @MainActor
     func testPendingMealEditReplacesProposal() {
         let support = BodyFlowUITestSupport(testCase: self)

@@ -537,13 +537,25 @@
     "en" : { "stringUnit" : { "state" : "translated", "value" : "Audio" } },
     "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Áudio" } }
   } },
+  "registration.root.way.audio.hint" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Log the meal by voice. You confirm before it is saved." } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Registrar a refeição por áudio. Você confirma antes de salvar." } }
+  } },
   "registration.root.way.photo" : { "localizations" : {
     "en" : { "stringUnit" : { "state" : "translated", "value" : "Photo" } },
     "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Foto" } }
   } },
+  "registration.root.way.photo.hint" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Log the meal with a photo. You confirm before it is saved." } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Registrar a refeição por foto. Você confirma antes de salvar." } }
+  } },
   "registration.root.way.text" : { "localizations" : {
     "en" : { "stringUnit" : { "state" : "translated", "value" : "Text" } },
     "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Texto" } }
+  } },
+  "registration.root.way.text.hint" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Log the meal by writing. You confirm before it is saved." } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Registrar a refeição por texto. Você confirma antes de salvar." } }
   } },
   "flow.suggestion.day" : { "localizations" : {
     "en" : { "stringUnit" : { "state" : "translated", "value" : "How is my day so far?" } },
@@ -825,6 +837,14 @@
     }
   }
 },
+"app.onboarding.error.team-account.message" : { "localizations" : {
+  "en" : { "stringUnit" : { "state" : "translated", "value" : "This email belongs to the team's panel. The app needs a different email. Sign out of this account and sign in with another email." } },
+  "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Este e-mail é do painel da equipe. O app precisa de um e-mail diferente. Saia desta conta e entre com outro e-mail." } }
+} },
+"app.onboarding.error.team-account.title" : { "localizations" : {
+  "en" : { "stringUnit" : { "state" : "translated", "value" : "Use a different email in the app" } },
+  "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Use outro e-mail no app" } }
+} },
 "app.onboarding.error.title" : {
   "localizations": {
     "en": {
@@ -889,6 +909,10 @@
     }
   }
 },
+"app.sign-out" : { "localizations" : {
+  "en" : { "stringUnit" : { "state" : "translated", "value" : "Sign out" } },
+  "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sair da conta" } }
+} },
 "auth.accessibility.error-format" : {
   "localizations": {
     "en": {
@@ -3353,6 +3377,10 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "rest" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "descanso" } }
     } },
+    "registration.live.analysis.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Analyzing your meal" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Analisando sua refeição" } }
+    } },
     "registration.live.back" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Back" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Voltar" } }
@@ -3445,6 +3473,10 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Analyzing the photo…" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Analisando a foto…" } }
     } },
+    "registration.live.phase.calculating" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Calculating the values…" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Calculando os valores…" } }
+    } },
     "registration.live.phase.preparing" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Preparing the file…" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Preparando o arquivo…" } }
@@ -3460,6 +3492,10 @@
     "registration.live.phase.uploading" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Uploading…" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Enviando…" } }
+    } },
+    "registration.live.photo.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Meal photo" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Foto da refeição" } }
     } },
     "registration.live.record.hint" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Say what you ate and how much. The limit is 3 minutes." } },

@@ -164,6 +164,304 @@ final class MealCaptureUITests: XCTestCase {
         XCTAssertFalse(submit.isEnabled, "Closing the keyboard does not confirm the eggs")
     }
 
+    // MARK: First update (2026-10-10) — the ways of the meal card open directly
+    //
+    // Asked for by the owner on build 1.0 (3), real account: choosing Foto,
+    // Texto or Áudio opened a sheet that asked the same question again.
+
+    @MainActor
+    func testTextWayOpensTheFieldWithTheKeyboardAndReachesTheReview() {
+        let app = launchRegister(language: "pt-BR")
+        let way = app.buttons["register.refeicao.texto"]
+        XCTAssertTrue(way.waitForExistence(timeout: 5), "Texto must be a real button on the meal card")
+        XCTAssertEqual(way.label, "Texto")
+        support.assertTarget(way)
+        way.tap()
+        XCTAssertTrue(element("sheet.registrar.refeicao", app: app).waitForExistence(timeout: 5))
+
+        let field = app.textFields["registration.meal.text"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForKeyboardFocus(field), "The field takes the keyboard without a touch")
+        XCTAssertTrue(app.keyboards.firstMatch.exists)
+        XCTAssertFalse(app.staticTexts["Como deseja adicionar a refeição?"].exists)
+        XCTAssertFalse(app.buttons["registration.meal.source.text"].exists)
+
+        // Typed without touching the field.
+        field.typeText("2 ovos mexidos e granola")
+        XCTAssertEqual(field.value as? String, "2 ovos mexidos e granola")
+        let read = app.buttons["registration.meal.detect"]
+        XCTAssertTrue(read.isEnabled)
+        tapDetectWithVisibleKeyboard(read, app: app)
+
+        let eggs = app.textFields["registration.review.item.c1-0a1b2c3d.name"]
+        XCTAssertTrue(eggs.waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Revise os alimentos"].exists)
+        XCTAssertFalse(element("registration.proposal", app: app).exists)
+        support.capture("u1-text-way-review-pt-light", app: app)
+    }
+
+    @MainActor
+    func testPhotoAndAudioWaysOpenTheirOwnStepAtOnce() {
+        let app = launchRegister(language: "pt-BR", extraArguments: ["--ui-testing-meal-capture-media"])
+
+        let audio = app.buttons["register.refeicao.audio"]
+        XCTAssertTrue(audio.waitForExistence(timeout: 5), "Áudio must be a real button on the meal card")
+        XCTAssertEqual(audio.label, "Áudio")
+        audio.tap()
+        XCTAssertTrue(element("sheet.registrar.refeicao", app: app).waitForExistence(timeout: 5))
+        let start = app.buttons["registration.meal.record.start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 5))
+        XCTAssertEqual(start.label, "Começar gravação")
+        XCTAssertTrue(element("registration.meal.record.elapsed", app: app).exists)
+        XCTAssertFalse(app.staticTexts["Como deseja adicionar a refeição?"].exists)
+        XCTAssertFalse(app.buttons["registration.meal.source.record"].exists)
+        // Nothing records and nothing is asked before "Começar gravação".
+        XCTAssertEqual(app.alerts.count, 0)
+        support.capture("u1-audio-way-recorder-pt-light", app: app)
+
+        // "Voltar" leads to the full choice, where "Importar áudio" lives.
+        let back = app.buttons["registration.meal.source.back"]
+        reveal(back, app: app)
+        back.tap()
+        XCTAssertTrue(app.buttons["registration.meal.source.text"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["registration.meal.source.audio-import"].exists)
+        app.buttons["sheet.fechar"].tap()
+
+        let photo = app.buttons["register.refeicao.foto"]
+        XCTAssertTrue(photo.waitForExistence(timeout: 5))
+        XCTAssertEqual(photo.label, "Foto")
+        photo.tap()
+        let step = element("registration.meal.photo-step", app: app)
+        XCTAssertTrue(step.waitForExistence(timeout: 5))
+        XCTAssertEqual(step.label, "Foto da refeição")
+        let choose = app.buttons["registration.meal.source.gallery"]
+        XCTAssertTrue(choose.waitForExistence(timeout: 5))
+        XCTAssertEqual(choose.label, "Escolher foto")
+        XCTAssertTrue(choose.isHittable)
+        support.assertTarget(choose)
+        XCTAssertFalse(app.staticTexts["Como deseja adicionar a refeição?"].exists)
+        for absent in ["text", "record", "audio-import"] {
+            XCTAssertFalse(app.buttons["registration.meal.source.\(absent)"].exists, absent)
+        }
+        XCTAssertEqual(app.alerts.count, 0)
+        support.capture("u1-photo-way-step-pt-light", app: app)
+    }
+
+    @MainActor
+    func testWaysWithoutMediaFallBackToTheChoiceThatSaysSo() {
+        let app = launchRegister(language: "pt-BR")
+        for way in ["foto", "audio"] {
+            let button = app.buttons["register.refeicao.\(way)"]
+            XCTAssertTrue(button.waitForExistence(timeout: 5), "\(way) must be a real button on the meal card")
+            button.tap()
+            XCTAssertTrue(element("sheet.registrar.refeicao", app: app).waitForExistence(timeout: 5))
+            XCTAssertTrue(app.buttons["registration.meal.source.text"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.staticTexts["Foto e áudio ainda não estão disponíveis nesta versão."].exists)
+            XCTAssertFalse(element("registration.meal.photo-step", app: app).exists)
+            XCTAssertFalse(app.buttons["registration.meal.record.start"].exists)
+            app.buttons["sheet.fechar"].tap()
+        }
+    }
+
+    /// Lock: the card's own action — the path every other registration test
+    /// takes — still opens the full choice.
+    @MainActor
+    func testMealCardTitleStillOpensTheFullChoice() {
+        let app = launchRegister(language: "pt-BR")
+        let meal = app.buttons["register.refeicao"]
+        XCTAssertTrue(meal.waitForExistence(timeout: 5))
+        XCTAssertEqual(meal.label, "Refeição")
+        support.assertTarget(meal)
+        meal.tap()
+        XCTAssertTrue(element("sheet.registrar.refeicao", app: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["registration.meal.source.text"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Como deseja adicionar a refeição?"].exists)
+        XCTAssertFalse(app.keyboards.firstMatch.exists)
+    }
+
+    /// The touch areas tile the card: a finger beside a way, or between two
+    /// of them, still opens a capture.
+    @MainActor
+    func testTouchesBesideAndBetweenTheWaysStillOpenACapture() {
+        let app = launchRegister(language: "pt-BR")
+        let photo = app.buttons["register.refeicao.foto"]
+        let text = app.buttons["register.refeicao.texto"]
+        XCTAssertTrue(photo.waitForExistence(timeout: 5), "Foto must be a real button on the meal card")
+        XCTAssertTrue(text.waitForExistence(timeout: 5))
+        let sheet = element("sheet.registrar.refeicao", app: app)
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let y = photo.frame.midY
+        // Left of the first way, and on each side of the line between two.
+        for x in [photo.frame.minX + 3, photo.frame.maxX - 2, text.frame.minX + 2] {
+            origin.withOffset(CGVector(dx: x, dy: y)).tap()
+            XCTAssertTrue(sheet.waitForExistence(timeout: 5), "Dead point at x=\(x) y=\(y)")
+            app.buttons["sheet.fechar"].tap()
+            XCTAssertTrue(photo.waitForExistence(timeout: 5))
+        }
+        XCTAssertEqual(photo.frame.maxX, text.frame.minX, accuracy: 0.5)
+    }
+
+    @MainActor
+    func testWaysKeepTheirTargetsInEnglishAtAXXXL() {
+        let app = launchRegister(
+            language: "en-US", dark: true,
+            category: "UICTContentSizeCategoryAccessibilityXXXL"
+        )
+        for (way, label) in [("foto", "Photo"), ("texto", "Text"), ("audio", "Audio")] {
+            let button = app.buttons["register.refeicao.\(way)"]
+            XCTAssertTrue(button.waitForExistence(timeout: 5), "\(label) must be a real button at the largest text size")
+            XCTAssertEqual(button.label, label)
+            for _ in 0..<12 where !button.isHittable { app.swipeUp() }
+            XCTAssertTrue(button.isHittable, label)
+            support.assertTarget(button)
+        }
+        support.capture("u1-meal-card-en-dark-axxxl", app: app)
+        let text = app.buttons["register.refeicao.texto"]
+        for _ in 0..<12 where !text.isHittable { app.swipeDown() }
+        text.tap()
+        let field = app.textFields["registration.meal.text"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForKeyboardFocus(field))
+        XCTAssertFalse(app.buttons["registration.meal.source.text"].exists)
+    }
+
+    /// The same step reached through the full choice ("Escrever") raises the
+    /// keyboard too: one touch less on the path every other entry takes.
+    @MainActor
+    func testWriteInsideTheChoiceRaisesTheKeyboardAtOnce() {
+        let app = launchCapture(language: "pt-BR")
+        let write = app.buttons["registration.meal.source.text"]
+        XCTAssertTrue(write.waitForExistence(timeout: 5))
+        write.tap()
+        let field = app.textFields["registration.meal.text"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForKeyboardFocus(field), "The field takes the keyboard without a touch")
+        field.typeText("2 ovos mexidos e granola")
+        XCTAssertEqual(field.value as? String, "2 ovos mexidos e granola")
+        tapDetectWithVisibleKeyboard(app.buttons["registration.meal.detect"], app: app)
+        XCTAssertTrue(app.textFields["registration.review.item.c1-0a1b2c3d.name"].waitForExistence(timeout: 8))
+    }
+
+    // MARK: First update (2026-10-10) — one structured loading for the analysis
+    //
+    // Asked for by the owner: "quando está processando, aparecem vários
+    // loading, o ideal seria manter somente 1 e melhor estruturado".
+
+    @MainActor
+    func testAnalysisShowsOneStructuredLoadingAndCancelReturnsToTheChoice() {
+        let app = launchCapture(language: "pt-BR", extraArguments: ["--ui-testing-meal-capture-hold"])
+        reachHeldAnalysis(app, text: "2 ovos mexidos e granola")
+
+        let progress = element("registration.meal.capture.progress", app: app)
+        XCTAssertTrue(progress.waitForExistence(timeout: 8))
+        XCTAssertEqual(progress.label, "Analisando sua refeição")
+        XCTAssertEqual(progress.value as? String, "Lendo os alimentos…")
+        XCTAssertEqual(
+            app.descendants(matching: .any).matching(identifier: "registration.meal.capture.progress").count, 1
+        )
+        let cancel = app.buttons["registration.meal.capture.cancel"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5))
+        XCTAssertEqual(cancel.label, "Cancelar")
+        XCTAssertTrue(cancel.isHittable)
+        support.assertTarget(cancel)
+        // The brand mark still says the state; it only stops drawing a second
+        // indicator.
+        XCTAssertEqual(element("registration.brand", app: app).label, "Processando")
+        support.capture("u1-analysis-loading-pt-light", app: app)
+
+        cancel.tap()
+        XCTAssertTrue(app.buttons["registration.meal.source.text"].waitForExistence(timeout: 5))
+        XCTAssertFalse(progress.exists)
+    }
+
+    @MainActor
+    func testAnalysisLoadingInEnglishAtAXXXLWithReduceMotion() {
+        let app = support.launch(
+            arguments: [
+                "--ui-testing", "--ui-testing-prompt13-reduce-motion",
+                "--ui-testing-meal-capture", "--ui-testing-meal-capture-hold",
+            ],
+            language: "en-US",
+            dark: true,
+            category: "UICTContentSizeCategoryAccessibilityXXXL"
+        )
+        let tab = app.buttons["tab.registrar"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 8))
+        tab.tap()
+        let meal = app.buttons["register.refeicao"]
+        XCTAssertTrue(meal.waitForExistence(timeout: 5))
+        meal.tap()
+        XCTAssertTrue(element("sheet.registrar.refeicao", app: app).waitForExistence(timeout: 5))
+        let write = app.buttons["registration.meal.source.text"]
+        XCTAssertTrue(write.waitForExistence(timeout: 5))
+        write.tap()
+        let field = app.textFields["registration.meal.text"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("2 eggs")
+        dismissKeyboard(app)
+        let read = app.buttons["registration.meal.detect"]
+        reveal(read, app: app)
+        read.tap()
+
+        let progress = element("registration.meal.capture.progress", app: app)
+        XCTAssertTrue(progress.waitForExistence(timeout: 8))
+        XCTAssertEqual(progress.label, "Analyzing your meal")
+        XCTAssertEqual(progress.value as? String, "Reading the foods…")
+        let cancel = app.buttons["registration.meal.capture.cancel"]
+        reveal(cancel, app: app)
+        XCTAssertEqual(cancel.label, "Cancel")
+        support.assertTarget(cancel)
+        support.capture("u1-analysis-loading-en-dark-axxxl-reduce-motion", app: app)
+        cancel.tap()
+        XCTAssertTrue(app.buttons["registration.meal.source.text"].waitForExistence(timeout: 5))
+        XCTAssertFalse(progress.exists)
+    }
+
+    /// Writes a meal and asks for it to be read; the synthetic reader holds.
+    @MainActor
+    private func reachHeldAnalysis(_ app: XCUIApplication, text: String) {
+        let write = app.buttons["registration.meal.source.text"]
+        XCTAssertTrue(write.waitForExistence(timeout: 5))
+        write.tap()
+        let field = app.textFields["registration.meal.text"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText(text)
+        tapDetectWithVisibleKeyboard(app.buttons["registration.meal.detect"], app: app)
+    }
+
+    @MainActor
+    private func waitForKeyboardFocus(_ field: XCUIElement) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "hasKeyboardFocus == true"),
+            object: field
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: 3) == .completed
+    }
+
+    /// The Register tab with the synthetic capture; nothing is opened yet.
+    @MainActor
+    private func launchRegister(
+        language: String,
+        dark: Bool = false,
+        category: String = "UICTContentSizeCategoryL",
+        extraArguments: [String] = []
+    ) -> XCUIApplication {
+        let app = support.launch(
+            arguments: [
+                "--ui-testing", "--ui-testing-prompt13-loaded", "--ui-testing-meal-capture",
+            ] + extraArguments,
+            language: language,
+            dark: dark,
+            category: category
+        )
+        let tab = app.buttons["tab.registrar"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 8))
+        tab.tap()
+        return app
+    }
+
     @MainActor
     private var support: PremiumUIUXUITestSupport {
         PremiumUIUXUITestSupport(testCase: self)
@@ -173,12 +471,13 @@ final class MealCaptureUITests: XCTestCase {
     private func launchCapture(
         language: String,
         dark: Bool = false,
-        category: String = "UICTContentSizeCategoryL"
+        category: String = "UICTContentSizeCategoryL",
+        extraArguments: [String] = []
     ) -> XCUIApplication {
         let app = support.launch(
             arguments: [
                 "--ui-testing", "--ui-testing-prompt13-loaded", "--ui-testing-meal-capture",
-            ],
+            ] + extraArguments,
             language: language,
             dark: dark,
             category: category

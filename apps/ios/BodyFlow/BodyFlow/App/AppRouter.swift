@@ -172,11 +172,14 @@ enum RegistrationKind: String, CaseIterable, Identifiable, Hashable, Sendable {
 }
 
 enum AppSheet: Identifiable, Hashable, Sendable {
-    case registration(RegistrationKind)
+    /// `mealEntry` is the way of telling the meal already chosen on the
+    /// Register screen (photo, text or audio); it is only read for a meal.
+    case registration(RegistrationKind, mealEntry: MealCaptureEntry? = nil)
 
+    /// The entry never changes which sheet this is.
     var id: String {
         switch self {
-        case let .registration(kind):
+        case let .registration(kind, _):
             "sheet.registrar.\(kind.id)"
         }
     }

@@ -527,14 +527,13 @@ struct AppDependencies: Sendable {
                 )
             }
         #if DEBUG
-        if configuration.mode == .demo,
-           DemoMealCaptureScenario.isEnabled(arguments: ProcessInfo.processInfo.arguments) {
-            mealCapture = MealCaptureCapability(
-                media: nil,
-                drafts: DemoMealDraftProvider(),
-                uploader: nil,
-                staging: MediaStagingStore()
-            )
+        // The arguments are the process's own; the choice itself is a pure
+        // function, so Release and Debug are both proven by test.
+        if let synthetic = DemoMealCaptureScenario.capability(
+            arguments: ProcessInfo.processInfo.arguments,
+            mode: configuration.mode
+        ) {
+            mealCapture = synthetic
         }
         #endif
 

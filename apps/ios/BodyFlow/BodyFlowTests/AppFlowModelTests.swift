@@ -705,6 +705,77 @@ struct AppFlowModelTests {
         #expect(model.authOperationState == .idle)
     }
 
+    /// Reported on 2026-10-10 11:55: a person signs in with an account that
+    /// administers the team's panel; reading the sign-up is refused for that
+    /// reason, and the screen had no way to leave the account.
+    @Test("signing in with a team-panel account says why, and sign out returns to sign in")
+    func signInWithATeamPanelAccountSaysWhyAndSignOutReturnsToSignIn() async {
+        let session = incompleteSession()
+        let onboarding = SequencedOnboardingRepository(
+            results: [.failure(.adminAccountConflict)]
+        )
+        let telemetry = InMemoryTelemetryClient()
+        let model = AppFlowModel(
+            authentication: AuthenticationServiceSpy(
+                restoredSession: nil,
+                signedInSession: session
+            ),
+            onboarding: onboarding,
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: telemetry,
+            developmentConsentAvailability: .syntheticDevelopment
+        )
+
+        await model.signIn(
+            email: "fixture@example.invalid",
+            password: "local-pass"
+        )
+
+        #expect(model.state == .onboarding(userID: session.userID, step: .welcome))
+        #expect(model.restoredOnboardingDraft == nil)
+        #expect(model.onboardingLoadFailure == .teamPanelAccount)
+
+        await model.signOut()
+
+        #expect(model.state == .signedOut(.signIn))
+        #expect(model.currentSession == nil)
+        #expect(model.onboardingLoadFailure == nil)
+        #expect(await telemetry.snapshot().last == TelemetryEvent(name: .signOutCompleted))
+        #expect(await onboarding.loadCount() == 1)
+    }
+
+    @Test("a temporary load failure keeps its meaning and a retry that works clears it")
+    func aTemporaryLoadFailureKeepsItsMeaningAndARetryThatWorksClearsIt() async {
+        let session = incompleteSession()
+        let draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .routine)
+        let onboarding = SequencedOnboardingRepository(
+            results: [
+                .failure(.serviceUnavailable),
+                .success(draft),
+            ]
+        )
+        let model = AppFlowModel(
+            authentication: AuthenticationServiceSpy(restoredSession: session),
+            onboarding: onboarding,
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: InMemoryTelemetryClient(),
+            developmentConsentAvailability: .syntheticDevelopment
+        )
+
+        await model.start()
+
+        #expect(model.state == .onboarding(userID: session.userID, step: .welcome))
+        #expect(model.restoredOnboardingDraft == nil)
+        #expect(model.onboardingLoadFailure == .temporary)
+
+        await model.retryOnboardingRestore()
+
+        #expect(model.state == .onboarding(userID: session.userID, step: .routine))
+        #expect(model.restoredOnboardingDraft == draft)
+        #expect(model.onboardingLoadFailure == nil)
+        #expect(await onboarding.loadCount() == 2)
+    }
+
     @Test("sign in opens the shell for a completed session")
     func signInOpensAuthenticatedShell() async {
         let session = AuthSession(

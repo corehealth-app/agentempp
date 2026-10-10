@@ -47,6 +47,9 @@ actor OnboardingPreviewRepository: OnboardingRepository {
 
     func loadState(for userID: String) async throws -> OnboardingServerState {
         try await requireActiveLocalUser(userID)
+        // The two load-failure fixtures answer like the real repository does.
+        if eligibilityScenario == .adminAccountConflict { throw OnboardingRepositoryError.adminAccountConflict }
+        if eligibilityScenario == .loadFailure { throw OnboardingRepositoryError.serviceUnavailable }
         let stored = try await receipt(for: userID)
         let draft: OnboardingDraft?
         if let stored { draft = stored.draft }

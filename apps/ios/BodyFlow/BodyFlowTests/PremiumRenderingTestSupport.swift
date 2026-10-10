@@ -37,6 +37,12 @@ enum PremiumRenderingTestSupport {
         let isEnabled: Bool
         let frame: CGRect
         let nativeBounds: CGRect?
+        /// What VoiceOver reads after the label (`accessibilityValue`).
+        var value: String = ""
+        /// The spoken hint (`accessibilityHint`).
+        var hint: String = ""
+        /// The element's `accessibilityIdentifier`, when it has one.
+        var identifier: String = ""
         var description: String { "\(label): button=\(isButton), frame=\(frame)" }
     }
 
@@ -73,6 +79,12 @@ enum PremiumRenderingTestSupport {
         host.view.layoutIfNeeded()
         UIAccessibility.post(notification: .screenChanged, argument: host.view)
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+        return accessibilityProbes(in: host.view)
+    }
+
+    /// Walks the accessibility tree under `root`, as `accessibilityProbe`
+    /// always did; shared with the live host below.
+    private static func accessibilityProbes(in root: UIView) -> [AccessibilityProbe] {
         var probes: [AccessibilityProbe] = []
         var visited: Set<ObjectIdentifier> = []
         func collect(_ object: NSObject, depth: Int = 0) {
@@ -83,7 +95,11 @@ enum PremiumRenderingTestSupport {
                     isButton: object.accessibilityTraits.contains(.button),
                     isEnabled: !object.accessibilityTraits.contains(.notEnabled),
                     frame: object.accessibilityFrame,
-                    nativeBounds: (object as? UIView)?.bounds
+                    nativeBounds: (object as? UIView)?.bounds,
+                    value: object.accessibilityValue ?? "",
+                    hint: object.accessibilityHint ?? "",
+                    identifier: (object as? UIAccessibilityIdentification)?
+                        .accessibilityIdentifier ?? ""
                 ))
             }
             if let elements = object.accessibilityElements {
@@ -102,8 +118,44 @@ enum PremiumRenderingTestSupport {
                 nativeView.subviews.forEach { collect($0, depth: depth + 1) }
             }
         }
-        collect(host.view)
+        collect(root)
         return probes
+    }
+
+    /// One view hosted once and probed at several moments, so a test can
+    /// follow the SAME live view through the states of its model (a fresh
+    /// host per state would not show a block being kept or replaced).
+    @MainActor
+    final class LiveAccessibilityHost {
+        private let host: UIViewController
+
+        fileprivate init(host: UIViewController) { self.host = host }
+
+        /// Lets SwiftUI apply the pending state changes, then reads the tree
+        /// with the same recipe `accessibilityProbe` uses.
+        func probe() -> [AccessibilityProbe] {
+            host.view.setNeedsLayout()
+            host.view.layoutIfNeeded()
+            UIAccessibility.post(notification: .screenChanged, argument: host.view)
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+            host.view.layoutIfNeeded()
+            return PremiumRenderingTestSupport.accessibilityProbes(in: host.view)
+        }
+
+        func detach() { host.view.removeFromSuperview() }
+    }
+
+    static func liveAccessibilityHost<V: View>(_ view: V, width: CGFloat,
+                                              size: DynamicTypeSize = .large) -> LiveAccessibilityHost {
+        let host = UIHostingController(rootView: view.frame(width: width)
+            .ignoresSafeArea()
+            .environment(\.dynamicTypeSize, size)
+            .environment(\.accessibilityEnabled, true))
+        configureTraits(host, size: size, dark: false)
+        nativeWindow().addSubview(host.view)
+        host.view.frame = CGRect(x: 0, y: 0, width: width, height: 800)
+        host.view.layoutIfNeeded()
+        return LiveAccessibilityHost(host: host)
     }
 
     struct FieldMetadata: CustomStringConvertible {

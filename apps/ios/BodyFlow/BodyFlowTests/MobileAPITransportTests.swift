@@ -391,6 +391,50 @@ struct MobileAPITransportTests {
             == "registration_not_pending")
     }
 
+    /// Reported on 2026-10-10 11:55: a person signs in to the app with an
+    /// account that administers the team's panel. The server answers HTTP 403
+    /// with this exact code to GET /api/mobile/v1/onboarding
+    /// (apps/admin/src/lib/mobile-api/auth.ts; docs/mobile/api-v1.md), in the
+    /// envelope `mobileErrorResponse` writes (no `details`).
+    @Test("HTTP 403 patient_admin_account_conflict on GET /onboarding reaches the caller as its own failure")
+    func teamPanelAccountConflictOnOnboardingReachesTheCallerAsItsOwnFailure() async throws {
+        let harness = try await TransportHarness(
+            tokens: ["session-alpha"],
+            maximumRetryCount: 0
+        )
+        await harness.stub.respond(with: StubResponse(
+            status: 403,
+            body: Data(
+                #"{"error":{"code":"patient_admin_account_conflict","message":"Patient and administrator accounts must be separate","request_id":"request-admin-0001"}}"#.utf8
+            )
+        ))
+        let repository = MobileOnboardingRepository(transport: harness.transport)
+
+        await #expect(throws: OnboardingRepositoryError.adminAccountConflict) {
+            try await repository.loadState(for: "user-team-panel")
+        }
+        // One request: a 403 is an answer, not a failure to send again.
+        let requests = await harness.stub.requests()
+        try #require(requests.count == 1)
+        #expect(requests[0].httpMethod == "GET")
+        #expect(requests[0].url?.path == "/api/mobile/v1/onboarding")
+
+        // Lock: any other refusal on the same route keeps today's meaning.
+        let other = try await TransportHarness(
+            tokens: ["session-alpha"],
+            maximumRetryCount: 0
+        )
+        await other.stub.respond(with: .failure(
+            status: 403,
+            code: "patient_account_inactive",
+            requestID: "request-inactive-0001"
+        ))
+        await #expect(throws: OnboardingRepositoryError.serviceUnavailable) {
+            try await MobileOnboardingRepository(transport: other.transport)
+                .loadState(for: "user-inactive")
+        }
+    }
+
     @Test("request ID is safe and attached to every attempt")
     func attachesRequestID() async throws {
         let harness = try await TransportHarness(tokens: ["session-alpha"])

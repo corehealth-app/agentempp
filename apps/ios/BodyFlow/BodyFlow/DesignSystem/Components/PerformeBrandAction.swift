@@ -11,6 +11,10 @@ struct PerformeBrandAction: View {
     var isNavigationAction = false
     var navigationIdentifier: String? = nil
     var connectsLaunch = false
+    /// False where the screen already shows the wait itself (the staged
+    /// loader of a meal analysis): one indicator, not two. The spoken state
+    /// is unchanged.
+    var showsProgress = true
     var action: (@MainActor () -> Void)? = nil
     @Environment(\.bodyFlowReduceMotion) private var reduceMotion
     /// One short pulse when the coordinator confirms a result.
@@ -66,7 +70,7 @@ struct PerformeBrandAction: View {
 
                         }
                     }
-                if state == .processing {
+                if state == .processing && showsProgress {
                     BodyFlowDelayedProgress()
                         .foregroundStyle(BodyFlowColor.color(.brandPrimary))
                         .background(BodyFlowColor.color(.surfaceElevated), in: Circle())

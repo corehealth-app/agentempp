@@ -335,10 +335,38 @@ struct OnboardingPreviewSupportTests {
         }
     }
 
+    /// First update (2026-10-10): the fixtures behind the load-error UI
+    /// tests answer the read of the sign-up the way the real repository does.
+    @Test("the two load-failure fixtures refuse the sign-up read with their own error")
+    func loadFailureFixturesRefuseTheRead() async throws {
+        let cases: [(String, OnboardingEligibilityPreviewScenario, OnboardingRepositoryError)] = [
+            ("--ui-testing-onboarding-admin-conflict", .adminAccountConflict, .adminAccountConflict),
+            ("--ui-testing-onboarding-load-failure", .loadFailure, .serviceUnavailable),
+        ]
+        for (flag, scenario, expected) in cases {
+            let resolved = AppLaunchConfiguration.resolve(arguments: [flag], buildFlavor: .debug)
+            #expect(resolved.mode == .demo)
+            #expect(resolved.onboardingEligibilityScenario == scenario)
+            let dependencies = try await debugDependencies()
+            let session = try #require(await dependencies.authentication.restoreSession())
+            let repository = OnboardingPreviewRepository(
+                stateStore: DemoStateStore(secureStore: dependencies.secureStore),
+                buildFlavor: .debug,
+                preloadsSyntheticOnboardingValues: true,
+                eligibilityScenario: scenario
+            )
+            await #expect(throws: expected) {
+                try await repository.loadState(for: session.userID)
+            }
+        }
+    }
+
     @Test("Release ignores all E3 UI fixture arguments and retains unavailable onboarding", arguments: [
         "--ui-testing-fresh-auth", "--ui-testing-onboarding-assigned", "--ui-testing-onboarding-gain-blocked",
         "--ui-testing-onboarding-welcome", "--ui-testing-onboarding-eligibility-failure",
-        "--ui-testing-onboarding-completion-uncertain"])
+        "--ui-testing-onboarding-completion-uncertain",
+        // First update (2026-10-10): the two load-failure fixtures.
+        "--ui-testing-onboarding-admin-conflict", "--ui-testing-onboarding-load-failure"])
     func releaseDoesNotSelectSyntheticOnboarding(flag: String) async {
         let configuration = AppLaunchConfiguration.resolve(
             arguments: ["--ui-testing", flag],

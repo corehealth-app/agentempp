@@ -29,21 +29,6 @@ enum MealCaptureCopy {
         }
     }
 
-    static func phaseKey(
-        _ phase: MealDraftPhase,
-        channel: MealSourceChannel?
-    ) -> String.LocalizationValue? {
-        switch phase {
-        case .uploading: "registration.live.phase.uploading"
-        case .processing:
-            channel?.isAudio == true
-                ? "registration.live.phase.transcribing"
-                : "registration.live.phase.analyzing"
-        case .reading: "registration.live.phase.reading"
-        case .idle, .review, .failed: nil
-        }
-    }
-
     static func basisKey(for item: MealDraftReview.Item) -> String.LocalizationValue {
         if item.hasTypedQuantity { return "registration.review.basis.stated" }
         guard item.candidate.quantityG != nil else {

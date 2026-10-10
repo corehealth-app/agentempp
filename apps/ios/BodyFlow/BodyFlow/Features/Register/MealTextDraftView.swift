@@ -4,8 +4,12 @@ struct MealTextDraftView: View {
     @Binding var draft: String
     let isSubmitting: Bool
     var presentsLocalDemonstration: Bool = true
+    /// True when the field should take the keyboard by itself (the direct
+    /// entry, once the sheet has finished arriving).
+    var takesKeyboard: Bool = false
     let detect: @MainActor () -> Void
     @Environment(\.locale) private var locale
+    @FocusState private var fieldFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
@@ -20,6 +24,7 @@ struct MealTextDraftView: View {
             )
                 .lineLimit(3...6)
                 .textInputAutocapitalization(.sentences)
+                .focused($fieldFocused)
                 .accessibilityIdentifier("registration.meal.text")
 
             Button(action: detect) {
@@ -30,6 +35,9 @@ struct MealTextDraftView: View {
                 .buttonStyle(BodyFlowButtonStyle(role: .primary))
                 .disabled(isSubmitting || draft.isEmpty)
                 .accessibilityIdentifier("registration.meal.detect")
+        }
+        .onChange(of: takesKeyboard, initial: true) { _, takes in
+            if takes { fieldFocused = true }
         }
     }
 

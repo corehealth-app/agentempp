@@ -112,6 +112,120 @@ struct MealDraftModelTests {
         #expect(!FileManager.default.fileExists(atPath: staged.fileURL.path))
     }
 
+    // MARK: First update (2026-10-10) — one continuous analysis
+    //
+    // Reported by the owner on build 1.0 (3), real account, PHOTO: while the
+    // plate was analysed, several loading indicators followed one another
+    // ("Preparando o arquivo…" owned by the screen, then a new one for
+    // "Enviando…" onwards owned by this model).
+
+    @Test("A photo is one continuous analysis from preparing to the review")
+    func photoIsOneContinuousAnalysisFromPreparingToReview() async throws {
+        let harness = makeHarness()
+        defer { try? FileManager.default.removeItem(at: harness.base) }
+        let staged = try harness.stagedPhoto()
+        await harness.server.setStates(["processing", "processed"])
+        let model = harness.model
+        await harness.server.observePhases { model.phase }
+
+        // The photo was taken: the wait starts before anything is sent.
+        model.beginPreparing()
+        #expect(model.phase == .preparing)
+        #expect(model.isAnalysing)
+        #expect(!model.isWorking, "Nothing travels yet: the prepared file is still accepted")
+        #expect(MealAnalysisStage.resolve(phase: model.phase, channel: model.channel, isProposing: false)
+            == .preparing)
+
+        await model.submitMedia(staged)
+
+        let calls = await harness.server.calls
+        let phases = await harness.server.phases
+        #expect(calls == [
+            .create, .upload, .complete, .process, .read, .read,
+            .draft(.media(assetID: Self.assetID)),
+        ])
+        try #require(phases.count == calls.count)
+        try #require(phases.count >= 6)
+        #expect(phases == [
+            .uploading, .uploading, .uploading, .processing, .processing, .processing, .reading,
+        ])
+        // The choice of ways can never show through in the middle.
+        #expect(!phases.contains(.idle))
+        let stages = phases.map {
+            MealAnalysisStage.resolve(phase: $0, channel: .camera, isProposing: false)
+        }
+        #expect(stages == [.sending, .sending, .sending, .photo, .photo, .photo, .reading])
+        #expect(model.phase == .review)
+        #expect(!model.isAnalysing)
+    }
+
+    @Test("A recording says its own line where the photo says the photo's")
+    func audioSaysListeningWhereThePhotoSaysLooking() async throws {
+        let harness = makeHarness()
+        defer { try? FileManager.default.removeItem(at: harness.base) }
+        let staged = try harness.stagedAudio()
+        let model = harness.model
+        await harness.server.observePhases { model.phase }
+
+        model.beginPreparing()
+        #expect(model.phase == .preparing)
+        await model.submitMedia(staged)
+
+        let phases = await harness.server.phases
+        try #require(phases.count == 6)
+        #expect(!phases.contains(.idle))
+        let stages = phases.map {
+            MealAnalysisStage.resolve(phase: $0, channel: .audioRecording, isProposing: false)
+        }
+        #expect(stages == [.sending, .sending, .sending, .audio, .audio, .reading])
+        #expect(model.channel == .audioRecording)
+        #expect(model.phase == .review)
+    }
+
+    @Test("A preparation that fails says why, and the next capture starts clean")
+    func preparingThatFailsSaysWhyAndTheNextCaptureStartsClean() async throws {
+        let harness = makeHarness()
+        defer { try? FileManager.default.removeItem(at: harness.base) }
+        let model = harness.model
+
+        model.beginPreparing()
+        #expect(model.phase == .preparing)
+        model.reportCaptureFailure(.unreadableMedia)
+        #expect(model.phase == .failed(.unreadableMedia))
+        #expect(!model.canRetry)
+
+        model.beginPreparing()
+        #expect(model.phase == .preparing)
+        await model.submitMedia(try harness.stagedPhoto())
+        #expect(model.phase == .review)
+
+        // A review is never thrown away by a preparation that arrives late.
+        model.beginPreparing()
+        #expect(model.phase == .review)
+        #expect(model.review != nil)
+    }
+
+    @Test("Closing the sheet while a file is prepared leaves nothing behind")
+    func closingTheSheetWhilePreparingLeavesNothingBehind() async throws {
+        let harness = makeHarness()
+        defer { try? FileManager.default.removeItem(at: harness.base) }
+        let staged = try harness.stagedPhoto()
+        let model = harness.model
+
+        model.beginPreparing()
+        #expect(model.phase == .preparing)
+        model.discardSheet()
+        #expect(model.phase == .idle)
+
+        // The file finishes preparing after the sheet is gone.
+        await model.submitMedia(staged)
+        #expect(!FileManager.default.fileExists(atPath: staged.fileURL.path))
+        #expect(await harness.server.calls.isEmpty)
+        #expect(model.phase == .idle)
+        model.beginPreparing()
+        #expect(model.phase == .idle, "A closed sheet begins nothing")
+    }
+
     @Test("A failed upload resumes with the same asset and a fresh ticket")
     func resumesAfterUploadFailure() async throws {
         let harness = makeHarness()
@@ -368,6 +482,10 @@ private actor CaptureServerFake: MealMediaProviding, MealDraftProviding, Storage
     private var uploadWaiters: [CheckedContinuation<Void, Never>] = []
 
     private(set) var calls: [Call] = []
+    /// The model's phase at the moment of each call (the model is suspended
+    /// inside the call, so the reading is deterministic).
+    private(set) var phases: [MealDraftPhase] = []
+    private var phaseProbe: (@MainActor @Sendable () -> MealDraftPhase)?
     private(set) var createKeys: [String] = []
     private(set) var processKeys: [String] = []
     private(set) var draftKeys: [String] = []
@@ -384,6 +502,15 @@ private actor CaptureServerFake: MealMediaProviding, MealDraftProviding, Storage
 
     func failNext(_ call: Call, with failure: MealCaptureFailure) {
         failures.append((call, failure))
+    }
+
+    func observePhases(_ probe: @escaping @MainActor @Sendable () -> MealDraftPhase) {
+        phaseProbe = probe
+    }
+
+    private func notePhase() async {
+        guard let phaseProbe else { return }
+        phases.append(await phaseProbe())
     }
 
     func suspendUploads() { uploadsSuspended = true }
@@ -425,6 +552,7 @@ private actor CaptureServerFake: MealMediaProviding, MealDraftProviding, Storage
     func create(
         _ attempt: MutationAttempt<MediaUploadRequest>
     ) async throws -> MediaCreateSnapshot {
+        await notePhase()
         createKeys.append(attempt.key.value)
         try record(.create)
         return MediaCreateSnapshot(
@@ -440,6 +568,7 @@ private actor CaptureServerFake: MealMediaProviding, MealDraftProviding, Storage
     }
 
     func upload(_ media: StagedMedia, with ticket: MediaUploadTicket) async throws {
+        await notePhase()
         try record(.upload)
         if uploadsSuspended {
             await withCheckedContinuation { uploadWaiters.append($0) }
@@ -453,6 +582,7 @@ private actor CaptureServerFake: MealMediaProviding, MealDraftProviding, Storage
     func complete(
         _ attempt: MutationAttempt<MediaAssetCommand>
     ) async throws -> MediaAssetSnapshot {
+        await notePhase()
         try record(.complete)
         return asset("uploaded")
     }
@@ -460,12 +590,14 @@ private actor CaptureServerFake: MealMediaProviding, MealDraftProviding, Storage
     func requestProcessing(
         _ attempt: MutationAttempt<MediaAssetCommand>
     ) async throws -> MediaAssetSnapshot {
+        await notePhase()
         processKeys.append(attempt.key.value)
         try record(.process)
         return asset("uploaded")
     }
 
     func asset(id: String) async throws -> MediaAssetSnapshot {
+        await notePhase()
         try record(.read)
         let status = states.count > 1 ? states.removeFirst() : (states.first ?? "processed")
         return asset(status)
@@ -478,6 +610,7 @@ private actor CaptureServerFake: MealMediaProviding, MealDraftProviding, Storage
     func draft(
         _ attempt: MutationAttempt<MealDraftRequest>
     ) async throws -> MealDraftSnapshot {
+        await notePhase()
         draftKeys.append(attempt.key.value)
         try record(.draft(attempt.payload))
         return draft

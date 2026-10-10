@@ -2,7 +2,9 @@ import SwiftUI
 import UIKit
 
 /// Two looping indicators drawn with Core Animation: the "Flow is typing"
-/// dots and the stair loader of the opening.
+/// dots and the stair loader of the opening. A third one, the liquid loader
+/// of the staged loading block, lives in `BodyFlowLiquidLoader.swift` on the
+/// same `BodyFlowLoopingView`.
 ///
 /// Why Core Animation and not a SwiftUI `repeatForever`/`TimelineView`: a
 /// SwiftUI loop re-evaluates the view every frame on the main thread, which

@@ -26,6 +26,76 @@ struct LocalizationContractTests {
         }
     }
 
+    /// First update after build 1.0 (3). The fallback accessor is used on
+    /// purpose: a missing key reads as "" and fails the comparison, where
+    /// `AppLocalization.string` would throw before any expectation ran.
+    private func expectExactCopy(
+        _ expected: [(String, String, String)],
+        _ language: SupportedAppLanguage
+    ) {
+        for (key, pt, en) in expected {
+            let localized = PremiumPresentationCopy.string(
+                String.LocalizationValue(key),
+                locale: language.formattingLocale,
+                fallback: ""
+            )
+            #expect(
+                localized == (language == .portugueseBrazil ? pt : en),
+                "\(key) / \(language)"
+            )
+        }
+    }
+
+    /// The way out of the sign-up load error (reported on 2026-10-10 11:55).
+    @Test(arguments: SupportedAppLanguage.allCases)
+    func firstUpdateLoadErrorCopyIsExact(_ language: SupportedAppLanguage) {
+        expectExactCopy([
+            ("app.onboarding.error.team-account.title",
+             "Use outro e-mail no app", "Use a different email in the app"),
+            ("app.onboarding.error.team-account.message",
+             "Este e-mail é do painel da equipe. O app precisa de um e-mail diferente. Saia desta conta e entre com outro e-mail.",
+             "This email belongs to the team's panel. The app needs a different email. Sign out of this account and sign in with another email."),
+            ("app.sign-out", "Sair da conta", "Sign out"),
+        ], language)
+    }
+
+    /// The three ways of the meal card are buttons now: each says what it
+    /// does, and "Foto" opens a step of its own.
+    @Test(arguments: SupportedAppLanguage.allCases)
+    func firstUpdateMealWaysCopyIsExact(_ language: SupportedAppLanguage) {
+        expectExactCopy([
+            ("registration.root.way.photo.hint",
+             "Registrar a refeição por foto. Você confirma antes de salvar.",
+             "Log the meal with a photo. You confirm before it is saved."),
+            ("registration.root.way.text.hint",
+             "Registrar a refeição por texto. Você confirma antes de salvar.",
+             "Log the meal by writing. You confirm before it is saved."),
+            ("registration.root.way.audio.hint",
+             "Registrar a refeição por áudio. Você confirma antes de salvar.",
+             "Log the meal by voice. You confirm before it is saved."),
+            ("registration.live.photo.title", "Foto da refeição", "Meal photo"),
+        ], language)
+    }
+
+    /// The one loading block of the meal analysis: a fixed title, the five
+    /// stage lines that already existed (locks: their reviewed wording does
+    /// not change) and the line of the calculation.
+    @Test(arguments: SupportedAppLanguage.allCases)
+    func firstUpdateMealAnalysisCopyIsExact(_ language: SupportedAppLanguage) {
+        expectExactCopy([
+            ("registration.live.analysis.title", "Analisando sua refeição", "Analyzing your meal"),
+            ("registration.live.phase.calculating", "Calculando os valores…", "Calculating the values…"),
+            // Locks.
+            ("registration.live.phase.preparing", "Preparando o arquivo…", "Preparing the file…"),
+            ("registration.live.phase.uploading", "Enviando…", "Uploading…"),
+            ("registration.live.phase.analyzing", "Analisando a foto…", "Analyzing the photo…"),
+            ("registration.live.phase.transcribing", "Transcrevendo o áudio…", "Transcribing the audio…"),
+            ("registration.live.phase.reading", "Lendo os alimentos…", "Reading the foods…"),
+            ("registration.live.cancel", "Cancelar", "Cancel"),
+            ("brand.processing", "Processando", "Processing"),
+        ], language)
+    }
+
     @Test(arguments: SupportedAppLanguage.allCases)
     func testEveryReviewedPublicCatalogKeyHasBothLanguages(
         _ language: SupportedAppLanguage

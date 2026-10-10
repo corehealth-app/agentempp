@@ -268,29 +268,21 @@ struct AppRootView: View {
         )
     }
 
+    /// The sign-up could not be loaded: the screen says why as far as the
+    /// model knows, and always offers a way out of the account.
     private var onboardingLoadError: some View {
-        ContentUnavailableView {
-            Label(
-                rootCopy("app.onboarding.error.title", fallback: "Não foi possível carregar"),
-                systemImage: BodyFlowSymbol.warning.systemName
-            )
-        } description: {
-            Text(rootCopy(
-                "app.onboarding.error.message",
-                fallback: "Tente novamente para continuar seu cadastro."
-            ))
-        } actions: {
-            Button(rootCopy("app.retry", fallback: "Tentar novamente")) {
+        let model = model
+        return OnboardingLoadErrorView(
+            failure: model.onboardingLoadFailure ?? .temporary,
+            retry: {
                 onboardingCoordinator.prepareForRetry()
                 onboardingRetryTask?.cancel()
                 onboardingRetryTask = Task {
                     await model.retryOnboardingRestore()
                 }
-            }
-            .buttonStyle(BodyFlowButtonStyle(role: .primary))
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(BodyFlowColor.background)
+            },
+            signOut: { await model.signOut() }
+        )
     }
 
     private func rootLoading(

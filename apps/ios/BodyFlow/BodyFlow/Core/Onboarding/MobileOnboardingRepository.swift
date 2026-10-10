@@ -16,7 +16,7 @@ struct MobileOnboardingRepository: OnboardingRepository {
         } catch is CancellationError {
             throw CancellationError()
         } catch let error as MobileAPITransportError {
-            throw map(error)
+            throw mapLoad(error)
         } catch {
             throw OnboardingRepositoryError.serviceUnavailable
         }
@@ -90,6 +90,17 @@ struct MobileOnboardingRepository: OnboardingRepository {
 
     func clear(for userID: String) async throws {
         try Task.checkCancellation()
+    }
+
+    /// The read of the sign-up is the request the root screen waits on, so
+    /// it alone tells the team-panel conflict apart (reported on 2026-10-10):
+    /// HTTP 403 with this code means the e-mail administers the team's panel.
+    /// Every other refusal keeps the meaning it had.
+    private func mapLoad(_ error: MobileAPITransportError) -> OnboardingRepositoryError {
+        if case .forbidden(let code, _) = error, code == "patient_admin_account_conflict" {
+            return .adminAccountConflict
+        }
+        return map(error)
     }
 
     private func map(_ error: MobileAPITransportError) -> OnboardingRepositoryError {

@@ -66,8 +66,16 @@ struct RegistrationSheet: View {
 
     private var kind: RegistrationKind {
         switch sheet {
-        case let .registration(kind):
+        case let .registration(kind, _):
             kind
+        }
+    }
+
+    /// The way of telling the meal already chosen on the Register screen.
+    private var mealEntry: MealCaptureEntry? {
+        switch sheet {
+        case let .registration(kind, entry):
+            kind == .meal ? entry : nil
         }
     }
 
@@ -85,8 +93,46 @@ struct RegistrationSheet: View {
         #endif
     }
 
+    /// The one decision about the wait of a meal analysis, read by the
+    /// loading block and by the brand mark alike, so the two can never
+    /// disagree: where the block is on screen the mark does not spin, and
+    /// everywhere else the mark keeps its own indicator.
+    ///
+    /// `nil` — no block on screen — whenever a proposal is shown (confirm,
+    /// save an edit and cancel a proposal keep the mark's indicator: it is
+    /// the only one they have) or the meal is confirmed, and for everything
+    /// that is not a meal captured through the live capture.
+    static func mealAnalysisStage(
+        kind: RegistrationKind,
+        hasLiveCapture: Bool,
+        hasProposal: Bool,
+        registrationPhase: MealRegistrationPhase,
+        draftPhase: MealDraftPhase,
+        channel: MealSourceChannel?,
+        isSubmitting: Bool
+    ) -> MealAnalysisStage? {
+        guard kind == .meal, hasLiveCapture, !hasProposal,
+              registrationPhase != .confirmed else { return nil }
+        return MealAnalysisStage.resolve(
+            phase: draftPhase,
+            channel: channel,
+            isProposing: isSubmitting
+        )
+    }
+
     var body: some View {
-        NavigationStack {
+        // Calculated once per evaluation and handed to both readers.
+        let liveCapture = liveCapture
+        let analysisStage = Self.mealAnalysisStage(
+            kind: kind,
+            hasLiveCapture: liveCapture != nil,
+            hasProposal: mealModel.currentProposal != nil,
+            registrationPhase: mealModel.phase,
+            draftPhase: mealDraftModel.phase,
+            channel: mealDraftModel.channel,
+            isSubmitting: mealModel.isSubmitting
+        )
+        return NavigationStack {
             ZStack {
                 BodyFlowColor.background.ignoresSafeArea()
 
@@ -115,7 +161,9 @@ struct RegistrationSheet: View {
                             perform(.cancel) { await mealModel.cancel() }
                         },
                         presentsLocalDemonstration: presentsLocalDemonstration,
-                        liveCapture: liveCapture
+                        liveCapture: liveCapture,
+                        entry: mealEntry,
+                        analysisStage: analysisStage
                     )
                         .accessibilityIdentifier(sheet.id)
                 } else if kind == .training {
@@ -224,7 +272,8 @@ struct RegistrationSheet: View {
                         state: presentation.state,
                         label: copy("tab.register"),
                         status: brandStatus,
-                        showsLabel: false
+                        showsLabel: false,
+                        showsProgress: analysisStage == nil
                     )
                     .frame(width: 44)
                     .accessibilityIdentifier("registration.brand")
@@ -773,7 +822,13 @@ private struct MealRegistrationContent: View {
     let cancel: @MainActor () -> Void
     let presentsLocalDemonstration: Bool
     let liveCapture: MealLiveCapture?
+    /// The way already chosen on the Register screen, if any.
+    let entry: MealCaptureEntry?
+    /// The stage of the analysis being waited for, decided by the sheet.
+    let analysisStage: MealAnalysisStage?
     @State private var choice: MealCaptureChoice?
+    /// The sheet has finished arriving: only then is a keyboard asked for.
+    @State private var sheetSettled = false
     @State private var textDraft: String
     @State private var showingEditor = false
     @State private var editedItemIndex = 0
@@ -787,7 +842,9 @@ private struct MealRegistrationContent: View {
         confirm: @escaping @MainActor () -> Void,
         cancel: @escaping @MainActor () -> Void,
         presentsLocalDemonstration: Bool = true,
-        liveCapture: MealLiveCapture? = nil
+        liveCapture: MealLiveCapture? = nil,
+        entry: MealCaptureEntry? = nil,
+        analysisStage: MealAnalysisStage? = nil
     ) {
         self.model = model
         self.submit = submit
@@ -797,6 +854,14 @@ private struct MealRegistrationContent: View {
         self.cancel = cancel
         self.presentsLocalDemonstration = presentsLocalDemonstration
         self.liveCapture = liveCapture
+        self.entry = entry
+        self.analysisStage = analysisStage
+        // Without the live capture the sheet opens on the step of the way
+        // already chosen, when there is one for it.
+        _choice = State(initialValue: MealCaptureStart.demonstrationChoice(
+            entry: entry,
+            presentsLocalDemonstration: presentsLocalDemonstration
+        ))
         // The demonstration pre-fills its sample text; a real account starts
         // empty and types the meal.
         _textDraft = State(initialValue: presentsLocalDemonstration
@@ -816,6 +881,11 @@ private struct MealRegistrationContent: View {
                 .accessibilityFocused($operationFocus, equals: .operationSummary)
             }
             .padding(BodyFlowSpacing.lg)
+        }
+        .background {
+            MealSheetSettledProbe { sheetSettled = true }
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
         }
         .navigationDestination(isPresented: $showingEditor) {
             if let proposal = model.currentProposal {
@@ -875,6 +945,9 @@ private struct MealRegistrationContent: View {
                 model: liveCapture.model,
                 stager: liveCapture.stager,
                 recorder: liveCapture.recorder,
+                entry: entry,
+                sheetSettled: sheetSettled,
+                analysisStage: analysisStage,
                 isProposing: model.isSubmitting,
                 submitText: liveCapture.submitText,
                 submitMedia: liveCapture.submitMedia,
@@ -887,7 +960,11 @@ private struct MealRegistrationContent: View {
                 MealTextDraftView(
                     draft: $textDraft,
                     isSubmitting: model.isSubmitting,
-                    presentsLocalDemonstration: presentsLocalDemonstration
+                    presentsLocalDemonstration: presentsLocalDemonstration,
+                    takesKeyboard: MealCaptureStart.focusesDemonstrationText(
+                        entry: entry,
+                        sheetSettled: sheetSettled
+                    )
                 ) {
                     submit(.text(textDraft))
                 }

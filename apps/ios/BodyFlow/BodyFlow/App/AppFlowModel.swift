@@ -24,6 +24,15 @@ enum AppPresentationError: Equatable, Sendable {
     case storageUnavailable
 }
 
+/// Why the sign-up of the signed-in account could not be loaded, as far as
+/// the screen needs to tell the cases apart.
+enum OnboardingLoadFailure: Equatable, Sendable {
+    /// The e-mail belongs to the team's panel: trying again cannot help.
+    case teamPanelAccount
+    /// Anything else: trying again may work.
+    case temporary
+}
+
 @MainActor
 @Observable
 final class AppFlowModel {
@@ -44,6 +53,8 @@ final class AppFlowModel {
     private(set) var restoredOnboardingRequirements: OnboardingRequirements = .unavailable
     private(set) var onboardingRestoreGeneration = 0
     private(set) var restoredHistoricalCompletedAt: String?
+    /// Set while the root shows the sign-up load error; `nil` everywhere else.
+    private(set) var onboardingLoadFailure: OnboardingLoadFailure?
 
     var onboardingOwnerToken: OnboardingOwnerToken? {
         guard case .onboarding(let userID, _) = state else { return nil }
@@ -170,6 +181,7 @@ final class AppFlowModel {
         restoredOnboardingDraft = nil
         restoredOnboardingRequirements = .unavailable
         restoredHistoricalCompletedAt = nil
+        onboardingLoadFailure = nil
         state = .authenticated(userID: userID)
     }
 
@@ -298,6 +310,7 @@ final class AppFlowModel {
             restoredOnboardingDraft = nil
             restoredOnboardingRequirements = .unavailable
             restoredHistoricalCompletedAt = nil
+            onboardingLoadFailure = nil
             currentSession = session
             guard !isCancellationRequested else {
                 currentSession = nil
@@ -359,7 +372,8 @@ final class AppFlowModel {
             publishOnboardingRestore(
                 session: session,
                 draft: nil,
-                error: presentationError(for: error)
+                error: presentationError(for: error),
+                loadFailure: onboardingLoadFailure(for: error)
             )
             finishOnboardingRestoreIfCurrent(restoreID)
         }
@@ -389,7 +403,8 @@ final class AppFlowModel {
         draft: OnboardingDraft?,
         requirements: OnboardingRequirements = .unavailable,
         historicalCompletedAt: String? = nil,
-        error: AppPresentationError? = nil
+        error: AppPresentationError? = nil,
+        loadFailure: OnboardingLoadFailure? = nil
     ) {
         currentSession = AuthSession(
             userID: session.userID,
@@ -406,6 +421,7 @@ final class AppFlowModel {
         restoredOnboardingRequirements = requirements
         restoredHistoricalCompletedAt = historicalCompletedAt
         presentationError = error
+        onboardingLoadFailure = loadFailure
         onboardingRestoreGeneration += 1
         state = .onboarding(
             userID: session.userID,
@@ -424,6 +440,7 @@ final class AppFlowModel {
         restoredOnboardingRequirements = .unavailable
         restoredHistoricalCompletedAt = nil
         presentationError = nil
+        onboardingLoadFailure = nil
         state = .authenticated(userID: session.userID)
     }
 
@@ -433,6 +450,7 @@ final class AppFlowModel {
         restoredOnboardingDraft = nil
         restoredOnboardingRequirements = .unavailable
         restoredHistoricalCompletedAt = nil
+        onboardingLoadFailure = nil
         currentSession = nil
         state = .signedOut(.signIn)
         if let error {
@@ -454,6 +472,7 @@ final class AppFlowModel {
         restoredOnboardingDraft = nil
         restoredOnboardingRequirements = .unavailable
         restoredHistoricalCompletedAt = nil
+        onboardingLoadFailure = nil
         currentSession = nil
         state = .signedOut(destination)
         presentationError = nil
@@ -505,6 +524,15 @@ final class AppFlowModel {
         Task.isCancelled || cancellationCheck()
     }
 
+    /// What the load-error screen needs to know about a failed read of the
+    /// sign-up: only the team-panel conflict is told apart.
+    private func onboardingLoadFailure(for error: Error) -> OnboardingLoadFailure {
+        switch error {
+        case OnboardingRepositoryError.adminAccountConflict: .teamPanelAccount
+        default: .temporary
+        }
+    }
+
     private func presentationError(for error: Error) -> AppPresentationError {
         switch error {
         case AuthenticationError.invalidInput, OnboardingRepositoryError.invalidDraft:
@@ -517,7 +545,8 @@ final class AppFlowModel {
              OnboardingRepositoryError.developmentConsentForbidden,
              OnboardingRepositoryError.documentsUnavailable,
              OnboardingRepositoryError.requirementsChanged,
-             OnboardingRepositoryError.alreadyCompleted:
+             OnboardingRepositoryError.alreadyCompleted,
+             OnboardingRepositoryError.adminAccountConflict:
             .operationUnavailable
         case AuthenticationError.serviceUnavailable,
              OnboardingRepositoryError.serviceUnavailable,

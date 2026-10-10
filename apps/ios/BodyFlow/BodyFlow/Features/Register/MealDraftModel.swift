@@ -3,6 +3,10 @@ import Observation
 
 enum MealDraftPhase: Equatable, Sendable {
     case idle
+    /// A photo or a recording was captured and its file is being prepared
+    /// for sending: the analysis has begun for the person, though nothing
+    /// has left the phone yet.
+    case preparing
     case uploading
     case processing
     case reading
@@ -96,8 +100,32 @@ final class MealDraftModel {
     var isWorking: Bool {
         switch phase {
         case .uploading, .processing, .reading: true
-        case .idle, .review, .failed: false
+        case .idle, .preparing, .review, .failed: false
         }
+    }
+
+    /// From the moment a capture is being prepared until the review: one
+    /// continuous wait for the person.
+    var isAnalysing: Bool { phase == .preparing || isWorking }
+
+    /// A photo or a recording was captured and its file is being prepared:
+    /// the wait starts here, in the same model that owns the rest of it, so
+    /// no moment of the analysis shows the choice of ways in between.
+    ///
+    /// Every preparation ends in `submitMedia` or `reportCaptureFailure`.
+    /// A review in hand and a capture already travelling are left alone.
+    func beginPreparing() {
+        guard !isClosed else { return }
+        switch phase {
+        case .idle, .failed: break
+        case .preparing, .uploading, .processing, .reading, .review: return
+        }
+        // Whatever was left of an earlier capture goes, as it would when the
+        // new one is sent.
+        dropPipeline(deletingAsset: true)
+        review = nil
+        channel = nil
+        phase = .preparing
     }
 
     /// A failure a new attempt of the same capture can get past.
@@ -203,7 +231,7 @@ final class MealDraftModel {
         isClosed = true
         sequence += 1
         dropPipeline(deletingAsset: !handedToProposal)
-        if isWorking { phase = .idle }
+        if isAnalysing { phase = .idle }
     }
 
     nonisolated static func precheck(_ staged: StagedMedia) -> MealCaptureFailure? {

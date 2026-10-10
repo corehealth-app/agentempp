@@ -125,6 +125,90 @@ struct FinalPolishPresentationTests {
         ) == .failed)
     }
 
+    // MARK: First update (2026-10-10) — one indicator for the meal analysis
+    //
+    // The loading block and the brand mark read ONE decision
+    // (`RegistrationSheet.mealAnalysisStage`): the mark shows its own
+    // progress exactly where no block is on screen.
+
+    private func analysisStage(
+        kind: RegistrationKind = .meal,
+        hasLiveCapture: Bool = true,
+        hasProposal: Bool = false,
+        registrationPhase: MealRegistrationPhase = .capture,
+        draftPhase: MealDraftPhase,
+        channel: MealSourceChannel? = .camera,
+        isSubmitting: Bool = false
+    ) -> MealAnalysisStage? {
+        RegistrationSheet.mealAnalysisStage(
+            kind: kind, hasLiveCapture: hasLiveCapture, hasProposal: hasProposal,
+            registrationPhase: registrationPhase, draftPhase: draftPhase,
+            channel: channel, isSubmitting: isSubmitting
+        )
+    }
+
+    @Test func brandMarkLeavesTheProgressToTheAnalysisLoader() {
+        // A meal captured on a real account, no proposal yet: the block is on
+        // screen for every stage, so the mark does not spin.
+        #expect(analysisStage(draftPhase: .preparing, channel: nil) == .preparing)
+        #expect(analysisStage(draftPhase: .uploading) == .sending)
+        #expect(analysisStage(draftPhase: .processing, channel: .camera) == .photo)
+        #expect(analysisStage(draftPhase: .processing, channel: .gallery) == .photo)
+        #expect(analysisStage(draftPhase: .processing, channel: .audioRecording) == .audio)
+        #expect(analysisStage(draftPhase: .reading, channel: .text) == .reading)
+        // The operation that carries the capture is "submitting" for the
+        // sheet at the same time: still one indicator.
+        #expect(analysisStage(draftPhase: .uploading, isSubmitting: true) == .sending)
+    }
+
+    /// Locks (the critic's first finding): with a proposal on screen the
+    /// draft is still in review underneath and the registration is
+    /// submitting — that is "Confirmar", "Salvar edição" and "Cancelar
+    /// proposta", whose only indicator is the brand mark.
+    @Test func confirmEditAndCancelKeepTheBrandProgress() {
+        for registrationPhase in [MealRegistrationPhase.proposal, .capture, .cancelled] {
+            #expect(analysisStage(
+                hasProposal: true, registrationPhase: registrationPhase,
+                draftPhase: .review, isSubmitting: true
+            ) == nil)
+            #expect(analysisStage(
+                hasProposal: true, registrationPhase: registrationPhase,
+                draftPhase: .idle, isSubmitting: true
+            ) == nil)
+        }
+        // A confirmed meal: nothing is waited for on the capture.
+        for draftPhase in [MealDraftPhase.review, .idle, .reading] {
+            #expect(analysisStage(
+                registrationPhase: .confirmed, draftPhase: draftPhase, isSubmitting: true
+            ) == nil)
+        }
+        // The local demonstration (no live capture) and the other records
+        // keep today's indicators in every phase.
+        for draftPhase in [MealDraftPhase.preparing, .uploading, .processing, .reading, .review, .idle] {
+            #expect(analysisStage(hasLiveCapture: false, draftPhase: draftPhase, isSubmitting: true) == nil)
+            for kind in [RegistrationKind.training, .hydration, .weight] {
+                #expect(analysisStage(kind: kind, draftPhase: draftPhase, isSubmitting: true) == nil)
+            }
+        }
+        // Nothing is waited for.
+        #expect(analysisStage(draftPhase: .idle) == nil)
+        #expect(analysisStage(draftPhase: .failed(.offline)) == nil)
+        #expect(analysisStage(draftPhase: .review) == nil)
+    }
+
+    /// The wait after "Calcular refeição" belongs to the same block: the
+    /// review is in hand, no proposal exists yet and the reviewed foods were
+    /// sent. (Replaces the lock that kept today's two indicators there.)
+    @Test func calculationWaitBelongsToTheLoader() {
+        #expect(analysisStage(draftPhase: .review, isSubmitting: true) == .calculating)
+        #expect(analysisStage(
+            registrationPhase: .cancelled, draftPhase: .review, isSubmitting: true
+        ) == .calculating)
+        // The proposal arrived: the block leaves and "Confirmar" keeps the mark.
+        #expect(analysisStage(hasProposal: true, draftPhase: .review, isSubmitting: true) == nil)
+        #expect(analysisStage(hasProposal: true, draftPhase: .review, isSubmitting: false) == nil)
+    }
+
     @Test func startOverClearsCaptureErrorAndRejectsThePriorOperation() {
         let presentation = PerformeOperationPresentation()
         let old = presentation.begin()

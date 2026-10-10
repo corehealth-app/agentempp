@@ -9,6 +9,9 @@ enum OnboardingRepositoryError: Error, Equatable, Sendable {
     case alreadyCompleted
     case storageUnavailable
     case serviceUnavailable
+    /// The signed-in e-mail administers the team's panel, so it cannot also
+    /// be an app account (HTTP 403 `patient_admin_account_conflict`).
+    case adminAccountConflict
 }
 
 protocol OnboardingRepository: Sendable {

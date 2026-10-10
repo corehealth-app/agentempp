@@ -4,6 +4,9 @@ import UniformTypeIdentifiers
 
 enum MealLiveCaptureChoice: Equatable {
     case text
+    /// Take or choose a photo: the step the "Foto" way of the meal card
+    /// opens on.
+    case photo
     case record
 }
 
@@ -15,6 +18,11 @@ struct MealLiveCaptureView: View {
     let model: MealDraftModel
     let stager: MealMediaStager
     let recorder: MealAudioRecorder
+    /// The sheet has finished arriving: only then is the keyboard asked for.
+    let sheetSettled: Bool
+    /// The stage of the analysis being waited for, decided by the sheet
+    /// (`RegistrationSheet.mealAnalysisStage`); `nil` when nothing is.
+    let analysisStage: MealAnalysisStage?
     let isProposing: Bool
     let submitText: @MainActor (String) -> Void
     let submitMedia: @MainActor (StagedMedia) -> Void
@@ -22,13 +30,45 @@ struct MealLiveCaptureView: View {
     let propose: @MainActor (MealProposalRequest) -> Void
 
     @State private var choice: MealLiveCaptureChoice?
+    @FocusState private var textFocused: Bool
     @State private var textDraft = ""
     @State private var showingCamera = false
     @State private var showingGallery = false
     @State private var showingImporter = false
     @State private var pickedPhoto: PhotosPickerItem?
-    @State private var isStaging = false
+    @AccessibilityFocusState private var analysisFocused: Bool
     @Environment(\.locale) private var locale
+
+    /// `entry` is the way already chosen on the Register screen: the capture
+    /// opens on its step and the choice is not asked again.
+    init(
+        model: MealDraftModel,
+        stager: MealMediaStager,
+        recorder: MealAudioRecorder,
+        entry: MealCaptureEntry?,
+        sheetSettled: Bool,
+        analysisStage: MealAnalysisStage?,
+        isProposing: Bool,
+        submitText: @escaping @MainActor (String) -> Void,
+        submitMedia: @escaping @MainActor (StagedMedia) -> Void,
+        retry: @escaping @MainActor () -> Void,
+        propose: @escaping @MainActor (MealProposalRequest) -> Void
+    ) {
+        self.model = model
+        self.stager = stager
+        self.recorder = recorder
+        self.sheetSettled = sheetSettled
+        self.analysisStage = analysisStage
+        self.isProposing = isProposing
+        self.submitText = submitText
+        self.submitMedia = submitMedia
+        self.retry = retry
+        self.propose = propose
+        _choice = State(initialValue: MealCaptureStart.liveChoice(
+            entry: entry,
+            supportsMedia: model.supportsMedia
+        ))
+    }
 
     var body: some View {
         content
@@ -59,6 +99,13 @@ struct MealLiveCaptureView: View {
                 case .failure: model.reportCaptureFailure(.unreadableMedia)
                 }
             }
+            // VoiceOver follows the wait: the block takes the focus once,
+            // when it appears; a change of stage is read as its new value.
+            .onChange(of: analysisStage) { previous, current in
+                if MealAnalysisFocus.takesFocus(from: previous, to: current) {
+                    analysisFocused = true
+                }
+            }
     }
 
     static let importableAudioTypes: [UTType] = [.mpeg4Audio, .mp3, .wav]
@@ -66,31 +113,30 @@ struct MealLiveCaptureView: View {
 
     @ViewBuilder
     private var content: some View {
-        switch model.phase {
-        case .review:
-            if model.review != nil {
-                MealDraftReviewView(
-                    review: Binding(
-                        get: { model.review ?? Self.emptyReview },
-                        set: { model.review = $0 }
-                    ),
-                    isSubmitting: isProposing,
-                    submit: {
-                        if let request = model.reviewedRequest(language: language) {
-                            propose(request)
-                        }
-                    },
-                    startOver: startOver
-                )
-            }
-        case .uploading, .processing, .reading:
-            progress
-        case let .failed(failure):
-            failureContent(failure)
-        case .idle:
-            if isStaging {
-                progressLine(copy("registration.live.phase.preparing"))
-            } else {
+        if let analysisStage {
+            // One block for the whole wait, whatever its stage.
+            analysisLoader(analysisStage)
+        } else {
+            switch model.phase {
+            case .review:
+                if model.review != nil {
+                    MealDraftReviewView(
+                        review: Binding(
+                            get: { model.review ?? Self.emptyReview },
+                            set: { model.review = $0 }
+                        ),
+                        isSubmitting: isProposing,
+                        submit: {
+                            if let request = model.reviewedRequest(language: language) {
+                                propose(request)
+                            }
+                        },
+                        startOver: startOver
+                    )
+                }
+            case let .failed(failure):
+                failureContent(failure)
+            case .idle, .preparing, .uploading, .processing, .reading:
                 capture
             }
         }
@@ -101,10 +147,12 @@ struct MealLiveCaptureView: View {
         switch choice {
         case .text:
             textEntry
+        case .photo:
+            photoStep
         case .record:
             MealAudioRecorderView(
                 recorder: recorder,
-                isBusy: isStaging,
+                isBusy: model.isAnalysing,
                 use: stageRecording,
                 fail: { failure in
                     choice = nil
@@ -130,13 +178,9 @@ struct MealLiveCaptureView: View {
             }
             if model.supportsMedia {
                 if MealCameraPicker.isCameraAvailable {
-                    sourceButton("registration.live.capture.camera", .camera, .secondary, "camera") {
-                        openCamera()
-                    }
+                    cameraButton(.secondary)
                 }
-                sourceButton("registration.live.capture.gallery", .photo, .secondary, "gallery") {
-                    showingGallery = true
-                }
+                galleryButton(.secondary)
                 sourceButton("registration.live.capture.record", .microphone, .secondary, "record") {
                     choice = .record
                 }
@@ -148,6 +192,38 @@ struct MealLiveCaptureView: View {
             } else {
                 BodyFlowStatusLine(copy("registration.capture.media-unavailable"), kind: .unavailable)
             }
+        }
+    }
+
+    /// The step "Foto" opens on: the same two actions the full choice
+    /// offers (the very same buttons — the two steps are never on screen
+    /// together), and the way back to it.
+    private var photoStep: some View {
+        VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
+            Text(copy("registration.live.photo.title"))
+                .font(BodyFlowTypography.headline)
+                .foregroundStyle(BodyFlowColor.primaryText)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("registration.meal.photo-step")
+            if MealCameraPicker.isCameraAvailable {
+                cameraButton(.primary)
+                galleryButton(.secondary)
+            } else {
+                galleryButton(.primary)
+            }
+            backButton
+        }
+    }
+
+    private func cameraButton(_ role: BodyFlowButtonRole) -> some View {
+        sourceButton("registration.live.capture.camera", .camera, role, "camera") {
+            openCamera()
+        }
+    }
+
+    private func galleryButton(_ role: BodyFlowButtonRole) -> some View {
+        sourceButton("registration.live.capture.gallery", .photo, role, "gallery") {
+            showingGallery = true
         }
     }
 
@@ -163,6 +239,7 @@ struct MealLiveCaptureView: View {
             )
             .lineLimit(3...8)
             .textInputAutocapitalization(.sentences)
+            .focused($textFocused)
             .bodyFlowField()
             .accessibilityIdentifier("registration.meal.text")
 
@@ -182,6 +259,13 @@ struct MealLiveCaptureView: View {
 
             backButton
         }
+        // The keyboard comes with the field — on the direct entry and after
+        // "Escrever" alike — once the sheet has stopped moving.
+        .onChange(of: sheetSettled, initial: true) { _, settled in
+            if MealCaptureStart.focusesText(isTextStep: true, sheetSettled: settled) {
+                textFocused = true
+            }
+        }
     }
 
     private var backButton: some View {
@@ -197,34 +281,25 @@ struct MealLiveCaptureView: View {
         .accessibilityIdentifier("registration.meal.source.back")
     }
 
-    private var progress: some View {
-        VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-            if let key = MealCaptureCopy.phaseKey(model.phase, channel: model.channel) {
-                progressLine(copy(key))
-            }
-            Button(action: startOver) {
-                Text(copy("registration.live.cancel"))
-                    .frame(maxWidth: .infinity)
-                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget + 1)
-            }
-            .buttonStyle(BodyFlowButtonStyle(role: .secondary))
-            .accessibilityIdentifier("registration.meal.capture.cancel")
-        }
-    }
-
-    private func progressLine(_ message: String) -> some View {
-        HStack(spacing: BodyFlowSpacing.sm) {
-            BodyFlowDelayedProgress()
-                .tint(BodyFlowColor.accent)
-                .accessibilityHidden(true)
-            Text(verbatim: message)
-                .font(BodyFlowTypography.body)
-                .foregroundStyle(BodyFlowColor.primaryText)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("registration.meal.capture.progress")
+    /// The one loading block of the analysis: the same title from the first
+    /// instant to the review, one line for the stage the work is really in,
+    /// and the cancel action always in its place.
+    private func analysisLoader(_ stage: MealAnalysisStage) -> some View {
+        BodyFlowStagedLoader(
+            title: copy("registration.live.analysis.title"),
+            stage: copy(stage.lineKey),
+            reservedStages: stage.reservedLines.map { copy($0.lineKey) },
+            cancel: stage.offersCancel
+                ? BodyFlowStagedLoader.CancelAction(
+                    title: copy("registration.live.cancel"),
+                    isEnabled: stage.isCancelEnabled,
+                    identifier: "registration.meal.capture.cancel",
+                    perform: startOver
+                )
+                : nil,
+            statusIdentifier: "registration.meal.capture.progress",
+            statusFocus: $analysisFocused
+        )
     }
 
     private func failureContent(_ failure: MealCaptureFailure) -> some View {
@@ -287,10 +362,9 @@ struct MealLiveCaptureView: View {
     }
 
     private func loadPickedPhoto(_ item: PhotosPickerItem) {
-        isStaging = true
+        model.beginPreparing()
         Task {
             guard let data = try? await item.loadTransferable(type: Data.self) else {
-                isStaging = false
                 model.reportCaptureFailure(.unreadableMedia)
                 return
             }
@@ -314,17 +388,18 @@ struct MealLiveCaptureView: View {
         }
     }
 
-    /// Prepares the file off the main actor and hands it to the upload.
+    /// Prepares the file off the main actor and hands it to the upload. The
+    /// wait belongs to the model from here on (`beginPreparing`), and ends
+    /// in `submitMedia` or in a reported failure.
     private func stage(
         _ work: @escaping @Sendable (MealMediaStager) async throws -> StagedMedia
     ) {
-        isStaging = true
+        model.beginPreparing()
         let stager = stager
         Task {
             let result = await Task.detached(priority: .userInitiated) {
                 await Result { try await work(stager) }
             }.value
-            isStaging = false
             choice = nil
             switch result {
             case let .success(staged): submitMedia(staged)

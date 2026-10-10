@@ -2766,6 +2766,336 @@ real com modelo roteirizado) e em
 
 > RC FN-7 — cenário "Flow escreve 'Dr. Roberto' sem o sobrenome" variante NÃO coberta pelo filtro nesta PR (fica só a instrução ao modelo; pendência da audit 2026-10-05). Título e/ou primeiro nome sem "Menescal" ("Dr. Roberto", "Doutor Roberto", "Roberto") nunca são trocados, porque podem ser o nome de quem usa o app ou de outra pessoa: "Bom treino, Dr. Roberto!" e "Fale com seu médico, o Dr. Roberto Silva." chegam como o modelo escreveu. Por isso "O Dr. Roberto é o médico que criou o método." (uma resposta possível a "Quem é o Dr. Roberto?") também chega inteira, com o título e o primeiro nome do médico. O turno só conta a ocorrência de título + primeiro nome em `persona_first_name_only`, sem texto. Travado como pendência no golden.
 
+## Linguagem simples na sugestão de treino do Flow
+
+Desde 2026-10-10 (primeira atualização depois do build 1.0 (3)). Pedido do
+dono, nas palavras dele: "quando ele monta o treino, está muito tecnico os
+termos usados, precisam ser mais simples para facilitar o entendimento do
+usuario". No rascunho gerado para uma conta de teste ele leu "Push/Pull/Legs",
+"RPE 8-9", "falha técnica", "progressão linear", "reps", "Compostos primeiro,
+isoladores depois", "pegada pronada" e "retração escapular".
+
+Vale só para o app (Flow) e só para a sugestão de TREINO criada por
+`propoe_plano_treino`. Nenhuma rota, DTO, esquema, status ou formato de campo
+muda: o rascunho tem as mesmas chaves e os mesmos tipos (`rpe_target` continua
+texto de até 40 caracteres), e o build 1.0 (3) continua funcionando sem
+atualização. A ferramenta legada (`gera_treino`), o prompt legado, o pedido
+legado e o plano que ela grava continuam byte a byte iguais. Nenhum número,
+limiar ou conduta do método muda; `docs/CALCULO-MPP.md` não foi tocado.
+
+Desde esta mudança o rascunho de treino do Flow é gravado com as grafias desta
+tabela trocadas na criação; a frase de RC FN-3 (o rascunho é gravado como o
+gerador escreveu) continua valendo para todo o resto, e RC FN-3 segue aberta.
+
+### Duas camadas
+
+1. **Pedido ao gerador** (`packages/agent/src/training-plan-generator.ts`, só
+   os ramos do Flow). As regras do método enviadas ao modelo ficam byte a
+   byte. O exemplo de `progression_rule` passa a "Adicione 1 repetição por
+   treino. Chegou a 12 repetições com o movimento certo → aumente o peso e
+   volte para 6." (os mesmos números 1, 12 e 6); o prompt termina com o bloco
+   "COMO ESCREVER", que pede português do dia a dia, sem gíria de academia,
+   sem sigla e sem inglês onde existe palavra comum, o nome de exercício que
+   as academias do Brasil usam, e diz que os números e os músculos de cada
+   dia não mudam; a mensagem pede `notes` e `progression_rule` com até 400
+   caracteres (o campo aceita 500) e termina em "Escreva todo texto em
+   português simples, para quem nunca treinou.". Mesmo modelo, mesmos
+   argumentos e mesmos limites (8000 tokens, 120 s, uma tentativa). É um
+   pedido: o modelo pode não obedecer (RC TL-3).
+2. **Rede determinística**
+   (`packages/agent/src/flow-plain-training-language.ts`). Um vocabulário
+   FECHADO aplicado uma vez, dentro de `propoe_plano_treino`, ao rascunho
+   candidato ANTES de ele ser avaliado e gravado. O texto do chat é montado do
+   rascunho gravado, então o chat e a aba Plano mostram as mesmas palavras. A
+   rede troca palavras; não reescreve a frase nem lê o sentido dela (RC
+   TL-10). Na dúvida a regra deixa a palavra do gerador: uma troca errada
+   ficaria gravada, e a palavra técnica mantida é o que o app já mostrava.
+
+Campos lidos: `notes`, `progression_rule`, `equipment_summary`; por dia `day`
+e `focus`; por exercício `name`, `muscle_group`, `reps_range`, `rpe_target`,
+`notes`, cada item de `execution_steps` e de `common_mistakes`. Nunca lidos
+nem escritos: `plan_type`, `duration_min`, `sets`, `rest_seconds` e qualquer
+chave fora dessa lista.
+
+O evento `training.plan_proposed` ganha três números (nenhum texto):
+`plain_terms_replaced` (grafias trocadas), `plain_sentences_kept` (frases que
+ficaram como o gerador escreveu por causa do limite do campo) e
+`plain_fields_kept` (campos de frase única que ficaram como o gerador
+escreveu pelo mesmo motivo).
+
+### Regras da rede
+
+1. Frase a frase, da esquerda para a direita, sobre o texto normalizado para
+   NFC. Numa mesma posição vence a grafia mais longa. A frase é relida até
+   nada mais mudar: nenhuma saída traz uma grafia da tabela, então uma saída
+   nunca é trocada, mas o termo que ficou por causa da vizinha ("Core" em "Leg
+   day - Core") é lido sem ela quando a vizinha também era um termo. Texto em
+   que nenhuma linha age volta como a mesma sequência de caracteres (sem
+   normalizar).
+2. Só palavra inteira: a grafia colada a letra, número, "_", "@" ou "-" não é
+   o termo (`reps_range`, "Push-up", "Pulldown", "score"). "/", "+",
+   parênteses e pontuação NÃO são cola: os dois lados de
+   "Isquiotibiais/Glúteos" são lidos. Uma exceção: número colado antes de
+   reps/rep ("12reps" vira "12 repetições"). O que conta como letra e como
+   número: letra é letra do alfabeto latino, com ou sem acento (A–Z, a–z e
+   toda letra até U+024F, inclusive "ª", "º" e "µ"); número é 0–9 ou um de
+   "²", "³", "¹", "¼", "½", "¾". Até U+024F isso é exatamente o que o Unicode
+   chama de letra e de número (travado caractere a caractere no teste). Depois
+   disso nada é cola: "→", "–", "—", "…", aspas curvas e emoji nunca foram, e
+   letra ou número de outro alfabeto (grego, cirílico e os demais) deixou de
+   ser — "Coreж" é lido como "Core" (RC TL-15). As fronteiras são escritas
+   como faixas explícitas, nunca com as classes Unicode de toda letra e de
+   todo número: com elas, o primeiro texto do processo com um caractere fora
+   do Latin-1 ("→", "–", "…") parava o Node por 4 a 9 segundos enquanto o V8
+   compilava a expressão; com as faixas, a rede leva de 50 a 157 ms na
+   primeira sugestão de um processo (medido em processo novo, com um build do
+   Xcode ao lado) e de 12 a 30 ms nas seguintes. Travado, com teto de 1 s, em
+   `packages/agent/src/flow-plain-training-language.first-call.test.ts`.
+3. Trecho de endereço é protegido inteiro (esquema "://", "www." ou o alvo de
+   um link Markdown).
+4. As divisões em inglês não agem dentro de NOME de exercício nem da lista de
+   EQUIPAMENTOS. Nos outros campos, Push, Pull, Legs, Upper, Lower e Core
+   soltas não agem quando a palavra vizinha, de um lado ou do outro, separada
+   só por espaço, está na lista fechada de inglês (abaixo): "Pull Up", "Face
+   Pull", "Band Pull Apart" e "Upper back" ficam.
+5. "falha" (sozinha ou com técnica, muscular, concêntrica) só depois de "até
+   a", "até à", "até", "à", "próximo da", "próximo à", "perto da", "antes
+   da". Depois de "até" sem artigo, o artigo entra ("até falha" vira "até a
+   última repetição bem feita"). Depois de "à" sozinho não é o termo quando
+   segue "de", "do", "da", "dos", "das", "na", "no", "nas", "nos" ou "em"
+   ("devida à falha na execução"). "Corrija qualquer falha técnica" e "se a
+   técnica falha" não são o termo.
+6. composto(s), multiarticular(es), isolador(es), monoarticular(es) e
+   uniarticular(es) SOZINHOS só em posição de nome: no início do campo;
+   depois de `. ! ? : ; , ( • —` ou quebra de linha; ou logo depois de "o",
+   "os", "do", "dos", "no", "nos", "ao", "aos", "pelo", "pelos", "e", "ou",
+   "de", "com", "em", "entre", "para". Nunca antes de "por", "pelo", "pela",
+   "de", "da", "do", "dos", "das" ("composto por 5 dias") nem de palavra de
+   substância (vitamínico, químico, orgânico, ativo, bioativo, natural e os
+   plurais: "composto vitamínico"). Depois de qualquer outra palavra ("um
+   composto seguro", "treino composto", "priorize compostos") ficam.
+   "isolado(s)" sozinho nunca é trocado. As entradas inteiras (exercício ou
+   movimento + o adjetivo) agem em qualquer lugar, menos antes de "por",
+   "pelo", "pela", "pelos", "pelas".
+7. Maiúscula: no início do campo, de uma frase ou de uma linha, a saída segue
+   a caixa da primeira letra do que foi trocado; em qualquer outro lugar é
+   minúscula. A linha cuja saída muda de gênero ou número leva escritos os
+   artigos que troca junto ("as escápulas retraídas" vira "os ombros para
+   trás"; "o Upper" vira "a parte de cima do corpo"; "no Legs" vira "nas
+   pernas"). Outra palavra que concorde com o termo trocado não é ajustada
+   (RC TL-10).
+8. Nenhuma linha acrescenta posição do corpo, articulação, direção de
+   movimento, carga ou número que a palavra trocada não diga.
+9. `rpe_target`: o rótulo repetido sai quando há nota ("RPE 8" vira "8") e o
+   "/10" que o gerador escreveu é escrito por extenso ("8/10" vira "8 de
+   10"). A escala só é acrescentada a uma nota pura com o sim do dono (D1).
+10. Sigla (RPE, PSE, RIR, PPL, MMSS, MMII) só em maiúsculas: "rir" é verbo.
+    "PSE" sozinha fica antes de palavra terminada em "a" ou "as" ("PSE
+    alta"), que concorda com ela e não com "esforço".
+11. RIR e a sua contagem. A sigla liga a contagem à direita ("RIR 2") e o
+    texto simples liga à esquerda ("2 repetições de sobra"). Com número de UM
+    lado da sigla, esse número é a contagem ("RIR 2", "2 RIR"). Com número dos
+    DOIS lados ("Séries de 12 RIR 2", "Semana 1 RIR 3", "2 RIR: 3") não dá
+    para saber qual dos dois é a contagem: a sigla fica, nenhuma palavra é
+    trocada e nenhum número muda de lugar (RC TL-15). Um número conta como
+    lado quando só espaços o separam da sigla; antes dela, também um
+    travessão ou hífen ("Semana 1 - RIR 3" fica, porque "Semana 1 - 3
+    repetições de sobra" seria lido como a faixa "1 - 3"); depois dela, também
+    ":" ou "=". Em "Séries de 12, RIR 2" e em "Séries de 12 (RIR 2)" só há
+    número de um lado, e a contagem é o 2. Depois da sigla, uma faixa só é a
+    contagem quando está escrita como faixa ("RIR 2-3" vira "2-3 repetições
+    de sobra"); com espaços em volta do traço ("RIR 2 - 3 séries") o segundo
+    número pode ser outra coisa, então as palavras entram no lugar da sigla e
+    nenhum número muda de lugar ("repetições de sobra 2 - 3 séries"). As
+    grafias por extenso ("repetições em reserva") são trocadas onde
+    estiverem, porque já ligam o número como o texto simples liga.
+
+Limites dos campos. Em texto corrido (`notes` e `progression_rule` 500;
+`notes` do exercício e cada passo ou erro 300) as frases são trocadas uma a
+uma; se o campo passaria do limite, as ÚLTIMAS frases trocadas voltam à
+redação do gerador até caber. Em campo de frase única (`day` 20, `focus` e
+`muscle_group` 80, `name` 120, `reps_range` e `rpe_target` 40,
+`equipment_summary` 500) o valor do gerador fica inteiro quando o simples não
+cabe: o dia "Upper A" continua "Upper A", porque "Parte de cima do corpo A"
+tem 24 caracteres. Nada é cortado e o rascunho continua pronto para revisar.
+
+### Tabela ativa
+
+Texto editorial, para o dono ler: uma linha por item, e qualquer linha pode
+ser riscada (tirar a linha daqui, de `FLOW_PLAIN_TRAINING_VOCABULARY` e do
+literal do teste na mesma mudança). `<nota>` é a nota do esforço ("8", "8-9",
+"7.5", "8/10"), colada ou depois de espaço, ":" ou "="; `<n>` é uma contagem
+("2", "1-2"). Letras valem com e sem acento, em qualquer caixa (as siglas, só
+em maiúsculas).
+
+| Grafias | Vira | Onde age |
+| --- | --- | --- |
+| `Push/Pull/Legs`; `Push Pull Legs`; `Push-Pull-Legs`; `PPL` | `empurrar/puxar/pernas` | fora de nome de exercício e de equipamento (regra 4) |
+| `Upper/Lower`; `Upper-Lower`; `Upper Lower` | `parte de cima/parte de baixo` | fora de nome de exercício e de equipamento (regra 4); troca junto "o" por "a", "do" por "da", "no" por "na", "ao" por "à", "pelo" por "pela", "um" por "uma" |
+| `Full Body`; `Full-Body`; `Fullbody` | `corpo inteiro` | fora de nome de exercício e de equipamento (regra 4) |
+| `Upper body` | `parte de cima do corpo` | fora de nome de exercício e de equipamento (regra 4); troca junto "o" por "a", "do" por "da", "no" por "na", "ao" por "à", "pelo" por "pela", "um" por "uma" |
+| `Lower body` | `parte de baixo do corpo` | fora de nome de exercício e de equipamento (regra 4); troca junto "o" por "a", "do" por "da", "no" por "na", "ao" por "à", "pelo" por "pela", "um" por "uma" |
+| `Lower back` | `lombar` | fora de nome de exercício e de equipamento (regra 4); troca junto "o" por "a", "do" por "da", "no" por "na", "ao" por "à", "pelo" por "pela", "um" por "uma" |
+| `Push day` | `dia de empurrar` | fora de nome de exercício e de equipamento (regra 4) |
+| `Pull day` | `dia de puxar` | fora de nome de exercício e de equipamento (regra 4) |
+| `Leg day`; `Legs day` | `dia de pernas` | fora de nome de exercício e de equipamento (regra 4) |
+| `Push` | `empurrar` | fora de nome de exercício e de equipamento, e nunca ao lado de palavra da lista de inglês (regra 4) |
+| `Pull` | `puxar` | fora de nome de exercício e de equipamento, e nunca ao lado de palavra da lista de inglês (regra 4) |
+| `Legs` | `pernas` | fora de nome de exercício e de equipamento, e nunca ao lado de palavra da lista de inglês (regra 4); troca junto "o" por "as", "do" por "das", "no" por "nas", "ao" por "às", "pelo" por "pelas" |
+| `Upper` | `parte de cima do corpo` | fora de nome de exercício e de equipamento, e nunca ao lado de palavra da lista de inglês (regra 4); troca junto "o" por "a", "do" por "da", "no" por "na", "ao" por "à", "pelo" por "pela", "um" por "uma" |
+| `Lower` | `parte de baixo do corpo` | fora de nome de exercício e de equipamento, e nunca ao lado de palavra da lista de inglês (regra 4); troca junto "o" por "a", "do" por "da", "no" por "na", "ao" por "à", "pelo" por "pela", "um" por "uma" |
+| `Core` | `abdômen` | fora de nome de exercício e de equipamento, e nunca ao lado de palavra da lista de inglês (regra 4) |
+| `MMSS` | `parte de cima do corpo` | em qualquer texto; troca junto "os" por "a", "dos" por "da", "nos" por "na", "aos" por "à", "pelos" por "pela" |
+| `MMII` | `parte de baixo do corpo` | em qualquer texto; troca junto "os" por "a", "dos" por "da", "nos" por "na", "aos" por "à", "pelos" por "pela" |
+| `RPE <nota>` | `esforço <nota>` | em qualquer texto; em `rpe_target` fica só a nota (regra 9) |
+| `PSE <nota>` | `esforço <nota>` | em qualquer texto; em `rpe_target` fica só a nota (regra 9); troca junto "a" por "o", "da" por "do", "na" por "no", "à" por "ao", "pela" por "pelo", "uma" por "um" |
+| `RPE` | `esforço` | em qualquer texto |
+| `PSE` | `esforço` | em qualquer texto, menos antes de palavra terminada em "a" ou "as" ("PSE alta"); troca junto "a" por "o", "da" por "do", "na" por "no", "à" por "ao", "pela" por "pelo", "uma" por "um" |
+| `RIR <n>`; `<n> RIR` | `<n> repetições de sobra` (com 1: `<n> repetição de sobra`) | em qualquer texto, menos quando há número dos dois lados da sigla ("Séries de 12 RIR 2" fica: regra 11) |
+| `RIR`; `repetições em reserva`; `reps em reserva` | `repetições de sobra` | em qualquer texto; a sigla, menos quando há número dos dois lados dela (regra 11) |
+| `repetição em reserva`; `rep em reserva` | `repetição de sobra` | em qualquer texto |
+| `falha muscular técnica`; `falha técnica muscular`; `falha muscular`; `falha técnica`; `falha concêntrica`; `falha` | `última repetição bem feita` | só depois de "até", "até a", "até à", "à", "próximo da", "próximo à", "perto da", "antes da"; depois de "à" sozinho, não quando segue "de", "do", "da", "na", "no" ou "em" (regra 5) |
+| `progressão linear` | `evolução passo a passo` | em qualquer texto |
+| `reps` | `repetições` | em qualquer texto; aceita o número colado ("12reps") |
+| `rep` | `repetição` | em qualquer texto; aceita o número colado ("12reps") |
+| `exercícios compostos`; `movimentos compostos`; `exercícios multiarticulares`; `movimentos multiarticulares` | `exercícios de vários músculos` | em qualquer texto, menos antes de "por", "pelo", "pela", "pelos", "pelas" (regra 6) |
+| `exercício composto`; `movimento composto`; `exercício multiarticular`; `movimento multiarticular` | `exercício de vários músculos` | em qualquer texto, menos antes de "por", "pelo", "pela", "pelos", "pelas" (regra 6) |
+| `exercícios isolados`; `movimentos isolados`; `exercícios isoladores`; `movimentos isoladores`; `exercícios monoarticulares`; `movimentos monoarticulares`; `exercícios uniarticulares`; `movimentos uniarticulares` | `exercícios de um músculo só` | em qualquer texto, menos antes de "por", "pelo", "pela", "pelos", "pelas" (regra 6) |
+| `exercício isolado`; `movimento isolado`; `exercício isolador`; `movimento isolador`; `exercício monoarticular`; `movimento monoarticular`; `exercício uniarticular`; `movimento uniarticular` | `exercício de um músculo só` | em qualquer texto, menos antes de "por", "pelo", "pela", "pelos", "pelas" (regra 6) |
+| `compostos`; `multiarticulares` | `exercícios de vários músculos` | só em posição de nome, e nunca antes de "por", "pelo", "pela", "de", "da", "do", "dos", "das" nem de palavra de substância (regra 6) |
+| `composto`; `multiarticular` | `exercício de vários músculos` | só em posição de nome, e nunca antes de "por", "pelo", "pela", "de", "da", "do", "dos", "das" nem de palavra de substância (regra 6) |
+| `isoladores`; `monoarticulares`; `uniarticulares` | `exercícios de um músculo só` | só em posição de nome, e nunca antes de "por", "pelo", "pela", "de", "da", "do", "dos", "das" nem de palavra de substância (regra 6) |
+| `isolador`; `monoarticular`; `uniarticular` | `exercício de um músculo só` | só em posição de nome, e nunca antes de "por", "pelo", "pela", "de", "da", "do", "dos", "das" nem de palavra de substância (regra 6) |
+| `pegada pronada` | `pegada por cima` | em qualquer texto |
+| `pegada supinada` | `pegada por baixo` | em qualquer texto |
+| `retração escapular`; `retração das escápulas`; `retração de escápulas` | `postura de ombros para trás` | em qualquer texto |
+| `escápulas retraídas` | `ombros para trás` | em qualquer texto, menos depois de outra palavra terminada em "as" ou antes de "e" ou vírgula mais palavra terminada em "adas" ou "idas"; troca junto "as" por "os", "das" por "dos", "nas" por "nos", "às" por "aos", "pelas" por "pelos", "suas" por "seus" |
+| `isquiotibiais` | `músculos de trás da coxa` | em qualquer texto |
+| `isquiotibial` | `músculo de trás da coxa` | em qualquer texto |
+| `gastrocnêmio e o sóleo`; `sóleo e o gastrocnêmio`; `gastrocnêmio e sóleo`; `sóleo e gastrocnêmio`; `gastrocnêmio/sóleo`; `sóleo/gastrocnêmio`; `gastrocnêmio, sóleo`; `sóleo, gastrocnêmio`; `gastrocnêmio+sóleo`; `sóleo+gastrocnêmio` | `músculos da panturrilha` | em qualquer texto; troca junto "o" por "os", "do" por "dos", "no" por "nos", "ao" por "aos", "pelo" por "pelos" |
+| `gastrocnêmios`; `sóleos` | `músculos da panturrilha` | em qualquer texto |
+| `gastrocnêmio`; `sóleo` | `músculo da panturrilha` | em qualquer texto |
+| `cadeia posterior` | `parte de trás do corpo` | em qualquer texto |
+| `cadeia anterior` | `parte da frente do corpo` | em qualquer texto |
+| `porção clavicular do peitoral maior`; `porção clavicular do peitoral`; `porção clavicular do peito`; `porção clavicular` | `parte de cima do peito` | em qualquer texto |
+| `cabeça longa do tríceps braquial`; `cabeça lateral do tríceps braquial`; `cabeça medial do tríceps braquial`; `cabeça longa do tríceps`; `cabeça lateral do tríceps`; `cabeça medial do tríceps` | `parte de trás do braço` | em qualquer texto |
+| `cabeça longa do bíceps braquial`; `cabeça curta do bíceps braquial`; `cabeça longa do bíceps`; `cabeça curta do bíceps` | `parte da frente do braço` | em qualquer texto |
+
+Lista fechada de vizinhas em inglês (regra 4): Up, Ups, Down, Downs, Over,
+Overs, Apart, Aparts, Through, Throughs, Around, Press, Presses, Row, Rows,
+Jerk, Jerks, Deadlift, Deadlifts, Hold, Holds, Split, Splits, Legged,
+Stability, Rack, Racks, Band, Bands, Cable, Cables, Sled, Sleds, Machine,
+Machines, Back, Body, Chest, Abs, Arm, Arms, Leg, Face, Trap, Traps, Lat,
+Lats, Pec, Pecs, Glute, Glutes, Limb, Limbs, Day, Days, Workout, Workouts,
+Training, Session, Sessions, Exercise, Exercises, Movement, Movements,
+Routine, Strength, Work.
+
+### O que espera o dono (escrito, testado e DESLIGADO)
+
+Nada abaixo age em produção: `FLOW_PLAIN_TRAINING_OWNER_SWITCHES` é
+`{ effortOutOfTen: false, renames: [] }`, e a ferramenta chama a rede sem
+outro argumento. Ligar um item é mudar esse literal, com a data do sim do dono
+aqui e os textos do golden na mesma mudança.
+
+- **D1 — escala do esforço** (`effortOutOfTen`). A nota de 1 a 10 ganharia a
+  escala: `rpe_target` "9" viraria "9 de 10", "8-9" viraria "8-9 de 10", e no
+  texto "RPE 8-9" viraria "esforço 8-9 de 10". Nota fora de 1 a 10 ("15") ou
+  texto ("moderado") ficaria como veio. É o único acréscimo de número em toda
+  a rede, e é número que o gerador não escreveu e que o documento do método
+  não define. Hoje a aba Plano mostra "Esforço alvo 9" (RC TL-14). sim do
+  dono em: ____
+- **D2 — nomes de exercício** (`renames`), um sim por linha. Os dois
+  candidatos são nomes usados em academia, sem fonte no repositório:
+
+  | Grafias | Viraria | Onde agiria |
+  | --- | --- | --- |
+  | `Hip Thrust`; `Hip-Thrust` | `elevação pélvica` | em qualquer texto; troca junto "o" por "a", "do" por "da", "no" por "na", "ao" por "à", "um" por "uma" |
+  | `Military press` | `desenvolvimento militar` | em qualquer texto |
+
+  `Hip Thrust`: sim do dono em: ____ · `Military press`: sim do dono em: ____
+
+  "Stiff" e "Leg Press" não têm candidato: a recomendação é manter, porque é
+  como a academia e a máquina chamam (uma descrição diria como posicionar o
+  joelho, o que o plano não disse). Hoje os quatro nomes ficam como o gerador
+  escreveu (RC TL-13).
+
+### O que é garantido
+
+Determinístico, valha o que o modelo escrever, num rascunho de treino que o
+Flow cria depois desta mudança:
+
+1. Toda linha da tabela ativa é aplicada, nos campos lidos, sempre que a
+   grafia aparece como palavra inteira, dentro das regras 3 a 6, 10 e 11, e o
+   texto simples cabe no limite do campo. O que as regras deixam passar de
+   propósito está em RC TL-15; o que fica como o gerador escreveu por causa
+   do limite, em RC TL-7.
+2. O chat e a aba Plano mostram o mesmo texto: o bloco da sugestão no chat é
+   montado do rascunho gravado (a única diferença possível continua sendo a
+   troca dos nomes internos, que age só no chat: RC FN-3).
+3. Números e estrutura são os do gerador: séries, descanso, minutos, tipo do
+   plano, número de dias, de exercícios, de passos e de erros, e todo dígito
+   de todo texto, na mesma ordem. Nenhum dígito é acrescentado nem retirado.
+4. Nenhuma linha acrescenta instrução de execução: a tabela inteira é travada
+   como literal no teste.
+5. Formato: mesmas chaves e tipos; nenhum campo passa do limite; nada é
+   cortado; um rascunho que seria `ready_for_review` continua
+   `ready_for_review`.
+6. Aplicar o vocabulário duas vezes não muda mais nada.
+7. Só no Flow e só no treino: o vocabulário é importado por
+   `tools/plan-proposal-tools.ts` e por mais nenhum arquivo, e chamado uma
+   vez, dentro de `propoe_plano_treino`. `gera_treino`, `processMessage`, o
+   prompt legado, a sugestão de cardápio, a importação de documento, a edição
+   feita pela pessoa e o texto livre do chat nunca chegam a ele.
+8. Nome de exercício não é trocado e o esforço não ganha escala enquanto o
+   dono não disser sim.
+
+O teto do chat. O texto simples é mais longo que o do gerador (o parágrafo de
+progressão do cenário relatado cresce 35 caracteres). O chat mostra até 2.000
+caracteres da sugestão (1.958 para os blocos): num plano perto desse teto, o
+chat perde primeiro o parágrafo "Progressão:" e depois dias inteiros, do fim
+para o começo, e termina em '(O restante está em "Revisar sugestão".)'; a aba
+Plano continua com tudo. O rascunho real de 2026-09-30 (18 exercícios) passa
+de 1.337 para 1.373 caracteres e continua inteiro.
+
+Travado em
+`packages/agent/src/__golden__/audit-10-10-flow-workout-plain-language.test.ts`
+(o turno relatado, "Nenhuma limitacao e sem prioridade", com os textos exatos
+do rascunho gravado em 2026-10-10 16:44:49Z, pela ferramenta real e pelo
+pipeline real com modelo roteirizado) e em
+`packages/agent/src/flow-plain-training-language.test.ts` (cada regra).
+
+> RC TL-1 — cenário rascunho de treino do Flow de 2026-10-10 16:44:49Z (conta de teste, 5 dias, 29 exercícios) variante os 23 exercícios, o grupo muscular de 3 exercícios e os dias de terça e quinta, cujo texto o arquivo de evidência não traz NÃO coberta nesta PR (pendência da audit 2026-10-10). O fim do chat só está provado no recorte de 3 dias e 6 exercícios: para o turno relatado inteiro o golden é variante próxima. No plano inteiro o texto simples é mais longo (só o parágrafo de progressão cresce 35 caracteres) e o chat pode terminar em '(O restante está em "Revisar sugestão".)' sem o parágrafo de progressão e sem o último dia; a aba Plano continua com tudo. Só a releitura autorizada do rascunho inteiro, fora desta raia, fecha esta linha.
+
+> RC TL-2 — cenário termos "porção clavicular", "cabeça longa do tríceps", "isquiotibiais", "gastrocnêmio", "sóleo", "cadeia posterior" e "Military press" variante a frase exata em que cada um apareceu no rascunho de 2026-10-10 (não está no arquivo de evidência; os seis primeiros são cobertos numa frase de teste, que é variante próxima, inclusive com barra; o sétimo está em RC TL-13) NÃO coberta nesta PR (pendência da audit 2026-10-10)
+
+> RC TL-3 — cenário sugestão de treino do Flow variante resposta do MODELO REAL ao pedido de linguagem simples (o modelo é roteirizado nos testes; nenhum turno real rodou com o pedido novo) NÃO coberta nesta PR (pendência da audit 2026-10-10)
+
+> RC TL-4 — cenário termo técnico ou nome em inglês variante FORA do vocabulário fechado (por exemplo "peitoral", "quadríceps", "dorsal", "deltoide", "amplitude", "stress", "escápulas" sem "retraídas", "unilateral" e "unilaterais", "pegada neutra", "cabeça longa" sem o músculo, "Upper back", "Pulldown", "Pullover", "Crossover", "drop set") NÃO coberta nesta PR (pendência da audit 2026-10-10)
+
+> RC TL-5 — cenário linha do exercício no chat ("• Hip Thrust com Barra — 4×8-12, descanso 90 s") variante a notação séries×repetições, o "s" de segundos e o rótulo "Progressão:" NÃO coberta nesta PR (pendência da audit 2026-10-10)
+
+> RC TL-6 — cenário rascunho de treino gravado ANTES desta mudança (inclusive o de 2026-10-10 16:44:49Z no ambiente de teste) e mensagem do chat já gravada variante texto já armazenado, que não é reescrito NÃO coberta nesta PR (pendência da audit 2026-10-10)
+
+> RC TL-7 — cenário campo cujo texto simples passaria do limite (observações, progressão e equipamentos 500; observação do exercício, passos e erros 300; nome 120; foco e grupo muscular 80; repetições e esforço 40; dia 20) variante frases ou campo que ficam como o gerador escreveu, por exemplo o dia "Upper A" NÃO coberta nesta PR (pendência da audit 2026-10-10). No campo do dia, "Upper" e "Lower" nunca são trocadas: "Parte de cima do corpo" tem 22 caracteres, "Parte de baixo do corpo" tem 23 e o limite é 20; um plano com os dias "Upper A" e "Lower A" continua com esses dois rótulos em inglês no chat e na aba Plano.
+
+> RC TL-8 — cenário perguntas do Flow ANTES de montar o treino e respostas a dúvidas depois variante texto livre do chat fora do turno da sugestão (inclusive uma pergunta sobre "falha muscular" vinda da descrição do parâmetro compartilhado) NÃO coberta nesta PR (pendência da audit 2026-10-10)
+
+> RC TL-9 — cenário sugestão de treino para conta em INGLÊS variante pedido ao gerador e vocabulário só em português NÃO coberta nesta PR (pendência da audit 2026-10-10)
+
+> RC TL-10 — cenário frase depois da troca variante redação que continua sem ser do dia a dia, porque a rede troca palavras e não reescreve a frase ("Plano empurrar/puxar/pernas modificado para 5 dias: Segunda (empurrar superior), Terça (puxar), Quarta (pernas completo)", "Exercício de vários músculos principal para peitoral", "Panturrilha (músculo da panturrilha)") NÃO coberta nesta PR (pendência da audit 2026-10-10). A concordância com a palavra vizinha também não é ajustada: "12 rep" vira "12 repetição", "MMII fortes" vira "Parte de baixo do corpo fortes" e "Treine a PSE 8" vira "Treine o esforço 8" (o "a" era preposição e foi lido como artigo).
+
+> RC TL-11 — cenário plano importado de foto ou PDF, texto digitado pela pessoa em "Revisar sugestão" e sugestão de cardápio variante texto que não é sugestão de treino escrita pelo Flow, deixado como está de propósito NÃO coberta nesta PR (pendência da audit 2026-10-10)
+
+> RC TL-12 — cenário frase de abertura ou de fecho escrita pelo modelo no turno da sugestão de treino variante termo técnico fora do bloco da sugestão NÃO coberta nesta PR (pendência da audit 2026-10-10)
+
+> RC TL-13 — cenário nomes de exercício em inglês vistos pelo dono ("Hip Thrust com Barra", "Stiff Unilateral com Halter", "Leg Press 45°") e "Military press" variante troca do nome pela rede determinística, que entra desligada até o dono aprovar cada nome NÃO coberta nesta PR (pendência da audit 2026-10-10). O nome fica como o gerador escreveu; só o pedido ao modelo pede o nome usado nas academias do Brasil.
+
+> RC TL-14 — cenário "Esforço alvo 9" na aba Plano variante explicação da escala da nota ("9 de 10"), que entra desligada até o dono decidir NÃO coberta nesta PR (pendência da audit 2026-10-10). A sigla sai do texto ("RPE 8-9" vira "esforço 8-9"); a nota fica como o gerador escreveu.
+
+> RC TL-15 — cenário grafia do vocabulário fechado variante que a regra deixa passar de propósito (colada a letra, número, "_", "@" ou "-"; sigla em minúsculas, como "rpe" e "rir"; a sigla RIR com número dos dois lados, como "Séries de 12 RIR 2"; "PSE" antes de palavra terminada em "a" ou "as"; as divisões em inglês dentro de nome de exercício ou de equipamento; Push, Pull, Legs, Upper, Lower e Core vizinhas de uma palavra da lista fechada de inglês; "falha" fora de "até", "até a", "à", "próximo da", "próximo à", "perto da", "antes da", e depois de "à" quando segue "de", "do", "da", "na", "no" ou "em"; "composto" e "isolador" depois de uma palavra que não anuncia nome, como um verbo, ou "composto" antes de "por", de "de" e de palavra de substância; "escápulas retraídas" depois de outra palavra terminada em "as" ou antes de "e" ou vírgula mais uma palavra terminada em "adas" ou "idas"; trecho de endereço), composto em inglês com vizinha fora da lista, trocado palavra por palavra em texto corrido ("Core Blaster" vira "abdômen Blaster"), frase trocada pela metade ("Combine compostos e isoladores" vira "Combine compostos e exercícios de um músculo só"), e grafia colada a letra ou número de outro alfabeto, que não conta como cola ("Treino de Coreж" vira "Treino de abdômenж") NÃO coberta nesta PR (pendência da audit 2026-10-10)
+
+> RC TL-16 — cenário turno relatado ("Nenhuma limitacao e sem prioridade", 2026-10-10 16:44:49Z) variante a resposta do modelo na segunda chamada do turno, os argumentos que ele passou à ferramenta e a data de nascimento da conta de teste, que não foram registrados NÃO coberta nesta PR (pendência da audit 2026-10-10). A mensagem não é um pedido único: o turno faz duas chamadas ao modelo. No golden a segunda resposta é roteirizada nas duas formas possíveis (o modelo resume, e o sistema põe a sugestão gravada entre a abertura e o fecho fixos, que é o fecho que a tela mostrou; ou o modelo copia a sugestão), e os argumentos são reconstruídos da conversa.
+
 ## Proposta de treino
 
 ```json

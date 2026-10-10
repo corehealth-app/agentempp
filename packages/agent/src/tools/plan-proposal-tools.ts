@@ -6,10 +6,16 @@
  * gravam SOMENTE um rascunho (`create_plan_draft_atomic`). Nada aqui grava em
  * `training_plans` ou `prescriptions`, e não existe ferramenta que confirme:
  * o rascunho só vira plano quando o paciente confirma no app.
+ *
+ * Audit 2026-10-10: os textos da sugestão de TREINO passam, uma vez e antes de
+ * gravar, pelo vocabulário fechado de linguagem simples do Flow
+ * (`../flow-plain-training-language.ts`): números e estrutura não mudam. A
+ * sugestão de cardápio não passa por ele.
  */
 import type { z } from 'zod'
 import { loadCalcConfig } from '../calc-config-loader.js'
 import { loadDailyTargets } from '../calc-targets.js'
+import { projectFlowPlainTrainingDraft } from '../flow-plain-training-language.js'
 import { assessPlanDraftPayload, type PlanDraftDomain } from '../plan-draft.js'
 import { nutritionSuggestionText, trainingSuggestionText } from '../plan-suggestion-text.js'
 import type { ToolContext, ToolDefinition } from './types.js'
@@ -307,16 +313,23 @@ export function createPlanProposalTools<
       })
       if (!plan) return UNAVAILABLE
 
+      // Audit 2026-10-10: the texts of the suggestion are stored in plain
+      // words (closed vocabulary, numbers and structure untouched). Once,
+      // here, before the draft is assessed: the chat text is rendered from
+      // the stored draft, so the chat and the Plan tab show the same words.
+      // The menu proposal below never goes through it.
+      const candidate = {
+        plan_type: plan.plan_type,
+        equipment_summary: plan.equipment_summary,
+        weekly_schedule: plan.weekly_schedule,
+        progression_rule: plan.progression_rule,
+        notes: plan.notes,
+      }
+      const plainWords = projectFlowPlainTrainingDraft(candidate)
       const draft = await createDraft(
         ctx,
         'training',
-        {
-          plan_type: plan.plan_type,
-          equipment_summary: plan.equipment_summary,
-          weekly_schedule: plan.weekly_schedule,
-          progression_rule: plan.progression_rule,
-          notes: plan.notes,
-        },
+        plainWords.payload as Record<string, unknown>,
         key,
         { method: 'training_plan_generator', identity: 'flow' },
       )
@@ -335,6 +348,10 @@ export function createPlanProposalTools<
           plan_type: plan.plan_type,
           days_per_week: plan.days_per_week,
           location: input.location,
+          // Numbers only: what the plain-language vocabulary did to this draft.
+          plain_terms_replaced: plainWords.termsReplaced,
+          plain_sentences_kept: plainWords.sentencesKeptAsGenerated,
+          plain_fields_kept: plainWords.fieldsKeptAsGenerated,
         })
       }
       return {

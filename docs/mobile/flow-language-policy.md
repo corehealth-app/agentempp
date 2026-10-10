@@ -150,7 +150,7 @@ anunciadas. Recursos parciais não habilitam a promessa de uma família inteira.
 | 2 — Refeição por texto/foto | `MobileMealDraftRepository` / `MealDraftModel` em Registrar; mídia requer disponibilidade e permissão; revisar e confirmar antes de registrar. |
 | 3 — Balanço/resumo do dia | `loadOfficialDailyState` / `renderFlowDayStatus`; registros confirmados e valores oficiais; exercício não aumenta comida restante. |
 | 4 — Cardápio | `propoe_plano_dieta` / `confirmPlanDraft`; rascunho em Plano com preferências/restrições; confirmar plano não registra consumo. |
-| 8 — Treino | `propoe_plano_treino`; rascunho com dias/equipamentos/nível informados, revisão e confirmação; não registra execução. |
+| 8 — Treino | `propoe_plano_treino`; rascunho com dias/equipamentos/nível informados, revisão e confirmação; não registra execução. Desde 2026-10-10 os textos da sugestão são gravados em linguagem simples (vocabulário fechado, números e estrutura intactos, só no Flow): `docs/mobile/api-v1.md`, "Linguagem simples na sugestão de treino do Flow". |
 | 9 — Educação no chat | `processAuthenticatedMessage`; assistente de IA, sem substituir avaliação profissional, diagnóstico ou tratamento. |
 
 Receitas completas (5), gordura corporal por foto (6), transições automáticas

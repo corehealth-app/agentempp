@@ -1,0 +1,447 @@
+{
+  "_about": [
+    "Golden fixture of the audit 2026-10-10 (owner's words: \"quando ele monta o treino, está muito tecnico os termos usados, precisam ser mais simples para facilitar o entendimento do usuario\").",
+    "VERBATIM from the evidence file flow-workout-reported-draft-20261010.json (public.plan_drafts on staging, TEST account with fictitious data, domain training, origin flow_generated, status ready_for_review, created 2026-10-10T16:44:49Z): \"conversation\" (the 9 lines), \"payload\" (plan_type, equipment_summary, notes, progression_rule, the 5 day headers and the 3 complete exercises), \"chat_text_seen_on_screen_excerpt\" and \"jargon_the_owner_objected_to_examples\" (22 terms).",
+    "RECONSTRUCTED, not recorded: \"tool_arguments_reconstructed\" (the arguments the chat model passed to propoe_plano_treino), every id, and the instant 2026-10-10T16:44:49Z used as the turn time.",
+    "\"generator_output_3_day_cut\" is assembled ONLY from what the evidence carries: 6 of the 29 exercises, 3 of the 5 days. Segunda and Quarta have the one exercise the evidence gives whole; Sexta has the four lines the chat showed, of which only \"Hip Thrust com Barra\" is known whole. The three exercises known only by their chat line have an empty muscle_group and no notes, steps, mistakes or rpe_target. Tuesday, Thursday and the other 23 exercises are NOT here (RC TL-1).",
+    "\"draft_20260930\" is a literal copy of the generator output pinned in audit-10-04-flow-turn-calls.test.ts (WORKOUT_OUTPUT: the draft stored on staging on 2026-09-30 15:57Z, 18 exercises)."
+  ],
+  "conversation": [
+    {
+      "role": "user",
+      "text": "Monte um treino para hoje"
+    },
+    {
+      "role": "assistant",
+      "text": "Posso montar uma sugestão de treino pra você! Preciso de algumas informações antes.\n\nOnde você vai treinar hoje: academia completa, academia com equipamentos limitados ou em casa?"
+    },
+    {
+      "role": "user",
+      "text": "Academia completa"
+    },
+    {
+      "role": "assistant",
+      "text": "Ótimo! Quantos dias por semana você topa treinar?"
+    },
+    {
+      "role": "user",
+      "text": "5 dias"
+    },
+    {
+      "role": "assistant",
+      "text": "E qual é o seu nível atual de musculação: iniciante, intermediário ou avançado?"
+    },
+    {
+      "role": "user",
+      "text": "Intermediario"
+    },
+    {
+      "role": "assistant",
+      "text": "Tem algum músculo que quer priorizar ou alguma limitação física que eu deva considerar?"
+    },
+    {
+      "role": "user",
+      "text": "Nenhuma limitacao e sem prioridade"
+    }
+  ],
+  "payload": {
+    "plan_type": "split",
+    "equipment_summary": "equipamentos completos de academia",
+    "notes": "Plano Push/Pull/Legs modificado para 5 dias: Segunda (Push superior), Terça (Pull), Quarta (Legs completo), Quinta (Ombros+Core), Sexta (Legs posterior). Compostos primeiro, isoladores depois. 10-20 séries/músculo/semana. Descanso 60-120s. Treino até próximo da falha técnica (RPE 8-9). Aqueça sempre: 5min cardio leve + séries progressivas. Hidrate-se. Durma 7-9h. Qualquer dor articular, pare e reavalie técnica.",
+    "progression_rule": "Como intermediário, use progressão linear: inicie cada exercício com 6 reps. A cada treino, adicione 1 rep mantendo o peso. Quando atingir 12 reps com técnica perfeita, aumente a carga e volte para 6 reps. Registre peso e reps a cada sessão.",
+    "weekly_schedule_days": [
+      "Segunda — Peito e Tríceps (60 min)",
+      "Terça — Costas e Bíceps (60 min)",
+      "Quarta — Pernas Completo (65 min)",
+      "Quinta — Ombros e Abdômen (55 min)",
+      "Sexta — Pernas Posterior e Glúteos (60 min)"
+    ],
+    "weekly_schedule_excerpt": [
+      {
+        "day": "Segunda",
+        "focus": "Peito e Tríceps",
+        "exercise": {
+          "name": "Supino Reto com Barra",
+          "sets": 4,
+          "notes": "Composto principal para peitoral. Pegada na largura dos ombros.",
+          "reps_range": "6-12",
+          "rpe_target": "9",
+          "muscle_group": "Peitoral",
+          "rest_seconds": 90,
+          "common_mistakes": [
+            "Tirar os pés do chão",
+            "Barra descer muito alta (clavícula)",
+            "Perder retração escapular"
+          ],
+          "execution_steps": [
+            "Deite no banco, pés firmes no chão",
+            "Pegada pronada, mãos alinhadas com linha dos mamilos",
+            "Desça a barra controlada até tocar o peito",
+            "Empurre explosivo mantendo escápulas retraídas"
+          ]
+        }
+      },
+      {
+        "day": "Quarta",
+        "focus": "Pernas Completo",
+        "exercise": {
+          "name": "Leg Press 45°",
+          "sets": 4,
+          "notes": "Composto com carga alta, menor stress lombar.",
+          "reps_range": "8-12",
+          "rpe_target": "9",
+          "muscle_group": "Quadríceps/Glúteos",
+          "rest_seconds": 90,
+          "common_mistakes": [
+            "Amplitude muito curta",
+            "Joelhos travam no topo",
+            "Lombar sai do banco"
+          ],
+          "execution_steps": [
+            "Pés na plataforma, largura dos ombros",
+            "Desça até 90° de flexão do joelho",
+            "Empurre pela plataforma toda do pé",
+            "Não destrave completamente no topo"
+          ]
+        }
+      },
+      {
+        "day": "Sexta",
+        "focus": "Pernas Posterior e Glúteos",
+        "exercise": {
+          "name": "Hip Thrust com Barra",
+          "sets": 4,
+          "notes": "Isolador específico para glúteos.",
+          "reps_range": "8-12",
+          "rpe_target": "9",
+          "muscle_group": "Glúteos",
+          "rest_seconds": 90,
+          "common_mistakes": [
+            "Hiperextender lombar",
+            "Não contrair glúteos no topo",
+            "Amplitude incompleta"
+          ],
+          "execution_steps": [
+            "Costas apoiadas no banco, barra sobre o quadril",
+            "Empurre quadril para cima contraindo glúteos",
+            "Corpo em linha reta no topo",
+            "Desça controlado"
+          ]
+        }
+      }
+    ]
+  },
+  "chat_text_seen_on_screen_excerpt": "• Cadeira Abdutora — 3×12-15, descanso 60 s\n• Stiff Unilateral com Halter — 3×10-12, descanso 60 s\n• Hip Thrust com Barra — 4×8-12, descanso 90 s\n• Panturrilha Sentado — 3×12-15, descanso 60 s\n\nProgressão: Como intermediário, use progressão linear: inicie cada exercício com 6 reps. A cada treino, adicione 1 rep mantendo o peso. Quando atingir 12 reps com técnica perfeita, aumente a carga e volte para 6 reps. Registre peso e reps a cada sessão.\n\nÉ um rascunho: toque em \"Revisar sugestão\" para conferir, ajustar e confirmar. Ele só vale depois que você confirmar.",
+  "jargon_the_owner_objected_to_examples": [
+    "Push/Pull/Legs",
+    "Push superior",
+    "Pull",
+    "Legs completo",
+    "Core",
+    "Compostos primeiro, isoladores depois",
+    "falha técnica",
+    "RPE 8-9",
+    "progressão linear",
+    "reps",
+    "rep",
+    "retração escapular",
+    "pegada pronada",
+    "escápulas retraídas",
+    "porção clavicular",
+    "cabeça longa do tríceps",
+    "isquiotibiais",
+    "gastrocnêmio",
+    "sóleo",
+    "cadeia posterior",
+    "Military press",
+    "Hip Thrust"
+  ],
+  "tool_arguments_reconstructed": {
+    "available_equipment": [
+      "equipamentos completos de academia"
+    ],
+    "location": "academia_completa",
+    "days_per_week": 5,
+    "training_level": "intermediario"
+  },
+  "generator_output_3_day_cut": {
+    "plan_type": "split",
+    "weekly_schedule": [
+      {
+        "day": "Segunda",
+        "focus": "Peito e Tríceps",
+        "duration_min": 60,
+        "exercises": [
+          {
+            "name": "Supino Reto com Barra",
+            "sets": 4,
+            "notes": "Composto principal para peitoral. Pegada na largura dos ombros.",
+            "reps_range": "6-12",
+            "rpe_target": "9",
+            "muscle_group": "Peitoral",
+            "rest_seconds": 90,
+            "common_mistakes": [
+              "Tirar os pés do chão",
+              "Barra descer muito alta (clavícula)",
+              "Perder retração escapular"
+            ],
+            "execution_steps": [
+              "Deite no banco, pés firmes no chão",
+              "Pegada pronada, mãos alinhadas com linha dos mamilos",
+              "Desça a barra controlada até tocar o peito",
+              "Empurre explosivo mantendo escápulas retraídas"
+            ]
+          }
+        ]
+      },
+      {
+        "day": "Quarta",
+        "focus": "Pernas Completo",
+        "duration_min": 65,
+        "exercises": [
+          {
+            "name": "Leg Press 45°",
+            "sets": 4,
+            "notes": "Composto com carga alta, menor stress lombar.",
+            "reps_range": "8-12",
+            "rpe_target": "9",
+            "muscle_group": "Quadríceps/Glúteos",
+            "rest_seconds": 90,
+            "common_mistakes": [
+              "Amplitude muito curta",
+              "Joelhos travam no topo",
+              "Lombar sai do banco"
+            ],
+            "execution_steps": [
+              "Pés na plataforma, largura dos ombros",
+              "Desça até 90° de flexão do joelho",
+              "Empurre pela plataforma toda do pé",
+              "Não destrave completamente no topo"
+            ]
+          }
+        ]
+      },
+      {
+        "day": "Sexta",
+        "focus": "Pernas Posterior e Glúteos",
+        "duration_min": 60,
+        "exercises": [
+          {
+            "name": "Cadeira Abdutora",
+            "muscle_group": "",
+            "sets": 3,
+            "reps_range": "12-15",
+            "rest_seconds": 60
+          },
+          {
+            "name": "Stiff Unilateral com Halter",
+            "muscle_group": "",
+            "sets": 3,
+            "reps_range": "10-12",
+            "rest_seconds": 60
+          },
+          {
+            "name": "Hip Thrust com Barra",
+            "sets": 4,
+            "notes": "Isolador específico para glúteos.",
+            "reps_range": "8-12",
+            "rpe_target": "9",
+            "muscle_group": "Glúteos",
+            "rest_seconds": 90,
+            "common_mistakes": [
+              "Hiperextender lombar",
+              "Não contrair glúteos no topo",
+              "Amplitude incompleta"
+            ],
+            "execution_steps": [
+              "Costas apoiadas no banco, barra sobre o quadril",
+              "Empurre quadril para cima contraindo glúteos",
+              "Corpo em linha reta no topo",
+              "Desça controlado"
+            ]
+          },
+          {
+            "name": "Panturrilha Sentado",
+            "muscle_group": "",
+            "sets": 3,
+            "reps_range": "12-15",
+            "rest_seconds": 60
+          }
+        ]
+      }
+    ],
+    "progression_rule": "Como intermediário, use progressão linear: inicie cada exercício com 6 reps. A cada treino, adicione 1 rep mantendo o peso. Quando atingir 12 reps com técnica perfeita, aumente a carga e volte para 6 reps. Registre peso e reps a cada sessão.",
+    "notes": "Plano Push/Pull/Legs modificado para 5 dias: Segunda (Push superior), Terça (Pull), Quarta (Legs completo), Quinta (Ombros+Core), Sexta (Legs posterior). Compostos primeiro, isoladores depois. 10-20 séries/músculo/semana. Descanso 60-120s. Treino até próximo da falha técnica (RPE 8-9). Aqueça sempre: 5min cardio leve + séries progressivas. Hidrate-se. Durma 7-9h. Qualquer dor articular, pare e reavalie técnica."
+  },
+  "draft_20260930": {
+    "plan_type": "full_body",
+    "weekly_schedule": [
+      {
+        "day": "Segunda-feira",
+        "focus": "Full Body A",
+        "duration_min": 60,
+        "exercises": [
+          {
+            "name": "Agachamento livre",
+            "muscle_group": "quadríceps/glúteos",
+            "sets": 3,
+            "reps_range": "12-15",
+            "rpe_target": "7-8",
+            "rest_seconds": 90
+          },
+          {
+            "name": "Supino reto com barra",
+            "muscle_group": "peitoral",
+            "sets": 3,
+            "reps_range": "12-15",
+            "rpe_target": "7-8",
+            "rest_seconds": 90
+          },
+          {
+            "name": "Puxada frontal",
+            "muscle_group": "dorsal",
+            "sets": 3,
+            "reps_range": "12-15",
+            "rpe_target": "7-8",
+            "rest_seconds": 90
+          },
+          {
+            "name": "Desenvolvimento com halteres",
+            "muscle_group": "ombros",
+            "sets": 3,
+            "reps_range": "12-15",
+            "rpe_target": "7-8",
+            "rest_seconds": 90
+          },
+          {
+            "name": "Rosca direta com barra",
+            "muscle_group": "bíceps",
+            "sets": 2,
+            "reps_range": "12-15",
+            "rpe_target": "7-8",
+            "rest_seconds": 60
+          },
+          {
+            "name": "Tríceps na polia (corda)",
+            "muscle_group": "tríceps",
+            "sets": 2,
+            "reps_range": "12-15",
+            "rpe_target": "7-8",
+            "rest_seconds": 60
+          }
+        ]
+      },
+      {
+        "day": "Quarta-feira",
+        "focus": "Full Body B",
+        "duration_min": 60,
+        "exercises": [
+          {
+            "name": "Leg press 45°",
+            "muscle_group": "quadríceps/glúteos",
+            "sets": 3,
+            "reps_range": "12-15",
+            "rpe_target": "7-8",
+            "rest_seconds": 90
+          },
+          {
+            "name": "Supino inclinado com halteres",
+            "muscle_group": "peitoral superior",
+            "sets": 3,
+            "reps_range": "12-15",
+            "rpe_target": "7-8",
+            "rest_seconds": 90
+          },
+          {
+            "name": "Remada curvada com barra",
+            "muscle_group": "dorsal",
+            "sets": 3,
+            "reps_range": "12-15",
+            "rpe_target": "7-8",
+            "rest_seconds": 90
+          },
+          {
+            "name": "Elevação lateral com halteres",
+            "muscle_group": "ombros (deltoides laterais)",
+            "sets": 3,
+            "reps_range": "12-15",
+            "rpe_target": "7-8",
+            "rest_seconds": 90
+          },
+          {
+            "name": "Rosca martelo alternada",
+            "muscle_group": "bíceps/antebraço",
+            "sets": 2,
+            "reps_range": "12-15",
+            "rpe_target": "7-8",
+            "rest_seconds": 60
+          },
+          {
+            "name": "Tríceps testa com barra",
+            "muscle_group": "tríceps",
+            "sets": 2,
+            "reps_range": "12-15",
+            "rpe_target": "7-8",
+            "rest_seconds": 60
+          }
+        ]
+      },
+      {
+        "day": "Sexta-feira",
+        "focus": "Full Body C",
+        "duration_min": 60,
+        "exercises": [
+          {
+            "name": "Stiff (levantamento romeno)",
+            "muscle_group": "posteriores de coxa/glúteos",
+            "sets": 3,
+            "reps_range": "12-15",
+            "rpe_target": "7-8",
+            "rest_seconds": 90
+          },
+          {
+            "name": "Crucifixo inclinado com halteres",
+            "muscle_group": "peitoral",
+            "sets": 3,
+            "reps_range": "12-15",
+            "rpe_target": "7-8",
+            "rest_seconds": 90
+          },
+          {
+            "name": "Pulldown com corda (ou pullover)",
+            "muscle_group": "dorsal",
+            "sets": 3,
+            "reps_range": "12-15",
+            "rpe_target": "7-8",
+            "rest_seconds": 90
+          },
+          {
+            "name": "Remada alta com barra",
+            "muscle_group": "ombros/trapézio",
+            "sets": 3,
+            "reps_range": "12-15",
+            "rpe_target": "7-8",
+            "rest_seconds": 90
+          },
+          {
+            "name": "Rosca concentrada",
+            "muscle_group": "bíceps",
+            "sets": 2,
+            "reps_range": "12-15",
+            "rpe_target": "7-8",
+            "rest_seconds": 60
+          },
+          {
+            "name": "Tríceps francês com haltere",
+            "muscle_group": "tríceps",
+            "sets": 2,
+            "reps_range": "12-15",
+            "rpe_target": "7-8",
+            "rest_seconds": 60
+          }
+        ]
+      }
+    ],
+    "progression_rule": "Período de aclimatação: 15 dias mantendo mesmo peso para aprender técnica. Depois, progressão em escada por 4-6 meses: 1ª semana 12-15 reps, 2ª semana 10-12 reps, 3ª semana 8-10 reps, 4ª semana 6-8 reps. Sempre mantendo técnica perfeita. Quando completar ciclo, aumenta carga e reinicia."
+  }
+}

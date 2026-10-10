@@ -986,7 +986,9 @@ describe('audit 2026-10-04 Flow calls — a plan suggestion ends without the sec
     expect(events(h, 'training.plan_proposed')).toHaveLength(1)
 
     const suggestion = trainingSuggestionText(stored?.p_payload)
-    expect(suggestion).toContain('Segunda-feira — Full Body A (60 min)')
+    // Audit 2026-10-10: the Flow stores the workout draft in plain words; the
+    // generator wrote "Full Body A" (audit-10-10-flow-workout-plain-language).
+    expect(suggestion).toContain('Segunda-feira — Corpo inteiro A (60 min)')
     expect(suggestion).toContain('• Agachamento livre — 3×12-15, descanso 90 s')
     expect(suggestion).toContain('• Tríceps francês com haltere — 2×12-15, descanso 60 s')
     expect(output.text).toBe(`${OPENING}\n\n${suggestion}\n\n${CLOSING}`)

@@ -488,6 +488,46 @@ describe('propoe_plano_dieta', () => {
     expect(recorded.inserts.map((entry) => entry.row.event)).toEqual(['diet.proposed'])
   })
 
+  // Audit 2026-10-10: the plain-language vocabulary of the workout suggestion
+  // lives in this same file's tool module and both tools share createDraft.
+  // The menu never goes through it: words that are jargon in a workout stay.
+  const WORKOUT_WORDS_IN_A_MENU = 'Dia de treino de Core: coma 30 min antes das 12 reps pesadas.'
+  const WORKOUT_WORDS_IN_A_MEAL = 'Depois do treino Push.'
+
+  it('grava notes como o gerador escreveu, mesmo com palavras de treino (trava)', async () => {
+    generateDietPlan.mockResolvedValue({
+      ...dietPlan,
+      notes: WORKOUT_WORDS_IN_A_MENU,
+      daily_meals: [{ ...dietPlan.daily_meals[0], notes: WORKOUT_WORDS_IN_A_MEAL }],
+    })
+    const { ctx, recorded } = makeContext()
+
+    const result = await propoePlanoDieta.execute({ horizon: 'daily' }, ctx)
+
+    expect(result).toMatchObject({ success: true, domain: 'nutrition', status: 'ready_for_review' })
+    const payload = recorded.rpcs[0]?.params.p_payload as {
+      notes?: string
+      daily_meals: Array<{ notes?: string }>
+    }
+    expect(payload.notes).toBe(WORKOUT_WORDS_IN_A_MENU)
+    expect(payload.daily_meals[0]?.notes).toBe(WORKOUT_WORDS_IN_A_MEAL)
+    expect(recorded.inserts[0]?.row.properties).toEqual({
+      draft_id: DRAFT,
+      horizon: 'daily',
+      meals_count: 1,
+    })
+  })
+
+  it('as mesmas palavras, numa sugestão de TREINO, são gravadas em linguagem simples', async () => {
+    generateTrainingPlan.mockResolvedValue({ ...trainingPlan, notes: WORKOUT_WORDS_IN_A_MENU })
+    const { ctx, recorded } = makeContext()
+
+    await propoePlanoTreino.execute(trainingArguments, ctx)
+
+    const payload = recorded.rpcs[0]?.params.p_payload as { notes?: string }
+    expect(payload.notes).toBe('Dia de treino de abdômen: coma 30 min antes das 12 repetições pesadas.')
+  })
+
   it('respeita o limite de 2 em 2h somando gerações e propostas', async () => {
     const { ctx, recorded } = makeContext({ recentEvents: 2 })
     expect(await propoePlanoDieta.execute({}, ctx)).toMatchObject({ success: false })

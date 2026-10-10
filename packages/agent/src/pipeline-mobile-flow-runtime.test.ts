@@ -305,9 +305,80 @@ describe('3.4 S3 — plan generator identity', () => {
       expect(prompt.split('\n')[0]).toMatch(/^Você é o Flow, o assistente do Performe AI/)
       expect(prompt).not.toMatch(/Roberto|Menescal|WhatsApp|\bMPP\b/)
     }
-    // The technical rules are the same; only the identity lines change.
+    // The method rules are the same, byte for byte; the Flow adds how to write.
     expect(trainingSystemPrompt('flow')).toContain('Compostos primeiro, isoladores depois')
     expect(dietSystemPrompt('flow')).toContain('Use TACO brasileira como referência calórica')
+  })
+
+  // Audit 2026-10-10 (golden: __golden__/audit-10-10-flow-workout-plain-language.test.ts):
+  // the owner read "Push/Pull/Legs", "RPE 8-9", "reps" in a workout suggestion.
+  it('the Flow training prompt keeps the method rules byte for byte and asks for plain language', () => {
+    const legacy = trainingSystemPrompt('legacy')
+    const flow = trainingSystemPrompt('flow')
+    const RULES_START = 'REGRAS MPP (seção "Prescrição de treinos" do manual):'
+    const RULES_END = 'USE só equipamentos da lista disponível.'
+    const rules = (prompt: string, start: string) =>
+      prompt.slice(prompt.indexOf(start), prompt.indexOf(RULES_END) + RULES_END.length)
+
+    // (a) the rules block: only the known swap of its heading.
+    expect(legacy).toContain(RULES_START)
+    expect(rules(legacy, RULES_START).split('\n')).toHaveLength(12)
+    expect(rules(flow, 'REGRAS DO MÉTODO (seção')).toBe(
+      rules(legacy, RULES_START).replace('REGRAS MPP (seção', 'REGRAS DO MÉTODO (seção'),
+    )
+    // The closing motto of the rules is still there too.
+    expect(flow).toContain('Compostos constroem; isoladores lapidam. Treine até a falha muscular técnica.')
+
+    // (b) the prompt ends with the writing block, written here by hand.
+    const HOW_TO_WRITE = `COMO ESCREVER (obrigatório; vale para todo texto do JSON: notes, progression_rule, day, focus, name, muscle_group, notes do exercício, execution_steps e common_mistakes):
+As regras acima são para VOCÊ montar o plano. Quem vai ler nunca treinou. Escreva em português simples, do dia a dia, como quem explica a um amigo.
+- Sem gíria de academia, sem sigla e sem palavra em inglês quando existe palavra comum em português.
+- Não escreva: RPE, reps, rep, Push, Pull, Legs, Upper, Lower, Full Body, Core, MMII, compostos, isoladores, falha, progressão linear, pegada pronada, pegada supinada, retração escapular, escápulas, cadeia posterior, isquiotibiais, gastrocnêmio, sóleo, porção clavicular, cabeça longa.
+- Escreva: "repetições"; "exercícios de vários músculos" e "exercícios de um músculo só"; "até a última repetição bem feita"; "evolução passo a passo"; "pegada por cima" ou "pegada por baixo"; "ombros para trás"; "parte de trás da coxa"; "panturrilha"; "parte de cima do peito"; "parte de trás do braço"; "abdômen".
+- Foco do dia em palavras comuns, como "Peito e tríceps", "Costas e bíceps", "Pernas", "Corpo inteiro". Não mude quais músculos entram em cada dia.
+- Nome de exercício: use o nome em português que as academias do Brasil usam. Não invente nome nem traduza palavra por palavra; se a academia só usa o nome em inglês, mantenha-o.
+- Esforço: não escreva a sigla. No texto, escreva "esforço" e a nota, como "esforço 8-9". Em rpe_target, escreva só a nota.
+- Passos e erros comuns: frases curtas que digam o que fazer com o corpo.
+- Os números não mudam: séries, repetições, descanso, minutos e dias continuam os das regras acima.`
+    expect(flow.endsWith(`\n\n${HOW_TO_WRITE}`)).toBe(true)
+    // Everything before the block is the legacy prompt with the three known swaps.
+    expect(flow.slice(0, -`\n\n${HOW_TO_WRITE}`.length)).toBe(
+      legacy
+        .replace(
+          'Você é Dr. Roberto Menescal, conduzindo o Método MPP via WhatsApp.',
+          'Você é o Flow, o assistente do Performe AI no app. Não se apresente como pessoa nem como profissional de saúde, e não cite nomes de métodos ou de profissionais no plano.',
+        )
+        .replace('REGRAS MPP (seção', 'REGRAS DO MÉTODO (seção')
+        .replace(
+          'Adicione 1 rep por treino. Bateu 12 reps com técnica → aumenta peso, volta pra 6.',
+          'Adicione 1 repetição por treino. Chegou a 12 repetições com o movimento certo → aumente o peso e volte para 6.',
+        ),
+    )
+
+    // (c) the progression example: plain words, the same numbers (1, 12, 6).
+    expect(legacy).toContain('"progression_rule": "Adicione 1 rep por treino. Bateu 12 reps com técnica → aumenta peso, volta pra 6.",')
+    expect(flow).not.toContain('Adicione 1 rep por treino')
+    expect(flow).toContain(
+      '"progression_rule": "Adicione 1 repetição por treino. Chegou a 12 repetições com o movimento certo → aumente o peso e volte para 6.",',
+    )
+
+    // (d) nothing the owner has not decided: no effort scale, no invented exercise name.
+    for (const undecided of [
+      'de 10',
+      '0 a 10',
+      '1 a 10',
+      'Prensa de pernas',
+      'Levantamento com pernas retas',
+      'Levantamento acima da cabeça',
+      'Peito e braços',
+      'Elevação pélvica',
+      'elevação pélvica',
+    ]) {
+      expect(HOW_TO_WRITE, undecided).not.toContain(undecided)
+      expect(flow, undecided).not.toContain(undecided)
+    }
+    // The app never shows these names, and the block does not teach them.
+    expect(HOW_TO_WRITE).not.toMatch(/Roberto|Menescal|WhatsApp|\bMPP\b|BodyFlow/)
   })
 
   function captureGeneratorIdentity(tool: typeof geraTreino | typeof geraDieta) {

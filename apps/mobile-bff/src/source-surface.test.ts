@@ -333,20 +333,17 @@ describe('authoritative Mobile API source surface', () => {
     expect(surface.forbiddenWorkerTraceReferences).toEqual([])
     expect(surface.forbiddenAdministrativeBundleReferences).toEqual([])
     expect(surface.forbiddenAdministrativeTraceReferences).toEqual([])
-    // Original50 traces retain5303 references/175 targets. C11 adds107 references,
-    // with only its route client-reference manifest as one extra unique file.
-    // The three routes of the sign-up body photos (update 2) add 107
-    // references each: what the media routes trace (106, the queue client
-    // included, since they create and complete uploads through the media
-    // service) plus ONE chunk the three share and no other route references —
-    // their common handler and service. Unique files beyond the original 50:
-    // each route's own client-reference manifest and that shared chunk.
-    // 5303 + 107 + 3 x 107 = 5731 references and 175 + 1 + 3 + 1 = 180 targets.
-    // (Package B0, the skeleton, had 104 each and no shared chunk: 5722 / 179.)
-    // Keep exact totals, the byte-exact Flow catalogs and worker/admin guards.
-    expect(surface.nftReferenceCount).toBe(5731)
-    expect(surface.nftUniqueTargetCount).toBe(180)
-    expect(surface.nftRegularFileTargetCount).toBe(178)
+    // Original50, excluding the single approved B4a finalization chunk, still
+    // retain5303 references/175 targets. C11 adds107 references and its manifest.
+    // Each body-photo route adds108: the106 media references, its prior shared
+    // handler chunk, and B4a's finalization chunk. That finalization chunk is
+    // referenced by exactly onboarding plus the three body-photo routes.
+    // 5303 + 1 + 107 + 3 x 108 = 5735 references; 175 + 1 + 1 + 3 + 1 = 181 targets.
+    // B3 had5731/180; B0's skeleton had5722/179. No new package or worker trace.
+    // Keep exact totals, original50 sans this one chunk, Flow bytes and all guards.
+    expect(surface.nftReferenceCount).toBe(5735)
+    expect(surface.nftUniqueTargetCount).toBe(181)
+    expect(surface.nftRegularFileTargetCount).toBe(179)
     expect(surface.nftDirectoryTargetCount).toBe(2)
 
     const bodyPhotoRoutes = [
@@ -356,7 +353,7 @@ describe('authoritative Mobile API source surface', () => {
     ]
     const addedRoutes: Record<string, number> = {
       '/api/mobile/v1/meal-records/[id]/route': 107,
-      ...Object.fromEntries(bodyPhotoRoutes.map((route) => [route, 107])),
+      ...Object.fromEntries(bodyPhotoRoutes.map((route) => [route, 108])),
     }
     const physicalTargets = (route: string): string[] => {
       const target = currentAppPathsManifest()[route]
@@ -373,11 +370,39 @@ describe('authoritative Mobile API source surface', () => {
         ),
       )
 
+    // Identify the sole new chunk by physical identity, not a generated number.
+    // The original49 other routes cannot reference it; the onboarding manifest
+    // is still its separate existing unique file.
+    const onboardingRoute = '/api/mobile/v1/onboarding/route'
+    const otherOriginalTargets = new Set(
+      Object.keys(currentAppPathsManifest())
+        .filter((route) => !Object.hasOwn(addedRoutes, route) && route !== onboardingRoute)
+        .flatMap(physicalTargets),
+    )
+    const finalizationChunks = [...new Set(physicalTargets(onboardingRoute))].filter(
+      (target) => !otherOriginalTargets.has(target) && target !== ownManifest(onboardingRoute),
+    )
+    expect(finalizationChunks).toHaveLength(1)
+    const [finalizationChunk = ''] = finalizationChunks
+    expect(relative(resolve(buildRoot, 'server/chunks'), finalizationChunk)).toMatch(
+      /^[\w.-]+\.js$/,
+    )
+    const finalizationSource = readFileSync(finalizationChunk, 'utf8')
+    expect(finalizationSource).toContain('deferred_rule')
+    expect(finalizationSource).toContain('bf_percent_estimated')
+    expect(finalizationSource).toContain('body_photo_cleanup_pending')
+    const byName = (left: string, right: string) => left.localeCompare(right, 'en')
+    expect(
+      Object.keys(currentAppPathsManifest())
+        .filter((route) => physicalTargets(route).includes(finalizationChunk))
+        .sort(byName),
+    ).toEqual([onboardingRoute, ...bodyPhotoRoutes].sort(byName))
+
     const baselineTargets = new Set<string>()
     let baselineReferences = 0
     for (const route of Object.keys(currentAppPathsManifest())) {
       if (Object.hasOwn(addedRoutes, route)) continue
-      const targets = physicalTargets(route)
+      const targets = physicalTargets(route).filter((target) => target !== finalizationChunk)
       baselineReferences += targets.length
       for (const target of targets) baselineTargets.add(target)
     }
@@ -397,15 +422,18 @@ describe('authoritative Mobile API source surface', () => {
     // bundler gives it: inside the build's own chunks, and of these three only.
     const sharedChunks = new Set<string>()
     for (const route of bodyPhotoRoutes) {
-      const extras = beyondBaseline(route).filter((target) => target !== ownManifest(route))
+      const extras = beyondBaseline(route).filter(
+        (target) => target !== ownManifest(route) && target !== finalizationChunk,
+      )
       expect(extras, route).toHaveLength(1)
+      expect(beyondBaseline(route), route).toHaveLength(3)
+      expect(beyondBaseline(route), route).toContain(finalizationChunk)
       expect(beyondBaseline(route), route).toContain(ownManifest(route))
       sharedChunks.add(extras[0] ?? '')
     }
     expect(sharedChunks.size).toBe(1)
     const [sharedChunk = ''] = [...sharedChunks]
     expect(relative(resolve(buildRoot, 'server/chunks'), sharedChunk)).toMatch(/^[\w.-]+\.js$/)
-    const byName = (left: string, right: string) => left.localeCompare(right, 'en')
     expect(
       Object.keys(currentAppPathsManifest())
         .filter((route) => physicalTargets(route).includes(sharedChunk))

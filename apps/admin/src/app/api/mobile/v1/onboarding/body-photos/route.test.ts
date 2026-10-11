@@ -8,7 +8,7 @@
  *   POST   /api/mobile/v1/onboarding/body-photos                404 body_photos_unavailable
  *   POST   /api/mobile/v1/onboarding/body-photos/consent        404 body_photos_unavailable
  *   POST   /api/mobile/v1/onboarding/body-photos/:id/complete   404 body_photos_unavailable
- *   DELETE /api/mobile/v1/onboarding/body-photos                200, nothing to delete
+ *   DELETE /api/mobile/v1/onboarding/body-photos                200 in known staging; other targets 404
  *
  * WHAT RUNS. The exported route functions of the three route files, with the
  * real route wrapper (authentication and the access gate), the real handlers
@@ -136,6 +136,8 @@ beforeEach(() => {
     authUserId: AUTH_USER,
     token: TOKEN,
   })
+  // The real bootstrap ensures this profile row (20260720020351:201).
+  db().profiles.set(ACCOUNT, { onboarding_completed: false, onboarding_completed_at: null })
   world.queue.length = 0
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', `https://${STAGING_REF}.supabase.co`)
   vi.stubEnv(SIGNUP_BODY_PHOTOS_PROJECT_REF_ENV, '')
@@ -195,11 +197,18 @@ describe.each(OFF)('body photos of the sign-up, switch off %s', (_label, switchO
     expect(world.queue).toEqual([])
   })
 
-  it('DELETE answers 200 with nothing to delete: no storage call, nothing sent', async () => {
+  it('DELETE cleans known staging; a blocked target is refused before any claim or photo query', async () => {
     const response = await CALLS.remove()
 
-    expect(response.status).toBe(200)
-    expect((await response.json()).data).toEqual({ deleted: 0 })
+    if (process.env.NEXT_PUBLIC_SUPABASE_URL === `https://${STAGING_REF}.supabase.co`) {
+      expect(response.status).toBe(200)
+      expect((await response.json()).data).toEqual({ deleted: 0 })
+    } else {
+      expect(response.status).toBe(404)
+      expect((await response.json()).error.code).toBe('body_photos_unavailable')
+      expect(db().operations).toEqual(AUTHENTICATION)
+      expect(db().ledger).toEqual([])
+    }
     expect(db().operations.filter((operation) => operation.startsWith('storage:'))).toEqual([])
     expect(world.queue).toEqual([])
   })

@@ -10,7 +10,8 @@
  *
  * With the switch off, the state says "not available" and the three POSTs
  * answer 404 before anything of the request is read; deleting never depends
- * on the switch. Completion requests a reading only with the switch on,
+ * on the switch, but is confined to known staging before its claim. GET is
+ * also unavailable on other targets. Completion requests a reading only with the switch on,
  * current consent accepted and the sign-up still open.
  */
 import {
@@ -38,6 +39,7 @@ import {
   signupBodyPhotosUnavailable,
 } from '@/lib/mobile-api/signup-body-photo-service'
 import { signupBodyPhotosEnabled } from '@/lib/mobile-api/signup-body-photo-switch'
+import { signupBodyPhotoFinalizationTargetAllowed } from '@/lib/mobile-api/supabase-signup-body-photo-finalization'
 import { createSupabaseSignupBodyPhotoDependencies } from '@/lib/mobile-api/supabase-signup-body-photos'
 
 export interface SignupBodyPhotoRouteDependencies {
@@ -54,7 +56,7 @@ export interface SignupBodyPhotoCompleteRouteContext {
 const defaultDependencies: SignupBodyPhotoRouteDependencies = {
   createService: (context) =>
     createSupabaseSignupBodyPhotoDependencies(context.supabase, {
-      enabled: signupBodyPhotosEnabled(),
+      enabled: signupBodyPhotosEnabled() && signupBodyPhotoFinalizationTargetAllowed(),
       requestId: context.requestId,
     }),
   executeIdempotent: executeSupabaseIdempotent,
@@ -105,7 +107,9 @@ export async function handleSignupBodyPhotosDelete(
   context: MobileRouteContext,
   dependencies: SignupBodyPhotoRouteDependencies = defaultDependencies,
 ): Promise<Response> {
-  // No switch here: deleting never depends on it.
+  // The switch cannot prevent deleting one's photos. The database target can:
+  // this delivery is confined to known staging, before any claim/photo query.
+  if (!signupBodyPhotoFinalizationTargetAllowed()) throw signupBodyPhotosUnavailable()
   const service = dependencies.createService(context)
   const deleteAll = async () =>
     mobileSuccess(

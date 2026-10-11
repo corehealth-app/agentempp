@@ -38,9 +38,11 @@
  * does; a new upload that fails leaves the earlier photo alone; the limit of
  * 9 creations in 24 hours counts the deleted ones and the ones never
  * uploaded; an account that completed the sign-up cannot create or complete,
- * and can still read and delete; the completion checks the stored size and
- * type; deleting removes the objects, marks the rows and empties what a
- * reading left, with the switch on or off; no answer carries the context, a
+ * while GET ON/DELETE use B4a repair: unresolved live photos return503.
+ * The completion checks stored size/type; known open profiles keep B2
+ * deletion of objects/rows/results OFF or ON. Only deleted tombstones of
+ * completed profiles allow byte repair without provenance/new marks.
+ * No answer carries the context, a
  * reading result or notes. Only explicitly successful uploaded completions
  * declare the exact reading events; every other case requires an empty queue.
  *
@@ -87,11 +89,11 @@
  *
  * > RC P-PHOTOS — cenário cadastro do médico em 2026-10-10 no build 1.0 (3) ("Comecei o cadastro. Ele perguntou qual era a gordura corporal" e "Não pediu as fotos") variante o cadastro pedir as três fotos e estimar o percentual por elas de ponta a ponta (B2 recebe, guarda, troca e apaga; B3 pede leitura após o aceite próprio com o interruptor ligado; a junção/uso, as telas e a conferência física ainda não estão concluídos) NÃO coberta nesta PR (pendência da audit 2026-10-11)
  * > RC P-PHOTOS — cenário foto do corpo com envio concluído variante a leitura real por IA e a estimativa integrada das três poses (B3 emite o pedido e distingue lida de sem número em testes locais; estimate segue null, a junção/uso espera D1 e D2 e a fila/provedor reais não foram verificados) NÃO coberta nesta PR (pendência da audit 2026-10-11)
- * > RC P-PHOTOS — cenário cadastro concluído com fotos enviadas variante o servidor apagar as fotos na conclusão (decisão D4 do orquestrador, anunciada ao dono; o passo da conclusão é o pacote B4a, e nesta PR as fotos ficam até o app chamar DELETE /onboarding/body-photos) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+ * > RC P-PHOTOS — cenário cadastro concluído com fotos enviadas variante o servidor apagar as fotos na conclusão (decisão D4 do orquestrador, anunciada ao dono; B4a tem hook e mecânica locais, mas o resolver real segue deferred_rule; foto viva fica pendente e GET/DELETE de cadastro concluído respondem 503 até B4b e a disposição explícita) NÃO coberta nesta PR (pendência da audit 2026-10-11)
  * > RC P-PHOTOS — cenário cadastro abandonado depois do envio das fotos variante apagar as fotos sem a pessoa voltar (a data de guarda gravada é a de 730 dias da política genérica de mídia e a rotina de limpeza não está publicada no ambiente de teste) NÃO coberta nesta PR (pendência da audit 2026-10-11)
- * > RC P-PHOTOS — cenário envio que chega ao armazenamento depois do último DELETE /onboarding/body-photos da conta, com o bilhete ainda válido de uma foto já apagada, trocada ou recusada (o bilhete de envio vale duas horas e não pode ser revogado) variante remover esse objeto sem que o app apague de novo ou chame a conclusão do envio dessa foto (cada DELETE manda remover os objetos das fotos do cadastro que a conta já criou, também das já apagadas, com o interruptor em qualquer posição; depois dele nada roda sozinho, e com as fotos desligadas a conclusão do envio responde 404 e não remove) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+ * > RC P-PHOTOS — cenário envio que chega ao armazenamento depois do último DELETE /onboarding/body-photos da conta, com o bilhete ainda válido de uma foto já apagada, trocada ou recusada (o bilhete de envio vale duas horas e não pode ser revogado) variante remover esse objeto sem que o app apague de novo ou chame a conclusão do envio dessa foto (no perfil conhecido aberto, DELETE usa B2; no concluído só tombstones podem ter bytes reparados, enquanto foto viva não resolvida responde 503; o interruptor não impede DELETE no staging, mas nada roda sozinho depois dele, e conclusão OFF responde 404) NÃO coberta nesta PR (pendência da audit 2026-10-11)
  * > RC P-PHOTOS — cenário conta com mais de 1000 linhas de foto do corpo no catálogo (só com fotos do cadastro, 112 dias no limite de 9 em 24 horas) variante o estado, a troca e a exclusão olharem além de uma página de 1000 linhas (a exclusão lê primeiro as linhas não apagadas e depois as apagadas mais recentemente: bytes que chegaram ao caminho de uma foto apagada há mais tempo que essas não são removidos, e com mais de 1000 linhas não apagadas uma foto viva pode ficar fora da página) NÃO coberta nesta PR (pendência da audit 2026-10-11)
- * > RC P-PHOTOS — cenário repetição da Idempotency-Key de uma foto com envio ainda pendente, depois de entrar em vigor um texto do consentimento que a conta não aceitou ou depois de o cadastro ser concluído variante a repetição só entregar bilhete novo com o aceite em vigor e o cadastro não concluído (a chave é procurada antes das conferências, como o plano fixou, e a repetição responde 201 com bilhete novo, válido por mais duas horas a cada vez; a conclusão do envio continua recusada com 403 ou 409 e a exclusão remove os bytes; mudar a ordem é decisão do orquestrador, ainda não tomada) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+ * > RC P-PHOTOS — cenário repetição da Idempotency-Key de uma foto com envio ainda pendente, depois de entrar em vigor um texto do consentimento que a conta não aceitou ou depois de o cadastro ser concluído variante a repetição só entregar bilhete novo com o aceite em vigor e o cadastro não concluído (a chave é procurada antes das conferências, como o plano fixou, e a repetição responde 201 com bilhete novo, válido por mais duas horas a cada vez; a conclusão do envio continua recusada com 403 ou 409; perfil aberto usa exclusão B2, mas concluído com foto viva não resolvida tem DELETE 503 e preserva os bytes; mudar a ordem da repetição é decisão do orquestrador, ainda não tomada) NÃO coberta nesta PR (pendência da audit 2026-10-11)
  * > RC P-PHOTOS — cenário duas criações ou duas conclusões da mesma conta no mesmo instante variante limite de 9 em 24 horas e troca da pose garantidos por trava no banco (as conferências são leituras seguidas de escrita, sem transação; duas criações simultâneas podem passar juntas do limite e duas conclusões simultâneas podem deixar duas fotos guardadas na mesma pose, das quais o estado mostra a mais nova) NÃO coberta nesta PR (pendência da audit 2026-10-11)
  * > RC P-PHOTOS — cenário muitas contas novas enviando fotos no mesmo dia variante teto total por dia (o limite é por conta e as rotas ficam fora do acesso pago; o freio é o interruptor) NÃO coberta nesta PR (pendência da audit 2026-10-11)
  * > RC P-PHOTOS — cenário foto do corpo recebida pelo servidor variante remoção de metadados e conferência do conteúdo no servidor (a rota só aceita image/jpeg declarado e confere o tipo e o tamanho gravados; não reescreve a imagem nem confere que é uma foto de corpo, da pose pedida ou da dona da conta) NÃO coberta nesta PR (pendência da audit 2026-10-11)
@@ -651,7 +653,7 @@ describe('repetition: the same Idempotency-Key', () => {
     expect(objectOf(first.photo.id)).toBeUndefined()
   })
 
-  it('R8 EXACT (the same finding, after the sign-up was completed): the front photo is created (pending), the sign-up is completed, and the same Idempotency-Key repeated → 201 with a NEW ticket. The completion is still refused (409), and DELETE removes the bytes', async () => {
+  it('R8 EXACT (the same finding, after the sign-up was completed): the front photo is created (pending), the sign-up is completed, and the same Idempotency-Key repeated → 201 with a NEW ticket. The completion is still refused (409); B4a refuses DELETE while disposition remains unresolved', async () => {
     const first = await created('front', { key: 'body-photo-repeat-0008' })
     db().profiles.set(ACCOUNT, COMPLETED_SIGNUP)
     expect(await errorOf(await create('side'))).toEqual({
@@ -673,8 +675,12 @@ describe('repetition: the same Idempotency-Key', () => {
       code: 'onboarding_already_completed',
     })
     expect(rowOf(first.photo.id).status).toBe('pending_upload')
-    expect((await (await remove()).json()).data).toEqual({ deleted: 1 })
-    expect(objectOf(first.photo.id)).toBeUndefined()
+    expect(await errorOf(await remove())).toEqual({
+      status: 503,
+      code: 'body_photo_cleanup_pending',
+    })
+    expect(objectOf(first.photo.id)).toBeDefined()
+    expect(rowOf(first.photo.id).status).toBe('pending_upload')
   })
 })
 
@@ -839,7 +845,7 @@ describe('an account that already completed the sign-up', () => {
       'a completion time with the mark still false',
       { onboarding_completed: false, onboarding_completed_at: '2026-10-11T14:30:00.000000+00:00' },
     ],
-  ])('C1 %s: creating is 409 onboarding_already_completed, and GET and DELETE go on working', async (_label, profile) => {
+  ])('C1 B4a %s: unresolved photo finalization refuses GET/DELETE and preserves every object/result', async (_label, profile) => {
     const stored = await store('front')
     db().profiles.set(ACCOUNT, profile)
 
@@ -849,15 +855,17 @@ describe('an account that already completed the sign-up', () => {
     })
     expect(db().mediaAssets).toHaveLength(1)
 
-    const state = await readState()
-    expect(state.available).toBe(true)
-    expect(state.poses[0]).toEqual({
-      pose: 'front',
-      photo: { id: stored, status: 'uploaded', created_at: databaseTimestamp(NOW) },
-    })
-
-    expect((await (await remove()).json()).data).toEqual({ deleted: 1 })
-    expect(objectOf(stored)).toBeUndefined()
+    const before = structuredClone(db().mediaAssets)
+    db().operations.length = 0
+    const get = await GET(request('GET', '', {}))
+    const deletion = await remove()
+    expect(await errorOf(get)).toEqual({ status: 503, code: 'body_photo_cleanup_pending' })
+    expect(await errorOf(deletion)).toEqual({ status: 503, code: 'body_photo_cleanup_pending' })
+    expect(db().mediaAssets).toEqual(before)
+    expect(objectOf(stored)).toBeDefined()
+    expect(operationsOf('storage:remove')).toEqual([])
+    expect(operationsOf('update:')).toEqual([])
+    expect(operationsOf('rpc:complete_mobile_api_request')).toEqual([])
   })
 
   it('C2 an upload still pending when the sign-up was completed cannot be completed either: 409, and the photo does not become a stored one', async () => {
@@ -873,10 +881,17 @@ describe('an account that already completed the sign-up', () => {
       code: 'onboarding_already_completed',
     })
     expect(rowOf(photo.id).status).toBe('pending_upload')
-    expect((await readState()).poses[0].photo).toBeNull()
-    // Deleting takes the bytes that were already sent.
-    expect((await (await remove()).json()).data).toEqual({ deleted: 1 })
-    expect(objectOf(photo.id)).toBeUndefined()
+    // B4a preserves this live photo until a disposition is supplied.
+    expect(await errorOf(await GET(request('GET', '', {})))).toEqual({
+      status: 503,
+      code: 'body_photo_cleanup_pending',
+    })
+    expect(await errorOf(await remove())).toEqual({
+      status: 503,
+      code: 'body_photo_cleanup_pending',
+    })
+    expect(objectOf(photo.id)).toBeDefined()
+    expect(rowOf(photo.id).status).toBe('pending_upload')
   })
 
   it('C3 an account with no profile row is not a completed one', async () => {
@@ -1861,7 +1876,7 @@ describe('the state with photos, and what no answer carries', () => {
     }
   })
 
-  it('S3 reading the state with photos costs the document, the acceptance and two reads of the catalogue, and writes nothing', async () => {
+  it('S3 reading the state of an open signup also checks completion before the existing acceptance/catalogue reads', async () => {
     await store('front')
     db().operations.length = 0
 
@@ -1870,6 +1885,7 @@ describe('the state with photos, and what no answer carries', () => {
     expect(db().operations).toEqual([
       ...AUTHENTICATION,
       'rpc:get_mobile_legal_document',
+      'select:user_profiles',
       'select:user_legal_acceptances',
       'select:media_assets',
       'select:media_assets',

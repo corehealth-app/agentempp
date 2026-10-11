@@ -105,7 +105,7 @@ com a mesma chave executa de novo; outro corpo com a mesma chave continua sendo
 | `POST` | `/onboarding/body-photos/consent` | fotos do corpo no cadastro: aceita exatamente a versão e a marca do consentimento próprio mostradas; recusa quem declara menos de 18 anos (`403 body_photo_age_not_allowed`); `404 body_photos_unavailable` com as fotos desligadas |
 | `POST` | `/onboarding/body-photos` | fotos do corpo no cadastro: cria a foto de uma pose (`front`, `side` ou `back`; só JPEG até 15 MiB) e devolve o bilhete de envio; exige o aceite do consentimento em vigor e cadastro não concluído; limite de 9 em 24 h; `404 body_photos_unavailable` com as fotos desligadas |
 | `POST` | `/onboarding/body-photos/:id/complete` | fotos do corpo no cadastro: confere dono, consentimento atual e cadastro aberto, conclui o envio, apaga a foto anterior da mesma pose e pede leitura enquanto uploaded; `404 body_photos_unavailable` com as fotos desligadas |
-| `DELETE` | `/onboarding/body-photos` | fotos do corpo no cadastro: manda remover os objetos de todas as fotos do cadastro que a conta já criou (também das já apagadas, se bytes chegaram depois com um bilhete antigo) e marca as linhas como apagadas; funciona com as fotos ligadas ou desligadas e depois do cadastro concluído |
+| `DELETE` | `/onboarding/body-photos` | fotos do corpo no cadastro: no staging conhecido, apaga pelo B2 se o perfil está aberto; cadastro concluído passa pelo reparo B4a e fotos vivas sem disposição resolvida retornam `503 body_photo_cleanup_pending`; outro alvo é `404` antes do claim; independe do interruptor |
 | `GET` | `/protocol` | objetivo atual do perfil, metas do dia como em `/today` e a mensagem de entrada do objetivo; só leitura |
 | `GET` | `/plan` | plano de treino ativo e prescrições vigentes |
 | `GET` | `/progress` | nível, streak, bloco 7700, peso, gordura corporal (a persistida no progresso ou, na falta dela, a informada no cadastro) e reavaliação |
@@ -2711,9 +2711,11 @@ Com as fotos **desligadas**:
   body_photos_unavailable`, seja qual for o corpo do pedido e com ou sem
   `Idempotency-Key`. Nada é lido, nenhuma chave é reservada, nada é guardado e
   nada é enviado à fila.
-- `DELETE /onboarding/body-photos` responde `200` e apaga o que houver.
-  Apagar nunca depende do interruptor. Exige `Idempotency-Key`, como todo
-  `DELETE` da API.
+- `DELETE /onboarding/body-photos` independe do interruptor, mas só funciona
+  no staging conhecido. Perfil conhecido aberto usa a exclusão B2; cadastro
+  concluído passa pelo reparo B4a e fotos vivas não resolvidas retornam `503
+  body_photo_cleanup_pending`, sem exclusão. Outro alvo é `404` antes do claim.
+  Exige `Idempotency-Key`, como todo `DELETE` da API no alvo permitido.
 - Sem token a resposta é `401`, antes de qualquer outra coisa.
 
 ### Leitura de estado
@@ -2768,13 +2770,17 @@ conta que ainda não concluiu o cadastro e não tem acesso liberado:
 - `remaining_uploads` é 9 menos as fotos do cadastro que a conta criou nas
   últimas 24 horas (contando as apagadas e as que nunca subiram), nunca
   abaixo de zero.
-- Custo com as fotos ligadas: uma chamada a `get_mobile_legal_document`, uma
-  leitura de `user_legal_acceptances` e duas de `media_assets` (as fotos do
-  corpo não apagadas da conta e as criadas nas últimas 24 horas). Nada é
-  gravado.
-- Falha em qualquer dessas leituras: `500 data_access_failed`. Uma leitura
+- Custo com as fotos ligadas, texto válido e perfil conhecido aberto: uma
+  chamada a `get_mobile_legal_document`, uma leitura de `user_profiles`, uma
+  de `user_legal_acceptances` e duas de `media_assets` (fotos do corpo não
+  apagadas e criações nas últimas 24 horas). Nada é gravado nesse caso.
+  Cadastro concluído passa pelo reparo B4a antes de mostrar o estado: fotos
+  vivas não resolvidas respondem `503 body_photo_cleanup_pending`; só linhas
+  já apagadas permitem remover bytes tardios, sem nova estimativa ou marca.
+- Falha/ausência/incerteza de perfil ou reparo é `503 body_photo_cleanup_pending`.
+  As demais leituras falhando mantêm `500 data_access_failed`. Uma leitura
   que falha nunca vira "texto ausente", "nunca aceitou" nem "sem fotos". A
-  linha de log
+  linha de log dessas demais leituras
   (`[mobile-signup-body-photos] operation_failed`) leva o id do pedido, o nome
   da operação e um código de banco de uma lista fechada — sem conta, sem data
   e sem texto do banco.
@@ -2862,8 +2868,9 @@ estas rotas.** Há **uma exceção, declarada**: a repetição de uma
 enquanto o envio dela estiver pendente, **sem conferir de novo** o aceite em
 vigor nem o cadastro não concluído (item 1 da criação, abaixo). Com esse
 bilhete os bytes podem chegar ao armazenamento; a conclusão desse envio
-continua recusada (`403`/`409`), a foto não vira foto guardada, e a exclusão
-remove os bytes.
+continua recusada (`403`/`409`) e a foto não vira foto guardada. Em perfil
+conhecido aberto, DELETE usa B2 e remove os bytes; no cadastro concluído,
+a foto viva sem disposição resolvida é preservada e DELETE responde `503`.
 
 O fluxo é o do envio genérico de mídia (bilhete, `PUT` direto no
 armazenamento, conclusão), com as regras próprias das fotos do corpo:
@@ -2935,9 +2942,11 @@ Resposta `201`:
   espera da confirmação do dono; não é decisão dele.
 - **Cadastro concluído** (`onboarding_completed` verdadeiro **ou**
   `onboarding_completed_at` preenchido): criar e concluir envio respondem `409
-  onboarding_already_completed`; `GET` e `DELETE` seguem funcionando. Conta
-  sem linha de perfil não é conta concluída. Perfil que não pôde ser lido:
-  `500 data_access_failed`, nada criado.
+  onboarding_already_completed`. `GET` ON e `DELETE` passam pelo reparo B4a;
+  fotos vivas não resolvidas respondem `503 body_photo_cleanup_pending` e
+  ficam preservadas. Na criação, conta sem linha de perfil não é concluída;
+  perfil que não pôde ser lido é `500 data_access_failed`, nada criado.
+  No reparo, perfil ausente ou inválido é incerteza e responde `503`.
 - **Onde a pose fica.** `media_assets` não tem coluna de pose e não há
   migration: o contexto privado da foto guarda uma de três frases fixas —
   `Foto de frente.`, `Foto de lado.`, `Foto de costas.` — e a pose é lida de
@@ -2983,17 +2992,24 @@ Resposta `201`:
   unreadable), e podem terminar uma troca pendente. Falha de leitura responde
   `409 body_photo_reading_failed` sem novo evento ou exclusão: a tentativa
   pelo endpoint exige criar uma nova foto, que conta no limite.
-- Foto já apagada ou já recusada no envio: `409 media_upload_not_pending`, e o
-  que tiver chegado ao armazenamento com o bilhete antigo é removido (o
-  bilhete vale duas horas e não pode ser revogado). Com as fotos desligadas
-  esta rota responde `404` e não remove nada: quem remove esses bytes, com o
-  interruptor em qualquer posição, é a exclusão.
+- Em cadastro aberto e com o interruptor ligado, foto já apagada ou já
+  recusada no envio: `409 media_upload_not_pending`, e bytes tardios do
+  bilhete antigo são removidos (vale duas horas e não pode ser revogado).
+  Com fotos desligadas, complete responde `404` sem remoção. DELETE no
+  staging independe do interruptor: usa B2 em perfil conhecido aberto;
+  concluído repara só tombstones, e foto viva não resolvida responde `503`.
 - O estado persistido continua uploaded até o worker tomar a foto. O B3
   altera deliberadamente a trava C24a para um emissor e três chamadores,
   preservando a recusa em process e importação genéricos.
 
 **Exclusão.** `DELETE /onboarding/body-photos`, com `Idempotency-Key`,
-responde `200` com `{ "deleted": <quantas linhas foram marcadas> }`.
+primeiro confere o alvo e o perfil. Outro alvo é `404` antes do claim;
+perfil ausente/ilegível é `503`. Cadastro concluído passa pelo reparo B4a:
+sem linhas ou só tombstones reparados responde `200 { "deleted": 0 }`;
+foto viva sem disposição resolvida responde `503`, sem apagar ou marcar.
+
+Os detalhes B2 abaixo aplicam-se ao **perfil conhecido aberto**, no staging:
+`200` com `{ "deleted": <quantas linhas foram marcadas> }`.
 
 - Manda remover do armazenamento os objetos de **todas as fotos do cadastro
   que a conta já criou** — guardadas, com envio pendente, recusadas no envio
@@ -3014,8 +3030,8 @@ responde `200` com `{ "deleted": <quantas linhas foram marcadas> }`.
   horas, uma conta leva 112 dias no limite para ter mais de 1000 linhas).
 - **A linha do catálogo não é removida**: fica marcada (`deleted`,
   `deleted_at`), e continua contando no limite das 24 horas. Foto recusada no
-  envio não pode virar `deleted` (o catálogo proíbe essa mudança): os bytes
-  dela, se chegaram depois, são removidos, e a linha fica como está.
+  envio não é marcada como `deleted` pelo caminho B2: os bytes dela, se
+  chegaram depois, são removidos, e a linha fica como está.
 - **É idempotente na resposta e na gravação, não nas chamadas:** apagar de
   novo responde `{ "deleted": 0 }` e não grava nada, mas **chama o
   armazenamento de novo** — uma chamada — enquanto a conta tiver alguma linha
@@ -3033,8 +3049,8 @@ responde `200` com `{ "deleted": <quantas linhas foram marcadas> }`.
   depois de mandar outra foto. **O que ele não garante:** bytes que cheguem
   **depois** dele, com um bilhete ainda válido, ficam guardados até a
   exclusão seguinte; nada roda sozinho (pendência abaixo).
-- Funciona com o interruptor em qualquer posição e depois do cadastro
-  concluído.
+- Independe do interruptor; cadastro concluído segue o reparo B4a descrito
+  acima, sem cair nesse caminho B2 quando há foto viva não resolvida.
 - Só as fotos do cadastro **desta** conta: outra conta, foto de refeição e
   foto do corpo sem frase de pose não são tocadas.
 - O aceite do consentimento continua valendo depois de apagar.
@@ -3045,21 +3061,92 @@ data de guarda. O endereço do objeto só existe dentro do bilhete de envio. A
 consulta das poses seleciona o resultado internamente e o reduz a número
 finito ou null; campos livres não saem do adaptador nem da resposta.
 
-**O que este caminho nunca grava:** `user_profiles` (nem
-`body_fat_percent`), eventos de produto, nem qualquer tabela além de
-`media_assets`, do aceite e do ledger.
+**O que este caminho nunca grava:** `body_fat_percent`,
+`body_fat_measured_at`, objetivo/protocolo/metas, `product_events` ou
+`vision.analyzed`. O fechamento mecânico B4a pode atualizar exclusivamente
+as três colunas de estimativa descritas abaixo, depois de receber um candidato
+válido de um resolver separado. O resolver real desta entrega retorna
+`deferred_rule`; não grava estimativa nem apaga fotos vivas.
 
-### Estado destes pacotes (B2 — envio; B3 — pedido de leitura exclusivo)
+### Fechamento da conclusão e reparo (B4a — mecânica, sem regra clínica)
+
+`OnboardingRouteDependencies.finalizeSignupBodyPhotos(context, input)` é
+obrigatório e o default é real. A conclusão, a repetição com a mesma chave e
+o novo aceite chamam o passo **depois** da liberação de acesso, dentro de
+`createResponse`, antes de montar a resposta. O legado parcial e as recusas
+anteriores não o chamam. A resposta oficial do cadastro é preservada mesmo
+se esse passo falhar.
+
+O default consulta fotos somente no banco de teste conhecido
+`xitugspwfxkcluxvrdeg`, pela mesma expressão de URL pública da factory.
+Essa proteção independe do interruptor: no teste com fotos OFF e sem fotos,
+ocorre uma leitura de `media_assets` da conta, zero escrita. Alvo inválido,
+diverso ou legado produz zero consultas do hook. Não identifica um client
+arbitrário injetado de outro alvo; a garantia corresponde ao wiring default
+observado (factory única por request), que deve ser revalidado se mudar.
+
+O helper copia e congela seu snapshot e o candidato. Não calcula número,
+cortes, confiança ou disposição. Um candidato pronto precisa fornecer o
+número, instante estável, as três fontes atuais e IDs explícitos de limpeza.
+A pose atual segue a ordem já usada pelo GET: envio concluído, depois ID;
+uma substituição ainda pendente não toma o lugar da foto armazenada.
+
+Ordem mecânica com candidato válido:
+
+1. Uma leitura de fotos vivas, filtrada por conta e tipo, com a projeção
+   privada mínima. O resolver recebe apenas os valores finitos reduzidos.
+2. UPDATE de `bf_percent_estimated`, `bf_source = 'signup_photos'` e
+   `bf_estimated_at`. Só um recibo com a conta, o número, a fonte e o mesmo
+   instante confirma a gravação. Perfil antigo com o mesmo valor não serve.
+3. Remoção dos objetos dos IDs explicitamente autorizados no snapshot.
+4. Marcação das mesmas linhas como apagadas e esvaziamento do resultado;
+   recibo completo com IDs, conta, estado e instante confirma o fechamento.
+
+Um orçamento **único de até 3000 ms** cobre o passo, com controller próprio
+e guards antes/depois de cada espera. No reparo, inclui perfil e catálogo;
+não ganha mais 3 s entre consultas. O relógio monotônico serve só para o
+prazo; a marca de exclusão usa relógio de parede. PostgREST recebe
+`abortSignal`; a API instalada de Storage `remove(paths)` não o aceita.
+Resultado tardio ou rejeição tardia não inicia a fase seguinte. O log tem
+somente fase/estado/motivo fechados, sem conta, número, caminho ou erro bruto.
+
+Interromper a espera **não desfaz uma escrita/exclusão já enviada**. Timeout
+durante UPDATE deixa proveniência desconhecida; após recibo confirmado mas
+antes de enviar a remoção, deixa limpeza pendente; durante remoção/marcação,
+deixa limpeza desconhecida. Não se promete rollback nem fotos intactas após
+uma operação remota enviada. Leitura/resolver falhando não inicia mutação.
+
+**Reparo:** GET OFF continua `200 available:false` sem consulta, assim como
+texto ausente mantém seu early return. GET em outro alvo é indisponível antes
+de ler consentimento. No alvo conhecido, GET ON com texto válido consulta o
+perfil antes do estado; DELETE consulta antes da exclusão e funciona OFF/ON.
+Perfil conhecido aberto conserva B2. Perfil ausente ou inválido é incerteza,
+não permissão de apagar. DELETE em outro alvo recusa `404` antes do claim.
+
+Conta concluída usa o mesmo helper, com uma leitura que inclui tombstones.
+Sem linhas, termina sem mutação. Só linhas já apagadas permite remover bytes
+tardios dos caminhos conhecidos dentro do mesmo orçamento, sem estimativa
+ou nova marca. Com foto viva e resolver `deferred_rule`, ou qualquer resultado
+incerto, GET/DELETE respondem `503 body_photo_cleanup_pending`, sem cair no
+antigo `deleteAll`. O claim do DELETE é liberado para tentar novamente; não
+se guarda um falso `200`. Isso muda intencionalmente C1, C2 e R8 de B2.
+
+### Estado destes pacotes (B2 — envio; B3 — leitura; B4a — fechamento mecânico)
 
 Construído localmente: interruptor, estado, aceite/idade, envio/troca/exclusão,
 pedido de leitura exclusivo do cadastro após aceite atual, estados read versus
 unreadable e proteção dos resultados genéricos frescos/históricos. Sem perfil,
 metas, objetivo, product_events ou algoritmo de junção escritos em B3.
 
-Ainda faltam B4a (proveniência e exclusão na conclusão), B4b (D1/D2,
-estimativa e uso), texto aprovado/publicado, telas iOS e validação real.
+Construído B4a mecânico, adaptador real, hook e redes de reparo em testes
+locais. A exclusão automática de fotos vivas na conclusão **ainda não está
+funcional no default real**: depende de B4b (D1/D2, estimativa/uso e disposição
+explícita quando não houver candidato). Ainda faltam texto aprovado/publicado,
+telas iOS e validação real de fila, modelo e armazenamento.
 Os textos e decisões humanas não são presumidos. O recurso continua desligado,
-e os objetos ficam até DELETE; nada foi publicado por este grupo.
+e fotos vivas de cadastro concluído ficam pendentes; nada foi publicado por
+este grupo. Não interpretar os testes sintéticos de candidato pronto como
+aprovação da regra ou prova de limpeza remota.
 
 O espelho do BFF passou de 51 para 54 rotas no pacote B0
 (`apps/mobile-bff/scripts/verify-route-mirror.mjs` e
@@ -3099,15 +3186,15 @@ O que não está coberto:
 
 > RC P-PHOTOS — cenário foto do corpo com envio concluído variante a leitura real por IA e a estimativa integrada das três poses (B3 emite o pedido e distingue lida de sem número em testes locais; estimate segue null, a junção/uso espera D1 e D2 e a fila/provedor reais não foram verificados) NÃO coberta nesta PR (pendência da audit 2026-10-11)
 
-> RC P-PHOTOS — cenário cadastro concluído com fotos enviadas variante o servidor apagar as fotos na conclusão (decisão D4 do orquestrador, anunciada ao dono; o passo da conclusão é o pacote B4a, e nesta PR as fotos ficam até o app chamar DELETE /onboarding/body-photos) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+> RC P-PHOTOS — cenário cadastro concluído com fotos enviadas variante o servidor apagar as fotos na conclusão (decisão D4 do orquestrador, anunciada ao dono; B4a tem hook e mecânica locais, mas o resolver real segue deferred_rule; foto viva fica pendente e GET/DELETE de cadastro concluído respondem 503 até B4b e a disposição explícita) NÃO coberta nesta PR (pendência da audit 2026-10-11)
 
 > RC P-PHOTOS — cenário cadastro abandonado depois do envio das fotos variante apagar as fotos sem a pessoa voltar (a data de guarda gravada é a de 730 dias da política genérica de mídia e a rotina de limpeza não está publicada no ambiente de teste) NÃO coberta nesta PR (pendência da audit 2026-10-11)
 
-> RC P-PHOTOS — cenário envio que chega ao armazenamento depois do último DELETE /onboarding/body-photos da conta, com o bilhete ainda válido de uma foto já apagada, trocada ou recusada (o bilhete de envio vale duas horas e não pode ser revogado) variante remover esse objeto sem que o app apague de novo ou chame a conclusão do envio dessa foto (cada DELETE manda remover os objetos das fotos do cadastro que a conta já criou, também das já apagadas, com o interruptor em qualquer posição; depois dele nada roda sozinho, e com as fotos desligadas a conclusão do envio responde 404 e não remove) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+> RC P-PHOTOS — cenário envio que chega ao armazenamento depois do último DELETE /onboarding/body-photos da conta, com o bilhete ainda válido de uma foto já apagada, trocada ou recusada (o bilhete de envio vale duas horas e não pode ser revogado) variante remover esse objeto sem que o app apague de novo ou chame a conclusão do envio dessa foto (no perfil conhecido aberto, DELETE usa B2; no concluído só tombstones podem ter bytes reparados, enquanto foto viva não resolvida responde 503; o interruptor não impede DELETE no staging, mas nada roda sozinho depois dele, e conclusão OFF responde 404) NÃO coberta nesta PR (pendência da audit 2026-10-11)
 
 > RC P-PHOTOS — cenário conta com mais de 1000 linhas de foto do corpo no catálogo (só com fotos do cadastro, 112 dias no limite de 9 em 24 horas) variante o estado, a troca e a exclusão olharem além de uma página de 1000 linhas (a exclusão lê primeiro as linhas não apagadas e depois as apagadas mais recentemente: bytes que chegaram ao caminho de uma foto apagada há mais tempo que essas não são removidos, e com mais de 1000 linhas não apagadas uma foto viva pode ficar fora da página) NÃO coberta nesta PR (pendência da audit 2026-10-11)
 
-> RC P-PHOTOS — cenário repetição da Idempotency-Key de uma foto com envio ainda pendente, depois de entrar em vigor um texto do consentimento que a conta não aceitou ou depois de o cadastro ser concluído variante a repetição só entregar bilhete novo com o aceite em vigor e o cadastro não concluído (a chave é procurada antes das conferências, como o plano fixou, e a repetição responde 201 com bilhete novo, válido por mais duas horas a cada vez; a conclusão do envio continua recusada com 403 ou 409 e a exclusão remove os bytes; mudar a ordem é decisão do orquestrador, ainda não tomada) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+> RC P-PHOTOS — cenário repetição da Idempotency-Key de uma foto com envio ainda pendente, depois de entrar em vigor um texto do consentimento que a conta não aceitou ou depois de o cadastro ser concluído variante a repetição só entregar bilhete novo com o aceite em vigor e o cadastro não concluído (a chave é procurada antes das conferências, como o plano fixou, e a repetição responde 201 com bilhete novo, válido por mais duas horas a cada vez; a conclusão do envio continua recusada com 403 ou 409; perfil aberto usa exclusão B2, mas concluído com foto viva não resolvida tem DELETE 503 e preserva os bytes; mudar a ordem da repetição é decisão do orquestrador, ainda não tomada) NÃO coberta nesta PR (pendência da audit 2026-10-11)
 
 > RC P-PHOTOS — cenário duas criações ou duas conclusões da mesma conta no mesmo instante variante limite de 9 em 24 horas e troca da pose garantidos por trava no banco (as conferências são leituras seguidas de escrita, sem transação; duas criações simultâneas podem passar juntas do limite e duas conclusões simultâneas podem deixar duas fotos guardadas na mesma pose, das quais o estado mostra a mais nova) NÃO coberta nesta PR (pendência da audit 2026-10-11)
 

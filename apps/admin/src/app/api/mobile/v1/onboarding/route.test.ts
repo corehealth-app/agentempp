@@ -65,6 +65,31 @@ interface DbResult {
 
 type Failure = 'error' | 'throw' | { data: unknown }
 
+/** The one read of live sign-up body photos on an empty catalogue. */
+interface SignupBodyPhotoMemoryRead {
+  columns: string[]
+  filters: Array<{ operator: 'eq' | 'neq'; column: string; value: unknown }>
+  order: { column: string; ascending: boolean } | null
+  limit: number
+}
+
+interface SignupBodyPhotoMemoryQuery {
+  abortSignal(signal: AbortSignal): SignupBodyPhotoMemoryQuery
+  select(columns: string): SignupBodyPhotoMemoryQuery
+  eq(column: string, value: unknown): SignupBodyPhotoMemoryQuery
+  neq(column: string, value: unknown): SignupBodyPhotoMemoryQuery
+  order(column: string, options: { ascending: boolean }): SignupBodyPhotoMemoryQuery
+  limit(count: number): SignupBodyPhotoMemoryQuery
+  maybeSingle(): Promise<DbResult>
+  update(patch: Record<string, unknown>): SignupBodyPhotoMemoryQuery
+  insert(row: Record<string, unknown>): SignupBodyPhotoMemoryQuery
+  delete(): SignupBodyPhotoMemoryQuery
+  then(
+    onFulfilled: (value: DbResult) => unknown,
+    onRejected?: (reason: unknown) => unknown,
+  ): Promise<unknown>
+}
+
 interface LegalDocument {
   document_key: string
   version: string
@@ -254,6 +279,11 @@ class SignupMemoryDb {
   readonly submissions: unknown[] = []
   /** The columns and the filter of every profile read. */
   readonly profileReads: string[] = []
+  /** Actual awaited photo reads, including their account/kind/status filters. */
+  readonly bodyPhotoReads: SignupBodyPhotoMemoryRead[] = []
+  readonly bodyPhotoReadSignals: AbortSignal[] = []
+  /** Media/Storage attempts stay observable even when the finalizer catches an error. */
+  readonly forbiddenPhotoEffects: string[] = []
   readonly failures = new Map<string, Failure>()
   calcRows: ConfigRow[] = STAGING_CALC_ROWS
   profile: StoredProfile | null = null
@@ -269,6 +299,9 @@ class SignupMemoryDb {
   constructor() {
     this.client = {
       from: (table: string) => this.query(table),
+      storage: {
+        from: (_bucketId: string) => this.refusePhotoEffect('storage:from'),
+      },
       rpc: (name: string, params: Record<string, unknown>) => this.rpc(name, params),
     } as unknown as ServiceClient
   }
@@ -326,7 +359,90 @@ class SignupMemoryDb {
     return rows()
   }
 
+  private refusePhotoEffect(operation: string): never {
+    this.forbiddenPhotoEffects.push(operation)
+    this.operations.push(operation)
+    throw new Error(`unexpected photo effect ${operation}`)
+  }
+
+  /** Only the existing catalogue adapter's listOpen query; every other shape is refused. */
+  private bodyPhotoQuery(): SignupBodyPhotoMemoryQuery {
+    const read: SignupBodyPhotoMemoryRead = {
+      columns: [],
+      filters: [],
+      order: null,
+      limit: Number.POSITIVE_INFINITY,
+    }
+    const run = async (single: boolean): Promise<DbResult> => {
+      this.bodyPhotoReads.push(structuredClone(read))
+      return this.answer('select:media_assets', () => {
+        if (
+          single ||
+          JSON.stringify(read.columns) !==
+            JSON.stringify([
+              'id',
+              'bucket_id',
+              'object_path',
+              'status',
+              'failure_stage',
+              'context_text',
+              'created_at',
+              'uploaded_at',
+              'processing_result',
+            ]) ||
+          JSON.stringify(read.filters) !==
+            JSON.stringify([
+              { operator: 'eq', column: 'user_id', value: USER_ID },
+              { operator: 'eq', column: 'kind', value: 'body_checkin_photo' },
+              { operator: 'neq', column: 'status', value: 'deleted' },
+            ]) ||
+          read.order === null ||
+          read.order.column !== 'created_at' ||
+          read.order.ascending !== false ||
+          read.limit !== 1000
+        ) {
+          throw new Error('unexpected sign-up body-photo query')
+        }
+        return { data: [], error: null }
+      })
+    }
+    const builder: SignupBodyPhotoMemoryQuery = {
+      abortSignal: (signal) => {
+        this.bodyPhotoReadSignals.push(signal)
+        return builder
+      },
+      select: (selected: string) => {
+        read.columns = selected.split(',').map((column) => column.trim())
+        return builder
+      },
+      eq: (column: string, value: unknown) => {
+        read.filters.push({ operator: 'eq', column, value })
+        return builder
+      },
+      neq: (column: string, value: unknown) => {
+        read.filters.push({ operator: 'neq', column, value })
+        return builder
+      },
+      order: (column: string, options: { ascending: boolean }) => {
+        read.order = { column, ascending: options.ascending }
+        return builder
+      },
+      limit: (count: number) => {
+        read.limit = count
+        return builder
+      },
+      maybeSingle: () => run(true),
+      update: (_patch: Record<string, unknown>) => this.refusePhotoEffect('update:media_assets'),
+      insert: (_row: Record<string, unknown>) => this.refusePhotoEffect('insert:media_assets'),
+      delete: () => this.refusePhotoEffect('delete:media_assets'),
+      // biome-ignore lint/suspicious/noThenProperty: the query builder of the real client is awaitable too.
+      then: (onFulfilled, onRejected) => run(false).then(onFulfilled, onRejected),
+    }
+    return builder
+  }
+
   private query(table: string) {
+    if (table === 'media_assets') return this.bodyPhotoQuery()
     if (table === 'user_profiles') {
       let columns: string[] = []
       const filters: Array<[string, unknown]> = []
@@ -524,14 +640,20 @@ function context(body?: unknown): MobileRouteContext {
 }
 
 function dependencies(repository: OnboardingRepository): OnboardingRouteDependencies {
-  return {
+  // A variable keeps this fixture assignable before and after the required hook is introduced.
+  const values = {
     createOnboardingRepository: vi.fn(() => repository),
-    executeIdempotent: vi.fn(async (_context, _payload, operation) => operation('normalized-key')),
+    executeIdempotent: vi.fn(
+      async (...args: Parameters<OnboardingRouteDependencies['executeIdempotent']>) =>
+        args[2]('normalized-key'),
+    ),
     saveLegacyOnboarding: vi.fn(async () => ({
       profile: null,
       targets: { calories: null, protein_g: null },
     })),
+    finalizeSignupBodyPhotos: vi.fn(async () => {}),
   }
+  return values
 }
 
 function validBody() {
@@ -747,6 +869,8 @@ beforeEach(() => {
   // The grant of evaluation access is another module's subject (off by
   // default): it stays off here whatever the shell holds.
   vi.stubEnv(EVALUATION_ACCESS_DAYS_ENV, undefined)
+  // B4a's default finalizer is exercised on the authorized synthetic target.
+  vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://xitugspwfxkcluxvrdeg.supabase.co')
 })
 
 afterEach(() => {
@@ -1039,7 +1163,14 @@ describe('POST /onboarding — a first completion records only an objective the 
       protocol_welcome: { protocol: body.objective },
     })
     // The check first, and only then the key is claimed.
-    expect(db.operations).toEqual([PROFILE_READ, CONFIG_READ, CLAIM, SQL_FUNCTION, RECORD])
+    expect(db.operations).toEqual([
+      PROFILE_READ,
+      CONFIG_READ,
+      CLAIM,
+      SQL_FUNCTION,
+      'select:media_assets',
+      RECORD,
+    ])
     expect(db.idempotencyRows()).toEqual([{ key: KEY, state: 'completed', status: 200 }])
     // The submission reaches the SQL function whole and unchanged.
     expect(db.submissions).toEqual([body])
@@ -1478,7 +1609,13 @@ describe('POST /onboarding — an account that already has a completion time is 
     })
     expect(json.data.document_actions).toMatchObject([{ version: DOCUMENT_V2.version }])
     // One read of the profile; the calc config is not even loaded.
-    expect(db.operations).toEqual([PROFILE_READ, CLAIM, SQL_FUNCTION, RECORD])
+    expect(db.operations).toEqual([
+      PROFILE_READ,
+      CLAIM,
+      SQL_FUNCTION,
+      'select:media_assets',
+      RECORD,
+    ])
     expect(db.submissions).toEqual([body])
     expect(db.profile).toMatchObject({
       current_protocol: 'ganho_massa',
@@ -1512,7 +1649,13 @@ describe('POST /onboarding — an account that already has a completion time is 
     expect(response.status).toBe(200)
     expect(json.data.objective).toBe(stored.objective)
     expect(json.data.completed_at).toBe(EARLIER_COMPLETION)
-    expect(db.operations).toEqual([PROFILE_READ, CLAIM, SQL_FUNCTION, RECORD])
+    expect(db.operations).toEqual([
+      PROFILE_READ,
+      CLAIM,
+      SQL_FUNCTION,
+      'select:media_assets',
+      RECORD,
+    ])
     expect(db.profile?.current_protocol).toBe(stored.objective)
   })
 
@@ -1550,9 +1693,11 @@ describe('POST /onboarding — an account that already has a completion time is 
       PROFILE_READ,
       CLAIM,
       SQL_FUNCTION,
+      'select:media_assets',
       PROFILE_READ,
       CLAIM,
       SQL_FUNCTION,
+      'select:media_assets',
     ])
     expect(db.idempotencyRows()).toEqual([{ key, state: 'completed', status: 200 }])
     expect(db.submissions).toEqual([body, body, body])
@@ -1573,7 +1718,13 @@ describe('POST /onboarding — an account that already has a completion time is 
 
     expect(response.status).toBe(200)
     expect(json.data.completed_at).toBe(completedAt)
-    expect(db.operations).toEqual([PROFILE_READ, CLAIM, SQL_FUNCTION, RECORD])
+    expect(db.operations).toEqual([
+      PROFILE_READ,
+      CLAIM,
+      SQL_FUNCTION,
+      'select:media_assets',
+      RECORD,
+    ])
   })
 
   it('the same answers under a new Idempotency-Key, after the cuts changed against them → completes, with no check', async () => {
@@ -1591,7 +1742,13 @@ describe('POST /onboarding — an account that already has a completion time is 
     expect(first.response.status).toBe(200)
     expect(second.response.status).toBe(200)
     expect(second.json.data).toEqual(first.json.data)
-    expect(db.operations).toEqual([PROFILE_READ, CLAIM, SQL_FUNCTION, RECORD])
+    expect(db.operations).toEqual([
+      PROFILE_READ,
+      CLAIM,
+      SQL_FUNCTION,
+      'select:media_assets',
+      RECORD,
+    ])
   })
 
   it('a completed account sending another objective is answered by the SQL function, as before: 409, never the 422 of the check', async () => {

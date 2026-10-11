@@ -102,6 +102,9 @@ function newDatabase(account: Partial<MemoryAccount> = {}): SignupBodyPhotoMemor
     token: TOKEN,
     ...account,
   })
+  // Real auth bootstrap ensures this row before serving the request.
+  // 20260720020351_p0_email_first_patient_identity.sql:201, ON CONFLICT DO NOTHING.
+  database.profiles.set(ACCOUNT, { onboarding_completed: false, onboarding_completed_at: null })
   database.now = () => new Date()
   world.db = database
   return database
@@ -191,8 +194,9 @@ describe('GET /onboarding/body-photos with the switch on — the state', () => {
     })
     // Never the paid-access lookup: the fake database throws on it.
     expect(db().operations).not.toContain('rpc:resolve_user_entitlement')
-    expect(db().operationsAfterAuthentication().slice(0, 2)).toEqual([
+    expect(db().operationsAfterAuthentication().slice(0, 3)).toEqual([
       'rpc:get_mobile_legal_document',
+      'select:user_profiles',
       'select:user_legal_acceptances',
     ])
     expect(db().calls.find((call) => call.operation === 'rpc:get_mobile_legal_document')).toEqual({

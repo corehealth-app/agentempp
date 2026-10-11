@@ -127,6 +127,19 @@ const LEFT_ALONE_OPERATIONS = FIRST_GRANT_OPERATIONS.filter(
   (operation) => operation !== 'rpc:apply_entitlement_event',
 )
 
+/** Only the authorized staging target gains the new photo read. */
+function completionOperations(operations: string[]): string[] {
+  if (process.env.NEXT_PUBLIC_SUPABASE_URL !== STAGING_URL) return operations
+  const beforeRecord = operations.indexOf('rpc:complete_mobile_api_request')
+  return beforeRecord < 0
+    ? [...operations, 'select:media_assets']
+    : [
+        ...operations.slice(0, beforeRecord),
+        'select:media_assets',
+        ...operations.slice(beforeRecord),
+      ]
+}
+
 // ---------------------------------------------------------------------------
 // In-memory database
 // ---------------------------------------------------------------------------
@@ -153,6 +166,23 @@ interface MemoryQuery {
     onFulfilled: (value: DbResult) => unknown,
     onRejected?: (reason: unknown) => unknown,
   ): Promise<unknown>
+}
+
+/** Only the read of the open sign-up photos; no media mutation is permitted here. */
+interface BodyPhotoMemoryRead {
+  columns: string[]
+  filters: Array<{ operator: 'eq' | 'neq'; column: string; value: unknown }>
+  order: { column: string; ascending: boolean } | null
+  limit: number
+}
+
+interface BodyPhotoMemoryQuery extends MemoryQuery {
+  abortSignal(signal: AbortSignal): BodyPhotoMemoryQuery
+  neq(column: string, value: unknown): BodyPhotoMemoryQuery
+  order(column: string, options: { ascending: boolean }): BodyPhotoMemoryQuery
+  update(patch: Record<string, unknown>): MemoryQuery
+  insert(row: Record<string, unknown>): MemoryQuery
+  delete(): MemoryQuery
 }
 
 interface LegalDocument {
@@ -253,6 +283,11 @@ class EvaluationMemoryDb {
   readonly entitlements: EntitlementRow[] = []
   readonly events: EntitlementEventRow[] = []
   readonly failures = new Map<string, Failure>()
+  /** Every awaited query of the photo catalogue, including its account filter. */
+  readonly bodyPhotoReads: BodyPhotoMemoryRead[] = []
+  readonly bodyPhotoReadSignals: AbortSignal[] = []
+  /** Attempts to write media or touch Storage are observable even if a caller catches them. */
+  readonly forbiddenPhotoEffects: string[] = []
   readonly client: ServiceClient
 
   private readonly profiles = new Map<
@@ -281,6 +316,9 @@ class EvaluationMemoryDb {
   constructor() {
     this.client = {
       from: (table: string) => this.query(table),
+      storage: {
+        from: (_bucketId: string) => this.refusePhotoEffect('storage:from'),
+      },
       // Like the real client, a call is sent when it is awaited, not when it is built.
       rpc: (name: string, params: Record<string, unknown>) => {
         let sent: Promise<DbResult> | undefined
@@ -395,7 +433,99 @@ class EvaluationMemoryDb {
     throw new Error(`unexpected table ${table}`)
   }
 
+  private refusePhotoEffect(operation: string): never {
+    this.forbiddenPhotoEffects.push(operation)
+    this.operations.push(operation)
+    throw new Error(`unexpected photo effect ${operation}`)
+  }
+
+  /**
+   * The real catalogue's open-photo query on an empty media_assets table.
+   * Every builder argument is kept and checked: a missing account/kind filter,
+   * another query or a swallowed unsupported operation cannot look like empty.
+   */
+  private bodyPhotoQuery(): BodyPhotoMemoryQuery {
+    const read: BodyPhotoMemoryRead = {
+      columns: [],
+      filters: [],
+      order: null,
+      limit: Number.POSITIVE_INFINITY,
+    }
+    const run = async (single: boolean): Promise<DbResult> => {
+      const operation = 'select:media_assets'
+      this.operations.push(operation)
+      this.bodyPhotoReads.push(structuredClone(read))
+      const injected =
+        this.injected(`${operation}(${read.columns.join(', ')})`) ?? this.injected(operation)
+      if (injected) return injected
+      if (
+        single ||
+        JSON.stringify(read.columns) !==
+          JSON.stringify([
+            'id',
+            'bucket_id',
+            'object_path',
+            'status',
+            'failure_stage',
+            'context_text',
+            'created_at',
+            'uploaded_at',
+            'processing_result',
+          ]) ||
+        JSON.stringify(read.filters) !==
+          JSON.stringify([
+            { operator: 'eq', column: 'user_id', value: USER },
+            { operator: 'eq', column: 'kind', value: 'body_checkin_photo' },
+            { operator: 'neq', column: 'status', value: 'deleted' },
+          ]) ||
+        read.order?.column !== 'created_at' ||
+        read.order.ascending !== false ||
+        read.limit !== 1000
+      ) {
+        throw new Error('unexpected sign-up body-photo query')
+      }
+      return { data: [], error: null }
+    }
+    const builder: BodyPhotoMemoryQuery = {
+      abortSignal: (signal) => {
+        this.bodyPhotoReadSignals.push(signal)
+        return builder
+      },
+      select: (selected: string) => {
+        read.columns = selected.split(',').map((column) => column.trim())
+        return builder
+      },
+      eq: (column: string, value: unknown) => {
+        read.filters.push({ operator: 'eq', column, value })
+        return builder
+      },
+      neq: (column: string, value: unknown) => {
+        read.filters.push({ operator: 'neq', column, value })
+        return builder
+      },
+      order: (column: string, options: { ascending: boolean }) => {
+        read.order = { column, ascending: options.ascending }
+        return builder
+      },
+      like: (_column: string, _pattern: string) => {
+        throw new Error('unexpected photo prefix filter')
+      },
+      limit: (count: number) => {
+        read.limit = count
+        return builder
+      },
+      maybeSingle: () => run(true),
+      update: (_patch: Record<string, unknown>) => this.refusePhotoEffect('update:media_assets'),
+      insert: (_row: Record<string, unknown>) => this.refusePhotoEffect('insert:media_assets'),
+      delete: () => this.refusePhotoEffect('delete:media_assets'),
+      // biome-ignore lint/suspicious/noThenProperty: the query builder of the real client is awaitable too.
+      then: (onFulfilled, onRejected) => run(false).then(onFulfilled, onRejected),
+    }
+    return builder
+  }
+
   private query(table: string): MemoryQuery {
+    if (table === 'media_assets') return this.bodyPhotoQuery()
     const filters: Array<[string, unknown]> = []
     const prefixes: Array<[string, string]> = []
     let columns: string[] = []
@@ -1181,7 +1311,7 @@ describe('switch off, or one lock closed: the same queries and the same bytes', 
 
     const response = await wire(await post(db))
 
-    expect(db.operations).toEqual(BASELINE_OPERATIONS)
+    expect(db.operations).toEqual(completionOperations(BASELINE_OPERATIONS))
     expect(response).toEqual(await baselineResponse())
     expect(response.status).toBe(200)
     expect(db.events).toEqual([])
@@ -1232,7 +1362,7 @@ describe('switch off, or one lock closed: the same queries and the same bytes', 
 
     const response = await wire(await post(db))
 
-    expect(db.operations).toEqual(BASELINE_OPERATIONS)
+    expect(db.operations).toEqual(completionOperations(BASELINE_OPERATIONS))
     expect(response).toEqual(await baselineResponse())
     expect(db.events).toEqual([])
     expect(db.entitlements).toEqual([])
@@ -1245,7 +1375,124 @@ describe('switch off, or one lock closed: the same queries and the same bytes', 
   })
 })
 
+describe('B4a default finalization stays outside every database except staging', () => {
+  // Public URLs are parsed only; the real handler runs over the in-memory client.
+  // Completion and the evaluation grant keep their own existing environment rules.
+  it.each<[string, string | undefined, string | undefined, string | undefined, boolean]>([
+    ['legacy URL with photos OFF', PRODUCTION_URL, undefined, STAGING_REF, false],
+    [
+      'legacy URL listed in the photo switch',
+      PRODUCTION_URL,
+      PRODUCTION_REF,
+      PRODUCTION_REF,
+      false,
+    ],
+    ['missing database URL', undefined, STAGING_REF, STAGING_REF, false],
+    ['invalid database URL', 'not-a-url', STAGING_REF, STAGING_REF, false],
+    [
+      'a database URL without a hosted project ref',
+      'https://db.performe.example',
+      STAGING_REF,
+      STAGING_REF,
+      false,
+    ],
+    [
+      'a non-staging hosted ref, even when both switches list it',
+      'https://abcdefghijklmnopqrst.supabase.co',
+      'abcdefghijklmnopqrst',
+      'abcdefghijklmnopqrst',
+      true,
+    ],
+  ])('%s: completes normally with no media or Storage access', async (_name, url, photoRefs, evaluationRefs, grants) => {
+    const log = logs()
+    switchOn({
+      NEXT_PUBLIC_SUPABASE_URL: url,
+      [EVALUATION_ACCESS_PROJECT_REF_ENV]: evaluationRefs,
+    })
+    vi.stubEnv('MOBILE_SIGNUP_BODY_PHOTOS_PROJECT_REF', photoRefs)
+    const db = new EvaluationMemoryDb().addAccount()
+
+    const response = await wire(await post(db))
+
+    expect(response).toEqual(await baselineResponse())
+    expect(response.status).toBe(200)
+    expect(db.completedAt()).toBe(NOW.toISOString())
+    expect(db.bodyPhotoReads).toEqual([])
+    expect(db.forbiddenPhotoEffects).toEqual([])
+    expect(db.operations).toEqual(grants ? FIRST_GRANT_OPERATIONS : BASELINE_OPERATIONS)
+    if (grants) {
+      expect(db.events).toEqual([
+        { ...GRANTED_EVENT, id: expect.any(String), entitlement_id: db.entitlements[0]?.id },
+      ])
+      expect(db.entitlements).toEqual([{ ...grantedEntitlement(30), id: expect.any(String) }])
+    } else {
+      expect(db.events).toEqual([])
+      expect(db.entitlements).toEqual([])
+      expect(log.info).not.toHaveBeenCalled()
+    }
+    expect(log.error).not.toHaveBeenCalled()
+  })
+})
+
 describe('first completion with the four locks open', () => {
+  // B4a's first causal RED: real default handler/repositories, build-3 input,
+  // no body fat and no photos. Photo finalization must run even with photos OFF.
+  it('B4a build 3 without photos reads media after the grant and before recording the response', async () => {
+    const log = logs()
+    switchOn()
+    vi.stubEnv('MOBILE_SIGNUP_BODY_PHOTOS_PROJECT_REF', undefined)
+    const db = new EvaluationMemoryDb().addAccount()
+
+    const response = await wire(await post(db))
+
+    expect(response).toEqual(await baselineResponse())
+    expect(response.status).toBe(200)
+    expect(db.completedAt()).toBe(NOW.toISOString())
+    expect(db.events).toEqual([
+      { ...GRANTED_EVENT, id: expect.any(String), entitlement_id: db.entitlements[0]?.id },
+    ])
+    expect(db.entitlements).toEqual([{ ...grantedEntitlement(30), id: expect.any(String) }])
+    expect(db.bodyPhotoReadSignals).toHaveLength(1)
+    expect(db.bodyPhotoReadSignals[0]).toBeInstanceOf(AbortSignal)
+    expect(db.bodyPhotoReadSignals[0].aborted).toBe(false)
+    expect(db.forbiddenPhotoEffects).toEqual([])
+    expect(log.error).not.toHaveBeenCalled()
+    expect(db.operations).toEqual([
+      OBJECTIVE_CHECK_PROFILE_READ,
+      OBJECTIVE_CHECK_CONFIG_READ,
+      'rpc:claim_mobile_api_request',
+      'select:user_profiles',
+      'rpc:complete_mobile_onboarding_atomic',
+      'select:entitlement_events',
+      'rpc:resolve_user_entitlement',
+      'rpc:apply_entitlement_event',
+      'select:media_assets',
+      'rpc:complete_mobile_api_request',
+    ])
+    expect(db.bodyPhotoReads).toEqual([
+      {
+        columns: [
+          'id',
+          'bucket_id',
+          'object_path',
+          'status',
+          'failure_stage',
+          'context_text',
+          'created_at',
+          'uploaded_at',
+          'processing_result',
+        ],
+        filters: [
+          { operator: 'eq', column: 'user_id', value: USER },
+          { operator: 'eq', column: 'kind', value: 'body_checkin_photo' },
+          { operator: 'neq', column: 'status', value: 'deleted' },
+        ],
+        order: { column: 'created_at', ascending: false },
+        limit: 1000,
+      },
+    ])
+  })
+
   it('grants exactly one event and one entitlement, and the response is the same bytes', async () => {
     const log = logs()
     switchOn()
@@ -1253,7 +1500,7 @@ describe('first completion with the four locks open', () => {
 
     const response = await wire(await post(db))
 
-    expect(db.operations).toEqual(FIRST_GRANT_OPERATIONS)
+    expect(db.operations).toEqual(completionOperations(FIRST_GRANT_OPERATIONS))
     expect(response).toEqual(await baselineResponse())
     expect(JSON.parse(response.body)).toEqual({
       data: {
@@ -1406,6 +1653,7 @@ describe('never twice', () => {
       'rpc:claim_mobile_api_request',
       'select:user_profiles',
       'rpc:complete_mobile_onboarding_atomic',
+      'select:media_assets',
     ])
     expect({ events: db.events, entitlements: db.entitlements }).toEqual(before)
   })
@@ -1423,6 +1671,7 @@ describe('never twice', () => {
       'rpc:claim_mobile_api_request',
       'select:user_profiles',
       'rpc:complete_mobile_onboarding_atomic',
+      'select:media_assets',
       'rpc:complete_mobile_api_request',
     ])
     expect({ events: db.events, entitlements: db.entitlements }).toEqual(before)
@@ -1520,7 +1769,7 @@ describe('lock d — an account that already has an entitlement event is left al
     const response = await wire(await post(db))
 
     expect(response).toEqual(await baselineResponse())
-    expect(db.operations).toEqual(LEFT_ALONE_OPERATIONS)
+    expect(db.operations).toEqual(completionOperations(LEFT_ALONE_OPERATIONS))
     expect({ events: db.events, entitlements: db.entitlements }).toEqual(before)
     expect(log.info.mock.calls).toEqual([
       [
@@ -1544,7 +1793,7 @@ describe('lock d — an account that already has an entitlement event is left al
 
     await post(db)
 
-    expect(db.operations).toEqual(LEFT_ALONE_OPERATIONS)
+    expect(db.operations).toEqual(completionOperations(LEFT_ALONE_OPERATIONS))
     expect(db.events).toEqual([])
     expect(db.entitlements).toEqual(before)
   })
@@ -1559,7 +1808,7 @@ describe('lock d — an account that already has an entitlement event is left al
 
     await post(db)
 
-    expect(db.operations).toEqual(LEFT_ALONE_OPERATIONS)
+    expect(db.operations).toEqual(completionOperations(LEFT_ALONE_OPERATIONS))
     expect(db.events).toEqual(before)
     expect(db.entitlements).toEqual([])
   })
@@ -1593,6 +1842,7 @@ describe('an account that completed onboarding before the switch was on (declare
         OBJECTIVE_CHECK_PROFILE_READ,
         'select:user_profiles',
         'rpc:complete_mobile_onboarding_atomic',
+        'select:media_assets',
       ],
     )
     expect(db.events).toEqual([])
@@ -1633,6 +1883,7 @@ describe('an account that completed onboarding before the switch was on (declare
         OBJECTIVE_CHECK_CONFIG_READ,
         'select:user_profiles',
         'rpc:complete_mobile_onboarding_atomic',
+        'select:media_assets',
       ],
     )
     expect(db.events).toEqual([])
@@ -1651,7 +1902,7 @@ describe('an account that completed onboarding before the switch was on (declare
 
     await post(db)
 
-    expect(db.operations).toEqual(FIRST_GRANT_OPERATIONS)
+    expect(db.operations).toEqual(completionOperations(FIRST_GRANT_OPERATIONS))
     expect(db.entitlements).toHaveLength(1)
   })
 
@@ -1779,6 +2030,7 @@ describe('a failure of the grant never reaches the onboarding response', () => {
       'rpc:claim_mobile_api_request',
       'select:user_profiles',
       'rpc:complete_mobile_onboarding_atomic',
+      'select:media_assets',
       'rpc:complete_mobile_api_request',
     ])
   })
@@ -1900,17 +2152,21 @@ describe('where the grant is called from', () => {
     const log = logs()
     switchOn()
     const db = new EvaluationMemoryDb().addAccount()
-    const dependencies: OnboardingRouteDependencies = {
+    // Keep the hook explicit without needing a future type/import for this fixture.
+    const values = {
       createOnboardingRepository: createSupabaseOnboardingRepository,
       executeIdempotent: executeSupabaseIdempotent,
       saveLegacyOnboarding: vi.fn(async () => ({
         profile: null,
         targets: { calories: null, protein_g: null },
       })),
+      finalizeSignupBodyPhotos: vi.fn(async () => {}),
     }
+    const dependencies: OnboardingRouteDependencies = values
 
     const response = await handleOnboardingPost(context(db, { height_cm: 180 }), dependencies)
 
+    expect(values.finalizeSignupBodyPhotos).not.toHaveBeenCalled()
     expect(response.status).toBe(200)
     expect(db.operations).toEqual([
       'rpc:claim_mobile_api_request',
@@ -1960,5 +2216,81 @@ describe('declared pendencies', () => {
     const fromDoc = Array.from(doc.matchAll(/^(> RC EA — .*)$/gm), (match) => match[1])
     expect(fromHeader).toHaveLength(10)
     expect(fromDoc).toEqual(fromHeader)
+  })
+})
+
+describe('B4a a failed injected hook cannot undo accepted completion or the grant', () => {
+  it.each([
+    'first',
+    'same-key replay',
+    'new document acceptance',
+  ] as const)('%s keeps its official wire and entitlement', async (phase) => {
+    const log = logs()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    switchOn()
+    const db = new EvaluationMemoryDb().addAccount()
+    const reference = new EvaluationMemoryDb().addAccount()
+    if (phase !== 'first') {
+      await post(db)
+      await post(reference)
+    }
+    if (phase === 'new document acceptance') {
+      db.publishNewDocumentVersion()
+      reference.publishNewDocumentVersion()
+    }
+    const body = completionBody(phase === 'new document acceptance' ? DOCUMENT_V2 : DOCUMENT_V1)
+    const key =
+      phase === 'new document acceptance' ? 'evaluation-access-key-2' : 'evaluation-access-key-1'
+    const expected = await wire(await post(reference, body, key))
+    // Capture the state before the intentional rejection. Assertions inside
+    // this hook would be caught by the handler and could falsely pass.
+    const observed: Array<{
+      userId: string
+      input: ReturnType<typeof onboardingCompletionInputSchema.parse>
+      completedAt: string | null
+      eventCount: number
+      entitlementCount: number
+    }> = []
+    const hook = vi.fn(
+      async (
+        ctx: MobileRouteContext,
+        input: ReturnType<typeof onboardingCompletionInputSchema.parse>,
+      ) => {
+        observed.push({
+          userId: ctx.auth.userId,
+          input: structuredClone(input),
+          completedAt: db.completedAt(),
+          eventCount: db.events.length,
+          entitlementCount: db.entitlements.length,
+        })
+        throw new Error('synthetic private error ' + USER)
+      },
+    )
+    const deps: OnboardingRouteDependencies = {
+      createOnboardingRepository: createSupabaseOnboardingRepository,
+      executeIdempotent: executeSupabaseIdempotent,
+      saveLegacyOnboarding: vi.fn(async () => ({
+        profile: null,
+        targets: { calories: null, protein_g: null },
+      })),
+      finalizeSignupBodyPhotos: hook,
+    }
+    const response = await handleOnboardingPost(context(db, body, key), deps)
+    expect(await wire(response)).toEqual(expected)
+    expect(hook).toHaveBeenCalledOnce()
+    expect(observed).toEqual([
+      {
+        userId: USER,
+        input: onboardingCompletionInputSchema.parse(body),
+        completedAt: NOW.toISOString(),
+        eventCount: 1,
+        entitlementCount: 1,
+      },
+    ])
+    expect(db.events).toHaveLength(1)
+    expect(db.entitlements).toHaveLength(1)
+    expect(db.operations).not.toContain('rpc:fail_mobile_api_request')
+    expect(warn.mock.calls).toEqual([['[mobile-signup-body-photos] finalization_hook_failed']])
+    expect(log.error).not.toHaveBeenCalled()
   })
 })

@@ -40,6 +40,7 @@ import {
   signupBodyPhotosUnavailable,
 } from './signup-body-photo-service'
 import { createSupabaseMediaDependencies } from './supabase-media'
+import { repairCompletedSignupBodyPhotos } from './supabase-signup-body-photo-finalization'
 
 interface DatabaseError {
   code?: string
@@ -349,5 +350,6 @@ export function createSupabaseSignupBodyPhotoDependencies(
     consent: createConsentRepository(supabase, requestId),
     catalogue: createCatalogue(supabase, requestId),
     media: createSupabaseMediaDependencies(supabase),
+    repairCompleted: (userId) => repairCompletedSignupBodyPhotos(supabase, userId),
   }
 }

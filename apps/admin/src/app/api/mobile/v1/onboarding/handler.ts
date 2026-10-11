@@ -1,6 +1,10 @@
 import type { ServiceClient } from '@mpp/db'
 import { saveOnboarding } from '@/lib/mobile-api/commands'
-import { onboardingCompletionInputSchema, onboardingInputSchema } from '@/lib/mobile-api/contracts'
+import {
+  type OnboardingCompletionInput,
+  onboardingCompletionInputSchema,
+  onboardingInputSchema,
+} from '@/lib/mobile-api/contracts'
 import { prepareEvaluationAccess } from '@/lib/mobile-api/evaluation-access'
 import { MobileApiError, mobileSuccess, readJsonBody } from '@/lib/mobile-api/http'
 import { executeSupabaseIdempotent, requireIdempotencyKey } from '@/lib/mobile-api/idempotency'
@@ -12,17 +16,23 @@ import {
 } from '@/lib/mobile-api/onboarding-service'
 import type { MobileRouteContext } from '@/lib/mobile-api/route'
 import { createSupabaseOnboardingRepository } from '@/lib/mobile-api/supabase-onboarding'
+import { finalizeSignupBodyPhotosAfterOnboarding } from '@/lib/mobile-api/supabase-signup-body-photo-finalization'
 
 export interface OnboardingRouteDependencies {
   createOnboardingRepository(client: ServiceClient): OnboardingRepository
   executeIdempotent: typeof executeSupabaseIdempotent
   saveLegacyOnboarding: typeof saveOnboarding
+  finalizeSignupBodyPhotos(
+    context: MobileRouteContext,
+    input: OnboardingCompletionInput,
+  ): Promise<void>
 }
 
 const defaultDependencies: OnboardingRouteDependencies = {
   createOnboardingRepository: createSupabaseOnboardingRepository,
   executeIdempotent: executeSupabaseIdempotent,
   saveLegacyOnboarding: saveOnboarding,
+  finalizeSignupBodyPhotos: finalizeSignupBodyPhotosAfterOnboarding,
 }
 
 function onboardingLocale(locale: string | null): 'pt-BR' | 'en-US' {
@@ -115,6 +125,13 @@ export async function handleOnboardingPost(
     const grantEvaluationAccess = await prepareEvaluationAccess(context)
     const data = await completeOnboarding(repository, context.auth.userId, input)
     await grantEvaluationAccess()
+    // Completion is already accepted. A photo failure cannot undo it or
+    // release its idempotency claim. The default hook has its own budget.
+    try {
+      await dependencies.finalizeSignupBodyPhotos(context, input)
+    } catch {
+      console.warn('[mobile-signup-body-photos] finalization_hook_failed')
+    }
     return mobileSuccess(data, context.requestId)
   }
   return dependencies.executeIdempotent(context, input, createResponse, {

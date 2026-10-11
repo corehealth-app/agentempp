@@ -286,6 +286,12 @@ class MemoryQuery implements PromiseLike<DbResult> {
     return this
   }
 
+  abortSignal(signal: AbortSignal): this {
+    this.db.querySignals.push(signal)
+    if (signal.aborted) throw new Error('synthetic query aborted')
+    return this
+  }
+
   async maybeSingle(): Promise<DbResult> {
     const result = await this.db.execute(this.spec)
     if (result.error || !Array.isArray(result.data)) return result
@@ -305,6 +311,7 @@ class MemoryQuery implements PromiseLike<DbResult> {
 }
 
 export class SignupBodyPhotoMemoryDb {
+  readonly querySignals: AbortSignal[] = []
   /** Every call that reached the database, the storage or the auth service, in order. */
   readonly operations: string[] = []
   /** The same calls with everything they carried (parameters, filters, values). */
@@ -316,10 +323,14 @@ export class SignupBodyPhotoMemoryDb {
   readonly mediaAssets: MemoryMediaAsset[] = []
   /** What is in the private buckets, by `<bucket>/<path>`. */
   readonly objects = new Map<string, MemoryStoredObject>()
-  /** `user_profiles`, the two onboarding columns, by account. An account without a row has none. */
+  /** `user_profiles`: completion plus nullable sex, by account; absent row stays absent. */
   readonly profiles = new Map<
     string,
-    { onboarding_completed: boolean; onboarding_completed_at: string | null }
+    {
+      onboarding_completed: boolean
+      onboarding_completed_at: string | null
+      sex?: 'masculino' | 'feminino' | null
+    }
   >()
   /** The clock of the database (`clock_timestamp()`). */
   now: () => Date = () => new Date('2026-10-11T15:00:00.000Z')
@@ -533,7 +544,7 @@ export class SignupBodyPhotoMemoryDb {
     if (spec.table === 'user_profiles' && spec.operation === 'select') {
       const rows = limited(
         [...this.profiles.entries()]
-          .map(([userId, profile]) => ({ user_id: userId, ...profile }))
+          .map(([userId, profile]) => ({ user_id: userId, sex: null, ...profile }))
           .filter((row) => matches(row, spec.filters)),
       ).map((row) => project(row, spec.columns))
       return { data: rows, error: null }

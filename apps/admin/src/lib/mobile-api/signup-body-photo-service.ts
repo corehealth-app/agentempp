@@ -177,6 +177,8 @@ export interface SignupBodyPhotoDependencies {
   catalogue: SignupBodyPhotoCatalogue
   /** The generic media catalogue and storage: creating and completing an upload are theirs. */
   media: MediaServiceDependencies
+  /** Real factory repairs completed accounts; pending repair refuses cleanup. */
+  repairCompleted?(userId: string): Promise<{ completed: boolean }>
 }
 
 export interface SignupBodyPhotoConsentDto {
@@ -307,9 +309,10 @@ export async function getSignupBodyPhotoState(
 
   const document = await dependencies.consent.currentDocument(auth.userId)
   if (!document) return unavailableState('consent_text_missing')
+  const repaired = await dependencies.repairCompleted?.(auth.userId)
   const [acceptedAt, open, createdInWindow] = await Promise.all([
     dependencies.consent.acceptedAt(auth.userId, document.version),
-    dependencies.catalogue.listOpen(auth.userId),
+    repaired?.completed ? Promise.resolve([]) : dependencies.catalogue.listOpen(auth.userId),
     dependencies.catalogue.countCreatedSince(auth.userId, limitWindowStart(now)),
   ])
 
@@ -631,6 +634,8 @@ export async function completeSignupBodyPhoto(
 /**
  * Deletes every photo of the sign-up of the account. It works with the switch
  * in any position and for an account that already completed the sign-up.
+ * The real factory first repairs completed accounts within one budget:
+ * unresolved live photos refuse this deletion instead of being discarded.
  *
  * `deleted` counts the rows marked by THIS call. The storage is asked to
  * remove the object of every photo of the sign-up the account ever created,
@@ -641,6 +646,7 @@ export async function deleteSignupBodyPhotos(
   auth: MobileAuthContext,
   now = new Date(),
 ): Promise<{ deleted: number }> {
+  if ((await dependencies.repairCompleted?.(auth.userId))?.completed) return { deleted: 0 }
   // One read, of every row: the ones already deleted too, because bytes sent
   // with an old ticket may be stored at their paths.
   const every = await dependencies.catalogue.listEvery(auth.userId)

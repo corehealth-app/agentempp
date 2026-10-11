@@ -101,6 +101,11 @@ com a mesma chave executa de novo; outro corpo com a mesma chave continua sendo
 | `GET` | `/onboarding` | retorna conclusão server-owned, documentos oficiais atuais e ações auditadas |
 | `POST` | `/onboarding` | conclui atomicamente o onboarding com payload completo e `Idempotency-Key`; usuário e horários são derivados pelo backend; na primeira conclusão recusa objetivo fora da regra do cadastro (`422 onboarding_objective_not_eligible`); devolve a mensagem de entrada do objetivo gravado |
 | `POST` | `/onboarding/eligibility` | conferência de objetivo no cadastro: quais objetivos podem ser gravados para os dados corporais enviados, com o texto de cada um; não grava nada |
+| `GET` | `/onboarding/body-photos` | fotos do corpo no cadastro: estado — texto do consentimento em vigor, aceite, poses e envios restantes (desligado por padrão; ver "Fotos do corpo no cadastro") |
+| `POST` | `/onboarding/body-photos/consent` | fotos do corpo no cadastro: aceita exatamente a versão e a marca do consentimento próprio mostradas; recusa quem declara menos de 18 anos (`403 body_photo_age_not_allowed`); `404 body_photos_unavailable` com as fotos desligadas |
+| `POST` | `/onboarding/body-photos` | fotos do corpo no cadastro: cria a foto de uma pose (`front`, `side` ou `back`; só JPEG até 15 MiB) e devolve o bilhete de envio; exige o aceite do consentimento em vigor e cadastro não concluído; limite de 9 em 24 h; `404 body_photos_unavailable` com as fotos desligadas |
+| `POST` | `/onboarding/body-photos/:id/complete` | fotos do corpo no cadastro: confere tipo e tamanho gravados, conclui o envio e só então apaga a foto anterior da mesma pose; não pede leitura por IA; `404 body_photos_unavailable` com as fotos desligadas |
+| `DELETE` | `/onboarding/body-photos` | fotos do corpo no cadastro: manda remover os objetos de todas as fotos do cadastro que a conta já criou (também das já apagadas, se bytes chegaram depois com um bilhete antigo) e marca as linhas como apagadas; funciona com as fotos ligadas ou desligadas e depois do cadastro concluído |
 | `GET` | `/protocol` | objetivo atual do perfil, metas do dia como em `/today` e a mensagem de entrada do objetivo; só leitura |
 | `GET` | `/plan` | plano de treino ativo e prescrições vigentes |
 | `GET` | `/progress` | nível, streak, bloco 7700, peso, gordura corporal (a persistida no progresso ou, na falta dela, a informada no cadastro) e reavaliação |
@@ -2647,6 +2652,487 @@ O que não está coberto:
 Linha trazida do plano do backlog (pacote C24), como está escrita lá:
 
 > RC C24 — cenário fotos enviadas variante gordura estimada a partir delas NÃO coberta nesta PR (pendência da audit 2026-10-07).
+
+## Fotos do corpo no cadastro
+
+Pedido do dono em 2026-10-10: o cadastro do app pede as fotos do corpo e
+estima o percentual de gordura por elas, como o fluxo antigo fazia. Esta seção
+descreve o que o servidor do app tem **hoje** desse caminho. Ele é construído
+em pacotes; o que cada pacote ainda não fez está dito no fim.
+
+Cinco chamadas, em três arquivos de rota, todas sob `/onboarding/body-photos`
+e por isso fora da trava de acesso pago (`402`), pelo prefixo `/onboarding` —
+a lista de `entitlement-service.ts` não mudou:
+
+| Método | Rota | O que faz |
+|---|---|---|
+| `GET` | `/onboarding/body-photos` | estado das fotos |
+| `POST` | `/onboarding/body-photos/consent` | aceite do consentimento próprio |
+| `POST` | `/onboarding/body-photos` | cria a foto de uma pose |
+| `POST` | `/onboarding/body-photos/:id/complete` | conclui o envio de uma foto |
+| `DELETE` | `/onboarding/body-photos` | apaga todas as fotos |
+
+Os builds 1.0 (3) e 1.0 (4), já liberados, não chamam nenhuma delas. Nenhuma
+rota, formato ou resposta que eles usam mudou.
+
+### Interruptor (desligado por padrão)
+
+As fotos nascem **desligadas**. Decisão do orquestrador, anunciada ao dono em
+2026-10-10/11, que pode riscar qualquer uma. Não é aprovação do dono nem do
+médico.
+
+| Trava | Onde | Valor |
+|---|---|---|
+| única | variável `MOBILE_SIGNUP_BODY_PHOTOS_PROJECT_REF` | ref(s) de projeto permitidos, separados por vírgula ou espaço. O ref é lido de `NEXT_PUBLIC_SUPABASE_URL` e precisa estar na lista. O ref da produção antiga é recusado em código, mesmo se listado; e uma lista que contenha o ref da produção desliga tudo, em qualquer banco. Ausente, vazia ou qualquer outro texto = desligado |
+
+É o mesmo desenho dos outros dois interruptores do servidor do app (acesso de
+avaliação e fechamento do dia sob demanda). O módulo
+(`apps/admin/src/lib/mobile-api/signup-body-photo-switch.ts`) não importa nada
+e repete a leitura do ref; um teste mantém os três iguais. A variável é lida a
+cada pedido.
+
+Por que um interruptor: o mesmo `apps/admin` é o código que a produção antiga
+publica, e estas rotas ficam fora do `402` — ligadas, qualquer conta recém
+criada pode guardar imagens do corpo. A variável só deve existir no projeto do
+servidor do app do ambiente de teste, e criá-la é mudança de configuração, que
+depende de autorização do dono. Em 2026-10-11 ela não existia lá (leitura dos
+nomes das variáveis, sem valores).
+
+Com as fotos **desligadas**:
+
+- `GET /onboarding/body-photos` responde `200` com o estado "não disponível",
+  **sem nenhuma consulta** além da autenticação do pedido:
+
+```json
+{
+  "available": false,
+  "unavailable_reason": "disabled",
+  "consent": null,
+  "minimum_age": 18,
+  "poses": [
+    { "pose": "front", "photo": null },
+    { "pose": "side", "photo": null },
+    { "pose": "back", "photo": null }
+  ],
+  "estimate": null,
+  "remaining_uploads": 0
+}
+```
+
+- `POST /onboarding/body-photos/consent`, `POST /onboarding/body-photos` e
+  `POST /onboarding/body-photos/:id/complete` respondem `404
+  body_photos_unavailable`, seja qual for o corpo do pedido e com ou sem
+  `Idempotency-Key`. Nada é lido, nenhuma chave é reservada, nada é guardado e
+  nada é enviado à fila.
+- `DELETE /onboarding/body-photos` responde `200` e apaga o que houver.
+  Apagar nunca depende do interruptor. Exige `Idempotency-Key`, como todo
+  `DELETE` da API.
+- Sem token a resposta é `401`, antes de qualquer outra coisa.
+
+### Leitura de estado
+
+Com as fotos **ligadas**, `GET /onboarding/body-photos` responde, para uma
+conta que ainda não concluiu o cadastro e não tem acesso liberado:
+
+```json
+{
+  "available": true,
+  "unavailable_reason": null,
+  "consent": {
+    "document_key": "body_photo_estimate_consent",
+    "version": "<versão do texto>",
+    "locale": "pt-BR",
+    "body": "<texto do consentimento>",
+    "body_hash": "<sha256 do texto, calculado pelo banco>",
+    "accepted_at": null
+  },
+  "minimum_age": 18,
+  "poses": [
+    { "pose": "front", "photo": null },
+    { "pose": "side", "photo": null },
+    { "pose": "back", "photo": null }
+  ],
+  "estimate": null,
+  "remaining_uploads": 9
+}
+```
+
+- `consent` é o texto **em vigor** para o idioma da conta (a linha mais nova
+  de `legal_documents` com a chave `body_photo_estimate_consent` e
+  `required_from` já passado). `accepted_at` é a hora em que a conta aceitou
+  **essa versão**, ou `null`. Aceite de versão anterior não conta.
+- Sem linha do documento para o idioma da conta (nenhuma linha, linha só em
+  outro idioma, linha ainda não vigente, conta com idioma fora de `pt-BR` e
+  `en-US`): `available: false`, `unavailable_reason: "consent_text_missing"`,
+  `consent: null` e `remaining_uploads: 0`. Só a leitura do documento é feita.
+- `unavailable_reason` vem sempre: `null` quando disponível, `"disabled"` ou
+  `"consent_text_missing"` quando não.
+- `poses` traz sempre as três, nesta ordem. `photo` é `null` ou
+  `{ "id", "status", "created_at" }` da foto **com envio concluído** daquela
+  pose. Envio pendente, envio recusado e foto apagada não aparecem: o envio
+  em andamento é do app. Se houver duas fotos guardadas na mesma pose (duas
+  conclusões ao mesmo tempo), vale a de conclusão mais nova.
+- `photo.status`: `uploaded` (o servidor guarda a foto e ninguém foi pedido
+  para lê-la — **o único estado que estas rotas produzem hoje**), `reading`,
+  `read` e `reading_failed` (uma linha em que o programa de leitura mexeu:
+  `processing`, `processed` e falha na leitura). Se uma leitura terminada
+  trouxe número ou não ainda não é olhado: o valor `unreadable` do plano só
+  passa a existir com a leitura (pacote B3).
+- `estimate` é sempre `null` hoje: nenhuma leitura de foto é pedida.
+- `remaining_uploads` é 9 menos as fotos do cadastro que a conta criou nas
+  últimas 24 horas (contando as apagadas e as que nunca subiram), nunca
+  abaixo de zero.
+- Custo com as fotos ligadas: uma chamada a `get_mobile_legal_document`, uma
+  leitura de `user_legal_acceptances` e duas de `media_assets` (as fotos do
+  corpo não apagadas da conta e as criadas nas últimas 24 horas). Nada é
+  gravado.
+- Falha em qualquer dessas leituras: `500 data_access_failed`. Uma leitura
+  que falha nunca vira "texto ausente", "nunca aceitou" nem "sem fotos". A
+  linha de log
+  (`[mobile-signup-body-photos] operation_failed`) leva o id do pedido, o nome
+  da operação e um código de banco de uma lista fechada — sem conta, sem data
+  e sem texto do banco.
+
+### Consentimento próprio e idade mínima
+
+**Por que um consentimento próprio.** As fotos são oferecidas na etapa 2 do
+cadastro; os quatro avisos do cadastro só são aceitos na etapa 5 e só são
+gravados na conclusão. Para que nenhuma imagem do corpo saia do aparelho antes
+de um aceite gravado, o aceite das fotos é pedido ali mesmo e gravado na hora,
+com a versão, a marca do texto (SHA-256) e o dia e a hora. Usa as funções
+genéricas de documento que o aviso de medicamentos já usa
+(`get_mobile_legal_document` e `accept_mobile_legal_document`) com a chave
+`body_photo_estimate_consent`. **Nenhuma migration.**
+
+**O texto do consentimento não faz parte desta mudança.** Ele é uma linha de
+dado em `legal_documents`, que o dono ainda vai aprovar e que só é gravada com
+autorização dele nomeando o alvo e o texto. O código e os testes foram
+construídos contra um **texto de teste**, marcado como tal nos testes. Sem a
+linha no banco, o servidor responde "não disponível"
+(`consent_text_missing`) mesmo com o interruptor ligado.
+
+`POST /onboarding/body-photos/consent`, com `Idempotency-Key`:
+
+```json
+{
+  "version": "<versão mostrada>",
+  "body_hash": "<marca mostrada>",
+  "birth_date": "1990-05-20"
+}
+```
+
+Resposta `200`:
+
+```json
+{
+  "document_key": "body_photo_estimate_consent",
+  "version": "<versão aceita>",
+  "accepted_at": "2026-10-11T15:00:00.000000+00:00"
+}
+```
+
+- **Idade mínima: 18 anos, pela data de nascimento declarada.** Decisão do
+  orquestrador, anunciada ao dono em 2026-10-10/11, que pode riscar qualquer
+  uma. Não é aprovação do dono nem do médico. Quem declara menos recebe `403
+  body_photo_age_not_allowed` (com `details.minimum_age`). A idade é contada
+  em anos completos na data de hoje **do fuso da conta**
+  (`America/Sao_Paulo` quando a conta não tem fuso ou tem um fuso inválido).
+  Quem nasceu em 29 de fevereiro completa o ano em 1º de março dos anos sem
+  esse dia. No dia do aniversário de 18 anos o aceite já é aceito.
+- **A data não é gravada nem registrada.** Ela vem no corpo (nunca no
+  endereço), é comparada e descartada. A recusa por idade acontece **antes**
+  de a `Idempotency-Key` ser reservada: não fica aceite, recibo nem chave no
+  ledger. E o que o ledger guarda do pedido é o hash do aceite **sem** a data
+  (`document_key`, `version`, `body_hash`): o hash de uma data de nascimento
+  se desfaz testando os dias de um século. A função que grava o aceite não
+  recebe a data.
+- **Versão ou marca diferente da que está em vigor:** `409
+  body_photo_consent_version_stale`, e nenhum aceite é gravado. Vale também
+  quando um texto novo entra em vigor entre a leitura e o aceite: o app lê o
+  estado de novo e mostra o texto atual. (A chave reservada fica no ledger
+  como `failed`, com o hash do aceite, por 24 horas — sem dado pessoal.)
+- **Repetição.** A mesma chave com o mesmo aceite devolve a resposta guardada
+  (`Idempotency-Replayed: true`). Outra chave depois do aceite devolve a hora
+  do **primeiro** aceite: o registro não é gravado de novo. A mesma chave com
+  outra versão é `409 idempotency_key_conflict`.
+- **O aceite é imutável.** Não há rota para desfazê-lo. "Retirar o
+  consentimento" é apagar as fotos; o registro de que a pessoa aceitou fica.
+- **Sem texto em vigor.** Conta em `pt-BR` ou `en-US` sem linha vigente do
+  documento recebe o mesmo `409 body_photo_consent_version_stale`: a função
+  do banco não distingue "não há texto" de "é outra versão". Ao ler o estado
+  de novo, como a recusa pede, o app recebe `consent_text_missing`. Conta com
+  idioma fora dos dois (ou sem idioma) recebe `404 body_photos_unavailable`.
+  Em nenhum dos casos algo é gravado.
+- Corpo inválido: `422 validation_failed`. Sem `Idempotency-Key`: `400`.
+- A ordem das recusas: interruptor (`404`), formato do corpo (`422`), chave
+  (`400`), idade (`403`), e só então o texto (`409`/`404`).
+
+### Envio por pose, conclusão do envio, troca e exclusão
+
+**Sem o aceite da versão em vigor do consentimento, o servidor não cria foto
+do corpo, não entrega bilhete de envio para foto nova e não conclui envio por
+estas rotas.** Há **uma exceção, declarada**: a repetição de uma
+`Idempotency-Key` devolve um bilhete novo para a foto que essa chave já criou,
+enquanto o envio dela estiver pendente, **sem conferir de novo** o aceite em
+vigor nem o cadastro não concluído (item 1 da criação, abaixo). Com esse
+bilhete os bytes podem chegar ao armazenamento; a conclusão desse envio
+continua recusada (`403`/`409`), a foto não vira foto guardada, e a exclusão
+remove os bytes.
+
+O fluxo é o do envio genérico de mídia (bilhete, `PUT` direto no
+armazenamento, conclusão), com as regras próprias das fotos do corpo:
+
+1. `POST /onboarding/body-photos`, com `Idempotency-Key`:
+
+```json
+{ "pose": "front", "mime_type": "image/jpeg", "size_bytes": 480000 }
+```
+
+Resposta `201`:
+
+```json
+{
+  "photo": {
+    "id": "<uuid>",
+    "pose": "front",
+    "status": "pending_upload",
+    "created_at": "2026-10-11T15:00:00.000000+00:00"
+  },
+  "upload": {
+    "signed_url": "<endereço temporário de envio>",
+    "method": "PUT",
+    "headers": { "Content-Type": "image/jpeg", "x-upsert": "false" },
+    "expires_at": "2026-10-11T17:00:00.000Z"
+  },
+  "replayed": false
+}
+```
+
+2. O app envia os bytes para `signed_url` com o `method` e os `headers`
+   devolvidos, com exatamente `size_bytes` bytes.
+3. `POST /onboarding/body-photos/:id/complete`, com outra `Idempotency-Key` e
+   sem corpo. Resposta `200`: `{ "photo": { "id", "pose", "status":
+   "uploaded", "created_at" } }`.
+
+**Criação — ordem fixa.**
+
+1. **A chave primeiro.** A foto já criada com a mesma `Idempotency-Key` é
+   devolvida de novo (`replayed: true`), com um bilhete **novo** enquanto o
+   envio estiver pendente e `upload: null` depois. Nada é apagado e nada conta
+   de novo no limite. A procura vem **antes** das conferências: uma repetição
+   é atendida mesmo com o limite já atingido. A mesma chave para outra pose,
+   outro tamanho ou outra mídia da conta é `409 idempotency_key_conflict`.
+   **A repetição não refaz as conferências do item 2.** Se, depois da
+   criação, entrou em vigor um texto que a conta não aceitou, ou o cadastro
+   foi concluído, a repetição ainda responde `201` com bilhete novo, válido
+   por mais duas horas a cada repetição, enquanto o envio estiver pendente. É
+   a ordem que o plano fixou ("a chave primeiro"); só entregar bilhete novo
+   com as duas conferências refeitas é decisão do orquestrador, ainda não
+   tomada (pendência abaixo).
+2. **As conferências de uma foto nova:** aceite da versão em vigor do
+   consentimento (`403 body_photo_consent_required`; sem texto em vigor, `404
+   body_photos_unavailable`); cadastro não concluído (`409
+   onboarding_already_completed`); limite (`429 body_photo_limit_reached`, com
+   `details.limit` e `details.window_hours`).
+3. **A foto é criada** no catálogo `media_assets` como `body_checkin_photo`,
+   no bucket privado `body-checkin-photos`, caminho `<conta>/<foto>.jpg`.
+4. **Nada é apagado na criação.** A foto anterior da pose só sai quando a nova
+   conclui o envio (abaixo).
+
+- **Só `image/jpeg`, até 15 MiB, e as três poses.** Outro tipo, tamanho fora
+  do limite, pose fora de `front`/`side`/`back` ou qualquer campo a mais
+  (`kind`, `context_text`) é `422 validation_failed`. O app refaz a imagem em
+  JPEG sem metadados antes de ela sair do aparelho; o servidor não reescreve
+  a imagem (pendência abaixo).
+- **Limite: 9 criações por conta em 24 horas**, contando as apagadas e as que
+  nunca subiram. A 10ª é recusada. O limite de 9 é um número do plano, à
+  espera da confirmação do dono; não é decisão dele.
+- **Cadastro concluído** (`onboarding_completed` verdadeiro **ou**
+  `onboarding_completed_at` preenchido): criar e concluir envio respondem `409
+  onboarding_already_completed`; `GET` e `DELETE` seguem funcionando. Conta
+  sem linha de perfil não é conta concluída. Perfil que não pôde ser lido:
+  `500 data_access_failed`, nada criado.
+- **Onde a pose fica.** `media_assets` não tem coluna de pose e não há
+  migration: o contexto privado da foto guarda uma de três frases fixas —
+  `Foto de frente.`, `Foto de lado.`, `Foto de costas.` — e a pose é lida de
+  volta por igualdade exata. "Foto do cadastro" **é** uma `body_checkin_photo`
+  cujo contexto é uma das três. O app não tem leitura dessa coluna e nenhuma
+  resposta destas rotas a devolve. (Quando a leitura for reaberta, esse
+  contexto é o que o programa de leitura manda ao modelo junto da imagem.) A
+  frase é comparada no código, não na consulta: as consultas filtram só por
+  conta e tipo. Foto do corpo sem frase de pose e mídia de outro tipo — mesmo
+  com uma dessas frases como legenda — não são fotos do cadastro: não
+  aparecem, não contam no limite e não são apagadas por estas rotas.
+- **A data de guarda** gravada na linha é a de 730 dias da política genérica
+  de foto do corpo. É só uma data gravada: nada apaga por ela no ambiente de
+  teste. Cadastro abandonado fica como está (decisão do orquestrador,
+  anunciada ao dono em 2026-10-10/11, que pode riscar qualquer uma).
+- **A resposta guardada para repetição não tem o bilhete**: o ledger guarda
+  `{ "temporary_capability_redacted": true }`, como em `POST /media`.
+
+**Conclusão do envio.**
+
+- Dono e tipo primeiro: foto de outra conta, mídia de outro tipo, foto do
+  corpo sem frase de pose e id inexistente respondem todos `404
+  body_photo_not_found`, e nada é tocado. Id que não é uuid: `422`.
+- Envio pendente: confere de novo o aceite em vigor (`403`) e o cadastro não
+  concluído (`409`), e então o tamanho e o tipo gravados no armazenamento
+  contra o declarado. Divergência: `422 media_upload_mismatch`, objeto
+  removido, foto marcada como envio recusado. Objeto ausente: `422
+  media_upload_missing`, idem. Esses dois `422` são guardados e repetidos pelo
+  ledger. Armazenamento indisponível: `503`, sem mudar nada.
+- **Troca de uma pose.** Só **depois** de a foto nova estar guardada, as
+  fotos guardadas **antes** dela na mesma pose são apagadas (objetos numa
+  chamada, linhas numa escrita, com o que uma leitura tenha deixado zerado).
+  Envio novo que falha deixa a foto anterior — e o que foi lido dela — como
+  estavam. As outras duas poses não são tocadas. Uma foto guardada **depois**
+  nunca é apagada pela conclusão repetida de uma mais antiga.
+- Concluir de novo uma foto já guardada, com outra chave, responde o mesmo
+  estado e termina uma troca que tenha parado no meio.
+- Foto já apagada ou já recusada no envio: `409 media_upload_not_pending`, e o
+  que tiver chegado ao armazenamento com o bilhete antigo é removido (o
+  bilhete vale duas horas e não pode ser revogado). Com as fotos desligadas
+  esta rota responde `404` e não remove nada: quem remove esses bytes, com o
+  interruptor em qualquer posição, é a exclusão.
+- **Nenhum evento de leitura sai deste caminho.** A foto fica em `uploaded`.
+  O código do serviço não contém o envio do evento: a trava de 2026-10-09
+  ("o evento tem um emissor e dois chamadores") continua verdadeira sem
+  mudar.
+
+**Exclusão.** `DELETE /onboarding/body-photos`, com `Idempotency-Key`,
+responde `200` com `{ "deleted": <quantas linhas foram marcadas> }`.
+
+- Manda remover do armazenamento os objetos de **todas as fotos do cadastro
+  que a conta já criou** — guardadas, com envio pendente, recusadas no envio
+  **e também as já apagadas ou trocadas** — numa chamada de armazenamento, e
+  depois marca como apagadas, numa escrita, as linhas que ainda não estavam,
+  zerando o que uma leitura tenha deixado. Se o armazenamento falhar: `503`,
+  e nenhuma linha é marcada.
+- **Por que também as já apagadas.** O bilhete de envio vale duas horas e não
+  pode ser revogado: bytes podem chegar ao caminho de uma foto depois de ela
+  ter sido apagada, trocada ou recusada (a pessoa apaga com o envio em
+  andamento, e o envio termina depois). Por isso cada exclusão passa de novo
+  por todas as linhas, **sem janela de tempo**: a pessoa pode só voltar — e o
+  app só apagar de novo — no dia seguinte. A leitura do catálogo é uma só, de
+  uma página de 1000 linhas de foto do corpo da conta: **primeiro as não
+  apagadas**, depois as apagadas mais recentemente. Uma foto viva nunca fica
+  de fora por causa de linhas já apagadas; o que a página pode deixar de fora
+  são as apagadas há mais tempo (só com fotos do cadastro, limitadas a 9 em 24
+  horas, uma conta leva 112 dias no limite para ter mais de 1000 linhas).
+- **A linha do catálogo não é removida**: fica marcada (`deleted`,
+  `deleted_at`), e continua contando no limite das 24 horas. Foto recusada no
+  envio não pode virar `deleted` (o catálogo proíbe essa mudança): os bytes
+  dela, se chegaram depois, são removidos, e a linha fica como está.
+- **É idempotente na resposta e na gravação, não nas chamadas:** apagar de
+  novo responde `{ "deleted": 0 }` e não grava nada, mas **chama o
+  armazenamento de novo** — uma chamada — enquanto a conta tiver alguma linha
+  de foto do cadastro, apagada ou não. Só a conta que nunca criou foto do
+  cadastro é atendida sem chamada ao armazenamento. Consequência: com o
+  armazenamento fora do ar, `DELETE` responde `503` mesmo sem nenhuma foto
+  viva — ele não tem como afirmar que não sobrou nada.
+- **A mesma `Idempotency-Key` repetida executa a exclusão de novo** — não
+  devolve a resposta guardada (a resposta vem com `Idempotency-Replayed:
+  true` e com o que foi apagado **agora**). É exceção declarada à regra geral
+  do ledger, como a conclusão do cadastro.
+- **O que um `200` quer dizer:** naquela chamada o servidor mandou remover o
+  objeto de toda foto do cadastro que a conta já criou e marcou como apagada
+  toda linha que podia ser marcada — mesmo para um cliente que reuse a chave
+  depois de mandar outra foto. **O que ele não garante:** bytes que cheguem
+  **depois** dele, com um bilhete ainda válido, ficam guardados até a
+  exclusão seguinte; nada roda sozinho (pendência abaixo).
+- Funciona com o interruptor em qualquer posição e depois do cadastro
+  concluído.
+- Só as fotos do cadastro **desta** conta: outra conta, foto de refeição e
+  foto do corpo sem frase de pose não são tocadas.
+- O aceite do consentimento continua valendo depois de apagar.
+
+**O que nenhuma resposta destas rotas devolve:** o contexto da foto, o
+resultado de uma leitura, anotações, confiança, bucket, caminho do objeto,
+data de guarda. O endereço do objeto só existe dentro do bilhete de envio. A
+consulta que monta as poses nem seleciona a coluna do resultado.
+
+**O que este caminho nunca grava:** `user_profiles` (nem
+`body_fat_percent`), eventos de produto, nem qualquer tabela além de
+`media_assets`, do aceite e do ledger.
+
+### Estado deste pacote (B2 — envio, conclusão, troca e exclusão)
+
+Construído: o interruptor, a leitura de estado, o aceite com idade mínima,
+e o envio por pose com conclusão, troca e exclusão. **Não construído, de
+propósito:** a leitura por IA (pacote B3), a estimativa e o que ela faz
+(pacote B4b, à espera das decisões D1 e D2 do dono), e o passo que apaga as
+fotos na conclusão do cadastro (pacote B4a). Até lá, com o interruptor
+ligado, uma foto guardada fica em `uploaded`, `estimate` é `null`, e as fotos
+de uma conta que conclui o cadastro ficam até o app chamar `DELETE`.
+
+A seção "Foto do corpo nunca vai à leitura por IA" continua valendo como
+está escrita: `POST /media/:id/process` recusa foto do corpo, e as rotas
+genéricas `POST /media`, `/complete`, `GET` e `DELETE` não mudaram.
+
+**Revisão de 2026-10-11 (rodada 1) — o que mudou.** A exclusão passa por
+todas as linhas de foto do cadastro da conta, também as já apagadas: antes,
+um envio que chegava ao armazenamento depois de a foto ter sido apagada
+ficava guardado, e o `DELETE` seguinte respondia `200 { "deleted": 0 }` sem
+remover nada. O resto da rodada é trava e declaração, sem mudança de
+comportamento: a repetição da chave que entrega bilhete novo sem refazer as
+conferências, o isolamento do aceite e do cadastro entre contas, e a conclusão
+de envio pela rota genérica de mídia.
+
+O espelho do BFF passou de 51 para 54 rotas no pacote B0
+(`apps/mobile-bff/scripts/verify-route-mirror.mjs` e
+`verify-build-surface.mjs`, com os hashes novos).
+
+Travado em
+`apps/admin/src/lib/mobile-api/signup-body-photos.audit-10-10.test.ts` (o
+cenário do relato, envio, repetição, limite, conclusão, troca e exclusão),
+`apps/admin/src/app/api/mobile/v1/onboarding/body-photos/consent/route.test.ts`
+(estado, aceite e idade),
+`apps/admin/src/app/api/mobile/v1/onboarding/body-photos/route.test.ts`
+(interruptor desligado),
+`apps/admin/src/lib/mobile-api/signup-body-photo-switch.test.ts` e
+`apps/admin/src/lib/mobile-api/entitlement-service.test.ts`. Banco,
+armazenamento e fila em memória, escritos a partir das migrations: nenhum
+banco foi lido nem gravado e nada foi publicado.
+
+O que não está coberto:
+
+> RC P-PHOTOS — cenário texto do consentimento das fotos do corpo (linha body_photo_estimate_consent de legal_documents) variante o texto definitivo (o dono ainda não aprovou nenhum), a gravação dele no banco e a revisão por advogado (os testes usam um texto de teste, que não é o texto do app; nenhuma linha foi gravada) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+
+> RC P-PHOTOS — cenário pessoa menor de idade variante o servidor conferir a idade real (a idade é a da data declarada no pedido do aceite; a data não é gravada nem cruzada com a enviada na conclusão do cadastro) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+
+> RC P-PHOTOS — cenário pessoa que completa 18 anos no dia do pedido com o relógio do aparelho num fuso diferente do fuso gravado na conta variante app e servidor concordarem nessas horas (o servidor conta a idade na data de hoje do fuso da conta, que antes da conclusão do cadastro é o valor inicial America/Sao_Paulo) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+
+> RC P-PHOTOS — cenário pessoa que apaga as fotos para retirar o consentimento variante desfazer o registro do aceite e perguntar de novo antes de novos envios (o registro é imutável e o aceite da versão continua valendo) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+
+> RC P-PHOTOS — cenário conta com idioma en-US variante texto do consentimento em inglês (sem linha do documento para o idioma da conta o servidor responde "não disponível") NÃO coberta nesta PR (pendência da audit 2026-10-11)
+
+> RC P-PHOTOS — cenário funções get_mobile_legal_document e accept_mobile_legal_document e tabela user_legal_acceptances reais do Postgres para conta que ainda não concluiu o cadastro variante teste contra o banco do ambiente de teste (os testes usam um banco em memória escrito a partir das migrations; nenhum banco foi lido nem gravado) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+
+> RC P-PHOTOS — cenário servidor já publicado no ambiente de teste (commit 6dc669f, sem as rotas das fotos e sem a variável do interruptor) variante rotas novas e interruptor em vigor nele NÃO coberta nesta PR (pendência da audit 2026-10-11)
+
+> RC P-PHOTOS — cenário cadastro do médico em 2026-10-10 no build 1.0 (3) ("Comecei o cadastro. Ele perguntou qual era a gordura corporal" e "Não pediu as fotos") variante o cadastro pedir as três fotos e estimar o percentual por elas de ponta a ponta (esta PR só recebe, guarda, troca e apaga as fotos no servidor, com o interruptor desligado; a leitura, a estimativa, as telas do app e a conferência no aparelho são dos pacotes seguintes) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+
+> RC P-PHOTOS — cenário foto do corpo com envio concluído variante a leitura por IA e a estimativa (a foto fica em "uploaded", estimate é sempre null e nenhum evento de leitura sai; reabrir a leitura só pelo cadastro é o pacote B3 e a junção das três leituras espera as decisões D1 e D2 do dono) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+
+> RC P-PHOTOS — cenário cadastro concluído com fotos enviadas variante o servidor apagar as fotos na conclusão (decisão D4 do orquestrador, anunciada ao dono; o passo da conclusão é o pacote B4a, e nesta PR as fotos ficam até o app chamar DELETE /onboarding/body-photos) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+
+> RC P-PHOTOS — cenário cadastro abandonado depois do envio das fotos variante apagar as fotos sem a pessoa voltar (a data de guarda gravada é a de 730 dias da política genérica de mídia e a rotina de limpeza não está publicada no ambiente de teste) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+
+> RC P-PHOTOS — cenário envio que chega ao armazenamento depois do último DELETE /onboarding/body-photos da conta, com o bilhete ainda válido de uma foto já apagada, trocada ou recusada (o bilhete de envio vale duas horas e não pode ser revogado) variante remover esse objeto sem que o app apague de novo ou chame a conclusão do envio dessa foto (cada DELETE manda remover os objetos das fotos do cadastro que a conta já criou, também das já apagadas, com o interruptor em qualquer posição; depois dele nada roda sozinho, e com as fotos desligadas a conclusão do envio responde 404 e não remove) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+
+> RC P-PHOTOS — cenário conta com mais de 1000 linhas de foto do corpo no catálogo (só com fotos do cadastro, 112 dias no limite de 9 em 24 horas) variante o estado, a troca e a exclusão olharem além de uma página de 1000 linhas (a exclusão lê primeiro as linhas não apagadas e depois as apagadas mais recentemente: bytes que chegaram ao caminho de uma foto apagada há mais tempo que essas não são removidos, e com mais de 1000 linhas não apagadas uma foto viva pode ficar fora da página) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+
+> RC P-PHOTOS — cenário repetição da Idempotency-Key de uma foto com envio ainda pendente, depois de entrar em vigor um texto do consentimento que a conta não aceitou ou depois de o cadastro ser concluído variante a repetição só entregar bilhete novo com o aceite em vigor e o cadastro não concluído (a chave é procurada antes das conferências, como o plano fixou, e a repetição responde 201 com bilhete novo, válido por mais duas horas a cada vez; a conclusão do envio continua recusada com 403 ou 409 e a exclusão remove os bytes; mudar a ordem é decisão do orquestrador, ainda não tomada) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+
+> RC P-PHOTOS — cenário duas criações ou duas conclusões da mesma conta no mesmo instante variante limite de 9 em 24 horas e troca da pose garantidos por trava no banco (as conferências são leituras seguidas de escrita, sem transação; duas criações simultâneas podem passar juntas do limite e duas conclusões simultâneas podem deixar duas fotos guardadas na mesma pose, das quais o estado mostra a mais nova) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+
+> RC P-PHOTOS — cenário muitas contas novas enviando fotos no mesmo dia variante teto total por dia (o limite é por conta e as rotas ficam fora do acesso pago; o freio é o interruptor) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+
+> RC P-PHOTOS — cenário foto do corpo recebida pelo servidor variante remoção de metadados e conferência do conteúdo no servidor (a rota só aceita image/jpeg declarado e confere o tipo e o tamanho gravados; não reescreve a imagem nem confere que é uma foto de corpo, da pose pedida ou da dona da conta) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+
+> RC P-PHOTOS — cenário foto do corpo criada pela rota genérica POST /media com uma das três frases de pose no texto de contexto, ou foto do cadastro com envio pendente concluída pela rota genérica POST /media/:id/complete (rotas que exigem acesso liberado; a primeira ainda aceita body_checkin_photo e a segunda conclui o envio sem conferir o tipo, o aceite em vigor nem o cadastro não concluído) variante recusar esse envio e essa conclusão e exigir o consentimento também neles (a recusa em POST /media é do pacote B3; a de POST /media/:id/complete ainda não está em nenhum pacote do plano) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+
+> RC P-PHOTOS — cenário rotas de envio, conclusão e exclusão contra o banco, o armazenamento e a fila reais do ambiente de teste variante teste com Supabase e Inngest reais (os testes usam banco e armazenamento em memória escritos a partir das migrations; nenhum banco foi lido nem gravado e nada foi publicado) NÃO coberta nesta PR (pendência da audit 2026-10-11)
 
 ## Rascunhos de plano (treino e plano alimentar)
 

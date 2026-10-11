@@ -133,15 +133,15 @@ function withSyntheticBuild<T>(
 }
 
 describe('authoritative Mobile API source surface', () => {
-  test('keeps the frozen 51-route path and named-export manifest', () => {
+  test('keeps the frozen 54-route path and named-export manifest', () => {
     const records = sourceRecords()
     const hash = hashRecords(records)
 
     console.info(`SOURCE_ROUTE_EXPORT_COUNT=${records.length}`)
     console.info(`SOURCE_ROUTE_EXPORT_STREAM_SHA256=${hash}`)
 
-    expect(records).toHaveLength(51)
-    expect(hash).toBe('d45eb47710802dd4c1d36f4ff60730187266e41fc67620e7a7c3fa09b436031d')
+    expect(records).toHaveLength(54)
+    expect(hash).toBe('02439f2a606fa6914be5d4c54a5e4758018f448ea69aae3af72dc6ded10d386b')
   })
 
   test('contains no export outside the Next Route Handler allowlist', () => {
@@ -194,7 +194,7 @@ describe('authoritative Mobile API source surface', () => {
     expect(hasServerActionDirective(inlineServerAction)).toBe(true)
   })
 
-  test('keeps the structured Next build surface limited to the 51 Mobile API routes', () => {
+  test('keeps the structured Next build surface limited to the 54 Mobile API routes', () => {
     const surface = inspectBuildSurface(buildRoot)
 
     console.info(`BUILD_ROUTE_PATH_COUNT=${surface.routePaths.length}`)
@@ -209,9 +209,9 @@ describe('authoritative Mobile API source surface', () => {
     console.info(`BUILD_MIDDLEWARE_COUNT=${surface.middlewareEntries.length}`)
     console.info(`BUILD_SERVER_ACTION_REFERENCE_COUNT=${surface.serverActionReferences.length}`)
 
-    expect(surface.routePaths).toHaveLength(51)
+    expect(surface.routePaths).toHaveLength(54)
     expect(surface.routePathHash).toBe(
-      '9617b85b2016b0f5081d71e8f92b47daa36784a6e614b331fc0537d97b769a4d',
+      '575bdb7757a730761d443ee35ee9749c90df5e85263e482e5bd70446bfef3d2b',
     )
     expect(surface.routesOutsideMobilePrefix).toEqual([])
     expect(surface.forbiddenAdminRoutes).toEqual([])
@@ -257,14 +257,14 @@ describe('authoritative Mobile API source surface', () => {
       mutate: (appPaths: Record<string, string>) => ({ ...appPaths }),
       omittedTargets: ['app/api/mobile/v1/today/route.js'],
     },
-  ])('rejects $name while the same 51 URL keys remain', ({
+  ])('rejects $name while the same 54 URL keys remain', ({
     expectedError,
     mutate,
     omittedTargets,
   }) => {
     const appPaths = mutate(currentAppPathsManifest())
 
-    expect(Object.keys(appPaths)).toHaveLength(51)
+    expect(Object.keys(appPaths)).toHaveLength(54)
     expect(() => withSyntheticBuild(appPaths, inspectBuildSurface, omittedTargets)).toThrow(
       expectedError,
     )
@@ -335,42 +335,82 @@ describe('authoritative Mobile API source surface', () => {
     expect(surface.forbiddenAdministrativeTraceReferences).toEqual([])
     // Original50 traces retain5303 references/175 targets. C11 adds107 references,
     // with only its route client-reference manifest as one extra unique file.
+    // The three routes of the sign-up body photos (update 2) add 107
+    // references each: what the media routes trace (106, the queue client
+    // included, since they create and complete uploads through the media
+    // service) plus ONE chunk the three share and no other route references —
+    // their common handler and service. Unique files beyond the original 50:
+    // each route's own client-reference manifest and that shared chunk.
+    // 5303 + 107 + 3 x 107 = 5731 references and 175 + 1 + 3 + 1 = 180 targets.
+    // (Package B0, the skeleton, had 104 each and no shared chunk: 5722 / 179.)
     // Keep exact totals, the byte-exact Flow catalogs and worker/admin guards.
-    expect(surface.nftReferenceCount).toBe(5410)
-    expect(surface.nftUniqueTargetCount).toBe(176)
-    expect(surface.nftRegularFileTargetCount).toBe(174)
+    expect(surface.nftReferenceCount).toBe(5731)
+    expect(surface.nftUniqueTargetCount).toBe(180)
+    expect(surface.nftRegularFileTargetCount).toBe(178)
     expect(surface.nftDirectoryTargetCount).toBe(2)
 
-    const baselineTargets = new Set<string>()
-    let baselineReferences = 0
-    const addedRoute = '/api/mobile/v1/meal-records/[id]/route'
-    for (const [route, target] of Object.entries(currentAppPathsManifest())) {
-      if (route === addedRoute) continue
+    const bodyPhotoRoutes = [
+      '/api/mobile/v1/onboarding/body-photos/route',
+      '/api/mobile/v1/onboarding/body-photos/consent/route',
+      '/api/mobile/v1/onboarding/body-photos/[id]/complete/route',
+    ]
+    const addedRoutes: Record<string, number> = {
+      '/api/mobile/v1/meal-records/[id]/route': 107,
+      ...Object.fromEntries(bodyPhotoRoutes.map((route) => [route, 107])),
+    }
+    const physicalTargets = (route: string): string[] => {
+      const target = currentAppPathsManifest()[route]
+      expect(target, route).toBeTypeOf('string')
       const tracePath = resolve(buildRoot, 'server', `${target}.nft.json`)
       const trace: { files: string[] } = JSON.parse(readFileSync(tracePath, 'utf8'))
-      baselineReferences += trace.files.length
-      for (const reference of trace.files)
-        baselineTargets.add(realpathSync(resolve(dirname(tracePath), reference)))
+      return trace.files.map((reference) => realpathSync(resolve(dirname(tracePath), reference)))
     }
-    expect(baselineReferences).toBe(5303)
-    expect(baselineTargets.size).toBe(175)
-    const addedTarget = currentAppPathsManifest()[addedRoute]
-    const addedTracePath = resolve(buildRoot, 'server', `${addedTarget}.nft.json`)
-    const addedTrace: { files: string[] } = JSON.parse(readFileSync(addedTracePath, 'utf8'))
-    expect(addedTrace.files).toHaveLength(107)
-    const addedPhysicalTargets = new Set(
-      addedTrace.files.map((reference) =>
-        realpathSync(resolve(dirname(addedTracePath), reference)),
-      ),
-    )
-    expect([...addedPhysicalTargets].filter((target) => !baselineTargets.has(target))).toEqual([
+    const ownManifest = (route: string): string =>
       realpathSync(
         resolve(
           buildRoot,
-          'server/app/api/mobile/v1/meal-records/[id]/route_client-reference-manifest.js',
+          `server/app${route.slice(0, -'/route'.length)}/route_client-reference-manifest.js`,
         ),
-      ),
+      )
+
+    const baselineTargets = new Set<string>()
+    let baselineReferences = 0
+    for (const route of Object.keys(currentAppPathsManifest())) {
+      if (Object.hasOwn(addedRoutes, route)) continue
+      const targets = physicalTargets(route)
+      baselineReferences += targets.length
+      for (const target of targets) baselineTargets.add(target)
+    }
+    expect(baselineReferences).toBe(5303)
+    expect(baselineTargets.size).toBe(175)
+
+    const beyondBaseline = (route: string): string[] =>
+      [...new Set(physicalTargets(route))].filter((target) => !baselineTargets.has(target))
+    for (const [addedRoute, references] of Object.entries(addedRoutes)) {
+      expect(physicalTargets(addedRoute), addedRoute).toHaveLength(references)
+    }
+    expect(beyondBaseline('/api/mobile/v1/meal-records/[id]/route')).toEqual([
+      ownManifest('/api/mobile/v1/meal-records/[id]/route'),
     ])
+
+    // The one chunk the three body-photo routes share, whatever number the
+    // bundler gives it: inside the build's own chunks, and of these three only.
+    const sharedChunks = new Set<string>()
+    for (const route of bodyPhotoRoutes) {
+      const extras = beyondBaseline(route).filter((target) => target !== ownManifest(route))
+      expect(extras, route).toHaveLength(1)
+      expect(beyondBaseline(route), route).toContain(ownManifest(route))
+      sharedChunks.add(extras[0] ?? '')
+    }
+    expect(sharedChunks.size).toBe(1)
+    const [sharedChunk = ''] = [...sharedChunks]
+    expect(relative(resolve(buildRoot, 'server/chunks'), sharedChunk)).toMatch(/^[\w.-]+\.js$/)
+    const byName = (left: string, right: string) => left.localeCompare(right, 'en')
+    expect(
+      Object.keys(currentAppPathsManifest())
+        .filter((route) => physicalTargets(route).includes(sharedChunk))
+        .sort(byName),
+    ).toEqual([...bodyPhotoRoutes].sort(byName))
   })
 
   test('traces the nine byte-exact approved catalogs only from the Flow route', () => {

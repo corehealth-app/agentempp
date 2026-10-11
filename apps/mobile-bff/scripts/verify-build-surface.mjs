@@ -3,8 +3,8 @@ import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'nod
 import { dirname, extname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const expectedRouteCount = 51
-const expectedRouteHash = '9617b85b2016b0f5081d71e8f92b47daa36784a6e614b331fc0537d97b769a4d'
+const expectedRouteCount = 54
+const expectedRouteHash = '575bdb7757a730761d443ee35ee9749c90df5e85263e482e5bd70446bfef3d2b'
 const internalNotFoundAppPath = '/_not-found/page'
 const internalNotFoundRoute = '/_not-found'
 const workerBundleMarkers = [

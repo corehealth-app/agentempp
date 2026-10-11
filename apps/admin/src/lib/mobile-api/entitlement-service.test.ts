@@ -103,6 +103,31 @@ describe('mobile entitlement service', () => {
     expect(mobilePathRequiresEntitlement('/api/mobile/v1/onboarding-eligibility')).toBe(true)
   })
 
+  it('keeps the sign-up body photo routes open with the sign-up (no 402), by the onboarding prefix, and the generic media routes behind the access', async () => {
+    const photoRoutes = [
+      '/api/mobile/v1/onboarding/body-photos',
+      '/api/mobile/v1/onboarding/body-photos/consent',
+      '/api/mobile/v1/onboarding/body-photos/00000000-0000-4000-8000-000000000201/complete',
+    ]
+    const supabase = serviceClient({ data: activeDecision, error: null })
+
+    for (const path of photoRoutes) {
+      expect(mobilePathRequiresEntitlement(path), path).toBe(false)
+      await expect(authorizeMobileEntitlement(supabase, USER_ID, path)).resolves.toBeUndefined()
+    }
+    // Not one billing query is made for them: an account that has not finished
+    // the sign-up has no access to look up.
+    expect(supabase.rpc).not.toHaveBeenCalled()
+
+    expect(mobilePathRequiresEntitlement('/api/mobile/v1/onboarding-body-photos')).toBe(true)
+    expect(mobilePathRequiresEntitlement('/api/mobile/v1/media')).toBe(true)
+    expect(
+      mobilePathRequiresEntitlement(
+        '/api/mobile/v1/media/00000000-0000-4000-8000-000000000201/complete',
+      ),
+    ).toBe(true)
+  })
+
   it('blocks a protected route when the central decision denies access', async () => {
     const supabase = serviceClient({
       data: {

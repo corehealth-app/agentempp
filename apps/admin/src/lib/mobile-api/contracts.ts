@@ -347,6 +347,32 @@ export const planImportInputSchema = z
   })
   .strict()
 
+// Body photos of the sign-up: the acceptance of their own consent. The version
+// and the mark are the ones of the text the person read; the birth date is
+// only checked against the minimum age and is never recorded.
+export const signupBodyPhotoConsentInputSchema = z
+  .object({
+    version: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/),
+    body_hash: z.string().regex(/^[0-9a-f]{64}$/),
+    birth_date: z.string().date(),
+  })
+  .strict()
+
+// Body photos of the sign-up: one photo of one pose. Only JPEG (the app
+// rebuilds the image without metadata before it leaves the phone) and nothing
+// else of the generic upload: no kind and no caption come from the client.
+export const signupBodyPhotoUploadInputSchema = z
+  .object({
+    pose: z.enum(['front', 'side', 'back']),
+    mime_type: z.literal('image/jpeg'),
+    size_bytes: z
+      .number()
+      .int()
+      .positive()
+      .max(15 * 1024 * 1024),
+  })
+  .strict()
+
 export const mobileDeviceInputSchema = z
   .object({
     installation_id: z.string().uuid(),
@@ -466,6 +492,8 @@ export type RegistrationProposalInput = z.infer<typeof registrationProposalInput
 export type HistoryQuery = z.infer<typeof historyQuerySchema>
 export type TrendsQuery = z.infer<typeof trendsQuerySchema>
 export type MediaUploadInput = z.infer<typeof mediaUploadInputSchema>
+export type SignupBodyPhotoConsentInput = z.infer<typeof signupBodyPhotoConsentInputSchema>
+export type SignupBodyPhotoUploadInput = z.infer<typeof signupBodyPhotoUploadInputSchema>
 export type MobileDeviceInput = z.infer<typeof mobileDeviceInputSchema>
 export type NotificationPreferencesPatch = z.infer<typeof notificationPreferencesPatchSchema>
 export type CreateReminderInput = z.infer<typeof createReminderInputSchema>

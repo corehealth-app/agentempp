@@ -85,13 +85,54 @@ struct MediaStagingStore: Sendable {
     }
 }
 
+/// The camera as the meal capture needs it — whether there is one, whether
+/// the person already answered about it, and how to ask — with no view in
+/// it. The views that show a camera live in Features.
+struct MealCameraAccess: Sendable {
+    enum Permission: Equatable, Sendable {
+        case authorized
+        /// The system has not asked yet: asking shows its prompt, once.
+        case notAsked
+        /// Refused or restricted: asking again shows nothing.
+        case denied
+    }
+
+    enum Origin: Equatable, Sendable {
+        /// No camera at all.
+        case none
+        /// The camera of this iPhone.
+        case device
+        #if DEBUG
+        /// A stand-in a UI test can drive (Debug builds only).
+        case synthetic
+        #endif
+    }
+
+    let origin: Origin
+    let isAvailable: @MainActor @Sendable () -> Bool
+    let permission: @MainActor @Sendable () -> Permission
+    /// Asks the system when it was never asked; true when the camera may
+    /// be used.
+    let requestAccess: @Sendable () async -> Bool
+
+    /// No camera: nothing is offered and nothing is ever asked.
+    static let unavailable = MealCameraAccess(
+        origin: .none,
+        isAvailable: { false },
+        permission: { .denied },
+        requestAccess: { false }
+    )
+}
+
 /// What the meal capture needs from the outside: the BFF for records and
-/// candidates, storage for the bytes, and the staging area on this phone.
+/// candidates, storage for the bytes, the staging area on this phone, and
+/// the camera.
 struct MealCaptureCapability: Sendable {
     let media: (any MealMediaProviding)?
     let drafts: any MealDraftProviding
     let uploader: (any StorageUploading)?
     let staging: MediaStagingStore
+    let camera: MealCameraAccess
 }
 
 /// Sign-out and user switch: no capture of the ended session stays on the

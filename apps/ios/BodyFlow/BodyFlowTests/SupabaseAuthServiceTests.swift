@@ -534,6 +534,296 @@ struct SupabaseAuthServiceTests {
         try await service.requestPasswordRecovery(email: "member@fixture.invalid")
         #expect(await remote.recoveryCount == 1)
     }
+
+    // MARK: Second update (2026-10-10) — a refused sign-up says why
+    //
+    // Reported by the physician on build 1.0 (3): "Criar conta" with an
+    // e-mail that already has an account. POST /auth/v1/signup answered 422
+    // and the screen said "Não foi possível conectar agora. Tente novamente."
+    // The body of the real 422 was NOT read (RC U1B-S1): these are the auth
+    // service's documented shapes.
+
+    @Test("sign-up refused because the e-mail already has an account is told apart, keeping nothing of the answer")
+    func signUpRefusedBecauseTheEmailAlreadyHasAnAccount() async throws {
+        let recorder = AuthRequestRecorder(
+            response: Data(SignUpRefusalCase.documentedTakenEmail.utf8),
+            status: 422
+        )
+        let remote = try SupabaseAuthRemoteClient(
+            configuration: configuration(),
+            fetch: { request in try await recorder.fetch(request) }
+        )
+
+        var thrown: (any Error)?
+        do {
+            _ = try await remote.signUp(
+                email: "member@fixture.invalid",
+                password: "password-do-not-print"
+            )
+            Issue.record("Expected the sign-up to be refused")
+        } catch {
+            thrown = error
+        }
+        #expect(thrown as? SupabaseAuthRemoteError == .emailAlreadyRegistered)
+        let requests = await recorder.requests
+        #expect(requests.count == 1)
+        #expect(requests.first?.url?.path == "/auth/v1/signup")
+        let reflected = String(reflecting: thrown)
+        #expect(!reflected.contains("member@fixture.invalid"))
+        #expect(!reflected.contains("password-do-not-print"))
+        #expect(!reflected.contains("User already registered"))
+
+        let store = AuthenticationSessionStore(secureStore: InMemorySecureStore())
+        let service = SupabaseAuthenticationService(remote: remote, sessionStore: store)
+        var serviceError: (any Error)?
+        do {
+            _ = try await service.signUp(
+                email: "member@fixture.invalid",
+                password: "password-do-not-print"
+            )
+            Issue.record("Expected the service to refuse the sign-up")
+        } catch {
+            serviceError = error
+        }
+        #expect(serviceError as? AuthenticationError == .emailAlreadyRegistered)
+        // The session storage is as it was: nothing was written.
+        #expect(await store.state == .notHydrated)
+        #expect(await recorder.requests.count == 2)
+    }
+
+    @Test("sign-up refusals are told apart through the SDK, one request each", arguments: SignUpRefusalCase.all)
+    func signUpRefusalsAreToldApart(_ refusal: SignUpRefusalCase) async throws {
+        let recorder = AuthRequestRecorder(
+            response: Data(refusal.body.utf8),
+            status: refusal.status,
+            headers: refusal.headers
+        )
+        let remote = try SupabaseAuthRemoteClient(
+            configuration: configuration(),
+            fetch: { request in try await recorder.fetch(request) }
+        )
+
+        var thrown: (any Error)?
+        do {
+            _ = try await remote.signUp(
+                email: "member@fixture.invalid",
+                password: "password-synthetic"
+            )
+            Issue.record("Expected the sign-up to be refused: \(refusal.name)")
+        } catch {
+            thrown = error
+        }
+        #expect(thrown as? SupabaseAuthRemoteError == refusal.expected, "\(refusal.name)")
+        #expect(await recorder.requests.count == 1, "\(refusal.name)")
+    }
+
+    /// 408 and 5xx are NOT driven through the SDK here: it repeats a POST
+    /// once after one second on those statuses. The table is the same
+    /// function the client calls.
+    @Test("sign-up failure classification: a connection or server problem stays one")
+    func signUpFailureClassificationTable() {
+        func classify(
+            _ status: Int,
+            _ body: String = "",
+            sdkCode: String? = nil
+        ) -> SupabaseAuthRemoteError {
+            SupabaseSignUpRefusal.classify(status: status, body: Data(body.utf8), sdkCode: sdkCode)
+        }
+
+        // Time ran out: the connection message, never "check the data".
+        #expect(classify(408) == .timeout)
+        #expect(classify(400, #"{"code":400,"error_code":"request_timeout","msg":"Processing this request timed out"}"#) == .timeout)
+        #expect(classify(422, #"{"code":422,"error_code":"hook_timeout","msg":"Failed to reach hook"}"#) == .timeout)
+        #expect(classify(422, #"{"code":422,"error_code":"hook_timeout_after_retry","msg":"Failed to reach hook"}"#) == .timeout)
+        // The server failed.
+        for status in [500, 503, 504, 520] {
+            #expect(classify(status) == .server, "\(status)")
+        }
+        #expect(classify(500, "<html>Internal Server Error</html>") == .server)
+        // Too many attempts, whatever the body is.
+        #expect(classify(429, "<html>Too Many Requests</html>") == .rateLimited)
+        #expect(classify(429) == .rateLimited)
+        // Any other refusal of what was sent.
+        #expect(classify(404) == .rejected)
+        #expect(classify(400, "{not json") == .rejected)
+        #expect(classify(422, #"{"code":422,"error_code":"signup_disabled","msg":"Signups not allowed for this instance"}"#) == .rejected)
+        // The SDK's own code is used when it read one, and its "could not
+        // read the answer" placeholders are not a code.
+        #expect(classify(422, sdkCode: "user_already_exists") == .emailAlreadyRegistered)
+        #expect(classify(422, SignUpRefusalCase.documentedTakenEmail, sdkCode: "unexpected_failure") == .emailAlreadyRegistered)
+        #expect(classify(422, SignUpRefusalCase.documentedTakenEmail, sdkCode: "unknown") == .emailAlreadyRegistered)
+        // The message is only a fallback: a code that was read decides.
+        #expect(classify(400, #"{"error_code":"validation_failed","msg":"User already registered"}"#) == .rejected)
+        #expect(classify(422, #"{"code":422,"msg":"A user with this email address has already been registered"}"#) == .emailAlreadyRegistered)
+        // Lock: what is not an HTTP refusal stays a failed request.
+        #expect(classify(302) == .requestFailed)
+    }
+
+    @Test("sign-up transport failures stay a failed request (locks)", arguments: [
+        SupabaseAuthNetworkError.network, .timeout,
+    ])
+    func signUpTransportFailuresStayAFailedRequest(_ failure: SupabaseAuthNetworkError) async throws {
+        let remote = try SupabaseAuthRemoteClient(
+            configuration: configuration(),
+            fetch: { _ in throw failure }
+        )
+        await #expect(throws: SupabaseAuthRemoteError.requestFailed) {
+            _ = try await remote.signUp(
+                email: "member@fixture.invalid",
+                password: "password-synthetic"
+            )
+        }
+    }
+
+    @Test("the service gives each sign-up refusal its own error and keeps the connection one for the rest")
+    func serviceMapsEachSignUpRefusal() async throws {
+        func signUpError(_ remoteError: SupabaseAuthRemoteError) async -> AuthenticationError? {
+            let service = SupabaseAuthenticationService(
+                remote: SupabaseAuthRemoteStub(signUpResult: .failure(remoteError)),
+                sessionStore: AuthenticationSessionStore(secureStore: InMemorySecureStore())
+            )
+            do {
+                _ = try await service.signUp(
+                    email: "member@fixture.invalid",
+                    password: "password-synthetic"
+                )
+                return nil
+            } catch {
+                return error as? AuthenticationError
+            }
+        }
+
+        #expect(await signUpError(.emailAlreadyRegistered) == .emailAlreadyRegistered)
+        #expect(await signUpError(.weakPassword) == .weakPassword)
+        #expect(await signUpError(.rejected) == .signUpRejected)
+        #expect(await signUpError(.rateLimited) == .tooManyAttempts)
+
+        // Locks: a server, time or transport problem keeps the connection
+        // message on sign-up.
+        for remoteError in [
+            SupabaseAuthRemoteError.server, .timeout, .requestFailed, .invalidResponse,
+        ] {
+            #expect(await signUpError(remoteError) == .serviceUnavailable, "\(remoteError)")
+        }
+
+        // Lock: sign-in is unchanged — a rate limit there is still the
+        // connection message.
+        let signIn = SupabaseAuthenticationService(
+            remote: SupabaseAuthRemoteStub(signInResult: .failure(SupabaseAuthRemoteError.rateLimited)),
+            sessionStore: AuthenticationSessionStore(secureStore: InMemorySecureStore())
+        )
+        await #expect(throws: AuthenticationError.serviceUnavailable) {
+            _ = try await signIn.signIn(
+                email: "member@fixture.invalid",
+                password: "password-synthetic"
+            )
+        }
+    }
+}
+
+/// One refusal of POST /auth/v1/signup as the auth service documents it.
+struct SignUpRefusalCase: Sendable, CustomTestStringConvertible {
+    let name: String
+    let status: Int
+    let body: String
+    var headers: [String: String] = [:]
+    let expected: SupabaseAuthRemoteError
+
+    var testDescription: String { name }
+
+    /// The documented answer for an e-mail that already has an account. The
+    /// numeric `code` is why the SDK cannot decode it and the app reads the
+    /// body itself.
+    static let documentedTakenEmail =
+        #"{"code":422,"error_code":"user_already_exists","msg":"User already registered"}"#
+
+    private static let apiVersion = ["X-Supabase-Api-Version": "2024-01-01"]
+
+    static let all: [SignUpRefusalCase] = [
+        // The e-mail already has an account.
+        SignUpRefusalCase(
+            name: "taken e-mail, documented body",
+            status: 422, body: documentedTakenEmail,
+            expected: .emailAlreadyRegistered
+        ),
+        SignUpRefusalCase(
+            name: "taken e-mail, 2024-01-01 format",
+            status: 422,
+            body: #"{"code":"user_already_exists","message":"User already registered"}"#,
+            headers: apiVersion,
+            expected: .emailAlreadyRegistered
+        ),
+        SignUpRefusalCase(
+            name: "taken e-mail, older format without the numeric code",
+            status: 422,
+            body: #"{"error_code":"user_already_exists","msg":"User already registered"}"#,
+            expected: .emailAlreadyRegistered
+        ),
+        SignUpRefusalCase(
+            name: "taken e-mail, code email_exists",
+            status: 422,
+            body: #"{"code":422,"error_code":"email_exists","msg":"A user with this email address has already been registered"}"#,
+            expected: .emailAlreadyRegistered
+        ),
+        SignUpRefusalCase(
+            name: "taken e-mail, only the message",
+            status: 422,
+            body: #"{"code":422,"msg":"User already registered"}"#,
+            expected: .emailAlreadyRegistered
+        ),
+        // The password is too weak.
+        SignUpRefusalCase(
+            name: "weak password, older format with reasons",
+            status: 422,
+            body: #"{"code":422,"error_code":"weak_password","msg":"Password should be at least 6 characters.","weak_password":{"reasons":["length"]}}"#,
+            expected: .weakPassword
+        ),
+        SignUpRefusalCase(
+            name: "weak password, 2024-01-01 format",
+            status: 422,
+            body: #"{"code":"weak_password","message":"Password should be at least 6 characters.","weak_password":{"reasons":["length"]}}"#,
+            headers: apiVersion,
+            expected: .weakPassword
+        ),
+        SignUpRefusalCase(
+            name: "weak password, no code but the weak_password object",
+            status: 422,
+            body: #"{"msg":"Password should be at least 6 characters.","weak_password":{"reasons":["length"]}}"#,
+            expected: .weakPassword
+        ),
+        // Too many attempts.
+        SignUpRefusalCase(
+            name: "429 over_request_rate_limit",
+            status: 429,
+            body: #"{"code":429,"error_code":"over_request_rate_limit","msg":"Request rate limit reached"}"#,
+            expected: .rateLimited
+        ),
+        SignUpRefusalCase(
+            name: "429 over_email_send_rate_limit",
+            status: 429,
+            body: #"{"code":429,"error_code":"over_email_send_rate_limit","msg":"Email rate limit exceeded"}"#,
+            expected: .rateLimited
+        ),
+        // Any other refusal of what was sent.
+        SignUpRefusalCase(
+            name: "400 validation_failed",
+            status: 400,
+            body: #"{"code":400,"error_code":"validation_failed","msg":"Unable to validate email address: invalid format"}"#,
+            expected: .rejected
+        ),
+        SignUpRefusalCase(
+            name: "400 email_address_invalid",
+            status: 400,
+            body: #"{"code":400,"error_code":"email_address_invalid","msg":"Email address is invalid"}"#,
+            expected: .rejected
+        ),
+        SignUpRefusalCase(
+            name: "422 signup_disabled",
+            status: 422,
+            body: #"{"code":422,"error_code":"signup_disabled","msg":"Signups not allowed for this instance"}"#,
+            expected: .rejected
+        ),
+    ]
 }
 
 private func configuration() throws -> SupabaseAuthConfiguration {
@@ -681,11 +971,18 @@ private actor AuthRequestRecorder {
     let response: Data
     let status: Int
     let delay: Duration
+    let headers: [String: String]
 
-    init(response: Data, status: Int = 200, delay: Duration = .zero) {
+    init(
+        response: Data,
+        status: Int = 200,
+        delay: Duration = .zero,
+        headers: [String: String] = [:]
+    ) {
         self.response = response
         self.status = status
         self.delay = delay
+        self.headers = headers
     }
 
     func fetch(_ request: URLRequest) async throws -> (Data, URLResponse) {
@@ -699,6 +996,7 @@ private actor AuthRequestRecorder {
                 statusCode: status,
                 httpVersion: "HTTP/1.1",
                 headerFields: ["Content-Type": "application/json"]
+                    .merging(headers) { _, extra in extra }
             )!
         )
     }

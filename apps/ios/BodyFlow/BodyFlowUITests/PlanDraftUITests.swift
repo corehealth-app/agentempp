@@ -298,6 +298,116 @@ final class PlanDraftUITests: XCTestCase {
         XCTAssertFalse(element("plan.draft.confirmed", app: app).exists)
     }
 
+    // MARK: Second update (2026-10-10) — effort with its scale, longer texts
+    //
+    // The row read "Esforço alvo 9". In a suggestion written by Flow a bare
+    // grade reads with its scale (decisão do orquestrador, anunciada ao dono
+    // em 2026-10-10, que pode riscar qualquer uma); a phrase is shown as it
+    // comes; an imported plan keeps its number as it came.
+
+    private let longDetail = "plan.draft.detail/weekly_schedule/0/exercises/"
+    private let longField = "plan.draft.field/weekly_schedule/0/exercises/"
+
+    @MainActor
+    func testEffortReadsWithItsScaleInAFlowSuggestion() {
+        let app = openLongTextDraft(language: "pt-BR", imported: false)
+        // The origin the scale depends on, as the screen itself says it.
+        XCTAssertTrue(app.staticTexts["Sugerido pelo Flow"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Lido do documento que você enviou"].exists)
+
+        let grade = element(longDetail + "0/rpe_target", app: app)
+        XCTAssertTrue(grade.waitForExistence(timeout: 5))
+        XCTAssertEqual(grade.label, "Esforço, 9 de 10")
+
+        let phrase = element(longDetail + "1/rpe_target", app: app)
+        XCTAssertTrue(phrase.exists)
+        XCTAssertEqual(phrase.label, "Esforço, Pare 2 repetições antes de não aguentar.")
+        XCTAssertFalse(phrase.label.contains("de 10"))
+        reveal(grade, app: app)
+        support.capture("u1b-plan-effort-scale-pt-light", app: app)
+    }
+
+    /// LOCK: a plan imported from the person's own document keeps its number
+    /// as it came — it may be on another scale (RC U1B-P4).
+    @MainActor
+    func testImportedPlanKeepsItsEffortAsItCame() {
+        let app = openLongTextDraft(language: "pt-BR", imported: true)
+        // The origin, as the screen itself says it.
+        XCTAssertTrue(app.staticTexts["Lido do documento que você enviou"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Sugerido pelo Flow"].exists)
+        let grade = element(longDetail + "0/rpe_target", app: app)
+        XCTAssertTrue(grade.waitForExistence(timeout: 5))
+        XCTAssertEqual(grade.label, "Esforço, 9")
+        XCTAssertEqual(
+            element(longDetail + "1/rpe_target", app: app).label,
+            "Esforço, Pare 2 repetições antes de não aguentar."
+        )
+    }
+
+    @MainActor
+    func testLongTextsGrowPastThreeLinesInEnglishAtAXXXL() {
+        let app = openLongTextDraft(
+            language: "en-US", imported: false, dark: true,
+            category: "UICTContentSizeCategoryAccessibilityXXXL"
+        )
+        XCTAssertEqual(element(longDetail + "0/rpe_target", app: app).label, "Effort, 9 of 10")
+
+        // The first exercise, top to bottom: nothing overlaps and nothing
+        // leaves the screen sideways.
+        let window = app.windows.firstMatch.frame
+        let frames = ["name", "muscle_group", "sets", "reps_range", "rest_seconds"].map { key in
+            element(longField + "0/" + key, app: app).frame
+        } + [element(longDetail + "0/rpe_target", app: app).frame]
+        for frame in frames {
+            XCTAssertGreaterThan(frame.height, 0)
+            XCTAssertGreaterThanOrEqual(frame.minX, window.minX, "\(frame)")
+            XCTAssertLessThanOrEqual(frame.maxX, window.maxX, "\(frame)")
+        }
+        for (above, below) in zip(frames, frames.dropFirst()) {
+            XCTAssertLessThanOrEqual(above.maxY, below.minY + 0.5, "\(above) overlaps \(below)")
+        }
+
+        // The name of 120 characters is whole: its field is taller than
+        // three one-line fields — which a field capped at three lines can
+        // never be, whatever its padding.
+        let longName = element(longField + "1/name", app: app).frame
+        let oneLine = element(longField + "1/sets", app: app).frame
+        XCTAssertGreaterThan(oneLine.height, 0)
+        XCTAssertGreaterThan(
+            longName.height, 3 * oneLine.height,
+            "The field of the 120-character name is cut: \(longName.height) vs one line \(oneLine.height)"
+        )
+        XCTAssertLessThanOrEqual(longName.maxX, window.maxX)
+    }
+
+    @MainActor
+    private func openLongTextDraft(
+        language: String,
+        imported: Bool,
+        dark: Bool = false,
+        category: String = "UICTContentSizeCategoryL"
+    ) -> XCUIApplication {
+        let app = support.launch(
+            arguments: [
+                "--ui-testing", "--ui-testing-prompt13-loaded", "--ui-testing-plan-drafts",
+                imported
+                    ? "--ui-testing-plan-drafts-long-text-imported"
+                    : "--ui-testing-plan-drafts-long-text",
+            ],
+            language: language,
+            dark: dark,
+            category: category
+        )
+        XCTAssertTrue(app.buttons["tab.plano"].waitForExistence(timeout: 8))
+        app.buttons["tab.plano"].tap()
+        let item = app.buttons[draftItem]
+        XCTAssertTrue(item.waitForExistence(timeout: 8))
+        for _ in 0..<12 where !item.isHittable { app.swipeUp() }
+        item.tap()
+        XCTAssertTrue(element("screen.plan.draft", app: app).waitForExistence(timeout: 8))
+        return app
+    }
+
     @MainActor
     private var support: PremiumUIUXUITestSupport {
         PremiumUIUXUITestSupport(testCase: self)

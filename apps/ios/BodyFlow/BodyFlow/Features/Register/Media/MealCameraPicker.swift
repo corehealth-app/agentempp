@@ -11,6 +11,16 @@ struct MealCameraPicker: UIViewControllerRepresentable {
         UIImagePickerController.isSourceTypeAvailable(.camera)
     }
 
+    /// What the person already answered about the camera.
+    static var permission: MealCameraAccess.Permission {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized: .authorized
+        case .notDetermined: .notAsked
+        case .denied, .restricted: .denied
+        @unknown default: .denied
+        }
+    }
+
     /// Asks for the camera when it was never asked; false when the patient
     /// has refused it.
     static func requestAccess() async -> Bool {
@@ -57,5 +67,36 @@ struct MealCameraPicker: UIViewControllerRepresentable {
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
             finish(nil)
         }
+    }
+}
+
+extension MealCameraAccess {
+    /// The camera of this iPhone.
+    static let device = MealCameraAccess(
+        origin: .device,
+        isAvailable: { MealCameraPicker.isCameraAvailable },
+        permission: { MealCameraPicker.permission },
+        requestAccess: { await MealCameraPicker.requestAccess() }
+    )
+}
+
+/// The camera the meal capture presents: the system's — or, in a Debug UI
+/// test that asked for it, its stand-in.
+struct MealCameraCover: View {
+    let camera: MealCameraAccess
+    /// Which presentation of the camera this is on its sheet (1, 2, …).
+    let presentation: Int
+    let finish: @MainActor (Data?) -> Void
+
+    var body: some View {
+        #if DEBUG
+        if camera.origin == .synthetic {
+            MealCameraStandIn(presentation: presentation, finish: finish)
+        } else {
+            MealCameraPicker(finish: finish).ignoresSafeArea()
+        }
+        #else
+        MealCameraPicker(finish: finish).ignoresSafeArea()
+        #endif
     }
 }

@@ -93,6 +93,9 @@ enum BodyFlowSymbol: String, CaseIterable, Sendable {
 
     // Auth / onboarding assurance copy
     case privacy = "lock.shield"
+    /// The control of a password field: show what was typed / hide it.
+    case showPassword = "eye"
+    case hidePassword = "eye.slash"
 
     var systemName: String { rawValue }
 }

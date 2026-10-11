@@ -117,6 +117,72 @@ enum PlanDraftCopy {
         return string(String.LocalizationValue(stringLiteral: localizationKey), language: language)
     }
 
+    /// The same value as the screen draws it for a draft of a given origin.
+    ///
+    /// The effort of a SUGGESTION WRITTEN BY FLOW gains its scale when it is
+    /// a bare grade or range from 1 to 10: "9" reads "9 de 10". This is the
+    /// "decisão do orquestrador, anunciada ao dono em 2026-10-10, que pode
+    /// riscar qualquer uma" — not an approval by the owner or by the
+    /// physician. Everything else is shown as it came: a phrase, a grade
+    /// that already says its scale ("9 de 10", "8/10"), a number outside 1
+    /// to 10.
+    ///
+    /// A plan IMPORTED from the person's own photo or PDF never gains a
+    /// scale: its number may be on another scale (engineer's choice inside
+    /// that decision — RC U1B-P4).
+    static func detailValue(
+        key: String,
+        text: String,
+        language: SupportedAppLanguage,
+        imported: Bool
+    ) -> String {
+        guard key == "rpe_target", !imported,
+              let effort = effortGrade(text),
+              !effort.numbers.isEmpty,
+              effort.numbers.allSatisfy({ (1...10).contains($0) })
+        else {
+            return detailValue(key: key, text: text, language: language)
+        }
+        return String(
+            format: string("plan.draft.detail.rpe.scale-format", language: language),
+            effort.grade
+        ) + effort.stop
+    }
+
+    /// How a value is drawn, knowing the value: the effort stays beside its
+    /// label while it is a grade ("9", "8-9", "9 de 10") and goes below it,
+    /// across the card, when the server sent a phrase.
+    static func detailLayout(_ key: String, text: String) -> FeatureFieldLayout {
+        guard key == "rpe_target" else { return detailLayout(key) }
+        return effortGrade(text) != nil || isEffortGradeWithScale(text) ? .row : .stacked
+    }
+
+    /// The numbers of a bare effort grade or range, read exactly as the
+    /// server reads one (`flow-plain-training-language.ts`, GRADE and
+    /// BARE_GRADE): one or two digits with one optional decimal after ","
+    /// or "."; a range with "-", "–" or " a "; an optional full stop at the
+    /// end. `nil` for anything else.
+    static func effortGrade(_ text: String) -> (numbers: [Double], grade: String, stop: String)? {
+        guard let match = text.wholeMatch(of: effortGradePattern) else { return nil }
+        let written = [match.output.first, match.output.dashed, match.output.spelled].compactMap { $0 }
+        let numbers = written.compactMap { Double($0.replacingOccurrences(of: ",", with: ".")) }
+        guard numbers.count == written.count else { return nil }
+        return (numbers, String(match.output.grade), String(match.output.stop))
+    }
+
+    private static var effortGradePattern: Regex<(
+        Substring, grade: Substring, first: Substring, dashed: Substring?, spelled: Substring?, stop: Substring
+    )> {
+        #/[ \t\u{A0}]*(?<grade>(?<first>[0-9]{1,2}(?:[.,][0-9])?)(?:[ \t\u{A0}]*[-\u{2013}][ \t\u{A0}]*(?<dashed>[0-9]{1,2}(?:[.,][0-9])?)|[ \t\u{A0}]+a[ \t\u{A0}]+(?<spelled>[0-9]{1,2}(?:[.,][0-9])?))?)[ \t\u{A0}]*(?<stop>\.?)\s*/#
+    }
+
+    /// A grade that already says its scale: "9 de 10", "8-9 of 10", "8/10".
+    static func isEffortGradeWithScale(_ text: String) -> Bool {
+        text.wholeMatch(
+            of: #/[ \t\u{A0}]*[0-9]{1,2}(?:[.,][0-9])?(?:[ \t\u{A0}]*[-\u{2013}][ \t\u{A0}]*[0-9]{1,2}(?:[.,][0-9])?|[ \t\u{A0}]+a[ \t\u{A0}]+[0-9]{1,2}(?:[.,][0-9])?)?(?:[ \t\u{A0}]*/[ \t\u{A0}]*10|[ \t\u{A0}]+(?:de|of)[ \t\u{A0}]+10)[ \t\u{A0}]*\.?\s*/#
+        ) != nil
+    }
+
     static func mealTypeKey(_ value: String) -> String.LocalizationValue {
         switch value {
         case "cafe": "plan.draft.meal.cafe"

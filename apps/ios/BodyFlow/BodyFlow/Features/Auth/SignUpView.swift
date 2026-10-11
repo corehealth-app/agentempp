@@ -65,8 +65,11 @@ struct SignUpView: View {
     @State private var confirmation = ""
     @State private var validationIssues: [AuthValidationIssue] = []
     @State private var submissionTask: Task<Void, Never>?
+    /// Which of the two passwords are shown as typed (the "eye").
+    @State private var passwordVisibility = AuthPasswordVisibility()
     @FocusState private var focusedField: SignUpField?
     @Environment(\.locale) private var locale
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         AuthScreenLayout(
@@ -106,44 +109,44 @@ struct SignUpView: View {
 
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
                     Text(copy("auth.common.password", fallback: "Senha")).font(BodyFlowTypography.headline)
-                    SecureField(copy("auth.common.password", fallback: "Senha"), text: $password)
-                        .textContentType(.newPassword)
-                        .submitLabel(
-                            SignUpKeyboardPolicy.presentation(for: .password)
-                                .submitLabel.swiftUIValue
-                        )
-                        .focused($focusedField, equals: .password)
-                        .onSubmit { handleSubmit(from: .password) }
-                        .bodyFlowField()
-                        .accessibilityLabel(copy("auth.common.password", fallback: "Senha"))
-                        .accessibilityHint(
-                            accessibilityHint(for: [.passwordRequired])
-                        )
-                        .accessibilityIdentifier("auth.password")
+                    AuthPasswordField(
+                        slot: .password,
+                        title: copy("auth.common.password", fallback: "Senha"),
+                        text: $password,
+                        visibility: $passwordVisibility,
+                        contentType: .newPassword,
+                        submitLabel: SignUpKeyboardPolicy.presentation(for: .password)
+                            .submitLabel.swiftUIValue,
+                        focus: $focusedField,
+                        focusValue: .password,
+                        hint: accessibilityHint(for: [.passwordRequired]),
+                        identifier: "auth.password",
+                        onSubmit: { handleSubmit(from: .password) }
+                    )
                     fieldMessage(for: [.passwordRequired])
                 }
 
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
                     Text(copy("auth.common.password-confirmation", fallback: "Confirmar senha")).font(BodyFlowTypography.headline)
-                    SecureField(copy("auth.common.password-confirmation", fallback: "Confirmar senha"), text: $confirmation)
-                        .textContentType(.newPassword)
-                        .submitLabel(
-                            SignUpKeyboardPolicy.presentation(for: .confirmation)
-                                .submitLabel.swiftUIValue
-                        )
-                        .focused($focusedField, equals: .confirmation)
-                        .onSubmit { handleSubmit(from: .confirmation) }
-                        .bodyFlowField()
-                        .accessibilityLabel(copy("auth.common.password-confirmation", fallback: "Confirmar senha"))
-                        .accessibilityHint(
-                            accessibilityHint(
-                                for: [
-                                    .passwordConfirmationRequired,
-                                    .passwordsDoNotMatch,
-                                ]
-                            )
-                        )
-                        .accessibilityIdentifier("auth.password-confirmation")
+                    AuthPasswordField(
+                        slot: .confirmation,
+                        title: copy("auth.common.password-confirmation", fallback: "Confirmar senha"),
+                        text: $confirmation,
+                        visibility: $passwordVisibility,
+                        contentType: .newPassword,
+                        submitLabel: SignUpKeyboardPolicy.presentation(for: .confirmation)
+                            .submitLabel.swiftUIValue,
+                        focus: $focusedField,
+                        focusValue: .confirmation,
+                        hint: accessibilityHint(
+                            for: [
+                                .passwordConfirmationRequired,
+                                .passwordsDoNotMatch,
+                            ]
+                        ),
+                        identifier: "auth.password-confirmation",
+                        onSubmit: { handleSubmit(from: .confirmation) }
+                    )
                     fieldMessage(for: [
                         .passwordConfirmationRequired,
                         .passwordsDoNotMatch,
@@ -175,7 +178,14 @@ struct SignUpView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("screen.auth.sign-up")
-        .onDisappear(perform: cancelSubmission)
+        .onDisappear {
+            cancelSubmission()
+            passwordVisibility.hideAll()
+        }
+        // No password stays readable once the app leaves the foreground.
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { passwordVisibility.hideAll() }
+        }
     }
 
     private var isSubmitting: Bool {
@@ -212,6 +222,8 @@ struct SignUpView: View {
             return
         }
 
+        // Sending: the passwords are hidden again. Their text is untouched.
+        passwordVisibility.hideAll()
         focusedField = nil
         submissionTask = Task {
             await model.signUp(email: email, password: password)

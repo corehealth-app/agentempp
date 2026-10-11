@@ -981,6 +981,30 @@
     "pt-BR": { "stringUnit": { "state": "translated", "value": "Não foi possível acessar os dados locais. Tente novamente." } }
   }
 },
+"auth.error.email-already-registered" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "This email already has an account. Use a different email or tap “I already have an account”." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Este e-mail já tem uma conta. Use outro e-mail ou toque em “Já tenho uma conta”." } }
+  }
+},
+"auth.error.weak-password" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "That password is too weak. Choose a longer one that is harder to guess." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Essa senha é fraca demais. Escolha uma senha mais longa e difícil de adivinhar." } }
+  }
+},
+"auth.error.sign-up-rejected" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Could not create the account. Check the email and password and try again." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Não foi possível criar a conta. Confira o e-mail e a senha e tente novamente." } }
+  }
+},
+"auth.error.too-many-attempts" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Too many attempts in a short time. Wait a few minutes and try again." } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Muitas tentativas em pouco tempo. Aguarde alguns minutos e tente novamente." } }
+  }
+},
 "auth.common.back-to-sign-in" : {
   "localizations": {
     "en": {
@@ -1059,6 +1083,30 @@
         "value": "Confirmar senha"
       }
     }
+  }
+},
+"auth.password.show" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Show password" } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Mostrar senha" } }
+  }
+},
+"auth.password.hide" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Hide password" } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Ocultar senha" } }
+  }
+},
+"auth.password-confirmation.show" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Show password confirmation" } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Mostrar confirmação da senha" } }
+  }
+},
+"auth.password-confirmation.hide" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Hide password confirmation" } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Ocultar confirmação da senha" } }
   }
 },
 "auth.confirmation.development" : {
@@ -2993,10 +3041,18 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Protein (g)" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Proteína (g)" } }
     } },
-    "plan.draft.detail.rpe" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Target effort" } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Esforço alvo" } }
-    } },
+"plan.draft.detail.rpe" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "Effort" } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "Esforço" } }
+  }
+},
+"plan.draft.detail.rpe.scale-format" : {
+  "localizations": {
+    "en": { "stringUnit": { "state": "translated", "value": "%@ of 10" } },
+    "pt-BR": { "stringUnit": { "state": "translated", "value": "%@ de 10" } }
+  }
+},
     "plan.draft.detail.total-kcal" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Meal total (kcal)" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Total da refeição (kcal)" } }

@@ -529,6 +529,55 @@ struct MealRegistrationModelTests {
         ])
     }
 
+    /// Second update (2026-10-10). After "Calcular refeição" fails the review
+    /// comes back from the top and the error with "Tentar novamente" is below
+    /// it, off the screen: a message that asks something of the patient must
+    /// be seen, and only such a message moves the sheet.
+    @Test("a failure with something to do asks to be seen; nothing else does")
+    func aFailureWithSomethingToDoAsksToBeSeen() async throws {
+        func asks(
+            _ state: RegistrationMutationState,
+            _ captureError: BodyFlowCapabilityError? = nil
+        ) -> Bool {
+            RegistrationOperationSummaryDescriptor(state: state, captureError: captureError).asksToBeSeen
+        }
+
+        // A failed operation that can be tried again.
+        let failed = try Self.makeHarness(confirmOutcomes: [.failure(.serviceUnavailable)])
+        await failed.model.submit(.text("Refeição preservada"))
+        await failed.model.confirm()
+        #expect(RegistrationOperationSummaryDescriptor(
+            state: failed.model.mutationState, captureError: failed.model.captureError
+        ).action == .retry)
+        #expect(asks(failed.model.mutationState, failed.model.captureError))
+
+        // A proposal that expired: a new one can be made.
+        let expired = try Self.makeHarness(confirmOutcomes: [.failure(.registrationExpired)])
+        await expired.model.submit(.text("Refeição preservada"))
+        await expired.model.confirm()
+        #expect(RegistrationOperationSummaryDescriptor(
+            state: expired.model.mutationState, captureError: expired.model.captureError
+        ).action == .newProposal)
+        #expect(asks(expired.model.mutationState, expired.model.captureError))
+
+        // A capture that failed and can be tried again.
+        #expect(asks(.idle, .serviceUnavailable))
+
+        // Locks: nothing else moves the sheet.
+        #expect(!asks(.idle))
+        #expect(!asks(.unavailable))
+        #expect(!asks(.idle, .operationUnavailable))
+        #expect(!asks(.succeeded(.confirm(Self.confirmedResponse))), "Never on success")
+        #expect(!asks(.succeeded(.alreadyConfirmed(registrationID: Self.pendingResponse.data.id))))
+        guard case let .failed(attempt, _) = failed.model.mutationState else {
+            Issue.record("Expected a failed state to borrow its attempt from")
+            return
+        }
+        #expect(!asks(.submitting(attempt)))
+        #expect(!asks(.failed(attempt, .operationUnavailable)))
+        #expect(!asks(.failed(attempt, .registrationAlreadyConfirmed)))
+    }
+
     @Test("a confirmation the server answered keeps the normal success, in both languages",
           arguments: SupportedAppLanguage.allCases)
     func answeredConfirmationStillCelebrates(_ language: SupportedAppLanguage) {

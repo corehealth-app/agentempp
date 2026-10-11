@@ -1,4 +1,7 @@
+import CoreGraphics
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 
 #if DEBUG
 /// UI-test scenario for the meal capture (Debug builds only): free text
@@ -15,6 +18,11 @@ enum DemoMealCaptureScenario {
     /// With the capture: the photo and audio entries are offered too. Every
     /// media call is refused, so nothing is ever sent.
     static let mediaArgument = "--ui-testing-meal-capture-media"
+
+    /// With the capture and the media: a stand-in camera a UI test can
+    /// drive. Without it the synthetic capture has no camera at all, so no
+    /// test ever raises the system's own camera or its permission prompt.
+    static let cameraArgument = "--ui-testing-meal-capture-camera"
 
     static func isEnabled(arguments: [String]) -> Bool {
         arguments.contains(argument)
@@ -34,8 +42,55 @@ enum DemoMealCaptureScenario {
                 holdsUntilCancelled: arguments.contains(holdArgument)
             ),
             uploader: offersMedia ? DemoRefusingMealMedia() : nil,
-            staging: MediaStagingStore()
+            staging: MediaStagingStore(),
+            camera: offersMedia && arguments.contains(cameraArgument)
+                ? .synthetic : .unavailable
         )
+    }
+}
+
+extension MealCameraAccess {
+    /// The stand-in camera of a UI test: there, allowed, and never the
+    /// system's.
+    static let synthetic = MealCameraAccess(
+        origin: .synthetic,
+        isAvailable: { true },
+        permission: { .authorized },
+        requestAccess: { true }
+    )
+}
+
+/// What the stand-in camera "takes".
+enum DemoMealCamera {
+    static let sampleSize = 64
+
+    /// A real JPEG, drawn here: one flat square. It goes through the same
+    /// preparation as a photo from the system's camera, so a UI test proves
+    /// that what the camera hands over reaches the upload.
+    static func samplePhoto() -> Data {
+        guard let context = CGContext(
+            data: nil,
+            width: sampleSize,
+            height: sampleSize,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        ) else {
+            return Data()
+        }
+        context.setFillColor(red: 0.2, green: 0.6, blue: 0.55, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: sampleSize, height: sampleSize))
+        let output = NSMutableData()
+        guard let image = context.makeImage(),
+              let destination = CGImageDestinationCreateWithData(
+                  output, UTType.jpeg.identifier as CFString, 1, nil
+              )
+        else {
+            return Data()
+        }
+        CGImageDestinationAddImage(destination, image, nil)
+        return CGImageDestinationFinalize(destination) ? output as Data : Data()
     }
 }
 

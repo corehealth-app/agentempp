@@ -111,6 +111,99 @@ enum SupabaseAuthRemoteError: Error, Equatable, Sendable {
     case server
     case timeout
     case requestFailed
+    /// Sign-up only: the e-mail already has an account.
+    case emailAlreadyRegistered
+    /// Sign-up only: the auth server refused the password as too weak.
+    case weakPassword
+    /// Sign-up only: any other refusal of what was sent (another 4xx).
+    case rejected
+}
+
+/// Why the auth server refused a sign-up, read from its answer.
+///
+/// The auth service's documented refusal carries a numeric `code` next to
+/// the `error_code` (`{"code":422,"error_code":"user_already_exists",…}`),
+/// which the SDK cannot decode: it then reports "unexpected failure" and
+/// hands over the raw answer. So the code is taken from the SDK when it read
+/// one, and from the body otherwise; the message is only a fallback. Nothing
+/// of the answer — body, message, e-mail — is kept in what is returned.
+///
+/// > RC U1B-S1 — the body of the real 422 of 2026-10-10 was not read; these
+/// > are the documented shapes.
+enum SupabaseSignUpRefusal {
+    static func classify(_ error: AuthError) -> SupabaseAuthRemoteError {
+        switch error {
+        case .weakPassword:
+            return .weakPassword
+        case let .api(_, errorCode, underlyingData, underlyingResponse):
+            return classify(
+                status: underlyingResponse.statusCode,
+                body: underlyingData,
+                sdkCode: errorCode.rawValue
+            )
+        default:
+            return .requestFailed
+        }
+    }
+
+    static func classify(
+        status: Int,
+        body: Data,
+        sdkCode: String?
+    ) -> SupabaseAuthRemoteError {
+        let answer = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
+        let code = readCode(sdkCode: sdkCode, answer: answer)
+        switch code {
+        case "weak_password":
+            return .weakPassword
+        case "user_already_exists", "email_exists":
+            return .emailAlreadyRegistered
+        case "over_request_rate_limit", "over_email_send_rate_limit":
+            return .rateLimited
+        case "request_timeout", "hook_timeout", "hook_timeout_after_retry":
+            return .timeout
+        default:
+            break
+        }
+        switch status {
+        case 429:
+            return .rateLimited
+        case 408:
+            return .timeout
+        case 500...599:
+            return .server
+        default:
+            break
+        }
+        if code == nil, let answer, saysAlreadyRegistered(answer) {
+            return .emailAlreadyRegistered
+        }
+        return (400...499).contains(status) ? .rejected : .requestFailed
+    }
+
+    /// What the SDK reports when it could not read the answer: not a code.
+    private static let unreadCodes: Set<String> = ["unexpected_failure", "unknown"]
+
+    private static func readCode(sdkCode: String?, answer: [String: Any]?) -> String? {
+        if let sdkCode, !sdkCode.isEmpty, !unreadCodes.contains(sdkCode) {
+            return sdkCode
+        }
+        guard let answer else { return nil }
+        for key in ["error_code", "code"] {
+            if let code = answer[key] as? String, !code.isEmpty {
+                return code
+            }
+        }
+        return answer["weak_password"] is [String: Any] ? "weak_password" : nil
+    }
+
+    private static func saysAlreadyRegistered(_ answer: [String: Any]) -> Bool {
+        ["msg", "message", "error_description"].contains { key in
+            guard let message = (answer[key] as? String)?.lowercased() else { return false }
+            return message.contains("already registered")
+                || message.contains("already been registered")
+        }
+    }
 }
 
 enum SupabaseRemoteSignUpResult: Equatable, Sendable {
@@ -201,6 +294,9 @@ struct SupabaseAuthRemoteClient: SupabaseAuthRemoteOperating, Sendable {
             throw CancellationError()
         } catch let error as SupabaseAuthRemoteError {
             throw error
+        } catch let error as AuthError {
+            // The server answered and refused: say which refusal it was.
+            throw SupabaseSignUpRefusal.classify(error)
         } catch {
             throw SupabaseAuthRemoteError.requestFailed
         }
@@ -540,7 +636,7 @@ struct SupabaseAuthenticationService: AuthenticationService, Sendable,
         } catch is CancellationError {
             throw CancellationError()
         } catch let error as SupabaseAuthRemoteError {
-            throw Self.map(error)
+            throw Self.mapSignUp(error)
         } catch is AuthenticationSessionStoreError {
             throw AuthenticationError.storageUnavailable
         } catch {
@@ -597,6 +693,8 @@ struct SupabaseAuthenticationService: AuthenticationService, Sendable,
         !password.isEmpty
     }
 
+    /// Sign-in, session refresh and password recovery: unchanged. The three
+    /// sign-up refusals never reach this map from those operations.
     private static func map(_ error: SupabaseAuthRemoteError) -> AuthenticationError {
         switch error {
         case .invalidCredentials:
@@ -604,8 +702,28 @@ struct SupabaseAuthenticationService: AuthenticationService, Sendable,
         case .emailNotConfirmed:
             .confirmationRequired
         case .invalidResponse, .invalidGrant, .forbidden, .rateLimited,
-             .server, .timeout, .requestFailed:
+             .server, .timeout, .requestFailed,
+             .emailAlreadyRegistered, .weakPassword, .rejected:
             .serviceUnavailable
+        }
+    }
+
+    /// Sign-up only: a refusal of what was sent has its own error, so the
+    /// screen never reads it as a connection problem. A server, time or
+    /// transport failure keeps the connection one.
+    private static func mapSignUp(_ error: SupabaseAuthRemoteError) -> AuthenticationError {
+        switch error {
+        case .emailAlreadyRegistered:
+            .emailAlreadyRegistered
+        case .weakPassword:
+            .weakPassword
+        case .rejected:
+            .signUpRejected
+        case .rateLimited:
+            .tooManyAttempts
+        case .invalidCredentials, .emailNotConfirmed, .invalidResponse,
+             .invalidGrant, .forbidden, .server, .timeout, .requestFailed:
+            map(error)
         }
     }
 }

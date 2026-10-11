@@ -334,9 +334,11 @@ struct PlanDraftReviewView: View {
                 .disabled(model.isWorking)
                 .accessibilityIdentifier("plan.draft.field\(field.pointer)")
             } else {
-                TextField(title, text: binding(field), axis: .vertical)
-                    .lineLimit(1...3)
-                    .keyboardType(keyboard(for: field.kind))
+                PlanDraftTextField(
+                    title: title,
+                    text: binding(field),
+                    keyboard: keyboard(for: field.kind)
+                )
                     .focused($focusedField, equals: field.pointer)
                     .bodyFlowField()
                     .disabled(model.isWorking)
@@ -399,9 +401,10 @@ struct PlanDraftReviewView: View {
                 value: PlanDraftCopy.detailValue(
                     key: detail.key,
                     text: detail.text,
-                    language: language
+                    language: language,
+                    imported: isImported
                 ),
-                layout: PlanDraftCopy.detailLayout(detail.key)
+                layout: PlanDraftCopy.detailLayout(detail.key, text: detail.text)
             )
             .accessibilityIdentifier("plan.draft.detail\(detail.id)")
         }
@@ -498,5 +501,19 @@ struct PlanDraftReviewView: View {
 
     private func copy(_ key: String.LocalizationValue) -> String {
         PlanDraftCopy.string(key, language: language)
+    }
+}
+
+/// One editable text of a plan draft. It grows with what it holds — a long
+/// exercise name, a phrase in the repetitions — at every text size: nothing
+/// is cut, and nothing is left to scroll inside the field.
+struct PlanDraftTextField: View {
+    let title: String
+    @Binding var text: String
+    let keyboard: UIKeyboardType
+
+    var body: some View {
+        TextField(title, text: $text, axis: .vertical)
+            .keyboardType(keyboard)
     }
 }

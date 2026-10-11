@@ -22,6 +22,14 @@ enum AppPresentationError: Equatable, Sendable {
     case operationUnavailable
     case serviceUnavailable
     case storageUnavailable
+    /// Sign-up refused: the e-mail already has an account.
+    case emailAlreadyRegistered
+    /// Sign-up refused: the password is too weak for the auth server.
+    case weakPassword
+    /// Sign-up refused for another reason in what was sent.
+    case signUpRejected
+    /// Sign-up refused: too many attempts in a short time.
+    case tooManyAttempts
 }
 
 /// Why the sign-up of the signed-in account could not be loaded, as far as
@@ -556,6 +564,15 @@ final class AppFlowModel {
              OnboardingRepositoryError.storageUnavailable,
              CoachPersonaRepositoryError.storageUnavailable:
             .storageUnavailable
+        // A refused sign-up keeps its own reason all the way to the banner.
+        case AuthenticationError.emailAlreadyRegistered:
+            .emailAlreadyRegistered
+        case AuthenticationError.weakPassword:
+            .weakPassword
+        case AuthenticationError.signUpRejected:
+            .signUpRejected
+        case AuthenticationError.tooManyAttempts:
+            .tooManyAttempts
         default:
             .operationUnavailable
         }
@@ -577,6 +594,13 @@ private extension AppPresentationError {
             .serviceUnavailable
         case .storageUnavailable:
             .storageUnavailable
+        // A refused sign-up adds no telemetry value, and none that says an
+        // account exists: what was sent was not accepted, or the service is
+        // limiting attempts.
+        case .emailAlreadyRegistered, .weakPassword, .signUpRejected:
+            .invalidInput
+        case .tooManyAttempts:
+            .serviceUnavailable
         }
     }
 }

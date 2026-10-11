@@ -17,6 +17,14 @@ enum AuthenticationError: Error, Equatable, Sendable {
     case operationUnavailable
     case serviceUnavailable
     case storageUnavailable
+    /// Sign-up refused: the e-mail already has an account.
+    case emailAlreadyRegistered
+    /// Sign-up refused: the password is too weak for the auth server.
+    case weakPassword
+    /// Sign-up refused for another reason in what was sent.
+    case signUpRejected
+    /// Sign-up refused: too many attempts in a short time.
+    case tooManyAttempts
 }
 
 enum RemoteRevocationOutcome: Equatable, Sendable {

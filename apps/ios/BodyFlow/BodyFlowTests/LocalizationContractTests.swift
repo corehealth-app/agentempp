@@ -96,6 +96,92 @@ struct LocalizationContractTests {
         ], language)
     }
 
+    // MARK: Second update (2026-10-10)
+
+    /// A refused sign-up says why (reported by the physician on build
+    /// 1.0 (3): an e-mail that already has an account read as "Não foi
+    /// possível conectar agora. Tente novamente.").
+    @Test(arguments: SupportedAppLanguage.allCases)
+    func secondUpdateSignUpRefusalCopyIsExact(_ language: SupportedAppLanguage) {
+        let refusals: [(String, AppPresentationError, String, String)] = [
+            ("auth.error.email-already-registered", .emailAlreadyRegistered,
+             "Este e-mail já tem uma conta. Use outro e-mail ou toque em “Já tenho uma conta”.",
+             "This email already has an account. Use a different email or tap “I already have an account”."),
+            ("auth.error.weak-password", .weakPassword,
+             "Essa senha é fraca demais. Escolha uma senha mais longa e difícil de adivinhar.",
+             "That password is too weak. Choose a longer one that is harder to guess."),
+            ("auth.error.sign-up-rejected", .signUpRejected,
+             "Não foi possível criar a conta. Confira o e-mail e a senha e tente novamente.",
+             "Could not create the account. Check the email and password and try again."),
+            ("auth.error.too-many-attempts", .tooManyAttempts,
+             "Muitas tentativas em pouco tempo. Aguarde alguns minutos e tente novamente.",
+             "Too many attempts in a short time. Wait a few minutes and try again."),
+        ]
+        expectExactCopy(refusals.map { ($0.0, $0.2, $0.3) }, language)
+        let connection = language == .portugueseBrazil
+            ? "Não foi possível conectar agora. Tente novamente."
+            : "Could not connect right now. Try again."
+        for (key, error, pt, en) in refusals {
+            // What the banner reads is the catalog's text...
+            #expect(error.authMessage(for: language) == (language == .portugueseBrazil ? pt : en), "\(key)")
+            // ...its fallback is the same Portuguese sentence...
+            #expect(error.authMessage == pt, "\(key)")
+            // ...and it is never the connection message.
+            #expect(error.authMessage(for: language) != connection, "\(key)")
+        }
+        // Lock: the connection message itself is unchanged.
+        expectExactCopy([
+            ("auth.error.service-unavailable",
+             "Não foi possível conectar agora. Tente novamente.",
+             "Could not connect right now. Try again."),
+        ], language)
+        #expect(AppPresentationError.serviceUnavailable.authMessage(for: language) == connection)
+    }
+
+    /// The banner points at a button: it must name it exactly as the button
+    /// is written on the same screen.
+    @Test(arguments: SupportedAppLanguage.allCases)
+    func signUpTakenEmailCopyNamesTheRealButton(_ language: SupportedAppLanguage) {
+        func catalog(_ key: String) -> String {
+            PremiumPresentationCopy.string(
+                String.LocalizationValue(key),
+                locale: language.formattingLocale,
+                fallback: ""
+            )
+        }
+        let button = catalog("auth.sign-up.existing-account")
+        #expect(button == (language == .portugueseBrazil ? "Já tenho uma conta" : "I already have an account"))
+        let banner = catalog("auth.error.email-already-registered")
+        #expect(
+            banner.contains("“\(button)”"),
+            "The banner must quote the button's own label: «\(banner)» / «\(button)»"
+        )
+    }
+
+    /// The "eye" of the password fields: what its control says.
+    @Test(arguments: SupportedAppLanguage.allCases)
+    func secondUpdatePasswordVisibilityCopyIsExact(_ language: SupportedAppLanguage) {
+        expectExactCopy([
+            ("auth.password.show", "Mostrar senha", "Show password"),
+            ("auth.password.hide", "Ocultar senha", "Hide password"),
+            ("auth.password-confirmation.show",
+             "Mostrar confirmação da senha", "Show password confirmation"),
+            ("auth.password-confirmation.hide",
+             "Ocultar confirmação da senha", "Hide password confirmation"),
+        ], language)
+    }
+
+    /// The effort of a plan draft: its label, and the scale the app writes
+    /// after a bare grade of a Flow suggestion (decisão do orquestrador,
+    /// anunciada ao dono em 2026-10-10, que pode riscar qualquer uma).
+    @Test(arguments: SupportedAppLanguage.allCases)
+    func secondUpdateEffortCopyIsExact(_ language: SupportedAppLanguage) {
+        expectExactCopy([
+            ("plan.draft.detail.rpe", "Esforço", "Effort"),
+            ("plan.draft.detail.rpe.scale-format", "%@ de 10", "%@ of 10"),
+        ], language)
+    }
+
     @Test(arguments: SupportedAppLanguage.allCases)
     func testEveryReviewedPublicCatalogKeyHasBothLanguages(
         _ language: SupportedAppLanguage
@@ -275,6 +361,19 @@ struct LocalizationContractTests {
             "profile.reminders.title",
             "profile.tutorial.title",
             "profile.tutorial.detail",
+            // Second update (2026-10-10): a refused sign-up says why.
+            "auth.error.email-already-registered",
+            "auth.error.weak-password",
+            "auth.error.sign-up-rejected",
+            "auth.error.too-many-attempts",
+            // Second update (2026-10-10): the eye of the password fields.
+            "auth.password.show",
+            "auth.password.hide",
+            "auth.password-confirmation.show",
+            "auth.password-confirmation.hide",
+            // Second update (2026-10-10): the effort of a plan draft.
+            "plan.draft.detail.rpe",
+            "plan.draft.detail.rpe.scale-format",
         ]
 
         for key in reviewedKeys {

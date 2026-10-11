@@ -43,6 +43,21 @@ struct RegistrationOperationSummaryDescriptor: Equatable {
         }
     }
 
+    /// A message that asks something of the patient — try again, or make a
+    /// new proposal — must be seen: the sheet brings it into view by itself.
+    /// A result that asks nothing (a success, an unavailable capability)
+    /// never moves the sheet.
+    ///
+    /// > RC U1B-L4 — a FAILURE that offers no action (the operation is not
+    /// > available in this version, or the record was already saved) is not
+    /// > brought into view either: after "Calcular refeição" its line stays
+    /// > below the review that came back from the top. Read by the review of
+    /// > 2026-10-11, not reproduced: no fixture ends a calculation that way
+    /// > (pendência da audit 2026-10-10).
+    var asksToBeSeen: Bool {
+        message != nil && action != nil
+    }
+
     private static func action(
         for error: BodyFlowCapabilityError
     ) -> RegistrationOperationAction? {

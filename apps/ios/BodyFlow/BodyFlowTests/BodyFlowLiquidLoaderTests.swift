@@ -141,6 +141,46 @@ struct BodyFlowLiquidLoaderTests {
         window.isHidden = true
     }
 
+    /// A highlight makes what it is drawn on lighter. Proven on the colour
+    /// the screen actually shows: the highlight at its opacity over each
+    /// bar, in light and in dark.
+    @Test
+    func highlightLightensEveryBarInLightAndInDark() throws {
+        let opacity = Double(metrics.highlightOpacity)
+        #expect(opacity > 0 && opacity < 1)
+        for dark in [false, true] {
+            let traits = UITraitCollection { $0.userInterfaceStyle = dark ? .dark : .light }
+            let highlight = try #require(components(metrics.highlightRole, traits))
+            let roles = Set(metrics.barRoles)
+            try #require(roles.count == 2)
+            for role in roles {
+                let bar = try #require(components(role, traits))
+                let mixed = zip(highlight, bar).map { opacity * $0 + (1 - opacity) * $1 }
+                #expect(
+                    luminance(mixed) > luminance(bar),
+                    "dark=\(dark) \(role): the highlight darkens the bar (\(luminance(mixed)) vs \(luminance(bar)))"
+                )
+                #expect(
+                    luminance(highlight) > luminance(bar),
+                    "dark=\(dark) \(role): the highlight colour is not lighter than the bar"
+                )
+            }
+        }
+    }
+
+    private func components(_ role: BodyFlowColor.Role, _ traits: UITraitCollection) -> [Double]? {
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        let color = UIColor(BodyFlowColor.color(role)).resolvedColor(with: traits)
+        guard color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return nil }
+        return [Double(red), Double(green), Double(blue)]
+    }
+
+    /// Relative luminance (WCAG) of an sRGB colour.
+    private func luminance(_ rgb: [Double]) -> Double {
+        let linear = rgb.map { $0 <= 0.03928 ? $0 / 12.92 : pow(($0 + 0.055) / 1.055, 2.4) }
+        return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+    }
+
     @Test
     func usesTheBrandTealAndItsTintsOnly() throws {
         let view = BodyFlowLiquidLoaderView()
@@ -151,7 +191,10 @@ struct BodyFlowLiquidLoaderTests {
         // The brand teal and its tint — never a domain colour, never a rainbow.
         #expect(Set(roles).isSubset(of: [.brandPrimary, .brandSecondary]))
         #expect(Set(roles).count == 2)
-        #expect(metrics.highlightRole == .onPrimary)
+        // Second update (2026-10-10): the highlight is the warm light of the
+        // brand surfaces — the same in light and in dark. It was `.onPrimary`,
+        // which is almost black in dark mode: a dark stripe, not a highlight.
+        #expect(metrics.highlightRole == .onHero)
 
         let colors = roles.map { UIColor(BodyFlowColor.color($0)) }
         view.applyColors(bars: colors, highlight: UIColor(BodyFlowColor.color(metrics.highlightRole)))

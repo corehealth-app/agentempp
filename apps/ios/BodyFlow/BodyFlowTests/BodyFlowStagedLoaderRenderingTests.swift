@@ -137,6 +137,59 @@ final class BodyFlowStagedLoaderRenderingTests: XCTestCase {
         }
     }
 
+    /// LOCK (second update, 2026-10-10) of a wiring that was proven only by
+    /// tables and by reading the source: the loader of the block, hosted in
+    /// the window, does not move under Reduce Motion nor under Low Power.
+    /// The environment is injected here, not read from this machine (its
+    /// battery and its temperature must not decide a test).
+    func testReduceMotionAndLowPowerKeepTheHostedLoaderStill() throws {
+        // Control: with motion allowed the same hosted loader does loop.
+        let moving = try hostedLoader(reduceMotion: false, policy: BodyFlowVisualPolicy())
+        XCTAssertTrue(moving.isLooping, "Control: the loader loops when motion is allowed")
+        XCTAssertEqual(moving.animations, 14, "Control: seven bars and seven drops")
+
+        let reduced = try hostedLoader(
+            reduceMotion: true, policy: BodyFlowVisualPolicy(reduceMotion: true)
+        )
+        XCTAssertFalse(reduced.isLooping, "Reduce Motion: nothing loops")
+        XCTAssertEqual(reduced.animations, 0, "Reduce Motion: no animation on a bar or a drop")
+
+        // Each half of the wiring by itself.
+        let reducedOnly = try hostedLoader(reduceMotion: true, policy: BodyFlowVisualPolicy())
+        XCTAssertFalse(reducedOnly.isLooping, "Reduce Motion in the environment alone")
+        XCTAssertEqual(reducedOnly.animations, 0)
+        let lowPower = try hostedLoader(reduceMotion: false, policy: BodyFlowVisualPolicy(lowPower: true))
+        XCTAssertFalse(lowPower.isLooping, "Low Power: nothing loops")
+        XCTAssertEqual(lowPower.animations, 0)
+        let hot = try hostedLoader(reduceMotion: false, policy: BodyFlowVisualPolicy(thermalLimited: true))
+        XCTAssertFalse(hot.isLooping, "A hot device: nothing loops")
+        XCTAssertEqual(hot.animations, 0)
+    }
+
+    private func hostedLoader(
+        reduceMotion: Bool,
+        policy: BodyFlowVisualPolicy
+    ) throws -> (isLooping: Bool, animations: Int) {
+        let wording = wordings[0]
+        let host = PremiumRenderingTestSupport.liveAccessibilityHost(
+            loader(wording, stage: wording.stages[0])
+                .environment(\.locale, wording.locale)
+                .environment(\.bodyFlowReduceMotion, reduceMotion)
+                .environment(\.bodyFlowVisualPolicy, policy),
+            width: 393
+        )
+        defer { host.detach() }
+        let views = host.nativeViews(BodyFlowLiquidLoaderView.self)
+        XCTAssertEqual(views.count, 1, "The block hosts exactly one liquid loader")
+        let view = try XCTUnwrap(views.first)
+        XCTAssertEqual(view.bars.count, 7)
+        XCTAssertEqual(view.drops.count, 7)
+        let animations = (view.bars + view.drops)
+            .compactMap { $0.layer.animation(forKey: BodyFlowLiquidLoaderView.animationKey) }
+            .count
+        return (view.isLooping, animations)
+    }
+
     // MARK: Support
 
     private func loader(

@@ -143,6 +143,41 @@ enum PremiumRenderingTestSupport {
         }
 
         func detach() { host.view.removeFromSuperview() }
+
+        /// Lets SwiftUI apply the pending state changes, without reading
+        /// the accessibility tree.
+        func settle() {
+            host.view.setNeedsLayout()
+            host.view.layoutIfNeeded()
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+            host.view.layoutIfNeeded()
+        }
+
+        /// The native views of one type that SwiftUI made for the hosted
+        /// view, in the order they are found (second update, 2026-10-10:
+        /// the traits of a text field, the loop of a loader, the size of
+        /// an editable field).
+        func nativeViews<Native: UIView>(_ type: Native.Type) -> [Native] {
+            settle()
+            var found: [Native] = []
+            func collect(_ view: UIView) {
+                if let native = view as? Native { found.append(native) }
+                view.subviews.forEach(collect)
+            }
+            collect(host.view)
+            return found
+        }
+
+        /// Takes the keyboard away from whatever a test focused.
+        func endEditing() { host.view.endEditing(true) }
+
+        /// What the hosted view draws right now.
+        func image() -> UIImage {
+            settle()
+            return UIGraphicsImageRenderer(size: host.view.bounds.size).image { _ in
+                host.view.drawHierarchy(in: host.view.bounds, afterScreenUpdates: true)
+            }
+        }
     }
 
     static func liveAccessibilityHost<V: View>(_ view: V, width: CGFloat,

@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import BodyFlow
@@ -834,6 +835,91 @@ struct AppFlowModelTests {
         #expect(model.authOperationState == .idle)
     }
 
+    // MARK: Second update (2026-10-10) — a refused sign-up says why
+
+    /// GOLDEN of the report of 2026-10-10 (build 1.0 (3), the physician):
+    /// "Criar conta" with an e-mail that already has an account. The auth
+    /// server answered POST /auth/v1/signup with 422 and the screen said
+    /// "Não foi possível conectar agora. Tente novamente."
+    ///
+    /// The whole path is the real one — the flow model, the authentication
+    /// service and the remote client over the SDK — and only the network is
+    /// replaced, by the documented body of that refusal (the body of the
+    /// real 422 was not read: RC U1B-S1). No scaffold: every symbol used
+    /// here existed before the fix.
+    @Test("golden 2026-10-10: Criar conta with an e-mail that already has an account says so, end to end")
+    func signUpRefusedForATakenEmailReadsRightEndToEnd() async throws {
+        let transport = SignUpRefusalTransport(
+            status: 422,
+            body: #"{"code":422,"error_code":"user_already_exists","msg":"User already registered"}"#
+        )
+        let remote = SupabaseAuthRemoteClient(
+            configuration: try goldenAuthConfiguration(),
+            fetch: { request in try await transport.fetch(request) }
+        )
+        let sessions = AuthenticationSessionStore(secureStore: InMemorySecureStore())
+        let model = AppFlowModel(
+            authentication: SupabaseAuthenticationService(remote: remote, sessionStore: sessions),
+            onboarding: OnboardingRepositorySpy(),
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: InMemoryTelemetryClient(),
+            initialState: .signedOut(.signUp)
+        )
+
+        await model.signUp(email: "panel-member@fixture.invalid", password: "local-pass")
+
+        #expect(model.state == .signedOut(.signUp))
+        var shown: AppPresentationError?
+        if case .failed(let error) = model.authOperationState { shown = error }
+        let banner = try #require(shown, "The sign-up must end as a failure with a banner")
+        #expect(
+            banner.authMessage(for: .portugueseBrazil)
+                == "Este e-mail já tem uma conta. Use outro e-mail ou toque em “Já tenho uma conta”."
+        )
+        #expect(
+            banner.authMessage(for: .englishUnitedStates)
+                == "This email already has an account. Use a different email or tap “I already have an account”."
+        )
+        // Never the connection message.
+        #expect(banner.authMessage(for: .portugueseBrazil) != "Não foi possível conectar agora. Tente novamente.")
+        #expect(banner.authMessage(for: .englishUnitedStates) != "Could not connect right now. Try again.")
+        // One request for the one tap, and no session.
+        #expect(await transport.signUpRequestCount == 1)
+        #expect(await transport.requestCount == 1)
+        #expect(model.currentSession == nil)
+        #expect(await sessions.state == .notHydrated)
+    }
+
+    @Test("a refused sign-up stays on the form with its own message", arguments: SignUpRefusalRow.all)
+    func signUpRefusalsStayOnTheFormWithTheirOwnMessage(_ row: SignUpRefusalRow) async {
+        let telemetry = InMemoryTelemetryClient()
+        let model = AppFlowModel(
+            authentication: AuthenticationServiceSpy(
+                restoredSession: nil,
+                signUpError: row.error
+            ),
+            onboarding: OnboardingRepositorySpy(),
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: telemetry,
+            initialState: .signedOut(.signUp)
+        )
+
+        await model.signUp(email: "fixture@example.invalid", password: "local-pass")
+
+        #expect(model.state == .signedOut(.signUp))
+        #expect(model.authOperationState == .failed(row.shown))
+        #expect(model.presentationError == row.shown)
+        #expect(model.currentSession == nil)
+        // No new telemetry value, and nothing that says an account exists.
+        #expect(await telemetry.snapshot() == [
+            .authOperationCompleted(
+                screen: .signUp,
+                outcome: .failure,
+                errorCategory: row.category
+            ),
+        ])
+    }
+
     @Test("development confirmation enters onboarding")
     func developmentConfirmationEntersOnboarding() async {
         let session = AuthSession(
@@ -977,11 +1063,68 @@ struct AppFlowModelTests {
     }
 }
 
+/// One refusal of a sign-up as the screen must end up showing it.
+struct SignUpRefusalRow: Sendable, CustomTestStringConvertible {
+    let error: AuthenticationError
+    let shown: AppPresentationError
+    let category: TelemetryErrorCategory
+
+    var testDescription: String { String(describing: error) }
+
+    static let all: [SignUpRefusalRow] = [
+        SignUpRefusalRow(error: .emailAlreadyRegistered, shown: .emailAlreadyRegistered, category: .invalidInput),
+        SignUpRefusalRow(error: .weakPassword, shown: .weakPassword, category: .invalidInput),
+        SignUpRefusalRow(error: .signUpRejected, shown: .signUpRejected, category: .invalidInput),
+        SignUpRefusalRow(error: .tooManyAttempts, shown: .tooManyAttempts, category: .serviceUnavailable),
+        // Lock: a connection or server problem is unchanged.
+        SignUpRefusalRow(error: .serviceUnavailable, shown: .serviceUnavailable, category: .serviceUnavailable),
+    ]
+}
+
+/// The auth origin of the golden test (synthetic; nothing leaves the test).
+private func goldenAuthConfiguration() throws -> SupabaseAuthConfiguration {
+    try SupabaseAuthConfiguration(
+        originString: "https://project.example.test",
+        key: "sb_publishable_synthetic"
+    )
+}
+
+/// The network of the golden test: answers every request with one refusal
+/// and counts what was asked.
+private actor SignUpRefusalTransport {
+    private let status: Int
+    private let body: String
+    private(set) var requestCount = 0
+    private(set) var signUpRequestCount = 0
+
+    init(status: Int, body: String) {
+        self.status = status
+        self.body = body
+    }
+
+    func fetch(_ request: URLRequest) throws -> (Data, URLResponse) {
+        requestCount += 1
+        if request.httpMethod == "POST", request.url?.path == "/auth/v1/signup" {
+            signUpRequestCount += 1
+        }
+        guard let url = request.url, let response = HTTPURLResponse(
+            url: url,
+            statusCode: status,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        ) else {
+            throw URLError(.badURL)
+        }
+        return (Data(body.utf8), response)
+    }
+}
+
 private struct AuthenticationServiceSpy: AuthenticationService {
     let restoredSession: AuthSession?
     let restoreError: AuthenticationError?
     let signedInSession: AuthSession?
     let signUpResult: AuthSignUpResult?
+    let signUpError: AuthenticationError?
     let confirmedSession: AuthSession?
     let recoveryError: AuthenticationError?
     let signOutError: AuthenticationError?
@@ -991,6 +1134,7 @@ private struct AuthenticationServiceSpy: AuthenticationService {
         restoreError: AuthenticationError? = nil,
         signedInSession: AuthSession? = nil,
         signUpResult: AuthSignUpResult? = nil,
+        signUpError: AuthenticationError? = nil,
         confirmedSession: AuthSession? = nil,
         recoveryError: AuthenticationError? = nil,
         signOutError: AuthenticationError? = nil
@@ -999,6 +1143,7 @@ private struct AuthenticationServiceSpy: AuthenticationService {
         self.restoreError = restoreError
         self.signedInSession = signedInSession
         self.signUpResult = signUpResult
+        self.signUpError = signUpError
         self.confirmedSession = confirmedSession
         self.recoveryError = recoveryError
         self.signOutError = signOutError
@@ -1019,6 +1164,9 @@ private struct AuthenticationServiceSpy: AuthenticationService {
     }
 
     func signUp(email: String, password: String) async throws -> AuthSignUpResult {
+        if let signUpError {
+            throw signUpError
+        }
         guard let signUpResult else {
             throw AuthenticationError.operationUnavailable
         }

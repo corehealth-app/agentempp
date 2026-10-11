@@ -9,13 +9,41 @@ enum DemoPlanDraftScenario {
     static let manyDraftsArgument = "--ui-testing-plan-drafts-many"
     static let draftID = "0d0d0d0d-1111-4222-8333-444455556666"
 
+    /// With the drafts: one complete training draft WRITTEN BY FLOW, with
+    /// the longer texts the server may send (a phrase of 40 characters in
+    /// the effort and in the repetitions, long names).
+    static let longTextArgument = "--ui-testing-plan-drafts-long-text"
+    /// The same content as a plan imported from the person's document.
+    static let longTextImportedArgument = "--ui-testing-plan-drafts-long-text-imported"
+
+    static let longFocus = "Músculos de trás da coxa/Glúteos"
+    static let longExerciseName = "Elevação pélvica com barra (Hip Thrust)"
+    static let longestExerciseName = "Elevação pélvica com barra apoiando as costas no banco com os pés na largura do quadril e pausa de dois segundos no topo"
+    static let repetitionsPhrase = "8 a 10, parando 2 antes de não aguentar."
+    static let effortPhrase = "Pare 2 repetições antes de não aguentar."
+
     static func isEnabled(arguments: [String]) -> Bool {
         arguments.contains(argument)
+    }
+
+    static func variant(arguments: [String]) -> DemoPlanDraftProvider.Variant {
+        if arguments.contains(longTextImportedArgument) { return .longText(imported: true) }
+        if arguments.contains(longTextArgument) { return .longText(imported: false) }
+        return .standard
     }
 }
 
 actor DemoPlanDraftProvider: PlanDraftProviding {
+    enum Variant: Equatable, Sendable {
+        /// The imported draft with a missing value (every older test).
+        case standard
+        /// A complete draft with the longer texts; `imported` says whose
+        /// words they are.
+        case longText(imported: Bool)
+    }
+
     private let openDraftCount: Int
+    private let origin: String
     private var status = "needs_completion"
     private var version = 1
     private var payload: JSONValue = .object([
@@ -45,9 +73,46 @@ actor DemoPlanDraftProvider: PlanDraftProviding {
         ]),
     ])
 
-    init(openDraftCount: Int = 1) {
+    init(openDraftCount: Int = 1, variant: Variant = .standard) {
         self.openDraftCount = openDraftCount
+        switch variant {
+        case .standard:
+            origin = "imported_pdf"
+        case let .longText(imported):
+            origin = imported ? "imported_pdf" : "flow_generated"
+            status = "ready_for_review"
+            payload = Self.longTextPayload
+        }
     }
+
+    private static let longTextPayload: JSONValue = .object([
+        "plan_type": .string("full_body"),
+        "weekly_schedule": .array([
+            .object([
+                "day": .string("Treino A"),
+                "focus": .string(DemoPlanDraftScenario.longFocus),
+                "duration_min": .number(60),
+                "exercises": .array([
+                    .object([
+                        "name": .string(DemoPlanDraftScenario.longExerciseName),
+                        "muscle_group": .string(DemoPlanDraftScenario.longFocus),
+                        "sets": .number(4),
+                        "reps_range": .string(DemoPlanDraftScenario.repetitionsPhrase),
+                        "rest_seconds": .number(90),
+                        "rpe_target": .string("9"),
+                    ]),
+                    .object([
+                        "name": .string(DemoPlanDraftScenario.longestExerciseName),
+                        "muscle_group": .string("pernas"),
+                        "sets": .number(3),
+                        "reps_range": .string("10"),
+                        "rest_seconds": .number(60),
+                        "rpe_target": .string(DemoPlanDraftScenario.effortPhrase),
+                    ]),
+                ]),
+            ]),
+        ]),
+    ])
 
     private var missing: [PlanDraftUncertainField] {
         guard case let .object(root) = payload,
@@ -80,7 +145,7 @@ actor DemoPlanDraftProvider: PlanDraftProviding {
         PlanDraftSnapshot(
             id: DemoPlanDraftScenario.draftID,
             domain: .training,
-            origin: "imported_pdf",
+            origin: origin,
             status: status,
             payloadVersion: version,
             payload: payload,
@@ -102,7 +167,7 @@ actor DemoPlanDraftProvider: PlanDraftProviding {
                 id: index == 1 ? DemoPlanDraftScenario.draftID
                     : String(format: "0d0d0d0d-1111-4222-8333-%012d", index),
                 domain: .training,
-                origin: "imported_pdf",
+                origin: origin,
                 status: status,
                 payloadVersion: version,
                 createdAt: APITimestamp(value: Date(timeIntervalSince1970: 1_790_000_000))

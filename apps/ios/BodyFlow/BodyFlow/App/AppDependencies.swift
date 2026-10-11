@@ -523,7 +523,8 @@ struct AppDependencies: Sendable {
                     uploader: supabaseAuthConfiguration.map {
                         StorageUploadTransport(storageOrigin: $0.origin)
                     },
-                    staging: staging
+                    staging: staging,
+                    camera: .device
                 )
             }
         #if DEBUG
@@ -557,7 +558,10 @@ struct AppDependencies: Sendable {
             let manyDrafts = ProcessInfo.processInfo.arguments.contains(DemoPlanDraftScenario.manyDraftsArgument)
             let importBoundary = manyDrafts ? DemoPlanDraftImportUnavailable() : nil
             planDrafts = PlanDraftCapability(
-                drafts: DemoPlanDraftProvider(openDraftCount: manyDrafts ? 20 : 1),
+                drafts: DemoPlanDraftProvider(
+                    openDraftCount: manyDrafts ? 20 : 1,
+                    variant: DemoPlanDraftScenario.variant(arguments: ProcessInfo.processInfo.arguments)
+                ),
                 media: importBoundary,
                 uploader: importBoundary,
                 staging: MediaStagingStore()

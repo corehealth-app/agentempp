@@ -31,7 +31,9 @@ enum BodyFlowLiquidLoaderMetrics {
     nonisolated static let highlightWidth: CGFloat = 3
     nonisolated static let highlightInset: CGFloat = 2
     nonisolated static let highlightOpacity: Float = 0.3
-    nonisolated static let highlightRole = BodyFlowColor.Role.onPrimary
+    /// The warm light of the brand surfaces: the same in light and in dark,
+    /// so the stripe is always lighter than the bar it is drawn on.
+    nonisolated static let highlightRole = BodyFlowColor.Role.onHero
 
     /// A bar and its drop are one colour: the brand teal and its tint,
     /// alternating along the wave.

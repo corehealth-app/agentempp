@@ -482,6 +482,26 @@ struct DemoServicesTests {
         ).scenarioID == "demo/reset/fresh/preloaded/succeed")
     }
 
+    /// Second update (2026-10-10): the two refusals of a sign-up as UI-test
+    /// fixtures. Debug demonstration only, like every other fixture.
+    @Test("the sign-up refusal fixtures resolve only in the Debug demonstration")
+    func signUpRefusalFixturesResolveOnlyInDebugDemo() {
+        #expect(AppLaunchConfiguration.resolve(
+            arguments: ["--ui-testing-sign-up-email-taken"],
+            buildFlavor: .debug
+        ).scenarioID == "demo/reset/fresh/preloaded/fail-emailAlreadyRegistered")
+        #expect(AppLaunchConfiguration.resolve(
+            arguments: ["--ui-testing-sign-up-weak-password"],
+            buildFlavor: .debug
+        ).scenarioID == "demo/reset/fresh/preloaded/fail-weakPassword")
+        for argument in ["--ui-testing-sign-up-email-taken", "--ui-testing-sign-up-weak-password"] {
+            #expect(AppLaunchConfiguration.resolve(
+                arguments: [argument],
+                buildFlavor: .release
+            ).scenarioID == "release/keep/fresh/empty/fail-operationUnavailable", "\(argument)")
+        }
+    }
+
     @Test("unknown and release arguments cannot enable demo mode")
     func unknownAndReleaseArgumentsCannotEnableDemoMode() {
         #expect(AppLaunchConfiguration.resolve(

@@ -18,6 +18,7 @@ final class MealLiveCaptureRenderingTests: XCTestCase {
         let readFoods: String
         let startRecording: String
         let photoTitle: String
+        let takePhoto: String
         let choosePhoto: String
         let recordAudio: String
         let importAudio: String
@@ -43,6 +44,7 @@ final class MealLiveCaptureRenderingTests: XCTestCase {
             readFoods: "Ler alimentos",
             startRecording: "Começar gravação",
             photoTitle: "Foto da refeição",
+            takePhoto: "Tirar foto",
             choosePhoto: "Escolher foto",
             recordAudio: "Gravar áudio",
             importAudio: "Importar áudio",
@@ -65,6 +67,7 @@ final class MealLiveCaptureRenderingTests: XCTestCase {
             readFoods: "Read foods",
             startRecording: "Start recording",
             photoTitle: "Meal photo",
+            takePhoto: "Take photo",
             choosePhoto: "Choose photo",
             recordAudio: "Record audio",
             importAudio: "Import audio",
@@ -123,6 +126,198 @@ final class MealLiveCaptureRenderingTests: XCTestCase {
             for absent in [wording.write, wording.recordAudio, wording.importAudio] {
                 XCTAssertFalse(photo.contains { $0.isButton && $0.label == absent }, "\(absent) (\(context)): \(photo)")
             }
+        }
+    }
+
+    // MARK: Second update (2026-10-10) — Foto opens the camera by itself
+    //
+    // The owner, on build 1.0 (3): "mesmo quando eu coloco pra registrar a
+    // refeição em audio ou foto, ao inves dele abrir direto, ele abre uma
+    // tela q pergunta novamente sobre isso". The camera here is one that
+    // counts how often it is asked for and never presents anything: its
+    // access is not granted in the test host.
+    //
+    // HOW A ZERO COUNTS: the request runs in a task, so "0 requests" alone
+    // could be read too early. Every zero below is read by the SAME helper,
+    // in the same test body, as a control that does reach 1; and the mark
+    // the sheet keeps — written in the same turn as the decision — is read
+    // too.
+
+    func testPhotoEntryAsksForTheCameraOnceAfterTheSheetSettles() throws {
+        for wording in wordings {
+            let harness = makeHarness(closed: [])
+            defer { harness.cleanUp() }
+            let context = wording.locale.identifier
+            let camera = CountingCamera()
+            let sheet = CameraSheetBox()
+
+            let first = runSheet(harness, entry: .photo, camera: camera, sheet: sheet, wording)
+            XCTAssertEqual(first.requestsWhileArriving, 0, "Nothing is asked while the sheet is still arriving (\(context))")
+            XCTAssertFalse(first.markWhileArriving, context)
+            XCTAssertEqual(
+                first.requestsOnceSettled, 1,
+                "Foto asks for the camera once, by itself, when the sheet has settled (\(context))"
+            )
+            XCTAssertTrue(first.markOnceSettled, context)
+            // The access was not granted here: nothing was presented and no
+            // refusal is shown — the step is simply underneath.
+            XCTAssertEqual(sheet.log.presentations, 0, context)
+            XCTAssertEqual(harness.model.phase, .idle, context)
+            XCTAssertTrue(first.probes.contains { $0.label == wording.photoTitle }, "\(context): \(first.probes)")
+            XCTAssertTrue(first.probes.contains { $0.isButton && $0.label == wording.takePhoto }, "\(context): \(first.probes)")
+            XCTAssertTrue(first.probes.contains { $0.isButton && $0.label == wording.choosePhoto }, "\(context): \(first.probes)")
+            XCTAssertFalse(first.probes.contains { $0.label == wording.question }, context)
+
+            // The same sheet with its capture view built again: never by
+            // itself a second time.
+            let rebuilt = runSheet(harness, entry: .photo, camera: camera, sheet: sheet, wording)
+            XCTAssertEqual(rebuilt.requestsWhileArriving + rebuilt.requestsOnceSettled, 0, context)
+            XCTAssertTrue(rebuilt.markOnceSettled, context)
+            // A new sheet does ask: the zero above was not read too early.
+            let another = runSheet(harness, entry: .photo, camera: camera, sheet: CameraSheetBox(), wording)
+            XCTAssertEqual(another.requestsOnceSettled, 1, context)
+            XCTAssertEqual(camera.requests, 2, context)
+        }
+    }
+
+    func testNoCameraOrRefusedCameraLeavesThePhotoStepAsToday() throws {
+        for wording in wordings {
+            let harness = makeHarness(closed: [])
+            defer { harness.cleanUp() }
+            let context = wording.locale.identifier
+            let camera = CountingCamera()
+
+            // Control: read the same way, a camera that can be asked is.
+            let control = runSheet(harness, entry: .photo, camera: camera, sheet: CameraSheetBox(), wording)
+            XCTAssertEqual(control.requestsOnceSettled, 1, "Control (\(context))")
+
+            // No camera: the step, with the gallery only.
+            let noCameraSheet = CameraSheetBox()
+            let noCamera = runSheet(
+                harness, entry: .photo, camera: camera, available: false, sheet: noCameraSheet, wording
+            )
+            XCTAssertEqual(noCamera.requestsOnceSettled, 0, context)
+            XCTAssertFalse(noCamera.markOnceSettled, context)
+            XCTAssertTrue(noCamera.probes.contains { $0.label == wording.photoTitle }, context)
+            XCTAssertTrue(noCamera.probes.contains { $0.isButton && $0.label == wording.choosePhoto }, context)
+            XCTAssertFalse(noCamera.probes.contains { $0.isButton && $0.label == wording.takePhoto }, context)
+
+            // A camera refused before: the step with its two actions, and
+            // nothing asked or said by itself.
+            let refusedSheet = CameraSheetBox()
+            let refused = runSheet(
+                harness, entry: .photo, camera: camera, permission: .denied, sheet: refusedSheet, wording
+            )
+            XCTAssertEqual(refused.requestsOnceSettled, 0, context)
+            XCTAssertFalse(refused.markOnceSettled, context)
+            XCTAssertTrue(refused.probes.contains { $0.label == wording.photoTitle }, context)
+            XCTAssertTrue(refused.probes.contains { $0.isButton && $0.label == wording.takePhoto }, context)
+            XCTAssertTrue(refused.probes.contains { $0.isButton && $0.label == wording.choosePhoto }, context)
+            XCTAssertEqual(harness.model.phase, .idle, "No refusal is reported by itself (\(context))")
+            XCTAssertEqual(camera.requests, 1, "Only the control asked (\(context))")
+        }
+    }
+
+    func testAudioAndTextEntriesNeverTouchTheCamera() throws {
+        for wording in wordings {
+            let harness = makeHarness(closed: [])
+            defer { harness.cleanUp() }
+            let context = wording.locale.identifier
+            let camera = CountingCamera()
+
+            let control = runSheet(harness, entry: .photo, camera: camera, sheet: CameraSheetBox(), wording)
+            XCTAssertEqual(control.requestsOnceSettled, 1, "Control (\(context))")
+
+            for entry in [MealCaptureEntry.audio, .text, nil] {
+                let sheet = CameraSheetBox()
+                let run = runSheet(harness, entry: entry, camera: camera, sheet: sheet, wording)
+                let name = entry.map { "\($0)" } ?? "no entry"
+                XCTAssertEqual(run.requestsWhileArriving + run.requestsOnceSettled, 0, "\(name) (\(context))")
+                XCTAssertFalse(run.markOnceSettled, "\(name) (\(context))")
+                XCTAssertEqual(sheet.log, MealCameraLog(), "\(name) (\(context))")
+                if entry == .audio {
+                    // The recorder is open and nothing records by itself.
+                    XCTAssertTrue(
+                        run.probes.contains { $0.isButton && $0.label == wording.startRecording },
+                        "\(context): \(run.probes)"
+                    )
+                    XCTAssertEqual(harness.recorder.state, .idle, context)
+                }
+                if entry == .text {
+                    XCTAssertTrue(run.probes.contains { $0.isButton && $0.label == wording.readFoods }, context)
+                }
+            }
+            XCTAssertEqual(camera.requests, 1, "Only the control asked (\(context))")
+        }
+    }
+
+    private struct CameraRun {
+        let requestsWhileArriving: Int
+        let markWhileArriving: Bool
+        let requestsOnceSettled: Int
+        let markOnceSettled: Bool
+        let probes: [Probe]
+    }
+
+    /// Mounts the capture on `sheet`, reads, lets the sheet settle and reads
+    /// again — always the same way, for the controls and for the zeros.
+    private func runSheet(
+        _ harness: Harness,
+        entry: MealCaptureEntry?,
+        camera: CountingCamera,
+        available: Bool = true,
+        permission: MealCameraAccess.Permission = .notAsked,
+        sheet: CameraSheetBox,
+        _ wording: Wording
+    ) -> CameraRun {
+        let start = camera.requests
+        let host = PremiumRenderingTestSupport.liveAccessibilityHost(
+            CameraHost(
+                harness: harness, sheet: sheet, entry: entry,
+                camera: camera.access(available: available, permission: permission)
+            )
+            .environment(\.locale, wording.locale),
+            width: 393
+        )
+        defer { host.detach() }
+        _ = host.probe()
+        _ = host.probe()
+        let whileArriving = camera.requests - start
+        let markWhileArriving = sheet.log.openedByItself
+        sheet.settled = true
+        _ = host.probe()
+        let probes = host.probe()
+        return CameraRun(
+            requestsWhileArriving: whileArriving,
+            markWhileArriving: markWhileArriving,
+            requestsOnceSettled: camera.requests - start - whileArriving,
+            markOnceSettled: sheet.log.openedByItself,
+            probes: probes
+        )
+    }
+
+    private struct CameraHost: View {
+        let harness: Harness
+        @Bindable var sheet: CameraSheetBox
+        let entry: MealCaptureEntry?
+        let camera: MealCameraAccess
+
+        var body: some View {
+            MealLiveCaptureView(
+                model: harness.model,
+                stager: MealMediaStager(staging: harness.staging),
+                recorder: harness.recorder,
+                entry: entry,
+                sheetSettled: sheet.settled,
+                camera: camera,
+                cameraLog: $sheet.log,
+                analysisStage: nil,
+                isProposing: false,
+                submitText: { _ in },
+                submitMedia: { _ in },
+                retry: {},
+                propose: { _ in }
+            )
         }
     }
 
@@ -352,6 +547,8 @@ final class MealLiveCaptureRenderingTests: XCTestCase {
                 recorder: harness.recorder,
                 entry: nil,
                 sheetSettled: true,
+                camera: .unavailable,
+                cameraLog: .constant(MealCameraLog()),
                 analysisStage: RegistrationSheet.mealAnalysisStage(
                     kind: .meal,
                     hasLiveCapture: true,
@@ -411,6 +608,8 @@ final class MealLiveCaptureRenderingTests: XCTestCase {
             recorder: harness.recorder,
             entry: entry,
             sheetSettled: true,
+            camera: .unavailable,
+            cameraLog: .constant(MealCameraLog()),
             analysisStage: nil,
             isProposing: false,
             submitText: { _ in },
@@ -543,5 +742,38 @@ actor GatedCaptureServer: MealMediaProviding, MealDraftProviding, StorageUploadi
     ) async throws -> MealDraftSnapshot {
         await pass(.draft)
         return Self.draft
+    }
+}
+
+/// What the sheet owns for the capture view: whether it has arrived, and its
+/// record of the camera.
+@MainActor
+@Observable
+final class CameraSheetBox {
+    var settled = false
+    var log = MealCameraLog()
+}
+
+/// A camera that counts how often it is asked for and never grants the
+/// access, so nothing is ever presented in the test host.
+final class CountingCamera: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    var requests: Int { lock.withLock { count } }
+
+    func access(
+        available: Bool = true,
+        permission: MealCameraAccess.Permission = .notAsked
+    ) -> MealCameraAccess {
+        MealCameraAccess(
+            origin: .device,
+            isAvailable: { available },
+            permission: { permission },
+            requestAccess: { [self] in
+                lock.withLock { count += 1 }
+                return false
+            }
+        )
     }
 }

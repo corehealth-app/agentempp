@@ -164,6 +164,120 @@ final class MealCaptureUITests: XCTestCase {
         XCTAssertFalse(submit.isEnabled, "Closing the keyboard does not confirm the eggs")
     }
 
+    // MARK: Second update (2026-10-10) — a failed calculation shows its error
+    //
+    // Found in the review of the first update: when "Calcular refeição"
+    // fails, the review comes back from the top and the error line with
+    // "Tentar novamente" is below it, off the screen. The failure is the one
+    // the demonstration already had (the first mutation fails once).
+
+    @MainActor
+    func testFailedCalculationShowsItsErrorAndRetryWithoutScrolling() {
+        let app = launchCapture(
+            language: "pt-BR",
+            scenario: "--ui-testing-prompt13-registration-error-once"
+        )
+        let write = app.buttons["registration.meal.source.text"]
+        XCTAssertTrue(write.waitForExistence(timeout: 5))
+        write.tap()
+        let field = app.textFields["registration.meal.text"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("2 ovos mexidos e granola")
+        XCTAssertEqual(field.value as? String, "2 ovos mexidos e granola")
+        tapDetectWithVisibleKeyboard(app.buttons["registration.meal.detect"], app: app)
+        XCTAssertTrue(app.textFields["registration.review.item.c1-0a1b2c3d.name"].waitForExistence(timeout: 8))
+        let submit = app.buttons["registration.review.submit"]
+        reveal(submit, app: app)
+        let confirmEggs = app.switches["registration.review.item.c1-0a1b2c3d.confirm"]
+        reveal(confirmEggs, app: app, direction: .down)
+        turnOn(confirmEggs)
+        let granola = app.textFields["registration.review.item.c2-1b2c3d4e.quantity"]
+        reveal(granola, app: app, direction: .down)
+        granola.tap()
+        granola.typeText("30")
+        finishNumericEntry(app, expectedLabel: "Concluído")
+        reveal(submit, app: app)
+        XCTAssertTrue(submit.isEnabled)
+        submit.tap()
+
+        assertFailedCalculationIsInReach(app, message: "Não foi possível concluir. Tente novamente.")
+        support.capture("u1b-failed-calculation-pt-light", app: app)
+        app.buttons["registration.mutation.retry"].tap()
+        XCTAssertTrue(element("registration.proposal", app: app).waitForExistence(timeout: 8))
+    }
+
+    @MainActor
+    func testFailedCalculationShowsItsErrorAndRetryWithoutScrollingInEnglishAtAXXXL() {
+        let app = launchCapture(
+            language: "en-US",
+            dark: true,
+            category: "UICTContentSizeCategoryAccessibilityXXXL",
+            scenario: "--ui-testing-prompt13-registration-error-once"
+        )
+        app.buttons["registration.meal.source.text"].tap()
+        let field = app.textFields["registration.meal.text"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("2 eggs")
+        dismissKeyboard(app)
+        let read = app.buttons["registration.meal.detect"]
+        reveal(read, app: app)
+        read.tap()
+        let confirmEggs = app.switches["registration.review.item.c1-0a1b2c3d.confirm"]
+        XCTAssertTrue(confirmEggs.waitForExistence(timeout: 8))
+        reveal(confirmEggs, app: app)
+        turnOn(confirmEggs)
+        let granola = app.textFields["registration.review.item.c2-1b2c3d4e.quantity"]
+        reveal(granola, app: app)
+        granola.tap()
+        granola.typeText("30")
+        finishNumericEntry(app, expectedLabel: "Done")
+        let submit = app.buttons["registration.review.submit"]
+        reveal(submit, app: app)
+        XCTAssertTrue(submit.isEnabled)
+        submit.tap()
+
+        assertFailedCalculationIsInReach(app, message: "Could not complete. Try again.")
+        support.capture("u1b-failed-calculation-en-dark-axxxl", app: app)
+        app.buttons["registration.mutation.retry"].tap()
+        XCTAssertTrue(element("registration.proposal", app: app).waitForExistence(timeout: 8))
+    }
+
+    /// After the touch on "Calcular refeição", WITHOUT a swipe: the error
+    /// line and its "Tentar novamente" are on screen, below the sheet's bar,
+    /// and can be touched; no proposal exists.
+    @MainActor
+    private func assertFailedCalculationIsInReach(
+        _ app: XCUIApplication,
+        message: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let retry = app.buttons["registration.mutation.retry"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 8), "The calculation must fail once", file: file, line: line)
+        let inReach = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "hittable == true"), object: retry
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [inReach], timeout: 5), .completed,
+            "Tentar novamente must be in reach without scrolling: \(retry.frame)",
+            file: file, line: line
+        )
+        let window = visibleWindow(app)
+        XCTAssertGreaterThanOrEqual(retry.frame.minY, window.top, file: file, line: line)
+        XCTAssertLessThanOrEqual(retry.frame.maxY, window.bottom, file: file, line: line)
+        XCTAssertTrue(app.frame.contains(retry.frame), "\(retry.frame)", file: file, line: line)
+        support.assertTarget(retry)
+        // The status line shows its text as one element inside another.
+        let text = app.staticTexts[message].firstMatch
+        XCTAssertTrue(text.exists, file: file, line: line)
+        XCTAssertTrue(text.isHittable, "The error line must be on screen: \(text.frame)", file: file, line: line)
+        // The review came back with what it had; nothing was proposed.
+        XCTAssertTrue(app.buttons["registration.review.submit"].exists, file: file, line: line)
+        XCTAssertFalse(element("registration.proposal", app: app).exists, file: file, line: line)
+    }
+
     // MARK: First update (2026-10-10) — the ways of the meal card open directly
     //
     // Asked for by the owner on build 1.0 (3), real account: choosing Foto,
@@ -245,6 +359,150 @@ final class MealCaptureUITests: XCTestCase {
         }
         XCTAssertEqual(app.alerts.count, 0)
         support.capture("u1-photo-way-step-pt-light", app: app)
+    }
+
+    // MARK: Second update (2026-10-10) — Foto opens the camera by itself
+    //
+    // The owner, on build 1.0 (3): "ao inves dele abrir direto, ele abre uma
+    // tela q pergunta novamente sobre isso" (RC U1-A1). The camera here is
+    // the Debug stand-in: the system's camera and its permission prompt are
+    // never raised by a test (RC U1B-F1).
+
+    @MainActor
+    func testPhotoWayOpensTheCameraByItselfAndCancelLeavesTheStep() {
+        let app = launchRegister(language: "pt-BR", extraArguments: [
+            "--ui-testing-meal-capture-media", "--ui-testing-meal-capture-camera",
+        ])
+        let photo = app.buttons["register.refeicao.foto"]
+        XCTAssertTrue(photo.waitForExistence(timeout: 5))
+        photo.tap()
+
+        // No second touch: the camera is there, and it is the first time.
+        let camera = element("registration.meal.camera", app: app)
+        XCTAssertTrue(
+            camera.waitForExistence(timeout: 8),
+            "Foto must open the camera by itself, without a second touch"
+        )
+        XCTAssertEqual(app.staticTexts["registration.meal.camera.presentation"].label, "1")
+        XCTAssertEqual(app.alerts.count, 0)
+        support.capture("u1b-photo-way-camera-pt-light", app: app)
+
+        // Cancel: the step is underneath, and nothing opens again by itself.
+        app.buttons["registration.meal.camera.cancel"].tap()
+        let step = element("registration.meal.photo-step", app: app)
+        XCTAssertTrue(step.waitForExistence(timeout: 5))
+        XCTAssertEqual(step.label, "Foto da refeição")
+        let take = app.buttons["registration.meal.source.camera"]
+        let choose = app.buttons["registration.meal.source.gallery"]
+        XCTAssertTrue(take.waitForExistence(timeout: 5))
+        XCTAssertEqual(take.label, "Tirar foto")
+        XCTAssertEqual(choose.label, "Escolher foto")
+        XCTAssertTrue(take.isHittable)
+        XCTAssertTrue(choose.isHittable)
+        support.assertTarget(take)
+        support.assertTarget(choose)
+        XCTAssertFalse(camera.waitForExistence(timeout: 2), "The camera never opens again by itself")
+        XCTAssertFalse(app.staticTexts["Permissão negada. Autorize o acesso nos Ajustes do iPhone."].exists)
+
+        // "Tirar foto" still opens it by touch: the second time.
+        take.tap()
+        XCTAssertTrue(camera.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["registration.meal.camera.presentation"].label, "2")
+
+        // The photo taken reaches the upload: what is refused is the SEND
+        // (the synthetic capture sends nothing), never the file.
+        app.buttons["registration.meal.camera.take"].tap()
+        let failure = element("registration.meal.capture.failure", app: app)
+        XCTAssertTrue(failure.waitForExistence(timeout: 8))
+        XCTAssertTrue(
+            app.staticTexts["Este tipo de captura não está disponível agora."].exists,
+            "The photo must reach the upload: \(failure.label)"
+        )
+        XCTAssertFalse(app.staticTexts["Não foi possível abrir o arquivo."].exists)
+        XCTAssertFalse(camera.exists)
+        XCTAssertEqual(app.alerts.count, 0)
+    }
+
+    /// Along the whole sheet the camera does not come back by itself: not
+    /// after cancelling it, not after "Voltar", not after a meal read from
+    /// text, not after a proposal that is cancelled.
+    ///
+    /// This is NOT the proof of the sheet's "once" mark: with the mark
+    /// switched off (`alreadyOpened: false`, review run
+    /// u1b-rev1-06-mutation2-run) this test still passed — nothing along
+    /// this path builds the capture view again on its photo step, so the
+    /// decision is never taken a second time. The mark is locked by the
+    /// hosted `testPhotoEntryAsksForTheCameraOnceAfterTheSheetSettles`,
+    /// which builds a second view over the same sheet's record and failed
+    /// under that mutation (RC U1B-F5).
+    @MainActor
+    func testCameraIsNeverReopenedAlongTheSheet() {
+        let app = launchRegister(language: "pt-BR", extraArguments: [
+            "--ui-testing-meal-capture-media", "--ui-testing-meal-capture-camera",
+        ])
+        let photo = app.buttons["register.refeicao.foto"]
+        XCTAssertTrue(photo.waitForExistence(timeout: 5))
+        photo.tap()
+        let camera = element("registration.meal.camera", app: app)
+        XCTAssertTrue(
+            camera.waitForExistence(timeout: 8),
+            "Foto must open the camera by itself, without a second touch"
+        )
+        XCTAssertEqual(app.staticTexts["registration.meal.camera.presentation"].label, "1")
+        app.buttons["registration.meal.camera.cancel"].tap()
+        XCTAssertTrue(element("registration.meal.photo-step", app: app).waitForExistence(timeout: 5))
+
+        // "Voltar": the full choice.
+        let back = app.buttons["registration.meal.source.back"]
+        reveal(back, app: app)
+        back.tap()
+        let write = app.buttons["registration.meal.source.text"]
+        XCTAssertTrue(write.waitForExistence(timeout: 5))
+        XCTAssertFalse(camera.exists, "After Voltar")
+        // From here on, the same steps as the written meal of this file.
+        reveal(write, app: app, direction: .down)
+        write.tap()
+        let field = app.textFields["registration.meal.text"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("2 ovos mexidos e granola")
+        XCTAssertEqual(field.value as? String, "2 ovos mexidos e granola")
+        tapDetectWithVisibleKeyboard(app.buttons["registration.meal.detect"], app: app)
+        XCTAssertTrue(app.textFields["registration.review.item.c1-0a1b2c3d.name"].waitForExistence(timeout: 8))
+        XCTAssertFalse(camera.exists, "With the review on screen")
+        let submit = app.buttons["registration.review.submit"]
+        reveal(submit, app: app)
+        let confirmEggs = app.switches["registration.review.item.c1-0a1b2c3d.confirm"]
+        reveal(confirmEggs, app: app, direction: .down)
+        turnOn(confirmEggs)
+        let granola = app.textFields["registration.review.item.c2-1b2c3d4e.quantity"]
+        reveal(granola, app: app, direction: .down)
+        granola.tap()
+        granola.typeText("30")
+        finishNumericEntry(app, expectedLabel: "Concluído")
+        reveal(submit, app: app)
+        XCTAssertTrue(submit.isEnabled)
+        submit.tap()
+        XCTAssertTrue(element("registration.proposal", app: app).waitForExistence(timeout: 8))
+        XCTAssertFalse(camera.exists, "With the proposal on screen")
+
+        // The proposal is cancelled: whatever comes back, the camera does
+        // not.
+        let cancel = app.buttons["registration.proposal.cancel"]
+        reveal(cancel, app: app)
+        cancel.tap()
+        XCTAssertTrue(element("registration.proposal", app: app).waitForNonExistence(timeout: 8))
+        XCTAssertFalse(camera.waitForExistence(timeout: 2), "After a cancelled proposal")
+        let cameBack = [
+            "registration.review.submit", "registration.meal.photo-step",
+            "registration.meal.source.text", "registration.meal.text",
+        ].filter { element($0, app: app).exists }
+        let record = XCTAttachment(string: "On screen after the cancelled proposal: \(cameBack)")
+        record.name = "u1b-after-cancelled-proposal"
+        record.lifetime = .keepAlways
+        add(record)
+        XCTAssertFalse(cameBack.contains("registration.meal.photo-step") && camera.exists)
+        XCTAssertEqual(app.alerts.count, 0)
     }
 
     @MainActor
@@ -472,11 +730,12 @@ final class MealCaptureUITests: XCTestCase {
         language: String,
         dark: Bool = false,
         category: String = "UICTContentSizeCategoryL",
-        extraArguments: [String] = []
+        extraArguments: [String] = [],
+        scenario: String = "--ui-testing-prompt13-loaded"
     ) -> XCUIApplication {
         let app = support.launch(
             arguments: [
-                "--ui-testing", "--ui-testing-prompt13-loaded", "--ui-testing-meal-capture",
+                "--ui-testing", scenario, "--ui-testing-meal-capture",
             ] + extraArguments,
             language: language,
             dark: dark,

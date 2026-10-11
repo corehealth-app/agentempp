@@ -268,15 +268,12 @@ struct RegistrationSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    PerformeBrandAction(
+                    RegistrationBrandMark(
                         state: presentation.state,
                         label: copy("tab.register"),
                         status: brandStatus,
-                        showsLabel: false,
-                        showsProgress: analysisStage == nil
+                        analysisStage: analysisStage
                     )
-                    .frame(width: 44)
-                    .accessibilityIdentifier("registration.brand")
                 }
                 ToolbarItem(placement: .cancellationAction) {
                     Button {
@@ -349,6 +346,7 @@ struct RegistrationSheet: View {
                 staging: dependencies.mealCapture?.staging ?? MediaStagingStore()
             ),
             recorder: mealRecorder,
+            camera: dependencies.mealCapture?.camera ?? .unavailable,
             submitText: { text in
                 perform(.draftText(text)) { await mealDraftModel.submitText(text) }
             },
@@ -800,12 +798,39 @@ private struct WorkoutRegistrationContent: View {
     )
 }
 
+/// The brand mark in the bar of the registration sheet. It says the state of
+/// the operation; where the staged loader of a meal analysis is on screen
+/// (`analysisStage` is not `nil`) it draws no indicator of its own — one
+/// wait, one indicator. A view of its own so that this is proven on what is
+/// drawn, not only read in the source.
+struct RegistrationBrandMark: View {
+    let state: PerformeBrandState
+    let label: String
+    let status: String
+    /// The stage of the meal analysis being waited for, decided by the sheet
+    /// (`RegistrationSheet.mealAnalysisStage`); `nil` when there is none.
+    let analysisStage: MealAnalysisStage?
+
+    var body: some View {
+        PerformeBrandAction(
+            state: state,
+            label: label,
+            status: status,
+            showsLabel: false,
+            showsProgress: analysisStage == nil
+        )
+        .frame(width: BodyFlowSpacing.minimumTapTarget)
+        .accessibilityIdentifier("registration.brand")
+    }
+}
+
 /// What the sheet hands to the live meal capture.
 @MainActor
 struct MealLiveCapture {
     let model: MealDraftModel
     let stager: MealMediaStager
     let recorder: MealAudioRecorder
+    let camera: MealCameraAccess
     let submitText: @MainActor (String) -> Void
     let submitMedia: @MainActor (StagedMedia) -> Void
     let retry: @MainActor () -> Void
@@ -829,10 +854,18 @@ private struct MealRegistrationContent: View {
     @State private var choice: MealCaptureChoice?
     /// The sheet has finished arriving: only then is a keyboard asked for.
     @State private var sheetSettled = false
+    /// What happened with the camera along this sheet. It lives here, above
+    /// the capture view, so a capture view built again on the same sheet
+    /// cannot open the camera by itself a second time.
+    @State private var cameraLog = MealCameraLog()
     @State private var textDraft: String
     @State private var showingEditor = false
     @State private var editedItemIndex = 0
     @AccessibilityFocusState private var operationFocus: RegistrationAccessibilityFocusTarget?
+    @Environment(\.bodyFlowReduceMotion) private var reduceMotion
+
+    /// Where the operation summary sits in the sheet's scroll.
+    private static let summaryAnchor = "registration.operation.summary"
 
     init(
         model: MealRegistrationModel,
@@ -869,18 +902,32 @@ private struct MealRegistrationContent: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
-                content
-                RegistrationOperationSummary(
-                    state: model.mutationState,
-                    captureError: model.captureError
-                ) { action in
-                    operationAction(action)
+        ScrollViewReader { scroll in
+            ScrollView {
+                VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
+                    content
+                    RegistrationOperationSummary(
+                        state: model.mutationState,
+                        captureError: model.captureError
+                    ) { action in
+                        operationAction(action)
+                    }
+                    .accessibilityFocused($operationFocus, equals: .operationSummary)
+                    .id(Self.summaryAnchor)
                 }
-                .accessibilityFocused($operationFocus, equals: .operationSummary)
+                .padding(BodyFlowSpacing.lg)
             }
-            .padding(BodyFlowSpacing.lg)
+            // A failure that can be tried again is brought into view by
+            // itself: when the calculation fails the review comes back from
+            // the top, and the error with its action is below it.
+            .onChange(of: summaryAsksToBeSeen) { _, asks in
+                if asks { showSummary(scroll) }
+            }
+            // The same moment VoiceOver is sent to the summary, so a second
+            // failure in a row is brought into view too.
+            .onChange(of: model.accessibilityFocusTarget) { _, target in
+                if target == .operationSummary, summaryAsksToBeSeen { showSummary(scroll) }
+            }
         }
         .background {
             MealSheetSettledProbe { sheetSettled = true }
@@ -938,6 +985,19 @@ private struct MealRegistrationContent: View {
         }
     }
 
+    private var summaryAsksToBeSeen: Bool {
+        RegistrationOperationSummaryDescriptor(
+            state: model.mutationState,
+            captureError: model.captureError
+        ).asksToBeSeen
+    }
+
+    private func showSummary(_ scroll: ScrollViewProxy) {
+        withAnimation(BodyFlowMotion.animation(.content, reduceMotion: reduceMotion)) {
+            scroll.scrollTo(Self.summaryAnchor, anchor: .bottom)
+        }
+    }
+
     @ViewBuilder
     private var captureContent: some View {
         if let liveCapture {
@@ -947,6 +1007,8 @@ private struct MealRegistrationContent: View {
                 recorder: liveCapture.recorder,
                 entry: entry,
                 sheetSettled: sheetSettled,
+                camera: liveCapture.camera,
+                cameraLog: $cameraLog,
                 analysisStage: analysisStage,
                 isProposing: model.isSubmitting,
                 submitText: liveCapture.submitText,

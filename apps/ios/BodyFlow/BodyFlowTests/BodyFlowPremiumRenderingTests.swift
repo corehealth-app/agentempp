@@ -859,6 +859,8 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
             // First update (2026-10-10): the load-error screen left
             // AppRootView for its own file and stays under the same rule.
             "BodyFlow/Features/Onboarding/OnboardingLoadErrorView.swift",
+            // Second update (2026-10-10): the password field with its eye.
+            "BodyFlow/Features/Auth/AuthPasswordField.swift",
         ]
         var offenders: [String] = []
         for path in reviewedSources {

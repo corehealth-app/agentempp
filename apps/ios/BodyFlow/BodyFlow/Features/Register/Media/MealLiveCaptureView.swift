@@ -18,8 +18,17 @@ struct MealLiveCaptureView: View {
     let model: MealDraftModel
     let stager: MealMediaStager
     let recorder: MealAudioRecorder
-    /// The sheet has finished arriving: only then is the keyboard asked for.
+    /// The way already chosen on the Register screen, if any.
+    let entry: MealCaptureEntry?
+    /// The sheet has finished arriving: only then is the keyboard — or the
+    /// camera — asked for.
     let sheetSettled: Bool
+    /// The camera this capture may use. No default on purpose: every caller
+    /// says which camera it means, so a test host can never raise the
+    /// system's.
+    let camera: MealCameraAccess
+    /// What happened with the camera along this sheet; owned by the sheet.
+    @Binding var cameraLog: MealCameraLog
     /// The stage of the analysis being waited for, decided by the sheet
     /// (`RegistrationSheet.mealAnalysisStage`); `nil` when nothing is.
     let analysisStage: MealAnalysisStage?
@@ -32,7 +41,13 @@ struct MealLiveCaptureView: View {
     @State private var choice: MealLiveCaptureChoice?
     @FocusState private var textFocused: Bool
     @State private var textDraft = ""
-    @State private var showingCamera = false
+    /// The camera on screen, with its number on this sheet; `nil` when it
+    /// is not shown. The cover is presented FROM this value, so what it
+    /// shows is never read from a state the body did not depend on.
+    @State private var cameraPresentation: CameraPresentation?
+    /// This very view already asked for the camera by itself (the sheet's
+    /// record says the same for a view built again).
+    @State private var askedForCameraByItself = false
     @State private var showingGallery = false
     @State private var showingImporter = false
     @State private var pickedPhoto: PhotosPickerItem?
@@ -47,6 +62,8 @@ struct MealLiveCaptureView: View {
         recorder: MealAudioRecorder,
         entry: MealCaptureEntry?,
         sheetSettled: Bool,
+        camera: MealCameraAccess,
+        cameraLog: Binding<MealCameraLog>,
         analysisStage: MealAnalysisStage?,
         isProposing: Bool,
         submitText: @escaping @MainActor (String) -> Void,
@@ -57,7 +74,10 @@ struct MealLiveCaptureView: View {
         self.model = model
         self.stager = stager
         self.recorder = recorder
+        self.entry = entry
         self.sheetSettled = sheetSettled
+        self.camera = camera
+        _cameraLog = cameraLog
         self.analysisStage = analysisStage
         self.isProposing = isProposing
         self.submitText = submitText
@@ -72,12 +92,11 @@ struct MealLiveCaptureView: View {
 
     var body: some View {
         content
-            .fullScreenCover(isPresented: $showingCamera) {
-                MealCameraPicker { data in
-                    showingCamera = false
+            .fullScreenCover(item: $cameraPresentation) { presentation in
+                MealCameraCover(camera: camera, presentation: presentation.id) { data in
+                    cameraPresentation = nil
                     if let data { stagePhoto(data, channel: .camera) }
                 }
-                .ignoresSafeArea()
             }
             .photosPicker(
                 isPresented: $showingGallery,
@@ -177,7 +196,7 @@ struct MealLiveCaptureView: View {
                 choice = .text
             }
             if model.supportsMedia {
-                if MealCameraPicker.isCameraAvailable {
+                if camera.isAvailable() {
                     cameraButton(.secondary)
                 }
                 galleryButton(.secondary)
@@ -205,13 +224,19 @@ struct MealLiveCaptureView: View {
                 .foregroundStyle(BodyFlowColor.primaryText)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("registration.meal.photo-step")
-            if MealCameraPicker.isCameraAvailable {
+            if camera.isAvailable() {
                 cameraButton(.primary)
                 galleryButton(.secondary)
             } else {
                 galleryButton(.primary)
             }
             backButton
+        }
+        // "Foto" opens the camera by itself, once, when the sheet has
+        // stopped moving — the same signal the text field waits for. The
+        // step stays underneath for whoever cancels the camera.
+        .onChange(of: sheetSettled, initial: true) { _, settled in
+            openCameraByItself(sheetSettled: settled)
         }
     }
 
@@ -351,14 +376,56 @@ struct MealLiveCaptureView: View {
         model.startOver()
     }
 
+    /// The touch on "Tirar foto": a refused camera says so.
     private func openCamera() {
         Task {
-            if await MealCameraPicker.requestAccess() {
-                showingCamera = true
+            if await camera.requestAccess() {
+                presentCamera()
             } else {
                 model.reportCaptureFailure(.permissionDenied)
             }
         }
+    }
+
+    /// The photo way, by itself. The mark is written in the same turn as
+    /// the decision, so nothing can ask twice. A camera that is not allowed
+    /// here says nothing: the step is simply there, and the refusal message
+    /// stays for the explicit touch on "Tirar foto".
+    private func openCameraByItself(sheetSettled: Bool) {
+        guard MealCaptureStart.opensCameraByItself(
+            entry: entry,
+            step: choice,
+            cameraAvailable: camera.isAvailable(),
+            permission: camera.permission(),
+            sheetSettled: sheetSettled,
+            alreadyOpened: cameraLog.openedByItself || askedForCameraByItself
+        ) else { return }
+        askedForCameraByItself = true
+        cameraLog.openedByItself = true
+        Task {
+            let granted = await camera.requestAccess()
+            if MealCaptureStart.presentsCameraAfterAccess(
+                granted: granted,
+                step: choice,
+                galleryShowing: showingGallery,
+                importerShowing: showingImporter,
+                phaseIsIdle: model.phase == .idle
+            ) {
+                presentCamera()
+            }
+        }
+    }
+
+    private func presentCamera() {
+        guard let number = cameraLog.present(
+            whileShowing: cameraPresentation != nil
+        ) else { return }
+        cameraPresentation = CameraPresentation(id: number)
+    }
+
+    /// One presentation of the camera: its number on the sheet (1, 2, …).
+    private struct CameraPresentation: Identifiable {
+        let id: Int
     }
 
     private func loadPickedPhoto(_ item: PhotosPickerItem) {

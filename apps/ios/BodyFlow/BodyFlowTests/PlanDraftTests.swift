@@ -1392,6 +1392,108 @@ struct PlanDraftOriginCopyTests {
         PlanDraftCopy.string(key, language: language)
     }
 
+    // Second update (2026-10-10). The row read "Esforço alvo 9": a grade
+    // without its scale. The scale is written by the app in a suggestion of
+    // Flow — "decisão do orquestrador, anunciada ao dono em 2026-10-10, que
+    // pode riscar qualquer uma" — and a phrase is shown as it comes.
+    @Test("effort shows its scale only in a Flow suggestion, and a phrase is shown as it comes")
+    func effortShowsItsScaleOnlyInAFlowSuggestionAndAPhraseIsShownAsItComes() {
+        func effort(_ text: String, _ language: SupportedAppLanguage = .portugueseBrazil, imported: Bool = false) -> String {
+            PlanDraftCopy.detailValue(key: "rpe_target", text: text, language: language, imported: imported)
+        }
+        let phrase = DemoPlanDraftScenario.effortPhrase
+        #expect(phrase.count == 40)
+
+        // A bare grade or range from 1 to 10, written as it came plus the scale.
+        #expect(effort("9") == "9 de 10")
+        #expect(effort("9", .englishUnitedStates) == "9 of 10")
+        #expect(effort("8-9") == "8-9 de 10")
+        #expect(effort("8-9", .englishUnitedStates) == "8-9 of 10")
+        #expect(effort("8–9") == "8–9 de 10")
+        #expect(effort("8 a 9") == "8 a 9 de 10")
+        #expect(effort("8 - 9") == "8 - 9 de 10")
+        #expect(effort("8,5") == "8,5 de 10")
+        #expect(effort("8.5") == "8.5 de 10")
+        #expect(effort("7,5-8") == "7,5-8 de 10")
+        #expect(effort("10") == "10 de 10")
+        #expect(effort("1") == "1 de 10")
+        // As the server reads it, a full stop at the end stays at the end.
+        #expect(effort("9.") == "9 de 10.")
+
+        // As they came: outside 1 to 10, already with a scale, another
+        // grammar, a word, a phrase.
+        for asItCame in [
+            "0", "12", "8-12", "10,5", "0-5", "8/10", "9 de 10", "8-9 de 10", "8—9", "8 to 9",
+            "8 ou 9", "8+", "RPE 8", "moderado", phrase,
+        ] {
+            #expect(effort(asItCame) == asItCame, "\(asItCame)")
+            #expect(effort(asItCame, .englishUnitedStates) == asItCame, "\(asItCame)")
+        }
+
+        // A plan imported from the person's document: never a scale.
+        for language in SupportedAppLanguage.allCases {
+            #expect(effort("9", language, imported: true) == "9")
+            #expect(effort("8-9", language, imported: true) == "8-9")
+            #expect(effort(phrase, language, imported: true) == phrase)
+        }
+
+        // Locks: the older accessor is unchanged, and no other value gains
+        // a scale.
+        #expect(PlanDraftCopy.detailValue(key: "rpe_target", text: "9", language: .portugueseBrazil) == "9")
+        #expect(PlanDraftCopy.detailValue(key: "notes", text: "9", language: .portugueseBrazil, imported: false) == "9")
+        #expect(PlanDraftCopy.detailValue(key: "sets", text: "9", language: .portugueseBrazil, imported: false) == "9")
+        #expect(PlanDraftCopy.detailValue(
+            key: "plan_type", text: "full_body", language: .portugueseBrazil, imported: false
+        ) == "Corpo inteiro")
+        #expect(PlanDraftCopy.detailValue(
+            key: "mode", text: "referencia", language: .englishUnitedStates, imported: true
+        ) == "Reference")
+    }
+
+    @Test("the effort stays beside its label while it is a grade and goes below it when it is a phrase")
+    func effortLayoutFollowsWhatTheValueIs() {
+        for grade in ["9", "8-9", "8 a 9", "8,5", "12", "8-12", "9 de 10", "8-9 de 10", "8/10", "9."] {
+            #expect(PlanDraftCopy.detailLayout("rpe_target", text: grade) == .row, "\(grade)")
+        }
+        for phrase in ["moderado", "RPE 8", DemoPlanDraftScenario.effortPhrase, "8 ou 9 repetições antes"] {
+            #expect(PlanDraftCopy.detailLayout("rpe_target", text: phrase) == .stacked, "\(phrase)")
+        }
+        // Locks: decided by the key alone, as before, for everything else.
+        #expect(PlanDraftCopy.detailLayout("rpe_target") == .row)
+        #expect(PlanDraftCopy.detailLayout("notes", text: "9") == .stacked)
+        #expect(PlanDraftCopy.detailLayout("plan_type", text: "uma frase bem comprida aqui") == .row)
+        #expect(PlanDraftCopy.detailLayout("anything_else", text: "x") == .row)
+    }
+
+    #if DEBUG
+    @Test("the long-text fixtures are a Flow suggestion and the same content imported")
+    func longTextFixtures() async throws {
+        #expect(DemoPlanDraftScenario.variant(arguments: ["--ui-testing-plan-drafts"]) == .standard)
+        #expect(DemoPlanDraftScenario.variant(
+            arguments: ["--ui-testing-plan-drafts", "--ui-testing-plan-drafts-long-text"]
+        ) == .longText(imported: false))
+        #expect(DemoPlanDraftScenario.variant(
+            arguments: ["--ui-testing-plan-drafts", "--ui-testing-plan-drafts-long-text-imported"]
+        ) == .longText(imported: true))
+        #expect(DemoPlanDraftScenario.longestExerciseName.count == 120)
+        #expect(DemoPlanDraftScenario.repetitionsPhrase.count == 40)
+
+        let flow = try await DemoPlanDraftProvider(variant: .longText(imported: false))
+            .draft(id: DemoPlanDraftScenario.draftID)
+        #expect(flow.origin == "flow_generated")
+        #expect(!flow.isImported)
+        #expect(flow.canConfirm)
+        let imported = try await DemoPlanDraftProvider(variant: .longText(imported: true))
+            .draft(id: DemoPlanDraftScenario.draftID)
+        #expect(imported.isImported)
+        #expect(imported.payload == flow.payload)
+        // Lock: every older test keeps its draft.
+        let standard = try await DemoPlanDraftProvider().draft(id: DemoPlanDraftScenario.draftID)
+        #expect(standard.origin == "imported_pdf")
+        #expect(standard.status == "needs_completion")
+    }
+    #endif
+
     @Test("What Flow created is a suggestion; an imported document is never called one")
     func suggestionOnlyForFlow() {
         #expect(text(PlanDraftCopy.navigationTitleKey(imported: false), .portugueseBrazil) == "Revisar sugestão")

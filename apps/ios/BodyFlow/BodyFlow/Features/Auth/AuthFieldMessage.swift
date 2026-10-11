@@ -71,6 +71,14 @@ extension AppPresentationError {
             "Não foi possível conectar agora. Tente novamente."
         case .storageUnavailable:
             "Não foi possível acessar os dados locais. Tente novamente."
+        case .emailAlreadyRegistered:
+            "Este e-mail já tem uma conta. Use outro e-mail ou toque em “Já tenho uma conta”."
+        case .weakPassword:
+            "Essa senha é fraca demais. Escolha uma senha mais longa e difícil de adivinhar."
+        case .signUpRejected:
+            "Não foi possível criar a conta. Confira o e-mail e a senha e tente novamente."
+        case .tooManyAttempts:
+            "Muitas tentativas em pouco tempo. Aguarde alguns minutos e tente novamente."
         }
     }
 
@@ -82,6 +90,10 @@ extension AppPresentationError {
         case .operationUnavailable: "auth.error.operation-unavailable"
         case .serviceUnavailable: "auth.error.service-unavailable"
         case .storageUnavailable: "auth.error.storage-unavailable"
+        case .emailAlreadyRegistered: "auth.error.email-already-registered"
+        case .weakPassword: "auth.error.weak-password"
+        case .signUpRejected: "auth.error.sign-up-rejected"
+        case .tooManyAttempts: "auth.error.too-many-attempts"
         }
         return (try? AppLocalization.string(key, for: language)) ?? authMessage
     }

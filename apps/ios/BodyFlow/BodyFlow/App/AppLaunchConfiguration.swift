@@ -506,6 +506,22 @@ struct AppLaunchConfiguration: Sendable {
             )
         }
 
+        // Second update (2026-10-10): a sign-up the auth server refuses,
+        // as a UI test sees it. Debug demonstration only.
+        if arguments.contains("--ui-testing-sign-up-email-taken") {
+            return uiTestingConfiguration(
+                startsWithCompletedFixture: false,
+                authBehavior: .fail(.emailAlreadyRegistered, after: nil)
+            )
+        }
+
+        if arguments.contains("--ui-testing-sign-up-weak-password") {
+            return uiTestingConfiguration(
+                startsWithCompletedFixture: false,
+                authBehavior: .fail(.weakPassword, after: nil)
+            )
+        }
+
         if arguments.contains("--ui-testing-recovery") {
             return uiTestingConfiguration(
                 startsWithCompletedFixture: false,

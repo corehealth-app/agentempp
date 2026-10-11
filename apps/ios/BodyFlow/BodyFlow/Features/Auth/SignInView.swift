@@ -13,8 +13,11 @@ struct SignInView: View {
     @State private var password = ""
     @State private var validationIssues: [AuthValidationIssue] = []
     @State private var submissionTask: Task<Void, Never>?
+    /// Whether the password is shown as typed (the "eye").
+    @State private var passwordVisibility = AuthPasswordVisibility()
     @FocusState private var focusedField: Field?
     @Environment(\.locale) private var locale
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         AuthScreenLayout(
@@ -52,17 +55,19 @@ struct SignInView: View {
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
                     Text(copy("auth.common.password", fallback: "Senha"))
                         .font(BodyFlowTypography.headline)
-                    SecureField(copy("auth.common.password", fallback: "Senha"), text: $password)
-                        .textContentType(.password)
-                        .submitLabel(.go)
-                        .focused($focusedField, equals: .password)
-                        .onSubmit(submit)
-                        .bodyFlowField()
-                        .accessibilityLabel(copy("auth.common.password", fallback: "Senha"))
-                        .accessibilityHint(
-                            accessibilityHint(for: [.passwordRequired])
-                        )
-                        .accessibilityIdentifier("auth.password")
+                    AuthPasswordField(
+                        slot: .password,
+                        title: copy("auth.common.password", fallback: "Senha"),
+                        text: $password,
+                        visibility: $passwordVisibility,
+                        contentType: .password,
+                        submitLabel: .go,
+                        focus: $focusedField,
+                        focusValue: .password,
+                        hint: accessibilityHint(for: [.passwordRequired]),
+                        identifier: "auth.password",
+                        onSubmit: submit
+                    )
                     fieldMessage(for: [.passwordRequired])
                 }
 
@@ -108,7 +113,14 @@ struct SignInView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("screen.auth.sign-in")
-        .onDisappear(perform: cancelSubmission)
+        .onDisappear {
+            cancelSubmission()
+            passwordVisibility.hideAll()
+        }
+        // No password stays readable once the app leaves the foreground.
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { passwordVisibility.hideAll() }
+        }
     }
 
     private var isSubmitting: Bool {
@@ -144,6 +156,8 @@ struct SignInView: View {
             return
         }
 
+        // Sending: the password is hidden again. Its text is untouched.
+        passwordVisibility.hideAll()
         focusedField = nil
         submissionTask = Task {
             await model.signIn(email: email, password: password)

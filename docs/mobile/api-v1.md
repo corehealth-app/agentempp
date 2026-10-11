@@ -103,7 +103,7 @@ com a mesma chave executa de novo; outro corpo com a mesma chave continua sendo
 | `POST` | `/onboarding/eligibility` | conferência de objetivo no cadastro: quais objetivos podem ser gravados para os dados corporais enviados, com o texto de cada um; não grava nada |
 | `GET` | `/protocol` | objetivo atual do perfil, metas do dia como em `/today` e a mensagem de entrada do objetivo; só leitura |
 | `GET` | `/plan` | plano de treino ativo e prescrições vigentes |
-| `GET` | `/progress` | nível, streak, bloco 7700, peso, BF e reavaliação |
+| `GET` | `/progress` | nível, streak, bloco 7700, peso, gordura corporal (a persistida no progresso ou, na falta dela, a informada no cadastro) e reavaliação |
 | `GET` | `/history` | histórico próprio; aceita `before` ISO e `limit` 1..100 |
 | `POST` | `/registrations/propose` | calcula e cria pending de refeição ou treino |
 | `POST` | `/registrations/:id/confirm` | grava deterministicamente o pending aprovado; proposta de refeição criada pelo app é sempre um registro novo e reenviar a confirmação da mesma proposta não duplica (ver "Ciclo do pending") |
@@ -801,11 +801,21 @@ oficial é separado do protocolo histórico usado para calcular a energia do dia
   ou inválido é `null`. `block_7700.enabled` passa a seguir esse campo: somente
   recomposição habilita. `protocol` mantém o significado do dia histórico.
   Nenhuma query nova em Hoje, nenhuma fórmula ou valor energético alterado.
-- `GET /progress`, quando `data` existe, conserva os 12 campos persistidos e
-  acrescenta `current_protocol: Protocol | null` e `block_7700_enabled: boolean`.
-  A leitura seletiva de `user_profiles.current_protocol` e a de `user_progress`
-  ocorrem em paralelo, com `user_id` autenticado nas duas. Não se aceita um
-  objetivo vindo de body, mensagem ou snapshot para decidir a apresentação.
+- `GET /progress`, quando `data` existe, conserva 11 campos persistidos como
+  estão e acrescenta `current_protocol: Protocol | null` e
+  `block_7700_enabled: boolean`. O 12º campo, `current_bf_percent`, é o valor
+  persistido em `user_progress`; quando ele é nulo, é a gordura corporal do
+  perfil (`user_profiles.body_fat_percent`, a que a pessoa informou no
+  cadastro), como número — só número finito ou texto em formato decimal;
+  qualquer outra coisa é `null`. Nenhum caminho do app grava
+  `user_progress.current_bf_percent` hoje. A resposta não diz a origem nem a
+  data do número (RC BF-2). É decisão do orquestrador, anunciada ao dono em
+  2026-10-10, que pode riscar qualquer uma; não é aprovação do dono nem do
+  médico (ver "Gordura corporal do cadastro em Progresso", abaixo).
+  A leitura seletiva de `user_profiles` (`current_protocol` e
+  `body_fat_percent`) e a de `user_progress` ocorrem em paralelo, com
+  `user_id` autenticado nas duas. Não se aceita um objetivo vindo de body,
+  mensagem ou snapshot para decidir a apresentação.
 - Ausência de progresso mantém `data:null`. Perfil ausente/nulo/inválido
   produz `current_protocol:null` e flag `false`. Erro em qualquer query produz
   `500 data_access_failed`, inclusive com progresso ausente; não é fallback de
@@ -855,6 +865,60 @@ mesma conta. Preferência de tutorial continua separada dos dados de saúde.
 Testes locais: `Block7700EligibilityBoundaryTests`, `Block7700TutorialTests`
 e `Block7700EligibilityRenderingTests`, além das suítes vizinhas. Isso não
 substitui a suíte integral, o UI runner, staging integrado e o smoke físico.
+
+### Gordura corporal do cadastro em Progresso (2026-10-10, alteração local)
+
+Relato do ensaio de 2026-10-10 com o build 1.0 (3) contra o servidor de
+e725096: uma conta que informou 15% de gordura corporal no cadastro abre
+Progresso e lê "Gordura corporal — Não disponível".
+
+Causa. O app mostra `current_bf_percent` de `GET /progress`. `loadProgress`
+copiava `user_progress.current_bf_percent`, coluna que nada no repositório
+grava com valor (as duas funções de reset a põem em nulo; a ferramenta legada
+de reavaliação só recebe um argumento com esse nome). O valor do cadastro é
+gravado por `complete_mobile_onboarding_atomic` em
+`user_profiles.body_fat_percent`, a mesma coluna que `GET /profile` já devolve.
+
+Mudança. `GET /progress` responde a gordura do perfil quando a do progresso é
+nula. As mesmas 14 chaves e os mesmos tipos: o build 1.0 (3), que decodifica o
+campo como decimal opcional, passa a mostrar "15%" sem atualização. Duas
+leituras, nenhuma escrita. O valor persistido no progresso, quando existe,
+vence. Só número finito ou texto em formato decimal (dígitos, com parte
+decimal opcional, sem sinal nem expoente) vira número; o resto é `null` — uma
+conversão direta responderia 0 para texto vazio e 1 para `true`, e o app
+mostraria "0%" ou "1%". Sem linha de progresso a resposta continua
+`data:null`. É apresentação: nenhuma fórmula, meta, balanço, bloco, número,
+limiar ou conduta do método muda, e `docs/CALCULO-MPP.md` só ganhou a frase
+que descreve a leitura.
+
+De quem é a decisão. Devolver a gordura do perfil nesse campo é decisão do
+orquestrador, anunciada ao dono em 2026-10-10, que pode riscar qualquer uma.
+Não foi aprovada por escrito pelo dono nem pelo médico. Riscar é tirar o
+`?? profileBodyFatPercent(...)` de `loadProgress` e a coluna do `select`.
+
+O que a tela mostra (lido no app, sem alterar): a linha fica no grupo
+"Medidas" / "Measurements", com o título "Gordura corporal" / "Body fat" e o
+valor "15%". A linha não diz que o número foi informado pela pessoa nem
+quando; a resposta não tem campo de origem (RC BF-2).
+
+O que NÃO mudou de propósito: as propostas de treino e de cardápio do Flow
+continuam lendo `user_progress.current_bf_percent` e entregando `bf_percent`
+nulo aos geradores (o de cardápio escreve "Gordura corporal: ?%" no pedido; o
+de treino não escreve o campo). É a mesma causa, mas mudar isso muda o pedido
+ao modelo e não foi relatado: está travado em
+`packages/agent/src/plan-proposal-tools.test.ts` (RC BF-3).
+
+Golden: `apps/admin/src/lib/mobile-api/progress-body-fat.audit-10-10.test.ts`
+(o handler real de `GET /progress`, banco em memória, sem rede). O teste de
+rota `progress/route.test.ts` ficou como estava.
+
+> RC BF-1 — cenário conta que informou 15% de gordura no cadastro e lê "Gordura corporal — Não disponível" em Progresso variante cadastro concluído de verdade contra o banco (a função complete_mobile_onboarding_atomic gravando user_profiles.body_fat_percent) e a tela vista no iPhone com o build 1.0 (3) NÃO coberta nesta PR (pendência da audit 2026-10-10). O golden parte do estado que o cadastro deixa (perfil com 15, progresso sem gordura); nenhum banco foi lido e nada foi publicado. Devolver a gordura do perfil quando a do progresso é nula é decisão do orquestrador, anunciada ao dono em 2026-10-10, que pode riscar qualquer uma.
+
+> RC BF-2 — cenário gordura corporal em Progresso variante dizer na tela que o número foi informado pela pessoa, e quando (GET /progress não ganhou campo de origem; a linha fica em "Medidas", sem origem nem data) NÃO coberta nesta PR (pendência da audit 2026-10-10)
+
+> RC BF-3 — cenário sugestão de cardápio e de treino do Flow para a mesma conta variante o pedido ao gerador, que continua lendo user_progress.current_bf_percent (coluna que nada grava) e envia "Gordura corporal: ?%" no cardápio NÃO coberta nesta PR (pendência da audit 2026-10-10). A causa é a mesma, mas trocar o que o gerador recebe muda o pedido ao modelo e não foi relatado: fica travado como está.
+
+> RC BF-4 — cenário gordura corporal em Progresso variante valor mais novo vindo de reavaliação ou de fotos (nenhum caminho do app grava user_progress.current_bf_percent; se um dia gravar, ele vence o do perfil sem comparar datas) NÃO coberta nesta PR (pendência da audit 2026-10-10)
 
 ### Fechamento do dia sob demanda (ambiente de avaliação)
 
@@ -2902,6 +2966,46 @@ Desde esta mudança o rascunho de treino do Flow é gravado com as grafias desta
 tabela trocadas na criação; a frase de RC FN-3 (o rascunho é gravado como o
 gerador escreveu) continua valendo para todo o resto, e RC FN-3 segue aberta.
 
+**Segunda rodada, 2026-10-10 (alteração local, ainda não publicada).** Seis
+coisas, todas só no Flow e só na sugestão de treino:
+
+1. "Hip Thrust" e "Military press" passam a ser gravados com o nome em
+   português seguido do nome original entre parênteses (regra 12);
+2. a nota de esforço de 1 a 10 passa a dizer a escala, "9 de 10" (regra 9);
+3. "composto" usado como particípio com um advérbio no meio deixa de ser
+   trocado (regra 6);
+4. uma sequência longa de espaços deixa de custar tempo ao quadrado (regra 1);
+5. "falha" escrita sozinha nos campos de repetições e de esforço é trocada, e
+   o rótulo repetido sai do campo de esforço sem deixar sobra (regras 5 e 9);
+6. um texto de repetições ou de esforço com mais de 40 caracteres que traz a
+   frase que o próprio pedido ensina deixa de recusar a sugestão inteira
+   ("Limites dos campos").
+
+Os itens 1 e 2 são decisão do orquestrador, anunciada ao dono em 2026-10-10,
+que pode riscar qualquer uma; não são aprovação do dono nem do médico (seção
+"O que espera o dono"). O formato não muda: `rpe_target` continua texto
+opcional de até 40 caracteres e o nome continua texto de até 120; o build
+1.0 (3) lê os textos novos sem atualização. O único número que a rede
+acrescenta é o "10" da escala. O pedido ao gerador não mudou nesta rodada: o
+modelo não é ensinado a escrever "de 10" nem o nome entre parênteses (o
+prompt do Flow continua byte a byte o de 3b65bee, travado em
+`pipeline-mobile-flow-runtime.test.ts`); quem escreve as duas coisas é a rede.
+
+**Revisão da segunda rodada, 2026-10-10 (mesma alteração local).** Três
+correções, cada uma com teste da cadeia exata visto vermelho antes:
+
+1. a escala deixou de ser escrita depois de uma faixa com espaços seguida de
+   palavra, em que o segundo número pode ser outra coisa ("RPE 8 - 10
+   repetições" era gravado "esforço 8 - 10 de 10 repetições"), e depois de
+   "para" ou "pra" e um número ("RPE 8 para 9"): regra 9;
+2. em `rpe_target`, a nota sozinha com ponto final também ganha a escala
+   ("9." vira "9 de 10."): regra 9;
+3. a frase ensinada escrita com hífen ("bem-feita") num `reps_range` ou
+   `rpe_target` acima de 40 caracteres deixou de recusar a sugestão ("Limites
+   dos campos").
+
+O que continua de fora está em RC TL-14, RC TL-18 e RC TL-21.
+
 ### Duas camadas
 
 1. **Pedido ao gerador** (`packages/agent/src/training-plan-generator.ts`, só
@@ -2942,11 +3046,22 @@ escreveu pelo mesmo motivo).
 
 1. Frase a frase, da esquerda para a direita, sobre o texto normalizado para
    NFC. Numa mesma posição vence a grafia mais longa. A frase é relida até
-   nada mais mudar: nenhuma saída traz uma grafia da tabela, então uma saída
-   nunca é trocada, mas o termo que ficou por causa da vizinha ("Core" em "Leg
-   day - Core") é lido sem ela quando a vizinha também era um termo. Texto em
-   que nenhuma linha age volta como a mesma sequência de caracteres (sem
-   normalizar).
+   nada mais mudar: nenhuma saída traz uma grafia que a tabela leria de novo,
+   então uma saída nunca é trocada, mas o termo que ficou por causa da vizinha
+   ("Core" em "Leg day - Core") é lido sem ela quando a vizinha também era um
+   termo. A única saída que carrega uma grafia é a do exercício renomeado, que
+   guarda o nome original entre parênteses (regra 12): a linha de renome não
+   lê dentro de parênteses nem onde o seu nome em português já está, e por
+   isso também não é lida de novo. Texto em que nenhuma linha age volta como a
+   mesma sequência de caracteres (sem normalizar). Uma sequência de espaços
+   vale por um espaço: a expressão do vocabulário é aplicada sobre a frase com
+   um espaço em cada lugar, e a sequência que está fora de uma grafia trocada
+   é escrita de volta como veio. Antes, o tempo crescia com o quadrado da
+   sequência (três sequências de 1.200 espaços: 2,9 s; depois: menos de 1 ms);
+   travado em
+   `packages/agent/src/flow-plain-training-language.space-runs.test.ts`, por um
+   teste que não depende de tempo e por um teto de 1 s. Sequência longa de
+   pontos ou de letras: RC TL-20.
 2. Só palavra inteira: a grafia colada a letra, número, "_", "@" ou "-" não é
    o termo (`reps_range`, "Push-up", "Pulldown", "score"). "/", "+",
    parênteses e pontuação NÃO são cola: os dois lados de
@@ -2979,7 +3094,15 @@ escreveu pelo mesmo motivo).
    última repetição bem feita"). Depois de "à" sozinho não é o termo quando
    segue "de", "do", "da", "dos", "das", "na", "no", "nas", "nos" ou "em"
    ("devida à falha na execução"). "Corrija qualquer falha técnica" e "se a
-   técnica falha" não são o termo.
+   técnica falha" não são o termo. SÓ em `reps_range` e em `rpe_target`, a
+   palavra escrita sozinha também é o termo, dentro de uma gramática fechada.
+   ANTES dela: o início do campo ou de uma frase, um número e um espaço,
+   "ou", um de `( / + , ; :` ou um traço ENTRE ESPAÇOS. DEPOIS dela: o fim
+   (com ou sem ponto final), `)`, `,`, `;`, `/`, `+` ou "ou". A saída leva a
+   introdução: "falha" vira "até a última repetição bem feita", "8-12
+   (falha)" vira "8-12 (até a última repetição bem feita)", "12 falha" vira
+   "12 até a última repetição bem feita". Fora da gramática fica: "sem
+   falha", "pré-falha", "Falha total", "falha na última série" (RC TL-18).
 6. composto(s), multiarticular(es), isolador(es), monoarticular(es) e
    uniarticular(es) SOZINHOS só em posição de nome: no início do campo;
    depois de `. ! ? : ; , ( • —` ou quebra de linha; ou logo depois de "o",
@@ -2991,7 +3114,18 @@ escreveu pelo mesmo motivo).
    composto seguro", "treino composto", "priorize compostos") ficam.
    "isolado(s)" sozinho nunca é trocado. As entradas inteiras (exercício ou
    movimento + o adjetivo) agem em qualquer lugar, menos antes de "por",
-   "pelo", "pela", "pelos", "pelas".
+   "pelo", "pela", "pelos", "pelas". O particípio é lido ATRAVÉS de um
+   advérbio: no início, depois de pontuação, de "e" ou de "ou" (onde
+   "composto" tanto pode ser nome como particípio), a palavra também fica
+   quando há um ou dois advérbios de uma lista fechada entre ela e a
+   preposição — palavra terminada em "mente", "apenas", "só", "sobretudo",
+   "quase", "também", "ainda", "sempre", "tanto", "em grande parte", "em sua
+   maioria", "na maior parte". "Treino ABC, composto principalmente por
+   exercícios básicos." fica como veio. Logo depois de artigo ou de
+   preposição ("os compostos normalmente de 6 a 10 repetições") o advérbio
+   não é atravessado: ali é o nome. As entradas inteiras atravessam os mesmos
+   advérbios em qualquer lugar ("exercícios compostos principalmente por duas
+   fases" fica). O que isso deixa de fora está em RC TL-17.
 7. Maiúscula: no início do campo, de uma frase ou de uma linha, a saída segue
    a caixa da primeira letra do que foi trocado; em qualquer outro lugar é
    minúscula. A linha cuja saída muda de gênero ou número leva escritos os
@@ -3001,9 +3135,54 @@ escreveu pelo mesmo motivo).
    (RC TL-10).
 8. Nenhuma linha acrescenta posição do corpo, articulação, direção de
    movimento, carga ou número que a palavra trocada não diga.
-9. `rpe_target`: o rótulo repetido sai quando há nota ("RPE 8" vira "8") e o
-   "/10" que o gerador escreveu é escrito por extenso ("8/10" vira "8 de
-   10"). A escala só é acrescentada a uma nota pura com o sim do dono (D1).
+9. A nota de esforço. O "/10" que o gerador escreveu é escrito por extenso
+   ("8/10" vira "8 de 10"). Em `rpe_target`, o campo que o app mostra depois
+   do rótulo dele ("Esforço alvo"), o rótulo repetido sai: "RPE 8" vira "8";
+   quando o rótulo abre o campo (artigo opcional, depois RPE, PSE ou
+   "esforço", com "alvo", ":" ou "=" opcionais), sai também antes de UMA
+   palavra ("RPE alto" vira "alto", "Esforço 8" vira "8") — nunca "PSE" antes
+   de palavra terminada em "a" ou "as", nem antes de "percebido",
+   "percebida" ou "alvo", que são parte do nome do próprio rótulo; e o rótulo
+   escrito depois de uma nota inteira sai também ("8 RPE" vira "8"). O que
+   fica de fora está em RC TL-19.
+   A escala (D1, ligada: ver "O que espera o dono"). A nota de 1 a 10 lê
+   "<nota> de 10": o campo `rpe_target` inteiro, com ou sem ponto final ("9"
+   vira "9 de 10", "8-9" vira "8-9 de 10", "9." vira "9 de 10."), ou a nota
+   depois de RPE / PSE em QUALQUER texto que a rede lê ("RPE 8-9" vira
+   "esforço 8-9 de 10") — também em `reps_range`, `focus`, `muscle_group` e
+   `name`, quando o gerador escreve a sigla ali ("8-12 RPE 9" vira "8-12
+   esforço 9 de 10"). A escala só entra depois de uma nota que
+   NÃO CONTINUA. O que pode vir depois da nota é uma lista fechada: o fim da
+   frase; `)` ou `]`; um de `. , ; : ! ? …` não seguido de número; ou um
+   espaço e uma palavra ou `(` — menos "ou", "e", "a", "até", "de", "em",
+   "para" e "pra" seguidos de número. "RPE 8/9", "RPE 8+", "RPE 8 ou 9", "RPE
+   8 para 9", "RPE 8 → 9" e "RPE 8 - RIR 2" ficam com a nota como veio, sem a
+   escala (antes desta regra, com o interruptor ligado à mão, dariam "esforço
+   8 de 10/9", "8 de 10+" e "8 de 10 ou 9").
+   Faixa escrita com espaços (revisão da segunda rodada). A faixa com espaço
+   ao lado do traço ("8 - 10") ou com " a " ("8 a 10") só ganha a escala
+   quando NADA continua depois dela: o fim, um fecha-parêntese ou pontuação.
+   Seguida de palavra ou de `(`, o segundo número pode ser outra coisa, como
+   numa lista escrita com traços: "Supino: 4 séries - RPE 8 - 10 repetições
+   - descanso 90 s." fica "Supino: 4 séries - esforço 8 - 10 repetições -
+   descanso 90 s.", "RPE 7 - 3 séries de aquecimento." fica "Esforço 7 - 3
+   séries de aquecimento." e "RPE 8 a 10 repetições por série." fica
+   "Esforço 8 a 10 repetições por série." (com a escala ligada eram gravados
+   "8 - 10 de 10 repetições", "7 - 3 de 10 séries" e "8 a 10 de 10
+   repetições": frase falsa). A faixa de verdade escrita assim também fica
+   sem a escala ("RPE 8 a 9 nas últimas séries"); a faixa escrita colada
+   continua com ela ("RPE 8-9 nas últimas" vira "esforço 8-9 de 10 nas
+   últimas"), e a faixa com espaços seguida de fim ou de pontuação também
+   ("RPE 8 - 9." vira "esforço 8 - 9 de 10."). A regra 11 lê o traço entre
+   espaços do mesmo jeito.
+   Também não entra quando a frase já diz a escala depois da
+   nota — a palavra "escala", "de 10", "em 10" ou "/10": "RPE 8 (de 10)" e
+   "RPE 8 numa escala de 1 a 10" ficam "esforço 8 (de 10)" e "esforço 8 numa
+   escala de 1 a 10". A nota que o gerador escreve depois da PALAVRA
+   "esforço" em texto corrido não é grafia da tabela e fica sem a escala; a
+   nota seguida de outro texto no próprio `rpe_target`, sem a sigla ("8
+   (pesado)"), também, porque um número antes de uma palavra pode ser outra
+   coisa (RC TL-14).
 10. Sigla (RPE, PSE, RIR, PPL, MMSS, MMII) só em maiúsculas: "rir" é verbo.
     "PSE" sozinha fica antes de palavra terminada em "a" ou "as" ("PSE
     alta"), que concorda com ela e não com "esforço".
@@ -3024,6 +3203,26 @@ escreveu pelo mesmo motivo).
     nenhum número muda de lugar ("repetições de sobra 2 - 3 séries"). As
     grafias por extenso ("repetições em reserva") são trocadas onde
     estiverem, porque já ligam o número como o texto simples liga.
+12. Nome de exercício renomeado (D2, ligado: ver "O que espera o dono"). A
+    grafia vira o nome em português seguido do nome original entre
+    parênteses, como o gerador o escreveu, para a pessoa ainda poder pedir
+    por ele na academia: "Hip Thrust com Barra" vira "Elevação pélvica com
+    Barra (Hip Thrust)". No nome (`name`), o parêntese vai ao fim do nome (da
+    frase dele, antes de um ponto final), ou logo depois do nome em português
+    quando o nome já tem um parêntese ("Hip Thrust com Barra (glúteos)" vira
+    "Elevação pélvica (Hip Thrust) com Barra (glúteos)"). Em qualquer outro
+    campo, logo depois, e só na PRIMEIRA menção do campo; as seguintes ficam
+    com o português sozinho ("Faça o Hip Thrust devagar. No hip thrust, suba
+    o quadril até o fim." vira "Faça a elevação pélvica (Hip Thrust) devagar.
+    Na elevação pélvica, suba o quadril até o fim."). A linha de renome não
+    lê o que está entre parênteses ("Glúteos (hip thrust)"); não age no campo
+    (frase única) nem na frase (texto corrido) que já traz o seu nome em
+    português, com ou sem acento, em qualquer caixa ("Hip Thrust (elevação
+    pélvica)", "Hip Thrust/Elevação pélvica"); e não age na lista de
+    equipamentos, que é o que a pessoa disse que tem ("banco para hip
+    thrust"). "Stiff" e "Leg Press" não têm linha: ficam exatamente como o
+    gerador escreveu, porque são o nome que está na máquina e o que as
+    academias do Brasil usam. O que fica de fora está em RC TL-13.
 
 Limites dos campos. Em texto corrido (`notes` e `progression_rule` 500;
 `notes` do exercício e cada passo ou erro 300) as frases são trocadas uma a
@@ -3033,6 +3232,57 @@ redação do gerador até caber. Em campo de frase única (`day` 20, `focus` e
 `equipment_summary` 500) o valor do gerador fica inteiro quando o simples não
 cabe: o dia "Upper A" continua "Upper A", porque "Parte de cima do corpo A"
 tem 24 caracteres. Nada é cortado e o rascunho continua pronto para revisar.
+
+Antes disso, o que os dois interruptores ACRESCENTAM sai, campo a campo, para
+que palavra simples que cabe nunca volte ao jargão por causa deles: primeiro o
+campo inteiro com a escala e o parêntese; se não cabe, sem a escala; se ainda
+não cabe, sem a escala e sem o parêntese (só o nome em português); e só então
+a regra acima, aplicada ao texto sem os dois. `rpe_target` "RPE 9, até a
+falha" teria 41 caracteres com a escala e é gravado "9, até a última
+repetição bem feita"; um nome de 110 caracteres com "Hip Thrust" fica só com o
+nome em português (116), porque com o parêntese teria 129. O campo conta uma
+vez em `plain_fields_kept`, e só quando nem o texto sem os dois cabe; a escala
+e o parêntese omitidos não são contados (RC TL-22).
+
+Campo pequeno acima do limite com a frase ensinada (no gerador, só no Flow,
+antes da validação; `packages/agent/src/training-plan-generator.ts`). O pedido
+ensina "até a última repetição bem feita" (32 caracteres); um modelo
+obediente que a escreve em `reps_range` ou em `rpe_target` ao lado de uma
+faixa ("10-12 ou até a última repetição bem feita", 41) passava dos 40
+caracteres do campo, o esquema recusava a resposta inteira e a pessoa ficava
+SEM sugestão. Ficou INOFENSIVO (não impossível: o modelo ainda pode escrever).
+Vale só para texto de um desses dois campos, com mais de 40 caracteres, que
+traz "última repetição bem feita" (em qualquer caixa, com ou sem acento; uma
+sequência de espaços vale por um; "bem-feita", com hífen, é a mesma frase —
+revisão da segunda rodada: essa grafia ainda recusava a sugestão, e "10-12,
+até a última repetição bem-feita possível" passa a gravar `reps_range`
+"10-12"):
+
+- o que vem ANTES da frase e da sua introdução ("até a", "até à", "até", "à",
+  "perto da", "próximo da", "próximo à", "antes da") só fica no campo se, com
+  no máximo um conector tirado do fim (`ou`, `e`, `,`, `;`, traço, `(`, `/`,
+  `+`, `:`), for um valor limpo: número ou faixa, com "repetições" ou não, em
+  `reps_range`; nota (com "/10" ou "de 10", ou sem), ou "esforço" e nota, em
+  `rpe_target`;
+- em qualquer outro caso (nada antes, texto que não é valor limpo, ou mais de
+  40 caracteres antes da frase) o campo recebe a própria frase com a sua
+  introdução, como o modelo escreveu: no máximo 37 caracteres ("próximo da
+  última repetição bem feita");
+- o texto INTEIRO do modelo abre a observação do exercício (primeiro o de
+  repetições, depois o de esforço), com ponto final quando não termina em
+  pontuação, e a observação segue para o corte de 300 caracteres que já
+  existe. O exercício que não tinha observação passa a ter.
+
+"10-12 ou até a última repetição bem feita" grava `reps_range` "10-12" e a
+observação "10-12 ou até a última repetição bem feita. Exercício de vários
+músculos principal para peitoral. Pegada na largura dos ombros."; "3 séries
+de até a última repetição bem feita" grava `reps_range` "até a última
+repetição bem feita", nunca "3 séries de". Nenhuma palavra é escrita que o
+modelo não tenha escrito (só o ponto final). Texto acima de 40 caracteres SEM
+a frase continua recusando a sugestão, como antes, e a ferramenta legada
+(`gera_treino`) não tem esse passo: a mesma resposta continua recusada lá (RC
+TL-21). Com a frase, esses dois campos nunca mais recusam a sugestão por
+tamanho.
 
 ### Tabela ativa
 
@@ -3062,25 +3312,25 @@ em maiúsculas).
 | `Core` | `abdômen` | fora de nome de exercício e de equipamento, e nunca ao lado de palavra da lista de inglês (regra 4) |
 | `MMSS` | `parte de cima do corpo` | em qualquer texto; troca junto "os" por "a", "dos" por "da", "nos" por "na", "aos" por "à", "pelos" por "pela" |
 | `MMII` | `parte de baixo do corpo` | em qualquer texto; troca junto "os" por "a", "dos" por "da", "nos" por "na", "aos" por "à", "pelos" por "pela" |
-| `RPE <nota>` | `esforço <nota>` | em qualquer texto; em `rpe_target` fica só a nota (regra 9) |
-| `PSE <nota>` | `esforço <nota>` | em qualquer texto; em `rpe_target` fica só a nota (regra 9); troca junto "a" por "o", "da" por "do", "na" por "no", "à" por "ao", "pela" por "pelo", "uma" por "um" |
-| `RPE` | `esforço` | em qualquer texto |
+| `RPE <nota>` | `esforço <nota>` | em qualquer texto; em `rpe_target` fica só a nota; a nota de 1 a 10 que não continua ganha " de 10" (regra 9) |
+| `PSE <nota>` | `esforço <nota>` | em qualquer texto; em `rpe_target` fica só a nota; a nota de 1 a 10 que não continua ganha " de 10" (regra 9); troca junto "a" por "o", "da" por "do", "na" por "no", "à" por "ao", "pela" por "pelo", "uma" por "um" |
+| `RPE` | `esforço` | em qualquer texto; em `rpe_target`, abrindo o campo antes de uma só palavra, o rótulo sai ("RPE alto" vira "alto": regra 9) |
 | `PSE` | `esforço` | em qualquer texto, menos antes de palavra terminada em "a" ou "as" ("PSE alta"); troca junto "a" por "o", "da" por "do", "na" por "no", "à" por "ao", "pela" por "pelo", "uma" por "um" |
 | `RIR <n>`; `<n> RIR` | `<n> repetições de sobra` (com 1: `<n> repetição de sobra`) | em qualquer texto, menos quando há número dos dois lados da sigla ("Séries de 12 RIR 2" fica: regra 11) |
 | `RIR`; `repetições em reserva`; `reps em reserva` | `repetições de sobra` | em qualquer texto; a sigla, menos quando há número dos dois lados dela (regra 11) |
 | `repetição em reserva`; `rep em reserva` | `repetição de sobra` | em qualquer texto |
-| `falha muscular técnica`; `falha técnica muscular`; `falha muscular`; `falha técnica`; `falha concêntrica`; `falha` | `última repetição bem feita` | só depois de "até", "até a", "até à", "à", "próximo da", "próximo à", "perto da", "antes da"; depois de "à" sozinho, não quando segue "de", "do", "da", "na", "no" ou "em" (regra 5) |
+| `falha muscular técnica`; `falha técnica muscular`; `falha muscular`; `falha técnica`; `falha concêntrica`; `falha` | `última repetição bem feita` | só depois de "até", "até a", "até à", "à", "próximo da", "próximo à", "perto da", "antes da"; depois de "à" sozinho, não quando segue "de", "do", "da", "na", "no" ou "em"; em `reps_range` e `rpe_target`, também sozinha, dentro da gramática fechada, e a saída é "até a última repetição bem feita" (regra 5) |
 | `progressão linear` | `evolução passo a passo` | em qualquer texto |
 | `reps` | `repetições` | em qualquer texto; aceita o número colado ("12reps") |
 | `rep` | `repetição` | em qualquer texto; aceita o número colado ("12reps") |
-| `exercícios compostos`; `movimentos compostos`; `exercícios multiarticulares`; `movimentos multiarticulares` | `exercícios de vários músculos` | em qualquer texto, menos antes de "por", "pelo", "pela", "pelos", "pelas" (regra 6) |
-| `exercício composto`; `movimento composto`; `exercício multiarticular`; `movimento multiarticular` | `exercício de vários músculos` | em qualquer texto, menos antes de "por", "pelo", "pela", "pelos", "pelas" (regra 6) |
-| `exercícios isolados`; `movimentos isolados`; `exercícios isoladores`; `movimentos isoladores`; `exercícios monoarticulares`; `movimentos monoarticulares`; `exercícios uniarticulares`; `movimentos uniarticulares` | `exercícios de um músculo só` | em qualquer texto, menos antes de "por", "pelo", "pela", "pelos", "pelas" (regra 6) |
-| `exercício isolado`; `movimento isolado`; `exercício isolador`; `movimento isolador`; `exercício monoarticular`; `movimento monoarticular`; `exercício uniarticular`; `movimento uniarticular` | `exercício de um músculo só` | em qualquer texto, menos antes de "por", "pelo", "pela", "pelos", "pelas" (regra 6) |
-| `compostos`; `multiarticulares` | `exercícios de vários músculos` | só em posição de nome, e nunca antes de "por", "pelo", "pela", "de", "da", "do", "dos", "das" nem de palavra de substância (regra 6) |
-| `composto`; `multiarticular` | `exercício de vários músculos` | só em posição de nome, e nunca antes de "por", "pelo", "pela", "de", "da", "do", "dos", "das" nem de palavra de substância (regra 6) |
-| `isoladores`; `monoarticulares`; `uniarticulares` | `exercícios de um músculo só` | só em posição de nome, e nunca antes de "por", "pelo", "pela", "de", "da", "do", "dos", "das" nem de palavra de substância (regra 6) |
-| `isolador`; `monoarticular`; `uniarticular` | `exercício de um músculo só` | só em posição de nome, e nunca antes de "por", "pelo", "pela", "de", "da", "do", "dos", "das" nem de palavra de substância (regra 6) |
+| `exercícios compostos`; `movimentos compostos`; `exercícios multiarticulares`; `movimentos multiarticulares` | `exercícios de vários músculos` | em qualquer texto, menos antes de "por", "pelo", "pela", "pelos", "pelas", também com um ou dois advérbios da lista fechada no meio (regra 6) |
+| `exercício composto`; `movimento composto`; `exercício multiarticular`; `movimento multiarticular` | `exercício de vários músculos` | em qualquer texto, menos antes de "por", "pelo", "pela", "pelos", "pelas", também com um ou dois advérbios da lista fechada no meio (regra 6) |
+| `exercícios isolados`; `movimentos isolados`; `exercícios isoladores`; `movimentos isoladores`; `exercícios monoarticulares`; `movimentos monoarticulares`; `exercícios uniarticulares`; `movimentos uniarticulares` | `exercícios de um músculo só` | em qualquer texto, menos antes de "por", "pelo", "pela", "pelos", "pelas", também com um ou dois advérbios da lista fechada no meio (regra 6) |
+| `exercício isolado`; `movimento isolado`; `exercício isolador`; `movimento isolador`; `exercício monoarticular`; `movimento monoarticular`; `exercício uniarticular`; `movimento uniarticular` | `exercício de um músculo só` | em qualquer texto, menos antes de "por", "pelo", "pela", "pelos", "pelas", também com um ou dois advérbios da lista fechada no meio (regra 6) |
+| `compostos`; `multiarticulares` | `exercícios de vários músculos` | só em posição de nome, e nunca antes de "por", "pelo", "pela", "de", "da", "do", "dos", "das" nem de palavra de substância; no início, depois de pontuação, de "e" ou de "ou", também não com um ou dois advérbios da lista fechada no meio (regra 6) |
+| `composto`; `multiarticular` | `exercício de vários músculos` | só em posição de nome, e nunca antes de "por", "pelo", "pela", "de", "da", "do", "dos", "das" nem de palavra de substância; no início, depois de pontuação, de "e" ou de "ou", também não com um ou dois advérbios da lista fechada no meio (regra 6) |
+| `isoladores`; `monoarticulares`; `uniarticulares` | `exercícios de um músculo só` | só em posição de nome, e nunca antes de "por", "pelo", "pela", "de", "da", "do", "dos", "das" nem de palavra de substância; no início, depois de pontuação, de "e" ou de "ou", também não com um ou dois advérbios da lista fechada no meio (regra 6) |
+| `isolador`; `monoarticular`; `uniarticular` | `exercício de um músculo só` | só em posição de nome, e nunca antes de "por", "pelo", "pela", "de", "da", "do", "dos", "das" nem de palavra de substância; no início, depois de pontuação, de "e" ou de "ou", também não com um ou dois advérbios da lista fechada no meio (regra 6) |
 | `pegada pronada` | `pegada por cima` | em qualquer texto |
 | `pegada supinada` | `pegada por baixo` | em qualquer texto |
 | `retração escapular`; `retração das escápulas`; `retração de escápulas` | `postura de ombros para trás` | em qualquer texto |
@@ -3105,34 +3355,50 @@ Lats, Pec, Pecs, Glute, Glutes, Limb, Limbs, Day, Days, Workout, Workouts,
 Training, Session, Sessions, Exercise, Exercises, Movement, Movements,
 Routine, Strength, Work.
 
-### O que espera o dono (escrito, testado e DESLIGADO)
+### O que espera o dono (ligado por decisão do orquestrador; o sim do dono continua em branco)
 
-Nada abaixo age em produção: `FLOW_PLAIN_TRAINING_OWNER_SWITCHES` é
-`{ effortOutOfTen: false, renames: [] }`, e a ferramenta chama a rede sem
-outro argumento. Ligar um item é mudar esse literal, com a data do sim do dono
-aqui e os textos do golden na mesma mudança.
+Os dois itens abaixo AGEM em produção desde a segunda rodada de 2026-10-10:
+`FLOW_PLAIN_TRAINING_OWNER_SWITCHES` é
+`{ effortOutOfTen: true, renames: ['hip_thrust', 'military_press'] }`, e a
+ferramenta chama a rede sem outro argumento. Quem ligou foi o orquestrador,
+não o dono nem o médico: as três linhas "sim do dono em" continuam em branco,
+e nenhuma data é escrita aqui enquanto o dono não disser sim por escrito.
+Riscar um item é mudar esse literal (uma linha) e os textos do golden na
+mesma mudança; o que volta está travado em U9 (c) de
+`packages/agent/src/flow-plain-training-language.test.ts`.
 
-- **D1 — escala do esforço** (`effortOutOfTen`). A nota de 1 a 10 ganharia a
-  escala: `rpe_target` "9" viraria "9 de 10", "8-9" viraria "8-9 de 10", e no
-  texto "RPE 8-9" viraria "esforço 8-9 de 10". Nota fora de 1 a 10 ("15") ou
-  texto ("moderado") ficaria como veio. É o único acréscimo de número em toda
-  a rede, e é número que o gerador não escreveu e que o documento do método
-  não define. Hoje a aba Plano mostra "Esforço alvo 9" (RC TL-14). sim do
+- **D1 — escala do esforço** (`effortOutOfTen`). Ligado por decisão do
+  orquestrador, anunciada ao dono em 2026-10-10, que pode riscar qualquer
+  uma. A nota de 1 a 10 ganha a escala: `rpe_target` "9" vira "9 de 10",
+  "8-9" vira "8-9 de 10", e no texto "RPE 8-9" vira "esforço 8-9 de 10" (a
+  aba Plano mostrava "Esforço alvo 9" e passa a mostrar "Esforço alvo 9 de
+  10"). Nota fora de 1 a 10 ("15"), texto ("moderado"), nota que continua
+  depois do número ("RPE 8/9") e faixa escrita com espaços e seguida de
+  palavra ("RPE 8 - 10 repetições") ficam como vieram (regra 9, RC TL-14).
+  A escala não é só de `rpe_target`: " de 10" pode aparecer em qualquer
+  campo de texto que a rede lê e em que o gerador escreva RPE ou PSE e a
+  nota, inclusive na linha de repetições ("8-12 RPE 9" vira "8-12 esforço 9
+  de 10"), no foco e no grupo muscular. É o
+  único acréscimo de número em toda a rede, e é número que o gerador não
+  escreveu e que o documento do método não define: é redação, não regra do
+  método. O formato de `rpe_target` não muda (texto opcional de até 40
+  caracteres). sim do
   dono em: ____
-- **D2 — nomes de exercício** (`renames`), um sim por linha. Os dois
-  candidatos são nomes usados em academia, sem fonte no repositório:
+- **D2 — nomes de exercício** (`renames`), um sim por linha. Ligado por
+  decisão do orquestrador, anunciada ao dono em 2026-10-10, que pode riscar
+  qualquer uma. Os dois nomes são os usados em academia, sem fonte no
+  repositório; o nome original fica entre parênteses (regra 12):
 
-  | Grafias | Viraria | Onde agiria |
+  | Grafias | Vira | Onde age |
   | --- | --- | --- |
-  | `Hip Thrust`; `Hip-Thrust` | `elevação pélvica` | em qualquer texto; troca junto "o" por "a", "do" por "da", "no" por "na", "ao" por "à", "um" por "uma" |
-  | `Military press` | `desenvolvimento militar` | em qualquer texto |
+  | `Hip Thrust`; `Hip-Thrust` | `elevação pélvica` | seguido do nome original entre parênteses ("Hip Thrust com Barra" vira "Elevação pélvica com Barra (Hip Thrust)"); em qualquer texto, menos na lista de equipamentos, dentro de parênteses e onde o nome em português já está (regra 12); troca junto "o" por "a", "do" por "da", "no" por "na", "ao" por "à", "um" por "uma" |
+  | `Military press` | `desenvolvimento militar` | seguido do nome original entre parênteses ("Military press" vira "Desenvolvimento militar (Military press)"); em qualquer texto, menos na lista de equipamentos, dentro de parênteses e onde o nome em português já está (regra 12) |
 
   `Hip Thrust`: sim do dono em: ____ · `Military press`: sim do dono em: ____
 
-  "Stiff" e "Leg Press" não têm candidato: a recomendação é manter, porque é
-  como a academia e a máquina chamam (uma descrição diria como posicionar o
-  joelho, o que o plano não disse). Hoje os quatro nomes ficam como o gerador
-  escreveu (RC TL-13).
+  "Stiff" e "Leg Press" não têm linha e ficam exatamente como o gerador
+  escreveu: é o nome que está na máquina e o que as academias do Brasil usam
+  (RC TL-13).
 
 ### O que é garantido
 
@@ -3142,27 +3408,44 @@ Flow cria depois desta mudança:
 1. Toda linha da tabela ativa é aplicada, nos campos lidos, sempre que a
    grafia aparece como palavra inteira, dentro das regras 3 a 6, 10 e 11, e o
    texto simples cabe no limite do campo. O que as regras deixam passar de
-   propósito está em RC TL-15; o que fica como o gerador escreveu por causa
-   do limite, em RC TL-7.
+   propósito está em RC TL-15, RC TL-17, RC TL-18 e RC TL-19; o que fica como
+   o gerador escreveu por causa do limite, em RC TL-7.
 2. O chat e a aba Plano mostram o mesmo texto: o bloco da sugestão no chat é
    montado do rascunho gravado (a única diferença possível continua sendo a
    troca dos nomes internos, que age só no chat: RC FN-3).
 3. Números e estrutura são os do gerador: séries, descanso, minutos, tipo do
    plano, número de dias, de exercícios, de passos e de erros, e todo dígito
-   de todo texto, na mesma ordem. Nenhum dígito é acrescentado nem retirado.
+   de todo texto, na mesma ordem. Nenhum dígito é retirado, e o ÚNICO número
+   que a rede acrescenta é o "10" de " de 10" depois de uma nota de esforço
+   (regra 9): tirado esse " de 10", os dígitos de cada texto são os do
+   gerador. Travado nas 20.000 frases semeadas do teste de unidade, lidas com
+   a escala desligada (igualdade estrita) e como a produção lê (a diferença
+   só pode ser " de 10" escrito).
 4. Nenhuma linha acrescenta instrução de execução: a tabela inteira é travada
    como literal no teste.
-5. Formato: mesmas chaves e tipos; nenhum campo passa do limite; nada é
-   cortado; um rascunho que seria `ready_for_review` continua
-   `ready_for_review`.
+5. Formato: mesmas chaves e tipos; nenhum campo passa do limite; a rede não
+   corta nada; um rascunho que seria `ready_for_review` continua
+   `ready_for_review`. (O passo do gerador para campo pequeno acima do limite
+   pode ACRESCENTAR a observação a um exercício que não tinha, e a observação
+   que recebe o texto movido passa pelo corte de 300 que já existia: RC
+   TL-21.)
 6. Aplicar o vocabulário duas vezes não muda mais nada.
 7. Só no Flow e só no treino: o vocabulário é importado por
    `tools/plan-proposal-tools.ts` e por mais nenhum arquivo, e chamado uma
    vez, dentro de `propoe_plano_treino`. `gera_treino`, `processMessage`, o
    prompt legado, a sugestão de cardápio, a importação de documento, a edição
    feita pela pessoa e o texto livre do chat nunca chegam a ele.
-8. Nome de exercício não é trocado e o esforço não ganha escala enquanto o
-   dono não disser sim.
+8. Só dois nomes de exercício são trocados ("Hip Thrust" e "Military
+   press"), sempre com o nome original entre parênteses quando cabe, nunca
+   duas vezes e nunca na lista de equipamentos; "Stiff" e "Leg Press" nunca
+   são tocados. A nota de 1 a 10 sozinha em `rpe_target`, ou depois de RPE /
+   PSE quando nada continua a nota, lê "<nota> de 10". As duas coisas estão
+   ligadas por decisão do orquestrador, anunciada ao dono em 2026-10-10, que
+   pode riscar qualquer uma; o sim escrito do dono continua em branco.
+9. Um `reps_range` ou `rpe_target` acima de 40 caracteres que traz a frase
+   ensinada pelo pedido não recusa mais a sugestão: o campo fica com um valor
+   limpo ou com a própria frase, e o texto do gerador abre a observação do
+   exercício ("Limites dos campos").
 
 O teto do chat. O texto simples é mais longo que o do gerador (o parágrafo de
 progressão do cenário relatado cresce 35 caracteres). O chat mostra até 2.000
@@ -3170,24 +3453,31 @@ caracteres da sugestão (1.958 para os blocos): num plano perto desse teto, o
 chat perde primeiro o parágrafo "Progressão:" e depois dias inteiros, do fim
 para o começo, e termina em '(O restante está em "Revisar sugestão".)'; a aba
 Plano continua com tudo. O rascunho real de 2026-09-30 (18 exercícios) passa
-de 1.337 para 1.373 caracteres e continua inteiro.
+de 1.337 para 1.373 caracteres e continua inteiro. Um exercício renomeado
+alonga a sua linha (a de "Hip Thrust com Barra" passa de 46 para 65
+caracteres: o bloco do cenário relatado vai de 685 para 704); a escala do
+esforço não aparece no chat, porque a linha do exercício não mostra a nota.
 
 Travado em
 `packages/agent/src/__golden__/audit-10-10-flow-workout-plain-language.test.ts`
 (o turno relatado, "Nenhuma limitacao e sem prioridade", com os textos exatos
 do rascunho gravado em 2026-10-10 16:44:49Z, pela ferramenta real e pelo
 pipeline real com modelo roteirizado) e em
-`packages/agent/src/flow-plain-training-language.test.ts` (cada regra).
+`packages/agent/src/flow-plain-training-language.test.ts` (cada regra),
+`packages/agent/src/flow-plain-training-language.first-call.test.ts` (a
+primeira sugestão de um processo) e
+`packages/agent/src/flow-plain-training-language.space-runs.test.ts` (uma
+sequência longa de espaços).
 
 > RC TL-1 — cenário rascunho de treino do Flow de 2026-10-10 16:44:49Z (conta de teste, 5 dias, 29 exercícios) variante os 23 exercícios, o grupo muscular de 3 exercícios e os dias de terça e quinta, cujo texto o arquivo de evidência não traz NÃO coberta nesta PR (pendência da audit 2026-10-10). O fim do chat só está provado no recorte de 3 dias e 6 exercícios: para o turno relatado inteiro o golden é variante próxima. No plano inteiro o texto simples é mais longo (só o parágrafo de progressão cresce 35 caracteres) e o chat pode terminar em '(O restante está em "Revisar sugestão".)' sem o parágrafo de progressão e sem o último dia; a aba Plano continua com tudo. Só a releitura autorizada do rascunho inteiro, fora desta raia, fecha esta linha.
 
-> RC TL-2 — cenário termos "porção clavicular", "cabeça longa do tríceps", "isquiotibiais", "gastrocnêmio", "sóleo", "cadeia posterior" e "Military press" variante a frase exata em que cada um apareceu no rascunho de 2026-10-10 (não está no arquivo de evidência; os seis primeiros são cobertos numa frase de teste, que é variante próxima, inclusive com barra; o sétimo está em RC TL-13) NÃO coberta nesta PR (pendência da audit 2026-10-10)
+> RC TL-2 — cenário termos "porção clavicular", "cabeça longa do tríceps", "isquiotibiais", "gastrocnêmio", "sóleo", "cadeia posterior" e "Military press" variante a frase exata em que cada um apareceu no rascunho de 2026-10-10 (não está no arquivo de evidência; os seis primeiros são cobertos numa frase de teste, que é variante próxima, inclusive com barra; o sétimo é renomeado desde a segunda rodada: RC TL-13) NÃO coberta nesta PR (pendência da audit 2026-10-10)
 
 > RC TL-3 — cenário sugestão de treino do Flow variante resposta do MODELO REAL ao pedido de linguagem simples (o modelo é roteirizado nos testes; nenhum turno real rodou com o pedido novo) NÃO coberta nesta PR (pendência da audit 2026-10-10)
 
 > RC TL-4 — cenário termo técnico ou nome em inglês variante FORA do vocabulário fechado (por exemplo "peitoral", "quadríceps", "dorsal", "deltoide", "amplitude", "stress", "escápulas" sem "retraídas", "unilateral" e "unilaterais", "pegada neutra", "cabeça longa" sem o músculo, "Upper back", "Pulldown", "Pullover", "Crossover", "drop set") NÃO coberta nesta PR (pendência da audit 2026-10-10)
 
-> RC TL-5 — cenário linha do exercício no chat ("• Hip Thrust com Barra — 4×8-12, descanso 90 s") variante a notação séries×repetições, o "s" de segundos e o rótulo "Progressão:" NÃO coberta nesta PR (pendência da audit 2026-10-10)
+> RC TL-5 — cenário linha do exercício no chat ("• Elevação pélvica com Barra (Hip Thrust) — 4×8-12, descanso 90 s", que a tela do dono mostrava como "• Hip Thrust com Barra — 4×8-12, descanso 90 s") variante a notação séries×repetições, o "s" de segundos e o rótulo "Progressão:" NÃO coberta nesta PR (pendência da audit 2026-10-10)
 
 > RC TL-6 — cenário rascunho de treino gravado ANTES desta mudança (inclusive o de 2026-10-10 16:44:49Z no ambiente de teste) e mensagem do chat já gravada variante texto já armazenado, que não é reescrito NÃO coberta nesta PR (pendência da audit 2026-10-10)
 
@@ -3197,19 +3487,31 @@ pipeline real com modelo roteirizado) e em
 
 > RC TL-9 — cenário sugestão de treino para conta em INGLÊS variante pedido ao gerador e vocabulário só em português NÃO coberta nesta PR (pendência da audit 2026-10-10)
 
-> RC TL-10 — cenário frase depois da troca variante redação que continua sem ser do dia a dia, porque a rede troca palavras e não reescreve a frase ("Plano empurrar/puxar/pernas modificado para 5 dias: Segunda (empurrar superior), Terça (puxar), Quarta (pernas completo)", "Exercício de vários músculos principal para peitoral", "Panturrilha (músculo da panturrilha)") NÃO coberta nesta PR (pendência da audit 2026-10-10). A concordância com a palavra vizinha também não é ajustada: "12 rep" vira "12 repetição", "MMII fortes" vira "Parte de baixo do corpo fortes" e "Treine a PSE 8" vira "Treine o esforço 8" (o "a" era preposição e foi lido como artigo).
+> RC TL-10 — cenário frase depois da troca variante redação que continua sem ser do dia a dia, porque a rede troca palavras e não reescreve a frase ("Plano empurrar/puxar/pernas modificado para 5 dias: Segunda (empurrar superior), Terça (puxar), Quarta (pernas completo)", "Exercício de vários músculos principal para peitoral", "Panturrilha (músculo da panturrilha)") NÃO coberta nesta PR (pendência da audit 2026-10-10). A concordância com a palavra vizinha também não é ajustada: "12 rep" vira "12 repetição", "MMII fortes" vira "Parte de baixo do corpo fortes" e "Treine a PSE 8" vira "Treine o esforço 8 de 10" (o "a" era preposição e foi lido como artigo).
 
 > RC TL-11 — cenário plano importado de foto ou PDF, texto digitado pela pessoa em "Revisar sugestão" e sugestão de cardápio variante texto que não é sugestão de treino escrita pelo Flow, deixado como está de propósito NÃO coberta nesta PR (pendência da audit 2026-10-10)
 
 > RC TL-12 — cenário frase de abertura ou de fecho escrita pelo modelo no turno da sugestão de treino variante termo técnico fora do bloco da sugestão NÃO coberta nesta PR (pendência da audit 2026-10-10)
 
-> RC TL-13 — cenário nomes de exercício em inglês vistos pelo dono ("Hip Thrust com Barra", "Stiff Unilateral com Halter", "Leg Press 45°") e "Military press" variante troca do nome pela rede determinística, que entra desligada até o dono aprovar cada nome NÃO coberta nesta PR (pendência da audit 2026-10-10). O nome fica como o gerador escreveu; só o pedido ao modelo pede o nome usado nas academias do Brasil.
+> RC TL-13 — cenário nomes de exercício em inglês vistos pelo dono ("Hip Thrust com Barra", "Stiff Unilateral com Halter", "Leg Press 45°") e "Military press" variante "Stiff" e "Leg Press", que ficam como o gerador escreveu (é o nome da máquina e o que as academias do Brasil usam); qualquer outro nome em inglês; as outras palavras em inglês do mesmo nome, que ficam ("Single Leg Hip Thrust" vira "Single Leg elevação pélvica (Hip Thrust)"); o nome que o gerador já escreveu entre parênteses ("Glúteos (hip thrust)"); o campo ou a frase que já traz o nome em português, que fica como veio ("Hip Thrust (elevação pélvica)"); a lista de equipamentos ("banco para hip thrust"); e a segunda menção no mesmo texto, que fica só com o nome em português NÃO coberta nesta PR (pendência da audit 2026-10-10). Coberto desde a segunda rodada de 2026-10-10, por decisão do orquestrador, anunciada ao dono em 2026-10-10, que pode riscar qualquer uma: "Hip Thrust" vira "Elevação pélvica" e "Military press" vira "Desenvolvimento militar", com o nome original entre parênteses ("Hip Thrust com Barra" vira "Elevação pélvica com Barra (Hip Thrust)"); quando o resultado não cabe no limite do campo, fica só o nome em português (RC TL-22). A frase exata em que "Military press" apareceu no rascunho de 2026-10-10 não está no arquivo de evidência.
 
-> RC TL-14 — cenário "Esforço alvo 9" na aba Plano variante explicação da escala da nota ("9 de 10"), que entra desligada até o dono decidir NÃO coberta nesta PR (pendência da audit 2026-10-10). A sigla sai do texto ("RPE 8-9" vira "esforço 8-9"); a nota fica como o gerador escreveu.
+> RC TL-14 — cenário "Esforço alvo 9" na aba Plano variante nota fora de 1 a 10 ("15"), esforço escrito em palavras ("moderado"), nota que o próprio gerador escreveu depois da palavra "esforço" em texto corrido ("esforço 8-9"), nota que continua depois do número ou é seguida de um sinal fora da lista fechada ("RPE 8/9", "RPE 8+", "RPE 8 ou 9", "RPE 8 para 9", "RPE 8 - RIR 2"), faixa escrita com espaço ao lado do traço ou com " a " e seguida de palavra ou de "(", em que o segundo número pode ser outra coisa ("RPE 8 - 10 repetições", "RPE 8 a 10 repetições por série", e também a faixa de verdade "RPE 8 a 9 nas últimas séries"), nota seguida de outro texto no próprio rpe_target, sem a sigla ("8 (pesado)") e nota cuja frase já diz a escala depois dela ("RPE 8 (de 10)", "RPE 8 numa escala de 1 a 10"), que ficam sem a escala NÃO coberta nesta PR (pendência da audit 2026-10-10). Coberto desde a segunda rodada de 2026-10-10, por decisão do orquestrador, anunciada ao dono em 2026-10-10, que pode riscar qualquer uma: a nota de 1 a 10 sozinha em rpe_target ganha a escala ("9" vira "9 de 10", e com ponto final "9." vira "9 de 10.") e a nota depois da sigla, no texto, também ("RPE 8-9" vira "esforço 8-9 de 10"). A faixa com espaço ao lado do traço seguida do fim da frase ou de pontuação é lida como faixa e ganha a escala ("RPE 8 - 9." vira "esforço 8 - 9 de 10."), também se o gerador quis dizer outra coisa com o segundo número. O "10" da escala é o único número que a rede acrescenta; o documento do método não define a escala.
 
-> RC TL-15 — cenário grafia do vocabulário fechado variante que a regra deixa passar de propósito (colada a letra, número, "_", "@" ou "-"; sigla em minúsculas, como "rpe" e "rir"; a sigla RIR com número dos dois lados, como "Séries de 12 RIR 2"; "PSE" antes de palavra terminada em "a" ou "as"; as divisões em inglês dentro de nome de exercício ou de equipamento; Push, Pull, Legs, Upper, Lower e Core vizinhas de uma palavra da lista fechada de inglês; "falha" fora de "até", "até a", "à", "próximo da", "próximo à", "perto da", "antes da", e depois de "à" quando segue "de", "do", "da", "na", "no" ou "em"; "composto" e "isolador" depois de uma palavra que não anuncia nome, como um verbo, ou "composto" antes de "por", de "de" e de palavra de substância; "escápulas retraídas" depois de outra palavra terminada em "as" ou antes de "e" ou vírgula mais uma palavra terminada em "adas" ou "idas"; trecho de endereço), composto em inglês com vizinha fora da lista, trocado palavra por palavra em texto corrido ("Core Blaster" vira "abdômen Blaster"), frase trocada pela metade ("Combine compostos e isoladores" vira "Combine compostos e exercícios de um músculo só"), e grafia colada a letra ou número de outro alfabeto, que não conta como cola ("Treino de Coreж" vira "Treino de abdômenж") NÃO coberta nesta PR (pendência da audit 2026-10-10)
+> RC TL-15 — cenário grafia do vocabulário fechado variante que a regra deixa passar de propósito (colada a letra, número, "_", "@" ou "-"; sigla em minúsculas, como "rpe" e "rir"; a sigla RIR com número dos dois lados, como "Séries de 12 RIR 2"; "PSE" antes de palavra terminada em "a" ou "as"; as divisões em inglês dentro de nome de exercício ou de equipamento; Push, Pull, Legs, Upper, Lower e Core vizinhas de uma palavra da lista fechada de inglês; "falha" fora de "até", "até a", "à", "próximo da", "próximo à", "perto da", "antes da", e depois de "à" quando segue "de", "do", "da", "na", "no" ou "em" (nos campos de repetições e de esforço a palavra sozinha também é trocada, dentro da gramática fechada: RC TL-18); "composto" e "isolador" depois de uma palavra que não anuncia nome, como um verbo, ou "composto" antes de "por", de "de" e de palavra de substância, também com um advérbio da lista fechada no meio quando vem no início, depois de pontuação, de "e" ou de "ou" (RC TL-17); "escápulas retraídas" depois de outra palavra terminada em "as" ou antes de "e" ou vírgula mais uma palavra terminada em "adas" ou "idas"; trecho de endereço), composto em inglês com vizinha fora da lista, trocado palavra por palavra em texto corrido ("Core Blaster" vira "abdômen Blaster"), frase trocada pela metade ("Combine compostos e isoladores" vira "Combine compostos e exercícios de um músculo só"), e grafia colada a letra ou número de outro alfabeto, que não conta como cola ("Treino de Coreж" vira "Treino de abdômenж") NÃO coberta nesta PR (pendência da audit 2026-10-10)
 
 > RC TL-16 — cenário turno relatado ("Nenhuma limitacao e sem prioridade", 2026-10-10 16:44:49Z) variante a resposta do modelo na segunda chamada do turno, os argumentos que ele passou à ferramenta e a data de nascimento da conta de teste, que não foram registrados NÃO coberta nesta PR (pendência da audit 2026-10-10). A mensagem não é um pedido único: o turno faz duas chamadas ao modelo. No golden a segunda resposta é roteirizada nas duas formas possíveis (o modelo resume, e o sistema põe a sugestão gravada entre a abertura e o fecho fixos, que é o fecho que a tela mostrou; ou o modelo copia a sugestão), e os argumentos são reconstruídos da conversa.
+
+> RC TL-17 — cenário "composto" usado como particípio ("Treino ABC, composto principalmente por exercícios básicos.") variante outra palavra entre o particípio e a preposição que não seja advérbio da lista fechada (palavra terminada em "mente", "apenas", "só", "sobretudo", "quase", "também", "ainda", "sempre", "tanto", "em grande parte", "em sua maioria", "na maior parte"), como em "Treino ABC, composto na prática por exercícios básicos.", que continua trocada; vírgula no meio ("composto, na prática, por"); e particípio logo depois de artigo ou de preposição NÃO coberta nesta PR (pendência da audit 2026-10-10). A leitura através do advérbio também deixa como o gerador escreveu um nome seguido de advérbio da lista e de "de" ou "por", no início, depois de pontuação, de "e" ou de "ou" ("Compostos sempre de manhã." fica). A segunda frase do revisor não está em nenhum registro: a de "e" foi escrita no teste.
+
+> RC TL-18 — cenário "falha" ou "falha técnica" escrita sozinha no campo de repetições ou de esforço variante valor cujo texto simples passa de 40 caracteres ("10-12 ou falha" teria 41, como "12-15 ou falha" e "10-12 ou até a falha": é a faixa de dois dígitos, o valor mais provável do campo), que fica como o gerador escreveu, e "falha" fora da gramática fechada: depois de outra palavra ("sem falha"), colada a hífen ("pré-falha") ou seguida de outra palavra ("Falha total") NÃO coberta nesta PR (pendência da audit 2026-10-10). As grafias cobertas foram tiradas da leitura do código; as do revisor não estão em nenhum registro. Fechar a faixa de dois dígitos pede que a rede mova texto de um campo para outro (como o gerador faz com a frase ensinada: RC TL-21), o que não foi decidido.
+
+> RC TL-19 — cenário rótulo do esforço repetido em rpe_target variante campo que é só o rótulo ("RPE" vira "Esforço"), rótulo no meio de uma frase ("Mantenha RPE alto" vira "Mantenha esforço alto"), rótulo seguido de mais de uma palavra ("Esforço percebido 8" fica), rótulo seguido de palavra que é parte do próprio nome ("Esforço percebido" fica) e "PSE" antes de palavra terminada em "a" ("PSE alta" fica) NÃO coberta nesta PR (pendência da audit 2026-10-10). As grafias cobertas foram tiradas da leitura do código; as do revisor não estão em nenhum registro.
+
+> RC TL-20 — cenário tempo da rede de linguagem simples variante sequência longa de pontos ou de letras sem espaço, cujo custo ainda cresce mais depressa que o tamanho do texto (medido com um build do Xcode ao lado: 4.000 pontos em 78 ms e 4.000 letras em 31 ms; nos 500 caracteres de um campo, 5 ms e 2 ms) NÃO coberta nesta PR (pendência da audit 2026-10-10)
+
+> RC TL-21 — cenário reps_range ou rpe_target com mais de 40 caracteres variante texto sem a frase "última repetição bem feita", que continua recusando a sugestão inteira (como já acontece com nome acima de 120, foco acima de 80 e dia acima de 20), e texto com a frase cujo original, movido para o começo da observação do exercício, faz a observação passar de 300 caracteres: ela é cortada no fim com "…" pela regra que já existe NÃO coberta nesta PR (pendência da audit 2026-10-10). A frase escrita com hífen ("até a última repetição bem-feita") conta como a frase desde a revisão da segunda rodada.
+
+> RC TL-22 — cenário escala "de 10" da nota de esforço e nome original entre parênteses variante campo cujo texto passaria do limite com eles (rpe_target "RPE 9, até a falha" teria 41 caracteres com a escala e fica "9, até a última repetição bem feita"): sai primeiro a escala, depois o parêntese, e só então vale RC TL-7; a telemetria não conta essas omissões NÃO coberta nesta PR (pendência da audit 2026-10-10)
 
 ## Proposta de treino
 

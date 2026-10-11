@@ -25,11 +25,18 @@
  * THE RULES (each one is pinned in flow-plain-training-language.test.ts):
  *  1. Sentence by sentence, left to right, over the text normalised to NFC.
  *     At a position the longer spelling wins. A sentence is read again until
- *     nothing changes: no output carries a spelling, so an output is never
- *     replaced, but a term that was kept because of its neighbour ("Core" in
- *     "Leg day - Core") is read without it once the neighbour was a term too.
+ *     nothing changes: no output carries a spelling the table would read
+ *     again, so an output is never replaced, but a term that was kept because
+ *     of its neighbour ("Core" in "Leg day - Core") is read without it once
+ *     the neighbour was a term too. The one output that carries a spelling is
+ *     the renamed exercise, which keeps its original name in parentheses
+ *     (rule 12): a rename row does not read inside parentheses nor where its
+ *     Portuguese name already is, so that one is not read again either.
  *     A text in which no row acts comes back as the very same string (not
- *     normalised).
+ *     normalised). A run of spaces counts as one space and is never read
+ *     twice: the vocabulary is matched over the sentence with one space in
+ *     each place (the time is linear in the run), and a run outside a
+ *     replaced spelling is written back as it was.
  *  2. Whole words only: a spelling glued to a letter, a digit, "_", "@" or
  *     "-" is not the term ("reps_range", "Push-up", "Pulldown", "score").
  *     "/", "+", brackets and punctuation are NOT glue: both sides of
@@ -57,6 +64,14 @@
  *     term when "de", "do", "da", "dos", "das", "na", "no", "nas", "nos" or
  *     "em" follows ("devida à falha na execução"). "Corrija qualquer falha
  *     técnica" and "se a técnica falha" are not the term.
+ *     In `reps_range` and `rpe_target` ONLY, the word written alone is the
+ *     term too, inside a closed grammar. BEFORE it: the start of the field
+ *     or of a sentence, a number and a space, "ou", one of ( / + , ; : or a
+ *     dash BETWEEN SPACES. AFTER it: the end (with or without a full stop),
+ *     ")", ",", ";", "/", "+" or "ou". The output carries the introduction:
+ *     "falha" → "até a última repetição bem feita", "8-12 (falha)" → "8-12
+ *     (até a última repetição bem feita)". "sem falha", "pré-falha" and
+ *     "Falha total" are outside the grammar and stay.
  *  6. composto(s), multiarticular(es), isolador(es), monoarticular(es) and
  *     uniarticular(es) ALONE only in noun position: at the start of the
  *     field; after . ! ? : ; , ( • — or a line break; or right after o, os,
@@ -67,15 +82,59 @@
  *     "treino composto", "priorize compostos") they stay. "isolado(s)" alone is never replaced. The whole
  *     entries (exercício/movimento + the adjective) act anywhere, except
  *     before por, pelo, pela, pelos, pelas.
+ *     The participle is read THROUGH an adverb. At the start, after
+ *     punctuation, after "e" or after "ou" (where "composto" is as likely a
+ *     participle as a noun: "Treino ABC, composto principalmente por
+ *     exercícios básicos"), the word also stays when up to two adverbs of a
+ *     closed list stand between it and the preposition: a word ending in
+ *     "mente", apenas, só, sobretudo, quase, também, ainda, sempre, tanto, em
+ *     grande parte, em sua maioria, na maior parte. Right after a determiner
+ *     or a preposition ("os compostos normalmente de 6 a 10 repetições") the
+ *     adverb is not read through: there it is the noun. The whole entries
+ *     are read through the same adverbs wherever they are ("exercícios
+ *     compostos principalmente por duas fases" stays).
  *  7. Capital letter: at the start of the field, of a sentence or of a line
  *     the output follows the case of the first letter of what it replaces;
  *     anywhere else it is lower case. A row whose output changes gender or
  *     number carries the determiners it swaps (`articles`).
  *  8. No row adds a body position, a joint, a direction, a load or a number
  *     that the replaced word does not say.
- *  9. `rpe_target`: the repeated label leaves when a grade follows ("RPE 8" →
- *     "8") and a written "/10" is spelled out ("8/10" → "8 de 10"). The scale
- *     is added to a bare grade ONLY with the owner's switch.
+ *  9. The effort grade. A written "/10" is spelled out ("8/10" → "8 de 10").
+ *     In `rpe_target`, the field the app prints after its own label, the
+ *     repeated label leaves: "RPE 8" → "8"; and, when the label opens the
+ *     field (an optional article, then RPE, PSE or "esforço", an optional
+ *     "alvo", ":" or "="), also before ONE word ("RPE alto" → "alto"; never
+ *     "PSE" before a word ending in "a" or "as", never before "percebido"/
+ *     "percebida" or "alvo", which are part of the label's own name); and
+ *     the label written after a whole grade leaves too ("8 RPE" → "8").
+ *     THE SCALE (switch `effortOutOfTen`, on): a grade from 1 to 10 reads
+ *     "<nota> de 10" — the whole of `rpe_target`, with or without its full
+ *     stop ("9" → "9 de 10", "9." → "9 de 10."), or after RPE / PSE in any
+ *     text the net reads ("RPE 8-9" → "esforço 8-9 de 10"; also in
+ *     `reps_range`, `focus`, `muscle_group` and `name` when the generator
+ *     writes the acronym there). It is written
+ *     only after a grade that does NOT GO ON. What may follow the grade is a
+ *     closed list: the end of the sentence; ")" or "]"; one of . , ; : ! ? …
+ *     not followed by a digit; or a space and then a word or "(" — but not
+ *     "ou", "e", "a", "até", "de", "em", "para" or "pra" followed by a
+ *     number. "RPE 8/9", "RPE 8+", "RPE 8 ou 9", "RPE 8 para 9", "RPE 8 → 9",
+ *     "RPE 8 - RIR 2" keep the grade as written, without the scale.
+ *     A RANGE WRITTEN WITH SPACES — a space beside its dash ("8 - 10") or
+ *     " a " ("8 a 10") — gains the scale only when NOTHING goes on after it
+ *     (the end, a closing bracket, punctuation). Followed by a word or "("
+ *     the second number may be another thing, as in a list written with
+ *     dashes: "RPE 8 - 10 repetições", "RPE 7 - 3 séries de aquecimento" and
+ *     "RPE 8 a 10 repetições por série" keep their numbers, without the
+ *     scale (review of the second round: they were stored "8 - 10 de 10
+ *     repetições"). A real range written that way loses it too ("RPE 8 a 9
+ *     nas últimas séries"); the range written as one keeps it ("RPE 8-9 nas
+ *     últimas"). Nor is the scale written when the sentence
+ *     already says the scale after the grade (the word "escala", "de 10",
+ *     "em 10" or "/10": "RPE 8 (de 10)", "RPE 8 numa escala de 0 a 10"). A
+ *     grade the generator wrote after the WORD "esforço" in running text is
+ *     not a spelling of the table: no scale. Nor is a grade followed by
+ *     other text in `rpe_target` itself, without the acronym ("8 (pesado)"):
+ *     a number before a word may be another thing.
  * 10. An acronym (a spelling written in capitals: RPE, PSE, RIR, PPL, MMSS,
  *     MMII) is matched in capitals only: "rir" is a verb. "PSE" alone stays
  *     before a word ending in "a" or "as" ("PSE alta"), which agrees with it.
@@ -93,10 +152,28 @@
  *     thing, so the words take the place of the acronym and no number moves
  *     ("repetições de sobra 2 - 3 séries"). The words ("repetições em
  *     reserva") are renamed in place wherever they are.
+ * 12. A RENAMED EXERCISE (switch `renames`, both rows on). The spelling
+ *     becomes the Portuguese name followed by the original name, as the
+ *     generator wrote it, in parentheses, so the person can still ask for it
+ *     at the gym: "Hip Thrust com Barra" → "Elevação pélvica com Barra (Hip
+ *     Thrust)". In `name` the parenthesis goes to the end of the name (of
+ *     its sentence, before a final full stop), or right after the Portuguese
+ *     name when the name already has a parenthesis ("Hip Thrust com Barra
+ *     (glúteos)" → "Elevação pélvica (Hip Thrust) com Barra (glúteos)"). In
+ *     any other field it comes right after, and only at the FIRST mention of
+ *     the field; the following ones read the Portuguese name alone. A rename
+ *     row does not read what is inside parentheses ("Glúteos (hip thrust)");
+ *     does not act in a field (single phrase) or in a sentence (running
+ *     text) that already carries its Portuguese name, whatever the case and
+ *     the accents ("Hip Thrust (elevação pélvica)"); and does not act in the
+ *     equipment list, which is what the person said they have. "Stiff" and
+ *     "Leg Press" have no row: they stay exactly as the generator wrote.
  *
  * NUMBERS AND STRUCTURE are never read nor written: plan_type, duration_min,
  * sets, rest_seconds, any unknown key. Every digit of every text is the
- * generator's, in the same order; nothing is derived.
+ * generator's, in the same order; nothing is derived. ONE number is written
+ * by the net: the "10" of " de 10" after an effort grade (rule 9). The
+ * method's document does not define that scale; it is copy, not a rule.
  *
  * LIMITS. Running text (notes, progression_rule, an exercise's notes, each
  * step and each mistake) is replaced sentence by sentence; if the field
@@ -104,11 +181,23 @@
  * wording until it fits. A single-phrase field (day, focus, muscle_group,
  * name, reps_range, rpe_target, equipment_summary) keeps the generated value
  * whole when the plain one does not fit. Nothing is cut.
+ * Before any of that, what the two switches ADD is left out, field by field,
+ * so that plain words that fit are never given back because of it: first the
+ * whole field with the scale and the parenthesis; if it does not fit,
+ * without the scale; if it still does not fit, without the scale and without
+ * the parenthesis (the Portuguese name alone); and only then the rule above,
+ * applied to the text without both. `rpe_target` "RPE 9, até a falha" would
+ * have 41 characters with the scale: it is stored as "9, até a última
+ * repetição bem feita".
  *
- * WHAT WAITS FOR THE OWNER is written here and switched OFF
- * (FLOW_PLAIN_TRAINING_OWNER_SWITCHES): the rows that rename an exercise and
- * the "de 10" scale of the effort grade. No production path passes other
- * switches; they exist so that turning one on is a one-line, tested change.
+ * THE TWO SWITCHES (FLOW_PLAIN_TRAINING_OWNER_SWITCHES) are ON since the
+ * second round of 2026-10-10: the "de 10" scale of the effort grade (D1) and
+ * the two rows that rename an exercise (D2). They were turned on by decisão
+ * do orquestrador, anunciada ao dono em 2026-10-10, que pode riscar qualquer
+ * uma. It is NOT the owner's nor the physician's written yes: in the doc the
+ * three lines "sim do dono em" are still blank. Striking a decision is
+ * taking its entry out of the literal (one line, tested). No production path
+ * passes other switches.
  *
  * The legacy WhatsApp tool (gera_treino), the menu proposal, the document
  * import and the chat's free text never call this file.
@@ -426,9 +515,12 @@ export const FLOW_PLAIN_TRAINING_VOCABULARY: readonly FlowPlainTrainingRow[] = [
 ]
 
 /**
- * The rows that RENAME an exercise. Candidates only: each one acts when, and
- * only when, its id is in the owner's switches. "Stiff" and "Leg Press" have
- * no row: the recommendation is to keep the name the gym and the machine use.
+ * The rows that RENAME an exercise (rule 12). Each one acts when, and only
+ * when, its id is in the switches; both are, since the second round of
+ * 2026-10-10 (see THE TWO SWITCHES above: the orchestrator's decision, the
+ * owner's written yes still blank — the name of this list did not change).
+ * "Stiff" and "Leg Press" have no row: they are the names on the machine and
+ * the ones the gyms of Brazil use.
  */
 export const FLOW_PLAIN_TRAINING_RENAMES_AWAITING_OWNER: readonly FlowPlainTrainingRow[] = [
   {
@@ -443,14 +535,19 @@ export const FLOW_PLAIN_TRAINING_RENAMES_AWAITING_OWNER: readonly FlowPlainTrain
 export interface FlowPlainTrainingOwnerSwitches {
   /** D1: write the scale after an effort grade from 1 to 10 ("9" → "9 de 10"). */
   effortOutOfTen: boolean
-  /** D2: ids of FLOW_PLAIN_TRAINING_RENAMES_AWAITING_OWNER the owner approved. */
+  /** D2: ids of FLOW_PLAIN_TRAINING_RENAMES_AWAITING_OWNER that are turned on. */
   renames: readonly string[]
 }
 
-/** What production uses. Turning a switch on needs the owner's yes, dated in the doc. */
+/**
+ * What production uses. Both decisions are ON by decisão do orquestrador,
+ * anunciada ao dono em 2026-10-10, que pode riscar qualquer uma; the owner's
+ * written yes is still blank in the doc (docs/mobile/api-v1.md). To strike
+ * D1, write `effortOutOfTen: false`; to strike a name, take its id out.
+ */
 export const FLOW_PLAIN_TRAINING_OWNER_SWITCHES: FlowPlainTrainingOwnerSwitches = Object.freeze({
-  effortOutOfTen: false,
-  renames: Object.freeze([] as string[]),
+  effortOutOfTen: true,
+  renames: Object.freeze(['hip_thrust', 'military_press']),
 })
 
 /**
@@ -581,20 +678,54 @@ const FAILURE_AFTER_BARE_UNTIL = `(?<=${WORD_START}${UNTIL}${SP}+)`
 const FAILURE_AFTER_LONE_A = `(?<=${WORD_START}[àÀ]${SP}+)`
 const NOT_A_FAULT_OF = `(?!${SP}+(?:${alternatives(['de', 'do', 'da', 'dos', 'das', 'na', 'no', 'nas', 'nos', 'em'])})${WORD_END})`
 
+/** Words written in this file that a model may type without their accent: any case, any accent. */
+function folded(text: string): string {
+  return [...text].map((char) => (char === ' ' ? `${SP}+` : character(char, true))).join('')
+}
+
 // Rule 6.
-/** Words after which composto(s) / isolador(es) alone is a noun: determiners, "e", "ou" and prepositions. */
-const BEFORE_A_NOUN = [
-  ...['o', 'os', 'do', 'dos', 'no', 'nos', 'ao', 'aos', 'pelo', 'pelos', 'e', 'ou'],
+/** Right after these, composto(s) / isolador(es) alone is a noun: determiners and prepositions. */
+const DETERMINERS_AND_PREPOSITIONS = [
+  ...['o', 'os', 'do', 'dos', 'no', 'nos', 'ao', 'aos', 'pelo', 'pelos'],
   ...['de', 'com', 'em', 'entre', 'para'],
 ]
+/** Words after which composto(s) / isolador(es) alone is a noun: those, "e" and "ou". */
+const BEFORE_A_NOUN = [...DETERMINERS_AND_PREPOSITIONS, 'e', 'ou']
 const NOUN_POSITION = `(?<=^${SP}*|[.!?:;,(•—\\n]${SP}*|${WORD_START}(?:${alternatives(BEFORE_A_NOUN)})${SP}+)`
 /** "composto vitamínico", "compostos químicos": the substance, not the exercise. */
 const SUBSTANCE_WORDS = [
   ...['vitamínico', 'vitamínicos', 'químico', 'químicos', 'orgânico', 'orgânicos'],
   ...['ativo', 'ativos', 'bioativo', 'bioativos', 'natural', 'naturais'],
 ]
-const NOT_AN_ADJECTIVE = `(?!${SP}+(?:${alternatives(['por', 'pelo', 'pela', 'de', 'da', 'do', 'dos', 'das'])}|${SUBSTANCE_WORDS.map((word) => [...word].map((char) => character(char, true)).join('')).join('|')})${WORD_END})`
-const NOT_MADE_OF = `(?!${SP}+(?:${alternatives(['por', 'pelo', 'pela', 'pelos', 'pelas'])})${WORD_END})`
+/** What makes "composto" a participle or the substance when it comes right after it. */
+const MADE_OF_OR_SUBSTANCE = `(?:${alternatives(['por', 'pelo', 'pela', 'de', 'da', 'do', 'dos', 'das'])}|${SUBSTANCE_WORDS.map((word) => [...word].map((char) => character(char, true)).join('')).join('|')})${WORD_END}`
+const MADE_OF = `(?:${alternatives(['por', 'pelo', 'pela', 'pelos', 'pelas'])})${WORD_END}`
+const NOT_AN_ADJECTIVE = `(?!${SP}+${MADE_OF_OR_SUBSTANCE})`
+const NOT_MADE_OF = `(?!${SP}+${MADE_OF})`
+/**
+ * The participle read THROUGH an adverb (review of 2026-10-10: "Treino ABC,
+ * composto principalmente por exercícios básicos." was replaced). A closed
+ * list: a word ending in "mente" and eleven written ones, one or two in a
+ * row ("quase sempre"). These are small expressions of their own, tried only
+ * on what follows a match of rule 6: inside the large alternation they made
+ * the first call of a process pass its budget
+ * (flow-plain-training-language.first-call.test.ts).
+ */
+const PARTICIPLE_ADVERBS: readonly string[] = [
+  ...['apenas', 'só', 'sobretudo', 'quase', 'também', 'ainda', 'sempre', 'tanto'],
+  ...['em grande parte', 'em sua maioria', 'na maior parte'],
+]
+const ADVERB = `(?:[${LETTER}]+${folded('mente')}|${PARTICIPLE_ADVERBS.map(folded).join('|')})${WORD_END}`
+const THROUGH_AN_ADVERB = `^${SP}+(?:${ADVERB}${SP}+){1,2}`
+/** After composto(s) / isolador(es) alone: an adverb, then what makes it a participle or the substance. */
+const PARTICIPLE_AFTER_AN_ADVERB = new RegExp(`${THROUGH_AN_ADVERB}${MADE_OF_OR_SUBSTANCE}`, 'u')
+/** After a whole entry ("exercícios compostos"): an adverb, then "por". */
+const MADE_OF_AFTER_AN_ADVERB = new RegExp(`${THROUGH_AN_ADVERB}${MADE_OF}`, 'u')
+/** Right after a determiner or a preposition the word alone is the noun: the adverb is not read through. */
+const AFTER_A_DETERMINER = new RegExp(
+  `${WORD_START}(?:${alternatives(DETERMINERS_AND_PREPOSITIONS)})${SP}+$`,
+  'u',
+)
 
 // "escápulas retraídas": another feminine plural word right before, or a
 // feminine participle coordinated right after ("e deprimidas", ", deprimidas"),
@@ -715,7 +846,7 @@ function compile(rows: readonly FlowPlainTrainingRow[]): Compiled {
 
 const compiledByKey = new Map<string, Compiled>()
 
-/** The rows that act in a field, with the owner's switches. */
+/** The rows that act in a field, with the switches. */
 function compiledFor(field: FlowPlainTrainingField, switches: FlowPlainTrainingOwnerSwitches): Compiled {
   const inName = field === 'name' || field === 'equipment_summary'
   const renames = FLOW_PLAIN_TRAINING_RENAMES_AWAITING_OWNER.filter((row) =>
@@ -733,7 +864,105 @@ function compiledFor(field: FlowPlainTrainingField, switches: FlowPlainTrainingO
   return compiled
 }
 
+// ── The two small fields (rules 5 and 9) ────────────────────────────────────
+// Small expressions of their own, outside the vocabulary's large alternation
+// (the first-call budget of that one is not touched). Review of 2026-10-10.
+
+/** The row of "falha": the same spellings and the same plain text as in the table. */
+const FAILURE_ROW = FLOW_PLAIN_TRAINING_VOCABULARY.find((row) => row.rule === 'failure') as FlowPlainTrainingRow
+const FAILURE_SPELLINGS = [...FAILURE_ROW.spellings]
+  .sort((a, b) => b.length - a.length)
+  .map((spelling) => spellingPattern(spelling, 0))
+  .join('|')
+/**
+ * Rule 5, in `reps_range` and `rpe_target`: "falha" written alone. Before it,
+ * the start, a number and a space, "ou", one of ( / + , ; : or a dash between
+ * spaces; after it, the end (with or without a full stop), one of ) , ; / +
+ * or "ou".
+ */
+const SMALL_FIELD_FAILURE = new RegExp(
+  `(?<=^${SP}*|[${DIGIT}]${SP}+|${WORD_START}${anyCase('ou')}${SP}+|[(/+,;:]${SP}*|${SP}${DASH}${SP}+)` +
+    `(?:${FAILURE_SPELLINGS})${NOT_GLUED_AFTER}` +
+    `(?=${SP}*(?:\\.?\\s*$|[),;/+]|${anyCase('ou')}${WORD_END}))`,
+  'gu',
+)
+/** The introduction the output carries there ("falha" → "até a última repetição bem feita"). */
+const SMALL_FIELD_FAILURE_PLAIN = `até a ${FAILURE_ROW.plain}`
+
+const EFFORT_LABEL = `(?:RPE|PSE|${folded('esforço')})`
+const SCALE_WRITTEN = `${SP}+${anyCase('de')}${SP}+10(?![${DIGIT}])`
+const SENTENCE_END = String.raw`${SP}*\.?\s*`
+/**
+ * Rule 9, in `rpe_target`: the label that opens the field (an optional
+ * article, RPE / PSE / "esforço", an optional "alvo", ":" or "=") before a
+ * whole grade or ONE word…
+ */
+const EFFORT_LABEL_FIRST = new RegExp(
+  `^(?<lead>${SP}*)(?<label>(?:(?:${alternatives(['o', 'a', 'um', 'uma'])})${SP}+)?(?<name>${EFFORT_LABEL})(?:${SP}+${anyCase('alvo')})?(?:${SP}*[:=]${SP}*|${SP}*))` +
+    `(?:(?<grade>${GRADE})(?<scale>${SCALE_WRITTEN})?|(?<word>[${LETTER}]+))${SENTENCE_END}$`,
+  'u',
+)
+/** …and the label written after a whole grade ("8 RPE"). */
+const EFFORT_LABEL_LAST = new RegExp(
+  `^(?<lead>${SP}*)(?<grade>${GRADE})(?<scale>${SCALE_WRITTEN})?(?<label>${SP}+${EFFORT_LABEL})${SENTENCE_END}$`,
+  'u',
+)
+/** One word after the label that is part of the label's own name: the label stays. */
+const LABEL_NAME_WORDS: ReadonlySet<string> = new Set(['alvo', 'percebido', 'percebida'])
+
+// ── A renamed exercise (rule 12) ────────────────────────────────────────────
+const RENAME_IDS: ReadonlySet<string> = new Set(
+  FLOW_PLAIN_TRAINING_RENAMES_AWAITING_OWNER.map((row) => row.id),
+)
+const portugueseNames = new Map<string, RegExp>()
+/** The Portuguese name of a rename row, whatever the case and the accents. */
+function portugueseName(row: FlowPlainTrainingRow): RegExp {
+  let pattern = portugueseNames.get(row.id)
+  if (!pattern) {
+    pattern = new RegExp(`${NOT_GLUED_BEFORE}${folded(row.plain)}${NOT_GLUED_AFTER}`, 'u')
+    portugueseNames.set(row.id, pattern)
+  }
+  return pattern
+}
+
+/** True when the position is after a "(" that was not closed yet. */
+function insideParentheses(text: string, index: number): boolean {
+  let depth = 0
+  for (let at = 0; at < index; at += 1) {
+    const code = text.charCodeAt(at)
+    if (code === 40) depth += 1
+    else if (code === 41 && depth > 0) depth -= 1
+  }
+  return depth > 0
+}
+
 // ── One field ───────────────────────────────────────────────────────────────
+/**
+ * How a text is read. `scale` and `original` are what the two switches ADD;
+ * a field that would pass its limit is read again without them (LIMITS).
+ */
+interface Reading {
+  switches: FlowPlainTrainingOwnerSwitches
+  /** The scale is written after an effort grade (never without the switch). */
+  scale: boolean
+  /** A renamed exercise keeps its original name in parentheses. */
+  original: boolean
+}
+
+const readingOf = (switches: FlowPlainTrainingOwnerSwitches): Reading => ({
+  switches,
+  scale: switches.effortOutOfTen,
+  original: true,
+})
+
+/** What the sentences of one field share (rule 12). */
+interface FieldScope {
+  /** Rename rows whose Portuguese name a single-phrase field already carries. */
+  carries: ReadonlySet<string>
+  /** Rename rows that already got their original name in parentheses in this field. */
+  mentioned: Set<string>
+}
+
 interface Span {
   start: number
   end: number
@@ -741,6 +970,8 @@ interface Span {
 
 interface Edit extends Span {
   output: string
+  /** False for what is written beside a replaced spelling (the parenthesis): it is not a spelling. */
+  counts?: boolean
 }
 
 /** The sentences of a text: cut after . ! ? … before a space, and at a line break. */
@@ -767,6 +998,45 @@ function capitalised(text: string): string {
   return text.charAt(0).toLocaleUpperCase('pt-BR') + text.slice(1)
 }
 
+/**
+ * A text with ONE space in the place of every run of spaces, and the way back
+ * to the text as written (rule 1; review of 2026-10-10). Every interval of the
+ * vocabulary is "one or more" or "zero or more" spaces, also inside
+ * look-behinds tried at every position: over a long run the time grew with
+ * its square. Over this copy a run costs what one space costs, and nothing
+ * else changes: a run is one space for every rule.
+ */
+interface Squeezed {
+  text: string
+  /** Where, in the text as written, the character at this position starts. */
+  start(index: number): number
+  /** Where, in the text as written, what ends at this position ends. */
+  end(index: number): number
+}
+
+const SPACE_RUN = /[ \t\u00A0]{2}/
+const isSpace = (char: string | undefined) => char === ' ' || char === '\t' || char === '\u00A0'
+
+function squeeze(text: string): Squeezed {
+  if (!SPACE_RUN.test(text)) return { text, start: (index) => index, end: (index) => index }
+  const starts: number[] = []
+  const ends: number[] = []
+  const kept: string[] = []
+  for (let at = 0; at < text.length; ) {
+    let next = at + 1
+    if (isSpace(text[at])) while (next < text.length && isSpace(text[next])) next += 1
+    starts.push(at)
+    ends.push(next)
+    kept.push(text[at] as string)
+    at = next
+  }
+  return {
+    text: kept.join(''),
+    start: (index) => starts[index] ?? text.length,
+    end: (index) => (index <= 0 ? 0 : (ends[index - 1] ?? text.length)),
+  }
+}
+
 /** True when every number of the grade is between 1 and 10. */
 function isGradeOutOfTen(grade: string): boolean {
   const numbers = grade.match(/\d{1,2}(?:[.,]\d)?/g) ?? []
@@ -781,7 +1051,39 @@ function isGradeOutOfTen(grade: string): boolean {
 
 const WRITTEN_OUT_OF_TEN = new RegExp(`^(.*?)${SP}*\\/${SP}*10$`, 'u')
 const SCALE_FOLLOWS = new RegExp(`^${SP}+de${SP}+10(?!\\d)`, 'u')
-const BARE_GRADE = new RegExp(`^(${SP}*)(${GRADE})${SP}*$`, 'u')
+/** The whole of `rpe_target` as a grade, with or without its full stop ("9", "9."). */
+const BARE_GRADE = new RegExp(`^(${SP}*)(${GRADE})${SP}*\\.?\\s*$`, 'u')
+/**
+ * Rule 9: what may follow a grade for the scale to be written — a closed
+ * list. Anything else may be the grade going on ("8/9", "8+", "8 ou 9",
+ * "8 para 9", "8 → 9", "8 - …"), and a scale there would be stored as a
+ * wrong number.
+ */
+const SCALE_MAY_FOLLOW = new RegExp(
+  `^(?:\\s*$|${SP}*[)\\]]|[.,;:!?\\u2026](?!${SP}*[${DIGIT}])|${SP}+(?!(?:${['ou', 'e', 'a', 'até', 'de', 'em', 'para', 'pra'].map(folded).join('|')})${SP}+[${DIGIT}])(?:[${LETTER}]|\\())`,
+  'u',
+)
+/**
+ * Rule 9 (review of the second round of 2026-10-10). The grade pattern reads
+ * "8 - 10" and "8 a 10" as a range. Written with a space beside the dash, or
+ * with " a ", and followed by a word or "(", the second number may be another
+ * thing — "RPE 8 - 10 repetições", "RPE 7 - 3 séries de aquecimento", "RPE 8
+ * a 10 repetições por série" — and the scale was stored as a false sentence
+ * ("10 de 10 repetições", "3 de 10 séries"). Such a range gains the scale
+ * only when nothing goes on after it: the end, a closing bracket or
+ * punctuation. Rule 11 reads the dash between spaces the same way.
+ */
+const SPACED_RANGE = new RegExp(`${SP}[-\\u2013]|[-\\u2013]${SP}|${SP}a${SP}`, 'u')
+const WORD_FOLLOWS = new RegExp(`^${SP}+(?:[${LETTER}]|\\()`, 'u')
+
+/**
+ * Rule 9: the sentence already says the scale after the grade ("RPE 8 (de
+ * 10)", "RPE 8 numa escala de 0 a 10"): writing it again would say it twice.
+ */
+const SCALE_SAID_AFTER = new RegExp(
+  `${WORD_START}${folded('escala')}${WORD_END}|${WORD_START}(?:${anyCase('de')}|${anyCase('em')})${SP}+10(?![${DIGIT}])|\\/${SP}*10(?![${DIGIT}])`,
+  'u',
+)
 
 /** The grade as written; "/10" spelled out; the scale added only when asked. */
 function gradeText(grade: string, addScale: boolean): string {
@@ -790,11 +1092,70 @@ function gradeText(grade: string, addScale: boolean): string {
   return addScale && isGradeOutOfTen(grade) ? `${grade} de 10` : grade
 }
 
+/**
+ * Rule 9, in `rpe_target`: the label of the field itself, when the sentence
+ * is the label and a whole grade or one word. One edit, or none.
+ */
+function effortLabelEdit(text: string, asWritten: (start: number, end: number) => string, reading: Reading): Edit | null {
+  const first = EFFORT_LABEL_FIRST.exec(text)
+  if (first?.groups) {
+    const { lead = '', label = '', name, grade, scale, word } = first.groups
+    const start = lead.length
+    const rest = start + label.length
+    if (grade !== undefined) {
+      // The grade as the generator wrote it; the scale it wrote, if any, stays as written.
+      const written = gradeText(asWritten(rest, rest + grade.length), reading.scale && scale === undefined)
+      return { start, end: rest + grade.length, output: written }
+    }
+    if (word !== undefined) {
+      const separated = /[ \t\u00A0:=]$/.test(label)
+      const agrees = name === 'PSE' && /[aA][sS]?$/.test(word)
+      if (separated && !agrees && !LABEL_NAME_WORDS.has(word.toLowerCase())) return { start, end: rest, output: '' }
+    }
+    return null
+  }
+  const last = EFFORT_LABEL_LAST.exec(text)
+  if (last?.groups) {
+    const { lead = '', grade = '', scale = '', label = '' } = last.groups
+    const start = lead.length
+    const gradeEnd = start + grade.length
+    const written = gradeText(asWritten(start, gradeEnd), reading.scale && scale === '')
+    return {
+      start,
+      end: gradeEnd + scale.length + label.length,
+      output: `${written}${asWritten(gradeEnd, gradeEnd + scale.length)}`,
+    }
+  }
+  return null
+}
+
+/** The edits of one sentence, in the positions of the sentence as written. */
 function editsOf(
-  text: string,
+  sentence: string,
   field: FlowPlainTrainingField,
-  switches: FlowPlainTrainingOwnerSwitches,
+  reading: Reading,
+  scope: FieldScope,
 ): Edit[] {
+  const { switches } = reading
+  // Rule 1: every expression below reads the sentence with one space in each place.
+  const squeezed = squeeze(sentence)
+  const text = squeezed.text
+  const asWritten = (start: number, end: number) => sentence.slice(squeezed.start(start), squeezed.end(end))
+  const written = (edits: Edit[]): Edit[] =>
+    edits
+      .sort((a, b) => a.start - b.start || a.end - b.end)
+      .map((edit) => ({
+        ...edit,
+        // What is written in (start = end) goes right after the character before it.
+        start: edit.start === edit.end ? squeezed.end(edit.start) : squeezed.start(edit.start),
+        end: squeezed.end(edit.end),
+      }))
+
+  if (field === 'rpe_target') {
+    const label = effortLabelEdit(text, asWritten, reading)
+    if (label) return written([label])
+  }
+
   const { pattern, entries } = compiledFor(field, switches)
   const addresses: Span[] = Array.from(text.matchAll(ADDRESS_SPAN), (match) => ({
     start: match.index,
@@ -802,6 +1163,8 @@ function editsOf(
   }))
   const spans = sentenceSpans(text)
   const edits: Edit[] = []
+  /** The renamed exercises of this sentence that are a first mention (rule 12). */
+  const firstMentions: Array<{ edit: Edit; original: string }> = []
   for (const match of text.matchAll(pattern)) {
     const start = match.index
     const end = start + match[0].length
@@ -813,16 +1176,42 @@ function editsOf(
     const grade = groups[`n${key}`]
     const count = groups[`c${key}`]
     const article = groups[`a${key}`]
+    // Rule 6: the participle read through an adverb ("…, composto principalmente por").
+    if (row.rule === 'whole_entry' && MADE_OF_AFTER_AN_ADVERB.test(text.slice(end))) continue
+    if (
+      row.rule === 'noun_position' &&
+      PARTICIPLE_AFTER_AN_ADVERB.test(text.slice(end)) &&
+      !AFTER_A_DETERMINER.test(text.slice(0, start))
+    ) {
+      continue
+    }
+    const renamed = RENAME_IDS.has(row.id)
+    if (renamed) {
+      // Rule 12: not the person's equipment, not the generator's own gloss, not twice.
+      if (field === 'equipment_summary') continue
+      if (scope.carries.has(row.id) || portugueseName(row).test(text)) continue
+      if (insideParentheses(text, start)) continue
+    }
+    // The count and the grade are written back as the generator wrote them, runs of spaces included.
+    const numberAt = start + match[0].search(/\d/)
 
     let output = row.plain
     if (count !== undefined) {
-      output = (count === '1' && row.one ? row.one : row.plain).replace('<n>', count)
+      const counted = asWritten(numberAt, numberAt + count.length)
+      output = (count === '1' && row.one ? row.one : row.plain).replace('<n>', counted)
     }
     if (grade !== undefined) {
-      const addScale = switches.effortOutOfTen && !SCALE_FOLLOWS.test(text.slice(end))
-      const written = gradeText(grade, addScale)
+      const rest = text.slice(end)
+      const addScale =
+        reading.scale &&
+        !SCALE_FOLLOWS.test(rest) &&
+        SCALE_MAY_FOLLOW.test(rest) &&
+        !SCALE_SAID_AFTER.test(rest) &&
+        // A range written with spaces, then a word: the second number may be another thing.
+        !(SPACED_RANGE.test(grade) && WORD_FOLLOWS.test(rest))
+      const graded = gradeText(asWritten(numberAt, numberAt + grade.length), addScale)
       // Rule 9: beside its own label, the grade alone.
-      output = field === 'rpe_target' ? written : row.plain.replace('<nota>', written)
+      output = field === 'rpe_target' ? graded : row.plain.replace('<nota>', graded)
     }
     output = `${lead}${output}`
     if (article !== undefined) {
@@ -831,18 +1220,56 @@ function editsOf(
     if (startsSentence(text, spans, start) && /^\p{Lu}/u.test(match[0])) output = capitalised(output)
     // "12reps": the unit was glued to its number.
     if (row.rule === 'count_unit' && /\d$/.test(text.slice(0, start))) output = ` ${output}`
-    edits.push({ start, end, output })
+    const edit: Edit = { start, end, output }
+    edits.push(edit)
+    if (renamed && reading.original && !scope.mentioned.has(row.id)) {
+      scope.mentioned.add(row.id)
+      const original = article === undefined ? match[0] : match[0].slice(article.length).trimStart()
+      firstMentions.push({ edit, original })
+    }
   }
+
+  // Rule 12: the original name in parentheses. In a name that has no
+  // parenthesis yet, at the end of the name; anywhere else, right after.
+  const atTheEnd = field === 'name' && firstMentions.length === 1 && !text.includes('(')
+  for (const { edit, original } of firstMentions) {
+    if (atTheEnd) {
+      const end = text.length - (/[\s.!?…]*$/u.exec(text)?.[0].length ?? 0)
+      if (end > edit.end) {
+        edits.push({ start: end, end, output: ` (${original})`, counts: false })
+        continue
+      }
+    }
+    edit.output = `${edit.output} (${original})`
+  }
+
+  // Rule 5, in the two small fields: "falha" written alone.
+  if (field === 'reps_range' || field === 'rpe_target') {
+    for (const match of text.matchAll(SMALL_FIELD_FAILURE)) {
+      const start = match.index
+      const end = start + match[0].length
+      if (addresses.some((address) => start < address.end && end > address.start)) continue
+      if (edits.some((edit) => start < edit.end && end > edit.start)) continue
+      const capital = startsSentence(text, spans, start) && /^\p{Lu}/u.test(match[0])
+      edits.push({
+        start,
+        end,
+        output: capital ? capitalised(SMALL_FIELD_FAILURE_PLAIN) : SMALL_FIELD_FAILURE_PLAIN,
+      })
+    }
+  }
+
   if (field === 'rpe_target' && edits.length === 0) {
     const bare = BARE_GRADE.exec(text)
     if (bare) {
-      const grade = bare[2] as string
-      const written = gradeText(grade, switches.effortOutOfTen)
       const start = (bare[1] as string).length
-      if (written !== grade) edits.push({ start, end: start + grade.length, output: written })
+      const end = start + (bare[2] as string).length
+      const grade = asWritten(start, end)
+      const graded = gradeText(grade, reading.scale)
+      if (graded !== grade) edits.push({ start, end, output: graded })
     }
   }
-  return edits
+  return written(edits)
 }
 
 function applyEdits(text: string, edits: readonly Edit[]): string {
@@ -856,8 +1283,8 @@ function applyEdits(text: string, edits: readonly Edit[]): string {
 }
 
 /**
- * No output of the table carries a spelling of the table (pinned by test), so
- * every pass leaves fewer spellings and the reading ends; this is a safety net.
+ * No output is read again by the row that wrote it (pinned by test), so every
+ * pass leaves fewer spellings and the reading ends; this is a safety net.
  */
 const MAX_PASSES = 6
 
@@ -876,27 +1303,35 @@ interface Piece {
 function plainSentence(
   sentence: string,
   field: FlowPlainTrainingField,
-  switches: FlowPlainTrainingOwnerSwitches,
+  reading: Reading,
+  scope: FieldScope,
 ): Piece {
   let text = sentence
   let replaced = 0
   for (let pass = 0; pass < MAX_PASSES; pass += 1) {
-    const edits = editsOf(text, field, switches)
+    const edits = editsOf(text, field, reading, scope)
     if (edits.length === 0) break
     text = applyEdits(text, edits)
-    replaced += edits.length
+    replaced += edits.filter((edit) => edit.counts !== false).length
   }
   return { original: sentence, text, replaced }
 }
 
 /** A text (NFC), sentence by sentence. */
-function plainPieces(
-  normalised: string,
-  field: FlowPlainTrainingField,
-  switches: FlowPlainTrainingOwnerSwitches,
-): Piece[] {
+function plainPieces(normalised: string, field: FlowPlainTrainingField, reading: Reading): Piece[] {
+  // Rule 12: a single-phrase field that already carries the Portuguese name
+  // of a renamed exercise is left alone as a whole; in running text it is
+  // sentence by sentence (editsOf).
+  const carries = new Set<string>()
+  if (field in SINGLE_PHRASE_LIMITS && reading.switches.renames.length > 0) {
+    const whole = squeeze(normalised).text
+    for (const row of FLOW_PLAIN_TRAINING_RENAMES_AWAITING_OWNER) {
+      if (reading.switches.renames.includes(row.id) && portugueseName(row).test(whole)) carries.add(row.id)
+    }
+  }
+  const scope: FieldScope = { carries, mentioned: new Set() }
   return sentenceSpans(normalised).map((span) =>
-    plainSentence(normalised.slice(span.start, span.end), field, switches),
+    plainSentence(normalised.slice(span.start, span.end), field, reading, scope),
   )
 }
 
@@ -909,6 +1344,14 @@ export interface FlowPlainTrainingText {
   replaced: number
 }
 
+function plainText(text: string, field: FlowPlainTrainingField, reading: Reading): FlowPlainTrainingText {
+  if (typeof text !== 'string' || text === '') return { text, replaced: 0 }
+  const pieces = plainPieces(text.normalize('NFC'), field, reading)
+  const replaced = replacedIn(pieces)
+  if (replaced === 0) return { text, replaced: 0 }
+  return { text: joined(pieces), replaced }
+}
+
 /**
  * One text of a workout suggestion in plain words. No limit is applied here
  * (projectFlowPlainTrainingDraft does it). A text in which no row acts comes
@@ -919,17 +1362,25 @@ export function projectFlowPlainTrainingText(
   field: FlowPlainTrainingField,
   switches: FlowPlainTrainingOwnerSwitches = FLOW_PLAIN_TRAINING_OWNER_SWITCHES,
 ): FlowPlainTrainingText {
-  if (typeof text !== 'string' || text === '') return { text, replaced: 0 }
-  const pieces = plainPieces(text.normalize('NFC'), field, switches)
-  const replaced = replacedIn(pieces)
-  if (replaced === 0) return { text, replaced: 0 }
-  return { text: joined(pieces), replaced }
+  return plainText(text, field, readingOf(switches))
 }
 
 // ── The whole draft ─────────────────────────────────────────────────────────
 /** The limits of the stored draft (trainingDraftPayloadSchema). */
 const RUNNING_TEXT_LIMITS = { notes: 500, progression_rule: 500, exercise_notes: 300, execution_steps: 300, common_mistakes: 300 } as const
 const SINGLE_PHRASE_LIMITS = { equipment_summary: 500, day: 20, focus: 80, name: 120, muscle_group: 80, reps_range: 40, rpe_target: 40 } as const
+
+/**
+ * LIMITS: the readings of a field, from the fullest to the plainest. What the
+ * two switches add is left out before any plain word is given back: with the
+ * scale and the parenthesis; without the scale; without both.
+ */
+function readingsOf(switches: FlowPlainTrainingOwnerSwitches): Reading[] {
+  const readings: Reading[] = [readingOf(switches)]
+  if (switches.effortOutOfTen) readings.push({ switches, scale: false, original: true })
+  if (switches.renames.length > 0) readings.push({ switches, scale: false, original: false })
+  return readings
+}
 
 export interface FlowPlainTrainingDraft {
   /** The candidate with its texts in plain words: same keys, same types, same numbers. */
@@ -961,13 +1412,24 @@ export function projectFlowPlainTrainingDraft(
     fieldsKeptAsGenerated: 0,
   }
   if (!isRecord(candidate)) return result
+  const readings = readingsOf(switches)
 
   const running = (value: unknown, field: keyof typeof RUNNING_TEXT_LIMITS): unknown => {
     if (typeof value !== 'string' || value === '') return value
     const limit = RUNNING_TEXT_LIMITS[field]
-    const pieces = plainPieces(value.normalize('NFC'), field, switches)
-    if (replacedIn(pieces) === 0) return value
-    // The last replaced sentences go back to the generated wording until it fits.
+    const normalised = value.normalize('NFC')
+    let pieces: Piece[] = []
+    for (const reading of readings) {
+      pieces = plainPieces(normalised, field, reading)
+      const replaced = replacedIn(pieces)
+      if (replaced === 0) return value
+      if (joined(pieces).length <= limit) {
+        result.termsReplaced += replaced
+        return joined(pieces)
+      }
+    }
+    // Not even the plainest reading fits: its last replaced sentences go back
+    // to the generated wording until it does.
     for (let index = pieces.length - 1; index >= 0 && joined(pieces).length > limit; index -= 1) {
       const piece = pieces[index] as Piece
       if (piece.replaced === 0) continue
@@ -982,14 +1444,17 @@ export function projectFlowPlainTrainingDraft(
 
   const single = (value: unknown, field: keyof typeof SINGLE_PHRASE_LIMITS): unknown => {
     if (typeof value !== 'string' || value === '') return value
-    const projected = projectFlowPlainTrainingText(value, field, switches)
-    if (projected.replaced === 0) return value
-    if (projected.text.length > SINGLE_PHRASE_LIMITS[field]) {
-      result.fieldsKeptAsGenerated += 1
-      return value
+    for (const reading of readings) {
+      const projected = plainText(value, field, reading)
+      if (projected.replaced === 0) return value
+      if (projected.text.length <= SINGLE_PHRASE_LIMITS[field]) {
+        result.termsReplaced += projected.replaced
+        return projected.text
+      }
     }
-    result.termsReplaced += projected.replaced
-    return projected.text
+    // Not even the plainest reading fits: the generated value stays whole (counted once).
+    result.fieldsKeptAsGenerated += 1
+    return value
   }
 
   const list = (value: unknown, field: 'execution_steps' | 'common_mistakes'): unknown =>

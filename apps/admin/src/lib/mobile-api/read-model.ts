@@ -210,6 +210,31 @@ export async function loadPlan(supabase: ServiceClient, userId: string) {
   }
 }
 
+/**
+ * The body fat of the profile as a JSON number, or null. Only a finite number
+ * or a text in decimal format (digits, an optional decimal part, no sign and
+ * no exponent) is a value: a bare conversion would answer 0 for an empty text
+ * and 1 for `true`, and the app would show "0%" or "1%".
+ */
+function profileBodyFatPercent(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value !== 'string') return null
+  const text = value.trim()
+  return /^\d+(?:\.\d+)?$/.test(text) ? Number(text) : null
+}
+
+/**
+ * Audit 2026-10-10 (rehearsal with build 1.0 (3)): an account that informed
+ * 15% of body fat at sign-up read "Gordura corporal — Não disponível" in
+ * Progresso. The app shows `current_bf_percent` of this answer, and nothing
+ * writes `user_progress.current_bf_percent`: the sign-up stores the value in
+ * `user_profiles.body_fat_percent`. The answer now carries the profile's value
+ * when the progress row has none; a value stored in the progress row wins.
+ * Same keys, same types, two reads, no write; presentation only, no number of
+ * the method changes. Decisão do orquestrador, anunciada ao dono em
+ * 2026-10-10, que pode riscar qualquer uma (it is not the owner's nor the
+ * physician's approval). Golden: progress-body-fat.audit-10-10.test.ts.
+ */
 export async function loadProgress(supabase: ServiceClient, userId: string) {
   const [progress, profile] = await Promise.all([
     supabase
@@ -219,7 +244,11 @@ export async function loadProgress(supabase: ServiceClient, userId: string) {
       )
       .eq('user_id', userId)
       .maybeSingle(),
-    supabase.from('user_profiles').select('current_protocol').eq('user_id', userId).maybeSingle(),
+    supabase
+      .from('user_profiles')
+      .select('current_protocol, body_fat_percent')
+      .eq('user_id', userId)
+      .maybeSingle(),
   ])
   throwQueryError(progress.error, 'Progress lookup')
   throwQueryError(profile.error, 'Progress objective lookup')
@@ -227,6 +256,8 @@ export async function loadProgress(supabase: ServiceClient, userId: string) {
   const currentProtocol = normalizeProtocol(profile.data?.current_protocol)
   return {
     ...progress.data,
+    current_bf_percent:
+      progress.data.current_bf_percent ?? profileBodyFatPercent(profile.data?.body_fat_percent),
     current_protocol: currentProtocol,
     block_7700_enabled: resolveFlowBloco7700Policy(currentProtocol).enabled,
   }

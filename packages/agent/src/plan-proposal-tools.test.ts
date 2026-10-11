@@ -88,6 +88,8 @@ interface Recorded {
   inserts: Array<{ table: string; row: Record<string, unknown> }>
   rpcs: Array<{ name: string; params: Record<string, unknown> }>
   reads: string[]
+  /** The columns each read asked for, by table. */
+  selects: Array<{ table: string; columns: string }>
 }
 
 function makeContext(options: {
@@ -100,14 +102,16 @@ function makeContext(options: {
   providerMessageId?: string | undefined
   llm?: unknown
   rpcError?: boolean
+  /** Columns added to the user_profiles row (what the sign-up stored). */
+  profile?: Record<string, unknown>
 } = {}): { ctx: ToolContext; recorded: Recorded } {
-  const recorded: Recorded = { inserts: [], rpcs: [], reads: [] }
+  const recorded: Recorded = { inserts: [], rpcs: [], reads: [], selects: [] }
   const rows: Record<string, unknown> = {
     plan_drafts: options.existingDraft ?? null,
     messages: { id: MESSAGE },
     product_events: Array.from({ length: options.recentEvents ?? 0 }, (_, id) => ({ id })),
     users: { name: 'Pessoa sintética' },
-    user_profiles: { sex: null, birth_date: null, weight_kg: 80, height_cm: 175 },
+    user_profiles: { sex: null, birth_date: null, weight_kg: 80, height_cm: 175, ...options.profile },
     user_progress: { current_bf_percent: null },
     meal_logs: [{ food_name: 'Arroz' }, { food_name: 'arroz ' }],
   }
@@ -115,7 +119,11 @@ function makeContext(options: {
     recorded.reads.push(table)
     const result: { data: unknown; error: null } = { data: rows[table] ?? null, error: null }
     const query = Promise.resolve(result) as Promise<typeof result> & Record<string, unknown>
-    for (const method of ['select', 'eq', 'gte', 'order']) query[method] = () => query
+    for (const method of ['eq', 'gte', 'order']) query[method] = () => query
+    query.select = (columns?: string) => {
+      recorded.selects.push({ table, columns: String(columns ?? '*') })
+      return query
+    }
     query.in = (column: string, values: string[]) => {
       if (table === 'product_events' && column === 'event' && options.eventsByName) {
         const count = values.reduce(
@@ -598,5 +606,57 @@ describe('o texto da sugestão vem do rascunho gravado', () => {
 
     expect(result).not.toHaveProperty('sugestao')
     expect(String(result.message)).toContain('NÃO apresente itens do plano')
+  })
+})
+
+// Audit 2026-10-10 (Progress shows the body fat of the sign-up): GET /progress
+// now answers user_profiles.body_fat_percent when the progress row has none.
+// The two proposal tools read the SAME empty column (user_progress.
+// current_bf_percent, which nothing writes) and hand the generators null. That
+// is the same defect, but changing it changes the request to the model and was
+// not reported: it stays as it is, locked here (RC BF-3 in docs/mobile/api-v1.md).
+describe('audit 2026-10-10: o que os geradores recebem de gordura corporal não mudou (trava: RC BF-3)', () => {
+  const SIGN_UP_PROFILE = { body_fat_percent: 15 }
+
+  it('treino: com 15% no perfil e nada no progresso, o gerador continua recebendo bf_percent null', async () => {
+    generateTrainingPlan.mockResolvedValue(trainingPlan)
+    const { ctx, recorded } = makeContext({ profile: SIGN_UP_PROFILE })
+
+    const result = await propoePlanoTreino.execute(trainingArguments, ctx)
+
+    expect(result).toMatchObject({ success: true, domain: 'training' })
+    expect(generateTrainingPlan).toHaveBeenCalledTimes(1)
+    const input = generateTrainingPlan.mock.calls[0]?.[2] as { profile: Record<string, unknown> }
+    expect(input.profile.bf_percent).toBeNull()
+    expect(Object.keys(input.profile)).toContain('bf_percent')
+    // What it reads: the progress column, and no body fat from the profile.
+    expect(recorded.selects.filter((read) => read.table === 'user_progress')).toEqual([
+      { table: 'user_progress', columns: 'current_bf_percent' },
+    ])
+    expect(recorded.selects.filter((read) => read.table === 'user_profiles')).toEqual([
+      { table: 'user_profiles', columns: 'sex, birth_date, weight_kg, height_cm, current_protocol' },
+    ])
+  })
+
+  it('cardápio: com 15% no perfil e nada no progresso, o gerador continua recebendo bf_percent null', async () => {
+    generateDietPlan.mockResolvedValue(dietPlan)
+    const { ctx, recorded } = makeContext({ profile: SIGN_UP_PROFILE })
+
+    const result = await propoePlanoDieta.execute({ horizon: 'daily' }, ctx)
+
+    expect(result).toMatchObject({ success: true, domain: 'nutrition' })
+    expect(generateDietPlan).toHaveBeenCalledTimes(1)
+    const input = generateDietPlan.mock.calls[0]?.[2] as { profile: Record<string, unknown> }
+    expect(input.profile.bf_percent).toBeNull()
+    expect(Object.keys(input.profile)).toContain('bf_percent')
+    expect(recorded.selects.filter((read) => read.table === 'user_progress')).toEqual([
+      { table: 'user_progress', columns: 'current_bf_percent' },
+    ])
+    expect(recorded.selects.filter((read) => read.table === 'user_profiles')).toEqual([
+      {
+        table: 'user_profiles',
+        columns: 'sex, birth_date, weight_kg, height_cm, activity_level, current_protocol',
+      },
+    ])
   })
 })

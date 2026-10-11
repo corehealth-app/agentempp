@@ -75,7 +75,7 @@ const DEFAULT_RULE =
   'Adicione 1 rep por treino. Bateu 12 reps com técnica → aumenta peso, volta pra 6.'
 
 const PLAIN_NOTES =
-  'Plano empurrar/puxar/pernas modificado para 5 dias: Segunda (empurrar superior), Terça (puxar), Quarta (pernas completo), Quinta (Ombros+abdômen), Sexta (pernas posterior). Exercícios de vários músculos primeiro, exercícios de um músculo só depois. 10-20 séries/músculo/semana. Descanso 60-120s. Treino até próximo da última repetição bem feita (esforço 8-9). Aqueça sempre: 5min cardio leve + séries progressivas. Hidrate-se. Durma 7-9h. Qualquer dor articular, pare e reavalie técnica.'
+  'Plano empurrar/puxar/pernas modificado para 5 dias: Segunda (empurrar superior), Terça (puxar), Quarta (pernas completo), Quinta (Ombros+abdômen), Sexta (pernas posterior). Exercícios de vários músculos primeiro, exercícios de um músculo só depois. 10-20 séries/músculo/semana. Descanso 60-120s. Treino até próximo da última repetição bem feita (esforço 8-9 de 10). Aqueça sempre: 5min cardio leve + séries progressivas. Hidrate-se. Durma 7-9h. Qualquer dor articular, pare e reavalie técnica.'
 
 /**
  * One second. On the reviewed code the calls below took 5,316 ms and 3,012 ms
@@ -106,7 +106,9 @@ describe('the first workout suggestion of a process does not stop Node (review o
     // No row acts on the example: it is stored as written. The rest is the plain draft.
     expect(payload.progression_rule).toBe(PROMPT_EXAMPLE)
     expect(payload.notes).toBe(PLAIN_NOTES)
-    expect(value.termsReplaced).toBe(16)
+    // 16 with 3b65bee; since the second round of 2026-10-10, three effort
+    // grades ("9" → "9 de 10") and one exercise name ("Hip Thrust com Barra").
+    expect(value.termsReplaced).toBe(20)
     expect(elapsedMs).toBeLessThan(FIRST_CALL_BUDGET_MS)
   })
 

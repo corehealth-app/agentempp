@@ -1266,10 +1266,17 @@ saldo anterior, sem consultar nem gravar staging.
   Snapshot antigo de recomposição com perfil em ganho não habilita o bloco;
   snapshot antigo de ganho com perfil em recomposição não o desabilita.
   Os saldos, percentuais, blocos e fontes persistidos continuam intactos.
-- `GET /progress` acrescenta `current_protocol` e `block_7700_enabled` à cópia
-  dos 12 campos existentes. Lê somente o protocolo de `user_profiles` em
-  paralelo ao progresso, ambos pelo usuário autenticado. Sem progresso mantém
-  `data:null`; perfil ausente/inválido oculta, erro de leitura falha com
+- `GET /progress` acrescenta `current_protocol` e `block_7700_enabled` à
+  resposta, que conserva 11 dos 12 campos existentes como persistidos. Lê de
+  `user_profiles`, em paralelo ao progresso e pelo usuário autenticado, o
+  protocolo e a gordura corporal do cadastro
+  (`user_profiles.body_fat_percent`); esta só entra na resposta, no 12º campo
+  (`current_bf_percent`), quando o valor persistido em `user_progress` é nulo
+  — decisão do orquestrador, anunciada ao dono em 2026-10-10, que pode riscar
+  qualquer uma (não é aprovação do dono nem do médico; relato e golden em
+  `docs/mobile/api-v1.md` §Gordura corporal do cadastro em Progresso). É
+  apresentação: nenhuma fórmula, meta, balanço ou bloco muda. Sem progresso
+  mantém `data:null`; perfil ausente/inválido oculta, erro de leitura falha com
   `500 data_access_failed`. Não escreve dados nem faz leitura do worker legado.
   O fechamento sob demanda continua anterior à leitura, com suas travas.
   Sem transação/versão, as duas leituras não garantem atomicidade entre perfil

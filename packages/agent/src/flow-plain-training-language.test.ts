@@ -11,6 +11,12 @@
  * Every input → output line below is written HERE, by hand. None is read from
  * the module: a table that changes does not change what this file expects.
  * The default field of a line is `notes` (running text, where every row acts).
+ *
+ * Second round of 2026-10-10. The two switches are ON by decisão do
+ * orquestrador, anunciada ao dono em 2026-10-10, que pode riscar qualquer uma
+ * (the owner's written yes is still blank in the doc): a line that does not
+ * name its switches is read with the scale of the effort grade and with the
+ * two renames, as production reads it. The lines that pin one switch name it.
  */
 import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
@@ -55,7 +61,7 @@ describe('U1 each listed spelling, in a sentence, gives the exact plain text', (
     ['Quinta (Ombros+Core)', 'Quinta (Ombros+abdômen)'],
     [
       'Treino até próximo da falha técnica (RPE 8-9).',
-      'Treino até próximo da última repetição bem feita (esforço 8-9).',
+      'Treino até próximo da última repetição bem feita (esforço 8-9 de 10).',
     ],
     [
       'Compostos primeiro, isoladores depois.',
@@ -126,11 +132,11 @@ describe('U1 each listed spelling, in a sentence, gives the exact plain text', (
     // Effort and repetitions left.
     ['RPE', 'Esforço'],
     ['RPE 8/10', 'Esforço 8 de 10'],
-    ['RPE: 8', 'Esforço 8'],
-    ['RPE8', 'Esforço 8'],
-    ['Mantenha RPE 7.5 nas séries.', 'Mantenha esforço 7.5 nas séries.'],
+    ['RPE: 8', 'Esforço 8 de 10'],
+    ['RPE8', 'Esforço 8 de 10'],
+    ['Mantenha RPE 7.5 nas séries.', 'Mantenha esforço 7.5 de 10 nas séries.'],
     ['Controle a PSE.', 'Controle o esforço.'],
-    ['Mantenha a PSE 8 nas séries.', 'Mantenha o esforço 8 nas séries.'],
+    ['Mantenha a PSE 8 nas séries.', 'Mantenha o esforço 8 de 10 nas séries.'],
     ['RIR 2', '2 repetições de sobra'],
     ['2 RIR', '2 repetições de sobra'],
     ['RIR 1', '1 repetição de sobra'],
@@ -235,12 +241,14 @@ describe('U2 what is NOT replaced comes back as the very same string', () => {
     'pegada neutra',
     'menor stress lombar',
     'Tríceps (cabeça longa)',
-    // Exercise names: no row renames them while the owner has not approved (RC TL-13).
-    'Hip Thrust com Barra',
-    'Military press',
+    // Exercise names no row renames: the machine's and the gym's own name (RC TL-13).
     'Stiff (levantamento romeno)',
     'Stiff Unilateral com Halter',
     'Leg Press 45°',
+    'Leg press 45°',
+    // A renamed exercise the generator already wrote in Portuguese, or in parentheses (RC TL-13).
+    'Hip Thrust (elevação pélvica)',
+    'Glúteos (hip thrust)',
     // A phrase kept whole because the plain form would break its agreement.
     'Mantenha ambas as escápulas retraídas',
     'escápulas retraídas e deprimidas',
@@ -353,7 +361,7 @@ describe('U4 field limits are never passed and nothing is cut', () => {
   const result = projectFlowPlainTrainingDraft(candidate)
   const payload = result.payload as typeof candidate
 
-  it('the setup is the case: 498 characters, and the plain note would have 509', () => {
+  it('the setup is the case: 498 characters, and the plain note would have 509 (515 with the scale, which is left out first: U17)', () => {
     expect(notes).toHaveLength(498)
     expect(longName.length).toBeLessThanOrEqual(120)
     expect(longName.length + ('músculo da panturrilha'.length - 'gastrocnêmio'.length)).toBeGreaterThan(120)
@@ -420,6 +428,13 @@ function probe(row: { id: string; rule?: string }, spelling: string): string {
 
 const digitGroups = (text: string) => text.match(/\d+/g) ?? []
 
+/** Production's switches with the scale of the effort grade written OFF (hand-written; U9 pins the literal). */
+const SCALE_OFF = { effortOutOfTen: false, renames: ['hip_thrust', 'military_press'] }
+/** Both switches written off: the reading of before the second round of 2026-10-10. */
+const ALL_OFF = { effortOutOfTen: false, renames: [] as string[] }
+/** How many times the scale is written in a text. */
+const scales = (text: string) => text.split(' de 10').length - 1
+
 describe('U5 applying it twice changes nothing more', () => {
   it('for every spelling of the table, and no plain text carries a spelling of the table', () => {
     expect(FLOW_PLAIN_TRAINING_VOCABULARY.length).toBeGreaterThan(0)
@@ -444,13 +459,27 @@ describe('U5 applying it twice changes nothing more', () => {
   // 20,000 seeded random sentences made of the table's spellings. The
   // sentences are the same on every run and the same as when this was one
   // test: they are all written first, in the generator's order, and then read
-  // in 20 blocks of 1,000, a test each. One test read them all in 16 s beside
-  // an Xcode build, three times the 5 s a test has (a synchronous test is not
+  // in blocks, a test each. One test read them all in 16 s beside an Xcode
+  // build, three times the 5 s a test has (a synchronous test is not
   // interrupted by vitest 2.1, but a later version or a slower machine would
-  // fail it); a block takes well under a second. The same 40,000 readings and
-  // the same assertions on each sentence; no timeout is raised.
+  // fail it). The same readings and the same assertions on each sentence; no
+  // timeout is raised.
+  //
+  // Second round of 2026-10-10: production writes " de 10" after an effort
+  // grade, the only number the net adds. The strict equality of digits is
+  // kept, on the reading with the scale off; and the reading production makes
+  // is compared with that one — it may differ from it ONLY by " de 10"
+  // written in. One more reading per sentence (60,000); nothing is relaxed.
+  //
+  // Review round 1 of the second round: with the third reading a block of
+  // 1,000 no longer took "well under a second" — measured from 0.9 to 2.4 s
+  // (the reviewer, beside an Xcode build: 1.0 to 2.4 s), half the room there
+  // was under the 5 s of a test. The blocks are now of 500 (40 tests): the
+  // same 20,000 sentences in the same order, the same three readings and the
+  // same assertions on each. Measured beside an Xcode build, with two
+  // workers: 0.4 to 0.8 s a block (19 s the 40). No timeout is raised.
   const SEEDED_SENTENCES = 20_000
-  const SEEDED_BLOCK = 1_000
+  const SEEDED_BLOCK = 500
   const seeded = (() => {
     // A small deterministic generator.
     let seed = 20261010
@@ -491,14 +520,21 @@ describe('U5 applying it twice changes nothing more', () => {
   })
 
   it.each(Array.from({ length: SEEDED_SENTENCES / SEEDED_BLOCK }, (_, block) => [block * SEEDED_BLOCK]))(
-    'for the 1,000 seeded random sentences from %i on; and their digits are kept',
+    'for the 500 seeded random sentences from %i on; and their digits are kept',
     (from) => {
       let acted = 0
       for (const { written, field } of seeded.slice(from, from + SEEDED_BLOCK)) {
+        // With the scale off, every digit group is the generator's, in the same order.
+        const off = projectFlowPlainTrainingText(written, field, SCALE_OFF)
+        expect(digitGroups(off.text), `${field}: ${written}`).toEqual(digitGroups(written))
+        // As production reads it: the same text, plus " de 10" written in and nothing else.
         const once = projectFlowPlainTrainingText(written, field)
         if (once.replaced > 0) acted += 1
         else expect(once.text, written).toBe(written)
-        expect(digitGroups(once.text), `${field}: ${written}`).toEqual(digitGroups(written))
+        expect(once.text.replaceAll(' de 10', ''), `${field}: ${written}`).toBe(
+          off.text.replaceAll(' de 10', ''),
+        )
+        expect(scales(once.text), `${field}: ${written}`).toBeGreaterThanOrEqual(scales(off.text))
         expect(projectFlowPlainTrainingText(once.text, field), `${field}: ${written}`).toEqual({
           text: once.text,
           replaced: 0,
@@ -543,7 +579,7 @@ describe('U5 applying it twice changes nothing more', () => {
 })
 
 describe('U6 no replacement is read as medication or supplement', () => {
-  it('every plain text of the table, and of the rows that wait for the owner', () => {
+  it('every plain text of the table, and of the rows that rename an exercise', () => {
     expect(FLOW_PLAIN_TRAINING_VOCABULARY.length).toBeGreaterThan(0)
     for (const row of [...FLOW_PLAIN_TRAINING_VOCABULARY, ...FLOW_PLAIN_TRAINING_RENAMES_AWAITING_OWNER]) {
       for (const output of [row.plain, row.one].filter((entry) => entry !== undefined)) {
@@ -883,7 +919,12 @@ const EXPECTED_VOCABULARY = [
   },
 ]
 
-/** The rows that rename an exercise: written, exercised here, read by no production path. */
+/**
+ * The rows that rename an exercise. Both are ON in production since the second
+ * round of 2026-10-10 (decisão do orquestrador, anunciada ao dono em
+ * 2026-10-10, que pode riscar qualquer uma; the owner's written yes is still
+ * blank). The exported name of the list did not change.
+ */
 const EXPECTED_RENAMES_AWAITING_OWNER = [
   {
     id: 'hip_thrust',
@@ -946,9 +987,10 @@ describe('U8 no row adds or removes a number, and no row adds an instruction', (
     }
     for (const written of lines) {
       for (const field of ['notes', 'name', 'rpe_target', 'reps_range', 'day'] as const) {
-        const off = projectFlowPlainTrainingText(written, field).text
+        // With the two switches written off (they are on in production: U9).
+        const off = projectFlowPlainTrainingText(written, field, ALL_OFF).text
         expect(digitGroups(off), `${field}: ${written}`).toEqual(digitGroups(written))
-        // With the owner's switch on, the only group added is the "10" of " de 10".
+        // With both switches on, the only group added is the "10" of " de 10".
         const on = projectFlowPlainTrainingText(written, field, {
           effortOutOfTen: true,
           renames: ['hip_thrust', 'military_press'],
@@ -975,47 +1017,105 @@ describe('U8 no row adds or removes a number, and no row adds an instruction', (
   })
 })
 
-describe('U9 what waits for the owner is off, and is exact when on', () => {
+describe('U9 the two decisions are ON, and each switch is exact on its own', () => {
+  // Second round of 2026-10-10. D1 (the scale of the effort grade) and D2 (the
+  // two exercise names) were turned on by decisão do orquestrador, anunciada
+  // ao dono em 2026-10-10, que pode riscar qualquer uma. Striking one is
+  // taking its entry out of the literal of (a): (c) pins what comes back.
   const on = (switches: { effortOutOfTen?: boolean; renames?: string[] }) => ({
     effortOutOfTen: switches.effortOutOfTen ?? false,
     renames: switches.renames ?? [],
   })
 
-  it('(a) the switches are off, and frozen', () => {
-    expect(FLOW_PLAIN_TRAINING_OWNER_SWITCHES).toEqual({ effortOutOfTen: false, renames: [] })
+  it('(a) the switches are on, and frozen', () => {
+    expect(FLOW_PLAIN_TRAINING_OWNER_SWITCHES).toEqual({
+      effortOutOfTen: true,
+      renames: ['hip_thrust', 'military_press'],
+    })
     expect(Object.isFrozen(FLOW_PLAIN_TRAINING_OWNER_SWITCHES)).toBe(true)
     expect(Object.isFrozen(FLOW_PLAIN_TRAINING_OWNER_SWITCHES.renames)).toBe(true)
   })
 
-  it('(b) by default no exercise is renamed and the effort grade keeps its text', () => {
-    for (const name of ['Hip Thrust com Barra', 'Military press', 'Leg Press 45°', 'Stiff Unilateral com Halter']) {
+  it('(b) by default the two exercises carry the Portuguese name with the original in parentheses, and a grade from 1 to 10 says "de 10"', () => {
+    for (const [written, expected] of [
+      // The reported draft, and the example of the decision (the generator wrote "com barra").
+      ['Hip Thrust com Barra', 'Elevação pélvica com Barra (Hip Thrust)'],
+      ['Hip Thrust com barra', 'Elevação pélvica com barra (Hip Thrust)'],
+      ['Military press', 'Desenvolvimento militar (Military press)'],
+      ['Hip-Thrust unilateral', 'Elevação pélvica unilateral (Hip-Thrust)'],
+    ] as const) {
+      expect(plain(written, 'name'), written).toBe(expected)
+    }
+    expect(plain('Faça o hip thrust devagar')).toBe('Faça a elevação pélvica (hip thrust) devagar')
+    // "Stiff" and "Leg Press" stay exactly as the generator wrote them.
+    for (const name of ['Leg Press 45°', 'Stiff Unilateral com Halter', 'Stiff (levantamento romeno)']) {
       expect(plain(name, 'name')).toBe(name)
       expect(plain(`Faça ${name} devagar.`)).toBe(`Faça ${name} devagar.`)
     }
-    for (const grade of ['9', '8-9', '7.5', '7-8', '15', 'moderado']) {
-      expect(plain(grade, 'rpe_target')).toBe(grade)
+    for (const [written, expected] of [
+      ['9', '9 de 10'],
+      ['8-9', '8-9 de 10'],
+      ['7-8', '7-8 de 10'],
+      ['7.5', '7.5 de 10'],
+      ['10', '10 de 10'],
+      ['8/10', '8 de 10'],
+      ['9 de 10', '9 de 10'],
+      ['15', '15'],
+      ['moderado', 'moderado'],
+    ] as const) {
+      expect(plain(written, 'rpe_target'), written).toBe(expected)
     }
+    // The shape does not change: a text, within the field's 40 characters.
+    expect(typeof plain('9', 'rpe_target')).toBe('string')
   })
 
-  it('(c) a rename the owner approves is exact', () => {
+  it('(c) with each switch written off, the output is the one of before the decision (lock)', () => {
+    const off = on({})
+    for (const name of ['Hip Thrust com Barra', 'Military press', 'Leg Press 45°', 'Stiff Unilateral com Halter']) {
+      expect(projectFlowPlainTrainingText(name, 'name', off)).toEqual({ text: name, replaced: 0 })
+      expect(projectFlowPlainTrainingText(`Faça ${name} devagar.`, 'notes', off).text).toBe(`Faça ${name} devagar.`)
+      // The scale on does not rename.
+      expect(projectFlowPlainTrainingText(name, 'name', on({ effortOutOfTen: true })).text).toBe(name)
+    }
+    for (const grade of ['9', '8-9', '7.5', '7-8', '15', 'moderado']) {
+      expect(projectFlowPlainTrainingText(grade, 'rpe_target', off)).toEqual({ text: grade, replaced: 0 })
+      // The renames on do not write the scale.
+      expect(
+        projectFlowPlainTrainingText(grade, 'rpe_target', on({ renames: ['hip_thrust', 'military_press'] })).text,
+      ).toBe(grade)
+    }
+    // Inside rpe_target, the repeated label leaves and "/10" is written out, scale or not.
+    for (const [written, expected] of [
+      ['RPE 8', '8'],
+      ['RPE 8-9', '8-9'],
+      ['8/10', '8 de 10'],
+      ['RPE 8/10', '8 de 10'],
+      ['PSE 15', '15'],
+    ] as const) {
+      expect(projectFlowPlainTrainingText(written, 'rpe_target', off).text, written).toBe(expected)
+    }
+    expect(projectFlowPlainTrainingText('Treine com RPE 8-9.', 'notes', off).text).toBe('Treine com esforço 8-9.')
+  })
+
+  it('(d) one rename on alone is exact, and leaves the other name', () => {
     const hip = on({ renames: ['hip_thrust'] })
     expect(projectFlowPlainTrainingText('Hip Thrust com Barra', 'name', hip).text).toBe(
-      'Elevação pélvica com Barra',
+      'Elevação pélvica com Barra (Hip Thrust)',
     )
     expect(projectFlowPlainTrainingText('Faça o hip thrust devagar', 'notes', hip).text).toBe(
-      'Faça a elevação pélvica devagar',
+      'Faça a elevação pélvica (hip thrust) devagar',
     )
     expect(projectFlowPlainTrainingText('Military press', 'name', hip).text).toBe('Military press')
     const military = on({ renames: ['military_press'] })
     expect(projectFlowPlainTrainingText('Military press', 'name', military).text).toBe(
-      'Desenvolvimento militar',
+      'Desenvolvimento militar (Military press)',
     )
     expect(projectFlowPlainTrainingText('Hip Thrust com Barra', 'name', military).text).toBe(
       'Hip Thrust com Barra',
     )
   })
 
-  it('(d) with the scale approved, the grade says "de 10" and nothing else is added', () => {
+  it('(e) the scale on alone: the grade says "de 10" and nothing else is added', () => {
     const scale = on({ effortOutOfTen: true })
     for (const [written, expected] of [
       ['9', '9 de 10'],
@@ -1039,14 +1139,6 @@ describe('U9 what waits for the owner is off, and is exact when on', () => {
     expect(projectFlowPlainTrainingText('Treine com RPE 15.', 'notes', scale).text).toBe(
       'Treine com esforço 15.',
     )
-  })
-
-  it('(e) by default, inside rpe_target, the repeated label leaves and "/10" is written out', () => {
-    expect(plain('RPE 8', 'rpe_target')).toBe('8')
-    expect(plain('RPE 8-9', 'rpe_target')).toBe('8-9')
-    expect(plain('8/10', 'rpe_target')).toBe('8 de 10')
-    expect(plain('RPE 8/10', 'rpe_target')).toBe('8 de 10')
-    expect(plain('PSE 15', 'rpe_target')).toBe('15')
   })
 })
 
@@ -1108,8 +1200,8 @@ describe('U10 what counts as a letter and as a digit (rule 2)', () => {
     ['Bateu 12 reps → aumenta peso', 'Bateu 12 repetições → aumenta peso', 'notes'],
     ['Push→Pull→Legs', 'Empurrar→puxar→pernas', 'notes'],
     ['Push → Pull → Legs', 'Empurrar → puxar → pernas', 'focus'],
-    ['RPE 8–9', 'Esforço 8–9', 'notes'],
-    ['RPE 8–9', '8–9', 'rpe_target'],
+    ['RPE 8–9', 'Esforço 8–9 de 10', 'notes'],
+    ['RPE 8–9', '8–9 de 10', 'rpe_target'],
     ['Descanso 60–90 s; faça 8–12 reps', 'Descanso 60–90 s; faça 8–12 repetições', 'notes'],
     ['Aqueça — Core no fim', 'Aqueça — abdômen no fim', 'notes'],
     ['Treino de Core… depois alongue', 'Treino de abdômen… depois alongue', 'notes'],
@@ -1183,10 +1275,11 @@ describe('U11 RIR and its count (rule 11)', () => {
     ['8-12 reps RIR 2', '8-12 repetições 2 repetições de sobra'],
     ['Semana 1: RIR 3. Semana 2: RIR 2.', 'Semana 1: 3 repetições de sobra. Semana 2: 2 repetições de sobra.'],
     // The number before may be the grade of the effort: it is a number all the same.
-    ['RPE 8 RIR 2', 'Esforço 8 RIR 2'],
+    // Since the second round the grade says its scale; after a dash it does not (the dash may go on).
+    ['RPE 8 RIR 2', 'Esforço 8 de 10 RIR 2'],
     ['RPE 8 - RIR 2', 'Esforço 8 - RIR 2'],
-    ['RPE 8, RIR 2', 'Esforço 8, 2 repetições de sobra'],
-    ['RPE 8 (RIR 2)', 'Esforço 8 (2 repetições de sobra)'],
+    ['RPE 8, RIR 2', 'Esforço 8 de 10, 2 repetições de sobra'],
+    ['RPE 8 (RIR 2)', 'Esforço 8 de 10 (2 repetições de sobra)'],
     ['12 reps - RIR 2', '12 repetições - 2 repetições de sobra'],
     ['- RIR 2 em todas as séries', '- 2 repetições de sobra em todas as séries'],
     // A range is read as the count when it is written as one ("2-3"). With
@@ -1209,5 +1302,660 @@ describe('U11 RIR and its count (rule 11)', () => {
     ['2 repetições em reserva 3', '2 repetições de sobra 3'],
   ])('%j → %j', (written, expected) => {
     expect(plain(written)).toBe(expected)
+  })
+})
+
+// ── Second round of 2026-10-10 ──────────────────────────────────────────────
+// The open LOW findings of the review of 3b65bee (S3a, S3c) and what the two
+// switches do (D2, D1). Every test below NAMES its switches: none depends on
+// what production has on.
+
+describe('U12 a participle is not the exercise (rule 6; review of 2026-10-10)', () => {
+  const RUNNING_FIELDS = ['notes', 'progression_rule', 'exercise_notes', 'execution_steps'] as const
+  // The first sentence is the one the review reported. The second ("e") was
+  // written here: the reviewer's own sentence is in no record (RC TL-17).
+  const PARTICIPLES = [
+    'Treino ABC, composto principalmente por exercícios básicos.',
+    'Treino dividido em três dias e composto principalmente por exercícios básicos.',
+    'Composto principalmente por exercícios básicos, o treino dura 60 minutos.',
+    'Treinos A e B, compostos basicamente de exercícios livres.',
+    'exercícios compostos principalmente por duas fases',
+    // The closed list of adverbs, one by one, and two in a row.
+    ...[
+      'apenas',
+      'só',
+      'somente',
+      'sobretudo',
+      'quase',
+      'também',
+      'ainda',
+      'sempre',
+      'tanto',
+      'essencialmente',
+      'em grande parte',
+      'em sua maioria',
+      'na maior parte',
+      // Typed without the accent.
+      'so',
+      'tambem',
+    ].map((adverb) => `Treino ABC, composto ${adverb} por exercícios básicos.`),
+    'Treino ABC, composto quase sempre por exercícios básicos.',
+    'Treino de 4 dias ou composto somente de exercícios livres.',
+  ]
+
+  it.each(PARTICIPLES)('%j stays as written, in every running text', (written) => {
+    for (const field of RUNNING_FIELDS) {
+      expect(projectFlowPlainTrainingText(written, field, ALL_OFF), field).toEqual({ text: written, replaced: 0 })
+    }
+  })
+
+  it.each([
+    // Locks: the noun is still replaced, as before.
+    ['Compostos antes de isoladores.', 'Exercícios de vários músculos antes de exercícios de um músculo só.'],
+    ['Compostos somente no início.', 'Exercícios de vários músculos somente no início.'],
+    ['Compostos primeiro, isoladores depois.', 'Exercícios de vários músculos primeiro, exercícios de um músculo só depois.'],
+    // After a determiner or a preposition the adverb is not read through.
+    [
+      'os compostos normalmente de 6 a 10 repetições',
+      'os exercícios de vários músculos normalmente de 6 a 10 repetições',
+    ],
+    ['Comece com compostos principalmente de pernas.', 'Comece com exercícios de vários músculos principalmente de pernas.'],
+    // An adverb with no "por"/"de" after it changes nothing.
+    ['Treino ABC, compostos principalmente.', 'Treino ABC, exercícios de vários músculos principalmente.'],
+    // Known limit (RC TL-17): another word between the participle and the preposition.
+    [
+      'Treino ABC, composto na prática por exercícios básicos.',
+      'Treino ABC, exercício de vários músculos na prática por exercícios básicos.',
+    ],
+  ])('%j → %j', (written, expected) => {
+    expect(projectFlowPlainTrainingText(written, 'notes', ALL_OFF).text).toBe(expected)
+  })
+
+  it('known limit (RC TL-17): at the start, a noun followed by an adverb of the list and "de" stays as generated', () => {
+    expect(projectFlowPlainTrainingText('Compostos sempre de manhã.', 'notes', ALL_OFF)).toEqual({
+      text: 'Compostos sempre de manhã.',
+      replaced: 0,
+    })
+  })
+})
+
+describe('U13 "falha" alone in the repetitions and effort fields, inside a closed grammar (rule 5; review of 2026-10-10)', () => {
+  // The reviewer's own spellings are in no record: these were read from the code (RC TL-18).
+  const SMALL_FIELDS = ['reps_range', 'rpe_target'] as const
+
+  it.each([
+    ['falha', 'até a última repetição bem feita'],
+    ['Falha técnica', 'Até a última repetição bem feita'],
+    ['falha muscular', 'até a última repetição bem feita'],
+    ['falha.', 'até a última repetição bem feita.'],
+    ['8-12 ou falha', '8-12 ou até a última repetição bem feita'],
+    ['8-12 (falha)', '8-12 (até a última repetição bem feita)'],
+    ['8-12 - falha', '8-12 - até a última repetição bem feita'],
+    ['12 falha', '12 até a última repetição bem feita'],
+    ['8-12, falha', '8-12, até a última repetição bem feita'],
+    ['8-12/falha', '8-12/até a última repetição bem feita'],
+    ['falha ou 12', 'até a última repetição bem feita ou 12'],
+    // The form the vocabulary already covered, unchanged.
+    ['até falha', 'até a última repetição bem feita'],
+    ['8-12 ou até a falha', '8-12 ou até a última repetição bem feita'],
+  ])('%j → %j', (written, expected) => {
+    for (const field of SMALL_FIELDS) {
+      const once = projectFlowPlainTrainingText(written, field, ALL_OFF)
+      expect(once, field).toEqual({ text: expected, replaced: 1 })
+      expect(once.text.length, field).toBeLessThanOrEqual(40)
+      // Applying it again changes nothing more.
+      expect(projectFlowPlainTrainingText(once.text, field, ALL_OFF), field).toEqual({ text: expected, replaced: 0 })
+    }
+  })
+
+  it.each([
+    // Outside the grammar: after another word, glued to a hyphen, or followed by another word.
+    'sem falha',
+    'pré-falha',
+    '8-12-falha',
+    'Falha total',
+    'falha na última série',
+    'evite a falha',
+    '8-12 falhas',
+    // An address is protected as a span (rule 3), here too.
+    'https://exemplo.com/falha',
+  ])('%j stays as written', (written) => {
+    for (const field of SMALL_FIELDS) {
+      expect(projectFlowPlainTrainingText(written, field, ALL_OFF), field).toEqual({ text: written, replaced: 0 })
+    }
+  })
+
+  it('the grammar is of the two small fields only: in running text "falha" keeps rule 5', () => {
+    for (const written of ['Falha', 'falha', 'Corrija qualquer falha técnica', '8-12 ou falha', '12 falha']) {
+      for (const field of ['notes', 'exercise_notes', 'execution_steps', 'focus', 'name'] as const) {
+        expect(projectFlowPlainTrainingText(written, field, ALL_OFF), `${field}: ${written}`).toEqual({
+          text: written,
+          replaced: 0,
+        })
+      }
+    }
+  })
+
+  // The range of two digits and two digits is the most likely value of the
+  // field, and its plain text has 41 characters: it stays as generated. A
+  // declared pendency (RC TL-18), with the exact strings of the review of
+  // the second round.
+  it.each([
+    ['10-12 ou falha', '10-12 ou até a última repetição bem feita'],
+    ['12-15 ou falha', '12-15 ou até a última repetição bem feita'],
+    ['10-12 ou até a falha', '10-12 ou até a última repetição bem feita'],
+  ])('%j: its plain text passes 40 characters, so it stays as generated, and is counted (RC TL-18)', (written, plainText) => {
+    expect(plainText).toHaveLength(41)
+    for (const field of SMALL_FIELDS) {
+      expect(projectFlowPlainTrainingText(written, field, ALL_OFF).text, field).toBe(plainText)
+      for (const switches of [ALL_OFF, FLOW_PLAIN_TRAINING_OWNER_SWITCHES]) {
+        const result = projectFlowPlainTrainingDraft(
+          {
+            weekly_schedule: [
+              { day: 'Segunda', focus: 'Peito', duration_min: 60, exercises: [{ name: 'Supino', [field]: written }] },
+            ],
+          },
+          switches,
+        )
+        const exercise = (result.payload as { weekly_schedule: Array<{ exercises: Array<Record<string, unknown>> }> })
+          .weekly_schedule[0]?.exercises[0]
+        expect(exercise?.[field], field).toBe(written)
+        expect(result.fieldsKeptAsGenerated, field).toBe(1)
+        expect(result.termsReplaced, field).toBe(0)
+      }
+    }
+  })
+})
+
+describe("U14 the field's own label leaves rpe_target without leftovers (rule 9; review of 2026-10-10)", () => {
+  // The app prints this field after its own label ("Esforço alvo"). The
+  // reviewer's spellings are in no record: these were read from the code (RC TL-19).
+  const SCALE_ON = { effortOutOfTen: true, renames: [] as string[] }
+
+  it.each([
+    // written, with the scale off, with the scale on
+    ['a PSE 8', '8', '8 de 10'],
+    ['RPE alto', 'alto', 'alto'],
+    ['8 RPE', '8', '8 de 10'],
+    ['Esforço 8', '8', '8 de 10'],
+    ['esforço 8-9', '8-9', '8-9 de 10'],
+    ['RPE alvo: 8', '8', '8 de 10'],
+    ['Esforço alto', 'alto', 'alto'],
+    ['Esforço alvo 9', '9', '9 de 10'],
+    ['Esforço: moderado', 'moderado', 'moderado'],
+    ['Esforço 8 de 10', '8 de 10', '8 de 10'],
+    ['8 esforço', '8', '8 de 10'],
+    ['RPE 8.', '8.', '8 de 10.'],
+    ['PSE 15', '15', '15'],
+  ] as const)('%j → %j (scale off) and %j (scale on)', (written, off, scaled) => {
+    for (const [switches, expected] of [
+      [ALL_OFF, off],
+      [SCALE_ON, scaled],
+    ] as const) {
+      const once = projectFlowPlainTrainingText(written, 'rpe_target', switches)
+      expect(once.text).toBe(expected)
+      expect(once.replaced).toBe(1)
+      expect(projectFlowPlainTrainingText(once.text, 'rpe_target', switches)).toEqual({ text: expected, replaced: 0 })
+    }
+  })
+
+  it.each([
+    // Locks: what the label rule leaves alone (RC TL-19).
+    ['RPE', 'Esforço'],
+    ['PSE alta', 'PSE alta'],
+    ['Esforço percebido 8', 'Esforço percebido 8'],
+    ['Esforço percebido', 'Esforço percebido'],
+    ['Esforço, 8', 'Esforço, 8'],
+    ['Esforço', 'Esforço'],
+    ['Mantenha RPE alto', 'Mantenha esforço alto'],
+    ['RPE moderado-alto', 'Esforço moderado-alto'],
+    ['RPE alvo', 'Esforço alvo'],
+  ] as const)('%j → %j, scale on or off', (written, expected) => {
+    for (const switches of [ALL_OFF, SCALE_ON]) {
+      const once = projectFlowPlainTrainingText(written, 'rpe_target', switches)
+      expect(once.text).toBe(expected)
+      expect(projectFlowPlainTrainingText(once.text, 'rpe_target', switches)).toEqual({ text: expected, replaced: 0 })
+    }
+  })
+
+  it('outside rpe_target the word "esforço" before a grade is never taken out', () => {
+    for (const field of ['notes', 'reps_range', 'exercise_notes', 'focus'] as const) {
+      for (const written of ['Esforço 8', 'esforço 8-9', 'Esforço alto']) {
+        expect(projectFlowPlainTrainingText(written, field, ALL_OFF), `${field}: ${written}`).toEqual({
+          text: written,
+          replaced: 0,
+        })
+      }
+    }
+  })
+})
+
+describe('U15 a renamed exercise keeps its original name in parentheses, once, and never twice (rule 12)', () => {
+  const RENAMES = { effortOutOfTen: false, renames: ['hip_thrust', 'military_press'] }
+  const read = (written: string, field: FlowPlainTrainingField) =>
+    projectFlowPlainTrainingText(written, field, RENAMES)
+
+  it.each([
+    // In the name the original goes to the end.
+    ['Hip Thrust com Barra', 'Elevação pélvica com Barra (Hip Thrust)', 1],
+    ['Hip Thrust com barra', 'Elevação pélvica com barra (Hip Thrust)', 1],
+    ['Hip Thrust', 'Elevação pélvica (Hip Thrust)', 1],
+    ['Military press', 'Desenvolvimento militar (Military press)', 1],
+    ['Hip-Thrust unilateral', 'Elevação pélvica unilateral (Hip-Thrust)', 1],
+    ['Barra — hip thrust', 'Barra — elevação pélvica (hip thrust)', 1],
+    // A name that already has a parenthesis: the original right after the Portuguese name.
+    ['Hip Thrust com Barra (glúteos)', 'Elevação pélvica (Hip Thrust) com Barra (glúteos)', 1],
+    // The end of the name is before its final punctuation; a second sentence is left alone.
+    ['Hip Thrust com Barra.', 'Elevação pélvica com Barra (Hip Thrust).', 1],
+    ['Hip Thrust com Barra. Pausa no alto', 'Elevação pélvica com Barra (Hip Thrust). Pausa no alto', 1],
+  ] as const)('name %j → %j', (written, expected, replaced) => {
+    const once = read(written, 'name')
+    expect(once).toEqual({ text: expected, replaced })
+    expect(read(once.text, 'name')).toEqual({ text: expected, replaced: 0 })
+    expect(classifyHealthProduct(once.text, 'item')).toBeNull()
+    expect(classifyHealthProduct(once.text, 'text')).toBeNull()
+  })
+
+  it('the lengths the brief counts', () => {
+    expect('Elevação pélvica com Barra (Hip Thrust)').toHaveLength(39)
+    expect('Elevação pélvica com barra (Hip Thrust)').toHaveLength(39)
+    expect('Desenvolvimento militar (Military press)').toHaveLength(40)
+    expect('Elevação pélvica unilateral (Hip-Thrust)').toHaveLength(40)
+    expect('Elevação pélvica (Hip Thrust) com Barra (glúteos)').toHaveLength(49)
+    expect('Faça a elevação pélvica (hip thrust) devagar').toHaveLength(44)
+  })
+
+  it.each([
+    // In running text the original comes right after, and only at the first mention of the field.
+    ['Faça o hip thrust devagar', 'Faça a elevação pélvica (hip thrust) devagar', 1],
+    [
+      'Faça o Hip Thrust devagar. No hip thrust, suba o quadril até o fim.',
+      'Faça a elevação pélvica (Hip Thrust) devagar. Na elevação pélvica, suba o quadril até o fim.',
+      2,
+    ],
+    [
+      'Hip Thrust leve, depois Hip Thrust pesado.',
+      'Elevação pélvica (Hip Thrust) leve, depois elevação pélvica pesado.',
+      2,
+    ],
+    [
+      'Hip Thrust e Military press no mesmo dia.',
+      'Elevação pélvica (Hip Thrust) e desenvolvimento militar (Military press) no mesmo dia.',
+      2,
+    ],
+  ] as const)('notes %j → %j', (written, expected, replaced) => {
+    for (const field of ['notes', 'progression_rule', 'exercise_notes', 'execution_steps', 'common_mistakes'] as const) {
+      const once = read(written, field)
+      expect(once, field).toEqual({ text: expected, replaced })
+      expect(read(once.text, field), field).toEqual({ text: expected, replaced: 0 })
+    }
+  })
+
+  it('in a one-phrase field that is not the name, the original comes right after', () => {
+    expect(read('Glúteos e Hip Thrust', 'focus')).toEqual({ text: 'Glúteos e elevação pélvica (Hip Thrust)', replaced: 1 })
+    expect(read('Hip Thrust', 'muscle_group')).toEqual({ text: 'Elevação pélvica (Hip Thrust)', replaced: 1 })
+  })
+
+  it.each([
+    // The field or the sentence already carries the Portuguese name (with or without accents, any case).
+    ['Hip Thrust (elevação pélvica)', 'name'],
+    ['Hip Thrust/Elevação pélvica', 'name'],
+    ['Elevacao pelvica ou HIP THRUST', 'name'],
+    ['Elevação pélvica com barra (Hip Thrust)', 'name'],
+    ['Desenvolvimento militar (Military press)', 'name'],
+    ['A elevação pélvica (hip thrust) vem primeiro.', 'notes'],
+    ['Na elevação pélvica, também chamada de hip thrust, suba o quadril.', 'notes'],
+    // The spelling is inside parentheses: it is the generator's own gloss.
+    ['Glúteos (hip thrust)', 'name'],
+    ['Glúteos (hip thrust com barra)', 'name'],
+    ['Empurre o quadril (como no Hip Thrust) até o fim.', 'notes'],
+    // The equipment list is what the person said they have.
+    ['banco para hip thrust, barra', 'equipment_summary'],
+    ['Hip Thrust', 'equipment_summary'],
+    // "Stiff" and "Leg Press": no row.
+    ['Stiff Unilateral com Halter', 'name'],
+    ['Stiff (levantamento romeno)', 'name'],
+    ['Leg Press 45°', 'name'],
+    ['Leg press 45°', 'name'],
+    // Glued, it is not the term (rule 2).
+    ['Hip Thruster', 'name'],
+  ] as const)('%j (%s) stays as written', (written, field) => {
+    expect(read(written, field)).toEqual({ text: written, replaced: 0 })
+  })
+
+  it.each([
+    // Known limit (RC TL-13): the row renames its two words and nothing around them.
+    ['Single Leg Hip Thrust', 'Single Leg elevação pélvica (Hip Thrust)'],
+    ['Hip Thrust Unilateral na Máquina', 'Elevação pélvica Unilateral na Máquina (Hip Thrust)'],
+    ['Seated Military Press', 'Seated desenvolvimento militar (Military Press)'],
+  ] as const)('name %j → %j: the other words of the name stay as generated', (written, expected) => {
+    expect(read(written, 'name')).toEqual({ text: expected, replaced: 1 })
+    expect(read(expected, 'name')).toEqual({ text: expected, replaced: 0 })
+  })
+
+  it('a name with two sentences: the one that already carries the Portuguese name stops the whole field', () => {
+    const written = 'Hip Thrust com Barra. Também chamado de elevação pélvica'
+    expect(read(written, 'name')).toEqual({ text: written, replaced: 0 })
+  })
+})
+
+describe('U16 the scale is written only after a grade that does not go on (rule 9)', () => {
+  const SCALE = { effortOutOfTen: true, renames: [] as string[] }
+  const read = (written: string, field: FlowPlainTrainingField) =>
+    projectFlowPlainTrainingText(written, field, SCALE).text
+
+  it.each([
+    // The grade goes on after the number: no scale (before, "esforço 8 de 10/9", "8 de 10+", "8 de 10 ou 9").
+    ['Treine com RPE 8/9.', 'Treine com esforço 8/9.'],
+    ['Treine com RPE 8+.', 'Treine com esforço 8+.'],
+    ['Treine com RPE 8 ou 9.', 'Treine com esforço 8 ou 9.'],
+    ['RPE 8 → 9 ao longo das semanas', 'Esforço 8 → 9 ao longo das semanas'],
+    ['RPE 8.55', 'Esforço 8.55'],
+    ['RPE 8 e 9 nas últimas', 'Esforço 8 e 9 nas últimas'],
+    ['RPE 8 até 9', 'Esforço 8 até 9'],
+    ['RPE 8 de 12', 'Esforço 8 de 12'],
+    ['RPE 8 em 10', 'Esforço 8 em 10'],
+    ['RPE 8~9', 'Esforço 8~9'],
+    ['RPE 8 9', 'Esforço 8 9'],
+    ['RPE 8, 9 na última', 'Esforço 8, 9 na última'],
+    ['RPE 8 - RIR 2', 'Esforço 8 - RIR 2'],
+    ['RPE 8%', 'Esforço 8%'],
+    // The sentence already says the scale after the grade: it is not said twice.
+    ['RPE 8 (de 10)', 'Esforço 8 (de 10)'],
+    ['RPE 8 (escala de 0 a 10)', 'Esforço 8 (escala de 0 a 10)'],
+    ['Mantenha RPE 8 numa escala de 1 a 10.', 'Mantenha esforço 8 numa escala de 1 a 10.'],
+    ['RPE 8 (8/10)', 'Esforço 8 (8/10)'],
+    // The scale is written.
+    ['Treine com RPE 8/10.', 'Treine com esforço 8 de 10.'],
+    ['Treine com RPE 8-9.', 'Treine com esforço 8-9 de 10.'],
+    ['RPE 8 a 9', 'Esforço 8 a 9 de 10'],
+    ['RPE 8 (pesado)', 'Esforço 8 de 10 (pesado)'],
+    ['(RPE 8)', '(esforço 8 de 10)'],
+    ['RPE 8, RIR 2', 'Esforço 8 de 10, 2 repetições de sobra'],
+    ['RPE 8 RIR 2', 'Esforço 8 de 10 RIR 2'],
+    ['RPE 8; descanse', 'Esforço 8 de 10; descanse'],
+    ['Mantenha RPE 8 nas séries', 'Mantenha esforço 8 de 10 nas séries'],
+    // Already written: nothing is added.
+    ['Treine com RPE 8 de 10.', 'Treine com esforço 8 de 10.'],
+    // Outside 1 to 10: no scale.
+    ['Treine com RPE 15.', 'Treine com esforço 15.'],
+  ])('notes %j → %j', (written, expected) => {
+    expect(read(written, 'notes')).toBe(expected)
+    expect(read(expected, 'notes')).toBe(expected)
+  })
+
+  it.each([
+    ['RPE 8/9', '8/9'],
+    ['RPE 8+', '8+'],
+    ['RPE 8 ou 9', '8 ou 9'],
+    ['RPE 8 (de 10)', '8 (de 10)'],
+    ['RPE 8/10', '8 de 10'],
+    ['8/9', '8/9'],
+    ['8+', '8+'],
+    ['8 ou 9', '8 ou 9'],
+    ['RPE 8', '8 de 10'],
+    ['9', '9 de 10'],
+    ['8-9', '8-9 de 10'],
+    ['8 a 9', '8 a 9 de 10'],
+    ['10', '10 de 10'],
+    ['0', '0'],
+    ['11', '11'],
+    // Review round 1 of the second round: the grade alone with its full stop
+    // is the whole field too ("RPE 9." already gave "9 de 10.").
+    ['9.', '9 de 10.'],
+    ['8-9.', '8-9 de 10.'],
+    ['8/10.', '8 de 10.'],
+    ['15.', '15.'],
+    // Known limit (RC TL-14): a grade followed by other text in the field
+    // itself, without the acronym, is not read — a number before a word may
+    // be another thing ("8 séries").
+    ['8 (pesado)', '8 (pesado)'],
+    ['8, pesado', '8, pesado'],
+    ['8 séries', '8 séries'],
+    // Review round 1 of the second round: a range written with spaces beside
+    // its dash, then a word — the second number may be another thing.
+    ['RPE 8 - 3 séries', '8 - 3 séries'],
+    ['RPE 8 para 9', '8 para 9'],
+    // …but the whole field as a range is the grade.
+    ['8 - 9', '8 - 9 de 10'],
+    ['RPE 8 - 9', '8 - 9 de 10'],
+  ])('rpe_target %j → %j', (written, expected) => {
+    expect(read(written, 'rpe_target')).toBe(expected)
+    expect(read(expected, 'rpe_target')).toBe(expected)
+  })
+
+  it('a value that is already the same comes back as the same string, with nothing counted', () => {
+    for (const written of ['8/9', '8+', '8 ou 9', '9 de 10', '9 de 10.', '15', '15.', '8 (pesado)', 'moderado']) {
+      expect(projectFlowPlainTrainingText(written, 'rpe_target', SCALE)).toEqual({ text: written, replaced: 0 })
+    }
+  })
+
+  // Review round 1 of the second round (2026-10-10). The grade pattern reads
+  // "8 - 10" and "8 a 10" as a range. In a list written with dashes the number
+  // after the dash is another thing ("RPE 8 - 10 repetições"), and with the
+  // scale ON the net stored a false sentence ("10 de 10 repetições", "3 de 10
+  // séries"). The four texts below are the reviewer's, through the entry
+  // production uses, with production's switches.
+  it('the four reported texts — a spaced range, then a word — gain no scale through projectFlowPlainTrainingDraft', () => {
+    const candidate = {
+      notes: 'Supino: 4 séries - RPE 8 - 10 repetições - descanso 90 s.',
+      weekly_schedule: [
+        {
+          day: 'Segunda',
+          focus: 'Peito',
+          duration_min: 60,
+          exercises: [
+            {
+              name: 'Supino',
+              muscle_group: 'peito',
+              sets: 4,
+              reps_range: '8-12',
+              rest_seconds: 90,
+              rpe_target: 'RPE 8 - 3 séries',
+              notes: 'RPE 7 - 3 séries de aquecimento. Depois RPE 9 – 2 séries pesadas.',
+              execution_steps: ['RPE 8 a 10 repetições por série.'],
+            },
+          ],
+        },
+      ],
+    }
+    interface Stored {
+      notes: string
+      weekly_schedule: Array<{
+        exercises: Array<{ rpe_target: string; notes: string; execution_steps: string[] }>
+      }>
+    }
+
+    const result = projectFlowPlainTrainingDraft(candidate)
+    const stored = result.payload as Stored
+    const exercise = stored.weekly_schedule[0]?.exercises[0]
+
+    expect(exercise?.notes).toBe('Esforço 7 - 3 séries de aquecimento. Depois esforço 9 – 2 séries pesadas.')
+    expect(stored.notes).toBe('Supino: 4 séries - esforço 8 - 10 repetições - descanso 90 s.')
+    expect(exercise?.execution_steps).toEqual(['Esforço 8 a 10 repetições por série.'])
+    expect(exercise?.rpe_target).toBe('8 - 3 séries')
+    // No scale anywhere, and every digit is the generator's, in the same order.
+    expect(scales(JSON.stringify(stored))).toBe(0)
+    expect(digitGroups(JSON.stringify(stored))).toEqual(digitGroups(JSON.stringify(candidate)))
+    expect(result).toMatchObject({ termsReplaced: 5, sentencesKeptAsGenerated: 0, fieldsKeptAsGenerated: 0 })
+    // With the scale written off the stored draft is the same one.
+    expect(projectFlowPlainTrainingDraft(candidate, SCALE_OFF).payload).toEqual(stored)
+    // Applying it again changes nothing more.
+    expect(projectFlowPlainTrainingDraft(stored)).toMatchObject({ payload: stored, termsReplaced: 0 })
+  })
+
+  it.each([
+    // A space beside the dash, or " a ", and then a word or "(": no scale.
+    ['RPE 7 - 3 séries de aquecimento.', 'Esforço 7 - 3 séries de aquecimento.'],
+    ['Depois RPE 9 – 2 séries pesadas.', 'Depois esforço 9 – 2 séries pesadas.'],
+    ['Supino: 4 séries - RPE 8 - 10 repetições - descanso 90 s.', 'Supino: 4 séries - esforço 8 - 10 repetições - descanso 90 s.'],
+    ['RPE 8 a 10 repetições por série.', 'Esforço 8 a 10 repetições por série.'],
+    ['RPE 8- 3 séries', 'Esforço 8- 3 séries'],
+    ['RPE 8 -3 séries', 'Esforço 8 -3 séries'],
+    ['RPE 8 - 9 (pesado)', 'Esforço 8 - 9 (pesado)'],
+    // Known limit (RC TL-14): a real range written that way loses the scale too.
+    ['RPE 8 a 9 nas últimas séries', 'Esforço 8 a 9 nas últimas séries'],
+    ['RPE 8 - 9 nas últimas séries', 'Esforço 8 - 9 nas últimas séries'],
+    // "para" / "pra" and a number: the grade goes on (before, "esforço 8 de 10 para 9").
+    ['RPE 8 para 9', 'Esforço 8 para 9'],
+    ['RPE 8 pra 9', 'Esforço 8 pra 9'],
+    ['Suba de RPE 7 para 8 na semana 2.', 'Suba de esforço 7 para 8 na semana 2.'],
+    // Locks: the range written as one, or a spaced one after which nothing goes on, keeps the scale.
+    ['RPE 8-9 nas últimas', 'Esforço 8-9 de 10 nas últimas'],
+    ['RPE 8–9 (pesado)', 'Esforço 8–9 de 10 (pesado)'],
+    ['RPE 8 - 9', 'Esforço 8 - 9 de 10'],
+    ['(RPE 8 - 9)', '(esforço 8 - 9 de 10)'],
+    ['RPE 8 a 9, sem pressa', 'Esforço 8 a 9 de 10, sem pressa'],
+    ['RPE 8 para o fim da série', 'Esforço 8 de 10 para o fim da série'],
+    // Known limit (RC TL-14): a spaced range and then the end or punctuation
+    // is read as a range, whatever the generator meant by the second number.
+    ['Treine com RPE 8 - 9.', 'Treine com esforço 8 - 9 de 10.'],
+  ])('notes %j → %j (spaced range)', (written, expected) => {
+    expect(read(written, 'notes')).toBe(expected)
+    expect(read(expected, 'notes')).toBe(expected)
+    // With the scale off the text is the same one, less the scale.
+    expect(projectFlowPlainTrainingText(written, 'notes', ALL_OFF).text).toBe(expected.replaceAll(' de 10', ''))
+  })
+
+  it('the scale follows the acronym in ANY text field the net reads, not only in rpe_target and in running text', () => {
+    // What the app may receive (note for the iOS lane): " de 10" in the
+    // repetitions line, in the focus and in the muscle group too, when the
+    // generator writes RPE / PSE and a grade there.
+    for (const [written, field, expected] of [
+      ['8-12 RPE 9', 'reps_range', '8-12 esforço 9 de 10'],
+      ['Pernas RPE 9', 'focus', 'Pernas esforço 9 de 10'],
+      ['Glúteos PSE 8', 'muscle_group', 'Glúteos esforço 8 de 10'],
+      ['Agachamento (RPE 8)', 'name', 'Agachamento (esforço 8 de 10)'],
+    ] as const) {
+      expect(projectFlowPlainTrainingText(written, field, SCALE), written).toEqual({ text: expected, replaced: 1 })
+      expect(expected.length, written).toBeLessThanOrEqual(40)
+    }
+  })
+
+  it('the scale is of the effort grade only: no other number of a draft gains it', () => {
+    for (const [written, field] of [
+      ['8', 'reps_range'],
+      ['8-12', 'reps_range'],
+      ['Faça 8 repetições.', 'notes'],
+      ['Esforço 8-9 nas últimas séries.', 'notes'],
+      ['Dia 3', 'day'],
+    ] as const) {
+      expect(projectFlowPlainTrainingText(written, field, SCALE), written).toEqual({ text: written, replaced: 0 })
+    }
+  })
+})
+
+describe('U17 when the scale or the parenthesis does not fit, it is left out and the plain words stay (limits)', () => {
+  const BOTH = { effortOutOfTen: true, renames: ['hip_thrust', 'military_press'] }
+
+  interface Exercise {
+    name: string
+    rpe_target?: string
+    notes?: string
+    [key: string]: unknown
+  }
+  const draftOf = (exercise: Partial<Exercise>, notes?: string) => ({
+    ...(notes === undefined ? {} : { notes }),
+    weekly_schedule: [
+      {
+        day: 'Segunda',
+        focus: 'Pernas',
+        duration_min: 60,
+        exercises: [{ name: 'Agachamento', muscle_group: 'pernas', sets: 4, reps_range: '8-12', rest_seconds: 90, ...exercise }],
+      },
+    ],
+  })
+  const project = (exercise: Partial<Exercise>, notes?: string) => {
+    const result = projectFlowPlainTrainingDraft(draftOf(exercise, notes), BOTH)
+    const payload = result.payload as { notes?: string; weekly_schedule: Array<{ exercises: Exercise[] }> }
+    return { result, notes: payload.notes, exercise: payload.weekly_schedule[0]?.exercises[0] as Exercise }
+  }
+
+  it('rpe_target "RPE 9, até a falha": with the scale it would have 41 characters; it stays plain, without the scale', () => {
+    expect('9 de 10, até a última repetição bem feita').toHaveLength(41)
+    const { result, exercise } = project({ rpe_target: 'RPE 9, até a falha' })
+    expect(exercise.rpe_target).toBe('9, até a última repetição bem feita')
+    expect(exercise.rpe_target).toHaveLength(35)
+    expect(result).toMatchObject({ termsReplaced: 2, sentencesKeptAsGenerated: 0, fieldsKeptAsGenerated: 0 })
+  })
+
+  it('rpe_target "RPE 9 (falha)": 42 with the scale, 36 without', () => {
+    expect('9 de 10 (até a última repetição bem feita)').toHaveLength(42)
+    const { result, exercise } = project({ rpe_target: 'RPE 9 (falha)' })
+    expect(exercise.rpe_target).toBe('9 (até a última repetição bem feita)')
+    expect(exercise.rpe_target).toHaveLength(36)
+    expect(result).toMatchObject({ termsReplaced: 2, sentencesKeptAsGenerated: 0, fieldsKeptAsGenerated: 0 })
+  })
+
+  it('what fits keeps the scale', () => {
+    expect(project({ rpe_target: 'RPE 9' }).exercise.rpe_target).toBe('9 de 10')
+    expect(project({ rpe_target: '9' }).exercise.rpe_target).toBe('9 de 10')
+  })
+
+  it('a note of 494 characters: 498 in plain words, 504 with the scale; the plain sentences stay, without " de 10"', () => {
+    const body = `${'Beba água durante o treino. '.repeat(16)}Respire bem nas séries. `
+    const written = `${body}Mantenha RPE 8 no fim.`
+    expect(written).toHaveLength(494)
+    expect(`${body}Mantenha esforço 8 no fim.`).toHaveLength(498)
+    expect(`${body}Mantenha esforço 8 de 10 no fim.`).toHaveLength(504)
+
+    const { result, notes } = project({}, written)
+
+    expect(notes).toBe(`${body}Mantenha esforço 8 no fim.`)
+    expect(result).toMatchObject({ termsReplaced: 1, sentencesKeptAsGenerated: 0, fieldsKeptAsGenerated: 0 })
+  })
+
+  it('a name of 110 characters: only the Portuguese name (116); with the parenthesis it would have 129', () => {
+    const written =
+      'Hip Thrust com barra, com os ombros apoiados no banco, pausa de dois segundos no alto e descida lenta e segura'
+    const portuguese =
+      'Elevação pélvica com barra, com os ombros apoiados no banco, pausa de dois segundos no alto e descida lenta e segura'
+    expect(written).toHaveLength(110)
+    expect(portuguese).toHaveLength(116)
+    expect(`${portuguese} (Hip Thrust)`).toHaveLength(129)
+
+    const { result, exercise } = project({ name: written })
+
+    expect(exercise.name).toBe(portuguese)
+    expect(result).toMatchObject({ termsReplaced: 1, sentencesKeptAsGenerated: 0, fieldsKeptAsGenerated: 0 })
+  })
+
+  it('a name of 116 characters: not even the Portuguese name fits (122); the generated name stays, counted once', () => {
+    const written =
+      'Hip Thrust com barra, com os ombros apoiados no banco, pausa de dois segundos no alto e descida lenta e segura assim'
+    expect(written).toHaveLength(116)
+    expect(written.replace('Hip Thrust', 'Elevação pélvica')).toHaveLength(122)
+
+    const { result, exercise } = project({ name: written })
+
+    expect(exercise.name).toBe(written)
+    expect(result).toMatchObject({ termsReplaced: 0, sentencesKeptAsGenerated: 0, fieldsKeptAsGenerated: 1 })
+  })
+
+  it("an exercise's note of 290 characters: the whole field without the parenthesis (296), no sentence given back", () => {
+    const head = 'Desça devagar e suba sem pressa. '.repeat(8)
+    const written = `${head}Faça o hip thrust devagar.`
+    expect(written).toHaveLength(290)
+    expect(`${head}Faça a elevação pélvica (hip thrust) devagar.`).toHaveLength(309)
+
+    const { result, exercise } = project({ notes: written })
+
+    expect(exercise.notes).toBe(`${head}Faça a elevação pélvica devagar.`)
+    expect(exercise.notes).toHaveLength(296)
+    expect(result).toMatchObject({ termsReplaced: 1, sentencesKeptAsGenerated: 0, fieldsKeptAsGenerated: 0 })
+  })
+
+  it('applying it again to each of these drafts changes nothing more', () => {
+    for (const exercise of [
+      { rpe_target: 'RPE 9, até a falha' },
+      { rpe_target: 'RPE 9 (falha)' },
+      { name: 'Hip Thrust com barra, com os ombros apoiados no banco, pausa de dois segundos no alto e descida lenta e segura' },
+      { notes: `${'Desça devagar e suba sem pressa. '.repeat(8)}Faça o hip thrust devagar.` },
+    ]) {
+      const once = projectFlowPlainTrainingDraft(draftOf(exercise), BOTH)
+      const twice = projectFlowPlainTrainingDraft(once.payload, BOTH)
+      expect(twice.payload).toEqual(once.payload)
+      expect(twice.termsReplaced).toBe(0)
+    }
   })
 })

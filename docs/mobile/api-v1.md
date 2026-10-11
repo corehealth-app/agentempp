@@ -104,7 +104,7 @@ com a mesma chave executa de novo; outro corpo com a mesma chave continua sendo
 | `GET` | `/onboarding/body-photos` | fotos do corpo no cadastro: estado — texto do consentimento em vigor, aceite, poses e envios restantes (desligado por padrão; ver "Fotos do corpo no cadastro") |
 | `POST` | `/onboarding/body-photos/consent` | fotos do corpo no cadastro: aceita exatamente a versão e a marca do consentimento próprio mostradas; recusa quem declara menos de 18 anos (`403 body_photo_age_not_allowed`); `404 body_photos_unavailable` com as fotos desligadas |
 | `POST` | `/onboarding/body-photos` | fotos do corpo no cadastro: cria a foto de uma pose (`front`, `side` ou `back`; só JPEG até 15 MiB) e devolve o bilhete de envio; exige o aceite do consentimento em vigor e cadastro não concluído; limite de 9 em 24 h; `404 body_photos_unavailable` com as fotos desligadas |
-| `POST` | `/onboarding/body-photos/:id/complete` | fotos do corpo no cadastro: confere tipo e tamanho gravados, conclui o envio e só então apaga a foto anterior da mesma pose; não pede leitura por IA; `404 body_photos_unavailable` com as fotos desligadas |
+| `POST` | `/onboarding/body-photos/:id/complete` | fotos do corpo no cadastro: confere dono, consentimento atual e cadastro aberto, conclui o envio, apaga a foto anterior da mesma pose e pede leitura enquanto uploaded; `404 body_photos_unavailable` com as fotos desligadas |
 | `DELETE` | `/onboarding/body-photos` | fotos do corpo no cadastro: manda remover os objetos de todas as fotos do cadastro que a conta já criou (também das já apagadas, se bytes chegaram depois com um bilhete antigo) e marca as linhas como apagadas; funciona com as fotos ligadas ou desligadas e depois do cadastro concluído |
 | `GET` | `/protocol` | objetivo atual do perfil, metas do dia como em `/today` e a mensagem de entrada do objetivo; só leitura |
 | `GET` | `/plan` | plano de treino ativo e prescrições vigentes |
@@ -125,9 +125,9 @@ com a mesma chave executa de novo; outro corpo com a mesma chave continua sendo
 | `POST` | `/content/:id/read` | registra impressão, abertura ou conclusão idempotente |
 | `POST` | `/content/:id/save` | salva ou remove dos salvos de forma idempotente |
 | `GET` | `/entitlements` | assinaturas sanitizadas e estado do billing mobile |
-| `POST` | `/media` | cria ativo privado e devolve URL temporária de upload |
+| `POST` | `/media` | cria ativo privado e devolve URL temporária de upload; recusa body_checkin_photo (só no cadastro) |
 | `POST` | `/media/:id/complete` | verifica tipo/tamanho reais e conclui o upload |
-| `GET` | `/media/:id` | metadados próprios, resultado e download temporário quando disponível |
+| `GET` | `/media/:id` | metadados próprios, resultado e download temporário quando disponível; foto corporal tem result nulo |
 | `POST` | `/media/:id/process` | solicita Vision/STT idempotente para um upload concluído; recusa `plan_document` e `body_checkin_photo` |
 | `DELETE` | `/media/:id` | remove o objeto físico antes de encerrar o catálogo |
 | `GET` | `/devices` | lista instalações iOS próprias sem token APNs |
@@ -2459,7 +2459,7 @@ Tipos aceitos pelo paciente:
 | `kind` | MIME aceitos | Limite | Retenção padrão | Download |
 |---|---|---:|---:|---:|
 | `meal_photo` | JPEG, PNG, WebP, HEIC, HEIF | 15 MiB | 30 dias | 300 s |
-| `body_checkin_photo` | JPEG, PNG, WebP, HEIC, HEIF | 15 MiB | 730 dias | 60 s |
+| `body_checkin_photo` | JPEG, só pelo cadastro; POST /media recusa | 15 MiB | 730 dias | 60 s |
 | `gym_photo` | JPEG, PNG, WebP, HEIC, HEIF | 15 MiB | 90 dias | 300 s |
 | `audio_note` | MP3, M4A/MP4, AAC, WAV, OGG | 25 MiB | 30 dias | 300 s |
 
@@ -2496,17 +2496,20 @@ upload do paciente, e só é lido no mobile pelo proxy de capability descrito em
 5. Quando houver análise, o app chama `POST /media/:id/process`. O evento contém
    apenas IDs técnicos; a legenda permanece no catálogo privado e é carregada
    pelo worker junto da foto. Foto e texto formam um único contexto e não viram
-   dois registros de refeição. Foto do corpo (`body_checkin_photo`) nunca é
-   analisada: a rota recusa o pedido (ver “Foto do corpo nunca vai à leitura
-   por IA”).
+   dois registros de refeição. Foto do corpo (`body_checkin_photo`) é recusada
+   nesta rota; a leitura só é pedida no cadastro após o consentimento próprio
+   (seção seguinte).
 6. O app consulta `GET /media/:id` até `processed` ou `failed`. A resposta inclui
    `result` somente depois de `processed` e uma URL curta de download apenas nos
-   estados em que o objeto já foi validado.
+   estados em que o objeto já foi validado. Para foto corporal, `result` é
+   sempre nulo, inclusive na conclusão e nos históricos repetidos.
 
 Repetir `POST /media` com a mesma chave nunca cria outro ativo. Como o ledger da
 API dura 24 horas e a URL dura duas, um replay regenera somente a URL temporária
 quando o ativo ainda está em `pending_upload`. A capacidade assinada não é
-persistida no corpo do ledger idempotente.
+persistida no corpo do ledger idempotente. A rota recusa entrada corporal
+antes do ledger e também confere o tipo persistido antes de assinar um bilhete:
+rotular como refeição a chave de um corpo não reabre seu envio.
 
 Estados válidos:
 
@@ -2538,70 +2541,56 @@ Enquanto o ativo está em `processing`, nenhum outro evento toma o claim ativo.
 - `DELETE /media/:id` segue a mesma ordem. URLs já emitidas têm TTL máximo de 60
   ou 300 segundos; clientes não devem reutilizá-las nem mantê-las em cache.
 - Fotos corporais são tratadas como mídia sensível: bucket separado, TTL de 60
-  segundos e nenhuma URL pública permanente. O servidor do app nunca as manda
-  para leitura por IA (seção seguinte).
+  segundos e nenhuma URL pública permanente. O servidor só pede a leitura pelo
+  cadastro, após o consentimento próprio, com as fotos ligadas (seção seguinte).
 
-### Foto do corpo nunca vai à leitura por IA
+### Foto do corpo só vai à leitura por IA pelo cadastro, depois do consentimento próprio
 
-O servidor do app nunca manda uma foto do corpo (`body_checkin_photo`) para
-leitura por IA. `POST /media/:id/process` recusa esse tipo com `422
-media_kind_not_supported` — a mesma resposta que já dá para documento de
-plano — e não envia o evento de leitura. Motivo: ainda não está definido quem
-avalia fotos do corpo nem o que a pessoa vê a partir delas. Enquanto isso, o
-servidor do app não pede a leitura de nenhuma imagem desse tipo.
+**O que mudou em 2026-10-11 (B3), a partir da decisão do Eduardo de
+2026-10-10; não é aprovação do médico.** A recusa genérica de C24a permanece.
+A leitura é pedida somente por `/onboarding/body-photos/:id/complete`, com o
+interruptor ligado, dono/tipo/pose conferidos, aceite da versão atual e
+cadastro ainda aberto. As fotos nascem desligadas. A junção das três leituras
+(D1), o uso do resultado (D2), o texto real do aceite e a conferência física
+continuam pendentes, nos seus próprios pacotes.
 
-Até esta mudança (2026-10-09) a rota aceitava o pedido (`202`) e enviava o
-evento. A função de leitura, que não mudou, pega o tipo da linha do catálogo
-e lê a imagem com o prompt de foto corporal, cujo texto padrão pede uma
-estimativa de percentual de gordura; o resultado fica em `GET /media/:id`.
-Nenhuma tela do app faz esse pedido: o app não cria `body_checkin_photo` e só
-chama `/process` para foto de refeição e áudio.
+`POST /media/:id/process` continua recusando `body_checkin_photo` com `422
+media_kind_not_supported`, em qualquer estado, sem evento nem alteração.
+Dono é conferido primeiro: outra conta continua `404 media_asset_not_found`.
+A rota só lê id e chave; corpo/query com outro `kind`, `hint` ou `force` não
+mudam o tipo persistido. Não há interruptor que reabra essa rota genérica.
 
-- **Vale para qualquer pedido.** A rota lê do pedido só o id e a
-  `Idempotency-Key`. Corpo ou query com outro `kind`, `hint` ou `force` não
-  chegam ao serviço: o tipo é o gravado no envio (`POST /media`).
-- **Vale em qualquer estado.** O tipo é recusado antes de o estado ser olhado.
-  `uploaded`, `processing` e `failed` na leitura — que antes despachavam —,
-  e `pending_upload`, `processed`, `failed` no upload e `deleted` — que antes
-  respondiam `409 media_not_processable` — respondem todos `422
-  media_kind_not_supported`.
-- **A posse vem antes.** Foto de outra conta continua `404
-  media_asset_not_found`: a recusa não revela que o ativo existe.
-- **Nada é gravado.** A recusa não altera a linha do catálogo nem o objeto
-  guardado.
-- **Sem interruptor.** Não há variável de ambiente nem configuração que
-  reabra o caminho. Reabrir é mudança de código, com o teste do cenário
-  alterado de propósito.
+`POST /media` agora recusa a entrada corporal antes do ledger. Mesmo uma
+entrada rotulada como refeição não recebe bilhete se a chave encontrar uma
+foto corporal já criada; vale também para uma colisão concorrente na criação.
+O serviço interno conserva o suporte corporal para o cadastro. O esquema de
+mídia não muda. O download e a exclusão de objetos existentes continuam.
 
-O que não mudou:
+As respostas genéricas (GET, criação repetida e conclusão) têm `result: null`
+para foto corporal. A resposta de uma conclusão antiga repetida pelo ledger
+é higienizada na saída, preservando status, metadados e cabeçalhos, sem
+reexecutar a operação nem regravar o histórico. Isso não apaga o resultado
+privado já armazenado. Resultados de refeição, academia, áudio e documento
+continuam disponíveis pelos seus fluxos.
 
-- `meal_photo`, `gym_photo` e `audio_note` seguem com o mesmo `202` e o mesmo
-  evento `{ assetId, userId, requestId }`. Em `processing` ou com falha na
-  leitura o pedido é enviado de novo; sem upload concluído segue `409
-  media_not_processable`.
-- `plan_document` segue recusado nesta rota e lido só pela importação.
-- `POST /plan-imports` — o outro ponto do servidor do app que envia o evento
-  de leitura — já recusava tudo que não é `plan_document`: uma foto do corpo
-  oferecida ali recebe `422 media_kind_not_supported`, sem rascunho e sem
-  evento. O evento tem um emissor e esses dois chamadores no servidor do app.
-- Envio, conclusão, consulta e exclusão de foto do corpo (`POST /media`,
-  `/complete`, `GET` e `DELETE`): mesmo bucket, guarda de 730 dias e link de
-  60 segundos.
-- O contrato: nenhuma rota, formato ou código de erro novo.
+Refeição, academia e áudio seguem com o mesmo evento e retry; documento de
+plano continua lido apenas na importação. `/plan-imports` continua recusando
+foto corporal sem rascunho nem evento. O evento tem um emissor
+(`supabase-media.ts`) e três chamadores: serviço genérico, importação e cadastro.
+O worker de mídia, Gemini e `process-message.ts` permanecem byte a byte.
 
-Onde fica: a recusa está em `requestMediaProcessing`
-(`apps/admin/src/lib/mobile-api/media-service.ts`), ao lado da recusa do
-documento de plano. A função de leitura (`media-asset-processing`) não foi
-editada: ela está na lista de funções que a produção antiga também publica e
-não recusa por tipo. O cenário exato da auditoria de 2026-10-09 e os casos
-acima estão travados em
-`apps/admin/src/lib/mobile-api/media-service.body-photo-ai-guard.test.ts` e em
-`apps/admin/src/app/api/mobile/v1/media/[id]/process/route.test.ts`, com
-repositório, armazenamento e fila em memória.
+**Efeito compartilhado:** quando as fotos forem ligadas, esses pedidos usam
+o processamento de mídia e o provedor também usados pelo WhatsApp, gerando
+carga/custo adicionais. Nenhum caminho de envio de mensagem WhatsApp é editado.
+O worker tem `retries: 3`: um pedido não prova uma única chamada ao provedor.
+A rota do cadastro não pede releitura de uma foto cuja leitura falhou, mas não
+cancela nem reduz as tentativas de um evento já despachado.
 
-O que a recusa espera: a definição de quem avalia fotos do corpo e do que a
-pessoa vê, e a aprovação do aceite específico e do prazo de guarda dessas
-imagens. Nenhuma das duas existe; esta seção não decide nenhuma.
+A recusa genérica está travada em `media-service.body-photo-ai-guard.test.ts`
+e `media/[id]/process/route.test.ts`. O cenário do cadastro, a autorização por
+estado, a privacidade do DTO/histórico e os vizinhos genéricos estão em
+`signup-body-photo-service.audit-10-10.test.ts`. São testes em memória; não
+constituem validação de Storage, fila ou provedor reais.
 
 O que não está coberto:
 
@@ -2621,12 +2610,10 @@ O que não está coberto:
 
 > RC C24a — cenário pedido de leitura de foto do corpo aceito antes desta mudança e ainda na fila ou em andamento variante cancelar a leitura já despachada NÃO coberta nesta PR (pendência da audit 2026-10-09)
 
-> RC C24a — cenário foto do corpo lida antes desta mudança (resultado gravado em media_assets.processing_result) variante as respostas de mídia (GET /media/:id, POST /media repetido e POST /media/:id/complete) deixarem de devolver o resultado e apagar o que foi gravado NÃO coberta nesta PR (pendência da audit 2026-10-09)
-> As três respostas devolvem `result` quando o ativo está `processed`.
-> Nenhum banco foi lido: não se sabe quantas linhas assim existem no ambiente
-> de teste.
-
-> RC C24a — cenário envio e guarda da foto do corpo (POST /media segue aceitando body_checkin_photo, com guarda de 730 dias) variante recusar o envio enquanto não houver avaliador, aceite específico e prazo aprovados NÃO coberta nesta PR (pendência da audit 2026-10-09)
+> RC C24a — cenário foto do corpo lida antes desta mudança (resultado gravado em media_assets.processing_result) variante apagar o resultado histórico já gravado (as respostas genéricas, inclusive o replay histórico de /media/:id/complete, agora devolvem result nulo sem regravar o histórico) NÃO coberta nesta PR (pendência da audit 2026-10-09)
+> As três respostas agora ocultam o resultado, também no replay histórico de
+> complete. O conteúdo histórico privado não é apagado nem regravado; nenhum
+> banco foi consultado para contar essas linhas.
 
 > RC C24a — cenário código legado do agente de WhatsApp, encerrado (process-message.ts ainda contém a leitura da imagem e a gravação da estimativa de gordura) variante retirar essa leitura do código legado NÃO coberta nesta PR (pendência da audit 2026-10-09)
 > Código legado, mantido idêntico por regra do projeto: não é acionado,
@@ -2649,9 +2636,9 @@ O que não está coberto:
 > operation as failed before propagating the error”); não foi executado de
 > novo com uma foto do corpo.
 
-Linha trazida do plano do backlog (pacote C24), como está escrita lá:
+Linha de C24 limitada à reavaliação; cadastro segue seus próprios gates:
 
-> RC C24 — cenário fotos enviadas variante gordura estimada a partir delas NÃO coberta nesta PR (pendência da audit 2026-10-07).
+> RC C24 — cenário fotos enviadas na reavaliação variante gordura estimada a partir delas (no cadastro a leitura só é pedida após o consentimento próprio, e a junção das três leituras ainda depende de D1 e D2) NÃO coberta nesta PR (pendência da audit 2026-10-07).
 
 ## Fotos do corpo no cadastro
 
@@ -2772,13 +2759,12 @@ conta que ainda não concluiu o cadastro e não tem acesso liberado:
   pose. Envio pendente, envio recusado e foto apagada não aparecem: o envio
   em andamento é do app. Se houver duas fotos guardadas na mesma pose (duas
   conclusões ao mesmo tempo), vale a de conclusão mais nova.
-- `photo.status`: `uploaded` (o servidor guarda a foto e ninguém foi pedido
-  para lê-la — **o único estado que estas rotas produzem hoje**), `reading`,
-  `read` e `reading_failed` (uma linha em que o programa de leitura mexeu:
-  `processing`, `processed` e falha na leitura). Se uma leitura terminada
-  trouxe número ou não ainda não é olhado: o valor `unreadable` do plano só
-  passa a existir com a leitura (pacote B3).
-- `estimate` é sempre `null` hoje: nenhuma leitura de foto é pedida.
+- `photo.status`: `uploaded` (guardada, com o pedido ainda podendo esperar
+  o worker), `reading` (processing), `read` (processed com leitura type=body e
+  número finito), `unreadable` (processed sem número válido) e `reading_failed`
+  (falha no processamento). Enfileirar não inventa o estado processing.
+- `estimate` é sempre `null` em B3: a junção/uso das três leituras depende de
+  D1 e D2. Nenhuma nota, confiança ou número da leitura vai no DTO da foto.
 - `remaining_uploads` é 9 menos as fotos do cadastro que a conta criou nas
   últimas 24 horas (contando as apagadas e as que nunca subiram), nunca
   abaixo de zero.
@@ -2957,8 +2943,8 @@ Resposta `201`:
   `Foto de frente.`, `Foto de lado.`, `Foto de costas.` — e a pose é lida de
   volta por igualdade exata. "Foto do cadastro" **é** uma `body_checkin_photo`
   cujo contexto é uma das três. O app não tem leitura dessa coluna e nenhuma
-  resposta destas rotas a devolve. (Quando a leitura for reaberta, esse
-  contexto é o que o programa de leitura manda ao modelo junto da imagem.) A
+  resposta destas rotas a devolve. Na leitura, esse contexto é o que o
+  programa compartilhado manda ao modelo junto da imagem. A
   frase é comparada no código, não na consulta: as consultas filtram só por
   conta e tipo. Foto do corpo sem frase de pose e mídia de outro tipo — mesmo
   com uma dessas frases como legenda — não são fotos do cadastro: não
@@ -2975,8 +2961,9 @@ Resposta `201`:
 - Dono e tipo primeiro: foto de outra conta, mídia de outro tipo, foto do
   corpo sem frase de pose e id inexistente respondem todos `404
   body_photo_not_found`, e nada é tocado. Id que não é uuid: `422`.
-- Envio pendente: confere de novo o aceite em vigor (`403`) e o cadastro não
-  concluído (`409`), e então o tamanho e o tipo gravados no armazenamento
+- **Em todos os estados**, depois do dono/tipo/pose, confere o aceite em
+  vigor (`403`) e o cadastro não concluído (`409`) antes de qualquer efeito.
+  Envio pendente confere então o tamanho e o tipo gravados no armazenamento
   contra o declarado. Divergência: `422 media_upload_mismatch`, objeto
   removido, foto marcada como envio recusado. Objeto ausente: `422
   media_upload_missing`, idem. Esses dois `422` são guardados e repetidos pelo
@@ -2987,17 +2974,23 @@ Resposta `201`:
   Envio novo que falha deixa a foto anterior — e o que foi lido dela — como
   estavam. As outras duas poses não são tocadas. Uma foto guardada **depois**
   nunca é apagada pela conclusão repetida de uma mais antiga.
-- Concluir de novo uma foto já guardada, com outra chave, responde o mesmo
-  estado e termina uma troca que tenha parado no meio.
+- Uploaded pede a leitura pelo emissor existente, após terminar a troca, com
+  `{ assetId, userId, requestId = sha256(chave normalizada) }`. Uma execução da
+  chave emite um evento; replay da mesma chave só devolve o ledger. Outra
+  chave enquanto uploaded emite outro pedido. O worker decide o claim e pode
+  repetir a chamada ao provedor: não é garantia de leitura única por foto.
+- Processing/processed respondem `200` sem novo pedido (reading/read ou
+  unreadable), e podem terminar uma troca pendente. Falha de leitura responde
+  `409 body_photo_reading_failed` sem novo evento ou exclusão: a tentativa
+  pelo endpoint exige criar uma nova foto, que conta no limite.
 - Foto já apagada ou já recusada no envio: `409 media_upload_not_pending`, e o
   que tiver chegado ao armazenamento com o bilhete antigo é removido (o
   bilhete vale duas horas e não pode ser revogado). Com as fotos desligadas
   esta rota responde `404` e não remove nada: quem remove esses bytes, com o
   interruptor em qualquer posição, é a exclusão.
-- **Nenhum evento de leitura sai deste caminho.** A foto fica em `uploaded`.
-  O código do serviço não contém o envio do evento: a trava de 2026-10-09
-  ("o evento tem um emissor e dois chamadores") continua verdadeira sem
-  mudar.
+- O estado persistido continua uploaded até o worker tomar a foto. O B3
+  altera deliberadamente a trava C24a para um emissor e três chamadores,
+  preservando a recusa em process e importação genéricos.
 
 **Exclusão.** `DELETE /onboarding/body-photos`, com `Idempotency-Key`,
 responde `200` com `{ "deleted": <quantas linhas foram marcadas> }`.
@@ -3049,34 +3042,24 @@ responde `200` com `{ "deleted": <quantas linhas foram marcadas> }`.
 **O que nenhuma resposta destas rotas devolve:** o contexto da foto, o
 resultado de uma leitura, anotações, confiança, bucket, caminho do objeto,
 data de guarda. O endereço do objeto só existe dentro do bilhete de envio. A
-consulta que monta as poses nem seleciona a coluna do resultado.
+consulta das poses seleciona o resultado internamente e o reduz a número
+finito ou null; campos livres não saem do adaptador nem da resposta.
 
 **O que este caminho nunca grava:** `user_profiles` (nem
 `body_fat_percent`), eventos de produto, nem qualquer tabela além de
 `media_assets`, do aceite e do ledger.
 
-### Estado deste pacote (B2 — envio, conclusão, troca e exclusão)
+### Estado destes pacotes (B2 — envio; B3 — pedido de leitura exclusivo)
 
-Construído: o interruptor, a leitura de estado, o aceite com idade mínima,
-e o envio por pose com conclusão, troca e exclusão. **Não construído, de
-propósito:** a leitura por IA (pacote B3), a estimativa e o que ela faz
-(pacote B4b, à espera das decisões D1 e D2 do dono), e o passo que apaga as
-fotos na conclusão do cadastro (pacote B4a). Até lá, com o interruptor
-ligado, uma foto guardada fica em `uploaded`, `estimate` é `null`, e as fotos
-de uma conta que conclui o cadastro ficam até o app chamar `DELETE`.
+Construído localmente: interruptor, estado, aceite/idade, envio/troca/exclusão,
+pedido de leitura exclusivo do cadastro após aceite atual, estados read versus
+unreadable e proteção dos resultados genéricos frescos/históricos. Sem perfil,
+metas, objetivo, product_events ou algoritmo de junção escritos em B3.
 
-A seção "Foto do corpo nunca vai à leitura por IA" continua valendo como
-está escrita: `POST /media/:id/process` recusa foto do corpo, e as rotas
-genéricas `POST /media`, `/complete`, `GET` e `DELETE` não mudaram.
-
-**Revisão de 2026-10-11 (rodada 1) — o que mudou.** A exclusão passa por
-todas as linhas de foto do cadastro da conta, também as já apagadas: antes,
-um envio que chegava ao armazenamento depois de a foto ter sido apagada
-ficava guardado, e o `DELETE` seguinte respondia `200 { "deleted": 0 }` sem
-remover nada. O resto da rodada é trava e declaração, sem mudança de
-comportamento: a repetição da chave que entrega bilhete novo sem refazer as
-conferências, o isolamento do aceite e do cadastro entre contas, e a conclusão
-de envio pela rota genérica de mídia.
+Ainda faltam B4a (proveniência e exclusão na conclusão), B4b (D1/D2,
+estimativa e uso), texto aprovado/publicado, telas iOS e validação real.
+Os textos e decisões humanas não são presumidos. O recurso continua desligado,
+e os objetos ficam até DELETE; nada foi publicado por este grupo.
 
 O espelho do BFF passou de 51 para 54 rotas no pacote B0
 (`apps/mobile-bff/scripts/verify-route-mirror.mjs` e
@@ -3085,6 +3068,8 @@ O espelho do BFF passou de 51 para 54 rotas no pacote B0
 Travado em
 `apps/admin/src/lib/mobile-api/signup-body-photos.audit-10-10.test.ts` (o
 cenário do relato, envio, repetição, limite, conclusão, troca e exclusão),
+`apps/admin/src/lib/mobile-api/signup-body-photo-service.audit-10-10.test.ts`
+(pedido de leitura, estados, autorizações e privacidade genérica),
 `apps/admin/src/app/api/mobile/v1/onboarding/body-photos/consent/route.test.ts`
 (estado, aceite e idade),
 `apps/admin/src/app/api/mobile/v1/onboarding/body-photos/route.test.ts`
@@ -3110,9 +3095,9 @@ O que não está coberto:
 
 > RC P-PHOTOS — cenário servidor já publicado no ambiente de teste (commit 6dc669f, sem as rotas das fotos e sem a variável do interruptor) variante rotas novas e interruptor em vigor nele NÃO coberta nesta PR (pendência da audit 2026-10-11)
 
-> RC P-PHOTOS — cenário cadastro do médico em 2026-10-10 no build 1.0 (3) ("Comecei o cadastro. Ele perguntou qual era a gordura corporal" e "Não pediu as fotos") variante o cadastro pedir as três fotos e estimar o percentual por elas de ponta a ponta (esta PR só recebe, guarda, troca e apaga as fotos no servidor, com o interruptor desligado; a leitura, a estimativa, as telas do app e a conferência no aparelho são dos pacotes seguintes) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+> RC P-PHOTOS — cenário cadastro do médico em 2026-10-10 no build 1.0 (3) ("Comecei o cadastro. Ele perguntou qual era a gordura corporal" e "Não pediu as fotos") variante o cadastro pedir as três fotos e estimar o percentual por elas de ponta a ponta (B2 recebe, guarda, troca e apaga; B3 pede leitura após o aceite próprio com o interruptor ligado; a junção/uso, as telas e a conferência física ainda não estão concluídos) NÃO coberta nesta PR (pendência da audit 2026-10-11)
 
-> RC P-PHOTOS — cenário foto do corpo com envio concluído variante a leitura por IA e a estimativa (a foto fica em "uploaded", estimate é sempre null e nenhum evento de leitura sai; reabrir a leitura só pelo cadastro é o pacote B3 e a junção das três leituras espera as decisões D1 e D2 do dono) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+> RC P-PHOTOS — cenário foto do corpo com envio concluído variante a leitura real por IA e a estimativa integrada das três poses (B3 emite o pedido e distingue lida de sem número em testes locais; estimate segue null, a junção/uso espera D1 e D2 e a fila/provedor reais não foram verificados) NÃO coberta nesta PR (pendência da audit 2026-10-11)
 
 > RC P-PHOTOS — cenário cadastro concluído com fotos enviadas variante o servidor apagar as fotos na conclusão (decisão D4 do orquestrador, anunciada ao dono; o passo da conclusão é o pacote B4a, e nesta PR as fotos ficam até o app chamar DELETE /onboarding/body-photos) NÃO coberta nesta PR (pendência da audit 2026-10-11)
 
@@ -3130,7 +3115,7 @@ O que não está coberto:
 
 > RC P-PHOTOS — cenário foto do corpo recebida pelo servidor variante remoção de metadados e conferência do conteúdo no servidor (a rota só aceita image/jpeg declarado e confere o tipo e o tamanho gravados; não reescreve a imagem nem confere que é uma foto de corpo, da pose pedida ou da dona da conta) NÃO coberta nesta PR (pendência da audit 2026-10-11)
 
-> RC P-PHOTOS — cenário foto do corpo criada pela rota genérica POST /media com uma das três frases de pose no texto de contexto, ou foto do cadastro com envio pendente concluída pela rota genérica POST /media/:id/complete (rotas que exigem acesso liberado; a primeira ainda aceita body_checkin_photo e a segunda conclui o envio sem conferir o tipo, o aceite em vigor nem o cadastro não concluído) variante recusar esse envio e essa conclusão e exigir o consentimento também neles (a recusa em POST /media é do pacote B3; a de POST /media/:id/complete ainda não está em nenhum pacote do plano) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+> RC P-PHOTOS — cenário foto do cadastro com envio pendente concluída pela rota genérica POST /media/:id/complete (exige acesso liberado, mas conclui sem conferir consentimento atual nem cadastro aberto; POST /media agora recusa entrada corporal e bilhete para tipo corporal persistido) variante recusar também essa conclusão genérica e exigir o consentimento nela (a recusa de complete ainda não está em nenhum pacote do plano) NÃO coberta nesta PR (pendência da audit 2026-10-11)
 
 > RC P-PHOTOS — cenário rotas de envio, conclusão e exclusão contra o banco, o armazenamento e a fila reais do ambiente de teste variante teste com Supabase e Inngest reais (os testes usam banco e armazenamento em memória escritos a partir das migrations; nenhum banco foi lido nem gravado e nada foi publicado) NÃO coberta nesta PR (pendência da audit 2026-10-11)
 

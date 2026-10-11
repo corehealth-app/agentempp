@@ -2,7 +2,9 @@
  * Audit 2026-10-10 — the sign-up did not ask for the body photos: what the
  * app's server does about it in update 2, package B2 (docs/mobile/api-v1.md,
  * "Fotos do corpo no cadastro"): it RECEIVES one photo per pose, completes
- * the upload, replaces one pose and deletes everything. Still no AI reading.
+ * the upload, replaces one pose and deletes everything. B3 now requests
+ * reading after the current consent and open sign-up checks; the per-case
+ * queue assertions below were changed deliberately in the same B3 commit.
  *
  * This file is the audit golden of the server part. It lives here, and not in
  * packages/agent/src/__golden__, because the behaviour belongs to the app's
@@ -39,7 +41,8 @@
  * and can still read and delete; the completion checks the stored size and
  * type; deleting removes the objects, marks the rows and empties what a
  * reading left, with the switch on or off; no answer carries the context, a
- * reading result or notes; and no reading event leaves from any of it.
+ * reading result or notes. Only explicitly successful uploaded completions
+ * declare the exact reading events; every other case requires an empty queue.
  *
  * ADDED IN THE ANSWER TO THE REVIEW OF 2026-10-11 (round 1), each with the
  * exact scenario the reviewer ran:
@@ -82,8 +85,8 @@
  * are synthetic. No database or storage was read or written, nothing was
  * published.
  *
- * > RC P-PHOTOS — cenário cadastro do médico em 2026-10-10 no build 1.0 (3) ("Comecei o cadastro. Ele perguntou qual era a gordura corporal" e "Não pediu as fotos") variante o cadastro pedir as três fotos e estimar o percentual por elas de ponta a ponta (esta PR só recebe, guarda, troca e apaga as fotos no servidor, com o interruptor desligado; a leitura, a estimativa, as telas do app e a conferência no aparelho são dos pacotes seguintes) NÃO coberta nesta PR (pendência da audit 2026-10-11)
- * > RC P-PHOTOS — cenário foto do corpo com envio concluído variante a leitura por IA e a estimativa (a foto fica em "uploaded", estimate é sempre null e nenhum evento de leitura sai; reabrir a leitura só pelo cadastro é o pacote B3 e a junção das três leituras espera as decisões D1 e D2 do dono) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+ * > RC P-PHOTOS — cenário cadastro do médico em 2026-10-10 no build 1.0 (3) ("Comecei o cadastro. Ele perguntou qual era a gordura corporal" e "Não pediu as fotos") variante o cadastro pedir as três fotos e estimar o percentual por elas de ponta a ponta (B2 recebe, guarda, troca e apaga; B3 pede leitura após o aceite próprio com o interruptor ligado; a junção/uso, as telas e a conferência física ainda não estão concluídos) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+ * > RC P-PHOTOS — cenário foto do corpo com envio concluído variante a leitura real por IA e a estimativa integrada das três poses (B3 emite o pedido e distingue lida de sem número em testes locais; estimate segue null, a junção/uso espera D1 e D2 e a fila/provedor reais não foram verificados) NÃO coberta nesta PR (pendência da audit 2026-10-11)
  * > RC P-PHOTOS — cenário cadastro concluído com fotos enviadas variante o servidor apagar as fotos na conclusão (decisão D4 do orquestrador, anunciada ao dono; o passo da conclusão é o pacote B4a, e nesta PR as fotos ficam até o app chamar DELETE /onboarding/body-photos) NÃO coberta nesta PR (pendência da audit 2026-10-11)
  * > RC P-PHOTOS — cenário cadastro abandonado depois do envio das fotos variante apagar as fotos sem a pessoa voltar (a data de guarda gravada é a de 730 dias da política genérica de mídia e a rotina de limpeza não está publicada no ambiente de teste) NÃO coberta nesta PR (pendência da audit 2026-10-11)
  * > RC P-PHOTOS — cenário envio que chega ao armazenamento depois do último DELETE /onboarding/body-photos da conta, com o bilhete ainda válido de uma foto já apagada, trocada ou recusada (o bilhete de envio vale duas horas e não pode ser revogado) variante remover esse objeto sem que o app apague de novo ou chame a conclusão do envio dessa foto (cada DELETE manda remover os objetos das fotos do cadastro que a conta já criou, também das já apagadas, com o interruptor em qualquer posição; depois dele nada roda sozinho, e com as fotos desligadas a conclusão do envio responde 404 e não remove) NÃO coberta nesta PR (pendência da audit 2026-10-11)
@@ -92,7 +95,7 @@
  * > RC P-PHOTOS — cenário duas criações ou duas conclusões da mesma conta no mesmo instante variante limite de 9 em 24 horas e troca da pose garantidos por trava no banco (as conferências são leituras seguidas de escrita, sem transação; duas criações simultâneas podem passar juntas do limite e duas conclusões simultâneas podem deixar duas fotos guardadas na mesma pose, das quais o estado mostra a mais nova) NÃO coberta nesta PR (pendência da audit 2026-10-11)
  * > RC P-PHOTOS — cenário muitas contas novas enviando fotos no mesmo dia variante teto total por dia (o limite é por conta e as rotas ficam fora do acesso pago; o freio é o interruptor) NÃO coberta nesta PR (pendência da audit 2026-10-11)
  * > RC P-PHOTOS — cenário foto do corpo recebida pelo servidor variante remoção de metadados e conferência do conteúdo no servidor (a rota só aceita image/jpeg declarado e confere o tipo e o tamanho gravados; não reescreve a imagem nem confere que é uma foto de corpo, da pose pedida ou da dona da conta) NÃO coberta nesta PR (pendência da audit 2026-10-11)
- * > RC P-PHOTOS — cenário foto do corpo criada pela rota genérica POST /media com uma das três frases de pose no texto de contexto, ou foto do cadastro com envio pendente concluída pela rota genérica POST /media/:id/complete (rotas que exigem acesso liberado; a primeira ainda aceita body_checkin_photo e a segunda conclui o envio sem conferir o tipo, o aceite em vigor nem o cadastro não concluído) variante recusar esse envio e essa conclusão e exigir o consentimento também neles (a recusa em POST /media é do pacote B3; a de POST /media/:id/complete ainda não está em nenhum pacote do plano) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+ * > RC P-PHOTOS — cenário foto do cadastro com envio pendente concluída pela rota genérica POST /media/:id/complete (exige acesso liberado, mas conclui sem conferir consentimento atual nem cadastro aberto; POST /media agora recusa entrada corporal e bilhete para tipo corporal persistido) variante recusar também essa conclusão genérica e exigir o consentimento nela (a recusa de complete ainda não está em nenhum pacote do plano) NÃO coberta nesta PR (pendência da audit 2026-10-11)
  * > RC P-PHOTOS — cenário rotas de envio, conclusão e exclusão contra o banco, o armazenamento e a fila reais do ambiente de teste variante teste com Supabase e Inngest reais (os testes usam banco e armazenamento em memória escritos a partir das migrations; nenhum banco foi lido nem gravado e nada foi publicado) NÃO coberta nesta PR (pendência da audit 2026-10-11)
  */
 import { readFileSync } from 'node:fs'
@@ -225,8 +228,26 @@ async function created(pose: string, call: Call & { size?: number } = {}) {
   }
 }
 
-function complete(id: string, call: Call = {}): Promise<Response> {
-  return COMPLETE(request('POST', `/${id}/complete`, { key: newKey('complete'), ...call }), {
+interface ProcessingEvent {
+  id: string
+  name: 'media.asset.process.requested'
+  data: { assetId: string; userId: string; requestId: string }
+}
+let expectedEvents: ProcessingEvent[] = []
+
+function complete(id: string, call: Call & { expectReading?: boolean } = {}): Promise<Response> {
+  const { expectReading = false, ...requestCall } = call
+  const key = newKey('complete')
+  if (expectReading) {
+    const userId = requestCall.token === OTHER_TOKEN ? OTHER_ACCOUNT : ACCOUNT
+    const requestId = sha256Hex((requestCall.key ?? key).trim())
+    expectedEvents.push({
+      id: `media-process:${id}:${requestId}`,
+      name: 'media.asset.process.requested',
+      data: { assetId: id, userId, requestId },
+    })
+  }
+  return COMPLETE(request('POST', `/${id}/complete`, { key, ...requestCall }), {
     params: Promise.resolve({ id }),
   })
 }
@@ -256,7 +277,7 @@ function upload(id: string, overrides: { size?: number; contentType?: string } =
 async function store(pose: Pose, size = 480_000): Promise<string> {
   const { photo } = await created(pose, { size })
   upload(photo.id)
-  const response = await complete(photo.id)
+  const response = await complete(photo.id, { expectReading: true })
   expect(response.status).toBe(200)
   return photo.id
 }
@@ -312,6 +333,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(NOW)
   keySequence = 0
+  expectedEvents = []
   const database = new SignupBodyPhotoMemoryDb()
     .addAccount({ id: ACCOUNT, authUserId: AUTH_USER, token: TOKEN })
     .addAccount({ id: OTHER_ACCOUNT, authUserId: OTHER_AUTH_USER, token: OTHER_TOKEN })
@@ -332,8 +354,8 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  // Still no AI reading: no reading event leaves from any call of this file.
-  expect(world.queue).toEqual([])
+  // Zero by default. Allowed cases declare every exact event before the call.
+  expect(world.queue).toEqual(expectedEvents)
   // And nothing here writes the profile or an event of the product.
   expect(
     db().operations.filter((operation) => /^(?:insert|update):(?!media_assets)/.test(operation)),
@@ -544,7 +566,7 @@ describe('repetition: the same Idempotency-Key', () => {
   it('R4 a repeated key after the upload was completed answers the photo with no ticket', async () => {
     const first = await created('front', { key: 'body-photo-repeat-0004' })
     upload(first.photo.id)
-    expect((await complete(first.photo.id)).status).toBe(200)
+    expect((await complete(first.photo.id, { expectReading: true })).status).toBe(200)
 
     const again = (await (await create('front', { key: 'body-photo-repeat-0004' })).json()).data
 
@@ -700,7 +722,9 @@ describe('each account answers for itself: the acceptance and the sign-up of ano
       await errorOf(await complete(pendingOfCompleted.photo.id, { token: completedToken })),
     ).toEqual({ status: 409, code: 'onboarding_already_completed' })
     expect((await create('side', { token: openToken })).status).toBe(201)
-    expect((await complete(pendingOfOpen.photo.id, { token: openToken })).status).toBe(200)
+    expect(
+      (await complete(pendingOfOpen.photo.id, { token: openToken, expectReading: true })).status,
+    ).toBe(200)
     expect(rowOf(pendingOfCompleted.photo.id).status).toBe('pending_upload')
     expect(rowOf(pendingOfOpen.photo.id).status).toBe('uploaded')
   })
@@ -876,11 +900,11 @@ describe('an account that already completed the sign-up', () => {
 describe('completing an upload', () => {
   beforeEach(() => acceptConsent())
 
-  it('U1 the stored size and type are checked and the photo becomes stored: 200, in its pose, and no reading event leaves', async () => {
+  it('U1 the stored size and type are checked and the photo becomes stored: 200, in its pose, and the exact reading event leaves', async () => {
     const { photo } = await created('front')
     upload(photo.id)
 
-    const response = await complete(photo.id)
+    const response = await complete(photo.id, { expectReading: true })
 
     expect(response.status).toBe(200)
     expect((await response.json()).data).toEqual({
@@ -893,7 +917,7 @@ describe('completing an upload', () => {
       processing_request_id: null,
       processing_result: null,
     })
-    expect(world.queue).toEqual([])
+    expect(world.queue).toEqual(expectedEvents)
   })
 
   it.each([
@@ -977,7 +1001,7 @@ describe('completing an upload', () => {
     const id = await store('front')
     const before = { ...rowOf(id) }
 
-    const response = await complete(id)
+    const response = await complete(id, { expectReading: true })
 
     expect(response.status).toBe(200)
     expect((await response.json()).data.photo).toMatchObject({ id, status: 'uploaded' })
@@ -1014,7 +1038,9 @@ describe('completing an upload', () => {
     })
     expect(rowOf(photo.id).status).toBe('pending_upload')
 
-    expect((await complete(photo.id, { key: 'body-photo-complete-retry' })).status).toBe(200)
+    expect(
+      (await complete(photo.id, { key: 'body-photo-complete-retry', expectReading: true })).status,
+    ).toBe(200)
     expect(rowOf(photo.id).status).toBe('uploaded')
   })
 
@@ -1075,7 +1101,7 @@ describe('replacing one pose', () => {
     expect(rowOf(earlier).status).toBe('uploaded')
     expect((await readState()).poses[0].photo.id).toBe(earlier)
 
-    expect((await complete(newer.id)).status).toBe(200)
+    expect((await complete(newer.id, { expectReading: true })).status).toBe(200)
 
     expect(rowOf(earlier)).toMatchObject({
       status: 'deleted',
@@ -1155,7 +1181,7 @@ describe('replacing one pose', () => {
     db().operations.length = 0
     db().calls.length = 0
 
-    expect((await complete(newer.id)).status).toBe(200)
+    expect((await complete(newer.id, { expectReading: true })).status).toBe(200)
 
     expect(operationsOf('storage:remove')).toHaveLength(1)
     expect(db().calls.find((call) => call.operation === 'storage:remove')?.detail).toEqual({
@@ -1182,7 +1208,7 @@ describe('replacing one pose', () => {
     upload(older)
     upload(newer)
 
-    expect((await complete(older)).status).toBe(200)
+    expect((await complete(older, { expectReading: true })).status).toBe(200)
 
     expect(rowOf(newer).status).toBe('uploaded')
     expect(objectOf(newer)).toBeDefined()
@@ -1190,7 +1216,7 @@ describe('replacing one pose', () => {
     expect((await readState()).poses[0].photo.id).toBe(newer)
 
     // And completing the newer one again finishes the replacement.
-    expect((await complete(newer)).status).toBe(200)
+    expect((await complete(newer, { expectReading: true })).status).toBe(200)
     expect(rowOf(older).status).toBe('deleted')
     expect(objectOf(older)).toBeUndefined()
   })
@@ -1201,14 +1227,14 @@ describe('replacing one pose', () => {
     upload(first.id)
     upload(second.id)
 
-    expect((await complete(first.id)).status).toBe(200)
+    expect((await complete(first.id, { expectReading: true })).status).toBe(200)
 
     expect(rowOf(second.id).status).toBe('pending_upload')
     expect(objectOf(second.id)).toBeDefined()
     expect(operationsOf('storage:remove')).toEqual([])
 
     vi.setSystemTime(new Date(NOW.getTime() + 1000))
-    expect((await complete(second.id)).status).toBe(200)
+    expect((await complete(second.id, { expectReading: true })).status).toBe(200)
 
     expect(rowOf(first.id).status).toBe('deleted')
     expect(objectOf(first.id)).toBeUndefined()
@@ -1230,7 +1256,7 @@ describe('replacing one pose', () => {
     expect(rowOf(earlier).status).toBe('uploaded')
     expect((await readState()).poses[0].photo.id).toBe(newer.id)
 
-    expect((await complete(newer.id)).status).toBe(200)
+    expect((await complete(newer.id, { expectReading: true })).status).toBe(200)
     expect(rowOf(earlier).status).toBe('deleted')
     expect(objectOf(earlier)).toBeUndefined()
   })
@@ -1750,7 +1776,7 @@ describe('the state with photos, and what no answer carries', () => {
     const first = await created('front')
     answers.push(first)
     upload(first.photo.id)
-    answers.push((await (await complete(first.photo.id)).json()).data)
+    answers.push((await (await complete(first.photo.id, { expectReading: true })).json()).data)
     const readPhoto = '00000000-0000-4000-8000-000000000a11'
     seed(readPhoto, 'side', {
       status: 'processed',
@@ -1769,6 +1795,27 @@ describe('the state with photos, and what no answer carries', () => {
     })
     answers.push(await readState())
     answers.push((await (await create('front', { key: 'body-photo-create-0002' })).json()).data)
+    const projected = await createSupabaseSignupBodyPhotoDependencies(db().client, {
+      enabled: true,
+    }).catalogue.listOpen(ACCOUNT)
+    expect(projected.length).toBeGreaterThan(0)
+    expect(projected.some((photo) => photo.id === readPhoto)).toBe(true)
+    for (const photo of projected) {
+      expect(Object.keys(photo).sort()).toEqual(
+        [
+          'id',
+          'bucketId',
+          'objectPath',
+          'pose',
+          'status',
+          'failureStage',
+          'createdAt',
+          'uploadedAt',
+          'bodyFatPercent',
+        ].sort(),
+      )
+      expect(photo.bodyFatPercent).toBe(photo.id === readPhoto ? 23 : null)
+    }
     answers.push((await (await remove()).json()).data)
 
     const everything = JSON.stringify(answers)
@@ -1794,8 +1841,8 @@ describe('the state with photos, and what no answer carries', () => {
     expect(everything.replace(/"signed_url":"[^"]*"/g, '"signed_url":"<ticket>"')).not.toContain(
       ACCOUNT,
     )
-    // What is selected for the poses does not even include the reading.
-    // The queries of these routes' own adapter are the ones that filter by kind.
+    // B3 selects the private reading internally but projects only its number.
+    // The public DTO assertions above still prohibit any reading fields.
     const listed = db().calls.filter(
       (call) =>
         call.operation === 'select:media_assets' &&
@@ -1805,7 +1852,12 @@ describe('the state with photos, and what no answer carries', () => {
     )
     expect(listed.length).toBeGreaterThan(0)
     for (const call of listed) {
-      expect((call.detail as { columns: string }).columns).not.toContain('processing_result')
+      const columns = (call.detail as { columns: string }).columns
+      expect(columns).toBe(
+        columns.includes('status')
+          ? 'id, bucket_id, object_path, status, failure_stage, context_text, created_at, uploaded_at, processing_result'
+          : 'context_text',
+      )
     }
   })
 
@@ -1863,16 +1915,18 @@ describe('declared pendencies', () => {
     expect(fromDoc).toEqual([...consent, ...here])
   })
 
-  it('the docs say what is whose decision, and that the reading stays closed in this change', () => {
+  it('the docs say what is whose decision, and that reading is exclusive to the consented sign-up', () => {
     const flat = doc.replace(/\s+/g, ' ')
     const start = flat.indexOf('## Fotos do corpo no cadastro')
     const section = flat.slice(start, flat.indexOf('## Rascunhos de plano', start))
 
     expect(section).toContain('### Envio por pose, conclusão do envio, troca e exclusão')
-    expect(section).toContain('Nenhum evento de leitura sai deste caminho')
+    expect(section).toContain('Uploaded pede a leitura pelo emissor existente')
     expect(section).toContain('O limite de 9 é um número do plano, à espera da confirmação do dono')
     expect(section).not.toMatch(/aprovad[oa] pelo (?:dono|médico|Dr\.)/i)
-    // The section of the refusal of 2026-10-09 still stands as written.
-    expect(flat).toContain('### Foto do corpo nunca vai à leitura por IA')
+    // B3 opens only the sign-up; the generic refusal remains explicit.
+    expect(flat).toContain(
+      '### Foto do corpo só vai à leitura por IA pelo cadastro, depois do consentimento próprio',
+    )
   })
 })

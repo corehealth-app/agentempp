@@ -10,7 +10,8 @@
  *
  * With the switch off, the state says "not available" and the three POSTs
  * answer 404 before anything of the request is read; deleting never depends
- * on the switch. No handler here asks for an AI reading.
+ * on the switch. Completion requests a reading only with the switch on,
+ * current consent accepted and the sign-up still open.
  */
 import {
   resourceIdSchema,
@@ -162,10 +163,16 @@ export async function handleSignupBodyPhotoCompletePost(
 
   const { id: rawId } = await routeContext.params
   const id = resourceIdSchema.parse(rawId)
-  return dependencies.executeIdempotent(context, { body_photo_id: id }, async () => {
+  return dependencies.executeIdempotent(context, { body_photo_id: id }, async (idempotencyKey) => {
     try {
       return mobileSuccess(
-        await completeSignupBodyPhoto(service, context.auth, id, dependencies.now()),
+        await completeSignupBodyPhoto(
+          service,
+          context.auth,
+          id,
+          idempotencyKey,
+          dependencies.now(),
+        ),
         context.requestId,
       )
     } catch (error) {

@@ -26,6 +26,8 @@ export interface MobileIdempotencyStore {
 
 interface ExecuteIdempotentOptions {
   refreshReplay?: (claim: Extract<IdempotencyClaim, { action: 'replay' }>) => Promise<Response>
+  /** Redact an old response on output without repeating or rewriting its mutation. */
+  responseBodyForReplay?: (body: unknown) => unknown
   responseBodyForStorage?: (body: unknown) => unknown
 }
 
@@ -206,7 +208,12 @@ export async function executeIdempotent(
     if (options.refreshReplay) {
       return markResponseAsReplay(await options.refreshReplay(claim), context.requestId)
     }
-    return replayResponse(claim, context.requestId)
+    return replayResponse(
+      options.responseBodyForReplay
+        ? { ...claim, body: options.responseBodyForReplay(claim.body) }
+        : claim,
+      context.requestId,
+    )
   }
 
   try {

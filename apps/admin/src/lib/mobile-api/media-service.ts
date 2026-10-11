@@ -149,7 +149,10 @@ function mediaAssetDto(asset: MediaAssetRecord) {
     uploaded_at: asset.uploaded_at,
     processed_at: asset.processed_at,
     deleted_at: asset.deleted_at,
-    result: asset.status === 'processed' ? (asset.processing_result ?? null) : null,
+    result:
+      asset.kind !== 'body_checkin_photo' && asset.status === 'processed'
+        ? (asset.processing_result ?? null)
+        : null,
     created_at: asset.created_at,
     updated_at: asset.updated_at,
   }
@@ -176,6 +179,17 @@ function requireOwnedAsset(asset: MediaAssetRecord | null): MediaAssetRecord {
 /** Same limit the app and the worker enforce. */
 export const MAX_AUDIO_DURATION_MS = 180_000
 
+interface MediaCreationOptions {
+  /** Generic /media opts in; the dedicated sign-up keeps body upload support. */
+  rejectBodyPhotos?: boolean
+}
+
+function assertUploadKindAllowed(kind: MediaAssetKind, options: MediaCreationOptions): void {
+  if (options.rejectBodyPhotos && kind === 'body_checkin_photo') {
+    throw new MobileApiError(422, 'media_kind_not_supported', 'Body photos are uploaded on sign-up')
+  }
+}
+
 export async function createMediaAsset(
   deps: MediaServiceDependencies,
   userId: string,
@@ -183,7 +197,31 @@ export async function createMediaAsset(
   requestKey: string,
   now = new Date(),
   assetId = randomUUID(),
+  options: MediaCreationOptions = {},
 ) {
+  const result = await createMediaAssetRecord(
+    deps,
+    userId,
+    input,
+    requestKey,
+    now,
+    assetId,
+    options,
+  )
+  return { asset: mediaAssetDto(result.asset), upload: result.upload, replayed: result.replayed }
+}
+
+/** Internal record for trusted services to project one coherent snapshot; never an API DTO. */
+export async function createMediaAssetRecord(
+  deps: MediaServiceDependencies,
+  userId: string,
+  input: MediaUploadInput,
+  requestKey: string,
+  now = new Date(),
+  assetId = randomUUID(),
+  options: MediaCreationOptions = {},
+) {
+  assertUploadKindAllowed(input.kind, options)
   if (
     input.kind === 'audio_note' &&
     input.duration_ms != null &&
@@ -194,8 +232,10 @@ export async function createMediaAsset(
   const sourceRequestHash = sha256(requestKey)
   const existing = await deps.repository.findByRequestHash(userId, sourceRequestHash)
   if (existing) {
+    // A differently labelled input must not refresh a stored body's ticket.
+    assertUploadKindAllowed(existing.kind, options)
     return {
-      asset: mediaAssetDto(existing),
+      asset: existing,
       upload: existing.status === 'pending_upload' ? await signedUpload(deps, existing, now) : null,
       replayed: true,
     }
@@ -218,9 +258,11 @@ export async function createMediaAsset(
     sourceRequestHash,
     retentionUntil: policy.retentionDays === null ? null : addDays(now, policy.retentionDays),
   })
+  // The adapter may resolve a concurrent unique-key collision to an existing row.
+  assertUploadKindAllowed(created.kind, options)
 
   return {
-    asset: mediaAssetDto(created),
+    asset: created,
     upload: await signedUpload(deps, created, now),
     replayed: false,
   }
@@ -232,8 +274,18 @@ export async function completeMediaUpload(
   assetId: string,
   now = new Date(),
 ) {
+  return mediaAssetDto(await completeMediaUploadRecord(deps, userId, assetId, now))
+}
+
+/** Internal snapshot for callers that build their own restricted DTO. */
+export async function completeMediaUploadRecord(
+  deps: MediaServiceDependencies,
+  userId: string,
+  assetId: string,
+  now = new Date(),
+): Promise<MediaAssetRecord> {
   const asset = requireOwnedAsset(await deps.repository.findOwned(userId, assetId))
-  if (['uploaded', 'processing', 'processed'].includes(asset.status)) return mediaAssetDto(asset)
+  if (['uploaded', 'processing', 'processed'].includes(asset.status)) return asset
   if (asset.status !== 'pending_upload') {
     throw new MobileApiError(409, 'media_upload_not_pending', 'Media upload is not pending')
   }
@@ -259,13 +311,11 @@ export async function completeMediaUpload(
     )
   }
 
-  return mediaAssetDto(
-    await deps.repository.markUploaded(userId, assetId, {
-      actualSizeBytes: info.size,
-      etag: info.etag,
-      uploadedAt: now.toISOString(),
-    }),
-  )
+  return deps.repository.markUploaded(userId, assetId, {
+    actualSizeBytes: info.size,
+    etag: info.etag,
+    uploadedAt: now.toISOString(),
+  })
 }
 
 export async function getMediaAsset(
@@ -333,9 +383,8 @@ export async function requestMediaProcessing(
   if (asset.kind === 'plan_document') {
     throw new MobileApiError(422, 'media_kind_not_supported', 'Plan documents are read on import')
   }
-  // A body photo is never sent to AI reading by the app's server, whatever
-  // the request carries and whatever state the asset is in: who evaluates it
-  // is not defined yet. The kind is the one recorded at upload.
+  // Body reading is exclusive to the sign-up's own consent and feature gate.
+  // The generic route refuses the persisted kind in every state.
   if (asset.kind === 'body_checkin_photo') {
     throw new MobileApiError(422, 'media_kind_not_supported', 'Body photos are not read by AI')
   }

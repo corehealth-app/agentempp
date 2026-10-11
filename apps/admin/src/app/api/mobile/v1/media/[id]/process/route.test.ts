@@ -1,7 +1,8 @@
 /**
  * POST /api/mobile/v1/media/:id/process — a body photo is never sent to AI
- * reading, whatever the request carries (docs/mobile/api-v1.md, "Foto do corpo
- * nunca vai à leitura por IA"; the golden and the declared pendencies are in
+ * reading by this generic route, whatever the request carries (docs/mobile/api-v1.md,
+ * "Foto do corpo só vai à leitura por IA pelo cadastro, depois do consentimento próprio";
+ * the golden and the declared pendencies are in
  * lib/mobile-api/media-service.body-photo-ai-guard.test.ts).
  *
  * The exported POST and the media service are the real code. Replaced, as in

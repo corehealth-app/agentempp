@@ -13,8 +13,8 @@
  * upload go through the generic media service and its adapter; what is here
  * is what that service does not have — listing the photos of the sign-up of
  * an account (the ones not deleted, or every one ever created), counting them
- * for the limit, and removing several at once. The column that holds what a
- * reading left is never selected here, only emptied when a photo is deleted.
+ * for the limit, and removing several at once. A reading is projected to
+ * its finite numeric body value only; free fields are never returned.
  *
  * The pose sentence is compared HERE, in code, not in the query: the queries
  * filter by account and kind only, with the plain filters the rest of the
@@ -36,6 +36,7 @@ import {
   type SignupBodyPhotoDependencies,
   type SignupBodyPhotoRow,
   signupBodyPhotoPoseOf,
+  signupBodyPhotoReadingPercent,
   signupBodyPhotosUnavailable,
 } from './signup-body-photo-service'
 import { createSupabaseMediaDependencies } from './supabase-media'
@@ -83,9 +84,9 @@ interface UntypedClient {
  */
 const PHOTOS_PAGE = 1000
 
-/** What is read of a photo. Not what a reading left of it. */
+/** Processing result is read internally and reduced before leaving this adapter. */
 const PHOTO_COLUMNS =
-  'id, bucket_id, object_path, status, failure_stage, context_text, created_at, uploaded_at'
+  'id, bucket_id, object_path, status, failure_stage, context_text, created_at, uploaded_at, processing_result'
 
 const dateTimeSchema = z.string().datetime({ offset: true })
 
@@ -122,6 +123,7 @@ const photoRowSchema = z.object({
   context_text: z.string().nullable(),
   created_at: dateTimeSchema,
   uploaded_at: dateTimeSchema.nullable(),
+  processing_result: z.unknown().optional(),
 })
 
 const createdRowSchema = z.object({ context_text: z.string().nullable() })
@@ -267,6 +269,7 @@ function createCatalogue(supabase: ServiceClient, requestId: string): SignupBody
         failureStage: parsed.data.failure_stage,
         createdAt: parsed.data.created_at,
         uploadedAt: parsed.data.uploaded_at,
+        bodyFatPercent: signupBodyPhotoReadingPercent(parsed.data.processing_result),
       })
     }
     return photos

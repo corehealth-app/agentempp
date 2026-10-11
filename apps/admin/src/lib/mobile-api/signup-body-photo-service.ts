@@ -4,8 +4,10 @@
  *
  * WHAT EXISTS HERE: the switch, the consent of its own, the minimum age, the
  * reading of the state, and one photo per pose — created, uploaded,
- * completed, replaced and deleted. NO AI READING: nothing in this file asks
- * for one, and a stored photo stays "uploaded". There is no estimate.
+ * completed, replaced and deleted. Reading is requested only after the
+ * consent and open sign-up checks, through the existing media event gateway.
+ * Dispatch leaves the stored state "uploaded" until the worker claims it.
+ * There is no aggregate estimate in this package.
  *
  * THE CONSENT. The photos are offered before the notices of the sign-up are
  * accepted, so their acceptance is asked for on the spot and recorded at once:
@@ -50,8 +52,9 @@ import type { MobileAuthContext } from './auth'
 import type { SignupBodyPhotoUploadInput } from './contracts'
 import { MobileApiError } from './http'
 import {
-  completeMediaUpload,
-  createMediaAsset,
+  completeMediaUploadRecord,
+  type createMediaAsset,
+  createMediaAssetRecord,
   type MediaAssetRecord,
   type MediaAssetStatus,
   type MediaServiceDependencies,
@@ -102,15 +105,16 @@ export type SignupBodyPhotoUnavailableReason = 'disabled' | 'consent_text_missin
 
 /**
  * How a photo is told to the app. `uploaded` is a photo the server holds and
- * that nobody was asked to read — the only stored state these routes produce.
- * `reading`, `read` and `reading_failed` tell a row the reading program
- * touched; whether a finished reading brought a number is not looked at here.
+ * whose reading request may still wait for the worker. `reading` is a claim
+ * by the worker. `read` requires a finite body-reading number; a processed
+ * photo without one is `unreadable`. No free reading fields are exposed.
  */
 export type SignupBodyPhotoStatus =
   | 'pending_upload'
   | 'uploaded'
   | 'reading'
   | 'read'
+  | 'unreadable'
   | 'reading_failed'
   | 'upload_failed'
   | 'deleted'
@@ -137,7 +141,7 @@ export interface SignupBodyPhotoConsentRepository {
   }): Promise<{ version: string; acceptedAt: string }>
 }
 
-/** A photo of the sign-up as the catalogue holds it, without what a reading left. */
+/** A photo of the sign-up with only the internal numeric reading, no free notes. */
 export interface SignupBodyPhotoRow {
   id: string
   bucketId: string
@@ -147,6 +151,8 @@ export interface SignupBodyPhotoRow {
   failureStage: 'upload' | 'processing' | null
   createdAt: string
   uploadedAt: string | null
+  /** Internal only; not returned in a photo DTO. */
+  bodyFatPercent?: number | null
 }
 
 export interface SignupBodyPhotoCatalogue {
@@ -217,11 +223,27 @@ function sha256(value: string): string {
 function publicStatus(
   status: MediaAssetStatus,
   failureStage: 'upload' | 'processing' | null,
+  bodyFatPercent?: number | null,
 ): SignupBodyPhotoStatus {
   if (status === 'processing') return 'reading'
-  if (status === 'processed') return 'read'
+  if (status === 'processed') {
+    return typeof bodyFatPercent === 'number' && Number.isFinite(bodyFatPercent)
+      ? 'read'
+      : 'unreadable'
+  }
   if (status === 'failed') return failureStage === 'processing' ? 'reading_failed' : 'upload_failed'
   return status
+}
+
+/** No coercion, range/aggregation decision, notes or confidence in this projection. */
+export function signupBodyPhotoReadingPercent(result: unknown): number | null {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return null
+  const reading = result as Record<string, unknown>
+  return reading.type === 'body' &&
+    typeof reading.bf_percent_estimate === 'number' &&
+    Number.isFinite(reading.bf_percent_estimate)
+    ? reading.bf_percent_estimate
+    : null
 }
 
 /** A photo the server holds: its upload was completed and it was not deleted. */
@@ -316,7 +338,7 @@ export async function getSignupBodyPhotoState(
         pose,
         photo: newest && {
           id: newest.id,
-          status: publicStatus(newest.status, newest.failureStage),
+          status: publicStatus(newest.status, newest.failureStage, newest.bodyFatPercent),
           created_at: newest.createdAt,
         },
       }
@@ -481,7 +503,7 @@ export async function createSignupBodyPhoto(
   // (3) The photo is created — or, on a repetition, found again by the media
   // service, which hands a new ticket while the upload is still pending.
   // (4) Nothing is deleted here: see `completeSignupBodyPhoto`.
-  const result = await createMediaAsset(
+  const result = await createMediaAssetRecord(
     dependencies.media,
     userId,
     {
@@ -497,7 +519,11 @@ export async function createSignupBodyPhoto(
     photo: {
       id: result.asset.id,
       pose: input.pose,
-      status: publicStatus(result.asset.status, result.asset.failure_stage),
+      status: publicStatus(
+        result.asset.status,
+        result.asset.failure_stage,
+        signupBodyPhotoReadingPercent(result.asset.processing_result),
+      ),
       created_at: result.asset.created_at,
     },
     upload: result.upload,
@@ -509,6 +535,7 @@ export async function completeSignupBodyPhoto(
   dependencies: SignupBodyPhotoDependencies,
   auth: MobileAuthContext,
   photoId: string,
+  requestKey: string,
   now = new Date(),
 ): Promise<{ photo: SignupBodyPhotoDto }> {
   if (!dependencies.enabled) throw signupBodyPhotosUnavailable()
@@ -522,6 +549,11 @@ export async function completeSignupBodyPhoto(
   if (!asset || !pose) {
     throw new MobileApiError(404, 'body_photo_not_found', 'Body photo not found')
   }
+  // Every stored state must still satisfy the CURRENT consent and open sign-up.
+  await assertSignupOpenWithConsent(dependencies, userId)
+  if (asset.status === 'failed' && asset.failure_stage === 'processing') {
+    throw new MobileApiError(409, 'body_photo_reading_failed', 'Send a new photo to try again')
+  }
 
   let stored = {
     id: asset.id,
@@ -529,19 +561,20 @@ export async function completeSignupBodyPhoto(
     failureStage: asset.failure_stage,
     createdAt: asset.created_at,
     uploadedAt: asset.uploaded_at,
+    bodyFatPercent: signupBodyPhotoReadingPercent(asset.processing_result),
   }
   if (asset.status === 'pending_upload') {
-    await assertSignupOpenWithConsent(dependencies, userId)
     // The stored size and type are checked against the declaration. A refusal
     // (422) marks THIS photo as a failed upload and goes no further: the
     // earlier photo of the pose is not looked at.
-    const completed = await completeMediaUpload(dependencies.media, userId, photoId, now)
+    const completed = await completeMediaUploadRecord(dependencies.media, userId, photoId, now)
     stored = {
       id: completed.id,
       status: completed.status,
       failureStage: completed.failure_stage,
       createdAt: completed.created_at,
       uploadedAt: completed.uploaded_at,
+      bodyFatPercent: signupBodyPhotoReadingPercent(completed.processing_result),
     }
   } else if (!isStored(asset.status, asset.failure_stage)) {
     // Deleted, or refused at upload. The ticket handed for it is valid for
@@ -574,11 +607,22 @@ export async function completeSignupBodyPhoto(
     )
   }
 
+  if (stored.status === 'uploaded') {
+    // The route passes the normalized claimed key. Same-key ledger replay
+    // does not execute here. A new key may dispatch while the worker waits.
+    // Worker retries are separate; this is not a one-provider-call guarantee.
+    await dependencies.media.events.sendProcessingRequested({
+      assetId: stored.id,
+      userId,
+      requestId: sha256(requestKey),
+    })
+  }
+
   return {
     photo: {
       id: stored.id,
       pose,
-      status: publicStatus(stored.status, stored.failureStage),
+      status: publicStatus(stored.status, stored.failureStage, stored.bodyFatPercent),
       created_at: stored.createdAt,
     },
   }

@@ -1,7 +1,8 @@
 /**
- * A body photo is never sent to AI reading by the app's server — golden of
- * the audit of 2026-10-09 for C24a (docs/mobile/api-v1.md, "Foto do corpo
- * nunca vai à leitura por IA").
+ * Body AI reading is exclusive to sign-up after its own consent — golden
+ * of the audit of 2026-10-09 for C24a, deliberately updated in B3 on
+ * 2026-10-11 (docs/mobile/api-v1.md, "Foto do corpo só vai à leitura por IA
+ * pelo cadastro, depois do consentimento próprio").
  *
  * This file is the audit golden of C24a. It lives here and not in
  * packages/agent/src/__golden__ because the behaviour belongs to the app's
@@ -31,20 +32,22 @@
  * route reads nothing from the request but the id and the Idempotency-Key
  * (its own test is in app/api/mobile/v1/media/[id]/process/route.test.ts).
  *
- * WHERE THE RULE COMES FROM. Item 11 of the decisions on the method-backlog
- * plan (decisions-v1.md, 2026-10-07; the orchestrator's decisions, not the
- * owner's): body photos are not asked for before it is known who evaluates them. The
- * question of who evaluates them and of what the person sees has no approved
- * answer yet; nothing here decides it. The refusal has no switch and no
- * environment variable: reopening the path is a change of code, with this
- * golden changed on purpose.
+ * WHERE THE RULE COMES FROM. The generic refusal began in C24a on
+ * 2026-10-09. The owner's 2026-10-10 request opens ONLY the dedicated
+ * sign-up, after its own current consent, with its project gate enabled and
+ * sign-up still open. This is not physician approval. The feature remains
+ * OFF by default; D1/D2 aggregate/use and the real consent text are pending.
+ * Generic creation now refuses body photos, including masked stored-key
+ * replay before a ticket. Generic DTOs and historical complete replay hide
+ * the result. The old stored result is not erased by this change.
+ * The worker has retries: one event is not one provider-call guarantee.
  *
  * WHAT IS LOCKED AS UNCHANGED: a meal photo, a gym photo and an audio note
  * leave with the same event as before; a meal photo being read or failed at
  * reading is sent again and one not uploaded yet is still 409; another
  * account's asset is 404 before any kind is looked at; a body photo offered to
  * `POST /plan-imports` — the second caller of the reading event — is refused
- * there as it already was; and the event has one emitter and two callers in
+ * there as it already was; and the event has one emitter and three callers in
  * the app's server. A plan document asked for reading keeps its own refusal
  * (media-service.test.ts). The replay of a stored answer and the release of a
  * refused key are the generic mechanism locked in idempotency.test.ts
@@ -59,8 +62,7 @@
  * > RC C24a — cenário foto do corpo enviada com outro tipo declarado (meal_photo, gym_photo ou plan_document) variante o servidor reconhecer pelo conteúdo que a imagem é do corpo e recusar a leitura NÃO coberta nesta PR (pendência da audit 2026-10-09)
  * > RC C24a — cenário evento media.asset.process.requested publicado direto na fila para uma foto do corpo (fora do servidor do app) variante recusa também na função de leitura NÃO coberta nesta PR (pendência da audit 2026-10-09)
  * > RC C24a — cenário pedido de leitura de foto do corpo aceito antes desta mudança e ainda na fila ou em andamento variante cancelar a leitura já despachada NÃO coberta nesta PR (pendência da audit 2026-10-09)
- * > RC C24a — cenário foto do corpo lida antes desta mudança (resultado gravado em media_assets.processing_result) variante as respostas de mídia (GET /media/:id, POST /media repetido e POST /media/:id/complete) deixarem de devolver o resultado e apagar o que foi gravado NÃO coberta nesta PR (pendência da audit 2026-10-09)
- * > RC C24a — cenário envio e guarda da foto do corpo (POST /media segue aceitando body_checkin_photo, com guarda de 730 dias) variante recusar o envio enquanto não houver avaliador, aceite específico e prazo aprovados NÃO coberta nesta PR (pendência da audit 2026-10-09)
+ * > RC C24a — cenário foto do corpo lida antes desta mudança (resultado gravado em media_assets.processing_result) variante apagar o resultado histórico já gravado (as respostas genéricas, inclusive o replay histórico de /media/:id/complete, agora devolvem result nulo sem regravar o histórico) NÃO coberta nesta PR (pendência da audit 2026-10-09)
  * > RC C24a — cenário código legado do agente de WhatsApp, encerrado (process-message.ts ainda contém a leitura da imagem e a gravação da estimativa de gordura) variante retirar essa leitura do código legado NÃO coberta nesta PR (pendência da audit 2026-10-09)
  * > RC C24a — cenário rota contra o banco e a fila reais do ambiente de teste variante teste com Supabase e Inngest reais (os testes usam repositório, armazenamento e fila em memória; nenhum banco foi lido nem gravado) NÃO coberta nesta PR (pendência da audit 2026-10-09)
  * > RC C24a — cenário app instalado no iPhone registrando refeição por foto e por áudio e importando plano depois da mudança variante conferência no aparelho NÃO coberta nesta PR (pendência da audit 2026-10-09)
@@ -68,7 +70,7 @@
  * > RC C24a — cenário pedido de leitura de foto do corpo aceito antes desta mudança e repetido com a mesma Idempotency-Key em até 24 horas variante resposta 202 gravada devolvida de novo no lugar da recusa (sem novo evento) NÃO coberta nesta PR (pendência da audit 2026-10-09)
  *
  * Carried from the plan of the method backlog (package C24), as written there:
- * > RC C24 — cenário fotos enviadas variante gordura estimada a partir delas NÃO coberta nesta PR (pendência da audit 2026-10-07).
+ * > RC C24 — cenário fotos enviadas na reavaliação variante gordura estimada a partir delas (no cadastro a leitura só é pedida após o consentimento próprio, e a junção das três leituras ainda depende de D1 e D2) NÃO coberta nesta PR (pendência da audit 2026-10-07).
  */
 import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve, sep } from 'node:path'
@@ -389,10 +391,11 @@ describe('where the reading event can leave from', () => {
       .sort()
   }
 
-  it('the reading event has one emitter and two callers in the app server', () => {
+  it('the reading event has one emitter and three callers in the app server', () => {
     expect(filesContaining('sendProcessingRequested')).toEqual([
       'lib/mobile-api/media-service.ts',
       'lib/mobile-api/plan-draft-service.ts',
+      'lib/mobile-api/signup-body-photo-service.ts',
       'lib/mobile-api/supabase-media.ts',
     ])
     expect(filesContaining('media.asset.process.requested')).toEqual([
@@ -410,7 +413,7 @@ describe('declared pendencies', () => {
     )
     const fromHeader = Array.from(header.matchAll(/^ \* (> RC C24a — .*)$/gm), (match) => match[1])
     const fromDoc = Array.from(doc.matchAll(/^(> RC C24a — .*)$/gm), (match) => match[1])
-    expect(fromHeader).toHaveLength(10)
+    expect(fromHeader).toHaveLength(9)
     for (const line of fromHeader) {
       expect(line).toMatch(
         /^> RC C24a — cenário .+ variante .+ NÃO coberta nesta PR \(pendência da audit 2026-10-09\)$/,
@@ -419,7 +422,7 @@ describe('declared pendencies', () => {
     expect(fromDoc).toEqual(fromHeader)
     // The line the plan of the method backlog already carried for C24, as written there.
     expect(doc).toContain(
-      '> RC C24 — cenário fotos enviadas variante gordura estimada a partir delas NÃO coberta nesta PR (pendência da audit 2026-10-07).',
+      '> RC C24 — cenário fotos enviadas na reavaliação variante gordura estimada a partir delas (no cadastro a leitura só é pedida após o consentimento próprio, e a junção das três leituras ainda depende de D1 e D2) NÃO coberta nesta PR (pendência da audit 2026-10-07).',
     )
   })
 })

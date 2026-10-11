@@ -308,7 +308,7 @@ struct AppRootView: View {
             restoreGeneration: model.onboardingRestoreGeneration,
             historicalCompletedAt: model.restoredHistoricalCompletedAt,
             requirements: model.restoredOnboardingRequirements,
-            onboarding: dependencies.onboarding,
+            onboarding: model.onboardingRepositoryForCurrentOwner,
             persona: dependencies.coachPersona,
             developmentConsentAvailability: configuration.developmentConsentAvailability,
             idempotencyKeyProvider: dependencies.idempotencyKeyProvider,

@@ -148,6 +148,13 @@ final class OnboardingEligibilityUITests: XCTestCase {
         XCTAssertTrue(element("onboarding.completion.unresolved", app).waitForExistence(timeout: 5))
         XCTAssertTrue(element("onboarding.error", app).exists)
         XCTAssertFalse(app.buttons["onboarding.back"].exists)
+        // Second update (2026-10-11, P-BACK): the way back fixed at the top
+        // is locked with the draft too, while the answer is unknown.
+        XCTAssertFalse(app.buttons["onboarding.back.top"].exists)
+        XCTAssertEqual(
+            app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Voltar")).count, 0,
+            "No way back while the completion is pending"
+        )
         XCTAssertFalse(app.buttons["onboarding.continue"].exists)
         XCTAssertFalse(element("screen.hoje", app).exists)
         support.capture("e3-uncertain-completion-pt-light", app: app)

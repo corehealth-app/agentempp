@@ -2,14 +2,85 @@ import Foundation
 
 struct MobileOnboardingRepository: OnboardingRepository {
     let transport: any MobileAPIExecuting
+    /// Local persistence requires the immutable session scope below.
+    let deviceDraft: OnboardingDeviceDraftStore?
+    let sessionLifecycle: (any SessionLifecycleProviding)?
+    private let sessionLease: SessionLease?
+
+    init(
+        transport: any MobileAPIExecuting,
+        deviceDraft: OnboardingDeviceDraftStore? = nil,
+        sessionLifecycle: (any SessionLifecycleProviding)? = nil
+    ) {
+        self.transport = transport
+        self.deviceDraft = deviceDraft
+        self.sessionLifecycle = sessionLifecycle
+        sessionLease = nil
+    }
+
+    private init(
+        transport: any MobileAPIExecuting,
+        deviceDraft: OnboardingDeviceDraftStore?,
+        sessionLifecycle: any SessionLifecycleProviding,
+        sessionLease: SessionLease
+    ) {
+        self.transport = transport
+        self.deviceDraft = deviceDraft
+        self.sessionLifecycle = sessionLifecycle
+        self.sessionLease = sessionLease
+    }
+
+    /// Bound once by the root before its first read and retained by its model.
+    /// Re-scoping an old instance never grants it a newer generation.
+    func scoped(for userID: String) async throws -> any OnboardingRepository {
+        if let sessionLease {
+            guard sessionLease.userID == userID, let sessionLifecycle else {
+                throw SessionLifecycleError.sessionSuperseded
+            }
+            try await sessionLifecycle.validate(sessionLease)
+            return self
+        }
+        guard let sessionLifecycle else {
+            // A token-only provider or test transport owns no device state.
+            return MobileOnboardingRepository(transport: transport)
+        }
+        let lease = try await sessionLifecycle.leaseForRequest()
+        guard lease.userID == userID else { throw SessionLifecycleError.sessionSuperseded }
+        try await sessionLifecycle.validate(lease)
+        let scopedTransport: any MobileAPIExecuting =
+            if let mobile = transport as? MobileAPITransport { mobile.scoped(to: lease) }
+            else { transport }
+        return MobileOnboardingRepository(
+            transport: scopedTransport, deviceDraft: deviceDraft,
+            sessionLifecycle: sessionLifecycle, sessionLease: lease
+        )
+    }
+
+    private func validateScope(for userID: String) async throws {
+        guard let sessionLease else { return }
+        guard let sessionLifecycle, sessionLease.userID == userID else {
+            throw SessionLifecycleError.sessionSuperseded
+        }
+        try await sessionLifecycle.validate(sessionLease)
+    }
+
+    private func clearDeviceDraft(for userID: String) async throws {
+        guard let deviceDraft, let sessionLifecycle, let sessionLease else { return }
+        guard sessionLease.userID == userID else { throw SessionLifecycleError.sessionSuperseded }
+        try await sessionLifecycle.performPatientStateOperation(lease: sessionLease) {
+            deviceDraft.clear(for: userID)
+        }
+    }
 
     func loadDraft(for userID: String) async throws -> OnboardingDraft? {
         try await loadState(for: userID).draft
     }
 
     func loadState(for userID: String) async throws -> OnboardingServerState {
+        try await validateScope(for: userID)
+        let state: OnboardingServerState
         do {
-            return try await transport.execute(MobileAPIRequest(
+            state = try await transport.execute(MobileAPIRequest(
                 method: .get,
                 path: "/api/mobile/v1/onboarding"
             ))
@@ -20,17 +91,52 @@ struct MobileOnboardingRepository: OnboardingRepository {
         } catch {
             throw OnboardingRepositoryError.serviceUnavailable
         }
+        try await validateScope(for: userID)
+        guard let deviceDraft, let sessionLifecycle, let sessionLease else { return state }
+        return try await sessionLifecycle.performPatientStateOperation(lease: sessionLease) {
+            resuming(state, for: userID, deviceDraft: deviceDraft)
+        }
+    }
+
+    /// The server's answer, completed by what this iPhone kept of an
+    /// unfinished sign-up. The server keeps nothing of a sign-up before it is
+    /// finished, so without this a person whose app was ended in the middle
+    /// came back to a blank first step.
+    private func resuming(
+        _ state: OnboardingServerState,
+        for userID: String,
+        deviceDraft: OnboardingDeviceDraftStore
+    ) -> OnboardingServerState {
+        // A finished sign-up, one whose documents are being accepted again,
+        // or any draft the server sends: the server's word, and nothing kept
+        // here applies any more.
+        guard !state.completion.completed,
+              state.completion.completedAt == nil,
+              state.draft == nil else {
+            deviceDraft.clear(for: userID)
+            return state
+        }
+        guard let kept = deviceDraft.load(for: userID) else { return state }
+        return OnboardingServerState(
+            locale: state.locale,
+            completion: state.completion,
+            requirements: state.requirements,
+            acceptedActions: state.acceptedActions,
+            draft: kept
+        )
     }
 
     func checkEligibility(
         _ input: OnboardingEligibilityInput, for userID: String,
         idempotencyKey: IdempotencyKey
     ) async throws -> OnboardingEligibilityDecision {
+        try await validateScope(for: userID)
         do {
             let result: OnboardingEligibilityDecision = try await transport.execute(MobileAPIRequest(
                 method: .post, path: "/api/mobile/v1/onboarding/eligibility",
                 body: try JSONEncoder().encode(input), idempotencyKey: idempotencyKey
             ))
+            try await validateScope(for: userID)
             return try result.validated()
         } catch is CancellationError {
             throw CancellationError()
@@ -43,8 +149,20 @@ struct MobileOnboardingRepository: OnboardingRepository {
         }
     }
 
+    /// Nothing of an unfinished sign-up is sent: the server only receives it
+    /// whole, at the end. What waits on this iPhone meanwhile is kept by
+    /// `keepDraftOnDevice`.
     func saveDraft(_ draft: OnboardingDraft, for userID: String) async throws {
         try Task.checkCancellation()
+        try await validateScope(for: userID)
+    }
+
+    func keepDraftOnDevice(_ draft: OnboardingDraft, for userID: String) async {
+        guard let deviceDraft, let sessionLifecycle, let sessionLease,
+              sessionLease.userID == userID else { return }
+        _ = try? await sessionLifecycle.performPatientStateOperation(lease: sessionLease) {
+            deviceDraft.save(draft, for: userID)
+        }
     }
 
     func complete(_ draft: OnboardingDraft, for userID: String) async throws {
@@ -56,6 +174,7 @@ struct MobileOnboardingRepository: OnboardingRepository {
         for userID: String,
         idempotencyKey: IdempotencyKey
     ) async throws -> OnboardingCompletionAcknowledgement {
+        try await validateScope(for: userID)
         let submission = try OnboardingCompletionSubmission(draft: draft)
         let body: Data
         do {
@@ -76,6 +195,9 @@ struct MobileOnboardingRepository: OnboardingRepository {
             guard acknowledgement.matches(draft) else {
                 throw OnboardingRepositoryError.serviceUnavailable
             }
+            // The sign-up is the server's now: nothing of it stays here.
+            try await validateScope(for: userID)
+            try await clearDeviceDraft(for: userID)
             return acknowledgement
         } catch is CancellationError {
             throw CancellationError()
@@ -90,6 +212,7 @@ struct MobileOnboardingRepository: OnboardingRepository {
 
     func clear(for userID: String) async throws {
         try Task.checkCancellation()
+        try await clearDeviceDraft(for: userID)
     }
 
     /// The read of the sign-up is the request the root screen waits on, so

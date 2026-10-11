@@ -15,6 +15,8 @@ enum OnboardingRepositoryError: Error, Equatable, Sendable {
 }
 
 protocol OnboardingRepository: Sendable {
+    /// Creates the repository the root keeps for this session owner.
+    func scoped(for userID: String) async throws -> any OnboardingRepository
     func loadDraft(for userID: String) async throws -> OnboardingDraft?
     func loadState(for userID: String) async throws -> OnboardingServerState
     func saveDraft(_ draft: OnboardingDraft, for userID: String) async throws
@@ -29,9 +31,18 @@ protocol OnboardingRepository: Sendable {
         idempotencyKey: IdempotencyKey
     ) async throws -> OnboardingEligibilityDecision
     func clear(for userID: String) async throws
+    /// Keeps an unfinished sign-up on this iPhone, where the repository has
+    /// a place for it (a real account does; the local demonstration keeps
+    /// its own draft through `saveDraft`). Nothing is sent anywhere, and a
+    /// draft that cannot be kept never stops the sign-up.
+    func keepDraftOnDevice(_ draft: OnboardingDraft, for userID: String) async
 }
 
 extension OnboardingRepository {
+    func scoped(for userID: String) async throws -> any OnboardingRepository { self }
+
+    func keepDraftOnDevice(_ draft: OnboardingDraft, for userID: String) async {}
+
     func checkEligibility(
         _ input: OnboardingEligibilityInput, for userID: String,
         idempotencyKey: IdempotencyKey

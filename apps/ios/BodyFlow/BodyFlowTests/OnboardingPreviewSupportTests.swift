@@ -366,7 +366,9 @@ struct OnboardingPreviewSupportTests {
         "--ui-testing-onboarding-welcome", "--ui-testing-onboarding-eligibility-failure",
         "--ui-testing-onboarding-completion-uncertain",
         // First update (2026-10-10): the two load-failure fixtures.
-        "--ui-testing-onboarding-admin-conflict", "--ui-testing-onboarding-load-failure"])
+        "--ui-testing-onboarding-admin-conflict", "--ui-testing-onboarding-load-failure",
+        // Update of 2026-10-11 (A4): the sign-up draft kept on the phone.
+        "--ui-testing-onboarding-device-draft"])
     func releaseDoesNotSelectSyntheticOnboarding(flag: String) async {
         let configuration = AppLaunchConfiguration.resolve(
             arguments: ["--ui-testing", flag],

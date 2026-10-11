@@ -7,6 +7,8 @@ struct MobileAPITransport: Sendable {
     private let clock: any Clock<Duration>
     private let timeout: Duration
     private let responseBodyLimit: Int
+    /// The owner/generation are retained; a rotated bearer is read at request time.
+    private var boundSession: (userID: String, generation: UInt64)? = nil
     /// Read by routine actions, which the server accepts on its own clock.
     let serverClock: ServerClockEstimate
 
@@ -96,7 +98,7 @@ struct MobileAPITransport: Sendable {
         let requestID = UUID().uuidString.lowercased()
         let lease: SessionLease
         do {
-            lease = try await sessionLifecycle.leaseForRequest()
+            lease = try await leaseForBoundRequest()
         } catch is CancellationError {
             throw CancellationError()
         } catch SessionLifecycleError.sessionSuperseded {
@@ -126,6 +128,7 @@ struct MobileAPITransport: Sendable {
         do {
             refreshedLease = try await sessionLifecycle
                 .refreshAfterUnauthorized(lease: lease)
+            try await validateBoundSession(matching: refreshedLease)
         } catch is CancellationError {
             throw CancellationError()
         } catch SessionLifecycleError.sessionSuperseded {
@@ -149,6 +152,28 @@ struct MobileAPITransport: Sendable {
             result: secondResult,
             lease: refreshedLease
         )
+    }
+
+    private func leaseForBoundRequest() async throws -> SessionLease {
+        if let boundSession {
+            try await sessionLifecycle.validate(SessionLease(
+                userID: boundSession.userID, generation: boundSession.generation, bearer: ""
+            ))
+        }
+        let lease = try await sessionLifecycle.leaseForRequest()
+        try await validateBoundSession(matching: lease)
+        return lease
+    }
+
+    private func validateBoundSession(matching lease: SessionLease) async throws {
+        guard let boundSession else { return }
+        guard lease.userID == boundSession.userID,
+              lease.generation == boundSession.generation else {
+            throw SessionLifecycleError.sessionSuperseded
+        }
+        try await sessionLifecycle.validate(SessionLease(
+            userID: boundSession.userID, generation: boundSession.generation, bearer: ""
+        ))
     }
 
     private func validatedDecode<Response: Decodable & Sendable>(
@@ -568,6 +593,15 @@ private final class MobileAPIRedirectDelegate: NSObject,
 }
 
 extension MobileAPITransport {
+    /// Copies the transport for one owner/generation. An already-bound copy
+    /// retains its original scope even when asked to bind again.
+    func scoped(to lease: SessionLease) -> MobileAPITransport {
+        guard boundSession == nil else { return self }
+        var copy = self
+        copy.boundSession = (lease.userID, lease.generation)
+        return copy
+    }
+
     /// Plans and plan drafts carry whole weekly schedules; everything else
     /// keeps the default limit.
     static let planResponseBodyLimit = 1_024 * 1_024
@@ -575,7 +609,7 @@ extension MobileAPITransport {
     /// The same origin, session lifecycle and rules, accepting a larger
     /// response. Nothing else about the transport changes.
     func withResponseBodyLimit(_ limit: Int) -> MobileAPITransport {
-        MobileAPITransport(
+        var copy = MobileAPITransport(
             configuration: configuration,
             sessionLifecycle: sessionLifecycle,
             session: session,
@@ -584,6 +618,8 @@ extension MobileAPITransport {
             responseBodyLimit: max(limit, responseBodyLimit),
             serverClock: serverClock
         )
+        copy.boundSession = boundSession
+        return copy
     }
 
     /// The cover proxy shares this transport's origin, session lifecycle and

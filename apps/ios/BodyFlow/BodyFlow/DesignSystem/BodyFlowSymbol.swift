@@ -11,6 +11,8 @@ enum BodyFlowSymbol: String, CaseIterable, Sendable {
     case refresh = "arrow.clockwise"
     case list = "list.bullet"
     case chevron = "chevron.right"
+    /// Returns to the previous step (the sign-up's command at the top).
+    case back = "chevron.backward"
     case send = "arrow.up"
     /// Places a suggestion in a text field without sending it.
     case fillField = "arrow.up.left"

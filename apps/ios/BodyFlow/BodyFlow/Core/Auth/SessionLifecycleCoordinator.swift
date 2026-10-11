@@ -109,6 +109,7 @@ actor SessionLifecycleCoordinator: SessionLifecycleProviding {
             if !didBootstrap {
                 record = try await store.bootstrapRecord()
                 didBootstrap = true
+                if record == nil { await sensitiveStateClearer.clearSensitiveState() }
             }
             let oldRecord = record
             try await store.replace(with: newRecord)
@@ -166,6 +167,29 @@ actor SessionLifecycleCoordinator: SessionLifecycleProviding {
 
     func finishPatientWork(_ id: UUID) async {
         _ = await patientWorkRegistry.finish(id)
+    }
+
+    /// Validation and all local FS effects share the transition gate.
+    /// The body cannot suspend or recursively request a lease/gate.
+    func performPatientStateOperation<Value: Sendable>(
+        lease: SessionLease, operation: @Sendable () throws -> Value
+    ) async throws -> Value {
+        await mutationGate.acquire()
+        do {
+            try Task.checkCancellation()
+            guard !localInvalidationInProgress, let record else {
+                throw SessionLifecycleError.missingSession
+            }
+            guard record.userID == lease.userID, generation == lease.generation else {
+                throw SessionLifecycleError.sessionSuperseded
+            }
+            let value = try operation()
+            await mutationGate.release()
+            return value
+        } catch {
+            await mutationGate.release()
+            throw error
+        }
     }
 
     private func refresh(
@@ -390,6 +414,7 @@ actor SessionLifecycleCoordinator: SessionLifecycleProviding {
             if !didBootstrap {
                 record = try await store.bootstrapRecord()
                 didBootstrap = true
+                if record == nil { await sensitiveStateClearer.clearSensitiveState() }
             }
             await mutationGate.release()
         } catch {

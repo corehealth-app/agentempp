@@ -1541,6 +1541,22 @@
     }
   }
 },
+"onboarding.back.previous-step" : {
+  "localizations": {
+    "en": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Back to the previous step"
+      }
+    },
+    "pt-BR": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Voltar para a etapa anterior"
+      }
+    }
+  }
+},
 "onboarding.body-data.message" : {
   "localizations": {
     "en": {
@@ -2121,6 +2137,12 @@
     "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Fuso horário" } }
   }
 },
+"onboarding.welcome.time-zone.detail" : {
+  "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "The app starts with the time zone of your device's clock. It does not use your location. Tap to change." } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O app começa com o fuso do relógio do seu aparelho. Não usa a sua localização. Toque para trocar." } }
+  }
+},
 "onboarding.welcome.time-zone-picker.title" : {
   "localizations" : {
     "en" : { "stringUnit" : { "state" : "translated", "value" : "Choose a time zone" } },
@@ -2295,6 +2317,42 @@
   "localizations" : {
     "en" : { "stringUnit" : { "state" : "translated", "value" : "Athlete" } },
     "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Atleta" } }
+  }
+},
+"onboarding.routine.activity-level.detail" : {
+  "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Count the days you exercise: strength training, running, sports, classes, cycling or swimming." } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Conte os dias em que você faz exercício: musculação, corrida, esporte, aula, pedal ou natação." } }
+  }
+},
+"onboarding.routine.activity-level.sedentary.detail" : {
+  "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Does not exercise." } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não faz exercício." } }
+  }
+},
+"onboarding.routine.activity-level.light.detail" : {
+  "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Exercise 1 to 3 days a week." } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Exercício de 1 a 3 dias por semana." } }
+  }
+},
+"onboarding.routine.activity-level.moderate.detail" : {
+  "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Exercise 4 to 5 days a week." } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Exercício de 4 a 5 dias por semana." } }
+  }
+},
+"onboarding.routine.activity-level.high.detail" : {
+  "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Exercise 6 to 7 days a week." } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Exercício de 6 a 7 dias por semana." } }
+  }
+},
+"onboarding.routine.activity-level.athlete.detail" : {
+  "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Trains 2 times a day." } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Treina 2 vezes por dia." } }
   }
 },
 "onboarding.routine.training-frequency.title" : {

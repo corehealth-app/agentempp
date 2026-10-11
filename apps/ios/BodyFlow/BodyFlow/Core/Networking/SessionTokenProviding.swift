@@ -46,9 +46,20 @@ protocol SessionLifecycleProviding: SessionTokenProviding {
         cancel: @escaping @Sendable () -> Void
     ) async throws -> UUID
     func finishPatientWork(_ id: UUID) async
+    /// A synchronous local-state operation, fenced by the session mutation gate.
+    func performPatientStateOperation<Value: Sendable>(
+        lease: SessionLease, operation: @Sendable () throws -> Value
+    ) async throws -> Value
 }
 
 extension SessionLifecycleProviding {
+    /// Providers without a local-state boundary cannot authorize local writes.
+    func performPatientStateOperation<Value: Sendable>(
+        lease: SessionLease, operation: @Sendable () throws -> Value
+    ) async throws -> Value {
+        throw SessionLifecycleError.sessionSuperseded
+    }
+
     func restorePublicSession() async throws -> AuthSession? {
         throw SessionLifecycleError.missingSession
     }

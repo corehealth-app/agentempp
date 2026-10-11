@@ -14,16 +14,32 @@ struct RoutineStepView: View {
                 messageFallback: "Conte como são seus hábitos em uma semana comum."
             )
 
-            pickerField(
-                copy("onboarding.routine.activity-level.title"),
-                selection: activityLevel,
-                issues: [.activityLevelRequired]
-            ) {
-                Text(copy("onboarding.selection.placeholder"))
-                    .tag(nil as ActivityLevel?)
-                ForEach(ActivityLevel.allCases, id: \.self) {
-                    Text($0.onboardingLabel(for: language))
-                        .tag($0 as ActivityLevel?)
+            // P-ACTIVITY (reported on 2026-10-10: "Aqui ele não diz qual a
+            // frequência semanal de atividade física de cada categoria"). It
+            // was a menu of five names; each level now says what it means,
+            // with nothing to open.
+            //
+            // The ranges are the physician's own, written for the sign-up
+            // question: leve 1–3x/sem, moderado 4–5x/sem, alto 6–7x/sem,
+            // atleta 2x/dia. The owner asked for them in days of exercise,
+            // saying which exercise counts (2026-10-10). The sentence form,
+            // the text of "Sedentário" and the line that says which exercise
+            // counts are a proposal of the orchestrator, announced to the
+            // owner on 2026-10-10/11, who can strike any of it.
+            //
+            // Presentation only: what is stored for each level, and the
+            // factor it selects, are the same.
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+                Text(copy("onboarding.routine.activity-level.title"))
+                    .font(BodyFlowTypography.headline)
+                Text(copy("onboarding.routine.activity-level.detail"))
+                    .font(BodyFlowTypography.callout)
+                    .foregroundStyle(BodyFlowColor.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                VStack(spacing: BodyFlowSpacing.sm) {
+                    ForEach(ActivityLevel.allCases, id: \.self) { level in
+                        activityLevelRow(level)
+                    }
                 }
             }
             OnboardingFieldIssue(model: model, candidates: [.activityLevelRequired])
@@ -162,8 +178,34 @@ struct RoutineStepView: View {
         OnboardingCopy.string(key, language: language)
     }
 
-    private var activityLevel: Binding<ActivityLevel?> {
-        Binding(get: { model.draft.activityLevel }, set: { model.updateActivityLevel($0) })
+    /// One level: its name and what it means, chosen with one touch.
+    private func activityLevelRow(_ level: ActivityLevel) -> some View {
+        let isChosen = model.draft.activityLevel == level
+        return Button {
+            model.updateActivityLevel(level)
+        } label: {
+            HStack(alignment: .top, spacing: BodyFlowSpacing.sm) {
+                Image(symbol: isChosen ? .selected : .unselected)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
+                    Text(level.onboardingLabel(for: language))
+                        .font(BodyFlowTypography.headline)
+                    Text(level.onboardingDetail(for: language))
+                        .font(BodyFlowTypography.callout)
+                        .foregroundStyle(BodyFlowColor.secondaryText)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, minHeight: BodyFlowSpacing.minimumTapTarget, alignment: .leading)
+            .padding(BodyFlowSpacing.sm)
+            .background(BodyFlowColor.surface, in: RoundedRectangle(cornerRadius: BodyFlowRadius.card))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.bodyFlowRow)
+        .accessibilityAddTraits(isChosen ? .isSelected : [])
+        .accessibilityHint(model.accessibilityHint(for: [.activityLevelRequired]))
+        .accessibilityIdentifier("onboarding.activity-level.\(level.rawValue)")
     }
 
     private var trainingFrequency: Binding<Int> {

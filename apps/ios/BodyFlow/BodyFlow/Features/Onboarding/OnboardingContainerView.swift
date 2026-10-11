@@ -7,48 +7,58 @@ private enum OnboardingScrollAnchor: Hashable {
 
 @MainActor
 struct OnboardingContainerView: View {
+    /// The widest the sign-up column gets; the command at the top keeps to
+    /// the same column.
+    private static let columnMaxWidth: CGFloat = 620
+
     let model: OnboardingFlowModel
     @State private var submissionTask: Task<Void, Never>?
     @Environment(\.locale) private var locale
     @Environment(\.bodyFlowReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack {
             ZStack {
                 BodyFlowColor.background.ignoresSafeArea()
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
-                            BodyFlowBrandIdentityView()
-                            if model.pendingProtocolWelcome == nil { progress }
-                            OnboardingOperationMessage(state: model.operationState)
-                            if model.operationState == .saving && isCheckingEligibility {
-                                BodyFlowStatusLine(copy("onboarding.objective.checking", fallback: "Conferindo os objetivos disponíveis…"), kind: .pending)
+                VStack(spacing: 0) {
+                    // Above the scrolling column, never inside it: in reach
+                    // on arrival at every step after the first.
+                    if model.canGoBack { topBackCommand }
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
+                                BodyFlowBrandIdentityView()
+                                if model.pendingProtocolWelcome == nil { progress }
+                                OnboardingOperationMessage(state: model.operationState)
+                                if model.operationState == .saving && isCheckingEligibility {
+                                    BodyFlowStatusLine(copy("onboarding.objective.checking", fallback: "Conferindo os objetivos disponíveis…"), kind: .pending)
+                                }
+                                OnboardingValidationSummary(issues: model.validationIssues)
+                                stepContent
+                                    .transition(BodyFlowMotion.stateTransition(reduceMotion: reduceMotion))
+                                    .animation(
+                                        BodyFlowMotion.animation(.content, reduceMotion: reduceMotion),
+                                        value: model.step
+                                    )
+                                commands
                             }
-                            OnboardingValidationSummary(issues: model.validationIssues)
-                            stepContent
-                                .transition(BodyFlowMotion.stateTransition(reduceMotion: reduceMotion))
-                                .animation(
-                                    BodyFlowMotion.animation(.content, reduceMotion: reduceMotion),
-                                    value: model.step
-                                )
-                            commands
+                            .padding(.horizontal, BodyFlowSpacing.lg)
+                            .padding(.vertical, BodyFlowSpacing.lg)
+                            .frame(maxWidth: Self.columnMaxWidth)
+                            .frame(maxWidth: .infinity)
+                            .id(OnboardingScrollAnchor.top)
                         }
-                        .padding(.horizontal, BodyFlowSpacing.lg)
-                        .padding(.vertical, BodyFlowSpacing.lg)
-                        .frame(maxWidth: 620)
-                        .frame(maxWidth: .infinity)
-                        .id(OnboardingScrollAnchor.top)
-                    }
-                    .scrollBounceBehavior(.basedOnSize)
-                    .scrollDismissesKeyboard(.interactively)
-                    // One ScrollView serves every step: without this, the offset
-                    // a long step leaves behind carries into the next one.
-                    .onChange(of: model.pendingProtocolWelcome != nil) {
-                        proxy.scrollTo(OnboardingScrollAnchor.top, anchor: .top)
-                    }
-                    .onChange(of: model.step) {
-                        proxy.scrollTo(OnboardingScrollAnchor.top, anchor: .top)
+                        .scrollBounceBehavior(.basedOnSize)
+                        .scrollDismissesKeyboard(.interactively)
+                        // One ScrollView serves every step: without this, the offset
+                        // a long step leaves behind carries into the next one.
+                        .onChange(of: model.pendingProtocolWelcome != nil) {
+                            proxy.scrollTo(OnboardingScrollAnchor.top, anchor: .top)
+                        }
+                        .onChange(of: model.step) {
+                            proxy.scrollTo(OnboardingScrollAnchor.top, anchor: .top)
+                        }
                     }
                 }
             }
@@ -57,6 +67,52 @@ struct OnboardingContainerView: View {
             if model.step == .objective { await model.prepareObjectiveIfNeeded() }
         }
         .onDisappear(perform: cancelSubmission)
+        .onChange(of: scenePhase) { _, phase in
+            keepDraftWhenLeaving(phase)
+        }
+    }
+
+    /// The person is leaving the app — another app, the camera, Settings, the
+    /// lock screen — and the system may end it there. What was typed so far
+    /// is kept on this iPhone first (package A4, 2026-10-11).
+    private func keepDraftWhenLeaving(_ phase: ScenePhase) {
+        guard phase != .active else { return }
+        if phase == .background {
+            // A number still being typed only reaches the draft when its
+            // field stops being edited.
+            UIApplication.shared.sendAction(
+                #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil
+            )
+        }
+        Task { await model.keepDraftOnDevice() }
+    }
+
+    /// P-BACK (reported on 2026-10-10, on "Sua rotina": "Passei pra frente e
+    /// ele não deixa voltar", with the top of the screen circled). The only
+    /// way back was the last item of the scrolling column and the review had
+    /// none. This one is fixed at the top; the one below "Continuar" stays.
+    ///
+    /// The gutter plus the button's own padding put the glyph on the
+    /// column's leading edge (`sm` + `sm` = the column's `lg`).
+    private var topBackCommand: some View {
+        HStack(spacing: 0) {
+            Button {
+                Task { await model.back() }
+            } label: {
+                Label(verbatim: copy("onboarding.back", fallback: "Voltar"), symbol: .back)
+            }
+            .buttonStyle(BodyFlowButtonStyle(role: .tertiary, isCompact: true))
+            .disabled(model.operationState == .saving)
+            .accessibilityLabel(copy(
+                "onboarding.back.previous-step",
+                fallback: "Voltar para a etapa anterior"
+            ))
+            .accessibilityIdentifier("onboarding.back.top")
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, BodyFlowSpacing.sm)
+        .frame(maxWidth: Self.columnMaxWidth)
+        .frame(maxWidth: .infinity)
     }
 
     private var progress: some View {

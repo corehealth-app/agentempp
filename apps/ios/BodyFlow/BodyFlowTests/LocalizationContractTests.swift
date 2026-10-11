@@ -182,6 +182,68 @@ struct LocalizationContractTests {
         ], language)
     }
 
+    // MARK: Update of 2026-10-11 (the physician's sign-up report of 2026-10-10)
+
+    /// P-BACK: what the way back fixed at the top of the sign-up says to
+    /// VoiceOver. The word drawn on it is the one that already existed.
+    @Test(arguments: SupportedAppLanguage.allCases)
+    func signUpReportBackCommandCopyIsExact(_ language: SupportedAppLanguage) {
+        expectExactCopy([
+            ("onboarding.back.previous-step",
+             "Voltar para a etapa anterior", "Back to the previous step"),
+            // Lock: the word on the command is unchanged.
+            ("onboarding.back", "Voltar", "Back"),
+        ], language)
+    }
+
+    /// P-ACTIVITY: what each activity level means, in days of exercise, and
+    /// which exercise counts. The ranges are the physician's (written for
+    /// the sign-up question: leve 1–3x/sem, moderado 4–5x/sem, alto 6–7x/sem,
+    /// atleta 2x/dia); the owner asked for days of exercise and the kind of
+    /// exercise (2026-10-10). The sentence form, the text of "Sedentário" and
+    /// the line that says which exercise counts are a proposal of the
+    /// orchestrator, announced to the owner on 2026-10-10/11, who can strike
+    /// any of it.
+    @Test(arguments: SupportedAppLanguage.allCases)
+    func signUpReportActivityLevelCopyIsExact(_ language: SupportedAppLanguage) {
+        expectExactCopy([
+            ("onboarding.routine.activity-level.detail",
+             "Conte os dias em que você faz exercício: musculação, corrida, esporte, aula, pedal ou natação.",
+             "Count the days you exercise: strength training, running, sports, classes, cycling or swimming."),
+            ("onboarding.routine.activity-level.sedentary.detail",
+             "Não faz exercício.", "Does not exercise."),
+            ("onboarding.routine.activity-level.light.detail",
+             "Exercício de 1 a 3 dias por semana.", "Exercise 1 to 3 days a week."),
+            ("onboarding.routine.activity-level.moderate.detail",
+             "Exercício de 4 a 5 dias por semana.", "Exercise 4 to 5 days a week."),
+            ("onboarding.routine.activity-level.high.detail",
+             "Exercício de 6 a 7 dias por semana.", "Exercise 6 to 7 days a week."),
+            ("onboarding.routine.activity-level.athlete.detail",
+             "Treina 2 vezes por dia.", "Trains 2 times a day."),
+            // Locks: the names of the levels and of the field are unchanged.
+            ("onboarding.routine.activity-level.title", "Nível de atividade", "Activity level"),
+            ("onboarding.routine.activity-level.sedentary", "Sedentário", "Sedentary"),
+            ("onboarding.routine.activity-level.light", "Leve", "Light"),
+            ("onboarding.routine.activity-level.moderate", "Moderado", "Moderate"),
+            ("onboarding.routine.activity-level.high", "Alto", "High"),
+            ("onboarding.routine.activity-level.athlete", "Atleta", "Athlete"),
+        ], language)
+    }
+
+    /// P-TIMEZONE: the line under the time zone of the first step. It says
+    /// where the value comes from (the phone's clock setting, never the
+    /// location) and that it can be changed.
+    @Test(arguments: SupportedAppLanguage.allCases)
+    func signUpReportTimeZoneOriginCopyIsExact(_ language: SupportedAppLanguage) {
+        expectExactCopy([
+            ("onboarding.welcome.time-zone.detail",
+             "O app começa com o fuso do relógio do seu aparelho. Não usa a sua localização. Toque para trocar.",
+             "The app starts with the time zone of your device's clock. It does not use your location. Tap to change."),
+            // Lock: the field's title is unchanged.
+            ("onboarding.welcome.time-zone.title", "Fuso horário", "Time zone"),
+        ], language)
+    }
+
     @Test(arguments: SupportedAppLanguage.allCases)
     func testEveryReviewedPublicCatalogKeyHasBothLanguages(
         _ language: SupportedAppLanguage
@@ -374,6 +436,18 @@ struct LocalizationContractTests {
             // Second update (2026-10-10): the effort of a plan draft.
             "plan.draft.detail.rpe",
             "plan.draft.detail.rpe.scale-format",
+            // Update of 2026-10-11 (P-BACK): the way back at the top.
+            "onboarding.back",
+            "onboarding.back.previous-step",
+            // Update of 2026-10-11 (P-ACTIVITY): what each level means.
+            "onboarding.routine.activity-level.detail",
+            "onboarding.routine.activity-level.sedentary.detail",
+            "onboarding.routine.activity-level.light.detail",
+            "onboarding.routine.activity-level.moderate.detail",
+            "onboarding.routine.activity-level.high.detail",
+            "onboarding.routine.activity-level.athlete.detail",
+            // Update of 2026-10-11 (P-TIMEZONE): where the time zone comes from.
+            "onboarding.welcome.time-zone.detail",
         ]
 
         for key in reviewedKeys {

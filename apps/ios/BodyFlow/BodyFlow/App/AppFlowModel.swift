@@ -64,6 +64,13 @@ final class AppFlowModel {
     /// Set while the root shows the sign-up load error; `nil` everywhere else.
     private(set) var onboardingLoadFailure: OnboardingLoadFailure?
 
+    private var restoredOnboardingRepository: (any OnboardingRepository)?
+
+    /// The immutable scope used by the restore is also the model's repository.
+    var onboardingRepositoryForCurrentOwner: any OnboardingRepository {
+        restoredOnboardingRepository ?? onboarding
+    }
+
     var onboardingOwnerToken: OnboardingOwnerToken? {
         guard case .onboarding(let userID, _) = state else { return nil }
         return OnboardingOwnerToken(userID: userID, restoreGeneration: onboardingRestoreGeneration)
@@ -335,7 +342,8 @@ final class AppFlowModel {
     private func restoreOnboarding(_ session: AuthSession) async {
         let restoreID = beginOnboardingRestore()
         do {
-            let serverState = try await onboarding.loadState(for: session.userID)
+            let scopedOnboarding = try await onboarding.scoped(for: session.userID)
+            let serverState = try await scopedOnboarding.loadState(for: session.userID)
             guard canPublishOnboardingRestore(restoreID) else {
                 finishOnboardingRestoreIfCurrent(restoreID)
                 return
@@ -362,6 +370,7 @@ final class AppFlowModel {
             draft = OnboardingResumePolicy.normalizedDraft(draft, requirements: serverState.requirements,
                 developmentConsentAvailability: developmentConsentAvailability,
                 historicalCompletedAt: serverState.completion.completedAt, now: now())
+            restoredOnboardingRepository = scopedOnboarding
             publishOnboardingRestore(
                 session: session,
                 draft: draft,
@@ -388,6 +397,7 @@ final class AppFlowModel {
     }
 
     private func beginOnboardingRestore() -> UUID {
+        restoredOnboardingRepository = nil
         let restoreID = UUID()
         activeOnboardingRestoreID = restoreID
         return restoreID
@@ -404,6 +414,7 @@ final class AppFlowModel {
 
     private func invalidateOnboardingRestore() {
         activeOnboardingRestoreID = nil
+        restoredOnboardingRepository = nil
     }
 
     private func publishOnboardingRestore(
@@ -438,6 +449,7 @@ final class AppFlowModel {
     }
 
     private func publishCompletedOnboardingRestore(session: AuthSession) {
+        restoredOnboardingRepository = nil
         currentSession = AuthSession(
             userID: session.userID,
             email: session.email,

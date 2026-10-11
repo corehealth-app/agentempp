@@ -75,10 +75,19 @@ struct WelcomeStepView: View {
                     selectionRow(timeZone.city, detail: timeZone.zoneName)
                 }
                 .buttonStyle(.bodyFlowRow)
-                .accessibilityHint(
-                    model.accessibilityHint(for: [.timeZoneInvalid])
-                )
+                .accessibilityHint(timeZoneHint)
                 .accessibilityIdentifier("onboarding.timezone")
+                // P-TIMEZONE (reported on 2026-10-10: "Ele já colocou aqui o
+                // fuso dos eua" / "Não se se ele pegou pela minha
+                // localização"). The value was right — the sign-up starts from
+                // the phone's own clock setting (`TimeZone.current`) and the
+                // app never reads where the person is — but nothing said so,
+                // nor that it can be changed.
+                Text(copy("onboarding.welcome.time-zone.detail"))
+                    .font(BodyFlowTypography.caption)
+                    .foregroundStyle(BodyFlowColor.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("onboarding.timezone.origin")
                 OnboardingFieldIssue(model: model, candidates: [.timeZoneInvalid])
             }
         }
@@ -110,6 +119,17 @@ struct WelcomeStepView: View {
             identifier: model.draft.timeZoneIdentifier,
             language: language
         )
+    }
+
+    /// What VoiceOver adds on the time zone itself: its error, when there is
+    /// one, and then where the value comes from.
+    private var timeZoneHint: String {
+        [
+            model.accessibilityHint(for: [.timeZoneInvalid]),
+            copy("onboarding.welcome.time-zone.detail"),
+        ]
+        .filter { !$0.isEmpty }
+        .joined(separator: " ")
     }
 
     private func selectionRow(_ title: String, detail: String?) -> some View {

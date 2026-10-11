@@ -861,6 +861,8 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
             "BodyFlow/Features/Onboarding/OnboardingLoadErrorView.swift",
             // Second update (2026-10-10): the password field with its eye.
             "BodyFlow/Features/Auth/AuthPasswordField.swift",
+            // Update of 2026-10-11 (P-ACTIVITY): the rows of the activity level.
+            "BodyFlow/Features/Onboarding/RoutineStepView.swift",
         ]
         var offenders: [String] = []
         for path in reviewedSources {
@@ -881,6 +883,9 @@ final class BodyFlowPremiumRenderingTests: XCTestCase {
             "BodyFlow/Features/Onboarding/ObjectiveStepView.swift",
             "BodyFlow/Features/Onboarding/PersonaStepView.swift",
             "BodyFlow/Features/Onboarding/ConsentStepView.swift",
+            // Update of 2026-10-11 (P-ACTIVITY): the activity level is five
+            // rows that say what each level means, no longer a menu of names.
+            "BodyFlow/Features/Onboarding/RoutineStepView.swift",
         ]
         var offenders: [String] = []
         for path in reviewedSources {

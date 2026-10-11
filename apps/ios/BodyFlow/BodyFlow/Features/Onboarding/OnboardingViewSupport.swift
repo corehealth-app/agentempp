@@ -453,6 +453,23 @@ extension ActivityLevel {
             OnboardingCopy.string("onboarding.routine.activity-level.athlete", language: language)
         }
     }
+
+    /// What the level means, in days of exercise (P-ACTIVITY, 2026-10-11).
+    /// Presentation only: the stored value and its factor are untouched.
+    func onboardingDetail(for language: SupportedAppLanguage) -> String {
+        switch self {
+        case .sedentary:
+            OnboardingCopy.string("onboarding.routine.activity-level.sedentary.detail", language: language)
+        case .light:
+            OnboardingCopy.string("onboarding.routine.activity-level.light.detail", language: language)
+        case .moderate:
+            OnboardingCopy.string("onboarding.routine.activity-level.moderate.detail", language: language)
+        case .high:
+            OnboardingCopy.string("onboarding.routine.activity-level.high.detail", language: language)
+        case .athlete:
+            OnboardingCopy.string("onboarding.routine.activity-level.athlete.detail", language: language)
+        }
+    }
 }
 
 extension WaterIntake {

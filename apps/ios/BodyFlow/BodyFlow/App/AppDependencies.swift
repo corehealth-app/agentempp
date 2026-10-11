@@ -88,7 +88,8 @@ struct AppDependencies: Sendable {
         authenticationSessionStore: AuthenticationSessionStore? = nil,
         supabaseAuthFetch: SupabaseAuthRemoteClient.Fetch? = nil,
         sessionLifecycleOverride: (any SessionLifecycleProviding)? = nil,
-        sessionRefreshPolicy: SessionRefreshPolicy = .production
+        sessionRefreshPolicy: SessionRefreshPolicy = .production,
+        onboardingDeviceDraft: OnboardingDeviceDraftStore = .device
     ) -> AppDependencies {
         let secureStore: any SecureStoring = switch configuration.demoStorageBoundary {
         case .memory:
@@ -150,6 +151,9 @@ struct AppDependencies: Sendable {
                         patientTimeZoneStore,
                         LocalReminderSessionClearer(scheduler: .system),
                         MediaStagingSessionClearer(staging: MediaStagingStore()),
+                        // An unfinished sign-up kept on the phone goes with
+                        // the session that was filling it.
+                        OnboardingDeviceDraftSessionClearer(store: onboardingDeviceDraft),
                     ]),
                     refreshPolicy: sessionRefreshPolicy
                 )
@@ -604,7 +608,17 @@ struct AppDependencies: Sendable {
 
         let onboarding: any OnboardingRepository
         #if DEBUG
-        if configuration.mode == .demo {
+        if configuration.mode == .demo, configuration.usesOnboardingDeviceDraftFixture {
+            // UI-test fixture (A4): the repository of a real account over a
+            // stand-in server, keeping its draft in a folder of its own.
+            let fixtureDraft = OnboardingDeviceDraftFixture.store
+            if configuration.shouldResetDemoState { fixtureDraft.clear() }
+            onboarding = MobileOnboardingRepository(
+                transport: OnboardingDeviceDraftFixtureTransport(),
+                deviceDraft: fixtureDraft,
+                sessionLifecycle: OnboardingDeviceDraftFixtureLifecycle(store: fixtureDraft)
+            )
+        } else if configuration.mode == .demo {
             onboarding = OnboardingPreviewRepository(
                 stateStore: stateStore,
                 buildFlavor: buildFlavor,
@@ -617,13 +631,21 @@ struct AppDependencies: Sendable {
                 eligibilityScenario: configuration.onboardingEligibilityScenario ?? .choice
             )
         } else if let transport = apiClient as? MobileAPITransport {
-            onboarding = MobileOnboardingRepository(transport: transport)
+            onboarding = MobileOnboardingRepository(
+                transport: transport,
+                deviceDraft: onboardingDeviceDraft,
+                sessionLifecycle: releaseLifecycle
+            )
         } else {
             onboarding = UnavailableOnboardingRepository()
         }
         #else
         if let transport = apiClient as? MobileAPITransport {
-            onboarding = MobileOnboardingRepository(transport: transport)
+            onboarding = MobileOnboardingRepository(
+                transport: transport,
+                deviceDraft: onboardingDeviceDraft,
+                sessionLifecycle: releaseLifecycle
+            )
         } else {
             onboarding = UnavailableOnboardingRepository()
         }

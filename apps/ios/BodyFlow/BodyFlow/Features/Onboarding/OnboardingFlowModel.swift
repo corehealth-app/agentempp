@@ -308,6 +308,14 @@ final class OnboardingFlowModel {
     var visibleSteps: [OnboardingStep] { isReacceptance ? [.consent, .completion] : OnboardingStep.allCases }
     var unresolvedCompletion: Bool { pendingCompletion != nil }
     var allowsDraftEditing: Bool { isActive && !didComplete && pendingCompletion == nil }
+    /// Whether a step before this one can be returned to. There is none on
+    /// the first step (of the sign-up, or of a new acceptance of the
+    /// documents), while a completion is pending, and once the sign-up was
+    /// accepted (the entry message).
+    var canGoBack: Bool {
+        guard allowsDraftEditing, let index = visibleSteps.firstIndex(of: step) else { return false }
+        return index > 0
+    }
     var hasCurrentEligibilityDecision: Bool {
         eligibilityDecision != nil && eligibilitySnapshot == currentEligibilitySnapshot()
     }
@@ -332,6 +340,20 @@ final class OnboardingFlowModel {
         draft.currentStep = previous
         onStepChanged(previous)
         await telemetry.record(.onboardingStepViewed(previous.telemetryValue))
+        await keepDraftOnDevice()
+    }
+
+    /// Keeps the unfinished sign-up on this iPhone (a real account; see
+    /// `OnboardingDeviceDraftStore`). It runs when the step changes and when
+    /// the person is about to leave the app — another app, the camera, the
+    /// photo library, Settings, the lock screen — so that an app ended in the
+    /// middle reopens where the person was, with what was typed.
+    ///
+    /// Nothing is kept for a new acceptance of the documents (that account's
+    /// data is the server's), while a completion is pending, or after it.
+    func keepDraftOnDevice() async {
+        guard allowsDraftEditing, !isReacceptance else { return }
+        await repository.keepDraftOnDevice(draft, for: userID)
     }
 
     func continueFromCurrentStep() async {
@@ -385,6 +407,7 @@ final class OnboardingFlowModel {
             onStepChanged(nextStep)
             await telemetry.record(.onboardingStepCompleted(completedStep.telemetryValue))
             await telemetry.record(.onboardingStepViewed(nextStep.telemetryValue))
+            await keepDraftOnDevice()
         } catch is CancellationError {
             finishCancelledSubmission(id)
         } catch {

@@ -5,7 +5,7 @@
 > (1) o código, (2) o teste que a trava, (3) este documento — na mesma PR.
 > Nunca mude uma fórmula "no susto" por um print de paciente sem checar aqui.
 
-Última revisão: 2026-10-07.
+Última revisão: 2026-10-11.
 
 ---
 
@@ -23,6 +23,40 @@
   dia" usado no balanço do §2c é derivado dela, não recalculado do perfil.
 - Código: `packages/core/src/engine/targets.ts` (`computeDailyTargets`),
   `packages/agent/src/calc-targets.ts`, `calc-config-loader.ts`.
+
+### Texto mostrado no cadastro do app por nível
+
+O pacote iOS A2 usa os textos abaixo. **Não muda nenhum fator**, fórmula,
+identificador persistido ou comportamento do motor compartilhado/WhatsApp.
+
+| Nível (`activity_level`) | Texto em pt-BR | Origem |
+|---|---|---|
+| Sedentário (`sedentario`) | Não faz exercício. | Proposta do orquestrador; o relato do médico não traz esta faixa. |
+| Leve (`leve`) | Exercício de 1 a 3 dias por semana. | Faixa do médico de 1–3 vezes/semana, apresentada em dias de exercício a pedido de Eduardo. |
+| Moderado (`moderado`) | Exercício de 4 a 5 dias por semana. | Faixa do médico de 4–5 vezes/semana, apresentada em dias de exercício a pedido de Eduardo. |
+| Alto (`alto`) | Exercício de 6 a 7 dias por semana. | Faixa do médico de 6–7 vezes/semana, apresentada em dias de exercício a pedido de Eduardo. |
+| Atleta (`atleta`) | Treina 2 vezes por dia. | Faixa do médico de 2 vezes/dia. |
+
+Sob o título, o app explica: “Conte os dias em que você faz exercício:
+musculação, corrida, esporte, aula, pedal ou natação.” Essa lista e a forma
+das frases são **decisão do orquestrador, anunciada ao dono em 2026-10-10/11,
+que pode riscar qualquer uma**, não aprovação do médico. A frequência de
+musculação continua sendo uma pergunta separada.
+
+Fonte das faixas: pergunta 3 de `method-backlog/perguntas-medico.json` no
+handoff local de 2026-10-04, registrada também em
+`e3/onboarding-physician-feedback-20261010.json` (P-ACTIVITY). Implementação:
+`ActivityLevel.onboardingDetail` e `RoutineStepView`; cópia exata e
+renderização travadas em `LocalizationContractTests` e
+`OnboardingActivityLevelRenderingTests`.
+
+> RC P-ACTIVITY — cenário nível “Sedentário” variante faixa escrita pelo médico (a regra dele traz faixa para leve, moderado, alto e atleta; “Não faz exercício.” é proposta do orquestrador) NÃO coberta nesta PR (pendência da audit 2026-10-11).
+>
+> RC P-ACTIVITY — cenário faixas de leve, moderado, alto e atleta escritas pelo médico para a pergunta do cadastro variante confirmação do médico de que valem como estão na tela do app, na forma “dias de exercício” pedida pelo dono NÃO coberta nesta PR (pendência da audit 2026-10-11).
+>
+> RC P-ACTIVITY — cenário linha de quais exercícios contam variante confirmação do dono ou do médico de quais exercícios contam, e de que a musculação conta (a pergunta seguinte da mesma tela é “Musculação por semana”) NÃO coberta nesta PR (pendência da audit 2026-10-11).
+>
+> RC P-ACTIVITY — cenário “qual tipo de exercício, como era no WhatsApp” variante texto fixo do WhatsApp com o tipo de exercício por nível (não foi encontrado nenhum; a produção antiga não foi lida) NÃO coberta nesta PR (pendência da audit 2026-10-11).
 
 ## 1b. Meta de proteína diária (`protein_target`) — regra M1
 

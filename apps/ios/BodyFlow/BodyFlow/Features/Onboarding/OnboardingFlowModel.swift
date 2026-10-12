@@ -227,6 +227,7 @@ final class OnboardingFlowModel {
         let developmentConsent: DevelopmentConsentAcceptance?
     }
     private var pendingCompletion: PendingCompletion?
+    private var bodyPhotoDeletionIntent: OnboardingBodyPhotoDeletionIntent?
     private var verifiedPhotoConfirmation: OnboardingBodyPhotoConfirmation?
     private var eligibilitySnapshot: EligibilitySnapshot?
     private var didComplete = false
@@ -312,6 +313,27 @@ final class OnboardingFlowModel {
     var visibleSteps: [OnboardingStep] { isReacceptance ? [.consent, .completion] : OnboardingStep.allCases }
     var unresolvedCompletion: Bool { pendingCompletion != nil }
     var allowsDraftEditing: Bool { isActive && !didComplete && pendingCompletion == nil }
+
+    var hasPendingBodyPhotoDeletion: Bool { bodyPhotoDeletionIntent != nil }
+
+    /// The pending operation is independent of the editable body-fat value.
+    /// A later intent supersedes the previous one without letting it finish us.
+    func beginBodyPhotoDeletion(for owner: OnboardingOwnerToken) -> OnboardingBodyPhotoDeletionIntent? {
+        guard allowsDraftEditing, !isReacceptance, !isCancellationRequested,
+              operationState != .saving, owner.userID == userID else { return nil }
+        let intent = OnboardingBodyPhotoDeletionIntent(owner: owner)
+        bodyPhotoDeletionIntent = intent
+        invalidateBodyPhotoConfirmation()
+        return intent
+    }
+
+    @discardableResult
+    func finishBodyPhotoDeletion(_ intent: OnboardingBodyPhotoDeletionIntent) -> Bool {
+        guard allowsDraftEditing, !isCancellationRequested,
+              bodyPhotoDeletionIntent == intent else { return false }
+        bodyPhotoDeletionIntent = nil
+        return true
+    }
     var requiresBodyPhotoRevalidation: Bool {
         draft.bodyFatOrigin == .photos && (draft.bodyPhotoConfirmation == nil
             || verifiedPhotoConfirmation != draft.bodyPhotoConfirmation
@@ -320,7 +342,7 @@ final class OnboardingFlowModel {
 
     @discardableResult
     func confirmBodyPhotoEstimate(_ state: SignupBodyPhotoState) -> Bool {
-        guard allowsDraftEditing, !isReacceptance, !isCancellationRequested,
+        guard allowsDraftEditing, !isReacceptance, !isCancellationRequested, !hasPendingBodyPhotoDeletion,
               let sex = draft.biologicalSex,
               let confirmation = OnboardingBodyPhotoConfirmation.candidate(from: state, sex: sex),
               let canonicalValue = Double(NSDecimalNumber(decimal: confirmation.value).stringValue) else { return false }
@@ -333,7 +355,8 @@ final class OnboardingFlowModel {
     }
 
     func reconcileBodyPhotoState(_ state: SignupBodyPhotoState?) {
-        guard allowsDraftEditing, !isReacceptance, !isCancellationRequested, draft.bodyFatOrigin == .photos else { return }
+        guard allowsDraftEditing, !isReacceptance, !isCancellationRequested,
+              !hasPendingBodyPhotoDeletion, draft.bodyFatOrigin == .photos else { return }
         guard let state, let sex = draft.biologicalSex,
               let current = OnboardingBodyPhotoConfirmation.candidate(from: state, sex: sex),
               current == draft.bodyPhotoConfirmation, current.matches(draft) else {
@@ -402,7 +425,8 @@ final class OnboardingFlowModel {
     }
 
     func continueFromCurrentStep() async {
-        guard allowsDraftEditing, operationState != .saving, !isCancellationRequested, !requiresBodyPhotoRevalidation else { return }
+        guard allowsDraftEditing, operationState != .saving, !isCancellationRequested,
+              !requiresBodyPhotoRevalidation, !hasPendingBodyPhotoDeletion else { return }
         let issues = issues(for: step)
         validationIssues = issues
         guard issues.isEmpty else { operationState = .idle; return }
@@ -464,7 +488,7 @@ final class OnboardingFlowModel {
     func prepareObjectiveIfNeeded() async {
         guard step == .objective, !isReacceptance, allowsDraftEditing,
               operationState != .saving, !isCancellationRequested, !hasCurrentEligibilityDecision,
-              !requiresBodyPhotoRevalidation else { return }
+              !requiresBodyPhotoRevalidation, !hasPendingBodyPhotoDeletion else { return }
         let prerequisite = prerequisiteIssues()
         guard prerequisite.isEmpty, let captured = currentEligibilitySnapshot() else {
             validationIssues = prerequisite
@@ -494,7 +518,8 @@ final class OnboardingFlowModel {
 
     func complete() async {
         guard isActive, step == .completion, draft.currentStep == .completion,
-              operationState != .saving, !didComplete, !isCancellationRequested else { return }
+              operationState != .saving, !didComplete, !isCancellationRequested,
+              !hasPendingBodyPhotoDeletion else { return }
         let submittedDraft: OnboardingDraft
         let key: IdempotencyKey
         if let pendingCompletion {

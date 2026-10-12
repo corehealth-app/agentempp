@@ -17,11 +17,14 @@ final class SignupBodyPhotoPresentationModel {
     private let isCurrentOwner: @MainActor @Sendable (OnboardingOwnerToken) -> Bool
     private var scope: SignupBodyPhotoCaptureScope?
     @ObservationIgnored private var bindingTask: Task<SignupBodyPhotoCaptureScope, Error>?
+    @ObservationIgnored private var deletionTask: Task<Void, Never>?
+    private var deletionIntent: OnboardingBodyPhotoDeletionIntent?
     private var epoch = 0
     private var observerEpoch: Int?
 
     private(set) var choice: SignupBodyFatChoice?
     private(set) var capture: SignupBodyPhotoCaptureModel?
+    private(set) var deletion: SignupBodyPhotoExplicitDeletionModel?
     private(set) var isActive = true
     private(set) var loadFailed = false
 
@@ -32,7 +35,7 @@ final class SignupBodyPhotoPresentationModel {
     }
 
     var route: SignupBodyPhotoRoute? {
-        guard currentOwner, choice == .photos, availability == .available,
+        guard currentOwner, deletionIntent == nil, choice == .photos, availability == .available,
               let capture else { return nil }
         guard capture.hasAcceptedConsent else { return .consent }
         if let state = capture.state, state.estimate != nil,
@@ -55,7 +58,7 @@ final class SignupBodyPhotoPresentationModel {
     }
 
     func load() async {
-        guard currentOwner, !Task.isCancelled, let capability else { return }
+        guard currentOwner, deletionIntent == nil, !Task.isCancelled, let capability else { return }
         epoch += 1
         let loadingEpoch = epoch
         observerEpoch = loadingEpoch
@@ -144,9 +147,60 @@ final class SignupBodyPhotoPresentationModel {
         await capture.retry(pose: pose)
     }
 
+    func deletePhotos() async {
+        // Join before consulting phase: ready can be published before the
+        // parent has adopted it, and must not start a second DELETE there.
+        if let deletionTask { await deletionTask.value; return }
+        guard allowsAction, deletionIntent == nil, let scope, let capture,
+              let intent = flow.beginBodyPhotoDeletion(for: ownerToken) else { return }
+        deletionIntent = intent
+        let controller: SignupBodyPhotoExplicitDeletionModel
+        if let deletion { controller = deletion }
+        else {
+            controller = SignupBodyPhotoExplicitDeletionModel(scope: scope, ownerToken: ownerToken,
+                captureModel: capture, timeProvider: timeProvider, keyProvider: keyProvider,
+                pollingTiming: pollingTiming,
+                onStateObserved: { [weak self] state in self?.observe(state) },
+                isCurrentOwner: isCurrentOwner)
+            deletion = controller
+        }
+        await runDeletion(controller, intent: intent, retry: false)
+    }
+
+    func retryDeletion() async {
+        if let deletionTask { await deletionTask.value; return }
+        guard allowsAction, let deletion, let intent = deletionIntent else { return }
+        await runDeletion(deletion, intent: intent, retry: true)
+    }
+
+    private func runDeletion(_ controller: SignupBodyPhotoExplicitDeletionModel,
+        intent: OnboardingBodyPhotoDeletionIntent, retry: Bool) async {
+        let work = Task {
+            defer { self.deletionTask = nil }
+            // A caller can cancel after installing the intent but before D1
+            // starts. Idle has no attempt yet; recovery starts that dispatch.
+            if retry && controller.phase != .idle { await controller.retryDeletion() }
+            else { await controller.deletePhotos() }
+            guard self.currentOwner, !Task.isCancelled, self.deletion === controller,
+                  self.deletionIntent == intent, controller.phase == .ready,
+                  controller.receipt != nil, controller.captureModel.state != nil,
+                  self.flow.finishBodyPhotoDeletion(intent) else { return }
+            // D1 already performed the guarded GET on the retained scope.
+            // A mode change cannot invalidate this separate operation identity.
+            self.capture = controller.captureModel
+            self.deletionIntent = nil
+            self.loadFailed = false
+            self.observerEpoch = self.choice == .photos ? self.epoch : nil
+        }
+        deletionTask = work
+        await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
+    }
+
     func invalidate() {
         epoch += 1; observerEpoch = nil; isActive = false
         bindingTask?.cancel()
+        deletionTask?.cancel()
+        deletion?.invalidate()
         capture?.invalidate()
     }
 
@@ -164,7 +218,7 @@ final class SignupBodyPhotoPresentationModel {
     }
 
     private var allowsPhotoAction: Bool {
-        allowsAction && choice == .photos && availability == .available
+        allowsAction && deletionIntent == nil && choice == .photos && availability == .available
     }
 
     private func checkLoad(_ loadingEpoch: Int) throws {
@@ -172,7 +226,7 @@ final class SignupBodyPhotoPresentationModel {
     }
 
     private func observe(_ state: SignupBodyPhotoState?) {
-        guard currentOwner, choice == .photos, observerEpoch == epoch else { return }
+        guard currentOwner, deletionIntent == nil, choice == .photos, observerEpoch == epoch else { return }
         flow.reconcileBodyPhotoState(state)
     }
 

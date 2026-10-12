@@ -15,6 +15,8 @@ final class SignupBodyPhotoExplicitDeletionModel {
     private let ownerToken: OnboardingOwnerToken
     private let timeProvider: any TimeProviding
     private let keyProvider: any IdempotencyKeyProviding
+    private let pollingTiming: SignupBodyPhotoPollingTiming
+    private let onStateObserved: @MainActor (SignupBodyPhotoState?) -> Void
     private let isCurrentOwner: @MainActor @Sendable (OnboardingOwnerToken) -> Bool
     private var epoch = 0
     private var producers: [UUID: Task<Void, Never>] = [:]
@@ -41,9 +43,12 @@ final class SignupBodyPhotoExplicitDeletionModel {
          captureModel: SignupBodyPhotoCaptureModel,
          timeProvider: any TimeProviding = SystemTimeProvider(),
          keyProvider: any IdempotencyKeyProviding = RandomIdempotencyKeyProvider(),
+         pollingTiming: SignupBodyPhotoPollingTiming = .live(),
+         onStateObserved: @escaping @MainActor (SignupBodyPhotoState?) -> Void = { _ in },
          isCurrentOwner: @escaping @MainActor @Sendable (OnboardingOwnerToken) -> Bool) {
         self.scope = scope; self.ownerToken = ownerToken; self.captureModel = captureModel
         self.timeProvider = timeProvider; self.keyProvider = keyProvider
+        self.pollingTiming = pollingTiming; self.onStateObserved = onStateObserved
         self.isCurrentOwner = isCurrentOwner
     }
 
@@ -158,7 +163,9 @@ final class SignupBodyPhotoExplicitDeletionModel {
         try await boundary(epoch, id: id)
         phase = .awaitingReload
         let candidate = SignupBodyPhotoCaptureModel(scope: scope, ownerToken: ownerToken,
-            timeProvider: timeProvider, keyProvider: keyProvider, isCurrentOwner: isCurrentOwner)
+            timeProvider: timeProvider, keyProvider: keyProvider,
+            pollingTiming: pollingTiming, onStateObserved: onStateObserved,
+            isCurrentOwner: isCurrentOwner)
         reloadCapture = candidate
         var published = false
         defer {

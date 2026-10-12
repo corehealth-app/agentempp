@@ -17,7 +17,7 @@ final class SignupBodyPhotoCleanupCoordinator {
         self.isCurrentOwner = isCurrentOwner
     }
 
-    func run(eventID: UUID) async {
+    func run(eventID: UUID, freshObservation: SignupBodyPhotoCleanupFreshObservation? = nil) async {
         guard isCurrentOwner(), handledEvents.insert(eventID).inserted else { return }
         work?.cancel()
         let operation = UUID()
@@ -27,7 +27,7 @@ final class SignupBodyPhotoCleanupCoordinator {
             do {
                 try await scope.performWork { [weak self] in
                     guard let self else { return }
-                    try await self.processEvent(operation)
+                    try await self.processEvent(operation, freshObservation: freshObservation)
                 }
                 try await self.boundary(operation)
             } catch {
@@ -83,7 +83,8 @@ final class SignupBodyPhotoCleanupCoordinator {
         }
     }
 
-    private func processEvent(_ operation: UUID) async throws {
+    private func processEvent(_ operation: UUID,
+        freshObservation: SignupBodyPhotoCleanupFreshObservation?) async throws {
         try await boundary(operation)
         let buffered = Array(pendingOfficial.values)
         for observation in buffered {
@@ -97,7 +98,20 @@ final class SignupBodyPhotoCleanupCoordinator {
         let snapshot = try await scope.loadQueue()
         try await boundary(operation)
         var visited: Set<String> = []
-        if !snapshot.unboundCreates.isEmpty {
+        if let freshObservation {
+            if let current = freshObservation.currentScope,
+               SignupBodyPhotoCleanupQueue.validGeneration(current.generation) {
+                visited.insert(current.generation)
+                // Reuse the accepted positive result. A snapshot obtained after
+                // that response cannot authorize negative revision-based clearing.
+                if current.state == .pending {
+                    do {
+                        try await apply(current, expectedRevision: snapshot.scope(current.generation)?.revision,
+                            operation: operation)
+                    } catch { try await boundary(operation) }
+                }
+            }
+        } else if !snapshot.unboundCreates.isEmpty {
             do {
                 let current = try await scope.readScope(nil)
                 try await boundary(operation)

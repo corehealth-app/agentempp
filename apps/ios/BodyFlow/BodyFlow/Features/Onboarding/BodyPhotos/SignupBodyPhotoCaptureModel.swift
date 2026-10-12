@@ -76,6 +76,7 @@ final class SignupBodyPhotoCaptureModel {
     private var consentTask: Task<Void, Never>?
     private var pipelines: [SignupBodyPhotoPose: Pipeline] = [:]
     private var tasks: [SignupBodyPhotoPose: Task<Void, Never>] = [:]
+    private var ownedMutationTasks: [UUID: Task<Void, Never>] = [:]
     private var ownedFiles: [UUID: URL] = [:]
     private var cleanupRequested: Set<UUID> = []
     private var localCleanups: [UUID: LocalCleanup] = [:]
@@ -165,6 +166,7 @@ final class SignupBodyPhotoCaptureModel {
         let context = Context(epoch: epoch, nonce: consentNonce, pose: nil)
         declined = false; hasAcceptedConsent = false; phase = .awaitingConsent
         let work = Task {
+            defer { self.ownedMutationTasks[context.nonce] = nil }
             do {
                 try await self.boundary(context, consent: true)
                 try await self.scope.performWork {
@@ -195,6 +197,7 @@ final class SignupBodyPhotoCaptureModel {
             self.consentResults[context.nonce] = nil
         }
         consentTask = work
+        ownedMutationTasks[context.nonce] = work
         await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
         if consentNonce == context.nonce { consentTask = nil }
         armPollingIfNeeded()
@@ -205,8 +208,7 @@ final class SignupBodyPhotoCaptureModel {
         pausePolling(clearAnchors: true)
         epoch += 1
         declined = true; hasAcceptedConsent = false; consentAttempt = nil
-        consentTask?.cancel()
-        for task in tasks.values { task.cancel() }
+        for task in ownedMutationTasks.values { task.cancel() }
         pipelines.removeAll()
         outcomes.removeAll()
         // Local cleanup is independent of a stopped upload pipeline.
@@ -239,12 +241,21 @@ final class SignupBodyPhotoCaptureModel {
     func invalidate() {
         pausePolling(clearAnchors: true)
         epoch += 1; isActive = false; hasAcceptedConsent = false
-        consentTask?.cancel()
-        for task in tasks.values { task.cancel() }
+        for task in ownedMutationTasks.values { task.cancel() }
         pipelines.removeAll()
         requestAllOwnedCleanup()
         state = nil; phase = .idle
         outcomes.removeAll(); consentResults.removeAll()
+    }
+
+    /// Waits for every retained local consumer, including replaced tasks.
+    /// Callers handle local file cleanup separately; no remote absence is proved.
+    func invalidateAndWaitForOwnedCaptureWork() async {
+        let mutations = Array(ownedMutationTasks.values)
+        let polls = Array(ownedPollTasks.values)
+        invalidate()
+        for task in mutations { await task.value }
+        for task in polls { await task.value }
     }
 
     /// Drains only explicitly requested local cleanup. It never waits for a
@@ -278,6 +289,7 @@ final class SignupBodyPhotoCaptureModel {
     private func start(_ context: Context, previous: Task<Void, Never>?, previousNonce: UUID?) async {
         guard let pose = context.pose else { return }
         let work = Task {
+            defer { self.ownedMutationTasks[context.nonce] = nil }
             do {
                 try await self.boundary(context)
                 try await self.scope.performWork {
@@ -321,6 +333,7 @@ final class SignupBodyPhotoCaptureModel {
             self.outcomes[context.nonce] = nil
         }
         tasks[pose] = work
+        ownedMutationTasks[context.nonce] = work
         await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
         if pipelines[pose]?.nonce == context.nonce { tasks[pose] = nil }
         armPollingIfNeeded()

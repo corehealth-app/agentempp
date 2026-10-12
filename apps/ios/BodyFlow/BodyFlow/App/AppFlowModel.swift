@@ -52,6 +52,7 @@ final class AppFlowModel {
     private let now: @MainActor () -> Date
     private let cancellationCheck: @MainActor () -> Bool
     private var activeOnboardingRestoreID: UUID?
+    private var publishedOnboardingActivationID: UUID?
     private let cleanupCoordinator: SignupBodyPhotoCleanupRootCoordinator
 
     private(set) var cleanupOwnerToken: SignupBodyPhotoCleanupOwnerToken?
@@ -77,6 +78,7 @@ final class AppFlowModel {
 
     var onboardingOwnerToken: OnboardingOwnerToken? {
         guard activeOnboardingRestoreID == nil,
+              publishedOnboardingActivationID == cleanupOwnerToken?.activationID,
               case .onboarding(let userID, _) = state else { return nil }
         return OnboardingOwnerToken(userID: userID, restoreGeneration: onboardingRestoreGeneration)
     }
@@ -522,6 +524,9 @@ final class AppFlowModel {
         presentationError = error
         onboardingLoadFailure = loadFailure
         onboardingRestoreGeneration += 1
+        // Ending a canceled restore must not grant a new activation authority
+        // over the preceding snapshot. Only a guarded publication binds them.
+        publishedOnboardingActivationID = cleanupOwnerToken?.activationID
         state = .onboarding(
             userID: session.userID,
             step: draft?.currentStep ?? .welcome

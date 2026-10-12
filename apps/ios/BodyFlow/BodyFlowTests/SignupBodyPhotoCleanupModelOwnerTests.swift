@@ -245,6 +245,77 @@ struct SignupBodyPhotoCleanupModelOwnerTests {
         }
     }
 
+    @Test("MC03 canceling a fresh activation cannot revive the preceding onboarding token or attach its G after retry")
+    func cancelledFreshActivationCannotReviveOldOnboardingAuthority() async throws {
+        let h = try await CleanupProcessorHarness()
+        defer { h.removeFolder() }
+        let factory = CleanupModelNextActivationFactory(scope: h.scope)
+        let incomplete = OnboardingServerState(locale: "pt-BR",
+            completion: .init(completed: false, completedAt: nil),
+            requirements: .unavailable, acceptedActions: [],
+            draft: BodyFlowTestFixtures.onboardingDraft(currentStep: .objective))
+        let repository = CleanupModelReplyRepository(replies: [
+            .success(incomplete),
+            .success(cleanupModelEdgeState(CleanupProcessorHarness.g2))
+        ])
+        let model = Self.model(repository, capability: factory.capability)
+        defer { model.setCleanupActive(false) }
+        await model.start()
+        let oldOnboarding = try #require(model.onboardingOwnerToken)
+        let oldActivation = try #require(model.cleanupOwnerToken)
+        let oldState = model.state
+        let initialQueue = try await h.queue()
+        #expect(initialQueue.knownScopes.isEmpty && initialQueue.unboundCreates.isEmpty)
+        #expect(await repository.snapshot().stateReads == 1)
+        let barrier = factory.newActivationBindingBarrier
+        let fresh = Task { await model.start(); await barrier.operationFinished() }
+        let entered = await barrier.entryOrOperationEnd()
+        if !entered {
+            await barrier.release(); await fresh.value
+            try #require(entered)
+        }
+        do {
+            let nextActivation = try #require(model.cleanupOwnerToken)
+            #expect(nextActivation.userID == oldActivation.userID)
+            #expect(nextActivation.activationID != oldActivation.activationID)
+            #expect(model.onboardingOwnerToken == nil)
+            // Root's cancellation handler cancels the bound task. The peer
+            // ignores cancellation until released; no second GET is performed.
+            fresh.cancel()
+            await barrier.release(); await fresh.value
+            #expect(model.state == oldState && model.cleanupOwnerToken == nextActivation)
+            #expect(await repository.snapshot().stateReads == 1)
+            #expect(model.onboardingOwnerToken == nil,
+                "Clearing active restore bookkeeping must not revive the preceding published token")
+            let staleEvent = await model.observeOnboardingCleanup(
+                .init(generation: CleanupProcessorHarness.g1, state: .pending), ownerToken: oldOnboarding)
+            #expect(staleEvent == nil)
+            #expect(try await h.queue() == initialQueue)
+            // The obsolete G can be buffered without disk effect. A valid
+            // retry bind then flushes it before the fresh authoritative GET.
+            await model.retryOnboardingRestore()
+            #expect(model.state == .authenticated(userID: CleanupProcessorHarness.a))
+            #expect(model.cleanupOwnerToken == nextActivation && model.onboardingOwnerToken == nil)
+            let final = try await h.queue()
+            #expect(final.scope(CleanupProcessorHarness.g1) == nil,
+                "The canceled activation must not let an old Flow callback become pending debt after rebind")
+            #expect(final.scope(CleanupProcessorHarness.g2)?.pending == true)
+            #expect(final.knownScopes.count == 1 && final.unboundCreates.isEmpty)
+            let source = await repository.snapshot()
+            #expect(source.stateReads == 2 && source.technicalReads == 0 && source.completionPosts == 0)
+            #expect(await factory.snapshot() == [CleanupProcessorHarness.a,
+                CleanupProcessorHarness.a, CleanupProcessorHarness.a])
+            #expect(model.cleanupEventTask == nil) // Inactive: no separate network sweep.
+            let peer = await h.peer.snapshot()
+            #expect(peer.reads.isEmpty && peer.repairs.isEmpty)
+            try await h.lifecycle.validate(h.lease)
+        } catch {
+            fresh.cancel()
+            await barrier.release(); await fresh.value
+            throw error
+        }
+    }
+
     private static func model(_ repository: CleanupModelReplyRepository,
         capability: SignupBodyPhotoCleanupCapability) -> AppFlowModel {
         AppFlowModel(authentication: CleanupModelAuthentication(session: cleanupModelSession()),

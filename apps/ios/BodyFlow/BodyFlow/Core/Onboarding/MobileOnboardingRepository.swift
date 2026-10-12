@@ -72,6 +72,46 @@ struct MobileOnboardingRepository: OnboardingRepository {
         }
     }
 
+    /// A pure technical GET. It never resumes or clears the device draft.
+    /// nil reads the current official scope; a literal G reads that history.
+    func loadBodyPhotoCleanupScope(generation: String?) async throws -> OnboardingBodyPhotoCleanupScope? {
+        try Task.checkCancellation()
+        guard let sessionLease, let sessionLifecycle else {
+            throw OnboardingRepositoryError.serviceUnavailable
+        }
+        try await sessionLifecycle.validate(sessionLease)
+        if let generation, !SignupBodyPhotoCleanupQueue.validGeneration(generation) {
+            throw OnboardingRepositoryError.invalidDraft
+        }
+        try Task.checkCancellation()
+        let state: OnboardingServerState
+        do {
+            state = try await transport.execute(MobileAPIRequest(
+                method: .get, path: "/api/mobile/v1/onboarding",
+                queryItems: generation.map { [URLQueryItem(name: "body_photo_cleanup_generation", value: $0)] } ?? []
+            ))
+        } catch {
+            // A late failure belongs to the same retained session as a late
+            // success. Validate it before exposing a recoverable network error.
+            try Task.checkCancellation()
+            try await sessionLifecycle.validate(sessionLease)
+            try Task.checkCancellation()
+            if error is CancellationError { throw CancellationError() }
+            if let failure = error as? SessionLifecycleError { throw failure }
+            if let failure = error as? MobileAPITransportError {
+                if failure == .sessionSuperseded { throw failure }
+                throw mapLoad(failure)
+            }
+            throw OnboardingRepositoryError.serviceUnavailable
+        }
+        try Task.checkCancellation()
+        try await sessionLifecycle.validate(sessionLease)
+        try Task.checkCancellation()
+        let expected = generation ?? state.completion.completedAt
+        guard let cleanup = state.bodyPhotoCleanup, cleanup.generation == expected else { return nil }
+        return cleanup
+    }
+
     func loadDraft(for userID: String) async throws -> OnboardingDraft? {
         try await loadState(for: userID).draft
     }
@@ -122,7 +162,8 @@ struct MobileOnboardingRepository: OnboardingRepository {
             completion: state.completion,
             requirements: state.requirements,
             acceptedActions: state.acceptedActions,
-            draft: kept
+            draft: kept,
+            bodyPhotoCleanup: state.bodyPhotoCleanup
         )
     }
 

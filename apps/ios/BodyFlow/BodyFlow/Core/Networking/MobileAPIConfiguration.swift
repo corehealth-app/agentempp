@@ -126,6 +126,10 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
         }
         components.path = path
         components.queryItems = queryItems.isEmpty ? nil : queryItems
+        // Form-style server parsers read a raw plus as a space. Escape only
+        // the plus still present after Foundation encoded the structured query.
+        components.percentEncodedQuery = components.percentEncodedQuery?
+            .replacingOccurrences(of: "+", with: "%2B")
         guard let url = components.url,
               url.scheme == configuration.origin.scheme,
               url.host == configuration.origin.host,

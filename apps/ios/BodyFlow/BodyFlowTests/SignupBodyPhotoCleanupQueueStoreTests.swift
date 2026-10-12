@@ -6,6 +6,29 @@ import Testing
 
 @Suite("Signup photo cleanup queue and protected store")
 struct SignupBodyPhotoCleanupQueueStoreTests {
+    @Test("invalid civil dates cannot authorize a cleanup scope or replace its stored bytes",
+          arguments: ["2026-02-30T11:22:33.123456Z", "2025-02-29T11:22:33Z", "2026-04-31T11:22:33+00:00"])
+    func rejectsImpossibleGenerationDates(_ generation: String) throws {
+        var queue = CleanupFixtures.empty()
+        #expect(throws: SignupBodyPhotoCleanupStoreError.invalidFormat) {
+            try queue.observePending(generation, newRevision: CleanupFixtures.id(90))
+        }
+        #expect(queue.knownScopes.isEmpty)
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("cleanup-date-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = SignupBodyPhotoCleanupStore(directory: folder)
+        try FileManager.default.createDirectory(at: store.root, withIntermediateDirectories: true)
+        let invalid = SignupBodyPhotoCleanupQueue(userHash: SignupBodyPhotoCleanupStore.userHash(CleanupFixtures.user),
+            knownScopes: [SignupBodyPhotoCleanupKnownScope(generation: generation, revision: CleanupFixtures.id(91),
+                operationID: nil, pending: true, repair: nil)])
+        let bytes = try JSONEncoder().encode(invalid)
+        try bytes.write(to: store.fileURL(for: CleanupFixtures.user))
+        #expect(throws: SignupBodyPhotoCleanupStoreError.invalidFormat) {
+            try store.mutate(for: CleanupFixtures.user) { current in current.rememberUnbound(CleanupFixtures.id(92)) }
+        }
+        #expect(try Data(contentsOf: store.fileURL(for: CleanupFixtures.user)) == bytes)
+    }
+
     @Test("Q01 known G survives ACK and repair identity survives JSON/reprepare")
     func generationsAndRepairAttemptAreRetained() throws {
         let inputs = CleanupQueueInputs()

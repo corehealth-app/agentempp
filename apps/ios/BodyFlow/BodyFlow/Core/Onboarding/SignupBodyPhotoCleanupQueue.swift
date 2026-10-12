@@ -129,8 +129,9 @@ struct SignupBodyPhotoCleanupQueue: Codable, Equatable, Sendable {
         }
     }
 
-    private static func validGeneration(_ value: String) -> Bool {
+    static func validGeneration(_ value: String) -> Bool {
         value.count <= 35 && value.range(of: #"^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,6})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$"#, options: .regularExpression) != nil
+            && OnboardingCivilDate.date(from: String(value.prefix(10)), timeZoneIdentifier: "UTC") != nil
             && (try? JSONDecoder().decode(APITimestamp.self, from: JSONEncoder().encode(value))) != nil
     }
 }
@@ -140,4 +141,3 @@ enum SignupBodyPhotoCleanupStoreError: Error, Equatable, Sendable {
     case unsupportedVersion
     case ownerMismatch
 }
-

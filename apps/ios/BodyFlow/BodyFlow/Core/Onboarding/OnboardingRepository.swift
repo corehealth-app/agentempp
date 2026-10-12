@@ -16,6 +16,7 @@ enum OnboardingRepositoryError: Error, Equatable, Sendable {
 }
 
 protocol OnboardingRepository: Sendable {
+    func loadBodyPhotoCleanupScope(generation: String?) async throws -> OnboardingBodyPhotoCleanupScope?
     /// Creates the repository the root keeps for this session owner.
     func scoped(for userID: String) async throws -> any OnboardingRepository
     func loadDraft(for userID: String) async throws -> OnboardingDraft?
@@ -40,6 +41,11 @@ protocol OnboardingRepository: Sendable {
 }
 
 extension OnboardingRepository {
+    /// Technical authority is unavailable in local/demo repositories.
+    func loadBodyPhotoCleanupScope(generation: String?) async throws -> OnboardingBodyPhotoCleanupScope? {
+        throw OnboardingRepositoryError.serviceUnavailable
+    }
+
     func scoped(for userID: String) async throws -> any OnboardingRepository { self }
 
     func keepDraftOnDevice(_ draft: OnboardingDraft, for userID: String) async {}

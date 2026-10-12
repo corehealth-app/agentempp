@@ -90,6 +90,27 @@ struct MobileAPIConfigurationTests {
         )
     }
 
+    @Test("query values round-trip through server form decoding without losing literal plus",
+          arguments: [
+            ("2026-10-12T11:22:33.123456+00:00", "2026-10-12T11:22:33.123456%2B00:00"),
+            ("%2B", "%252B"),
+            ("a b", "a%20b"),
+            ("a&b=c", "a%26b%3Dc"),
+          ])
+    func preservesQueryValuesAtTheServerBoundary(value: String, encoded: String) throws {
+        let request = try MobileAPIRequest<TestPayload>(method: .get,
+            path: "/api/mobile/v1/onboarding",
+            queryItems: [URLQueryItem(name: "scope+name", value: value)])
+        let configuration = try MobileAPIConfiguration(originString: "https://staging.example.test")
+        let url = try request.url(using: configuration)
+        let raw = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedQuery)
+        #expect(raw == "scope%2Bname=\(encoded)")
+        let pair = raw.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+        try #require(pair.count == 2)
+        #expect(String(pair[0]).replacingOccurrences(of: "+", with: " ").removingPercentEncoding == "scope+name")
+        #expect(String(pair[1]).replacingOccurrences(of: "+", with: " ").removingPercentEncoding == value)
+    }
+
     @Test(
         "rejects absolute network and payload-derived hosts",
         arguments: [

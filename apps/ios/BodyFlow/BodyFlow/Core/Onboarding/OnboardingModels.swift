@@ -227,19 +227,22 @@ struct OnboardingServerState: Codable, Equatable, Sendable {
     let requirements: OnboardingRequirements
     let acceptedActions: [OnboardingAcceptedAction]
     let draft: OnboardingDraft?
+    let bodyPhotoCleanup: OnboardingBodyPhotoCleanupScope?
 
     init(
         locale: String = "pt-BR",
         completion: OnboardingCompletionState,
         requirements: OnboardingRequirements,
         acceptedActions: [OnboardingAcceptedAction],
-        draft: OnboardingDraft? = nil
+        draft: OnboardingDraft? = nil,
+        bodyPhotoCleanup: OnboardingBodyPhotoCleanupScope? = nil
     ) {
         self.locale = locale
         self.completion = completion
         self.requirements = requirements
         self.acceptedActions = acceptedActions
         self.draft = draft
+        self.bodyPhotoCleanup = bodyPhotoCleanup
     }
 
     init(from decoder: any Decoder) throws {
@@ -255,6 +258,9 @@ struct OnboardingServerState: Codable, Equatable, Sendable {
             OnboardingServerDraft.self,
             forKey: .draft
         )?.onboardingDraft()
+        // Only this additive technical field is tolerant. Required patient
+        // fields and the server draft retain their existing validation.
+        bodyPhotoCleanup = try? values.decodeIfPresent(OnboardingBodyPhotoCleanupScope.self, forKey: .bodyPhotoCleanup)
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -266,6 +272,7 @@ struct OnboardingServerState: Codable, Equatable, Sendable {
         if let draft {
             try values.encode(OnboardingServerDraft(draft), forKey: .draft)
         }
+        try values.encodeIfPresent(bodyPhotoCleanup, forKey: .bodyPhotoCleanup)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -274,6 +281,7 @@ struct OnboardingServerState: Codable, Equatable, Sendable {
         case requirements
         case acceptedActions = "accepted_actions"
         case draft
+        case bodyPhotoCleanup = "body_photo_cleanup"
     }
 }
 
@@ -447,6 +455,7 @@ struct OnboardingCompletionAcknowledgement: Codable, Equatable, Sendable {
     let persona: CoachPersona
     let documentActions: [OnboardingAcceptedAction]
     let protocolWelcome: ProtocolWelcome?
+    let bodyPhotoCleanup: OnboardingBodyPhotoCleanupScope?
 
     private enum CodingKeys: String, CodingKey {
         case onboardingCompleted = "onboarding_completed"
@@ -455,6 +464,7 @@ struct OnboardingCompletionAcknowledgement: Codable, Equatable, Sendable {
         case persona
         case documentActions = "document_actions"
         case protocolWelcome = "protocol_welcome"
+        case bodyPhotoCleanup = "body_photo_cleanup"
     }
 
     init(
@@ -463,7 +473,8 @@ struct OnboardingCompletionAcknowledgement: Codable, Equatable, Sendable {
         objective: BodyFlowObjective,
         persona: CoachPersona,
         documentActions: [OnboardingAcceptedAction],
-        protocolWelcome: ProtocolWelcome? = nil
+        protocolWelcome: ProtocolWelcome? = nil,
+        bodyPhotoCleanup: OnboardingBodyPhotoCleanupScope? = nil
     ) {
         self.onboardingCompleted = onboardingCompleted
         self.completedAt = completedAt
@@ -471,6 +482,7 @@ struct OnboardingCompletionAcknowledgement: Codable, Equatable, Sendable {
         self.persona = persona
         self.documentActions = documentActions
         self.protocolWelcome = protocolWelcome
+        self.bodyPhotoCleanup = bodyPhotoCleanup?.generation == completedAt ? bodyPhotoCleanup : nil
     }
 
     init(from decoder: any Decoder) throws {
@@ -492,6 +504,8 @@ struct OnboardingCompletionAcknowledgement: Codable, Equatable, Sendable {
             [OnboardingAcceptedAction].self,
             forKey: .documentActions
         )
+        let cleanup = try? values.decodeIfPresent(OnboardingBodyPhotoCleanupScope.self, forKey: .bodyPhotoCleanup)
+        bodyPhotoCleanup = cleanup?.generation == completedAt ? cleanup : nil
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -502,6 +516,7 @@ struct OnboardingCompletionAcknowledgement: Codable, Equatable, Sendable {
         try values.encode(Self.code(for: persona), forKey: .persona)
         try values.encodeIfPresent(protocolWelcome, forKey: .protocolWelcome)
         try values.encode(documentActions, forKey: .documentActions)
+        try values.encodeIfPresent(bodyPhotoCleanup, forKey: .bodyPhotoCleanup)
     }
 
     private static func persona(for code: String) -> CoachPersona? {

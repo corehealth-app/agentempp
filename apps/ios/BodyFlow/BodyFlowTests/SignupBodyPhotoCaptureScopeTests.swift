@@ -9,6 +9,72 @@ struct SignupBodyPhotoCaptureScopeTests {
     private static let a = "00000000-0000-4000-8000-00000000c701"
     private static let b = "00000000-0000-4000-8000-00000000c702"
 
+    @Test("The entire signup operation is registered, not only its PUT")
+    func entirePipelineIsRegistered() async throws {
+        let lifecycle = PhotoScopeLifecycle(userID: Self.a)
+        let scope = try await capability(lifecycle, PhotoScopeUploader(), MediaStagingStore()).scoped(Self.a)
+        let peer = PhotoScopeWorkPeer()
+        var failure = false
+        do { try await scope.performWork { await peer.enter() } } catch { failure = true }
+        #expect(!failure)
+        #expect(await peer.calls == 1)
+        #expect(await lifecycle.began == 1)
+        #expect(await lifecycle.finished == 1)
+        #expect(await lifecycle.activeCount == 0)
+    }
+
+    @Test("Staged discard is owner gated and removes only its own capture")
+    func discardUsesBoundLocalGate() async throws {
+        let lifecycle = PhotoScopeLifecycle(userID: Self.a)
+        let staging = MediaStagingStore(temporaryDirectory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        defer { try? FileManager.default.removeItem(at: staging.root.deletingLastPathComponent()) }
+        let scope = try await capability(lifecycle, PhotoScopeUploader(), staging).scoped(Self.a)
+        let data = try image()
+        let first = try await scope.stagePhoto(data, .camera)
+        let other = try await scope.stagePhoto(data, .gallery)
+        var failure = false
+        do { try await scope.discardStaged(first.fileURL) } catch { failure = true }
+        #expect(!failure)
+        #expect(!FileManager.default.fileExists(atPath: first.fileURL.path))
+        #expect(FileManager.default.fileExists(atPath: other.fileURL.path))
+        #expect(await lifecycle.localWrites == 3)
+    }
+
+    @Test("Cancellation does not prevent cleanup of the same owner's local file")
+    func cancelledCallerCanDiscardOwnFile() async throws {
+        let lifecycle = PhotoScopeLifecycle(userID: Self.a)
+        let staging = MediaStagingStore(temporaryDirectory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        defer { try? FileManager.default.removeItem(at: staging.root.deletingLastPathComponent()) }
+        let scope = try await capability(lifecycle, PhotoScopeUploader(), staging).scoped(Self.a)
+        let data = try image()
+        let own = try await scope.stagePhoto(data, .camera)
+        let other = try await scope.stagePhoto(data, .gallery)
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            try await scope.discardStaged(own.fileURL)
+        }
+        var failure = false
+        do { try await task.value } catch { failure = true }
+        #expect(!failure)
+        #expect(!FileManager.default.fileExists(atPath: own.fileURL.path))
+        #expect(FileManager.default.fileExists(atPath: other.fileURL.path))
+        #expect(await lifecycle.localWrites == 3)
+    }
+
+    @Test("A retained scope cannot discard files or register work in a later session", arguments: [false, true])
+    func oldScopeCannotDiscardOrRegister(returnToA: Bool) async throws {
+        let lifecycle = PhotoScopeLifecycle(userID: Self.a)
+        let scope = try await capability(lifecycle, PhotoScopeUploader(), MediaStagingStore()).scoped(Self.a)
+        await lifecycle.move(to: Self.b)
+        if returnToA { await lifecycle.move(to: Self.a) }
+        await #expect(throws: SessionLifecycleError.sessionSuperseded) {
+            try await scope.discardStaged(URL(fileURLWithPath: "/synthetic/not-opened.jpg"))
+        }
+        await #expect(throws: SessionLifecycleError.sessionSuperseded) { try await scope.performWork {} }
+        #expect(await lifecycle.began == 0)
+        #expect(await lifecycle.localWrites == 0)
+    }
+
     @Test("Live scope binds the owner once and stages a protected signup JPEG")
     func stagesOnlyForBoundOwner() async throws {
         let lifecycle = PhotoScopeLifecycle(userID: Self.a)
@@ -197,6 +263,11 @@ struct SignupBodyPhotoCaptureScopeTests {
     }
 }
 
+private actor PhotoScopeWorkPeer {
+    private(set) var calls = 0
+    func enter() { calls += 1 }
+}
+
 private actor PhotoScopeUploader: StorageUploading {
     private(set) var calls = 0
     let holdsResult: Bool
@@ -262,6 +333,7 @@ private actor PhotoScopeLifecycle: SessionLifecycleProviding {
     }
     func releaseFinish() { finishReleased?.resume(); finishReleased = nil }
     func performPatientStateOperation<Value: Sendable>(lease: SessionLease, operation: @Sendable () throws -> Value) async throws -> Value {
+        try Task.checkCancellation()
         try await validate(lease); localWrites += 1; return try operation()
     }
 }

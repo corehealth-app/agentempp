@@ -10,6 +10,27 @@ struct SignupBodyPhotoCaptureScope: Sendable {
     let camera: MealCameraAccess
     let validateSession: @Sendable () async throws -> Void
     let stagePhoto: @Sendable (Data, MealSourceChannel) async throws -> StagedMedia
+    let performWork: @Sendable (@escaping @Sendable () async throws -> Void) async throws -> Void
+    let discardStaged: @Sendable (URL) async throws -> Void
+
+    init(
+        userID: String, photos: any SignupBodyPhotosProviding, uploader: any StorageUploading,
+        staging: MediaStagingStore, camera: MealCameraAccess,
+        validateSession: @escaping @Sendable () async throws -> Void,
+        stagePhoto: @escaping @Sendable (Data, MealSourceChannel) async throws -> StagedMedia,
+        performWork: @escaping @Sendable (@escaping @Sendable () async throws -> Void) async throws -> Void = { _ in throw SignupBodyPhotoFailure.unavailable },
+        discardStaged: @escaping @Sendable (URL) async throws -> Void = { _ in throw SignupBodyPhotoFailure.unavailable }
+    ) {
+        self.userID = userID
+        self.photos = photos
+        self.uploader = uploader
+        self.staging = staging
+        self.camera = camera
+        self.validateSession = validateSession
+        self.stagePhoto = stagePhoto
+        self.performWork = performWork
+        self.discardStaged = discardStaged
+    }
 }
 
 struct SignupBodyPhotoCaptureCapability: Sendable {
@@ -41,6 +62,19 @@ struct SignupBodyPhotoCaptureCapability: Sendable {
                     try await lifecycle.performPatientStateOperation(lease: lease) {
                         try SignupBodyPhotoStager(staging: staging).stagePhoto(data, channel: channel)
                     }
+                },
+                performWork: { operation in
+                    try await SignupSessionBoundWork(lifecycle: lifecycle, lease: lease).run(operation)
+                },
+                discardStaged: { url in
+                    // Local cleanup must finish even if its caller cancelled.
+                    // The retained lease still owns every filesystem effect.
+                    let cleanup = Task {
+                        try await lifecycle.performPatientStateOperation(lease: lease) {
+                            staging.remove(url)
+                        }
+                    }
+                    try await cleanup.value
                 }
             )
         }
@@ -59,6 +93,19 @@ struct SignupSessionBoundUploader: StorageUploading {
               media.channel.isPhoto, media.duration == nil,
               (1...MealMediaLimits.maximumPhotoBytes).contains(media.sizeBytes)
         else { throw SignupBodyPhotoFailure.invalidInput }
+        try await SignupSessionBoundWork(lifecycle: lifecycle, lease: lease).run {
+            try await uploader.upload(media, with: ticket)
+        }
+    }
+}
+
+/// Shares the already guarded PUT registration with the whole capture task.
+/// Completing the registry is a suspension and cannot renew the retained lease.
+private struct SignupSessionBoundWork: Sendable {
+    let lifecycle: any SessionLifecycleProviding
+    let lease: SessionLease
+
+    func run(_ operation: @escaping @Sendable () async throws -> Void) async throws {
         try Task.checkCancellation()
         let cancellation = SignupUploadCancellation()
         let id = try await lifecycle.beginPatientWork(lease: lease, cancel: { cancellation.cancel() })
@@ -67,7 +114,7 @@ struct SignupSessionBoundUploader: StorageUploading {
             let task = Task {
                 try await lifecycle.validate(lease)
                 try Task.checkCancellation()
-                try await uploader.upload(media, with: ticket)
+                try await operation()
                 try await lifecycle.validate(lease)
                 try Task.checkCancellation()
             }

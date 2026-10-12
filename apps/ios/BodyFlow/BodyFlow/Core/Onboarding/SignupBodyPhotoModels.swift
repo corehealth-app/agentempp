@@ -43,6 +43,15 @@ struct SignupBodyPhotoSourceIDs: Codable, Hashable, Sendable {
 }
 
 struct SignupBodyPhotoEstimate: Codable, Hashable, Sendable {
+    struct Reading: Codable, Hashable, Sendable {
+        let pose: SignupBodyPhotoPose
+        let bodyFatPercent: Decimal
+
+        enum CodingKeys: String, CodingKey {
+            case pose
+            case bodyFatPercent = "body_fat_percent"
+        }
+    }
     struct Decision: Codable, Hashable, Sendable {
         let usable: Bool
         let bodyFatPercent: Decimal?
@@ -67,9 +76,18 @@ struct SignupBodyPhotoEstimate: Codable, Hashable, Sendable {
     let bySex: Decisions
     let sourceIDs: SignupBodyPhotoSourceIDs?
     let fingerprint: String?
+    let readings: [Reading]?
+
+    init(isEstimate: Bool, bySex: Decisions, sourceIDs: SignupBodyPhotoSourceIDs?, fingerprint: String?, readings: [Reading]? = nil) {
+        self.isEstimate = isEstimate
+        self.bySex = bySex
+        self.sourceIDs = sourceIDs
+        self.fingerprint = fingerprint
+        self.readings = readings
+    }
 
     enum CodingKeys: String, CodingKey {
-        case fingerprint
+        case fingerprint, readings
         case isEstimate = "is_estimate"
         case bySex = "by_sex"
         case sourceIDs = "source_ids"
@@ -77,7 +95,7 @@ struct SignupBodyPhotoEstimate: Codable, Hashable, Sendable {
 }
 
 /// Public state only. It carries no raw model output, Storage path or session.
-/// Current v1 has no individual readings; never substitute the joined mean.
+/// Older v1 snapshots omit individual readings; never substitute the joined mean.
 struct SignupBodyPhotoState: Codable, Hashable, Sendable {
     let available: Bool
     let unavailableReason: String?
@@ -161,6 +179,11 @@ struct SignupBodyPhotoDeleteReceipt: Codable, Hashable, Sendable {
     let deleted: Int
 }
 
+/// The official completion string, retained verbatim with its microseconds.
+struct SignupBodyPhotoRepairCommand: Hashable, Sendable {
+    let generation: String
+}
+
 enum SignupBodyPhotoFailure: Error, Hashable, Sendable {
     case unavailable
     case invalidInput
@@ -179,6 +202,13 @@ enum SignupBodyPhotoFailure: Error, Hashable, Sendable {
     init(_ error: any Error) {
         if let failure = error as? Self {
             self = failure
+            return
+        }
+        if let lifecycle = error as? SessionLifecycleError {
+            switch lifecycle {
+            case .missingSession, .sessionSuperseded: self = .sessionChanged
+            case .refreshFailed, .localInvalidationFailed: self = .unavailable
+            }
             return
         }
         if let media = error as? MealCaptureFailure {
@@ -226,4 +256,14 @@ protocol SignupBodyPhotosProviding: Sendable {
         -> SignupBodyPhotoCompleteReceipt
     func delete(_ attempt: MutationAttempt<SignupBodyPhotoDeleteCommand>) async throws
         -> SignupBodyPhotoDeleteReceipt
+    func repair(_ attempt: MutationAttempt<SignupBodyPhotoRepairCommand>) async throws
+        -> SignupBodyPhotoDeleteReceipt
+}
+
+extension SignupBodyPhotosProviding {
+    // Older/synthetic providers have no authority to repair a real generation.
+    func repair(_ attempt: MutationAttempt<SignupBodyPhotoRepairCommand>) async throws
+        -> SignupBodyPhotoDeleteReceipt {
+        throw SignupBodyPhotoFailure.unavailable
+    }
 }

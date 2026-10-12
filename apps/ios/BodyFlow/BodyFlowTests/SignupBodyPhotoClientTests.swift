@@ -7,6 +7,70 @@ import Testing
 
 @Suite("Signup body photo client")
 struct SignupBodyPhotoClientTests {
+    @Test("Three original fractions survive wire decoding and encoding")
+    func realReadingsAreRetained() throws {
+        let json = Self.stateJSON
+            .replacingOccurrences(of: "\"body_fat_percent\":24", with: "\"body_fat_percent\":24.13")
+            .replacingOccurrences(of: "\"is_estimate\":true,", with: """
+            "is_estimate":true,"readings":[{"pose":"front","body_fat_percent":18.125},{"pose":"side","body_fat_percent":24.125},{"pose":"back","body_fat_percent":30.125}],
+            """)
+        let state = try JSONDecoder().decode(SignupBodyPhotoState.self, from: Data(json.utf8))
+        let encoded = try JSONEncoder().encode(state)
+        let wire = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        let estimate = try #require(wire["estimate"] as? [String: Any])
+        let readings = estimate["readings"] as? [[String: Any]]
+        #expect(readings?.count == 3)
+        let values = try #require(readings)
+        #expect(values.compactMap { $0["pose"] as? String } == ["front", "side", "back"])
+        #expect(values.compactMap { $0["body_fat_percent"] as? Double } == [18.125, 24.125, 30.125])
+        #expect(state.estimate?.bySex.masculine.bodyFatPercent == Decimal(string: "24.13"))
+    }
+
+    @Test("Repair keeps the exact official G and stable key, never becomes empty DELETE")
+    func repairRequestIsScoped() async throws {
+        let spy = SignupPhotoTransportSpy(responseJSON: response("{\"deleted\":0}"))
+        let repo = MobileSignupBodyPhotoRepository(transport: spy)
+        let command = try attempt(SignupBodyPhotoRepairCommand(generation: Self.date), operation: .mediaDelete)
+        for _ in 0..<2 {
+            let (value, failure) = await result { try await repo.repair(command) }
+            #expect(failure == nil)
+            _ = try #require(value)
+        }
+        let requests = await spy.requests
+        #expect(requests.count == 2)
+        for request in requests {
+            #expect(request.method == .delete)
+            #expect(request.path == "/api/mobile/v1/onboarding/body-photos")
+            #expect(request.queryItems.isEmpty)
+            #expect(request.idempotency == .required(command.key))
+            let body = try #require(request.body)
+            let object = try #require(JSONSerialization.jsonObject(with: body) as? [String: String])
+            #expect(object == ["mode": "repair_completed", "generation": Self.date])
+        }
+    }
+
+    @Test("Retained lease errors are named session changes", arguments: [SessionLifecycleError.missingSession, .sessionSuperseded])
+    func scopeErrorIsSessionChanged(_ error: SessionLifecycleError) {
+        #expect(SignupBodyPhotoFailure(error) == .sessionChanged)
+    }
+
+    @Test("Invalid repair generations cannot fall back to deleting the whole signup", arguments: ["", "2026-10-12", "2026-10-12T15:00:00.1234567Z", "not-a-date", "2026-99-99T15:00:00Z"])
+    func invalidRepairGeneration(_ generation: String) async throws {
+        let spy = SignupPhotoTransportSpy(responseJSON: response("{\"deleted\":0}"))
+        let repository = MobileSignupBodyPhotoRepository(transport: spy)
+        await #expect(throws: SignupBodyPhotoFailure.invalidInput) {
+            try await repository.repair(try attempt(SignupBodyPhotoRepairCommand(generation: generation), operation: .mediaDelete))
+        }
+        #expect(await spy.requests.isEmpty)
+    }
+
+    @Test("Unavailable old providers have no repair authority")
+    func unavailableRepairProvider() async throws {
+        let provider = SignupPhotoLegacyProvider()
+        await #expect(throws: SignupBodyPhotoFailure.unavailable) {
+            try await provider.repair(try attempt(SignupBodyPhotoRepairCommand(generation: Self.date), operation: .mediaDelete))
+        }
+    }
     @Test("The signup upload kind is recognized without changing meal media")
     func bodyPhotoUploadKindIsRecognized() {
         #expect(MediaUploadKind(rawValue: "body_checkin_photo") != nil)
@@ -53,6 +117,7 @@ struct SignupBodyPhotoClientTests {
         #expect(state.estimate?.sourceIDs?.side == Self.otherIDs[0])
         #expect(state.consent?.acceptedAt != nil)
         #expect(state.remainingUploads == 6)
+        #expect(state.estimate?.readings == nil)
         let encoded = String(decoding: try JSONEncoder().encode(state), as: UTF8.self)
         #expect(!encoded.contains("readings"))
         #expect(!encoded.contains("processing_result"))
@@ -283,6 +348,9 @@ struct SignupBodyPhotoClientTests {
     func preservesCancellation() async {
         let repository = MobileSignupBodyPhotoRepository(transport: SignupPhotoCancelledTransport())
         await #expect(throws: CancellationError.self) { try await repository.state() }
+        await #expect(throws: CancellationError.self) {
+            try await repository.repair(try attempt(SignupBodyPhotoRepairCommand(generation: Self.date), operation: .mediaDelete))
+        }
     }
 
     @Test("Invalid image/channel and invalid request metadata are refused before upload")
@@ -326,4 +394,13 @@ private struct SignupPhotoCancelledTransport: MobileAPIEnvelopeExecuting {
     func executeEnvelope<Response: Codable & Sendable>(_ request: MobileAPIRequest<Response>) async throws -> MobileResponse<Response> {
         throw CancellationError()
     }
+}
+
+/// Deliberately omits repair: old providers must retain the protocol's refusal.
+private struct SignupPhotoLegacyProvider: SignupBodyPhotosProviding {
+    func state() async throws -> SignupBodyPhotoState { throw SignupBodyPhotoFailure.unavailable }
+    func consent(_ attempt: MutationAttempt<SignupBodyPhotoConsentRequest>) async throws -> SignupBodyPhotoConsentReceipt { throw SignupBodyPhotoFailure.unavailable }
+    func create(_ attempt: MutationAttempt<SignupBodyPhotoCreateRequest>) async throws -> SignupBodyPhotoCreateReceipt { throw SignupBodyPhotoFailure.unavailable }
+    func complete(_ attempt: MutationAttempt<MediaAssetCommand>) async throws -> SignupBodyPhotoCompleteReceipt { throw SignupBodyPhotoFailure.unavailable }
+    func delete(_ attempt: MutationAttempt<SignupBodyPhotoDeleteCommand>) async throws -> SignupBodyPhotoDeleteReceipt { throw SignupBodyPhotoFailure.unavailable }
 }

@@ -58,6 +58,29 @@ struct MobileSignupBodyPhotoRepository: SignupBodyPhotosProviding {
         }
     }
 
+    func repair(_ attempt: MutationAttempt<SignupBodyPhotoRepairCommand>) async throws
+        -> SignupBodyPhotoDeleteReceipt {
+        let generation = attempt.payload.generation
+        guard generation.count <= 64,
+              generation.range(of: #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$"#, options: .regularExpression) != nil,
+              (try? JSONDecoder().decode(APITimestamp.self, from: JSONEncoder().encode(generation))) != nil
+        else { throw SignupBodyPhotoFailure.invalidInput }
+        // Parsing validates only. Preserve the official string: Date encoding
+        // would round its microseconds and could name a different generation.
+        return try await execute {
+            try MobileAPIRequest(
+                method: .delete, path: Self.path,
+                body: try JSONEncoder().encode(RepairBody(generation: generation)),
+                idempotencyKey: attempt.key
+            )
+        }
+    }
+
+    private struct RepairBody: Encodable {
+        let mode = "repair_completed"
+        let generation: String
+    }
+
     private func execute<Response: Codable & Sendable>(
         _ request: () throws -> MobileAPIRequest<Response>
     ) async throws -> Response {

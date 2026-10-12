@@ -7,6 +7,7 @@ enum OnboardingRepositoryError: Error, Equatable, Sendable {
     case documentsUnavailable
     case requirementsChanged
     case alreadyCompleted
+    case bodyPhotoConfirmationChanged
     case storageUnavailable
     case serviceUnavailable
     /// The signed-in e-mail administers the team's panel, so it cannot also

@@ -6,6 +6,18 @@ import Testing
 @MainActor
 @Suite("Onboarding completion")
 struct OnboardingCompletionTests {
+    @Test("A definitive photo refusal returns to body data only after an official read")
+    func photoRefusalReconcilesBeforeEditing() async {
+        let repository = CompletionOnboardingRepository(results: [.failure(.bodyPhotoConfirmationChanged)])
+        let model = await makeModel(onboarding: repository)
+        await prepareE3Review(model)
+        await model.complete()
+        #expect(model.step == .bodyData)
+        #expect(!model.unresolvedCompletion)
+        #expect(model.allowsDraftEditing)
+        #expect(model.eligibilityDecision == nil)
+        #expect(await repository.completedDrafts.count == 1)
+    }
     @Test("missing persona blocks every persistence side effect")
     func missingPersonaBlocksCompletion() async {
         var draft = completeDraft()

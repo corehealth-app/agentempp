@@ -234,6 +234,9 @@ struct MobileOnboardingRepository: OnboardingRepository {
         case .conflict(let code, _)
             where code == "onboarding_already_completed":
             .alreadyCompleted
+        case .conflict(let code, _)
+            where code == "body_photo_confirmation_stale" || code == "body_photo_confirmation_unavailable":
+            .bodyPhotoConfirmationChanged
         case .server(_, let code, _)
             where code == "onboarding_documents_unavailable":
             .documentsUnavailable
@@ -267,6 +270,7 @@ private struct OnboardingCompletionSubmission: Encodable, Sendable {
     let foodOrganization: FoodOrganization
     let persona: String
     let documentActions: [OnboardingDocumentAction]
+    let bodyPhotoConfirmation: OnboardingBodyPhotoConfirmation.Intent?
 
     init(draft: OnboardingDraft) throws {
         guard let name = draft.displayName?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -319,6 +323,14 @@ private struct OnboardingCompletionSubmission: Encodable, Sendable {
         case .zen: "zen"
         }
         self.documentActions = documentActions
+        if draft.bodyFatOrigin == .photos {
+            guard let confirmation = draft.bodyPhotoConfirmation, confirmation.matches(draft) else {
+                throw OnboardingRepositoryError.invalidDraft
+            }
+            bodyPhotoConfirmation = confirmation.intent
+        } else {
+            bodyPhotoConfirmation = nil
+        }
     }
 
     private static func timeString(_ time: LocalTime) -> String {
@@ -345,5 +357,6 @@ private struct OnboardingCompletionSubmission: Encodable, Sendable {
         case foodOrganization = "food_organization"
         case persona
         case documentActions = "document_actions"
+        case bodyPhotoConfirmation = "body_photo_confirmation"
     }
 }

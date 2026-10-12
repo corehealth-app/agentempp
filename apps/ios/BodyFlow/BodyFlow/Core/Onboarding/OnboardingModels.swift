@@ -588,6 +588,8 @@ struct OnboardingDraft: Codable, Equatable, Sendable {
     var heightCM: Double?
     var weightKG: Double?
     var bodyFatPercent: Double?
+    var bodyFatOrigin: OnboardingBodyFatOrigin? = nil
+    var bodyPhotoConfirmation: OnboardingBodyPhotoConfirmation? = nil
     var objective: BodyFlowObjective?
     var activityLevel: ActivityLevel?
     var trainingFrequency: Int?

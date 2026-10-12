@@ -5,6 +5,62 @@ import Testing
 
 @Suite("Mobile onboarding repository")
 struct MobileOnboardingRepositoryTests {
+    @Test("Confirmed photo proof adds only the contracted intent to the official POST")
+    func postsPhotoConfirmationWithoutLocalProvenance() async throws {
+        let transport = OnboardingTransportSpy(state: emptyState, completion: completionAcknowledgement)
+        let repository = MobileOnboardingRepository(transport: transport)
+        var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .completion)
+        draft.documentActions = [termsDocument.explicitAction]
+        draft.bodyFatPercent = 24.13
+        draft.bodyFatOrigin = .photos
+        draft.bodyPhotoConfirmation = .init(value: Decimal(string: "24.13")!, sex: try #require(draft.biologicalSex),
+            sourceIDs: .init(front: "00000000-0000-4000-8000-000000000001", side: "00000000-0000-4000-8000-000000000002", back: "00000000-0000-4000-8000-000000000003"),
+            fingerprint: String(repeating: "a", count: 64))
+        let key = try IdempotencyKey(validating: "photo-official-same-key")
+        for _ in 0..<2 { _ = try await repository.completeOfficial(draft, for: "synthetic-owner", idempotencyKey: key) }
+        let requests = await transport.requests
+        #expect(requests.count == 2)
+        for request in requests {
+            #expect(request.idempotency == .required(key))
+            let body = try #require(request.body)
+            let object = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            #expect(object["bodyFatOrigin"] == nil)
+            #expect(object["bodyPhotoConfirmation"] == nil)
+            #expect(object["readings"] == nil)
+            #expect(object["body_fat_percent"] as? Double == 24.13)
+            let proof = try #require(object["body_photo_confirmation"] as? [String: Any])
+            #expect(Set(proof.keys) == ["decision", "source_ids", "fingerprint"])
+            #expect(proof["decision"] as? String == "accept")
+            #expect(proof["fingerprint"] as? String == String(repeating: "a", count: 64))
+            #expect(proof["source_ids"] as? [String: String] == ["front": "00000000-0000-4000-8000-000000000001", "side": "00000000-0000-4000-8000-000000000002", "back": "00000000-0000-4000-8000-000000000003"])
+        }
+    }
+
+    @Test("Photo origin without a matching proof cannot be silently posted as manual")
+    func refusesIncompletePhotoProof() async throws {
+        let transport = OnboardingTransportSpy(state: emptyState, completion: completionAcknowledgement)
+        let repository = MobileOnboardingRepository(transport: transport)
+        var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .completion)
+        draft.documentActions = [termsDocument.explicitAction]
+        draft.bodyFatOrigin = .photos
+        draft.bodyPhotoConfirmation = nil
+        await #expect(throws: OnboardingRepositoryError.invalidDraft) {
+            try await repository.completeOfficial(draft, for: "synthetic-owner", idempotencyKey: IdempotencyKey(validating: "invalid-photo-proof"))
+        }
+        #expect(await transport.requests.isEmpty)
+    }
+
+    @Test("Photo proof refusals are distinguished from uncertain network errors", arguments: ["body_photo_confirmation_stale", "body_photo_confirmation_unavailable"])
+    func namesPhotoProofRefusal(_ code: String) async throws {
+        let transport = OnboardingTransportSpy(state: emptyState, completion: completionAcknowledgement,
+            completionError: .conflict(code: code, requestID: nil))
+        var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .completion)
+        draft.documentActions = [termsDocument.explicitAction]
+        await #expect(throws: OnboardingRepositoryError.bodyPhotoConfirmationChanged) {
+            try await MobileOnboardingRepository(transport: transport).completeOfficial(draft,
+                for: "synthetic-owner", idempotencyKey: IdempotencyKey(validating: "photo-proof-refusal"))
+        }
+    }
     @Test("Release dependency graph installs only real or fail-closed onboarding")
     func releaseDependencyGraphExcludesDemoOnboarding() throws {
         let mobileConfiguration = try MobileAPIConfiguration(
@@ -84,6 +140,7 @@ struct MobileOnboardingRepositoryTests {
         #expect(object["user_id"] == nil)
         #expect(object["onboarding_completed"] == nil)
         #expect(object["accepted_at"] == nil)
+        #expect(object["body_photo_confirmation"] == nil)
         #expect(object["persona"] as? String == "focus")
         #expect(object["document_actions"] as? [[String: String]] == [[
             "document_key": "terms_of_service",

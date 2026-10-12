@@ -227,6 +227,7 @@ final class OnboardingFlowModel {
         let developmentConsent: DevelopmentConsentAcceptance?
     }
     private var pendingCompletion: PendingCompletion?
+    private var verifiedPhotoConfirmation: OnboardingBodyPhotoConfirmation?
     private var eligibilitySnapshot: EligibilitySnapshot?
     private var didComplete = false
     private var didNotifyRoot = false
@@ -308,6 +309,46 @@ final class OnboardingFlowModel {
     var visibleSteps: [OnboardingStep] { isReacceptance ? [.consent, .completion] : OnboardingStep.allCases }
     var unresolvedCompletion: Bool { pendingCompletion != nil }
     var allowsDraftEditing: Bool { isActive && !didComplete && pendingCompletion == nil }
+    var requiresBodyPhotoRevalidation: Bool {
+        draft.bodyFatOrigin == .photos && (draft.bodyPhotoConfirmation == nil
+            || verifiedPhotoConfirmation != draft.bodyPhotoConfirmation
+            || draft.bodyPhotoConfirmation?.matches(draft) != true)
+    }
+
+    @discardableResult
+    func confirmBodyPhotoEstimate(_ state: SignupBodyPhotoState) -> Bool {
+        guard allowsDraftEditing, !isReacceptance, !isCancellationRequested,
+              let sex = draft.biologicalSex,
+              let confirmation = OnboardingBodyPhotoConfirmation.candidate(from: state, sex: sex),
+              let canonicalValue = Double(NSDecimalNumber(decimal: confirmation.value).stringValue) else { return false }
+        draft.bodyFatPercent = canonicalValue
+        draft.bodyFatOrigin = .photos
+        draft.bodyPhotoConfirmation = confirmation
+        verifiedPhotoConfirmation = confirmation
+        clearEligibility()
+        return true
+    }
+
+    func reconcileBodyPhotoState(_ state: SignupBodyPhotoState?) {
+        guard allowsDraftEditing, !isReacceptance, !isCancellationRequested, draft.bodyFatOrigin == .photos else { return }
+        guard let state, let sex = draft.biologicalSex,
+              let current = OnboardingBodyPhotoConfirmation.candidate(from: state, sex: sex),
+              current == draft.bodyPhotoConfirmation, current.matches(draft) else {
+            invalidateBodyPhotoConfirmation()
+            return
+        }
+        verifiedPhotoConfirmation = current
+    }
+
+    private func invalidateBodyPhotoConfirmation() {
+        verifiedPhotoConfirmation = nil
+        draft.bodyPhotoConfirmation = nil
+        if draft.bodyFatOrigin == .photos {
+            draft.bodyFatOrigin = nil
+            draft.bodyFatPercent = nil
+            clearEligibility()
+        }
+    }
     /// Whether a step before this one can be returned to. There is none on
     /// the first step (of the sign-up, or of a new acceptance of the
     /// documents), while a completion is pending, and once the sign-up was
@@ -317,7 +358,7 @@ final class OnboardingFlowModel {
         return index > 0
     }
     var hasCurrentEligibilityDecision: Bool {
-        eligibilityDecision != nil && eligibilitySnapshot == currentEligibilitySnapshot()
+        !requiresBodyPhotoRevalidation && eligibilityDecision != nil && eligibilitySnapshot == currentEligibilitySnapshot()
     }
 
     /// Teardown affects local ownership only. It cannot undo a server request.
@@ -327,6 +368,7 @@ final class OnboardingFlowModel {
         eligibilitySnapshot = nil
         eligibilityDecision = nil
         pendingProtocolWelcome = nil
+        verifiedPhotoConfirmation = nil
         operationState = .idle
     }
 
@@ -357,7 +399,7 @@ final class OnboardingFlowModel {
     }
 
     func continueFromCurrentStep() async {
-        guard allowsDraftEditing, operationState != .saving, !isCancellationRequested else { return }
+        guard allowsDraftEditing, operationState != .saving, !isCancellationRequested, !requiresBodyPhotoRevalidation else { return }
         let issues = issues(for: step)
         validationIssues = issues
         guard issues.isEmpty else { operationState = .idle; return }
@@ -418,7 +460,8 @@ final class OnboardingFlowModel {
     /// Called on objective appearance after a resumed draft or a definitive refusal.
     func prepareObjectiveIfNeeded() async {
         guard step == .objective, !isReacceptance, allowsDraftEditing,
-              operationState != .saving, !isCancellationRequested, !hasCurrentEligibilityDecision else { return }
+              operationState != .saving, !isCancellationRequested, !hasCurrentEligibilityDecision,
+              !requiresBodyPhotoRevalidation else { return }
         let prerequisite = prerequisiteIssues()
         guard prerequisite.isEmpty, let captured = currentEligibilitySnapshot() else {
             validationIssues = prerequisite
@@ -455,6 +498,7 @@ final class OnboardingFlowModel {
             submittedDraft = pendingCompletion.submittedDraft
             key = pendingCompletion.key
         } else {
+            guard !requiresBodyPhotoRevalidation else { return }
             validationIssues = OnboardingStepValidator.completionIssues(draft: draft,
                 developmentConsentAvailability: developmentConsentAvailability, requirements: requirements, now: now())
             guard validationIssues.isEmpty else { operationState = .idle; return }
@@ -487,7 +531,9 @@ final class OnboardingFlowModel {
                 await prepareObjectiveIfNeeded()
                 return
             }
-            if error as? OnboardingRepositoryError == .requirementsChanged || error as? OnboardingRepositoryError == .alreadyCompleted {
+            if error as? OnboardingRepositoryError == .requirementsChanged
+                || error as? OnboardingRepositoryError == .alreadyCompleted
+                || error as? OnboardingRepositoryError == .bodyPhotoConfirmationChanged {
                 do {
                     let state = try await repository.loadState(for: userID)
                     guard canPublish(id) else { finishCancelledSubmission(id); return }
@@ -505,6 +551,18 @@ final class OnboardingFlowModel {
                     pendingCompletion = nil
                     requirements = state.requirements
                     historicalCompletedAt = state.completion.completedAt
+                    if error as? OnboardingRepositoryError == .bodyPhotoConfirmationChanged, !isReacceptance {
+                        activeSubmissionID = nil
+                        operationState = .idle
+                        invalidateBodyPhotoConfirmation()
+                        clearEligibility()
+                        draft.currentStep = .bodyData
+                        step = .bodyData
+                        validationIssues = []
+                        onStepChanged(.bodyData)
+                        operationState = .failed(presentationError(for: error))
+                        return
+                    }
                     if isReacceptance, let authoritativeDraft = state.draft { draft = authoritativeDraft }
                     draft.localeIdentifier = state.locale
                     draft.documentActions = nil
@@ -553,7 +611,7 @@ final class OnboardingFlowModel {
     }
 
     func updateDisplayName(_ value: String?) { guard allowsDraftEditing else { return }; draft.displayName = value }
-    func updateLocaleIdentifier(_ value: String) { guard allowsDraftEditing else { return }; draft.localeIdentifier = value; clearEligibility() }
+    func updateLocaleIdentifier(_ value: String) { guard allowsDraftEditing else { return }; if draft.localeIdentifier != value { invalidateBodyPhotoConfirmation() }; draft.localeIdentifier = value; clearEligibility() }
     func updateCountryCode(_ value: String) { guard allowsDraftEditing else { return }; draft.countryCode = value.uppercased() }
     func updateTimeZoneIdentifier(_ value: String) {
         guard allowsDraftEditing else { return }
@@ -561,11 +619,18 @@ final class OnboardingFlowModel {
         draft.timeZoneIdentifier = value
         if let civil, let date = OnboardingCivilDate.date(from: civil, timeZoneIdentifier: value) { draft.birthDate = date }
     }
-    func updateBiologicalSex(_ value: BiologicalSex?) { guard allowsDraftEditing else { return }; draft.biologicalSex = value; clearEligibility() }
-    func updateBirthDate(_ value: Date?) { guard allowsDraftEditing else { return }; draft.birthDate = value }
+    func updateBiologicalSex(_ value: BiologicalSex?) { guard allowsDraftEditing else { return }; if draft.biologicalSex != value { invalidateBodyPhotoConfirmation() }; draft.biologicalSex = value; clearEligibility() }
+    func updateBirthDate(_ value: Date?) { guard allowsDraftEditing else { return }; if draft.birthDate != value { invalidateBodyPhotoConfirmation() }; draft.birthDate = value }
     func updateHeightCM(_ value: Double?) { guard allowsDraftEditing else { return }; draft.heightCM = value; clearEligibility() }
     func updateWeightKG(_ value: Double?) { guard allowsDraftEditing else { return }; draft.weightKG = value; clearEligibility() }
-    func updateBodyFatPercent(_ value: Double?) { guard allowsDraftEditing else { return }; draft.bodyFatPercent = value; clearEligibility() }
+    func updateBodyFatPercent(_ value: Double?) {
+        guard allowsDraftEditing else { return }
+        draft.bodyFatPercent = value
+        draft.bodyFatOrigin = value == nil ? nil : .typed
+        draft.bodyPhotoConfirmation = nil
+        verifiedPhotoConfirmation = nil
+        clearEligibility()
+    }
     func updateObjective(_ value: BodyFlowObjective?) {
         guard allowsDraftEditing, !isReacceptance, hasCurrentEligibilityDecision,
               value == nil || eligibilityDecision?.permits(value) == true else { return }
@@ -646,6 +711,7 @@ final class OnboardingFlowModel {
              OnboardingRepositoryError.documentsUnavailable,
              OnboardingRepositoryError.requirementsChanged,
              OnboardingRepositoryError.alreadyCompleted,
+             OnboardingRepositoryError.bodyPhotoConfirmationChanged,
              OnboardingRepositoryError.developmentConsentForbidden: .operationUnavailable
         case OnboardingRepositoryError.serviceUnavailable, CoachPersonaRepositoryError.serviceUnavailable: .serviceUnavailable
         case OnboardingRepositoryError.storageUnavailable, CoachPersonaRepositoryError.storageUnavailable: .storageUnavailable

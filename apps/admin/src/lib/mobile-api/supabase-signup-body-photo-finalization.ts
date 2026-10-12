@@ -47,6 +47,7 @@ export function createSupabaseSignupBodyPhotoFinalizationDependencies(
           .select(photoColumns)
           .eq('user_id', userId)
           .eq('kind', SIGNUP_BODY_PHOTO_KIND)
+          .eq('signup_origin', true)
         const { data, error } = await (options.includeDeleted
           ? query.order('deleted_at', { ascending: false, nullsFirst: true })
           : query.neq('status', 'deleted').order('created_at', { ascending: false })
@@ -94,6 +95,7 @@ export function createSupabaseSignupBodyPhotoFinalizationDependencies(
           })
           .eq('user_id', userId)
           .eq('kind', SIGNUP_BODY_PHOTO_KIND)
+          .eq('signup_origin', true)
           .in('id', [...ids])
           .neq('status', 'deleted')
           .select('id, user_id, status, deleted_at, processing_result')

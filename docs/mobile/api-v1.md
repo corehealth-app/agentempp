@@ -2765,8 +2765,17 @@ conta que ainda não concluiu o cadastro e não tem acesso liberado:
   o worker), `reading` (processing), `read` (processed com leitura type=body e
   número finito), `unreadable` (processed sem número válido) e `reading_failed`
   (falha no processamento). Enfileirar não inventa o estado processing.
-- `estimate` é sempre `null` em B3: a junção/uso das três leituras depende de
-  D1 e D2. Nenhuma nota, confiança ou número da leitura vai no DTO da foto.
+- `estimate` em B4b só existe após o consentimento atual e três poses atuais
+  `processed`, com número corporal finito. D1 (Eduardo, 2026-10-11): média
+  aritmética, pesos iguais dos slots; `view` e confiança do modelo não alteram
+  a pose nem o peso. A resposta contém `is_estimate: true` e `by_sex` com o
+  mesmo valor utilizável para ambos os sexos, normalizado a duas casas
+  decimais como `numeric(4,2)`. Leitura fora de3–60 torna ambos `usable: false`,
+  `reason: "out_of_range"`; ausência/não finito mantém `estimate: null`.
+  Não expõe as três leituras, notas, confiança ou view. Essa minimização é
+  escolha técnica desta implementação local, não texto de consentimento aceito.
+  GET não grava percentual oficial, objetivo nem metas. D2 foi decidido por
+  Eduardo, mas confirmação/recibo e aplicação atômica seguem na etapa seguinte.
 - `remaining_uploads` é 9 menos as fotos do cadastro que a conta criou nas
   últimas 24 horas (contando as apagadas e as que nunca subiram), nunca
   abaixo de zero.
@@ -2947,17 +2956,29 @@ Resposta `201`:
   ficam preservadas. Na criação, conta sem linha de perfil não é concluída;
   perfil que não pôde ser lido é `500 data_access_failed`, nada criado.
   No reparo, perfil ausente ou inválido é incerteza e responde `503`.
-- **Onde a pose fica.** `media_assets` não tem coluna de pose e não há
-  migration: o contexto privado da foto guarda uma de três frases fixas —
+- **Origem e pose.** `media_assets.signup_origin = true` é prova privada
+  gravada somente no INSERT da factory do cadastro. Ausência, `false` e `null`
+  são UNKNOWN; uma foto antiga com a mesma frase não é reclassificada. A
+  migration local `20261012004043_signup_body_photo_trusted_origin.sql` adiciona
+  a coluna e impede sua alteração; ela precisa preceder a habilitação das rotas
+  e ainda não foi aplicada no staging. A seleção genérica de mídia permanece
+  igual, sem exigir essa coluna na produção antiga. O contexto privado guarda
+  uma de três frases fixas —
   `Foto de frente.`, `Foto de lado.`, `Foto de costas.` — e a pose é lida de
-  volta por igualdade exata. "Foto do cadastro" **é** uma `body_checkin_photo`
-  cujo contexto é uma das três. O app não tem leitura dessa coluna e nenhuma
+  volta por igualdade exata. Foto do cadastro exige origem comprovada,
+  `body_checkin_photo` e uma dessas frases. O app não tem leitura dessas colunas e nenhuma
   resposta destas rotas a devolve. Na leitura, esse contexto é o que o
   programa compartilhado manda ao modelo junto da imagem. A
-  frase é comparada no código, não na consulta: as consultas filtram só por
-  conta e tipo. Foto do corpo sem frase de pose e mídia de outro tipo — mesmo
+  frase é comparada no código; as consultas filtram conta, tipo e origem
+  comprovada antes do limite de página. Foto UNKNOWN, foto do corpo sem frase
+  de pose e mídia de outro tipo — mesmo
   com uma dessas frases como legenda — não são fotos do cadastro: não
   aparecem, não contam no limite e não são apagadas por estas rotas.
+- **Ordem de publicação:** a migration de origem deve ser aplicada antes de
+  qualquer publicação deste BFF, inclusive com o interruptor OFF. O hook de
+  conclusão e DELETE usam os filtros privados independentemente do interruptor;
+  OFF não dispensa esse pré-requisito. Nenhuma aplicação remota está autorizada
+  por este registro local.
 - **A data de guarda** gravada na linha é a de 730 dias da política genérica
   de foto do corpo. É só uma data gravada: nada apaga por ela no ambiente de
   teste. Cadastro abandonado fica como está (decisão do orquestrador,
@@ -3184,7 +3205,7 @@ O que não está coberto:
 
 > RC P-PHOTOS — cenário cadastro do médico em 2026-10-10 no build 1.0 (3) ("Comecei o cadastro. Ele perguntou qual era a gordura corporal" e "Não pediu as fotos") variante o cadastro pedir as três fotos e estimar o percentual por elas de ponta a ponta (B2 recebe, guarda, troca e apaga; B3 pede leitura após o aceite próprio com o interruptor ligado; a junção/uso, as telas e a conferência física ainda não estão concluídos) NÃO coberta nesta PR (pendência da audit 2026-10-11)
 
-> RC P-PHOTOS — cenário foto do corpo com envio concluído variante a leitura real por IA e a estimativa integrada das três poses (B3 emite o pedido e distingue lida de sem número em testes locais; estimate segue null, a junção/uso espera D1 e D2 e a fila/provedor reais não foram verificados) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+> RC P-PHOTOS — cenário foto do corpo com envio concluído variante a leitura real por IA e a estimativa integrada das três poses (B3 emite o pedido; B4b junta três slots por média aritmética em testes locais, sem expor leituras individuais; confirmação/uso atômico, UI e fila/provedor reais ainda não foram verificados) NÃO coberta nesta PR (pendência da audit 2026-10-11)
 
 > RC P-PHOTOS — cenário cadastro concluído com fotos enviadas variante o servidor apagar as fotos na conclusão (decisão D4 do orquestrador, anunciada ao dono; B4a tem hook e mecânica locais, mas o resolver real segue deferred_rule; foto viva fica pendente e GET/DELETE de cadastro concluído respondem 503 até B4b e a disposição explícita) NÃO coberta nesta PR (pendência da audit 2026-10-11)
 

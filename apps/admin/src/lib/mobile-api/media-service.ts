@@ -31,6 +31,8 @@ export interface MediaAssetRecord {
   failure_stage: 'upload' | 'processing' | null
   failure_code: string | null
   context_text: string | null
+  /** Private origin proof; absent/false/null is not verified signup media. */
+  signup_origin?: boolean | null
   retention_until: string | null
   uploaded_at: string | null
   processed_at: string | null
@@ -52,6 +54,8 @@ interface CreateMediaAssetRecord {
   sourceRequestHash: string
   /** null = no automatic retention date (plan documents). */
   retentionUntil: string | null
+  /** Internal only: the dedicated signup INSERT opts in. Never retag a replay. */
+  signupOrigin?: true
 }
 
 export interface MediaAssetRepository {
@@ -182,6 +186,32 @@ export const MAX_AUDIO_DURATION_MS = 180_000
 interface MediaCreationOptions {
   /** Generic /media opts in; the dedicated sign-up keeps body upload support. */
   rejectBodyPhotos?: boolean
+  /** Internal dedicated signup caller; public upload schemas cannot set this. */
+  signupOrigin?: true
+}
+
+function assertSignupCreation(
+  asset: MediaAssetRecord,
+  userId: string,
+  input: MediaUploadInput,
+  options: MediaCreationOptions,
+): void {
+  if (!options.signupOrigin) return
+  if (
+    asset.signup_origin !== true ||
+    asset.user_id !== userId ||
+    asset.kind !== 'body_checkin_photo' ||
+    asset.kind !== input.kind ||
+    asset.context_text !== input.context_text ||
+    asset.mime_type !== input.mime_type ||
+    asset.declared_size_bytes !== input.size_bytes
+  ) {
+    throw new MobileApiError(
+      409,
+      'idempotency_key_conflict',
+      'Idempotency-Key was already used for another request',
+    )
+  }
 }
 
 function assertUploadKindAllowed(kind: MediaAssetKind, options: MediaCreationOptions): void {
@@ -234,6 +264,7 @@ export async function createMediaAssetRecord(
   if (existing) {
     // A differently labelled input must not refresh a stored body's ticket.
     assertUploadKindAllowed(existing.kind, options)
+    assertSignupCreation(existing, userId, input, options)
     return {
       asset: existing,
       upload: existing.status === 'pending_upload' ? await signedUpload(deps, existing, now) : null,
@@ -257,9 +288,11 @@ export async function createMediaAssetRecord(
     contextText: input.context_text ?? null,
     sourceRequestHash,
     retentionUntil: policy.retentionDays === null ? null : addDays(now, policy.retentionDays),
+    ...(options.signupOrigin ? { signupOrigin: true as const } : {}),
   })
   // The adapter may resolve a concurrent unique-key collision to an existing row.
   assertUploadKindAllowed(created.kind, options)
+  assertSignupCreation(created, userId, input, options)
 
   return {
     asset: created,

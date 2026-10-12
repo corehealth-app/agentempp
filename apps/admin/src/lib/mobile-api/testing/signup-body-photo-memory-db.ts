@@ -59,6 +59,8 @@ export interface MemoryMediaAsset {
   failure_stage: string | null
   failure_code: string | null
   context_text: string | null
+  /** Default false/null is UNKNOWN; true is set only by the signup INSERT. */
+  signup_origin: boolean | null
   processing_request_id: string | null
   processing_result: unknown
   source_request_hash: string
@@ -393,6 +395,7 @@ export class SignupBodyPhotoMemoryDb {
       failure_stage: null,
       failure_code: null,
       context_text: null,
+      signup_origin: false,
       processing_request_id: null,
       processing_result: null,
       source_request_hash: sha256Hex(`seed:${row.id}`),
@@ -674,6 +677,7 @@ export class SignupBodyPhotoMemoryDb {
         failure_stage: null,
         failure_code: null,
         context_text: null,
+        signup_origin: false,
         processing_request_id: null,
         processing_result: null,
         retention_until: null,

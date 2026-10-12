@@ -201,6 +201,7 @@ function seed(state: Partial<MemoryMediaAsset> = {}) {
   return db().seedMediaAsset({
     id: ASSET,
     user_id: ACCOUNT,
+    signup_origin: true,
     context_text: 'Foto de frente.',
     ...state,
   })

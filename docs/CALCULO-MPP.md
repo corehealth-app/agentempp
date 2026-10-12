@@ -4017,3 +4017,51 @@ golden):
 > RC C26a — cenário lista allowed_tools dos estágios de ganho de massa e de manutenção no banco do ambiente de teste variante leitura do valor gravado (a cerca vale com qualquer valor; o valor não foi lido, e um estágio que liste só esta ferramenta deixa o Flow sem ferramenta nenhuma) NÃO coberta nesta PR (pendência da audit 2026-10-09)
 
 > RC C26a — cenário caminho legado (processMessage) chamando consulta_reavaliacao_protocolo variante deixar de devolver pausar_ganho, revisar_fase e −150 ou −300 kcal (o legado fica igual, byte a byte, por decisão) NÃO coberta nesta PR (pendência da audit 2026-10-09)
+
+## 10s. Cadastro por fotos — decisões D1/D2 de Eduardo em 2026-10-11
+
+**Estado local por etapa, sem publicação.** D1 foi respondido pelo dono:
+“Média das três leituras”. Cada slot (frente, lado, costas) contribui uma vez,
+com pesos iguais. O `view` inferido pelo modelo e sua confiança não substituem
+o slot nem alteram os pesos. Só três poses atuais, processadas e com números
+corporais finitos podem formar a estimativa; duas fotos não são completadas
+artificialmente. As três leituras devem estar na faixa já usada no cadastro,
+3–60. Isso não é validação de precisão clínica.
+
+`18/24/30 → 24`; `21/24/22 → 67/3` como média bruta. A prévia utiliza o valor
+canônico com duas casas decimais, como `numeric(4,2)`, calculado pelo decimal
+exato antes do arredondamento; tela e armazenamento não devem usar números
+diferentes perto de um corte. O GET mostra só a estimativa agregada. Não expõe
+as três leituras individuais, notas, confiança ou view e não grava o BF
+oficial, objetivo ou metas. Essa minimização é escolha técnica local, a refletir
+no rascunho de consentimento ainda não aprovado.
+
+D2 foi respondido pelo dono: “Usar no objetivo e nas metas (Recomendado)”,
+**após confirmação explícita**. Substitui as respostas provisórias14,39 e41
+para este cadastro. A aplicação atômica e seu recibo durável ainda pertencem
+à próxima etapa de B4b; igualdade entre a média e um número digitado não
+prova confirmação. D1/D2 são decisões de Eduardo, sem aprovação médica
+inferida. O interruptor continua OFF e os builds publicados não usam este fluxo.
+
+As fórmulas existentes permanecem: com BF oficial informado, `calcBMR` usa
+`370 + 21,6 × massa_magra`; sem BF, usa Mifflin. A composição na elegibilidade
+usa BF quando informado, ou IMC quando ausente, com os cortes/configuração
+existentes; não há corte ou fator novo da média. Os testes reais dessas funções,
+com homem81kg/180cm/44anos, recomposição e déficit500, dão1564kcal sem BF,
+1582 com22%,1540 com24% e1414 com30%; proteína121,5g em todos. São efeitos
+das funções existentes sob dados sintéticos, não prova da confirmação integrada.
+Dados oficiais da mesma conta alimentam cálculos compartilhados, inclusive o
+caminho WhatsApp; seus módulos de leitura, junção e mensagens ficam inalterados.
+
+A regra11.1.3 do método manda escolher Katch com confiança adequada e
+consistência das fotos, medidas e histórico, ou Mifflin quando o BF não puder
+ser inferido com precisão. Ela não fornece corte numérico de confiança.
+A média escolhida pelo dono não comprova essa precisão nem resolve a avaliação
+clínica de leituras contraditórias. O cálculo existente muda de fórmula pela
+presença de BF; não inventar validação médica, tolerância de divergência ou
+aprovação de Roberto a partir desta implementação.
+
+Origem das fotos exige marker trusted no INSERT; uma foto corporal histórica
+com a mesma frase permanece UNKNOWN. A coluna local é imutável e não foi
+aplicada remotamente. Confirmação/prova, limpeza automática D4, texto B5,
+telas, Storage/fila/provedor e QA físico seguem os gates próprios do handoff.

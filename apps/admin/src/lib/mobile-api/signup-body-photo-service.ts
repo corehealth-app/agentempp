@@ -7,7 +7,7 @@
  * completed, replaced and deleted. Reading is requested only after the
  * consent and open sign-up checks, through the existing media event gateway.
  * Dispatch leaves the stored state "uploaded" until the worker claims it.
- * There is no aggregate estimate in this package.
+ * An accepted current consent permits the arithmetic estimate of three read slots.
  *
  * THE CONSENT. The photos are offered before the notices of the sign-up are
  * accepted, so their acceptance is asked for on the spot and recorded at once:
@@ -21,10 +21,11 @@
  * acceptance does not receive it, so it cannot reach the database.
  *
  * WHERE THE POSE IS KEPT. The media catalogue has no column for it, and no
- * migration is made: the photo's private context holds one of three fixed
+ * the photo's private context holds one of three fixed
  * sentences, and the pose is read back from it by exact equality. The client
  * has no read access to that column and no answer of these routes carries it.
- * A photo of the sign-up IS a body photo whose context is one of the three.
+ * Only a trusted signup_origin=true INSERT proves signup origin; a historical
+ * body photo with the same sentence remains UNKNOWN and is preserved.
  *
  * ORDER OF A CREATION, fixed: (1) the Idempotency-Key is looked up first — a
  * photo already created with it is handed back with a new upload ticket,
@@ -48,6 +49,10 @@
  * of the catalogue, the photos not deleted first: see the adapter.)
  */
 import { createHash } from 'node:crypto'
+import {
+  estimateSignupBodyFat,
+  type SignupBodyFatEstimate,
+} from '@mpp/agent/signup-body-fat-estimate'
 import type { MobileAuthContext } from './auth'
 import type { SignupBodyPhotoUploadInput } from './contracts'
 import { MobileApiError } from './http'
@@ -201,7 +206,8 @@ export interface SignupBodyPhotoState {
   consent: SignupBodyPhotoConsentDto | null
   minimum_age: number
   poses: SignupBodyPhotoPoseDto[]
-  estimate: null
+  /** The preview exposes the joined value, not three individual readings. */
+  estimate: Pick<SignupBodyFatEstimate, 'is_estimate' | 'by_sex'> | null
   remaining_uploads: number
 }
 
@@ -316,6 +322,24 @@ export async function getSignupBodyPhotoState(
     dependencies.catalogue.countCreatedSince(auth.userId, limitWindowStart(now)),
   ])
 
+  const selected = SIGNUP_BODY_PHOTO_POSES.map((pose) =>
+    open
+      .filter((row) => row.pose === pose && isStored(row.status, row.failureStage))
+      .reduce<SignupBodyPhotoRow | null>(
+        (latest, row) => (latest === null || storedBefore(latest, row) ? row : latest),
+        null,
+      ),
+  )
+  const estimate =
+    acceptedAt !== null && selected.every((row) => row?.status === 'processed')
+      ? estimateSignupBodyFat(
+          selected.map((row, index) => ({
+            pose: SIGNUP_BODY_PHOTO_POSES[index] as SignupBodyPhotoPose,
+            bodyFatPercent: row?.bodyFatPercent ?? null,
+          })),
+        )
+      : null
+
   return {
     available: true,
     unavailable_reason: null,
@@ -330,13 +354,8 @@ export async function getSignupBodyPhotoState(
     minimum_age: SIGNUP_BODY_PHOTO_MINIMUM_AGE,
     // Only a photo whose upload was completed is in its pose; when two are
     // stored for one pose (two completions at once), the newest.
-    poses: SIGNUP_BODY_PHOTO_POSES.map((pose) => {
-      const newest = open
-        .filter((row) => row.pose === pose && isStored(row.status, row.failureStage))
-        .reduce<SignupBodyPhotoRow | null>(
-          (latest, row) => (latest === null || storedBefore(latest, row) ? row : latest),
-          null,
-        )
+    poses: SIGNUP_BODY_PHOTO_POSES.map((pose, index) => {
+      const newest = selected[index]
       return {
         pose,
         photo: newest && {
@@ -346,7 +365,7 @@ export async function getSignupBodyPhotoState(
         },
       }
     }),
-    estimate: null,
+    estimate: estimate && { is_estimate: estimate.is_estimate, by_sex: estimate.by_sex },
     remaining_uploads: Math.max(0, SIGNUP_BODY_PHOTO_DAILY_LIMIT - createdInWindow),
   }
 }
@@ -454,6 +473,7 @@ async function assertSignupOpenWithConsent(
 function isSameCreation(existing: MediaAssetRecord, input: SignupBodyPhotoUploadInput): boolean {
   return (
     existing.kind === SIGNUP_BODY_PHOTO_KIND &&
+    existing.signup_origin === true &&
     signupBodyPhotoPoseOf(existing.context_text) === input.pose &&
     existing.mime_type === input.mime_type &&
     existing.declared_size_bytes === input.size_bytes
@@ -517,6 +537,8 @@ export async function createSignupBodyPhoto(
     },
     requestKey,
     now,
+    undefined,
+    { signupOrigin: true },
   )
   return {
     photo: {
@@ -548,7 +570,9 @@ export async function completeSignupBodyPhoto(
   // and a body photo that is not of the sign-up are all "not found".
   const asset = await dependencies.media.repository.findOwned(userId, photoId)
   const pose =
-    asset?.kind === SIGNUP_BODY_PHOTO_KIND ? signupBodyPhotoPoseOf(asset.context_text) : null
+    asset?.kind === SIGNUP_BODY_PHOTO_KIND && asset.signup_origin === true
+      ? signupBodyPhotoPoseOf(asset.context_text)
+      : null
   if (!asset || !pose) {
     throw new MobileApiError(404, 'body_photo_not_found', 'Body photo not found')
   }

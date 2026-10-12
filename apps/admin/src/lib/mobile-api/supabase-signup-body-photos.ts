@@ -8,8 +8,9 @@
  * photos. Nothing here touches the client until a method is called, so a
  * request answered with the switch off makes no query at all.
  *
- * The photos are rows of the media catalogue: body photos whose private
- * context is one of the three pose sentences. Creating one and completing its
+ * Signup origin requires the private trusted INSERT marker signup_origin=true;
+ * historical/default false or null is UNKNOWN, even with a pose sentence.
+ * Creating one and completing its
  * upload go through the generic media service and its adapter; what is here
  * is what that service does not have — listing the photos of the sign-up of
  * an account (the ones not deleted, or every one ever created), counting them
@@ -17,7 +18,8 @@
  * its finite numeric body value only; free fields are never returned.
  *
  * The pose sentence is compared HERE, in code, not in the query: the queries
- * filter by account and kind only, with the plain filters the rest of the
+ * filter by account, kind and the trusted origin BEFORE the page limit.
+ * The plain filters are the same API the rest of the
  * app server already uses. A filter that silently matched nothing would make
  * "delete everything" delete nothing.
  *
@@ -249,6 +251,7 @@ function createCatalogue(supabase: ServiceClient, requestId: string): SignupBody
       .select(PHOTO_COLUMNS)
       .eq('user_id', userId)
       .eq('kind', SIGNUP_BODY_PHOTO_KIND)
+      .eq('signup_origin', true)
     const { data, error } = await (which === 'open'
       ? ofTheAccount.neq('status', 'deleted').order('created_at', { ascending: false })
       : ofTheAccount.order('deleted_at', { ascending: false, nullsFirst: true })
@@ -287,6 +290,7 @@ function createCatalogue(supabase: ServiceClient, requestId: string): SignupBody
         .select('context_text')
         .eq('user_id', userId)
         .eq('kind', SIGNUP_BODY_PHOTO_KIND)
+        .eq('signup_origin', true)
         .gte('created_at', since)
         .limit(PHOTOS_PAGE)
       if (error || !Array.isArray(data)) operationFailure(requestId, 'count_photos', error)
@@ -311,6 +315,7 @@ function createCatalogue(supabase: ServiceClient, requestId: string): SignupBody
         })
         .eq('user_id', userId)
         .eq('kind', SIGNUP_BODY_PHOTO_KIND)
+        .eq('signup_origin', true)
         .in('id', photoIds)
         .neq('status', 'deleted')
         .select('id')
@@ -349,7 +354,7 @@ export function createSupabaseSignupBodyPhotoDependencies(
     enabled: options.enabled,
     consent: createConsentRepository(supabase, requestId),
     catalogue: createCatalogue(supabase, requestId),
-    media: createSupabaseMediaDependencies(supabase),
+    media: createSupabaseMediaDependencies(supabase, { signupPhotos: true }),
     repairCompleted: (userId) => repairCompletedSignupBodyPhotos(supabase, userId),
   }
 }

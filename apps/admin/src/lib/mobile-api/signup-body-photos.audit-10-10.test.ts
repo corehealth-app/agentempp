@@ -88,7 +88,7 @@
  * published.
  *
  * > RC P-PHOTOS — cenário cadastro do médico em 2026-10-10 no build 1.0 (3) ("Comecei o cadastro. Ele perguntou qual era a gordura corporal" e "Não pediu as fotos") variante o cadastro pedir as três fotos e estimar o percentual por elas de ponta a ponta (B2 recebe, guarda, troca e apaga; B3 pede leitura após o aceite próprio com o interruptor ligado; a junção/uso, as telas e a conferência física ainda não estão concluídos) NÃO coberta nesta PR (pendência da audit 2026-10-11)
- * > RC P-PHOTOS — cenário foto do corpo com envio concluído variante a leitura real por IA e a estimativa integrada das três poses (B3 emite o pedido e distingue lida de sem número em testes locais; estimate segue null, a junção/uso espera D1 e D2 e a fila/provedor reais não foram verificados) NÃO coberta nesta PR (pendência da audit 2026-10-11)
+ * > RC P-PHOTOS — cenário foto do corpo com envio concluído variante a leitura real por IA e a estimativa integrada das três poses (B3 emite o pedido; B4b junta três slots por média aritmética em testes locais, sem expor leituras individuais; confirmação/uso atômico, UI e fila/provedor reais ainda não foram verificados) NÃO coberta nesta PR (pendência da audit 2026-10-11)
  * > RC P-PHOTOS — cenário cadastro concluído com fotos enviadas variante o servidor apagar as fotos na conclusão (decisão D4 do orquestrador, anunciada ao dono; B4a tem hook e mecânica locais, mas o resolver real segue deferred_rule; foto viva fica pendente e GET/DELETE de cadastro concluído respondem 503 até B4b e a disposição explícita) NÃO coberta nesta PR (pendência da audit 2026-10-11)
  * > RC P-PHOTOS — cenário cadastro abandonado depois do envio das fotos variante apagar as fotos sem a pessoa voltar (a data de guarda gravada é a de 730 dias da política genérica de mídia e a rotina de limpeza não está publicada no ambiente de teste) NÃO coberta nesta PR (pendência da audit 2026-10-11)
  * > RC P-PHOTOS — cenário envio que chega ao armazenamento depois do último DELETE /onboarding/body-photos da conta, com o bilhete ainda válido de uma foto já apagada, trocada ou recusada (o bilhete de envio vale duas horas e não pode ser revogado) variante remover esse objeto sem que o app apague de novo ou chame a conclusão do envio dessa foto (no perfil conhecido aberto, DELETE usa B2; no concluído só tombstones podem ter bytes reparados, enquanto foto viva não resolvida responde 503; o interruptor não impede DELETE no staging, mas nada roda sozinho depois dele, e conclusão OFF responde 404) NÃO coberta nesta PR (pendência da audit 2026-10-11)
@@ -324,6 +324,7 @@ function seed(id: string, pose: Pose, overrides: Partial<MemoryMediaAsset> = {})
   return db().seedMediaAsset({
     id,
     user_id: ACCOUNT,
+    signup_origin: true,
     context_text: POSE_SENTENCE[pose],
     ...overrides,
   })
@@ -1944,5 +1945,190 @@ describe('declared pendencies', () => {
     expect(flat).toContain(
       '### Foto do corpo só vai à leitura por IA pelo cadastro, depois do consentimento próprio',
     )
+  })
+})
+
+describe('B4b owner decision 2026-10-11: arithmetic mean of three slot readings', () => {
+  async function readTriad() {
+    await acceptConsent()
+    const ids: string[] = []
+    for (const [index, pose] of (['front', 'side', 'back'] as const).entries()) {
+      const id = await store(pose)
+      ids.push(id)
+      rowOf(id).status = 'processed'
+      rowOf(id).processing_result = { type: 'body', bf_percent_estimate: [18, 24, 30][index] }
+    }
+    return ids
+  }
+
+  it('B4B-02 three processed readings but a new current consent is not accepted: no estimate/writes', async () => {
+    const ids = await readTriad()
+    publishSecondConsentText()
+    db().operations.length = 0
+    const state = await readState()
+    expect(state.consent.accepted_at).toBeNull()
+    expect(state.estimate).toBeNull()
+    expect(state.poses.map((slot: { photo: { id: string } }) => slot.photo.id)).toEqual(ids)
+    expect(db().operations.some((operation) => /^(insert|update|storage:)/.test(operation))).toBe(
+      false,
+    )
+  })
+
+  it('B4B-03 mean24 survives a pending replacement; completing it selects the new uploaded slot and waits for reading', async () => {
+    const ids = await readTriad()
+    const replacement = await created('front')
+    const before = await readState()
+    expect(before.poses.map((slot: { photo: { id: string } }) => slot.photo.id)).toEqual(ids)
+    expect(before.estimate.by_sex.masculino).toEqual({ usable: true, body_fat_percent: 24 })
+    upload(replacement.photo.id, { size: 480_000 })
+    // This is a later completion, not the documented same-instant UUID tie.
+    vi.setSystemTime(new Date(NOW.getTime() + 1000))
+    expect((await complete(replacement.photo.id, { expectReading: true })).status).toBe(200)
+    expect(Date.parse(rowOf(replacement.photo.id).uploaded_at ?? '')).toBeGreaterThan(
+      Date.parse(rowOf(ids[0] ?? '').uploaded_at ?? ''),
+    )
+    const after = await readState()
+    expect(after.poses[0].photo).toMatchObject({ id: replacement.photo.id, status: 'uploaded' })
+    expect(after.estimate).toBeNull()
+    expect(rowOf(ids[0] ?? '').status).toBe('deleted')
+  })
+  it('B4B-01 EXACT male readings18/24/30 return24 for both sexes, regardless of repeated model views/confidence', async () => {
+    await acceptConsent()
+    const values = [18, 24, 30]
+    for (const [index, pose] of (['front', 'side', 'back'] as const).entries()) {
+      const id = await store(pose)
+      rowOf(id).status = 'processed'
+      rowOf(id).processing_result = {
+        type: 'body',
+        bf_percent_estimate: values[index],
+        view: 'front',
+        bf_confidence: [0.9, 0.6, 0.7][index],
+        composition_notes: 'private synthetic composition',
+        posture_notes: 'private synthetic posture',
+      }
+    }
+    db().operations.length = 0
+    const state = await readState()
+    expect(state.estimate).toEqual({
+      is_estimate: true,
+      by_sex: {
+        masculino: { usable: true, body_fat_percent: 24 },
+        feminino: { usable: true, body_fat_percent: 24 },
+      },
+    })
+    const wire = JSON.stringify(state)
+    expect(wire).not.toContain('private synthetic')
+    expect(wire).not.toContain('confidence')
+    expect(wire).not.toContain('view')
+    expect(state.estimate).not.toHaveProperty('readings')
+    expect(
+      db().operations.filter((operation) => /^(insert|update|storage:remove)/.test(operation)),
+    ).toEqual([])
+    expect(state.poses.map((slot: { photo: { status: string } }) => slot.photo.status)).toEqual([
+      'read',
+      'read',
+      'read',
+    ])
+  })
+})
+
+describe('B4b trusted signup origin: historical body photos are UNKNOWN', () => {
+  it('B4B-ORIGIN-11 SQL scopes origin before limit1000:1001 newer UNKNOWN rows cannot hide three signup readings', async () => {
+    await acceptConsent()
+    const ids: string[] = []
+    for (const [index, pose] of (['front', 'side', 'back'] as const).entries()) {
+      const id = await store(pose)
+      ids.push(id)
+      rowOf(id).status = 'processed'
+      rowOf(id).processing_result = { type: 'body', bf_percent_estimate: [18, 24, 30][index] }
+    }
+    const historical = Array.from({ length: 1001 }, (_unused, index) => {
+      const row = db().seedMediaAsset({
+        id: `00000000-0000-4000-8000-00000002${String(index).padStart(4, '0')}`,
+        user_id: ACCOUNT,
+        signup_origin: false,
+        context_text: 'Foto de frente.',
+        created_at: databaseTimestamp(new Date(NOW.getTime() + 60_000 + index)),
+      })
+      db().upload(row, { size: 1200 })
+      return row
+    })
+    const state = await readState()
+    expect(state.poses.map((slot: { photo: { id: string } }) => slot.photo.id)).toEqual(ids)
+    expect(state.estimate.by_sex.masculino).toEqual({ usable: true, body_fat_percent: 24 })
+    expect(state.remaining_uploads).toBe(6)
+    const response = await remove()
+    expect(response.status).toBe(200)
+    expect((await response.json()).data).toEqual({ deleted: 3 })
+    for (const row of historical) {
+      expect(row.status).toBe('pending_upload')
+      expect(objectOf(row.id)).toBeDefined()
+    }
+  })
+  it.each([
+    false,
+    null,
+  ])('B4B-ORIGIN-01 origin=%s same pose contexts cannot become signup photos or estimates', async (signupOrigin) => {
+    await acceptConsent()
+    for (const [index, pose] of (['front', 'side', 'back'] as const).entries()) {
+      db().seedMediaAsset({
+        id: `00000000-0000-4000-8000-000000000c0${index}`,
+        user_id: ACCOUNT,
+        signup_origin: signupOrigin,
+        context_text: POSE_SENTENCE[pose],
+        status: 'processed',
+        actual_size_bytes: 1200,
+        uploaded_at: databaseTimestamp(NOW),
+        processed_at: databaseTimestamp(NOW),
+        processing_request_id: sha256Hex(`historical-${pose}`),
+        processing_result: { type: 'body', bf_percent_estimate: [18, 24, 30][index] },
+      })
+    }
+    const state = await readState()
+    expect(state.poses.map((slot: { photo: unknown }) => slot.photo)).toEqual([null, null, null])
+    expect(state.estimate).toBeNull()
+    expect(state.remaining_uploads).toBe(9)
+  })
+
+  it.each([
+    false,
+    null,
+  ])('B4B-ORIGIN-02 origin=%s same context bytes survive DELETE', async (signupOrigin) => {
+    const row = db().seedMediaAsset({
+      id: '00000000-0000-4000-8000-000000000c10',
+      user_id: ACCOUNT,
+      signup_origin: signupOrigin,
+      context_text: 'Foto de frente.',
+    })
+    db().upload(row, { size: 1200 })
+    const before = structuredClone(row)
+    const response = await DELETE(request('DELETE', '', { key: newKey('delete-unknown') }))
+    expect(response.status).toBe(200)
+    expect((await response.json()).data).toEqual({ deleted: 0 })
+    expect(row).toEqual(before)
+    expect(db().objects.has(`${row.bucket_id}/${row.object_path}`)).toBe(true)
+    expect(db().operations).not.toContain('storage:remove')
+    expect(db().operations).not.toContain('update:media_assets')
+  })
+
+  it.each([
+    false,
+    null,
+  ])('B4B-ORIGIN-03 origin=%s same context cannot be completed by signup', async (signupOrigin) => {
+    await acceptConsent()
+    const row = db().seedMediaAsset({
+      id: '00000000-0000-4000-8000-000000000c11',
+      user_id: ACCOUNT,
+      signup_origin: signupOrigin,
+      context_text: 'Foto de frente.',
+    })
+    db().upload(row, { size: 1200 })
+    const before = structuredClone(row)
+    const response = await complete(row.id)
+    expect(response.status).toBe(404)
+    expect((await response.json()).error.code).toBe('body_photo_not_found')
+    expect(row).toEqual(before)
+    expect(db().operations).not.toContain('storage:info')
+    expect(db().operations).not.toContain('update:media_assets')
   })
 })

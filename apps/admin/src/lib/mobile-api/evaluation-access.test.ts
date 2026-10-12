@@ -476,6 +476,7 @@ class EvaluationMemoryDb {
           JSON.stringify([
             { operator: 'eq', column: 'user_id', value: USER },
             { operator: 'eq', column: 'kind', value: 'body_checkin_photo' },
+            { operator: 'eq', column: 'signup_origin', value: true },
             { operator: 'neq', column: 'status', value: 'deleted' },
           ]) ||
         read.order?.column !== 'created_at' ||
@@ -1485,6 +1486,7 @@ describe('first completion with the four locks open', () => {
         filters: [
           { operator: 'eq', column: 'user_id', value: USER },
           { operator: 'eq', column: 'kind', value: 'body_checkin_photo' },
+          { operator: 'eq', column: 'signup_origin', value: true },
           { operator: 'neq', column: 'status', value: 'deleted' },
         ],
         order: { column: 'created_at', ascending: false },

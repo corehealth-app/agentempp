@@ -9,6 +9,7 @@
     ".": "./src/index.ts",
     "./flow-public-metrics": "./src/flow-public-metrics.ts",
     "./flow-curated-phrases": "./src/flow-curated-phrases.ts",
+    "./signup-body-fat-estimate": "./src/signup-body-fat-estimate.ts",
     "./testing/day-close-memory-db": "./src/testing/day-close-memory-db.ts"
   },
   "scripts": {

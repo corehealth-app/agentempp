@@ -29,6 +29,7 @@ const mediaAssetRowSchema = z.object({
   failure_stage: z.enum(['upload', 'processing']).nullable(),
   failure_code: z.string().nullable(),
   context_text: z.string().nullable(),
+  signup_origin: z.boolean().nullable().optional(),
   retention_until: z.string().datetime({ offset: true }).nullable(),
   uploaded_at: z.string().datetime({ offset: true }).nullable(),
   processed_at: z.string().datetime({ offset: true }).nullable(),
@@ -82,14 +83,16 @@ function storageErrorStatus(error: unknown): number | null {
   return Number.isInteger(parsed) ? parsed : null
 }
 
-function createRepository(supabase: ServiceClient): MediaAssetRepository {
+function createRepository(supabase: ServiceClient, signupPhotos: boolean): MediaAssetRepository {
+  // Generic media retains its old projection, including on the old database.
+  const selection = signupPhotos ? `${mediaSelection}, signup_origin` : mediaSelection
   const findByRequestHash: MediaAssetRepository['findByRequestHash'] = async (
     userId,
     sourceRequestHash,
   ) => {
     const { data, error } = await supabase
       .from('media_assets')
-      .select(mediaSelection)
+      .select(selection)
       .eq('user_id', userId)
       .eq('source_request_hash', sourceRequestHash)
       .maybeSingle()
@@ -113,8 +116,9 @@ function createRepository(supabase: ServiceClient): MediaAssetRepository {
           context_text: input.contextText,
           source_request_hash: input.sourceRequestHash,
           retention_until: input.retentionUntil,
+          ...(input.signupOrigin ? { signup_origin: true } : {}),
         })
-        .select(mediaSelection)
+        .select(selection)
         .maybeSingle()
       if (error?.code === '23505') {
         const existing = await findByRequestHash(input.userId, input.sourceRequestHash)
@@ -126,7 +130,7 @@ function createRepository(supabase: ServiceClient): MediaAssetRepository {
     async findOwned(userId, assetId) {
       const { data, error } = await supabase
         .from('media_assets')
-        .select(mediaSelection)
+        .select(selection)
         .eq('id', assetId)
         .eq('user_id', userId)
         .maybeSingle()
@@ -145,7 +149,7 @@ function createRepository(supabase: ServiceClient): MediaAssetRepository {
         .eq('id', assetId)
         .eq('user_id', userId)
         .eq('status', 'pending_upload')
-        .select(mediaSelection)
+        .select(selection)
         .maybeSingle()
       if (error || !data) databaseFailure('mark_uploaded', error)
       return parseMediaAsset(data)
@@ -176,7 +180,7 @@ function createRepository(supabase: ServiceClient): MediaAssetRepository {
         .eq('id', assetId)
         .eq('user_id', userId)
         .neq('status', 'deleted')
-        .select(mediaSelection)
+        .select(selection)
         .maybeSingle()
       if (error || !data) databaseFailure('mark_deleted', error)
       return parseMediaAsset(data)
@@ -227,18 +231,30 @@ function createStorage(supabase: ServiceClient): MediaStorageGateway {
   }
 }
 
-export function createSupabaseMediaDependencies(supabase: ServiceClient): MediaServiceDependencies {
+export function createSupabaseMediaDependencies(
+  supabase: ServiceClient,
+  options: { signupPhotos?: boolean } = {},
+): MediaServiceDependencies {
   return {
-    repository: createRepository(supabase),
+    repository: createRepository(supabase, options.signupPhotos === true),
     storage: createStorage(supabase),
     planDrafts: {
       async hasOpenDraftOfMedia(userId, assetId) {
         const { data, error } = await (
           supabase.from('plan_drafts' as never) as unknown as {
             select(columns: string): {
-              eq(column: string, value: string): {
-                eq(column: string, value: string): {
-                  in(column: string, values: string[]): {
+              eq(
+                column: string,
+                value: string,
+              ): {
+                eq(
+                  column: string,
+                  value: string,
+                ): {
+                  in(
+                    column: string,
+                    values: string[],
+                  ): {
                     limit(count: number): PromiseLike<{
                       data: unknown[] | null
                       error: { code?: string; message: string } | null

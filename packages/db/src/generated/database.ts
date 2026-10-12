@@ -1857,6 +1857,7 @@ export type Database = {
           processing_result: Json | null
           retention_until: string | null
           source_request_hash: string
+          signup_origin: boolean | null
           status: string
           updated_at: string
           uploaded_at: string | null
@@ -1881,6 +1882,7 @@ export type Database = {
           processing_result?: Json | null
           retention_until?: string | null
           source_request_hash: string
+          signup_origin?: boolean | null
           status?: string
           updated_at?: string
           uploaded_at?: string | null
@@ -1905,6 +1907,7 @@ export type Database = {
           processing_result?: Json | null
           retention_until?: string | null
           source_request_hash?: string
+          signup_origin?: boolean | null
           status?: string
           updated_at?: string
           uploaded_at?: string | null

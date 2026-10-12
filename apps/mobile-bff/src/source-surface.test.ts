@@ -335,13 +335,15 @@ describe('authoritative Mobile API source surface', () => {
     expect(surface.forbiddenAdministrativeTraceReferences).toEqual([])
     // Original50, excluding the single approved B4a finalization chunk, still
     // retain5303 references/175 targets. C11 adds107 references and its manifest.
-    // Each body-photo route adds108: the106 media references, its prior shared
-    // handler chunk, and B4a's finalization chunk. That finalization chunk is
+    // Each body-photo route adds109: the106 media references, its prior shared
+    // handler chunk, B4a's finalization chunk, and the agent package manifest
+    // needed by the pure signup-body-fat-estimate leaf (no agent barrel chunks).
+    // That finalization chunk is
     // referenced by exactly onboarding plus the three body-photo routes.
-    // 5303 + 1 + 107 + 3 x 108 = 5735 references; 175 + 1 + 1 + 3 + 1 = 181 targets.
-    // B3 had5731/180; B0's skeleton had5722/179. No new package or worker trace.
-    // Keep exact totals, original50 sans this one chunk, Flow bytes and all guards.
-    expect(surface.nftReferenceCount).toBe(5735)
+    // 5303 + 1 + 107 + 3 x 109 = 5738 references; 175 + 1 + 1 + 3 + 1 = 181 targets.
+    // The agent manifest already belongs to the original50: no new unique target.
+    // Keep exact totals, original50 sans this chunk, nine Flow catalogs and guards.
+    expect(surface.nftReferenceCount).toBe(5738)
     expect(surface.nftUniqueTargetCount).toBe(181)
     expect(surface.nftRegularFileTargetCount).toBe(179)
     expect(surface.nftDirectoryTargetCount).toBe(2)
@@ -353,7 +355,7 @@ describe('authoritative Mobile API source surface', () => {
     ]
     const addedRoutes: Record<string, number> = {
       '/api/mobile/v1/meal-records/[id]/route': 107,
-      ...Object.fromEntries(bodyPhotoRoutes.map((route) => [route, 108])),
+      ...Object.fromEntries(bodyPhotoRoutes.map((route) => [route, 109])),
     }
     const physicalTargets = (route: string): string[] => {
       const target = currentAppPathsManifest()[route]
@@ -421,7 +423,13 @@ describe('authoritative Mobile API source surface', () => {
     // The one chunk the three body-photo routes share, whatever number the
     // bundler gives it: inside the build's own chunks, and of these three only.
     const sharedChunks = new Set<string>()
+    const agentManifest = realpathSync(resolve(appRoot, '../../packages/agent/package.json'))
+    expect(baselineTargets.has(agentManifest)).toBe(true)
     for (const route of bodyPhotoRoutes) {
+      expect(
+        physicalTargets(route).filter((target) => target === agentManifest),
+        route,
+      ).toEqual([agentManifest])
       const extras = beyondBaseline(route).filter(
         (target) => target !== ownManifest(route) && target !== finalizationChunk,
       )

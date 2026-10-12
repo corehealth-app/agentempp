@@ -4,7 +4,7 @@ import { MobileApiError } from './http'
 
 export type OnboardingActionType = 'acceptance' | 'acknowledgement' | 'consent'
 
-const MAX_PUBLIC_ONBOARDING_STATE_BYTES = 60_000
+export const MAX_PUBLIC_ONBOARDING_STATE_BYTES = 60_000
 
 export interface OnboardingDocumentRecord {
   documentKey: string

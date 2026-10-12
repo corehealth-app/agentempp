@@ -60,7 +60,7 @@ const CLAIM = 'rpc:claim_mobile_api_request'
 const PROFILE_READ = 'select:user_profiles'
 const SNAPSHOT_READ = 'rpc:get_mobile_signup_body_photo_snapshot'
 const CONFIG_READ = 'select:global_config'
-const SQL_FUNCTION = 'rpc:complete_mobile_onboarding_with_body_photo_confirmation'
+const SQL_FUNCTION = 'rpc:complete_mobile_onboarding_with_cleanup_scope'
 const RECORD = 'rpc:complete_mobile_api_request'
 const RELEASE = 'rpc:fail_mobile_api_request'
 
@@ -504,7 +504,7 @@ class SignupMemoryDb {
   private async rpc(name: string, params: Record<string, unknown>): Promise<DbResult> {
     if (
       (name === 'complete_mobile_onboarding_atomic' ||
-        name === 'complete_mobile_onboarding_with_body_photo_confirmation') &&
+        name === 'complete_mobile_onboarding_with_cleanup_scope') &&
       this.holdSqlFunction
     ) {
       this.waitingSqlFunctions += 1
@@ -569,7 +569,7 @@ class SignupMemoryDb {
           error: null,
         }
       }
-      if (name === 'complete_mobile_onboarding_with_body_photo_confirmation') {
+      if (name === 'complete_mobile_onboarding_with_cleanup_scope') {
         // This memory fixture only delegates the no-metadata/count0 compatibility path.
         // Atomicity, receipt/CAS and photo acceptance are covered in native PostgreSQL.
         if (params.p_confirmation !== null || params.p_expected_receipt_count !== 0)
@@ -1099,8 +1099,9 @@ describe('D2 staging completion integration', () => {
       'rpc:get_mobile_signup_body_photo_snapshot',
       CONFIG_READ,
       CLAIM,
-      'rpc:complete_mobile_onboarding_with_body_photo_confirmation',
+      'rpc:complete_mobile_onboarding_with_cleanup_scope',
       'rpc:prepare_mobile_signup_body_photo_disposition',
+      'rpc:get_mobile_signup_body_photo_cleanup_scope',
       RECORD,
     ])
     expect(db.signupSnapshotReads).toEqual([{ p_user_id: USER_ID, p_include_open_photos: false }])
@@ -1507,6 +1508,7 @@ describe('POST /onboarding — a first completion records only an objective the 
       CLAIM,
       SQL_FUNCTION,
       'rpc:prepare_mobile_signup_body_photo_disposition',
+      'rpc:get_mobile_signup_body_photo_cleanup_scope',
       RECORD,
     ])
     expect(db.idempotencyRows()).toEqual([{ key: KEY, state: 'completed', status: 200 }])
@@ -1953,6 +1955,7 @@ describe('POST /onboarding — an account that already has a completion time is 
       CLAIM,
       SQL_FUNCTION,
       'rpc:prepare_mobile_signup_body_photo_disposition',
+      'rpc:get_mobile_signup_body_photo_cleanup_scope',
       RECORD,
     ])
     expect(db.submissions).toEqual([body])
@@ -1993,6 +1996,7 @@ describe('POST /onboarding — an account that already has a completion time is 
       CLAIM,
       SQL_FUNCTION,
       'rpc:prepare_mobile_signup_body_photo_disposition',
+      'rpc:get_mobile_signup_body_photo_cleanup_scope',
       RECORD,
     ])
     expect(db.profile?.current_protocol).toBe(stored.objective)
@@ -2034,11 +2038,13 @@ describe('POST /onboarding — an account that already has a completion time is 
       SNAPSHOT_READ,
       SQL_FUNCTION,
       'rpc:prepare_mobile_signup_body_photo_disposition',
+      'rpc:get_mobile_signup_body_photo_cleanup_scope',
       SNAPSHOT_READ,
       CLAIM,
       SNAPSHOT_READ,
       SQL_FUNCTION,
       'rpc:prepare_mobile_signup_body_photo_disposition',
+      'rpc:get_mobile_signup_body_photo_cleanup_scope',
     ])
     expect(db.idempotencyRows()).toEqual([{ key, state: 'completed', status: 200 }])
     expect(db.submissions).toEqual([body, body, body])
@@ -2064,6 +2070,7 @@ describe('POST /onboarding — an account that already has a completion time is 
       CLAIM,
       SQL_FUNCTION,
       'rpc:prepare_mobile_signup_body_photo_disposition',
+      'rpc:get_mobile_signup_body_photo_cleanup_scope',
       RECORD,
     ])
   })
@@ -2088,6 +2095,7 @@ describe('POST /onboarding — an account that already has a completion time is 
       CLAIM,
       SQL_FUNCTION,
       'rpc:prepare_mobile_signup_body_photo_disposition',
+      'rpc:get_mobile_signup_body_photo_cleanup_scope',
       RECORD,
     ])
   })
@@ -2352,5 +2360,152 @@ describe('POST /onboarding — the objective check fails closed', () => {
     // Only the allowed one reached the SQL function, which recorded nothing.
     expect(db.submissions).toHaveLength(1)
     expect(db.profile).toBeNull()
+  })
+})
+
+describe('official signup cleanup scope', () => {
+  const generation = '2026-10-12T12:34:56.123456Z'
+  function reading(
+    deps: OnboardingRouteDependencies,
+    state: 'pending' | 'unknown' | 'not_required',
+  ) {
+    return Object.assign(deps, {
+      readSignupBodyPhotoCleanupScope: vi.fn(
+        async (_client: ServiceClient, owner: string, g: string) => {
+          if (owner !== USER_ID) throw new Error('wrong_owner')
+          return { generation: g, state }
+        },
+      ),
+    })
+  }
+
+  it('GET returns historical G literally while retaining the current completion', async () => {
+    const repo = repository()
+    const deps = reading(dependencies(repo), 'pending')
+    const ctx = context()
+    ctx.request = new Request(
+      `${ENDPOINT}?body_photo_cleanup_generation=${encodeURIComponent(generation)}`,
+    )
+    const response = await handleOnboardingGet(ctx, deps)
+    const { data } = await response.json()
+    expect(data.completion).toEqual({ completed: false, completed_at: null })
+    expect(data.body_photo_cleanup).toEqual({ generation, state: 'pending' })
+    expect(deps.readSignupBodyPhotoCleanupScope).toHaveBeenCalledWith(
+      ctx.supabase,
+      USER_ID,
+      generation,
+    )
+  })
+
+  it.each([
+    'infinity',
+    '2026-02-30T12:00:00Z',
+    '2026-10-12T12:34:56.1234567Z',
+    '2026-10-12T12:34:56.123456+99:99',
+    '2026-10-12T12:34:56.123456+24:00',
+    '2026-10-12T12:34:56.123456+00:60',
+    '2026-10-12',
+  ])('GET rejects invalid generation %s', async (g) => {
+    const repo = repository()
+    const ctx = context()
+    ctx.request = new Request(`${ENDPOINT}?body_photo_cleanup_generation=${encodeURIComponent(g)}`)
+    const deps = reading(dependencies(repo), 'not_required')
+    await expect(handleOnboardingGet(ctx, deps)).rejects.toMatchObject({
+      status: 400,
+      code: 'invalid_body_photo_cleanup_generation',
+    })
+    expect(repo.load).not.toHaveBeenCalled()
+    expect(deps.readSignupBodyPhotoCleanupScope).not.toHaveBeenCalled()
+  })
+
+  it('GET rejects duplicate generation parameters', async () => {
+    const ctx = context()
+    ctx.request = new Request(
+      `${ENDPOINT}?body_photo_cleanup_generation=${generation}&body_photo_cleanup_generation=${generation}`,
+    )
+    await expect(
+      handleOnboardingGet(ctx, reading(dependencies(repository()), 'pending')),
+    ).rejects.toMatchObject({ status: 400 })
+  })
+
+  it('POST and replay recompute the optional signal without storing a stale signal or changing the input hash', async () => {
+    const repo = recordingRepository()
+    const deps = reading(dependencies(repo), 'pending')
+    const state = ledger()
+    deps.executeIdempotent = state.execute
+    const body = validBody()
+    const first = await handleOnboardingPost(completionContext(body, 'cleanup-replay'), deps)
+    expect((await first.json()).data.body_photo_cleanup).toEqual({
+      generation: '2026-09-15T15:00:00.000Z',
+      state: 'pending',
+    })
+    deps.readSignupBodyPhotoCleanupScope.mockImplementation(async (_client, _owner, g) => ({
+      generation: g,
+      state: 'unknown',
+    }))
+    const replay = await handleOnboardingPost(completionContext(body, 'cleanup-replay'), deps)
+    expect(replay.headers.get('idempotency-replayed')).toBe('true')
+    expect((await replay.json()).data.body_photo_cleanup.state).toBe('unknown')
+    expect((state.stored[0].body as { data: object }).data).not.toHaveProperty('body_photo_cleanup')
+    expect(state.rows.rows[0].request_hash).toBe(hashMobileRequest(body))
+  })
+
+  it('an optional read failure preserves the official POST and completed claim', async () => {
+    const repo = recordingRepository()
+    const deps = reading(dependencies(repo), 'pending')
+    deps.readSignupBodyPhotoCleanupScope.mockRejectedValue(new Error('read_failed'))
+    const state = ledger()
+    deps.executeIdempotent = state.execute
+    const response = await handleOnboardingPost(
+      completionContext(validBody(), 'cleanup-read-error'),
+      deps,
+    )
+    expect(response.status).toBe(200)
+    expect((await response.json()).data).toMatchObject({
+      onboarding_completed: true,
+      body_photo_cleanup: { state: 'unknown' },
+    })
+    expect(state.rows.rows[0].state).toBe('completed')
+  })
+
+  it('omits only the optional field when enrichment would exceed the existing 60000 byte bound', async () => {
+    const repo = repository()
+    const loaded = await repo.load(USER_ID, 'pt-BR')
+    loaded.completedAt = generation
+    loaded.documents = [
+      {
+        documentKey: 'terms_of_service',
+        version: 'test',
+        locale: 'pt-BR',
+        body: '',
+        contentUrl: null,
+        contentHash: 'a'.repeat(64),
+        purpose: 'test',
+        action: 'acceptance',
+        required: true,
+        effectiveAt: generation,
+      },
+    ]
+    vi.mocked(repo.load).mockResolvedValue(loaded)
+    const base = await handleOnboardingGet(context(), dependencies(repo))
+    const baseData = (await base.json()).data
+    loaded.documents[0].body = 'a'.repeat(
+      60000 - new TextEncoder().encode(JSON.stringify(baseData)).byteLength - 10,
+    )
+    const deps = reading(dependencies(repo), 'pending')
+    const response = await handleOnboardingGet(context(), deps)
+    const { data } = await response.json()
+    expect(response.status).toBe(200)
+    expect(data).not.toHaveProperty('body_photo_cleanup')
+    expect(new TextEncoder().encode(JSON.stringify(data)).byteLength).toBe(59990)
+    expect(deps.readSignupBodyPhotoCleanupScope).toHaveBeenCalledOnce()
+  })
+
+  it('does not read cleanup metadata on the old production or unknown target', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://xuxehkhdvjivitduarvb.supabase.co')
+    const deps = reading(dependencies(recordingRepository()), 'not_required')
+    const response = await handleOnboardingPost(context(validBody()), deps)
+    expect((await response.json()).data).not.toHaveProperty('body_photo_cleanup')
+    expect(deps.readSignupBodyPhotoCleanupScope).not.toHaveBeenCalled()
   })
 })

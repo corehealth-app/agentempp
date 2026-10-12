@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { ServiceClient } from '@mpp/db'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { OnboardingCompletionInput } from './contracts'
 import { OnboardingRepositoryError } from './onboarding-service'
 import type { PreparedSignupPhotoConfirmation } from './signup-body-photo-confirmation'
@@ -86,6 +86,8 @@ function requirementSet(documentKeys: string[]) {
   }
 }
 
+afterEach(() => vi.unstubAllEnvs())
+
 describe('Supabase onboarding adapter', () => {
   it.each([
     ['40001', 'onboarding_generation_changed', 409],
@@ -135,6 +137,7 @@ describe('Supabase onboarding adapter', () => {
     'absent',
     'accept',
   ] as const)('uses the server generation in the checked RPC with ORIGINAL submission (%s)', async (mode) => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://xitugspwfxkcluxvrdeg.supabase.co')
     const original = completionInput()
     original.height_cm = 173.555
     original.weight_kg = 80.005
@@ -191,7 +194,7 @@ describe('Supabase onboarding adapter', () => {
       completed: true,
     })
     expect(rpc).toHaveBeenCalledTimes(1)
-    expect(rpc).toHaveBeenCalledWith('complete_mobile_onboarding_with_body_photo_confirmation', {
+    expect(rpc).toHaveBeenCalledWith('complete_mobile_onboarding_with_cleanup_scope', {
       p_user_id: USER_ID,
       p_submission: official,
       p_confirmation: confirmation ?? null,

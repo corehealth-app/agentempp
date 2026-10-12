@@ -68,6 +68,7 @@ import { executeSupabaseIdempotent, hashMobileRequest } from './idempotency'
 import { completeOnboarding } from './onboarding-service'
 import { asStoredBodyValue } from './protocol-eligibility-service'
 import type { MobileRouteContext } from './route'
+import { readSignupBodyPhotoCleanupScope } from './signup-body-photo-cleanup-scope'
 import { createSupabaseOnboardingRepository } from './supabase-onboarding'
 
 const USER = '0b9f6f0e-0000-4000-8000-00000000ea01'
@@ -101,7 +102,7 @@ const ON = {
 const OBJECTIVE_CHECK_PROFILE_READ = 'select:user_profiles'
 const OBJECTIVE_CHECK_CONFIG_READ = 'select:global_config'
 const SIGNUP_SNAPSHOT_READ = 'rpc:get_mobile_signup_body_photo_snapshot'
-const CHECKED_COMPLETION = 'rpc:complete_mobile_onboarding_with_body_photo_confirmation'
+const CHECKED_COMPLETION = 'rpc:complete_mobile_onboarding_with_cleanup_scope'
 
 /**
  * The grant's own read of the profile, as a failure is aimed at it: the
@@ -155,10 +156,15 @@ function completionOperations(operations: string[], replay = false): string[] {
   if (projectRefFromUrl(process.env.NEXT_PUBLIC_SUPABASE_URL) !== STAGING_REF) return checked
   const beforeRecord = checked.indexOf('rpc:complete_mobile_api_request')
   return beforeRecord < 0
-    ? [...checked, 'rpc:prepare_mobile_signup_body_photo_disposition']
+    ? [
+        ...checked,
+        'rpc:prepare_mobile_signup_body_photo_disposition',
+        'rpc:get_mobile_signup_body_photo_cleanup_scope',
+      ]
     : [
         ...checked.slice(0, beforeRecord),
         'rpc:prepare_mobile_signup_body_photo_disposition',
+        'rpc:get_mobile_signup_body_photo_cleanup_scope',
         ...checked.slice(beforeRecord),
       ]
 }
@@ -630,7 +636,7 @@ class EvaluationMemoryDb {
         error: null,
       }
     }
-    if (name === 'complete_mobile_onboarding_with_body_photo_confirmation')
+    if (name === 'complete_mobile_onboarding_with_cleanup_scope')
       return this.completeCheckedOnboarding(params)
     if (name === 'complete_mobile_onboarding_atomic') return this.completeOnboarding(params)
     if (name === 'resolve_user_entitlement') return this.resolveEntitlement(params)
@@ -1175,12 +1181,20 @@ async function wire(response: Response) {
   }
 }
 
-/** The response as the handler built it before this change, on a database of its own. */
+/** Official completion bytes plus the optional unavailable proof on the allowed fixture target. */
 async function baselineResponse() {
   const db = new EvaluationMemoryDb().addAccount()
   const repository = createSupabaseOnboardingRepository(db.client)
   const input = onboardingCompletionInputSchema.parse(completionBody())
-  return wire(mobileSuccess(await completeOnboarding(repository, USER, input), REQUEST_ID))
+  const data = await completeOnboarding(repository, USER, input)
+  return wire(
+    mobileSuccess(
+      process.env.NEXT_PUBLIC_SUPABASE_URL === STAGING_URL
+        ? { ...data, body_photo_cleanup: { generation: NOW.toISOString(), state: 'unknown' } }
+        : data,
+      REQUEST_ID,
+    ),
+  )
 }
 
 function switchOn(overrides: Record<string, string | undefined> = {}): void {
@@ -1614,6 +1628,7 @@ describe('first completion with the four locks open', () => {
           protocol: 'recomposicao',
           paragraphs: protocolWelcomeMessage('recomposicao', NAME, 'pt-BR'),
         },
+        body_photo_cleanup: { generation: NOW.toISOString(), state: 'unknown' },
       },
       meta: { api_version: 'v1', request_id: REQUEST_ID },
     })
@@ -1762,12 +1777,10 @@ describe('Task3 checked compatibility keeps ORIGINAL hash and evaluation grant o
         .map((call) => call.params.p_request_hash),
     ).toEqual([originalHash, originalHash])
     expect(
-      db.calls.filter(
-        (call) => call.name === 'complete_mobile_onboarding_with_body_photo_confirmation',
-      ),
+      db.calls.filter((call) => call.name === 'complete_mobile_onboarding_with_cleanup_scope'),
     ).toEqual([
       {
-        name: 'complete_mobile_onboarding_with_body_photo_confirmation',
+        name: 'complete_mobile_onboarding_with_cleanup_scope',
         params: {
           p_user_id: USER,
           p_submission: original,
@@ -1778,7 +1791,7 @@ describe('Task3 checked compatibility keeps ORIGINAL hash and evaluation grant o
         },
       },
       {
-        name: 'complete_mobile_onboarding_with_body_photo_confirmation',
+        name: 'complete_mobile_onboarding_with_cleanup_scope',
         params: {
           p_user_id: USER,
           p_submission: original,
@@ -2469,6 +2482,7 @@ describe('B4a a failed injected hook cannot undo accepted completion or the gran
         targets: { calories: null, protein_g: null },
       })),
       finalizeSignupBodyPhotos: hook,
+      readSignupBodyPhotoCleanupScope,
     }
     const response = await handleOnboardingPost(context(db, body, key), deps)
     expect(await wire(response)).toEqual(expected)

@@ -12,9 +12,15 @@ import { assertOnboardingObjectiveEligible } from '@/lib/mobile-api/onboarding-e
 import {
   completeOnboarding,
   getOnboardingState,
+  MAX_PUBLIC_ONBOARDING_STATE_BYTES,
   type OnboardingRepository,
 } from '@/lib/mobile-api/onboarding-service'
 import type { MobileRouteContext } from '@/lib/mobile-api/route'
+import {
+  readSignupBodyPhotoCleanupScope,
+  signupCleanupGenerationSchema,
+  signupCleanupScopeSchema,
+} from '@/lib/mobile-api/signup-body-photo-cleanup-scope'
 import {
   type PreparedSignupPhotoConfirmation,
   prepareSignupPhotoConfirmation,
@@ -38,6 +44,7 @@ export interface OnboardingRouteDependencies {
   ): OnboardingRepository
   executeIdempotent: typeof executeSupabaseIdempotent
   saveLegacyOnboarding: typeof saveOnboarding
+  readSignupBodyPhotoCleanupScope?: typeof readSignupBodyPhotoCleanupScope
   finalizeSignupBodyPhotos(
     context: MobileRouteContext,
     input: OnboardingCompletionInput,
@@ -49,6 +56,7 @@ const defaultDependencies: OnboardingRouteDependencies = {
   createOnboardingRepository: createSupabaseOnboardingRepository,
   executeIdempotent: executeSupabaseIdempotent,
   saveLegacyOnboarding: saveOnboarding,
+  readSignupBodyPhotoCleanupScope,
   finalizeSignupBodyPhotos: finalizeSignupBodyPhotosAfterOnboarding,
 }
 
@@ -72,21 +80,71 @@ function completionBodyForStorage(body: unknown): unknown {
   const envelope = body as Record<string, unknown>
   const data = envelope.data
   if (!data || typeof data !== 'object' || Array.isArray(data)) return body
-  const { protocol_welcome: _welcome, ...stored } = data as Record<string, unknown>
+  const {
+    protocol_welcome: _welcome,
+    body_photo_cleanup: _scope,
+    ...stored
+  } = data as Record<string, unknown>
   return { ...envelope, data: stored }
+}
+
+async function withCleanupScope<T extends object>(
+  context: MobileRouteContext,
+  dependencies: OnboardingRouteDependencies,
+  data: T,
+  generation: string | null,
+) {
+  if (
+    !signupBodyPhotoFinalizationTargetAllowed() ||
+    !dependencies.readSignupBodyPhotoCleanupScope ||
+    generation === null ||
+    !signupCleanupGenerationSchema.safeParse(generation).success
+  )
+    return data
+  let scope = { generation, state: 'unknown' as 'unknown' | 'pending' | 'not_required' }
+  try {
+    const parsed = signupCleanupScopeSchema.safeParse(
+      await dependencies.readSignupBodyPhotoCleanupScope(
+        context.supabase,
+        context.auth.userId,
+        generation,
+      ),
+    )
+    if (parsed.success && parsed.data.generation === generation) scope = parsed.data
+  } catch {
+    /* Official completion and base GET remain valid. */
+  }
+  return { ...data, body_photo_cleanup: scope }
 }
 
 export async function handleOnboardingGet(
   context: MobileRouteContext,
   dependencies: OnboardingRouteDependencies = defaultDependencies,
 ): Promise<Response> {
+  const queries = new URL(context.request.url).searchParams.getAll('body_photo_cleanup_generation')
+  if (
+    queries.length > 1 ||
+    (queries.length === 1 && !signupCleanupGenerationSchema.safeParse(queries[0]).success)
+  )
+    throw new MobileApiError(
+      400,
+      'invalid_body_photo_cleanup_generation',
+      'Invalid cleanup generation',
+    )
   const repository = dependencies.createOnboardingRepository(context.supabase)
+  const data = await getOnboardingState(
+    repository,
+    context.auth.userId,
+    onboardingLocale(context.auth.patient.locale),
+  )
+  const generation = queries[0] ?? data.completion.completed_at
+  const enriched = await withCleanupScope(context, dependencies, data, generation)
+  // Base DTO already passed its limit. If metadata alone exceeds it, omit metadata.
   return mobileSuccess(
-    await getOnboardingState(
-      repository,
-      context.auth.userId,
-      onboardingLocale(context.auth.patient.locale),
-    ),
+    new TextEncoder().encode(JSON.stringify(enriched)).byteLength >
+      MAX_PUBLIC_ONBOARDING_STATE_BYTES
+      ? data
+      : enriched,
     context.requestId,
   )
 }
@@ -183,7 +241,10 @@ export async function handleOnboardingPost(
     } catch {
       console.warn('[mobile-signup-body-photos] finalization_hook_failed')
     }
-    return mobileSuccess(data, context.requestId)
+    return mobileSuccess(
+      await withCleanupScope(context, dependencies, data, data.completed_at),
+      context.requestId,
+    )
   }
   return dependencies.executeIdempotent(context, input, () => createResponse(prepared), {
     refreshReplay: async () =>

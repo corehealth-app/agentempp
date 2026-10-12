@@ -11,6 +11,7 @@ import {
   OnboardingRepositoryError,
 } from './onboarding-service'
 import type { PreparedSignupPhotoConfirmation } from './signup-body-photo-confirmation'
+import { signupBodyPhotoFinalizationTargetAllowed } from './supabase-signup-body-photo-finalization'
 
 const documentSchema = z
   .object({
@@ -562,14 +563,19 @@ export function createSupabaseOnboardingRepository(
       const token = prepared?.snapshot?.generation_token
       const { body_photo_confirmation: intent, ...official } = input
       const { data, error } = token
-        ? await client.rpc('complete_mobile_onboarding_with_body_photo_confirmation', {
-            p_user_id: userId,
-            p_submission: official,
-            p_confirmation: intent ?? null,
-            p_expected_completed: token.onboarding_completed,
-            p_expected_completed_at: token.onboarding_completed_at,
-            p_expected_receipt_count: token.receipt_count,
-          })
+        ? await client.rpc(
+            signupBodyPhotoFinalizationTargetAllowed()
+              ? 'complete_mobile_onboarding_with_cleanup_scope'
+              : 'complete_mobile_onboarding_with_body_photo_confirmation',
+            {
+              p_user_id: userId,
+              p_submission: official,
+              p_confirmation: intent ?? null,
+              p_expected_completed: token.onboarding_completed,
+              p_expected_completed_at: token.onboarding_completed_at,
+              p_expected_receipt_count: token.receipt_count,
+            },
+          )
         : await client.rpc('complete_mobile_onboarding_atomic', {
             p_user_id: userId,
             p_submission: input,

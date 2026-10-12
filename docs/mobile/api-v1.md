@@ -222,6 +222,38 @@ No ambiente de avaliação, a primeira conclusão pode conceder um acesso de N
 dias sem mudar esta resposta: ver "Acesso de avaliação automático". Desligado
 por padrão.
 
+### Estado técnico da exclusão das fotos do cadastro
+
+No staging autorizado, o ACK da conclusão e o `GET /onboarding` podem incluir
+`body_photo_cleanup: { generation: string, state: "not_required" | "pending" | "unknown" }`.
+Esse campo é opcional; clientes anteriores continuam aceitando os demais campos.
+Não contém fotos, caminhos, IDs de fontes, dados corporais ou percentuais.
+
+- `not_required`: prova durável de zero fontes de cadastro não atribuídas no
+  fechamento dessa geração, sob as mesmas travas da conclusão. Não é um recibo de
+  remoção do Storage; não resolve um envio incerto sem geração oficial.
+- `pending`: existe manifesto positivo selado dessa geração. Continua válido após
+  um ACK de exclusão, pois um upload autorizado anteriormente pode terminar depois.
+- `unknown` ou campo ausente: não há prova suficiente ou a leitura falhou. Nunca
+  equivale a ausência de fotos; nenhuma prova negativa é criada para cadastros antigos.
+
+O leitor é técnico e não altera perfil, catálogo, manifesto ou Storage. Funciona
+independentemente do interruptor das fotos, câmera e idioma, somente no alvo de
+staging conhecido. Uma falha nesse leitor preserva o ACK oficial e a chave de
+idempotência. O replay recalcula o sinal; ele não fica gravado como verdade permanente
+no corpo armazenado da resposta. No GET, o limite final continua em 60.000 bytes;
+se apenas o campo novo ultrapassar esse limite, ele é omitido e o estado base válido
+é preservado.
+
+Para consultar uma geração anterior após reabrir o cadastro, usar
+`GET /onboarding?body_photo_cleanup_generation=<G>`. O proprietário vem da
+autenticação; os demais campos continuam descrevendo o cadastro atual. `G` é a
+string oficial literal RFC3339, com até seis casas decimais, nunca reformatada por
+`Date` no cliente. A resposta ecoa esse literal, mesmo quando SQL compara o instante
+com precisão de microssegundos. G inválido ou repetido retorna
+`400 invalid_body_photo_cleanup_generation`; G sem prova para essa conta retorna
+`unknown`. A consulta não executa exclusão nem repete o POST de conclusão.
+
 ### Mensagem de entrada do objetivo
 
 `POST /onboarding`, no formato com `document_actions`, devolve também:

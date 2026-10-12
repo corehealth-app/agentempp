@@ -57,6 +57,7 @@ final class SignupBodyPhotoCaptureModel {
     private let keyProvider: any IdempotencyKeyProviding
     private let pollingTiming: SignupBodyPhotoPollingTiming
     private let isCurrentOwner: @MainActor @Sendable (OnboardingOwnerToken) -> Bool
+    private let onStateObserved: @MainActor (SignupBodyPhotoState?) -> Void
     private var epoch = 0
     private var loadNonce = UUID()
     private var consentNonce = UUID()
@@ -84,7 +85,9 @@ final class SignupBodyPhotoCaptureModel {
     private var consentResults: [UUID: SignupBodyPhotoConsentReceipt] = [:]
 
     private(set) var phase = SignupBodyPhotoCapturePhase.idle
-    private(set) var state: SignupBodyPhotoState?
+    private(set) var state: SignupBodyPhotoState? {
+        didSet { onStateObserved(state) }
+    }
     private(set) var hasAcceptedConsent = false
     private(set) var isActive = true
     private(set) var hasExceededReadingWait = false
@@ -99,11 +102,13 @@ final class SignupBodyPhotoCaptureModel {
          timeProvider: any TimeProviding = SystemTimeProvider(),
          keyProvider: any IdempotencyKeyProviding = RandomIdempotencyKeyProvider(),
          pollingTiming: SignupBodyPhotoPollingTiming = .live(),
+         onStateObserved: @escaping @MainActor (SignupBodyPhotoState?) -> Void = { _ in },
          isCurrentOwner: @escaping @MainActor @Sendable (OnboardingOwnerToken) -> Bool) {
         self.scope = scope; self.ownerToken = ownerToken
         self.timeProvider = timeProvider; self.keyProvider = keyProvider
         self.pollingTiming = pollingTiming
         self.isCurrentOwner = isCurrentOwner
+        self.onStateObserved = onStateObserved
     }
 
     /// Internal readiness from the model task, never from load or a producer.

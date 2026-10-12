@@ -35,6 +35,7 @@ import { POST as MEDIA_POST } from '@/app/api/mobile/v1/media/route'
 import { POST as PHOTO_COMPLETE } from '@/app/api/mobile/v1/onboarding/body-photos/[id]/complete/route'
 import { POST as CONSENT } from '@/app/api/mobile/v1/onboarding/body-photos/consent/route'
 import {
+  DELETE as PHOTO_DELETE,
   GET as PHOTO_GET,
   POST as PHOTO_POST,
 } from '@/app/api/mobile/v1/onboarding/body-photos/route'
@@ -86,6 +87,8 @@ const BODY_RESULT = {
   bf_confidence: 0.4,
   notes: 'synthetic private reading notes',
 }
+
+const COMPLETED_G = '2026-10-11T14:00:00.123456+00:00'
 
 /**
  * The gap in the existing B2 fixture is explicit: it throws for the generic
@@ -1038,6 +1041,228 @@ describe('B3 historical ledger replay of generic complete is sanitized without e
       'rpc:claim_mobile_api_request',
     ])
     expect(db().operations).not.toContain('rpc:complete_mobile_api_request')
+    assertNoMediaEffects()
+  })
+})
+
+/** Declared historical RPC membership; SQL sealing is proved by native gates. */
+describe('B7 repair-only cannot delete a reopened signup', () => {
+  function oldScopeAndNewPhotos() {
+    const old = ['31', '32', '33'].map((suffix, index) =>
+      seed({
+        ...storedState('processed'),
+        id: `00000000-0000-4000-8000-000000000b${suffix}`,
+        context_text: ['Foto de frente.', 'Foto de lado.', 'Foto de costas.'][index],
+      }),
+    )
+    for (const row of old) db().upload(row, { size: 1200 })
+    db().declareCompletedSignupScope(
+      ACCOUNT,
+      COMPLETED_G,
+      old.map((row) => row.id),
+    )
+    // The current profile is genuinely open after A's completion/reset.
+    const reopened = seed({
+      ...storedState('uploaded'),
+      id: '00000000-0000-4000-8000-000000000b34',
+    })
+    db().upload(reopened, { size: 1400 })
+    return { old, reopened }
+  }
+  function repair(key = 'body-photo-historical-repair', generation = COMPLETED_G) {
+    return PHOTO_DELETE(
+      request('DELETE', PHOTO_PATH, {
+        body: { mode: 'repair_completed', generation },
+        key,
+      }),
+    )
+  }
+
+  it('old cleanup retry after reset preserves new B photos and never falls back to B2', async () => {
+    const { old, reopened } = oldScopeAndNewPhotos()
+    const before = structuredClone(reopened)
+    const profile = structuredClone(db().profiles.get(ACCOUNT))
+    const response = await repair()
+    expect(response.status).toBe(200)
+    expect((await response.json()).data).toEqual({ deleted: 3 })
+    expect(reopened).toEqual(before)
+    expect(db().objects.has(`${reopened.bucket_id}/${reopened.object_path}`)).toBe(true)
+    expect(db().profiles.get(ACCOUNT)).toEqual(profile)
+    expect(old.every((row) => row.status === 'deleted')).toBe(true)
+    expect(db().operations).not.toContain('select:media_assets')
+    const prepares = db().calls.filter(
+      (call) => call.operation === 'rpc:prepare_mobile_signup_body_photo_disposition',
+    )
+    expect(prepares.map((call) => call.detail)).toEqual([
+      { p_user_id: ACCOUNT, p_generation: COMPLETED_G, p_swept_generations: [] },
+    ])
+  })
+
+  it('replay resweeps late bytes only in G, counts no new deletion and preserves B', async () => {
+    const { old, reopened } = oldScopeAndNewPhotos()
+    expect((await repair()).status).toBe(200)
+    const before = structuredClone(reopened)
+    for (const row of old) db().upload(row, { size: 1200 })
+    forgetRecordedCalls()
+    const replay = await repair()
+    expect(replay.status).toBe(200)
+    expect((await replay.json()).data).toEqual({ deleted: 0 })
+    expect(old.every((row) => !db().objects.has(`${row.bucket_id}/${row.object_path}`))).toBe(true)
+    expect(reopened).toEqual(before)
+    expect(db().objects.has(`${reopened.bucket_id}/${reopened.object_path}`)).toBe(true)
+    expect(db().operations).not.toContain('select:media_assets')
+  })
+
+  it.each([
+    'all',
+    'other-G',
+  ])('same key with %s conflicts before any Storage work', async (mode) => {
+    oldScopeAndNewPhotos()
+    expect((await repair()).status).toBe(200)
+    forgetRecordedCalls()
+    const conflicting =
+      mode === 'all'
+        ? await PHOTO_DELETE(request('DELETE', PHOTO_PATH, { key: 'body-photo-historical-repair' }))
+        : await repair('body-photo-historical-repair', '2026-10-11T14:00:00.123457+00:00')
+    expect(await errorOf(conflicting)).toEqual({ status: 409, code: 'idempotency_key_conflict' })
+    assertNoMediaEffects()
+  })
+
+  it('unknown generation is pending, never successful empty cleanup or deletion of B', async () => {
+    const reopened = seed({ ...storedState('uploaded') })
+    db().upload(reopened, { size: 1200 })
+    const before = structuredClone(reopened)
+    const response = await repair()
+    expect(await errorOf(response)).toEqual({ status: 503, code: 'body_photo_cleanup_pending' })
+    expect(reopened).toEqual(before)
+    expect(db().objects.has(`${reopened.bucket_id}/${reopened.object_path}`)).toBe(true)
+    assertNoMediaEffects()
+  })
+
+  it('feature OFF still repairs a proven G without deleting new open photos', async () => {
+    const { reopened } = oldScopeAndNewPhotos()
+    const before = structuredClone(reopened)
+    vi.stubEnv(SIGNUP_BODY_PHOTOS_PROJECT_REF_ENV, '')
+    expect((await repair()).status).toBe(200)
+    expect(reopened).toEqual(before)
+    expect(db().objects.has(`${reopened.bucket_id}/${reopened.object_path}`)).toBe(true)
+  })
+
+  it.each([
+    { mode: 'wrong', generation: COMPLETED_G },
+    { mode: 'repair_completed', generation: '' },
+    { mode: 'repair_completed', generation: 'not-an-instant' },
+    { mode: 'repair_completed', generation: '2026-10-11T14:00:00.1234567Z' },
+    { mode: 'repair_completed', generation: COMPLETED_G, user_id: OTHER_ACCOUNT },
+    null,
+    [],
+  ])('invalid nonempty body is refused before claiming, never defaulting to all: %j', async (body) => {
+    seed(storedState('uploaded'))
+    const response = await PHOTO_DELETE(
+      request('DELETE', PHOTO_PATH, { body, key: 'invalid-repair-body' }),
+    )
+    expect(response.status).toBe(422)
+    expect(db().operations).not.toContain('rpc:claim_mobile_api_request')
+    assertNoMediaEffects()
+  })
+
+  it.each([
+    ' ',
+    '\uFEFF',
+    '{"mode":"repair_completed","mode":"repair_completed","generation":"2026-10-11T14:00:00.123456Z"}',
+  ])('whitespace/BOM-only/duplicate JSON cannot authorize all', async (body) => {
+    const row = seed(storedState('uploaded'))
+    db().upload(row, { size: 1200 })
+    const before = structuredClone(row)
+    const response = await PHOTO_DELETE(
+      new Request(`${ORIGIN}${PHOTO_PATH}`, {
+        method: 'DELETE',
+        body,
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          'content-type': 'application/json',
+          'idempotency-key': 'invalid-raw-repair-body',
+        },
+      }),
+    )
+    expect(response.status).toBe(400)
+    expect(row).toEqual(before)
+    expect(db().objects.has(`${row.bucket_id}/${row.object_path}`)).toBe(true)
+    expect(db().operations).not.toContain('rpc:claim_mobile_api_request')
+    assertNoMediaEffects()
+  })
+
+  it.each([
+    undefined,
+    '',
+  ])('zero bytes preserve the explicit existing delete (%s)', async (body) => {
+    const row = seed(storedState('uploaded'))
+    db().upload(row, { size: 1200 })
+    const response = await PHOTO_DELETE(
+      new Request(`${ORIGIN}${PHOTO_PATH}`, {
+        method: 'DELETE',
+        body,
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          'idempotency-key': 'explicit-delete-zero-bytes',
+        },
+      }),
+    )
+    expect(response.status).toBe(200)
+    expect((await response.json()).data).toEqual({ deleted: 1 })
+    expect(row.status).toBe('deleted')
+    expect(db().objects.size).toBe(0)
+  })
+
+  it.each([
+    {
+      body: JSON.stringify({ mode: 'repair_completed', generation: COMPLETED_G }),
+      type: 'text/plain',
+      status: 415,
+    },
+    { body: 'x'.repeat(2049), type: 'application/json', status: 413 },
+    { body: new Uint8Array([0xc3, 0x28]), type: 'application/json', status: 400 },
+  ])('invalid media/size/UTF8 is rejected before claim and Storage', async ({
+    body,
+    type,
+    status,
+  }) => {
+    const row = seed(storedState('uploaded'))
+    db().upload(row, { size: 1200 })
+    const before = structuredClone(row)
+    const response = await PHOTO_DELETE(
+      new Request(`${ORIGIN}${PHOTO_PATH}`, {
+        method: 'DELETE',
+        body,
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          'content-type': type,
+          'idempotency-key': 'invalid-repair-wire',
+        },
+      }),
+    )
+    expect(response.status).toBe(status)
+    expect(row).toEqual(before)
+    expect(db().objects.has(`${row.bucket_id}/${row.object_path}`)).toBe(true)
+    expect(db().operations).not.toContain('rpc:claim_mobile_api_request')
+    assertNoMediaEffects()
+  })
+
+  it('an old/unknown target refuses even malformed repair before body parsing or claim', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://xuxehkhdvjivitduarvb.supabase.co')
+    const response = await PHOTO_DELETE(
+      new Request(`${ORIGIN}${PHOTO_PATH}`, {
+        method: 'DELETE',
+        body: '\uFEFF',
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          'content-type': 'application/json',
+          'idempotency-key': 'old-target-repair',
+        },
+      }),
+    )
+    expect(response.status).toBe(404)
+    expect(db().operations).not.toContain('rpc:claim_mobile_api_request')
     assertNoMediaEffects()
   })
 })

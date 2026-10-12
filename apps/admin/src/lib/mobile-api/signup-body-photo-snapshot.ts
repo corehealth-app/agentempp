@@ -25,6 +25,14 @@ const estimateValue = z.discriminatedUnion('usable', [
   z.object({ usable: z.literal(true), body_fat_percent: value }).strict(),
   z.object({ usable: z.literal(false), reason: z.literal('out_of_range') }).strict(),
 ])
+const readings = z
+  .array(
+    z
+      .object({ pose: z.enum(['front', 'side', 'back']), body_fat_percent: z.number().finite() })
+      .strict(),
+  )
+  .length(3)
+  .refine((rows) => rows.every((row, i) => row.pose === ['front', 'side', 'back'][i]))
 const confirmation = z.discriminatedUnion('decision', [
   z
     .object({
@@ -99,6 +107,7 @@ const snapshotSchema = z
       .object({
         is_estimate: z.literal(true),
         by_sex: z.object({ masculino: estimateValue, feminino: estimateValue }).strict(),
+        readings: readings.optional(),
       })
       .strict()
       .nullable(),
@@ -199,6 +208,12 @@ export function parseSignupPhotoSnapshot(
         return lookupFailed()
       const { masculino, feminino } = s.estimate.by_sex
       if (masculino.usable !== feminino.usable) return lookupFailed()
+      if (s.estimate.readings) {
+        const allInRange = s.estimate.readings.every(
+          (row) => row.body_fat_percent >= 3 && row.body_fat_percent <= 60,
+        )
+        if (masculino.usable !== allInRange) return lookupFailed()
+      }
       if (masculino.usable && feminino.usable) {
         if (
           !s.candidate ||

@@ -17,6 +17,7 @@
 import {
   resourceIdSchema,
   signupBodyPhotoConsentInputSchema,
+  signupBodyPhotoRepairInputSchema,
   signupBodyPhotoUploadInputSchema,
 } from '@/lib/mobile-api/contracts'
 import {
@@ -24,6 +25,7 @@ import {
   mobileErrorResponse,
   mobileSuccess,
   readJsonBody,
+  readOptionalJsonBody,
 } from '@/lib/mobile-api/http'
 import { executeSupabaseIdempotent, requireIdempotencyKey } from '@/lib/mobile-api/idempotency'
 import type { MobileRouteContext } from '@/lib/mobile-api/route'
@@ -110,7 +112,29 @@ export async function handleSignupBodyPhotosDelete(
   // The switch cannot prevent deleting one's photos. The database target can:
   // this delivery is confined to known staging, before any claim/photo query.
   if (!signupBodyPhotoFinalizationTargetAllowed()) throw signupBodyPhotosUnavailable()
+  const body = await readOptionalJsonBody(context.request)
+  const repair = body === undefined ? undefined : signupBodyPhotoRepairInputSchema.parse(body)
   const service = dependencies.createService(context)
+  if (repair) {
+    const repairGeneration = service.repairGeneration
+    if (!repairGeneration)
+      throw new MobileApiError(
+        503,
+        'body_photo_cleanup_pending',
+        'Body photo cleanup is pending; try again',
+      )
+    const repairOnly = async () =>
+      mobileSuccess(
+        await repairGeneration(context.auth.userId, repair.generation),
+        context.requestId,
+      )
+    return dependencies.executeIdempotent(
+      context,
+      { body_photos: 'repair_completed_v1', generation: repair.generation },
+      repairOnly,
+      { refreshReplay: repairOnly },
+    )
+  }
   const deleteAll = async () =>
     mobileSuccess(
       await deleteSignupBodyPhotos(service, context.auth, dependencies.now()),

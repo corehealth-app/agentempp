@@ -161,7 +161,14 @@ class StrictJsonParser {
 }
 
 async function readBoundedUtf8Body(request: Request, maxBytes: number): Promise<string> {
-  if (!request.body) return ''
+  return (await readBoundedUtf8BodyWithLength(request, maxBytes)).text
+}
+
+async function readBoundedUtf8BodyWithLength(
+  request: Request,
+  maxBytes: number,
+): Promise<{ text: string; byteLength: number }> {
+  if (!request.body) return { text: '', byteLength: 0 }
   const reader = request.body.getReader()
   const decoder = new TextDecoder('utf-8', { fatal: true })
   let byteLength = 0
@@ -177,7 +184,7 @@ async function readBoundedUtf8Body(request: Request, maxBytes: number): Promise<
     }
     text += decoder.decode(value, { stream: true })
   }
-  return text + decoder.decode()
+  return { text: text + decoder.decode(), byteLength }
 }
 
 export async function readJsonBody(request: Request, maxBytes = 64 * 1024): Promise<unknown> {
@@ -206,6 +213,43 @@ export async function readJsonBody(request: Request, maxBytes = 64 * 1024): Prom
   if (!text || /^[ \t\r\n]*$/.test(text))
     throw new MobileApiError(400, 'invalid_json', 'JSON body is required')
 
+  try {
+    return new StrictJsonParser(text).parse()
+  } catch {
+    throw new MobileApiError(400, 'invalid_json', 'Request body must contain valid JSON')
+  }
+}
+
+/** Zero bytes mean absence; any nonempty body must pass the strict JSON reader.
+ * Used only by signup DELETE, whose existing empty-body intent must stay valid.
+ */
+export async function readOptionalJsonBody(
+  request: Request,
+  maxBytes = 2048,
+): Promise<unknown | undefined> {
+  const length = request.headers.get('content-length')
+  if (length && Number(length) > maxBytes)
+    throw new MobileApiError(413, 'request_too_large', 'Request body is too large')
+  let decoded: { text: string; byteLength: number }
+  try {
+    decoded = await readBoundedUtf8BodyWithLength(request, maxBytes)
+  } catch (error) {
+    if (error instanceof MobileApiError) throw error
+    throw new MobileApiError(400, 'invalid_json', 'Request body must contain valid JSON')
+  }
+  if (decoded.byteLength === 0) return undefined
+  // A nonempty BOM-only body decodes to empty text. It is not the old all intent.
+  const text = decoded.text
+  const contentType = request.headers.get('content-type')
+  if (
+    !contentType ||
+    !/^[ \t]*application\/json(?:[ \t]*;[ \t]*charset[ \t]*=[ \t]*(?:utf-8|"utf-8"))?[ \t]*$/i.test(
+      contentType,
+    )
+  )
+    throw new MobileApiError(415, 'unsupported_media_type', 'Content-Type must be application/json')
+  if (/^[ \t\r\n]*$/.test(text))
+    throw new MobileApiError(400, 'invalid_json', 'JSON body is required')
   try {
     return new StrictJsonParser(text).parse()
   } catch {

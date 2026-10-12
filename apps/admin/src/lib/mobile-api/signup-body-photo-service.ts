@@ -186,6 +186,7 @@ export interface SignupBodyPhotoDependencies {
   media: MediaServiceDependencies
   /** Real factory repairs completed accounts; pending repair refuses cleanup. */
   repairCompleted?(userId: string): Promise<{ completed: boolean; newlyDeleted?: number }>
+  repairGeneration?(userId: string, generation: string): Promise<{ deleted: number }>
   /** One strict server snapshot for the state, estimate and confirmation identifiers. */
   loadStateSnapshot?(userId: string): Promise<SignupPhotoSnapshot>
 }
@@ -210,11 +211,12 @@ export interface SignupBodyPhotoState {
   consent: SignupBodyPhotoConsentDto | null
   minimum_age: number
   poses: SignupBodyPhotoPoseDto[]
-  /** The preview exposes the joined value, not three individual readings. */
+  /** The official joined value, with actual slot readings on new v1 snapshots. */
   estimate:
     | (Pick<SignupBodyFatEstimate, 'is_estimate' | 'by_sex'> & {
         source_ids?: SignupPhotoSourceIds
         fingerprint?: string
+        readings?: SignupBodyFatEstimate['readings']
       })
     | null
   remaining_uploads: number

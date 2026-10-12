@@ -127,6 +127,84 @@ function dependencies(current = snapshot()) {
 }
 
 describe('body photo state from one official snapshot', () => {
+  it('projects three original readings from one snapshot with no catalogue lookup', async () => {
+    const current = snapshot()
+    const estimate = current.estimate
+    const candidate = current.candidate
+    if (!estimate || !candidate) throw new Error('invalid synthetic snapshot fixture')
+    const readings = [18.125, 24.125, 30.125].map((value, index) => ({
+      pose: (['front', 'side', 'back'] as const)[index],
+      body_fat_percent: value,
+    }))
+    estimate.readings = readings
+    estimate.by_sex = {
+      masculino: { usable: true, body_fat_percent: 24.13 },
+      feminino: { usable: true, body_fat_percent: 24.13 },
+    }
+    candidate.body_fat_percent = 24.13
+    const deps = dependencies(current)
+    const dto = await getSignupBodyPhotoState(deps, auth)
+    expect(dto.estimate?.readings).toEqual(readings)
+    expect(dto.estimate?.source_ids).toEqual(SOURCES)
+    expect(dto.estimate?.fingerprint).toBe('a'.repeat(64))
+    expect(dto.estimate?.by_sex.masculino).toEqual({ usable: true, body_fat_percent: 24.13 })
+    expect(deps.loadStateSnapshot).toHaveBeenCalledTimes(1)
+    expect(deps.catalogue.listOpen).not.toHaveBeenCalled()
+    for (const field of [
+      'notes',
+      'confidence',
+      'processing_result',
+      'object_path',
+      'uploaded_at_us',
+    ])
+      expect(JSON.stringify(dto.estimate?.readings)).not.toContain(`"${field}"`)
+  })
+
+  it('successive worker snapshots keep their own readings, mean and IDs together', async () => {
+    const first = snapshot()
+    const firstEstimate = first.estimate
+    if (!firstEstimate) throw new Error('invalid synthetic snapshot fixture')
+    firstEstimate.readings = [18, 24, 30].map((value, index) => ({
+      pose: (['front', 'side', 'back'] as const)[index],
+      body_fat_percent: value,
+    }))
+    const second = structuredClone(first)
+    const secondEstimate = second.estimate
+    const side = second.poses[1]?.photo
+    const sideReading = secondEstimate?.readings?.[1]
+    if (!secondEstimate || !side || !sideReading)
+      throw new Error('invalid synthetic snapshot fixture')
+    const newSide = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
+    side.id = newSide
+    sideReading.body_fat_percent = 25
+    secondEstimate.by_sex = {
+      masculino: { usable: true, body_fat_percent: 24.33 },
+      feminino: { usable: true, body_fat_percent: 24.33 },
+    }
+    second.candidate = {
+      method: 'arithmetic_mean_v1',
+      body_fat_percent: 24.33,
+      source_ids: { ...SOURCES, side: newSide },
+      fingerprint: 'b'.repeat(64),
+    }
+    const deps = dependencies(first)
+    deps.loadStateSnapshot.mockResolvedValueOnce(first).mockResolvedValueOnce(second)
+    const a = await getSignupBodyPhotoState(deps, auth)
+    const b = await getSignupBodyPhotoState(deps, auth)
+    expect(a.estimate).toMatchObject({
+      readings: firstEstimate.readings,
+      source_ids: SOURCES,
+      fingerprint: 'a'.repeat(64),
+    })
+    expect(b.estimate).toMatchObject({
+      readings: secondEstimate.readings,
+      source_ids: second.candidate.source_ids,
+      fingerprint: 'b'.repeat(64),
+      by_sex: secondEstimate.by_sex,
+    })
+    expect(deps.loadStateSnapshot).toHaveBeenCalledTimes(2)
+    expect(deps.catalogue.listOpen).not.toHaveBeenCalled()
+  })
   it.each([
     true,
     false,

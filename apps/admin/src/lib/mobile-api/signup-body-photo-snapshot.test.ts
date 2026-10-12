@@ -84,6 +84,104 @@ function closedSnapshot() {
   }
 }
 
+describe('B8b real individual readings from the same snapshot', () => {
+  const readings = (values: number[]) =>
+    (['front', 'side', 'back'] as const).map((pose, i) => ({
+      pose,
+      body_fat_percent: values[i],
+    }))
+
+  it.each([
+    { values: [18, 24, 30], mean: 24 },
+    { values: [18.125, 24.125, 30.125], mean: 24.13 },
+  ])('preserves actual slots $values and canonical mean $mean', ({ values, mean }) => {
+    const current = openSnapshot()
+    Object.assign(current.estimate, { readings: readings(values) })
+    current.estimate.by_sex.masculino.body_fat_percent = mean
+    current.estimate.by_sex.feminino.body_fat_percent = mean
+    current.candidate.body_fat_percent = mean
+    let failure: unknown
+    let parsed: unknown
+    try {
+      parsed = parseSignupPhotoSnapshot(current, OWNER, true)
+    } catch (error) {
+      failure = error
+    }
+    expect(failure).toBeUndefined()
+    expect(parsed).toEqual(current)
+    expect(current.candidate.source_ids).toEqual(SOURCES)
+    expect(current.candidate.fingerprint).toBe('a'.repeat(64))
+  })
+
+  it('preserves 2/24/46 as unusable readings, even though their raw mean is24', () => {
+    const current = openSnapshot()
+    Object.assign(current.estimate, {
+      readings: readings([2, 24, 46]),
+      by_sex: {
+        masculino: { usable: false, reason: 'out_of_range' },
+        feminino: { usable: false, reason: 'out_of_range' },
+      },
+    })
+    Reflect.set(current, 'candidate', null)
+    let failure: unknown
+    let parsed: unknown
+    try {
+      parsed = parseSignupPhotoSnapshot(current, OWNER, true)
+    } catch (error) {
+      failure = error
+    }
+    expect(failure).toBeUndefined()
+    expect(parsed).toEqual(current)
+  })
+
+  it('keeps a legitimate older v1 without readings, never makes three copies of the mean', () => {
+    const current = openSnapshot()
+    expect(parseSignupPhotoSnapshot(current, OWNER, true)).toEqual(current)
+    expect(current.estimate).not.toHaveProperty('readings')
+  })
+
+  it.each([
+    null,
+    [],
+    readings([18, 24, 30]).slice(0, 2),
+    [...readings([18, 24, 30])].reverse(),
+    [
+      { pose: 'front', body_fat_percent: 18 },
+      { pose: 'front', body_fat_percent: 24 },
+      { pose: 'back', body_fat_percent: 30 },
+    ],
+    [{ pose: 'front', body_fat_percent: '18' }, ...readings([18, 24, 30]).slice(1)],
+    [{ pose: 'front', body_fat_percent: Infinity }, ...readings([18, 24, 30]).slice(1)],
+    [
+      { pose: 'front', body_fat_percent: 18, notes: 'synthetic private notes' },
+      ...readings([18, 24, 30]).slice(1),
+    ],
+  ])('rejects an invalid triple before public projection: %j', (input) => {
+    const current = openSnapshot()
+    Object.assign(current.estimate, { readings: input })
+    expect(() => parseSignupPhotoSnapshot(current, OWNER, true)).toThrow(
+      'Invalid body photo snapshot',
+    )
+  })
+
+  it.each([false, true])('rejects readings inconsistent with usable=%s', (usable) => {
+    const current = openSnapshot()
+    Object.assign(current.estimate, {
+      readings: readings(usable ? [2, 24, 46] : [18, 24, 30]),
+      by_sex: usable
+        ? current.estimate.by_sex
+        : {
+            masculino: { usable: false, reason: 'out_of_range' },
+            feminino: { usable: false, reason: 'out_of_range' },
+          },
+    })
+    if (!usable) Reflect.set(current, 'candidate', null)
+    expect(() => parseSignupPhotoSnapshot(current, OWNER, true)).toThrow(
+      'Invalid body photo snapshot',
+    )
+  })
+})
+
 describe('official body photo snapshot boundary', () => {
   it('keeps the existing patient-not-found error for a missing domain owner', async () => {
     const rpc = vi.fn(async () => ({

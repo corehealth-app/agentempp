@@ -143,3 +143,25 @@ export async function finalizeSignupBodyPhotosAfterOnboarding(
     drainAllGenerations: false,
   })
 }
+
+/** Repair a proven completed generation only. It never visits the open catalogue. */
+export async function repairSignupBodyPhotoGeneration(
+  client: ServiceClient,
+  userId: string,
+  generation: string,
+): Promise<{ deleted: number }> {
+  if (!signupBodyPhotoFinalizationTargetAllowed())
+    throw new MobileApiError(404, 'body_photos_unavailable', 'Body photos are not available')
+  const outcome = await disposeSignupBodyPhotos(client, userId, {
+    generation,
+    drainAllGenerations: false,
+    requireSealedScope: true,
+  })
+  if (outcome.state !== 'complete')
+    throw new MobileApiError(
+      503,
+      'body_photo_cleanup_pending',
+      'Body photo cleanup is pending; try again',
+    )
+  return { deleted: outcome.newlyDeleted }
+}

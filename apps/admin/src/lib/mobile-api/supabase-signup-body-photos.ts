@@ -45,6 +45,7 @@ import { loadSignupPhotoSnapshot } from './signup-body-photo-snapshot'
 import { createSupabaseMediaDependencies } from './supabase-media'
 import {
   repairCompletedSignupBodyPhotos,
+  repairSignupBodyPhotoGeneration,
   signupBodyPhotoFinalizationTargetAllowed,
 } from './supabase-signup-body-photo-finalization'
 
@@ -358,6 +359,8 @@ export function createSupabaseSignupBodyPhotoDependencies(
     catalogue: createCatalogue(supabase, requestId),
     media: createSupabaseMediaDependencies(supabase, { signupPhotos: true }),
     repairCompleted: (userId) => repairCompletedSignupBodyPhotos(supabase, userId),
+    repairGeneration: (userId, generation) =>
+      repairSignupBodyPhotoGeneration(supabase, userId, generation),
     loadStateSnapshot: async (userId) => {
       if (!signupBodyPhotoFinalizationTargetAllowed()) throw signupBodyPhotosUnavailable()
       return loadSignupPhotoSnapshot(supabase, userId, true)

@@ -2657,7 +2657,7 @@ a lista de `entitlement-service.ts` não mudou:
 | `POST` | `/onboarding/body-photos/consent` | aceite do consentimento próprio |
 | `POST` | `/onboarding/body-photos` | cria a foto de uma pose |
 | `POST` | `/onboarding/body-photos/:id/complete` | conclui o envio de uma foto |
-| `DELETE` | `/onboarding/body-photos` | apaga todas as fotos |
+| `DELETE` | `/onboarding/body-photos` | sem corpo, exclusão explícita; com `repair_completed` e geração oficial, somente reparo histórico |
 
 Os builds 1.0 (3) e 1.0 (4), já liberados, não chamam nenhuma delas. Nenhuma
 rota, formato ou resposta que eles usam mudou.
@@ -2773,10 +2773,10 @@ conta que ainda não concluiu o cadastro e não tem acesso liberado:
   mesmo valor utilizável para ambos os sexos, normalizado a duas casas
   decimais como `numeric(4,2)`. Leitura fora de3–60 torna ambos `usable: false`,
   `reason: "out_of_range"`; ausência/não finito mantém `estimate: null`.
-  Não expõe as três leituras, notas, confiança ou view. Essa minimização é
-  escolha técnica desta implementação local, não texto de consentimento aceito.
+  A extensão B8b abaixo acrescenta as três leituras reais; notas, confiança e
+  view continuam privados. Isso não registra aceite do consentimento.
   GET não grava percentual oficial, objetivo nem metas. D2 foi decidido por
-  Eduardo, mas confirmação/recibo e aplicação atômica seguem na etapa seguinte.
+  Eduardo; confirmação/recibo e aplicação atômica são descritos nas seções B4b/D4 abaixo.
 - `remaining_uploads` é 9 menos as fotos do cadastro que a conta criou nas
   últimas 24 horas (contando as apagadas e as que nunca subiram), nunca
   abaixo de zero.
@@ -3028,7 +3028,9 @@ Resposta `201`:
   preservando a recusa em process e importação genéricos.
 
 **Exclusão.** `DELETE /onboarding/body-photos`, com `Idempotency-Key`,
-primeiro confere o alvo e o perfil. Outro alvo é `404` antes do claim;
+**sem corpo**, é a ação explícita abaixo. Um corpo não vazio precisa ser o
+modo de reparo estrito documentado a seguir; não é interpretado como exclusão total.
+O pedido primeiro confere o alvo e o perfil. Outro alvo é `404` antes do claim;
 perfil ausente/ilegível é `503`. Passa pelo reparo D4 dos escopos selados,
 inclusive históricos após reset; resposta `deleted` soma apenas transições
 novas desta chamada, não o tamanho do manifesto. Escopo UNKNOWN ou disposição
@@ -3178,8 +3180,62 @@ orçamento único: se observar conclusão durante a leitura, a resposta suprime
 poses e estimativa; não entrega um candidato antigo. OFF e ausência de texto
 conservam os early returns. A estimativa utilizável acrescenta
 `source_ids: { front, side, back }` e `fingerprint` (hexadecimal minúsculo de
-64 caracteres), sem devolver as leituras individuais. O cliente trata o
+64 caracteres). A extensão B8b local acrescenta as leituras individuais reais,
+conforme o contrato abaixo. O cliente trata o
 fingerprint como opaco: é produzido e conferido pelo SQL.
+
+### Leituras individuais e reparo de uma geração (B7/B8b — local, não publicado)
+
+A migration aditiva `20261012095000_signup_body_photo_individual_readings.sql`
+redefine somente o builder privado do snapshot. Não altera o método da média,
+seu arredondamento, o candidato, o fingerprint ou a resposta fechada/OFF.
+`estimate.readings`, opcional em snapshots v1 antigos, contém exatamente:
+
+```json
+[
+  { "pose": "front", "body_fat_percent": 18 },
+  { "pose": "side", "body_fat_percent": 24 },
+  { "pose": "back", "body_fat_percent": 30 }
+]
+```
+
+Os números vêm dos mesmos slots materializados usados pela média e pelo
+fingerprint. Não são três cópias da média, nem são arredondados individualmente.
+Leitura finita fora de 3–60 continua visível neste array, mas conserva
+`usable:false`/`out_of_range`; uma leitura ausente mantém `estimate:null`.
+O array expõe somente pose e número, sem notas, confiança, timestamps, Storage
+ou resultado bruto. Ausência em um snapshot antigo não autoriza fabricar números.
+Aplicar a migration somente no staging autorizado. Manter fotos OFF enquanto
+migrations e BFF são preparados; o BFF novo aceita v1 antigo e novo. Só ativar
+depois dos gates de UI/consentimento/ambiente, com OK específico. Um BFF anterior
+com parser estrito não aceita a extensão quando as fotos estão ON.
+
+Para retry automático após conclusão, usar a mesma rota DELETE com corpo:
+
+```json
+{ "mode": "repair_completed", "generation": "2026-10-12T02:00:00.123456+00:00" }
+```
+
+`generation` é o `completed_at` oficial literal, com até seis casas fracionárias;
+não passar por Date nem arredondar. O dono vem da autenticação. Corpo estrito de
+até 2 KiB: campos extras, JSON duplicado, whitespace/BOM-only, UTF-8 inválido,
+MIME errado e tamanho excessivo são recusados antes do claim. Apenas zero bytes
+de fato preserva a exclusão explícita antiga, mesmo com stream vazio não nulo.
+O alvo é conferido antes da leitura do corpo; produção antiga continua recusada.
+
+Este modo repara **somente o manifesto selado de G**, mesmo com fotos OFF e
+perfil reaberto. Nunca lê/apaga as fotos abertas de outro cadastro, nem cai em B2.
+G sem manifesto próprio é `503 body_photo_cleanup_pending`, não um falso sucesso
+vazio. O hash lógico `{body_photos:repair_completed_v1,generation:G}` distingue
+modo e instante; mesma chave com outro G ou exclusão total é conflito. Replay
+refaz o sweep de G, incluindo caminhos de tombstones com bytes tardios, com o
+orçamento total de 3 s. A resposta mantém `{deleted:N}`, somente novas transições.
+Timeout/ACK incerto conserva o erro e não autoriza remover outras fontes.
+Isso não revoga bilhetes nem comprova ausência permanente de bytes após a chamada.
+
+Prova local: fixtures HTTP e PostgreSQL sintético com outer ROLLBACK, inclusive
+reset real seguido de novas fotos B e resweep somente de A. Não equivale a
+Auth/JWT, Storage, fila/provedor ou QA físico do ambiente de teste.
 
 `POST /onboarding` admite opcionalmente, somente no cadastro completo:
 

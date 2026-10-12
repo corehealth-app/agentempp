@@ -392,6 +392,20 @@ export const signupBodyPhotoUploadInputSchema = z
   })
   .strict()
 
+// A retry of a finished signup may not delete photos of a reopened signup.
+// Keep the official instant literal, including its microseconds, in the hash.
+export const signupBodyPhotoRepairInputSchema = z
+  .object({
+    mode: z.literal('repair_completed'),
+    generation: z
+      .string()
+      .max(64)
+      .datetime({ offset: true })
+      .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/)
+      .refine((value) => Number.isFinite(Date.parse(value))),
+  })
+  .strict()
+
 export const mobileDeviceInputSchema = z
   .object({
     installation_id: z.string().uuid(),

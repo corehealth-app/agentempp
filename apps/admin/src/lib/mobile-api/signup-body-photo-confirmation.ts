@@ -35,6 +35,8 @@ export interface SignupPhotoSnapshot {
   consent: (SignupBodyPhotoConsentDto & { legal_document_id: string }) | null
   estimate: {
     is_estimate: true
+    /** Optional only for older v1 snapshots. Numbers belong to their actual slots. */
+    readings?: Array<{ pose: 'front' | 'side' | 'back'; body_fat_percent: number }>
     by_sex: {
       masculino:
         | { usable: true; body_fat_percent: number }

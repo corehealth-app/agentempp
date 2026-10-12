@@ -119,7 +119,12 @@ interface RpcQuery extends PromiseLike<{ data: unknown; error: unknown }> {
 export async function disposeSignupBodyPhotos(
   client: ServiceClient,
   owner: string,
-  options: { generation?: string; drainAllGenerations: boolean; deadline?: number },
+  options: {
+    generation?: string
+    drainAllGenerations: boolean
+    deadline?: number
+    requireSealedScope?: boolean
+  },
 ): Promise<SignupPhotoDispositionOutcome> {
   const controller = new AbortController()
   const deadline = Math.min(options.deadline ?? Infinity, performance.now() + 3000)
@@ -175,8 +180,11 @@ export async function disposeSignupBodyPhotos(
         guard()
         requireMatch(sameId(scope.user_id, owner))
         completed = scope.current_profile_completed
-        if (scope.kind === 'empty')
+        if (scope.kind === 'empty') {
+          if (options.requireSealedScope && sweptThisRequest.length === 0)
+            return stop('invalid_receipt')
           return { state: sweptThisRequest.length ? 'complete' : 'empty', completed, newlyDeleted }
+        }
         if (options.generation)
           requireMatch(instantKey(scope.generation) === instantKey(options.generation))
         requireMatch(!sweptThisRequest.some((g) => instantKey(g) === instantKey(scope.generation)))

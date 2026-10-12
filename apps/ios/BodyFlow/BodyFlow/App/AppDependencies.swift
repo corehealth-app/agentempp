@@ -40,6 +40,8 @@ struct AppDependencies: Sendable {
     var currentObjective: (any CurrentObjectiveProviding)? = nil
     /// Technical owner/G cleanup; only a real authenticated lifecycle can bind it.
     var signupBodyPhotoCleanup: SignupBodyPhotoCleanupCapability? = nil
+    /// Optional authenticated capture; absence keeps manual/skip available.
+    var signupBodyPhotoCapture: SignupBodyPhotoCaptureCapability? = nil
     /// The guided tour's per-account answer on this iPhone and whether it
     /// offers itself on the first entry.
     var guidedTutorial = GuidedTutorialCapability(
@@ -665,6 +667,19 @@ struct AppDependencies: Sendable {
             signupBodyPhotoCleanup = nil
         }
 
+        let signupBodyPhotoCapture: SignupBodyPhotoCaptureCapability?
+        if configuration.mode != .demo,
+           let transport = apiClient as? MobileAPITransport,
+           let releaseLifecycle,
+           let storageOrigin = supabaseAuthConfiguration?.origin {
+            signupBodyPhotoCapture = .live(transport: transport, lifecycle: releaseLifecycle,
+                uploader: StorageUploadTransport(storageOrigin: storageOrigin),
+                staging: MediaStagingStore(), camera: .device,
+                cleanupStore: signupBodyPhotoCleanupStore)
+        } else {
+            signupBodyPhotoCapture = nil
+        }
+
         return AppDependencies(
             apiClient: apiClient,
             authentication: authentication,
@@ -694,6 +709,7 @@ struct AppDependencies: Sendable {
             planDrafts: planDrafts,
             currentObjective: currentObjective,
             signupBodyPhotoCleanup: signupBodyPhotoCleanup,
+            signupBodyPhotoCapture: signupBodyPhotoCapture,
             guidedTutorial: guidedTutorial
         )
     }

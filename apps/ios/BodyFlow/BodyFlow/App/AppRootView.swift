@@ -334,7 +334,10 @@ struct AppRootView: View {
             onOfficialCleanupObserved: { observation in
                 guard let ownerToken else { return }
                 _ = await model.observeOnboardingCleanup(observation, ownerToken: ownerToken)
-            }
+            },
+            signupBodyPhotoCapture: dependencies.signupBodyPhotoCapture,
+            timeProvider: dependencies.timeProvider,
+            isCurrentPhotoOwner: { token in model.onboardingOwnerToken == token }
         )
     }
 }
@@ -383,6 +386,7 @@ struct OnboardingRootCoordinator {
     private(set) var flowModel: OnboardingFlowModel?
     private(set) var loadFailed = false
     private(set) var ownerToken: OnboardingOwnerToken?
+    private(set) var photosModel: SignupBodyPhotoPresentationModel?
 
     func canRender(ownerToken: OnboardingOwnerToken?) -> Bool {
         ownerToken != nil && self.ownerToken == ownerToken && flowModel?.isActive == true
@@ -405,9 +409,14 @@ struct OnboardingRootCoordinator {
         telemetry: any TelemetryClient,
         onStepChanged: @escaping @MainActor (OnboardingStep) -> Void,
         onCompleted: @escaping @MainActor () -> Void,
-        onOfficialCleanupObserved: @escaping @MainActor (OnboardingBodyPhotoCleanupScope?) async -> Void = { _ in }
+        onOfficialCleanupObserved: @escaping @MainActor (OnboardingBodyPhotoCleanupScope?) async -> Void = { _ in },
+        signupBodyPhotoCapture: SignupBodyPhotoCaptureCapability? = nil,
+        timeProvider: any TimeProviding = SystemTimeProvider(),
+        isCurrentPhotoOwner: @escaping @MainActor @Sendable (OnboardingOwnerToken) -> Bool = { _ in false }
     ) {
         guard let activeUserID else {
+            photosModel?.invalidate()
+            photosModel = nil
             flowModel?.invalidate()
             flowModel = nil
             ownerToken = nil
@@ -417,6 +426,8 @@ struct OnboardingRootCoordinator {
         let requestedOwner = OnboardingOwnerToken(userID: activeUserID, restoreGeneration: restoreGeneration)
         guard ownerToken != requestedOwner || flowModel?.isActive != true else { return }
 
+        photosModel?.invalidate()
+        photosModel = nil
         flowModel?.invalidate()
         flowModel = nil
         ownerToken = requestedOwner
@@ -426,7 +437,7 @@ struct OnboardingRootCoordinator {
             return
         }
 
-        flowModel = OnboardingFlowModel(
+        let flow = OnboardingFlowModel(
             userID: activeUserID,
             initialDraft: restoredDraft,
             repository: onboarding,
@@ -438,8 +449,13 @@ struct OnboardingRootCoordinator {
             telemetry: telemetry,
             onStepChanged: onStepChanged,
             onCompleted: onCompleted,
-            onOfficialCleanupObserved: onOfficialCleanupObserved
+            onOfficialCleanupObserved: onOfficialCleanupObserved,
+            now: { timeProvider.now }
         )
+        flowModel = flow
+        photosModel = SignupBodyPhotoPresentationModel(flow: flow, ownerToken: requestedOwner,
+            capability: signupBodyPhotoCapture, timeProvider: timeProvider,
+            keyProvider: idempotencyKeyProvider, isCurrentOwner: isCurrentPhotoOwner)
     }
 }
 

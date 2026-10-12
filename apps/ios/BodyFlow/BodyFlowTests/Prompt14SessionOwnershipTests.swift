@@ -873,9 +873,11 @@ final class AppRootSessionPrivacyRenderingTests: XCTestCase {
     }
 
     private static func pixel(in view: UIView, x: Int, y: Int) throws -> (Int, Int, Int) {
+        var drawComplete = false
         let image = UIGraphicsImageRenderer(size: view.bounds.size).image { _ in
-            view.drawHierarchy(in: view.bounds, afterScreenUpdates: false)
+            drawComplete = view.drawHierarchy(in: view.bounds, afterScreenUpdates: true)
         }
+        XCTAssertTrue(drawComplete, "Snapshot including recent updates must contain complete image data")
         let cgImage = try XCTUnwrap(image.cgImage)
         let width = cgImage.width
         let height = cgImage.height

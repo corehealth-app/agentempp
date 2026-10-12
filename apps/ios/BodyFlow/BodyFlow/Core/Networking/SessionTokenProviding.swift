@@ -50,9 +50,20 @@ protocol SessionLifecycleProviding: SessionTokenProviding {
     func performPatientStateOperation<Value: Sendable>(
         lease: SessionLease, operation: @Sendable () throws -> Value
     ) async throws -> Value
+    /// A synchronous visible-owner check and local effect share MainActor
+    /// while the same session mutation gate excludes account transitions.
+    func performVisiblePatientStateOperation<Value: Sendable>(
+        lease: SessionLease, operation: @MainActor @Sendable () throws -> Value
+    ) async throws -> Value
 }
 
 extension SessionLifecycleProviding {
+    func performVisiblePatientStateOperation<Value: Sendable>(
+        lease: SessionLease, operation: @MainActor @Sendable () throws -> Value
+    ) async throws -> Value {
+        throw SessionLifecycleError.sessionSuperseded
+    }
+
     /// Providers without a local-state boundary cannot authorize local writes.
     func performPatientStateOperation<Value: Sendable>(
         lease: SessionLease, operation: @Sendable () throws -> Value

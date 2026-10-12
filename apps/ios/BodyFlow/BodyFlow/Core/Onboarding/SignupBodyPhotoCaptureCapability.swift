@@ -101,7 +101,7 @@ struct SignupSessionBoundUploader: StorageUploading {
 
 /// Shares the already guarded PUT registration with the whole capture task.
 /// Completing the registry is a suspension and cannot renew the retained lease.
-private struct SignupSessionBoundWork: Sendable {
+struct SignupSessionBoundWork: Sendable {
     let lifecycle: any SessionLifecycleProviding
     let lease: SessionLease
 

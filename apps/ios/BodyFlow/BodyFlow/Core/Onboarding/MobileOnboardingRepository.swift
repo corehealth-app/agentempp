@@ -18,7 +18,7 @@ struct MobileOnboardingRepository: OnboardingRepository {
         sessionLease = nil
     }
 
-    private init(
+    init(
         transport: any MobileAPIExecuting,
         deviceDraft: OnboardingDeviceDraftStore?,
         sessionLifecycle: any SessionLifecycleProviding,

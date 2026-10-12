@@ -192,6 +192,32 @@ actor SessionLifecycleCoordinator: SessionLifecycleProviding {
         }
     }
 
+    /// Only the hop suspends. Owner authorization and the whole local effect
+    /// execute together in one synchronous MainActor body, without re-entry.
+    func performVisiblePatientStateOperation<Value: Sendable>(
+        lease: SessionLease, operation: @MainActor @Sendable () throws -> Value
+    ) async throws -> Value {
+        await mutationGate.acquire()
+        do {
+            try Task.checkCancellation()
+            guard !localInvalidationInProgress, let record else {
+                throw SessionLifecycleError.missingSession
+            }
+            guard record.userID == lease.userID, generation == lease.generation else {
+                throw SessionLifecycleError.sessionSuperseded
+            }
+            let value = try await MainActor.run {
+                try Task.checkCancellation()
+                return try operation()
+            }
+            await mutationGate.release()
+            return value
+        } catch {
+            await mutationGate.release()
+            throw error
+        }
+    }
+
     private func refresh(
         record expectedRecord: AuthenticationSessionRecord,
         generation expectedGeneration: UInt64

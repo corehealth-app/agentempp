@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { MobileAuthContext } from './auth'
 import type { SignupPhotoSnapshot } from './signup-body-photo-confirmation'
 import {
+  deleteSignupBodyPhotos,
   getSignupBodyPhotoState,
   type SignupBodyPhotoDependencies,
 } from './signup-body-photo-service'
@@ -117,13 +118,26 @@ function dependencies(current = snapshot()) {
       },
       events: { sendProcessingRequested: vi.fn() },
     },
-    repairCompleted: vi.fn(async () => ({ completed: false })),
+    repairCompleted: vi.fn(
+      async (): Promise<{ completed: boolean; newlyDeleted?: number }> => ({ completed: false }),
+    ),
     loadStateSnapshot: vi.fn(async () => current),
   } satisfies SignupBodyPhotoDependencies
   return deps
 }
 
 describe('body photo state from one official snapshot', () => {
+  it.each([
+    true,
+    false,
+  ])('DELETE retains two real deletions from repair when current completed=%s', async (completed) => {
+    const deps = dependencies()
+    deps.repairCompleted.mockResolvedValue({ completed, newlyDeleted: 2 })
+    expect(await deleteSignupBodyPhotos(deps, auth)).toEqual({ deleted: 2 })
+    expect(deps.catalogue.markDeleted).not.toHaveBeenCalled()
+    expect(deps.catalogue.removeObjects).not.toHaveBeenCalled()
+    expect(deps.catalogue.listEvery).toHaveBeenCalledTimes(completed ? 0 : 1)
+  })
   it('projects current consent, poses, mean24, remaining6 and the same official IDs/hash', async () => {
     const current = snapshot()
     const deps = dependencies(current)

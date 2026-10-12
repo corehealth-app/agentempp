@@ -3,10 +3,10 @@ import { z } from 'zod'
 import type { OnboardingCompletionInput } from './contracts'
 import { MobileApiError } from './http'
 import type { MobileRouteContext } from './route'
+import { disposeSignupBodyPhotos } from './signup-body-photo-disposition'
 import {
   deferSignupBodyPhotoCandidate,
   type FinalizationDependencies,
-  finalizeSignupBodyPhotos,
 } from './signup-body-photo-finalization'
 import {
   SIGNUP_BODY_PHOTO_KIND,
@@ -114,60 +114,14 @@ export function createSupabaseSignupBodyPhotoFinalizationDependencies(
   }
 }
 
-const completionSchema = z.object({
-  onboarding_completed: z.boolean(),
-  onboarding_completed_at: dateTime.nullable(),
-  sex: z.enum(['masculino', 'feminino']).nullable().optional(),
-})
-
-// This completion column predates the generated client types in this checkout.
-interface CompletionQuery {
-  select(columns: string): CompletionQuery
-  eq(column: string, value: unknown): CompletionQuery
-  abortSignal(signal: AbortSignal): CompletionQuery
-  maybeSingle(): PromiseLike<{ data: unknown; error: unknown }>
-}
-
 export async function repairCompletedSignupBodyPhotos(
   client: ServiceClient,
   userId: string,
-): Promise<{ completed: boolean }> {
+): Promise<{ completed: boolean; newlyDeleted: number }> {
   if (!signupBodyPhotoFinalizationTargetAllowed()) {
     throw new MobileApiError(404, 'body_photos_unavailable', 'Body photos are not available')
   }
-  const dependencies = createSupabaseSignupBodyPhotoFinalizationDependencies(client, {
-    includeDeleted: true,
-  })
-  const deadline = dependencies.now() + 3000
-  const loadPhotos = dependencies.repository.loadSnapshot
-  let completed = false
-  let sex: 'masculino' | 'feminino' | null = null
-  dependencies.repository.loadSnapshot = async (owner, signal) => {
-    const query = client.from('user_profiles') as unknown as CompletionQuery
-    const { data, error } = await query
-      .select('onboarding_completed, onboarding_completed_at, sex')
-      .eq('user_id', owner)
-      .abortSignal(signal)
-      .maybeSingle()
-    if (error) throw new Error('photo_completion_unavailable')
-    if (signal.aborted || dependencies.now() >= deadline)
-      throw new Error('photo_completion_stopped')
-    // Auth bootstrap normally ensures this row exists. Missing data cannot
-    // authorize erasing an account's photos via the open-signup path.
-    if (data === null) throw new Error('photo_completion_unknown')
-    const profile = completionSchema.parse(data)
-    completed = profile.onboarding_completed || profile.onboarding_completed_at !== null
-    sex = profile.sex ?? null
-    if (signal.aborted || dependencies.now() >= deadline)
-      throw new Error('photo_completion_stopped')
-    return completed ? loadPhotos(owner, signal) : []
-  }
-  dependencies.resolveCandidate = async (snapshot, _sex, signal) =>
-    deferSignupBodyPhotoCandidate(snapshot, sex, signal)
-  const outcome = await finalizeSignupBodyPhotos(
-    { userId, sex: null, cleanupDeletedObjects: true, deadline },
-    dependencies,
-  )
+  const outcome = await disposeSignupBodyPhotos(client, userId, { drainAllGenerations: true })
   if (outcome.state !== 'empty' && outcome.state !== 'complete') {
     throw new MobileApiError(
       503,
@@ -175,16 +129,17 @@ export async function repairCompletedSignupBodyPhotos(
       'Body photo cleanup is pending; try again',
     )
   }
-  return { completed }
+  return { completed: outcome.completed, newlyDeleted: outcome.newlyDeleted }
 }
 
 export async function finalizeSignupBodyPhotosAfterOnboarding(
   context: MobileRouteContext,
-  input: OnboardingCompletionInput,
+  _input: OnboardingCompletionInput,
+  generation: string,
 ): Promise<void> {
   if (!signupBodyPhotoFinalizationTargetAllowed()) return
-  await finalizeSignupBodyPhotos(
-    { userId: context.auth.userId, sex: input.sex },
-    createSupabaseSignupBodyPhotoFinalizationDependencies(context.supabase),
-  )
+  await disposeSignupBodyPhotos(context.supabase, context.auth.userId, {
+    generation,
+    drainAllGenerations: false,
+  })
 }

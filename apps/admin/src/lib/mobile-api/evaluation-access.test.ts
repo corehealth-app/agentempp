@@ -155,8 +155,12 @@ function completionOperations(operations: string[], replay = false): string[] {
   if (projectRefFromUrl(process.env.NEXT_PUBLIC_SUPABASE_URL) !== STAGING_REF) return checked
   const beforeRecord = checked.indexOf('rpc:complete_mobile_api_request')
   return beforeRecord < 0
-    ? [...checked, 'select:media_assets']
-    : [...checked.slice(0, beforeRecord), 'select:media_assets', ...checked.slice(beforeRecord)]
+    ? [...checked, 'rpc:prepare_mobile_signup_body_photo_disposition']
+    : [
+        ...checked.slice(0, beforeRecord),
+        'rpc:prepare_mobile_signup_body_photo_disposition',
+        ...checked.slice(beforeRecord),
+      ]
 }
 
 // ---------------------------------------------------------------------------
@@ -304,6 +308,8 @@ class EvaluationMemoryDb {
   readonly failures = new Map<string, Failure>()
   /** The strict no-metadata snapshot calls, separate from the finalizer's media query. */
   readonly signupSnapshotReads: Array<Record<string, unknown>> = []
+  readonly signupDispositionReads: Array<Record<string, unknown>> = []
+  readonly signupDispositionSignals: AbortSignal[] = []
   /** Every awaited query of the photo catalogue, including its account filter. */
   readonly bodyPhotoReads: BodyPhotoMemoryRead[] = []
   readonly bodyPhotoReadSignals: AbortSignal[] = []
@@ -343,16 +349,21 @@ class EvaluationMemoryDb {
       // Like the real client, a call is sent when it is awaited, not when it is built.
       rpc: (name: string, params: Record<string, unknown>) => {
         let sent: Promise<DbResult> | undefined
-        return {
+        const builder: PromiseLike<DbResult> & {
+          abortSignal(signal: AbortSignal): PromiseLike<DbResult>
+        } = {
           // biome-ignore lint/suspicious/noThenProperty: the RPC builder of the real client is awaitable too.
-          then: (
-            onFulfilled: (value: DbResult) => unknown,
-            onRejected?: (reason: unknown) => unknown,
-          ) => {
+          then: (onFulfilled, onRejected) => {
             sent ??= this.rpc(name, params)
             return sent.then(onFulfilled, onRejected)
           },
+          abortSignal: (signal) => {
+            if (name === 'prepare_mobile_signup_body_photo_disposition')
+              this.signupDispositionSignals.push(signal)
+            return builder
+          },
         }
+        return builder
       },
     } as unknown as ServiceClient
   }
@@ -604,6 +615,21 @@ class EvaluationMemoryDb {
     if (name === 'complete_mobile_api_request') return this.completeClaim(params)
     if (name === 'fail_mobile_api_request') return this.failClaim(params)
     if (name === 'get_mobile_signup_body_photo_snapshot') return this.signupSnapshot(params)
+    if (name === 'prepare_mobile_signup_body_photo_disposition') {
+      this.signupDispositionReads.push(structuredClone(params))
+      const profile = this.profiles.get(String(params.p_user_id))
+      if (!profile) return invalid('onboarding_user_not_found')
+      return {
+        data: {
+          version: 1,
+          user_id: params.p_user_id,
+          kind: 'empty',
+          current_profile_completed:
+            profile.onboarding_completed || profile.onboarding_completed_at !== null,
+        },
+        error: null,
+      }
+    }
     if (name === 'complete_mobile_onboarding_with_body_photo_confirmation')
       return this.completeCheckedOnboarding(params)
     if (name === 'complete_mobile_onboarding_atomic') return this.completeOnboarding(params)
@@ -1528,7 +1554,7 @@ describe('B4a default finalization stays outside every database except staging',
 describe('first completion with the four locks open', () => {
   // B4a's first causal RED: real default handler/repositories, build-3 input,
   // no body fat and no photos. Photo finalization must run even with photos OFF.
-  it('B4a build 3 without photos reads media after the grant and before recording the response', async () => {
+  it('D4 build 3 without photos prepares the official generation after the grant and before response storage', async () => {
     const log = logs()
     switchOn()
     vi.stubEnv('MOBILE_SIGNUP_BODY_PHOTOS_PROJECT_REF', undefined)
@@ -1543,35 +1569,16 @@ describe('first completion with the four locks open', () => {
       { ...GRANTED_EVENT, id: expect.any(String), entitlement_id: db.entitlements[0]?.id },
     ])
     expect(db.entitlements).toEqual([{ ...grantedEntitlement(30), id: expect.any(String) }])
-    expect(db.bodyPhotoReadSignals).toHaveLength(1)
-    expect(db.bodyPhotoReadSignals[0]).toBeInstanceOf(AbortSignal)
-    expect(db.bodyPhotoReadSignals[0].aborted).toBe(false)
+    expect(db.signupDispositionSignals).toHaveLength(1)
+    expect(db.signupDispositionSignals[0]).toBeInstanceOf(AbortSignal)
+    expect(db.signupDispositionSignals[0].aborted).toBe(false)
     expect(db.forbiddenPhotoEffects).toEqual([])
     expect(log.error).not.toHaveBeenCalled()
     expect(db.operations).toEqual(completionOperations(FIRST_GRANT_OPERATIONS))
-    expect(db.bodyPhotoReads).toEqual([
-      {
-        columns: [
-          'id',
-          'bucket_id',
-          'object_path',
-          'status',
-          'failure_stage',
-          'context_text',
-          'created_at',
-          'uploaded_at',
-          'processing_result',
-        ],
-        filters: [
-          { operator: 'eq', column: 'user_id', value: USER },
-          { operator: 'eq', column: 'kind', value: 'body_checkin_photo' },
-          { operator: 'eq', column: 'signup_origin', value: true },
-          { operator: 'neq', column: 'status', value: 'deleted' },
-        ],
-        order: { column: 'created_at', ascending: false },
-        limit: 1000,
-      },
+    expect(db.signupDispositionReads).toEqual([
+      { p_user_id: USER, p_generation: NOW.toISOString(), p_swept_generations: [] },
     ])
+    expect(db.bodyPhotoReads).toEqual([])
   })
 
   it('grants exactly one event and one entitlement, and the response is the same bytes', async () => {
@@ -2433,6 +2440,7 @@ describe('B4a a failed injected hook cannot undo accepted completion or the gran
       userId: string
       input: ReturnType<typeof onboardingCompletionInputSchema.parse>
       completedAt: string | null
+      cleanupGeneration: string | undefined
       eventCount: number
       entitlementCount: number
     }> = []
@@ -2440,11 +2448,13 @@ describe('B4a a failed injected hook cannot undo accepted completion or the gran
       async (
         ctx: MobileRouteContext,
         input: ReturnType<typeof onboardingCompletionInputSchema.parse>,
+        generation?: string,
       ) => {
         observed.push({
           userId: ctx.auth.userId,
           input: structuredClone(input),
           completedAt: db.completedAt(),
+          cleanupGeneration: generation,
           eventCount: db.events.length,
           entitlementCount: db.entitlements.length,
         })
@@ -2468,6 +2478,7 @@ describe('B4a a failed injected hook cannot undo accepted completion or the gran
         userId: USER,
         input: onboardingCompletionInputSchema.parse(body),
         completedAt: NOW.toISOString(),
+        cleanupGeneration: NOW.toISOString(),
         eventCount: 1,
         entitlementCount: 1,
       },

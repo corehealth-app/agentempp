@@ -95,6 +95,11 @@ const BODY_RESULT = {
 class B3MemoryDb extends SignupBodyPhotoMemoryDb {
   readonly accountsWithAccess = new Set<string>()
 
+  // Public spy boundary; keep the strict RPC model and call recording unchanged.
+  override rpc(name: string, params: Record<string, unknown>) {
+    return super.rpc(name, params)
+  }
+
   protected override otherRpc(name: string, params: Record<string, unknown>) {
     if (name !== 'resolve_user_entitlement') return super.otherRpc(name, params)
     if (params.p_entitlement_key !== 'bodyflow_full' || typeof params.p_user_id !== 'string') {
@@ -759,7 +764,7 @@ describe('B3-18 sign-up creation replay uses one coherent reading snapshot', () 
     })
     db().upload(row, { size: 480_000, contentType: 'image/jpeg' })
     forgetRecordedCalls()
-    const executeReal = db().execute.bind(db())
+    const rpcReal = db().rpc.bind(db())
     const workerProcessing = {
       status: 'processing' as const,
       processing_request_id: 'c'.repeat(64),
@@ -769,20 +774,18 @@ describe('B3-18 sign-up creation replay uses one coherent reading snapshot', () 
       processed_at: NOW.toISOString(),
       processing_result: BODY_RESULT,
     }
+    const signupLookups: Record<string, unknown>[] = []
     let hashLookups = 0
     let firstWasUploaded = false
     let workerTransitions = 0
-    vi.spyOn(db(), 'execute').mockImplementation(async (spec) => {
+    vi.spyOn(db(), 'rpc').mockImplementation(async (name, params) => {
+      if (name !== 'get_mobile_signup_body_photo_asset') return rpcReal(name, params)
+      signupLookups.push({ ...params })
       const isHashLookup =
-        spec.table === 'media_assets' &&
-        spec.operation === 'select' &&
-        spec.filters.some(
-          (filter) =>
-            filter.kind === 'eq' &&
-            filter.column === 'source_request_hash' &&
-            filter.value === sha256Hex(key),
-        )
-      if (!isHashLookup) return executeReal(spec)
+        params.p_user_id === ACCOUNT &&
+        params.p_asset_id === null &&
+        params.p_request_hash === sha256Hex(key)
+      if (!isHashLookup) return rpcReal(name, params)
       hashLookups += 1
       if (hashLookups === 2) {
         expect(firstWasUploaded).toBe(true)
@@ -808,9 +811,12 @@ describe('B3-18 sign-up creation replay uses one coherent reading snapshot', () 
         expect(processed.data).toEqual([{ id: ASSET }])
         workerTransitions += 1
       }
-      const result = await executeReal(spec)
+      const result = await rpcReal(name, params)
       if (hashLookups === 1) {
-        const first = Array.isArray(result.data) ? result.data[0] : null
+        const first =
+          result.data !== null && typeof result.data === 'object' && !Array.isArray(result.data)
+            ? (result.data as Record<string, unknown>)
+            : null
         firstWasUploaded = first?.status === 'uploaded' && first.processing_result === null
         expect(firstWasUploaded).toBe(true)
       }
@@ -821,6 +827,11 @@ describe('B3-18 sign-up creation replay uses one coherent reading snapshot', () 
 
     expect(response.status).toBe(201)
     expect(hashLookups).toBe(2)
+    expect(signupLookups).toEqual([
+      { p_user_id: ACCOUNT, p_asset_id: null, p_request_hash: sha256Hex(key) },
+      { p_user_id: ACCOUNT, p_asset_id: null, p_request_hash: sha256Hex(key) },
+      { p_user_id: ACCOUNT, p_asset_id: ASSET, p_request_hash: null },
+    ])
     expect(firstWasUploaded).toBe(true)
     expect(workerTransitions).toBe(2)
     expect(row).toMatchObject({ status: 'processed', processing_result: BODY_RESULT })
@@ -852,7 +863,7 @@ describe('B3-19 sign-up completion uses one coherent reading snapshot', () => {
     // actor in this fixture, not to the route under test.
     db().upload(row, { size: 480_000, contentType: 'image/jpeg' })
     forgetRecordedCalls()
-    const executeReal = db().execute.bind(db())
+    const rpcReal = db().rpc.bind(db())
     const workerUploaded = {
       status: 'uploaded' as const,
       actual_size_bytes: 480_000,
@@ -868,21 +879,18 @@ describe('B3-19 sign-up completion uses one coherent reading snapshot', () => {
       processed_at: NOW.toISOString(),
       processing_result: BODY_RESULT,
     }
+    const signupLookups: Record<string, unknown>[] = []
     let ownedLookups = 0
     let firstWasPending = false
     let externalTransitions = 0
-    vi.spyOn(db(), 'execute').mockImplementation(async (spec) => {
+    vi.spyOn(db(), 'rpc').mockImplementation(async (name, params) => {
+      if (name !== 'get_mobile_signup_body_photo_asset') return rpcReal(name, params)
+      signupLookups.push({ ...params })
       const isOwnedLookup =
-        spec.table === 'media_assets' &&
-        spec.operation === 'select' &&
-        spec.filters.some(
-          (filter) => filter.kind === 'eq' && filter.column === 'id' && filter.value === ASSET,
-        ) &&
-        spec.filters.some(
-          (filter) =>
-            filter.kind === 'eq' && filter.column === 'user_id' && filter.value === ACCOUNT,
-        )
-      if (!isOwnedLookup) return executeReal(spec)
+        params.p_user_id === ACCOUNT &&
+        params.p_asset_id === ASSET &&
+        params.p_request_hash === null
+      if (!isOwnedLookup) return rpcReal(name, params)
       ownedLookups += 1
       if (ownedLookups === 2) {
         expect(firstWasPending).toBe(true)
@@ -901,9 +909,12 @@ describe('B3-19 sign-up completion uses one coherent reading snapshot', () => {
           externalTransitions += 1
         }
       }
-      const result = await executeReal(spec)
+      const result = await rpcReal(name, params)
       if (ownedLookups === 1) {
-        const first = Array.isArray(result.data) ? result.data[0] : null
+        const first =
+          result.data !== null && typeof result.data === 'object' && !Array.isArray(result.data)
+            ? (result.data as Record<string, unknown>)
+            : null
         firstWasPending =
           first?.status === 'pending_upload' &&
           first.actual_size_bytes === null &&
@@ -917,7 +928,13 @@ describe('B3-19 sign-up completion uses one coherent reading snapshot', () => {
     const response = await photoComplete(ASSET, 'body-photo-coherent-complete-snapshot')
 
     expect(response.status).toBe(200)
-    expect(ownedLookups).toBe(2)
+    expect(ownedLookups).toBe(4)
+    expect(signupLookups).toEqual([
+      { p_user_id: ACCOUNT, p_asset_id: ASSET, p_request_hash: null },
+      { p_user_id: ACCOUNT, p_asset_id: ASSET, p_request_hash: null },
+      { p_user_id: ACCOUNT, p_asset_id: ASSET, p_request_hash: null },
+      { p_user_id: ACCOUNT, p_asset_id: ASSET, p_request_hash: null },
+    ])
     expect(firstWasPending).toBe(true)
     expect(externalTransitions).toBe(3)
     expect(row).toMatchObject({

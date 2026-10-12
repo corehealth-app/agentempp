@@ -197,7 +197,7 @@ describe('GET /onboarding/body-photos with the switch on — the state', () => {
     expect(db().operationsAfterAuthentication().slice(0, 3)).toEqual([
       'rpc:get_mobile_legal_document',
       'rpc:get_mobile_signup_body_photo_snapshot',
-      'select:user_profiles',
+      'rpc:prepare_mobile_signup_body_photo_disposition',
     ])
     expect(db().calls.find((call) => call.operation === 'rpc:get_mobile_legal_document')).toEqual({
       operation: 'rpc:get_mobile_legal_document',

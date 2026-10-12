@@ -41,6 +41,7 @@ export interface OnboardingRouteDependencies {
   finalizeSignupBodyPhotos(
     context: MobileRouteContext,
     input: OnboardingCompletionInput,
+    generation: string,
   ): Promise<void>
 }
 
@@ -178,7 +179,7 @@ export async function handleOnboardingPost(
     // Completion is already accepted. A photo failure cannot undo it or
     // release its idempotency claim. The default hook has its own budget.
     try {
-      await dependencies.finalizeSignupBodyPhotos(context, input)
+      await dependencies.finalizeSignupBodyPhotos(context, input, data.completed_at)
     } catch {
       console.warn('[mobile-signup-body-photos] finalization_hook_failed')
     }

@@ -62,6 +62,7 @@ export interface MemoryMediaAsset {
   context_text: string | null
   /** Default false/null is UNKNOWN; true is set only by the signup INSERT. */
   signup_origin: boolean | null
+  signup_disposition_version: 1 | null
   processing_request_id: string | null
   processing_result: unknown
   source_request_hash: string
@@ -324,6 +325,41 @@ export class SignupBodyPhotoMemoryDb {
   readonly legalAcceptances: MemoryLegalAcceptance[] = []
   readonly mutationReceipts: MutationReceipt[] = []
   readonly mediaAssets: MemoryMediaAsset[] = []
+  /** Declared historical membership only; native SQL proves sealing and sweep state. */
+  readonly signupAssignments = new Set<string>()
+  private readonly signupScopes: Array<{
+    owner: string
+    generation: string
+    ids: string[]
+    paths: string[]
+    sweep: number
+    cursor: string | null
+    complete: boolean
+  }> = []
+
+  /** Explicit synthetic RPC authorization; not a simulated SQL transaction or BF3 decision. */
+  declareCompletedSignupScope(owner: string, generation: string, ids: string[]): void {
+    const assets = ids.map((id) =>
+      this.mediaAssets.find((row) => row.id === id && row.user_id === owner),
+    )
+    if (
+      assets.some(
+        (row) => !row || row.signup_origin !== true || row.signup_disposition_version !== 1,
+      )
+    )
+      throw new Error('invalid declared signup scope')
+    const sorted = [...ids].sort()
+    this.signupScopes.push({
+      owner,
+      generation,
+      ids: sorted,
+      paths: sorted.map((id) => this.mediaAssets.find((row) => row.id === id)?.object_path ?? ''),
+      sweep: 1,
+      cursor: null,
+      complete: false,
+    })
+    for (const id of ids) this.signupAssignments.add(id)
+  }
   /** What is in the private buckets, by `<bucket>/<path>`. */
   readonly objects = new Map<string, MemoryStoredObject>()
   /** `user_profiles`: completion plus nullable sex, by account; absent row stays absent. */
@@ -398,6 +434,8 @@ export class SignupBodyPhotoMemoryDb {
       failure_code: null,
       context_text: null,
       signup_origin: false,
+      // Current fixture rows. Explicit NULL represents pre-Task4 history.
+      signup_disposition_version: row.signup_origin === true ? 1 : null,
       processing_request_id: null,
       processing_result: null,
       source_request_hash: sha256Hex(`seed:${row.id}`),
@@ -462,7 +500,15 @@ export class SignupBodyPhotoMemoryDb {
         },
       },
       from: (table: string) => new MemoryQuery(this, table),
-      rpc: (name: string, params: Row) => this.rpc(name, params),
+      rpc: (name: string, params: Row) => {
+        const pending = this.rpc(name, params)
+        return Object.assign(pending, {
+          abortSignal: (signal: AbortSignal) => {
+            this.querySignals.push(signal)
+            return pending
+          },
+        })
+      },
       storage: { from: (bucketId: string) => this.bucket(bucketId) },
     } as unknown as ServiceClient
   }
@@ -576,10 +622,227 @@ export class SignupBodyPhotoMemoryDb {
   }
 
   protected otherRpc(name: string, params: Row): DbResult {
+    if (name === 'get_mobile_signup_body_photo_asset') {
+      const owner = String(params.p_user_id)
+      const asset = this.mediaAssets.find(
+        (row) =>
+          row.user_id === owner &&
+          (params.p_asset_id !== null
+            ? row.id === params.p_asset_id
+            : row.source_request_hash === params.p_request_hash),
+      )
+      return { data: asset ? this.signupAssetContext(asset) : null, error: null }
+    }
+    if (name === 'prepare_mobile_signup_body_photo_disposition') {
+      const owner = String(params.p_user_id)
+      const profile = this.profiles.get(owner)
+      if (!profile) return raise('P0002', 'onboarding_user_not_found')
+      const completed = profile.onboarding_completed || profile.onboarding_completed_at !== null
+      if (
+        completed &&
+        this.mediaAssets.some(
+          (row) =>
+            row.user_id === owner &&
+            row.kind === 'body_checkin_photo' &&
+            row.signup_origin === true &&
+            !this.signupAssignments.has(row.id),
+        )
+      )
+        return raise('55000', 'body_photo_disposition_scope_unknown')
+      const scope = this.signupScopes.find(
+        (entry) =>
+          entry.owner === owner &&
+          (params.p_generation === null || entry.generation === params.p_generation) &&
+          !(params.p_swept_generations as string[]).includes(entry.generation),
+      )
+      if (scope) {
+        if (scope.complete) {
+          scope.sweep += 1
+          scope.cursor = null
+          scope.complete = false
+        }
+        return {
+          data: {
+            version: 1,
+            user_id: owner,
+            kind: 'ready',
+            current_profile_completed: completed,
+            generation: scope.generation,
+            policy: 'delete_all_signup_v1',
+            estimate_state: 'unusable',
+            sweep_no: scope.sweep,
+            cursor: scope.cursor,
+            manifest_count: scope.ids.length,
+            remaining_count: scope.ids.filter((id) => scope.cursor === null || id > scope.cursor)
+              .length,
+          },
+          error: null,
+        }
+      }
+      return {
+        data: { version: 1, user_id: owner, kind: 'empty', current_profile_completed: completed },
+        error: null,
+      }
+    }
+    if (
+      name === 'get_mobile_signup_body_photo_disposition_page' ||
+      name === 'commit_mobile_signup_body_photo_disposition_page'
+    ) {
+      const scope = this.signupScopes.find(
+        (entry) => entry.owner === params.p_user_id && entry.generation === params.p_generation,
+      )
+      if (
+        !scope ||
+        scope.sweep !== params.p_expected_sweep ||
+        scope.cursor !== params.p_expected_after ||
+        scope.complete
+      )
+        return raise('40001', 'body_photo_disposition_cursor_changed')
+      const remaining = scope.ids.filter((id) => scope.cursor === null || id > scope.cursor)
+      const ids = remaining.slice(0, 200)
+      if (name === 'get_mobile_signup_body_photo_disposition_page')
+        return {
+          data: {
+            version: 1,
+            user_id: scope.owner,
+            generation: scope.generation,
+            sweep_no: scope.sweep,
+            cursor: scope.cursor,
+            has_more: remaining.length > 200,
+            items: ids.map((id) => ({
+              asset_id: id,
+              bucket_id: 'body-checkin-photos',
+              object_path: scope.paths[scope.ids.indexOf(id)],
+            })),
+          },
+          error: null,
+        }
+      if (JSON.stringify(params.p_asset_ids) !== JSON.stringify(ids))
+        return raise('40001', 'body_photo_disposition_page_mismatch')
+      const previous = scope.cursor
+      const assets = ids.map((id) => {
+        const row = this.mediaAssets.find((item) => item.id === id)
+        const failedUpload = row?.status === 'failed' && row.failure_stage === 'upload'
+        const newlyDeleted = Boolean(row && row.status !== 'deleted' && !failedUpload)
+        if (row && !failedUpload)
+          Object.assign(row, {
+            status: 'deleted',
+            deleted_at: row.deleted_at ?? databaseTimestamp(this.now()),
+            failure_stage: null,
+            failure_code: null,
+            processing_result: null,
+          })
+        return {
+          asset_id: id,
+          state: !row ? 'absent' : failedUpload ? 'failed_upload_preserved' : 'deleted',
+          newly_deleted: newlyDeleted,
+          processing_result: null,
+          deleted_at: !row || failedUpload ? null : row.deleted_at,
+          failure_stage: failedUpload ? 'upload' : null,
+          failure_code: failedUpload ? row?.failure_code : null,
+        }
+      })
+      scope.cursor = ids.at(-1) ?? null
+      scope.complete = remaining.length <= 200
+      return {
+        data: {
+          version: 1,
+          user_id: scope.owner,
+          generation: scope.generation,
+          sweep_no: scope.sweep,
+          previous_cursor: previous,
+          cursor: scope.cursor,
+          sweep_complete: scope.complete,
+          assets,
+        },
+        error: null,
+      }
+    }
+    if (name === 'list_mobile_open_signup_body_photo_assets') {
+      const owner = String(params.p_user_id)
+      const profile = this.profiles.get(owner)
+      if (!profile) return raise('22023', 'body_photos_unavailable')
+      if (profile.onboarding_completed || profile.onboarding_completed_at !== null)
+        return raise('22023', 'onboarding_already_completed')
+      const includeDeleted = params.p_include_deleted === true
+      const rows = this.mediaAssets.filter(
+        (row) =>
+          row.user_id === owner &&
+          row.kind === 'body_checkin_photo' &&
+          row.signup_origin === true &&
+          row.signup_disposition_version === 1 &&
+          !this.signupAssignments.has(row.id) &&
+          (includeDeleted || row.status !== 'deleted'),
+      )
+      rows.sort(
+        (a, b) =>
+          (includeDeleted
+            ? a.deleted_at === null
+              ? -1
+              : b.deleted_at === null
+                ? 1
+                : Date.parse(b.deleted_at) - Date.parse(a.deleted_at)
+            : Date.parse(b.created_at) - Date.parse(a.created_at)) || b.id.localeCompare(a.id),
+      )
+      return {
+        data: rows
+          .slice(0, Number(params.p_limit))
+          .map((row) =>
+            project(
+              row as unknown as Row,
+              'id, bucket_id, object_path, status, failure_stage, context_text, created_at, uploaded_at, processing_result',
+            ),
+          ),
+        error: null,
+      }
+    }
+    if (name === 'mark_mobile_signup_body_photo_uploaded') {
+      const owner = String(params.p_user_id)
+      const asset = this.mediaAssets.find(
+        (row) => row.user_id === owner && row.id === params.p_asset_id,
+      )
+      if (
+        !asset ||
+        !this.signupAssetContext(asset).signup_upload_open ||
+        asset.status !== 'pending_upload'
+      )
+        return raise('22023', 'media_upload_not_pending')
+      if (params.p_actual_size_bytes !== asset.declared_size_bytes)
+        return raise('22023', 'media_upload_metadata_mismatch')
+      const updated = this.mediaTransition(asset, {
+        ...asset,
+        status: 'uploaded',
+        actual_size_bytes: Number(params.p_actual_size_bytes),
+        etag: params.p_etag as string | null,
+        uploaded_at: String(params.p_uploaded_at),
+      })
+      if ('message' in updated) return { data: null, error: updated }
+      Object.assign(asset, updated)
+      return { data: this.signupAssetContext(asset), error: null }
+    }
     if (name === 'get_mobile_signup_body_photo_snapshot') return this.signupPhotoSnapshot(params)
     if (name === 'get_mobile_legal_document') return this.getLegalDocument(params)
     if (name === 'accept_mobile_legal_document') return this.acceptLegalDocument(params)
     throw new Error(`unexpected rpc ${name}`)
+  }
+
+  private signupAssetContext(asset: MemoryMediaAsset): Row {
+    const profile = this.profiles.get(asset.user_id)
+    const account = this.accounts.find((entry) => entry.id === asset.user_id)
+    const assigned = this.signupAssignments.has(asset.id)
+    return {
+      ...asset,
+      signup_disposition_assigned: assigned,
+      signup_upload_open:
+        Boolean(account) &&
+        (account?.status ?? 'active') === 'active' &&
+        profile?.onboarding_completed === false &&
+        profile.onboarding_completed_at === null &&
+        asset.kind === 'body_checkin_photo' &&
+        asset.signup_origin === true &&
+        asset.signup_disposition_version === 1 &&
+        !assigned,
+    }
   }
 
   /**
@@ -647,6 +910,8 @@ export class SignupBodyPhotoMemoryDb {
               row.user_id === owner &&
               row.kind === 'body_checkin_photo' &&
               row.signup_origin === true &&
+              row.signup_disposition_version === 1 &&
+              !this.signupAssignments.has(row.id) &&
               row.context_text === caption &&
               (['uploaded', 'processing', 'processed'].includes(row.status) ||
                 (row.status === 'failed' && row.failure_stage === 'processing')),
@@ -858,6 +1123,17 @@ export class SignupBodyPhotoMemoryDb {
         updated_at: now,
         ...spec.payload,
       } as MemoryMediaAsset
+      if (row.signup_origin === true) {
+        const account = this.accounts.find((entry) => entry.id === row.user_id)
+        const profile = this.profiles.get(row.user_id)
+        if (!account || (account.status ?? 'active') !== 'active' || !profile)
+          return raise('22023', 'body_photos_unavailable')
+        if (profile.onboarding_completed !== false || profile.onboarding_completed_at !== null)
+          return raise('22023', 'onboarding_already_completed')
+        if (this.signupAssignments.has(row.id))
+          return raise('22023', 'signup_body_photo_disposition_asset_closed')
+      }
+      row.signup_disposition_version = row.signup_origin === true ? 1 : null
       if (
         this.mediaAssets.some(
           (other) =>

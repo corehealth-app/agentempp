@@ -30,6 +30,9 @@ const mediaAssetRowSchema = z.object({
   failure_code: z.string().nullable(),
   context_text: z.string().nullable(),
   signup_origin: z.boolean().nullable().optional(),
+  signup_disposition_version: z.literal(1).nullable().optional(),
+  signup_disposition_assigned: z.boolean().optional(),
+  signup_upload_open: z.boolean().optional(),
   retention_until: z.string().datetime({ offset: true }).nullable(),
   uploaded_at: z.string().datetime({ offset: true }).nullable(),
   processed_at: z.string().datetime({ offset: true }).nullable(),
@@ -85,11 +88,33 @@ function storageErrorStatus(error: unknown): number | null {
 
 function createRepository(supabase: ServiceClient, signupPhotos: boolean): MediaAssetRepository {
   // Generic media retains its old projection, including on the old database.
-  const selection = signupPhotos ? `${mediaSelection}, signup_origin` : mediaSelection
+  const selection = signupPhotos
+    ? `${mediaSelection}, signup_origin, signup_disposition_version`
+    : mediaSelection
+  const lookupSignupAsset = async (
+    userId: string,
+    assetId: string | null,
+    requestHash: string | null,
+  ) => {
+    const api = supabase as unknown as {
+      rpc(
+        name: string,
+        args: Record<string, unknown>,
+      ): PromiseLike<{ data: unknown; error: { message: string } | null }>
+    }
+    const { data, error } = await api.rpc('get_mobile_signup_body_photo_asset', {
+      p_user_id: userId,
+      p_asset_id: assetId,
+      p_request_hash: requestHash,
+    })
+    if (error) databaseFailure('find_signup_asset', error)
+    return data === null ? null : parseMediaAsset(data)
+  }
   const findByRequestHash: MediaAssetRepository['findByRequestHash'] = async (
     userId,
     sourceRequestHash,
   ) => {
+    if (signupPhotos) return lookupSignupAsset(userId, null, sourceRequestHash)
     const { data, error } = await supabase
       .from('media_assets')
       .select(selection)
@@ -125,9 +150,15 @@ function createRepository(supabase: ServiceClient, signupPhotos: boolean): Media
         if (existing) return existing
       }
       if (error || !data) databaseFailure('create', error)
+      if (signupPhotos) {
+        const current = await lookupSignupAsset(input.userId, input.id, null)
+        if (!current) databaseFailure('find_created_signup_asset', null)
+        return current
+      }
       return parseMediaAsset(data)
     },
     async findOwned(userId, assetId) {
+      if (signupPhotos) return lookupSignupAsset(userId, assetId, null)
       const { data, error } = await supabase
         .from('media_assets')
         .select(selection)
@@ -138,6 +169,25 @@ function createRepository(supabase: ServiceClient, signupPhotos: boolean): Media
       return data ? parseMediaAsset(data) : null
     },
     async markUploaded(userId, assetId, details) {
+      if (signupPhotos) {
+        const api = supabase as unknown as {
+          rpc(
+            name: string,
+            args: Record<string, unknown>,
+          ): PromiseLike<{ data: unknown; error: { message: string; code?: string } | null }>
+        }
+        const { data, error } = await api.rpc('mark_mobile_signup_body_photo_uploaded', {
+          p_user_id: userId,
+          p_asset_id: assetId,
+          p_actual_size_bytes: details.actualSizeBytes,
+          p_etag: details.etag,
+          p_uploaded_at: details.uploadedAt,
+        })
+        if (error?.code === '22023' || error?.code === 'P0002')
+          throw new MobileApiError(409, 'media_upload_not_pending', 'Media upload is not pending')
+        if (error || data === null) databaseFailure('mark_signup_uploaded', error)
+        return parseMediaAsset(data)
+      }
       const { data, error } = await supabase
         .from('media_assets')
         .update({

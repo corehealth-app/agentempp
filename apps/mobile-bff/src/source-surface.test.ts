@@ -390,8 +390,14 @@ describe('authoritative Mobile API source surface', () => {
       /^[\w.-]+\.js$/,
     )
     const finalizationSource = readFileSync(finalizationChunk, 'utf8')
-    expect(finalizationSource).toContain('deferred_rule')
-    expect(finalizationSource).toContain('bf_percent_estimated')
+    // Task4 replaces the deferred default with the strict durable RPC protocol.
+    // Keep the physical chunk boundary and every original graph guard below.
+    expect(finalizationSource).not.toContain('deferred_rule')
+    expect(finalizationSource).toContain('prepare_mobile_signup_body_photo_disposition')
+    expect(finalizationSource).toContain('get_mobile_signup_body_photo_disposition_page')
+    expect(finalizationSource).toContain('commit_mobile_signup_body_photo_disposition_page')
+    expect(finalizationSource).toContain('delete_all_signup_v1')
+    expect(finalizationSource).toContain('remaining_count')
     expect(finalizationSource).toContain('body_photo_cleanup_pending')
     const byName = (left: string, right: string) => left.localeCompare(right, 'en')
     expect(

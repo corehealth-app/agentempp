@@ -33,6 +33,10 @@ export interface MediaAssetRecord {
   context_text: string | null
   /** Private origin proof; absent/false/null is not verified signup media. */
   signup_origin?: boolean | null
+  /** Internal version assigned only to signup INSERTs passing the Task4 fence. */
+  signup_disposition_version?: 1 | null
+  signup_disposition_assigned?: boolean
+  signup_upload_open?: boolean
   retention_until: string | null
   uploaded_at: string | null
   processed_at: string | null
@@ -190,6 +194,20 @@ interface MediaCreationOptions {
   signupOrigin?: true
 }
 
+/** Internal server snapshot, checked again after external waits. Never a public DTO. */
+export function assertSignupPhotoUploadOpen(
+  asset: MediaAssetRecord | null,
+): asserts asset is MediaAssetRecord {
+  if (
+    !asset ||
+    asset.signup_origin !== true ||
+    asset.signup_disposition_version !== 1 ||
+    asset.signup_disposition_assigned !== false ||
+    asset.signup_upload_open !== true
+  )
+    throw new MobileApiError(409, 'media_upload_not_pending', 'Media upload is not pending')
+}
+
 function assertSignupCreation(
   asset: MediaAssetRecord,
   userId: string,
@@ -199,6 +217,7 @@ function assertSignupCreation(
   if (!options.signupOrigin) return
   if (
     asset.signup_origin !== true ||
+    asset.signup_disposition_version !== 1 ||
     asset.user_id !== userId ||
     asset.kind !== 'body_checkin_photo' ||
     asset.kind !== input.kind ||
@@ -260,16 +279,23 @@ export async function createMediaAssetRecord(
     throw new MobileApiError(422, 'audio_too_long', 'Audio must be at most 180 seconds long')
   }
   const sourceRequestHash = sha256(requestKey)
+  const finish = async (asset: MediaAssetRecord, replayed: boolean) => {
+    assertSignupCreation(asset, userId, input, options)
+    if (options.signupOrigin) assertSignupPhotoUploadOpen(asset)
+    const upload =
+      !replayed || asset.status === 'pending_upload' ? await signedUpload(deps, asset, now) : null
+    if (!options.signupOrigin) return { asset, upload, replayed }
+    // Signing cannot hold the SQL lock or revoke a ticket. Re-read before returning it.
+    const latest = await deps.repository.findOwned(userId, asset.id)
+    assertSignupPhotoUploadOpen(latest)
+    assertSignupCreation(latest, userId, input, options)
+    return { asset: latest, upload: latest.status === 'pending_upload' ? upload : null, replayed }
+  }
   const existing = await deps.repository.findByRequestHash(userId, sourceRequestHash)
   if (existing) {
     // A differently labelled input must not refresh a stored body's ticket.
     assertUploadKindAllowed(existing.kind, options)
-    assertSignupCreation(existing, userId, input, options)
-    return {
-      asset: existing,
-      upload: existing.status === 'pending_upload' ? await signedUpload(deps, existing, now) : null,
-      replayed: true,
-    }
+    return finish(existing, true)
   }
 
   const policy = mediaPolicy[input.kind]
@@ -292,13 +318,7 @@ export async function createMediaAssetRecord(
   })
   // The adapter may resolve a concurrent unique-key collision to an existing row.
   assertUploadKindAllowed(created.kind, options)
-  assertSignupCreation(created, userId, input, options)
-
-  return {
-    asset: created,
-    upload: await signedUpload(deps, created, now),
-    replayed: false,
-  }
+  return finish(created, false)
 }
 
 export async function completeMediaUpload(

@@ -105,7 +105,7 @@ com a mesma chave executa de novo; outro corpo com a mesma chave continua sendo
 | `POST` | `/onboarding/body-photos/consent` | fotos do corpo no cadastro: aceita exatamente a versão e a marca do consentimento próprio mostradas; recusa quem declara menos de 18 anos (`403 body_photo_age_not_allowed`); `404 body_photos_unavailable` com as fotos desligadas |
 | `POST` | `/onboarding/body-photos` | fotos do corpo no cadastro: cria a foto de uma pose (`front`, `side` ou `back`; só JPEG até 15 MiB) e devolve o bilhete de envio; exige o aceite do consentimento em vigor e cadastro não concluído; limite de 9 em 24 h; `404 body_photos_unavailable` com as fotos desligadas |
 | `POST` | `/onboarding/body-photos/:id/complete` | fotos do corpo no cadastro: confere dono, consentimento atual e cadastro aberto, conclui o envio, apaga a foto anterior da mesma pose e pede leitura enquanto uploaded; `404 body_photos_unavailable` com as fotos desligadas |
-| `DELETE` | `/onboarding/body-photos` | fotos do corpo no cadastro: no staging conhecido, apaga pelo B2 se o perfil está aberto; cadastro concluído passa pelo reparo B4a e fotos vivas sem disposição resolvida retornam `503 body_photo_cleanup_pending`; outro alvo é `404` antes do claim; independe do interruptor |
+| `DELETE` | `/onboarding/body-photos` | no staging conhecido, repara os escopos selados do cadastro antes da exclusão explícita de fotos atuais; reparo incerto é `503 body_photo_cleanup_pending`; outro alvo é `404` antes do claim; independe do interruptor |
 | `GET` | `/protocol` | objetivo atual do perfil, metas do dia como em `/today` e a mensagem de entrada do objetivo; só leitura |
 | `GET` | `/plan` | plano de treino ativo e prescrições vigentes |
 | `GET` | `/progress` | nível, streak, bloco 7700, peso, gordura corporal (a persistida no progresso ou, na falta dela, a informada no cadastro) e reavaliação |
@@ -2712,9 +2712,10 @@ Com as fotos **desligadas**:
   `Idempotency-Key`. Nada é lido, nenhuma chave é reservada, nada é guardado e
   nada é enviado à fila.
 - `DELETE /onboarding/body-photos` independe do interruptor, mas só funciona
-  no staging conhecido. Perfil conhecido aberto usa a exclusão B2; cadastro
-  concluído passa pelo reparo B4a e fotos vivas não resolvidas retornam `503
-  body_photo_cleanup_pending`, sem exclusão. Outro alvo é `404` antes do claim.
+  no staging conhecido. Repara primeiro os escopos históricos selados; depois
+  usa B2 se o perfil atual estiver aberto. Disposição incerta retorna `503
+  body_photo_cleanup_pending`, preservando fontes não autorizadas. Outro alvo
+  é `404` antes do claim.
   Exige `Idempotency-Key`, como todo `DELETE` da API no alvo permitido.
 - Sem token a resposta é `401`, antes de qualquer outra coisa.
 
@@ -2779,13 +2780,12 @@ conta que ainda não concluiu o cadastro e não tem acesso liberado:
 - `remaining_uploads` é 9 menos as fotos do cadastro que a conta criou nas
   últimas 24 horas (contando as apagadas e as que nunca subiram), nunca
   abaixo de zero.
-- Custo com as fotos ligadas, texto válido e perfil conhecido aberto: uma
-  chamada a `get_mobile_legal_document`, uma leitura de `user_profiles`, uma
-  de `user_legal_acceptances` e duas de `media_assets` (fotos do corpo não
-  apagadas e criações nas últimas 24 horas). Nada é gravado nesse caso.
-  Cadastro concluído passa pelo reparo B4a antes de mostrar o estado: fotos
-  vivas não resolvidas respondem `503 body_photo_cleanup_pending`; só linhas
-  já apagadas permitem remover bytes tardios, sem nova estimativa ou marca.
+- Com fotos ligadas e texto válido, o estado usa `get_mobile_legal_document`,
+  um snapshot SQL coerente e o reparo dos escopos concluídos. Sem escopo
+  histórico, o reparo aberto é uma leitura sem mutação. Com escopo selado,
+  pode persistir a disposição e remover fontes, antes de responder. Resultado
+  incerto é `503 body_photo_cleanup_pending`, preservando as fotos ainda não
+  autorizadas para limpeza; veja o protocolo B4b/D4 abaixo.
 - Falha/ausência/incerteza de perfil ou reparo é `503 body_photo_cleanup_pending`.
   As demais leituras falhando mantêm `500 data_access_failed`. Uma leitura
   que falha nunca vira "texto ausente", "nunca aceitou" nem "sem fotos". A
@@ -2924,13 +2924,14 @@ Resposta `201`:
    de novo no limite. A procura vem **antes** das conferências: uma repetição
    é atendida mesmo com o limite já atingido. A mesma chave para outra pose,
    outro tamanho ou outra mídia da conta é `409 idempotency_key_conflict`.
-   **A repetição não refaz as conferências do item 2.** Se, depois da
-   criação, entrou em vigor um texto que a conta não aceitou, ou o cadastro
-   foi concluído, a repetição ainda responde `201` com bilhete novo, válido
-   por mais duas horas a cada repetição, enquanto o envio estiver pendente. É
-   a ordem que o plano fixou ("a chave primeiro"); só entregar bilhete novo
-   com as duas conferências refeitas é decisão do orquestrador, ainda não
-   tomada (pendência abaixo).
+   **A repetição não refaz o aceite/limite do item 2**, mas exige origem
+   comprovada/versão1, perfil aberto e ID não atribuído a um escopo concluído.
+   Após fechar ou reabrir com esse ID histórico, recusa `409
+   media_upload_not_pending`, sem renovar ticket. A conferência é repetida
+   depois do SDK de assinatura: não entrega ticket se observar conclusão
+   durante essa espera. Se apenas o texto do consentimento mudou, com perfil
+   ainda aberto, o replay pendente conserva `201`/ticket novo; a conclusão do
+   envio exige o novo aceite e recusa `403` até recebê-lo (R7 permanece).
 2. **As conferências de uma foto nova:** aceite da versão em vigor do
    consentimento (`403 body_photo_consent_required`; sem texto em vigor, `404
    body_photos_unavailable`); cadastro não concluído (`409
@@ -2943,18 +2944,21 @@ Resposta `201`:
 
 - **Só `image/jpeg`, até 15 MiB, e as três poses.** Outro tipo, tamanho fora
   do limite, pose fora de `front`/`side`/`back` ou qualquer campo a mais
-  (`kind`, `context_text`) é `422 validation_failed`. O app refaz a imagem em
-  JPEG sem metadados antes de ela sair do aparelho; o servidor não reescreve
-  a imagem (pendência abaixo).
+  (`kind`, `context_text`) é `422 validation_failed`. O cliente deverá refazer a imagem em
+  JPEG sem metadados antes de ela sair do aparelho; a implementação e a
+  conferência iOS ainda são gates próprios. O servidor não reescreve a imagem.
 - **Limite: 9 criações por conta em 24 horas**, contando as apagadas e as que
   nunca subiram. A 10ª é recusada. O limite de 9 é um número do plano, à
   espera da confirmação do dono; não é decisão dele.
 - **Cadastro concluído** (`onboarding_completed` verdadeiro **ou**
-  `onboarding_completed_at` preenchido): criar e concluir envio respondem `409
-  onboarding_already_completed`. `GET` ON e `DELETE` passam pelo reparo B4a;
-  fotos vivas não resolvidas respondem `503 body_photo_cleanup_pending` e
-  ficam preservadas. Na criação, conta sem linha de perfil não é concluída;
-  perfil que não pôde ser lido é `500 data_access_failed`, nada criado.
+  `onboarding_completed_at` preenchido): criação nova e conclusão do envio
+  respondem `409 onboarding_already_completed`; replay de criação recusa
+  `409 media_upload_not_pending` pela guarda dedicada. `GET` ON e `DELETE`
+  passam pelo reparo D4; disposição incerta responde `503
+  body_photo_cleanup_pending` e preserva as fontes ainda não autorizadas. O INSERT dedicado exige conta ativa e perfil
+  aberto conhecido: sem perfil, recusa antes da criação/ticket (`500
+  media_storage_failed` no adaptador); falha na leitura prévia mantém `500
+  data_access_failed`, nada criado.
   No reparo, perfil ausente ou inválido é incerteza e responde `503`.
 - **Origem e pose.** `media_assets.signup_origin = true` é prova privada
   gravada somente no INSERT da factory do cadastro. Ausência, `false` e `null`
@@ -3025,15 +3029,17 @@ Resposta `201`:
 
 **Exclusão.** `DELETE /onboarding/body-photos`, com `Idempotency-Key`,
 primeiro confere o alvo e o perfil. Outro alvo é `404` antes do claim;
-perfil ausente/ilegível é `503`. Cadastro concluído passa pelo reparo B4a:
-sem linhas ou só tombstones reparados responde `200 { "deleted": 0 }`;
-foto viva sem disposição resolvida responde `503`, sem apagar ou marcar.
+perfil ausente/ilegível é `503`. Passa pelo reparo D4 dos escopos selados,
+inclusive históricos após reset; resposta `deleted` soma apenas transições
+novas desta chamada, não o tamanho do manifesto. Escopo UNKNOWN ou disposição
+não resolvida responde `503`, sem autorizar nova remoção.
 
-Os detalhes B2 abaixo aplicam-se ao **perfil conhecido aberto**, no staging:
+Os detalhes B2 abaixo aplicam-se às **fotos atuais não atribuídas de perfil
+conhecido aberto**, depois do reparo histórico no staging:
 `200` com `{ "deleted": <quantas linhas foram marcadas> }`.
 
-- Manda remover do armazenamento os objetos de **todas as fotos do cadastro
-  que a conta já criou** — guardadas, com envio pendente, recusadas no envio
+- Manda remover do armazenamento os objetos da **página de fotos atuais
+  comprovadas do cadastro** — guardadas, com envio pendente, recusadas no envio
   **e também as já apagadas ou trocadas** — numa chamada de armazenamento, e
   depois marca como apagadas, numa escrita, as linhas que ainda não estavam,
   zerando o que uma leitura tenha deixado. Se o armazenamento falhar: `503`,
@@ -3047,8 +3053,8 @@ Os detalhes B2 abaixo aplicam-se ao **perfil conhecido aberto**, no staging:
   uma página de 1000 linhas de foto do corpo da conta: **primeiro as não
   apagadas**, depois as apagadas mais recentemente. Uma foto viva nunca fica
   de fora por causa de linhas já apagadas; o que a página pode deixar de fora
-  são as apagadas há mais tempo (só com fotos do cadastro, limitadas a 9 em 24
-  horas, uma conta leva 112 dias no limite para ter mais de 1000 linhas).
+  são as apagadas há mais tempo; mais de 1000 linhas não apagadas também
+  excede a página. Esse limite B2 permanece; D4 pagina todo escopo selado.
 - **A linha do catálogo não é removida**: fica marcada (`deleted`,
   `deleted_at`), e continua contando no limite das 24 horas. Foto recusada no
   envio não é marcada como `deleted` pelo caminho B2: os bytes dela, se
@@ -3064,14 +3070,14 @@ Os detalhes B2 abaixo aplicam-se ao **perfil conhecido aberto**, no staging:
   devolve a resposta guardada (a resposta vem com `Idempotency-Replayed:
   true` e com o que foi apagado **agora**). É exceção declarada à regra geral
   do ledger, como a conclusão do cadastro.
-- **O que um `200` quer dizer:** naquela chamada o servidor mandou remover o
-  objeto de toda foto do cadastro que a conta já criou e marcou como apagada
-  toda linha que podia ser marcada — mesmo para um cliente que reuse a chave
+- **O que um `200` quer dizer:** naquela chamada o servidor mandou remover os
+  objetos da página observada e marcou suas linhas que podiam ser marcadas
+  — mesmo para um cliente que reuse a chave
   depois de mandar outra foto. **O que ele não garante:** bytes que cheguem
   **depois** dele, com um bilhete ainda válido, ficam guardados até a
   exclusão seguinte; nada roda sozinho (pendência abaixo).
-- Independe do interruptor; cadastro concluído segue o reparo B4a descrito
-  acima, sem cair nesse caminho B2 quando há foto viva não resolvida.
+- Independe do interruptor; cadastro concluído usa D4, com exclusão só após
+  prova durável da disposição. Falha no reparo impede cair no caminho B2.
 - Só as fotos do cadastro **desta** conta: outra conta, foto de refeição e
   foto do corpo sem frase de pose não são tocadas.
 - O aceite do consentimento continua valendo depois de apagar.
@@ -3086,10 +3092,14 @@ finito ou null; campos livres não saem do adaptador nem da resposta.
 `body_fat_measured_at`, objetivo/protocolo/metas, `product_events` ou
 `vision.analyzed`. O fechamento mecânico B4a pode atualizar exclusivamente
 as três colunas de estimativa descritas abaixo, depois de receber um candidato
-válido de um resolver separado. O resolver real desta entrega retorna
-`deferred_rule`; não grava estimativa nem apaga fotos vivas.
+válido de um resolver separado. O helper B4a histórico conserva
+`deferred_rule` para caracterização; o executor padrão atual usa o protocolo
+SQL durável B4b/D4 descrito abaixo.
 
-### Fechamento da conclusão e reparo (B4a — mecânica, sem regra clínica)
+### Fechamento da conclusão e reparo (B4a — contrato mecânico histórico)
+
+A integração padrão foi substituída pelo protocolo B4b/D4 abaixo. O helper
+mecânico exportado permanece para caracterização, sem ser o executor padrão.
 
 `OnboardingRouteDependencies.finalizeSignupBodyPhotos(context, input)` é
 obrigatório e o default é real. A conclusão, a repetição com a mesma chave e
@@ -3156,7 +3166,8 @@ se guarda um falso `200`. Isso muda intencionalmente C1, C2 e R8 de B2.
 
 **Pré-requisito de implantação:** aplicar, no staging conhecido, as migrations
 `20261012004043_signup_body_photo_trusted_origin.sql` e
-`20261012021423_signup_body_photo_confirmation.sql` antes de publicar um BFF
+`20261012021423_signup_body_photo_confirmation.sql` e
+`20261012065500_signup_body_photo_disposition.sql` antes de publicar um BFF
 que contenha esta integração. Mesmo com fotos OFF e sem metadata, o cadastro
 completo nesse alvo usa o snapshot e o wrapper novos. Não aplicar na produção
 antiga. Não há ativação remota nesta etapa.
@@ -3203,8 +3214,8 @@ O wrapper trusted revalida fontes/consentimento e chama a conclusão oficial na
 mesma transação que grava BF, origem e recibo privado. Uma falha nessa gravação
 reverte também a conclusão SQL. A resposta pública do cadastro não muda.
 Concessão de acesso e remoção de Storage são etapas posteriores: não fazem
-parte dessa transação. D4 continua pendente, e o finalizer real ainda retorna
-`deferred_rule` para fotos vivas.
+parte dessa transação. O wrapper também sela os IDs do escopo a limpar;
+a disposição e o Storage seguem o protocolo D4 abaixo.
 
 O hash de idempotência usa o **payload original**, incluindo a metadata; não
 usa BF ou token derivados. Preflight recusado deixa zero claim. Se a recusa
@@ -3240,8 +3251,69 @@ A tabela privada não concede leitura/escrita aos clientes; RPCs públicas
 exigem backend trusted, com execução apenas para service_role. Sem FK para
 mídia, a exclusão das fontes não apaga a prova. Testes nativos usam PostgreSQL
 local sintético e shims de plataforma; não comprovam JWT/GoTrue, fila, modelo,
-Storage remoto ou QA físico. Texto B5, disposição D4 e telas B6–B9 permanecem
-gates próprios antes da ativação.
+Storage remoto ou QA físico. Texto B5, telas B6–B9 e conferência real da
+disposição/Storage permanecem gates próprios antes da ativação.
+
+### Disposição e limpeza das fontes (B4b/D4 — integração local)
+
+A conclusão trusted captura o snapshot **antes** de fechar e sela, na mesma
+transação SQL, todos os IDs comprovados daquela geração, inclusive pendentes,
+incompletos, recusados e tombstones. Não há FK para mídia. Não se cria escopo
+retroativo para cadastro já concluído ou repetição: histórico sem prova fica
+UNKNOWN e não é apagado por inferência.
+
+O cutover acrescenta `media_assets.signup_disposition_version`, sem default
+nem backfill: somente o INSERT dedicado, com conta ativa/perfil aberto sob a
+mesma trava do cadastro, atribui `1`. TRUE histórico com versão NULL continua
+UNKNOWN. A versão é imutável. Reuso/renomeação de UUID selado é recusado,
+inclusive com marcador false/NULL. Consulta dedicada por ID/hash preserva o
+registro histórico e devolve flags internas coerentes; não o transforma em
+registro ausente. Após fechar, não há renovação de ticket ou conclusão de upload
+no caminho dedicado; callback atrasado não emite novo evento. O contexto e o
+catálogo aberto excluem IDs já atribuídos mesmo após reabrir o cadastro.
+
+`prepare_mobile_signup_body_photo_disposition` persiste uma decisão única:
+recibo de aceite já salvo prova a média original, mesmo após invalidar sua
+origem; nos demais casos, o candidato congelado e as três colunas BF3 capturadas
+são conferidos por CAS com a geração atual antes de salvar BF3. Ausência de
+candidato utilizável vira prova `unusable`, sem inventar percentual. Mudança de
+BF3/geração incompatível ou fonte incerta impede Storage. Retry não recalcula
+média nem sobrescreve BF3 salvo com leitura tardia. A recusa D2 não autoriza usar
+a média nas metas; eventual salvamento BF3 de D4 permanece apenas descritivo.
+
+Página por UUID crescente com até 200 IDs; manifesto e contagem restante,
+geração, sweep e cursor são conferidos antes do remove. ACK exige a página
+exata e atesta metadados/resultados limpos. `deleted` conta só transições novas:
+failed-upload terminal permanece nesse estado; fonte já purgada fica ausente.
+Os caminhos selados são preservados para remover bytes tardios em outra visita.
+O reparo percorre gerações históricas mesmo com perfil atual reaberto; cada
+sweep só é pulado depois de ACK completo observado nesta chamada. Perfil atual
+não é marcado concluído por limpar um escopo antigo. Posthook usa somente o
+instante oficial devolvido pelo POST, sem fabricar datas; não desfaz resposta
+200, concessão de acesso ou ledger quando a limpeza falha.
+
+Hook/reparo usam **um orçamento total de 3 s**, abrangendo preparo, páginas,
+remoção e ACK. RPCs recebem abortSignal. O SDK de Storage não cancela remove já
+enviado; retorno tardio não autoriza ACK ou fase nova após timeout. Não há
+cron/job novo nem garantia de ausência permanente de bytes depois da última
+visita: tickets anteriores continuam válidos e não são revogáveis.
+
+GET ON e DELETE no staging executam reparo global; UNKNOWN sem escopo ou falha
+responde `503 body_photo_cleanup_pending`. Fotos OFF não impede DELETE nem o
+hook da conclusão nesse alvo. O hook explicitamente vinculado a um escopo
+conhecido não significa que todos os históricos da conta estejam resolvidos.
+A exclusão B2 explicitamente autorizada quando aberta conserva Storage primeiro,
+nenhuma marca se remove falhar e retry com tombstones. Essa operação em voo não
+vira cleanup automático por uma conclusão posterior; atua somente sobre os IDs
+que observou. Catálogo aberto continua limitado a 1000 linhas por leitura; a
+paginação de D4 resolve o escopo selado, não esse limite B2 preexistente.
+
+As tabelas e funções privadas ficam inacessíveis a clientes. Os seis RPCs
+públicos dedicados exigem backend trusted/service_role; nenhum campo de escopo,
+flag interna, resultado bruto ou segredo é devolvido no wire público. A política
+D1/D2/D4 é uma decisão do produto documentada, sem aceite clínico presumido.
+A integração não está publicada; provas locais de SQL/concorrência e testes
+HTTP sintéticos não substituem Storage, modelo, sessão/JWT e câmera reais.
 
 ### Estado destes pacotes (B2 — envio; B3 — leitura; B4a — fechamento mecânico)
 
@@ -3250,15 +3322,13 @@ pedido de leitura exclusivo do cadastro após aceite atual, estados read versus
 unreadable e proteção dos resultados genéricos frescos/históricos. Sem perfil,
 metas, objetivo, product_events ou algoritmo de junção escritos em B3.
 
-Construído B4a mecânico, adaptador real, hook e redes de reparo em testes
-locais. A exclusão automática de fotos vivas na conclusão **ainda não está
-funcional no default real**: depende de B4b (D1/D2, estimativa/uso e disposição
-explícita quando não houver candidato). Ainda faltam texto aprovado/publicado,
-telas iOS e validação real de fila, modelo e armazenamento.
-Os textos e decisões humanas não são presumidos. O recurso continua desligado,
-e fotos vivas de cadastro concluído ficam pendentes; nada foi publicado por
-este grupo. Não interpretar os testes sintéticos de candidato pronto como
-aprovação da regra ou prova de limpeza remota.
+B4a mecânico e B4b/D4 estão integrados localmente: a limpeza padrão passa pelo
+escopo/disposição duráveis. Ainda faltam texto aprovado/publicado, telas iOS e
+validação real de fila, modelo e armazenamento. O recurso continua desligado;
+nenhuma implantação ou limpeza remota foi feita por este grupo. Os registros RC
+abaixo preservam os limites da auditoria anterior; a seção D4 descreve o código
+local atual. Não interpretar provas locais como aprovação clínica ou limpeza
+remota verificada.
 
 O espelho do BFF passou de 51 para 54 rotas no pacote B0
 (`apps/mobile-bff/scripts/verify-route-mirror.mjs` e

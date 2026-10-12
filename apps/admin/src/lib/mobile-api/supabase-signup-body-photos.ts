@@ -91,10 +91,6 @@ interface UntypedClient {
  */
 const PHOTOS_PAGE = 1000
 
-/** Processing result is read internally and reduced before leaving this adapter. */
-const PHOTO_COLUMNS =
-  'id, bucket_id, object_path, status, failure_stage, context_text, created_at, uploaded_at, processing_result'
-
 const dateTimeSchema = z.string().datetime({ offset: true })
 
 const consentDocumentSchema = z
@@ -250,16 +246,18 @@ function createCatalogue(supabase: ServiceClient, requestId: string): SignupBody
    * already deleted.
    */
   async function list(userId: string, which: 'open' | 'every'): Promise<SignupBodyPhotoRow[]> {
-    const ofTheAccount = supabase
-      .from('media_assets')
-      .select(PHOTO_COLUMNS)
-      .eq('user_id', userId)
-      .eq('kind', SIGNUP_BODY_PHOTO_KIND)
-      .eq('signup_origin', true)
-    const { data, error } = await (which === 'open'
-      ? ofTheAccount.neq('status', 'deleted').order('created_at', { ascending: false })
-      : ofTheAccount.order('deleted_at', { ascending: false, nullsFirst: true })
-    ).limit(PHOTOS_PAGE)
+    const rpc = supabase.rpc as unknown as UntypedRpc
+    const { data, error } = await rpc.call(supabase, 'list_mobile_open_signup_body_photo_assets', {
+      p_user_id: userId,
+      p_include_deleted: which === 'every',
+      p_limit: PHOTOS_PAGE,
+    })
+    if (error?.code === '22023' && error.message === 'onboarding_already_completed')
+      throw new MobileApiError(
+        409,
+        'onboarding_already_completed',
+        'Onboarding was already completed',
+      )
     if (error || !Array.isArray(data)) operationFailure(requestId, 'list_photos', error)
     const photos: SignupBodyPhotoRow[] = []
     for (const row of data) {

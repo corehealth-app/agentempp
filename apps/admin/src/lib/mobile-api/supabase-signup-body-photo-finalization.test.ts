@@ -552,15 +552,103 @@ describe('B4a real Supabase finalization adapter', () => {
   })
 })
 
+function dispositionRpc(db: QueuedClient, receipts: Array<Receipt | (() => Promise<Receipt>)>) {
+  const calls: Array<{ name: string; params: Record<string, unknown>; signal?: AbortSignal }> = []
+  const rpc = (name: string, params: Record<string, unknown>) => {
+    const call: (typeof calls)[number] = { name, params }
+    calls.push(call)
+    const pending = Promise.resolve().then(() => {
+      const receipt = receipts.shift()
+      if (!receipt) throw new Error('undeclared disposition receipt')
+      return typeof receipt === 'function' ? receipt() : receipt
+    })
+    return Object.assign(pending, {
+      abortSignal: (signal: AbortSignal) => {
+        call.signal = signal
+        return pending
+      },
+    })
+  }
+  ;(db.client as unknown as { rpc: typeof rpc }).rpc = rpc
+  return calls
+}
+function readyDisposition(count = 1) {
+  return {
+    version: 1,
+    user_id: ACCOUNT,
+    kind: 'ready',
+    current_profile_completed: true,
+    generation: AT,
+    policy: 'delete_all_signup_v1',
+    estimate_state: 'unusable',
+    sweep_no: 1,
+    cursor: null,
+    manifest_count: count,
+    remaining_count: count,
+  }
+}
+function emptyDisposition(completed = true): Receipt {
+  return {
+    data: { version: 1, user_id: ACCOUNT, kind: 'empty', current_profile_completed: completed },
+    error: null,
+  }
+}
+function dispositionPage(ids = [ASSET]): Receipt {
+  return {
+    data: {
+      version: 1,
+      user_id: ACCOUNT,
+      generation: AT,
+      sweep_no: 1,
+      cursor: null,
+      has_more: false,
+      items: ids.map((id) => ({
+        asset_id: id,
+        bucket_id: BUCKET,
+        object_path: `${ACCOUNT}/${id}.jpg`,
+      })),
+    },
+    error: null,
+  }
+}
+function dispositionAck(ids = [ASSET], newly = false): Receipt {
+  return {
+    data: {
+      version: 1,
+      user_id: ACCOUNT,
+      generation: AT,
+      sweep_no: 1,
+      previous_cursor: null,
+      cursor: ids.at(-1),
+      sweep_complete: true,
+      assets: ids.map((id) => ({
+        asset_id: id,
+        state: 'deleted',
+        newly_deleted: newly,
+        processing_result: null,
+        deleted_at: AT,
+        failure_stage: null,
+        failure_code: null,
+      })),
+    },
+    error: null,
+  }
+}
+
 describe('B4a real default wrapper target guard', () => {
   it('runs an empty READ after completion in known staging even with the photo switch OFF', async () => {
-    const db = new QueuedClient().next({ data: [], error: null })
+    const db = new QueuedClient()
+    const calls = dispositionRpc(db, [emptyDisposition()])
     expect(signupBodyPhotoFinalizationTargetAllowed()).toBe(true)
-    await finalizeSignupBodyPhotosAfterOnboarding(context(db), input())
-    expect(db.queries).toHaveLength(1)
-    const signal = db.queries[0]?.steps.find((step) => step.method === 'abortSignal')?.args[0]
-    expect(signal).toBeInstanceOf(AbortSignal)
-    expect(db.queries).toEqual([expectedRead(signal as AbortSignal)])
+    await finalizeSignupBodyPhotosAfterOnboarding(context(db), input(), AT)
+    expect(calls).toEqual([
+      {
+        name: 'prepare_mobile_signup_body_photo_disposition',
+        params: { p_user_id: ACCOUNT, p_generation: AT, p_swept_generations: [] },
+        signal: expect.any(AbortSignal),
+      },
+    ])
+    expect(db.queries).toEqual([])
     expect(db.storageCalls).toEqual([])
     expect(db.forbidden).toEqual([])
   })
@@ -580,7 +668,7 @@ describe('B4a real default wrapper target guard', () => {
     const db = new QueuedClient()
     expect(signupBodyPhotoFinalizationTargetAllowed()).toBe(false)
     await expect(
-      finalizeSignupBodyPhotosAfterOnboarding(context(db), input()),
+      finalizeSignupBodyPhotosAfterOnboarding(context(db), input(), AT),
     ).resolves.toBeUndefined()
     expect(db.queries).toEqual([])
     expect(db.storageCalls).toEqual([])
@@ -588,240 +676,320 @@ describe('B4a real default wrapper target guard', () => {
   })
 })
 
-describe('B4a repair uses one budget for profile and media', () => {
-  it('R1 profile resolves at the deadline before timer delivery: no media query may start', async () => {
+describe('D4 repair uses one total budget and trusted disposition receipts', () => {
+  it('R1 preparation validates at the deadline: no page or Storage may start', async () => {
     const clock = vi.spyOn(performance, 'now').mockReturnValue(0)
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     const db = new QueuedClient()
-      .next({
-        data: {
-          onboarding_completed: true,
-          onboarding_completed_at: AT,
-          get sex() {
-            clock.mockReturnValue(3000)
-            return 'feminino'
-          },
-        },
-        error: null,
-      })
-      .next({ data: [], error: null })
+    const receipt = readyDisposition()
+    Object.defineProperty(receipt, 'current_profile_completed', {
+      enumerable: true,
+      get: () => {
+        clock.mockReturnValue(3000)
+        return true
+      },
+    })
+    const calls = dispositionRpc(db, [{ data: receipt, error: null }])
     await expect(repairCompletedSignupBodyPhotos(db.client, ACCOUNT)).rejects.toMatchObject({
       status: 503,
       code: 'body_photo_cleanup_pending',
     })
-    expect(db.queries.map((call) => call.table)).toEqual(['user_profiles'])
+    expect(calls).toHaveLength(1)
+    expect(db.queries).toEqual([])
     expect(db.storageCalls).toEqual([])
     expect(db.forbidden).toEqual([])
+  })
+
+  it('R2 missing preparation receipt is unknown and cannot authorize deleteAll', async () => {
+    const db = new QueuedClient()
+    const calls = dispositionRpc(db, [{ data: null, error: null }])
+    await expect(repairCompletedSignupBodyPhotos(db.client, ACCOUNT)).rejects.toMatchObject({
+      status: 503,
+      code: 'body_photo_cleanup_pending',
+    })
+    expect(calls).toHaveLength(1)
+    expect(db.queries).toEqual([])
+    expect(db.storageCalls).toEqual([])
+    expect(db.forbidden).toEqual([])
+  })
+
+  it('R3 other hosted ref explicitly ON: GET/DELETE do not query or claim even consent', async () => {
+    const ref = 'abcdefghijklmnopqrst'
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', `https://${ref}.supabase.co`)
+    vi.stubEnv('MOBILE_SIGNUP_BODY_PHOTOS_PROJECT_REF', ref)
+    const db = new QueuedClient()
+    const response = await handleSignupBodyPhotosGet(context(db)).catch(() => null)
+    expect(response?.status).toBe(200)
+    expect((await response?.json())?.data).toMatchObject({
+      available: false,
+      unavailable_reason: 'disabled',
+    })
+    await expect(handleSignupBodyPhotosDelete(context(db))).rejects.toMatchObject({
+      status: 404,
+      code: 'body_photos_unavailable',
+    })
+    expect(db.forbidden).toEqual([])
+    expect(db.queries).toEqual([])
+    expect(db.storageCalls).toEqual([])
+  })
+
+  it('R4 known open profile with no historical scope permits the established B2 path', async () => {
+    const db = new QueuedClient()
+    const calls = dispositionRpc(db, [emptyDisposition(false)])
+    expect(await repairCompletedSignupBodyPhotos(db.client, ACCOUNT)).toEqual({
+      completed: false,
+      newlyDeleted: 0,
+    })
+    expect(calls).toEqual([
+      {
+        name: 'prepare_mobile_signup_body_photo_disposition',
+        params: { p_user_id: ACCOUNT, p_generation: null, p_swept_generations: [] },
+        signal: expect.any(AbortSignal),
+      },
+    ])
+    expect(db.queries).toEqual([])
+    expect(db.storageCalls).toEqual([])
+  })
+
+  it.each([
+    'true/time',
+    'true/no-time',
+    'false/time',
+  ])('R5 empty completed %s receives no mutation authorization', async () => {
+    // Completion shape is evaluated by the SQL RPC. This fake declares its boolean only.
+    const db = new QueuedClient()
+    const calls = dispositionRpc(db, [emptyDisposition()])
+    expect(await repairCompletedSignupBodyPhotos(db.client, ACCOUNT)).toEqual({
+      completed: true,
+      newlyDeleted: 0,
+    })
+    expect(calls).toHaveLength(1)
+    expect(db.storageCalls).toEqual([])
+    expect(db.forbidden).toEqual([])
+  })
+
+  it.each([
+    'processed',
+    'pending_upload',
+    'failed',
+  ])('R6 unsealed legacy %s stays unknown instead of authorizing deletion', async () => {
+    const db = new QueuedClient()
+    const calls = dispositionRpc(db, [
+      { data: null, error: { code: '55000', message: 'body_photo_disposition_scope_unknown' } },
+    ])
+    await expect(repairCompletedSignupBodyPhotos(db.client, ACCOUNT)).rejects.toMatchObject({
+      status: 503,
+      code: 'body_photo_cleanup_pending',
+    })
+    expect(calls).toHaveLength(1)
+    expect(db.queries).toEqual([])
+    expect(db.storageCalls).toEqual([])
+    expect(db.forbidden).toEqual([])
+  })
+
+  it('R7 tombstones resweep late bytes once, without counting a new deletion or writing BF3', async () => {
+    const db = new QueuedClient()
+    const calls = dispositionRpc(db, [
+      { data: readyDisposition(), error: null },
+      dispositionPage(),
+      dispositionAck(),
+      emptyDisposition(),
+    ])
+    expect(await repairCompletedSignupBodyPhotos(db.client, ACCOUNT)).toEqual({
+      completed: true,
+      newlyDeleted: 0,
+    })
+    expect(db.storageCalls).toEqual([
+      { method: 'from', args: [BUCKET] },
+      { method: 'remove', args: [[`${ACCOUNT}/${ASSET}.jpg`]] },
+    ])
+    expect(calls.map((call) => call.name)).toEqual([
+      'prepare_mobile_signup_body_photo_disposition',
+      'get_mobile_signup_body_photo_disposition_page',
+      'commit_mobile_signup_body_photo_disposition_page',
+      'prepare_mobile_signup_body_photo_disposition',
+    ])
+    expect(calls.at(-1)?.params.p_swept_generations).toEqual([AT])
+    expect(db.queries).toEqual([])
+    expect(db.forbidden).toEqual([])
+  })
+
+  it('R8 unsealed mixed tombstones/live remains pending without deleteAll', async () => {
+    const db = new QueuedClient()
+    const calls = dispositionRpc(db, [
+      { data: null, error: { code: '55000', message: 'body_photo_disposition_scope_unknown' } },
+    ])
+    await expect(repairCompletedSignupBodyPhotos(db.client, ACCOUNT)).rejects.toMatchObject({
+      status: 503,
+      code: 'body_photo_cleanup_pending',
+    })
+    expect(calls).toHaveLength(1)
+    expect(db.storageCalls).toEqual([])
+    expect(db.queries).toEqual([])
+    expect(db.forbidden).toEqual([])
+  })
+
+  it('R9 failed tombstone remove starts no ACK or new preparation and hides private errors', async () => {
+    const db = new QueuedClient()
+    const calls = dispositionRpc(db, [{ data: readyDisposition(), error: null }, dispositionPage()])
+    db.storageResult = { data: null, error: { message: 'SYNTHETIC PRIVATE FAILURE' } }
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    await expect(repairCompletedSignupBodyPhotos(db.client, ACCOUNT)).rejects.toMatchObject({
+      status: 503,
+      code: 'body_photo_cleanup_pending',
+    })
+    expect(calls).toHaveLength(2)
     expect(warn.mock.calls).toEqual([
       [
         '[mobile-signup-body-photos] finalization_incomplete',
-        { state: 'source_unknown', phase: 'read', reason: 'timeout' },
+        { state: 'cleanup_unknown', phase: 'remove', reason: 'error' },
       ],
     ])
+    expect(db.forbidden).toEqual([])
   })
-})
 
-it('R2 missing profile receipt is unknown: repair cannot authorize the old deleteAll', async () => {
-  const db = new QueuedClient().next({ data: null, error: null })
-  await expect(repairCompletedSignupBodyPhotos(db.client, ACCOUNT)).rejects.toMatchObject({
-    status: 503,
-    code: 'body_photo_cleanup_pending',
+  it.each([
+    { data: null, error: { message: 'SYNTHETIC PRIVATE ERROR' } },
+    { data: {}, error: null },
+    { data: { ...readyDisposition(), current_profile_completed: 'unknown' }, error: null },
+  ])('R10 invalid preparation never authorizes a page or Storage: %j', async (receipt) => {
+    const db = new QueuedClient()
+    const calls = dispositionRpc(db, [receipt])
+    await expect(repairCompletedSignupBodyPhotos(db.client, ACCOUNT)).rejects.toMatchObject({
+      status: 503,
+      code: 'body_photo_cleanup_pending',
+    })
+    expect(calls).toHaveLength(1)
+    expect(db.queries).toEqual([])
+    expect(db.storageCalls).toEqual([])
   })
-  expect(db.queries.map((call) => call.table)).toEqual(['user_profiles'])
-  expect(db.storageCalls).toEqual([])
-  expect(db.forbidden).toEqual([])
-})
 
-it('R3 other hosted ref explicitly ON: GET/DELETE do not query or claim even consent', async () => {
-  const ref = 'abcdefghijklmnopqrst'
-  vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', `https://${ref}.supabase.co`)
-  vi.stubEnv('MOBILE_SIGNUP_BODY_PHOTOS_PROJECT_REF', ref)
-  const db = new QueuedClient()
-  const response = await handleSignupBodyPhotosGet(context(db)).catch(() => null)
-  expect(db.forbidden).toEqual([])
-  expect(db.queries).toEqual([])
-  expect(db.storageCalls).toEqual([])
-  expect(response?.status).toBe(200)
-  const json = await response?.json()
-  expect(json?.data).toMatchObject({
-    available: false,
-    unavailable_reason: 'disabled',
-  })
-  await expect(handleSignupBodyPhotosDelete(context(db))).rejects.toMatchObject({
-    status: 404,
-    code: 'body_photos_unavailable',
-  })
-  expect(db.forbidden).toEqual([])
-  expect(db.queries).toEqual([])
-  expect(db.storageCalls).toEqual([])
-})
-
-function profile(completed = true) {
-  return {
-    onboarding_completed: completed,
-    onboarding_completed_at: completed ? AT : null,
-    sex: 'feminino',
-  }
-}
-
-function repairRead(signal: AbortSignal): QueryCall {
-  const expected = expectedRead(signal)
-  expected.steps = expected.steps.filter((step) => step.method !== 'neq')
-  expected.steps = expected.steps.map((step) =>
-    step.method === 'order'
-      ? { method: 'order', args: ['deleted_at', { ascending: false, nullsFirst: true }] }
-      : step,
-  )
-  return expected
-}
-
-it('R4 known open profile does not read photos in repair and still permits the established B2 path', async () => {
-  const db = new QueuedClient().next({ data: profile(false), error: null })
-  expect(await repairCompletedSignupBodyPhotos(db.client, ACCOUNT)).toEqual({ completed: false })
-  expect(db.queries.map((call) => call.table)).toEqual(['user_profiles'])
-  expect(db.queries[0].steps).toEqual([
-    { method: 'select', args: ['onboarding_completed, onboarding_completed_at, sex'] },
-    { method: 'eq', args: ['user_id', ACCOUNT] },
-    { method: 'abortSignal', args: [expect.any(AbortSignal)] },
-    { method: 'maybeSingle', args: [] },
-  ])
-  expect(db.storageCalls).toEqual([])
-})
-
-it.each([
-  profile(),
-  { ...profile(), onboarding_completed_at: null },
-  { ...profile(), onboarding_completed: false },
-])('R5 each existing completion shape with no catalogue rows returns completed without mutations', async (value) => {
-  const db = new QueuedClient().next({ data: value, error: null }).next({ data: [], error: null })
-  expect(await repairCompletedSignupBodyPhotos(db.client, ACCOUNT)).toEqual({ completed: true })
-  const signal = db.queries[0].steps.find((step) => step.method === 'abortSignal')
-    ?.args[0] as AbortSignal
-  expect(db.queries[1]).toEqual(repairRead(signal))
-  expect(db.storageCalls).toEqual([])
-  expect(db.forbidden).toEqual([])
-})
-
-it.each([
-  'processed',
-  'pending_upload',
-  'failed',
-] as const)('R6 live %s photo remains pending without a clinical/disposition callback', async (status) => {
-  const db = new QueuedClient().next({ data: { ...profile(), sex: null }, error: null }).next({
-    data: [row({ status, failure_stage: status === 'failed' ? 'upload' : null })],
-    error: null,
-  })
-  await expect(repairCompletedSignupBodyPhotos(db.client, ACCOUNT)).rejects.toMatchObject({
-    status: 503,
-    code: 'body_photo_cleanup_pending',
-  })
-  expect(db.queries.map((call) => call.table)).toEqual(['user_profiles', 'media_assets'])
-  expect(db.queries.every((call) => !call.steps.some((step) => step.method === 'update'))).toBe(
-    true,
-  )
-  expect(db.storageCalls).toEqual([])
-  expect(db.forbidden).toEqual([])
-})
-
-it('R7 only already-deleted tombstones: remove late bytes once inside the budget, no provenance/mark/resolver', async () => {
-  const db = new QueuedClient()
-    .next({ data: profile(), error: null })
-    .next({ data: [row({ status: 'deleted', processing_result: null })], error: null })
-  expect(await repairCompletedSignupBodyPhotos(db.client, ACCOUNT)).toEqual({ completed: true })
-  const signal = db.queries[0].steps.find((step) => step.method === 'abortSignal')
-    ?.args[0] as AbortSignal
-  expect(db.queries[1]).toEqual(repairRead(signal))
-  expect(db.storageCalls).toEqual([
-    { method: 'from', args: [BUCKET] },
-    { method: 'remove', args: [[`${ACCOUNT}/${ASSET}.jpg`]] },
-  ])
-  expect(db.queries).toHaveLength(2)
-  expect(db.forbidden).toEqual([])
-})
-
-it('R8 tombstones mixed with a live photo: deferred outcome never falls through to deleteAll', async () => {
-  const db = new QueuedClient().next({ data: profile(), error: null }).next({
-    data: [
-      row({ status: 'deleted', processing_result: null }),
-      row({ id: SECOND, object_path: `${ACCOUNT}/${SECOND}.jpg` }),
-    ],
-    error: null,
-  })
-  await expect(repairCompletedSignupBodyPhotos(db.client, ACCOUNT)).rejects.toMatchObject({
-    status: 503,
-    code: 'body_photo_cleanup_pending',
-  })
-  expect(db.storageCalls).toEqual([])
-  expect(db.queries).toHaveLength(2)
-  expect(db.forbidden).toEqual([])
-})
-
-it('R9 failed removal of tombstone bytes is pending and starts no fresh mark/query', async () => {
-  const db = new QueuedClient()
-    .next({ data: profile(), error: null })
-    .next({ data: [row({ status: 'deleted', processing_result: null })], error: null })
-  db.storageResult = { data: null, error: { message: 'SYNTHETIC PRIVATE FAILURE' } }
-  const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-  await expect(repairCompletedSignupBodyPhotos(db.client, ACCOUNT)).rejects.toMatchObject({
-    status: 503,
-    code: 'body_photo_cleanup_pending',
-  })
-  expect(db.queries).toHaveLength(2)
-  expect(warn.mock.calls).toEqual([
-    [
-      '[mobile-signup-body-photos] finalization_incomplete',
-      { state: 'cleanup_unknown', phase: 'remove', reason: 'error' },
-    ],
-  ])
-  expect(db.forbidden).toEqual([])
-})
-
-it.each([
-  { data: null, error: { message: 'SYNTHETIC PRIVATE ERROR' } },
-  { data: {}, error: null },
-  { data: { ...profile(), sex: 'unknown' }, error: null },
-])('R10 invalid profile never authorizes cleanup or a media read: %j', async (receipt) => {
-  const db = new QueuedClient().next(receipt)
-  vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-  await expect(repairCompletedSignupBodyPhotos(db.client, ACCOUNT)).rejects.toMatchObject({
-    status: 503,
-    code: 'body_photo_cleanup_pending',
-  })
-  expect(db.queries.map((call) => call.table)).toEqual(['user_profiles'])
-  expect(db.storageCalls).toEqual([])
-})
-
-it('R11 profile1500 + photo read1600 share 3000 total: late tombstone snapshot never removes bytes', async () => {
-  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
-  vi.setSystemTime(0)
-  vi.spyOn(performance, 'now').mockImplementation(() => Date.now())
-  const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-  const db = new QueuedClient()
-    .next(
-      () =>
-        new Promise((resolve) => setTimeout(() => resolve({ data: profile(), error: null }), 1500)),
-    )
-    .next(
+  it('R11 prepare1500 + page1600 share3000: late page never removes tombstone bytes', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    vi.setSystemTime(0)
+    vi.spyOn(performance, 'now').mockImplementation(() => Date.now())
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const db = new QueuedClient()
+    const calls = dispositionRpc(db, [
       () =>
         new Promise((resolve) =>
-          setTimeout(
-            () =>
-              resolve({ data: [row({ status: 'deleted', processing_result: null })], error: null }),
-            1600,
-          ),
+          setTimeout(() => resolve({ data: readyDisposition(), error: null }), 1500),
         ),
-    )
-  const work = repairCompletedSignupBodyPhotos(db.client, ACCOUNT)
-  const assertion = expect(work).rejects.toMatchObject({
-    status: 503,
-    code: 'body_photo_cleanup_pending',
+      () => new Promise((resolve) => setTimeout(() => resolve(dispositionPage()), 1600)),
+    ])
+    const assertion = expect(
+      repairCompletedSignupBodyPhotos(db.client, ACCOUNT),
+    ).rejects.toMatchObject({ status: 503, code: 'body_photo_cleanup_pending' })
+    await vi.advanceTimersByTimeAsync(3000)
+    await assertion
+    expect(calls).toHaveLength(2)
+    expect(db.storageCalls).toEqual([])
+    await vi.advanceTimersByTimeAsync(100)
+    expect(db.storageCalls).toEqual([])
+    expect(warn).toHaveBeenCalledOnce()
+    expect(vi.getTimerCount()).toBe(0)
   })
-  await vi.advanceTimersByTimeAsync(3000)
-  await assertion
-  expect(db.queries).toHaveLength(2)
-  expect(db.storageCalls).toEqual([])
-  await vi.advanceTimersByTimeAsync(100)
-  expect(db.storageCalls).toEqual([])
-  expect(warn).toHaveBeenCalledOnce()
-  expect(vi.getTimerCount()).toBe(0)
+})
+
+// D4 characterization against the existing real post-completion entrypoint.
+// Future SQL replies are declared here; this fake proves orchestration only.
+describe('D4 disposes the sealed signup scope independently of photo confirmation', () => {
+  it.each([
+    ['one incomplete upload, without a usable estimate', false, 1],
+    ['an explicitly declined18/24/30 mean, already saved atomically in BF3', true, 3],
+  ] as const)('%s', async (_label, declined, count) => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const ids = [ASSET, SECOND, '00000000-0000-4000-8000-000000000343'].slice(0, count)
+    const poses = ['front', 'side', 'back'] as const
+    const db = new QueuedClient().next({
+      data: ids.map((id, i) =>
+        row({
+          id,
+          object_path: `${ACCOUNT}/${id}.jpg`,
+          status: declined ? 'processed' : 'pending_upload',
+          context_text: SIGNUP_BODY_PHOTO_POSE_CONTEXT[poses[i]],
+          uploaded_at: declined ? AT : null,
+          processing_result: declined
+            ? { type: 'body', bf_percent_estimate: [18, 24, 30][i] }
+            : null,
+        }),
+      ),
+      error: null,
+    })
+    const rpcCalls: string[] = []
+    const rpc = vi.fn((name: string) => {
+      rpcCalls.push(name)
+      let data: unknown
+      if (name === 'prepare_mobile_signup_body_photo_disposition')
+        data = {
+          version: 1,
+          kind: 'ready',
+          user_id: ACCOUNT,
+          generation: AT,
+          current_profile_completed: true,
+          policy: 'delete_all_signup_v1',
+          estimate_state: declined ? 'saved' : 'unusable',
+          sweep_no: 1,
+          cursor: null,
+          manifest_count: count,
+          remaining_count: count,
+        }
+      else if (name === 'get_mobile_signup_body_photo_disposition_page')
+        data = {
+          version: 1,
+          user_id: ACCOUNT,
+          generation: AT,
+          sweep_no: 1,
+          cursor: null,
+          items: ids.map((id) => ({
+            asset_id: id,
+            bucket_id: BUCKET,
+            object_path: `${ACCOUNT}/${id}.jpg`,
+          })),
+          has_more: false,
+        }
+      else if (name === 'commit_mobile_signup_body_photo_disposition_page')
+        data = {
+          version: 1,
+          user_id: ACCOUNT,
+          generation: AT,
+          sweep_no: 1,
+          previous_cursor: null,
+          cursor: ids.at(-1),
+          sweep_complete: true,
+          assets: ids.map((id) => ({
+            asset_id: id,
+            state: 'deleted',
+            newly_deleted: true,
+            deleted_at: AT,
+            processing_result: null,
+            failure_stage: null,
+            failure_code: null,
+          })),
+        }
+      else throw new Error('unexpected disposition RPC')
+      const result = Promise.resolve({ data, error: null })
+      return Object.assign(result, {
+        abortSignal: (signal: AbortSignal) => {
+          if (signal.aborted) throw new Error('disposition stopped')
+          return result
+        },
+      })
+    })
+    const caller = { ...context(db), supabase: { ...db.client, rpc } as unknown as ServiceClient }
+    const submission = declined
+      ? { ...input(), body_photo_confirmation: { decision: 'decline' as const } }
+      : input()
+    await finalizeSignupBodyPhotosAfterOnboarding(caller, submission, AT)
+    expect(db.storageCalls).toEqual([
+      { method: 'from', args: [BUCKET] },
+      { method: 'remove', args: [ids.map((id) => `${ACCOUNT}/${id}.jpg`)] },
+    ])
+    expect(rpcCalls).toEqual([
+      'prepare_mobile_signup_body_photo_disposition',
+      'get_mobile_signup_body_photo_disposition_page',
+      'commit_mobile_signup_body_photo_disposition_page',
+    ])
+    expect(db.queries).toEqual([]) // No direct BF3 write outside the atomic SQL receipt.
+    expect(db.forbidden).toEqual([])
+  })
 })

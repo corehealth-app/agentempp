@@ -310,7 +310,12 @@ class SignupMemoryDb {
       storage: {
         from: (_bucketId: string) => this.refusePhotoEffect('storage:from'),
       },
-      rpc: (name: string, params: Record<string, unknown>) => this.rpc(name, params),
+      rpc: (name: string, params: Record<string, unknown>) => {
+        const pending = this.rpc(name, params)
+        return Object.assign(pending, {
+          abortSignal: (_signal: AbortSignal) => pending,
+        })
+      },
     } as unknown as ServiceClient
   }
 
@@ -509,6 +514,27 @@ class SignupMemoryDb {
       if (name === 'claim_mobile_api_request') return this.claim(params)
       if (name === 'complete_mobile_api_request') return this.completeClaim(params)
       if (name === 'fail_mobile_api_request') return this.failClaim(params)
+      if (name === 'prepare_mobile_signup_body_photo_disposition') {
+        if (
+          params.p_user_id !== USER_ID ||
+          !Array.isArray(params.p_swept_generations) ||
+          params.p_swept_generations.length !== 0 ||
+          params.p_generation !== this.profile?.onboarding_completed_at
+        )
+          throw new Error('unexpected empty disposition arguments')
+        // This fixture has no signup media. Native SQL separately proves sealing/cleanup.
+        return {
+          data: {
+            version: 1,
+            user_id: USER_ID,
+            kind: 'empty',
+            current_profile_completed:
+              this.profile?.onboarding_completed === true ||
+              this.profile?.onboarding_completed_at !== null,
+          },
+          error: null,
+        }
+      }
       if (name === 'get_mobile_signup_body_photo_snapshot') {
         if (params.p_user_id !== USER_ID || typeof params.p_include_open_photos !== 'boolean')
           throw new Error('unexpected signup snapshot arguments')
@@ -1074,7 +1100,7 @@ describe('D2 staging completion integration', () => {
       CONFIG_READ,
       CLAIM,
       'rpc:complete_mobile_onboarding_with_body_photo_confirmation',
-      'select:media_assets',
+      'rpc:prepare_mobile_signup_body_photo_disposition',
       RECORD,
     ])
     expect(db.signupSnapshotReads).toEqual([{ p_user_id: USER_ID, p_include_open_photos: false }])
@@ -1480,7 +1506,7 @@ describe('POST /onboarding — a first completion records only an objective the 
       CONFIG_READ,
       CLAIM,
       SQL_FUNCTION,
-      'select:media_assets',
+      'rpc:prepare_mobile_signup_body_photo_disposition',
       RECORD,
     ])
     expect(db.idempotencyRows()).toEqual([{ key: KEY, state: 'completed', status: 200 }])
@@ -1926,7 +1952,7 @@ describe('POST /onboarding — an account that already has a completion time is 
       SNAPSHOT_READ,
       CLAIM,
       SQL_FUNCTION,
-      'select:media_assets',
+      'rpc:prepare_mobile_signup_body_photo_disposition',
       RECORD,
     ])
     expect(db.submissions).toEqual([body])
@@ -1966,7 +1992,7 @@ describe('POST /onboarding — an account that already has a completion time is 
       SNAPSHOT_READ,
       CLAIM,
       SQL_FUNCTION,
-      'select:media_assets',
+      'rpc:prepare_mobile_signup_body_photo_disposition',
       RECORD,
     ])
     expect(db.profile?.current_protocol).toBe(stored.objective)
@@ -2007,12 +2033,12 @@ describe('POST /onboarding — an account that already has a completion time is 
       CLAIM,
       SNAPSHOT_READ,
       SQL_FUNCTION,
-      'select:media_assets',
+      'rpc:prepare_mobile_signup_body_photo_disposition',
       SNAPSHOT_READ,
       CLAIM,
       SNAPSHOT_READ,
       SQL_FUNCTION,
-      'select:media_assets',
+      'rpc:prepare_mobile_signup_body_photo_disposition',
     ])
     expect(db.idempotencyRows()).toEqual([{ key, state: 'completed', status: 200 }])
     expect(db.submissions).toEqual([body, body, body])
@@ -2037,7 +2063,7 @@ describe('POST /onboarding — an account that already has a completion time is 
       SNAPSHOT_READ,
       CLAIM,
       SQL_FUNCTION,
-      'select:media_assets',
+      'rpc:prepare_mobile_signup_body_photo_disposition',
       RECORD,
     ])
   })
@@ -2061,7 +2087,7 @@ describe('POST /onboarding — an account that already has a completion time is 
       SNAPSHOT_READ,
       CLAIM,
       SQL_FUNCTION,
-      'select:media_assets',
+      'rpc:prepare_mobile_signup_body_photo_disposition',
       RECORD,
     ])
   })

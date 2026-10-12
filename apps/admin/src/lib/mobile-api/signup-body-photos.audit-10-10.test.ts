@@ -58,9 +58,9 @@
  *   - finding 3 (LB6): deleting again DOES call the storage, for every photo
  *     of the sign-up the account ever created; only the answer and the writes
  *     are idempotent.
- *   - finding 2 (R7, R8): a repeated Idempotency-Key hands a new ticket
- *     without making the checks of a new photo again. Locked as it IS, and
- *     declared in an RC line: changing it is the orchestrator's decision.
+ *   - finding 2 (R7): an open repeated Idempotency-Key can renew its ticket.
+ *     Task4 changes R8 deliberately: a closed replay cannot renew a ticket;
+ *     an undeclared closed scope still refuses cleanup and preserves bytes.
  *   - finding 4 (I1, I2): the acceptance and the sign-up of another account
  *     are never read as the account's own.
  *   - finding 5 (X1): the generic completion of media stores a pending photo
@@ -116,6 +116,13 @@ import {
   SignupBodyPhotoMemoryDb,
   sha256Hex,
 } from '@/lib/mobile-api/testing/signup-body-photo-memory-db'
+
+/** Typed spy boundary only: keep the strict RPC model and call recording. */
+class DeleteBoundaryMemoryDb extends SignupBodyPhotoMemoryDb {
+  override rpc(name: string, params: Record<string, unknown>) {
+    return super.rpc(name, params)
+  }
+}
 
 const world = vi.hoisted(() => ({ db: undefined as unknown, queue: [] as unknown[] }))
 
@@ -288,6 +295,15 @@ async function errorOf(response: Response) {
   return { status: response.status, code: (await response.json()).error?.code }
 }
 
+/** Error/GET/DELETE wires never expose internal media, disposition or upload fields. */
+function assertPrivate(payload: unknown): void {
+  const wire = JSON.stringify(payload)
+  expect(wire).not.toMatch(
+    /"(?:bucket_id|object_path|processing_result|source_request_hash|processing_request_id|signup_origin|signup_disposition_version|signup_disposition_assigned|signup_upload_open|generation_token|sweep_no|cursor|manifest_count|remaining_count|estimate_proof|signed_url)"\s*:/,
+  )
+  expect(wire).not.toContain('https://storage.test/')
+}
+
 function operationsOf(prefix: string): string[] {
   return db().operations.filter((operation) => operation.startsWith(prefix))
 }
@@ -337,7 +353,7 @@ beforeEach(() => {
   vi.setSystemTime(NOW)
   keySequence = 0
   expectedEvents = []
-  const database = new SignupBodyPhotoMemoryDb()
+  const database = new DeleteBoundaryMemoryDb()
     .addAccount({ id: ACCOUNT, authUserId: AUTH_USER, token: TOKEN })
     .addAccount({ id: OTHER_ACCOUNT, authUserId: OTHER_AUTH_USER, token: OTHER_TOKEN })
   database.now = () => new Date()
@@ -654,34 +670,45 @@ describe('repetition: the same Idempotency-Key', () => {
     expect(objectOf(first.photo.id)).toBeUndefined()
   })
 
-  it('R8 EXACT (the same finding, after the sign-up was completed): the front photo is created (pending), the sign-up is completed, and the same Idempotency-Key repeated → 201 with a NEW ticket. The completion is still refused (409); B4a refuses DELETE while disposition remains unresolved', async () => {
+  it('R8 closed replay without a sealed scope is 409 with no new ticket; completion is refused and DELETE stays 503 with bytes intact', async () => {
     const first = await created('front', { key: 'body-photo-repeat-0008' })
+    const pendingBefore = structuredClone(rowOf(first.photo.id))
+    // Deliberately NOT a checked close: no private scope is declared here.
     db().profiles.set(ACCOUNT, COMPLETED_SIGNUP)
     expect(await errorOf(await create('side'))).toEqual({
       status: 409,
       code: 'onboarding_already_completed',
     })
+    db().operations.length = 0
+    db().calls.length = 0
 
     const again = await create('front', { key: 'body-photo-repeat-0008' })
+    assertPrivate(await again.clone().json())
+    expect(await errorOf(again)).toEqual({ status: 409, code: 'media_upload_not_pending' })
+    expect(operationsOf('storage:createSignedUploadUrl')).toEqual([])
+    expect(db().mediaAssets).toHaveLength(1)
 
-    expect(again.status).toBe(201)
-    const second = (await again.json()).data
-    expect(second.photo).toEqual(first.photo)
-    expect(second.upload.signed_url).toContain(`/${ACCOUNT}/${first.photo.id}.jpg?token=`)
-    expect(second.upload.signed_url).not.toBe(first.upload?.signed_url)
-
+    // The ticket originally handed before close can still deliver bytes.
     upload(first.photo.id)
-    expect(await errorOf(await complete(first.photo.id))).toEqual({
+    const bytesBefore = structuredClone(objectOf(first.photo.id))
+    const completion = await complete(first.photo.id)
+    assertPrivate(await completion.clone().json())
+    expect(await errorOf(completion)).toEqual({
       status: 409,
       code: 'onboarding_already_completed',
     })
-    expect(rowOf(first.photo.id).status).toBe('pending_upload')
-    expect(await errorOf(await remove())).toEqual({
-      status: 503,
-      code: 'body_photo_cleanup_pending',
-    })
-    expect(objectOf(first.photo.id)).toBeDefined()
-    expect(rowOf(first.photo.id).status).toBe('pending_upload')
+    const deletion = await remove()
+    assertPrivate(await deletion.clone().json())
+    expect(await errorOf(deletion)).toEqual({ status: 503, code: 'body_photo_cleanup_pending' })
+    expect(bytesBefore).toBeDefined()
+    expect(objectOf(first.photo.id)).toEqual(bytesBefore)
+    expect(rowOf(first.photo.id)).toEqual(pendingBefore)
+    expect(operationsOf('storage:')).toEqual([])
+    expect(operationsOf('insert:media_assets')).toEqual([])
+    expect(operationsOf('update:media_assets')).toEqual([])
+    expect(operationsOf('rpc:get_mobile_signup_body_photo_disposition_page')).toEqual([])
+    expect(operationsOf('rpc:commit_mobile_signup_body_photo_disposition_page')).toEqual([])
+    expect(world.queue).toEqual([])
   })
 })
 
@@ -895,10 +922,16 @@ describe('an account that already completed the sign-up', () => {
     expect(rowOf(photo.id).status).toBe('pending_upload')
   })
 
-  it('C3 an account with no profile row is not a completed one', async () => {
+  it('C3 an account with no profile row cannot issue an upload ticket or insert a signup asset', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
     db().profiles.delete(ACCOUNT)
-
-    expect((await create('front')).status).toBe(201)
+    const before = structuredClone(db().mediaAssets)
+    const response = await create('front')
+    assertPrivate(await response.clone().json())
+    expect(await errorOf(response)).toEqual({ status: 500, code: 'media_storage_failed' })
+    expect(db().mediaAssets).toEqual(before)
+    expect(operationsOf('storage:')).toEqual([])
+    expect(world.queue).toEqual([])
   })
 
   it('C4 a profile that cannot be read creates nothing: 500, not "not completed"', async () => {
@@ -1457,6 +1490,194 @@ describe('deleting everything', () => {
   })
 })
 
+describe('explicit DELETE authorization observed while open versus a subsequent close', () => {
+  beforeEach(() => acceptConsent())
+
+  function boundaryDb(): DeleteBoundaryMemoryDb {
+    const database = db()
+    if (!(database instanceof DeleteBoundaryMemoryDb))
+      throw new Error('missing typed DELETE boundary')
+    return database
+  }
+
+  function processedTriad(): string[] {
+    return (
+      [
+        { id: '00000000-0000-4000-8000-000000000d41', pose: 'front', value: 18 },
+        { id: '00000000-0000-4000-8000-000000000d42', pose: 'side', value: 24 },
+        { id: '00000000-0000-4000-8000-000000000d43', pose: 'back', value: 30 },
+      ] as const
+    ).map(({ id, pose, value }) => {
+      seed(id, pose, {
+        status: 'processed',
+        actual_size_bytes: 1200,
+        uploaded_at: STORED_AT,
+        processed_at: STORED_AT,
+        processing_request_id: sha256Hex(`delete-boundary-${id}`),
+        processing_result: { type: 'body', bf_percent_estimate: value },
+      })
+      upload(id, { size: 1200 })
+      return id
+    })
+  }
+
+  it.each([
+    false,
+    true,
+  ])('DC1 open list wins before close; Storage failure=%s preserves D6 and observed-ID scope', async (storageFails) => {
+    const database = boundaryDb()
+    const ids = processedTriad()
+    expect((await readState()).estimate.by_sex.masculino).toEqual({
+      usable: true,
+      body_fat_percent: 24,
+    })
+    const rowsBefore = ids.map((id) => structuredClone(rowOf(id)))
+    const bytesBefore = ids.map((id) => structuredClone(objectOf(id)))
+    const laterId = '00000000-0000-4000-8000-000000000d44'
+    const generation = databaseTimestamp(new Date(NOW.getTime() + 1000))
+    let laterBefore: MemoryMediaAsset | undefined
+    let laterBytes: ReturnType<typeof objectOf>
+    let boundaryCalls = 0
+    const actualRpc = database.rpc.bind(database)
+    vi.spyOn(database, 'rpc').mockImplementation(async (name, params) => {
+      const result = await actualRpc(name, params)
+      if (name === 'list_mobile_open_signup_body_photo_assets' && boundaryCalls === 0) {
+        boundaryCalls += 1
+        expect(params).toEqual({ p_user_id: ACCOUNT, p_include_deleted: true, p_limit: 1000 })
+        expect(result.error).toBeNull()
+        expect(result.data).toEqual(
+          expect.arrayContaining(ids.map((id) => expect.objectContaining({ id }))),
+        )
+        expect(Array.isArray(result.data) && result.data.length).toBe(3)
+        expect(removals()).toEqual([])
+        expect(database.profiles.get(ACCOUNT)).toEqual(OPEN_SIGNUP)
+        // A later INSERT wins before the close, but after this DELETE's list.
+        seed(laterId, 'front')
+        upload(laterId)
+        laterBefore = structuredClone(rowOf(laterId))
+        laterBytes = structuredClone(objectOf(laterId))
+        database.profiles.set(ACCOUNT, {
+          onboarding_completed: true,
+          onboarding_completed_at: generation,
+        })
+        // Explicit fixture membership only. Native SQL proves capture/BF3/transactionality.
+        database.declareCompletedSignupScope(ACCOUNT, generation, [...ids, laterId])
+      }
+      return result
+    })
+    database.operations.length = 0
+    database.calls.length = 0
+    if (storageFails) database.failNext('storage:remove', { message: 'storage is down' })
+
+    const response = await remove({ key: 'body-photo-delete-open-close-characterization' })
+    assertPrivate(await response.clone().json())
+    expect(boundaryCalls).toBe(1)
+    expect(removals()).toEqual([
+      { bucketId: BUCKET, objectPaths: ids.map((id) => `${ACCOUNT}/${id}.jpg`).sort() },
+    ])
+    expect(operationsOf('rpc:prepare_mobile_signup_body_photo_disposition')).toHaveLength(1)
+    expect(operationsOf('rpc:get_mobile_signup_body_photo_disposition_page')).toEqual([])
+    expect(operationsOf('rpc:commit_mobile_signup_body_photo_disposition_page')).toEqual([])
+    expect(rowOf(laterId)).toEqual(laterBefore)
+    expect(objectOf(laterId)).toEqual(laterBytes)
+    expect(objectOf(laterId)).toBeDefined()
+    expect(world.queue).toEqual([])
+
+    if (storageFails) {
+      expect(await errorOf(response)).toEqual({ status: 503, code: 'media_delete_failed' })
+      expect(ids.map((id) => rowOf(id))).toEqual(rowsBefore)
+      expect(ids.map((id) => objectOf(id))).toEqual(bytesBefore)
+      expect(operationsOf('update:media_assets')).toEqual([])
+      database.calls.length = 0
+      database.operations.length = 0
+      // The same key retries AFTER close: now it uses the declared D4 scope,
+      // which includes the later photo. No earlier failed request marked rows.
+      const retried = await remove({ key: 'body-photo-delete-open-close-characterization' })
+      expect(retried.status).toBe(200)
+      const body = await retried.json()
+      assertPrivate(body)
+      expect(body.data).toEqual({ deleted: 4 })
+      expect(removals()).toEqual([
+        {
+          bucketId: BUCKET,
+          objectPaths: [...ids, laterId].map((id) => `${ACCOUNT}/${id}.jpg`).sort(),
+        },
+      ])
+      expect(operationsOf('rpc:list_mobile_open_signup_body_photo_assets')).toEqual([])
+      expect(
+        database.calls.filter(
+          (call) => call.operation === 'rpc:commit_mobile_signup_body_photo_disposition_page',
+        ),
+      ).toEqual([
+        {
+          operation: 'rpc:commit_mobile_signup_body_photo_disposition_page',
+          detail: {
+            p_user_id: ACCOUNT,
+            p_generation: generation,
+            p_expected_sweep: 1,
+            p_expected_after: null,
+            p_asset_ids: [...ids, laterId],
+          },
+        },
+      ])
+      for (const id of [...ids, laterId]) {
+        expect(rowOf(id)).toMatchObject({ status: 'deleted', processing_result: null })
+        expect(objectOf(id)).toBeUndefined()
+      }
+    } else {
+      expect(response.status).toBe(200)
+      expect((await response.json()).data).toEqual({ deleted: 3 })
+      for (const id of ids) {
+        expect(rowOf(id)).toMatchObject({ status: 'deleted', processing_result: null })
+        expect(objectOf(id)).toBeUndefined()
+      }
+      expect(database.objects.size).toBe(1)
+    }
+    expect(operationsOf('storage:createSignedUploadUrl')).toEqual([])
+    expect(operationsOf('storage:info')).toEqual([])
+    expect(world.queue).toEqual([])
+  })
+
+  it('DC2 close wins after open repair but before list: the scoped list rejects before any Storage or tombstone', async () => {
+    const database = boundaryDb()
+    const ids = processedTriad()
+    const rowsBefore = ids.map((id) => structuredClone(rowOf(id)))
+    const bytesBefore = ids.map((id) => structuredClone(objectOf(id)))
+    const generation = databaseTimestamp(new Date(NOW.getTime() + 1000))
+    let boundaryCalls = 0
+    const actualRpc = database.rpc.bind(database)
+    vi.spyOn(database, 'rpc').mockImplementation(async (name, params) => {
+      if (name === 'list_mobile_open_signup_body_photo_assets') {
+        boundaryCalls += 1
+        expect(database.profiles.get(ACCOUNT)).toEqual(OPEN_SIGNUP)
+        database.profiles.set(ACCOUNT, {
+          onboarding_completed: true,
+          onboarding_completed_at: generation,
+        })
+        database.declareCompletedSignupScope(ACCOUNT, generation, ids)
+      }
+      return actualRpc(name, params)
+    })
+    database.operations.length = 0
+    database.calls.length = 0
+
+    const response = await remove()
+
+    assertPrivate(await response.clone().json())
+    expect(await errorOf(response)).toEqual({ status: 409, code: 'onboarding_already_completed' })
+    expect(boundaryCalls).toBe(1)
+    expect(operationsOf('rpc:prepare_mobile_signup_body_photo_disposition')).toHaveLength(1)
+    expect(operationsOf('rpc:list_mobile_open_signup_body_photo_assets')).toHaveLength(1)
+    expect(operationsOf('rpc:get_mobile_signup_body_photo_disposition_page')).toEqual([])
+    expect(operationsOf('rpc:commit_mobile_signup_body_photo_disposition_page')).toEqual([])
+    expect(operationsOf('storage:')).toEqual([])
+    expect(operationsOf('update:media_assets')).toEqual([])
+    expect(ids.map((id) => rowOf(id))).toEqual(rowsBefore)
+    expect(ids.map((id) => objectOf(id))).toEqual(bytesBefore)
+    expect(world.queue).toEqual([])
+  })
+})
+
 describe('bytes that arrive AFTER a photo was deleted, replaced or refused: the upload ticket is valid for two hours and cannot be revoked', () => {
   beforeEach(() => acceptConsent())
 
@@ -1475,14 +1696,46 @@ describe('bytes that arrive AFTER a photo was deleted, replaced or refused: the 
     const second = await remove()
 
     expect(second.status).toBe(200)
-    expect((await second.json()).data).toEqual({ deleted: 0 })
+    const secondBody = await second.json()
+    assertPrivate(secondBody)
+    expect(secondBody.data).toEqual({ deleted: 0 })
     expect(objectOf(photo.id)).toBeUndefined()
     expect(db().objects.size).toBe(0)
-    // One read of the catalogue and one storage call; nothing is written.
-    expect(operationsOf('select:media_assets')).toHaveLength(1)
+    // Empty historical repair, then one scoped open catalogue read and one remove.
+    expect(operationsOf('select:media_assets')).toEqual([])
+    expect(
+      db().calls.filter(
+        (call) => call.operation === 'rpc:prepare_mobile_signup_body_photo_disposition',
+      ),
+    ).toEqual([
+      {
+        operation: 'rpc:prepare_mobile_signup_body_photo_disposition',
+        detail: {
+          p_user_id: ACCOUNT,
+          p_generation: null,
+          p_swept_generations: [],
+        },
+      },
+    ])
+    expect(
+      db().calls.filter(
+        (call) => call.operation === 'rpc:list_mobile_open_signup_body_photo_assets',
+      ),
+    ).toEqual([
+      {
+        operation: 'rpc:list_mobile_open_signup_body_photo_assets',
+        detail: {
+          p_user_id: ACCOUNT,
+          p_include_deleted: true,
+          p_limit: 1000,
+        },
+      },
+    ])
+    expect(operationsOf('rpc:commit_mobile_signup_body_photo_disposition_page')).toEqual([])
     expect(removals()).toEqual([{ bucketId: BUCKET, objectPaths: [`${ACCOUNT}/${photo.id}.jpg`] }])
     expect(operationsOf('update:')).toEqual([])
     expect(rowOf(photo.id)).toMatchObject({ status: 'deleted', deleted_at: NOW.toISOString() })
+    expect(world.queue).toEqual([])
   })
 
   it('LB2 EXACT, the variant of the same finding with the photos switched OFF afterwards: the completion of the upload answers 404 and removes nothing, and DELETE still removes the object', async () => {
@@ -1505,19 +1758,53 @@ describe('bytes that arrive AFTER a photo was deleted, replaced or refused: the 
     expect(db().objects.size).toBe(0)
   })
 
-  it('LB3 there is no time window: the bytes arrive one minute after the DELETE, the person only comes back the next day and completes the sign-up, and the DELETE sent then removes the object', async () => {
+  it('LB3 there is no time window: late bytes on a tombstone are removed the next day from the scope sealed by checked close', async () => {
     const { photo } = await created('front')
     expect((await (await remove()).json()).data).toEqual({ deleted: 1 })
+    const tombstoneBefore = structuredClone(rowOf(photo.id))
     vi.setSystemTime(new Date(NOW.getTime() + 60_000))
     upload(photo.id)
+    expect(objectOf(photo.id)).toBeDefined()
     vi.setSystemTime(new Date(NOW.getTime() + 26 * HOUR))
-    db().profiles.set(ACCOUNT, COMPLETED_SIGNUP)
+    const generation = databaseTimestamp(new Date())
+    db().profiles.set(ACCOUNT, { onboarding_completed: true, onboarding_completed_at: generation })
+    // Explicit fixture authorization only. Native SQL separately proves the
+    // checked close sealed this existing tombstone; this fake simulates no BF3/TX.
+    db().declareCompletedSignupScope(ACCOUNT, generation, [photo.id])
+    db().operations.length = 0
+    db().calls.length = 0
 
     const nextDay = await remove()
 
     expect(nextDay.status).toBe(200)
-    expect((await nextDay.json()).data).toEqual({ deleted: 0 })
+    const body = await nextDay.json()
+    assertPrivate(body)
+    expect(body.data).toEqual({ deleted: 0 })
     expect(objectOf(photo.id)).toBeUndefined()
+    expect(rowOf(photo.id)).toEqual(tombstoneBefore)
+    expect(removals()).toEqual([{ bucketId: BUCKET, objectPaths: [`${ACCOUNT}/${photo.id}.jpg`] }])
+    expect(operationsOf('rpc:prepare_mobile_signup_body_photo_disposition')).toHaveLength(2)
+    expect(
+      db().calls.filter(
+        (call) => call.operation === 'rpc:commit_mobile_signup_body_photo_disposition_page',
+      ),
+    ).toEqual([
+      {
+        operation: 'rpc:commit_mobile_signup_body_photo_disposition_page',
+        detail: {
+          p_user_id: ACCOUNT,
+          p_generation: generation,
+          p_expected_sweep: 1,
+          p_expected_after: null,
+          p_asset_ids: [photo.id],
+        },
+      },
+    ])
+    expect(operationsOf('rpc:list_mobile_open_signup_body_photo_assets')).toEqual([])
+    expect(operationsOf('select:media_assets')).toEqual([])
+    expect(operationsOf('storage:createSignedUploadUrl')).toEqual([])
+    expect(operationsOf('storage:info')).toEqual([])
+    expect(world.queue).toEqual([])
   })
 
   it('LB4 a photo that was REPLACED: its PUT, repeated with the old ticket after the replacement removed the object, leaves bytes again; DELETE removes them in the same storage call as the photo of the pose', async () => {
@@ -1647,16 +1934,50 @@ describe('bytes that arrive AFTER a photo was deleted, replaced or refused: the 
     expect(objectOf(deletedLongestAgo)).toBeDefined()
   })
 
-  it('LB8 an account that never created a photo of the sign-up: DELETE reads the catalogue once and calls no storage', async () => {
+  it('LB8 an account without signup photos: one empty repair and one scoped catalogue read, no Storage', async () => {
     db().operations.length = 0
+    db().calls.length = 0
 
     const response = await remove()
 
     expect(response.status).toBe(200)
-    expect((await response.json()).data).toEqual({ deleted: 0 })
-    expect(operationsOf('select:media_assets')).toHaveLength(1)
+    const body = await response.json()
+    assertPrivate(body)
+    expect(body.data).toEqual({ deleted: 0 })
+    expect(operationsOf('select:media_assets')).toEqual([])
+    expect(
+      db().calls.filter(
+        (call) => call.operation === 'rpc:prepare_mobile_signup_body_photo_disposition',
+      ),
+    ).toEqual([
+      {
+        operation: 'rpc:prepare_mobile_signup_body_photo_disposition',
+        detail: {
+          p_user_id: ACCOUNT,
+          p_generation: null,
+          p_swept_generations: [],
+        },
+      },
+    ])
+    expect(
+      db().calls.filter(
+        (call) => call.operation === 'rpc:list_mobile_open_signup_body_photo_assets',
+      ),
+    ).toEqual([
+      {
+        operation: 'rpc:list_mobile_open_signup_body_photo_assets',
+        detail: {
+          p_user_id: ACCOUNT,
+          p_include_deleted: true,
+          p_limit: 1000,
+        },
+      },
+    ])
+    expect(operationsOf('rpc:get_mobile_signup_body_photo_disposition_page')).toEqual([])
+    expect(operationsOf('rpc:commit_mobile_signup_body_photo_disposition_page')).toEqual([])
     expect(operationsOf('storage:')).toEqual([])
     expect(operationsOf('update:')).toEqual([])
+    expect(world.queue).toEqual([])
   })
 })
 
@@ -1879,16 +2200,19 @@ describe('the state with photos, and what no answer carries', () => {
 
   it('S3 reading an open signup uses one official snapshot then one completion repair', async () => {
     await store('front')
+    const queuedBeforeRead = structuredClone(world.queue)
     db().operations.length = 0
 
-    await readState()
+    const state = await readState()
+    assertPrivate(state)
 
     expect(db().operations).toEqual([
       ...AUTHENTICATION,
       'rpc:get_mobile_legal_document',
       'rpc:get_mobile_signup_body_photo_snapshot',
-      'select:user_profiles',
+      'rpc:prepare_mobile_signup_body_photo_disposition',
     ])
+    expect(world.queue).toEqual(queuedBeforeRead)
   })
 
   it('S4 a catalogue that cannot be read is 500, not "no photos"', async () => {

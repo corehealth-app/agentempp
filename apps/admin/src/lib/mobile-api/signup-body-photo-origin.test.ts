@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { MobileAuthContext } from './auth'
 import { createMediaAsset, type MediaAssetRecord } from './media-service'
 import {
+  completeSignupBodyPhoto,
   createSignupBodyPhoto,
   type SignupBodyPhotoDependencies,
 } from './signup-body-photo-service'
@@ -34,6 +35,9 @@ function asset(origin: boolean | null): MediaAssetRecord & { signup_origin: bool
     failure_code: null,
     context_text: 'Foto de frente.',
     signup_origin: origin,
+    signup_disposition_version: origin === true ? 1 : null,
+    signup_disposition_assigned: false,
+    signup_upload_open: origin === true,
     retention_until: '2028-10-10T15:00:00.000Z',
     uploaded_at: null,
     processed_at: null,
@@ -47,7 +51,7 @@ function memory(created = asset(true)) {
   const repository = {
     findByRequestHash: vi.fn(async () => null as MediaAssetRecord | null),
     create: vi.fn(async () => created),
-    findOwned: vi.fn(),
+    findOwned: vi.fn(async () => created),
     markUploaded: vi.fn(),
     markUploadFailed: vi.fn(),
     markDeleted: vi.fn(),
@@ -89,6 +93,78 @@ function create(deps: SignupBodyPhotoDependencies) {
 }
 
 describe('trusted origin before signup upload tickets', () => {
+  it('D4 already uploaded photo closes during catalogue read and dispatches no late reading', async () => {
+    const fresh = {
+      ...asset(true),
+      status: 'uploaded' as const,
+      actual_size_bytes: 1200,
+      uploaded_at: NOW.toISOString(),
+      signup_disposition_assigned: false,
+      signup_upload_open: true,
+    }
+    const closed = { ...fresh, signup_disposition_assigned: true, signup_upload_open: false }
+    const { deps, repository, storage } = memory(fresh)
+    vi.mocked(deps.catalogue.listOpen).mockImplementation(async () => {
+      repository.findOwned.mockResolvedValue(closed)
+      return []
+    })
+    await expect(
+      completeSignupBodyPhoto(deps, { userId: USER } as MobileAuthContext, ID, KEY, NOW),
+    ).rejects.toMatchObject({ status: 409, code: 'media_upload_not_pending' })
+    expect(deps.media.events.sendProcessingRequested).not.toHaveBeenCalled()
+    expect(storage.getObjectInfo).not.toHaveBeenCalled()
+    expect(deps.catalogue.removeObjects).not.toHaveBeenCalled()
+    expect(deps.catalogue.markDeleted).not.toHaveBeenCalled()
+  })
+  it('D4 version1 historical membership refuses a replay before signing even after reset', async () => {
+    const historical = {
+      ...asset(true),
+      signup_disposition_assigned: true,
+      signup_upload_open: false,
+    }
+    const { deps, repository, storage } = memory(historical)
+    repository.findByRequestHash.mockResolvedValue(historical)
+    await expect(create(deps)).rejects.toMatchObject({
+      status: 409,
+      code: 'media_upload_not_pending',
+    })
+    expect(storage.createSignedUpload).not.toHaveBeenCalled()
+    expect(repository.create).not.toHaveBeenCalled()
+  })
+
+  it('D4 close while signing never returns the late upload ticket', async () => {
+    const fresh = { ...asset(true), signup_disposition_assigned: false, signup_upload_open: true }
+    const closed = { ...fresh, signup_disposition_assigned: true, signup_upload_open: false }
+    const { deps, repository, storage } = memory(fresh)
+    repository.findByRequestHash.mockResolvedValue(fresh)
+    repository.findOwned.mockResolvedValue(closed)
+    await expect(create(deps)).rejects.toMatchObject({
+      status: 409,
+      code: 'media_upload_not_pending',
+    })
+    expect(storage.createSignedUpload).toHaveBeenCalledOnce()
+    expect(repository.findOwned).toHaveBeenCalledWith(USER, ID)
+    expect(repository.create).not.toHaveBeenCalled()
+  })
+  it.each([
+    'first lookup',
+    'second lookup',
+    '23505 lookup',
+  ])('D4 legacy TRUE without fence version is preserved at %s before signing', async (phase) => {
+    const historical = { ...asset(true), signup_disposition_version: null }
+    const { deps, repository, storage } = memory(historical)
+    if (phase === 'first lookup') repository.findByRequestHash.mockResolvedValue(historical)
+    if (phase === 'second lookup')
+      repository.findByRequestHash.mockResolvedValueOnce(null).mockResolvedValueOnce(historical)
+    await expect(create(deps)).rejects.toMatchObject({
+      status: 409,
+      code: 'idempotency_key_conflict',
+    })
+    expect(storage.createSignedUpload).not.toHaveBeenCalled()
+    expect(historical.signup_origin).toBe(true)
+    expect(historical.signup_disposition_version).toBeNull()
+    expect(repository.create).toHaveBeenCalledTimes(phase === '23505 lookup' ? 1 : 0)
+  })
   it.each([
     false,
     null,
@@ -196,6 +272,8 @@ describe('trusted origin before signup upload tickets', () => {
       }
     }
     const database = new CollisionDb()
+    database.addAccount({ id: USER, authUserId: USER, token: 'synthetic-origin-test' })
+    database.profiles.set(USER, { onboarding_completed: false, onboarding_completed_at: null })
     const { deps } = memory()
     deps.media = createSupabaseMediaDependencies(database.client, { signupPhotos: true })
     await expect(create(deps)).rejects.toMatchObject({
@@ -205,7 +283,9 @@ describe('trusted origin before signup upload tickets', () => {
     expect(database.mediaAssets).toHaveLength(1)
     expect(database.mediaAssets[0]?.signup_origin).toBe(origin)
     expect(
-      database.operations.filter((operation) => operation === 'select:media_assets'),
+      database.operations.filter(
+        (operation) => operation === 'rpc:get_mobile_signup_body_photo_asset',
+      ),
     ).toHaveLength(3)
     expect(
       database.operations.filter((operation) => operation === 'insert:media_assets'),

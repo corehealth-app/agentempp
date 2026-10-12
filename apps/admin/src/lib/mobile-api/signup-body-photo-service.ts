@@ -57,6 +57,7 @@ import type { MobileAuthContext } from './auth'
 import type { SignupBodyPhotoUploadInput } from './contracts'
 import { MobileApiError } from './http'
 import {
+  assertSignupPhotoUploadOpen,
   completeMediaUploadRecord,
   type createMediaAsset,
   createMediaAssetRecord,
@@ -184,7 +185,7 @@ export interface SignupBodyPhotoDependencies {
   /** The generic media catalogue and storage: creating and completing an upload are theirs. */
   media: MediaServiceDependencies
   /** Real factory repairs completed accounts; pending repair refuses cleanup. */
-  repairCompleted?(userId: string): Promise<{ completed: boolean }>
+  repairCompleted?(userId: string): Promise<{ completed: boolean; newlyDeleted?: number }>
   /** One strict server snapshot for the state, estimate and confirmation identifiers. */
   loadStateSnapshot?(userId: string): Promise<SignupPhotoSnapshot>
 }
@@ -530,6 +531,7 @@ function isSameCreation(existing: MediaAssetRecord, input: SignupBodyPhotoUpload
   return (
     existing.kind === SIGNUP_BODY_PHOTO_KIND &&
     existing.signup_origin === true &&
+    existing.signup_disposition_version === 1 &&
     signupBodyPhotoPoseOf(existing.context_text) === input.pose &&
     existing.mime_type === input.mime_type &&
     existing.declared_size_bytes === input.size_bytes
@@ -626,7 +628,9 @@ export async function completeSignupBodyPhoto(
   // and a body photo that is not of the sign-up are all "not found".
   const asset = await dependencies.media.repository.findOwned(userId, photoId)
   const pose =
-    asset?.kind === SIGNUP_BODY_PHOTO_KIND && asset.signup_origin === true
+    asset?.kind === SIGNUP_BODY_PHOTO_KIND &&
+    asset.signup_origin === true &&
+    asset.signup_disposition_version === 1
       ? signupBodyPhotoPoseOf(asset.context_text)
       : null
   if (!asset || !pose) {
@@ -634,6 +638,7 @@ export async function completeSignupBodyPhoto(
   }
   // Every stored state must still satisfy the CURRENT consent and open sign-up.
   await assertSignupOpenWithConsent(dependencies, userId)
+  assertSignupPhotoUploadOpen(asset)
   if (asset.status === 'failed' && asset.failure_stage === 'processing') {
     throw new MobileApiError(409, 'body_photo_reading_failed', 'Send a new photo to try again')
   }
@@ -665,6 +670,8 @@ export async function completeSignupBodyPhoto(
     await dependencies.catalogue.removeObjects(asset.bucket_id, [asset.object_path])
     throw new MobileApiError(409, 'media_upload_not_pending', 'Media upload is not pending')
   }
+  // The scoped upload write and this read fence callbacks that finished after close/reset.
+  assertSignupPhotoUploadOpen(await dependencies.media.repository.findOwned(userId, photoId))
 
   // The photo is stored. Only now do the earlier photos of the same pose go —
   // also when this is a repeated completion, so a replacement that stopped
@@ -690,6 +697,7 @@ export async function completeSignupBodyPhoto(
     )
   }
 
+  assertSignupPhotoUploadOpen(await dependencies.media.repository.findOwned(userId, photoId))
   if (stored.status === 'uploaded') {
     // The route passes the normalized claimed key. Same-key ledger replay
     // does not execute here. A new key may dispatch while the worker waits.
@@ -726,11 +734,13 @@ export async function deleteSignupBodyPhotos(
   auth: MobileAuthContext,
   now = new Date(),
 ): Promise<{ deleted: number }> {
-  if ((await dependencies.repairCompleted?.(auth.userId))?.completed) return { deleted: 0 }
+  const repaired = await dependencies.repairCompleted?.(auth.userId)
+  const alreadyDeleted = repaired?.newlyDeleted ?? 0
+  if (repaired?.completed) return { deleted: alreadyDeleted }
   // One read, of every row: the ones already deleted too, because bytes sent
   // with an old ticket may be stored at their paths.
   const every = await dependencies.catalogue.listEvery(auth.userId)
-  if (every.length === 0) return { deleted: 0 }
+  if (every.length === 0) return { deleted: alreadyDeleted }
 
   // The objects first, the catalogue after: a failure in between leaves rows
   // that still say a photo exists, never a stored photo with no row.
@@ -747,12 +757,14 @@ export async function deleteSignupBodyPhotos(
     (row) =>
       row.status !== 'deleted' && !(row.status === 'failed' && row.failureStage === 'upload'),
   )
-  if (deletable.length === 0) return { deleted: 0 }
+  if (deletable.length === 0) return { deleted: alreadyDeleted }
   return {
-    deleted: await dependencies.catalogue.markDeleted(
-      auth.userId,
-      deletable.map((row) => row.id),
-      now.toISOString(),
-    ),
+    deleted:
+      alreadyDeleted +
+      (await dependencies.catalogue.markDeleted(
+        auth.userId,
+        deletable.map((row) => row.id),
+        now.toISOString(),
+      )),
   }
 }

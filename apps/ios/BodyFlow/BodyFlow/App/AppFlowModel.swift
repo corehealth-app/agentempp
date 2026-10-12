@@ -52,6 +52,10 @@ final class AppFlowModel {
     private let now: @MainActor () -> Date
     private let cancellationCheck: @MainActor () -> Bool
     private var activeOnboardingRestoreID: UUID?
+    private let cleanupCoordinator: SignupBodyPhotoCleanupRootCoordinator
+
+    private(set) var cleanupOwnerToken: SignupBodyPhotoCleanupOwnerToken?
+    @ObservationIgnored private(set) var cleanupEventTask: Task<Void, Never>?
 
     private(set) var state: AppFlowState = .launching
     private(set) var currentSession: AuthSession?
@@ -72,7 +76,8 @@ final class AppFlowModel {
     }
 
     var onboardingOwnerToken: OnboardingOwnerToken? {
-        guard case .onboarding(let userID, _) = state else { return nil }
+        guard activeOnboardingRestoreID == nil,
+              case .onboarding(let userID, _) = state else { return nil }
         return OnboardingOwnerToken(userID: userID, restoreGeneration: onboardingRestoreGeneration)
     }
 
@@ -81,6 +86,7 @@ final class AppFlowModel {
         onboarding: any OnboardingRepository,
         persona: any CoachPersonaRepository,
         telemetry: any TelemetryClient,
+        signupBodyPhotoCleanup: SignupBodyPhotoCleanupCapability? = nil,
         initialState: AppFlowState = .launching,
         initialAuthOperationState: AuthOperationState = .idle,
         developmentConsentAvailability: DevelopmentConsentAvailability = .unavailable,
@@ -91,11 +97,41 @@ final class AppFlowModel {
         self.onboarding = onboarding
         self.persona = persona
         self.telemetry = telemetry
+        cleanupCoordinator = SignupBodyPhotoCleanupRootCoordinator(capability: signupBodyPhotoCleanup)
         self.developmentConsentAvailability = developmentConsentAvailability
         self.now = now
         state = initialState
         authOperationState = initialAuthOperationState
         self.cancellationCheck = cancellationCheck
+    }
+
+    @discardableResult
+    func setCleanupActive(_ active: Bool) -> Task<Void, Never>? {
+        retainCleanupEvent(cleanupCoordinator.setActive(active))
+    }
+
+    @discardableResult
+    func observeOnboardingCleanup(_ observation: OnboardingBodyPhotoCleanupScope?,
+        ownerToken: OnboardingOwnerToken) async -> Task<Void, Never>? {
+        guard !isCancellationRequested, onboardingOwnerToken == ownerToken,
+              let activation = cleanupOwnerToken, activation.userID == ownerToken.userID else { return nil }
+        await cleanupCoordinator.observeOfficial(observation, owner: activation)
+        guard !isCancellationRequested, onboardingOwnerToken == ownerToken,
+              cleanupOwnerToken == activation else { return nil }
+        return retainCleanupEvent(cleanupCoordinator.completionObserved(owner: activation,
+            freshObservation: .init(currentScope: observation)))
+    }
+
+    @discardableResult
+    private func retainCleanupEvent(_ task: Task<Void, Never>?) -> Task<Void, Never>? {
+        if let task { cleanupEventTask = task }
+        return task
+    }
+
+    private func invalidateCleanupActivation() {
+        cleanupOwnerToken = nil
+        cleanupEventTask = nil
+        cleanupCoordinator.invalidate()
     }
 
     func start() async {
@@ -142,7 +178,14 @@ final class AppFlowModel {
         }
 
         presentationError = nil
-        await restoreOnboarding(session)
+        guard let activation = cleanupOwnerToken, activation.userID == session.userID else { return }
+        let restoreID = beginOnboardingRestore()
+        await cleanupCoordinator.transition(to: activation)
+        guard canPublishOnboardingRestore(restoreID, activation: activation) else {
+            finishOnboardingRestoreIfCurrent(restoreID)
+            return
+        }
+        await restoreOnboarding(session, activation: activation, restoreID: restoreID)
     }
 
     func showSignUp() async {
@@ -245,6 +288,7 @@ final class AppFlowModel {
 
             switch result {
             case .confirmationRequired(let email):
+                invalidateCleanupActivation()
                 currentSession = nil
                 state = .awaitingEmailConfirmation(email: email)
                 await telemetry.record(.authScreenViewed(.emailConfirmation))
@@ -322,6 +366,7 @@ final class AppFlowModel {
         guard session.isEmailConfirmed else {
             guard !isCancellationRequested else { return }
             invalidateOnboardingRestore()
+            invalidateCleanupActivation()
             restoredOnboardingDraft = nil
             restoredOnboardingRequirements = .unavailable
             restoredHistoricalCompletedAt = nil
@@ -336,20 +381,48 @@ final class AppFlowModel {
             return
         }
 
-        await restoreOnboarding(session)
+        // A new confirmed authentication activation must not reuse authority
+        // from an earlier restore, even when the user ID happens to match.
+        invalidateOnboardingRestore()
+        let activation = SignupBodyPhotoCleanupOwnerToken(userID: session.userID, activationID: UUID())
+        cleanupOwnerToken = activation
+        cleanupEventTask = nil
+        let restoreID = beginOnboardingRestore()
+        await cleanupCoordinator.transition(to: activation)
+        guard canPublishOnboardingRestore(restoreID, activation: activation) else {
+            finishOnboardingRestoreIfCurrent(restoreID)
+            return
+        }
+        await restoreOnboarding(session, activation: activation, restoreID: restoreID)
     }
 
-    private func restoreOnboarding(_ session: AuthSession) async {
-        let restoreID = beginOnboardingRestore()
+    private func restoreOnboarding(_ session: AuthSession,
+        activation: SignupBodyPhotoCleanupOwnerToken, restoreID: UUID) async {
+        var freshObservation: SignupBodyPhotoCleanupFreshObservation?
         do {
             let scopedOnboarding = try await onboarding.scoped(for: session.userID)
+            guard canPublishOnboardingRestore(restoreID, activation: activation) else {
+                finishOnboardingRestoreIfCurrent(restoreID)
+                return
+            }
             let serverState = try await scopedOnboarding.loadState(for: session.userID)
-            guard canPublishOnboardingRestore(restoreID) else {
+            guard canPublishOnboardingRestore(restoreID, activation: activation) else {
+                finishOnboardingRestoreIfCurrent(restoreID)
+                return
+            }
+            let cleanup = serverState.bodyPhotoCleanup.flatMap { scope in
+                scope.generation == serverState.completion.completedAt ? scope : nil
+            }
+            freshObservation = .init(currentScope: cleanup)
+            await cleanupCoordinator.observeOfficial(cleanup, owner: activation)
+            guard canPublishOnboardingRestore(restoreID, activation: activation) else {
                 finishOnboardingRestoreIfCurrent(restoreID)
                 return
             }
 
             if serverState.completion.completed {
+                retainCleanupEvent(cleanupCoordinator.finishRestore(owner: activation,
+                    freshObservation: freshObservation))
                 publishCompletedOnboardingRestore(session: session)
                 finishOnboardingRestoreIfCurrent(restoreID)
                 return
@@ -370,6 +443,8 @@ final class AppFlowModel {
             draft = OnboardingResumePolicy.normalizedDraft(draft, requirements: serverState.requirements,
                 developmentConsentAvailability: developmentConsentAvailability,
                 historicalCompletedAt: serverState.completion.completedAt, now: now())
+            retainCleanupEvent(cleanupCoordinator.finishRestore(owner: activation,
+                freshObservation: freshObservation))
             restoredOnboardingRepository = scopedOnboarding
             publishOnboardingRestore(
                 session: session,
@@ -381,11 +456,15 @@ final class AppFlowModel {
             let step = draft.currentStep
             await telemetry.record(.onboardingStepViewed(step.telemetryValue))
         } catch {
-            guard canPublishOnboardingRestore(restoreID) else {
+            guard canPublishOnboardingRestore(restoreID, activation: activation) else {
                 finishOnboardingRestoreIfCurrent(restoreID)
                 return
             }
 
+            // A failed GET leaves the ordinary sweep available. Only an
+            // actually received normal response can supply a fresh observation.
+            retainCleanupEvent(cleanupCoordinator.finishRestore(owner: activation,
+                freshObservation: freshObservation))
             publishOnboardingRestore(
                 session: session,
                 draft: nil,
@@ -403,8 +482,9 @@ final class AppFlowModel {
         return restoreID
     }
 
-    private func canPublishOnboardingRestore(_ restoreID: UUID) -> Bool {
-        activeOnboardingRestoreID == restoreID && !isCancellationRequested
+    private func canPublishOnboardingRestore(_ restoreID: UUID,
+        activation: SignupBodyPhotoCleanupOwnerToken) -> Bool {
+        activeOnboardingRestoreID == restoreID && cleanupOwnerToken == activation && !isCancellationRequested
     }
 
     private func finishOnboardingRestoreIfCurrent(_ restoreID: UUID) {
@@ -467,6 +547,7 @@ final class AppFlowModel {
     private func transitionToSignedOut(error: AppPresentationError? = nil) {
         guard !isCancellationRequested else { return }
         invalidateOnboardingRestore()
+        invalidateCleanupActivation()
         restoredOnboardingDraft = nil
         restoredOnboardingRequirements = .unavailable
         restoredHistoricalCompletedAt = nil
@@ -489,6 +570,7 @@ final class AppFlowModel {
             return false
         }
         invalidateOnboardingRestore()
+        invalidateCleanupActivation()
         restoredOnboardingDraft = nil
         restoredOnboardingRequirements = .unavailable
         restoredHistoricalCompletedAt = nil

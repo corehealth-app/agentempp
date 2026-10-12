@@ -15,11 +15,27 @@ import {
   type OnboardingRepository,
 } from '@/lib/mobile-api/onboarding-service'
 import type { MobileRouteContext } from '@/lib/mobile-api/route'
-import { createSupabaseOnboardingRepository } from '@/lib/mobile-api/supabase-onboarding'
-import { finalizeSignupBodyPhotosAfterOnboarding } from '@/lib/mobile-api/supabase-signup-body-photo-finalization'
+import {
+  type PreparedSignupPhotoConfirmation,
+  prepareSignupPhotoConfirmation,
+} from '@/lib/mobile-api/signup-body-photo-confirmation'
+import { signupBodyPhotosUnavailable } from '@/lib/mobile-api/signup-body-photo-service'
+import { loadSignupPhotoSnapshot } from '@/lib/mobile-api/signup-body-photo-snapshot'
+import { signupBodyPhotosEnabled } from '@/lib/mobile-api/signup-body-photo-switch'
+import {
+  createSupabaseOnboardingRepository,
+  type SupabaseOnboardingOptions,
+} from '@/lib/mobile-api/supabase-onboarding'
+import {
+  finalizeSignupBodyPhotosAfterOnboarding,
+  signupBodyPhotoFinalizationTargetAllowed,
+} from '@/lib/mobile-api/supabase-signup-body-photo-finalization'
 
 export interface OnboardingRouteDependencies {
-  createOnboardingRepository(client: ServiceClient): OnboardingRepository
+  createOnboardingRepository(
+    client: ServiceClient,
+    options?: SupabaseOnboardingOptions,
+  ): OnboardingRepository
   executeIdempotent: typeof executeSupabaseIdempotent
   saveLegacyOnboarding: typeof saveOnboarding
   finalizeSignupBodyPhotos(
@@ -115,9 +131,43 @@ export async function handleOnboardingPost(
   // read here (without it the answer is still 400, before anything is read),
   // and a refusal leaves no record at all.
   requireIdempotencyKey(context.request)
-  await assertOnboardingObjectiveEligible(context, input)
-  const repository = dependencies.createOnboardingRepository(context.supabase)
-  const createResponse = async () => {
+  if (input.body_photo_confirmation && !signupBodyPhotoFinalizationTargetAllowed()) {
+    throw signupBodyPhotosUnavailable()
+  }
+  const prepare = async () => {
+    const prepared = await prepareSignupPhotoConfirmation(context, input, {
+      targetAllowed: signupBodyPhotoFinalizationTargetAllowed(),
+      photosEnabled: signupBodyPhotosEnabled(),
+      loadSnapshot: async (owner, includeOpenPhotos) => {
+        try {
+          return await loadSignupPhotoSnapshot(context.supabase, owner, includeOpenPhotos)
+        } catch (error) {
+          if (
+            error instanceof MobileApiError &&
+            error.status === 500 &&
+            error.code === 'data_access_failed'
+          )
+            throw new MobileApiError(
+              500,
+              'data_access_failed',
+              'Onboarding completion lookup failed',
+            )
+          throw error
+        }
+      },
+    })
+    await assertOnboardingObjectiveEligible(
+      context,
+      prepared.effectiveSubmission,
+      prepared.snapshot?.generation_token,
+    )
+    return prepared
+  }
+  const prepared = await prepare()
+  const createResponse = async (current: PreparedSignupPhotoConfirmation) => {
+    const repository = dependencies.createOnboardingRepository(context.supabase, {
+      signupPhotoConfirmation: current,
+    })
     // Evaluation access is off unless the test environment switched it on
     // (see the module header); off, it reads nothing and the returned function
     // does nothing. It is asked before the completion is recorded because
@@ -134,8 +184,9 @@ export async function handleOnboardingPost(
     }
     return mobileSuccess(data, context.requestId)
   }
-  return dependencies.executeIdempotent(context, input, createResponse, {
-    refreshReplay: createResponse,
+  return dependencies.executeIdempotent(context, input, () => createResponse(prepared), {
+    refreshReplay: async () =>
+      createResponse(prepared.mode === 'legacy' ? prepared : await prepare()),
     responseBodyForStorage: completionBodyForStorage,
   })
 }

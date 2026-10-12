@@ -1877,7 +1877,7 @@ describe('the state with photos, and what no answer carries', () => {
     }
   })
 
-  it('S3 reading the state of an open signup also checks completion before the existing acceptance/catalogue reads', async () => {
+  it('S3 reading an open signup uses one official snapshot then one completion repair', async () => {
     await store('front')
     db().operations.length = 0
 
@@ -1886,17 +1886,15 @@ describe('the state with photos, and what no answer carries', () => {
     expect(db().operations).toEqual([
       ...AUTHENTICATION,
       'rpc:get_mobile_legal_document',
+      'rpc:get_mobile_signup_body_photo_snapshot',
       'select:user_profiles',
-      'select:user_legal_acceptances',
-      'select:media_assets',
-      'select:media_assets',
     ])
   })
 
   it('S4 a catalogue that cannot be read is 500, not "no photos"', async () => {
     await store('front')
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    db().failNext('select:media_assets')
+    db().failNext('rpc:get_mobile_signup_body_photo_snapshot')
 
     const response = await GET(request('GET', '', {}))
 
@@ -1995,8 +1993,10 @@ describe('B4b owner decision 2026-10-11: arithmetic mean of three slot readings'
   it('B4B-01 EXACT male readings18/24/30 return24 for both sexes, regardless of repeated model views/confidence', async () => {
     await acceptConsent()
     const values = [18, 24, 30]
+    const ids: string[] = []
     for (const [index, pose] of (['front', 'side', 'back'] as const).entries()) {
       const id = await store(pose)
+      ids.push(id)
       rowOf(id).status = 'processed'
       rowOf(id).processing_result = {
         type: 'body',
@@ -2015,6 +2015,8 @@ describe('B4b owner decision 2026-10-11: arithmetic mean of three slot readings'
         masculino: { usable: true, body_fat_percent: 24 },
         feminino: { usable: true, body_fat_percent: 24 },
       },
+      source_ids: { front: ids[0], side: ids[1], back: ids[2] },
+      fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
     })
     const wire = JSON.stringify(state)
     expect(wire).not.toContain('private synthetic')

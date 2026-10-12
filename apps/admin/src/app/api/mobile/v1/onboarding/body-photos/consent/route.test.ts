@@ -196,8 +196,8 @@ describe('GET /onboarding/body-photos with the switch on — the state', () => {
     expect(db().operations).not.toContain('rpc:resolve_user_entitlement')
     expect(db().operationsAfterAuthentication().slice(0, 3)).toEqual([
       'rpc:get_mobile_legal_document',
+      'rpc:get_mobile_signup_body_photo_snapshot',
       'select:user_profiles',
-      'select:user_legal_acceptances',
     ])
     expect(db().calls.find((call) => call.operation === 'rpc:get_mobile_legal_document')).toEqual({
       operation: 'rpc:get_mobile_legal_document',
@@ -299,7 +299,8 @@ describe('GET /onboarding/body-photos with the switch on — the state', () => {
   it('an acceptance that cannot be read is 500, not "never accepted"', async () => {
     publishFixture()
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    db().failNext('select:user_legal_acceptances')
+    // The coherent SQL snapshot now owns the acceptance read.
+    db().failNext('rpc:get_mobile_signup_body_photo_snapshot')
 
     expect(await errorOf(await getState())).toEqual({ status: 500, code: 'data_access_failed' })
   })

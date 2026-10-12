@@ -1,10 +1,15 @@
+import { createHash } from 'node:crypto'
 import { clearCalcConfigCache } from '@mpp/agent'
 import { protocolWelcomeMessage } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { authorizeMobileEntitlement } from '@/lib/mobile-api/entitlement-service'
 import { EVALUATION_ACCESS_DAYS_ENV } from '@/lib/mobile-api/evaluation-access'
-import { executeIdempotent, type MobileIdempotencyStore } from '@/lib/mobile-api/idempotency'
+import {
+  executeIdempotent,
+  hashMobileRequest,
+  type MobileIdempotencyStore,
+} from '@/lib/mobile-api/idempotency'
 import type { OnboardingRepository } from '@/lib/mobile-api/onboarding-service'
 import {
   createMobileRoute,
@@ -53,8 +58,9 @@ const KEY = 'signup-objective-key-1'
 
 const CLAIM = 'rpc:claim_mobile_api_request'
 const PROFILE_READ = 'select:user_profiles'
+const SNAPSHOT_READ = 'rpc:get_mobile_signup_body_photo_snapshot'
 const CONFIG_READ = 'select:global_config'
-const SQL_FUNCTION = 'rpc:complete_mobile_onboarding_atomic'
+const SQL_FUNCTION = 'rpc:complete_mobile_onboarding_with_body_photo_confirmation'
 const RECORD = 'rpc:complete_mobile_api_request'
 const RELEASE = 'rpc:fail_mobile_api_request'
 
@@ -279,6 +285,8 @@ class SignupMemoryDb {
   readonly submissions: unknown[] = []
   /** The columns and the filter of every profile read. */
   readonly profileReads: string[] = []
+  readonly signupSnapshotReads: Record<string, unknown>[] = []
+  signupSnapshotOverride: unknown | undefined
   /** Actual awaited photo reads, including their account/kind/status filters. */
   readonly bodyPhotoReads: SignupBodyPhotoMemoryRead[] = []
   readonly bodyPhotoReadSignals: AbortSignal[] = []
@@ -394,6 +402,7 @@ class SignupMemoryDb {
             JSON.stringify([
               { operator: 'eq', column: 'user_id', value: USER_ID },
               { operator: 'eq', column: 'kind', value: 'body_checkin_photo' },
+              { operator: 'eq', column: 'signup_origin', value: true },
               { operator: 'neq', column: 'status', value: 'deleted' },
             ]) ||
           read.order === null ||
@@ -488,7 +497,11 @@ class SignupMemoryDb {
   }
 
   private async rpc(name: string, params: Record<string, unknown>): Promise<DbResult> {
-    if (name === 'complete_mobile_onboarding_atomic' && this.holdSqlFunction) {
+    if (
+      (name === 'complete_mobile_onboarding_atomic' ||
+        name === 'complete_mobile_onboarding_with_body_photo_confirmation') &&
+      this.holdSqlFunction
+    ) {
       this.waitingSqlFunctions += 1
       await this.holdSqlFunction
     }
@@ -496,6 +509,47 @@ class SignupMemoryDb {
       if (name === 'claim_mobile_api_request') return this.claim(params)
       if (name === 'complete_mobile_api_request') return this.completeClaim(params)
       if (name === 'fail_mobile_api_request') return this.failClaim(params)
+      if (name === 'get_mobile_signup_body_photo_snapshot') {
+        if (params.p_user_id !== USER_ID || typeof params.p_include_open_photos !== 'boolean')
+          throw new Error('unexpected signup snapshot arguments')
+        this.signupSnapshotReads.push(structuredClone(params))
+        if (this.signupSnapshotOverride !== undefined)
+          return { data: structuredClone(this.signupSnapshotOverride), error: null }
+        return {
+          data: {
+            version: 1,
+            user_id: USER_ID,
+            profile_present: this.profile !== null,
+            locale: 'pt-BR',
+            timezone: 'America/Sao_Paulo',
+            generation_token: {
+              onboarding_completed: this.profile?.onboarding_completed ?? false,
+              onboarding_completed_at: this.profile?.onboarding_completed_at ?? null,
+              receipt_count: 0,
+            },
+            poses:
+              params.p_include_open_photos &&
+              this.profile &&
+              !this.profile.onboarding_completed &&
+              this.profile.onboarding_completed_at === null
+                ? ['front', 'side', 'back'].map((pose) => ({ pose, photo: null }))
+                : [],
+            remaining_uploads: 0,
+            consent: null,
+            estimate: null,
+            candidate: null,
+            confirmation: null,
+          },
+          error: null,
+        }
+      }
+      if (name === 'complete_mobile_onboarding_with_body_photo_confirmation') {
+        // This memory fixture only delegates the no-metadata/count0 compatibility path.
+        // Atomicity, receipt/CAS and photo acceptance are covered in native PostgreSQL.
+        if (params.p_confirmation !== null || params.p_expected_receipt_count !== 0)
+          throw new Error('photo confirmation requires a dedicated native fixture')
+        return this.completeOnboarding(params)
+      }
       if (name === 'complete_mobile_onboarding_atomic') return this.completeOnboarding(params)
       throw new Error(`unexpected rpc ${name}`)
     })
@@ -752,7 +806,7 @@ function ledger() {
     operation,
     options,
   ) => executeIdempotent(requestContext, payload, store, operation, options)
-  return { execute, stored }
+  return { execute, stored, rows }
 }
 
 function completionContext(body: unknown, idempotencyKey: string): MobileRouteContext {
@@ -871,12 +925,270 @@ beforeEach(() => {
   vi.stubEnv(EVALUATION_ACCESS_DAYS_ENV, undefined)
   // B4a's default finalizer is exercised on the authorized synthetic target.
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://xitugspwfxkcluxvrdeg.supabase.co')
+  vi.stubEnv('MOBILE_SIGNUP_BODY_PHOTOS_PROJECT_REF', undefined)
+})
+
+describe('D2 staging completion integration', () => {
+  it('rebuilds a same-key replay from the new official receipt while preserving the ORIGINAL hash', async () => {
+    vi.stubEnv('MOBILE_SIGNUP_BODY_PHOTOS_PROJECT_REF', 'xitugspwfxkcluxvrdeg')
+    const db = new SignupMemoryDb().addAccount()
+    const sources = {
+      front: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      side: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      back: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    }
+    const body = 'Synthetic unpublished consent.'
+    db.signupSnapshotOverride = {
+      version: 1,
+      user_id: USER_ID,
+      profile_present: true,
+      locale: 'pt-BR',
+      timezone: 'America/Sao_Paulo',
+      generation_token: {
+        onboarding_completed: false,
+        onboarding_completed_at: null,
+        receipt_count: 0,
+      },
+      poses: (['front', 'side', 'back'] as const).map((pose) => ({
+        pose,
+        photo: { id: sources[pose], status: 'read', created_at: COMPLETED_AT },
+      })),
+      remaining_uploads: 6,
+      consent: {
+        legal_document_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        document_key: 'body_photo_estimate_consent',
+        version: 'synthetic-v1',
+        locale: 'pt-BR',
+        body,
+        body_hash: createHash('sha256').update(body).digest('hex'),
+        accepted_at: COMPLETED_AT,
+      },
+      estimate: {
+        is_estimate: true,
+        by_sex: {
+          masculino: { usable: true, body_fat_percent: 24 },
+          feminino: { usable: true, body_fat_percent: 24 },
+        },
+      },
+      candidate: {
+        method: 'arithmetic_mean_v1',
+        body_fat_percent: 24,
+        source_ids: sources,
+        fingerprint: 'a'.repeat(64),
+      },
+      confirmation: null,
+    }
+    const original = {
+      ...validBody(),
+      body_photo_confirmation: {
+        decision: 'accept',
+        source_ids: sources,
+        fingerprint: 'a'.repeat(64),
+      },
+    }
+    const state = ledger()
+    const deps = dependencies(repository())
+    deps.executeIdempotent = async (ctx, payload, operation, options) => {
+      // Another request has completed between the first preflight and this claim.
+      // The real executor stores this hash and refreshes its replay below.
+      await state.execute(
+        ctx,
+        payload,
+        async () =>
+          new Response(
+            JSON.stringify({
+              data: { obsolete_source: 'must never be reused' },
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+      )
+      db.signupSnapshotOverride = {
+        version: 1,
+        user_id: USER_ID,
+        profile_present: true,
+        locale: 'pt-BR',
+        timezone: 'America/Sao_Paulo',
+        generation_token: {
+          onboarding_completed: true,
+          onboarding_completed_at: COMPLETED_AT,
+          receipt_count: 1,
+        },
+        poses: [],
+        remaining_uploads: 0,
+        consent: null,
+        estimate: null,
+        candidate: null,
+        confirmation: {
+          decision: 'accepted',
+          method: 'arithmetic_mean_v1',
+          source_ids: sources,
+          fingerprint: 'a'.repeat(64),
+          confirmed_body_fat_percent: 24,
+          decided_at: COMPLETED_AT,
+          invalidated_at: null,
+          active: true,
+        },
+      }
+      vi.stubEnv('MOBILE_SIGNUP_BODY_PHOTOS_PROJECT_REF', undefined)
+      db.failures.set(CONFIG_READ, 'error')
+      return state.execute(ctx, payload, operation, options)
+    }
+    const ctx = context(original)
+    ctx.supabase = db.client
+    const response = await handleOnboardingPost(ctx, deps)
+    const result = await response.json()
+    expect(response.status).toBe(200)
+    expect(response.headers.get('idempotency-replayed')).toBe('true')
+    expect(result.data).not.toHaveProperty('obsolete_source')
+    expect(result.data.protocol_welcome.protocol).toBe('recomposicao')
+    expect(db.signupSnapshotReads).toEqual([
+      { p_user_id: USER_ID, p_include_open_photos: true },
+      { p_user_id: USER_ID, p_include_open_photos: false },
+    ])
+    expect(deps.createOnboardingRepository).toHaveBeenCalledWith(db.client, {
+      signupPhotoConfirmation: expect.objectContaining({
+        mode: 'historic_accept',
+        snapshot: expect.objectContaining({
+          generation_token: {
+            onboarding_completed: true,
+            onboarding_completed_at: COMPLETED_AT,
+            receipt_count: 1,
+          },
+        }),
+      }),
+    })
+    expect(state.rows.rows).toHaveLength(1)
+    expect(state.rows.rows[0]?.request_hash).toBe(hashMobileRequest(original))
+    expect(state.rows.rows[0]?.state).toBe('completed')
+    expect(original).not.toHaveProperty('body_fat_percent')
+    expect(state.stored).toHaveLength(1)
+  })
+
+  it('uses one profile-only snapshot and the checked SQL entry even without metadata and photos OFF', async () => {
+    const db = new SignupMemoryDb().addAccount()
+    const body = validBody()
+    const { response } = await complete(db, body)
+    expect(response.status).toBe(200)
+    expect(db.operations).toEqual([
+      'rpc:get_mobile_signup_body_photo_snapshot',
+      CONFIG_READ,
+      CLAIM,
+      'rpc:complete_mobile_onboarding_with_body_photo_confirmation',
+      'select:media_assets',
+      RECORD,
+    ])
+    expect(db.signupSnapshotReads).toEqual([{ p_user_id: USER_ID, p_include_open_photos: false }])
+    expect(db.profileReads).toEqual([])
+    expect(db.submissions).toEqual([body])
+  })
+
+  it('uses the confirmed mean for objective eligibility before claiming, preserving the original intent', async () => {
+    vi.stubEnv('MOBILE_SIGNUP_BODY_PHOTOS_PROJECT_REF', 'xitugspwfxkcluxvrdeg')
+    const db = new SignupMemoryDb().addAccount()
+    const sources = {
+      front: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      side: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      back: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    }
+    const consentBody = 'Synthetic unpublished consent.'
+    db.signupSnapshotOverride = {
+      version: 1,
+      user_id: USER_ID,
+      profile_present: true,
+      locale: 'pt-BR',
+      timezone: 'America/Sao_Paulo',
+      generation_token: {
+        onboarding_completed: false,
+        onboarding_completed_at: null,
+        receipt_count: 0,
+      },
+      poses: (['front', 'side', 'back'] as const).map((pose) => ({
+        pose,
+        photo: { id: sources[pose], status: 'read', created_at: COMPLETED_AT },
+      })),
+      remaining_uploads: 6,
+      consent: {
+        legal_document_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        document_key: 'body_photo_estimate_consent',
+        version: 'synthetic-v1',
+        locale: 'pt-BR',
+        body: consentBody,
+        body_hash: createHash('sha256').update(consentBody).digest('hex'),
+        accepted_at: COMPLETED_AT,
+      },
+      estimate: {
+        is_estimate: true,
+        by_sex: {
+          masculino: { usable: true, body_fat_percent: 24 },
+          feminino: { usable: true, body_fat_percent: 24 },
+        },
+      },
+      candidate: {
+        method: 'arithmetic_mean_v1',
+        body_fat_percent: 24,
+        source_ids: sources,
+        fingerprint: 'a'.repeat(64),
+      },
+      confirmation: null,
+    }
+    const original = {
+      ...validBody(),
+      objective: 'ganho_massa',
+      body_photo_confirmation: {
+        decision: 'accept',
+        source_ids: sources,
+        fingerprint: 'a'.repeat(64),
+      },
+    }
+    const { response, json } = await complete(db, original)
+    expect(response.status).toBe(422)
+    expect(json).toEqual(REFUSED)
+    expect(db.operations).toEqual(['rpc:get_mobile_signup_body_photo_snapshot', CONFIG_READ])
+    expect(db.idempotencyRows()).toEqual([])
+    expect(db.submissions).toEqual([])
+    expect(original).not.toHaveProperty('body_fat_percent')
+    expect(original.body_photo_confirmation.fingerprint).toBe('a'.repeat(64))
+  })
 })
 
 afterEach(() => {
   clearCalcConfigCache()
   vi.restoreAllMocks()
   vi.unstubAllEnvs()
+})
+
+describe('D2 confirmation target guard before the idempotency claim', () => {
+  const confirmation = {
+    decision: 'accept',
+    source_ids: {
+      front: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      side: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      back: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    },
+    fingerprint: 'a'.repeat(64),
+  }
+
+  it.each([
+    ['unknown target', undefined, confirmation],
+    ['old production target', 'https://xuxehkhdvjivitduarvb.supabase.co', confirmation],
+    [
+      'decline on old production',
+      'https://xuxehkhdvjivitduarvb.supabase.co',
+      { decision: 'decline' },
+    ],
+  ])('refuses %s without a claim, completion or cleanup', async (_case, url, intent) => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', url as string | undefined)
+    const repo = repository()
+    const deps = dependencies(repo)
+
+    await expect(
+      handleOnboardingPost(context({ ...validBody(), body_photo_confirmation: intent }), deps),
+    ).rejects.toMatchObject({ status: 404, code: 'body_photos_unavailable' })
+
+    expect(deps.executeIdempotent).not.toHaveBeenCalled()
+    expect(repo.complete).not.toHaveBeenCalled()
+    expect(deps.finalizeSignupBodyPhotos).not.toHaveBeenCalled()
+  })
 })
 
 describe('mobile onboarding route', () => {
@@ -1164,7 +1476,7 @@ describe('POST /onboarding — a first completion records only an objective the 
     })
     // The check first, and only then the key is claimed.
     expect(db.operations).toEqual([
-      PROFILE_READ,
+      SNAPSHOT_READ,
       CONFIG_READ,
       CLAIM,
       SQL_FUNCTION,
@@ -1216,7 +1528,7 @@ describe('POST /onboarding — a first completion records only an objective the 
     expect(response.status).toBe(422)
     expect(json).toEqual(REFUSED)
     // Refused before the key is claimed: the two reads, and no row in the ledger.
-    expect(db.operations).toEqual([PROFILE_READ, CONFIG_READ])
+    expect(db.operations).toEqual([SNAPSHOT_READ, CONFIG_READ])
     expect(db.idempotencyRows()).toEqual([])
     expect(db.submissions).toEqual([])
     expect(db.profile).toEqual(NEW_ACCOUNT)
@@ -1477,17 +1789,18 @@ describe('POST /onboarding — a first completion records only an objective the 
     expect(twin.response.status).toBe(409)
     expect(twin.json.error.code).toBe('idempotency_request_in_progress')
     expect(recorded.response.status).toBe(200)
-    expect(db.operations.filter((operation) => operation === PROFILE_READ)).toHaveLength(2)
+    expect(db.operations.filter((operation) => operation === SNAPSHOT_READ)).toHaveLength(2)
     expect(db.submissions).toEqual([body])
     expect(db.idempotencyRows()).toEqual([{ key, state: 'completed', status: 200 }])
   })
 
-  it('reads one column of the profile of the authenticated account, once', async () => {
+  it('reads one server snapshot of the authenticated account, with no second profile lookup', async () => {
     const db = new SignupMemoryDb().addAccount()
 
     await complete(db, man())
 
-    expect(db.profileReads).toEqual([`onboarding_completed_at where user_id = ${USER_ID}`])
+    expect(db.profileReads).toEqual([])
+    expect(db.signupSnapshotReads).toEqual([{ p_user_id: USER_ID, p_include_open_photos: false }])
   })
 
   it.each<[string, string | null, string]>([
@@ -1559,7 +1872,7 @@ describe('POST /onboarding — a first completion records only an objective the 
     expect(options.find((option) => option.objective === 'manutencao')?.status).toBe('not_offered')
     expect(refused.response.status).toBe(422)
     expect(refused.json).toEqual(REFUSED)
-    expect(refusing.operations).toEqual([CONFIG_READ, PROFILE_READ])
+    expect(refusing.operations).toEqual([CONFIG_READ, SNAPSHOT_READ])
     expect(accepted.response.status).toBe(200)
     expect(accepting.profile?.current_protocol).toBe('manutencao')
   })
@@ -1610,7 +1923,7 @@ describe('POST /onboarding — an account that already has a completion time is 
     expect(json.data.document_actions).toMatchObject([{ version: DOCUMENT_V2.version }])
     // One read of the profile; the calc config is not even loaded.
     expect(db.operations).toEqual([
-      PROFILE_READ,
+      SNAPSHOT_READ,
       CLAIM,
       SQL_FUNCTION,
       'select:media_assets',
@@ -1650,7 +1963,7 @@ describe('POST /onboarding — an account that already has a completion time is 
     expect(json.data.objective).toBe(stored.objective)
     expect(json.data.completed_at).toBe(EARLIER_COMPLETION)
     expect(db.operations).toEqual([
-      PROFILE_READ,
+      SNAPSHOT_READ,
       CLAIM,
       SQL_FUNCTION,
       'select:media_assets',
@@ -1690,12 +2003,14 @@ describe('POST /onboarding — an account that already has a completion time is 
     // As before this change, the SQL function validates each replay again. The
     // profile now has its completion time: one read of it, and no check.
     expect(db.operations).toEqual([
-      PROFILE_READ,
+      SNAPSHOT_READ,
       CLAIM,
+      SNAPSHOT_READ,
       SQL_FUNCTION,
       'select:media_assets',
-      PROFILE_READ,
+      SNAPSHOT_READ,
       CLAIM,
+      SNAPSHOT_READ,
       SQL_FUNCTION,
       'select:media_assets',
     ])
@@ -1719,7 +2034,7 @@ describe('POST /onboarding — an account that already has a completion time is 
     expect(response.status).toBe(200)
     expect(json.data.completed_at).toBe(completedAt)
     expect(db.operations).toEqual([
-      PROFILE_READ,
+      SNAPSHOT_READ,
       CLAIM,
       SQL_FUNCTION,
       'select:media_assets',
@@ -1743,7 +2058,7 @@ describe('POST /onboarding — an account that already has a completion time is 
     expect(second.response.status).toBe(200)
     expect(second.json.data).toEqual(first.json.data)
     expect(db.operations).toEqual([
-      PROFILE_READ,
+      SNAPSHOT_READ,
       CLAIM,
       SQL_FUNCTION,
       'select:media_assets',
@@ -1759,7 +2074,7 @@ describe('POST /onboarding — an account that already has a completion time is 
 
     expect(response.status).toBe(409)
     expect(json.error.code).toBe('onboarding_already_completed')
-    expect(db.operations).toEqual([PROFILE_READ, CLAIM, SQL_FUNCTION, RELEASE])
+    expect(db.operations).toEqual([SNAPSHOT_READ, CLAIM, SQL_FUNCTION, RELEASE])
     expect(db.profile).toMatchObject({
       current_protocol: 'recomposicao',
       onboarding_completed_at: EARLIER_COMPLETION,
@@ -1786,7 +2101,7 @@ describe('POST /onboarding — an account that already has a completion time is 
 
     expect(response.status).toBe(409)
     expect(json.error.code).toBe('onboarding_already_completed')
-    expect(db.operations).toEqual([PROFILE_READ, CLAIM, SQL_FUNCTION, RELEASE])
+    expect(db.operations).toEqual([SNAPSHOT_READ, CLAIM, SQL_FUNCTION, RELEASE])
     expect(db.profile.current_protocol).toBeNull()
   })
 })
@@ -1805,7 +2120,7 @@ describe('POST /onboarding — an older account marked completed with no complet
 
     expect(response.status).toBe(422)
     expect(json).toEqual(REFUSED)
-    expect(db.operations).toEqual([PROFILE_READ, CONFIG_READ])
+    expect(db.operations).toEqual([SNAPSHOT_READ, CONFIG_READ])
     expect(db.idempotencyRows()).toEqual([])
     expect(db.submissions).toEqual([])
     expect(db.profile).toMatchObject({
@@ -1831,34 +2146,56 @@ describe('POST /onboarding — an older account marked completed with no complet
   })
 })
 
+/** A valid no-photo snapshot except for the completion time deliberately under test. */
+function snapshotWithCompletionTime(completedAt: unknown) {
+  return {
+    version: 1,
+    user_id: USER_ID,
+    profile_present: true,
+    locale: 'pt-BR',
+    timezone: 'America/Sao_Paulo',
+    generation_token: {
+      onboarding_completed: false,
+      onboarding_completed_at: completedAt,
+      receipt_count: 0,
+    },
+    poses: [],
+    remaining_uploads: 0,
+    consent: null,
+    estimate: null,
+    candidate: null,
+    confirmation: null,
+  }
+}
+
 describe('POST /onboarding — the objective check fails closed', () => {
   it.each<[string, Failure]>([
     ['answers an error', 'error'],
     ['throws', 'throw'],
-    ['answers a row without the column', { data: {} }],
-    ['answers a completion time that is not a text', { data: { onboarding_completed_at: 0 } }],
-    ['answers an empty completion time', { data: { onboarding_completed_at: '' } }],
+    ['answers a snapshot without the generation column', { data: {} }],
+    ['answers a completion time that is not a text', { data: snapshotWithCompletionTime(0) }],
+    ['answers an empty completion time', { data: snapshotWithCompletionTime('') }],
     // A text that is not a date is not a completion time either: it does not
     // exempt the request from the check, and nothing is assumed in its place.
-    ['answers a blank completion time', { data: { onboarding_completed_at: ' ' } }],
-    ['answers the text "null" as completion time', { data: { onboarding_completed_at: 'null' } }],
+    ['answers a blank completion time', { data: snapshotWithCompletionTime(' ') }],
+    ['answers the text "null" as completion time', { data: snapshotWithCompletionTime('null') }],
     [
       'answers a completion time that is not a date',
-      { data: { onboarding_completed_at: 'not-a-date' } },
+      { data: snapshotWithCompletionTime('not-a-date') },
     ],
     // Texts `Date.parse` would take for a date, and that are not a time with
     // an offset as the database client writes it.
-    ['answers the text "1" as completion time', { data: { onboarding_completed_at: '1' } }],
-    ['answers a bare year as completion time', { data: { onboarding_completed_at: '2026' } }],
+    ['answers the text "1" as completion time', { data: snapshotWithCompletionTime('1') }],
+    ['answers a bare year as completion time', { data: snapshotWithCompletionTime('2026') }],
     [
       'answers a completion time with no offset',
-      { data: { onboarding_completed_at: '2026-09-20T12:00:00' } },
+      { data: snapshotWithCompletionTime('2026-09-20T12:00:00') },
     ],
     ['answers a list of rows', { data: [{ onboarding_completed_at: null }] }],
-  ])('the profile read %s → 500 data_access_failed, and the SQL function is not called', async (_case, failure) => {
+  ])('the snapshot read %s → 500 data_access_failed, and the SQL function is not called', async (_case, failure) => {
     const spies = logs()
     const db = new SignupMemoryDb().addAccount()
-    db.failures.set(PROFILE_READ, failure)
+    db.failures.set(SNAPSHOT_READ, failure)
 
     // Recomposição is available to everyone, and still nothing is assumed.
     const { response, json } = await complete(db, man({ objective: 'recomposicao' }))
@@ -1872,7 +2209,7 @@ describe('POST /onboarding — the objective check fails closed', () => {
       },
     })
     // Before the key is claimed: one read, and no row in the ledger.
-    expect(db.operations).toEqual([PROFILE_READ])
+    expect(db.operations).toEqual([SNAPSHOT_READ])
     expect(db.idempotencyRows()).toEqual([])
     expect(db.submissions).toEqual([])
     expect(db.profile).toEqual(NEW_ACCOUNT)
@@ -1881,7 +2218,7 @@ describe('POST /onboarding — the objective check fails closed', () => {
 
   it('a text that is not a date in the place of the completion time never lets a first completion outside the rule be recorded', async () => {
     const db = new SignupMemoryDb().addAccount()
-    db.failures.set(PROFILE_READ, { data: { onboarding_completed_at: 'not-a-date' } })
+    db.failures.set(SNAPSHOT_READ, { data: snapshotWithCompletionTime('not-a-date') })
 
     const { response, json } = await complete(
       db,
@@ -1897,7 +2234,7 @@ describe('POST /onboarding — the objective check fails closed', () => {
   it('a completed account whose profile cannot be read is not let through either', async () => {
     const stored = man({ body_fat_percent: 25, objective: 'ganho_massa' })
     const db = new SignupMemoryDb().addCompletedAccount(stored, EARLIER_COMPLETION)
-    db.failures.set(PROFILE_READ, 'error')
+    db.failures.set(SNAPSHOT_READ, 'error')
 
     const { response, json } = await complete(db, stored)
 
@@ -1924,7 +2261,7 @@ describe('POST /onboarding — the objective check fails closed', () => {
         request_id: REQUEST_ID,
       },
     })
-    expect(db.operations).toEqual([PROFILE_READ, CONFIG_READ])
+    expect(db.operations).toEqual([SNAPSHOT_READ, CONFIG_READ])
     expect(db.idempotencyRows()).toEqual([])
     expect(db.submissions).toEqual([])
     expect(db.profile).toEqual(NEW_ACCOUNT)
@@ -1935,7 +2272,7 @@ describe('POST /onboarding — the objective check fails closed', () => {
     const db = new SignupMemoryDb().addAccount()
     const body = man({ objective: 'recomposicao' })
     const key = 'signup-objective-after-failure-1'
-    db.failures.set(PROFILE_READ, 'error')
+    db.failures.set(SNAPSHOT_READ, 'error')
     const failed = await complete(db, body, key)
     db.failures.clear()
 
@@ -1948,7 +2285,7 @@ describe('POST /onboarding — the objective check fails closed', () => {
   })
 
   it.each<[string, string]>([
-    ['the profile', PROFILE_READ],
+    ['the profile', SNAPSHOT_READ],
     ['the calc config', CONFIG_READ],
   ])('a failed read of %s leaves no record either: once it answers again the same key completes even with another objective', async (_case, read) => {
     const db = new SignupMemoryDb().addAccount()

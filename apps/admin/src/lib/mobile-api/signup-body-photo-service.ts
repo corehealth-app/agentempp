@@ -64,6 +64,7 @@ import {
   type MediaAssetStatus,
   type MediaServiceDependencies,
 } from './media-service'
+import type { SignupPhotoSnapshot, SignupPhotoSourceIds } from './signup-body-photo-confirmation'
 
 /** The row of `legal_documents` that holds the consent of the body photos. */
 export const BODY_PHOTO_CONSENT_KEY = 'body_photo_estimate_consent'
@@ -184,6 +185,8 @@ export interface SignupBodyPhotoDependencies {
   media: MediaServiceDependencies
   /** Real factory repairs completed accounts; pending repair refuses cleanup. */
   repairCompleted?(userId: string): Promise<{ completed: boolean }>
+  /** One strict server snapshot for the state, estimate and confirmation identifiers. */
+  loadStateSnapshot?(userId: string): Promise<SignupPhotoSnapshot>
 }
 
 export interface SignupBodyPhotoConsentDto {
@@ -207,7 +210,12 @@ export interface SignupBodyPhotoState {
   minimum_age: number
   poses: SignupBodyPhotoPoseDto[]
   /** The preview exposes the joined value, not three individual readings. */
-  estimate: Pick<SignupBodyFatEstimate, 'is_estimate' | 'by_sex'> | null
+  estimate:
+    | (Pick<SignupBodyFatEstimate, 'is_estimate' | 'by_sex'> & {
+        source_ids?: SignupPhotoSourceIds
+        fingerprint?: string
+      })
+    | null
   remaining_uploads: number
 }
 
@@ -315,6 +323,54 @@ export async function getSignupBodyPhotoState(
 
   const document = await dependencies.consent.currentDocument(auth.userId)
   if (!document) return unavailableState('consent_text_missing')
+  if (dependencies.loadStateSnapshot) {
+    const snapshot = await dependencies.loadStateSnapshot(auth.userId)
+    if (!snapshot.profile_present) throw signupBodyPhotosUnavailable()
+    const repaired = await dependencies.repairCompleted?.(auth.userId)
+    const completed =
+      repaired?.completed ||
+      snapshot.generation_token.onboarding_completed ||
+      snapshot.generation_token.onboarding_completed_at !== null
+    if (completed) {
+      // Preserve the closed-state wire while suppressing every stale candidate.
+      // Cleanup runs once with its existing budget; failure remains visible.
+      return {
+        available: true,
+        unavailable_reason: null,
+        minimum_age: SIGNUP_BODY_PHOTO_MINIMUM_AGE,
+        consent: {
+          document_key: document.documentKey,
+          version: document.version,
+          locale: document.locale,
+          body: document.body,
+          body_hash: document.bodyHash,
+          accepted_at: await dependencies.consent.acceptedAt(auth.userId, document.version),
+        },
+        poses: emptyPoses(),
+        estimate: null,
+        remaining_uploads: 0,
+      }
+    }
+    if (!snapshot.consent) return unavailableState('consent_text_missing')
+    const { legal_document_id: _privateDocumentId, ...consent } = snapshot.consent
+    return {
+      available: true,
+      unavailable_reason: null,
+      consent,
+      minimum_age: SIGNUP_BODY_PHOTO_MINIMUM_AGE,
+      poses: snapshot.poses,
+      estimate: snapshot.estimate && {
+        ...snapshot.estimate,
+        ...(snapshot.candidate
+          ? {
+              source_ids: snapshot.candidate.source_ids,
+              fingerprint: snapshot.candidate.fingerprint,
+            }
+          : {}),
+      },
+      remaining_uploads: snapshot.remaining_uploads,
+    }
+  }
   const repaired = await dependencies.repairCompleted?.(auth.userId)
   const [acceptedAt, open, createdInWindow] = await Promise.all([
     dependencies.consent.acceptedAt(auth.userId, document.version),

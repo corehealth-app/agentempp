@@ -15,17 +15,20 @@
  * use. The database is in memory and reproduces the functions the code calls
  * (`complete_mobile_onboarding_atomic`, `resolve_user_entitlement`,
  * `apply_entitlement_event` and the three idempotency functions) from their
- * migrations. No network. The project refs are the two real ones (they are
+ * migrations. For Task3, only the no-photo/count0 compatibility path of the
+ * snapshot and checked completion RPCs is modeled; receipt/CAS atomicity and
+ * accepted photo estimates require the native PostgreSQL lane. No network. The project refs are the two real ones (they are
  * identifiers of projects, not credentials); every URL here is only parsed,
  * never called.
  *
  * Since 2026-10-07 the handler also checks the objective of a completion
  * (onboarding-eligibility-guard.ts; its own tests are in the onboarding
- * route.test.ts). That check reads the profile's completion time on every
- * completion and the calc config on a first one, whatever the switch says, so
- * both reads are part of every list of operations below — ahead of the claim
- * of the idempotency key, because the check runs before the key is claimed.
- * The grant's own read of the profile is the one that asks for two columns.
+ * route.test.ts). On the authorized staging target, that check now uses the
+ * completion time in the signup snapshot; other targets keep the old profile
+ * read. A first completion also reads the calc config. Both run before the
+ * idempotency claim, regardless of the grant switch. A staging replay reloads
+ * the snapshot after the claim before completing again. The grant's own
+ * profile read still asks for two columns and still precedes completion.
  *
  * > RC EA — cenário conta que concluiu o onboarding ANTES de o interruptor ser ligado NÃO coberto nesta PR (pendência da audit 2026-10-04). Não recebe nada, nem reenviando a conclusão nem aceitando documentos novos depois: segue dependendo da concessão manual do operador. Vale também para a conta antiga marcada `onboarding_completed = true` com `onboarding_completed_at` nulo (2 contas em staging, contadas em 2026-10-05), que a RPC ainda grava como primeira conclusão. Travado em evaluation-access.test.ts.
  * > RC EA — cenário acesso vencido (N dias depois) ou bloqueado NÃO coberto nesta PR (pendência da audit 2026-10-04). Não é renovado por este caminho: a conta volta a receber 402 e a renovação é manual. Travado em evaluation-access.test.ts.
@@ -61,8 +64,9 @@ import {
   resolveEvaluationAccess,
 } from './evaluation-access'
 import { mobileSuccess } from './http'
-import { executeSupabaseIdempotent } from './idempotency'
+import { executeSupabaseIdempotent, hashMobileRequest } from './idempotency'
 import { completeOnboarding } from './onboarding-service'
+import { asStoredBodyValue } from './protocol-eligibility-service'
 import type { MobileRouteContext } from './route'
 import { createSupabaseOnboardingRepository } from './supabase-onboarding'
 
@@ -90,15 +94,18 @@ const ON = {
 /**
  * The two reads of the objective check on a first completion: the profile's
  * completion time, then the calc config (a completed account gets only the
- * first). They are not the grant's, happen with the switch on or off, and
- * come before the idempotency key is claimed.
+ * first). On staging, the snapshot replaces that first profile read. They
+ * are not the grant's, happen with the switch on or off, and come before the
+ * idempotency key is claimed.
  */
 const OBJECTIVE_CHECK_PROFILE_READ = 'select:user_profiles'
 const OBJECTIVE_CHECK_CONFIG_READ = 'select:global_config'
+const SIGNUP_SNAPSHOT_READ = 'rpc:get_mobile_signup_body_photo_snapshot'
+const CHECKED_COMPLETION = 'rpc:complete_mobile_onboarding_with_body_photo_confirmation'
 
 /**
  * The grant's own read of the profile, as a failure is aimed at it: the
- * objective check reads the same table, asking for one column.
+ * legacy objective check reads the same table, asking for one column.
  */
 const GRANT_PROFILE_READ = 'select:user_profiles(onboarding_completed, onboarding_completed_at)'
 
@@ -127,17 +134,29 @@ const LEFT_ALONE_OPERATIONS = FIRST_GRANT_OPERATIONS.filter(
   (operation) => operation !== 'rpc:apply_entitlement_event',
 )
 
-/** Only the authorized staging target gains the new photo read. */
-function completionOperations(operations: string[]): string[] {
-  if (process.env.NEXT_PUBLIC_SUPABASE_URL !== STAGING_URL) return operations
-  const beforeRecord = operations.indexOf('rpc:complete_mobile_api_request')
+/** Exact Task3 substitution on the only authorized target; grant reads keep their position. */
+function checkedOperations(operations: string[], replay = false): string[] {
+  if (projectRefFromUrl(process.env.NEXT_PUBLIC_SUPABASE_URL) !== STAGING_REF) return operations
+  const result = operations.map((operation, index) => {
+    if (index === 0 && operation === OBJECTIVE_CHECK_PROFILE_READ) return SIGNUP_SNAPSHOT_READ
+    return operation === 'rpc:complete_mobile_onboarding_atomic' ? CHECKED_COMPLETION : operation
+  })
+  if (replay) {
+    const claim = result.indexOf('rpc:claim_mobile_api_request')
+    if (claim < 0) throw new Error('replay expectation requires the idempotency claim')
+    result.splice(claim + 1, 0, SIGNUP_SNAPSHOT_READ)
+  }
+  return result
+}
+
+/** Finalization remains after the grant and before response storage, including photos OFF. */
+function completionOperations(operations: string[], replay = false): string[] {
+  const checked = checkedOperations(operations, replay)
+  if (projectRefFromUrl(process.env.NEXT_PUBLIC_SUPABASE_URL) !== STAGING_REF) return checked
+  const beforeRecord = checked.indexOf('rpc:complete_mobile_api_request')
   return beforeRecord < 0
-    ? [...operations, 'select:media_assets']
-    : [
-        ...operations.slice(0, beforeRecord),
-        'select:media_assets',
-        ...operations.slice(beforeRecord),
-      ]
+    ? [...checked, 'select:media_assets']
+    : [...checked.slice(0, beforeRecord), 'select:media_assets', ...checked.slice(beforeRecord)]
 }
 
 // ---------------------------------------------------------------------------
@@ -283,6 +302,8 @@ class EvaluationMemoryDb {
   readonly entitlements: EntitlementRow[] = []
   readonly events: EntitlementEventRow[] = []
   readonly failures = new Map<string, Failure>()
+  /** The strict no-metadata snapshot calls, separate from the finalizer's media query. */
+  readonly signupSnapshotReads: Array<Record<string, unknown>> = []
   /** Every awaited query of the photo catalogue, including its account filter. */
   readonly bodyPhotoReads: BodyPhotoMemoryRead[] = []
   readonly bodyPhotoReadSignals: AbortSignal[] = []
@@ -582,10 +603,67 @@ class EvaluationMemoryDb {
     if (name === 'claim_mobile_api_request') return this.claim(params)
     if (name === 'complete_mobile_api_request') return this.completeClaim(params)
     if (name === 'fail_mobile_api_request') return this.failClaim(params)
+    if (name === 'get_mobile_signup_body_photo_snapshot') return this.signupSnapshot(params)
+    if (name === 'complete_mobile_onboarding_with_body_photo_confirmation')
+      return this.completeCheckedOnboarding(params)
     if (name === 'complete_mobile_onboarding_atomic') return this.completeOnboarding(params)
     if (name === 'resolve_user_entitlement') return this.resolveEntitlement(params)
     if (name === 'apply_entitlement_event') return this.applyEntitlementEvent(params)
     throw new Error(`unexpected rpc ${name}`)
+  }
+
+  /** Only no metadata/count0 is modeled here; this is not a photo reader or receipt/CAS fixture. */
+  private signupSnapshot(params: Record<string, unknown>): DbResult {
+    if (
+      Object.keys(params).sort().join(',') !== 'p_include_open_photos,p_user_id' ||
+      params.p_user_id !== USER ||
+      params.p_include_open_photos !== false
+    )
+      throw new Error('unexpected no-photo signup snapshot arguments')
+    this.signupSnapshotReads.push(structuredClone(params))
+    const profile = this.profiles.get(USER)
+    return {
+      data: {
+        version: 1,
+        user_id: USER,
+        profile_present: profile !== undefined,
+        locale: 'pt-BR',
+        timezone: 'America/Sao_Paulo',
+        generation_token: {
+          onboarding_completed: profile?.onboarding_completed ?? false,
+          onboarding_completed_at: profile?.onboarding_completed_at ?? null,
+          receipt_count: 0,
+        },
+        poses: [],
+        remaining_uploads: 0,
+        consent: null,
+        estimate: null,
+        candidate: null,
+        confirmation: null,
+      },
+      error: null,
+    }
+  }
+
+  private completeCheckedOnboarding(params: Record<string, unknown>): DbResult {
+    if (
+      Object.keys(params).sort().join(',') !==
+        'p_confirmation,p_expected_completed,p_expected_completed_at,p_expected_receipt_count,p_submission,p_user_id' ||
+      params.p_user_id !== USER ||
+      params.p_confirmation !== null ||
+      params.p_expected_receipt_count !== 0 ||
+      typeof params.p_expected_completed !== 'boolean' ||
+      (params.p_expected_completed_at !== null &&
+        typeof params.p_expected_completed_at !== 'string') ||
+      !params.p_submission ||
+      typeof params.p_submission !== 'object' ||
+      Array.isArray(params.p_submission) ||
+      'body_photo_confirmation' in params.p_submission
+    )
+      throw new Error('checked photo confirmation requires a dedicated native fixture')
+    // The real SQL preserves the old path when intent is null and observed/current count is 0.
+    // It applies generation CAS only when intent or receipts exist; do not invent CAS here.
+    return this.completeOnboarding(params)
   }
 
   /**
@@ -679,7 +757,19 @@ class EvaluationMemoryDb {
     } else {
       // COALESCE(profile.onboarding_completed_at, v_now): written once.
       profile.onboarding_completed_at = now
-      profile.answers = answers
+      // Model the old numeric columns, not a raw request echo. The old SQL
+      // compares subsequent ORIGINAL values against these stored values.
+      profile.answers = JSON.stringify(
+        Object.entries(submission)
+          .filter(([key]) => key !== 'document_actions')
+          .map(([key, value]) => [
+            key,
+            typeof value === 'number' &&
+            ['height_cm', 'weight_kg', 'body_fat_percent'].includes(key)
+              ? asStoredBodyValue(value)
+              : value,
+          ]),
+      )
     }
     // `onboarding_completed = true` is set by every completion.
     profile.onboarding_completed = true
@@ -1458,18 +1548,7 @@ describe('first completion with the four locks open', () => {
     expect(db.bodyPhotoReadSignals[0].aborted).toBe(false)
     expect(db.forbiddenPhotoEffects).toEqual([])
     expect(log.error).not.toHaveBeenCalled()
-    expect(db.operations).toEqual([
-      OBJECTIVE_CHECK_PROFILE_READ,
-      OBJECTIVE_CHECK_CONFIG_READ,
-      'rpc:claim_mobile_api_request',
-      'select:user_profiles',
-      'rpc:complete_mobile_onboarding_atomic',
-      'select:entitlement_events',
-      'rpc:resolve_user_entitlement',
-      'rpc:apply_entitlement_event',
-      'select:media_assets',
-      'rpc:complete_mobile_api_request',
-    ])
+    expect(db.operations).toEqual(completionOperations(FIRST_GRANT_OPERATIONS))
     expect(db.bodyPhotoReads).toEqual([
       {
         columns: [
@@ -1628,6 +1707,93 @@ describe('first completion with the four locks open', () => {
   })
 })
 
+describe('Task3 checked compatibility keeps ORIGINAL hash and evaluation grant order', () => {
+  it('hashes unrounded ORIGINAL values and preserves the legacy fractional replay refusal', async () => {
+    logs()
+    switchOn()
+    const db = new EvaluationMemoryDb().addAccount()
+    const original = onboardingCompletionInputSchema.parse({
+      ...completionBody(),
+      height_cm: 173.555,
+      weight_kg: 80.005,
+    })
+    const beforeOriginal = structuredClone(original)
+    const originalHash = hashMobileRequest(original)
+    const canonicalHash = hashMobileRequest({ ...original, height_cm: 173.56, weight_kg: 80.01 })
+    expect(originalHash).not.toBe(canonicalHash)
+
+    const first = await post(db, original)
+    expect(first.status).toBe(200)
+    expect(db.operations).toEqual(completionOperations(FIRST_GRANT_OPERATIONS))
+    const beforeGrant = structuredClone({ events: db.events, entitlements: db.entitlements })
+    expect(db.events).toHaveLength(1)
+    expect(db.entitlements).toHaveLength(1)
+    db.operations.length = 0
+
+    // No metadata/count0 delegates to the old RPC: numeric(5,2) storage
+    // makes this unrounded legacy replay409. Do not model a fictional200.
+    await expect(post(db, original)).rejects.toMatchObject({
+      status: 409,
+      code: 'onboarding_already_completed',
+    })
+    expect(db.operations).toEqual(
+      checkedOperations(
+        [
+          OBJECTIVE_CHECK_PROFILE_READ,
+          'rpc:claim_mobile_api_request',
+          'select:user_profiles',
+          'rpc:complete_mobile_onboarding_atomic',
+        ],
+        true,
+      ),
+    )
+    expect({ events: db.events, entitlements: db.entitlements }).toEqual(beforeGrant)
+    expect(original).toEqual(beforeOriginal)
+    expect(
+      db.calls
+        .filter((call) => call.name === 'claim_mobile_api_request')
+        .map((call) => call.params.p_request_hash),
+    ).toEqual([originalHash, originalHash])
+    expect(
+      db.calls.filter(
+        (call) => call.name === 'complete_mobile_onboarding_with_body_photo_confirmation',
+      ),
+    ).toEqual([
+      {
+        name: 'complete_mobile_onboarding_with_body_photo_confirmation',
+        params: {
+          p_user_id: USER,
+          p_submission: original,
+          p_confirmation: null,
+          p_expected_completed: false,
+          p_expected_completed_at: null,
+          p_expected_receipt_count: 0,
+        },
+      },
+      {
+        name: 'complete_mobile_onboarding_with_body_photo_confirmation',
+        params: {
+          p_user_id: USER,
+          p_submission: original,
+          p_confirmation: null,
+          p_expected_completed: true,
+          p_expected_completed_at: NOW.toISOString(),
+          p_expected_receipt_count: 0,
+        },
+      },
+    ])
+    expect(db.signupSnapshotReads).toEqual(
+      Array.from({ length: 3 }, () => ({
+        p_user_id: USER,
+        p_include_open_photos: false,
+      })),
+    )
+    expect(db.calls.filter((call) => call.name === 'complete_mobile_onboarding_atomic')).toEqual([])
+    expect(db.calls.filter((call) => call.name === 'complete_mobile_api_request')).toHaveLength(1)
+    expect(db.calls.filter((call) => call.name === 'apply_entitlement_event')).toHaveLength(1)
+  })
+})
+
 describe('never twice', () => {
   async function grantedAccount() {
     switchOn()
@@ -1647,16 +1813,20 @@ describe('never twice', () => {
 
     expect(replay.status).toBe(200)
     expect(replay.headers.get('idempotency-replayed')).toBe('true')
-    // The profile already has its completion time: the objective check reads
-    // it and checks nothing (no calc config read), the grant reads it once and
-    // asks no entitlement query.
-    expect(db.operations).toEqual([
-      OBJECTIVE_CHECK_PROFILE_READ,
-      'rpc:claim_mobile_api_request',
-      'select:user_profiles',
-      'rpc:complete_mobile_onboarding_atomic',
-      'select:media_assets',
-    ])
+    // Preflight and replay refresh each load the completed generation. No calc
+    // config is read. The grant still reads the profile once before completion
+    // and asks no entitlement query after completion.
+    expect(db.operations).toEqual(
+      completionOperations(
+        [
+          OBJECTIVE_CHECK_PROFILE_READ,
+          'rpc:claim_mobile_api_request',
+          'select:user_profiles',
+          'rpc:complete_mobile_onboarding_atomic',
+        ],
+        true,
+      ),
+    )
     expect({ events: db.events, entitlements: db.entitlements }).toEqual(before)
   })
 
@@ -1668,14 +1838,15 @@ describe('never twice', () => {
     const response = await post(db, completionBody(), 'evaluation-access-key-2')
 
     expect(response.status).toBe(200)
-    expect(db.operations).toEqual([
-      OBJECTIVE_CHECK_PROFILE_READ,
-      'rpc:claim_mobile_api_request',
-      'select:user_profiles',
-      'rpc:complete_mobile_onboarding_atomic',
-      'select:media_assets',
-      'rpc:complete_mobile_api_request',
-    ])
+    expect(db.operations).toEqual(
+      completionOperations([
+        OBJECTIVE_CHECK_PROFILE_READ,
+        'rpc:claim_mobile_api_request',
+        'select:user_profiles',
+        'rpc:complete_mobile_onboarding_atomic',
+        'rpc:complete_mobile_api_request',
+      ]),
+    )
     expect({ events: db.events, entitlements: db.entitlements }).toEqual(before)
   })
 
@@ -1839,13 +2010,17 @@ describe('an account that completed onboarding before the switch was on (declare
     const response = await post(db, completionBody(newVersion ? DOCUMENT_V2 : DOCUMENT_V1), key)
 
     expect(response.status).toBe(200)
-    expect(db.operations.filter((operation) => !operation.endsWith('_mobile_api_request'))).toEqual(
-      [
-        OBJECTIVE_CHECK_PROFILE_READ,
-        'select:user_profiles',
-        'rpc:complete_mobile_onboarding_atomic',
-        'select:media_assets',
-      ],
+    expect(db.operations).toEqual(
+      completionOperations(
+        [
+          OBJECTIVE_CHECK_PROFILE_READ,
+          'rpc:claim_mobile_api_request',
+          'select:user_profiles',
+          'rpc:complete_mobile_onboarding_atomic',
+          ...(key === 'evaluation-access-key-1' ? [] : ['rpc:complete_mobile_api_request']),
+        ],
+        key === 'evaluation-access-key-1',
+      ),
     )
     expect(db.events).toEqual([])
     expect(db.entitlements).toEqual([])
@@ -1876,17 +2051,18 @@ describe('an account that completed onboarding before the switch was on (declare
     expect(response.status).toBe(200)
     // The RPC treated it as a first completion.
     expect(db.completedAt()).toBe(NOW.toISOString())
-    // With no completion time the objective check takes it for a first
-    // completion too (its two reads). The grant: one read before the
-    // completion, and not one entitlement query after it.
-    expect(db.operations.filter((operation) => !operation.endsWith('_mobile_api_request'))).toEqual(
-      [
+    // With no completion time the objective check still treats it as first
+    // (snapshot plus config). The grant reads the two legacy columns before
+    // completion and makes no entitlement query after it.
+    expect(db.operations).toEqual(
+      completionOperations([
         OBJECTIVE_CHECK_PROFILE_READ,
         OBJECTIVE_CHECK_CONFIG_READ,
+        'rpc:claim_mobile_api_request',
         'select:user_profiles',
         'rpc:complete_mobile_onboarding_atomic',
-        'select:media_assets',
-      ],
+        'rpc:complete_mobile_api_request',
+      ]),
     )
     expect(db.events).toEqual([])
     expect(db.entitlements).toEqual([])
@@ -2026,15 +2202,16 @@ describe('a failure of the grant never reaches the onboarding response', () => {
 
     await post(db)
 
-    expect(db.operations).toEqual([
-      OBJECTIVE_CHECK_PROFILE_READ,
-      OBJECTIVE_CHECK_CONFIG_READ,
-      'rpc:claim_mobile_api_request',
-      'select:user_profiles',
-      'rpc:complete_mobile_onboarding_atomic',
-      'select:media_assets',
-      'rpc:complete_mobile_api_request',
-    ])
+    expect(db.operations).toEqual(
+      completionOperations([
+        OBJECTIVE_CHECK_PROFILE_READ,
+        OBJECTIVE_CHECK_CONFIG_READ,
+        'rpc:claim_mobile_api_request',
+        'select:user_profiles',
+        'rpc:complete_mobile_onboarding_atomic',
+        'rpc:complete_mobile_api_request',
+      ]),
+    )
   })
 
   it('an account id that is not a uuid is refused before any query', async () => {
@@ -2085,14 +2262,16 @@ describe('a failure of the grant never reaches the onboarding response', () => {
       code: 'onboarding_requirements_changed',
     })
 
-    expect(db.operations).toEqual([
-      OBJECTIVE_CHECK_PROFILE_READ,
-      OBJECTIVE_CHECK_CONFIG_READ,
-      'rpc:claim_mobile_api_request',
-      'select:user_profiles',
-      'rpc:complete_mobile_onboarding_atomic',
-      'rpc:fail_mobile_api_request',
-    ])
+    expect(db.operations).toEqual(
+      checkedOperations([
+        OBJECTIVE_CHECK_PROFILE_READ,
+        OBJECTIVE_CHECK_CONFIG_READ,
+        'rpc:claim_mobile_api_request',
+        'select:user_profiles',
+        'rpc:complete_mobile_onboarding_atomic',
+        'rpc:fail_mobile_api_request',
+      ]),
+    )
     expect(db.completedAt()).toBeNull()
     expect(db.events).toEqual([])
     expect(log.info).not.toHaveBeenCalled()
@@ -2107,13 +2286,15 @@ describe('a failure of the grant never reaches the onboarding response', () => {
       status: 409,
       code: 'onboarding_requirements_changed',
     })
-    expect(db.operations).toEqual([
-      OBJECTIVE_CHECK_PROFILE_READ,
-      OBJECTIVE_CHECK_CONFIG_READ,
-      'rpc:claim_mobile_api_request',
-      'rpc:complete_mobile_onboarding_atomic',
-      'rpc:fail_mobile_api_request',
-    ])
+    expect(db.operations).toEqual(
+      checkedOperations([
+        OBJECTIVE_CHECK_PROFILE_READ,
+        OBJECTIVE_CHECK_CONFIG_READ,
+        'rpc:claim_mobile_api_request',
+        'rpc:complete_mobile_onboarding_atomic',
+        'rpc:fail_mobile_api_request',
+      ]),
+    )
   })
 
   // The objective check of the completion (onboarding-eligibility-guard.ts)
@@ -2129,7 +2310,9 @@ describe('a failure of the grant never reaches the onboarding response', () => {
       post(db, { ...completionBody(), body_fat_percent: 20, objective: 'ganho_massa' }),
     ).rejects.toMatchObject({ status: 422, code: 'onboarding_objective_not_eligible' })
 
-    expect(db.operations).toEqual([OBJECTIVE_CHECK_PROFILE_READ, OBJECTIVE_CHECK_CONFIG_READ])
+    expect(db.operations).toEqual(
+      checkedOperations([OBJECTIVE_CHECK_PROFILE_READ, OBJECTIVE_CHECK_CONFIG_READ]),
+    )
     expect(db.completedAt()).toBeNull()
     expect(db.events).toEqual([])
     expect(db.entitlements).toEqual([])

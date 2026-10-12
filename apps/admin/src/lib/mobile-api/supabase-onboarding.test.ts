@@ -3,6 +3,7 @@ import type { ServiceClient } from '@mpp/db'
 import { describe, expect, it, vi } from 'vitest'
 import type { OnboardingCompletionInput } from './contracts'
 import { OnboardingRepositoryError } from './onboarding-service'
+import type { PreparedSignupPhotoConfirmation } from './signup-body-photo-confirmation'
 import { createSupabaseOnboardingRepository } from './supabase-onboarding'
 
 const USER_ID = '00000000-0000-4000-8000-000000000951'
@@ -86,6 +87,123 @@ function requirementSet(documentKeys: string[]) {
 }
 
 describe('Supabase onboarding adapter', () => {
+  it.each([
+    ['40001', 'onboarding_generation_changed', 409],
+    ['22023', 'body_photo_confirmation_stale', 409],
+    ['22023', 'body_photo_confirmation_unavailable', 409],
+    ['22023', 'body_photo_confirmation_value_mismatch', 422],
+    ['22023', 'body_photo_consent_required', 403],
+    ['22023', 'body_photo_age_not_allowed', 403],
+    ['22023', 'body_photo_consent_locale_changed', 409],
+    ['22023', 'body_photos_unavailable', 404],
+  ] as const)('maps checked SQL %s/%s to the recoverable HTTP status %s', async (code, message, status) => {
+    const original = completionInput()
+    const prepared: PreparedSignupPhotoConfirmation = {
+      original,
+      effectiveSubmission: original,
+      mode: 'manual',
+      snapshot: {
+        version: 1,
+        user_id: USER_ID,
+        profile_present: true,
+        locale: 'pt-BR',
+        timezone: 'America/Sao_Paulo',
+        generation_token: {
+          onboarding_completed: false,
+          onboarding_completed_at: null,
+          receipt_count: 1,
+        },
+        poses: [],
+        remaining_uploads: 0,
+        consent: null,
+        estimate: null,
+        candidate: null,
+        confirmation: null,
+      },
+    }
+    const rpc = vi.fn(async () => ({ data: null, error: { code, message } }))
+    const repository = createSupabaseOnboardingRepository({ rpc } as unknown as ServiceClient, {
+      signupPhotoConfirmation: prepared,
+    })
+    await expect(repository.complete(USER_ID, original)).rejects.toMatchObject({
+      status,
+      code: message,
+    })
+  })
+
+  it.each([
+    'absent',
+    'accept',
+  ] as const)('uses the server generation in the checked RPC with ORIGINAL submission (%s)', async (mode) => {
+    const original = completionInput()
+    original.height_cm = 173.555
+    original.weight_kg = 80.005
+    if (mode === 'accept')
+      original.body_photo_confirmation = {
+        decision: 'accept',
+        source_ids: {
+          front: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          side: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          back: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        },
+        fingerprint: 'a'.repeat(64),
+      }
+    const { body_photo_confirmation: confirmation, ...official } = original
+    const prepared: PreparedSignupPhotoConfirmation = {
+      original,
+      effectiveSubmission: mode === 'accept' ? { ...official, body_fat_percent: 24 } : official,
+      mode: mode === 'accept' ? 'fresh_accept' : 'manual',
+      snapshot: {
+        version: 1,
+        user_id: USER_ID,
+        profile_present: true,
+        locale: 'pt-BR',
+        timezone: 'America/Sao_Paulo',
+        generation_token: {
+          onboarding_completed: false,
+          onboarding_completed_at: null,
+          receipt_count: 0,
+        },
+        poses: [],
+        remaining_uploads: 0,
+        consent: null,
+        estimate: null,
+        candidate: null,
+        confirmation: null,
+      },
+    }
+    const rpc = vi.fn(async () => ({
+      data: {
+        user_id: USER_ID,
+        onboarding_completed: true,
+        completed_at: '2026-10-12T01:00:00.000Z',
+        objective: 'recomposicao',
+        persona: 'focus',
+        document_actions: [],
+      },
+      error: null,
+    }))
+    const repository = createSupabaseOnboardingRepository({ rpc } as unknown as ServiceClient, {
+      signupPhotoConfirmation: prepared,
+    })
+    await expect(repository.complete(USER_ID, original)).resolves.toMatchObject({
+      userId: USER_ID,
+      completed: true,
+    })
+    expect(rpc).toHaveBeenCalledTimes(1)
+    expect(rpc).toHaveBeenCalledWith('complete_mobile_onboarding_with_body_photo_confirmation', {
+      p_user_id: USER_ID,
+      p_submission: official,
+      p_confirmation: confirmation ?? null,
+      p_expected_completed: false,
+      p_expected_completed_at: null,
+      p_expected_receipt_count: 0,
+    })
+    expect(original).not.toHaveProperty('body_fat_percent')
+    expect(original.height_cm).toBe(173.555)
+    expect(original.weight_kg).toBe(80.005)
+  })
+
   it('loads only the authenticated user and current locale documents', async () => {
     const profile = queryResult({
       onboarding_completed: false,

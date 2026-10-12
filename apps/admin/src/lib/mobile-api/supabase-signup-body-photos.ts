@@ -41,8 +41,12 @@ import {
   signupBodyPhotoReadingPercent,
   signupBodyPhotosUnavailable,
 } from './signup-body-photo-service'
+import { loadSignupPhotoSnapshot } from './signup-body-photo-snapshot'
 import { createSupabaseMediaDependencies } from './supabase-media'
-import { repairCompletedSignupBodyPhotos } from './supabase-signup-body-photo-finalization'
+import {
+  repairCompletedSignupBodyPhotos,
+  signupBodyPhotoFinalizationTargetAllowed,
+} from './supabase-signup-body-photo-finalization'
 
 interface DatabaseError {
   code?: string
@@ -356,5 +360,9 @@ export function createSupabaseSignupBodyPhotoDependencies(
     catalogue: createCatalogue(supabase, requestId),
     media: createSupabaseMediaDependencies(supabase, { signupPhotos: true }),
     repairCompleted: (userId) => repairCompletedSignupBodyPhotos(supabase, userId),
+    loadStateSnapshot: async (userId) => {
+      if (!signupBodyPhotoFinalizationTargetAllowed()) throw signupBodyPhotosUnavailable()
+      return loadSignupPhotoSnapshot(supabase, userId, true)
+    },
   }
 }

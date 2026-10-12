@@ -4038,9 +4038,13 @@ no rascunho de consentimento ainda não aprovado.
 
 D2 foi respondido pelo dono: “Usar no objetivo e nas metas (Recomendado)”,
 **após confirmação explícita**. Substitui as respostas provisórias14,39 e41
-para este cadastro. A aplicação atômica e seu recibo durável ainda pertencem
-à próxima etapa de B4b; igualdade entre a média e um número digitado não
-prova confirmação. D1/D2 são decisões de Eduardo, sem aprovação médica
+para este cadastro. A integração local B4b agora deriva a média no guard e
+revalida no wrapper SQL, gravando BF e recibo privado na mesma transação da
+conclusão. O hash de idempotência mantém o payload original. Igualdade entre a
+média e um número digitado não prova confirmação; um BF manual igual continua
+manual. Escrita explícita posterior de BF, até com o mesmo número, invalida a
+origem de fotos sem apagar a prova histórica. D1/D2 são decisões de Eduardo,
+sem aprovação médica
 inferida. O interruptor continua OFF e os builds publicados não usam este fluxo.
 
 As fórmulas existentes permanecem: com BF oficial informado, `calcBMR` usa
@@ -4063,5 +4067,7 @@ aprovação de Roberto a partir desta implementação.
 
 Origem das fotos exige marker trusted no INSERT; uma foto corporal histórica
 com a mesma frase permanece UNKNOWN. A coluna local é imutável e não foi
-aplicada remotamente. Confirmação/prova, limpeza automática D4, texto B5,
-telas, Storage/fila/provedor e QA físico seguem os gates próprios do handoff.
+aplicada remotamente. Confirmação/prova estão implementadas localmente;
+a evidência de testes e revisão pertence ao diário da operação. Isso não
+significa recurso ativado. Limpeza automática D4, texto B5, telas,
+Storage/fila/provedor e QA físico seguem os gates próprios do handoff.

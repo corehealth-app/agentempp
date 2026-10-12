@@ -75,6 +75,24 @@ export const onboardingDocumentActionInputSchema = z
   })
   .strict()
 
+/** Explicit intent only: the server derives the value from these official sources. */
+export const signupBodyPhotoConfirmationInputSchema = z.discriminatedUnion('decision', [
+  z
+    .object({
+      decision: z.literal('accept'),
+      source_ids: z
+        .object({ front: z.string().uuid(), side: z.string().uuid(), back: z.string().uuid() })
+        .strict()
+        .refine(
+          (ids) => new Set(Object.values(ids).map((id) => id.toLowerCase())).size === 3,
+          'Photo source IDs must be distinct',
+        ),
+      fingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+    })
+    .strict(),
+  z.object({ decision: z.literal('decline') }).strict(),
+])
+
 export const onboardingCompletionInputSchema = z
   .object({
     name: z.string().trim().min(1).max(100),
@@ -86,6 +104,7 @@ export const onboardingCompletionInputSchema = z
     height_cm: signupHeightCmSchema,
     weight_kg: signupWeightKgSchema,
     body_fat_percent: signupBodyFatPercentSchema.optional(),
+    body_photo_confirmation: signupBodyPhotoConfirmationInputSchema.optional(),
     objective: z.enum(['recomposicao', 'ganho_massa', 'manutencao']),
     activity_level: z.enum(['sedentario', 'leve', 'moderado', 'alto', 'atleta']),
     training_frequency: signupTrainingFrequencySchema,
@@ -486,6 +505,9 @@ export const markRoutineTakenInputSchema = z
 export type PatchMeInput = z.infer<typeof patchMeInputSchema>
 export type OnboardingInput = z.infer<typeof onboardingInputSchema>
 export type OnboardingCompletionInput = z.infer<typeof onboardingCompletionInputSchema>
+export type SignupBodyPhotoConfirmationInput = z.infer<
+  typeof signupBodyPhotoConfirmationInputSchema
+>
 export type OnboardingEligibilityInput = z.infer<typeof onboardingEligibilityInputSchema>
 export type OnboardingDocumentActionInput = z.infer<typeof onboardingDocumentActionInputSchema>
 export type RegistrationProposalInput = z.infer<typeof registrationProposalInputSchema>

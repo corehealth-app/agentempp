@@ -35,11 +35,10 @@
  * the check runs all the same, and so it answers before every refusal of the
  * SQL function, that one included.
  *
- * The read is outside the SQL function's transaction, and that is safe in the
- * direction that matters: a completion recorded between this read and the
- * function's own only makes the function take the branch that records no
- * objective; the opposite needs a completion time to be emptied, which
- * nothing does.
+ * In staging the caller supplies the generation from the strict photo
+ * snapshot. The checked SQL wrapper compares it under locks, including a
+ * receipted reset, so eligibility is never based on a second profile read.
+ * Callers outside that path retain the existing profile lookup.
  *
  * WHAT IS DECIDED. The answer of the eligibility check, by construction: the
  * same function over the same rounding (`decideOnboardingEligibility`) and the
@@ -133,8 +132,12 @@ async function isFirstCompletion(context: GuardContext): Promise<boolean> {
 export async function assertOnboardingObjectiveEligible(
   context: GuardContext,
   input: OnboardingCompletionInput,
+  observedGeneration?: { onboarding_completed_at: string | null },
 ): Promise<void> {
-  if (!(await isFirstCompletion(context))) return
+  const first = observedGeneration
+    ? observedGeneration.onboarding_completed_at === null
+    : await isFirstCompletion(context)
+  if (!first) return
 
   let config: CalcConfig
   try {

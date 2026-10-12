@@ -3152,6 +3152,97 @@ incerto, GET/DELETE respondem `503 body_photo_cleanup_pending`, sem cair no
 antigo `deleteAll`. O claim do DELETE é liberado para tentar novamente; não
 se guarda um falso `200`. Isso muda intencionalmente C1, C2 e R8 de B2.
 
+### Confirmação da média no cadastro (B4b — integração local, não publicada)
+
+**Pré-requisito de implantação:** aplicar, no staging conhecido, as migrations
+`20261012004043_signup_body_photo_trusted_origin.sql` e
+`20261012021423_signup_body_photo_confirmation.sql` antes de publicar um BFF
+que contenha esta integração. Mesmo com fotos OFF e sem metadata, o cadastro
+completo nesse alvo usa o snapshot e o wrapper novos. Não aplicar na produção
+antiga. Não há ativação remota nesta etapa.
+
+O GET ON com texto disponível obtém poses, consentimento atual, média,
+fontes e limite de envios de **um snapshot SQL**. O reparo continua com seu
+orçamento único: se observar conclusão durante a leitura, a resposta suprime
+poses e estimativa; não entrega um candidato antigo. OFF e ausência de texto
+conservam os early returns. A estimativa utilizável acrescenta
+`source_ids: { front, side, back }` e `fingerprint` (hexadecimal minúsculo de
+64 caracteres), sem devolver as leituras individuais. O cliente trata o
+fingerprint como opaco: é produzido e conferido pelo SQL.
+
+`POST /onboarding` admite opcionalmente, somente no cadastro completo:
+
+```json
+{
+  "body_photo_confirmation": {
+    "decision": "accept",
+    "source_ids": {
+      "front": "00000000-0000-4000-8000-000000000001",
+      "side": "00000000-0000-4000-8000-000000000002",
+      "back": "00000000-0000-4000-8000-000000000003"
+    },
+    "fingerprint": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  }
+}
+```
+
+Esse fragmento ilustra a metadata; os campos obrigatórios do cadastro continuam
+necessários. A alternativa é `{ "decision": "decline" }`. Variantes strict,
+três UUIDs semanticamente distintos; owner, percentual, método, datas e token
+interno não são aceitos nessa metadata. Ausência mantém o BF manual ou ausente.
+Recusa não injeta média nem transforma uma confirmação histórica em recusa.
+
+Aceite novo exige fotos ON, idade mínima de 18 no fuso **já armazenado**,
+consentimento atual na língua da conta e três fontes marcadas do cadastro com
+leituras finitas em 3–60. A média aritmética usa duas casas decimais. BF omitido
+é derivado; BF enviado junto precisa coincidir após a canonização. O guard
+existente decide o objetivo com esse valor antes do claim. Cortes e fórmulas
+não mudam. A decisão é de Eduardo, sem aprovação clínica inferida.
+
+O wrapper trusted revalida fontes/consentimento e chama a conclusão oficial na
+mesma transação que grava BF, origem e recibo privado. Uma falha nessa gravação
+reverte também a conclusão SQL. A resposta pública do cadastro não muda.
+Concessão de acesso e remoção de Storage são etapas posteriores: não fazem
+parte dessa transação. D4 continua pendente, e o finalizer real ainda retorna
+`deferred_rule` para fotos vivas.
+
+O hash de idempotência usa o **payload original**, incluindo a metadata; não
+usa BF ou token derivados. Preflight recusado deixa zero claim. Se a recusa
+acontecer dentro do SQL após o claim, o ledger conserva a semântica antiga:
+corpo alterado pede nova chave. Repetição oficial relê o snapshot/token, sem
+substituir IDs/fingerprint originais por fontes novas. Uma confirmação
+histórica pode ser validada com fotos OFF e resultados removidos, pelo recibo
+original; não renova acesso nem reativa origem invalidada.
+
+O token privado contém conclusão, instante oficial e contagem de todos os
+recibos da conta. O CAS sob trava é exigido quando há metadata ou histórico;
+sem ambos, preserva a conclusão concorrente do cliente antigo. Uma geração
+manual posterior a um recibo grava stub sem inventar aceite. Reset true→false
+limpa o instante somente quando existe recibo da geração anterior; o reset
+legado sem recibo conserva seu comportamento. Não há backfill histórico.
+
+Uma escrita explícita de BF invalida irreversivelmente a origem de fotos,
+**até se o número for igual**. Mudança real de instante de medição ou geração
+também invalida; peso, altura, BF3 e replay oficial não a reativam. A prova
+original permanece. Isso afeta a classificação de origem nos caminhos que
+compartilham o perfil, inclusive WhatsApp; nenhuma fórmula, mensagem ou envio
+WhatsApp é alterado. Igualdade numérica sozinha nunca prova confirmação.
+
+Erros específicos: `404 body_photos_unavailable`, `403 body_photo_consent_required`,
+`403 body_photo_age_not_allowed`,
+`409 body_photo_confirmation_stale`, `409 body_photo_confirmation_unavailable`,
+`409 body_photo_consent_locale_changed`, `409 onboarding_generation_changed` e
+`422 body_photo_confirmation_value_mismatch`. Falha ou snapshot inválido
+responde `500 data_access_failed`, sem resultado bruto no log. Os erros antigos
+da conclusão/elegibilidade continuam válidos.
+
+A tabela privada não concede leitura/escrita aos clientes; RPCs públicas
+exigem backend trusted, com execução apenas para service_role. Sem FK para
+mídia, a exclusão das fontes não apaga a prova. Testes nativos usam PostgreSQL
+local sintético e shims de plataforma; não comprovam JWT/GoTrue, fila, modelo,
+Storage remoto ou QA físico. Texto B5, disposição D4 e telas B6–B9 permanecem
+gates próprios antes da ativação.
+
 ### Estado destes pacotes (B2 — envio; B3 — leitura; B4a — fechamento mecânico)
 
 Construído localmente: interruptor, estado, aceite/idade, envio/troca/exclusão,

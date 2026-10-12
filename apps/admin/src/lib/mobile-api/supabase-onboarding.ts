@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import type { ServiceClient } from '@mpp/db'
 import { z } from 'zod'
 import type { OnboardingCompletionInput } from './contracts'
+import { MobileApiError } from './http'
 import {
   type OnboardingAcceptedActionRecord,
   type OnboardingDocumentRecord,
@@ -9,6 +10,7 @@ import {
   type OnboardingRepository,
   OnboardingRepositoryError,
 } from './onboarding-service'
+import type { PreparedSignupPhotoConfirmation } from './signup-body-photo-confirmation'
 
 const documentSchema = z
   .object({
@@ -148,6 +150,7 @@ interface UntypedClient {
 }
 
 export interface SupabaseOnboardingOptions {
+  signupPhotoConfirmation?: PreparedSignupPhotoConfirmation
   allowedLegalOrigins?: string[]
   fetchLegalContent?: (input: string, init: RequestInit) => Promise<Response>
   legalContentTimeoutMs?: number
@@ -555,10 +558,44 @@ export function createSupabaseOnboardingRepository(
     },
 
     async complete(userId: string, input: OnboardingCompletionInput) {
-      const { data, error } = await client.rpc('complete_mobile_onboarding_atomic', {
-        p_user_id: userId,
-        p_submission: input,
-      })
+      const prepared = options.signupPhotoConfirmation
+      const token = prepared?.snapshot?.generation_token
+      const { body_photo_confirmation: intent, ...official } = input
+      const { data, error } = token
+        ? await client.rpc('complete_mobile_onboarding_with_body_photo_confirmation', {
+            p_user_id: userId,
+            p_submission: official,
+            p_confirmation: intent ?? null,
+            p_expected_completed: token.onboarding_completed,
+            p_expected_completed_at: token.onboarding_completed_at,
+            p_expected_receipt_count: token.receipt_count,
+          })
+        : await client.rpc('complete_mobile_onboarding_atomic', {
+            p_user_id: userId,
+            p_submission: input,
+          })
+      if (token && error) {
+        const status: Record<string, number> = {
+          onboarding_generation_changed: 409,
+          body_photo_confirmation_stale: 409,
+          body_photo_confirmation_unavailable: 409,
+          body_photo_confirmation_value_mismatch: 422,
+          body_photo_consent_required: 403,
+          body_photo_age_not_allowed: 403,
+          body_photo_consent_locale_changed: 409,
+          body_photos_unavailable: 404,
+        }
+        const code = error.message ?? ''
+        if (
+          status[code] &&
+          error.code === (code === 'onboarding_generation_changed' ? '40001' : '22023')
+        )
+          throw new MobileApiError(
+            status[code],
+            code,
+            'Reload the signup state before trying again',
+          )
+      }
       if (error) completionError(error)
       return parseCompletion(data, userId)
     },

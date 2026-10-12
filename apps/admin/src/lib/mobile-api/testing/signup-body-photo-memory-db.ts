@@ -29,6 +29,7 @@
  * No database was read to write this file.
  */
 import { createHash } from 'node:crypto'
+import { estimateSignupBodyFat } from '@mpp/agent/signup-body-fat-estimate'
 import type { ServiceClient } from '@mpp/db'
 
 interface DbError {
@@ -355,7 +356,8 @@ export class SignupBodyPhotoMemoryDb {
     requiredFrom: string
   }): MemoryLegalDocument {
     const row: MemoryLegalDocument = {
-      id: this.nextId('legal-document'),
+      // Match the real uuid column now validated by the snapshot boundary.
+      id: `00000000-0000-4000-8000-${String(++this.sequence).padStart(12, '0')}`,
       document_key: document.documentKey,
       version: document.version,
       locale: document.locale,
@@ -574,9 +576,177 @@ export class SignupBodyPhotoMemoryDb {
   }
 
   protected otherRpc(name: string, params: Row): DbResult {
+    if (name === 'get_mobile_signup_body_photo_snapshot') return this.signupPhotoSnapshot(params)
     if (name === 'get_mobile_legal_document') return this.getLegalDocument(params)
     if (name === 'accept_mobile_legal_document') return this.acceptLegalDocument(params)
     throw new Error(`unexpected rpc ${name}`)
+  }
+
+  /**
+   * Test-only DTO producer for GET. Numeric aggregation uses the separately
+   * golden-tested pure method; native PostgreSQL proves SQL math/atomicity.
+   * Fingerprints here are opaque test tokens, never a copy of SQL serialization.
+   * This fixture has no confirmation history or GoTrue/JWT proof.
+   */
+  private signupPhotoSnapshot(params: Row): DbResult {
+    if (typeof params.p_user_id !== 'string' || typeof params.p_include_open_photos !== 'boolean')
+      throw new Error('unexpected signup snapshot arguments')
+    const owner = params.p_user_id
+    const account = this.accounts.find((entry) => entry.id === owner)
+    if (!account || (account.status ?? 'active') !== 'active')
+      return raise('P0002', 'onboarding_user_not_found')
+    const profile = this.profiles.get(owner)
+    const base = {
+      version: 1,
+      user_id: owner,
+      profile_present: profile !== undefined,
+      locale: account.locale === undefined ? 'pt-BR' : account.locale,
+      timezone: account.timezone === undefined ? 'America/Sao_Paulo' : account.timezone,
+      generation_token: {
+        onboarding_completed: profile?.onboarding_completed ?? false,
+        onboarding_completed_at: profile?.onboarding_completed_at ?? null,
+        receipt_count: 0,
+      },
+      poses: [] as unknown[],
+      remaining_uploads: 0,
+      consent: null,
+      estimate: null,
+      candidate: null,
+      confirmation: null,
+    }
+    if (
+      !params.p_include_open_photos ||
+      !profile ||
+      profile.onboarding_completed ||
+      profile.onboarding_completed_at !== null
+    )
+      return { data: base, error: null }
+    const locale = this.legalLocale(owner)
+    const document = locale
+      ? this.currentLegalDocument('body_photo_estimate_consent', locale)
+      : null
+    const accepted =
+      document &&
+      this.legalAcceptances.find(
+        (entry) =>
+          entry.user_id === owner &&
+          entry.legal_document_id === document.id &&
+          entry.document_key === document.document_key &&
+          entry.version === document.version &&
+          entry.locale === document.locale &&
+          entry.body_hash === document.body_hash,
+      )
+    const slots = [
+      { pose: 'front' as const, caption: 'Foto de frente.' },
+      { pose: 'side' as const, caption: 'Foto de lado.' },
+      { pose: 'back' as const, caption: 'Foto de costas.' },
+    ].map(({ pose, caption }) => {
+      const rows = document
+        ? this.mediaAssets.filter(
+            (row) =>
+              row.user_id === owner &&
+              row.kind === 'body_checkin_photo' &&
+              row.signup_origin === true &&
+              row.context_text === caption &&
+              (['uploaded', 'processing', 'processed'].includes(row.status) ||
+                (row.status === 'failed' && row.failure_stage === 'processing')),
+          )
+        : []
+      rows.sort(
+        (a, b) =>
+          Date.parse(b.uploaded_at ?? '1970-01-01T00:00:00Z') -
+            Date.parse(a.uploaded_at ?? '1970-01-01T00:00:00Z') || b.id.localeCompare(a.id),
+      )
+      const row = rows[0]
+      const result = row?.processing_result
+      const reading =
+        result !== null && typeof result === 'object' && !Array.isArray(result)
+          ? (result as Record<string, unknown>)
+          : null
+      const number =
+        reading?.type === 'body' &&
+        typeof reading.bf_percent_estimate === 'number' &&
+        Number.isFinite(reading.bf_percent_estimate)
+          ? reading.bf_percent_estimate
+          : null
+      return { pose, row, number }
+    })
+    const estimate =
+      accepted && slots.every((entry) => entry.row?.status === 'processed')
+        ? estimateSignupBodyFat(
+            slots.map((entry) => ({ pose: entry.pose, bodyFatPercent: entry.number })),
+          )
+        : null
+    const usable = estimate?.by_sex.masculino
+    const candidate = usable?.usable
+      ? {
+          method: 'arithmetic_mean_v1',
+          body_fat_percent: usable.body_fat_percent,
+          source_ids: Object.fromEntries(slots.map((entry) => [entry.pose, entry.row?.id])),
+          fingerprint: sha256Hex(
+            'TEST ONLY OPAQUE TOKEN ' +
+              JSON.stringify(
+                slots.map((entry) => ({
+                  pose: entry.pose,
+                  id: entry.row?.id,
+                  value: entry.number,
+                  uploaded_at: entry.row?.uploaded_at,
+                })),
+              ),
+          ),
+        }
+      : null
+    return {
+      data: {
+        ...base,
+        poses: slots.map(({ pose, row, number }) => ({
+          pose,
+          photo: row
+            ? {
+                id: row.id,
+                created_at: row.created_at,
+                status:
+                  row.status === 'processed'
+                    ? number === null
+                      ? 'unreadable'
+                      : 'read'
+                    : row.status === 'processing'
+                      ? 'reading'
+                      : row.status === 'failed'
+                        ? 'reading_failed'
+                        : 'uploaded',
+              }
+            : null,
+        })),
+        remaining_uploads: document
+          ? Math.max(
+              0,
+              9 -
+                this.mediaAssets.filter(
+                  (row) =>
+                    row.user_id === owner &&
+                    row.kind === 'body_checkin_photo' &&
+                    row.signup_origin === true &&
+                    Date.parse(row.created_at) >= this.now().getTime() - 24 * 60 * 60 * 1000,
+                ).length,
+            )
+          : 0,
+        consent: document
+          ? {
+              legal_document_id: document.id,
+              document_key: document.document_key,
+              version: document.version,
+              locale: document.locale,
+              body: document.body,
+              body_hash: document.body_hash,
+              accepted_at: accepted ? accepted.accepted_at : null,
+            }
+          : null,
+        estimate: estimate ? { is_estimate: true, by_sex: estimate.by_sex } : null,
+        candidate,
+      },
+      error: null,
+    }
   }
 
   // ---- media_assets (20260720153510_bodyflow_secure_media_storage.sql) ----

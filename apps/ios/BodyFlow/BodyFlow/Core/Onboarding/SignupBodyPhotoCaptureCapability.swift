@@ -12,6 +12,7 @@ struct SignupBodyPhotoCaptureScope: Sendable {
     let stagePhoto: @Sendable (Data, MealSourceChannel) async throws -> StagedMedia
     let performWork: @Sendable (@escaping @Sendable () async throws -> Void) async throws -> Void
     let discardStaged: @Sendable (URL) async throws -> Void
+    let rememberUnboundCreate: @Sendable (UUID) async throws -> Void
 
     init(
         userID: String, photos: any SignupBodyPhotosProviding, uploader: any StorageUploading,
@@ -19,7 +20,8 @@ struct SignupBodyPhotoCaptureScope: Sendable {
         validateSession: @escaping @Sendable () async throws -> Void,
         stagePhoto: @escaping @Sendable (Data, MealSourceChannel) async throws -> StagedMedia,
         performWork: @escaping @Sendable (@escaping @Sendable () async throws -> Void) async throws -> Void = { _ in throw SignupBodyPhotoFailure.unavailable },
-        discardStaged: @escaping @Sendable (URL) async throws -> Void = { _ in throw SignupBodyPhotoFailure.unavailable }
+        discardStaged: @escaping @Sendable (URL) async throws -> Void = { _ in throw SignupBodyPhotoFailure.unavailable },
+        rememberUnboundCreate: @escaping @Sendable (UUID) async throws -> Void = { _ in throw SignupBodyPhotoFailure.unavailable }
     ) {
         self.userID = userID
         self.photos = photos
@@ -30,6 +32,7 @@ struct SignupBodyPhotoCaptureScope: Sendable {
         self.stagePhoto = stagePhoto
         self.performWork = performWork
         self.discardStaged = discardStaged
+        self.rememberUnboundCreate = rememberUnboundCreate
     }
 }
 
@@ -41,7 +44,8 @@ struct SignupBodyPhotoCaptureCapability: Sendable {
         lifecycle: any SessionLifecycleProviding,
         uploader: any StorageUploading,
         staging: MediaStagingStore,
-        camera: MealCameraAccess
+        camera: MealCameraAccess,
+        cleanupStore: SignupBodyPhotoCleanupStore = .device
     ) -> Self {
         Self { userID in
             try Task.checkCancellation()
@@ -75,6 +79,13 @@ struct SignupBodyPhotoCaptureCapability: Sendable {
                         }
                     }
                     try await cleanup.value
+                },
+                rememberUnboundCreate: { operationID in
+                    try await lifecycle.performPatientStateOperation(lease: lease) {
+                        try cleanupStore.mutate(for: userID) { current in
+                            _ = current.rememberUnbound(operationID)
+                        }
+                    }
                 }
             )
         }

@@ -263,7 +263,8 @@ struct CaptureModelHarness {
             validateSession: { try Task.checkCancellation() },
             stagePhoto: { data, channel in try await peer.stage(data, channel: channel) },
             performWork: { operation in try await operation() },
-            discardStaged: { url in try await cleanupPeer.discard(url, staging: staging) })
+            discardStaged: { url in try await cleanupPeer.discard(url, staging: staging) },
+            rememberUnboundCreate: { _ in })
         self.base = base; self.staging = staging; self.peer = peer; self.gate = gate
         self.stageGate = stageGate; self.stateGate = stateGate
         self.cleanupGate = cleanupGate; self.cleanupPeer = cleanupPeer

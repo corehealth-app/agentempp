@@ -363,6 +363,10 @@ final class SignupBodyPhotoCaptureModel {
                 guard let original = pipelines[pose]?.createAttempt else { throw SignupBodyPhotoFailure.unavailable }
                 phase = .sending
                 try await boundary(context)
+                // Keep uncertain CREATEs durably, using the same operation on retry.
+                // A cancelled wait cannot prove that the server received nothing.
+                try await scope.rememberUnboundCreate(context.nonce)
+                try await boundary(context)
                 let created = try await scope.photos.create(original)
                 try await boundary(context)
                 guard created.photo.pose == pose, UUID(uuidString: created.photo.id) != nil else { throw SignupBodyPhotoFailure.invalidInput }

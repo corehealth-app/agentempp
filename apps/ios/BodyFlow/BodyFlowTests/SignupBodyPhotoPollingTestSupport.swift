@@ -203,7 +203,8 @@ struct CapturePollingHarness {
                 }
                 await clock.workEnded(); await peer.workEnded(); await gate.workEnded()
             },
-            discardStaged: { url in staging.remove(url) })
+            discardStaged: { url in staging.remove(url) },
+            rememberUnboundCreate: { _ in })
         self.clock = clock; self.peer = peer; self.readGate = gate
         self.ownerBox = ownerBox
         self.model = SignupBodyPhotoCaptureModel(scope: scope, ownerToken: owner,

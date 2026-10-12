@@ -36,7 +36,7 @@ struct AppRootView: View {
         Group {
             rootContent
                 .transition(
-                    hasOutgoingAuthenticatedOwner
+                    hasOutgoingSessionOwner
                         ? .identity
                         : BodyFlowMotion.stateTransition(reduceMotion: effectiveReduceMotion)
                 )
@@ -44,13 +44,13 @@ struct AppRootView: View {
         // The root changes with the brand duration (400 ms) so the Signal
         // Spark mark is seen travelling from the splash into the tab bar.
         .animation(
-            hasOutgoingAuthenticatedOwner
+            hasOutgoingSessionOwner
                 ? nil
                 : BodyFlowMotion.animation(.brand, reduceMotion: effectiveReduceMotion),
             value: rootPresentationKey
         )
         .transaction { transaction in
-            if hasOutgoingAuthenticatedOwner {
+            if hasOutgoingSessionOwner {
                 transaction.animation = nil
                 transaction.disablesAnimations = true
             }
@@ -58,7 +58,7 @@ struct AppRootView: View {
         .installAppDependencies(dependencies)
         .environment(
             \.performeBrandNamespace,
-            hasOutgoingAuthenticatedOwner ? nil : brandNamespace
+            hasOutgoingSessionOwner ? nil : brandNamespace
         )
         // Appearance only: the catalog AccentColor is a historical asset (its
         // dark value is the achievement gold), so every SwiftUI control that
@@ -76,9 +76,11 @@ struct AppRootView: View {
         .environment(appearance)
         .task { await appearance.followSchedule() }
         .onChange(of: scenePhase) { _, phase in
+            model.setCleanupActive(phase == .active)
             if phase == .active { appearance.refreshClock() }
         }
         .task {
+            model.setCleanupActive(scenePhase == .active)
             await model.start()
         }
         .task(id: onboardingTaskID) {
@@ -97,6 +99,7 @@ struct AppRootView: View {
             await (dependencies.localReminders?.scheduler ?? LocalReminderScheduler.system).clearAll()
         }
         .onDisappear {
+            model.setCleanupActive(false)
             onboardingRetryTask?.cancel()
             onboardingRetryTask = nil
         }
@@ -245,10 +248,15 @@ struct AppRootView: View {
         return userID
     }
 
-    /// A removed shell must never remain in the outgoing opacity transition,
-    /// even for one frame: the next root may represent another account.
+    /// A removed shell or onboarding must not remain in an outgoing transition:
+    /// the next root may represent a different authentication activation.
     /// After teardown, the neutral root may animate into its safe destination.
-    private var hasOutgoingAuthenticatedOwner: Bool {
+    private var hasOutgoingSessionOwner: Bool {
+        if let owner = onboardingCoordinator.ownerToken,
+           owner != model.onboardingOwnerToken { return true }
+        if case .onboarding = model.state, model.onboardingOwnerToken == nil {
+            return true
+        }
         if authenticatedShellCoordinator.tearingDownOwner != nil { return true }
         guard let owner = authenticatedShellCoordinator.renderableOwner else {
             return false
@@ -257,8 +265,7 @@ struct AppRootView: View {
     }
 
     private var onboardingUserID: String? {
-        guard case .onboarding(let userID, _) = model.state else { return nil }
-        return userID
+        model.onboardingOwnerToken?.userID
     }
 
     private var onboardingTaskID: OnboardingRootTaskID {
@@ -323,6 +330,10 @@ struct AppRootView: View {
                       onboardingUserID == userID, model.onboardingOwnerToken == ownerToken else { return }
                 guard let ownerToken else { return }
                 model.completeOnboarding(ownerToken: ownerToken)
+            },
+            onOfficialCleanupObserved: { observation in
+                guard let ownerToken else { return }
+                _ = await model.observeOnboardingCleanup(observation, ownerToken: ownerToken)
             }
         )
     }
@@ -393,7 +404,8 @@ struct OnboardingRootCoordinator {
         idempotencyKeyProvider: any IdempotencyKeyProviding = RandomIdempotencyKeyProvider(),
         telemetry: any TelemetryClient,
         onStepChanged: @escaping @MainActor (OnboardingStep) -> Void,
-        onCompleted: @escaping @MainActor () -> Void
+        onCompleted: @escaping @MainActor () -> Void,
+        onOfficialCleanupObserved: @escaping @MainActor (OnboardingBodyPhotoCleanupScope?) async -> Void = { _ in }
     ) {
         guard let activeUserID else {
             flowModel?.invalidate()
@@ -425,7 +437,8 @@ struct OnboardingRootCoordinator {
             idempotencyKeyProvider: idempotencyKeyProvider,
             telemetry: telemetry,
             onStepChanged: onStepChanged,
-            onCompleted: onCompleted
+            onCompleted: onCompleted,
+            onOfficialCleanupObserved: onOfficialCleanupObserved
         )
     }
 }

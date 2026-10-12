@@ -37,6 +37,7 @@ struct BodyFlowApp: App {
             onboarding: dependencies.onboarding,
             persona: dependencies.coachPersona,
             telemetry: dependencies.telemetry,
+            signupBodyPhotoCleanup: dependencies.signupBodyPhotoCleanup,
             developmentConsentAvailability: configuration.developmentConsentAvailability
         ))
     }

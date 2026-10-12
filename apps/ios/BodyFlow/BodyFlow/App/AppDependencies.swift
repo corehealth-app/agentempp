@@ -38,6 +38,8 @@ struct AppDependencies: Sendable {
     var planDrafts: PlanDraftCapability? = nil
     /// Current objective, official daily targets and entry message; read only.
     var currentObjective: (any CurrentObjectiveProviding)? = nil
+    /// Technical owner/G cleanup; only a real authenticated lifecycle can bind it.
+    var signupBodyPhotoCleanup: SignupBodyPhotoCleanupCapability? = nil
     /// The guided tour's per-account answer on this iPhone and whether it
     /// offers itself on the first entry.
     var guidedTutorial = GuidedTutorialCapability(
@@ -89,7 +91,8 @@ struct AppDependencies: Sendable {
         supabaseAuthFetch: SupabaseAuthRemoteClient.Fetch? = nil,
         sessionLifecycleOverride: (any SessionLifecycleProviding)? = nil,
         sessionRefreshPolicy: SessionRefreshPolicy = .production,
-        onboardingDeviceDraft: OnboardingDeviceDraftStore = .device
+        onboardingDeviceDraft: OnboardingDeviceDraftStore = .device,
+        signupBodyPhotoCleanupStore: SignupBodyPhotoCleanupStore = .device
     ) -> AppDependencies {
         let secureStore: any SecureStoring = switch configuration.demoStorageBoundary {
         case .memory:
@@ -651,6 +654,17 @@ struct AppDependencies: Sendable {
         }
         #endif
 
+        let signupBodyPhotoCleanup: SignupBodyPhotoCleanupCapability?
+        if configuration.mode != .demo,
+           let transport = apiClient as? MobileAPITransport,
+           let releaseLifecycle {
+            signupBodyPhotoCleanup = .live(transport: transport, lifecycle: releaseLifecycle,
+                store: signupBodyPhotoCleanupStore, keyProvider: idempotencyKeyProvider,
+                timeProvider: timeProvider)
+        } else {
+            signupBodyPhotoCleanup = nil
+        }
+
         return AppDependencies(
             apiClient: apiClient,
             authentication: authentication,
@@ -679,6 +693,7 @@ struct AppDependencies: Sendable {
             mealCapture: mealCapture,
             planDrafts: planDrafts,
             currentObjective: currentObjective,
+            signupBodyPhotoCleanup: signupBodyPhotoCleanup,
             guidedTutorial: guidedTutorial
         )
     }

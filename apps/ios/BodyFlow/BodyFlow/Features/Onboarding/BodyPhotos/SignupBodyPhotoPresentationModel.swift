@@ -3,6 +3,27 @@ import Observation
 
 enum SignupBodyPhotoRoute: Hashable, Sendable { case consent, capture, result }
 
+struct SignupBodyPhotoProducerAuthorization: Sendable {
+    private let validation: @Sendable () async throws -> Void
+    init(validate: @escaping @Sendable () async throws -> Void) {
+        validation = validate
+    }
+    func validate() async throws { try await validation() }
+}
+
+/// SDK callbacks can ignore cancellation or resume outside the producer task.
+/// Revocation is synchronous; every access to the flag is protected by the lock.
+private final class SignupBodyPhotoProducerLifetime: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isActive = true
+
+    func revoke() { lock.withLock { isActive = false } }
+
+    func validate() throws {
+        guard lock.withLock({ isActive }) else { throw CancellationError() }
+    }
+}
+
 /// One retained session scope and capture model. Official publications can
 /// revalidate a photo proof; only a separate explicit action confirms it.
 @MainActor
@@ -27,6 +48,11 @@ final class SignupBodyPhotoPresentationModel {
     private(set) var deletion: SignupBodyPhotoExplicitDeletionModel?
     private(set) var isActive = true
     private(set) var loadFailed = false
+
+    var camera: MealCameraAccess? {
+        guard allowsPhotoAction, capture?.hasAcceptedConsent == true else { return nil }
+        return scope?.camera
+    }
 
     var availability: SignupBodyPhotoAvailability {
         guard currentOwner, !flow.isReacceptance, !loadFailed else { return .unavailable }
@@ -137,6 +163,39 @@ final class SignupBodyPhotoPresentationModel {
         leavePhotos(choice: flow.draft.bodyFatPercent == nil ? nil : .typed)
     }
 
+    func producePhoto(pose: SignupBodyPhotoPose, channel: MealSourceChannel,
+        load: @escaping @Sendable (SignupBodyPhotoProducerAuthorization) async throws -> Data?) async {
+        guard allowsPhotoAction, channel.isPhoto, let scope, let capture,
+              capture.hasAcceptedConsent else { return }
+        let producerEpoch = epoch
+        let controller = retainedDeletionController(scope: scope, capture: capture)
+        let lifetime = SignupBodyPhotoProducerLifetime()
+        let authorization = SignupBodyPhotoProducerAuthorization { [weak self, weak capture] in
+            try lifetime.validate()
+            guard let self, let capture else { throw CancellationError() }
+            try await self.validateProducer(producerEpoch, capture: capture)
+            try lifetime.validate()
+        }
+        // D1 retains the producer before its first await and drains it before
+        // DELETE. The captured mode and consumer identity cannot revive on reentry.
+        await controller.producePhoto(pose: pose, channel: channel) {
+            try await withTaskCancellationHandler {
+                defer { lifetime.revoke() }
+                try await authorization.validate()
+                let data: Data?
+                do { data = try await load(authorization) }
+                catch {
+                    // A late SDK error has the same authority boundary as
+                    // late bytes. Preserve errors only for the current loader.
+                    try await authorization.validate()
+                    throw error
+                }
+                try await authorization.validate()
+                return data
+            } onCancel: { lifetime.revoke() }
+        }
+    }
+
     func capture(_ data: Data, pose: SignupBodyPhotoPose, channel: MealSourceChannel) async {
         guard allowsPhotoAction, let capture, capture.hasAcceptedConsent else { return }
         await capture.capture(data, pose: pose, channel: channel)
@@ -154,17 +213,37 @@ final class SignupBodyPhotoPresentationModel {
         guard allowsAction, deletionIntent == nil, let scope, let capture,
               let intent = flow.beginBodyPhotoDeletion(for: ownerToken) else { return }
         deletionIntent = intent
-        let controller: SignupBodyPhotoExplicitDeletionModel
-        if let deletion { controller = deletion }
-        else {
-            controller = SignupBodyPhotoExplicitDeletionModel(scope: scope, ownerToken: ownerToken,
-                captureModel: capture, timeProvider: timeProvider, keyProvider: keyProvider,
-                pollingTiming: pollingTiming,
-                onStateObserved: { [weak self] state in self?.observe(state) },
-                isCurrentOwner: isCurrentOwner)
-            deletion = controller
-        }
+        let controller = retainedDeletionController(scope: scope, capture: capture)
         await runDeletion(controller, intent: intent, retry: false)
+    }
+
+    private func retainedDeletionController(scope: SignupBodyPhotoCaptureScope,
+        capture: SignupBodyPhotoCaptureModel) -> SignupBodyPhotoExplicitDeletionModel {
+        if let deletion { return deletion }
+        let controller = SignupBodyPhotoExplicitDeletionModel(scope: scope, ownerToken: ownerToken,
+            captureModel: capture, timeProvider: timeProvider, keyProvider: keyProvider,
+            pollingTiming: pollingTiming,
+            onStateObserved: { [weak self] state in self?.observe(state) },
+            isCurrentOwner: isCurrentOwner)
+        deletion = controller
+        return controller
+    }
+
+    private func validateProducer(_ producerEpoch: Int,
+        capture: SignupBodyPhotoCaptureModel) async throws {
+        try checkProducer(producerEpoch, capture: capture)
+        guard let scope else { throw CancellationError() }
+        try await scope.validateSession()
+        try checkProducer(producerEpoch, capture: capture)
+    }
+
+    private func checkProducer(_ producerEpoch: Int,
+        capture: SignupBodyPhotoCaptureModel) throws {
+        guard epoch == producerEpoch, allowsPhotoAction, self.capture === capture,
+              capture.isActive, capture.hasAcceptedConsent, deletion?.canCapture == true else {
+            throw CancellationError()
+        }
+        try Task.checkCancellation()
     }
 
     func retryDeletion() async {

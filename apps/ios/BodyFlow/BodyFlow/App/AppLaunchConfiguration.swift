@@ -271,6 +271,26 @@ enum DemoPrompt14ScenarioSelection: Equatable, Sendable {
 #endif
 
 #if DEBUG
+enum SignupBodyPhotoPreviewScenario: CaseIterable, Equatable, Sendable {
+    case read, unreadable, offline, unavailable, limit, outOfRange, minor
+
+    var launchArgument: String {
+        switch self {
+        case .read: "--ui-testing-signup-body-photos-read"
+        case .unreadable: "--ui-testing-signup-body-photos-unreadable"
+        case .offline: "--ui-testing-signup-body-photos-offline"
+        case .unavailable: "--ui-testing-signup-body-photos-unavailable"
+        case .limit: "--ui-testing-signup-body-photos-limit"
+        case .outOfRange: "--ui-testing-signup-body-photos-out-of-range"
+        case .minor: "--ui-testing-signup-body-photos-minor"
+        }
+    }
+
+    static func resolve(arguments: [String]) -> Self? {
+        allCases.first { arguments.contains($0.launchArgument) }
+    }
+}
+
 enum OnboardingEligibilityPreviewScenario: Sendable {
     case choice, assigned, gainBlocked, welcome, failure, completionUncertain
     /// The read of the sign-up is refused: the e-mail administers the team's
@@ -304,6 +324,7 @@ struct AppLaunchConfiguration: Sendable {
     let demoKeychainService: String
     #if DEBUG
     let onboardingEligibilityScenario: OnboardingEligibilityPreviewScenario?
+    let signupBodyPhotoScenario: SignupBodyPhotoPreviewScenario?
     /// UI-test fixture: the sign-up runs on the repository of a real account
     /// over a stand-in server, so what it keeps on the phone can be driven.
     let usesOnboardingDeviceDraftFixture: Bool
@@ -323,6 +344,7 @@ struct AppLaunchConfiguration: Sendable {
         demoStorageBoundary: DemoStorageBoundary = .memory,
         demoKeychainService: String = DemoStorageService.development,
         onboardingEligibilityScenario: OnboardingEligibilityPreviewScenario? = nil,
+        signupBodyPhotoScenario: SignupBodyPhotoPreviewScenario? = nil,
         usesOnboardingDeviceDraftFixture: Bool = false,
         prompt13Scenario: DemoBodyFlowScenario? = nil,
         prompt14Scenario: DemoPrompt14Scenario? = nil,
@@ -337,6 +359,7 @@ struct AppLaunchConfiguration: Sendable {
         self.demoStorageBoundary = demoStorageBoundary
         self.demoKeychainService = demoKeychainService
         self.onboardingEligibilityScenario = mode == .demo ? onboardingEligibilityScenario : nil
+        self.signupBodyPhotoScenario = mode == .demo ? signupBodyPhotoScenario : nil
         self.usesOnboardingDeviceDraftFixture = mode == .demo && usesOnboardingDeviceDraftFixture
         self.prompt13Scenario = mode == .demo ? prompt13Scenario : nil
         self.prompt14Scenario = mode == .demo ? prompt14Scenario : nil
@@ -462,6 +485,21 @@ struct AppLaunchConfiguration: Sendable {
                 demoStorageBoundary: .keychain,
                 demoKeychainService: DemoStorageService.uiTesting,
                 usesOnboardingDeviceDraftFixture: true
+            )
+        }
+
+        // DEBUG state fixtures only. B7 owns capability/session and capture wiring.
+        // Do not use the generic helper: it preloads BF25/completed onboarding.
+        if let scenario = SignupBodyPhotoPreviewScenario.resolve(arguments: arguments) {
+            return AppLaunchConfiguration(
+                mode: .demo,
+                shouldResetDemoState: true,
+                startsWithCompletedFixture: false,
+                preloadsSyntheticOnboardingValues: false,
+                authBehavior: .succeed(after: nil),
+                demoStorageBoundary: .keychain,
+                demoKeychainService: DemoStorageService.uiTesting,
+                signupBodyPhotoScenario: scenario
             )
         }
 

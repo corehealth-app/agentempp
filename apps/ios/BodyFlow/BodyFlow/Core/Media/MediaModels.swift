@@ -16,6 +16,7 @@ enum MediaUploadKind: String, Codable, Hashable, Sendable {
     case mealPhoto = "meal_photo"
     case audioNote = "audio_note"
     case planDocument = "plan_document"
+    case signupBodyPhoto = "body_checkin_photo"
 }
 
 struct MediaUploadRequest: Codable, Hashable, Sendable {

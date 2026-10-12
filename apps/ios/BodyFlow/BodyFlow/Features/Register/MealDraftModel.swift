@@ -240,8 +240,8 @@ final class MealDraftModel {
         case .mealPhoto:
             guard staged.channel.isPhoto else { return .invalidInput }
             return staged.sizeBytes > MealMediaLimits.maximumPhotoBytes ? .fileTooLarge : nil
-        case .planDocument:
-            // Plan documents travel through the plan import, never as a meal.
+        case .planDocument, .signupBodyPhoto:
+            // Plans and signup body photos use their dedicated flows, never a meal.
             return .invalidInput
         case .audioNote:
             guard staged.channel.isAudio else { return .invalidInput }

@@ -6,8 +6,8 @@ enum SignupBodyPhotoCapturePhase: Equatable, Sendable {
     case failed(SignupBodyPhotoFailure)
 }
 
-/// Initial capture subgroup only. Polling, explicit deletion, repair debt and
-/// root/UI callbacks are separate integrations; no estimate is written here.
+/// Capture and one owner-bound reading poll. Explicit deletion, repair debt
+/// and root/UI callbacks remain separate; no estimate is written here.
 @MainActor
 @Observable
 final class SignupBodyPhotoCaptureModel {
@@ -15,6 +15,19 @@ final class SignupBodyPhotoCaptureModel {
         let epoch: Int
         let nonce: UUID
         let pose: SignupBodyPhotoPose?
+    }
+    private struct PollContext: Sendable {
+        let epoch: Int
+        let nonce: UUID
+    }
+    private struct ReadingAnchor: Sendable {
+        let assetID: String
+        let startedAt: Duration
+    }
+    private struct PollWaiter {
+        let nonce: UUID
+        let untilStopped: Bool
+        let continuation: CheckedContinuation<Bool, Never>
     }
     private struct Pipeline: Sendable {
         let nonce: UUID
@@ -42,11 +55,22 @@ final class SignupBodyPhotoCaptureModel {
     private let ownerToken: OnboardingOwnerToken
     private let timeProvider: any TimeProviding
     private let keyProvider: any IdempotencyKeyProviding
+    private let pollingTiming: SignupBodyPhotoPollingTiming
     private let isCurrentOwner: @MainActor @Sendable (OnboardingOwnerToken) -> Bool
     private var epoch = 0
     private var loadNonce = UUID()
     private var consentNonce = UUID()
     private var readNonce = UUID()
+    private var pollNonce = UUID()
+    private var pollTask: Task<Void, Never>?
+    private var ownedPollTasks: [UUID: Task<Void, Never>] = [:]
+    private var pollStartedNonce: UUID?
+    private var lastPollStoppedSuccessfully = false
+    private var pollWaiters: [UUID: PollWaiter] = [:]
+    private var pollTerminal: Outcome?
+    private var pollReadIdentity: UUID?
+    private var readingAnchors: [SignupBodyPhotoPose: ReadingAnchor] = [:]
+    private var lastReadingElapsed = Duration.zero
     private var declined = false
     private var consentAttempt: MutationAttempt<SignupBodyPhotoConsentRequest>?
     private var consentTask: Task<Void, Never>?
@@ -62,6 +86,7 @@ final class SignupBodyPhotoCaptureModel {
     private(set) var state: SignupBodyPhotoState?
     private(set) var hasAcceptedConsent = false
     private(set) var isActive = true
+    private(set) var hasExceededReadingWait = false
 
     /// Internal resource boundary for deterministic lifecycle tests. This is
     /// only the model's pending input, not caller/camera or process memory.
@@ -72,22 +97,56 @@ final class SignupBodyPhotoCaptureModel {
     init(scope: SignupBodyPhotoCaptureScope, ownerToken: OnboardingOwnerToken,
          timeProvider: any TimeProviding = SystemTimeProvider(),
          keyProvider: any IdempotencyKeyProviding = RandomIdempotencyKeyProvider(),
+         pollingTiming: SignupBodyPhotoPollingTiming = .live(),
          isCurrentOwner: @escaping @MainActor @Sendable (OnboardingOwnerToken) -> Bool) {
         self.scope = scope; self.ownerToken = ownerToken
         self.timeProvider = timeProvider; self.keyProvider = keyProvider
+        self.pollingTiming = pollingTiming
         self.isCurrentOwner = isCurrentOwner
+    }
+
+    /// Internal readiness from the model task, never from load or a producer.
+    /// Terminal success is signalled only after finish, guards and publication.
+    func waitForPollingEvent(untilStopped: Bool = false) async -> Bool {
+        guard currentOwner else { return false }
+        guard pollTask != nil else {
+            return untilStopped && lastPollStoppedSuccessfully
+        }
+        if !untilStopped, pollStartedNonce == pollNonce { return true }
+        let id = UUID(), nonce = pollNonce
+        return await withTaskCancellationHandler {
+            guard !Task.isCancelled else { return false }
+            return await withCheckedContinuation { continuation in
+                pollWaiters[id] = PollWaiter(nonce: nonce, untilStopped: untilStopped,
+                    continuation: continuation)
+            }
+        } onCancel: { Task { @MainActor in self.cancelPollWaiter(id) } }
+    }
+
+    /// Await only polling tasks already superseded by pause/invalidation.
+    /// This is local completion, never proof of remote cancellation. It uses
+    /// retained work and does not include a newly armed poll or acquire a lease.
+    func waitForStoppedPollingWork() async {
+        let stopped = ownedPollTasks.filter { $0.key != pollNonce }.map(\.value)
+        for work in stopped { await work.value }
     }
 
     func load() async {
         guard currentOwner else { return }
+        pausePolling()
         loadNonce = UUID()
         let context = Context(epoch: epoch, nonce: loadNonce, pose: nil)
         do {
             let snapshot = try await fetchState(context, consent: false)
-            try check(context, consent: false)
+            let identity = readNonce
+            let elapsed = await pollingTiming.elapsed()
+            try await boundary(context, consent: false)
+            guard identity == readNonce else { throw CancellationError() }
+            refreshReadingWait(snapshot, elapsed: elapsed)
             state = snapshot
             hasAcceptedConsent = !declined && snapshot.available && snapshot.consent?.acceptedAt != nil
-            phase = snapshot.available ? (hasAcceptedConsent ? .idle : .awaitingConsent) : .failed(.unavailable)
+            phase = snapshot.available ? (hasAcceptedConsent ? (reading(snapshot) ? .reading : .idle) : .awaitingConsent) : .failed(.unavailable)
+            armPollingIfNeeded()
         } catch { publishFailure(error, context, consent: false) }
     }
 
@@ -100,6 +159,7 @@ final class SignupBodyPhotoCaptureModel {
             }
         } catch { phase = .failed(.unavailable); return }
         guard let original = consentAttempt else { return }
+        pausePolling()
         consentTask?.cancel()
         consentNonce = UUID()
         let context = Context(epoch: epoch, nonce: consentNonce, pose: nil)
@@ -130,17 +190,19 @@ final class SignupBodyPhotoCaptureModel {
                 self.state = SignupBodyPhotoState(available: current.available, unavailableReason: current.unavailableReason,
                     consent: accepted, minimumAge: current.minimumAge, poses: current.poses,
                     estimate: current.estimate, remainingUploads: current.remainingUploads)
-                self.phase = .idle
+                self.phase = self.reading(current) ? .reading : .idle
             } catch { self.publishFailure(error, context, consent: true) }
             self.consentResults[context.nonce] = nil
         }
         consentTask = work
         await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
         if consentNonce == context.nonce { consentTask = nil }
+        armPollingIfNeeded()
     }
 
     func declineConsent() {
         guard currentOwner else { return }
+        pausePolling(clearAnchors: true)
         epoch += 1
         declined = true; hasAcceptedConsent = false; consentAttempt = nil
         consentTask?.cancel()
@@ -155,6 +217,9 @@ final class SignupBodyPhotoCaptureModel {
     func capture(_ data: Data, pose: SignupBodyPhotoPose, channel: MealSourceChannel) async {
         guard currentOwner, hasAcceptedConsent, !declined, state?.available == true else { return }
         guard channel.isPhoto else { phase = .failed(.invalidInput); return }
+        pausePolling()
+        // A failed retake can leave the same official photo in place. Its
+        // reading age changes only when a fresh snapshot has another ID.
         let previous = tasks[pose]
         let previousNonce = pipelines[pose]?.nonce
         previous?.cancel()
@@ -167,10 +232,12 @@ final class SignupBodyPhotoCaptureModel {
     func retry(pose: SignupBodyPhotoPose) async {
         guard currentOwner, hasAcceptedConsent, !declined, state?.available == true,
               tasks[pose] == nil, let pipeline = pipelines[pose] else { return }
+        pausePolling()
         await start(Context(epoch: epoch, nonce: pipeline.nonce, pose: pose), previous: nil, previousNonce: nil)
     }
 
     func invalidate() {
+        pausePolling(clearAnchors: true)
         epoch += 1; isActive = false; hasAcceptedConsent = false
         consentTask?.cancel()
         for task in tasks.values { task.cancel() }
@@ -225,8 +292,12 @@ final class SignupBodyPhotoCaptureModel {
                     try await self.executeCapture(context)
                 }
                 try await self.boundary(context)
-                guard let outcome = self.outcomes.removeValue(forKey: context.nonce) else { throw SignupBodyPhotoFailure.unavailable }
+                guard let outcome = self.outcomes[context.nonce] else { throw SignupBodyPhotoFailure.unavailable }
                 guard outcome.readIdentity == self.readNonce else { throw CancellationError() }
+                let elapsed = await self.pollingTiming.elapsed()
+                try await self.boundary(context)
+                guard outcome.readIdentity == self.readNonce else { throw CancellationError() }
+                self.refreshReadingWait(outcome.snapshot, elapsed: elapsed)
                 self.state = outcome.snapshot
                 self.hasAcceptedConsent = !self.declined && outcome.snapshot.available && outcome.snapshot.consent?.acceptedAt != nil
                 if let failure = outcome.failure { self.phase = .failed(failure) }
@@ -252,6 +323,7 @@ final class SignupBodyPhotoCaptureModel {
         tasks[pose] = work
         await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
         if pipelines[pose]?.nonce == context.nonce { tasks[pose] = nil }
+        armPollingIfNeeded()
     }
 
     private func executeCapture(_ context: Context) async throws {
@@ -392,6 +464,154 @@ final class SignupBodyPhotoCaptureModel {
         if failure == .sessionChanged { invalidate(); return }
         if failure == .consentRequired || failure == .ageNotAllowed || failure == .signupCompleted { hasAcceptedConsent = false }
         phase = .failed(failure)
+    }
+
+    private func refreshReadingWait(_ snapshot: SignupBodyPhotoState, elapsed: Duration) {
+        lastReadingElapsed = elapsed
+        guard snapshot.available, !declined, snapshot.consent?.acceptedAt != nil else {
+            readingAnchors.removeAll(); hasExceededReadingWait = false
+            return
+        }
+        var next: [SignupBodyPhotoPose: ReadingAnchor] = [:]
+        for slot in snapshot.poses {
+            guard let photo = slot.photo, photo.status == "uploaded" || photo.status == "reading" else { continue }
+            if let old = readingAnchors[slot.pose], old.assetID == photo.id { next[slot.pose] = old }
+            else { next[slot.pose] = ReadingAnchor(assetID: photo.id, startedAt: elapsed) }
+        }
+        readingAnchors = next
+        updateReadingWaitFlag()
+    }
+
+    private func updateReadingWaitFlag() {
+        hasExceededReadingWait = readingAnchors.values.contains {
+            lastReadingElapsed - $0.startedAt > .seconds(120)
+        }
+    }
+
+    private func armPollingIfNeeded() {
+        guard currentOwner, hasAcceptedConsent, !declined, phase == .reading,
+              let snapshot = state, snapshot.available, reading(snapshot), pollTask == nil,
+              tasks.values.allSatisfy({ $0.isCancelled }) else { return }
+        pollNonce = UUID(); pollStartedNonce = nil; lastPollStoppedSuccessfully = false
+        pollTerminal = nil; pollReadIdentity = nil
+        let context = PollContext(epoch: epoch, nonce: pollNonce)
+        let work = Task { await self.runPoll(context) }
+        pollTask = work
+        ownedPollTasks[context.nonce] = work
+    }
+
+    private func runPoll(_ context: PollContext) async {
+        var stoppedSuccessfully = false
+        do {
+            try await pollBoundary(context)
+            try await scope.performWork { try await self.pollLoop(context) }
+            // The scope's finish is complete before terminal publication.
+            try await pollBoundary(context)
+            guard let terminal = pollTerminal, terminal.readIdentity == readNonce else { throw CancellationError() }
+            let elapsed = await pollingTiming.elapsed()
+            try await pollBoundary(context)
+            guard terminal.readIdentity == readNonce else { throw CancellationError() }
+            publishPollSnapshot(terminal.snapshot, elapsed: elapsed)
+            stoppedSuccessfully = true
+        } catch {
+            // An old success or error never publishes through a new owner,
+            // capture, explicit read, or poll generation.
+            do {
+                try checkPoll(context)
+                if let identity = pollReadIdentity, identity != readNonce { throw CancellationError() }
+                if !(error is CancellationError) {
+                    let failure = SignupBodyPhotoFailure(error)
+                    if failure == .sessionChanged { invalidate() }
+                    else { phase = .failed(failure) }
+                }
+            } catch { /* obsolete/cancelled work has no public effect */ }
+        }
+        finishPolling(context, successfully: stoppedSuccessfully)
+    }
+
+    private func pollLoop(_ context: PollContext) async throws {
+        while true {
+            try await pollBoundary(context)
+            signalPollStarted(context)
+            try await pollingTiming.sleep(.milliseconds(1_500))
+            try await pollBoundary(context)
+            let request = UUID(); readNonce = request; pollReadIdentity = request
+            let snapshot: SignupBodyPhotoState
+            do {
+                snapshot = try await scope.photos.state()
+                try await pollBoundary(context)
+                guard request == readNonce else { throw CancellationError() }
+            } catch {
+                try checkPoll(context)
+                guard request == readNonce else { throw CancellationError() }
+                throw error
+            }
+            let elapsed = await pollingTiming.elapsed()
+            try await pollBoundary(context)
+            guard request == readNonce else { throw CancellationError() }
+            if snapshot.available, !declined, snapshot.consent?.acceptedAt != nil, reading(snapshot) {
+                publishPollSnapshot(snapshot, elapsed: elapsed)
+            } else {
+                pollTerminal = Outcome(snapshot: snapshot, failure: nil, readIdentity: request)
+                return
+            }
+        }
+    }
+
+    private func publishPollSnapshot(_ snapshot: SignupBodyPhotoState, elapsed: Duration) {
+        refreshReadingWait(snapshot, elapsed: elapsed)
+        state = snapshot
+        hasAcceptedConsent = !declined && snapshot.available && snapshot.consent?.acceptedAt != nil
+        if !snapshot.available { phase = .failed(.unavailable) }
+        else if !hasAcceptedConsent { phase = .awaitingConsent }
+        else if reading(snapshot) { phase = .reading }
+        else if snapshot.poses.contains(where: { $0.photo?.status == "reading_failed" }) { phase = .failed(.readingFailed) }
+        else { phase = .ready }
+    }
+
+    private func checkPoll(_ context: PollContext) throws {
+        guard currentOwner, epoch == context.epoch, pollNonce == context.nonce else { throw CancellationError() }
+    }
+
+    private func pollBoundary(_ context: PollContext) async throws {
+        try checkPoll(context)
+        try await scope.validateSession()
+        try checkPoll(context)
+    }
+
+    private func signalPollStarted(_ context: PollContext) {
+        guard pollNonce == context.nonce else { return }
+        pollStartedNonce = context.nonce
+        resolvePollWaiters(context.nonce, stopped: false, value: true)
+    }
+
+    private func finishPolling(_ context: PollContext, successfully: Bool) {
+        ownedPollTasks[context.nonce] = nil
+        guard pollNonce == context.nonce else { return }
+        pollTask = nil; pollTerminal = nil; pollReadIdentity = nil
+        lastPollStoppedSuccessfully = successfully
+        resolvePollWaiters(context.nonce, stopped: true, value: successfully)
+    }
+
+    private func pausePolling(clearAnchors: Bool = false) {
+        let old = pollNonce
+        pollTask?.cancel(); pollTask = nil
+        pollNonce = UUID(); readNonce = UUID()
+        pollStartedNonce = nil; lastPollStoppedSuccessfully = false
+        pollTerminal = nil; pollReadIdentity = nil
+        resolvePollWaiters(old, stopped: true, value: false)
+        if clearAnchors { readingAnchors.removeAll(); hasExceededReadingWait = false }
+    }
+
+    private func resolvePollWaiters(_ nonce: UUID, stopped: Bool, value: Bool) {
+        let ids = pollWaiters.compactMap { id, waiter in
+            waiter.nonce == nonce && (stopped || !waiter.untilStopped) ? id : nil
+        }
+        for id in ids { pollWaiters.removeValue(forKey: id)?.continuation.resume(returning: value) }
+    }
+
+    private func cancelPollWaiter(_ id: UUID) {
+        pollWaiters.removeValue(forKey: id)?.continuation.resume(returning: false)
     }
 
     private func requestAllOwnedCleanup() {

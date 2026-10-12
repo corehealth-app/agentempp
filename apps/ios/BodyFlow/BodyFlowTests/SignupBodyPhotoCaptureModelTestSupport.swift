@@ -117,6 +117,7 @@ actor CaptureServerPeer: SignupBodyPhotosProviding, StorageUploading {
     private let replay: CaptureReplayScript
     private var failOnceAt: CaptureFailurePoint?
     private var readingFailsOnce: Bool
+    private let returnsReading: Bool
     private var accepted = false
     private var acceptedVersion: String?
     private var documentVersion = "test-v1"
@@ -133,11 +134,12 @@ actor CaptureServerPeer: SignupBodyPhotosProviding, StorageUploading {
          failOnceAt: CaptureFailurePoint? = nil, replay: CaptureReplayScript = .none,
          readingFailsOnce: Bool = false, otherPosesPresent: Bool = false,
          stageGate: CaptureConsentGate? = nil, stateGate: CaptureConsentGate? = nil,
-         failStateAfterComplete: Bool = false, cooperativeStage: Bool = false) {
+         failStateAfterComplete: Bool = false, cooperativeStage: Bool = false, returnsReading: Bool = false) {
         self.staging = staging; self.consentGate = consentGate; self.available = available
         self.stageGate = stageGate; self.stateGate = stateGate
         self.failStateAfterComplete = failStateAfterComplete
         self.cooperativeStage = cooperativeStage
+        self.returnsReading = returnsReading
         self.failOnceAt = failOnceAt; self.replay = replay; self.readingFailsOnce = readingFailsOnce
         if otherPosesPresent {
             byPose[.side] = SignupBodyPhotoOperationPhoto(id: "00000000-0000-4000-8000-000000910002", pose: .side, status: "read", createdAt: timestamp)
@@ -208,7 +210,7 @@ actor CaptureServerPeer: SignupBodyPhotosProviding, StorageUploading {
     func complete(_ attempt: MutationAttempt<MediaAssetCommand>) async throws -> SignupBodyPhotoCompleteReceipt {
         calls.append(.complete(attempt))
         guard let current = byPose.values.first(where: { $0.id == attempt.payload.assetID }) else { throw SignupBodyPhotoFailure.invalidInput }
-        let status = readingFailsOnce ? "reading_failed" : "read"
+        let status = readingFailsOnce ? "reading_failed" : (returnsReading ? "reading" : "read")
         readingFailsOnce = false
         let photo = SignupBodyPhotoOperationPhoto(id: current.id, pose: current.pose, status: status, createdAt: current.createdAt)
         byPose[current.pose] = photo
@@ -246,7 +248,8 @@ struct CaptureModelHarness {
     init(available: Bool = true, failOnceAt: CaptureFailurePoint? = nil, replay: CaptureReplayScript = .none,
          holdConsent: Bool = false, readingFailsOnce: Bool = false, otherPosesPresent: Bool = false,
          holdStage: Bool = false, holdCleanup: Bool = false, failCleanupOnce: Bool = false,
-         failStateAfterComplete: Bool = false, cooperativeStage: Bool = false) {
+         failStateAfterComplete: Bool = false, cooperativeStage: Bool = false, returnsReading: Bool = false,
+         pollingTiming: SignupBodyPhotoPollingTiming = .live()) {
         let base = FileManager.default.temporaryDirectory.appendingPathComponent("signup-model-\(UUID().uuidString)", isDirectory: true)
         let staging = MediaStagingStore(temporaryDirectory: base)
         let gate = CaptureConsentGate(holds: holdConsent)
@@ -254,7 +257,7 @@ struct CaptureModelHarness {
         let stateGate = CaptureConsentGate(holds: true)
         let cleanupGate = CaptureConsentGate(holds: holdCleanup)
         let cleanupPeer = CaptureCleanupPeer(gate: cleanupGate, failOnce: failCleanupOnce)
-        let peer = CaptureServerPeer(staging: staging, consentGate: gate, available: available, failOnceAt: failOnceAt, replay: replay, readingFailsOnce: readingFailsOnce, otherPosesPresent: otherPosesPresent, stageGate: stageGate, stateGate: stateGate, failStateAfterComplete: failStateAfterComplete, cooperativeStage: cooperativeStage)
+        let peer = CaptureServerPeer(staging: staging, consentGate: gate, available: available, failOnceAt: failOnceAt, replay: replay, readingFailsOnce: readingFailsOnce, otherPosesPresent: otherPosesPresent, stageGate: stageGate, stateGate: stateGate, failStateAfterComplete: failStateAfterComplete, cooperativeStage: cooperativeStage, returnsReading: returnsReading)
         let ownerToken = OnboardingOwnerToken(userID: Self.owner, restoreGeneration: 1)
         let scope = SignupBodyPhotoCaptureScope(userID: Self.owner, photos: peer, uploader: peer, staging: staging, camera: .unavailable,
             validateSession: { try Task.checkCancellation() },
@@ -266,6 +269,7 @@ struct CaptureModelHarness {
         self.cleanupGate = cleanupGate; self.cleanupPeer = cleanupPeer
         self.model = SignupBodyPhotoCaptureModel(scope: scope, ownerToken: ownerToken,
             timeProvider: CaptureAttemptTime(), keyProvider: DeterministicIdempotencyKeyProvider(prefix: "signup-model-key"),
+            pollingTiming: pollingTiming,
             isCurrentOwner: { $0 == ownerToken })
     }
     func clean() { try? FileManager.default.removeItem(at: base) }

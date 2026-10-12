@@ -624,25 +624,182 @@ struct OnboardingCompletionTests {
         #expect(Set(keys).count == 1)
     }
 
+    #if DEBUG
+    @Test("G31 confirmed ACK plus local persistence failure never repeats completion POST", arguments: [false, true])
+    func confirmedACKCleanupFaultNeverReposts(welcome: Bool) async throws {
+        let h = try await CleanupProcessorHarness()
+        defer { h.removeFolder() }
+        let events = CompletionEventRecorder()
+        let repository = CompletionCleanupObservedRepository(mode: .acknowledged, signal: .pending,
+            welcome: welcome, events: events)
+        let telemetry = CompletionCleanupTelemetry()
+        let cleanup = SignupBodyPhotoCleanupCoordinator(scope: h.scope, isCurrentOwner: { true })
+        var observed: [OnboardingBodyPhotoCleanupScope?] = []
+        var callbacks = 0
+        let model = await makeModel(onboarding: repository, userID: CleanupProcessorHarness.a,
+            telemetry: telemetry, onOfficialCleanupObserved: { observation in
+                observed.append(observation); events.record("cleanup")
+                await cleanup.observeOfficial(observation)
+            }, onCompleted: { callbacks += 1; events.record("callback") })
+        let original = model.draft
+        let beforeTelemetry = await telemetry.snapshot()
+        h.writeFault.arm()
+        await model.complete()
+        #expect(observed == [CompletionCleanupObservedRepository.pendingScope])
+        #expect(!model.unresolvedCompletion && !model.allowsDraftEditing)
+        #expect(model.operationState == .idle)
+        if welcome {
+            #expect(model.pendingProtocolWelcome != nil && callbacks == 0)
+            model.finishProtocolWelcome(); model.finishProtocolWelcome()
+        }
+        #expect(callbacks == 1)
+        #expect(events.values == ["complete", "cleanup", "callback"])
+        let localBefore = try await h.queue()
+        #expect(localBefore.knownScopes.isEmpty)
+        await model.complete()
+        let counts = await repository.counts()
+        #expect(counts.drafts == [original] && counts.keys.count == 1 && counts.reads == 0)
+        let accepted = Array((await telemetry.snapshot()).dropFirst(beforeTelemetry.count))
+        let persona = try #require(original.persona)
+        #expect(accepted == [.coachPersonaSelected(persona.telemetryValue),
+            .onboardingStepCompleted(.completion), .onboardingCompleted])
+        // The processor's retained official buffer, not another completion POST.
+        await cleanup.run(eventID: UUID())
+        let localAfter = try await h.queue()
+        #expect(localAfter.scope(CompletionCleanupObservedRepository.g1)?.pending == false)
+        let finalCounts = await repository.counts()
+        #expect(finalCounts.drafts == [original] && finalCounts.keys == counts.keys && finalCounts.reads == 0)
+    }
+
+    @Test("G32 cancel/owner invalidation during the new hook preserves accepted state and telemetry", arguments: [false, true])
+    func acceptedACKHookCancellationCannotRearmPOST(invalidateOwner: Bool) async throws {
+        let h = try await CleanupProcessorHarness()
+        defer { h.removeFolder() }
+        let gate = CleanupProcessorBarrier(holds: true)
+        let owner = CompletionCleanupOwnerFlag()
+        let repository = CompletionCleanupObservedRepository(mode: .acknowledged, signal: .pending, welcome: true)
+        let telemetry = CompletionCleanupTelemetry()
+        let cleanup = SignupBodyPhotoCleanupCoordinator(scope: h.scope, isCurrentOwner: { owner.current })
+        var callbacks = 0
+        let model = await makeModel(onboarding: repository, userID: CleanupProcessorHarness.a,
+            telemetry: telemetry, onOfficialCleanupObserved: { observation in
+                await gate.enter()
+                await cleanup.observeOfficial(observation)
+            }, onCompleted: { callbacks += 1 })
+        let beforeTelemetry = await telemetry.snapshot()
+        let original = model.draft
+        let task = Task { await model.complete(); await gate.operationFinished() }
+        let entered = await gate.entryOrOperationEnd()
+        if !entered {
+            await gate.release(); await task.value
+            try #require(entered)
+        }
+        #expect(!model.unresolvedCompletion && !model.allowsDraftEditing)
+        let started = await repository.counts()
+        #expect(started.drafts == [original] && started.keys.count == 1)
+        if invalidateOwner { owner.current = false; model.invalidate() }
+        else { task.cancel() }
+        await gate.release(); await task.value
+        #expect(callbacks == 0 && model.pendingProtocolWelcome == nil)
+        await model.complete()
+        let final = await repository.counts()
+        #expect(final.drafts == [original] && final.keys == started.keys && final.reads == 0)
+        let persona = try #require(original.persona)
+        let accepted = Array((await telemetry.snapshot()).dropFirst(beforeTelemetry.count))
+        #expect(accepted == [.coachPersonaSelected(persona.telemetryValue),
+            .onboardingStepCompleted(.completion), .onboardingCompleted])
+        if !invalidateOwner {
+            await cleanup.run(eventID: UUID())
+            let queued = try await h.queue()
+            #expect(queued.scope(CompletionCleanupObservedRepository.g1)?.pending == false)
+        }
+    }
+
+    @Test("G33 completed reconciliation observes only its already-returned current scope",
+        arguments: [OnboardingRepositoryError.alreadyCompleted, .requirementsChanged, .bodyPhotoConfirmationChanged],
+        [CompletionCleanupSignal.pending, .unknown, .mismatch, .missing])
+    func reconciliationObservesReturnedMetadata(error: OnboardingRepositoryError, signal: CompletionCleanupSignal) async throws {
+        let events = CompletionEventRecorder()
+        let repository = CompletionCleanupObservedRepository(mode: .reconcile(error), signal: signal,
+            welcome: false, events: events)
+        let telemetry = CompletionCleanupTelemetry()
+        var observed: [OnboardingBodyPhotoCleanupScope?] = []
+        var callbacks = 0
+        let model = await makeModel(onboarding: repository, userID: CleanupProcessorHarness.a,
+            telemetry: telemetry, onOfficialCleanupObserved: { scope in
+                observed.append(scope); events.record("cleanup")
+            }, onCompleted: { callbacks += 1; events.record("callback") })
+        let beforeTelemetry = await telemetry.snapshot()
+        await model.complete()
+        if let expected = CompletionCleanupObservedRepository.currentScope(signal) {
+            #expect(observed == [expected])
+            #expect(events.values == ["complete", "read", "cleanup", "callback"])
+        } else {
+            #expect(observed.allSatisfy { $0 == nil })
+        }
+        #expect(callbacks == 1 && !model.unresolvedCompletion && !model.allowsDraftEditing)
+        let counts = await repository.counts()
+        #expect(counts.drafts.count == 1 && counts.keys.count == 1 && counts.reads == 1)
+        let accepted = Array((await telemetry.snapshot()).dropFirst(beforeTelemetry.count))
+        #expect(accepted.isEmpty) // Reconciliation is not a manufactured accepted ACK.
+        await model.complete()
+        let final = await repository.counts()
+        #expect(final.drafts == counts.drafts && final.keys == counts.keys && final.reads == 1)
+    }
+
+    @Test("G34 invalid ACK/uncertain POST retain the original completion contract", arguments: [false, true])
+    func cleanupHookDoesNotAuthorizeInvalidOrUncertainCompletion(uncertain: Bool) async throws {
+        let repository = CompletionCleanupObservedRepository(mode: uncertain ? .uncertain : .invalidACK,
+            signal: .pending, welcome: false)
+        let telemetry = CompletionCleanupTelemetry()
+        var observed: [OnboardingBodyPhotoCleanupScope?] = []
+        var callbacks = 0
+        let model = await makeModel(onboarding: repository, userID: CleanupProcessorHarness.a,
+            telemetry: telemetry, onOfficialCleanupObserved: { observed.append($0) },
+            onCompleted: { callbacks += 1 })
+        let original = model.draft
+        let beforeTelemetry = await telemetry.snapshot()
+        await model.complete()
+        #expect(observed.isEmpty && callbacks == 0 && model.unresolvedCompletion)
+        #expect(model.operationState == .failed(.serviceUnavailable))
+        let first = await repository.counts()
+        #expect(first.drafts == [original] && first.keys.count == 1 && first.reads == 0)
+        let accepted = Array((await telemetry.snapshot()).dropFirst(beforeTelemetry.count))
+        #expect(accepted.isEmpty)
+        if uncertain {
+            await model.complete()
+            let retried = await repository.counts()
+            #expect(retried.drafts == [original, original])
+            #expect(retried.keys.count == 2 && Set(retried.keys).count == 1)
+            #expect(observed == [CompletionCleanupObservedRepository.pendingScope] && callbacks == 1)
+        }
+    }
+    #endif
+
     private func makeModel(
         draft: OnboardingDraft? = nil,
         onboarding: any OnboardingRepository = CompletionOnboardingRepository(),
         persona: any CoachPersonaRepository = CompletionPersonaRepository(),
         developmentConsentAvailability: DevelopmentConsentAvailability = .unavailable,
         requirements: OnboardingRequirements? = nil,
+        userID: String = "fixture-user",
+        telemetry: any TelemetryClient = DisabledTelemetryClient(),
+        onOfficialCleanupObserved: @escaping @MainActor (OnboardingBodyPhotoCleanupScope?) async -> Void = { _ in },
         onStepChanged: @escaping @MainActor (OnboardingStep) -> Void = { _ in },
         onCompleted: @escaping @MainActor () -> Void = {}
     ) async -> OnboardingFlowModel {
         let setup = CompletionSetupState()
         let model = OnboardingFlowModel(
-            userID: "fixture-user",
+            userID: userID,
             initialDraft: draft ?? completeDraft(),
             repository: onboarding,
             personaRepository: persona,
             developmentConsentAvailability: developmentConsentAvailability,
             requirements: requirements ?? officialRequirements,
+            telemetry: telemetry,
             onStepChanged: { if setup.finished { onStepChanged($0) } },
             onCompleted: onCompleted,
+            onOfficialCleanupObserved: onOfficialCleanupObserved,
             now: { fixtureDate }
         )
         // Establish the current server decision before observing the completion operation.
@@ -1161,3 +1318,91 @@ private final class CompletionCancellationCheck {
 private final class CompletionSetupState {
     var finished = false
 }
+
+#if DEBUG
+private enum CompletionCleanupMode: Sendable {
+    case acknowledged, reconcile(OnboardingRepositoryError), invalidACK, uncertain
+}
+enum CompletionCleanupSignal: Sendable { case pending, unknown, mismatch, missing }
+private struct CompletionCleanupCounts: Sendable {
+    let drafts: [OnboardingDraft]
+    let keys: [IdempotencyKey]
+    let reads: Int
+}
+private actor CompletionCleanupObservedRepository: OnboardingRepository {
+    nonisolated static let g1 = "2026-10-12T12:34:56.123456+03:00"
+    nonisolated static let g2 = "2026-10-12T12:35:00.654321Z"
+    nonisolated static var pendingScope: OnboardingBodyPhotoCleanupScope { .init(generation: g1, state: .pending) }
+    private let mode: CompletionCleanupMode
+    private let signal: CompletionCleanupSignal
+    private let welcome: Bool
+    private let events: CompletionEventRecorder?
+    private let base: CompletionOnboardingRepository
+    private var reads = 0
+
+    init(mode: CompletionCleanupMode, signal: CompletionCleanupSignal, welcome: Bool,
+        events: CompletionEventRecorder? = nil) {
+        self.mode = mode; self.signal = signal; self.welcome = welcome; self.events = events
+        let results: [Result<Void, OnboardingRepositoryError>]
+        switch mode {
+        case .reconcile(let error): results = [.failure(error)]
+        case .uncertain: results = [.failure(.serviceUnavailable)]
+        default: results = []
+        }
+        base = CompletionOnboardingRepository(events: events, results: results)
+    }
+    nonisolated static func currentScope(_ signal: CompletionCleanupSignal) -> OnboardingBodyPhotoCleanupScope? {
+        switch signal {
+        case .pending: pendingScope
+        case .unknown: .init(generation: g1, state: .unknown)
+        case .mismatch, .missing: nil
+        }
+    }
+    private func rawScope() -> OnboardingBodyPhotoCleanupScope? {
+        if case .mismatch = signal { return .init(generation: Self.g2, state: .pending) }
+        return Self.currentScope(signal)
+    }
+    func counts() async -> CompletionCleanupCounts {
+        .init(drafts: await base.completedDrafts, keys: await base.completionKeys, reads: reads)
+    }
+    func scoped(for userID: String) async throws -> any OnboardingRepository { self }
+    func loadBodyPhotoCleanupScope(generation: String?) async throws -> OnboardingBodyPhotoCleanupScope? {
+        // This callback packet must never create a new technical GET.
+        throw OnboardingRepositoryError.serviceUnavailable
+    }
+    func loadDraft(for userID: String) async throws -> OnboardingDraft? { try await base.loadDraft(for: userID) }
+    func loadState(for userID: String) async throws -> OnboardingServerState {
+        reads += 1; events?.record("read")
+        return OnboardingServerState(locale: "pt-BR",
+            completion: .init(completed: true, completedAt: Self.g1), requirements: .unavailable,
+            acceptedActions: [], draft: nil, bodyPhotoCleanup: rawScope())
+    }
+    func saveDraft(_ draft: OnboardingDraft, for userID: String) async throws { try await base.saveDraft(draft, for: userID) }
+    func keepDraftOnDevice(_ draft: OnboardingDraft, for userID: String) async { await base.keepDraftOnDevice(draft, for: userID) }
+    func complete(_ draft: OnboardingDraft, for userID: String) async throws {
+        throw OnboardingRepositoryError.serviceUnavailable // No synthetic default-ACK fallback.
+    }
+    func completeOfficial(_ draft: OnboardingDraft, for userID: String,
+        idempotencyKey: IdempotencyKey) async throws -> OnboardingCompletionAcknowledgement {
+        let accepted = try await base.completeOfficial(draft, for: userID, idempotencyKey: idempotencyKey)
+        let completed: Bool
+        if case .invalidACK = mode { completed = false } else { completed = accepted.onboardingCompleted }
+        return OnboardingCompletionAcknowledgement(onboardingCompleted: completed, completedAt: Self.g1,
+            objective: accepted.objective, persona: accepted.persona, documentActions: accepted.documentActions,
+            protocolWelcome: welcome ? ProtocolWelcome(protocol: accepted.objective, paragraphs: ["Synthetic original welcome"]) : nil,
+            bodyPhotoCleanup: rawScope())
+    }
+    func checkEligibility(_ input: OnboardingEligibilityInput, for userID: String,
+        idempotencyKey: IdempotencyKey) async throws -> OnboardingEligibilityDecision {
+        try await base.checkEligibility(input, for: userID, idempotencyKey: idempotencyKey)
+    }
+    func clear(for userID: String) async throws { try await base.clear(for: userID) }
+}
+private actor CompletionCleanupTelemetry: TelemetryClient {
+    private var events: [TelemetryEvent] = []
+    func record(_ event: TelemetryEvent) async { events.append(event) }
+    func snapshot() -> [TelemetryEvent] { events }
+}
+@MainActor
+private final class CompletionCleanupOwnerFlag { var current = true }
+#endif

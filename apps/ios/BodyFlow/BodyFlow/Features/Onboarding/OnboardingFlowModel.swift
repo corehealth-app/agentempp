@@ -242,6 +242,7 @@ final class OnboardingFlowModel {
     private(set) var requirements: OnboardingRequirements
     let onStepChanged: @MainActor (OnboardingStep) -> Void
     let onCompleted: @MainActor () -> Void
+    let onOfficialCleanupObserved: @MainActor (OnboardingBodyPhotoCleanupScope?) async -> Void
 
     init(
         userID: String, initialDraft: OnboardingDraft,
@@ -254,6 +255,7 @@ final class OnboardingFlowModel {
         telemetry: any TelemetryClient = DisabledTelemetryClient(),
         onStepChanged: @escaping @MainActor (OnboardingStep) -> Void,
         onCompleted: @escaping @MainActor () -> Void,
+        onOfficialCleanupObserved: @escaping @MainActor (OnboardingBodyPhotoCleanupScope?) async -> Void = { _ in },
         initialOperationState: OnboardingOperationState = .idle,
         initialValidationIssues: [OnboardingValidationIssue] = [],
         now: @escaping @MainActor () -> Date = Date.init,
@@ -280,6 +282,7 @@ final class OnboardingFlowModel {
         }
         self.onStepChanged = onStepChanged
         self.onCompleted = onCompleted
+        self.onOfficialCleanupObserved = onOfficialCleanupObserved
         self.now = now
         self.cancellationCheck = cancellationCheck
     }
@@ -540,6 +543,11 @@ final class OnboardingFlowModel {
                     if state.completion.completed {
                         pendingCompletion = nil
                         didComplete = true
+                        let cleanup = state.bodyPhotoCleanup.flatMap { scope in
+                            scope.generation == state.completion.completedAt ? scope : nil
+                        }
+                        await onOfficialCleanupObserved(cleanup)
+                        guard canPublish(id) else { finishCancelledSubmission(id); return }
                         activeSubmissionID = nil
                         operationState = .idle
                         notifyRootOnce()
@@ -580,14 +588,21 @@ final class OnboardingFlowModel {
             return
         }
         guard canPublish(id) else { finishCancelledSubmission(id); return }
+        // Acceptance survives a cancelled wait or a failed local cleanup write.
+        // Neither may rearm the already acknowledged completion POST.
         didComplete = true
         pendingCompletion = nil
-        activeSubmissionID = nil
-        operationState = .idle
-        if !isReacceptance, let welcome = acknowledgement.protocolWelcome {
-            pendingProtocolWelcome = welcome
+        await onOfficialCleanupObserved(acknowledgement.bodyPhotoCleanup)
+        if canPublish(id) {
+            activeSubmissionID = nil
+            operationState = .idle
+            if !isReacceptance, let welcome = acknowledgement.protocolWelcome {
+                pendingProtocolWelcome = welcome
+            } else {
+                notifyRootOnce()
+            }
         } else {
-            notifyRootOnce()
+            finishCancelledSubmission(id)
         }
         if let selectedPersona = submittedDraft.persona {
             await telemetry.record(.coachPersonaSelected(selectedPersona.telemetryValue))

@@ -656,6 +656,201 @@ struct MobileAPITransportTests {
         }
         #expect(await stub.requests().isEmpty)
     }
+    // C11 characterization uses this serialized suite's existing HTTP peers.
+    // Coordinator/store/transport are real; holds only delay actual boundaries.
+    @Test("C11 W02: a scoped GET/PATCH/DELETE cannot adopt B or A2 during lease capture",
+          arguments: [HTTPMethod.get, .patch, .delete], [false, true])
+    func c11W02LeaseAwaitCannotRebind(method: HTTPMethod, returnToA: Bool) async throws {
+        let harness = try await C11RealLifecycleTransportHarness()
+        let original = try await harness.lifecycle.leaseForRequest()
+        let scoped = harness.transport.scoped(to: original)
+        await harness.lifecycle.holdNextLease()
+        let request = try C11RealLifecycleTransportHarness.request(method: method)
+        let operation = Task { try await scoped.execute(request) }
+        await harness.lifecycle.leaseHold.waitUntilEntered()
+        try await harness.replaceSession(returnToA: returnToA)
+        let current = try await harness.coordinator.leaseForRequest()
+        #expect(current.generation != original.generation)
+        #expect(current.userID == (returnToA ? "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" : "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"))
+        await harness.lifecycle.leaseHold.release()
+        await #expect(throws: MobileAPITransportError.sessionSuperseded) {
+            _ = try await operation.value
+        }
+        #expect(await harness.stub.requests().isEmpty)
+        #expect(await harness.remote.refreshCount == 0)
+        // Re-scoping an already-bound transport cannot renew it for A2/B.
+        await #expect(throws: MobileAPITransportError.sessionSuperseded) {
+            _ = try await scoped.scoped(to: current).execute(request)
+        }
+        #expect(await harness.stub.requests().isEmpty)
+    }
+
+    @Test("C11 W03: a completed HTTP success pending validation cannot publish after B/A2",
+          arguments: [HTTPMethod.get, .patch, .delete], [false, true])
+    func c11W03SuccessPendingValidation(method: HTTPMethod, returnToA: Bool) async throws {
+        let harness = try await C11RealLifecycleTransportHarness()
+        let original = try await harness.lifecycle.leaseForRequest()
+        let request = try C11RealLifecycleTransportHarness.request(method: method)
+        await harness.lifecycle.holdNextFinish()
+        let operation = Task { try await harness.transport.scoped(to: original).execute(request) }
+        await harness.lifecycle.finishHold.waitUntilEntered()
+        let sent = await harness.stub.requests()
+        #expect(sent.count == 1)
+        #expect(sent.first?.value(forHTTPHeaderField: "Authorization") == "Bearer \(original.bearer)")
+        try await harness.replaceSession(returnToA: returnToA)
+        await harness.lifecycle.finishHold.release()
+        await #expect(throws: MobileAPITransportError.sessionSuperseded) {
+            _ = try await operation.value
+        }
+        #expect(await harness.stub.requests().count == 1)
+        #expect(await harness.remote.refreshCount == 0)
+        // The HTTP request already left. This oracle does not imply server rollback.
+    }
+
+    @Test("C11 W04: a completed 401 pending validation cannot refresh another generation",
+          arguments: [HTTPMethod.get, .patch, .delete], [false, true])
+    func c11W04UnauthorizedPendingValidation(method: HTTPMethod, returnToA: Bool) async throws {
+        let harness = try await C11RealLifecycleTransportHarness()
+        let original = try await harness.lifecycle.leaseForRequest()
+        await harness.stub.respond(with: .failure(status: 401, code: "expired_token"))
+        await harness.lifecycle.holdNextFinish()
+        let request = try C11RealLifecycleTransportHarness.request(method: method)
+        let operation = Task { try await harness.transport.scoped(to: original).execute(request) }
+        await harness.lifecycle.finishHold.waitUntilEntered()
+        #expect(await harness.stub.requests().count == 1)
+        try await harness.replaceSession(returnToA: returnToA)
+        await harness.lifecycle.finishHold.release()
+        await #expect(throws: MobileAPITransportError.sessionSuperseded) {
+            _ = try await operation.value
+        }
+        #expect(await harness.remote.refreshCount == 0)
+        #expect(await harness.stub.requests().count == 1)
+    }
+
+    @Test("C11 W05: same-generation refresh preserves the exact logical request",
+          arguments: [HTTPMethod.get, .patch, .delete])
+    func c11W05RefreshPreservesScopeAndCommand(method: HTTPMethod) async throws {
+        let harness = try await C11RealLifecycleTransportHarness()
+        let original = try await harness.lifecycle.leaseForRequest()
+        let bodyCapture = C11RequestBodyCapture()
+        await harness.stub.respond { request, call in
+            try await bodyCapture.capture(request)
+            return call == 1 ? .failure(status: 401, code: "expired_token") : .success()
+        }
+        let request = try C11RealLifecycleTransportHarness.request(method: method)
+        let response = try await harness.transport.scoped(to: original).execute(request)
+        #expect(response == TransportPayload(value: "ok"))
+        let current = try await harness.coordinator.leaseForRequest()
+        #expect(current.userID == original.userID)
+        #expect(current.generation == original.generation)
+        let sent = await harness.stub.requests()
+        #expect(sent.count == 2)
+        let first = try #require(sent.first)
+        let second = try #require(sent.last)
+        #expect(first.httpMethod == second.httpMethod)
+        #expect(first.url == second.url)
+        let bodies = await bodyCapture.bodies()
+        #expect(bodies.count == 2)
+        #expect(bodies.allSatisfy { $0 == request.body })
+        #expect(first.value(forHTTPHeaderField: "Idempotency-Key") == second.value(forHTTPHeaderField: "Idempotency-Key"))
+        #expect(first.value(forHTTPHeaderField: "X-Request-Id") == second.value(forHTTPHeaderField: "X-Request-Id"))
+        #expect(first.value(forHTTPHeaderField: "Authorization") != second.value(forHTTPHeaderField: "Authorization"))
+        #expect((method == .get) == (first.value(forHTTPHeaderField: "Idempotency-Key") == nil))
+        #expect(await harness.remote.refreshCount == 1)
+    }
+
+    @Test("C11 W06: close before a reserved child attaches sends nothing and releases once")
+    func c11W06CloseBeforeStartAndRelease() async throws {
+        let harness = try await C11RealLifecycleTransportHarness()
+        let lease = try await harness.lifecycle.leaseForRequest()
+        let startHold = C11BoundaryHold()
+        let gate = Prompt14SessionOperationGate(operationStartBoundary: {
+            await startHold.enterAndWait()
+        })
+        let capability = MealRecordSessionCapability(
+            provider: MobileMealRecordRepository(transport: harness.transport.scoped(to: lease)), gate: gate
+        )
+        let retained = capability
+        let operation = Task { try await capability.mealRecord(id: C11RealLifecycleTransportHarness.recordID) }
+        await startHold.waitUntilEntered()
+        gate.close()
+        #expect(gate.isClosed)
+        try await harness.replaceSession(returnToA: true)
+        await startHold.release()
+        await #expect(throws: CancellationError.self) { _ = try await operation.value }
+        await gate.drain()
+        capability.release()
+        capability.release()
+        #expect(!capability.hasRetainedCapability)
+        await #expect(throws: CancellationError.self) {
+            _ = try await retained.mealRecord(id: C11RealLifecycleTransportHarness.recordID)
+        }
+        #expect(await harness.stub.requests().isEmpty)
+        #expect(await harness.remote.refreshCount == 0)
+    }
+
+    @MainActor
+    @Test("C11 W03 model: finished GET/PATCH/DELETE cannot restore state or invalidate A2",
+          arguments: [HTTPMethod.get, .patch, .delete])
+    func c11W03ModelPublicationAndInvalidation(method: HTTPMethod) async throws {
+        let harness = try await C11RealLifecycleTransportHarness()
+        let lease = try await harness.lifecycle.leaseForRequest()
+        let gate = Prompt14SessionOperationGate()
+        let capability = MealRecordSessionCapability(
+            provider: MobileMealRecordRepository(transport: harness.transport.scoped(to: lease)), gate: gate
+        )
+        let center = FeatureInvalidationCenter()
+        let keys = C11OwnerFixtureKeys()
+        let model = MealRecordModel(
+            recordID: C11RealLifecycleTransportHarness.recordID, provider: capability,
+            time: C11OwnerFixtureTime(), keys: keys, invalidation: center,
+            isSessionActive: { !gate.isClosed }
+        )
+        try await harness.respondWithMealDetail()
+        if method != .get {
+            await model.load()
+            #expect(model.detail != nil)
+            #expect(model.canStartMutation)
+            if method == .patch { model.draft?.items[0].quantityText = "25" }
+            try await harness.respondWithMealReceipt(method: method)
+        }
+        await harness.lifecycle.holdNextFinish()
+        let operation = Task { @MainActor in
+            switch method {
+            case .get: await model.load()
+            case .patch: await model.save(language: .englishUnitedStates)
+            case .delete: await model.delete()
+            case .post: Issue.record("POST is outside this C11 test matrix")
+            }
+        }
+        await harness.lifecycle.finishHold.waitUntilEntered()
+        let retained = model.retainedAttempt
+        #expect((method == .get) == (retained == nil))
+        #expect(keys.count == (method == .get ? 0 : 1))
+        let expectedRequests = method == .get ? 1 : 2
+        #expect(await harness.stub.requests().count == expectedRequests)
+        gate.close() // synchronous auth boundary, BEFORE transition await
+        model.endSession()
+        try await harness.replaceSession(returnToA: true)
+        await harness.lifecycle.finishHold.release()
+        await operation.value
+        await gate.drain()
+        capability.release()
+        #expect(model.detail == nil)
+        #expect(model.draft == nil)
+        #expect(model.retainedAttempt == nil)
+        #expect(model.confirmedReceipt == nil)
+        #expect(model.completedMutations.isEmpty)
+        #expect(center.revision(for: .today) == 0)
+        #expect(center.revision(for: .history) == 0)
+        await model.retry()
+        await model.save(language: .englishUnitedStates)
+        await model.delete()
+        #expect(await harness.stub.requests().count == expectedRequests)
+        #expect(keys.count == (method == .get ? 0 : 1))
+        #expect(await harness.remote.refreshCount == 0)
+    }
+
 }
 
 private actor RejectingRegistrationLifecycle: SessionLifecycleProviding {
@@ -1072,5 +1267,262 @@ private actor StubRegistry {
 
     func current() -> TransportStubStore? {
         store
+    }
+}
+
+// C11 test boundaries delay the real session lifecycle, without replacing it.
+// No separate transport/session engine: all actual behavior delegates to the
+// existing SessionLifecycleCoordinator, PatientWorkRegistry and MobileAPITransport.
+private actor C11BoundaryHold {
+    private var entered = false
+    private var opened = false
+    private var enteredWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func enterAndWait() async {
+        entered = true
+        let enteredWaiters = enteredWaiters
+        self.enteredWaiters.removeAll()
+        enteredWaiters.forEach { $0.resume() }
+        guard !opened else { return }
+        await withCheckedContinuation { releaseWaiters.append($0) }
+    }
+    func waitUntilEntered() async {
+        guard !entered else { return }
+        await withCheckedContinuation { enteredWaiters.append($0) }
+    }
+    func release() {
+        opened = true
+        let releaseWaiters = releaseWaiters
+        self.releaseWaiters.removeAll()
+        releaseWaiters.forEach { $0.resume() }
+    }
+}
+
+private actor C11HoldingLifecycle: SessionLifecycleProviding {
+    let base: SessionLifecycleCoordinator
+    let leaseHold = C11BoundaryHold()
+    let finishHold = C11BoundaryHold()
+    private var nextLeaseIsHeld = false
+    private var completeHeldLeaseEvenIfCancelled = false
+    private var nextFinishIsHeld = false
+    private(set) var lastReturnedGeneration: UInt64?
+
+    init(base: SessionLifecycleCoordinator) { self.base = base }
+    func holdNextLease(completeEvenIfCancelled: Bool = false) {
+        nextLeaseIsHeld = true
+        completeHeldLeaseEvenIfCancelled = completeEvenIfCancelled
+    }
+    func holdNextFinish() { nextFinishIsHeld = true }
+    func currentBearerToken() async -> String? { await base.currentBearerToken() }
+    func restorePublicSession() async throws -> AuthSession? { try await base.restorePublicSession() }
+    func `switch`(to record: AuthenticationSessionRecord) async throws { try await base.switch(to: record) }
+    func leaseForRequest() async throws -> SessionLease {
+        let held = nextLeaseIsHeld
+        let completesIfCancelled = completeHeldLeaseEvenIfCancelled
+        nextLeaseIsHeld = false
+        completeHeldLeaseEvenIfCancelled = false
+        if held { await leaseHold.enterAndWait() }
+        let lease: SessionLease
+        if held && completesIfCancelled {
+            // Test one resolver that completes despite caller cancellation.
+            // It still obtains the REAL current lease; no generation/token is fabricated.
+            let completion = Task { try await base.leaseForRequest() }
+            lease = try await completion.value
+        } else {
+            lease = try await base.leaseForRequest()
+        }
+        lastReturnedGeneration = lease.generation
+        return lease
+    }
+    func refreshAfterUnauthorized(lease: SessionLease) async throws -> SessionLease {
+        try await base.refreshAfterUnauthorized(lease: lease)
+    }
+    func validate(_ lease: SessionLease) async throws { try await base.validate(lease) }
+    func signOut() async -> RemoteRevocationOutcome { await base.signOut() }
+    func beginPatientWork(lease: SessionLease, cancel: @escaping @Sendable () -> Void) async throws -> UUID {
+        try await base.beginPatientWork(lease: lease, cancel: cancel)
+    }
+    func finishPatientWork(_ id: UUID) async {
+        let held = nextFinishIsHeld
+        nextFinishIsHeld = false
+        if held { await finishHold.enterAndWait() }
+        await base.finishPatientWork(id)
+    }
+    func performPatientStateOperation<Value: Sendable>(
+        lease: SessionLease, operation: @Sendable () throws -> Value
+    ) async throws -> Value {
+        try await base.performPatientStateOperation(lease: lease, operation: operation)
+    }
+    func performVisiblePatientStateOperation<Value: Sendable>(
+        lease: SessionLease, operation: @MainActor @Sendable () throws -> Value
+    ) async throws -> Value {
+        try await base.performVisiblePatientStateOperation(lease: lease, operation: operation)
+    }
+}
+
+private actor C11OwnerRemote: SupabaseAuthRemoteOperating {
+    private(set) var refreshCount = 0
+    func signIn(email: String, password: String) throws -> AuthenticationSessionRecord {
+        throw SupabaseAuthRemoteError.requestFailed
+    }
+    func signUp(email: String, password: String) throws -> SupabaseRemoteSignUpResult {
+        throw SupabaseAuthRemoteError.requestFailed
+    }
+    func requestPasswordRecovery(email: String) throws {}
+    func refresh(record: AuthenticationSessionRecord) -> AuthenticationSessionRecord {
+        refreshCount += 1
+        return C11RealLifecycleTransportHarness.record(userID: record.userID, ordinal: 10)
+    }
+    func revokeCurrentSession(accessToken: String) -> RemoteRevocationOutcome { .confirmed }
+}
+
+private struct C11RealLifecycleTransportHarness: Sendable {
+    static let recordID = "11111111-1111-4111-8111-111111111111"
+    let stub: TransportStubStore
+    let remote: C11OwnerRemote
+    let coordinator: SessionLifecycleCoordinator
+    let lifecycle: C11HoldingLifecycle
+    let transport: MobileAPITransport
+
+    init() async throws {
+        let store = AuthenticationSessionStore(
+            secureStore: InMemorySecureStore(), now: { Date(timeIntervalSince1970: 1000) }
+        )
+        try await store.replace(with: Self.record(userID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", ordinal: 1))
+        let remote = C11OwnerRemote()
+        let coordinator = SessionLifecycleCoordinator(
+            store: store, remote: remote,
+            refreshPolicy: SessionRefreshPolicy(now: { Date(timeIntervalSince1970: 1000) }, leeway: 60)
+        )
+        let lifecycle = C11HoldingLifecycle(base: coordinator)
+        let stub = TransportStubStore()
+        await StubURLProtocol.install(store: stub)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        self.stub = stub
+        self.remote = remote
+        self.coordinator = coordinator
+        self.lifecycle = lifecycle
+        self.transport = MobileAPITransport(
+            configuration: try MobileAPIConfiguration(originString: "https://staging.example.test"),
+            sessionLifecycle: lifecycle, session: URLSession(configuration: configuration),
+            clock: ContinuousClock(), timeout: .seconds(2)
+        )
+        _ = try await coordinator.leaseForRequest() // bootstrap before hold; generation is real
+    }
+
+    func replaceSession(returnToA: Bool) async throws {
+        try await coordinator.switch(to: Self.record(userID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", ordinal: 2))
+        if returnToA {
+            try await coordinator.switch(to: Self.record(userID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", ordinal: 3))
+        }
+    }
+
+    static func record(userID: String, ordinal: Int) -> AuthenticationSessionRecord {
+        AuthenticationSessionRecord(
+            userID: userID, email: "c11-owner@example.invalid", isEmailConfirmed: true,
+            isOnboardingCompleted: true, accessToken: c11OwnerToken(subject: userID, marker: "\(ordinal)"),
+            refreshToken: "c11-synthetic-refresh-\(ordinal)", expiresAt: Date(timeIntervalSince1970: 2000)
+        )
+    }
+
+    static func request(method: HTTPMethod) throws -> MobileAPIRequest<TransportPayload> {
+        try MobileAPIRequest(
+            method: method, path: "/api/mobile/v1/meal-records/\(recordID)",
+            body: method == .get ? nil : Data("{}".utf8),
+            idempotencyKey: method == .get ? nil : IdempotencyKey(validating: "c11-owner-command-0001")
+        )
+    }
+
+    func respondWithMealDetail() async throws {
+        let value = Self.detail()
+        // DTO uses its real Codable implementation, not a second wire schema.
+        let data = try JSONEncoder().encode(value)
+        await stub.respond(with: StubResponse(status: 200, body: data))
+    }
+
+    static func detail() -> MealRecordResponse {
+        let item = MealRecordItemSnapshot(
+            id: recordID, foodName: "Synthetic owner fixture", quantityG: 50, kcal: 100,
+            proteinG: 1, carbsG: 2, fatG: 3, source: "canonical_exact",
+            consumedAt: APITimestamp(value: Date(timeIntervalSince1970: 1790000000)), mealType: nil
+        )
+        return MealRecordResponse(data: MealRecordSnapshot(
+            recordID: recordID, scope: .item, expectedVersion: "opaque-owner-fixture-version",
+            itemIDs: [recordID], items: [item], editable: true, dayClosed: false,
+            localDate: "2026-10-13", timezone: "America/Sao_Paulo", editBlockReason: nil
+        ), meta: MobileResponseMetadata(apiVersion: "v1", requestID: "c11-owner-fixture"))
+    }
+}
+
+private extension C11RealLifecycleTransportHarness {
+    func respondWithMealReceipt(method: HTTPMethod) async throws {
+        let next = "22222222-2222-4222-8222-222222222222"
+        let updated = method == .patch
+        let value = MealRecordMutationResponse(data: MealRecordMutationSnapshot(
+            recordID: Self.recordID, operation: updated ? .updated : .deleted,
+            newItemIDs: updated ? [next] : [], removedItemIDs: [Self.recordID],
+            nextRecordID: updated ? next : nil,
+            snapshot: MealRecordPersistedSnapshot(id: "c11-owner-snapshot", date: "2026-10-13",
+                caloriesConsumed: updated ? 123 : 0, proteinG: 0, carbsG: 0, fatG: 0, dailyBalance: 0)
+        ), meta: MobileResponseMetadata(apiVersion: "v1", requestID: "c11-owner-mutation-fixture"))
+        await stub.respond(with: StubResponse(status: 200, body: try JSONEncoder().encode(value)))
+    }
+}
+
+private struct C11OwnerFixtureTime: TimeProviding {
+    var now: Date { Date(timeIntervalSince1970: 1790000000) }
+}
+
+private final class C11OwnerFixtureKeys: IdempotencyKeyProviding, @unchecked Sendable {
+    private let lock = NSLock()
+    private var issued = 0
+    var count: Int { lock.withLock { issued } }
+    func nextKey() throws -> IdempotencyKey {
+        let ordinal = lock.withLock { issued += 1; return issued }
+        return try IdempotencyKey(validating: "c11-owner-model-command-\(ordinal)")
+    }
+}
+
+// URLProtocol can receive a body stream instead of httpBody. Capture it at
+// the handler boundary so body equality cannot pass as nil == nil.
+private actor C11RequestBodyCapture {
+    private var values: [Data?] = []
+    func capture(_ request: URLRequest) throws {
+        if let body = request.httpBody { values.append(body); return }
+        guard let stream = request.httpBodyStream else { values.append(nil); return }
+        stream.open()
+        defer { stream.close() }
+        var result = Data()
+        var buffer = [UInt8](repeating: 0, count: 256)
+        while true {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            if count < 0 { throw C11BodyCaptureError.readFailed }
+            if count == 0 { break }
+            guard result.count + count <= 8192 else { throw C11BodyCaptureError.tooLarge }
+            result.append(contentsOf: buffer.prefix(count))
+        }
+        values.append(result)
+    }
+    func bodies() -> [Data?] { values }
+}
+private enum C11BodyCaptureError: Error { case readFailed, tooLarge }
+
+// Same synthetic subject-bearing token shape as SessionLifecycleCoordinatorTests.
+// No real signature, session, auth provider or credential is used.
+private func c11OwnerToken(subject: String, marker: String) -> String {
+    let header = Data(#"{"alg":"none"}"#.utf8).c11OwnerBase64URL
+    let payload = Data(#"{"sub":"\#(subject)","marker":"\#(marker)"}"#.utf8)
+        .c11OwnerBase64URL
+    return "\(header).\(payload).synthetic"
+}
+
+private extension Data {
+    var c11OwnerBase64URL: String {
+        base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
     }
 }

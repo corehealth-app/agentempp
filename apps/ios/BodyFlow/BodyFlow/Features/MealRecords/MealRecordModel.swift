@@ -24,7 +24,7 @@ final class MealRecordModel {
     private var presentationDismissed = false
     private var requiresFreshPresentationRead = false
     // A new official version cannot make unchanged rejected input corrected.
-    private var rejectedPatchInput: RejectedPatchInput?
+    private var rejectedPatchInputs: [RejectedPatchInput] = []
 
     private(set) var detail: MealRecordResponse?
     var draft: MealRecordEditDraft?
@@ -97,10 +97,12 @@ final class MealRecordModel {
     /// A group-limit refusal is about the group, so it ends when the form
     /// stands on another group.
     private func rejection(of body: MealRecordPatchBody) -> MealRecordFailure? {
-        guard let rejected = rejectedPatchInput, rejected.items == body.items else { return nil }
-        if rejected.reason == .groupLimitExceeded, let draft,
-           draft.itemIDs != rejected.groupItemIDs { return nil }
-        return rejected.reason
+        for rejected in rejectedPatchInputs.reversed() where rejected.items == body.items {
+            if rejected.reason == .groupLimitExceeded, let draft,
+               draft.itemIDs != rejected.groupItemIDs { continue }
+            return rejected.reason
+        }
+        return nil
     }
 
     /// The official read is newer than a form that holds typed fields and no
@@ -268,7 +270,7 @@ final class MealRecordModel {
         hasCompletedCurrentPresentation = false; requiresFreshPresentationRead = false
         isCorrectingRejectedInput = false
         attemptHistory.removeAll(); completedMutations.removeAll(); archivedDrafts.removeAll()
-        rejectedPatchInput = nil
+        rejectedPatchInputs.removeAll()
     }
 
     private func perform(_ attempt: MealRecordMutationAttempt) async {
@@ -309,8 +311,9 @@ final class MealRecordModel {
                 if case let .patch(value) = attempt, let reason = failure {
                     switch reason {
                     case .quantityNotRepresentable, .nutritionUnresolved, .groupLimitExceeded:
-                        rejectedPatchInput = RejectedPatchInput(items: value.payload.body.items,
+                        let rejected = RejectedPatchInput(items: value.payload.body.items,
                             reason: reason, groupItemIDs: value.payload.originalGroupItemIDs)
+                        if !rejectedPatchInputs.contains(rejected) { rejectedPatchInputs.append(rejected) }
                     default: break
                     }
                 }
@@ -398,7 +401,7 @@ final class MealRecordModel {
         let ownership: FeatureLoadOwnership
     }
 
-    private struct RejectedPatchInput {
+    private struct RejectedPatchInput: Equatable {
         let items: [MealProposalItemRequest]
         let reason: MealRecordFailure
         let groupItemIDs: [String]

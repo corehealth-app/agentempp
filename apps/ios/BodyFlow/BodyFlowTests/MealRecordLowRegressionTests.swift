@@ -2,10 +2,10 @@ import Foundation
 import Testing
 @testable import BodyFlow
 
-// Private test proposal only. Root must compile/run before calling it causal RED.
+// Exact refusal-history and meaningful-save regressions, verified on native targets.
 // Kept separate from the 27 byte-frozen MealRecordCandidateTests declarations.
 @MainActor
-@Suite("C11 low regression: remembered refusals")
+@Suite("C11 low regressions: remembered refusals and meaningful save")
 struct MealRecordLowRegressionTests {
     @Test("L1: refused X, then refused Y, then X cannot obtain a third key or request")
     func refusesPreviouslyRejectedXAfterDifferentRejectedY() async throws {
@@ -63,7 +63,50 @@ struct MealRecordLowRegressionTests {
         #expect(center.revision(for: .history) == 0)
     }
 
+    @Test("L3: server-equivalent name spelling alone offers no meaningful Save",
+          arguments: [SupportedAppLanguage.portugueseBrazil, .englishUnitedStates])
+    func equivalentNameSpellingDoesNotOfferSave(_ language: SupportedAppLanguage) async throws {
+        let peer = C11LowRefusalPeer(detail: C11LowFixtures.detail(name: "Feijão carioca"))
+        let keys = C11LowKeys()
+        let model = C11LowFixtures.model(peer, keys: keys, center: FeatureInvalidationCenter())
+        await model.load()
+        try #require(model.canSave(language: language))
+        #expect(!MealRecordDetailPresentation.offersSave(model: model, language: language))
 
+        // Literal expectations from normalizedQuantityIdentity in the real server:
+        // lower-case -> NFD -> Diacritic removal -> whitespace collapse -> trim.
+        // The test does not implement that normalizer or compute nutrition.
+        let sameFoodNames = [
+            "FEIJÃO CARIOCA",
+            "Feijao carioca",
+            "Feija\u{0303}o carioca",
+            "  feijão \t \n carioca  ",
+        ]
+        for spelling in sameFoodNames {
+            model.draft?.items[0].foodName = spelling
+            try #require(model.canSave(language: language))
+            #expect(!MealRecordDetailPresentation.offersSave(model: model, language: language),
+                    "Only server-equivalent spelling changed: \(spelling)")
+            #expect(model.draft?.items[0].foodName == spelling)
+        }
+
+        // Controls preserve actual edits; preparation words are not stripped/fuzzy-matched.
+        model.draft?.items[0].foodName = "Feijão carioca cozido"
+        #expect(MealRecordDetailPresentation.offersSave(model: model, language: language))
+        model.draft?.items[0].foodName = "FEIJAO CARIOCA"
+        model.draft?.items[0].quantityText = "25"
+        #expect(MealRecordDetailPresentation.offersSave(model: model, language: language))
+        model.draft?.items[0].quantityText = nil
+        model.draft?.items[0].manualKcalText = "80"
+        #expect(MealRecordDetailPresentation.offersSave(model: model, language: language))
+        model.draft?.items[0].manualKcalText = ""
+        #expect(!MealRecordDetailPresentation.offersSave(model: model, language: language))
+        #expect(keys.count == 0)
+        #expect(await peer.patches.isEmpty)
+        #expect(await peer.reads == [C11LowFixtures.a])
+        #expect(model.retainedAttempt == nil)
+        #expect(model.confirmedReceipt == nil)
+    }
 }
 
 // Original C11 helpers are file-private. Preserve them and the frozen test file.

@@ -117,7 +117,7 @@ enum SignUpRenderingProbe {
         return host.nodes()
     }
 
-    fileprivate static func nodes(in root: UIView) -> [Node] {
+    static func nodes(in root: UIView) -> [Node] {
         var nodes: [Node] = []
         var visited: Set<ObjectIdentifier> = []
         let identifierSelector = NSSelectorFromString("accessibilityIdentifier")

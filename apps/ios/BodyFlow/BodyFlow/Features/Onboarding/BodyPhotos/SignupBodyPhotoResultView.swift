@@ -60,6 +60,9 @@ struct SignupBodyPhotoResultView: View {
                     .buttonStyle(BodyFlowButtonStyle(role: .primary))
                     .disabled(photos.confirmableEstimate == nil)
                     .accessibilityIdentifier("onboarding.photos.result.confirm")
+                Button(copy("onboarding.photos.result.retake")) { _ = photos.beginRetake() }
+                    .buttonStyle(BodyFlowButtonStyle(role: .secondary))
+                    .accessibilityIdentifier("onboarding.photos.result.retake")
                 Button(copy("onboarding.photos.change-percentage")) { select(.typed) }
                     .buttonStyle(BodyFlowButtonStyle(role: .secondary))
                     .accessibilityIdentifier("onboarding.photos.result.manual")

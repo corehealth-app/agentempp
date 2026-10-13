@@ -40,6 +40,10 @@ struct SignupBodyPhotoFlowSurface: View {
                         .padding(BodyFlowSpacing.lg)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                    // A different step starts at its first instruction;
+                    // publications within that step preserve reading position.
+                    // SDK source/caller state belongs to the retained surface.
+                    .id(photos.route)
                     .scrollBounceBehavior(.basedOnSize)
                     .accessibilityIdentifier("onboarding.photos.flow.scroll")
                 }

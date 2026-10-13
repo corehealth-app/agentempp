@@ -356,6 +356,22 @@
         }
       }
     },
+    "onboarding.photos.result.retake": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refazer fotos"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retake photos"
+          }
+        }
+      }
+    },
     "onboarding.photos.result.confirm": {
       "localizations": {
         "pt-BR": {

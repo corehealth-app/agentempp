@@ -40,6 +40,8 @@ final class SignupBodyPhotoPresentationModel {
     @ObservationIgnored private var bindingTask: Task<SignupBodyPhotoCaptureScope, Error>?
     @ObservationIgnored private var deletionTask: Task<Void, Never>?
     private var deletionIntent: OnboardingBodyPhotoDeletionIntent?
+    // Presentation intent only; preserve the three official slots, including nil.
+    private var retakeAnchor: [String?]?
     private var epoch = 0
     private var observerEpoch: Int?
 
@@ -68,7 +70,7 @@ final class SignupBodyPhotoPresentationModel {
     /// Candidate/proof validation remains in the existing canonical validator.
     /// The explicit action may still refuse a Flow cancellation at tap time.
     var confirmableEstimate: OnboardingBodyPhotoConfirmation? {
-        guard allowsPhotoAction, !flow.hasPendingBodyPhotoDeletion,
+        guard route == .result, allowsPhotoAction, !flow.hasPendingBodyPhotoDeletion,
               let capture, capture.isActive, capture.hasAcceptedConsent,
               let state = capture.state, let sex = flow.draft.biologicalSex else { return nil }
         return OnboardingBodyPhotoConfirmation.candidate(from: state, sex: sex)
@@ -88,6 +90,7 @@ final class SignupBodyPhotoPresentationModel {
         guard currentOwner, deletionIntent == nil, choice == .photos, availability == .available,
               let capture else { return nil }
         guard capture.hasAcceptedConsent else { return .consent }
+        if retakeAnchor != nil { return .capture }
         if let state = capture.state, state.estimate != nil,
            !state.poses.contains(where: { $0.photo?.status == "reading" }) {
             return .result
@@ -181,8 +184,17 @@ final class SignupBodyPhotoPresentationModel {
     }
 
     @discardableResult
+    func beginRetake() -> Bool {
+        guard route == .result, allowsPhotoAction, !flow.hasPendingBodyPhotoDeletion,
+              let capture, capture.isActive, capture.hasAcceptedConsent,
+              let state = capture.state else { return false }
+        retakeAnchor = officialPhotoIDs(in: state)
+        return true
+    }
+
+    @discardableResult
     func confirmEstimate() -> Bool {
-        guard allowsPhotoAction, let capture, capture.hasAcceptedConsent,
+        guard route == .result, allowsPhotoAction, let capture, capture.hasAcceptedConsent,
               let state = capture.state else { return false }
         return flow.confirmBodyPhotoEstimate(state)
     }
@@ -243,6 +255,7 @@ final class SignupBodyPhotoPresentationModel {
         guard allowsAction, deletionIntent == nil, let scope, let capture,
               let intent = flow.beginBodyPhotoDeletion(for: ownerToken) else { return }
         deletionIntent = intent
+        retakeAnchor = nil
         let controller = retainedDeletionController(scope: scope, capture: capture)
         await runDeletion(controller, intent: intent, retry: false)
     }
@@ -306,6 +319,7 @@ final class SignupBodyPhotoPresentationModel {
     }
 
     func invalidate() {
+        retakeAnchor = nil
         epoch += 1; observerEpoch = nil; isActive = false
         bindingTask?.cancel()
         deletionTask?.cancel()
@@ -337,9 +351,33 @@ final class SignupBodyPhotoPresentationModel {
     private func observe(_ state: SignupBodyPhotoState?) {
         guard currentOwner, deletionIntent == nil, choice == .photos, observerEpoch == epoch else { return }
         flow.reconcileBodyPhotoState(state)
+        if let anchor = retakeAnchor, let state,
+           retakeResultIsReady(state, replacing: anchor) {
+            retakeAnchor = nil
+        }
+    }
+
+    private func officialPhotoIDs(in state: SignupBodyPhotoState) -> [String?] {
+        SignupBodyPhotoPose.allCases.map { pose in
+            state.poses.first { $0.pose == pose }?.photo?.id
+        }
+    }
+
+    // Read the incoming official snapshot: Core publishes state before phase.
+    // Usability/readings belong to the existing result/confirmation contracts.
+    private func retakeResultIsReady(_ state: SignupBodyPhotoState,
+        replacing anchor: [String?]) -> Bool {
+        guard state.available, state.consent?.acceptedAt != nil, state.estimate != nil,
+              state.poses.map(\.pose) == SignupBodyPhotoPose.allCases,
+              officialPhotoIDs(in: state) != anchor else { return false }
+        return state.poses.allSatisfy { slot in
+            guard let photo = slot.photo else { return false }
+            return !photo.id.isEmpty && photo.status == "read"
+        }
     }
 
     private func leavePhotos(choice: SignupBodyFatChoice?) {
+        retakeAnchor = nil
         epoch += 1; observerEpoch = nil; self.choice = choice
         capture?.declineConsent()
     }

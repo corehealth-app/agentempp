@@ -139,12 +139,14 @@ struct PresentationHarness {
 
     init(manual: Double? = nil, available: Bool = true, missingDocument: Bool = false,
         documentLocale: String = "pt-BR", hasEstimate: Bool = false, holdConsent: Bool = false,
-        holdFactory: Bool = false, installsCapability: Bool = true, birthDate: String = "1990-01-02") async throws {
+        holdFactory: Bool = false, installsCapability: Bool = true, birthDate: String = "1990-01-02",
+        failOnceAt: CaptureFailurePoint? = nil) async throws {
         let cleanup = try await CleanupProcessorHarness()
         let staging = MediaStagingStore(temporaryDirectory: cleanup.folder.appendingPathComponent("staging"))
         let consentGate = CaptureConsentGate(holds: holdConsent)
         let stateGate = CaptureConsentGate(holds: true)
-        let base = CaptureServerPeer(staging: staging, consentGate: consentGate, available: available, stateGate: stateGate)
+        let base = CaptureServerPeer(staging: staging, consentGate: consentGate, available: available,
+            failOnceAt: failOnceAt, stateGate: stateGate)
         let peer = PresentationPhotoPeer(base: base, locale: documentLocale, missingDocument: missingDocument, hasEstimate: hasEstimate)
         let lifecycle = cleanup.lifecycle, lease = cleanup.lease, store = cleanup.store
         let clock = CapturePollingClock()

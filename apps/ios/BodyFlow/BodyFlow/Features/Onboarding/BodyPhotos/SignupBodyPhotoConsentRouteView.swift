@@ -18,6 +18,7 @@ struct SignupBodyPhotoConsentRouteView: View {
                 }
                 SignupBodyPhotoConsentView(document: document, isAccepting: isAccepting,
                     consent: accept, decline: photos.declineConsent)
+                SignupBodyPhotoDeleteControl(photos: photos)
             }
         }
     }

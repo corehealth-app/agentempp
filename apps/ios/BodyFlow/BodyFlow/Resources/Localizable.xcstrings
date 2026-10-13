@@ -356,6 +356,70 @@
         }
       }
     },
+    "onboarding.photos.delete.title": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apagar fotos"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete photos"
+          }
+        }
+      }
+    },
+    "onboarding.photos.delete.message": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quando a exclusão é concluída no app, o resultado da leitura é apagado do catálogo; a linha que registra a foto continua guardada.\n\nA original escolhida da galeria, e a cópia na nuvem da galeria, continuam lá; o app não as apaga. Apagar fotos não revoga este aceite nem apaga seu registro. Também não apaga automaticamente uma estimativa ou um percentual já registrado no perfil.\n\nUm envio já autorizado pode chegar depois de uma tentativa de exclusão. Por isso, não há garantia de que as fotos fiquem permanentemente ausentes, nem de exclusão das cópias dos serviços externos."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When deletion is completed in the app, the reading result is cleared from the catalogue; the record of the photo remains stored.\n\nThe original selected from your photo library, and its library cloud copy, remain there; the app does not delete them. Deleting photos does not revoke this consent or delete its record. It also does not automatically erase an estimate or percentage already stored in your profile.\n\nAn upload that was already authorised may arrive after a deletion attempt. There is therefore no guarantee that the photos remain permanently absent, or that copies held by external services are deleted."
+          }
+        }
+      }
+    },
+    "onboarding.photos.delete.error": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível concluir a solicitação de exclusão. Tente novamente."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not complete the deletion request. Try again."
+          }
+        }
+      }
+    },
+    "onboarding.photos.delete.pending": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solicitação de exclusão em andamento."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deletion request in progress."
+          }
+        }
+      }
+    },
     "onboarding.photos.result.retake": {
       "localizations": {
         "pt-BR": {

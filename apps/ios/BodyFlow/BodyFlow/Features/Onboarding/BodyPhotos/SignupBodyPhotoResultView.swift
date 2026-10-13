@@ -63,6 +63,7 @@ struct SignupBodyPhotoResultView: View {
                 Button(copy("onboarding.photos.result.retake")) { _ = photos.beginRetake() }
                     .buttonStyle(BodyFlowButtonStyle(role: .secondary))
                     .accessibilityIdentifier("onboarding.photos.result.retake")
+                SignupBodyPhotoDeleteControl(photos: photos)
                 Button(copy("onboarding.photos.change-percentage")) { select(.typed) }
                     .buttonStyle(BodyFlowButtonStyle(role: .secondary))
                     .accessibilityIdentifier("onboarding.photos.result.manual")

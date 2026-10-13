@@ -46,6 +46,7 @@ struct SignupBodyPhotoCaptureView: View {
                 ForEach(SignupBodyPhotoPose.allCases, id: \.self) { pose in
                     poseRow(pose, photo: state.poses.first { $0.pose == pose }?.photo)
                 }
+                SignupBodyPhotoDeleteControl(photos: photos)
                 Button(copy("onboarding.photos.change-percentage")) { select(.typed) }
                     .buttonStyle(BodyFlowButtonStyle(role: .secondary))
                     .accessibilityIdentifier("onboarding.photos.capture.manual")
@@ -90,8 +91,15 @@ struct SignupBodyPhotoCaptureView: View {
                 .disabled(isChoosingSource)
                 .accessibilityIdentifier("onboarding.photos.capture.gallery." + pose.rawValue)
             }
-            // GET-only status does not prove a retained retry pipeline. A
-            // retry action requires a separate Core eligibility/action seam.
+            if photos.canRetry(pose: pose) {
+                Button(copy("onboarding.retry")) {
+                    guard !isChoosingSource, photos.canRetry(pose: pose) else { return }
+                    Task { await photos.retry(pose: pose) }
+                }
+                .buttonStyle(BodyFlowButtonStyle(role: .secondary))
+                .disabled(isChoosingSource)
+                .accessibilityIdentifier("onboarding.photos.capture.retry." + pose.rawValue)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)

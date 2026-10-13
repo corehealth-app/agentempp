@@ -113,6 +113,7 @@ struct BodyDataStepView: View {
                 issues: [.weightOutOfRange]
             )
             if let photos {
+                SignupBodyPhotoDeleteControl(photos: photos)
                 if photos.loadFailed || isReloadingPhotos {
                     VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
                         if photos.loadFailed {

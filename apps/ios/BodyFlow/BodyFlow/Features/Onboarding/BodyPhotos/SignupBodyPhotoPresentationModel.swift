@@ -38,7 +38,8 @@ final class SignupBodyPhotoPresentationModel {
     private let isCurrentOwner: @MainActor @Sendable (OnboardingOwnerToken) -> Bool
     private var scope: SignupBodyPhotoCaptureScope?
     @ObservationIgnored private var bindingTask: Task<SignupBodyPhotoCaptureScope, Error>?
-    @ObservationIgnored private var deletionTask: Task<Void, Never>?
+    // Retry readiness changes when this task ends, after D1 publishes failure.
+    private var deletionTask: Task<Void, Never>?
     private var deletionIntent: OnboardingBodyPhotoDeletionIntent?
     // Presentation intent only; preserve the three official slots, including nil.
     private var retakeAnchor: [String?]?
@@ -78,6 +79,30 @@ final class SignupBodyPhotoPresentationModel {
 
     var resultRequiresBiologicalSex: Bool {
         currentOwner && route == .result && flow.draft.biologicalSex == nil
+    }
+
+    /// Deleting known owner photos never requires accepting a new document.
+    var canDeletePhotos: Bool {
+        guard allowsAction, deletionIntent == nil, !flow.hasPendingBodyPhotoDeletion,
+              scope != nil, let capture, capture.isActive else { return false }
+        return capture.state?.poses.contains { $0.photo != nil } == true
+    }
+
+    var photoDeletionPhase: SignupBodyPhotoExplicitDeletionPhase? {
+        guard currentOwner, deletionIntent != nil else { return nil }
+        return deletion?.phase ?? .idle
+    }
+
+    var canRetryPhotoDeletion: Bool {
+        guard allowsAction, deletionIntent != nil, deletionTask == nil else { return false }
+        switch deletion?.phase ?? .idle {
+        case .idle, .ready, .failed: return true
+        case .draining, .requesting, .awaitingReload: return false
+        }
+    }
+
+    func canRetry(pose: SignupBodyPhotoPose) -> Bool {
+        allowsPhotoAction && route == .capture && capture?.canRetry(pose: pose) == true
     }
 
     var availability: SignupBodyPhotoAvailability {
@@ -244,7 +269,7 @@ final class SignupBodyPhotoPresentationModel {
     }
 
     func retry(pose: SignupBodyPhotoPose) async {
-        guard allowsPhotoAction, let capture, capture.hasAcceptedConsent else { return }
+        guard canRetry(pose: pose), let capture else { return }
         await capture.retry(pose: pose)
     }
 

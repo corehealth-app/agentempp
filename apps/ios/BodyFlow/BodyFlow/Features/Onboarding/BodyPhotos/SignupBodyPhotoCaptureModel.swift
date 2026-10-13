@@ -39,6 +39,7 @@ final class SignupBodyPhotoCaptureModel {
         var uploaded = false
         var completeAttempt: MutationAttempt<MediaAssetCommand>?
         var completed = false
+        var failure: SignupBodyPhotoFailure?
     }
     private struct LocalCleanup: Sendable {
         let nonce: UUID
@@ -96,6 +97,14 @@ final class SignupBodyPhotoCaptureModel {
     /// only the model's pending input, not caller/camera or process memory.
     var retainedInputBytes: Int {
         pipelines.values.reduce(0) { $0 + ($1.data?.count ?? 0) }
+    }
+
+    /// A retained, failed local attempt can recover a transport/read error.
+    /// An official terminal reading failure requires another photo instead.
+    func canRetry(pose: SignupBodyPhotoPose) -> Bool {
+        guard currentOwner, hasAcceptedConsent, !declined, state?.available == true,
+              tasks[pose] == nil, let failure = pipelines[pose]?.failure else { return false }
+        return failure == .offline || failure == .unavailable
     }
 
     init(scope: SignupBodyPhotoCaptureScope, ownerToken: OnboardingOwnerToken,
@@ -293,6 +302,7 @@ final class SignupBodyPhotoCaptureModel {
 
     private func start(_ context: Context, previous: Task<Void, Never>?, previousNonce: UUID?) async {
         guard let pose = context.pose else { return }
+        if pipelines[pose]?.nonce == context.nonce { pipelines[pose]?.failure = nil }
         let work = Task {
             defer { self.ownedMutationTasks[context.nonce] = nil }
             do {
@@ -317,6 +327,7 @@ final class SignupBodyPhotoCaptureModel {
                 self.refreshReadingWait(outcome.snapshot, elapsed: elapsed)
                 self.state = outcome.snapshot
                 self.hasAcceptedConsent = !self.declined && outcome.snapshot.available && outcome.snapshot.consent?.acceptedAt != nil
+                self.pipelines[pose]?.failure = outcome.failure
                 if let failure = outcome.failure { self.phase = .failed(failure) }
                 else { self.phase = self.reading(outcome.snapshot) ? .reading : .ready }
             } catch {
@@ -484,6 +495,7 @@ final class SignupBodyPhotoCaptureModel {
         if error is CancellationError { return }
         let failure = SignupBodyPhotoFailure(error)
         if failure == .sessionChanged { invalidate(); return }
+        if let pose = context.pose { pipelines[pose]?.failure = failure }
         if failure == .consentRequired || failure == .ageNotAllowed || failure == .signupCompleted { hasAcceptedConsent = false }
         phase = .failed(failure)
     }

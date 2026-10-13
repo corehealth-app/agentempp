@@ -198,3 +198,126 @@ private final class PasswordBindingDiagnosticCleanup {
         }
     }
 }
+
+
+// Exact context of the new ManualForm receipt. Existing English test, observer
+// types and cleanup above are byte unchanged; there is no signup submit.
+extension OnboardingPasswordBindingDiagnosticUITests {
+    func testPortugueseLightDefaultSizeFirstPasswordBindingBeforeSignup() throws {
+        continueAfterFailure = false
+        let journey = OnboardingJourneyUITestSupport(testCase: self)
+        let app = journey.launch(
+            language: "pt-BR", dark: false, category: "UICTContentSizeCategoryL"
+        )
+        let eye = app.buttons["auth.password.visibility"]
+        let shown = journey.element("auth.password.shown", app)
+        let cleanup = PasswordBindingDiagnosticCleanup(app: app, eye: eye, shown: shown)
+        addTeardownBlock { await cleanup.tearDown() }
+
+        // Same actual signup first SecureField and synthetic input as the
+        // failed journey. ORIGINAL field-directed fallback is run first.
+        let expected = "local-pass"
+        var observation = observePortuguesePreparation(
+            app: app, journey: journey, cleanup: cleanup, expected: expected
+        )
+        observation.hiddenBeforeAssertions = cleanup.hideAndVerify()
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let receipt = XCTAttachment(
+            data: try encoder.encode(observation), uniformTypeIdentifier: "public.json"
+        )
+        receipt.name = "password-binding-pt-light-L-counts-and-booleans"
+        receipt.lifetime = .keepAlways
+        add(receipt)
+
+        // Only boolean/count failures; never print or capture the input.
+        XCTAssertTrue(observation.hiddenBeforeAssertions)
+        XCTAssertFalse(observation.inconclusive)
+        XCTAssertTrue(observation.openSignUpReached)
+        XCTAssertTrue(observation.emailReached)
+        XCTAssertTrue(observation.passwordExists)
+        XCTAssertTrue(observation.passwordReached)
+        XCTAssertTrue(observation.focusBeforeEscape)
+        XCTAssertTrue(observation.focusAfterEscape)
+        XCTAssertTrue(observation.eyeReached)
+        XCTAssertTrue(observation.shownExists)
+        XCTAssertTrue(observation.shownValueAvailable)
+        XCTAssertEqual(observation.shownCount, observation.expectedCount)
+        XCTAssertTrue(observation.shownMatchesExpected,
+            "The actual first-password Binding must retain the exact synthetic input")
+        XCTAssertEqual(observation.maskedCountAtEnd, observation.expectedCount)
+        XCTAssertTrue(observation.finalSecureEntryMatched)
+    }
+
+    private func observePortuguesePreparation(
+        app: XCUIApplication,
+        journey: OnboardingJourneyUITestSupport,
+        cleanup: PasswordBindingDiagnosticCleanup,
+        expected: String
+    ) -> PasswordBindingDiagnosticObservation {
+        var observation = PasswordBindingDiagnosticObservation(expectedCount: expected.count)
+        let openSignUp = app.buttons["auth.open-sign-up"]
+        observation.openSignUpReached = reachWithoutAssertions(openSignUp, app: app)
+        guard observation.openSignUpReached else { return observation }
+        openSignUp.tap()
+
+        let email = app.textFields["auth.email"]
+        observation.emailReached = reachWithoutAssertions(email, app: app)
+        guard observation.emailReached else { return observation }
+        email.tap()
+        email.typeText("person@example.invalid")
+
+        let field = app.secureTextFields["auth.password"]
+        observation.passwordExists = field.waitForExistence(timeout: 5)
+        guard observation.passwordExists else { return observation }
+        observation.passwordReached = reachWithoutAssertions(field, app: app)
+        guard observation.passwordReached else { return observation }
+        field.tap()
+        observation.focusBeforeEscape = journey.waitForKeyboardFocus(field)
+        field.typeKey(XCUIKeyboardKey.escape, modifierFlags: [])
+        observation.focusAfterEscape = journey.waitForKeyboardFocus(field)
+
+        // Exact enterSecure recipe, including its branch and existing waits.
+        // The helper's final assertion is replaced only in this new probe.
+        UIPasteboard.general.string = expected
+        defer { UIPasteboard.general.string = nil }
+        field.typeKey("v", modifierFlags: .command)
+        observation.pasteSecureEntryMatched = journey.waitForSecureEntry(
+            field, characterCount: expected.count, timeout: 1
+        )
+        observation.maskedCountAfterPaste = (field.value as? String)?.count ?? -1
+        if !observation.pasteSecureEntryMatched {
+            observation.usedTypingFallback = true
+            field.typeKey("a", modifierFlags: .command)
+            field.typeKey(XCUIKeyboardKey.delete, modifierFlags: [])
+            for character in expected {
+                field.typeText(String(character))
+            }
+        }
+        observation.finalSecureEntryMatched = journey.waitForSecureEntry(
+            field, characterCount: expected.count
+        )
+        observation.maskedCountAtEnd = (field.value as? String)?.count ?? -1
+
+        observation.eyeReached = reachWithoutAssertions(cleanup.eye, app: app)
+        guard observation.eyeReached else { return observation }
+        cleanup.eye.tap()
+        cleanup.wasRevealed = true
+        observation.shownExists = cleanup.shown.waitForExistence(timeout: 5)
+        if observation.shownExists, let bindingValue = cleanup.shown.value as? String {
+            observation.shownValueAvailable = true
+            observation.shownCount = bindingValue.count
+            observation.shownMatchesExpected = bindingValue == expected
+        }
+        observation.inconclusive = !observation.focusBeforeEscape
+            || !observation.focusAfterEscape
+            || !observation.shownExists
+            || !observation.shownValueAvailable
+        observation.maskedCountMismatchWithBindingIntact = !observation.inconclusive
+            && !observation.finalSecureEntryMatched && observation.shownMatchesExpected
+        observation.bindingDiffersFromExpected = !observation.inconclusive
+            && !observation.shownMatchesExpected
+        return observation
+    }
+
+}

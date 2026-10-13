@@ -1,6 +1,870 @@
 {
   "sourceLanguage" : "pt-BR",
   "strings" : {
+  "confirmed-meal.title": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Registro confirmado"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Confirmed record"
+        }
+      }
+    }
+  },
+  "confirmed-meal.saved.title": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Alteração salva"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Change saved"
+        }
+      }
+    }
+  },
+  "confirmed-meal.saved.previous": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Última alteração confirmada"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Last confirmed change"
+        }
+      }
+    }
+  },
+  "confirmed-meal.saved.daily-consumption": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Consumo do dia salvo"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Saved daily consumption"
+        }
+      }
+    }
+  },
+  "confirmed-meal.saved.refresh": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Atualizar registro"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Refresh record"
+        }
+      }
+    }
+  },
+  "confirmed-meal.history.title": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Confirmações anteriores"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Previous confirmations"
+        }
+      }
+    }
+  },
+  "confirmed-meal.history.updated": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Correção salva"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Correction saved"
+        }
+      }
+    }
+  },
+  "confirmed-meal.history.deleted": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Remoção salva"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Deletion saved"
+        }
+      }
+    }
+  },
+  "confirmed-meal.scope.group": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Refeição confirmada"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Confirmed meal"
+        }
+      }
+    }
+  },
+  "confirmed-meal.scope.item": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Alimento confirmado"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Confirmed food item"
+        }
+      }
+    }
+  },
+  "confirmed-meal.read-only": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Este registro está disponível só para consulta."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "This record is available for viewing only."
+        }
+      }
+    }
+  },
+  "confirmed-meal.one-at-a-time": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Corrija um alimento por vez. Para corrigir outro, selecione-o no Histórico."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Correct one food item at a time. To correct another, select it in History."
+        }
+      }
+    }
+  },
+  "confirmed-meal.item.saved-quantity": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Quantidade salva (g)"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Saved quantity (g)"
+        }
+      }
+    }
+  },
+  "confirmed-meal.item.select-for-deletion": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Selecionar para apagar"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Select for deletion"
+        }
+      }
+    }
+  },
+  "confirmed-meal.field.name": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Nome"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Name"
+        }
+      }
+    }
+  },
+  "confirmed-meal.field.quantity": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Quantidade (g)"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Quantity (g)"
+        }
+      }
+    }
+  },
+  "confirmed-meal.field.kcal": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Novo total de calorias (opcional)"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "New total calories (optional)"
+        }
+      }
+    }
+  },
+  "confirmed-meal.field.kcal.footer": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Deixe as calorias vazias ao corrigir apenas a quantidade. Use este campo somente para informar um novo total de calorias."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Leave calories blank when only correcting the quantity. Use this field only to enter a new calorie total."
+        }
+      }
+    }
+  },
+  "confirmed-meal.action.save": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Salvar correção deste alimento"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Save this food item's correction"
+        }
+      }
+    }
+  },
+  "confirmed-meal.action.delete": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Apagar selecionados"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Delete selected items"
+        }
+      }
+    }
+  },
+  "confirmed-meal.action.retry-send": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Tentar enviar novamente"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Try sending again"
+        }
+      }
+    }
+  },
+  "confirmed-meal.action.correct-fields": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Corrigir os campos"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Correct the fields"
+        }
+      }
+    }
+  },
+  "confirmed-meal.action.load-current": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Buscar os dados atuais"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Get the current data"
+        }
+      }
+    }
+  },
+  "confirmed-meal.action.review-current": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Revisar dados atuais"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Review current data"
+        }
+      }
+    }
+  },
+  "confirmed-meal.action.restore-fields": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Recuperar o que você digitou"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Restore what you typed"
+        }
+      }
+    }
+  },
+  "confirmed-meal.action.retry-read": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Tentar abrir novamente"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Try opening again"
+        }
+      }
+    }
+  },
+  "confirmed-meal.delete.title.one": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Apagar este alimento?"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Delete this food item?"
+        }
+      }
+    }
+  },
+  "confirmed-meal.delete.title.other": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Apagar os alimentos selecionados?"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Delete the selected food items?"
+        }
+      }
+    }
+  },
+  "confirmed-meal.delete.message.one": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%lld alimento selecionado será removido. O consumo do dia será atualizado."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%lld selected food item will be removed. Daily consumption will be updated."
+        }
+      }
+    }
+  },
+  "confirmed-meal.delete.message.other": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%lld alimentos selecionados serão removidos. O consumo do dia será atualizado."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%lld selected food items will be removed. Daily consumption will be updated."
+        }
+      }
+    }
+  },
+  "confirmed-meal.delete.confirm": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Apagar"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Delete"
+        }
+      }
+    }
+  },
+  "confirmed-meal.delete.cancel": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Cancelar"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Cancel"
+        }
+      }
+    }
+  },
+  "confirmed-meal.failure.changed": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Este registro mudou depois que você abriu. Busque os dados atuais e revise antes de salvar."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "This record changed after you opened it. Get the current data and review it before saving."
+        }
+      }
+    }
+  },
+  "confirmed-meal.failure.not-editable": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Este dia não está disponível para alteração."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "This day cannot be changed."
+        }
+      }
+    }
+  },
+  "confirmed-meal.failure.not-found": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Este registro não foi encontrado."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "This record was not found."
+        }
+      }
+    }
+  },
+  "confirmed-meal.failure.send-conflict": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Não foi possível confirmar este envio. Busque os dados atuais e revise antes de tentar de novo."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "This submission could not be confirmed. Get the current data and review it before trying again."
+        }
+      }
+    }
+  },
+  "confirmed-meal.failure.in-progress": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "O envio anterior ainda está sendo processado. Aguarde um instante e tente enviar novamente."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "The previous submission is still being processed. Wait a moment and try sending again."
+        }
+      }
+    }
+  },
+  "confirmed-meal.failure.unconfirmed": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Não foi possível confirmar se a alteração foi salva. Tente enviar novamente: a mesma alteração não é aplicada duas vezes."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "It could not be confirmed whether the change was saved. Try sending again: the same change is never applied twice."
+        }
+      }
+    }
+  },
+  "confirmed-meal.failure.invalid": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Não foi possível usar estes dados. Revise e tente novamente."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "This information could not be used. Review it and try again."
+        }
+      }
+    }
+  },
+  "confirmed-meal.failure.country-required": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Confirme seu país antes de recalcular este alimento."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Confirm your country before this food item can be recalculated."
+        }
+      }
+    }
+  },
+  "confirmed-meal.failure.quantity": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Informe a quantidade em gramas com até duas casas decimais."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Enter the quantity in grams with up to two decimal places."
+        }
+      }
+    }
+  },
+  "confirmed-meal.failure.nutrition": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Não foi possível calcular este alimento. Revise o nome e a quantidade."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "This food item could not be calculated. Review the name and the quantity."
+        }
+      }
+    }
+  },
+  "confirmed-meal.failure.group-limit": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Esta alteração passaria do limite de alimentos da refeição."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "This change would exceed the meal's food item limit."
+        }
+      }
+    }
+  },
+  "confirmed-meal.failure.group-changed": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "A refeição mudou e passou do limite de alimentos. Busque os dados atuais e revise."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "The meal changed and is over the food item limit. Get the current data and review it."
+        }
+      }
+    }
+  },
+  "confirmed-meal.failure.generic": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Não foi possível concluir agora."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "This could not be completed right now."
+        }
+      }
+    }
+  },
+  "confirmed-meal.fields-kept": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "O que você digitou foi mantido."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "What you typed was kept."
+        }
+      }
+    }
+  },
+  "confirmed-meal.read-failed": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Não foi possível abrir este registro agora."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "This record could not be opened right now."
+        }
+      }
+    }
+  },
+  "confirmed-meal.read-failed.local": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Não foi possível abrir este registro para alteração agora. Estes são os dados que já estavam no app."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "This record could not be opened for changes right now. This is the information already in the app."
+        }
+      }
+    }
+  },
+  "confirmed-meal.read-failed.refresh": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Não foi possível atualizar este registro agora."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "This record could not be refreshed right now."
+        }
+      }
+    }
+  },
+  "confirmed-meal.read-failed.after-save": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "A última alteração continua salva. Não foi possível atualizar o registro agora."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Your last change is still saved. The record could not be refreshed right now."
+        }
+      }
+    }
+  },
+  "confirmed-meal.review-needed": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Este registro mudou desde que você abriu. Revise os dados atuais antes de continuar; o que você digitou fica guardado para recuperar depois."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "This record changed since you opened it. Review the current data before continuing; what you typed is kept so you can restore it afterwards."
+        }
+      }
+    }
+  },
+  "confirmed-meal.rejected-input": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Estes mesmos dados já foram recusados. Altere-os para salvar."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "This same information was already declined. Change it to save."
+        }
+      }
+    }
+  },
+  "confirmed-meal.loading": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Carregando o registro…"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Loading the record…"
+        }
+      }
+    }
+  },
+  "confirmed-meal.sending": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Enviando a alteração…"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Sending the change…"
+        }
+      }
+    }
+  },
     "onboarding.photos.result.sex-required" : {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Choose your biological sex in body data to review this estimate."}}, "pt-BR": {"stringUnit": {"state": "translated", "value": "Escolha o sexo biológico nos dados corporais para revisar esta estimativa."}}}},
     "onboarding.photos.capture.camera-unavailable" : {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "The camera is unavailable. You can choose photos from your library."}}, "pt-BR": {"stringUnit": {"state": "translated", "value": "A câmera não está disponível. Você pode escolher as fotos da galeria."}}}},
     "onboarding.photos.capture.camera-denied" : {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Camera access is blocked. Choose library photos or allow the camera in Settings."}}, "pt-BR": {"stringUnit": {"state": "translated", "value": "A câmera está bloqueada. Escolha fotos da galeria ou permita a câmera nos Ajustes."}}}},

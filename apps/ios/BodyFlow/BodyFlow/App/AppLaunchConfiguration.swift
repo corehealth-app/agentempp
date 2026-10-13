@@ -328,6 +328,7 @@ struct AppLaunchConfiguration: Sendable {
     /// UI-test fixture: the sign-up runs on the repository of a real account
     /// over a stand-in server, so what it keeps on the phone can be driven.
     let usesOnboardingDeviceDraftFixture: Bool
+    let usesSignupBodyPhotoCaptureFixture: Bool
     let prompt13Scenario: DemoBodyFlowScenario?
     let prompt14Scenario: DemoPrompt14Scenario?
     let prompt14ScenarioSelection: DemoPrompt14ScenarioSelection?
@@ -346,6 +347,7 @@ struct AppLaunchConfiguration: Sendable {
         onboardingEligibilityScenario: OnboardingEligibilityPreviewScenario? = nil,
         signupBodyPhotoScenario: SignupBodyPhotoPreviewScenario? = nil,
         usesOnboardingDeviceDraftFixture: Bool = false,
+        usesSignupBodyPhotoCaptureFixture: Bool = false,
         prompt13Scenario: DemoBodyFlowScenario? = nil,
         prompt14Scenario: DemoPrompt14Scenario? = nil,
         prompt14ScenarioSelection: DemoPrompt14ScenarioSelection? = nil,
@@ -361,6 +363,10 @@ struct AppLaunchConfiguration: Sendable {
         self.onboardingEligibilityScenario = mode == .demo ? onboardingEligibilityScenario : nil
         self.signupBodyPhotoScenario = mode == .demo ? signupBodyPhotoScenario : nil
         self.usesOnboardingDeviceDraftFixture = mode == .demo && usesOnboardingDeviceDraftFixture
+        self.usesSignupBodyPhotoCaptureFixture = mode == .demo
+            && !startsWithCompletedFixture && !preloadsSyntheticOnboardingValues
+            && signupBodyPhotoScenario == nil && !usesOnboardingDeviceDraftFixture
+            && usesSignupBodyPhotoCaptureFixture
         self.prompt13Scenario = mode == .demo ? prompt13Scenario : nil
         self.prompt14Scenario = mode == .demo ? prompt14Scenario : nil
         self.block7700Scenario = mode == .demo ? block7700Scenario : nil
@@ -530,6 +536,15 @@ struct AppLaunchConfiguration: Sendable {
                 prompt14ScenarioSelection: selection,
                 block7700Scenario: DemoBlock7700Scenario.resolve(arguments: arguments)
             )
+        }
+
+        // Fresh capture fixture is separate from the seven state-only cases.
+        if arguments.contains("--ui-testing-signup-body-photos-capture") {
+            return AppLaunchConfiguration(mode: .demo, shouldResetDemoState: true,
+                startsWithCompletedFixture: false, preloadsSyntheticOnboardingValues: false,
+                authBehavior: .succeed(after: nil), demoStorageBoundary: .keychain,
+                demoKeychainService: DemoStorageService.uiTesting,
+                usesSignupBodyPhotoCaptureFixture: true)
         }
 
         if arguments.contains("--ui-testing-preserve-state") {

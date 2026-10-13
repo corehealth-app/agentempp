@@ -667,7 +667,7 @@ struct AppDependencies: Sendable {
             signupBodyPhotoCleanup = nil
         }
 
-        let signupBodyPhotoCapture: SignupBodyPhotoCaptureCapability?
+        var signupBodyPhotoCapture: SignupBodyPhotoCaptureCapability?
         if configuration.mode != .demo,
            let transport = apiClient as? MobileAPITransport,
            let releaseLifecycle,
@@ -679,6 +679,20 @@ struct AppDependencies: Sendable {
         } else {
             signupBodyPhotoCapture = nil
         }
+
+        #if DEBUG
+        if configuration.mode == .demo, configuration.usesSignupBodyPhotoCaptureFixture,
+           let document = SignupBodyPhotoCaptureFixtureConsent.document(
+               for: DemoOnboardingSuggestions.currentDevice.localeIdentifier) {
+            // This UUID folder and capability belong only to the fresh local
+            // capture fixture. It never enters the real JWT/Storage transport.
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("signup-body-photo-capture-fixture-" + UUID().uuidString)
+            signupBodyPhotoCapture = SignupBodyPhotoCaptureFixture(
+                mode: .demo, buildFlavor: buildFlavor, directory: directory,
+                allowedOwnerID: DemoUser.id, document: document).capability
+        }
+        #endif
 
         return AppDependencies(
             apiClient: apiClient,

@@ -181,14 +181,18 @@ final class MealRecordModel {
         finish(operation)
     }
 
+    /// The same eligibility used by reviewLatest(), exposed to its controls.
+    var canReviewLatest: Bool {
+        !isLoading && !isSubmitting && isSessionActive() && !hasCompletedCurrentPresentation
+            && !requiresFreshPresentationRead && detail != nil
+            && (retainedAttempt == nil
+                || (failure?.mayRetrySameAttempt == false && lastReadSequence > attemptSequence))
+    }
+
     /// Explicitly review the latest server version. Preserve the old form as
     /// an archive; never merge it silently over a concurrently changed group.
     func reviewLatest() {
-        guard !isLoading, !isSubmitting, isSessionActive(), !hasCompletedCurrentPresentation,
-              !requiresFreshPresentationRead,
-              let detail,
-              retainedAttempt == nil || (failure?.mayRetrySameAttempt == false && lastReadSequence > attemptSequence)
-        else { return }
+        guard canReviewLatest, let detail else { return }
         archiveCurrentDraft()
         draft = MealRecordEditDraft(detail.data)
         deletionSelection = [recordID]

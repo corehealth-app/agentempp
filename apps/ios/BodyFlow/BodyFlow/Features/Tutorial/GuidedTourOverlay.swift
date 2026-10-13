@@ -104,6 +104,7 @@ struct GuidedTourOverlay: View {
                 calloutContent(step)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
             }
+            .id(step.id)
             .scrollBounceBehavior(.basedOnSize)
             .frame(height: min(contentHeight, max(48, maxHeight - actionsHeight)))
             actions(step)
@@ -137,14 +138,14 @@ struct GuidedTourOverlay: View {
                 .foregroundStyle(BodyFlowColor.primaryText)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("tour.body.\(step.id)")
-            if step.kind == .trail { trail(showsBlock7700: step.showsBlock7700) }
+            if step.kind == .trail { trail(showsBlock7700: step.showsBlock7700, planLineKey: step.planLineKey) }
         }
         .padding(BodyFlowSpacing.md)
     }
 
     /// The day's trail: register → Today updates → 7,700 kcal block →
     /// Progress. The plan line says how Plano and Flow fit around it.
-    private func trail(showsBlock7700: Bool) -> some View {
+    private func trail(showsBlock7700: Bool, planLineKey: String) -> some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
             let nodes: [(BodyFlowSymbol, String)] = [
                 (.meals, "tour.trail.node.register"),
@@ -158,7 +159,7 @@ struct GuidedTourOverlay: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("tour.trail.diagram")
-            Text(copy("tour.trail.plan"))
+            Text(copy(planLineKey))
                 .font(BodyFlowTypography.callout)
                 .foregroundStyle(BodyFlowColor.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)

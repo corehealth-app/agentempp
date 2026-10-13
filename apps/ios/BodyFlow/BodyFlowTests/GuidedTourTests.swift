@@ -41,7 +41,7 @@ struct GuidedTourTests {
     @Test("Every tour text exists in both languages with the public names only",
           arguments: SupportedAppLanguage.allCases)
     func textsAreReviewed(_ language: SupportedAppLanguage) throws {
-        var keys: Set<String> = ["tour.skip", "tour.got-it", "tour.trail.plan",
+        var keys: Set<String> = ["tour.skip", "tour.got-it", "tour.trail.plan", "tour.plan.body.drafts",
                                  "tour.trail.node.register", "tour.trail.node.today",
                                  "tour.trail.node.block", "tour.trail.node.progress"]
         for base in [allFacts, noFacts] {
@@ -52,6 +52,7 @@ struct GuidedTourTests {
                     facts.reminders = reminders
                     for step in GuidedTourContent.steps(facts: facts) {
                         keys.insert(step.titleKey); keys.insert(step.bodyKey)
+                        keys.insert(step.planLineKey)
                     }
                 }
             }
@@ -64,6 +65,26 @@ struct GuidedTourTests {
             let text = try AppLocalization.string(String.LocalizationValue(key), for: language)
             #expect(text != key && !text.isEmpty, "\(key) / \(language)")
             #expect(!text.localizedCaseInsensitiveContains("BodyFlow") && !text.contains("MPP"), "\(key)")
+        }
+    }
+
+    @Test("Standalone trail captions default to current plans and draft facts select the suggestion line")
+    func planCaptionDefaultAndSelectedKey() throws {
+        let standalone = GuidedTourStep(id: "trail", kind: .trail, tab: .today,
+            titleKey: "tour.trail.title", bodyKey: "tour.trail.body.without-block")
+        #expect(standalone.planLineKey == "tour.trail.plan.current")
+        let cases: [(Bool, Bool, String)] = [
+            (false, false, "tour.trail.plan.current"),
+            (false, true, "tour.trail.plan.current"),
+            (true, false, "tour.trail.plan"),
+            (true, true, "tour.trail.plan"),
+        ]
+        for (drafts, importing, expectedKey) in cases {
+            var facts = noFacts
+            facts.planDrafts = drafts
+            facts.planImport = importing
+            let trail = try #require(GuidedTourContent.steps(facts: facts).first { $0.id == "trail" })
+            #expect(trail.planLineKey == expectedKey)
         }
     }
 

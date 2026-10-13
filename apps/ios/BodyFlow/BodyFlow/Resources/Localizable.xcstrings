@@ -6295,12 +6295,12 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sua trilha hoje" } }
     } },
     "tour.flow.body" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Ask about your data, targets and progress. Flow is an AI and does not replace professional advice." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Pergunte sobre seus dados, metas e progresso. O Flow é uma IA e não substitui orientação profissional." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Ask about your data, targets and progress. Flow is an AI and does not replace professional advice. Ready-made questions only fill the field; nothing is sent until you tap send. You can keep typing while Flow answers. If the connection fails, the message shows “Delivery unconfirmed”, with the option to try again. Cancel waiting stops waiting for the answer on this device, but does not guarantee the request was cancelled." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Pergunte sobre seus dados, metas e progresso. O Flow é uma IA e não substitui orientação profissional. As perguntas prontas só preenchem o campo; nada é enviado até você tocar em enviar. Você pode continuar escrevendo enquanto o Flow responde. Se a conexão falhar, a mensagem aparece como “Envio sem confirmação”, com a opção de tentar novamente. Cancelar espera para de aguardar a resposta neste aparelho, mas não garante que o pedido foi cancelado." } }
     } },
     "tour.flow.body.suggestions" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Ask about your data and request workout or meal plan suggestions. They only count after you review and confirm them." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Pergunte sobre seus dados e peça sugestões de treino ou cardápio. Elas só valem depois que você revisar e confirmar." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Ask about your data and request workout or meal plan suggestions. They only count after you review and confirm them. Ready-made questions only fill the field; nothing is sent until you tap send. You can keep typing while Flow answers. If the connection fails, the message shows “Delivery unconfirmed”, with the option to try again. Cancel waiting stops waiting for the answer on this device, but does not guarantee the request was cancelled." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Pergunte sobre seus dados e peça sugestões de treino ou cardápio. Elas só valem depois que você revisar e confirmar. As perguntas prontas só preenchem o campo; nada é enviado até você tocar em enviar. Você pode continuar escrevendo enquanto o Flow responde. Se a conexão falhar, a mensagem aparece como “Envio sem confirmação”, com a opção de tentar novamente. Cancelar espera para de aguardar a resposta neste aparelho, mas não garante que o pedido foi cancelado." } }
     } },
     "tour.flow.title" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Chat with Flow" } },
@@ -6311,20 +6311,20 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Entendi" } }
     } },
     "tour.library.body" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Published articles to read, save and mark as completed. It can be empty while nothing has been published." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Artigos publicados para ler, salvar e marcar como concluídos. Pode estar vazia enquanto nada foi publicado." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Also in Today, the Library holds published articles to read, save and mark as completed, with the All and Saved filters. It can be empty while nothing has been published.\n\nIn Today, Routine lists the supplements and medications already on file, with their times. Marking, snoozing or skipping becomes available from each item’s time." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Também em Hoje, a Biblioteca reúne artigos publicados para ler, salvar e marcar como concluídos, com os filtros Todos e Salvos. Ela pode estar vazia enquanto nada foi publicado.\n\nEm Hoje, Rotina lista os suplementos e medicamentos já cadastrados, com horários. Marcar, adiar ou pular fica disponível a partir do horário de cada item." } }
     } },
     "tour.library.title" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Library" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Biblioteca" } }
     } },
     "tour.plan.body" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Your current workout and nutrition plans, and Flow’s suggestions under “To review”." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Seus planos atuais de treino e alimentação, e as sugestões do Flow em “Para revisar”." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Your current workout and nutrition plans, with their details." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Seus planos atuais de treino e alimentação, com os detalhes." } }
     } },
     "tour.plan.body.import" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Your current plans, Flow’s suggestions under “To review” and importing a plan from a photo or PDF." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Seus planos atuais, as sugestões do Flow em “Para revisar” e a importação de um plano por foto ou PDF." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Your current workout and nutrition plans. In Import plan, choose workout or nutrition and send a photo or PDF of a plan you already have. The result stays as a draft under To review. Review, adjust or discard before confirming: the plan only changes when you confirm." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Seus planos atuais de treino e alimentação. Em Importar plano, escolha treino ou alimentação e envie uma foto ou PDF de um plano que já tem. O resultado fica como rascunho em Para revisar. Revise, ajuste ou descarte antes de confirmar: o plano só muda quando você confirma." } }
     } },
     "tour.plan.title" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Plan" } },
@@ -6351,24 +6351,24 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Perfil" } }
     } },
     "tour.progress.body.without-block" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Weight, measurements, consistency and achievements, with the dates of your records." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Peso, medidas, consistência e conquistas, com as datas dos seus registros." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Weight, measurements, consistency and achievements, with the dates of your records. Tap a calorie bar to see that day’s data. When a value does not exist yet, the app shows it is not available, never a made-up number." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Peso, medidas, consistência e conquistas, com as datas dos seus registros. Toque em uma barra de calorias para ver os dados daquele dia. Quando um dado ainda não existe, o app mostra que ele não está disponível, nunca um número inventado." } }
     } },
     "tour.progress.body" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Weight, measurements, consistency, achievements and the 7,700 kcal Block, always with the date of each value." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Peso, medidas, consistência, conquistas e o Bloco 7.700 kcal, sempre com a data de cada dado." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Weight, measurements, consistency, achievements and the 7,700 kcal Block, always with the date of each value. Tap a calorie bar to see that day’s data. When a value does not exist yet, the app shows it is not available, never a made-up number." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Peso, medidas, consistência, conquistas e o Bloco 7.700 kcal, sempre com a data de cada dado. Toque em uma barra de calorias para ver os dados daquele dia. Quando um dado ainda não existe, o app mostra que ele não está disponível, nunca um número inventado." } }
     } },
     "tour.progress.title" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Progress" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Progresso" } }
     } },
     "tour.register.body" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "The central button opens Meal, Workout, Weight and Hydration. A meal is described in text and reviewed before you confirm." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O botão central abre Refeição, Treino, Peso e Hidratação. A refeição é descrita por texto e revisada antes de confirmar." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The central Register button opens Meal, Workout, Weight and Hydration. For a meal, describe what you ate in text. For a meal or a workout, the app builds a proposal. Review and adjust it before confirming: none of it is saved without your confirmation. Weight and hydration are saved when you tap Record weight or Record hydration." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O botão central Registrar abre Refeição, Treino, Peso e Hidratação. Na refeição, descreva o que comeu por texto. Na refeição e no treino, o app monta uma proposta. Revise e ajuste antes de confirmar: nada disso é salvo sem a sua confirmação. Peso e hidratação são salvos quando você toca em Registrar peso ou Registrar hidratação." } }
     } },
     "tour.register.body.media" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "The central button opens Meal, Workout, Weight and Hydration. A meal can go by text, photo or audio and is reviewed before you confirm." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O botão central abre Refeição, Treino, Peso e Hidratação. A refeição pode ir por texto, foto ou áudio e é revisada antes de confirmar." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The central Register button opens Meal, Workout, Weight and Hydration. For a meal, describe what you ate in text, or send a photo or an audio. For a meal or a workout, the app builds a proposal. Review and adjust it before confirming: none of it is saved without your confirmation. Weight and hydration are saved when you tap Record weight or Record hydration." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O botão central Registrar abre Refeição, Treino, Peso e Hidratação. Na refeição, descreva o que comeu por texto, envie uma foto ou um áudio. Na refeição e no treino, o app monta uma proposta. Revise e ajuste antes de confirmar: nada disso é salvo sem a sua confirmação. Peso e hidratação são salvos quando você toca em Registrar peso ou Registrar hidratação." } }
     } },
     "tour.register.title" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Register" } },
@@ -6395,12 +6395,12 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Comece pela refeição" } }
     } },
     "tour.trail.body.without-block" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Each entry updates Today. Progress shows your recorded measurements and consistency over time." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Cada registro atualiza o Hoje. O Progresso mostra suas medidas registradas e a constância ao longo do tempo." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Each entry updates Today. Progress shows your recorded measurements and consistency over time.\n\n“Remaining for food” shows how much still fits in today’s food target. If you go past it, you see “Food excess”. Exercise is not part of this number. “Day balance” shows the balance of the whole day. The caption below says whether exercise is counted. To get the latest data, tap the refresh icon or pull the screen down. When it is out of date, the app tells you. More details shows the day’s values. History lists your confirmed meals and workouts." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Cada registro atualiza o Hoje. O Progresso mostra suas medidas registradas e a constância ao longo do tempo.\n\n“Restam para comida” mostra quanto ainda cabe na sua meta de comida de hoje. Se você passar da meta, aparece “Excesso alimentar”. O exercício não entra nessa conta. “Balanço do dia” mostra o balanço do dia inteiro. A legenda embaixo diz se o exercício entrou na conta. Para buscar os dados mais recentes, toque no ícone de atualizar ou puxe a tela para baixo. Quando eles estiverem desatualizados, o app avisa. Em Mais detalhes ficam os valores do dia. O Histórico reúne as refeições e os treinos confirmados." } }
     } },
     "tour.trail.body" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Each entry updates Today. When the day closes, meeting your food target credits the deficit to the 7,700 kcal Block: exercise speeds it up, going over subtracts. Progress shows the result over the weeks." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Cada registro atualiza o Hoje. Ao fechar o dia, bater a meta de comida credita o déficit no Bloco 7.700 kcal: o exercício acelera, passar da meta desconta. O Progresso mostra o resultado ao longo das semanas." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Each entry updates Today. When the day closes, meeting your food target credits the deficit to the 7,700 kcal Block: exercise speeds it up, going over subtracts. Progress shows the result over the weeks.\n\n“Remaining for food” shows how much still fits in today’s food target. If you go past it, you see “Food excess”. Exercise is not part of this number. “Day balance” shows the balance of the whole day. The caption below says whether exercise is counted. To get the latest data, tap the refresh icon or pull the screen down. When it is out of date, the app tells you. More details shows the day’s values. History lists your confirmed meals and workouts." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Cada registro atualiza o Hoje. Ao fechar o dia, bater a meta de comida credita o déficit no Bloco 7.700 kcal: o exercício acelera, passar da meta desconta. O Progresso mostra o resultado ao longo das semanas.\n\n“Restam para comida” mostra quanto ainda cabe na sua meta de comida de hoje. Se você passar da meta, aparece “Excesso alimentar”. O exercício não entra nessa conta. “Balanço do dia” mostra o balanço do dia inteiro. A legenda embaixo diz se o exercício entrou na conta. Para buscar os dados mais recentes, toque no ícone de atualizar ou puxe a tela para baixo. Quando eles estiverem desatualizados, o app avisa. Em Mais detalhes ficam os valores do dia. O Histórico reúne as refeições e os treinos confirmados." } }
     } },
     "tour.trail.node.block" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "7,700 Block" } },
@@ -6455,8 +6455,8 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Cancelar espera para de aguardar a resposta neste aparelho, mas não garante que o pedido foi cancelado." } }
     } },
     "tutorial.flow.open" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "In Today, tap Chat with Flow to ask about your data, targets and progress. Flow is an AI and does not replace professional advice." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Em Hoje, toque em Falar com o Flow para perguntar sobre seus dados, metas e progresso. O Flow é uma IA e não substitui orientação profissional." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "In Today, tap Chat with Flow to ask about your data, targets and progress. Flow is an AI and does not replace professional advice. Ready-made questions only fill the field; nothing is sent until you tap send." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Em Hoje, toque em Falar com o Flow para perguntar sobre seus dados, metas e progresso. O Flow é uma IA e não substitui orientação profissional. As perguntas prontas só preenchem o campo; nada é enviado até você tocar em enviar." } }
     } },
     "tutorial.flow.pending" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "You can keep typing while Flow answers. If the connection fails, the message shows “Delivery unconfirmed”, with the option to try again." } },
@@ -6507,8 +6507,8 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Em Para revisar ficam as sugestões criadas pelo Flow." } }
     } },
     "tutorial.plan.review.import" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "To review holds Flow’s suggestions and the plans you import from a photo or a PDF with Import plan." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Em Para revisar ficam as sugestões do Flow e os planos que você importar por foto ou PDF, em Importar plano." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "In Import plan, choose workout or nutrition and send a photo or PDF of a plan you already have. The result stays as a draft under To review. Review, adjust or discard before confirming: the plan only changes when you confirm." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Em Importar plano, escolha treino ou alimentação e envie uma foto ou PDF de um plano que já tem. O resultado fica como rascunho em Para revisar. Revise, ajuste ou descarte antes de confirmar: o plano só muda quando você confirma." } }
     } },
     "tutorial.plan.title" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Plan" } },
@@ -6543,12 +6543,12 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Perfil" } }
     } },
     "tutorial.progress.body.without-block" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Progress brings together weight, measurements, consistency and achievements, with the dates of your records." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Progresso reúne peso, medidas, consistência e conquistas, com as datas dos seus registros." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Progress brings together weight, measurements, consistency and achievements, with the dates of your records. Tap a calorie bar to see that day’s data." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Progresso reúne peso, medidas, consistência e conquistas, com as datas dos seus registros. Toque em uma barra de calorias para ver os dados daquele dia." } }
     } },
     "tutorial.progress.body" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Progress brings together weight, measurements, consistency, achievements and the 7,700 kcal Block, with the date of each value." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Progresso reúne peso, medidas, consistência, conquistas e o Bloco 7.700 kcal, com a data de cada dado." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Progress brings together weight, measurements, consistency, achievements and the 7,700 kcal Block, with the date of each value. Tap a calorie bar to see that day’s data." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Progresso reúne peso, medidas, consistência, conquistas e o Bloco 7.700 kcal, com a data de cada dado. Toque em uma barra de calorias para ver os dados daquele dia." } }
     } },
     "tutorial.progress.empty" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "When a value does not exist yet, the app shows it is not available, never a made-up number." } },
@@ -6617,6 +6617,14 @@
     "tutorial.welcome.title" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Welcome to Performe AI" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Boas-vindas ao Performe AI" } }
+    } },
+    "tour.plan.body.drafts" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Your current workout and nutrition plans. When Flow has suggestions, they appear under To review. Review and adjust before confirming: the plan only changes when you confirm." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Seus planos atuais de treino e alimentação. Quando houver sugestões do Flow, elas ficam em Para revisar. Revise e ajuste antes de confirmar: o plano só muda quando você confirma." } }
+    } },
+    "tour.trail.plan.current" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Plan is your protocol: your current workout and nutrition." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O Plano é o seu protocolo: treino e alimentação atuais." } }
     } }
   },
   "version" : "1.0"

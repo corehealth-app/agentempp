@@ -30,6 +30,15 @@ struct MealRecordDetailPresentation: Equatable {
 
     @MainActor
     static func make(model: MealRecordModel, localRow: HistoryMealLogRow?) -> MealRecordDetailPresentation {
+        if isRecordUnavailable(model: model) {
+            if let detail = model.detail?.data {
+                return MealRecordDetailPresentation(content: .readOnly(detail.items))
+            }
+            if let localRow, localRow.id == model.recordID {
+                return MealRecordDetailPresentation(content: .localRow(localRow))
+            }
+            return MealRecordDetailPresentation(content: .nothing)
+        }
         guard let detail = model.detail?.data else {
             // After a saved change the row History held describes the past.
             if model.confirmedReceipt == nil, let localRow, localRow.id == model.recordID {
@@ -45,6 +54,15 @@ struct MealRecordDetailPresentation: Equatable {
         return MealRecordDetailPresentation(content: .form(detail.items.map { item in
             Row(official: item, draftIndex: item.id == model.recordID ? anchor : nil)
         }))
+    }
+
+    /// A typed official GET says this original record no longer exists. A
+    /// command with an unknown outcome still owns its key and retry path;
+    /// neither a failed read nor this presentation resolves that command.
+    @MainActor
+    static func isRecordUnavailable(model: MealRecordModel) -> Bool {
+        model.readFailure == .notFound && model.confirmedReceipt == nil
+            && (model.retainedAttempt == nil || model.failure?.mayRetrySameAttempt == false)
     }
 
     /// Whether the screen offers Save: the model accepts the form and sending

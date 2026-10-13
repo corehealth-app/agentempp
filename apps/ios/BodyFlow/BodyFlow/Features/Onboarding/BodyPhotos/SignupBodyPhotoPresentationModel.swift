@@ -54,6 +54,30 @@ final class SignupBodyPhotoPresentationModel {
         return scope?.camera
     }
 
+    /// The server's decision for the current draft sex, never a client mean.
+    /// Readonly presentation eligibility; confirmation keeps its own guards.
+    var currentEstimateDecision: SignupBodyPhotoEstimate.Decision? {
+        guard allowsPhotoAction, !flow.hasPendingBodyPhotoDeletion,
+              let capture, capture.isActive, capture.hasAcceptedConsent,
+              let state = capture.state, state.available,
+              let estimate = state.estimate, estimate.isEstimate,
+              let sex = flow.draft.biologicalSex else { return nil }
+        return sex == .masculine ? estimate.bySex.masculine : estimate.bySex.feminine
+    }
+
+    /// Candidate/proof validation remains in the existing canonical validator.
+    /// The explicit action may still refuse a Flow cancellation at tap time.
+    var confirmableEstimate: OnboardingBodyPhotoConfirmation? {
+        guard allowsPhotoAction, !flow.hasPendingBodyPhotoDeletion,
+              let capture, capture.isActive, capture.hasAcceptedConsent,
+              let state = capture.state, let sex = flow.draft.biologicalSex else { return nil }
+        return OnboardingBodyPhotoConfirmation.candidate(from: state, sex: sex)
+    }
+
+    var resultRequiresBiologicalSex: Bool {
+        currentOwner && route == .result && flow.draft.biologicalSex == nil
+    }
+
     var availability: SignupBodyPhotoAvailability {
         guard currentOwner, !flow.isReacceptance, !loadFailed else { return .unavailable }
         return .resolve(draft: flow.draft, state: capture?.state,
@@ -89,6 +113,7 @@ final class SignupBodyPhotoPresentationModel {
         let loadingEpoch = epoch
         observerEpoch = loadingEpoch
         loadFailed = false
+        var resolvedBinding = false
         do {
             if capture == nil {
                 if bindingTask == nil {
@@ -97,6 +122,7 @@ final class SignupBodyPhotoPresentationModel {
                 }
                 guard let bindingTask else { return }
                 let bound = try await bindingTask.value
+                resolvedBinding = true
                 try checkLoad(loadingEpoch)
                 guard bound.userID == ownerToken.userID else { throw CancellationError() }
                 try await bound.validateSession()
@@ -113,9 +139,13 @@ final class SignupBodyPhotoPresentationModel {
             try checkLoad(loadingEpoch)
             loadFailed = capture?.state == nil
         } catch {
-            guard currentOwner, epoch == loadingEpoch, !Task.isCancelled else { return }
-            if capture == nil { bindingTask = nil }
-            loadFailed = true
+            guard currentOwner, epoch == loadingEpoch else { return }
+            // A cancelled initial caller still needs an explicit recovery
+            // action. A successfully resolved immutable scope can be reused
+            // and validated by that retry, without another factory binding.
+            let retainBinding = resolvedBinding && Task.isCancelled && error is CancellationError
+            if capture == nil, !retainBinding { bindingTask = nil }
+            loadFailed = capture?.state == nil
         }
     }
 

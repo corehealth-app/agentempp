@@ -141,7 +141,9 @@ struct AppRootView: View {
                        modelUserID: onboardingFlowModel.userID,
                        activeUserID: userID
                    ) {
-                    OnboardingContainerView(model: onboardingFlowModel)
+                    OnboardingContainerView(model: onboardingFlowModel,
+                        photos: onboardingCoordinator.photosModel)
+                        .id(onboardingTaskID)
                 } else if onboardingCoordinator.flowModel == nil,
                           onboardingCoordinator.loadFailed {
                     onboardingLoadError
@@ -339,6 +341,12 @@ struct AppRootView: View {
             timeProvider: dependencies.timeProvider,
             isCurrentPhotoOwner: { token in model.onboardingOwnerToken == token }
         )
+        guard let ownerToken, model.onboardingOwnerToken == ownerToken,
+              !Task.isCancelled,
+              let photos = onboardingCoordinator.claimInitialPhotoLoad(ownerToken: ownerToken) else { return }
+        // Admission belongs to the retained parent. Recreating this root task
+        // for the same full owner cannot start another initial read.
+        await photos.load()
     }
 }
 
@@ -376,7 +384,7 @@ extension EnvironmentValues {
     }
 }
 
-private struct OnboardingRootTaskID: Equatable {
+private struct OnboardingRootTaskID: Equatable, Hashable {
     let userID: String?
     let restoreGeneration: Int
 }
@@ -387,9 +395,20 @@ struct OnboardingRootCoordinator {
     private(set) var loadFailed = false
     private(set) var ownerToken: OnboardingOwnerToken?
     private(set) var photosModel: SignupBodyPhotoPresentationModel?
+    private var initialPhotoLoadClaim: ObjectIdentifier?
 
     func canRender(ownerToken: OnboardingOwnerToken?) -> Bool {
         ownerToken != nil && self.ownerToken == ownerToken && flowModel?.isActive == true
+    }
+
+    /// One synchronous claim for the current retained parent, before awaiting
+    /// the initial read. Recreated root tasks cannot admit a second load.
+    mutating func claimInitialPhotoLoad(ownerToken: OnboardingOwnerToken?) -> SignupBodyPhotoPresentationModel? {
+        guard !Task.isCancelled, canRender(ownerToken: ownerToken),
+              let photos = photosModel, photos.isActive,
+              initialPhotoLoadClaim != ObjectIdentifier(photos) else { return nil }
+        initialPhotoLoadClaim = ObjectIdentifier(photos)
+        return photos
     }
 
     mutating func prepareForRetry() {
@@ -417,6 +436,7 @@ struct OnboardingRootCoordinator {
         guard let activeUserID else {
             photosModel?.invalidate()
             photosModel = nil
+            initialPhotoLoadClaim = nil
             flowModel?.invalidate()
             flowModel = nil
             ownerToken = nil
@@ -428,6 +448,7 @@ struct OnboardingRootCoordinator {
 
         photosModel?.invalidate()
         photosModel = nil
+        initialPhotoLoadClaim = nil
         flowModel?.invalidate()
         flowModel = nil
         ownerToken = requestedOwner

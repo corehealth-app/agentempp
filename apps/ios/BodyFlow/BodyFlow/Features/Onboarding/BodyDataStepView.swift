@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @MainActor
 struct BodyDataStepView: View {
@@ -9,8 +10,18 @@ struct BodyDataStepView: View {
     }
 
     let model: OnboardingFlowModel
+    let photos: SignupBodyPhotoPresentationModel?
+    let openPhotos: @MainActor () -> Void
+
+    init(model: OnboardingFlowModel, photos: SignupBodyPhotoPresentationModel? = nil,
+         openPhotos: @escaping @MainActor () -> Void = {}) {
+        self.model = model
+        self.photos = photos
+        self.openPhotos = openPhotos
+    }
     @Environment(\.locale) private var locale
     @FocusState private var focusedField: Field?
+    @State private var isReloadingPhotos = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
@@ -101,13 +112,48 @@ struct BodyDataStepView: View {
                 identifier: "onboarding.weight",
                 issues: [.weightOutOfRange]
             )
-            decimalField(
-                descriptor: .bodyFat(language: language),
-                value: bodyFat,
-                field: .bodyFat,
-                identifier: "onboarding.body-fat",
-                issues: [.bodyFatOutOfRange]
-            )
+            if let photos {
+                if photos.loadFailed || isReloadingPhotos {
+                    VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+                        if photos.loadFailed {
+                            BodyFlowStatusLine(copy("state.error.detail"), kind: .error)
+                                .accessibilityIdentifier("onboarding.photos.load.error")
+                        } else {
+                            BodyFlowStatusLine(copy("state.loading.title"), kind: .pending)
+                        }
+                        Button(copy("onboarding.retry"), action: reloadPhotos)
+                            .buttonStyle(BodyFlowButtonStyle(role: .secondary,
+                                isLoading: isReloadingPhotos))
+                            .disabled(isReloadingPhotos || !model.allowsDraftEditing
+                                || model.operationState == .saving)
+                            .accessibilityIdentifier("onboarding.photos.load.retry")
+                    }
+                }
+                if model.draft.bodyFatOrigin == .photos,
+                   let confirmation = model.draft.bodyPhotoConfirmation,
+                   confirmation.matches(model.draft), !model.requiresBodyPhotoRevalidation {
+                    let number = confirmation.value.formatted(
+                        .number.locale(language.formattingLocale)
+                            .precision(.fractionLength(0...2))) + "%"
+                    Text(OnboardingCopy.format("onboarding.body-fat.photos.confirmed-format",
+                        language: language, number))
+                        .font(BodyFlowTypography.callout)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("onboarding.body-fat.photos.confirmed")
+                }
+                SignupBodyPhotoChoiceView(availability: photos.availability,
+                    selection: photos.choice, select: selectBodyFatChoice)
+                    .disabled(!model.allowsDraftEditing || model.operationState == .saving)
+            }
+            if photos?.choice != .photos && photos?.choice != .skip {
+                decimalField(
+                    descriptor: .bodyFat(language: language),
+                    value: bodyFat,
+                    field: .bodyFat,
+                    identifier: "onboarding.body-fat",
+                    issues: [.bodyFatOutOfRange]
+                )
+            }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("screen.onboarding.body-data")
@@ -125,6 +171,24 @@ struct BodyDataStepView: View {
 
     private var biologicalSex: Binding<BiologicalSex?> {
         Binding(get: { model.draft.biologicalSex }, set: { model.updateBiologicalSex($0) })
+    }
+
+    private func selectBodyFatChoice(_ choice: SignupBodyFatChoice) {
+        // Commit the number still being edited before removing its field.
+        focusedField = nil
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+            to: nil, from: nil, for: nil)
+        photos?.select(choice)
+        if choice == .photos, photos?.route != nil { openPhotos() }
+    }
+
+    private func reloadPhotos() {
+        guard !isReloadingPhotos, let photos else { return }
+        isReloadingPhotos = true
+        Task {
+            await photos.load()
+            isReloadingPhotos = false
+        }
     }
 
     private var language: SupportedAppLanguage {
@@ -171,7 +235,8 @@ struct BodyDataStepView: View {
                 TextField(
                     descriptor.accessibilityLabel,
                     value: value,
-                    format: .number.precision(.fractionLength(0...2)),
+                    format: .number.locale(language.formattingLocale)
+                        .precision(.fractionLength(0...2)),
                     prompt: Text(descriptor.prompt)
                 )
                     .keyboardType(.decimalPad)

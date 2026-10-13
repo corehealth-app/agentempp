@@ -38,13 +38,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Performe AI uses the camera to photograph the meal you want to log or the plan you want to import."
+            "value" : "Performe AI uses the camera to photograph the meal you want to log, the plan you want to import, or the body photos you choose to send during sign-up."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "O Performe AI usa a câmera para fotografar a refeição que você quer registrar ou o plano que você quer importar."
+            "value" : "O Performe AI usa a câmera para fotografar a refeição que você quer registrar, o plano que você quer importar ou as fotos do corpo que você escolher enviar no cadastro."
           }
         }
       }

@@ -12,7 +12,15 @@ struct OnboardingContainerView: View {
     private static let columnMaxWidth: CGFloat = 620
 
     let model: OnboardingFlowModel
+    let photos: SignupBodyPhotoPresentationModel?
+
+    init(model: OnboardingFlowModel, photos: SignupBodyPhotoPresentationModel? = nil) {
+        self.model = model
+        self.photos = photos
+    }
     @State private var submissionTask: Task<Void, Never>?
+    @State private var showsPhotoFlow = false
+    @State private var photoFlowParentID: ObjectIdentifier?
     @Environment(\.locale) private var locale
     @Environment(\.bodyFlowReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
@@ -62,14 +70,57 @@ struct OnboardingContainerView: View {
                     }
                 }
             }
+            .navigationDestination(isPresented: $showsPhotoFlow) {
+                photoFlowDestination
+            }
         }
         .task(id: model.step) {
             if model.step == .objective { await model.prepareObjectiveIfNeeded() }
+        }
+        .onChange(of: photos?.route) { _, route in
+            if route == nil { closePhotoFlow() }
+        }
+        .onChange(of: photos.map { ObjectIdentifier($0) }) { _, _ in
+            closePhotoFlow()
+        }
+        .onChange(of: model.step) { _, step in
+            if step != .bodyData { closePhotoFlow() }
+        }
+        .onChange(of: showsPhotoFlow) { _, presented in
+            if !presented, !showsPhotoFlow { photoFlowParentID = nil }
         }
         .onDisappear(perform: cancelSubmission)
         .onChange(of: scenePhase) { _, phase in
             keepDraftWhenLeaving(phase)
         }
+    }
+
+    @ViewBuilder
+    private var photoFlowDestination: some View {
+        if let photos, photoFlowParentID == ObjectIdentifier(photos) {
+            let expectedParent = ObjectIdentifier(photos)
+            SignupBodyPhotoFlowSurface(photos: photos,
+                close: { closePhotoFlow(expectedParent: expectedParent) })
+                // Surface owns explicit close and its caller cancellation.
+                // Do not provide another navigation back command around it.
+                .navigationBarBackButtonHidden(true)
+        }
+    }
+
+    private func openPhotoFlow() {
+        guard model.isActive, model.step == .bodyData,
+              model.allowsDraftEditing, model.operationState != .saving,
+              let photos, photos.isActive, photos.route != nil else { return }
+        photoFlowParentID = ObjectIdentifier(photos)
+        showsPhotoFlow = true
+    }
+
+    private func closePhotoFlow(expectedParent: ObjectIdentifier? = nil) {
+        if let expectedParent, photoFlowParentID != expectedParent { return }
+        // Confirmation keeps choice/photos proof. Navigation is independent
+        // because a valid confirmed Parent can still expose route .result.
+        showsPhotoFlow = false
+        photoFlowParentID = nil
     }
 
     /// The person is leaving the app — another app, the camera, Settings, the
@@ -143,7 +194,7 @@ struct OnboardingContainerView: View {
             case .step(.welcome):
                 WelcomeStepView(model: model)
             case .step(.bodyData):
-                BodyDataStepView(model: model)
+                BodyDataStepView(model: model, photos: photos, openPhotos: openPhotoFlow)
             case .step(.objective):
                 ObjectiveStepView(model: model)
             case .step(.routine):

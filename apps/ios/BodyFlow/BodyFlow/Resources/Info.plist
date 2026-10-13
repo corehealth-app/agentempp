@@ -25,7 +25,7 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>O Performe AI usa a câmera para fotografar a refeição que você quer registrar ou o plano que você quer importar.</string>
+	<string>O Performe AI usa a câmera para fotografar a refeição que você quer registrar, o plano que você quer importar ou as fotos do corpo que você escolher enviar no cadastro.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>O Performe AI usa o microfone para gravar a descrição da refeição que você quer registrar.</string>
 	<key>PERFORME_MOBILE_API_ORIGIN</key>

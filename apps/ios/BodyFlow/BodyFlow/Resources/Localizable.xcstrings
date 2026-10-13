@@ -1,6 +1,425 @@
 {
   "sourceLanguage" : "pt-BR",
   "strings" : {
+    "onboarding.photos.result.sex-required" : {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Choose your biological sex in body data to review this estimate."}}, "pt-BR": {"stringUnit": {"state": "translated", "value": "Escolha o sexo biológico nos dados corporais para revisar esta estimativa."}}}},
+    "onboarding.photos.capture.camera-unavailable" : {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "The camera is unavailable. You can choose photos from your library."}}, "pt-BR": {"stringUnit": {"state": "translated", "value": "A câmera não está disponível. Você pode escolher as fotos da galeria."}}}},
+    "onboarding.photos.capture.camera-denied" : {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Camera access is blocked. Choose library photos or allow the camera in Settings."}}, "pt-BR": {"stringUnit": {"state": "translated", "value": "A câmera está bloqueada. Escolha fotos da galeria ou permita a câmera nos Ajustes."}}}},
+  "onboarding.body-fat.photos.confirmed-format": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Você confirmou a estimativa por fotos: %@"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "You confirmed the photo estimate: %@"
+        }
+      }
+    }
+  },
+    "onboarding.photos.capture.phase.preparing": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparando a foto…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing the photo…"
+          }
+        }
+      }
+    },
+    "onboarding.photos.capture.phase.sending": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviando a foto…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sending the photo…"
+          }
+        }
+      }
+    },
+    "onboarding.photos.capture.title": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envie as três fotos"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send the three photos"
+          }
+        }
+      }
+    },
+    "onboarding.photos.pose.front": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Frente"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Front"
+          }
+        }
+      }
+    },
+    "onboarding.photos.pose.side": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lado"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Side"
+          }
+        }
+      }
+    },
+    "onboarding.photos.pose.back": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Costas"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back"
+          }
+        }
+      }
+    },
+    "onboarding.photos.capture.status.empty": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Foto ainda não enviada."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo not sent yet."
+          }
+        }
+      }
+    },
+    "onboarding.photos.capture.status.pending-upload": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aguardando o envio da foto."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for photo upload."
+          }
+        }
+      }
+    },
+    "onboarding.photos.capture.status.uploaded": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Foto enviada. Aguardando leitura."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo uploaded. Waiting for a reading."
+          }
+        }
+      }
+    },
+    "onboarding.photos.capture.status.reading": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leitura em andamento."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reading in progress."
+          }
+        }
+      }
+    },
+    "onboarding.photos.capture.status.read": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leitura concluída."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reading complete."
+          }
+        }
+      }
+    },
+    "onboarding.photos.capture.status.unreadable": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível ler esta foto."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This photo could not be read."
+          }
+        }
+      }
+    },
+    "onboarding.photos.capture.status.reading-failed": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A leitura desta foto falhou."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The reading for this photo failed."
+          }
+        }
+      }
+    },
+    "onboarding.photos.capture.status.unknown": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O estado desta foto não está disponível."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The status of this photo is unavailable."
+          }
+        }
+      }
+    },
+    "onboarding.photos.capture.camera-format": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fotografar: %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Take photo: %@"
+          }
+        }
+      }
+    },
+    "onboarding.photos.capture.gallery-format": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolher da galeria: %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose from gallery: %@"
+          }
+        }
+      }
+    },
+    "onboarding.photos.result.disclaimer.estimate": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este número é a estimativa do seu percentual de gordura corporal."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This number is the estimate of your body fat percentage."
+          }
+        }
+      }
+    },
+    "onboarding.photos.result.disclaimer.variation": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "As mesmas fotos podem dar números diferentes."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The same photos can produce different numbers."
+          }
+        }
+      }
+    },
+    "onboarding.photos.result.disclaimer.comparison": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi comparada com exame."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "It has not been compared with an examination."
+          }
+        }
+      }
+    },
+    "onboarding.photos.result.mean-label": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Média das três leituras"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mean of the three readings"
+          }
+        }
+      }
+    },
+    "onboarding.photos.result.effect": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Só ao confirmar expressamente a estimativa ela passa a ser o percentual usado na escolha do objetivo e no cálculo das metas, do mesmo jeito que um número digitado por você. Isso pode definir seu objetivo automaticamente."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only when you explicitly confirm the estimate does it become the percentage used to choose your goal and calculate your targets, just as a number you enter would. This may set your goal automatically."
+          }
+        }
+      }
+    },
+    "onboarding.photos.result.confirm": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirmar estimativa"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirm estimate"
+          }
+        }
+      }
+    },
+    "onboarding.photos.change-percentage": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trocar o percentual"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Change the percentage"
+          }
+        }
+      }
+    },
+    "onboarding.photos.result.readings-unavailable": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "As três leituras não estão disponíveis. Você pode digitar seu percentual ou seguir sem informar."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The three readings are unavailable. You can enter your percentage or continue without providing one."
+          }
+        }
+      }
+    },
+    "onboarding.photos.result.unusable": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não há uma estimativa utilizável. Você pode digitar seu percentual ou seguir sem informar."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A usable estimate is not available. You can enter your percentage or continue without providing one."
+          }
+        }
+      }
+    },
   "onboarding.body-fat.choice.photos": {
     "localizations": {
       "pt-BR": {

@@ -138,25 +138,27 @@ struct OnboardingJourneyUITestSupport {
     }
 
     func waitForKeyboardFocus(_ field: XCUIElement) -> Bool {
-        let expectation = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "hasKeyboardFocus == true"),
-            object: field
-        )
-        return XCTWaiter.wait(for: [expectation], timeout: 3) == .completed
+        let predicate = NSPredicate(format: "hasKeyboardFocus == true")
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: field)
+        let result = XCTWaiter.wait(for: [expectation], timeout: 3)
+        return OnboardingJourneyWaitRevalidation.matches(result: result) {
+            predicate.evaluate(with: field)
+        }
     }
 
     func waitForSecureEntry(
         _ field: XCUIElement, characterCount: Int, timeout: TimeInterval = 3
     ) -> Bool {
-        let expectation = XCTNSPredicateExpectation(
-            predicate: NSPredicate { object, _ in
-                guard let element = object as? XCUIElement,
-                      let value = element.value as? String else { return false }
-                return value.count == characterCount
-            },
-            object: field
-        )
-        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+        let predicate = NSPredicate { object, _ in
+            guard let element = object as? XCUIElement,
+                  let value = element.value as? String else { return false }
+            return value.count == characterCount
+        }
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: field)
+        let result = XCTWaiter.wait(for: [expectation], timeout: timeout)
+        return OnboardingJourneyWaitRevalidation.matches(result: result) {
+            predicate.evaluate(with: field)
+        }
     }
 
     /// A step has arrived when its progress line stopped moving: the step

@@ -18,6 +18,7 @@ actor PresentationPhotoPeer: SignupBodyPhotosProviding, StorageUploading {
     private let hasEstimate: Bool
     private var forcedReading = false
     private var replacementIDs = false
+    private var stateProjection: (@Sendable (SignupBodyPhotoState) -> SignupBodyPhotoState)? = nil
     static let ids = ["00000000-0000-4000-8000-000000001001",
         "00000000-0000-4000-8000-000000001002", "00000000-0000-4000-8000-000000001003"]
 
@@ -29,7 +30,12 @@ actor PresentationPhotoPeer: SignupBodyPhotosProviding, StorageUploading {
     func holdNextState() async { await base.holdNextState() }
     func forceReading(_ value: Bool) { forcedReading = value }
     func replaceReadIDs() { replacementIDs = true; forcedReading = false }
+    // Test-only public DTO script. A held GET keeps its original projection.
+    func setStateProjection(_ projection: (@Sendable (SignupBodyPhotoState) -> SignupBodyPhotoState)?) {
+        stateProjection = projection
+    }
     func state() async throws -> SignupBodyPhotoState {
+        let project = stateProjection
         let raw = try await base.state()
         let document: SignupBodyPhotoConsent?
         if let doc = raw.consent, !missingDocument {
@@ -39,8 +45,9 @@ actor PresentationPhotoPeer: SignupBodyPhotosProviding, StorageUploading {
                 body: body, bodyHash: hash, acceptedAt: doc.acceptedAt)
         } else { document = nil }
         guard hasEstimate else {
-            return .init(available: raw.available, unavailableReason: raw.unavailableReason, consent: document,
+            let answer = SignupBodyPhotoState(available: raw.available, unavailableReason: raw.unavailableReason, consent: document,
                 minimumAge: raw.minimumAge, poses: raw.poses, estimate: nil, remainingUploads: raw.remainingUploads)
+            return project?(answer) ?? answer
         }
         let timestamp = APITimestamp(value: PresentationHarness.now)
         let ids = Self.ids.enumerated().map { index, old in
@@ -59,8 +66,9 @@ actor PresentationPhotoPeer: SignupBodyPhotosProviding, StorageUploading {
             bySex: .init(masculine: decision, feminine: decision), sourceIDs: source, fingerprint: fingerprint,
             readings: [.init(pose: .front, bodyFatPercent: Decimal(18)),
                 .init(pose: .side, bodyFatPercent: Decimal(24)), .init(pose: .back, bodyFatPercent: Decimal(30))])
-        return .init(available: raw.available, unavailableReason: raw.unavailableReason, consent: document,
+        let answer = SignupBodyPhotoState(available: raw.available, unavailableReason: raw.unavailableReason, consent: document,
             minimumAge: raw.minimumAge, poses: poses, estimate: estimate, remainingUploads: raw.remainingUploads)
+        return project?(answer) ?? answer
     }
     func consent(_ attempt: MutationAttempt<SignupBodyPhotoConsentRequest>) async throws -> SignupBodyPhotoConsentReceipt {
         try await base.consent(attempt)

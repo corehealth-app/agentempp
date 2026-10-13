@@ -3732,6 +3732,7 @@ export type Database = {
           country_detected_from_wpp: string | null
           created_at: string
           email: string | null
+          flow_phrase_cursor_revision: number
           id: string
           last_active_at: string | null
           locale: string | null
@@ -3753,6 +3754,7 @@ export type Database = {
           country_detected_from_wpp?: string | null
           created_at?: string
           email?: string | null
+          flow_phrase_cursor_revision?: number
           id?: string
           last_active_at?: string | null
           locale?: string | null
@@ -3774,6 +3776,7 @@ export type Database = {
           country_detected_from_wpp?: string | null
           created_at?: string
           email?: string | null
+          flow_phrase_cursor_revision?: number
           id?: string
           last_active_at?: string | null
           locale?: string | null

@@ -39,6 +39,7 @@ export function fixture() {
     updated_at: now.toISOString(),
     created_at: now.toISOString(),
     email: null,
+    flow_phrase_cursor_revision: 0,
     name: null,
     locale: 'pt-BR',
     admin_notes: null,

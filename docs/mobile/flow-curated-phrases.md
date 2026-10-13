@@ -1,8 +1,9 @@
 # Flow — catálogo e seletor de frases C5
 
-Peça local de servidor, ainda sem consumidor ativado. Não altera WhatsApp,
-rotas, banco, cálculos ou telas. Não comprova os protocolos completos nem
-aceite clínico, fidelidade integral aos PDFs ou QA no staging.
+Catálogo e seletor do servidor, com integração local C5a nas respostas de status
+determinísticas do Flow. Essa integração ainda não foi publicada. Não comprova
+os protocolos completos, aceite clínico, fidelidade integral aos PDFs ou QA no
+staging. Cálculos e telas permanecem sem alteração neste grupo.
 
 ## Fonte e proveniência
 
@@ -80,7 +81,31 @@ sequência; o consumidor precisa atualizar o estado com exclusão/versão própr
 
 ## Integrações seguintes
 
-C7 status, C13 retorno do registro e C15/C16 avisos/“Ontem” integrarão essa peça
+### C5a: status determinístico no Flow
+
+A rota do Flow cria `createSupabaseFlowPhraseReplyStore` com o cliente do
+contexto autenticado. Apenas respostas com `flowStatusPhrase` usam a gravação
+atômica da resposta e do cursor; outros tipos de resposta preservam seu caminho.
+GET e replay HTTP não consomem uma nova frase. Idiomas não cobertos preservam
+o status sem acrescentar texto do catálogo.
+
+`20261013184655_flow_phrase_cursor_reply_atomic.sql` adiciona o witness técnico
+`users.flow_phrase_cursor_revision` e os RPCs privados ao backend. A revisão é
+transportada como string pelos RPCs para preservar a precisão de bigint.
+Aplicar essa migration **antes** de publicar o BFF que liga o store; primeira
+adoção exige ausência do namespace anterior e aborta conflitos de lock sem esperar.
+Aplicação no staging exige autorização específica. Em rollback do BFF, preservar
+coluna, namespace e cursor; não remover a persistência junto com o consumidor.
+
+As duas overloads do reset compartilhado com o painel/legado do WhatsApp zeram
+também esse witness. Seus deletes e a opção de manter planos são preservados.
+O teste `supabase/tests/flow_phrase_reply_atomic.sql` cobre ACL, isolamento por
+usuário, commit, replay e reset numa transação sintética com rollback. Isso não
+substitui validação de JWT, modelo real, aplicativo ou staging.
+
+### Demais consumidores
+
+As demais respostas C7, C13 retorno do registro e C15/C16 avisos/“Ontem” integrarão essa peça
 usando dados confirmados e eventos estáveis. Turno Flow já possui
 `providerMessageId = mobile_flow/<user>/<Idempotency-Key>`; `request_id` e
 timestamp da tentativa não são chaves de replay. Preservar o bypass existente
@@ -96,7 +121,7 @@ não depende deste catálogo; não substituir por incentivo genérico.
 
 > RC C5 — cenário frase específica por exercício variante biblioteca não entregue NÃO coberta nesta PR; fallback usa somente incentivo existente (pendência da audit 2026-10-08).
 
-> RC C5 — cenário rodízio entre sessões e superfícies reais variante estado persistente dos consumidores C7/C13/C15/C16 NÃO coberta pela peça local inerte (pendência da audit 2026-10-08).
+> RC C5 — cenário rodízio entre sessões e superfícies reais variante estado persistente dos demais consumidores C7/C13/C15/C16 NÃO coberta pela integração local C5a de status determinístico (pendência da audit 2026-10-08).
 
 A fixture mecânica `synthetic-slot-policy` testa somente a restrição de lanche;
 não está no catálogo público. “Refeição praticamente” da fonte de verduras não

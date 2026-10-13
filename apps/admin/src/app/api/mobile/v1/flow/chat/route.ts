@@ -5,6 +5,7 @@ import {
   loadFlowHistory,
   sendFlowMessage,
 } from '@/lib/mobile-api/flow-chat-service'
+import { createSupabaseFlowPhraseReplyStore } from '@/lib/mobile-api/flow-phrase-reply-store'
 import { loadFlowPresentationContext } from '@/lib/mobile-api/flow-presentation-context'
 import { executeSupabaseIdempotent } from '@/lib/mobile-api/idempotency'
 import { createMobileRoute } from '@/lib/mobile-api/route'
@@ -19,6 +20,7 @@ const dependencies: FlowChatRouteDependencies = {
       store: createSupabaseFlowChatStore(context.supabase),
       drafts: createSupabaseFlowDraftLookup(context.supabase),
       agent: createFlowAgent(context),
+      phraseReplies: createSupabaseFlowPhraseReplyStore(context.supabase),
     }
   },
   loadHistory: loadFlowHistory,

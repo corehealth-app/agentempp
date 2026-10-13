@@ -851,6 +851,178 @@ struct MobileAPITransportTests {
         #expect(await harness.remote.refreshCount == 0)
     }
 
+    @MainActor
+    @Test("C11 W01: owner reservation before await rejects a valid A2 lease",
+          arguments: [false, true])
+    func c11W01OwnerReservationBeforeAwait(closeLeafToo: Bool) async throws {
+        let harness = try await C11RealLifecycleTransportHarness()
+        let ownerA1 = Prompt14SessionOwner(userID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            dependencies: C11BindingTestDependencies.make(), enablesMealRecordBinding: true)
+        await ownerA1.awaitPatientTimeZoneResolution()
+        let bindingA1 = try #require(ownerA1.mealRecordBinding)
+        #expect(bindingA1.isOpen)
+        let originalLease = try await harness.coordinator.leaseForRequest()
+        #expect(originalLease.userID == ownerA1.userID)
+        await harness.lifecycle.holdNextLease(completeEvenIfCancelled: true)
+        let oldBind = Task {
+            try await bindingA1.bind(transport: harness.transport, lifecycle: harness.lifecycle)
+        }
+        await harness.lifecycle.leaseHold.waitUntilEntered()
+        #expect(bindingA1.capability == nil)
+        ownerA1.invalidateSynchronously()
+        if closeLeafToo { bindingA1.invalidateSynchronously() }
+        try await harness.replaceSession(returnToA: true)
+        let current = try await harness.coordinator.leaseForRequest()
+        try await harness.coordinator.validate(current)
+        #expect(current.userID == ownerA1.userID)
+        #expect(current.generation != originalLease.generation)
+        await harness.lifecycle.leaseHold.release()
+        await #expect(throws: CancellationError.self) { _ = try await oldBind.value }
+        #expect(await harness.lifecycle.lastReturnedGeneration == current.generation)
+        #expect(bindingA1.capability == nil)
+        #expect(bindingA1.capturedLease == nil)
+        #expect(!bindingA1.isOpen)
+        #expect(await harness.stub.requests().isEmpty)
+        let ownerA2 = Prompt14SessionOwner(userID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            dependencies: C11BindingTestDependencies.make(), enablesMealRecordBinding: true)
+        await ownerA2.awaitPatientTimeZoneResolution()
+        let bindingA2 = try #require(ownerA2.mealRecordBinding)
+        try await harness.respondWithMealDetail()
+        let currentCapability = try await bindingA2.bind(
+            transport: harness.transport, lifecycle: harness.lifecycle)
+        #expect(bindingA2.capturedLease?.generation == current.generation)
+        let detail = try await currentCapability.mealRecord(id: C11RealLifecycleTransportHarness.recordID)
+        #expect(detail.data.recordID == C11RealLifecycleTransportHarness.recordID)
+        #expect(await harness.stub.requests().count == 1)
+        await ownerA1.endSession()
+        await ownerA2.endSession()
+        #expect(!currentCapability.hasRetainedCapability)
+    }
+
+    @MainActor
+    @Test("C11 BIND-F1: original owner close after bind blocks a retained grant before auth changes")
+    func c11BindingOriginalOwnerCloseAfterBind() async throws {
+        let harness = try await C11RealLifecycleTransportHarness()
+        let owner = Prompt14SessionOwner(userID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            dependencies: C11BindingTestDependencies.make(), enablesMealRecordBinding: true)
+        await owner.awaitPatientTimeZoneResolution()
+        let binding = try #require(owner.mealRecordBinding)
+        let lease = try await harness.coordinator.leaseForRequest()
+        try await harness.respondWithMealDetail()
+        let retained = try await binding.bind(transport: harness.transport, lifecycle: harness.lifecycle)
+        #expect(binding.isOpen)
+        #expect(retained.hasRetainedCapability)
+        #expect(binding.capability === retained)
+        #expect(await harness.stub.requests().isEmpty)
+        owner.invalidateSynchronously() // ONLY original owner; lifecycle is still A1.
+        try await harness.coordinator.validate(lease)
+        #expect(owner.isInvalidated)
+        #expect(!binding.isOpen)
+        await #expect(throws: CancellationError.self) {
+            _ = try await retained.mealRecord(id: C11RealLifecycleTransportHarness.recordID)
+        }
+        #expect(await harness.stub.requests().isEmpty)
+        #expect(!retained.hasRetainedCapability)
+        #expect(binding.capability == nil)
+        #expect(binding.capturedLease == nil)
+        await owner.endSession()
+    }
+
+    @MainActor
+    @Test("C11 BIND-F2: cancel/owner-close/leaf-close after real visible commit leaves no orphan grant",
+          arguments: [C11BindingTerminalBoundary.callerCancellation, .originalOwnerClose, .leafClose])
+    func c11BindingTerminalBetweenCommitAndReturn(boundary: C11BindingTerminalBoundary) async throws {
+        let harness = try await C11RealLifecycleTransportHarness()
+        let owner = Prompt14SessionOwner(userID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            dependencies: C11BindingTestDependencies.make(), enablesMealRecordBinding: true)
+        await owner.awaitPatientTimeZoneResolution()
+        let binding = try #require(owner.mealRecordBinding)
+        let lease = try await harness.coordinator.leaseForRequest()
+        try await harness.respondWithMealDetail()
+        await harness.lifecycle.holdNextVisibleReturn()
+        let pending = Task { try await binding.bind(transport: harness.transport, lifecycle: harness.lifecycle) }
+        await harness.lifecycle.visibleReturnHold.waitUntilEntered()
+        // The delegate executed the REAL atomic commit before this hold.
+        let installed = try #require(binding.capability)
+        #expect(installed.hasRetainedCapability)
+        #expect(binding.capturedLease?.generation == lease.generation)
+        #expect(binding.capturedLease?.userID == lease.userID)
+        #expect(binding.isOpen)
+        #expect(await harness.stub.requests().isEmpty)
+        switch boundary {
+        case .callerCancellation: pending.cancel()
+        case .originalOwnerClose: owner.invalidateSynchronously()
+        case .leafClose: binding.invalidateSynchronously()
+        }
+        try await harness.coordinator.validate(lease) // no lifecycle transition hiding this gap
+        await #expect(throws: CancellationError.self) {
+            _ = try await installed.mealRecord(id: C11RealLifecycleTransportHarness.recordID)
+        }
+        #expect(await harness.stub.requests().isEmpty)
+        // Closing a borrowed leaf must not close other original-owner capabilities.
+        if boundary != .originalOwnerClose {
+            #expect(!owner.isInvalidated)
+            let neighbor = try await owner.progress.progress()
+            #expect(!neighbor.meta.requestID.isEmpty)
+        } else {
+            #expect(owner.isInvalidated)
+            await #expect(throws: CancellationError.self) { _ = try await owner.progress.progress() }
+        }
+        await harness.lifecycle.visibleReturnHold.release()
+        await #expect(throws: CancellationError.self) { _ = try await pending.value }
+        #expect(binding.capability == nil)
+        #expect(binding.capturedLease == nil)
+        #expect(!binding.isOpen)
+        #expect(!installed.hasRetainedCapability)
+        #expect(await harness.stub.requests().isEmpty)
+        await owner.endSession()
+    }
+
+    @MainActor
+    @Test("C11 BIND-F3: two concurrent owner ends join a held committed bind and release its grant")
+    func c11BindingConcurrentEndJoinsHeldCommit() async throws {
+        let harness = try await C11RealLifecycleTransportHarness()
+        let owner = Prompt14SessionOwner(userID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            dependencies: C11BindingTestDependencies.make(), enablesMealRecordBinding: true)
+        await owner.awaitPatientTimeZoneResolution()
+        let binding = try #require(owner.mealRecordBinding)
+        await harness.lifecycle.holdNextVisibleReturn()
+        let pending = Task { try await binding.bind(transport: harness.transport, lifecycle: harness.lifecycle) }
+        await harness.lifecycle.visibleReturnHold.waitUntilEntered()
+        let installed = try #require(binding.capability)
+        #expect(installed.hasRetainedCapability)
+        let probe = C11ConcurrentEndProbe()
+        let first = Task { @MainActor in
+            probe.didStart()
+            await owner.endSession()
+            probe.didFinish()
+        }
+        let second = Task { @MainActor in
+            probe.didStart()
+            await owner.endSession()
+            probe.didFinish()
+        }
+        await probe.waitForBothStarts()
+        #expect(probe.finishedCount == 0)
+        #expect(owner.isInvalidated)
+        #expect(!binding.isOpen)
+        #expect(binding.capability == nil)
+        #expect(!installed.hasRetainedCapability)
+        await harness.lifecycle.visibleReturnHold.release()
+        await #expect(throws: CancellationError.self) { _ = try await pending.value }
+        await first.value
+        await second.value
+        #expect(probe.finishedCount == 2)
+        #expect(owner.mealRecordBinding == nil)
+        #expect(binding.capability == nil)
+        #expect(binding.capturedLease == nil)
+        #expect(!owner.hasRetainedCapabilities)
+        #expect(!installed.hasRetainedCapability)
+        #expect(await harness.stub.requests().isEmpty)
+        await owner.endSession()
+        await binding.endSession()
+    }
+
 }
 
 private actor RejectingRegistrationLifecycle: SessionLifecycleProviding {
@@ -1303,9 +1475,11 @@ private actor C11HoldingLifecycle: SessionLifecycleProviding {
     let base: SessionLifecycleCoordinator
     let leaseHold = C11BoundaryHold()
     let finishHold = C11BoundaryHold()
+    let visibleReturnHold = C11BoundaryHold()
     private var nextLeaseIsHeld = false
     private var completeHeldLeaseEvenIfCancelled = false
     private var nextFinishIsHeld = false
+    private var nextVisibleReturnIsHeld = false
     private(set) var lastReturnedGeneration: UInt64?
 
     init(base: SessionLifecycleCoordinator) { self.base = base }
@@ -1314,6 +1488,7 @@ private actor C11HoldingLifecycle: SessionLifecycleProviding {
         completeHeldLeaseEvenIfCancelled = completeEvenIfCancelled
     }
     func holdNextFinish() { nextFinishIsHeld = true }
+    func holdNextVisibleReturn() { nextVisibleReturnIsHeld = true }
     func currentBearerToken() async -> String? { await base.currentBearerToken() }
     func restorePublicSession() async throws -> AuthSession? { try await base.restorePublicSession() }
     func `switch`(to record: AuthenticationSessionRecord) async throws { try await base.switch(to: record) }
@@ -1357,7 +1532,11 @@ private actor C11HoldingLifecycle: SessionLifecycleProviding {
     func performVisiblePatientStateOperation<Value: Sendable>(
         lease: SessionLease, operation: @MainActor @Sendable () throws -> Value
     ) async throws -> Value {
-        try await base.performVisiblePatientStateOperation(lease: lease, operation: operation)
+        let held = nextVisibleReturnIsHeld
+        nextVisibleReturnIsHeld = false
+        let value = try await base.performVisiblePatientStateOperation(lease: lease, operation: operation)
+        if held { await visibleReturnHold.enterAndWait() }
+        return value
     }
 }
 
@@ -1525,4 +1704,53 @@ private extension Data {
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
     }
+}
+
+enum C11BindingTerminalBoundary: Equatable, Sendable {
+    case callerCancellation
+    case originalOwnerClose
+    case leafClose
+}
+
+@MainActor
+private final class C11ConcurrentEndProbe {
+    private var startedCount = 0
+    private(set) var finishedCount = 0
+    private var startsWaiter: CheckedContinuation<Void, Never>?
+    func didStart() {
+        startedCount += 1
+        if startedCount == 2 {
+            startsWaiter?.resume()
+            startsWaiter = nil
+        }
+    }
+    func didFinish() { finishedCount += 1 }
+    func waitForBothStarts() async {
+        guard startedCount < 2 else { return }
+        await withCheckedContinuation { startsWaiter = $0 }
+    }
+}
+
+private enum C11BindingTestDependencies {
+    static func make() -> AppDependencies {
+        let base = AppDependencies.scaffold()
+        return AppDependencies(
+            apiClient: base.apiClient, authentication: base.authentication,
+            onboarding: base.onboarding, coachPersona: base.coachPersona,
+            secureStore: base.secureStore, telemetry: base.telemetry,
+            today: base.today, history: base.history, plan: base.plan,
+            progress: C11BindingNeighborProgress(), mealDetection: base.mealDetection,
+            registration: base.registration, hydration: base.hydration, weight: base.weight,
+            routine: base.routine, me: base.me,
+            publishedContentSessions: base.publishedContentSessions,
+            coachExperienceSessions: base.coachExperienceSessions,
+            contentCoverSessions: base.contentCoverSessions,
+            timeProvider: base.timeProvider, idempotencyKeyProvider: base.idempotencyKeyProvider,
+            patientTimeZoneStore: base.patientTimeZoneStore, flowChat: base.flowChat
+        )
+    }
+}
+private struct C11BindingNeighborProgress: ProgressProviding {
+    func progress() async throws -> ProgressResponse { BodyFlowTestFixtures.progressResponse }
+    func profileWeight() async throws -> ProfileWeightResponse? { nil }
 }

@@ -11,6 +11,8 @@ final class Prompt14SessionOwner {
     let progress: any ProgressProviding
     let coverLoader: any ContentCoverLoading
 
+    private(set) var mealRecordBinding: MealRecordSessionBinding?
+
     private let gate: Prompt14SessionOperationGate
     private let listingReference: Prompt14CapabilityReference<any PublishedContentListing>
     private let detailReference: Prompt14CapabilityReference<any PublishedContentDetailProviding>
@@ -25,7 +27,7 @@ final class Prompt14SessionOwner {
     private var endTask: Task<Void, Never>?
     private var ended = false
 
-    init(userID: String, dependencies: AppDependencies) {
+    init(userID: String, dependencies: AppDependencies, enablesMealRecordBinding: Bool = false) {
         self.userID = userID
 
         let contentSession = dependencies.publishedContentSessions.makeSession(
@@ -95,6 +97,10 @@ final class Prompt14SessionOwner {
             gate: gate,
             endpoint: coverEndpoint
         )
+        // Construction only: no lease, task or meal request is started here.
+        if enablesMealRecordBinding {
+            mealRecordBinding = MealRecordSessionBinding(owner: self, parentGate: gate)
+        }
     }
 
     var isInvalidated: Bool {
@@ -110,6 +116,7 @@ final class Prompt14SessionOwner {
             || meReference.hasValue
             || lifetimeEndpoint.hasValue
             || coverEndpoint.hasValue
+            || mealRecordBinding?.hasRetainedCapability == true
     }
 
     /// Lets a caller wait for the `/me` resolution to settle (tests and
@@ -139,6 +146,7 @@ final class Prompt14SessionOwner {
     }
 
     func invalidateSynchronously() {
+        mealRecordBinding?.invalidateSynchronously()
         gate.close()
     }
 
@@ -152,6 +160,8 @@ final class Prompt14SessionOwner {
         } else {
             task = Task {
                 timeZoneResolution?.cancel()
+                await mealRecordBinding?.endSession()
+                mealRecordBinding = nil
                 await gate.drain()
 
                 async let contentEnd: Void = lifetimeEndpoint.end { lifetime in

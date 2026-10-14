@@ -17,6 +17,7 @@ enum C11RootNavigationSelection: String, Sendable {
     case observeCompleted401 = "observe-completed401"
     case observeDeliveryFailure = "observe-delivery-failure"
     case observeDeliveryCancellation = "observe-delivery-cancellation"
+    case completed401Foreground = "held401-foreground"
 
     var observesDelivery: Bool {
         self == .observeCompleted401 || self == .observeDeliveryFailure || self == .observeDeliveryCancellation
@@ -36,7 +37,8 @@ enum C11RootNavigationSelection: String, Sendable {
             (.deleteUnauthorizedThenSuccess, "--ui-testing-c11-root-delete-401-200"),
             (.observeCompleted401, "--ui-testing-c11-root-observe-completed401"),
             (.observeDeliveryFailure, "--ui-testing-c11-root-observe-delivery-failure"),
-            (.observeDeliveryCancellation, "--ui-testing-c11-root-observe-delivery-cancellation")
+            (.observeDeliveryCancellation, "--ui-testing-c11-root-observe-delivery-cancellation"),
+            (.completed401Foreground, "--ui-testing-c11-root-held401-foreground")
         ]
         let selected = choices.filter { arguments.contains($0.1) }
         guard selected.count == 1 else { return nil }
@@ -46,7 +48,7 @@ enum C11RootNavigationSelection: String, Sendable {
     var suppliesMealRecordSource: Bool {
         switch self {
         case .sourceOn, .logoutMarkerFailure, .sameRecordForeground, .getUnauthorizedThenSuccess, .getUnauthorizedTwice, .getUnauthorizedTwiceThenRetrySuccess, .patchUnauthorizedThenSuccess, .deleteUnauthorizedThenSuccess: true
-        case .observeCompleted401, .observeDeliveryFailure, .observeDeliveryCancellation: true
+        case .observeCompleted401, .observeDeliveryFailure, .observeDeliveryCancellation, .completed401Foreground: true
         case .sourceOff: false
         }
     }
@@ -60,12 +62,15 @@ struct C11RootNavigationFixture {
     let configuration: AppLaunchConfiguration
     let dependencies: AppDependencies
     let probe: C11RootNavigationProbe
+    fileprivate let held401Checkpoint: C11RootHeld401Checkpoint?
 
     static func make(selection: C11RootNavigationSelection) throws -> Self {
         let configuration = AppLaunchConfiguration(mode: .releaseUnavailable,
             shouldResetDemoState: false, startsWithCompletedFixture: true,
             preloadsSyntheticOnboardingValues: false, authBehavior: .succeed(after: nil))
-        let probe = C11RootNavigationProbe()
+        let held401State = selection == .completed401Foreground ? C11RootHeld401State() : nil
+        let held401Checkpoint = held401State.map { _ in C11RootHeld401Checkpoint() }
+        let probe = C11RootNavigationProbe(held401: held401State)
         let record = try C11RootNavigationFacts.record()
         let secure = try C11RootNavigationSecureStore(record: record,
             markerFailureProbe: selection == .logoutMarkerFailure ? probe : nil)
@@ -75,17 +80,21 @@ struct C11RootNavigationFixture {
         let lifecycle = SessionLifecycleCoordinator(store: store, remote: remote,
             refreshPolicy: SessionRefreshPolicy(now: { Date(timeIntervalSince1970: 1000) }, leeway: 60))
         let bindingProbe = C11RootNavigationLifecycleProbe(base: lifecycle, probe: probe,
-            capturesForegroundGrants: selection == .sameRecordForeground)
+            capturesForegroundGrants: selection == .sameRecordForeground || selection == .completed401Foreground)
         let patchState = selection == .patchUnauthorizedThenSuccess ? C11RootNavigationPatchState(probe: probe) : nil
         let deleteState = selection == .deleteUnauthorizedThenSuccess ? C11RootNavigationDeleteState(probe: probe) : nil
-        let observation = selection.observesDelivery ? C11RootNavigationDeliveryObservation(probe: probe) : nil
+        let observation = selection.observesDelivery || selection == .completed401Foreground
+            ? C11RootNavigationDeliveryObservation(probe: probe, held401Checkpoint: held401Checkpoint) : nil
         let server = C11RootNavigationServer(probe: probe, selection: selection,
             patchState: patchState, deleteState: deleteState, deliveryObservation: observation)
         C11RootNavigationURLProtocol.install(server)
         let sessionConfiguration = URLSessionConfiguration.ephemeral
         sessionConfiguration.protocolClasses = [C11RootNavigationURLProtocol.self]
         let transportLifecycle: any SessionLifecycleProviding
-        if selection == .observeDeliveryCancellation {
+        if let held401State, let held401Checkpoint {
+            transportLifecycle = C11RootHeld401Lifecycle(base: lifecycle, probe: probe,
+                state: held401State, checkpoint: held401Checkpoint)
+        } else if selection == .observeDeliveryCancellation {
             transportLifecycle = C11RootNavigationCancelledCallerObservation(base: lifecycle, probe: probe)
         } else { transportLifecycle = lifecycle }
         let transport = MobileAPITransport(
@@ -130,7 +139,8 @@ struct C11RootNavigationFixture {
             timeProvider: C11RootNavigationTime(), idempotencyKeyProvider: RandomIdempotencyKeyProvider(),
             patientTimeZoneStore: PatientTimeZoneStore(seed: PatientTimeZoneContext(documentedIANAIdentifier: nil)),
             flowChat: scaffold.flowChat, mealRecordBindingSource: source)
-        return Self(selection: selection, configuration: configuration, dependencies: dependencies, probe: probe)
+        return Self(selection: selection, configuration: configuration, dependencies: dependencies, probe: probe,
+            held401Checkpoint: held401Checkpoint)
     }
 }
 
@@ -138,6 +148,14 @@ struct C11RootNavigationFixture {
 @MainActor
 @Observable
 final class C11RootNavigationProbe {
+    fileprivate let held401: C11RootHeld401State?
+    fileprivate init(held401: C11RootHeld401State? = nil) { self.held401 = held401 }
+    fileprivate func matchesFirstForegroundOwner(userID: String, generation: UInt64) -> Bool {
+        foregroundFirst?.userID == userID && foregroundFirst?.generation == generation
+    }
+    fileprivate var firstForegroundCapabilityIsRetained: Bool {
+        foregroundFirst?.capability.hasRetainedCapability == true
+    }
     private(set) var gets = 0
     private(set) var binds = 0
     private(set) var refreshes = 0
@@ -298,6 +316,17 @@ struct C11RootNavigationDiagnosticView: View {
     let probe: C11RootNavigationProbe
     private var diagnostic: String {
         let counts = "C11 \(selection.rawValue): get=\(probe.gets) bind=\(probe.binds) refresh=\(probe.refreshes) blocked=\(probe.blocked)"
+        if selection == .completed401Foreground, let held = probe.held401 {
+            let delivery = probe.delivery
+            return counts + " client401=\(delivery.completed401) deliverySuccess=\(delivery.success) deliveryError=\(delivery.error) stopBefore=\(delivery.stopBefore)"
+                + " firstFinish=\(held.firstFinishEntries) matchedWork=\(held.matchedFirstWork ? 1 : 0) entryCancelled=\(held.cancelledAtFinishEntry ? 1 : 0) held=\(held.held ? 1 : 0) rejected=\(held.rejected)"
+                + " normalRelease=\(held.normalRelease) releaseSeen=\(held.releaseSeen) releasedCancelled=\(held.cancelledAtRelease ? 1 : 0) baseFinishReturned=\(held.baseFinishReturned)"
+                + " consumer=\(held.consumerEntries) consumerCancelled=\(held.cancelledAtConsumerEntry ? 1 : 0) ownerGeneration=\(held.sameOwnerGeneration ? 1 : 0) newReadID=\(held.newReadID ? 1 : 0)"
+                + " bg=\(probe.foregroundBackgrounds) restore=\(probe.foregroundRestores) finished=\(probe.foregroundFinished) controllerCancelled=\(probe.foregroundCancelled) disappeared=\(probe.foregroundDisappeared)"
+                + " captures=\(probe.foregroundCaptures) preRetained=\(probe.foregroundPreRetained ? 1 : 0) originalLive=\(probe.firstForegroundCapabilityIsRetained ? 1 : 0) oldClosed=\(probe.foregroundOldClosed ? 1 : 0) distinct=\(probe.foregroundDistinct ? 1 : 0)"
+                + " sameUser=\(probe.foregroundSameUser ? 1 : 0) sameGeneration=\(probe.foregroundSameGeneration ? 1 : 0) ticketChanged=\(probe.foregroundTicketChanged ? 1 : 0) samePublic=\(probe.foregroundSamePublic ? 1 : 0)"
+                + " bodyAbsent=\(probe.foregroundBodyAbsent ? 1 : 0) keyAbsent=\(probe.foregroundKeyAbsent ? 1 : 0) commands=\(probe.foregroundCommands)"
+        }
         if selection.observesDelivery {
             let delivery = probe.delivery
             return counts + " completed401=\(delivery.completed401) success=\(delivery.success) error=\(delivery.error) callbackCancel=\(delivery.callbackCancel)"
@@ -348,6 +377,8 @@ struct C11RootNavigationDiagnosticView: View {
 struct C11ForegroundRestoreModifier: ViewModifier {
     private let originalModel: AppFlowModel
     private let probe: C11RootNavigationProbe?
+    private let held401Probe: C11RootNavigationProbe?
+    private let held401Checkpoint: C11RootHeld401Checkpoint?
     @Environment(\.scenePhase) private var phase
     @State private var armed = false
     @State private var consumed = false
@@ -355,6 +386,8 @@ struct C11ForegroundRestoreModifier: ViewModifier {
     init(originalModel: AppFlowModel, fixture: C11RootNavigationFixture?) {
         self.originalModel = originalModel
         probe = fixture?.selection == .sameRecordForeground ? fixture?.probe : nil
+        held401Probe = fixture?.selection == .completed401Foreground ? fixture?.probe : nil
+        held401Checkpoint = fixture?.held401Checkpoint
     }
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -387,7 +420,232 @@ struct C11ForegroundRestoreModifier: ViewModifier {
                     probe.recordForegroundDisappearance()
                     // SwiftUI owns/cancels task. Do not close/reset authority.
                 }
+        } else if let held401Probe, let held401Checkpoint {
+            content.modifier(C11RootHeld401ForegroundModifier(originalModel: originalModel,
+                probe: held401Probe, checkpoint: held401Checkpoint))
         } else { content }
+    }
+}
+
+/// New selection only. No identifiers, body, bearer or lease enter these facts.
+@MainActor
+@Observable
+fileprivate final class C11RootHeld401State {
+    var firstFinishEntries = 0
+    var matchedFirstWork = false
+    var cancelledAtFinishEntry = false
+    var held = false
+    var rejected = 0
+    var normalRelease = 0
+    var releaseSeen = 0
+    var cancelledAtRelease = false
+    var baseFinishReturned = 0
+    var consumerEntries = 0
+    var cancelledAtConsumerEntry = false
+    var sameOwnerGeneration = false
+    var newReadID = false
+}
+
+/// Post-publish event + controller-owned release, both one-shot. The old caller's
+/// EXPECTED cancellation does not release its hold. Every resume is outside the
+/// private lock; no callback, scheduling, I/O or authority is created here.
+fileprivate final class C11RootHeld401Checkpoint: @unchecked Sendable {
+    private let lock = NSLock()
+    private var terminalResult: Bool?
+    private var terminalWaiter: CheckedContinuation<Bool, Never>?
+    private var releaseWaiter: CheckedContinuation<Void, Never>?
+    private var held = false
+    private var released = false
+    private var aborted = false
+
+    var isHeld: Bool { lock.withLock { held && !released && !aborted } }
+    func recordPublishedTerminal(_ snapshot: C11RootNavigationDeliverySnapshot) {
+        let valid = snapshot.completed401 == 1 && snapshot.success == 1
+            && snapshot.error == 0 && snapshot.callbackCancel == 0 && snapshot.stopBefore == 0
+        let signal: (CheckedContinuation<Bool, Never>?, Bool) = lock.withLock {
+            guard terminalResult == nil else { return (nil, false) }
+            let result = valid && !aborted
+            terminalResult = result
+            let waiting = terminalWaiter
+            terminalWaiter = nil
+            return (waiting, result)
+        }
+        signal.0?.resume(returning: signal.1)
+    }
+    func waitForPublishedTerminal() async -> Bool {
+        await withCheckedContinuation { continuation in
+            let result: Bool? = lock.withLock {
+                if let terminalResult { return terminalResult }
+                terminalWaiter = continuation
+                return nil
+            }
+            if let result { continuation.resume(returning: result) }
+        }
+    }
+    func admitHold() -> Bool {
+        lock.withLock {
+            guard terminalResult == true, !held, !released, !aborted else { return false }
+            held = true
+            return true
+        }
+    }
+    func waitForControllerRelease() async {
+        await withCheckedContinuation { continuation in
+            let releaseNow = lock.withLock {
+                if released { return true }
+                releaseWaiter = continuation
+                return false
+            }
+            if releaseNow { continuation.resume() }
+        }
+    }
+    func release() {
+        let waiting = lock.withLock {
+            released = true
+            let waiting = releaseWaiter
+            releaseWaiter = nil
+            return waiting
+        }
+        waiting?.resume()
+    }
+    func abort() {
+        let waiting: (CheckedContinuation<Bool, Never>?, CheckedContinuation<Void, Never>?) = lock.withLock {
+            aborted = true
+            released = true
+            if terminalResult == nil { terminalResult = false }
+            let pending = (terminalWaiter, releaseWaiter)
+            terminalWaiter = nil
+            releaseWaiter = nil
+            return pending
+        }
+        waiting.0?.resume(returning: false)
+        waiting.1?.resume()
+    }
+}
+
+/// Injected into transport only for held401-foreground. All authority stays in
+/// the same real coordinator. One private workID is retained only to identify
+/// the first real finish; no prepared work/grant/lease/ticket is manufactured.
+private actor C11RootHeld401Lifecycle: SessionLifecycleProviding {
+    let base: SessionLifecycleCoordinator
+    let probe: C11RootNavigationProbe
+    let state: C11RootHeld401State
+    let checkpoint: C11RootHeld401Checkpoint
+    private var firstWorkID: UUID?
+    private var firstFinishTaken = false
+    init(base: SessionLifecycleCoordinator, probe: C11RootNavigationProbe,
+        state: C11RootHeld401State, checkpoint: C11RootHeld401Checkpoint) {
+        self.base = base; self.probe = probe; self.state = state; self.checkpoint = checkpoint
+    }
+    func currentBearerToken() async -> String? { await base.currentBearerToken() }
+    func restorePublicSession() async throws -> AuthSession? { try await base.restorePublicSession() }
+    func `switch`(to record: AuthenticationSessionRecord) async throws { try await base.switch(to: record) }
+    func leaseForRequest() async throws -> SessionLease { try await base.leaseForRequest() }
+    func validate(_ lease: SessionLease) async throws { try await base.validate(lease) }
+    func signOut() async -> RemoteRevocationOutcome { await base.signOut() }
+    func beginPatientWork(lease: SessionLease, cancel: @escaping @Sendable () -> Void) async throws -> UUID {
+        let realID = try await base.beginPatientWork(lease: lease, cancel: cancel)
+        if firstWorkID == nil, !firstFinishTaken { firstWorkID = realID }
+        return realID
+    }
+    func finishPatientWork(_ id: UUID) async {
+        let cancelledAtEntry = Task.isCancelled // Actual caller; before first await.
+        guard !firstFinishTaken, let firstWorkID, firstWorkID == id else {
+            await base.finishPatientWork(id)
+            return
+        }
+        firstFinishTaken = true
+        await MainActor.run {
+            state.firstFinishEntries += 1
+            state.matchedFirstWork = true
+            state.cancelledAtFinishEntry = cancelledAtEntry
+        }
+        let terminalWasPublished = await checkpoint.waitForPublishedTerminal()
+        if terminalWasPublished, !cancelledAtEntry, checkpoint.admitHold() {
+            await MainActor.run { state.held = true }
+            // Deliberately no caller cancellation handler: only the foreground
+            // controller releases, after its real Model.start return or cleanup.
+            await checkpoint.waitForControllerRelease()
+            let cancelledAtRelease = Task.isCancelled
+            await MainActor.run {
+                state.releaseSeen += 1
+                state.cancelledAtRelease = cancelledAtRelease
+            }
+        } else { await MainActor.run { state.rejected += 1 } }
+        await base.finishPatientWork(id)
+        self.firstWorkID = nil
+        await MainActor.run { state.baseFinishReturned += 1 }
+    }
+    func refreshAfterUnauthorized(lease: SessionLease) async throws -> SessionLease {
+        let cancelledAtEntry = Task.isCancelled // Before first await; never a getter/re-lease.
+        let userID = lease.userID, generation = lease.generation
+        await MainActor.run {
+            state.consumerEntries += 1
+            if state.consumerEntries == 1 {
+                state.cancelledAtConsumerEntry = cancelledAtEntry
+                state.sameOwnerGeneration = probe.matchesFirstForegroundOwner(userID: userID, generation: generation)
+            }
+        }
+        // Exact original argument. Integral forwarding is proved by pinned
+        // transport/callsite source, NOT a fabricated runtime fullLeaseEqual.
+        return try await base.refreshAfterUnauthorized(lease: lease)
+    }
+    func performPatientStateOperation<Value: Sendable>(lease: SessionLease,
+        operation: @Sendable () throws -> Value) async throws -> Value {
+        try await base.performPatientStateOperation(lease: lease, operation: operation)
+    }
+    func performVisiblePatientStateOperation<Value: Sendable>(lease: SessionLease,
+        operation: @MainActor @Sendable () throws -> Value) async throws -> Value {
+        try await base.performVisiblePatientStateOperation(lease: lease, operation: operation)
+    }
+}
+
+/// Separate new-mode branch. This structured scene task owns release; it never
+/// waits for A2/grant2/GET2/Form or old-task join before releasing first finish.
+@MainActor
+private struct C11RootHeld401ForegroundModifier: ViewModifier {
+    let originalModel: AppFlowModel
+    let probe: C11RootNavigationProbe
+    let checkpoint: C11RootHeld401Checkpoint
+    @Environment(\.scenePhase) private var phase
+    @State private var armed = false
+    @State private var consumed = false
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: phase) { _, current in
+                if current == .background, !consumed, checkpoint.isHeld {
+                    armed = probe.armForegroundAfterRealBackground()
+                }
+            }
+            .task(id: phase) {
+                guard phase == .active, armed, !consumed, !Task.isCancelled else { return }
+                consumed = true
+                armed = false
+                await withTaskCancellationHandler {
+                    defer { checkpoint.release() } // All returns release before any join.
+                    guard checkpoint.isHeld, let held = probe.held401,
+                          probe.observeForegroundPreStartRetained() else { return }
+                    let originalSession = originalModel.currentSession
+                    let originalActivation = originalModel.mealRecordActivation
+                    probe.recordForegroundRestoreStarted()
+                    await originalModel.start() // The existing actual Model, not a copy.
+                    let current = originalModel.mealRecordActivation
+                    let samePublic = originalSession != nil && originalModel.currentSession == originalSession
+                    let changedTicket = originalActivation != nil && current != nil
+                        && originalActivation?.ticket != current?.ticket
+                    probe.recordForegroundRestoreFinished(cancelled: Task.isCancelled,
+                        samePublicSession: samePublic, ticketChanged: changedTicket)
+                    if !Task.isCancelled, samePublic, changedTicket { held.normalRelease += 1 }
+                    checkpoint.release() // Immediately after start return + synchronous facts.
+                } onCancel: {
+                    checkpoint.abort() // Synchronous/idempotent; no orphan cleanup Task.
+                }
+            }
+            .onDisappear {
+                armed = false
+                checkpoint.abort()
+                probe.recordForegroundDisappearance()
+            }
     }
 }
 
@@ -496,7 +754,8 @@ private actor C11RootNavigationRemote: SupabaseAuthRemoteOperating {
         await probe.recordRefresh()
         guard selection == .getUnauthorizedThenSuccess || selection == .getUnauthorizedTwice
             || selection == .getUnauthorizedTwiceThenRetrySuccess || selection == .patchUnauthorizedThenSuccess
-            || selection == .deleteUnauthorizedThenSuccess || selection == .observeCompleted401 else {
+            || selection == .deleteUnauthorizedThenSuccess || selection == .observeCompleted401
+            || selection == .completed401Foreground else {
             throw SupabaseAuthRemoteError.requestFailed
         }
         return try C11RootNavigationFacts.refreshedRecord(from: record)
@@ -752,6 +1011,7 @@ private actor C11RootNavigationServer {
     }
 
     func respond(to request: URLRequest) async throws -> C11RootNavigationHTTPResponse {
+        if selection == .completed401Foreground { return try await respondToHeld401Foreground(request) }
         if selection.observesDelivery { return try await respondToDeliveryControl(request) }
         if selection == .sameRecordForeground { return try await respondToForegroundRead(request) }
         if selection == .logoutMarkerFailure { return try await respondToRecoveryRead(request) }
@@ -836,6 +1096,42 @@ private actor C11RootNavigationServer {
         }
     }
 
+
+    /// A1 is an actual completed401; A2 is a separate current read, never replay.
+    private func respondToHeld401Foreground(_ request: URLRequest) async throws -> C11RootNavigationHTTPResponse {
+        if request.httpMethod == "GET" {
+            attemptedGETs += 1
+            await probe.recordGET()
+        } else { await probe.recordForegroundCommand() }
+        let logical = LogicalRequest(request)
+        let authorization = request.value(forHTTPHeaderField: "Authorization")
+        let allowed = await probe.canServeForegroundRead(attempt: attemptedGETs)
+        guard allowed, logical.method == "GET", logical.isValidRead,
+              request.url?.absoluteString == "https://c11-ui.fixture.invalid/api/mobile/v1/meal-records/11111111-1111-4111-8111-111111111111",
+              authorization?.hasPrefix("Bearer ") == true, (authorization?.count ?? 0) > 7 else {
+            await probe.recordBlocked(); throw MobileAPITransportError.invalidResponse
+        }
+        await probe.recordForegroundReadMetadata(bodyAbsent: logical.bodyIsAbsent,
+            keyAbsent: logical.idempotencyKey == nil)
+        if attemptedGETs == 1 {
+            firstLogicalRequest = logical // No bearer/lease is retained by this mode.
+            let error = ["error": ["code": "expired_token", "message": "Synthetic held401 unauthorized",
+                                     "request_id": "c11-ui-held401"]]
+            return C11RootNavigationHTTPResponse(statusCode: 401,
+                data: try JSONSerialization.data(withJSONObject: error))
+        }
+        let distinct = attemptedGETs == 2 && firstLogicalRequest?.requestID != logical.requestID
+        let releasedAfterStart = await MainActor.run {
+            probe.foregroundFinished == 1 && probe.held401?.normalRelease == 1
+        }
+        await MainActor.run { probe.held401?.newReadID = distinct }
+        guard distinct, releasedAfterStart else {
+            await probe.recordBlocked(); throw MobileAPITransportError.invalidResponse
+        }
+        // No consumer-entry gate: A2 admission must not manufacture the ordering.
+        return C11RootNavigationHTTPResponse(statusCode: 200,
+            data: try JSONEncoder().encode(C11RootNavigationFacts.foregroundDetail()))
+    }
 
     /// Separate harness controls; these never claim the held-finish I3 journey.
     private func respondToDeliveryControl(_ request: URLRequest) async throws -> C11RootNavigationHTTPResponse {
@@ -1353,7 +1649,11 @@ private final class C11RootNavigationDeliveryObservation: @unchecked Sendable {
     private let probe: C11RootNavigationProbe
     private var cancellationReleased = false
     private var cancellationWaiter: CheckedContinuation<Void, Never>?
-    init(probe: C11RootNavigationProbe) { self.probe = probe }
+    private let held401Checkpoint: C11RootHeld401Checkpoint?
+    init(probe: C11RootNavigationProbe, held401Checkpoint: C11RootHeld401Checkpoint? = nil) {
+        self.probe = probe
+        self.held401Checkpoint = held401Checkpoint
+    }
 
     func recordSuccess(statusCode: Int) {
         lock.withLock {
@@ -1377,6 +1677,9 @@ private final class C11RootNavigationDeliveryObservation: @unchecked Sendable {
     func publish() async {
         let current = lock.withLock { snapshot }
         await probe.recordDelivery(current)
+        // Existing owned task, strictly after callback/observer/context locks
+        // and after the snapshot is published. Nil in every old selection.
+        held401Checkpoint?.recordPublishedTerminal(current)
     }
     func waitForActualCancellation() async throws {
         await withTaskCancellationHandler {

@@ -1074,6 +1074,86 @@ final class C11RootNavigationUITests: XCTestCase {
         capture(app, name: "c11-delivery-observer-real-back-stoploading-control")
     }
 
+    /// Composition of the fixed transport and actual Root/scene ownership.
+    /// This is a new integration test, never a fabricated pre-fix product RED.
+    func testRealRootCompleted401OldCancelledCallerCannotRefreshAcrossSameRecordForegroundRestore() throws {
+        let app = try launchFixture("--ui-testing-c11-root-held401-foreground", selection: "held401-foreground")
+        let status = element("c11.fixture.status", in: app)
+        func requireHeld401(_ counters: [String: Int], phase: String) -> Bool {
+            let predicates = counters.sorted { $0.key < $1.key }.map { key, value in
+                NSPredicate(format: "label MATCHES %@", ".*\\b\(key)=\(value)\\b.*")
+            }
+            let matched = XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                predicate: NSCompoundPredicate(andPredicateWithSubpredicates: predicates), object: status)], timeout: 8) == .completed
+            if !matched {
+                capture(app, name: "c11-held401-" + phase + "-counter-mismatch")
+                if phase == "after-real-foreground", status.label.contains(" consumer=0 ") {
+                    XCTFail("SETUP_NOT_VERIFIED: client terminal401 alone cannot prove the consumer401 path; actual refreshAfterUnauthorized entry must equal one")
+                } else {
+                    XCTFail("I3_COMPOSITION: actual held401/foreground observations must match " + phase)
+                }
+            }
+            return matched
+        }
+        try openActualHistoryRow(in: app)
+        guard requireHeld401(
+            ["get": 1, "bind": 1, "refresh": 0, "blocked": 0,
+             "client401": 1, "deliverySuccess": 1, "deliveryError": 0, "stopBefore": 0,
+             "firstFinish": 1, "matchedWork": 1, "entryCancelled": 0, "held": 1, "rejected": 0,
+             "normalRelease": 0, "releaseSeen": 0, "baseFinishReturned": 0,
+             "consumer": 0, "consumerCancelled": 0, "ownerGeneration": 0, "newReadID": 0,
+             "bg": 0, "restore": 0, "finished": 0, "controllerCancelled": 0, "disappeared": 0,
+             "captures": 1, "originalLive": 1, "bodyAbsent": 1, "keyAbsent": 1, "commands": 0],
+            phase: "completed-client401-before-home") else { return }
+        let detail = element("screen.meal-record", in: app)
+        let progress = element("meal-record.progress", in: app)
+        guard detail.exists, progress.waitForExistence(timeout: 5),
+              !app.textFields["meal-record.field.name"].exists,
+              !element("meal-record.read-failure", in: app).exists else {
+            capture(app, name: "c11-held401-original-read-not-pending")
+            XCTFail("SETUP_NOT_VERIFIED: actual original destination must remain pending while its real uncancelled caller finish is held")
+            return
+        }
+        capture(app, name: "c11-held401-real-client-terminal-before-home-first-finish-held")
+        XCUIDevice.shared.press(.home)
+        let backgroundStates = [NSNumber(value: XCUIApplication.State.runningBackground.rawValue),
+                                NSNumber(value: XCUIApplication.State.runningBackgroundSuspended.rawValue)]
+        let background = XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "state IN %@", backgroundStates), object: app)], timeout: 5) == .completed
+        guard background else {
+            capture(app, name: "c11-held401-home-did-not-background")
+            XCTFail("SETUP_NOT_VERIFIED: actual Home/background is required before activating the same running app")
+            return
+        }
+        app.activate() // No terminate/relaunch, ScenePhase setter or authority reset.
+        guard requireHeld401(
+            ["get": 2, "bind": 2, "refresh": 0, "blocked": 0,
+             "client401": 1, "deliverySuccess": 2, "deliveryError": 0, "stopBefore": 0,
+             "firstFinish": 1, "matchedWork": 1, "entryCancelled": 0, "held": 1, "rejected": 0,
+             "normalRelease": 1, "releaseSeen": 1, "releasedCancelled": 1, "baseFinishReturned": 1,
+             "consumer": 1, "consumerCancelled": 1, "ownerGeneration": 1, "newReadID": 1,
+             "bg": 1, "restore": 1, "finished": 1, "controllerCancelled": 0, "disappeared": 0,
+             "captures": 2, "preRetained": 1, "originalLive": 0, "oldClosed": 1, "distinct": 1,
+             "sameUser": 1, "sameGeneration": 1, "ticketChanged": 1, "samePublic": 1,
+             "bodyAbsent": 1, "keyAbsent": 1, "commands": 0], phase: "after-real-foreground") else { return }
+        let name = app.textFields["meal-record.field.name"]
+        XCTAssertTrue(detail.exists, "The current actual History route must survive the same-generation restore")
+        guard name.waitForExistence(timeout: 5), name.isHittable else {
+            capture(app, name: "c11-held401-a2-current-form-not-mounted")
+            XCTFail("I3_COMPOSITION: a separate current official A2 Form must mount after releasing and draining A1")
+            return
+        }
+        XCTAssertEqual(name.value as? String, "Synthetic C11 foreground restored official food")
+        XCTAssertEqual(app.textFields["meal-record.field.quantity"].value as? String, "50")
+        XCTAssertNotEqual(name.value as? String, "Synthetic C11 confirmed food")
+        for identifier in ["screen.history.meal-detail", "meal-record.read-failure", "meal-record.failure",
+                           "meal-record.saved", "meal-record.recovery.notice", "meal-record.recovery.action",
+                           "screen.auth.sign-in"] {
+            XCTAssertFalse(element(identifier, in: app).exists)
+        }
+        capture(app, name: "c11-held401-cancelled-real-consumer-no-remote-refresh-current-a2-form")
+    }
+
     private func requireDeliveryStatus(in app: XCUIApplication, counters: [String: Int]) -> Bool {
         let status = element("c11.fixture.status", in: app)
         // Word boundaries prevent get=1 from accepting get=10. Expected

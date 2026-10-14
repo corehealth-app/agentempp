@@ -12,6 +12,7 @@ import SwiftUI
 struct BodyFlowApp: App {
     private let configuration: AppLaunchConfiguration
     private let dependencies: AppDependencies
+    private let mealRecordLifetime: MealRecordAuthenticationLifetime?
     @State private var model: AppFlowModel
 
     init() {
@@ -30,6 +31,10 @@ struct BodyFlowApp: App {
             },
             supabaseAuthConfiguration: runtime?.supabase
         )
+        let mealRecordLifetime = dependencies.mealRecordBindingSource.map { _ in
+            MealRecordAuthenticationLifetime()
+        }
+        self.mealRecordLifetime = mealRecordLifetime
         self.configuration = configuration
         self.dependencies = dependencies
         _model = State(initialValue: AppFlowModel(
@@ -38,6 +43,7 @@ struct BodyFlowApp: App {
             persona: dependencies.coachPersona,
             telemetry: dependencies.telemetry,
             signupBodyPhotoCleanup: dependencies.signupBodyPhotoCleanup,
+            mealRecordAuthenticationLifetime: mealRecordLifetime,
             developmentConsentAvailability: configuration.developmentConsentAvailability
         ))
     }
@@ -47,7 +53,8 @@ struct BodyFlowApp: App {
             AppRootView(
                 model: model,
                 dependencies: dependencies,
-                configuration: configuration
+                configuration: configuration,
+                mealRecordLifetime: mealRecordLifetime
             )
         }
     }

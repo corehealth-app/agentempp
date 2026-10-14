@@ -49,6 +49,9 @@ struct AppDependencies: Sendable {
         offersOnFirstEntry: false
     )
 
+    /// Explicit local wiring permission; nil preserves the read-only history.
+    var mealRecordBindingSource: MealRecordSessionBindingSource? = nil
+
     var patientTimeZone: PatientTimeZoneContext {
         patientTimeZoneStore.current
     }
@@ -94,7 +97,8 @@ struct AppDependencies: Sendable {
         sessionLifecycleOverride: (any SessionLifecycleProviding)? = nil,
         sessionRefreshPolicy: SessionRefreshPolicy = .production,
         onboardingDeviceDraft: OnboardingDeviceDraftStore = .device,
-        signupBodyPhotoCleanupStore: SignupBodyPhotoCleanupStore = .device
+        signupBodyPhotoCleanupStore: SignupBodyPhotoCleanupStore = .device,
+        enablesConfirmedMealEditing: Bool = false
     ) -> AppDependencies {
         let secureStore: any SecureStoring = switch configuration.demoStorageBoundary {
         case .memory:
@@ -233,6 +237,11 @@ struct AppDependencies: Sendable {
             apiClient = UnavailableAPIClient()
         }
         #endif
+
+        let mealRecordBindingSource = makeMealRecordBindingSource(
+            enabled: enablesConfirmedMealEditing, mode: configuration.mode,
+            client: apiClient, lifecycle: releaseLifecycle
+        )
 
         #if DEBUG
         let timeProvider: any TimeProviding
@@ -724,8 +733,19 @@ struct AppDependencies: Sendable {
             currentObjective: currentObjective,
             signupBodyPhotoCleanup: signupBodyPhotoCleanup,
             signupBodyPhotoCapture: signupBodyPhotoCapture,
-            guidedTutorial: guidedTutorial
+            guidedTutorial: guidedTutorial,
+            mealRecordBindingSource: mealRecordBindingSource
         )
+    }
+
+    /// Construction only; a legacy token provider or demonstration cannot bind C11.
+    static func makeMealRecordBindingSource(
+        enabled: Bool, mode: AppRuntimeMode, client: any APIClient,
+        lifecycle: (any SessionLifecycleProviding)?
+    ) -> MealRecordSessionBindingSource? {
+        guard enabled, mode != .demo,
+              let transport = client as? MobileAPITransport, let lifecycle else { return nil }
+        return MealRecordSessionBindingSource(transport: transport, lifecycle: lifecycle)
     }
 }
 

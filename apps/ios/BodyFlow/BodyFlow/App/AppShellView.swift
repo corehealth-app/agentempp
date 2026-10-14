@@ -6,6 +6,7 @@ struct AppShellView: View {
     @State private var keyboardVisible = false
     @State private var router = AppRouter()
     @State private var invalidationCenter: FeatureInvalidationCenter
+    @State private var mealRecordSessions: MealRecordShellSessionCoordinator
     @State private var todayViewModel: TodayViewModel
     @State private var planViewModel: PlanViewModel
     @State private var progressViewModel: ProgressViewModel
@@ -39,19 +40,22 @@ struct AppShellView: View {
     /// The root's sign-out for a real account; nil keeps the demonstration
     /// without an account action.
     let signOut: (@MainActor () async -> Void)?
+    let mealRecordContext: MealRecordReadyContext?
 
     init(
         userID: String,
         dependencies: AppDependencies,
         sessionOwner: Prompt14SessionOwner,
         accountEmail: String? = nil,
-        signOut: (@MainActor () async -> Void)? = nil
+        signOut: (@MainActor () async -> Void)? = nil,
+        mealRecordContext: MealRecordReadyContext? = nil
     ) {
         self.userID = userID
         self.dependencies = dependencies
         self.sessionOwner = sessionOwner
         self.accountEmail = accountEmail
         self.signOut = signOut
+        self.mealRecordContext = mealRecordContext
         #if DEBUG
         let launch = AppLaunchConfiguration.current()
         if launch.mode == .demo, launch.block7700Scenario != nil,
@@ -64,6 +68,10 @@ struct AppShellView: View {
         #endif
         let invalidationCenter = FeatureInvalidationCenter()
         _invalidationCenter = State(initialValue: invalidationCenter)
+        _mealRecordSessions = State(initialValue: MealRecordShellSessionCoordinator(
+            time: dependencies.timeProvider, keys: dependencies.idempotencyKeyProvider,
+            invalidation: invalidationCenter
+        ))
         _todayViewModel = State(
             initialValue: TodayViewModel(provider: dependencies.today)
         )
@@ -133,7 +141,9 @@ struct AppShellView: View {
     }
 
     var body: some View {
-        shell
+        let originalMealRecordContext = mealRecordContext
+        let originalMealRecordOwner = sessionOwner
+        return shell
 #if DEBUG
         .task {
             guard ProcessInfo.processInfo.arguments.contains("--ui-testing-prompt13-stale-offline") else {
@@ -169,6 +179,10 @@ struct AppShellView: View {
             await sessionOwner.awaitPatientTimeZoneResolution()
             await localReminders.refresh()
         }
+        .task(id: originalMealRecordContext?.activation) {
+            guard !Task.isCancelled else { return }
+            mealRecordSessions.synchronize(context: originalMealRecordContext, owner: originalMealRecordOwner)
+        }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             routePendingReminderTap()
@@ -194,6 +208,7 @@ struct AppShellView: View {
             tour?.updateFacts(tutorialFacts, ownerKey: tutorialOwnerKey)
         }
         .onDisappear {
+            mealRecordSessions.endSession()
             flowChatModel.invalidate()
             planDraftsModel?.invalidate()
             currentObjectiveModel?.invalidate()
@@ -592,9 +607,13 @@ struct AppShellView: View {
                 model: historyViewModel,
                 invalidationCenter: invalidationCenter
             )
-        case .historyMealLog:
-            HistoryMealLogDetailView(
-                row: historyCoordinator.mealLogRow(for: route)
+        case let .historyMealLog(rowID):
+            MealRecordHistoryDestination(
+                recordID: rowID,
+                localRow: historyCoordinator.mealLogRow(for: route),
+                context: mealRecordContext,
+                owner: sessionOwner,
+                sessions: mealRecordSessions
             )
         case .historyWorkout:
             HistoryWorkoutDetailView(
@@ -720,4 +739,58 @@ struct AppShellView: View {
         )
     )
         .installAppDependencies(dependencies)
+}
+
+/// Uses the real route ID. OFF/pending keeps History's existing read-only view.
+/// Cache creation is an explicit view effect; body and initializers do no work.
+@MainActor
+struct MealRecordHistoryDestination: View {
+    let recordID: String
+    let localRow: HistoryMealLogRow?
+    let context: MealRecordReadyContext?
+    let owner: Prompt14SessionOwner
+    let sessions: MealRecordShellSessionCoordinator
+    @State private var prepared: Prepared?
+
+    private struct Prepared {
+        let context: MealRecordReadyContext
+        let model: MealRecordModel
+    }
+    private struct TaskID: Hashable {
+        let recordID: String
+        let activation: MealRecordAuthenticatedActivation?
+        let owner: ObjectIdentifier
+    }
+    private var taskID: TaskID {
+        TaskID(recordID: recordID, activation: context?.activation, owner: ObjectIdentifier(owner))
+    }
+
+    var body: some View {
+        let originalTaskID = taskID
+        return Group {
+            if let prepared, prepared.model.recordID == recordID,
+               prepared.context.activation == context?.activation,
+               prepared.context.capability === context?.capability,
+               sessions.isCurrent(context: prepared.context, owner: owner) {
+                MealRecordDetailView(model: prepared.model, localRow: localRow)
+            } else {
+                HistoryMealLogDetailView(row: localRow)
+            }
+        }
+        .task(id: originalTaskID) {
+            synchronizePresentation(expected: originalTaskID)
+        }
+    }
+
+    private func synchronizePresentation(expected: TaskID) {
+        guard !Task.isCancelled, expected == taskID else { return }
+        sessions.synchronize(context: context, owner: owner)
+        guard let context, sessions.isCurrent(context: context, owner: owner),
+              let model = sessions.prepareModel(recordID: recordID, context: context, owner: owner) else {
+            // A delayed inactive/nil effect never erases a new active presentation.
+            if prepared?.context.isActive != true { prepared = nil }
+            return
+        }
+        prepared = Prepared(context: context, model: model)
+    }
 }

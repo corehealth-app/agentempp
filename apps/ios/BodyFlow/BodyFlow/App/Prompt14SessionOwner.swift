@@ -223,6 +223,7 @@ final class Prompt14SessionOwner {
 @Observable
 final class Prompt14AuthenticatedShellCoordinator {
     private let dependencies: AppDependencies
+    private let enablesMealRecordBinding: Bool
     private var transitionGeneration: UInt64 = 0
     private var teardownTask: Task<Void, Never>?
 
@@ -230,8 +231,9 @@ final class Prompt14AuthenticatedShellCoordinator {
     private(set) var renderableOwner: Prompt14SessionOwner?
     private(set) var tearingDownOwner: Prompt14SessionOwner?
 
-    init(dependencies: AppDependencies) {
+    init(dependencies: AppDependencies, enablesMealRecordBinding: Bool = false) {
         self.dependencies = dependencies
+        self.enablesMealRecordBinding = enablesMealRecordBinding
     }
 
     func renderableOwner(
@@ -301,7 +303,8 @@ final class Prompt14AuthenticatedShellCoordinator {
 
         renderableOwner = Prompt14SessionOwner(
             userID: requestedUserID,
-            dependencies: dependencies
+            dependencies: dependencies,
+            enablesMealRecordBinding: enablesMealRecordBinding
         )
     }
 }

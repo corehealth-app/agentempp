@@ -11,6 +11,7 @@ struct AppRootView: View {
     private var systemDifferentiateWithoutColor
     @State private var onboardingCoordinator = OnboardingRootCoordinator()
     @State private var authenticatedShellCoordinator: Prompt14AuthenticatedShellCoordinator
+    @State private var mealRecordDriver: MealRecordRootWiringDriver
     @State private var onboardingRetryTask: Task<Void, Never>?
     @State private var appearance: BodyFlowAppearanceStore
     @Environment(\.scenePhase) private var scenePhase
@@ -19,21 +20,28 @@ struct AppRootView: View {
     init(
         model: AppFlowModel,
         dependencies: AppDependencies,
-        configuration: AppLaunchConfiguration
+        configuration: AppLaunchConfiguration,
+        mealRecordLifetime: MealRecordAuthenticationLifetime? = nil
     ) {
         self.model = model
         self.dependencies = dependencies
         self.configuration = configuration
-        _authenticatedShellCoordinator = State(
-            initialValue: Prompt14AuthenticatedShellCoordinator(
-                dependencies: dependencies
-            )
+        let shellCoordinator = Prompt14AuthenticatedShellCoordinator(
+            dependencies: dependencies,
+            enablesMealRecordBinding: mealRecordLifetime != nil
+                && dependencies.mealRecordBindingSource != nil
         )
+        _authenticatedShellCoordinator = State(initialValue: shellCoordinator)
+        _mealRecordDriver = State(initialValue: MealRecordRootWiringDriver(
+            model: model, ownerCoordinator: shellCoordinator,
+            lifetime: mealRecordLifetime, source: dependencies.mealRecordBindingSource
+        ))
         _appearance = State(initialValue: BodyFlowAppearanceStore.make(isDemo: configuration.mode == .demo))
     }
 
     var body: some View {
-        Group {
+        let originalMealRecordTaskID = mealRecordDriver.taskID
+        return Group {
             rootContent
                 .transition(
                     hasOutgoingSessionOwner
@@ -91,6 +99,9 @@ struct AppRootView: View {
                 to: requestedAuthenticatedUserID
             )
         }
+        .task(id: originalMealRecordTaskID) {
+            await synchronizeMealRecords(expected: originalMealRecordTaskID)
+        }
         .task(id: isSignedOut) {
             // No local reminder survives without a signed-in account: this
             // also finishes a clean-up that a sign-out could not complete
@@ -102,7 +113,14 @@ struct AppRootView: View {
             model.setCleanupActive(false)
             onboardingRetryTask?.cancel()
             onboardingRetryTask = nil
+            mealRecordDriver.invalidateSynchronously()
         }
+    }
+
+    private func synchronizeMealRecords(expected: MealRecordRootTaskID?) async {
+        let original = expected
+        _ = await mealRecordDriver.synchronize(expected: original)
+        // H05's scoped finisher belongs to its later integration, not an automatic recovery.
     }
 
     private var isSignedOut: Bool {
@@ -163,7 +181,8 @@ struct AppRootView: View {
                         sessionOwner: owner,
                         accountEmail: dependencies.presentsRealAccountIdentity
                             ? model.currentSession?.email : nil,
-                        signOut: accountSignOut
+                        signOut: accountSignOut,
+                        mealRecordContext: mealRecordDriver.readyContext
                     )
                     .id(userID)
                 } else {

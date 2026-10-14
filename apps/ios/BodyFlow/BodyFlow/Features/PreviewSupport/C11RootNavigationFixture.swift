@@ -14,6 +14,13 @@ enum C11RootNavigationSelection: String, Sendable {
     case getUnauthorizedTwiceThenRetrySuccess = "get-401-401-retry-200"
     case patchUnauthorizedThenSuccess = "patch-401-200"
     case deleteUnauthorizedThenSuccess = "delete-401-200"
+    case observeCompleted401 = "observe-completed401"
+    case observeDeliveryFailure = "observe-delivery-failure"
+    case observeDeliveryCancellation = "observe-delivery-cancellation"
+
+    var observesDelivery: Bool {
+        self == .observeCompleted401 || self == .observeDeliveryFailure || self == .observeDeliveryCancellation
+    }
 
     static func resolve(arguments: [String]) -> Self? {
         guard arguments.contains("--ui-testing") else { return nil }
@@ -26,7 +33,10 @@ enum C11RootNavigationSelection: String, Sendable {
             (.getUnauthorizedTwice, "--ui-testing-c11-root-get-401-401"),
             (.getUnauthorizedTwiceThenRetrySuccess, "--ui-testing-c11-root-get-401-401-retry-200"),
             (.patchUnauthorizedThenSuccess, "--ui-testing-c11-root-patch-401-200"),
-            (.deleteUnauthorizedThenSuccess, "--ui-testing-c11-root-delete-401-200")
+            (.deleteUnauthorizedThenSuccess, "--ui-testing-c11-root-delete-401-200"),
+            (.observeCompleted401, "--ui-testing-c11-root-observe-completed401"),
+            (.observeDeliveryFailure, "--ui-testing-c11-root-observe-delivery-failure"),
+            (.observeDeliveryCancellation, "--ui-testing-c11-root-observe-delivery-cancellation")
         ]
         let selected = choices.filter { arguments.contains($0.1) }
         guard selected.count == 1 else { return nil }
@@ -36,6 +46,7 @@ enum C11RootNavigationSelection: String, Sendable {
     var suppliesMealRecordSource: Bool {
         switch self {
         case .sourceOn, .logoutMarkerFailure, .sameRecordForeground, .getUnauthorizedThenSuccess, .getUnauthorizedTwice, .getUnauthorizedTwiceThenRetrySuccess, .patchUnauthorizedThenSuccess, .deleteUnauthorizedThenSuccess: true
+        case .observeCompleted401, .observeDeliveryFailure, .observeDeliveryCancellation: true
         case .sourceOff: false
         }
     }
@@ -67,14 +78,19 @@ struct C11RootNavigationFixture {
             capturesForegroundGrants: selection == .sameRecordForeground)
         let patchState = selection == .patchUnauthorizedThenSuccess ? C11RootNavigationPatchState(probe: probe) : nil
         let deleteState = selection == .deleteUnauthorizedThenSuccess ? C11RootNavigationDeleteState(probe: probe) : nil
+        let observation = selection.observesDelivery ? C11RootNavigationDeliveryObservation(probe: probe) : nil
         let server = C11RootNavigationServer(probe: probe, selection: selection,
-            patchState: patchState, deleteState: deleteState)
+            patchState: patchState, deleteState: deleteState, deliveryObservation: observation)
         C11RootNavigationURLProtocol.install(server)
         let sessionConfiguration = URLSessionConfiguration.ephemeral
         sessionConfiguration.protocolClasses = [C11RootNavigationURLProtocol.self]
+        let transportLifecycle: any SessionLifecycleProviding
+        if selection == .observeDeliveryCancellation {
+            transportLifecycle = C11RootNavigationCancelledCallerObservation(base: lifecycle, probe: probe)
+        } else { transportLifecycle = lifecycle }
         let transport = MobileAPITransport(
             configuration: try MobileAPIConfiguration(originString: "https://c11-ui.fixture.invalid"),
-            sessionLifecycle: lifecycle, session: URLSession(configuration: sessionConfiguration),
+            sessionLifecycle: transportLifecycle, session: URLSession(configuration: sessionConfiguration),
             clock: ContinuousClock(), timeout: .seconds(5))
         // Only this explicitly selected synthetic harness can supply a source.
         let source = AppDependencies.makeMealRecordBindingSource(enabled: selection.suppliesMealRecordSource,
@@ -126,6 +142,25 @@ final class C11RootNavigationProbe {
     private(set) var binds = 0
     private(set) var refreshes = 0
     private(set) var blocked = 0
+    private(set) var delivery = C11RootNavigationDeliverySnapshot()
+    private(set) var deliveryWaiting = 0
+    private(set) var deliveryCallerFinishes = 0
+    private(set) var deliveryFirstCallerCancelled = false
+    func recordDeliveryCallerFinish(cancelledAtEntry: Bool) {
+        deliveryCallerFinishes += 1
+        if deliveryCallerFinishes == 1 { deliveryFirstCallerCancelled = cancelledAtEntry }
+    }
+    func recordDelivery(_ snapshot: C11RootNavigationDeliverySnapshot) {
+        // Concurrent real loading tasks may publish snapshots in reverse
+        // MainActor order. Aggregated facts only increase; never lose one.
+        delivery.completed401 = max(delivery.completed401, snapshot.completed401)
+        delivery.success = max(delivery.success, snapshot.success)
+        delivery.error = max(delivery.error, snapshot.error)
+        delivery.callbackCancel = max(delivery.callbackCancel, snapshot.callbackCancel)
+        delivery.stopBefore = max(delivery.stopBefore, snapshot.stopBefore)
+        delivery.stopAfter = max(delivery.stopAfter, snapshot.stopAfter)
+    }
+    func recordDeliveryWaiting() { deliveryWaiting += 1 }
     private(set) var sameLogicalRequest = false
     private(set) var bearerChanged = false
     private(set) var patches = 0
@@ -263,6 +298,14 @@ struct C11RootNavigationDiagnosticView: View {
     let probe: C11RootNavigationProbe
     private var diagnostic: String {
         let counts = "C11 \(selection.rawValue): get=\(probe.gets) bind=\(probe.binds) refresh=\(probe.refreshes) blocked=\(probe.blocked)"
+        if selection.observesDelivery {
+            let delivery = probe.delivery
+            return counts + " completed401=\(delivery.completed401) success=\(delivery.success) error=\(delivery.error) callbackCancel=\(delivery.callbackCancel)"
+                + " stopBefore=\(delivery.stopBefore) stopAfter=\(delivery.stopAfter) waiting=\(probe.deliveryWaiting)"
+                + " sameLogical=\(probe.sameLogicalRequest ? 1 : 0) bearerChanged=\(probe.bearerChanged ? 1 : 0)"
+                + (selection == .observeDeliveryCancellation
+                    ? " finish=\(probe.deliveryCallerFinishes) callerCancelled=\(probe.deliveryFirstCallerCancelled ? 1 : 0)" : "")
+        }
         if selection == .sameRecordForeground {
             return counts + " bg=\(probe.foregroundBackgrounds) restore=\(probe.foregroundRestores) finished=\(probe.foregroundFinished) cancelled=\(probe.foregroundCancelled) disappeared=\(probe.foregroundDisappeared)"
                 + " preRetained=\(probe.foregroundPreRetained ? 1 : 0) preclosed=\(probe.foregroundPreclosed ? 1 : 0) oldClosed=\(probe.foregroundOldClosed ? 1 : 0) captures=\(probe.foregroundCaptures) distinct=\(probe.foregroundDistinct ? 1 : 0)"
@@ -453,7 +496,7 @@ private actor C11RootNavigationRemote: SupabaseAuthRemoteOperating {
         await probe.recordRefresh()
         guard selection == .getUnauthorizedThenSuccess || selection == .getUnauthorizedTwice
             || selection == .getUnauthorizedTwiceThenRetrySuccess || selection == .patchUnauthorizedThenSuccess
-            || selection == .deleteUnauthorizedThenSuccess else {
+            || selection == .deleteUnauthorizedThenSuccess || selection == .observeCompleted401 else {
             throw SupabaseAuthRemoteError.requestFailed
         }
         return try C11RootNavigationFacts.refreshedRecord(from: record)
@@ -648,6 +691,7 @@ private struct C11RootNavigationHTTPResponse: Sendable {
 private actor C11RootNavigationServer {
     let probe: C11RootNavigationProbe
     let selection: C11RootNavigationSelection
+    nonisolated let deliveryObservation: C11RootNavigationDeliveryObservation?
     private var attemptedGETs = 0
     private var firstLogicalRequest: LogicalRequest?
     private var firstAuthorization: String?
@@ -698,14 +742,17 @@ private actor C11RootNavigationServer {
     }
 
     init(probe: C11RootNavigationProbe, selection: C11RootNavigationSelection,
-         patchState: C11RootNavigationPatchState?, deleteState: C11RootNavigationDeleteState?) {
+         patchState: C11RootNavigationPatchState?, deleteState: C11RootNavigationDeleteState?,
+         deliveryObservation: C11RootNavigationDeliveryObservation? = nil) {
         self.probe = probe
         self.selection = selection
         self.patchState = patchState
         self.deleteState = deleteState
+        self.deliveryObservation = deliveryObservation
     }
 
     func respond(to request: URLRequest) async throws -> C11RootNavigationHTTPResponse {
+        if selection.observesDelivery { return try await respondToDeliveryControl(request) }
         if selection == .sameRecordForeground { return try await respondToForegroundRead(request) }
         if selection == .logoutMarkerFailure { return try await respondToRecoveryRead(request) }
         guard request.url?.absoluteString == "https://c11-ui.fixture.invalid/api/mobile/v1/meal-records/11111111-1111-4111-8111-111111111111" else {
@@ -787,6 +834,57 @@ private actor C11RootNavigationServer {
             await probe.recordBlocked()
             throw MobileAPITransportError.invalidResponse
         }
+    }
+
+
+    /// Separate harness controls; these never claim the held-finish I3 journey.
+    private func respondToDeliveryControl(_ request: URLRequest) async throws -> C11RootNavigationHTTPResponse {
+        let logical = LogicalRequest(request)
+        let authorization = request.value(forHTTPHeaderField: "Authorization")
+        guard logical.method == "GET", logical.isValidRead,
+              request.url?.absoluteString == "https://c11-ui.fixture.invalid/api/mobile/v1/meal-records/11111111-1111-4111-8111-111111111111",
+              authorization?.hasPrefix("Bearer ") == true, (authorization?.count ?? 0) > 7 else {
+            await probe.recordBlocked()
+            throw MobileAPITransportError.invalidResponse
+        }
+        attemptedGETs += 1
+        await probe.recordGET()
+        if selection == .observeDeliveryFailure {
+            guard attemptedGETs == 1 else { await probe.recordBlocked(); throw MobileAPITransportError.invalidResponse }
+            throw URLError(.cannotDecodeContentData)
+        }
+        if selection == .observeDeliveryCancellation {
+            guard attemptedGETs == 1, let deliveryObservation else {
+                await probe.recordBlocked(); throw MobileAPITransportError.invalidResponse
+            }
+            await probe.recordDeliveryWaiting()
+            // Only this cancellation CONTROL waits before delivery. The later
+            // I3 journey must instead hold lifecycle.finish after completed401.
+            // The existing LoadingContext task owns this child await; actual
+            // stopLoading cancels it and the cancellation handler releases it.
+            try await deliveryObservation.waitForActualCancellation()
+            throw MobileAPITransportError.invalidResponse
+        }
+        guard selection == .observeCompleted401 else {
+            await probe.recordBlocked(); throw MobileAPITransportError.invalidResponse
+        }
+        if attemptedGETs == 1 {
+            firstLogicalRequest = logical
+            firstAuthorization = authorization
+            let error = ["error": ["code": "expired_token", "message": "Synthetic observation unauthorized",
+                                     "request_id": "c11-ui-observation-401"]]
+            return C11RootNavigationHTTPResponse(statusCode: 401,
+                data: try JSONSerialization.data(withJSONObject: error))
+        }
+        let sameLogical = attemptedGETs == 2 && logical == firstLogicalRequest
+        let changed = firstAuthorization?.hasPrefix("Bearer ") == true && firstAuthorization != authorization
+        firstAuthorization = nil
+        guard sameLogical, changed else {
+            await probe.recordBlocked(); throw MobileAPITransportError.invalidResponse
+        }
+        await probe.recordReplayComparison(sameLogical: sameLogical, bearerChanged: changed)
+        return C11RootNavigationHTTPResponse(statusCode: 200,
+            data: try JSONEncoder().encode(C11RootNavigationFacts.detail()))
     }
 
     private func respondToForegroundRead(_ request: URLRequest) async throws -> C11RootNavigationHTTPResponse {
@@ -992,6 +1090,45 @@ private actor C11RootNavigationLifecycleProbe: SessionLifecycleProviding {
     }
 }
 
+
+/// Only the Back cancellation control uses this forwarding lifecycle.
+/// The source binding still uses its unchanged bindingProbe and the same
+/// real coordinator. This adapter grants no authority and retains no lease,
+/// work identifier, token or request. Count/boolean are its only observation.
+private actor C11RootNavigationCancelledCallerObservation: SessionLifecycleProviding {
+    let base: SessionLifecycleCoordinator
+    let probe: C11RootNavigationProbe
+    init(base: SessionLifecycleCoordinator, probe: C11RootNavigationProbe) {
+        self.base = base
+        self.probe = probe
+    }
+    func currentBearerToken() async -> String? { await base.currentBearerToken() }
+    func restorePublicSession() async throws -> AuthSession? { try await base.restorePublicSession() }
+    func `switch`(to record: AuthenticationSessionRecord) async throws { try await base.switch(to: record) }
+    func leaseForRequest() async throws -> SessionLease { try await base.leaseForRequest() }
+    func refreshAfterUnauthorized(lease: SessionLease) async throws -> SessionLease {
+        try await base.refreshAfterUnauthorized(lease: lease)
+    }
+    func validate(_ lease: SessionLease) async throws { try await base.validate(lease) }
+    func signOut() async -> RemoteRevocationOutcome { await base.signOut() }
+    func beginPatientWork(lease: SessionLease, cancel: @escaping @Sendable () -> Void) async throws -> UUID {
+        try await base.beginPatientWork(lease: lease, cancel: cancel)
+    }
+    func finishPatientWork(_ id: UUID) async {
+        let cancelledAtEntry = Task.isCancelled // Before the first await.
+        await probe.recordDeliveryCallerFinish(cancelledAtEntry: cancelledAtEntry)
+        await base.finishPatientWork(id)
+    }
+    func performPatientStateOperation<Value: Sendable>(lease: SessionLease,
+        operation: @Sendable () throws -> Value) async throws -> Value {
+        try await base.performPatientStateOperation(lease: lease, operation: operation)
+    }
+    func performVisiblePatientStateOperation<Value: Sendable>(lease: SessionLease,
+        operation: @MainActor @Sendable () throws -> Value) async throws -> Value {
+        try await base.performVisiblePatientStateOperation(lease: lease, operation: operation)
+    }
+}
+
 // URLProtocol itself is not transferred into an async closure. Only the narrow
 // immutable-handle loading context below crosses that boundary.
 private final class C11RootNavigationURLProtocol: URLProtocol {
@@ -1005,23 +1142,47 @@ private final class C11RootNavigationURLProtocol: URLProtocol {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        let context = C11RootNavigationLoadingContext(protocolInstance: self, request: request,
-            server: Self.registry.current, client: client)
+        let server = Self.registry.current
+        let context: C11RootNavigationLoadingContext
+        if let observation = server?.deliveryObservation {
+            context = C11RootNavigationLoadingContext(protocolInstance: self, request: request,
+                server: server, client: client, observation: observation)
+        } else {
+            // Keep the old call without an observer for every old selection.
+            context = C11RootNavigationLoadingContext(protocolInstance: self, request: request,
+                server: server, client: client)
+        }
+        start(context)
+    }
+
+    @discardableResult
+    private func start(_ context: C11RootNavigationLoadingContext) -> Task<Void, Never>? {
         let admission: (accepted: Bool, cancelImmediately: Bool) = lock.withLock {
             guard loadingContext == nil else { return (false, false) }
             loadingContext = context
             return (true, stopped)
         }
-        guard admission.accepted else { return }
+        guard admission.accepted else { return nil }
         if admission.cancelImmediately { context.cancel() }
-        context.start()
+        return context.start()
     }
+
+    /// Dedicated instance only: never reads or installs the shared registry.
+    fileprivate func startReentryControl(server: C11RootNavigationServer,
+        observation: C11RootNavigationDeliveryObservation) -> C11RootNavigationReentryWork? {
+        let context = C11RootNavigationLoadingContext(protocolInstance: self, request: request,
+            server: server, client: client, observation: observation)
+        guard let work = start(context) else { return nil }
+        return C11RootNavigationReentryWork(context: context, task: work)
+    }
+    fileprivate var hasReleasedReentryContext: Bool { lock.withLock { loadingContext == nil } }
 
     override func stopLoading() {
         let current = lock.withLock {
             stopped = true
             return loadingContext
         }
+        current?.observeActualStopLoading()
         current?.cancel()
     }
 
@@ -1040,6 +1201,7 @@ private final class C11RootNavigationLoadingContext: @unchecked Sendable {
     private let request: URLRequest
     private let server: C11RootNavigationServer?
     private let client: (any URLProtocolClient)?
+    private let observation: C11RootNavigationDeliveryObservation?
     // Client delivery may synchronously call stopLoading: allow that reentry.
     private let lock = NSRecursiveLock()
     private var started = false
@@ -1049,14 +1211,27 @@ private final class C11RootNavigationLoadingContext: @unchecked Sendable {
     private var task: Task<Void, Never>?
 
     init(protocolInstance: C11RootNavigationURLProtocol, request: URLRequest,
-         server: C11RootNavigationServer?, client: (any URLProtocolClient)?) {
+         server: C11RootNavigationServer?, client: (any URLProtocolClient)?,
+         observation: C11RootNavigationDeliveryObservation? = nil) {
         self.protocolInstance = protocolInstance
         self.request = request
         self.server = server
         self.client = client
+        self.observation = observation
     }
 
-    func start() {
+    /// Pure observation under the existing context lock, before the unchanged
+    /// cancellation call. A stop after terminal admission (including callback
+    /// reentry) is cleanup; it does not erase a completed terminal response.
+    func observeActualStopLoading() {
+        guard let observation else { return }
+        // terminalDelivered is the existing admission flag, set before the
+        // callback. Reentry inside it is post-admission, not pre-terminal.
+        lock.withLock { observation.recordStop(beforeTerminalAdmission: !terminalDelivered) }
+    }
+
+    @discardableResult
+    func start() -> Task<Void, Never>? {
         let admitted = lock.withLock {
             guard !started, !cancelled, !finished else { return false }
             started = true
@@ -1064,7 +1239,7 @@ private final class C11RootNavigationLoadingContext: @unchecked Sendable {
         }
         guard admitted else {
             finish()
-            return
+            return nil
         }
         // The sendable context is the sole async capture; not the URLProtocol.
         let work = Task { await run() }
@@ -1074,7 +1249,10 @@ private final class C11RootNavigationLoadingContext: @unchecked Sendable {
             return false
         }
         if cancelNow { work.cancel() }
+        return work
     }
+
+    fileprivate var hasFinishedForReentryControl: Bool { lock.withLock { finished && task == nil } }
 
     func cancel() {
         let pending = lock.withLock {
@@ -1105,6 +1283,9 @@ private final class C11RootNavigationLoadingContext: @unchecked Sendable {
         } catch {
             deliver(error: error)
         }
+        // Existing owned task publishes only AFTER callback/lock return.
+        // No Task, await or executor hop is introduced inside client callbacks.
+        if let observation { await observation.publish() }
     }
 
     private func deliver(response: HTTPURLResponse, data: Data) {
@@ -1116,6 +1297,9 @@ private final class C11RootNavigationLoadingContext: @unchecked Sendable {
             guard !cancelled else { return }
             terminalDelivered = true
             client.urlProtocolDidFinishLoading(protocolInstance)
+            if let observation {
+                observation.recordSuccess(statusCode: response.statusCode)
+            }
         }
     }
 
@@ -1124,6 +1308,10 @@ private final class C11RootNavigationLoadingContext: @unchecked Sendable {
             guard !cancelled, !terminalDelivered, !finished, let client else { return }
             terminalDelivered = true
             client.urlProtocol(protocolInstance, didFailWithError: error)
+            if let observation {
+                observation.recordFailure(cancelled: error is CancellationError
+                    || (error as? URLError)?.code == .cancelled)
+            }
         }
     }
 
@@ -1144,6 +1332,186 @@ private final class C11RootNavigationProtocolRegistry: @unchecked Sendable {
     private var server: C11RootNavigationServer?
     var current: C11RootNavigationServer? { lock.withLock { server } }
     func install(_ value: C11RootNavigationServer) { lock.withLock { server = value } }
+}
+
+/// Aggregated synthetic observations only; not request/session authority.
+struct C11RootNavigationDeliverySnapshot: Equatable, Sendable {
+    var completed401 = 0
+    var success = 0
+    var error = 0
+    var callbackCancel = 0
+    var stopBefore = 0
+    var stopAfter = 0
+}
+
+/// Called synchronously inside the existing recursive callback lock. It does
+/// no scheduling, callback, await or I/O there. The already-owned run() task
+/// publishes an immutable snapshot only after leaving that lock/callback.
+private final class C11RootNavigationDeliveryObservation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var snapshot = C11RootNavigationDeliverySnapshot()
+    private let probe: C11RootNavigationProbe
+    private var cancellationReleased = false
+    private var cancellationWaiter: CheckedContinuation<Void, Never>?
+    init(probe: C11RootNavigationProbe) { self.probe = probe }
+
+    func recordSuccess(statusCode: Int) {
+        lock.withLock {
+            snapshot.success += 1
+            if statusCode == 401 { snapshot.completed401 += 1 }
+        }
+    }
+    func recordFailure(cancelled: Bool) {
+        lock.withLock {
+            snapshot.error += 1
+            if cancelled { snapshot.callbackCancel += 1 }
+        }
+    }
+    func recordStop(beforeTerminalAdmission: Bool) {
+        lock.withLock {
+            if beforeTerminalAdmission { snapshot.stopBefore += 1 }
+            else { snapshot.stopAfter += 1 }
+        }
+    }
+    fileprivate var snapshotForReentryControl: C11RootNavigationDeliverySnapshot { lock.withLock { snapshot } }
+    func publish() async {
+        let current = lock.withLock { snapshot }
+        await probe.recordDelivery(current)
+    }
+    func waitForActualCancellation() async throws {
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let releaseNow = lock.withLock {
+                    if cancellationReleased { return true }
+                    cancellationWaiter = continuation
+                    return false
+                }
+                if releaseNow { continuation.resume() }
+            }
+        } onCancel: {
+            self.releaseCancellationWaiter()
+        }
+        try Task.checkCancellation()
+        throw MobileAPITransportError.invalidResponse
+    }
+    private func releaseCancellationWaiter() {
+        let waiting = lock.withLock {
+            cancellationReleased = true
+            let pending = cancellationWaiter
+            cancellationWaiter = nil
+            return pending
+        }
+        waiting?.resume()
+    }
+}
+
+/// Returned only to native DEBUG tests. Contains no protocol, server, payload,
+/// credential or request identifier; every field is an aggregate/boolean.
+struct C11RootNavigationReentryResult: Sendable {
+    let beforeStop: C11RootNavigationDeliverySnapshot
+    let insideCallbackAfterStop: C11RootNavigationDeliverySnapshot
+    let afterOwnedTask: C11RootNavigationDeliverySnapshot
+    let receivedCallbacks: Int
+    let dataCallbacks: Int
+    let finishedCallbacks: Int
+    let failedCallbacks: Int
+    let unexpectedCallbacks: Int
+    let contextFinished: Bool
+    let protocolReleasedContext: Bool
+}
+
+/// No registry, URLSession, auth, grant or lease is installed by this driver.
+/// It runs the same actual context.start/run/deliver and actual stopLoading.
+@MainActor
+enum C11RootNavigationReentryControl {
+    enum Mode: Equatable, Sendable { case success401, failure }
+    static func run(_ mode: Mode) async throws -> C11RootNavigationReentryResult {
+        try Task.checkCancellation()
+        let probe = C11RootNavigationProbe()
+        let observation = C11RootNavigationDeliveryObservation(probe: probe)
+        let selection: C11RootNavigationSelection = mode == .success401 ? .observeCompleted401 : .observeDeliveryFailure
+        let server = C11RootNavigationServer(probe: probe, selection: selection,
+            patchState: nil, deleteState: nil, deliveryObservation: observation)
+        var request = URLRequest(url: URL(string: "https://c11-ui.fixture.invalid/api/mobile/v1/meal-records/11111111-1111-4111-8111-111111111111")!)
+        request.httpMethod = "GET"
+        request.setValue("Bearer synthetic-reentry-control", forHTTPHeaderField: "Authorization")
+        request.setValue("synthetic-reentry-control", forHTTPHeaderField: "X-Request-Id")
+        let client = C11RootNavigationReentrantClient(observation: observation)
+        let instance = C11RootNavigationURLProtocol(request: request, cachedResponse: nil, client: client)
+        guard let owned = instance.startReentryControl(server: server, observation: observation) else {
+            throw C11RootNavigationReentrySetupError.taskNotAdmitted
+        }
+        defer { owned.context.cancel() } // Synchronous/idempotent, never creates a Task.
+        await withTaskCancellationHandler {
+            await owned.task.value // Join the real existing loading task through defer finish.
+        } onCancel: {
+            owned.context.cancel()
+        }
+        try Task.checkCancellation()
+        let callbacks = client.result
+        guard let before = callbacks.before, let inside = callbacks.inside else {
+            throw C11RootNavigationReentrySetupError.terminalCallbackMissing
+        }
+        return C11RootNavigationReentryResult(beforeStop: before,
+            insideCallbackAfterStop: inside, afterOwnedTask: observation.snapshotForReentryControl,
+            receivedCallbacks: callbacks.received, dataCallbacks: callbacks.data,
+            finishedCallbacks: callbacks.finished, failedCallbacks: callbacks.failed,
+            unexpectedCallbacks: callbacks.unexpected,
+            contextFinished: owned.context.hasFinishedForReentryControl,
+            protocolReleasedContext: instance.hasReleasedReentryContext)
+    }
+}
+
+private enum C11RootNavigationReentrySetupError: Error { case taskNotAdmitted, terminalCallbackMissing }
+private struct C11RootNavigationReentryWork: Sendable {
+    let context: C11RootNavigationLoadingContext
+    let task: Task<Void, Never>
+}
+
+/// Synthetic boundary client; no prepared phase boolean is passed to the
+/// observer. Real stopLoading reads the real context's admission flag.
+/// No client lock is held during reentry, and no continuation is resumed here.
+private final class C11RootNavigationReentrantClient: NSObject, URLProtocolClient, @unchecked Sendable {
+    struct Result {
+        var before: C11RootNavigationDeliverySnapshot?
+        var inside: C11RootNavigationDeliverySnapshot?
+        var received = 0, data = 0, finished = 0, failed = 0, unexpected = 0
+    }
+    private let lock = NSLock()
+    private var stored = Result()
+    private let observation: C11RootNavigationDeliveryObservation
+    init(observation: C11RootNavigationDeliveryObservation) {
+        self.observation = observation
+        super.init()
+    }
+    var result: Result { lock.withLock { stored } }
+    private func reenter(_ instance: URLProtocol, finished: Bool) {
+        let before = observation.snapshotForReentryControl
+        instance.stopLoading() // Real override, synchronously inside real terminal callback.
+        let inside = observation.snapshotForReentryControl
+        lock.withLock {
+            if stored.before == nil { stored.before = before; stored.inside = inside }
+            if finished { stored.finished += 1 } else { stored.failed += 1 }
+        }
+    }
+    func urlProtocolDidFinishLoading(_ instance: URLProtocol) { reenter(instance, finished: true) }
+    func urlProtocol(_ instance: URLProtocol, didFailWithError error: Error) { reenter(instance, finished: false) }
+    func urlProtocol(_ instance: URLProtocol, didReceive response: URLResponse, cacheStoragePolicy policy: URLCache.StoragePolicy) {
+        lock.withLock { stored.received += 1 }
+    }
+    func urlProtocol(_ instance: URLProtocol, didLoad data: Data) { lock.withLock { stored.data += 1 } }
+    func urlProtocol(_ instance: URLProtocol, wasRedirectedTo request: URLRequest, redirectResponse: URLResponse) {
+        lock.withLock { stored.unexpected += 1 }
+    }
+    func urlProtocol(_ instance: URLProtocol, cachedResponseIsValid cachedResponse: CachedURLResponse) {
+        lock.withLock { stored.unexpected += 1 }
+    }
+    func urlProtocol(_ instance: URLProtocol, didReceive challenge: URLAuthenticationChallenge) {
+        lock.withLock { stored.unexpected += 1 }
+    }
+    func urlProtocol(_ instance: URLProtocol, didCancel challenge: URLAuthenticationChallenge) {
+        lock.withLock { stored.unexpected += 1 }
+    }
 }
 
 #endif

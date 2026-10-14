@@ -1008,6 +1008,86 @@ final class C11RootNavigationUITests: XCTestCase {
         capture(app, name: "c11-root-presentation-actual-reopen-official-get2-draft-retained")
     }
 
+
+    /// Harness control only: real callback completion, not I3 foreground.
+    func testDeliveryObserverCountsCompleted401OnlyAfterRealClientTerminal() throws {
+        let app = try launchFixture("--ui-testing-c11-root-observe-completed401", selection: "observe-completed401")
+        try openActualHistoryRow(in: app)
+        let name = app.textFields["meal-record.field.name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 8))
+        XCTAssertEqual(name.value as? String, "Synthetic C11 confirmed food")
+        XCTAssertEqual(app.textFields["meal-record.field.quantity"].value as? String, "50")
+        XCTAssertTrue(requireDeliveryStatus(in: app,
+            counters: ["get": 2, "bind": 1, "refresh": 1, "blocked": 0,
+                       "completed401": 1, "success": 2, "error": 0, "callbackCancel": 0,
+                       "waiting": 0, "sameLogical": 1, "bearerChanged": 1]))
+        XCTAssertFalse(element("meal-record.read-failure", in: app).exists)
+        capture(app, name: "c11-delivery-observer-real401-and200-callback-control")
+    }
+
+    func testDeliveryObserverDoesNotCountProtocolFailureAsCompleted401() throws {
+        let app = try launchFixture("--ui-testing-c11-root-observe-delivery-failure", selection: "observe-delivery-failure")
+        try openActualHistoryRow(in: app)
+        XCTAssertTrue(requireDeliveryStatus(in: app,
+            counters: ["get": 1, "bind": 1, "refresh": 0, "blocked": 0,
+                       "completed401": 0, "success": 0, "error": 1, "callbackCancel": 0,
+                       "waiting": 0, "sameLogical": 0, "bearerChanged": 0]))
+        XCTAssertTrue(element("meal-record.read-failure", in: app).waitForExistence(timeout: 5))
+        XCTAssertFalse(app.textFields["meal-record.field.name"].exists)
+        XCTAssertFalse(element("meal-record.saved", in: app).exists)
+        capture(app, name: "c11-delivery-observer-real-failed-callback-control")
+    }
+
+    func testDeliveryObserverSeparatesActualBackCancellationFromCompleted401() throws {
+        let app = try launchFixture("--ui-testing-c11-root-observe-delivery-cancellation", selection: "observe-delivery-cancellation")
+        try openActualHistoryRow(in: app)
+        guard requireDeliveryStatus(in: app,
+            counters: ["get": 1, "bind": 1, "refresh": 0, "blocked": 0, "waiting": 1,
+                       "completed401": 0, "success": 0, "error": 0, "callbackCancel": 0,
+                       "stopBefore": 0, "stopAfter": 0, "finish": 0, "callerCancelled": 0]) else { return }
+        let detail = element("screen.meal-record", in: app)
+        let progress = element("meal-record.progress", in: app)
+        guard detail.exists, progress.waitForExistence(timeout: 5),
+              !element("meal-record.read-failure", in: app).exists,
+              !app.textFields["meal-record.field.name"].exists else {
+            XCTFail("SETUP_NOT_VERIFIED: actual read must still be pending with no terminal Form or failure before Back")
+            return
+        }
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        guard back.exists, back.isEnabled, back.isHittable else {
+            XCTFail("SETUP_NOT_VERIFIED: real Back must be accessible while the controlled GET is pending")
+            return
+        }
+        back.tap() // Actual disappearance cancels the actual View-owned read.
+        XCTAssertTrue(element("screen.history", in: app).waitForExistence(timeout: 5))
+        guard requireDeliveryStatus(in: app,
+            counters: ["get": 1, "bind": 1, "refresh": 0, "blocked": 0, "waiting": 1,
+                       "completed401": 0, "success": 0, "error": 0, "callbackCancel": 0,
+                       "finish": 1, "callerCancelled": 1]) else { return }
+        let status = element("c11.fixture.status", in: app)
+        let cancelled = XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label MATCHES %@", ".*\\bstopBefore=[1-9][0-9]*\\b.*"), object: status)], timeout: 5) == .completed
+        XCTAssertTrue(cancelled,
+            "Actual pre-admission stopLoading plus cancelled caller finish are required; timeout alone cannot satisfy callerCancelled=1")
+        XCTAssertFalse(element("screen.meal-record", in: app).exists)
+        XCTAssertFalse(element("meal-record.saved", in: app).exists)
+        capture(app, name: "c11-delivery-observer-real-back-stoploading-control")
+    }
+
+    private func requireDeliveryStatus(in app: XCUIApplication, counters: [String: Int]) -> Bool {
+        let status = element("c11.fixture.status", in: app)
+        // Word boundaries prevent get=1 from accepting get=10. Expected
+        // counters are literal fixture facts; no credentials/IDs are parsed.
+        let predicates = counters.sorted { $0.key < $1.key }.map { key, value in
+            NSPredicate(format: "label MATCHES %@", ".*\\b\(key)=\(value)\\b.*")
+        }
+        let matched = XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSCompoundPredicate(andPredicateWithSubpredicates: predicates), object: status)], timeout: 8) == .completed
+        if !matched { capture(app, name: "c11-delivery-observation-counter-mismatch") }
+        XCTAssertTrue(matched, "HARNESS_CONTROL: actual terminal observations must match the selected synthetic control")
+        return matched
+    }
+
     private func launchFixture(_ argument: String, selection: String) throws -> XCUIApplication {
         let app = XCUIApplication()
         runningApp = app

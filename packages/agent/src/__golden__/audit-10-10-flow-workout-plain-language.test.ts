@@ -245,6 +245,9 @@ const USER: Row = {
 }
 
 const PROFILE: Row = {
+  user_id: USER_ID,
+  onboarding_completed: true,
+  onboarding_completed_at: null,
   sex: 'masculino',
   // Not recorded (RC TL-16).
   birth_date: '2000-01-01',
@@ -462,6 +465,30 @@ function harness(fixture: Fixture = {}): Harness {
     },
     rpc: async (name: string, params: Row = {}) => {
       rpcs.push({ name, params })
+      if (name === 'get_mobile_signup_body_photo_snapshot') {
+        expect(params).toEqual({ p_user_id: USER_ID, p_include_open_photos: false })
+        return {
+          data: {
+            version: 1,
+            user_id: USER_ID,
+            profile_present: true,
+            locale: 'pt-BR',
+            timezone: 'America/Sao_Paulo',
+            generation_token: {
+              onboarding_completed: true,
+              onboarding_completed_at: null,
+              receipt_count: 0,
+            },
+            poses: [],
+            remaining_uploads: 0,
+            consent: null,
+            estimate: null,
+            candidate: null,
+            confirmation: null,
+          },
+          error: null,
+        }
+      }
       if (name === 'list_mobile_routine_items') {
         return { data: { local_date: '2026-10-10', items: [] }, error: null }
       }

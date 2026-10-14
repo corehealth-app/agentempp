@@ -3342,6 +3342,46 @@ local sintético e shims de plataforma; não comprovam JWT/GoTrue, fila, modelo,
 Storage remoto ou QA físico. Texto B5, telas B6–B9 e conferência real da
 disposição/Storage permanecem gates próprios antes da ativação.
 
+### Marca de origem no contexto do Flow (B4c)
+
+A apresentação factual do chat autenticado usa o recibo privado por meio do RPC
+já existente `get_mobile_signup_body_photo_snapshot`, nunca consulta a tabela
+privada diretamente. Há no máximo uma leitura adicional por contexto quando
+`historyProvider === 'mobile_flow'` e BF oficial não é nulo, sempre com
+`p_user_id` do dono autenticado e `p_include_open_photos=false`. Sem BF, não lê.
+Isso não muda o contrato HTTP, os cálculos nem a família de capacidades do Flow.
+
+Somente confirmação aceita por `arithmetic_mean_v1`, ativa e não invalidada,
+do mesmo dono/geração do perfil lido, e com valor confirmado igual ao BF
+oficial acrescenta a marca: ` (estimativa por fotos, confirmada pela pessoa; não é medida)`.
+Perfil público, `bf_source` e igualdade entre números não provam aceite.
+Ausência de recibo, recusa ou origem legitimamente inativa mantêm a linha
+simples. Cadastro aberto sem recibo da geração atual também é válido, mesmo
+com recibos de gerações anteriores. Novas fotos OFF não apagam a prova
+histórica válida.
+
+RPC ausente, falha, payload desconhecido ou contradição de autoridade falham
+pelo caminho de erro da leitura de contexto. Não há segunda consulta de reparo
+nem fallback positivo. Só um booleano é projetado no contexto do modelo; não
+se enviam fontes, fingerprint, datas, notas ou leituras individuais. A linha
+legada `- BF%` e as chamadas de `processMessage`/WhatsApp não mudam e não
+consultam esse RPC.
+
+A comparação conservadora mantém os literais oficiais de geração com toda a
+precisão. `onboarding_completed_at` vem da coluna do perfil e do mesmo campo
+na projeção SQL, sem `to_char` ou `date_trunc`; não é convertido a milissegundos
+para decidir igualdade. Serialização consistente dessas leituras e presença
+das migrações/RPC são gates anteriores à publicação no alvo. A escolha não
+cria uma regra de negócio sobre representações ISO equivalentes e não promete
+serialização entre o perfil, snapshot e alterações posteriores.
+
+D1/D2 e os textos B5 PT/EN aprovados em 2026-10-12 permanecem inalterados;
+[decisões, limites e referências B5](../CALCULO-MPP.md#b4c--origem-confirmada-no-contexto-factual-do-flow).
+Aprovação de texto não equivale a publicação, validação médica ou QA físico.
+O golden `audit-10-14-flow-confirmed-photo-origin.test.ts` captura o pedido real
+ao modelo por `processAuthenticatedMessage`; o stub não prova a redação da
+resposta de um modelo externo.
+
 ### Disposição e limpeza das fontes (B4b/D4 — integração local)
 
 A conclusão trusted captura o snapshot **antes** de fechar e sela, na mesma

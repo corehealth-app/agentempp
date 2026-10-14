@@ -128,6 +128,9 @@ const PROGRESS: Row = {
 }
 
 const BODY: Row = {
+  user_id: USER_ID,
+  onboarding_completed: true,
+  onboarding_completed_at: null,
   sex: 'masculino',
   birth_date: '1990-01-01',
   height_cm: 180,
@@ -459,10 +462,36 @@ function harness(fixture: Fixture): Harness {
       chain.maybeSingle = one
       return chain
     },
-    rpc: async (name: string) => ({
-      data: name === 'match_method_chunks' ? [] : USER_ID,
-      error: null,
-    }),
+    rpc: async (name: string, params: Row = {}) => {
+      if (name === 'get_mobile_signup_body_photo_snapshot') {
+        expect(params).toEqual({ p_user_id: USER_ID, p_include_open_photos: false })
+        return {
+          data: {
+            version: 1,
+            user_id: USER_ID,
+            profile_present: true,
+            locale: 'pt-BR',
+            timezone: 'America/Sao_Paulo',
+            generation_token: {
+              onboarding_completed: true,
+              onboarding_completed_at: null,
+              receipt_count: 0,
+            },
+            poses: [],
+            remaining_uploads: 0,
+            consent: null,
+            estimate: null,
+            candidate: null,
+            confirmation: null,
+          },
+          error: null,
+        }
+      }
+      return {
+        data: name === 'match_method_chunks' ? [] : USER_ID,
+        error: null,
+      }
+    },
   } as unknown as PipelineDeps['supabase']
 
   let call = 0

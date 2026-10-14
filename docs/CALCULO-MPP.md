@@ -4031,10 +4031,12 @@ artificialmente. As três leituras devem estar na faixa já usada no cadastro,
 `18/24/30 → 24`; `21/24/22 → 67/3` como média bruta. A prévia utiliza o valor
 canônico com duas casas decimais, como `numeric(4,2)`, calculado pelo decimal
 exato antes do arredondamento; tela e armazenamento não devem usar números
-diferentes perto de um corte. O GET mostra só a estimativa agregada. Não expõe
-as três leituras individuais, notas, confiança ou view e não grava o BF
-oficial, objetivo ou metas. Essa minimização é escolha técnica local, a refletir
-no rascunho de consentimento ainda não aprovado.
+diferentes perto de um corte. A prévia local atual do cadastro mostra a média e
+as três leituras individuais do mesmo snapshot, sem notas, confiança ou `view`;
+a consulta não grava BF oficial, objetivo ou metas. Isso é distinto da
+minimização do contexto enviado ao modelo descrita no B4c abaixo. Os textos B5
+v2 em português e inglês foram aprovados por Eduardo em 2026-10-12; aprovação
+dos textos não comprova publicação, aceite clínico ou exclusão nos provedores.
 
 D2 foi respondido pelo dono: “Usar no objetivo e nas metas (Recomendado)”,
 **após confirmação explícita**. Substitui as respostas provisórias14,39 e41
@@ -4069,5 +4071,38 @@ Origem das fotos exige marker trusted no INSERT; uma foto corporal histórica
 com a mesma frase permanece UNKNOWN. A coluna local é imutável e não foi
 aplicada remotamente. Confirmação/prova estão implementadas localmente;
 a evidência de testes e revisão pertence ao diário da operação. Isso não
-significa recurso ativado. Limpeza automática D4, texto B5, telas,
-Storage/fila/provedor e QA físico seguem os gates próprios do handoff.
+significa recurso ativado. Publicação do B5 aprovado, limpeza automática D4,
+telas, Storage/fila/provedor e QA físico seguem os gates próprios do handoff.
+
+### B4c — origem confirmada no contexto factual do Flow
+
+Somente o contexto autenticado `mobile_flow`, quando há BF oficial, lê uma vez
+o RPC existente `get_mobile_signup_body_photo_snapshot` com
+`p_include_open_photos=false`. Um recibo `accepted`/`arithmetic_mean_v1` ativo,
+sem invalidação, da mesma conta e geração, com valor igual ao BF oficial,
+permite acrescentar à linha factual: “(estimativa por fotos, confirmada pela
+pessoa; não é medida)”. Não há inferência por `bf_source` ou igualdade com a
+estimativa pública. Número manual igual, recusa, recibo ausente ou origem
+invalidada conservam a linha simples; BF ausente não faz a consulta.
+
+Falha do RPC ou inconsistência de dono, geração, forma ou valor interrompe a
+leitura do contexto pelo erro existente, sem inferir confirmação nem registrar
+o snapshot bruto. Só uma marca booleana chega ao contexto: fontes,
+fingerprint, datas e leituras individuais não vão ao modelo. Fórmulas,
+objetivos, metas, capacidade 6 e o caminho legado WhatsApp não mudam. Uma
+origem histórica válida continua identificada mesmo com novas fotos OFF.
+
+A geração preserva o literal do timestamp oficial, incluindo microssegundos;
+não usa milissegundos ou tolerância. Esta implementação conservadora depende
+da representação consistente das duas leituras do mesmo banco. A existência
+do RPC/migrações e essa serialização precisam ser conferidas no alvo antes de
+publicar; não se afirma que toda representação ISO equivalente é diferente por
+regra de negócio. Comparar perfil e snapshot não promete serialização global
+ou invalidação instantânea após a leitura.
+
+Contrato e limites: [marca de origem no contexto do Flow](mobile/api-v1.md#marca-de-origem-no-contexto-do-flow-b4c).
+A evidência local B5 mantém os corpos aprovados sem alteração:
+`codex-u2-b5-consent-pt-approval-20261012/APPROVAL.json` e
+`codex-u2-b5-consent-en-approval-20261012/APPROVAL.json` no diretório privado da
+operação; hashes PT `e45e4a38adbeab144430a9fd33df59d1754ecf154c7871d358cb0ad17762210d`
+e EN `a72cad69b3040007c81b38ab56b1b22bfc9b45c56a966e91b29bcaf45484b9e2`.

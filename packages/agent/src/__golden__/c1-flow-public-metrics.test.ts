@@ -254,15 +254,41 @@ function harness(fixture: Fixture = {}): Harness {
       chain.maybeSingle = one
       return chain
     },
-    rpc: async (name: string) => ({
-      data:
-        name === 'match_method_chunks'
-          ? fixture.rag
-            ? [{ page_title: 'Regra', content: fixture.rag }]
-            : []
-          : USER_ID,
-      error: null,
-    }),
+    rpc: async (name: string, params: Row = {}) => {
+      if (name === 'get_mobile_signup_body_photo_snapshot') {
+        expect(params).toEqual({ p_user_id: USER_ID, p_include_open_photos: false })
+        return {
+          data: {
+            version: 1,
+            user_id: USER_ID,
+            profile_present: true,
+            locale: 'pt-BR',
+            timezone: 'America/Sao_Paulo',
+            generation_token: {
+              onboarding_completed: true,
+              onboarding_completed_at: null,
+              receipt_count: 0,
+            },
+            poses: [],
+            remaining_uploads: 0,
+            consent: null,
+            estimate: null,
+            candidate: null,
+            confirmation: null,
+          },
+          error: null,
+        }
+      }
+      return {
+        data:
+          name === 'match_method_chunks'
+            ? fixture.rag
+              ? [{ page_title: 'Regra', content: fixture.rag }]
+              : []
+            : USER_ID,
+        error: null,
+      }
+    },
   } as unknown as PipelineDeps['supabase']
 
   let call = 0
@@ -714,7 +740,13 @@ describe('C1 — public Flow metrics', () => {
     const text = 'Como estão minhas metas hoje?'
     const h = harness({
       text,
-      profile: { ...PROFILE, body_fat_percent: 15 },
+      profile: {
+        ...PROFILE,
+        user_id: USER_ID,
+        onboarding_completed: true,
+        onboarding_completed_at: null,
+        body_fat_percent: 15,
+      },
       user: { ...USER, summary: 'Alergia a amendoim. BMR: 1836 kcal. Prefere arroz.' },
       prompt: 'Use Mifflin-St Jeor. Mantenha a restrição alimentar.',
       rag: 'BMR: 1836 kcal. Não sugerir amendoim.',

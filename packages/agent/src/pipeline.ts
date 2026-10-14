@@ -23,6 +23,7 @@ import { loadDailyTargets } from './calc-targets.js'
 import { throwIfQueryFailed } from './db-query-error.js'
 import { flowCapabilitiesQuestionLocale, renderFlowCapabilities } from './flow-capabilities.js'
 import { type FlowCoachStyle, flowCoachStyleLine, loadFlowCoachStyle } from './flow-coach-style.js'
+import { loadFlowConfirmedSignupPhotoBodyFat } from './flow-confirmed-photo-origin.js'
 import { flowLanguageCards, loadFlowLanguageRules } from './flow-language-policy.js'
 import {
   auditNumericClaims,
@@ -801,6 +802,8 @@ interface UserContext {
   flowOutsideSessionLines?: boolean[]
   /** Flow only: optional conversation style, scoped to this authenticated turn. */
   flowCoachStyle?: FlowCoachStyle
+  /** Flow only: active official photo origin proved for this context, never a formula input. */
+  flowConfirmedSignupPhotoBodyFat?: true
   /** Resumo persistente do paciente (gerado periodicamente). */
   summary: string | null
   /** Tempo desde a última msg IN, em horas. */
@@ -3533,6 +3536,10 @@ export async function loadContext(
     historyProvider === 'mobile_flow'
       ? await Promise.all([readProfile(), loadFlowCoachStyle(supabase, userId)])
       : [await readProfile(), undefined]
+  const flowConfirmedSignupPhotoBodyFat =
+    historyProvider === 'mobile_flow' && profile.body_fat_percent != null
+      ? await loadFlowConfirmedSignupPhotoBodyFat(supabase, userId, profile)
+      : false
 
   const messagesQuery = supabase
     .from('messages')
@@ -3800,6 +3807,7 @@ export async function loadContext(
     recentMessages,
     ...(flowOutsideSessionLines ? { flowOutsideSessionLines } : {}),
     ...(flowCoachStyle ? { flowCoachStyle } : {}),
+    ...(flowConfirmedSignupPhotoBodyFat ? { flowConfirmedSignupPhotoBodyFat: true as const } : {}),
     summary: userTyped?.summary ?? null,
     hoursSinceLastIn,
     isReentry,
@@ -4218,7 +4226,7 @@ function formatUserContext(
     `- Altura: ${ctx.profile.heightCm ?? '?'} cm`,
     `- Peso: ${ctx.profile.weightKg ?? '?'} kg`,
     flowPublicMetrics
-      ? `- Gordura corporal: ${ctx.profile.bodyFatPercent == null ? '?' : `${ctx.profile.bodyFatPercent}%`}`
+      ? `- Gordura corporal: ${ctx.profile.bodyFatPercent == null ? '?' : `${ctx.profile.bodyFatPercent}%${ctx.flowConfirmedSignupPhotoBodyFat ? ' (estimativa por fotos, confirmada pela pessoa; não é medida)' : ''}`}`
       : `- BF%: ${ctx.profile.bodyFatPercent ?? '?'}`,
     `- Atividade: ${ctx.profile.activityLevel ?? '?'}`,
     `- Treinos/semana: ${ctx.profile.trainingFrequency ?? '?'}`,

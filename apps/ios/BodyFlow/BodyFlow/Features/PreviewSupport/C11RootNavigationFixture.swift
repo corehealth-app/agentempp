@@ -7,13 +7,25 @@ import SwiftUI
 enum C11RootNavigationSelection: String, Sendable {
     case sourceOn = "on"
     case sourceOff = "off"
+    case getUnauthorizedThenSuccess = "get-401-200"
 
     static func resolve(arguments: [String]) -> Self? {
         guard arguments.contains("--ui-testing") else { return nil }
-        let on = arguments.contains("--ui-testing-c11-root-source-on")
-        let off = arguments.contains("--ui-testing-c11-root-source-off")
-        guard on != off else { return nil }
-        return on ? .sourceOn : .sourceOff
+        let choices: [(Self, String)] = [
+            (.sourceOn, "--ui-testing-c11-root-source-on"),
+            (.sourceOff, "--ui-testing-c11-root-source-off"),
+            (.getUnauthorizedThenSuccess, "--ui-testing-c11-root-get-401-200")
+        ]
+        let selected = choices.filter { arguments.contains($0.1) }
+        guard selected.count == 1 else { return nil }
+        return selected[0].0
+    }
+
+    var suppliesMealRecordSource: Bool {
+        switch self {
+        case .sourceOn, .getUnauthorizedThenSuccess: true
+        case .sourceOff: false
+        }
     }
 }
 
@@ -35,11 +47,11 @@ struct C11RootNavigationFixture {
         let secure = try C11RootNavigationSecureStore(record: record)
         let store = AuthenticationSessionStore(secureStore: secure,
             now: { Date(timeIntervalSince1970: 1000) })
-        let remote = C11RootNavigationRemote(probe: probe)
+        let remote = C11RootNavigationRemote(probe: probe, selection: selection)
         let lifecycle = SessionLifecycleCoordinator(store: store, remote: remote,
             refreshPolicy: SessionRefreshPolicy(now: { Date(timeIntervalSince1970: 1000) }, leeway: 60))
         let bindingProbe = C11RootNavigationLifecycleProbe(base: lifecycle, probe: probe)
-        let server = C11RootNavigationServer(probe: probe)
+        let server = C11RootNavigationServer(probe: probe, selection: selection)
         C11RootNavigationURLProtocol.install(server)
         let sessionConfiguration = URLSessionConfiguration.ephemeral
         sessionConfiguration.protocolClasses = [C11RootNavigationURLProtocol.self]
@@ -48,7 +60,7 @@ struct C11RootNavigationFixture {
             sessionLifecycle: lifecycle, session: URLSession(configuration: sessionConfiguration),
             clock: ContinuousClock(), timeout: .seconds(5))
         // Only this explicitly selected synthetic harness can supply a source.
-        let source = AppDependencies.makeMealRecordBindingSource(enabled: selection == .sourceOn,
+        let source = AppDependencies.makeMealRecordBindingSource(enabled: selection.suppliesMealRecordSource,
             mode: configuration.mode, client: transport, lifecycle: bindingProbe)
         let scaffold = AppDependencies.scaffold()
         let unavailable = UnavailableBodyFlowCapabilities()
@@ -78,18 +90,29 @@ final class C11RootNavigationProbe {
     private(set) var binds = 0
     private(set) var refreshes = 0
     private(set) var blocked = 0
+    private(set) var sameLogicalRequest = false
+    private(set) var bearerChanged = false
     func recordGET() { gets += 1 }
     func recordBind() { binds += 1 }
     func recordRefresh() { refreshes += 1 }
     func recordBlocked() { blocked += 1 }
+    func recordReplayComparison(sameLogical: Bool, bearerChanged: Bool) {
+        sameLogicalRequest = sameLogical
+        self.bearerChanged = bearerChanged
+    }
 }
 
 @MainActor
 struct C11RootNavigationDiagnosticView: View {
     let selection: C11RootNavigationSelection
     let probe: C11RootNavigationProbe
+    private var diagnostic: String {
+        let counts = "C11 \(selection.rawValue): get=\(probe.gets) bind=\(probe.binds) refresh=\(probe.refreshes) blocked=\(probe.blocked)"
+        guard selection == .getUnauthorizedThenSuccess else { return counts }
+        return counts + " sameLogical=\(probe.sameLogicalRequest ? 1 : 0) bearerChanged=\(probe.bearerChanged ? 1 : 0)"
+    }
     var body: some View {
-        Text("C11 \(selection.rawValue): get=\(probe.gets) bind=\(probe.binds) refresh=\(probe.refreshes) blocked=\(probe.blocked)")
+        Text(diagnostic)
             .font(.system(size: 9, design: .monospaced))
             .padding(2)
             .background(.black.opacity(0.85))
@@ -115,6 +138,21 @@ private enum C11RootNavigationFacts {
         return AuthenticationSessionRecord(userID: userID, email: "c11-root@example.invalid",
             isEmailConfirmed: true, isOnboardingCompleted: true, accessToken: synthetic,
             refreshToken: "synthetic-c11-root-refresh", expiresAt: Date(timeIntervalSince1970: 2000))
+    }
+    /// This valid synthetic replacement is returned ONLY by the new refresh scenario.
+    /// Public session facts stay identical; token values never enter diagnostics.
+    static func refreshedRecord(from original: AuthenticationSessionRecord) throws -> AuthenticationSessionRecord {
+        guard original.userID == userID else { throw SupabaseAuthRemoteError.requestFailed }
+        let header = try JSONSerialization.data(withJSONObject: ["alg": "none", "typ": "JWT"])
+        let payload = try JSONSerialization.data(withJSONObject: ["sub": userID, "fixture": "c11-root-navigation-refreshed"])
+        func part(_ data: Data) -> String {
+            data.base64EncodedString().replacingOccurrences(of: "+", with: "-")
+                .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        }
+        let synthetic = "\(part(header)).\(part(payload)).synthetic-signature"
+        return AuthenticationSessionRecord(userID: original.userID, email: original.email,
+            isEmailConfirmed: original.isEmailConfirmed, isOnboardingCompleted: original.isOnboardingCompleted,
+            accessToken: synthetic, refreshToken: "synthetic-c11-root-refreshed", expiresAt: Date(timeIntervalSince1970: 3000))
     }
     static var row: HistoryMealLogRow {
         HistoryMealLogRow(id: recordID, mealType: "almoco", foodName: "Synthetic C11 confirmed food",
@@ -144,7 +182,11 @@ private final class C11RootNavigationSecureStore: SecureStoring, @unchecked Send
 
 private actor C11RootNavigationRemote: SupabaseAuthRemoteOperating {
     let probe: C11RootNavigationProbe
-    init(probe: C11RootNavigationProbe) { self.probe = probe }
+    let selection: C11RootNavigationSelection
+    init(probe: C11RootNavigationProbe, selection: C11RootNavigationSelection) {
+        self.probe = probe
+        self.selection = selection
+    }
     func signIn(email: String, password: String) throws -> AuthenticationSessionRecord {
         throw SupabaseAuthRemoteError.requestFailed
     }
@@ -154,7 +196,8 @@ private actor C11RootNavigationRemote: SupabaseAuthRemoteOperating {
     func requestPasswordRecovery(email: String) throws { throw SupabaseAuthRemoteError.requestFailed }
     func refresh(record: AuthenticationSessionRecord) async throws -> AuthenticationSessionRecord {
         await probe.recordRefresh()
-        throw SupabaseAuthRemoteError.requestFailed
+        guard selection == .getUnauthorizedThenSuccess else { throw SupabaseAuthRemoteError.requestFailed }
+        return try C11RootNavigationFacts.refreshedRecord(from: record)
     }
     func revokeCurrentSession(accessToken: String) -> RemoteRevocationOutcome { .unconfirmed }
 }
@@ -179,18 +222,79 @@ private actor C11RootNavigationOnboarding: OnboardingRepository {
 }
 private struct C11RootNavigationTime: TimeProviding { var now: Date { C11RootNavigationFacts.date } }
 
-/// The ONLY allowed HTTP response is an exact synthetic GET. Unknown requests never reach internet.
+/// A status-bearing HTTP response from the strictly synthetic protocol, never a real endpoint.
+private struct C11RootNavigationHTTPResponse: Sendable {
+    let statusCode: Int
+    let data: Data
+}
+
+/// Only an exact synthetic GET is allowed. Unknown requests never reach internet.
 private actor C11RootNavigationServer {
     let probe: C11RootNavigationProbe
-    init(probe: C11RootNavigationProbe) { self.probe = probe }
-    func respond(to request: URLRequest) async throws -> Data {
-        guard request.httpMethod == "GET", request.httpBody == nil,
+    let selection: C11RootNavigationSelection
+    private var attemptedGETs = 0
+    private var firstLogicalRequest: LogicalRequest?
+    private var firstAuthorization: String?
+
+    /// Contains safe request metadata only. Authorization is NEVER placed here.
+    private struct LogicalRequest: Equatable {
+        let method: String?
+        let url: URL?
+        let bodyIsAbsent: Bool
+        let requestID: String?
+        let idempotencyKey: String?
+        init(_ request: URLRequest) {
+            method = request.httpMethod
+            url = request.url
+            bodyIsAbsent = request.httpBody == nil && request.httpBodyStream == nil
+            requestID = request.value(forHTTPHeaderField: "X-Request-Id")
+            idempotencyKey = request.value(forHTTPHeaderField: "Idempotency-Key")
+        }
+        var isValidRead: Bool {
+            bodyIsAbsent && requestID?.isEmpty == false && idempotencyKey == nil
+        }
+    }
+
+    init(probe: C11RootNavigationProbe, selection: C11RootNavigationSelection) {
+        self.probe = probe
+        self.selection = selection
+    }
+
+    func respond(to request: URLRequest) async throws -> C11RootNavigationHTTPResponse {
+        guard request.httpMethod == "GET", request.httpBody == nil, request.httpBodyStream == nil,
               request.url?.absoluteString == "https://c11-ui.fixture.invalid/api/mobile/v1/meal-records/11111111-1111-4111-8111-111111111111" else {
             await probe.recordBlocked()
             throw MobileAPITransportError.invalidResponse
         }
+        attemptedGETs += 1
         await probe.recordGET()
-        return try JSONEncoder().encode(C11RootNavigationFacts.detail())
+        guard selection == .getUnauthorizedThenSuccess else {
+            return C11RootNavigationHTTPResponse(statusCode: 200,
+                data: try JSONEncoder().encode(C11RootNavigationFacts.detail()))
+        }
+        switch attemptedGETs {
+        case 1:
+            firstLogicalRequest = LogicalRequest(request)
+            firstAuthorization = request.value(forHTTPHeaderField: "Authorization")
+            let error = ["error": ["code": "expired_token", "message": "Synthetic fixture unauthorized",
+                                     "request_id": "c11-ui-unauthorized"]]
+            return C11RootNavigationHTTPResponse(statusCode: 401,
+                data: try JSONSerialization.data(withJSONObject: error))
+        case 2:
+            let second = LogicalRequest(request)
+            let currentAuthorization = request.value(forHTTPHeaderField: "Authorization")
+            let sameLogical = firstLogicalRequest == second && second.isValidRead
+            let changed = firstAuthorization?.hasPrefix("Bearer ") == true
+                && currentAuthorization?.hasPrefix("Bearer ") == true
+                && firstAuthorization != currentAuthorization
+            firstAuthorization = nil
+            await probe.recordReplayComparison(sameLogical: sameLogical, bearerChanged: changed)
+            return C11RootNavigationHTTPResponse(statusCode: 200,
+                data: try JSONEncoder().encode(C11RootNavigationFacts.detail()))
+        default:
+            await probe.recordBlocked()
+            throw MobileAPITransportError.invalidResponse
+        }
     }
 }
 
@@ -325,14 +429,14 @@ private final class C11RootNavigationLoadingContext: @unchecked Sendable {
                 if isCancelled { return }
                 throw MobileAPITransportError.invalidResponse
             }
-            let data = try await server.respond(to: request)
+            let reply = try await server.respond(to: request)
             try Task.checkCancellation()
             guard let url = request.url,
-                  let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1",
+                  let response = HTTPURLResponse(url: url, statusCode: reply.statusCode, httpVersion: "HTTP/1.1",
                     headerFields: ["Content-Type": "application/json"]) else {
                 throw MobileAPITransportError.invalidResponse
             }
-            deliver(response: response, data: data)
+            deliver(response: response, data: reply.data)
         } catch is CancellationError {
             // URLSession already owns cancellation; no callback after stopLoading.
         } catch {

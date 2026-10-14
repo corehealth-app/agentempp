@@ -65,6 +65,37 @@ final class C11RootNavigationUITests: XCTestCase {
         capture(app, name: "c11-root-source-off-read-only")
     }
 
+    func testRealRootHistoryGET401RefreshesOnceAndShowsOfficialRecord() throws {
+        let app = try launchFixture("--ui-testing-c11-root-get-401-200", selection: "get-401-200")
+        try openActualHistoryRow(in: app)
+        let detail = element("screen.meal-record", in: app)
+        let entered = detail.waitForExistence(timeout: 8)
+        XCTAssertTrue(entered,
+            "CHARACTERIZATION: real Root/History must publish the official record after HTTP 401 and one real refresh")
+        guard entered else { capture(app, name: "c11-root-get401-destination"); return }
+        let name = app.textFields["meal-record.field.name"]
+        let nameReady = name.waitForExistence(timeout: 5)
+        XCTAssertTrue(nameReady, "The official GET response must reach the actual Form's own name field")
+        guard nameReady else { capture(app, name: "c11-root-get401-field"); return }
+        XCTAssertEqual(name.value as? String, "Synthetic C11 confirmed food")
+        XCTAssertEqual(app.textFields["meal-record.field.quantity"].value as? String, "50")
+        // Official stored kcal is displayed above the manual override field.
+        // That override intentionally starts blank; do not fill it from the server.
+        XCTAssertTrue(app.staticTexts["100 kcal"].exists)
+        for id in ["screen.history.meal-detail", "meal-record.read-failure", "meal-record.failure",
+                   "meal-record.saved", "meal-record.recovery.notice"] {
+            XCTAssertFalse(element(id, in: app).exists,
+                "A refreshed read must show the editable official detail without a false mutation result: \(id)")
+        }
+        let status = element("c11.fixture.status", in: app)
+        let expected = "C11 get-401-200: get=2 bind=1 refresh=1 blocked=0 sameLogical=1 bearerChanged=1"
+        let reached = expectation(for: NSPredicate(format: "label == %@", expected), evaluatedWith: status)
+        wait(for: [reached], timeout: 5)
+        XCTAssertEqual(status.label, expected,
+            "Real HTTP attempts must retain method/path/body/key/request ID, change bearer once, and avoid extra binding or endpoint")
+        capture(app, name: "c11-root-get401-real-refresh-official-record")
+    }
+
     private func launchFixture(_ argument: String, selection: String) throws -> XCUIApplication {
         let app = XCUIApplication()
         runningApp = app

@@ -164,7 +164,19 @@ struct BodyFlowKeyboardObserver: UIViewRepresentable {
             guard let window, window.isKeyWindow,
                   let value = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue else { return }
             let keyboard = window.convert(value.cgRectValue, from: window.screen.coordinateSpace)
-            changed(window.bounds.intersection(keyboard).height > 0)
+            let occupied = window.bounds.intersection(keyboard).height > 0
+            // A completed hide can still report the old accessory frame after
+            // Done has released our input owner. Keep an accessory whose own
+            // view or controller remains first responder; will-change is not
+            // a completed hide and keeps its reported occupied frame.
+            let completedHide = notification.name == UIResponder.keyboardDidHideNotification
+            changed(occupied && (!completedHide || Self.hasOwnFirstResponder(in: window)))
+        }
+
+        private static func hasOwnFirstResponder(in view: UIView) -> Bool {
+            if view.isFirstResponder { return true }
+            if let owner = view.next as? UIViewController, owner.isFirstResponder { return true }
+            return view.subviews.contains { hasOwnFirstResponder(in: $0) }
         }
     }
 }

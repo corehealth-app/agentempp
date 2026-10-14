@@ -609,16 +609,14 @@ describe('o texto da sugestão vem do rascunho gravado', () => {
   })
 })
 
-// Audit 2026-10-10 (Progress shows the body fat of the sign-up): GET /progress
-// now answers user_profiles.body_fat_percent when the progress row has none.
-// The two proposal tools read the SAME empty column (user_progress.
-// current_bf_percent, which nothing writes) and hand the generators null. That
-// is the same defect, but changing it changes the request to the model and was
-// not reported: it stays as it is, locked here (RC BF-3 in docs/mobile/api-v1.md).
-describe('audit 2026-10-10: o que os geradores recebem de gordura corporal não mudou (trava: RC BF-3)', () => {
+// RC BF-3, 2026-10-14: replace the historical null characterization only after
+// the exact golden reproduced four causal failures with the real generators.
+// Flow proposals now read the saved sign-up percent when progress has none.
+// No generator prompt, nutrition rule or legacy caller changes here.
+describe('audit 2026-10-14: propostas Flow recebem a gordura do cadastro (RC BF-3)', () => {
   const SIGN_UP_PROFILE = { body_fat_percent: 15 }
 
-  it('treino: com 15% no perfil e nada no progresso, o gerador continua recebendo bf_percent null', async () => {
+  it('treino: com 15% no perfil e nada no progresso, o gerador recebe bf_percent 15', async () => {
     generateTrainingPlan.mockResolvedValue(trainingPlan)
     const { ctx, recorded } = makeContext({ profile: SIGN_UP_PROFILE })
 
@@ -627,18 +625,21 @@ describe('audit 2026-10-10: o que os geradores recebem de gordura corporal não 
     expect(result).toMatchObject({ success: true, domain: 'training' })
     expect(generateTrainingPlan).toHaveBeenCalledTimes(1)
     const input = generateTrainingPlan.mock.calls[0]?.[2] as { profile: Record<string, unknown> }
-    expect(input.profile.bf_percent).toBeNull()
+    expect(input.profile.bf_percent).toBe(15)
     expect(Object.keys(input.profile)).toContain('bf_percent')
-    // What it reads: the progress column, and no body fat from the profile.
+    // Same two reads; the profile projection now also carries body fat.
     expect(recorded.selects.filter((read) => read.table === 'user_progress')).toEqual([
       { table: 'user_progress', columns: 'current_bf_percent' },
     ])
     expect(recorded.selects.filter((read) => read.table === 'user_profiles')).toEqual([
-      { table: 'user_profiles', columns: 'sex, birth_date, weight_kg, height_cm, current_protocol' },
+      {
+        table: 'user_profiles',
+        columns: 'sex, birth_date, weight_kg, height_cm, current_protocol, body_fat_percent',
+      },
     ])
   })
 
-  it('cardápio: com 15% no perfil e nada no progresso, o gerador continua recebendo bf_percent null', async () => {
+  it('cardápio: com 15% no perfil e nada no progresso, o gerador recebe bf_percent 15', async () => {
     generateDietPlan.mockResolvedValue(dietPlan)
     const { ctx, recorded } = makeContext({ profile: SIGN_UP_PROFILE })
 
@@ -647,7 +648,7 @@ describe('audit 2026-10-10: o que os geradores recebem de gordura corporal não 
     expect(result).toMatchObject({ success: true, domain: 'nutrition' })
     expect(generateDietPlan).toHaveBeenCalledTimes(1)
     const input = generateDietPlan.mock.calls[0]?.[2] as { profile: Record<string, unknown> }
-    expect(input.profile.bf_percent).toBeNull()
+    expect(input.profile.bf_percent).toBe(15)
     expect(Object.keys(input.profile)).toContain('bf_percent')
     expect(recorded.selects.filter((read) => read.table === 'user_progress')).toEqual([
       { table: 'user_progress', columns: 'current_bf_percent' },
@@ -655,7 +656,8 @@ describe('audit 2026-10-10: o que os geradores recebem de gordura corporal não 
     expect(recorded.selects.filter((read) => read.table === 'user_profiles')).toEqual([
       {
         table: 'user_profiles',
-        columns: 'sex, birth_date, weight_kg, height_cm, activity_level, current_protocol',
+        columns:
+          'sex, birth_date, weight_kg, height_cm, activity_level, current_protocol, body_fat_percent',
       },
     ])
   })

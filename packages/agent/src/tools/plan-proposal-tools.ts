@@ -270,7 +270,7 @@ export function createPlanProposalTools<
         sp.from('users').select('name').eq('id', ctx.userId).maybeSingle(),
         sp
           .from('user_profiles')
-          .select('sex, birth_date, weight_kg, height_cm, current_protocol')
+          .select('sex, birth_date, weight_kg, height_cm, current_protocol, body_fat_percent')
           .eq('user_id', ctx.userId)
           .maybeSingle(),
         sp.from('user_progress').select('current_bf_percent').eq('user_id', ctx.userId).maybeSingle(),
@@ -300,7 +300,7 @@ export function createPlanProposalTools<
           weight_kg: profile.data?.weight_kg ?? null,
           height_cm: profile.data?.height_cm ?? null,
           protocol: profile.data?.current_protocol ?? null,
-          bf_percent: progress.data?.current_bf_percent ?? null,
+          bf_percent: progress.data?.current_bf_percent ?? profile.data?.body_fat_percent ?? null,
           training_level: input.training_level,
           limitations: input.limitations ?? [],
           priority_muscles: input.priority_muscles ?? [],
@@ -399,7 +399,9 @@ export function createPlanProposalTools<
         sp.from('users').select('name').eq('id', ctx.userId).maybeSingle(),
         sp
           .from('user_profiles')
-          .select('sex, birth_date, weight_kg, height_cm, activity_level, current_protocol')
+          .select(
+            'sex, birth_date, weight_kg, height_cm, activity_level, current_protocol, body_fat_percent',
+          )
           .eq('user_id', ctx.userId)
           .maybeSingle(),
         sp.from('user_progress').select('current_bf_percent').eq('user_id', ctx.userId).maybeSingle(),
@@ -447,7 +449,7 @@ export function createPlanProposalTools<
           protocol: profile.data?.current_protocol ?? null,
           meta_kcal: targets.calories_target ?? null,
           meta_protein_g: targets.protein_target ?? null,
-          bf_percent: progress.data?.current_bf_percent ?? null,
+          bf_percent: progress.data?.current_bf_percent ?? profile.data?.body_fat_percent ?? null,
           restrictions: input.restrictions ?? [],
           preferences: input.preferences ?? [],
         },

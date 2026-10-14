@@ -950,12 +950,21 @@ adição servidor P-DEPOIS-1 não comprova que o iOS já mostra o novo rótulo;
 decode, apresentação localizada e conferência física seguem gates próprios.
 As linhas RC BF abaixo preservam o registro histórico e suas pendências.
 
-O que NÃO mudou de propósito: as propostas de treino e de cardápio do Flow
-continuam lendo `user_progress.current_bf_percent` e entregando `bf_percent`
-nulo aos geradores (o de cardápio escreve "Gordura corporal: ?%" no pedido; o
-de treino não escreve o campo). É a mesma causa, mas mudar isso muda o pedido
-ao modelo e não foi relatado: está travado em
-`packages/agent/src/plan-proposal-tools.test.ts` (RC BF-3).
+Na correção local RC BF-3 de 2026-10-14, as propostas de treino e de cardápio
+do Flow leem também `user_profiles.body_fat_percent` nas consultas já existentes.
+Um `user_progress.current_bf_percent` não nulo continua vencendo; na ausência
+dele, o valor do perfil é repassado ao input do gerador. Sem ambos, permanece
+nulo. Isso inclui o valor persistido pelo cadastro com ou sem fotos confirmadas;
+não há nova inferência de origem, leitura de fotos ou recibos.
+
+O pedido atual de cardápio usa esse valor na linha "Gordura corporal". O pedido
+de treino permanece byte idêntico e não usa BF; corrigir seu input não demonstra
+personalização do treino por esse campo. Metas oficiais, fórmulas, limites,
+idempotência, rascunhos e os callers legados permanecem iguais. São dois SELECTs
+ampliados e um fallback em cada proposta, sem consulta adicional, API ou SQL.
+O golden `packages/agent/src/__golden__/audit-10-14-flow-generator-body-fat.test.ts`
+usa as tools e os geradores reais, com banco e LLM sintéticos. Parte do estado
+pós-cadastro/pós-D2, sem provar essas transações, staging ou QA físico.
 
 Golden: `apps/admin/src/lib/mobile-api/progress-body-fat.audit-10-10.test.ts`
 (o handler real de `GET /progress`, banco em memória, sem rede). O teste de
@@ -1003,7 +1012,7 @@ encerradas por esta adição de servidor.
 
 > RC BF-2 — cenário gordura corporal em Progresso variante dizer na tela que o número foi informado pela pessoa, e quando (GET /progress não ganhou campo de origem; a linha fica em "Medidas", sem origem nem data) NÃO coberta nesta PR (pendência da audit 2026-10-10)
 
-> RC BF-3 — cenário sugestão de cardápio e de treino do Flow para a mesma conta variante o pedido ao gerador, que continua lendo user_progress.current_bf_percent (coluna que nada grava) e envia "Gordura corporal: ?%" no cardápio NÃO coberta nesta PR (pendência da audit 2026-10-10). A causa é a mesma, mas trocar o que o gerador recebe muda o pedido ao modelo e não foi relatado: fica travado como está.
+> RC BF-3 — registro de 2026-10-10, resolvido localmente no transporte dos inputs em 2026-10-14: perfil15/progresso null e perfil24 pós-D2 chegam aos dois geradores Flow; progresso18 vence perfil24 e null/null permanece desconhecido. O golden cobre o cardápio real com a linha do percentual e o pedido de treino atual sem BF. Não cobre conta live, resposta real do modelo, confirmação D2 em SQL ou conferência no iPhone; esses gates continuam separados.
 
 > RC BF-4 — cenário gordura corporal em Progresso variante valor mais novo vindo de reavaliação ou de fotos (nenhum caminho do app grava user_progress.current_bf_percent; se um dia gravar, ele vence o do perfil sem comparar datas) NÃO coberta nesta PR (pendência da audit 2026-10-10)
 

@@ -605,6 +605,162 @@ final class C11RootNavigationUITests: XCTestCase {
         capture(app, name: "c11-root-manual-read-retry-official-third-get")
     }
 
+    /// One real Profile sign-out failure, then one explicit History recovery.
+    /// No auth/offer/ticket/model setter or mutation action is called by this test.
+    func testRealRootLocalLogoutMarkerFailureNeedsExplicitHistoryRecoveryAndFreshOfficialGET() throws {
+        let app = try launchFixture("--ui-testing-c11-root-h05-marker-failure", selection: "h05-marker-failure")
+        let status = element("c11.fixture.status", in: app)
+        let before = "C11 h05-marker-failure: get=0 bind=1 refresh=0 blocked=0 markerFailures=0 revokes=0 commands=0 bodyAbsent=0 keyAbsent=0"
+        let failedLogout = "C11 h05-marker-failure: get=0 bind=1 refresh=0 blocked=0 markerFailures=1 revokes=0 commands=0 bodyAbsent=0 keyAbsent=0"
+        let recovered = "C11 h05-marker-failure: get=1 bind=2 refresh=0 blocked=0 markerFailures=1 revokes=0 commands=0 bodyAbsent=1 keyAbsent=1"
+        func requireStatus(_ expected: String, phase: String) -> Bool {
+            let matched = XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "label == %@", expected), object: status)], timeout: 8) == .completed
+            if !matched { capture(app, name: "c11-root-h05-status-" + phase) }
+            XCTAssertTrue(matched, "ACTION_OBSERVATION: actual fixture counters must settle for " + phase)
+            if status.exists { XCTAssertEqual(status.label, expected) }
+            return matched
+        }
+        func wholeControl(_ control: XCUIElement, inside container: XCUIElement) -> Bool {
+            guard control.exists, container.exists, status.exists else { return false }
+            let viewport = container.frame.intersection(app.frame)
+            let frame = control.frame, diagnostic = status.frame
+            return !viewport.isNull && viewport.width > 0 && viewport.height > 0
+                && frame.width >= 44 && frame.height >= 44
+                && diagnostic.width > 0 && diagnostic.height > 0
+                && viewport.contains(frame) && !frame.intersects(diagnostic)
+                && control.isEnabled && control.isHittable
+        }
+        guard requireStatus(before, phase: "initial-bind-without-http") else { return }
+        let profileTab = app.buttons["tab.perfil"]
+        guard profileTab.waitForExistence(timeout: 5), profileTab.isEnabled, profileTab.isHittable else {
+            capture(app, name: "c11-root-h05-profile-tab-setup")
+            XCTFail("SETUP_NOT_RED: actual Profile tab must be reachable")
+            return
+        }
+        profileTab.tap()
+        let profile = element("screen.perfil", in: app)
+        guard profile.waitForExistence(timeout: 5) else {
+            capture(app, name: "c11-root-h05-profile-not-mounted")
+            XCTFail("SETUP_NOT_RED: real Profile must mount before sign-out")
+            return
+        }
+        // Existing actual native AX identifies screen.perfil as the CollectionView
+        // itself; descendants exclude self. Require that observed public role.
+        guard profile.elementType == .collectionView else {
+            capture(app, name: "c11-root-h05-profile-list-observer")
+            XCTFail("SETUP_NOT_RED: expected the observed Profile root CollectionView; inspect native AX before changing the query")
+            return
+        }
+        let list = profile
+        let signOut = app.buttons["profile.account.sign-out"]
+        for _ in 0..<6 {
+            if wholeControl(signOut, inside: list) { break }
+            list.swipeUp()
+        }
+        let signOutReady = wholeControl(signOut, inside: list)
+        capture(app, name: "c11-root-h05-profile-sign-out-before-tap")
+        XCTAssertTrue(signOutReady, "SETUP_VISIBLE_CONTROL: actual account Sign Out must be mounted/full44/enabled/hittable clear of diagnostics")
+        guard signOutReady, requireStatus(before, phase: "before-opening-confirmation") else { return }
+        signOut.tap()
+        // The source uses confirmationDialog. The existing native DELETE
+        // observer saw a Sheet; require this public native container here too.
+        // A different actual presentation is SETUP, never a blind label tap.
+        let dialogs = app.sheets
+        let modal = dialogs.firstMatch
+        guard modal.waitForExistence(timeout: 5), dialogs.count == 1 else {
+            capture(app, name: "c11-root-h05-sign-out-modal-observer")
+            XCTFail("SETUP_NOT_RED: expected one actual native confirmation Sheet; observe its AX before adopting another selector")
+            return
+        }
+        let confirmations = modal.buttons.matching(NSPredicate(format: "label == %@", "Sair da conta"))
+        guard confirmations.count == 1 else {
+            capture(app, name: "c11-root-h05-sign-out-confirmation-not-unique")
+            XCTFail("SETUP_NOT_RED: actual modal must own exactly one destructive Sair da conta button")
+            return
+        }
+        let confirm = confirmations.element(boundBy: 0)
+        guard confirm.exists, confirm.isEnabled, confirm.isHittable,
+              confirm.frame.width >= 44, confirm.frame.height >= 44,
+              app.frame.contains(confirm.frame) else {
+            capture(app, name: "c11-root-h05-sign-out-confirmation-not-visible")
+            XCTFail("SETUP_VISIBLE_CONTROL: native Sair da conta confirmation must be wholly visible before its single normal tap")
+            return
+        }
+        if status.exists { XCTAssertEqual(status.label, before, "Opening confirmation alone must not attempt the storage marker") }
+        capture(app, name: "c11-root-h05-actual-native-sign-out-confirmation")
+        confirm.tap()
+        guard requireStatus(failedLogout, phase: "real-local-marker-failure") else { return }
+        let signingOutSettled = XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND enabled == true"), object: signOut)], timeout: 5) == .completed
+        XCTAssertTrue(signingOutSettled, "The actual Profile task must return before interpreting recovery availability")
+        XCTAssertFalse(modal.exists)
+        XCTAssertTrue(profile.exists)
+        for id in ["screen.auth.sign-in", "screen.auth.sign-up", "screen.meal-record"] {
+            XCTAssertFalse(element(id, in: app).exists)
+        }
+        capture(app, name: "c11-root-h05-authenticated-profile-after-marker-failure")
+        guard signingOutSettled, profile.exists, !modal.exists else { return }
+        let todayTab = app.buttons["tab.hoje"]
+        guard todayTab.waitForExistence(timeout: 5), todayTab.isEnabled, todayTab.isHittable else {
+            capture(app, name: "c11-root-h05-today-tab-setup")
+            XCTFail("SETUP_NOT_RED: preserved actual Today tab must remain available")
+            return
+        }
+        todayTab.tap()
+        guard element("screen.hoje", in: app).waitForExistence(timeout: 5) else {
+            XCTFail("SETUP_NOT_RED: actual Today must reappear after the failed logout")
+            return
+        }
+        try openActualHistoryRow(in: app)
+        let fallback = element("screen.history.meal-detail", in: app)
+        XCTAssertTrue(fallback.waitForExistence(timeout: 5), "H05 must preserve the real read-only History destination")
+        guard fallback.exists else { capture(app, name: "c11-root-h05-missing-fallback"); return }
+        XCTAssertTrue(app.staticTexts["Synthetic C11 confirmed food"].exists)
+        let quantity = element("history.meal.quantity", in: app)
+        let energy = element("history.meal.energy", in: app)
+        XCTAssertTrue(quantity.exists && energy.exists)
+        guard quantity.exists && energy.exists else { capture(app, name: "c11-root-h05-local-metrics-not-mounted"); return }
+        XCTAssertEqual(quantity.label, "Quantidade: 50 g")
+        XCTAssertEqual(energy.label, "Energia: 100 kcal")
+        let notice = element("meal-record.recovery.notice", in: app)
+        let resume = app.buttons["meal-record.recovery.action"]
+        XCTAssertTrue(notice.waitForExistence(timeout: 5))
+        XCTAssertTrue(resume.waitForExistence(timeout: 5))
+        guard notice.exists, resume.exists else { capture(app, name: "c11-root-h05-recovery-offer-not-visible"); return }
+        XCTAssertEqual(notice.label, "Edição pausada. Histórico disponível.")
+        XCTAssertEqual(resume.label, "Retomar edição")
+        for id in ["screen.meal-record", "meal-record.field.name", "meal-record.patch", "meal-record.delete", "meal-record.saved"] {
+            XCTAssertFalse(element(id, in: app).exists, "A closed old grant must not expose editable controls before explicit recovery")
+        }
+        XCTAssertTrue(wholeControl(resume, inside: app), "The actual recovery action must be full44/enabled/hittable without diagnostic overlap")
+        XCTAssertTrue(notice.isHittable)
+        capture(app, name: "c11-root-h05-read-only-history-before-explicit-recovery")
+        guard wholeControl(resume, inside: app), requireStatus(failedLogout, phase: "before-explicit-recovery") else { return }
+        // The only recovery trigger is the actual Root/Shell-captured action.
+        resume.tap()
+        guard requireStatus(recovered, phase: "new-binding-and-fresh-official-get") else { return }
+        let detail = element("screen.meal-record", in: app)
+        XCTAssertTrue(detail.waitForExistence(timeout: 8))
+        let name = app.textFields["meal-record.field.name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        guard detail.exists, name.exists else { capture(app, name: "c11-root-h05-official-detail-not-mounted"); return }
+        XCTAssertEqual(name.value as? String, "Synthetic C11 recovered official food",
+            "A fresh official response, not the unchanged History localRow, must populate the actual editable Form")
+        let officialQuantity = app.textFields["meal-record.field.quantity"]
+        XCTAssertTrue(officialQuantity.exists)
+        guard officialQuantity.exists else { capture(app, name: "c11-root-h05-official-quantity-not-mounted"); return }
+        XCTAssertEqual(officialQuantity.value as? String, "50")
+        XCTAssertTrue(name.isHittable && officialQuantity.isHittable)
+        for id in ["screen.history.meal-detail", "meal-record.recovery.notice", "meal-record.recovery.action",
+                   "meal-record.read-failure", "meal-record.failure", "meal-record.saved", "screen.auth.sign-in"] {
+            XCTAssertFalse(element(id, in: app).exists)
+        }
+        XCTAssertEqual(status.label, recovered,
+            "Exactly one fresh bind/GET after explicit recovery, no remote revoke/refresh/mutation/key/body or unexpected endpoint")
+        capture(app, name: "c11-root-h05-explicit-recovery-official-detail-no-mutation")
+    }
+
     private func launchFixture(_ argument: String, selection: String) throws -> XCUIApplication {
         let app = XCUIApplication()
         runningApp = app

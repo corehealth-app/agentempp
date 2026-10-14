@@ -7,6 +7,7 @@ import SwiftUI
 enum C11RootNavigationSelection: String, Sendable {
     case sourceOn = "on"
     case sourceOff = "off"
+    case logoutMarkerFailure = "h05-marker-failure"
     case getUnauthorizedThenSuccess = "get-401-200"
     case getUnauthorizedTwice = "get-401-401"
     case getUnauthorizedTwiceThenRetrySuccess = "get-401-401-retry-200"
@@ -18,6 +19,7 @@ enum C11RootNavigationSelection: String, Sendable {
         let choices: [(Self, String)] = [
             (.sourceOn, "--ui-testing-c11-root-source-on"),
             (.sourceOff, "--ui-testing-c11-root-source-off"),
+            (.logoutMarkerFailure, "--ui-testing-c11-root-h05-marker-failure"),
             (.getUnauthorizedThenSuccess, "--ui-testing-c11-root-get-401-200"),
             (.getUnauthorizedTwice, "--ui-testing-c11-root-get-401-401"),
             (.getUnauthorizedTwiceThenRetrySuccess, "--ui-testing-c11-root-get-401-401-retry-200"),
@@ -31,7 +33,7 @@ enum C11RootNavigationSelection: String, Sendable {
 
     var suppliesMealRecordSource: Bool {
         switch self {
-        case .sourceOn, .getUnauthorizedThenSuccess, .getUnauthorizedTwice, .getUnauthorizedTwiceThenRetrySuccess, .patchUnauthorizedThenSuccess, .deleteUnauthorizedThenSuccess: true
+        case .sourceOn, .logoutMarkerFailure, .getUnauthorizedThenSuccess, .getUnauthorizedTwice, .getUnauthorizedTwiceThenRetrySuccess, .patchUnauthorizedThenSuccess, .deleteUnauthorizedThenSuccess: true
         case .sourceOff: false
         }
     }
@@ -52,7 +54,8 @@ struct C11RootNavigationFixture {
             preloadsSyntheticOnboardingValues: false, authBehavior: .succeed(after: nil))
         let probe = C11RootNavigationProbe()
         let record = try C11RootNavigationFacts.record()
-        let secure = try C11RootNavigationSecureStore(record: record)
+        let secure = try C11RootNavigationSecureStore(record: record,
+            markerFailureProbe: selection == .logoutMarkerFailure ? probe : nil)
         let store = AuthenticationSessionStore(secureStore: secure,
             now: { Date(timeIntervalSince1970: 1000) })
         let remote = C11RootNavigationRemote(probe: probe, selection: selection)
@@ -123,6 +126,23 @@ final class C11RootNavigationProbe {
     private(set) var todayReads = 0
     private(set) var historyReads = 0
     private(set) var fixtureCommits = 0
+    private(set) var recoveryMarkerFailures = 0
+    private(set) var recoveryRemoteRevokes = 0
+    private(set) var recoveryCommands = 0
+    private(set) var recoveryReadBodyAbsent = false
+    private(set) var recoveryReadKeyAbsent = false
+    func recordRecoveryMarkerFailure() { recoveryMarkerFailures += 1 }
+    func recordRecoveryRemoteRevoke() { recoveryRemoteRevokes += 1 }
+    func recordRecoveryCommand() { recoveryCommands += 1 }
+    func recordRecoveryReadMetadata(bodyAbsent: Bool, keyAbsent: Bool) {
+        recoveryReadBodyAbsent = bodyAbsent
+        recoveryReadKeyAbsent = keyAbsent
+    }
+    // Harness admission of a canned response only; no Model/lease/ticket authority.
+    var canServeRecoveryRead: Bool {
+        recoveryMarkerFailures == 1 && binds == 2 && refreshes == 0
+            && recoveryRemoteRevokes == 0 && recoveryCommands == 0
+    }
     func recordPATCH(uniqueKeys: Int) { patches += 1; self.uniqueKeys = uniqueKeys }
     func recordDELETE(uniqueKeys: Int) { deletes += 1; self.uniqueKeys = uniqueKeys }
     func recordTodayRead() { todayReads += 1 }
@@ -154,6 +174,10 @@ struct C11RootNavigationDiagnosticView: View {
     let probe: C11RootNavigationProbe
     private var diagnostic: String {
         let counts = "C11 \(selection.rawValue): get=\(probe.gets) bind=\(probe.binds) refresh=\(probe.refreshes) blocked=\(probe.blocked)"
+        if selection == .logoutMarkerFailure {
+            return counts + " markerFailures=\(probe.recoveryMarkerFailures) revokes=\(probe.recoveryRemoteRevokes) commands=\(probe.recoveryCommands)"
+                + " bodyAbsent=\(probe.recoveryReadBodyAbsent ? 1 : 0) keyAbsent=\(probe.recoveryReadKeyAbsent ? 1 : 0)"
+        }
         if selection == .deleteUnauthorizedThenSuccess {
             return counts + " delete=\(probe.deletes) sameLogical=\(probe.sameLogicalRequest ? 1 : 0) bearerChanged=\(probe.bearerChanged ? 1 : 0)"
                 + " keys=\(probe.uniqueKeys) today=\(probe.todayReads) history=\(probe.historyReads) commits=\(probe.fixtureCommits)"
@@ -225,17 +249,37 @@ private enum C11RootNavigationFacts {
             expectedVersion: "opaque-c11-ui-version", itemIDs: [recordID], items: [item], editable: true,
             dayClosed: false, localDate: "2026-10-13", timezone: "America/Sao_Paulo", editBlockReason: nil), meta: meta)
     }
+    /// Distinct canned official read after explicit recovery; History's local row stays unchanged.
+    static func recoveredDetail() -> MealRecordResponse {
+        let item = MealRecordItemSnapshot(id: recordID, foodName: "Synthetic C11 recovered official food",
+            quantityG: 50, kcal: 100, proteinG: 1, carbsG: 2, fatG: 3, source: "canonical_exact",
+            consumedAt: APITimestamp(value: date), mealType: "almoco")
+        return MealRecordResponse(data: MealRecordSnapshot(recordID: recordID, scope: .item,
+            expectedVersion: "opaque-c11-ui-version", itemIDs: [recordID], items: [item], editable: true,
+            dayClosed: false, localDate: "2026-10-13", timezone: "America/Sao_Paulo", editBlockReason: nil),
+            meta: MobileResponseMetadata(apiVersion: "v1", requestID: "c11-ui-recovery-get-200"))
+    }
 }
 
 /// Same JSONEncoder/schema/storageKey as AuthenticationSessionStore.replace; no async init race.
 private final class C11RootNavigationSecureStore: SecureStoring, @unchecked Sendable {
     private let lock = NSLock()
     private var values: [String: Data]
-    init(record: AuthenticationSessionRecord) throws {
+    private let markerFailureProbe: C11RootNavigationProbe?
+    init(record: AuthenticationSessionRecord, markerFailureProbe: C11RootNavigationProbe? = nil) throws {
         values = [AuthenticationSessionStore.storageKey: try JSONEncoder().encode(record)]
+        self.markerFailureProbe = markerFailureProbe
     }
     func data(forKey key: String) -> Data? { lock.withLock { values[key] } }
-    func store(_ data: Data, forKey key: String) { lock.withLock { values[key] = data } }
+    func store(_ data: Data, forKey key: String) async throws {
+        if key == AuthenticationSessionStore.invalidationMarkerKey, let markerFailureProbe {
+            // Await the real attempt's safe counter before failing; no detached Task.
+            // The actual AuthStore catches this before record/generation invalidation.
+            await markerFailureProbe.recordRecoveryMarkerFailure()
+            throw AuthenticationSessionStoreError.localInvalidationFailed
+        }
+        lock.withLock { values[key] = data }
+    }
     func removeData(forKey key: String) { lock.withLock { _ = values.removeValue(forKey: key) } }
 }
 
@@ -262,7 +306,10 @@ private actor C11RootNavigationRemote: SupabaseAuthRemoteOperating {
         }
         return try C11RootNavigationFacts.refreshedRecord(from: record)
     }
-    func revokeCurrentSession(accessToken: String) -> RemoteRevocationOutcome { .unconfirmed }
+    func revokeCurrentSession(accessToken: String) async -> RemoteRevocationOutcome {
+        if selection == .logoutMarkerFailure { await probe.recordRecoveryRemoteRevoke() }
+        return .unconfirmed
+    }
 }
 
 private struct C11RootNavigationReads: TodayProviding, HistoryProviding {
@@ -507,6 +554,7 @@ private actor C11RootNavigationServer {
     }
 
     func respond(to request: URLRequest) async throws -> C11RootNavigationHTTPResponse {
+        if selection == .logoutMarkerFailure { return try await respondToRecoveryRead(request) }
         guard request.url?.absoluteString == "https://c11-ui.fixture.invalid/api/mobile/v1/meal-records/11111111-1111-4111-8111-111111111111" else {
             await probe.recordBlocked()
             throw MobileAPITransportError.invalidResponse
@@ -586,6 +634,30 @@ private actor C11RootNavigationServer {
             await probe.recordBlocked()
             throw MobileAPITransportError.invalidResponse
         }
+    }
+
+    /// One fresh official read, only after actual failed logout and explicit new binding.
+    /// Unknown methods/routes/extra reads are intercepted and fail closed here.
+    private func respondToRecoveryRead(_ request: URLRequest) async throws -> C11RootNavigationHTTPResponse {
+        if request.httpMethod == "GET" {
+            attemptedGETs += 1
+            await probe.recordGET()
+        } else {
+            await probe.recordRecoveryCommand()
+        }
+        let logical = LogicalRequest(request)
+        let bearer = request.value(forHTTPHeaderField: "Authorization")
+        let allowed = await probe.canServeRecoveryRead
+        guard allowed, attemptedGETs == 1, logical.method == "GET", logical.isValidRead,
+              request.url?.absoluteString == "https://c11-ui.fixture.invalid/api/mobile/v1/meal-records/11111111-1111-4111-8111-111111111111",
+              bearer?.hasPrefix("Bearer ") == true, (bearer?.count ?? 0) > 7 else {
+            await probe.recordBlocked()
+            throw MobileAPITransportError.invalidResponse
+        }
+        await probe.recordRecoveryReadMetadata(bodyAbsent: logical.bodyIsAbsent,
+            keyAbsent: logical.idempotencyKey == nil)
+        return C11RootNavigationHTTPResponse(statusCode: 200,
+            data: try JSONEncoder().encode(C11RootNavigationFacts.recoveredDetail()))
     }
 
     private func respondToPATCH(_ request: URLRequest) async throws -> C11RootNavigationHTTPResponse {

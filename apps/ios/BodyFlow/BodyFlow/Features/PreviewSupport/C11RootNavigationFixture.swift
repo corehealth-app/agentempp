@@ -9,6 +9,7 @@ enum C11RootNavigationSelection: String, Sendable {
     case sourceOff = "off"
     case getUnauthorizedThenSuccess = "get-401-200"
     case patchUnauthorizedThenSuccess = "patch-401-200"
+    case deleteUnauthorizedThenSuccess = "delete-401-200"
 
     static func resolve(arguments: [String]) -> Self? {
         guard arguments.contains("--ui-testing") else { return nil }
@@ -16,7 +17,8 @@ enum C11RootNavigationSelection: String, Sendable {
             (.sourceOn, "--ui-testing-c11-root-source-on"),
             (.sourceOff, "--ui-testing-c11-root-source-off"),
             (.getUnauthorizedThenSuccess, "--ui-testing-c11-root-get-401-200"),
-            (.patchUnauthorizedThenSuccess, "--ui-testing-c11-root-patch-401-200")
+            (.patchUnauthorizedThenSuccess, "--ui-testing-c11-root-patch-401-200"),
+            (.deleteUnauthorizedThenSuccess, "--ui-testing-c11-root-delete-401-200")
         ]
         let selected = choices.filter { arguments.contains($0.1) }
         guard selected.count == 1 else { return nil }
@@ -25,7 +27,7 @@ enum C11RootNavigationSelection: String, Sendable {
 
     var suppliesMealRecordSource: Bool {
         switch self {
-        case .sourceOn, .getUnauthorizedThenSuccess, .patchUnauthorizedThenSuccess: true
+        case .sourceOn, .getUnauthorizedThenSuccess, .patchUnauthorizedThenSuccess, .deleteUnauthorizedThenSuccess: true
         case .sourceOff: false
         }
     }
@@ -54,7 +56,9 @@ struct C11RootNavigationFixture {
             refreshPolicy: SessionRefreshPolicy(now: { Date(timeIntervalSince1970: 1000) }, leeway: 60))
         let bindingProbe = C11RootNavigationLifecycleProbe(base: lifecycle, probe: probe)
         let patchState = selection == .patchUnauthorizedThenSuccess ? C11RootNavigationPatchState(probe: probe) : nil
-        let server = C11RootNavigationServer(probe: probe, selection: selection, patchState: patchState)
+        let deleteState = selection == .deleteUnauthorizedThenSuccess ? C11RootNavigationDeleteState(probe: probe) : nil
+        let server = C11RootNavigationServer(probe: probe, selection: selection,
+            patchState: patchState, deleteState: deleteState)
         C11RootNavigationURLProtocol.install(server)
         let sessionConfiguration = URLSessionConfiguration.ephemeral
         sessionConfiguration.protocolClasses = [C11RootNavigationURLProtocol.self]
@@ -72,6 +76,10 @@ struct C11RootNavigationFixture {
         let history: any HistoryProviding
         if let patchState {
             let tracked = C11RootNavigationPatchReads(state: patchState, probe: probe)
+            today = tracked
+            history = tracked
+        } else if let deleteState {
+            let tracked = C11RootNavigationDeleteReads(state: deleteState, probe: probe)
             today = tracked
             history = tracked
         } else {
@@ -106,11 +114,13 @@ final class C11RootNavigationProbe {
     private(set) var sameLogicalRequest = false
     private(set) var bearerChanged = false
     private(set) var patches = 0
+    private(set) var deletes = 0
     private(set) var uniqueKeys = 0
     private(set) var todayReads = 0
     private(set) var historyReads = 0
     private(set) var fixtureCommits = 0
     func recordPATCH(uniqueKeys: Int) { patches += 1; self.uniqueKeys = uniqueKeys }
+    func recordDELETE(uniqueKeys: Int) { deletes += 1; self.uniqueKeys = uniqueKeys }
     func recordTodayRead() { todayReads += 1 }
     func recordHistoryRead() { historyReads += 1 }
     func recordFixtureCommit() { fixtureCommits += 1 }
@@ -130,6 +140,10 @@ struct C11RootNavigationDiagnosticView: View {
     let probe: C11RootNavigationProbe
     private var diagnostic: String {
         let counts = "C11 \(selection.rawValue): get=\(probe.gets) bind=\(probe.binds) refresh=\(probe.refreshes) blocked=\(probe.blocked)"
+        if selection == .deleteUnauthorizedThenSuccess {
+            return counts + " delete=\(probe.deletes) sameLogical=\(probe.sameLogicalRequest ? 1 : 0) bearerChanged=\(probe.bearerChanged ? 1 : 0)"
+                + " keys=\(probe.uniqueKeys) today=\(probe.todayReads) history=\(probe.historyReads) commits=\(probe.fixtureCommits)"
+        }
         if selection == .patchUnauthorizedThenSuccess {
             return counts + " patch=\(probe.patches) sameLogical=\(probe.sameLogicalRequest ? 1 : 0) bearerChanged=\(probe.bearerChanged ? 1 : 0)"
                 + " keys=\(probe.uniqueKeys) today=\(probe.todayReads) history=\(probe.historyReads) commits=\(probe.fixtureCommits)"
@@ -222,7 +236,8 @@ private actor C11RootNavigationRemote: SupabaseAuthRemoteOperating {
     func requestPasswordRecovery(email: String) throws { throw SupabaseAuthRemoteError.requestFailed }
     func refresh(record: AuthenticationSessionRecord) async throws -> AuthenticationSessionRecord {
         await probe.recordRefresh()
-        guard selection == .getUnauthorizedThenSuccess || selection == .patchUnauthorizedThenSuccess else {
+        guard selection == .getUnauthorizedThenSuccess || selection == .patchUnauthorizedThenSuccess
+            || selection == .deleteUnauthorizedThenSuccess else {
             throw SupabaseAuthRemoteError.requestFailed
         }
         return try C11RootNavigationFacts.refreshedRecord(from: record)
@@ -336,6 +351,74 @@ private struct C11RootNavigationPatchReads: TodayProviding, HistoryProviding {
     }
 }
 
+/// Own DELETE receipt: no new row, explicit null nextRecordID, literal persisted zero.
+private enum C11RootNavigationDeleteFacts {
+    static var expectedBody: MealRecordDeleteBody {
+        MealRecordDeleteBody(expectedVersion: "opaque-c11-ui-version", itemIDs: [C11RootNavigationFacts.recordID])
+    }
+    static func receipt() -> MealRecordMutationResponse {
+        MealRecordMutationResponse(data: MealRecordMutationSnapshot(
+            recordID: C11RootNavigationFacts.recordID, operation: .deleted,
+            newItemIDs: [], removedItemIDs: [C11RootNavigationFacts.recordID], nextRecordID: nil,
+            snapshot: MealRecordPersistedSnapshot(id: "33333333-3333-4333-8333-333333333333",
+                date: "2026-10-13", caloriesConsumed: 0, proteinG: 0, carbsG: 0, fatG: 0,
+                dailyBalance: -1800)),
+            meta: MobileResponseMetadata(apiVersion: "v1", requestID: "c11-ui-delete-200"))
+    }
+    static func today(committed: Bool) -> TodayResponse {
+        let before = C11RootNavigationPatchFacts.today(committed: false)
+        guard committed else { return before }
+        let base = before.data
+        let snapshot = TodaySnapshot(localDate: base.localDate, protocolName: base.protocolName,
+            currentProtocol: base.currentProtocol, targets: base.targets,
+            consumed: TodayConsumed(caloriesKcal: 0, proteinG: 0, carbsG: 0, fatG: 0,
+                source: "synthetic-persisted"),
+            remainingFoodKcal: 1800, foodExcessKcal: nil, exerciseKcal: 0,
+            dailyBalanceKcal: -1800, dailyBalanceStatus: "deficit", dailyBalanceIncludesExercise: true,
+            dailyBalanceReferenceKcal: 1800,
+            proteinStatus: TodayProteinStatus(consumedG: 0, targetG: 100, remainingG: 100, percentage: 0, status: "below"),
+            meals: [], workouts: [], hydration: base.hydration, supplements: base.supplements,
+            medications: base.medications, pendingActions: base.pendingActions, block7700: base.block7700,
+            completionStatus: base.completionStatus, sources: base.sources,
+            calculationVersion: "synthetic-persisted", updatedAt: base.updatedAt, generatedAt: base.generatedAt)
+        return TodayResponse(data: snapshot,
+            meta: MobileResponseMetadata(apiVersion: "v1", requestID: "c11-ui-delete-today-after"))
+    }
+}
+
+/// Only the second admitted DELETE commits this isolated synthetic state.
+private actor C11RootNavigationDeleteState {
+    let probe: C11RootNavigationProbe
+    private var committed = false
+    init(probe: C11RootNavigationProbe) { self.probe = probe }
+    func commit() async throws {
+        guard !committed else { throw MobileAPITransportError.invalidResponse }
+        committed = true
+        await probe.recordFixtureCommit()
+    }
+    func today() -> TodayResponse { C11RootNavigationDeleteFacts.today(committed: committed) }
+    func history() -> HistoryResponse {
+        HistoryResponse(data: HistorySnapshot(meals: committed ? [] : [C11RootNavigationFacts.row],
+            workouts: [], pagination: HistoryPaginationMetadata(limit: 30, before: nil)),
+            meta: MobileResponseMetadata(apiVersion: "v1", requestID: committed ? "c11-ui-delete-history-after" : "c11-ui-delete-history-before"))
+    }
+}
+
+private struct C11RootNavigationDeleteReads: TodayProviding, HistoryProviding {
+    let state: C11RootNavigationDeleteState
+    let probe: C11RootNavigationProbe
+    func today() async -> TodayResponse {
+        let value = await state.today()
+        await probe.recordTodayRead()
+        return value
+    }
+    func history(_ query: HistoryQuery) async -> HistoryResponse {
+        let value = await state.history()
+        await probe.recordHistoryRead()
+        return value
+    }
+}
+
 /// A status-bearing HTTP response from the strictly synthetic protocol, never a real endpoint.
 private struct C11RootNavigationHTTPResponse: Sendable {
     let statusCode: Int
@@ -350,6 +433,11 @@ private actor C11RootNavigationServer {
     private var firstLogicalRequest: LogicalRequest?
     private var firstAuthorization: String?
     let patchState: C11RootNavigationPatchState?
+    let deleteState: C11RootNavigationDeleteState?
+    private var attemptedDELETEs = 0
+    private var firstDELETE: PatchLogicalRequest?
+    private var firstDELETEAuthorization: String?
+    private var deleteKeys: Set<String> = []
     private var attemptedPATCHes = 0
     private var firstPATCH: PatchLogicalRequest?
     private var firstPATCHAuthorization: String?
@@ -387,10 +475,11 @@ private actor C11RootNavigationServer {
     }
 
     init(probe: C11RootNavigationProbe, selection: C11RootNavigationSelection,
-         patchState: C11RootNavigationPatchState?) {
+         patchState: C11RootNavigationPatchState?, deleteState: C11RootNavigationDeleteState?) {
         self.probe = probe
         self.selection = selection
         self.patchState = patchState
+        self.deleteState = deleteState
     }
 
     func respond(to request: URLRequest) async throws -> C11RootNavigationHTTPResponse {
@@ -400,6 +489,9 @@ private actor C11RootNavigationServer {
         }
         if request.httpMethod == "PATCH" {
             return try await respondToPATCH(request)
+        }
+        if request.httpMethod == "DELETE" {
+            return try await respondToDELETE(request)
         }
         guard request.httpMethod == "GET", request.httpBody == nil, request.httpBodyStream == nil else {
             await probe.recordBlocked()
@@ -472,6 +564,51 @@ private actor C11RootNavigationServer {
             await probe.recordReplayComparison(sameLogical: same, bearerChanged: changed)
             return C11RootNavigationHTTPResponse(statusCode: 200,
                 data: try JSONEncoder().encode(C11RootNavigationPatchFacts.receipt()))
+        default:
+            await probe.recordBlocked()
+            throw MobileAPITransportError.invalidResponse
+        }
+    }
+
+    private func respondToDELETE(_ request: URLRequest) async throws -> C11RootNavigationHTTPResponse {
+        guard selection == .deleteUnauthorizedThenSuccess, let deleteState,
+              let body = try? Self.bodyData(request),
+              let object = try? JSONSerialization.jsonObject(with: body),
+              let json = object as? [String: Any],
+              Set(json.keys) == Set(["expected_version", "item_ids"]),
+              let decoded = try? JSONDecoder().decode(MealRecordDeleteBody.self, from: body),
+              decoded == C11RootNavigationDeleteFacts.expectedBody,
+              let key = request.value(forHTTPHeaderField: "Idempotency-Key"), !key.isEmpty,
+              let requestID = request.value(forHTTPHeaderField: "X-Request-Id"), !requestID.isEmpty else {
+            await probe.recordBlocked()
+            throw MobileAPITransportError.invalidResponse
+        }
+        attemptedDELETEs += 1
+        deleteKeys.insert(key)
+        await probe.recordDELETE(uniqueKeys: deleteKeys.count)
+        let logical = PatchLogicalRequest(request, body: body, key: key)
+        switch attemptedDELETEs {
+        case 1:
+            firstDELETE = logical
+            firstDELETEAuthorization = request.value(forHTTPHeaderField: "Authorization")
+            let error = ["error": ["code": "expired_token", "message": "Synthetic DELETE unauthorized",
+                                     "request_id": "c11-ui-delete-401"]]
+            return C11RootNavigationHTTPResponse(statusCode: 401,
+                data: try JSONSerialization.data(withJSONObject: error))
+        case 2:
+            let authorization = request.value(forHTTPHeaderField: "Authorization")
+            let same = firstDELETE == logical
+            let changed = firstDELETEAuthorization?.hasPrefix("Bearer ") == true
+                && authorization?.hasPrefix("Bearer ") == true && firstDELETEAuthorization != authorization
+            firstDELETEAuthorization = nil
+            guard same && changed else {
+                await probe.recordBlocked()
+                throw MobileAPITransportError.invalidResponse
+            }
+            try await deleteState.commit()
+            await probe.recordReplayComparison(sameLogical: same, bearerChanged: changed)
+            return C11RootNavigationHTTPResponse(statusCode: 200,
+                data: try JSONEncoder().encode(C11RootNavigationDeleteFacts.receipt()))
         default:
             await probe.recordBlocked()
             throw MobileAPITransportError.invalidResponse

@@ -54,6 +54,15 @@ final class AppFlowModel {
     private var activeOnboardingRestoreID: UUID?
     private var publishedOnboardingActivationID: UUID?
     private let cleanupCoordinator: SignupBodyPhotoCleanupRootCoordinator
+    @ObservationIgnored private let mealRecordAuthenticationLifetime: MealRecordAuthenticationLifetime?
+    @ObservationIgnored private var mealRecordOnboardingContinuity: MealRecordOnboardingContinuity?
+
+    // A visible-form version, not authentication authority or a photos token.
+    private struct MealRecordOnboardingContinuity {
+        let ticket: MealRecordAuthenticationTicket
+        let userID: String
+        let restoreGeneration: Int
+    }
 
     private(set) var cleanupOwnerToken: SignupBodyPhotoCleanupOwnerToken?
     @ObservationIgnored private(set) var cleanupEventTask: Task<Void, Never>?
@@ -70,6 +79,15 @@ final class AppFlowModel {
     private(set) var onboardingLoadFailure: OnboardingLoadFailure?
 
     private var restoredOnboardingRepository: (any OnboardingRepository)?
+
+    var mealRecordActivation: MealRecordAuthenticatedActivation? {
+        guard let lifetime = mealRecordAuthenticationLifetime,
+              let activation = lifetime.currentActivation,
+              case let .authenticated(userID) = state,
+              userID == activation.userID,
+              lifetime.isCurrent(activation.ticket) else { return nil }
+        return activation
+    }
 
     /// The immutable scope used by the restore is also the model's repository.
     var onboardingRepositoryForCurrentOwner: any OnboardingRepository {
@@ -89,6 +107,7 @@ final class AppFlowModel {
         persona: any CoachPersonaRepository,
         telemetry: any TelemetryClient,
         signupBodyPhotoCleanup: SignupBodyPhotoCleanupCapability? = nil,
+        mealRecordAuthenticationLifetime: MealRecordAuthenticationLifetime? = nil,
         initialState: AppFlowState = .launching,
         initialAuthOperationState: AuthOperationState = .idle,
         developmentConsentAvailability: DevelopmentConsentAvailability = .unavailable,
@@ -96,6 +115,7 @@ final class AppFlowModel {
         cancellationCheck: @escaping @MainActor () -> Bool = { false }
     ) {
         self.authentication = authentication
+        self.mealRecordAuthenticationLifetime = mealRecordAuthenticationLifetime
         self.onboarding = onboarding
         self.persona = persona
         self.telemetry = telemetry
@@ -138,33 +158,36 @@ final class AppFlowModel {
 
     func start() async {
         presentationError = nil
+        let c11Ticket = beginMealRecordAuthenticationBoundary()
 
         do {
             let restoredSession = try await authentication.restoreSession()
             guard !isCancellationRequested else { return }
 
             guard let restoredSession else {
-                transitionToSignedOut()
+                transitionToSignedOut(c11Ticket: c11Ticket)
                 await telemetry.record(.authScreenViewed(.signIn))
                 return
             }
 
-            await restore(restoredSession)
+            await restore(restoredSession, c11Ticket: c11Ticket)
         } catch {
             guard !isCancellationRequested else { return }
-            transitionToSignedOut(error: presentationError(for: error))
+            transitionToSignedOut(error: presentationError(for: error), c11Ticket: c11Ticket)
             await telemetry.record(.authScreenViewed(.signIn))
         }
     }
 
     func signOut() async {
+        let c11Ticket = beginMealRecordAuthenticationBoundary()
         do {
             try await authentication.signOut()
             guard !isCancellationRequested else { return }
-            transitionToSignedOut()
+            transitionToSignedOut(c11Ticket: c11Ticket)
             await telemetry.record(TelemetryEvent(name: .signOutCompleted))
         } catch {
             guard !isCancellationRequested else { return }
+            withdrawMealRecordAuthentication(ticket: c11Ticket)
             let error = presentationError(for: error)
             presentationError = error
             authOperationState = .failed(error)
@@ -179,6 +202,7 @@ final class AppFlowModel {
             return
         }
 
+        let c11Ticket = currentMealRecordOnboardingTicket()
         presentationError = nil
         guard let activation = cleanupOwnerToken, activation.userID == session.userID else { return }
         let restoreID = beginOnboardingRestore()
@@ -187,7 +211,7 @@ final class AppFlowModel {
             finishOnboardingRestoreIfCurrent(restoreID)
             return
         }
-        await restoreOnboarding(session, activation: activation, restoreID: restoreID)
+        await restoreOnboarding(session, activation: activation, restoreID: restoreID, c11Ticket: c11Ticket)
     }
 
     func showSignUp() async {
@@ -231,6 +255,7 @@ final class AppFlowModel {
             return
         }
 
+        let c11Ticket = currentMealRecordOnboardingTicket()
         currentSession = AuthSession(
             userID: session.userID,
             email: session.email,
@@ -243,10 +268,12 @@ final class AppFlowModel {
         restoredHistoricalCompletedAt = nil
         onboardingLoadFailure = nil
         state = .authenticated(userID: userID)
+        publishMealRecordAuthentication(userID: userID, ticket: c11Ticket)
     }
 
     func signIn(email: String, password: String) async {
         guard beginAuthOperation() else { return }
+        let c11Ticket = beginMealRecordAuthenticationBoundary()
 
         do {
             let session = try await authentication.signIn(
@@ -254,13 +281,13 @@ final class AppFlowModel {
                 password: password
             )
             guard !isCancellationRequested else {
-                finishCancelledAuthOperation()
+                finishCancelledAuthOperation(c11Ticket: c11Ticket)
                 return
             }
 
-            await restore(session)
+            await restore(session, c11Ticket: c11Ticket)
             guard !isCancellationRequested else {
-                finishCancelledAuthOperation()
+                finishCancelledAuthOperation(c11Ticket: c11Ticket)
                 return
             }
             authOperationState = .idle
@@ -269,14 +296,15 @@ final class AppFlowModel {
                 outcome: .success
             ))
         } catch is CancellationError {
-            finishCancelledAuthOperation()
+            finishCancelledAuthOperation(c11Ticket: c11Ticket)
         } catch {
-            await failAuthOperation(with: error, screen: .signIn)
+            await failAuthOperation(with: error, screen: .signIn, c11Ticket: c11Ticket)
         }
     }
 
     func signUp(email: String, password: String) async {
         guard beginAuthOperation() else { return }
+        let c11Ticket = beginMealRecordAuthenticationBoundary()
 
         do {
             let result = try await authentication.signUp(
@@ -284,22 +312,23 @@ final class AppFlowModel {
                 password: password
             )
             guard !isCancellationRequested else {
-                finishCancelledAuthOperation()
+                finishCancelledAuthOperation(c11Ticket: c11Ticket)
                 return
             }
 
             switch result {
             case .confirmationRequired(let email):
+                withdrawMealRecordAuthentication(ticket: c11Ticket)
                 invalidateCleanupActivation()
                 currentSession = nil
                 state = .awaitingEmailConfirmation(email: email)
                 await telemetry.record(.authScreenViewed(.emailConfirmation))
             case .authenticated(let session):
-                await restore(session)
+                await restore(session, c11Ticket: c11Ticket)
             }
 
             guard !isCancellationRequested else {
-                finishCancelledAuthOperation()
+                finishCancelledAuthOperation(c11Ticket: c11Ticket)
                 return
             }
             authOperationState = .idle
@@ -308,25 +337,26 @@ final class AppFlowModel {
                 outcome: .success
             ))
         } catch is CancellationError {
-            finishCancelledAuthOperation()
+            finishCancelledAuthOperation(c11Ticket: c11Ticket)
         } catch {
-            await failAuthOperation(with: error, screen: .signUp)
+            await failAuthOperation(with: error, screen: .signUp, c11Ticket: c11Ticket)
         }
     }
 
     func confirmEmailForDevelopment() async {
         guard beginAuthOperation() else { return }
+        let c11Ticket = beginMealRecordAuthenticationBoundary()
 
         do {
             let session = try await authentication.confirmEmailForDevelopment()
             guard !isCancellationRequested else {
-                finishCancelledAuthOperation()
+                finishCancelledAuthOperation(c11Ticket: c11Ticket)
                 return
             }
 
-            await restore(session)
+            await restore(session, c11Ticket: c11Ticket)
             guard !isCancellationRequested else {
-                finishCancelledAuthOperation()
+                finishCancelledAuthOperation(c11Ticket: c11Ticket)
                 return
             }
             authOperationState = .idle
@@ -335,9 +365,9 @@ final class AppFlowModel {
                 outcome: .success
             ))
         } catch is CancellationError {
-            finishCancelledAuthOperation()
+            finishCancelledAuthOperation(c11Ticket: c11Ticket)
         } catch {
-            await failAuthOperation(with: error, screen: .emailConfirmation)
+            await failAuthOperation(with: error, screen: .emailConfirmation, c11Ticket: c11Ticket)
         }
     }
 
@@ -362,11 +392,12 @@ final class AppFlowModel {
         }
     }
 
-    private func restore(_ session: AuthSession) async {
+    private func restore(_ session: AuthSession, c11Ticket: MealRecordAuthenticationTicket?) async {
         guard !isCancellationRequested else { return }
 
         guard session.isEmailConfirmed else {
             guard !isCancellationRequested else { return }
+            withdrawMealRecordAuthentication(ticket: c11Ticket)
             invalidateOnboardingRestore()
             invalidateCleanupActivation()
             restoredOnboardingDraft = nil
@@ -395,11 +426,12 @@ final class AppFlowModel {
             finishOnboardingRestoreIfCurrent(restoreID)
             return
         }
-        await restoreOnboarding(session, activation: activation, restoreID: restoreID)
+        await restoreOnboarding(session, activation: activation, restoreID: restoreID, c11Ticket: c11Ticket)
     }
 
     private func restoreOnboarding(_ session: AuthSession,
-        activation: SignupBodyPhotoCleanupOwnerToken, restoreID: UUID) async {
+        activation: SignupBodyPhotoCleanupOwnerToken, restoreID: UUID,
+        c11Ticket: MealRecordAuthenticationTicket?) async {
         var freshObservation: SignupBodyPhotoCleanupFreshObservation?
         do {
             let scopedOnboarding = try await onboarding.scoped(for: session.userID)
@@ -425,7 +457,7 @@ final class AppFlowModel {
             if serverState.completion.completed {
                 retainCleanupEvent(cleanupCoordinator.finishRestore(owner: activation,
                     freshObservation: freshObservation))
-                publishCompletedOnboardingRestore(session: session)
+                publishCompletedOnboardingRestore(session: session, c11Ticket: c11Ticket)
                 finishOnboardingRestoreIfCurrent(restoreID)
                 return
             }
@@ -451,6 +483,7 @@ final class AppFlowModel {
             publishOnboardingRestore(
                 session: session,
                 draft: draft,
+                c11Ticket: c11Ticket,
                 requirements: serverState.requirements,
                 historicalCompletedAt: serverState.completion.completedAt
             )
@@ -470,6 +503,7 @@ final class AppFlowModel {
             publishOnboardingRestore(
                 session: session,
                 draft: nil,
+                c11Ticket: c11Ticket,
                 error: presentationError(for: error),
                 loadFailure: onboardingLoadFailure(for: error)
             )
@@ -502,6 +536,7 @@ final class AppFlowModel {
     private func publishOnboardingRestore(
         session: AuthSession,
         draft: OnboardingDraft?,
+        c11Ticket: MealRecordAuthenticationTicket?,
         requirements: OnboardingRequirements = .unavailable,
         historicalCompletedAt: String? = nil,
         error: AppPresentationError? = nil,
@@ -531,9 +566,17 @@ final class AppFlowModel {
             userID: session.userID,
             step: draft?.currentStep ?? .welcome
         )
+        if let c11Ticket, mealRecordAuthenticationLifetime?.isCurrent(c11Ticket) == true {
+            mealRecordAuthenticationLifetime?.withdrawVisibleActivation(ticket: c11Ticket)
+            mealRecordOnboardingContinuity = MealRecordOnboardingContinuity(
+                ticket: c11Ticket, userID: session.userID,
+                restoreGeneration: onboardingRestoreGeneration
+            )
+        }
     }
 
-    private func publishCompletedOnboardingRestore(session: AuthSession) {
+    private func publishCompletedOnboardingRestore(session: AuthSession,
+        c11Ticket: MealRecordAuthenticationTicket?) {
         restoredOnboardingRepository = nil
         currentSession = AuthSession(
             userID: session.userID,
@@ -547,10 +590,13 @@ final class AppFlowModel {
         presentationError = nil
         onboardingLoadFailure = nil
         state = .authenticated(userID: session.userID)
+        publishMealRecordAuthentication(userID: session.userID, ticket: c11Ticket)
     }
 
-    private func transitionToSignedOut(error: AppPresentationError? = nil) {
+    private func transitionToSignedOut(error: AppPresentationError? = nil,
+        c11Ticket: MealRecordAuthenticationTicket?) {
         guard !isCancellationRequested else { return }
+        withdrawMealRecordAuthentication(ticket: c11Ticket)
         invalidateOnboardingRestore()
         invalidateCleanupActivation()
         restoredOnboardingDraft = nil
@@ -574,6 +620,8 @@ final class AppFlowModel {
               isAuthenticationNavigationAllowed else {
             return false
         }
+        mealRecordAuthenticationLifetime?.withdrawVisibleActivation()
+        mealRecordOnboardingContinuity = nil
         invalidateOnboardingRestore()
         invalidateCleanupActivation()
         restoredOnboardingDraft = nil
@@ -605,18 +653,21 @@ final class AppFlowModel {
         return true
     }
 
-    private func finishCancelledAuthOperation() {
+    private func finishCancelledAuthOperation(c11Ticket: MealRecordAuthenticationTicket? = nil) {
         authOperationState = .idle
+        withdrawMealRecordAuthentication(ticket: c11Ticket)
     }
 
     private func failAuthOperation(
         with error: Error,
-        screen: TelemetryAuthScreen
+        screen: TelemetryAuthScreen,
+        c11Ticket: MealRecordAuthenticationTicket? = nil
     ) async {
         guard !isCancellationRequested else {
-            finishCancelledAuthOperation()
+            finishCancelledAuthOperation(c11Ticket: c11Ticket)
             return
         }
+        withdrawMealRecordAuthentication(ticket: c11Ticket)
         let error = presentationError(for: error)
         presentationError = error
         authOperationState = .failed(error)
@@ -625,6 +676,33 @@ final class AppFlowModel {
             outcome: .failure,
             errorCategory: error.telemetryCategory
         ))
+    }
+
+    private func beginMealRecordAuthenticationBoundary() -> MealRecordAuthenticationTicket? {
+        mealRecordOnboardingContinuity = nil
+        return mealRecordAuthenticationLifetime?.beginAuthenticationBoundary()
+    }
+
+    private func withdrawMealRecordAuthentication(ticket: MealRecordAuthenticationTicket?) {
+        guard mealRecordAuthenticationLifetime?.isCurrent(ticket) == true else { return }
+        mealRecordAuthenticationLifetime?.withdrawVisibleActivation(ticket: ticket)
+        mealRecordOnboardingContinuity = nil
+    }
+
+    private func publishMealRecordAuthentication(userID: String,
+        ticket: MealRecordAuthenticationTicket?) {
+        guard mealRecordAuthenticationLifetime?.isCurrent(ticket) == true else { return }
+        mealRecordOnboardingContinuity = nil
+        mealRecordAuthenticationLifetime?.publishAuthenticated(userID: userID, ticket: ticket)
+    }
+
+    private func currentMealRecordOnboardingTicket() -> MealRecordAuthenticationTicket? {
+        guard let continuation = mealRecordOnboardingContinuity,
+              case let .onboarding(userID, _) = state,
+              userID == continuation.userID,
+              onboardingRestoreGeneration == continuation.restoreGeneration,
+              mealRecordAuthenticationLifetime?.isCurrent(continuation.ticket) == true else { return nil }
+        return continuation.ticket
     }
 
     private var isCancellationRequested: Bool {

@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Testing
 
 @testable import BodyFlow
@@ -1023,6 +1024,400 @@ struct MobileAPITransportTests {
         await binding.endSession()
     }
 
+    @MainActor
+    @Test("C11 H01: all five admitted auth entries withdraw the original grant before auth suspension",
+          arguments: [C11AuthenticationEntry.start, .signIn, .signUp, .confirmDevelopment, .signOut])
+    func c11H01FivePreAwaitAuthHooks(entry: C11AuthenticationEntry) async throws {
+        let wire = try await C11RealLifecycleTransportHarness()
+        let peer = C11AuthenticationEntryPeer(coordinator: wire.coordinator)
+        let onboarding = C11AuthenticationOnboardingPeer(completed: true)
+        let telemetry = InMemoryTelemetryClient()
+        let tickets = C11AuthenticationTicketFactorySpy()
+        let lifetime = MealRecordAuthenticationLifetime(ticketFactory: { tickets.next() })
+        let model = C11AuthenticationFixtures.model(peer: peer, onboarding: onboarding,
+            lifetime: lifetime, telemetry: telemetry, initialState: .authenticated(userID: C11AuthenticationFixtures.a))
+        let grant = try await C11AuthenticationOwnedGrant.prepare(lifetime: lifetime, wire: wire)
+        #expect(model.mealRecordActivation == grant.activation)
+        #expect(tickets.issued.count == 1)
+        let observation = C11ActivationObservationSignal()
+        withObservationTracking { _ = model.mealRecordActivation } onChange: { observation.signal() }
+        await peer.holdNextEntry(entry)
+        let work = Task { await C11AuthenticationFixtures.invoke(entry, model: model) }
+        do {
+            await peer.entryHold.waitUntilEntered()
+            // Auth has not switched/revoked the real A1 session yet.
+            try await wire.coordinator.validate(grant.lease)
+            #expect(!grant.binding.isOpen)
+            #expect(!grant.retained.hasRetainedCapability)
+            #expect(grant.binding.capability == nil)
+            #expect(grant.binding.capturedLease == nil)
+            #expect(model.mealRecordActivation == nil)
+            #expect(lifetime.currentActivation == nil)
+            #expect(observation.didChange)
+            #expect(model.state == .authenticated(userID: C11AuthenticationFixtures.a))
+            #expect(tickets.issued.count == 2)
+            #expect(await peer.entries == [entry])
+            await #expect(throws: CancellationError.self) {
+                _ = try await grant.retained.mealRecord(id: C11RealLifecycleTransportHarness.recordID)
+            }
+            #expect(await wire.stub.requests().isEmpty)
+            let heldCore = C11AuthenticationCoreSnapshot(model)
+            await peer.entryHold.release()
+            await work.value
+            let resultingCore = C11AuthenticationCoreSnapshot(model)
+            let resultingTelemetry = await telemetry.snapshot()
+            #expect(await peer.entries == [entry])
+            #expect(tickets.issued.count == 2)
+            #expect(await wire.stub.requests().isEmpty)
+            await lifetime.endSession()
+            await grant.owner.endSession()
+            // Default-nil reference follows the exact same existing core/telemetry.
+            let referenceWire = try await C11RealLifecycleTransportHarness()
+            let referencePeer = C11AuthenticationEntryPeer(coordinator: referenceWire.coordinator)
+            let referenceTelemetry = InMemoryTelemetryClient()
+            let reference = C11AuthenticationFixtures.model(peer: referencePeer,
+                onboarding: C11AuthenticationOnboardingPeer(completed: true), telemetry: referenceTelemetry,
+                initialState: .authenticated(userID: C11AuthenticationFixtures.a))
+            await referencePeer.holdNextEntry(entry)
+            let referenceWork = Task { await C11AuthenticationFixtures.invoke(entry, model: reference) }
+            await referencePeer.entryHold.waitUntilEntered()
+            #expect(C11AuthenticationCoreSnapshot(reference) == heldCore)
+            #expect(reference.mealRecordActivation == nil)
+            await referencePeer.entryHold.release()
+            await referenceWork.value
+            #expect(C11AuthenticationCoreSnapshot(reference) == resultingCore)
+            #expect(await referenceTelemetry.snapshot() == resultingTelemetry)
+            #expect(await referencePeer.entries == [entry])
+        } catch {
+            await peer.entryHold.release()
+            await work.value
+            await lifetime.endSession()
+            await grant.owner.endSession()
+            throw error
+        }
+    }
+
+    @MainActor
+    @Test("C11 auth guards do not retire a grant or reserve another ticket",
+          arguments: [C11AuthenticationEntry.signIn, .signUp, .confirmDevelopment])
+    func c11H01RejectedAuthGuardPreservesOriginal(entry: C11AuthenticationEntry) async throws {
+        let wire = try await C11RealLifecycleTransportHarness()
+        let peer = C11AuthenticationEntryPeer(coordinator: wire.coordinator)
+        let tickets = C11AuthenticationTicketFactorySpy()
+        let lifetime = MealRecordAuthenticationLifetime(ticketFactory: { tickets.next() })
+        let telemetry = InMemoryTelemetryClient()
+        let model = C11AuthenticationFixtures.model(peer: peer,
+            onboarding: C11AuthenticationOnboardingPeer(completed: true), lifetime: lifetime,
+            telemetry: telemetry, initialState: .authenticated(userID: C11AuthenticationFixtures.a),
+            initialAuthOperationState: .submitting)
+        let grant = try await C11AuthenticationOwnedGrant.prepare(lifetime: lifetime, wire: wire)
+        let before = C11AuthenticationCoreSnapshot(model)
+        await C11AuthenticationFixtures.invoke(entry, model: model)
+        #expect(C11AuthenticationCoreSnapshot(model) == before)
+        #expect(tickets.issued.count == 1)
+        #expect(model.mealRecordActivation == grant.activation)
+        #expect(grant.binding.isOpen)
+        #expect(grant.retained.hasRetainedCapability)
+        #expect(await peer.entries.isEmpty)
+        #expect(await telemetry.snapshot().isEmpty)
+        #expect(await wire.stub.requests().isEmpty)
+        await lifetime.endSession()
+        await grant.owner.endSession()
+    }
+
+    @MainActor
+    @Test("C11 password recovery does not cross an authentication replacement boundary")
+    func c11PasswordRecoveryPreservesOriginalGrant() async throws {
+        let wire = try await C11RealLifecycleTransportHarness()
+        let peer = C11AuthenticationEntryPeer(coordinator: wire.coordinator)
+        let tickets = C11AuthenticationTicketFactorySpy()
+        let lifetime = MealRecordAuthenticationLifetime(ticketFactory: { tickets.next() })
+        let telemetry = InMemoryTelemetryClient()
+        let model = C11AuthenticationFixtures.model(peer: peer,
+            onboarding: C11AuthenticationOnboardingPeer(completed: true), lifetime: lifetime,
+            telemetry: telemetry, initialState: .authenticated(userID: C11AuthenticationFixtures.a))
+        let grant = try await C11AuthenticationOwnedGrant.prepare(lifetime: lifetime, wire: wire)
+        await model.requestPasswordRecovery(email: C11AuthenticationFixtures.email)
+        #expect(tickets.issued.count == 1)
+        #expect(model.mealRecordActivation == grant.activation)
+        #expect(grant.binding.isOpen)
+        #expect(grant.retained.hasRetainedCapability)
+        #expect(model.state == .authenticated(userID: C11AuthenticationFixtures.a))
+        #expect(model.authOperationState == .recoveryConfirmation)
+        #expect(await peer.entries == [.passwordRecovery])
+        #expect(await telemetry.snapshot() == [
+            .authOperationCompleted(screen: .passwordRecovery, outcome: .success)
+        ])
+        #expect(await wire.stub.requests().isEmpty)
+        await lifetime.endSession()
+        await grant.owner.endSession()
+    }
+
+    @MainActor
+    @Test("C11 H03: an old completed/nil/unconfirmed/failed auth return cannot withdraw A2",
+          arguments: [C11OldAuthenticationReturn.completed, .missing, .unconfirmed, .failed])
+    func c11H03OldAuthenticationTerminalIsScoped(oldReturn: C11OldAuthenticationReturn) async throws {
+        let wire = try await C11RealLifecycleTransportHarness()
+        let peer = C11AuthenticationEntryPeer(coordinator: wire.coordinator)
+        let tickets = C11AuthenticationTicketFactorySpy()
+        let lifetime = MealRecordAuthenticationLifetime(ticketFactory: { tickets.next() })
+        let model = C11AuthenticationFixtures.model(peer: peer,
+            onboarding: C11AuthenticationOnboardingPeer(completed: true), lifetime: lifetime,
+            telemetry: InMemoryTelemetryClient())
+        await peer.holdNextEntry(.start, forcedRestore: C11AuthenticationFixtures.lateReturn(oldReturn))
+        let first = Task { await model.start() }
+        do {
+            await peer.entryHold.waitUntilEntered()
+            #expect(tickets.issued.count == 1)
+            let originalTicket = try #require(tickets.issued.first)
+            await C11AuthenticationFixtures.cycleThroughBAndBackToA(model: model, peer: peer)
+            let current = try #require(lifetime.currentActivation)
+            #expect(current.ticket != originalTicket)
+            #expect(tickets.issued.count == 5)
+            #expect(current.ticket == tickets.issued.last)
+            #expect(model.mealRecordActivation == current)
+            await peer.entryHold.release()
+            await first.value
+            #expect(lifetime.currentActivation == current)
+            #expect(lifetime.isCurrent(current.ticket))
+            #expect(tickets.issued.count == 5)
+            #expect(await peer.entries == [.start, .signOut, .signIn, .signOut, .signIn])
+            switch oldReturn {
+            case .completed:
+                #expect(model.state == .authenticated(userID: C11AuthenticationFixtures.a))
+                #expect(model.mealRecordActivation == current)
+            case .missing:
+                #expect(model.state == .signedOut(.signIn))
+                #expect(model.mealRecordActivation == nil)
+            case .unconfirmed:
+                #expect(model.state == .awaitingEmailConfirmation(email: C11AuthenticationFixtures.email))
+                #expect(model.mealRecordActivation == nil)
+            case .failed:
+                #expect(model.state == .signedOut(.signIn))
+                #expect(model.presentationError == .serviceUnavailable)
+                #expect(model.mealRecordActivation == nil)
+            }
+            #expect(await wire.stub.requests().isEmpty)
+            await lifetime.endSession()
+        } catch {
+            await peer.entryHold.release()
+            await first.value
+            await lifetime.endSession()
+            throw error
+        }
+    }
+
+    @MainActor
+    @Test("C11 H03: a held onboarding return from A1 cannot replace A2 authority")
+    func c11H03OldOnboardingReturnIsScoped() async throws {
+        let wire = try await C11RealLifecycleTransportHarness()
+        let peer = C11AuthenticationEntryPeer(coordinator: wire.coordinator)
+        let onboarding = C11AuthenticationOnboardingPeer(completed: true)
+        await onboarding.holdLoad(1)
+        let tickets = C11AuthenticationTicketFactorySpy()
+        let lifetime = MealRecordAuthenticationLifetime(ticketFactory: { tickets.next() })
+        let model = C11AuthenticationFixtures.model(peer: peer, onboarding: onboarding,
+            lifetime: lifetime, telemetry: InMemoryTelemetryClient())
+        let first = Task { await model.start() }
+        do {
+            await onboarding.loadHold.waitUntilEntered()
+            let firstTicket = try #require(tickets.issued.first)
+            await C11AuthenticationFixtures.cycleThroughBAndBackToA(model: model, peer: peer)
+            let current = try #require(lifetime.currentActivation)
+            #expect(current.ticket != firstTicket)
+            let core = C11AuthenticationCoreSnapshot(model)
+            await onboarding.loadHold.release()
+            await first.value
+            #expect(lifetime.currentActivation == current)
+            #expect(model.mealRecordActivation == current)
+            #expect(C11AuthenticationCoreSnapshot(model) == core)
+            #expect(tickets.issued.count == 5)
+            #expect(await wire.stub.requests().isEmpty)
+            await lifetime.endSession()
+        } catch {
+            await onboarding.loadHold.release()
+            await first.value
+            await lifetime.endSession()
+            throw error
+        }
+    }
+
+    @MainActor
+    @Test("C11 H06: only an official completed restore publishes an activation",
+          arguments: [C11ActivationSource.completed, .incomplete, .confirmationRequired])
+    func c11H06LegitimateActivationSources(source: C11ActivationSource) async throws {
+        let wire = try await C11RealLifecycleTransportHarness()
+        let peer = C11AuthenticationEntryPeer(coordinator: wire.coordinator)
+        let tickets = C11AuthenticationTicketFactorySpy()
+        let lifetime = MealRecordAuthenticationLifetime(ticketFactory: { tickets.next() })
+        let model = C11AuthenticationFixtures.model(peer: peer,
+            onboarding: C11AuthenticationOnboardingPeer(completed: source == .completed),
+            lifetime: lifetime, telemetry: InMemoryTelemetryClient())
+        if source == .confirmationRequired {
+            await peer.requireSignUpConfirmation()
+            await model.signUp(email: C11AuthenticationFixtures.email, password: C11AuthenticationFixtures.syntheticPassword)
+            #expect(model.state == .awaitingEmailConfirmation(email: C11AuthenticationFixtures.email))
+        } else {
+            await model.start()
+        }
+        #expect(tickets.issued.count == 1)
+        if source == .completed {
+            let activation = try #require(model.mealRecordActivation)
+            #expect(activation.ticket == tickets.issued.first)
+            let repeated = lifetime.publishAuthenticated(userID: activation.userID, ticket: activation.ticket)
+            #expect(repeated == activation)
+            #expect(tickets.issued.count == 1)
+        } else {
+            #expect(model.mealRecordActivation == nil)
+            #expect(lifetime.currentActivation == nil)
+        }
+        #expect(await peer.entries.count == 1)
+        #expect(await wire.stub.requests().isEmpty)
+        await lifetime.endSession()
+    }
+
+    @MainActor
+    @Test("C11 H06: onboarding retry and completion retain the auth ticket from before await")
+    func c11H06RetryAndCompletionRetainOriginalTicket() async throws {
+        let wire = try await C11RealLifecycleTransportHarness()
+        let peer = C11AuthenticationEntryPeer(coordinator: wire.coordinator)
+        let onboarding = C11AuthenticationOnboardingPeer(completed: false)
+        await onboarding.failNextRead()
+        let tickets = C11AuthenticationTicketFactorySpy()
+        let lifetime = MealRecordAuthenticationLifetime(ticketFactory: { tickets.next() })
+        let model = C11AuthenticationFixtures.model(peer: peer, onboarding: onboarding,
+            lifetime: lifetime, telemetry: InMemoryTelemetryClient())
+        await model.start()
+        #expect(tickets.issued.count == 1)
+        let original = try #require(tickets.issued.first)
+        #expect(model.mealRecordActivation == nil)
+        #expect(model.presentationError == .serviceUnavailable)
+        await model.retryOnboardingRestore()
+        #expect(tickets.issued.count == 1)
+        #expect(await peer.entries == [.start])
+        #expect(await onboarding.loads == 2)
+        let owner = try #require(model.onboardingOwnerToken)
+        model.completeOnboarding(ownerToken: owner)
+        let activation = try #require(model.mealRecordActivation)
+        #expect(activation.ticket == original)
+        model.completeOnboarding(ownerToken: owner)
+        #expect(model.mealRecordActivation == activation)
+        #expect(tickets.issued.count == 1)
+        #expect(await wire.stub.requests().isEmpty)
+        await lifetime.endSession()
+    }
+
+    @MainActor
+    @Test("C11 H06: late A1 incomplete form cannot spend A2's continuation through retry/completion",
+          arguments: [C11OldIncompleteAction.retry, .complete])
+    func c11H06OldIncompleteVisibleFormCannotUseCurrentTicket(action: C11OldIncompleteAction) async throws {
+        let wire = try await C11RealLifecycleTransportHarness()
+        let peer = C11AuthenticationEntryPeer(coordinator: wire.coordinator)
+        let onboarding = C11AuthenticationOnboardingPeer(completed: false)
+        let tickets = C11AuthenticationTicketFactorySpy()
+        let lifetime = MealRecordAuthenticationLifetime(ticketFactory: { tickets.next() })
+        let model = C11AuthenticationFixtures.model(peer: peer, onboarding: onboarding,
+            lifetime: lifetime, telemetry: InMemoryTelemetryClient())
+        await peer.holdNextEntry(.start, forcedRestore: C11AuthenticationFixtures.lateReturn(.completed))
+        let first = Task { await model.start() }
+        do {
+            await peer.entryHold.waitUntilEntered()
+            let oldTicket = try #require(tickets.issued.first)
+            await C11AuthenticationFixtures.cycleThroughBAndBackToA(model: model, peer: peer)
+            #expect(tickets.issued.count == 5)
+            let currentTicket = try #require(tickets.issued.last)
+            #expect(currentTicket != oldTicket)
+            #expect(lifetime.isCurrent(currentTicket))
+            let currentGeneration = model.onboardingRestoreGeneration
+            let a2Owner = try #require(model.onboardingOwnerToken)
+            #expect(lifetime.currentActivation == nil)
+            await peer.entryHold.release()
+            await first.value
+            // Preserve the existing core's late visible-form publication.
+            #expect(model.onboardingRestoreGeneration > currentGeneration)
+            #expect(model.currentSession?.userID == C11AuthenticationFixtures.a)
+            #expect(model.currentSession?.isOnboardingCompleted == false)
+            #expect(lifetime.isCurrent(currentTicket))
+            model.completeOnboarding(ownerToken: a2Owner)
+            #expect(model.currentSession?.isOnboardingCompleted == false)
+            if action == .retry { await model.retryOnboardingRestore() }
+            model.completeOnboarding(for: C11AuthenticationFixtures.a)
+            #expect(model.state == .authenticated(userID: C11AuthenticationFixtures.a))
+            #expect(lifetime.currentActivation == nil)
+            #expect(model.mealRecordActivation == nil)
+            #expect(lifetime.isCurrent(currentTicket))
+            #expect(tickets.issued.count == 5)
+            #expect(await peer.entries == [.start, .signOut, .signIn, .signOut, .signIn])
+            #expect(await wire.stub.requests().isEmpty)
+            await lifetime.endSession()
+        } catch {
+            await peer.entryHold.release()
+            await first.value
+            await lifetime.endSession()
+            throw error
+        }
+    }
+
+    @MainActor
+    @Test("C11 lifetime remains absent by default through actual restore and sign out")
+    func c11DefaultNilRemainsOff() async throws {
+        let wire = try await C11RealLifecycleTransportHarness()
+        let peer = C11AuthenticationEntryPeer(coordinator: wire.coordinator)
+        let telemetry = InMemoryTelemetryClient()
+        let model = C11AuthenticationFixtures.model(peer: peer,
+            onboarding: C11AuthenticationOnboardingPeer(completed: true), telemetry: telemetry)
+        await model.start()
+        #expect(model.state == .authenticated(userID: C11AuthenticationFixtures.a))
+        #expect(model.mealRecordActivation == nil)
+        await model.signOut()
+        #expect(model.state == .signedOut(.signIn))
+        #expect(model.mealRecordActivation == nil)
+        #expect(await peer.entries == [.start, .signOut])
+        #expect(await wire.stub.requests().isEmpty)
+    }
+
+    @MainActor
+    @Test("C11 register rejects B for activation A and rejects A borrowed to register B's reservation",
+          arguments: [C11WrongBindingOwnerArgument.actualB, .borrowedA])
+    func c11RegistrationRequiresOriginalOwnerAndBinding(argument: C11WrongBindingOwnerArgument) async throws {
+        let wire = try await C11RealLifecycleTransportHarness()
+        let lifetime = MealRecordAuthenticationLifetime()
+        let ticket = lifetime.beginAuthenticationBoundary()
+        let activation = try #require(lifetime.publishAuthenticated(userID: C11AuthenticationFixtures.a, ticket: ticket))
+        let ownerA = Prompt14SessionOwner(userID: C11AuthenticationFixtures.a,
+            dependencies: C11BindingTestDependencies.make(), enablesMealRecordBinding: true)
+        let ownerB = Prompt14SessionOwner(userID: C11AuthenticationFixtures.b,
+            dependencies: C11BindingTestDependencies.make(), enablesMealRecordBinding: true)
+        do {
+            await ownerA.awaitPatientTimeZoneResolution()
+            await ownerB.awaitPatientTimeZoneResolution()
+            let bindingA = try #require(ownerA.mealRecordBinding)
+            let bindingB = try #require(ownerB.mealRecordBinding)
+            #expect(bindingA.isOpen)
+            #expect(bindingB.isOpen)
+            let suppliedOwner = argument == .actualB ? ownerB : ownerA
+            #expect(!lifetime.register(binding: bindingB, owner: suppliedOwner, activation: activation))
+            #expect(!bindingB.isOpen)
+            #expect(bindingB.capability == nil)
+            #expect(bindingB.capturedLease == nil)
+            #expect(!ownerA.isInvalidated)
+            #expect(!ownerB.isInvalidated)
+            #expect(lifetime.currentActivation == activation)
+            #expect(lifetime.isCurrent(ticket))
+            #expect(bindingA.isOpen)
+            #expect(lifetime.register(binding: bindingA, owner: ownerA, activation: activation))
+            #expect(await wire.stub.requests().isEmpty)
+            await lifetime.endSession()
+            await ownerA.endSession()
+            await ownerB.endSession()
+        } catch {
+            await lifetime.endSession()
+            await ownerA.endSession()
+            await ownerB.endSession()
+            throw error
+        }
+    }
+
 }
 
 private actor RejectingRegistrationLifecycle: SessionLifecycleProviding {
@@ -1754,3 +2149,237 @@ private struct C11BindingNeighborProgress: ProgressProviding {
     func progress() async throws -> ProgressResponse { BodyFlowTestFixtures.progressResponse }
     func profileWeight() async throws -> ProfileWeightResponse? { nil }
 }
+
+// These parameter types are internal because the existing suite's @Test methods
+// are internal (private enum parameters would be a compiler/setup failure).
+enum C11AuthenticationEntry: CaseIterable, Equatable, Sendable {
+    case start, signIn, signUp, confirmDevelopment, signOut, passwordRecovery
+}
+enum C11OldAuthenticationReturn: Equatable, Sendable { case completed, missing, unconfirmed, failed }
+enum C11ActivationSource: Equatable, Sendable { case completed, incomplete, confirmationRequired }
+enum C11OldIncompleteAction: Equatable, Sendable { case retry, complete }
+
+@MainActor
+private final class C11AuthenticationTicketFactorySpy {
+    private(set) var issued: [MealRecordAuthenticationTicket] = []
+    func next() -> MealRecordAuthenticationTicket {
+        let value = MealRecordAuthenticationTicket()
+        issued.append(value)
+        return value
+    }
+}
+
+private final class C11ActivationObservationSignal: @unchecked Sendable {
+    private let lock = NSLock()
+    private var changed = false
+    func signal() { lock.withLock { changed = true } }
+    var didChange: Bool { lock.withLock { changed } }
+}
+
+private actor C11AuthenticationEntryPeer: AuthenticationService {
+    let coordinator: SessionLifecycleCoordinator
+    let entryHold = C11BoundaryHold()
+    private var heldEntry: C11AuthenticationEntry?
+    private var forcedHeldRestore: Result<AuthSession?, AuthenticationError>?
+    private var signInRecords: [AuthenticationSessionRecord] = []
+    private var signUpNeedsConfirmation = false
+    private(set) var entries: [C11AuthenticationEntry] = []
+
+    init(coordinator: SessionLifecycleCoordinator) { self.coordinator = coordinator }
+    func holdNextEntry(_ entry: C11AuthenticationEntry,
+        forcedRestore: Result<AuthSession?, AuthenticationError>? = nil) {
+        heldEntry = entry
+        forcedHeldRestore = forcedRestore
+    }
+    func setSignInRecords(_ values: [AuthenticationSessionRecord]) { signInRecords = values }
+    func requireSignUpConfirmation() { signUpNeedsConfirmation = true }
+
+    private func enter(_ entry: C11AuthenticationEntry) async -> Bool {
+        entries.append(entry)
+        guard heldEntry == entry else { return false }
+        heldEntry = nil
+        await entryHold.enterAndWait()
+        return true
+    }
+
+    func restoreSession() async throws -> AuthSession? {
+        let forced = forcedHeldRestore
+        let held = await enter(.start)
+        if held, let forced { return try forced.get() }
+        return try await coordinator.restorePublicSession()
+    }
+    func signIn(email: String, password: String) async throws -> AuthSession {
+        _ = await enter(.signIn)
+        let record = signInRecords.isEmpty
+            ? C11RealLifecycleTransportHarness.record(userID: C11AuthenticationFixtures.a, ordinal: 4)
+            : signInRecords.removeFirst()
+        try await coordinator.switch(to: record)
+        return record.publicSession
+    }
+    func signUp(email: String, password: String) async throws -> AuthSignUpResult {
+        _ = await enter(.signUp)
+        if signUpNeedsConfirmation { return .confirmationRequired(email: C11AuthenticationFixtures.email) }
+        let record = C11RealLifecycleTransportHarness.record(userID: C11AuthenticationFixtures.a, ordinal: 4)
+        try await coordinator.switch(to: record)
+        return .authenticated(record.publicSession)
+    }
+    func confirmEmailForDevelopment() async throws -> AuthSession {
+        _ = await enter(.confirmDevelopment)
+        let record = C11RealLifecycleTransportHarness.record(userID: C11AuthenticationFixtures.a, ordinal: 4)
+        try await coordinator.switch(to: record)
+        return record.publicSession
+    }
+    func requestPasswordRecovery(email: String) async throws { _ = await enter(.passwordRecovery) }
+    func signOut() async throws {
+        _ = await enter(.signOut)
+        if await coordinator.signOut() == .localInvalidationFailed {
+            throw AuthenticationError.storageUnavailable
+        }
+    }
+}
+
+private actor C11AuthenticationOnboardingPeer: OnboardingRepository {
+    let loadHold = C11BoundaryHold()
+    private var heldLoad: Int?
+    private let completed: Bool
+    private var failNext = false
+    private(set) var loads = 0
+
+    init(completed: Bool) { self.completed = completed }
+    func holdLoad(_ ordinal: Int) { heldLoad = ordinal }
+    func failNextRead() { failNext = true }
+    func loadDraft(for userID: String) -> OnboardingDraft? {
+        completed ? nil : BodyFlowTestFixtures.onboardingDraft(currentStep: .objective)
+    }
+    func loadState(for userID: String) async throws -> OnboardingServerState {
+        loads += 1
+        let value = OnboardingServerState(
+            locale: "pt-BR",
+            completion: OnboardingCompletionState(completed: completed,
+                completedAt: completed ? "2026-10-13T00:00:00.000Z" : nil),
+            requirements: .unavailable, acceptedActions: [],
+            draft: completed ? nil : BodyFlowTestFixtures.onboardingDraft(currentStep: .objective)
+        )
+        if heldLoad == loads { await loadHold.enterAndWait() }
+        if failNext { failNext = false; throw OnboardingRepositoryError.serviceUnavailable }
+        return value
+    }
+    func saveDraft(_ draft: OnboardingDraft, for userID: String) async throws {}
+    func complete(_ draft: OnboardingDraft, for userID: String) async throws {}
+    func clear(for userID: String) async throws {}
+}
+
+private enum C11AuthenticationFixtures {
+    static let a = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    static let b = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    static let email = "c11-owner@example.invalid"
+    static let syntheticPassword = "synthetic-local-only"
+
+    @MainActor
+    static func model(peer: C11AuthenticationEntryPeer,
+        onboarding: C11AuthenticationOnboardingPeer,
+        lifetime: MealRecordAuthenticationLifetime? = nil,
+        telemetry: InMemoryTelemetryClient,
+        initialState: AppFlowState = .launching,
+        initialAuthOperationState: AuthOperationState = .idle) -> AppFlowModel {
+        AppFlowModel(authentication: peer, onboarding: onboarding,
+            persona: AppDependencies.scaffold().coachPersona, telemetry: telemetry,
+            mealRecordAuthenticationLifetime: lifetime, initialState: initialState,
+            initialAuthOperationState: initialAuthOperationState,
+            developmentConsentAvailability: .syntheticDevelopment,
+            now: { Date(timeIntervalSince1970: 1790000000) })
+    }
+
+    @MainActor
+    static func invoke(_ entry: C11AuthenticationEntry, model: AppFlowModel) async {
+        switch entry {
+        case .start: await model.start()
+        case .signIn: await model.signIn(email: email, password: syntheticPassword)
+        case .signUp: await model.signUp(email: email, password: syntheticPassword)
+        case .confirmDevelopment: await model.confirmEmailForDevelopment()
+        case .signOut: await model.signOut()
+        case .passwordRecovery: await model.requestPasswordRecovery(email: email)
+        }
+    }
+
+    @MainActor
+    static func cycleThroughBAndBackToA(model: AppFlowModel,
+        peer: C11AuthenticationEntryPeer) async {
+        await peer.setSignInRecords([
+            C11RealLifecycleTransportHarness.record(userID: b, ordinal: 2),
+            C11RealLifecycleTransportHarness.record(userID: a, ordinal: 3)
+        ])
+        await model.signOut()
+        await model.signIn(email: email, password: syntheticPassword)
+        await model.signOut()
+        await model.signIn(email: email, password: syntheticPassword)
+    }
+
+    static func lateReturn(_ value: C11OldAuthenticationReturn) -> Result<AuthSession?, AuthenticationError> {
+        switch value {
+        case .completed: .success(C11RealLifecycleTransportHarness.record(userID: a, ordinal: 1).publicSession)
+        case .missing: .success(nil)
+        case .unconfirmed: .success(AuthSession(userID: a, email: email,
+            isEmailConfirmed: false, isOnboardingCompleted: false))
+        case .failed: .failure(.serviceUnavailable)
+        }
+    }
+}
+
+@MainActor
+private struct C11AuthenticationOwnedGrant {
+    let owner: Prompt14SessionOwner
+    let binding: MealRecordSessionBinding
+    let retained: MealRecordSessionCapability
+    let activation: MealRecordAuthenticatedActivation
+    let lease: SessionLease
+
+    static func prepare(lifetime: MealRecordAuthenticationLifetime,
+        wire: C11RealLifecycleTransportHarness) async throws -> Self {
+        var preparedOwner: Prompt14SessionOwner?
+        do {
+            let ticket = lifetime.beginAuthenticationBoundary()
+            let activation = try #require(lifetime.publishAuthenticated(
+                userID: C11AuthenticationFixtures.a, ticket: ticket))
+            let owner = Prompt14SessionOwner(userID: C11AuthenticationFixtures.a,
+                dependencies: C11BindingTestDependencies.make(), enablesMealRecordBinding: true)
+            preparedOwner = owner
+            await owner.awaitPatientTimeZoneResolution()
+            let binding = try #require(owner.mealRecordBinding)
+            #expect(lifetime.register(binding: binding, owner: owner, activation: activation))
+            let lease = try await wire.coordinator.leaseForRequest()
+            try await wire.coordinator.validate(lease)
+            try await wire.respondWithMealDetail() // a permitted GET has a valid real DTO, not a decode/setup failure
+            let retained = try await binding.bind(transport: wire.transport, lifecycle: wire.lifecycle)
+            #expect(retained.hasRetainedCapability)
+            #expect(binding.isOpen)
+            #expect(await wire.stub.requests().isEmpty)
+            return Self(owner: owner, binding: binding, retained: retained, activation: activation, lease: lease)
+        } catch {
+            await lifetime.endSession()
+            await preparedOwner?.endSession()
+            throw error
+        }
+    }
+}
+
+private struct C11AuthenticationCoreSnapshot: Equatable, Sendable {
+    let state: AppFlowState
+    let session: AuthSession?
+    let error: AppPresentationError?
+    let operation: AuthOperationState
+    let draft: OnboardingDraft?
+    let requirements: OnboardingRequirements
+    let restoreGeneration: Int
+    let completedAt: String?
+    let loadFailure: OnboardingLoadFailure?
+    @MainActor init(_ model: AppFlowModel) {
+        state = model.state; session = model.currentSession; error = model.presentationError
+        operation = model.authOperationState; draft = model.restoredOnboardingDraft
+        requirements = model.restoredOnboardingRequirements
+        restoreGeneration = model.onboardingRestoreGeneration
+        completedAt = model.restoredHistoricalCompletedAt; loadFailure = model.onboardingLoadFailure
+    }
+}
+
+enum C11WrongBindingOwnerArgument: Equatable, Sendable { case actualB, borrowedA }

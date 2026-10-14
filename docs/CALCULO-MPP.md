@@ -4115,3 +4115,53 @@ A evidência local B5 mantém os corpos aprovados sem alteração:
 `codex-u2-b5-consent-en-approval-20261012/APPROVAL.json` no diretório privado da
 operação; hashes PT `e45e4a38adbeab144430a9fd33df59d1754ecf154c7871d358cb0ad17762210d`
 e EN `a72cad69b3040007c81b38ab56b1b22bfc9b45c56a966e91b29bcaf45484b9e2`.
+
+### C59a.1 — fatos puros do contador semanal de força (Q15)
+
+A resposta operacional Q15 define um contador de exibição para recomposição,
+ganho e manutenção. É uma decisão de produto aprovada na operação, sem aceite
+médico inferido. O módulo interno `packages/core/src/strength-training-week.ts`
+concentra duas funções puras; os consumidores atuais continuam inalterados.
+
+- **X** é o número de datas locais distintas com treino de força confirmado,
+  da segunda-feira até a data observada, dentro da mesma semana civil da pessoa.
+  Dois registros no mesmo dia contam um dia. A categoria autoritativa do evento
+  confirmado `musculacao` conta; outras categorias conhecidas ficam separadas.
+  Para tipo desconhecido, só uma resposta sim persistida, da mesma pessoa e
+  treino, permite contar. Sem resposta, o treino continua não classificado.
+  Categoria conhecida prevalece sobre uma resposta sim/não válida.
+- **Y** vem do registro durável da pessoa e semana. Na sua criação, a prioridade
+  é o número de dias do plano aceito, depois a frequência de força informada,
+  ambos comprovadamente efetivos para aquela segunda; sem valor, registra-se a
+  ausência. Um registro existente conserva valor, origem e referência. Mudanças
+  passam a valer na próxima segunda; o perfil atual não reconstrói semanas antigas.
+- Para Y positivo, **percentual = `min(100, round(100 × X / Y))`**. X não é
+  limitado a Y: quatro dias com Y igual a três são `4 de 3`, com 100%.
+  Y zero, ausência durável e registro ainda não congelado são estados distintos;
+  preservam X e mantêm o percentual ausente, sem inventar um denominador.
+
+O contrato amplo distingue valor nulo de zero. Dias nulos no plano permitem
+consultar a frequência efetiva da mesma semana; números não nulos inválidos
+recusam a entrada, sem coerção ou fallback. Isso preserva as faixas existentes
+dos produtores de cadastro e plano. Contas misturadas, datas inválidas,
+respostas de outro treino e cópias conflitantes do mesmo registro recusam a
+projeção inteira, com todos os contadores ausentes. Cópias idênticas são
+idempotentes. As funções conservam as entradas e retornam listas ordenadas.
+
+Os três exemplos travados são: plano de três dias com segunda e quarta
+confirmadas gera `2 de 3`, 67%; dois treinos no mesmo dia geram um dia; e mudar
+a frequência de quatro para três na quinta conserva quatro nesta semana e
+usa três na seguinte. Os testes fornecem datas civis e fatos sintéticos
+explícitos, inclusive o registro já persistido usado pela projeção.
+
+`resolveStrengthWeekTarget` propõe ou reutiliza um registro; uma proposta não
+comprova persistência. `summarizeStrengthTrainingWeek` projeta os fatos de um
+registro durável fornecido pelo integrador. A integração deve provar o vencedor
+atômico por pessoa/semana, a história das fontes, a vigência e a categoria do
+evento. A conversão de instantes para o fuso da pessoa, a pergunta persistida,
+os contratos Hoje/Flow e a apresentação iOS seguem como etapas de integração.
+O calendário puro não comprova esses fluxos, timezone/DST ou comportamento remoto.
+
+O contador não altera calorias, proteína, metas nutricionais, fase, elegibilidade,
+crédito, XP, bloco 7700 ou os consumidores do legado WhatsApp. Não há novo export
+no barrel, consulta, esquema ou escrita de banco neste pacote.

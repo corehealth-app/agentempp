@@ -9,6 +9,71 @@ import Testing
 @Suite("C11 actual Root/Shell consumer composition", .serialized)
 @MainActor
 struct MealRecordWiringTests {
+    @Test("I5 real refresh terminal: invalid grant withdraws authority; transient preserves typed work",
+          arguments: [C11RootNavigationSelection.refreshInvalidGrant, .refreshTransient])
+    func terminalRefreshUsesActualContextAndModel(_ selection: C11RootNavigationSelection) async throws {
+        try await withC11I5Composition(selection: selection) { actual in
+            let originalTask = try #require(actual.driver.taskID)
+            let context = try #require(await actual.driver.synchronize(expected: originalTask))
+            actual.cache.synchronize(context: context, owner: actual.owner)
+            let model = try #require(actual.cache.prepareModel(recordID: C11WireFixtures.recordID,
+                context: context, owner: actual.owner))
+            try #require(await model.load() == .settled)
+            try #require(model.detail?.data.items.first?.foodName == "Synthetic C11 confirmed food")
+            model.draft?.items[0].foodName = "Synthetic I5 unsent name"
+            model.draft?.items[0].quantityText = "25"
+            try #require(model.canSave(language: .portugueseBrazil))
+            let originalDraft = try #require(model.draft)
+            model.discardPresentation() // Same operations the actual View's Back performs.
+            actual.cache.synchronize(context: context, owner: actual.owner)
+            let reopened = try #require(actual.cache.prepareModel(recordID: C11WireFixtures.recordID,
+                context: context, owner: actual.owner))
+            try #require(reopened === model)
+            model.beginPresentation()
+            _ = await model.load() // Actual GET2=401 -> real selected remote failure.
+            let terminal = try #require(actual.fixture.probe.terminalRefresh)
+            // Prove the REAL branch and store before any causal authority oracle.
+            try #require(actual.fixture.probe.gets == 2)
+            try #require(actual.fixture.probe.binds == 1)
+            try #require(actual.fixture.probe.refreshes == 1)
+            try #require(actual.fixture.probe.blocked == 0)
+            try #require(terminal.remoteStarted == 1 && terminal.remoteFinished == 1 && terminal.postBase == 1)
+            try #require(terminal.oldInputMatches && terminal.bodiesAbsent && terminal.keysAbsent)
+            try #require(terminal.commands == 0 && terminal.newReadID)
+            #expect(model.confirmedReceipt == nil)
+            #expect(model.retainedAttempt == nil && model.attemptHistory.isEmpty)
+            #expect(model.completedMutations.isEmpty)
+            #expect(actual.keys.count == 0)
+            #expect(actual.center.revision(for: .today) == 0)
+            #expect(actual.center.revision(for: .history) == 0)
+            let rootAuthenticated = actual.flow.state == .authenticated(userID: C11WireFixtures.userID)
+            print("I5_ACTUAL_TERMINAL case=\(selection.rawValue) outcome=\(terminal.outcome.rawValue) storeEmpty=\(terminal.storeEmpty) retained=\(terminal.originalRecordRetained) rootAuthenticated=\(rootAuthenticated) contextActive=\(context.isActive) canStart=\(model.canStartMutation) canEdit=\(model.canEditDraft) canSave=\(model.canSave(language: .portugueseBrazil)) readFailure=\(model.readFailure != nil) callerCancelled=\(terminal.callerCancelled)")
+            if selection == .refreshInvalidGrant {
+                try #require(terminal.outcome == .missingSession && terminal.storeEmpty && !terminal.originalRecordRetained)
+                try #require(terminal.revokes == 1 && terminal.revokeUsesOriginal)
+                // No assumed signedOut policy: the actual C11 context/predicate
+                // cannot claim valid editing after REAL lifecycle invalidation.
+                #expect(!context.isActive, "I5_INVALID_GRANT_ACTUAL_CONTEXT_MUST_WITHDRAW")
+                #expect(!model.canStartMutation, "I5_INVALID_GRANT_ACTUAL_MODEL_MUST_DENY_START")
+                #expect(!model.canEditDraft, "I5_INVALID_GRANT_ACTUAL_MODEL_MUST_DENY_EDIT")
+                #expect(!model.canSave(language: .portugueseBrazil), "I5_INVALID_GRANT_ACTUAL_MODEL_MUST_DENY_SAVE")
+            } else {
+                try #require(terminal.outcome == .refreshFailed && !terminal.storeEmpty && terminal.originalRecordRetained)
+                try #require(terminal.revokes == 0)
+                #expect(rootAuthenticated)
+                let sameTask = actual.driver.taskID == originalTask
+                let sameContext = actual.driver.readyContext === context
+                let typedDraftPreserved = model.draft == originalDraft
+                #expect(sameTask && sameContext && context.isActive)
+                #expect(typedDraftPreserved)
+                #expect(model.readFailure == .capability(.serviceUnavailable))
+                #expect(model.canStartMutation && model.canEditDraft)
+                #expect(model.canSave(language: .portugueseBrazil))
+                #expect(!model.isLoading && !model.isSubmitting)
+            }
+        }
+    }
+
     @Test("DI requires an explicit flag, non-demo mode and the real transport/lifecycle pair",
           arguments: C11WireSourceCase.allCases)
     func sourceAdmission(_ scenario: C11WireSourceCase) async throws {
@@ -1094,6 +1159,57 @@ struct MealRecordWiringTests {
         }
     }
 
+}
+
+/// Reuses the actual selected DEBUG transport/server/remote, not a clone of
+/// predicates or a new status protocol. Its own real center/keys feed the Model.
+@MainActor
+private struct C11I5Composition {
+    let fixture: C11RootNavigationFixture
+    let flow: AppFlowModel
+    let owner: Prompt14SessionOwner
+    let driver: MealRecordRootWiringDriver
+    let cache: MealRecordShellSessionCoordinator
+    let keys: C11WireKeys
+    let center: FeatureInvalidationCenter
+}
+
+@MainActor
+private func withC11I5Composition(selection: C11RootNavigationSelection,
+    _ operation: @MainActor (C11I5Composition) async throws -> Void) async throws {
+    let fixture = try C11RootNavigationFixture.make(selection: selection)
+    let dependencies = fixture.dependencies
+    let lifetime = MealRecordAuthenticationLifetime()
+    let flow = AppFlowModel(authentication: dependencies.authentication, onboarding: dependencies.onboarding,
+        persona: dependencies.coachPersona, telemetry: dependencies.telemetry,
+        mealRecordAuthenticationLifetime: lifetime, now: { C11WireFixtures.date })
+    let owners = Prompt14AuthenticatedShellCoordinator(dependencies: dependencies, enablesMealRecordBinding: true)
+    let driver = MealRecordRootWiringDriver(model: flow, ownerCoordinator: owners,
+        lifetime: lifetime, source: dependencies.mealRecordBindingSource)
+    let keys = C11WireKeys()
+    let center = FeatureInvalidationCenter()
+    let cache = MealRecordShellSessionCoordinator(time: dependencies.timeProvider, keys: keys, invalidation: center)
+    do {
+        await flow.start()
+        let rootReady = flow.state == .authenticated(userID: C11WireFixtures.userID)
+        try #require(rootReady)
+        await owners.transition(to: C11WireFixtures.userID)
+        let owner = try #require(owners.renderableOwner(for: C11WireFixtures.userID))
+        await owner.awaitPatientTimeZoneResolution()
+        let actual = C11I5Composition(fixture: fixture, flow: flow, owner: owner, driver: driver,
+            cache: cache, keys: keys, center: center)
+        try await operation(actual)
+        cache.endSession()
+        await driver.endSession()
+        await lifetime.endSession()
+        await owners.transition(to: nil)
+    } catch {
+        cache.endSession()
+        await driver.endSession()
+        await lifetime.endSession()
+        await owners.transition(to: nil)
+        throw error
+    }
 }
 
 enum C11WireSourceCase: CaseIterable, Sendable { case disabled, demo, wrongClient, missingLifecycle, enabled }

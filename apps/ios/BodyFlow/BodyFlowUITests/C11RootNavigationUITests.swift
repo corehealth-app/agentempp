@@ -1299,6 +1299,282 @@ final class C11RootNavigationUITests: XCTestCase {
         capture(app, name: "c11-i4-real-history-parent-and-plan-preserved-no-extra-requests")
     }
 
+    func testRealRootInvalidRefreshGrantWithdrawsEditingAuthorityForRetainedForm() throws {
+        try exerciseTerminalRefresh(invalidGrant: true)
+    }
+
+    func testRealRootTransientRefreshPreservesTypedFormWithoutAutomaticRetry() throws {
+        try exerciseTerminalRefresh(invalidGrant: false)
+    }
+
+    /// Only the two new I5 cases. No manual retry/send/delete is tapped here.
+    private func exerciseTerminalRefresh(invalidGrant: Bool) throws {
+        let selection = invalidGrant ? "refresh-invalid-grant" : "refresh-transient"
+        let argument = invalidGrant ? "--ui-testing-c11-root-refresh-invalid-grant" : "--ui-testing-c11-root-refresh-transient"
+        let app = try launchFixture(argument, selection: selection)
+        let status = element("c11.fixture.status", in: app)
+        let detail = element("screen.meal-record", in: app)
+        let name = app.textFields["meal-record.field.name"]
+        let quantity = app.textFields["meal-record.field.quantity"]
+        let typedName = "Synthetic I5 unsent name"
+        // Only I5: avoid letting tap's implicit scroll consume the History
+        // action. Mount the real Today link inside the unobscured viewport,
+        // then perform exactly one normal tap; never retry that action.
+        let todayScroll = app.scrollViews["screen.hoje"]
+        let todayHistory = element("today.history", in: app)
+        let todayNav = app.navigationBars["Hoje"]
+        let tabBar = element("navigation.tab-bar", in: app)
+        func historyReadyForSingleTap() -> Bool {
+            guard todayScroll.exists, todayHistory.exists, todayNav.exists,
+                  tabBar.exists, status.exists else { return false }
+            let viewport = todayScroll.frame.intersection(app.frame)
+            let frame = todayHistory.frame, nav = todayNav.frame, tabs = tabBar.frame
+            let diagnostic = status.frame
+            return !viewport.isNull && viewport.width > 0 && viewport.height > 0
+                && nav.height > 0 && tabs.height > 0 && diagnostic.height > 0
+                && frame.width >= 44 && frame.height >= 44 && viewport.contains(frame)
+                && frame.minY >= nav.maxY && frame.maxY <= tabs.minY
+                && !frame.intersects(diagnostic) && todayHistory.isEnabled && todayHistory.isHittable
+        }
+        for _ in 0..<6 {
+            if historyReadyForSingleTap() { break }
+            guard todayScroll.exists else { break }
+            if todayHistory.exists, todayNav.exists, todayHistory.frame.minY < todayNav.frame.maxY {
+                todayScroll.swipeDown()
+            } else {
+                todayScroll.swipeUp()
+            }
+        }
+        guard historyReadyForSingleTap() else {
+            capture(app, name: "c11-i5-" + selection + "-today-history-visibility-setup")
+            XCTFail("SETUP_NOT_VERIFIED: bounded scroll could not mount the real Today History link below nav and above tabs/HUD for one normal tap; no tap or GET authority inferred"); return
+        }
+        capture(app, name: "c11-i5-" + selection + "-today-history-before-single-tap")
+        todayHistory.tap()
+        guard element("screen.history", in: app).waitForExistence(timeout: 5) else {
+            capture(app, name: "c11-i5-" + selection + "-history-after-single-tap-setup")
+            XCTFail("SETUP_NOT_VERIFIED: the one visible Today History tap did not reach the actual History stack; no retry tap"); return
+        }
+        let initialRow = element("history.meal.\(rowID)", in: app)
+        guard initialRow.waitForExistence(timeout: 5) else {
+            capture(app, name: "c11-i5-" + selection + "-initial-history-row-setup")
+            XCTFail("SETUP_NOT_VERIFIED: actual History must draw the synthetic official UUID row before the first GET"); return
+        }
+        initialRow.tap()
+        guard detail.waitForExistence(timeout: 8), name.waitForExistence(timeout: 5),
+              quantity.exists, name.isEnabled, name.isHittable, quantity.isEnabled else {
+            capture(app, name: "c11-i5-initial-form-setup")
+            XCTFail("SETUP_NOT_VERIFIED: actual first official GET200 must mount editable fields"); return
+        }
+        XCTAssertEqual(name.value as? String, "Synthetic C11 confirmed food")
+        XCTAssertEqual(quantity.value as? String, "50")
+        name.tap()
+        name.typeKey("a", modifierFlags: .command)
+        name.typeText(typedName)
+        quantity.tap()
+        quantity.typeKey("a", modifierFlags: .command)
+        quantity.typeText("25")
+        XCTAssertEqual(name.value as? String, typedName)
+        XCTAssertEqual(quantity.value as? String, "25")
+        let done = app.buttons["keyboard.done"]
+        guard done.waitForExistence(timeout: 5), done.isEnabled, done.isHittable else {
+            XCTFail("SETUP_NOT_VERIFIED: actual Done required before Back/reentry"); return
+        }
+        done.tap()
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        guard back.exists, back.isEnabled, back.isHittable else {
+            XCTFail("SETUP_NOT_VERIFIED: native detail Back required"); return
+        }
+        back.tap()
+        guard element("screen.history", in: app).waitForExistence(timeout: 5) else {
+            XCTFail("SETUP_NOT_VERIFIED: actual Back must reach the original History stack"); return
+        }
+        let row = element("history.meal.\(rowID)", in: app)
+        guard row.waitForExistence(timeout: 5), row.isEnabled, row.isHittable else {
+            XCTFail("SETUP_NOT_VERIFIED: same actual UUID row must reopen"); return
+        }
+        row.tap() // New presentation GET2=401; same cached working Model.
+        let numeric: [String: Int] = [
+            "get": 2, "bind": 1, "refresh": 1, "blocked": 0,
+            "remoteStarted": 1, "remoteFinished": 1, "postBase": 1, "oldInput": 1,
+            "storeEmpty": invalidGrant ? 1 : 0, "recordRetained": invalidGrant ? 0 : 1,
+            "revokes": invalidGrant ? 1 : 0, "revokeOriginal": invalidGrant ? 1 : 0,
+            "bodyAbsent": 1, "keyAbsent": 1, "commands": 0, "newReadID": 1,
+        ]
+        var predicates = numeric.sorted { $0.key < $1.key }.map { key, value in
+            NSPredicate(format: "label MATCHES %@", ".*\\b\(key)=\(value)\\b.*")
+        }
+        let outcome = invalidGrant ? "missingSession" : "refreshFailed"
+        predicates.append(NSPredicate(format: "label MATCHES %@", ".*\\boutcome=\(outcome)\\b.*"))
+        let terminal = XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSCompoundPredicate(andPredicateWithSubpredicates: predicates), object: status)], timeout: 8) == .completed
+        guard terminal else {
+            capture(app, name: "c11-i5-" + selection + "-actual-terminal-setup")
+            XCTFail("SETUP_NOT_VERIFIED: real selected refresh outcome/store/counters must precede the authority oracle"); return
+        }
+        let terminalCounters = status.label
+        let form = app.collectionViews["screen.meal-record"]
+        let warning = element("meal-record.read-failure", in: app)
+        let signIn = element("screen.auth.sign-in", in: app)
+        let readOnly = element("meal-record.read-only", in: app)
+        let progress = element("meal-record.progress", in: app)
+        let retry = app.buttons["meal-record.retry-read"]
+        func visibleInForm(_ control: XCUIElement) -> Bool {
+            guard form.exists, control.exists, status.exists else { return false }
+            let viewport = form.frame.intersection(app.frame), frame = control.frame
+            return !viewport.isNull && viewport.width > 0 && viewport.height > 0
+                && frame.width > 0 && frame.height > 0 && viewport.contains(frame)
+                && !frame.intersects(status.frame)
+        }
+        func actualAuthenticationSurface() -> Bool {
+            // A positive real auth root plus removal of the destination is a
+            // replacement surface; a virtualized field alone proves nothing.
+            invalidGrant && signIn.exists && !detail.exists
+        }
+        func actualLocalRowSurface() -> Bool {
+            // Existing exclusive non-form content from History, after the
+            // real invalidGrant/store/revoke terminal facts above. Require
+            // the actual row values visibly mounted, not absent lazy fields.
+            guard invalidGrant, detail.exists else { return false }
+            let rows = app.staticTexts.matching(identifier: "meal-record.local-row")
+            for label in ["Synthetic C11 confirmed food", "Quantidade: 50 g", "Energia: 100 kcal"] {
+                let value = rows.matching(NSPredicate(format: "label == %@", label)).element
+                guard visibleInForm(value), value.isHittable else { return false }
+            }
+            return true
+        }
+        func accessibleWarning() -> Bool {
+            guard visibleInForm(warning), warning.isHittable else { return false }
+            if invalidGrant { return true }
+            return visibleInForm(retry) && retry.isEnabled && retry.isHittable
+                && retry.frame.width >= 44 && retry.frame.height >= 44
+        }
+        // Form virtualizes the warning after the fields/actions. Materialize it
+        // BEFORE waiting for the terminal UI; no longer timeout or extra read.
+        for _ in 0..<6 {
+            if actualAuthenticationSurface() || actualLocalRowSurface() || accessibleWarning() { break }
+            guard form.exists else { break }
+            form.swipeUp()
+        }
+        let rendered = XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                !progress.exists && (accessibleWarning() || actualAuthenticationSurface() || actualLocalRowSurface())
+            }, object: app)], timeout: 8) == .completed
+        guard rendered else {
+            capture(app, name: "c11-i5-" + selection + "-terminal-surface-setup")
+            XCTFail("SETUP_NOT_VERIFIED: bounded scroll could not materialize the real terminal warning/retry clear of HUD, or a positive invalidGrant auth/local-row replacement; no authority result inferred"); return
+        }
+        capture(app, name: "c11-i5-" + selection + "-accessible-terminal-before-controls")
+        if !actualAuthenticationSurface() && !actualLocalRowSurface() {
+            XCTAssertTrue(accessibleWarning(), "Real terminal warning and any valid explicit retry must be accessible clear of the DEBUG HUD")
+            if !invalidGrant {
+                XCTAssertEqual(warning.label,
+                    "Não foi possível atualizar este registro agora. O que você digitou foi mantido.")
+                XCTAssertEqual(retry.label, "Tentar abrir novamente")
+            }
+        }
+
+        let observedNameEnabled: Bool, observedQuantityEnabled: Bool
+        let observedPatchEnabled: Bool, observedDeleteEnabled: Bool
+        let observedNameValue: String?, observedQuantityValue: String?
+        let observedFieldsHittable: Bool
+        let authoritySurface: String
+        if actualAuthenticationSurface() {
+            authoritySurface = "actual-auth-replacement"
+            observedNameEnabled = false; observedQuantityEnabled = false
+            observedPatchEnabled = false; observedDeleteEnabled = false
+            observedNameValue = nil; observedQuantityValue = nil; observedFieldsHittable = false
+        } else if actualLocalRowSurface() {
+            // make() chooses .localRow exclusively, and View renders that
+            // case without fields/formActions. This positive official row
+            // replacement is permitted only after actual session invalidation.
+            authoritySurface = "actual-history-local-row-content"
+            observedNameEnabled = false; observedQuantityEnabled = false
+            observedPatchEnabled = false; observedDeleteEnabled = false
+            observedNameValue = nil; observedQuantityValue = nil; observedFieldsHittable = false
+            capture(app, name: "c11-i5-" + selection + "-positive-local-row-content")
+        } else {
+            // Return to the actual fields. Missing offscreen nodes can never
+            // satisfy the invalidGrant oracle. A real read-only content marker
+            // is a positive alternative: current View/presentation source puts
+            // that marker only in non-form content, with no form actions.
+            for _ in 0..<6 {
+                if (visibleInForm(name) && visibleInForm(quantity))
+                    || (visibleInForm(readOnly) && readOnly.isHittable) { break }
+                guard form.exists else { break }
+                form.swipeDown()
+            }
+            if visibleInForm(readOnly) && readOnly.isHittable {
+                authoritySurface = "actual-read-only-content"
+                observedNameEnabled = false; observedQuantityEnabled = false
+                observedPatchEnabled = false; observedDeleteEnabled = false
+                observedNameValue = nil; observedQuantityValue = nil; observedFieldsHittable = false
+                capture(app, name: "c11-i5-" + selection + "-positive-read-only-content")
+            } else {
+                guard visibleInForm(name), visibleInForm(quantity) else {
+                    capture(app, name: "c11-i5-" + selection + "-field-visibility-setup")
+                    XCTFail("SETUP_NOT_VERIFIED: bounded return could not materialize both real fields or a positive read-only replacement; missing/virtualized fields are not withdrawn authority"); return
+                }
+                authoritySurface = "actual-mounted-form"
+                observedNameEnabled = name.isEnabled
+                observedQuantityEnabled = quantity.isEnabled
+                observedNameValue = name.value as? String
+                observedQuantityValue = quantity.value as? String
+                observedFieldsHittable = name.isHittable && quantity.isHittable
+                capture(app, name: "c11-i5-" + selection + "-visible-fields-before-authority-oracle")
+                // Observe each action while it is inside the real Form's
+                // viewport. Disabled controls need visible geometry, not a tap.
+                func mountedActionEnabled(_ identifier: String) -> Bool? {
+                    let action = app.buttons[identifier]
+                    for _ in 0..<6 {
+                        if visibleInForm(action) { break }
+                        guard form.exists else { break }
+                        form.swipeUp()
+                    }
+                    guard visibleInForm(action) else {
+                        capture(app, name: "c11-i5-" + selection + "-action-visibility-setup")
+                        XCTFail("SETUP_NOT_VERIFIED: bounded scroll could not materialize real action \(identifier); virtualized absence is not disabled authority")
+                        return nil
+                    }
+                    capture(app, name: "c11-i5-" + selection + "-visible-" + identifier)
+                    return action.isEnabled
+                }
+                guard let patchEnabled = mountedActionEnabled("meal-record.patch"),
+                      let deleteEnabled = mountedActionEnabled("meal-record.delete") else { return }
+                observedPatchEnabled = patchEnabled; observedDeleteEnabled = deleteEnabled
+            }
+        }
+        print("I5_ACTUAL_UI case=\(selection) surface=\(authoritySurface) authScreen=\(signIn.exists) nameEnabled=\(observedNameEnabled) quantityEnabled=\(observedQuantityEnabled) patchEnabled=\(observedPatchEnabled) deleteEnabled=\(observedDeleteEnabled)")
+        if invalidGrant {
+            // These facts came from each mounted control, or a positive real
+            // replacement surface. No missing lazy node is treated as disabled.
+            XCTAssertFalse(observedNameEnabled,
+                "I5_INVALID_GRANT_ACTUAL_UI_MUST_DENY_NAME_EDIT")
+            XCTAssertFalse(observedQuantityEnabled,
+                "I5_INVALID_GRANT_ACTUAL_UI_MUST_DENY_QUANTITY_EDIT")
+            XCTAssertFalse(observedPatchEnabled,
+                "I5_INVALID_GRANT_ACTUAL_UI_MUST_DENY_PATCH")
+            XCTAssertFalse(observedDeleteEnabled,
+                "I5_INVALID_GRANT_ACTUAL_UI_MUST_DENY_DELETE")
+        } else {
+            XCTAssertTrue(detail.exists)
+            XCTAssertEqual(authoritySurface, "actual-mounted-form")
+            XCTAssertEqual(observedNameValue, typedName)
+            XCTAssertEqual(observedQuantityValue, "25")
+            XCTAssertTrue(observedNameEnabled && observedQuantityEnabled && observedFieldsHittable)
+            XCTAssertTrue(observedPatchEnabled)
+            XCTAssertFalse(signIn.exists)
+        }
+        for identifier in ["meal-record.saved", "meal-record.failure", "meal-record.retry-same-attempt",
+                           "meal-record.recovery.notice", "meal-record.recovery.action"] {
+            XCTAssertFalse(element(identifier, in: app).exists)
+        }
+        // No retry/send/delete tap, timer or new read: terminal counters remain
+        // exact after rendering and inspecting the accessible result.
+        XCTAssertEqual(status.label, terminalCounters, "No third GET, second refresh or new operation while inspecting the actual terminal UI")
+        capture(app, name: "c11-i5-" + selection + "-accessible-terminal-no-retry-no-receipt")
+    }
+
     private func requireDeliveryStatus(in app: XCUIApplication, counters: [String: Int]) -> Bool {
         let status = element("c11.fixture.status", in: app)
         // Word boundaries prevent get=1 from accepting get=10. Expected

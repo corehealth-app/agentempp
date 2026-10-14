@@ -853,6 +853,279 @@ struct MobileAPITransportTests {
     }
 
     @MainActor
+    @Test("C11 I5 binding: real terminal invalidation withdraws an idle retained capability",
+          arguments: [C11I5BindingTerminal.invalidGrant, .signOut, .otherUser])
+    func c11I5BindingRealTerminalWithdrawsIdleCapability(terminal: C11I5BindingTerminal) async throws {
+        try await c11WithI5Binding { fixture in
+            let runtime = fixture.runtime
+            let capability = try await fixture.bind()
+            try #require(capability.hasRetainedCapability)
+            try #require(fixture.binding.capability === capability)
+            try #require(await runtime.store.currentRecord() == runtime.original)
+            try #require(await runtime.stub.requests().isEmpty)
+            switch terminal {
+            case .invalidGrant:
+                await #expect(throws: SessionLifecycleError.missingSession) {
+                    _ = try await runtime.session.refreshAfterUnauthorized(lease: runtime.originalLease)
+                }
+                try #require(await runtime.store.currentRecord() == nil)
+                try #require(await runtime.remote.refreshCount == 1)
+                try #require(await runtime.remote.revokeCount == 1)
+            case .signOut:
+                try #require(await runtime.session.signOut() == .confirmed)
+                try #require(await runtime.store.currentRecord() == nil)
+                try #require(await runtime.remote.revokeCount == 1)
+            case .otherUser:
+                let next = C11RealLifecycleTransportHarness.record(userID: C11AuthenticationFixtures.b, ordinal: 2)
+                try await runtime.session.switch(to: next)
+                try #require(await runtime.store.currentRecord() == next)
+                await #expect(throws: SessionLifecycleError.sessionSuperseded) {
+                    try await runtime.session.validate(runtime.originalLease)
+                }
+                try #require(await runtime.remote.revokeCount == 0)
+            }
+            // Causal product oracle comes before prospective registration/count oracles.
+            #expect(!capability.hasRetainedCapability, "I5_BINDING_IDLE_REAL_INVALIDATION_WITHDRAWS_AUTHORITY")
+            await #expect(throws: CancellationError.self) {
+                _ = try await capability.mealRecord(id: C11RealLifecycleTransportHarness.recordID)
+            }
+            #expect(await runtime.stub.requests().isEmpty)
+            let admitted = await runtime.probe.admittedIDs
+            #expect(admitted.count == 1)
+            #expect(runtime.cancellations.count == 1)
+            #expect(await runtime.registry.activeCount == 0)
+            await fixture.owner.endSession()
+            #expect(await runtime.probe.finishedIDs == admitted)
+            #expect(fixture.binding.capability == nil && fixture.binding.capturedLease == nil)
+            #expect(await runtime.registry.activeCount == 0)
+        }
+    }
+
+    @MainActor
+    @Test("C11 I5 binding: transient, failed marker and same-user credentials preserve the real grant",
+          arguments: [C11I5BindingPreserved.transient, .markerFailure, .sameUserCredentials])
+    func c11I5BindingNonterminalPreservesAuthority(boundary: C11I5BindingPreserved) async throws {
+        try await c11WithI5Binding { fixture in
+            let runtime = fixture.runtime
+            let capability = try await fixture.bind()
+            try #require(capability.hasRetainedCapability)
+            switch boundary {
+            case .transient:
+                await runtime.remote.failRefresh(with: .rateLimited)
+                await #expect(throws: SessionLifecycleError.refreshFailed) {
+                    _ = try await runtime.session.refreshAfterUnauthorized(lease: runtime.originalLease)
+                }
+                try #require(await runtime.remote.refreshCount == 1)
+                try #require(await runtime.store.currentRecord() == runtime.original)
+            case .markerFailure:
+                await runtime.secure.rejectMarker()
+                try #require(await runtime.session.signOut() == .localInvalidationFailed)
+                try #require(await runtime.store.currentRecord() == runtime.original)
+            case .sameUserCredentials:
+                let next = C11RealLifecycleTransportHarness.record(userID: runtime.original.userID, ordinal: 2)
+                try await runtime.session.switch(to: next)
+                try #require(await runtime.store.currentRecord() == next)
+                let current = try await runtime.session.leaseForRequest()
+                try #require(current.generation == runtime.originalLease.generation)
+            }
+            try await runtime.session.validate(runtime.originalLease)
+            #expect(capability.hasRetainedCapability)
+            #expect(fixture.binding.capability === capability)
+            #expect(runtime.cancellations.count == 0)
+            #expect(await runtime.remote.revokeCount == 0)
+            #expect(await runtime.registry.activeCount == 1)
+            try await runtime.respond()
+            let detail = try await capability.mealRecord(id: C11RealLifecycleTransportHarness.recordID)
+            #expect(detail.data.recordID == C11RealLifecycleTransportHarness.recordID)
+            #expect(await runtime.stub.requests().count == 1)
+            #expect(await runtime.registry.activeCount == 1)
+            let admitted = await runtime.probe.admittedIDs
+            #expect(admitted.count == 1)
+            await fixture.owner.endSession()
+            #expect(!capability.hasRetainedCapability)
+            #expect(await runtime.registry.activeCount == 0)
+            #expect(await runtime.probe.finishedIDs == admitted)
+        }
+    }
+
+    @MainActor
+    @Test("C11 I5 binding: invalidation after the real visible commit cannot escape as a live grant")
+    func c11I5BindingInvalidationBeforeRegistrationReturn() async throws {
+        try await c11WithI5Binding { fixture in
+            let runtime = fixture.runtime
+            await runtime.held.holdNextVisibleReturn()
+            let pending = Task { try await fixture.bind() }
+            do {
+                await runtime.held.visibleReturnHold.waitUntilEntered()
+                let installed = try #require(fixture.binding.capability)
+                try #require(installed.hasRetainedCapability)
+                try #require(fixture.binding.capturedLease?.generation == runtime.originalLease.generation)
+                try #require(await runtime.session.signOut() == .confirmed)
+                try #require(await runtime.store.currentRecord() == nil)
+                try #require(await runtime.remote.revokeCount == 1)
+                await runtime.held.visibleReturnHold.release()
+                let result = await pending.result
+                if case .success = result {
+                    Issue.record("I5_BINDING_INVALIDATED_COMMIT_MUST_NOT_RETURN_SUCCESS")
+                }
+                #expect(!installed.hasRetainedCapability)
+                #expect(fixture.binding.capability == nil && fixture.binding.capturedLease == nil)
+                #expect(await runtime.registry.activeCount == 0)
+                #expect(await runtime.stub.requests().isEmpty)
+            } catch {
+                await runtime.releaseAll()
+                _ = await pending.result
+                throw error
+            }
+        }
+    }
+
+    @MainActor
+    @Test("C11 I5 binding: cancellation or invalidation after actual work admission cleans its own UUID",
+          arguments: [C11I5BindingAdmissionTerminal.invalidation, .callerCancellation, .leafClose])
+    func c11I5BindingTerminalAfterActualAdmission(terminal: C11I5BindingAdmissionTerminal) async throws {
+        try await c11WithI5Binding { fixture in
+            let runtime = fixture.runtime
+            await runtime.probe.holdNextBeginReturn()
+            let pending = Task {
+                do {
+                    let capability = try await fixture.bind()
+                    await runtime.probe.beginReturn.noteCompletion()
+                    return capability
+                } catch {
+                    await runtime.probe.beginReturn.noteCompletion()
+                    throw error
+                }
+            }
+            do {
+                let entered = await runtime.probe.beginReturn.waitUntilEnteredOrCompleted()
+                // A missing future subscription is a structural contract failure, never a setup hang/product RED.
+                guard entered else {
+                    Issue.record("I5_BINDING_SUBSCRIPTION_CONTRACT_NOT_YET_PRESENT")
+                    _ = await pending.result
+                    return
+                }
+                let installed = try #require(fixture.binding.capability)
+                let admitted = await runtime.probe.admittedIDs
+                try #require(admitted.count == 1)
+                try #require(await runtime.registry.activeCount == 1)
+                switch terminal {
+                case .invalidation:
+                    try #require(await runtime.session.signOut() == .confirmed)
+                    try #require(await runtime.store.currentRecord() == nil)
+                case .callerCancellation: pending.cancel()
+                case .leafClose: fixture.binding.invalidateSynchronously()
+                }
+                await runtime.probe.beginReturn.release()
+                let result = await pending.result
+                if case .success = result {
+                    Issue.record("I5_BINDING_TERMINAL_ADMISSION_MUST_NOT_RETURN_SUCCESS")
+                }
+                #expect(!installed.hasRetainedCapability)
+                #expect(await runtime.registry.activeCount == 0)
+                #expect(await runtime.probe.finishedIDs == admitted)
+                #expect(runtime.cancellations.count == (terminal == .invalidation ? 1 : 0))
+                #expect(await runtime.stub.requests().isEmpty)
+                if terminal != .invalidation {
+                    try await runtime.session.validate(runtime.originalLease)
+                    #expect(!fixture.owner.isInvalidated)
+                    let neighbor = try await fixture.owner.progress.progress()
+                    #expect(neighbor.meta.requestID == "progress-presentation-0001")
+                }
+                await fixture.binding.endSession()
+                #expect(await runtime.probe.finishedIDs == admitted)
+            } catch {
+                await runtime.releaseAll()
+                _ = await pending.result
+                throw error
+            }
+        }
+    }
+
+    @MainActor
+    @Test("C11 I5 binding: old delayed cleanup finishes only its UUID while same-generation A2 stays usable")
+    func c11I5BindingOldCleanupCannotFinishA2() async throws {
+        try await c11WithI5Binding { fixture in
+            let runtime = fixture.runtime
+            let oldCapability = try await fixture.bind()
+            try #require(oldCapability.hasRetainedCapability)
+            await runtime.probe.holdNextFinish()
+            let oldEnd = Task { @MainActor in
+                await fixture.binding.endSession()
+                await runtime.probe.finishReturn.noteCompletion()
+            }
+            do {
+                let entered = await runtime.probe.finishReturn.waitUntilEnteredOrCompleted()
+                guard entered else {
+                    Issue.record("I5_BINDING_OWNED_FINISH_CONTRACT_NOT_YET_PRESENT")
+                    await oldEnd.value
+                    return
+                }
+                try #require(!oldCapability.hasRetainedCapability)
+                try #require(await runtime.registry.activeCount == 1)
+                let fresh = try #require(fixture.owner.reserveNewMealRecordBinding())
+                try #require(fresh !== fixture.binding)
+                let current = try await fresh.bind(transport: runtime.transport, lifecycle: runtime.probe)
+                try #require(current.hasRetainedCapability)
+                try #require(fresh.capturedLease?.generation == runtime.originalLease.generation)
+                let admitted = await runtime.probe.admittedIDs
+                try #require(admitted.count == 2 && admitted[0] != admitted[1])
+                try #require(await runtime.registry.activeCount == 2)
+                await runtime.probe.finishReturn.release()
+                await oldEnd.value
+                #expect(await runtime.probe.finishedIDs == [admitted[0]])
+                #expect(await runtime.registry.activeCount == 1)
+                #expect(current.hasRetainedCapability)
+                #expect(fixture.owner.mealRecordBinding === fresh)
+                try await runtime.respond()
+                let response = try await current.mealRecord(id: C11RealLifecycleTransportHarness.recordID)
+                #expect(response.data.recordID == C11RealLifecycleTransportHarness.recordID)
+                #expect(await runtime.stub.requests().count == 1)
+                await fixture.binding.endSession()
+                #expect(await runtime.probe.finishedIDs == [admitted[0]])
+                #expect(await runtime.registry.activeCount == 1)
+                await fixture.owner.endSession()
+                #expect(await runtime.probe.finishedIDs == admitted)
+                #expect(await runtime.registry.activeCount == 0)
+                #expect(!current.hasRetainedCapability)
+                #expect(runtime.cancellations.count == 0)
+            } catch {
+                await runtime.releaseAll()
+                await oldEnd.value
+                throw error
+            }
+        }
+    }
+
+    @MainActor
+    @Test("C11 I5 binding: default and explicit source OFF leave the real registry unchanged",
+          arguments: [false, true])
+    func c11I5BindingSourceOffHasNoSubscription(explicitOwnerOff: Bool) async throws {
+        let runtime = try await C11I5BindingRuntime()
+        let dependencies = C11BindingTestDependencies.make()
+        let owner = explicitOwnerOff
+            ? Prompt14SessionOwner(userID: runtime.original.userID, dependencies: dependencies,
+                                   enablesMealRecordBinding: false)
+            : Prompt14SessionOwner(userID: runtime.original.userID, dependencies: dependencies)
+        await owner.awaitPatientTimeZoneResolution()
+        let source = AppDependencies.makeMealRecordBindingSource(enabled: false,
+            mode: .releaseUnavailable, client: runtime.transport, lifecycle: runtime.probe)
+        #expect(source == nil)
+        #expect(owner.reserveNewMealRecordBinding() == nil)
+        #expect(await runtime.registry.activeCount == 0)
+        #expect(await runtime.probe.admittedIDs.isEmpty)
+        #expect(await runtime.stub.requests().isEmpty)
+        try await runtime.session.validate(runtime.originalLease)
+        await owner.endSession()
+        await owner.endSession()
+        #expect(await runtime.registry.activeCount == 0)
+        #expect(await runtime.probe.finishedIDs.isEmpty)
+        #expect(runtime.cancellations.count == 0)
+        #expect(await runtime.remote.refreshCount == 0)
+        #expect(await runtime.remote.revokeCount == 0)
+    }
+
+    @MainActor
     @Test("C11 W01: owner reservation before await rejects a valid A2 lease",
           arguments: [false, true])
     func c11W01OwnerReservationBeforeAwait(closeLeafToo: Bool) async throws {
@@ -3903,5 +4176,204 @@ private struct C11H05Fixture {
         await root.endSession()
         await lifetime.endSession()
         await owner.endSession()
+    }
+}
+
+// I5 binding-only tests: new adapters observe existing APIs and delegate all authority
+// to the real coordinator/registry. Transport work uses that same real coordinator.
+enum C11I5BindingTerminal: Equatable, Sendable { case invalidGrant, signOut, otherUser }
+enum C11I5BindingPreserved: Equatable, Sendable { case transient, markerFailure, sameUserCredentials }
+enum C11I5BindingAdmissionTerminal: Equatable, Sendable { case invalidation, callerCancellation, leafClose }
+
+private final class C11I5BindingCancellationCount: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+    var count: Int { lock.withLock { value } }
+    func note() { lock.withLock { value += 1 } }
+}
+
+/// A real API-entry hold, with completion escape when the pre-implementation
+/// binding never calls that API. No sleep, polling, timeout or fabricated grant.
+private actor C11I5BindingCheckpoint {
+    private var entered = false
+    private var completed = false
+    private var opened = false
+    private var entryWaiters: [CheckedContinuation<Bool, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+    func enterAndWait() async {
+        entered = true
+        let waiters = entryWaiters
+        entryWaiters.removeAll()
+        waiters.forEach { $0.resume(returning: true) }
+        if !opened { await withCheckedContinuation { releaseWaiters.append($0) } }
+    }
+    func noteCompletion() {
+        completed = true
+        let waiters = entryWaiters
+        entryWaiters.removeAll()
+        waiters.forEach { $0.resume(returning: entered) }
+    }
+    func waitUntilEnteredOrCompleted() async -> Bool {
+        if entered { return true }
+        if completed { return false }
+        return await withCheckedContinuation { entryWaiters.append($0) }
+    }
+    func release() {
+        opened = true
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+    }
+}
+
+private actor C11I5BindingLifecycleProbe: SessionLifecycleProviding {
+    private let base: C11HoldingLifecycle
+    private let cancellations: C11I5BindingCancellationCount
+    let beginReturn = C11I5BindingCheckpoint()
+    let finishReturn = C11I5BindingCheckpoint()
+    private var holdsBegin = false
+    private var holdsFinish = false
+    private(set) var admittedIDs: [UUID] = []
+    private(set) var finishedIDs: [UUID] = []
+    init(base: C11HoldingLifecycle, cancellations: C11I5BindingCancellationCount) {
+        self.base = base
+        self.cancellations = cancellations
+    }
+    func holdNextBeginReturn() { holdsBegin = true }
+    func holdNextFinish() { holdsFinish = true }
+    func currentBearerToken() async -> String? { await base.currentBearerToken() }
+    func restorePublicSession() async throws -> AuthSession? { try await base.restorePublicSession() }
+    func `switch`(to record: AuthenticationSessionRecord) async throws { try await base.switch(to: record) }
+    func leaseForRequest() async throws -> SessionLease { try await base.leaseForRequest() }
+    func refreshAfterUnauthorized(lease: SessionLease) async throws -> SessionLease {
+        try await base.refreshAfterUnauthorized(lease: lease)
+    }
+    func validate(_ lease: SessionLease) async throws { try await base.validate(lease) }
+    func signOut() async -> RemoteRevocationOutcome { await base.signOut() }
+    func beginPatientWork(lease: SessionLease, cancel: @escaping @Sendable () -> Void) async throws -> UUID {
+        let held = holdsBegin
+        holdsBegin = false
+        let cancellations = cancellations
+        let id = try await base.beginPatientWork(lease: lease) {
+            cancellations.note()
+            cancel()
+        }
+        admittedIDs.append(id)
+        if held { await beginReturn.enterAndWait() }
+        return id
+    }
+    func finishPatientWork(_ id: UUID) async {
+        let held = holdsFinish
+        holdsFinish = false
+        if held { await finishReturn.enterAndWait() }
+        await base.finishPatientWork(id)
+        finishedIDs.append(id)
+    }
+    func performPatientStateOperation<Value: Sendable>(lease: SessionLease,
+        operation: @Sendable () throws -> Value) async throws -> Value {
+        try await base.performPatientStateOperation(lease: lease, operation: operation)
+    }
+    func performVisiblePatientStateOperation<Value: Sendable>(lease: SessionLease,
+        operation: @MainActor @Sendable () throws -> Value) async throws -> Value {
+        try await base.performVisiblePatientStateOperation(lease: lease, operation: operation)
+    }
+}
+
+private actor C11I5BindingRemote: SupabaseAuthRemoteOperating {
+    private var refreshError: SupabaseAuthRemoteError = .invalidGrant
+    private(set) var refreshCount = 0
+    private(set) var revokeCount = 0
+    func failRefresh(with error: SupabaseAuthRemoteError) { refreshError = error }
+    func signIn(email: String, password: String) throws -> AuthenticationSessionRecord {
+        throw SupabaseAuthRemoteError.requestFailed
+    }
+    func signUp(email: String, password: String) throws -> SupabaseRemoteSignUpResult {
+        throw SupabaseAuthRemoteError.requestFailed
+    }
+    func requestPasswordRecovery(email: String) throws { throw SupabaseAuthRemoteError.requestFailed }
+    func refresh(record: AuthenticationSessionRecord) throws -> AuthenticationSessionRecord {
+        refreshCount += 1
+        throw refreshError
+    }
+    func revokeCurrentSession(accessToken: String) -> RemoteRevocationOutcome {
+        revokeCount += 1
+        return .confirmed
+    }
+}
+
+private struct C11I5BindingRuntime: Sendable {
+    let original: AuthenticationSessionRecord
+    let originalLease: SessionLease
+    let secure: C11H05MarkerStore
+    let store: AuthenticationSessionStore
+    let remote: C11I5BindingRemote
+    let registry: PatientWorkRegistry
+    let session: SessionLifecycleCoordinator
+    let held: C11HoldingLifecycle
+    let probe: C11I5BindingLifecycleProbe
+    let cancellations: C11I5BindingCancellationCount
+    let transport: MobileAPITransport
+    let stub: TransportStubStore
+    init() async throws {
+        let original = C11RealLifecycleTransportHarness.record(userID: C11AuthenticationFixtures.a, ordinal: 1)
+        let secure = C11H05MarkerStore()
+        let store = AuthenticationSessionStore(secureStore: secure, now: { Date(timeIntervalSince1970: 1000) })
+        try await store.replace(with: original)
+        let remote = C11I5BindingRemote()
+        let registry = PatientWorkRegistry()
+        let session = SessionLifecycleCoordinator(store: store, remote: remote, patientWorkRegistry: registry,
+            refreshPolicy: SessionRefreshPolicy(now: { Date(timeIntervalSince1970: 1000) }, leeway: 60))
+        let held = C11HoldingLifecycle(base: session)
+        let cancellations = C11I5BindingCancellationCount()
+        let probe = C11I5BindingLifecycleProbe(base: held, cancellations: cancellations)
+        let stub = TransportStubStore()
+        await StubURLProtocol.install(store: stub)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        self.original = original; self.secure = secure; self.store = store; self.remote = remote
+        self.registry = registry; self.session = session; self.held = held; self.probe = probe
+        self.cancellations = cancellations; self.stub = stub
+        self.transport = MobileAPITransport(
+            configuration: try MobileAPIConfiguration(originString: "https://staging.example.test"),
+            sessionLifecycle: session, session: URLSession(configuration: configuration),
+            clock: ContinuousClock(), timeout: .seconds(2))
+        self.originalLease = try await session.leaseForRequest()
+    }
+    func respond() async throws {
+        await stub.respond(with: StubResponse(status: 200,
+            body: try JSONEncoder().encode(C11RealLifecycleTransportHarness.detail())))
+    }
+    func releaseAll() async {
+        await held.visibleReturnHold.release()
+        await probe.beginReturn.release()
+        await probe.finishReturn.release()
+    }
+}
+
+@MainActor
+private struct C11I5BindingFixture {
+    let runtime: C11I5BindingRuntime
+    let owner: Prompt14SessionOwner
+    let binding: MealRecordSessionBinding
+    func bind() async throws -> MealRecordSessionCapability {
+        try await binding.bind(transport: runtime.transport, lifecycle: runtime.probe)
+    }
+}
+
+@MainActor
+private func c11WithI5Binding(_ body: (C11I5BindingFixture) async throws -> Void) async throws {
+    let runtime = try await C11I5BindingRuntime()
+    let owner = Prompt14SessionOwner(userID: runtime.original.userID,
+        dependencies: C11BindingTestDependencies.make(), enablesMealRecordBinding: true)
+    do {
+        await owner.awaitPatientTimeZoneResolution()
+        let binding = try #require(owner.mealRecordBinding)
+        try await body(C11I5BindingFixture(runtime: runtime, owner: owner, binding: binding))
+        await runtime.releaseAll()
+        await owner.endSession()
+    } catch {
+        await runtime.releaseAll()
+        await owner.endSession()
+        throw error
     }
 }

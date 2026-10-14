@@ -390,6 +390,13 @@ struct AppDependencies: Sendable {
             today = DemoBlock7700TodayProvider(base: today, scenario: scenario)
             progress = DemoBlock7700ProgressProvider(base: progress, scenario: scenario)
         }
+        if configuration.mode == .demo,
+           configuration.prompt13Scenario == .loaded,
+           configuration.prompt14ScenarioSelection == nil,
+           configuration.block7700Scenario == nil,
+           let scenario = DemoProgressBodyFatOriginScenario.resolve(arguments: ProcessInfo.processInfo.arguments) {
+            progress = DemoProgressBodyFatOriginProvider(scenario: scenario)
+        }
         #else
         let timeProvider: any TimeProviding = SystemTimeProvider()
         let idempotencyKeyProvider: any IdempotencyKeyProviding =

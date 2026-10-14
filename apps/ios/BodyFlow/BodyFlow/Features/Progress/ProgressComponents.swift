@@ -91,6 +91,7 @@ struct ProgressPresentation: Equatable, Sendable {
     let deficitBlockText: String
     let weightText: String
     let bodyFatText: String
+    let bodyFatOriginText: String?
     let badges: [String]
     let medalRows: [ProgressMedalRow]
     let streakRestartMessage: String?
@@ -120,6 +121,9 @@ struct ProgressPresentation: Equatable, Sendable {
         bodyFatText = snapshot.currentBodyFatPercent.map {
             "\(Self.decimal($0, language: language))%"
         } ?? Self.copy("progress.not-available", language)
+        bodyFatOriginText = snapshot.currentBodyFatPercent != nil
+            && snapshot.currentBodyFatOrigin == "signup_photos"
+            ? Self.copy("progress.metric.body-fat.photo-origin", language) : nil
         let visibleMedals = snapshot.badgesEarned.enumerated().filter { _, text in
             policy.showsBlock || text != "Primeiro Bloco"
         }
@@ -307,11 +311,26 @@ struct ProgressContentView: View {
                         )
                     }
                     Divider()
-                    metricRow(
-                        copy("progress.metric.body-fat"),
-                        presentation.bodyFatText,
-                        symbol: .bodyComposition
-                    )
+                    if let originText = presentation.bodyFatOriginText {
+                        VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+                            metricRow(
+                                copy("progress.metric.body-fat"),
+                                presentation.bodyFatText,
+                                symbol: .bodyComposition
+                            )
+                            Text(verbatim: originText)
+                                .font(BodyFlowTypography.supporting)
+                                .foregroundStyle(BodyFlowColor.secondaryText)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .accessibilityElement(children: .combine)
+                    } else {
+                        metricRow(
+                            copy("progress.metric.body-fat"),
+                            presentation.bodyFatText,
+                            symbol: .bodyComposition
+                        )
+                    }
                 }
                 .accessibilityIdentifier("progress.measurements")
 

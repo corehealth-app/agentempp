@@ -244,6 +244,7 @@ struct PlanProgressContractTests {
         #expect(progress.blocksCompleted != todayBlock.completedBlocks)
 
         let labels = Set(Mirror(reflecting: progress).children.compactMap(\.label))
+        #expect(labels.count == 15)
         #expect(
             labels == [
                 "xpTotal",
@@ -260,6 +261,7 @@ struct PlanProgressContractTests {
                 "updatedAt",
                 "currentProtocol",
                 "block7700Enabled",
+                "currentBodyFatOrigin",
             ]
         )
         #expect(!labels.contains("percentage"))

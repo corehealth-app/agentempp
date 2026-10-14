@@ -33,6 +33,7 @@ struct ProgressSnapshot: Codable, Equatable, Sendable {
     let updatedAt: APITimestamp
     var currentProtocol: String? = nil
     var block7700Enabled: Bool? = nil
+    var currentBodyFatOrigin: String? = nil
 
     var blockPresentationPolicy: Block7700PresentationPolicy {
         Block7700PresentationPolicy(currentProtocol: currentProtocol, enabled: block7700Enabled)
@@ -47,6 +48,7 @@ struct ProgressSnapshot: Codable, Equatable, Sendable {
         case deficitBlock = "deficit_block"
         case currentWeight = "current_weight"
         case currentBodyFatPercent = "current_bf_percent"
+        case currentBodyFatOrigin = "current_bf_origin"
         case badgesEarned = "badges_earned"
         case lastActiveDate = "last_active_date"
         case nextReevaluation = "next_reevaluation"

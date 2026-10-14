@@ -6438,6 +6438,10 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Body fat" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Gordura corporal" } }
     } },
+    "progress.metric.body-fat.photo-origin" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Photo estimate" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Estimativa por fotos" } }
+    } },
     "progress.metric.completed-blocks" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Blocks completed" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Blocos concluídos" } }

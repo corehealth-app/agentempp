@@ -8,13 +8,15 @@ enum C11RootNavigationSelection: String, Sendable {
     case sourceOn = "on"
     case sourceOff = "off"
     case getUnauthorizedThenSuccess = "get-401-200"
+    case patchUnauthorizedThenSuccess = "patch-401-200"
 
     static func resolve(arguments: [String]) -> Self? {
         guard arguments.contains("--ui-testing") else { return nil }
         let choices: [(Self, String)] = [
             (.sourceOn, "--ui-testing-c11-root-source-on"),
             (.sourceOff, "--ui-testing-c11-root-source-off"),
-            (.getUnauthorizedThenSuccess, "--ui-testing-c11-root-get-401-200")
+            (.getUnauthorizedThenSuccess, "--ui-testing-c11-root-get-401-200"),
+            (.patchUnauthorizedThenSuccess, "--ui-testing-c11-root-patch-401-200")
         ]
         let selected = choices.filter { arguments.contains($0.1) }
         guard selected.count == 1 else { return nil }
@@ -23,7 +25,7 @@ enum C11RootNavigationSelection: String, Sendable {
 
     var suppliesMealRecordSource: Bool {
         switch self {
-        case .sourceOn, .getUnauthorizedThenSuccess: true
+        case .sourceOn, .getUnauthorizedThenSuccess, .patchUnauthorizedThenSuccess: true
         case .sourceOff: false
         }
     }
@@ -51,7 +53,8 @@ struct C11RootNavigationFixture {
         let lifecycle = SessionLifecycleCoordinator(store: store, remote: remote,
             refreshPolicy: SessionRefreshPolicy(now: { Date(timeIntervalSince1970: 1000) }, leeway: 60))
         let bindingProbe = C11RootNavigationLifecycleProbe(base: lifecycle, probe: probe)
-        let server = C11RootNavigationServer(probe: probe, selection: selection)
+        let patchState = selection == .patchUnauthorizedThenSuccess ? C11RootNavigationPatchState(probe: probe) : nil
+        let server = C11RootNavigationServer(probe: probe, selection: selection, patchState: patchState)
         C11RootNavigationURLProtocol.install(server)
         let sessionConfiguration = URLSessionConfiguration.ephemeral
         sessionConfiguration.protocolClasses = [C11RootNavigationURLProtocol.self]
@@ -65,10 +68,20 @@ struct C11RootNavigationFixture {
         let scaffold = AppDependencies.scaffold()
         let unavailable = UnavailableBodyFlowCapabilities()
         let reads = C11RootNavigationReads()
+        let today: any TodayProviding
+        let history: any HistoryProviding
+        if let patchState {
+            let tracked = C11RootNavigationPatchReads(state: patchState, probe: probe)
+            today = tracked
+            history = tracked
+        } else {
+            today = reads
+            history = reads
+        }
         let authentication = SupabaseAuthenticationService(remote: remote, lifecycle: lifecycle)
         let dependencies = AppDependencies(apiClient: transport, authentication: authentication,
             onboarding: C11RootNavigationOnboarding(), coachPersona: scaffold.coachPersona,
-            secureStore: secure, telemetry: DisabledTelemetryClient(), today: reads, history: reads,
+            secureStore: secure, telemetry: DisabledTelemetryClient(), today: today, history: history,
             plan: unavailable, progress: unavailable, mealDetection: unavailable,
             registration: unavailable, hydration: unavailable, weight: unavailable,
             routine: unavailable, me: unavailable,
@@ -92,6 +105,15 @@ final class C11RootNavigationProbe {
     private(set) var blocked = 0
     private(set) var sameLogicalRequest = false
     private(set) var bearerChanged = false
+    private(set) var patches = 0
+    private(set) var uniqueKeys = 0
+    private(set) var todayReads = 0
+    private(set) var historyReads = 0
+    private(set) var fixtureCommits = 0
+    func recordPATCH(uniqueKeys: Int) { patches += 1; self.uniqueKeys = uniqueKeys }
+    func recordTodayRead() { todayReads += 1 }
+    func recordHistoryRead() { historyReads += 1 }
+    func recordFixtureCommit() { fixtureCommits += 1 }
     func recordGET() { gets += 1 }
     func recordBind() { binds += 1 }
     func recordRefresh() { refreshes += 1 }
@@ -108,6 +130,10 @@ struct C11RootNavigationDiagnosticView: View {
     let probe: C11RootNavigationProbe
     private var diagnostic: String {
         let counts = "C11 \(selection.rawValue): get=\(probe.gets) bind=\(probe.binds) refresh=\(probe.refreshes) blocked=\(probe.blocked)"
+        if selection == .patchUnauthorizedThenSuccess {
+            return counts + " patch=\(probe.patches) sameLogical=\(probe.sameLogicalRequest ? 1 : 0) bearerChanged=\(probe.bearerChanged ? 1 : 0)"
+                + " keys=\(probe.uniqueKeys) today=\(probe.todayReads) history=\(probe.historyReads) commits=\(probe.fixtureCommits)"
+        }
         guard selection == .getUnauthorizedThenSuccess else { return counts }
         return counts + " sameLogical=\(probe.sameLogicalRequest ? 1 : 0) bearerChanged=\(probe.bearerChanged ? 1 : 0)"
     }
@@ -196,7 +222,9 @@ private actor C11RootNavigationRemote: SupabaseAuthRemoteOperating {
     func requestPasswordRecovery(email: String) throws { throw SupabaseAuthRemoteError.requestFailed }
     func refresh(record: AuthenticationSessionRecord) async throws -> AuthenticationSessionRecord {
         await probe.recordRefresh()
-        guard selection == .getUnauthorizedThenSuccess else { throw SupabaseAuthRemoteError.requestFailed }
+        guard selection == .getUnauthorizedThenSuccess || selection == .patchUnauthorizedThenSuccess else {
+            throw SupabaseAuthRemoteError.requestFailed
+        }
         return try C11RootNavigationFacts.refreshedRecord(from: record)
     }
     func revokeCurrentSession(accessToken: String) -> RemoteRevocationOutcome { .unconfirmed }
@@ -222,6 +250,92 @@ private actor C11RootNavigationOnboarding: OnboardingRepository {
 }
 private struct C11RootNavigationTime: TimeProviding { var now: Date { C11RootNavigationFacts.date } }
 
+/// Canned server facts for the PATCH scenario. No quantity/energy calculation occurs here.
+private enum C11RootNavigationPatchFacts {
+    static let newRecordID = "22222222-2222-4222-8222-222222222222"
+    static func row(committed: Bool) -> HistoryMealLogRow {
+        guard committed else { return C11RootNavigationFacts.row }
+        return HistoryMealLogRow(id: newRecordID, mealType: "almoco", foodName: "Synthetic C11 updated food",
+            quantityG: 75, kcal: 123, proteinG: 2, carbsG: 3, fatG: 4,
+            consumedAt: APITimestamp(value: C11RootNavigationFacts.date))
+    }
+    static func receipt() -> MealRecordMutationResponse {
+        MealRecordMutationResponse(data: MealRecordMutationSnapshot(
+            recordID: C11RootNavigationFacts.recordID, operation: .updated,
+            newItemIDs: [newRecordID], removedItemIDs: [C11RootNavigationFacts.recordID],
+            nextRecordID: newRecordID,
+            snapshot: MealRecordPersistedSnapshot(id: "33333333-3333-4333-8333-333333333333",
+                date: "2026-10-13", caloriesConsumed: 123, proteinG: 2, carbsG: 3, fatG: 4,
+                dailyBalance: -1677)),
+            meta: MobileResponseMetadata(apiVersion: "v1", requestID: "c11-ui-patch-200"))
+    }
+    static var expectedBody: MealRecordPatchBody {
+        MealRecordPatchBody(expectedVersion: "opaque-c11-ui-version",
+            itemIDs: [C11RootNavigationFacts.recordID], items: [MealProposalItemRequest(
+                foodName: "Synthetic C11 confirmed food", quantityG: 75, userKcal: nil)])
+    }
+    static func today(committed: Bool) -> TodayResponse {
+        let base = DemoBodyFlowFixtures.loadedToday.data
+        let row = row(committed: committed)
+        let meal = TodayMeal(id: row.id, mealType: row.mealType, foodName: row.foodName,
+            quantityG: row.quantityG, kcal: row.kcal, proteinG: row.proteinG, carbsG: row.carbsG,
+            fatG: row.fatG, consumedAt: row.consumedAt, nutritionSource: "canonical_exact")
+        let snapshot = TodaySnapshot(localDate: "2026-10-13", protocolName: base.protocolName,
+            currentProtocol: base.currentProtocol,
+            targets: TodayTargets(caloriesKcal: 1800, proteinG: 100, source: "synthetic-official",
+                caloriesSource: "synthetic-official", proteinSource: "synthetic-official"),
+            consumed: TodayConsumed(caloriesKcal: committed ? 123 : 100,
+                proteinG: committed ? 2 : 1, carbsG: committed ? 3 : 2, fatG: committed ? 4 : 3,
+                source: "synthetic-persisted"),
+            remainingFoodKcal: committed ? 1677 : 1700, foodExcessKcal: nil, exerciseKcal: 0,
+            dailyBalanceKcal: committed ? -1677 : -1700, dailyBalanceStatus: "deficit",
+            dailyBalanceIncludesExercise: true, dailyBalanceReferenceKcal: 1800,
+            proteinStatus: TodayProteinStatus(consumedG: committed ? 2 : 1, targetG: 100,
+                remainingG: committed ? 98 : 99, percentage: committed ? 2 : 1, status: "below"),
+            meals: [meal], workouts: [], hydration: base.hydration, supplements: base.supplements,
+            medications: base.medications, pendingActions: base.pendingActions, block7700: base.block7700,
+            completionStatus: base.completionStatus, sources: base.sources,
+            calculationVersion: "synthetic-persisted", updatedAt: base.updatedAt, generatedAt: base.generatedAt)
+        return TodayResponse(data: snapshot,
+            meta: MobileResponseMetadata(apiVersion: "v1", requestID: committed ? "c11-ui-today-after" : "c11-ui-today-before"))
+    }
+}
+
+/// A synthetic persisted state: only the second valid PATCH may commit it once.
+private actor C11RootNavigationPatchState {
+    let probe: C11RootNavigationProbe
+    private var committed = false
+    init(probe: C11RootNavigationProbe) { self.probe = probe }
+    func commit() async throws {
+        guard !committed else { throw MobileAPITransportError.invalidResponse }
+        committed = true
+        await probe.recordFixtureCommit()
+    }
+    func today() -> TodayResponse { C11RootNavigationPatchFacts.today(committed: committed) }
+    func history() -> HistoryResponse {
+        HistoryResponse(data: HistorySnapshot(meals: [C11RootNavigationPatchFacts.row(committed: committed)],
+            workouts: [], pagination: HistoryPaginationMetadata(limit: 30, before: nil)),
+            meta: MobileResponseMetadata(apiVersion: "v1", requestID: committed ? "c11-ui-history-after" : "c11-ui-history-before"))
+    }
+}
+
+/// Counts provider calls made by the real Today/History Models, not revisions of their private center.
+/// This does not trigger invalidation or read from a getter; server facts are returned as received.
+private struct C11RootNavigationPatchReads: TodayProviding, HistoryProviding {
+    let state: C11RootNavigationPatchState
+    let probe: C11RootNavigationProbe
+    func today() async -> TodayResponse {
+        let value = await state.today()
+        await probe.recordTodayRead()
+        return value
+    }
+    func history(_ query: HistoryQuery) async -> HistoryResponse {
+        let value = await state.history()
+        await probe.recordHistoryRead()
+        return value
+    }
+}
+
 /// A status-bearing HTTP response from the strictly synthetic protocol, never a real endpoint.
 private struct C11RootNavigationHTTPResponse: Sendable {
     let statusCode: Int
@@ -235,6 +349,23 @@ private actor C11RootNavigationServer {
     private var attemptedGETs = 0
     private var firstLogicalRequest: LogicalRequest?
     private var firstAuthorization: String?
+    let patchState: C11RootNavigationPatchState?
+    private var attemptedPATCHes = 0
+    private var firstPATCH: PatchLogicalRequest?
+    private var firstPATCHAuthorization: String?
+    private var patchKeys: Set<String> = []
+
+    private struct PatchLogicalRequest: Equatable {
+        let method: String?
+        let url: URL?
+        let body: Data
+        let requestID: String?
+        let key: String
+        init(_ request: URLRequest, body: Data, key: String) {
+            method = request.httpMethod; url = request.url; self.body = body
+            requestID = request.value(forHTTPHeaderField: "X-Request-Id"); self.key = key
+        }
+    }
 
     /// Contains safe request metadata only. Authorization is NEVER placed here.
     private struct LogicalRequest: Equatable {
@@ -255,14 +386,22 @@ private actor C11RootNavigationServer {
         }
     }
 
-    init(probe: C11RootNavigationProbe, selection: C11RootNavigationSelection) {
+    init(probe: C11RootNavigationProbe, selection: C11RootNavigationSelection,
+         patchState: C11RootNavigationPatchState?) {
         self.probe = probe
         self.selection = selection
+        self.patchState = patchState
     }
 
     func respond(to request: URLRequest) async throws -> C11RootNavigationHTTPResponse {
-        guard request.httpMethod == "GET", request.httpBody == nil, request.httpBodyStream == nil,
-              request.url?.absoluteString == "https://c11-ui.fixture.invalid/api/mobile/v1/meal-records/11111111-1111-4111-8111-111111111111" else {
+        guard request.url?.absoluteString == "https://c11-ui.fixture.invalid/api/mobile/v1/meal-records/11111111-1111-4111-8111-111111111111" else {
+            await probe.recordBlocked()
+            throw MobileAPITransportError.invalidResponse
+        }
+        if request.httpMethod == "PATCH" {
+            return try await respondToPATCH(request)
+        }
+        guard request.httpMethod == "GET", request.httpBody == nil, request.httpBodyStream == nil else {
             await probe.recordBlocked()
             throw MobileAPITransportError.invalidResponse
         }
@@ -295,6 +434,71 @@ private actor C11RootNavigationServer {
             await probe.recordBlocked()
             throw MobileAPITransportError.invalidResponse
         }
+    }
+
+    private func respondToPATCH(_ request: URLRequest) async throws -> C11RootNavigationHTTPResponse {
+        guard selection == .patchUnauthorizedThenSuccess, let patchState,
+              let body = try? Self.bodyData(request),
+              let decoded = try? JSONDecoder().decode(MealRecordPatchBody.self, from: body),
+              decoded == C11RootNavigationPatchFacts.expectedBody,
+              let key = request.value(forHTTPHeaderField: "Idempotency-Key"), !key.isEmpty,
+              let requestID = request.value(forHTTPHeaderField: "X-Request-Id"), !requestID.isEmpty else {
+            await probe.recordBlocked()
+            throw MobileAPITransportError.invalidResponse
+        }
+        attemptedPATCHes += 1
+        patchKeys.insert(key)
+        await probe.recordPATCH(uniqueKeys: patchKeys.count)
+        let logical = PatchLogicalRequest(request, body: body, key: key)
+        switch attemptedPATCHes {
+        case 1:
+            firstPATCH = logical
+            firstPATCHAuthorization = request.value(forHTTPHeaderField: "Authorization")
+            let error = ["error": ["code": "expired_token", "message": "Synthetic PATCH unauthorized",
+                                     "request_id": "c11-ui-patch-401"]]
+            return C11RootNavigationHTTPResponse(statusCode: 401,
+                data: try JSONSerialization.data(withJSONObject: error))
+        case 2:
+            let authorization = request.value(forHTTPHeaderField: "Authorization")
+            let same = firstPATCH == logical
+            let changed = firstPATCHAuthorization?.hasPrefix("Bearer ") == true
+                && authorization?.hasPrefix("Bearer ") == true && firstPATCHAuthorization != authorization
+            firstPATCHAuthorization = nil
+            guard same && changed else {
+                await probe.recordBlocked()
+                throw MobileAPITransportError.invalidResponse
+            }
+            try await patchState.commit()
+            await probe.recordReplayComparison(sameLogical: same, bearerChanged: changed)
+            return C11RootNavigationHTTPResponse(statusCode: 200,
+                data: try JSONEncoder().encode(C11RootNavigationPatchFacts.receipt()))
+        default:
+            await probe.recordBlocked()
+            throw MobileAPITransportError.invalidResponse
+        }
+    }
+
+    /// URLSession may hand URLProtocol a body stream. Materialize only this
+    /// bounded synthetic command; never log it or allow an unbounded read.
+    private static func bodyData(_ request: URLRequest) throws -> Data {
+        if let data = request.httpBody {
+            guard data.count <= 16_384 else { throw MobileAPITransportError.invalidResponse }
+            return data
+        }
+        guard let stream = request.httpBodyStream else { throw MobileAPITransportError.invalidResponse }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while true {
+            let capacity = buffer.count
+            let count = stream.read(&buffer, maxLength: capacity)
+            guard count >= 0 else { throw MobileAPITransportError.invalidResponse }
+            if count == 0 { break }
+            guard data.count + count <= 16_384 else { throw MobileAPITransportError.invalidResponse }
+            data.append(contentsOf: buffer.prefix(count))
+        }
+        return data
     }
 }
 

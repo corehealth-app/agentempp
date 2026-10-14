@@ -96,6 +96,109 @@ final class C11RootNavigationUITests: XCTestCase {
         capture(app, name: "c11-root-get401-real-refresh-official-record")
     }
 
+    func testRealRootPATCH401RefreshesOncePublishesUpdatedReceiptAndReloadsTodayHistory() throws {
+        let app = try launchFixture("--ui-testing-c11-root-patch-401-200", selection: "patch-401-200")
+        try openActualHistoryRow(in: app)
+        XCTAssertTrue(element("screen.meal-record", in: app).waitForExistence(timeout: 8))
+        let name = app.textFields["meal-record.field.name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        XCTAssertEqual(name.value as? String, "Synthetic C11 confirmed food")
+        XCTAssertTrue(app.staticTexts["100 kcal"].exists)
+        let quantity = app.textFields["meal-record.field.quantity"]
+        XCTAssertEqual(quantity.value as? String, "50")
+        let status = element("c11.fixture.status", in: app)
+        let before = "C11 patch-401-200: get=1 bind=1 refresh=0 blocked=0 patch=0 sameLogical=0 bearerChanged=0 keys=0 today=1 history=1 commits=0"
+        wait(for: [expectation(for: NSPredicate(format: "label == %@", before), evaluatedWith: status)], timeout: 5)
+        XCTAssertEqual(status.label, before)
+        quantity.tap()
+        quantity.typeKey("a", modifierFlags: .command)
+        quantity.typeText("75")
+        XCTAssertEqual(quantity.value as? String, "75")
+        let done = app.buttons["keyboard.done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 5))
+        done.tap()
+        let form = app.collectionViews["screen.meal-record"]
+        let save = app.buttons["meal-record.patch"]
+        for _ in 0..<6 {
+            // Form virtualizes offscreen rows. Do not query a missing Save's
+            // frame/traits; mount it by the same bounded normal scrolling.
+            if !save.exists { form.swipeUp(); continue }
+            let viewport = form.frame.intersection(app.frame)
+            let button = save.frame
+            let diagnostic = status.frame
+            if save.isEnabled && save.isHittable && !viewport.isNull
+                && viewport.width > 0 && viewport.height > 0 && button.width > 0 && button.height > 0
+                && diagnostic.width > 0 && diagnostic.height > 0
+                && viewport.contains(button) && !button.intersects(diagnostic) { break }
+            form.swipeUp()
+        }
+        XCTAssertTrue(save.exists, "SETUP_VISIBLE_CONTROL: the real Save row must mount before frame/trait inspection")
+        guard save.exists else {
+            capture(app, name: "c11-root-patch401-save-row-not-mounted")
+            return
+        }
+        let viewport = form.frame.intersection(app.frame)
+        let buttonFrame = save.frame
+        let diagnosticFrame = status.frame
+        let wholeButtonVisible = !viewport.isNull && viewport.width > 0 && viewport.height > 0
+            && buttonFrame.width > 0 && buttonFrame.height > 0 && viewport.contains(buttonFrame)
+        let clearOfDiagnostic = diagnosticFrame.width > 0 && diagnosticFrame.height > 0
+            && !buttonFrame.intersects(diagnosticFrame)
+        XCTAssertTrue(save.isEnabled && save.isHittable)
+        XCTAssertTrue(wholeButtonVisible, "SETUP_VISIBLE_CONTROL: entire Save frame must fit the actual Form/application viewport")
+        XCTAssertTrue(clearOfDiagnostic, "SETUP_VISIBLE_CONTROL: Save must not intersect the measured diagnostic overlay")
+        print("C11_PATCH_PRETAP app=\(app.frame) form=\(form.frame) viewport=\(viewport) save=\(buttonFrame) diagnostic=\(diagnosticFrame) enabled=\(save.isEnabled) hittable=\(save.isHittable) status=\(status.label)")
+        capture(app, name: "c11-root-patch401-save-fully-visible-before-tap")
+        guard save.isEnabled && save.isHittable && wholeButtonVisible && clearOfDiagnostic else { return }
+        // Normal accessibility tap only; no forced coordinate or provider invocation.
+        save.tap()
+        let sent = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label MATCHES %@", ".* patch=[1-9][0-9]* .*"), object: status)
+        let observedPATCH = XCTWaiter.wait(for: [sent], timeout: 8) == .completed
+        XCTAssertTrue(observedPATCH,
+            "ACTION_OBSERVATION: require a real synthetic PATCH call before scrolling or interpreting receipt/backend behavior")
+        guard observedPATCH else {
+            capture(app, name: "c11-root-patch401-no-http-after-visible-normal-tap")
+            return
+        }
+        let receipt = element("meal-record.saved", in: app)
+        // Native AX groups the label and official value into this static text.
+        let officialKcal = app.staticTexts.matching(identifier: "meal-record.saved").matching(
+            NSPredicate(format: "label == %@", "Consumo do dia salvo, 123 kcal")
+        ).element
+        for _ in 0..<6 {
+            if receipt.exists && officialKcal.isHittable { break }
+            form.swipeDown()
+        }
+        XCTAssertTrue(receipt.waitForExistence(timeout: 8))
+        XCTAssertTrue(officialKcal.exists,
+            "Official persisted daily total is the synthetic receipt's literal123, not local quantity arithmetic")
+        XCTAssertTrue(officialKcal.isHittable,
+            "The official persisted123kcal must be visibly reachable in the viewport, not only present offscreen in AX")
+        XCTAssertFalse(element("meal-record.failure", in: app).exists)
+        XCTAssertFalse(element("meal-record.read-failure", in: app).exists)
+        XCTAssertFalse(element("meal-record.recovery.notice", in: app).exists)
+        capture(app, name: "c11-root-patch401-official-updated-receipt")
+        // Use native back navigation, never fixture setters/router/driver calls.
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(element("screen.history", in: app).waitForExistence(timeout: 5))
+        let updated = element("history.meal.22222222-2222-4222-8222-222222222222", in: app)
+        XCTAssertTrue(updated.waitForExistence(timeout: 5))
+        XCTAssertFalse(element("history.meal.\(rowID)", in: app).exists)
+        XCTAssertTrue(app.staticTexts["Synthetic C11 updated food"].exists)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(element("screen.hoje", in: app).waitForExistence(timeout: 5))
+        let consumed = element("today.energy.consumed", in: app)
+        XCTAssertTrue(consumed.waitForExistence(timeout: 5))
+        wait(for: [expectation(for: NSPredicate(format: "label CONTAINS %@", "123"), evaluatedWith: consumed)], timeout: 5)
+        XCTAssertTrue(consumed.label.contains("123"))
+        let after = "C11 patch-401-200: get=1 bind=1 refresh=1 blocked=0 patch=2 sameLogical=1 bearerChanged=1 keys=1 today=2 history=2 commits=1"
+        wait(for: [expectation(for: NSPredicate(format: "label == %@", after), evaluatedWith: status)], timeout: 5)
+        XCTAssertEqual(status.label, after,
+            "Two identical PATCH attempts, one real refresh/key/fixture commit and one additional real provider call per visible feature")
+        capture(app, name: "c11-root-patch401-today-history-reloaded")
+    }
+
     private func launchFixture(_ argument: String, selection: String) throws -> XCUIApplication {
         let app = XCUIApplication()
         runningApp = app

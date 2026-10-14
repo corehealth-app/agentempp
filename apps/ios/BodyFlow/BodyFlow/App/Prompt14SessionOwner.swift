@@ -13,6 +13,7 @@ final class Prompt14SessionOwner {
 
     private(set) var mealRecordBinding: MealRecordSessionBinding?
 
+    private let permitsMealRecordBinding: Bool
     private let gate: Prompt14SessionOperationGate
     private let listingReference: Prompt14CapabilityReference<any PublishedContentListing>
     private let detailReference: Prompt14CapabilityReference<any PublishedContentDetailProviding>
@@ -25,10 +26,13 @@ final class Prompt14SessionOwner {
     private let patientTimeZoneStore: PatientTimeZoneStore
     private var timeZoneResolution: Task<Void, Never>?
     private var endTask: Task<Void, Never>?
+    // Join only leaf teardowns; the existing gates still register all operations.
+    private var mealRecordRetirementTask: Task<Void, Never>?
     private var ended = false
 
     init(userID: String, dependencies: AppDependencies, enablesMealRecordBinding: Bool = false) {
         self.userID = userID
+        permitsMealRecordBinding = enablesMealRecordBinding
 
         let contentSession = dependencies.publishedContentSessions.makeSession(
             userID: userID
@@ -103,6 +107,26 @@ final class Prompt14SessionOwner {
         }
     }
 
+    /// Admission for one new C11 activation. Retired leaves never reopen;
+    /// their original parent and all neighboring capabilities remain alive.
+    func reserveNewMealRecordBinding() -> MealRecordSessionBinding? {
+        guard permitsMealRecordBinding, !ended, endTask == nil, !gate.isClosed else {
+            return nil
+        }
+        let predecessor = mealRecordBinding
+        predecessor?.invalidateSynchronously() // deny old starts before replacement
+        let replacement = MealRecordSessionBinding(owner: self, parentGate: gate)
+        mealRecordBinding = replacement
+        if let predecessor {
+            let previousRetirement = mealRecordRetirementTask
+            mealRecordRetirementTask = Task {
+                await predecessor.endSession()
+                await previousRetirement?.value
+            }
+        }
+        return replacement
+    }
+
     var isInvalidated: Bool {
         gate.isClosed
     }
@@ -160,8 +184,12 @@ final class Prompt14SessionOwner {
         } else {
             task = Task {
                 timeZoneResolution?.cancel()
+                // Invalidation above denies further reservations synchronously.
+                let retiredMealRecords = mealRecordRetirementTask
                 await mealRecordBinding?.endSession()
                 mealRecordBinding = nil
+                await retiredMealRecords?.value
+                mealRecordRetirementTask = nil
                 await gate.drain()
 
                 async let contentEnd: Void = lifetimeEndpoint.end { lifetime in

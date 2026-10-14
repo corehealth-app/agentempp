@@ -1418,6 +1418,262 @@ struct MobileAPITransportTests {
         }
     }
 
+    @MainActor
+    @Test("C11 H07 OFF: default and explicit-off owners never admit a meal leaf")
+    func c11OwnerRenewalPermissionOffCannotActivate() async throws {
+        let harness = try await C11RealLifecycleTransportHarness()
+        let original = try await harness.coordinator.leaseForRequest()
+        for explicitOff in [false, true] {
+            let dependencies = C11BindingTestDependencies.make()
+            let owner = explicitOff
+                ? Prompt14SessionOwner(userID: original.userID, dependencies: dependencies,
+                                       enablesMealRecordBinding: false)
+                : Prompt14SessionOwner(userID: original.userID, dependencies: dependencies)
+            await owner.awaitPatientTimeZoneResolution()
+            try await harness.respondWithMealDetail()
+            let reservation = owner.reserveNewMealRecordBinding()
+            #expect(reservation == nil)
+            // Exercise a bad accidental admission rather than only inspecting nil.
+            if let reservation {
+                let grant = try await reservation.bind(transport: harness.transport,
+                                                       lifecycle: harness.lifecycle)
+                _ = try await grant.mealRecord(id: C11RealLifecycleTransportHarness.recordID)
+            }
+            #expect(await harness.stub.requests().isEmpty)
+            let neighbor = try await owner.progress.progress()
+            #expect(neighbor.meta.requestID == "progress-presentation-0001")
+            try await harness.coordinator.validate(original)
+            await owner.endSession()
+            #expect(owner.reserveNewMealRecordBinding() == nil)
+            #expect(!owner.hasRetainedCapabilities)
+        }
+        #expect(await harness.remote.refreshCount == 0)
+    }
+
+    @MainActor
+    @Test("C11 H07 closed: renewal cannot reactivate an invalidated or ended owner")
+    func c11OwnerRenewalCannotReactivateClosedOwner() async throws {
+        let harness = try await C11RealLifecycleTransportHarness()
+        let original = try await harness.coordinator.leaseForRequest()
+        let owner = Prompt14SessionOwner(userID: original.userID,
+            dependencies: C11BindingTestDependencies.make(), enablesMealRecordBinding: true)
+        await owner.awaitPatientTimeZoneResolution()
+        let first = try #require(owner.mealRecordBinding)
+        let retained = try await first.bind(transport: harness.transport, lifecycle: harness.lifecycle)
+        owner.invalidateSynchronously() // Lifecycle A stays valid; only the original owner closes.
+        try await harness.coordinator.validate(original)
+        let rejected = owner.reserveNewMealRecordBinding()
+        #expect(rejected == nil)
+        if let rejected {
+            await #expect(throws: CancellationError.self) {
+                _ = try await rejected.bind(transport: harness.transport, lifecycle: harness.lifecycle)
+            }
+        }
+        await #expect(throws: CancellationError.self) {
+            _ = try await retained.mealRecord(id: C11RealLifecycleTransportHarness.recordID)
+        }
+        #expect(await harness.stub.requests().isEmpty)
+        await owner.endSession()
+        #expect(owner.reserveNewMealRecordBinding() == nil)
+        #expect(owner.mealRecordBinding == nil)
+        #expect(!owner.hasRetainedCapabilities)
+        #expect(!retained.hasRetainedCapability)
+    }
+
+    @MainActor
+    @Test("C11 H07 renewal: the same live owner denies its old grant and admits a fresh same-generation leaf")
+    func c11OwnerRenewalOldGrantDeniedNewSameGenerationGETWorks() async throws {
+        let harness = try await C11RealLifecycleTransportHarness()
+        let original = try await harness.coordinator.leaseForRequest()
+        let owner = Prompt14SessionOwner(userID: original.userID,
+            dependencies: C11BindingTestDependencies.make(), enablesMealRecordBinding: true)
+        await owner.awaitPatientTimeZoneResolution()
+        let first = try #require(owner.mealRecordBinding)
+        let oldGrant = try await first.bind(transport: harness.transport, lifecycle: harness.lifecycle)
+        #expect(await harness.stub.requests().isEmpty)
+        try await harness.respondWithMealDetail()
+        let fresh = try #require(owner.reserveNewMealRecordBinding())
+        #expect(fresh !== first)
+        #expect(owner.mealRecordBinding === fresh)
+        #expect(!first.isOpen)
+        #expect(first.capability == nil && first.capturedLease == nil)
+        #expect(!owner.isInvalidated)
+        // The real lifecycle deliberately did NOT switch users or generation.
+        try await harness.coordinator.validate(original)
+        await #expect(throws: CancellationError.self) {
+            _ = try await oldGrant.mealRecord(id: C11RealLifecycleTransportHarness.recordID)
+        }
+        #expect(await harness.stub.requests().isEmpty,
+                "Renewal must deny the retained old endpoint before it reaches URLProtocol")
+        let current = await c11OwnerRenewalBindMustSucceed(fresh, harness: harness)
+        if let current {
+            #expect(fresh.capturedLease?.generation == original.generation)
+            #expect(fresh.capturedLease?.userID == original.userID)
+            let detail = try await current.mealRecord(id: C11RealLifecycleTransportHarness.recordID)
+            #expect(detail.data.recordID == "11111111-1111-4111-8111-111111111111")
+            #expect(detail.meta.requestID == "c11-owner-fixture")
+            let requests = await harness.stub.requests()
+            #expect(requests.count == 1)
+            #expect(requests.first?.httpMethod == "GET")
+            #expect(requests.first?.url?.path == "/api/mobile/v1/meal-records/11111111-1111-4111-8111-111111111111")
+        }
+        let neighbor = try await owner.progress.progress()
+        #expect(neighbor.meta.requestID == "progress-presentation-0001")
+        #expect(!owner.isInvalidated)
+        await owner.endSession()
+        #expect(owner.mealRecordBinding == nil)
+        #expect(!owner.hasRetainedCapabilities)
+        if let current {
+            await #expect(throws: CancellationError.self) {
+                _ = try await current.mealRecord(id: C11RealLifecycleTransportHarness.recordID)
+            }
+            #expect(!current.hasRetainedCapability)
+        }
+        #expect(await harness.remote.refreshCount == 0)
+    }
+
+    @MainActor
+    @Test("C11 H07 held: replacement works before its predecessor settles and concurrent owner ends join the hold",
+          arguments: [C11OwnerRenewalHoldBoundary.beforeLease, .afterVisibleCommit])
+    func c11OwnerRenewalHeldPredecessorAndConcurrentEnd(boundary: C11OwnerRenewalHoldBoundary) async throws {
+        let harness = try await C11RealLifecycleTransportHarness()
+        let original = try await harness.coordinator.leaseForRequest()
+        let owner = Prompt14SessionOwner(userID: original.userID,
+            dependencies: C11BindingTestDependencies.make(), enablesMealRecordBinding: true)
+        await owner.awaitPatientTimeZoneResolution()
+        let first = try #require(owner.mealRecordBinding)
+        switch boundary {
+        case .beforeLease: await harness.lifecycle.holdNextLease(completeEvenIfCancelled: true)
+        case .afterVisibleCommit: await harness.lifecycle.holdNextVisibleReturn()
+        }
+        let oldBind = Task { try await first.bind(transport: harness.transport, lifecycle: harness.lifecycle) }
+        do {
+            switch boundary {
+            case .beforeLease: await harness.lifecycle.leaseHold.waitUntilEntered()
+            case .afterVisibleCommit: await harness.lifecycle.visibleReturnHold.waitUntilEntered()
+            }
+            let installed = first.capability
+            if boundary == .afterVisibleCommit {
+                _ = try #require(installed, "The REAL visible commit must exist before testing withdrawal")
+            } else {
+                #expect(installed == nil)
+            }
+            try await harness.respondWithMealDetail()
+            let fresh = try #require(owner.reserveNewMealRecordBinding())
+            #expect(fresh !== first)
+            #expect(!first.isOpen)
+            #expect(first.capability == nil && first.capturedLease == nil)
+            #expect(!owner.isInvalidated)
+            try await harness.coordinator.validate(original)
+            if let installed {
+                await #expect(throws: CancellationError.self) {
+                    _ = try await installed.mealRecord(id: C11RealLifecycleTransportHarness.recordID)
+                }
+                #expect(!installed.hasRetainedCapability)
+            }
+            #expect(await harness.stub.requests().isEmpty)
+            let current = await c11OwnerRenewalBindMustSucceed(fresh, harness: harness)
+            if let current {
+                let response = try await current.mealRecord(id: C11RealLifecycleTransportHarness.recordID)
+                #expect(response.data.recordID == "11111111-1111-4111-8111-111111111111")
+                #expect(await harness.stub.requests().count == 1)
+            }
+            let neighbor = try await owner.progress.progress()
+            #expect(neighbor.meta.requestID == "progress-presentation-0001")
+            let ends = C11ConcurrentEndProbe()
+            let firstEnd = Task { @MainActor in
+                ends.didStart(); await owner.endSession(); ends.didFinish()
+            }
+            let secondEnd = Task { @MainActor in
+                ends.didStart(); await owner.endSession(); ends.didFinish()
+            }
+            await ends.waitForBothStarts()
+            #expect(ends.finishedCount == 0,
+                    "Owner teardown cannot finish while the retired bind is still in its actual lifecycle hold")
+            #expect(owner.isInvalidated)
+            #expect(owner.reserveNewMealRecordBinding() == nil)
+            await c11OwnerRenewalReleaseHolds(harness)
+            await #expect(throws: CancellationError.self) { _ = try await oldBind.value }
+            await firstEnd.value
+            await secondEnd.value
+            #expect(ends.finishedCount == 2)
+            #expect(owner.mealRecordBinding == nil)
+            #expect(!owner.hasRetainedCapabilities)
+            #expect(!first.isOpen && !fresh.isOpen)
+            #expect(first.capability == nil && first.capturedLease == nil)
+            #expect(fresh.capability == nil && fresh.capturedLease == nil)
+            await owner.endSession() // Reentrant completed teardown remains terminal.
+        } catch {
+            owner.invalidateSynchronously()
+            await c11OwnerRenewalReleaseHolds(harness)
+            _ = try? await oldBind.value
+            await owner.endSession()
+            throw error
+        }
+    }
+
+    @MainActor
+    @Test("C11 H07 chain: ending the owner joins two outstanding predecessors, not only the newest retirement")
+    func c11OwnerRenewalTwoOutstandingPredecessorsAreJoined() async throws {
+        let harness = try await C11RealLifecycleTransportHarness()
+        let original = try await harness.coordinator.leaseForRequest()
+        let owner = Prompt14SessionOwner(userID: original.userID,
+            dependencies: C11BindingTestDependencies.make(), enablesMealRecordBinding: true)
+        await owner.awaitPatientTimeZoneResolution()
+        let first = try #require(owner.mealRecordBinding)
+        await harness.lifecycle.holdNextLease(completeEvenIfCancelled: true)
+        let firstBind = Task { try await first.bind(transport: harness.transport, lifecycle: harness.lifecycle) }
+        var middleBind: Task<MealRecordSessionCapability, any Error>?
+        do {
+            await harness.lifecycle.leaseHold.waitUntilEntered()
+            let middle = try #require(owner.reserveNewMealRecordBinding())
+            // This is a causal missing-renewal requirement, NOT a setup/type error.
+            // It prevents waiting forever on a second hold if the baseline returned first.
+            try #require(middle !== first,
+                         "H07 causal: a second activation cannot reuse the already-started predecessor")
+            await harness.lifecycle.holdNextVisibleReturn()
+            let task = Task { try await middle.bind(transport: harness.transport, lifecycle: harness.lifecycle) }
+            middleBind = task
+            await harness.lifecycle.visibleReturnHold.waitUntilEntered()
+            let installed = try #require(middle.capability)
+            let newest = try #require(owner.reserveNewMealRecordBinding())
+            try #require(newest !== middle)
+            #expect(!first.isOpen && !middle.isOpen)
+            #expect(!installed.hasRetainedCapability)
+            #expect(owner.mealRecordBinding === newest && newest.isOpen)
+            let neighbor = try await owner.progress.progress()
+            #expect(neighbor.meta.requestID == "progress-presentation-0001")
+            let ends = C11ConcurrentEndProbe()
+            let end1 = Task { @MainActor in ends.didStart(); await owner.endSession(); ends.didFinish() }
+            let end2 = Task { @MainActor in ends.didStart(); await owner.endSession(); ends.didFinish() }
+            await ends.waitForBothStarts()
+            #expect(ends.finishedCount == 0)
+            #expect(owner.reserveNewMealRecordBinding() == nil)
+            // The newer predecessor completes; the older resolver still ignores cancellation.
+            await harness.lifecycle.visibleReturnHold.release()
+            await #expect(throws: CancellationError.self) { _ = try await task.value }
+            #expect(ends.finishedCount == 0)
+            await harness.lifecycle.leaseHold.release()
+            await #expect(throws: CancellationError.self) { _ = try await firstBind.value }
+            await end1.value
+            await end2.value
+            #expect(ends.finishedCount == 2)
+            #expect(!owner.hasRetainedCapabilities)
+            #expect(owner.mealRecordBinding == nil)
+            #expect(first.capability == nil && middle.capability == nil && newest.capability == nil)
+            #expect(first.capturedLease == nil && middle.capturedLease == nil && newest.capturedLease == nil)
+            #expect(await harness.stub.requests().isEmpty)
+        } catch {
+            owner.invalidateSynchronously()
+            await c11OwnerRenewalReleaseHolds(harness)
+            _ = try? await firstBind.value
+            if let middleBind { _ = try? await middleBind.value }
+            await owner.endSession()
+            throw error
+        }
+    }
+
+
 }
 
 private actor RejectingRegistrationLifecycle: SessionLifecycleProviding {
@@ -2383,3 +2639,28 @@ private struct C11AuthenticationCoreSnapshot: Equatable, Sendable {
 }
 
 enum C11WrongBindingOwnerArgument: Equatable, Sendable { case actualB, borrowedA }
+
+enum C11OwnerRenewalHoldBoundary: Equatable, Sendable {
+    case beforeLease
+    case afterVisibleCommit
+}
+
+@MainActor
+private func c11OwnerRenewalBindMustSucceed(
+    _ binding: MealRecordSessionBinding,
+    harness: C11RealLifecycleTransportHarness
+) async -> MealRecordSessionCapability? {
+    do {
+        return try await binding.bind(transport: harness.transport, lifecycle: harness.lifecycle)
+    } catch {
+        // Runtime failure of an already-started baseline leaf is causal.
+        // Record it without swallowing it into a green optional branch.
+        Issue.record("H07 causal: the new reservation must bind successfully while the original owner and real lease are valid")
+        return nil
+    }
+}
+
+private func c11OwnerRenewalReleaseHolds(_ harness: C11RealLifecycleTransportHarness) async {
+    await harness.lifecycle.leaseHold.release()
+    await harness.lifecycle.visibleReturnHold.release()
+}

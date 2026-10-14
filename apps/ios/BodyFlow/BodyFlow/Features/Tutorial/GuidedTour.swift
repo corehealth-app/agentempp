@@ -55,6 +55,7 @@ struct GuidedTourStep: Identifiable, Equatable, Sendable {
     let bodyKey: String
     var showsBlock7700: Bool = false
     var planLineKey: String = "tour.trail.plan.current"
+    var additionalLineKey: String? = nil
 
     var target: GuidedTourTarget? {
         if case let .spotlight(target) = kind { return target }
@@ -93,7 +94,8 @@ enum GuidedTourContent {
                            titleKey: "tour.trail.title",
                            bodyKey: facts.showsBlock7700 ? "tour.trail.body" : "tour.trail.body.without-block",
                            showsBlock7700: facts.showsBlock7700,
-                           planLineKey: facts.planDrafts ? "tour.trail.plan" : "tour.trail.plan.current"),
+                           planLineKey: facts.planDrafts ? "tour.trail.plan" : "tour.trail.plan.current",
+                           additionalLineKey: facts.confirmedMealEditing ? "tutorial.history.confirmed-meal-editing" : nil),
         ]
     }
 

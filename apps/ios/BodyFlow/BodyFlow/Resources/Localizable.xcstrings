@@ -7366,6 +7366,10 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Flow" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Flow" } }
     } },
+    "tutorial.history.confirmed-meal-editing" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "In Today, open History and choose a confirmed meal. If the record allows changes, correct one food item at a time and review before saving. To delete, select items and confirm. View-only records do not offer these actions." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Em Hoje, abra o Histórico e escolha uma refeição confirmada. Se o registro permitir alterações, corrija um alimento por vez e revise antes de salvar. Para apagar, selecione os itens e confirme. Registros somente para consulta não oferecem essas ações." } }
+    } },
     "tutorial.later" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Not now" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Agora não" } }

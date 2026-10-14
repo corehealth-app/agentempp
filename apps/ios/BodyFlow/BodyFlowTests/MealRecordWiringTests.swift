@@ -1028,6 +1028,72 @@ struct MealRecordWiringTests {
             "SETUP: screen conversion must preserve the measured viewport size: \(geometry)")
         return geometry
     }
+    @Test("C11 tutorial promise requires an admitted source and the exact active original owner, without extra work")
+    func confirmedMealTutorialRequiresCurrentSourceAndOriginalOwner() async throws {
+        try await withWireFixture { fixture in
+            #expect(!GuidedTutorialFacts.confirmedMealEditingIsAvailable(source: fixture.dependencies.mealRecordBindingSource,
+                context: nil, owner: fixture.owner))
+            let context = try #require(await fixture.driver.synchronize(expected: fixture.driver.taskID))
+            #expect(GuidedTutorialFacts.confirmedMealEditingIsAvailable(source: fixture.dependencies.mealRecordBindingSource,
+                context: context, owner: fixture.owner))
+            #expect(!GuidedTutorialFacts.confirmedMealEditingIsAvailable(source: nil, context: context, owner: fixture.owner))
+            #expect(!GuidedTutorialFacts.confirmedMealEditingIsAvailable(source: fixture.dependencies.mealRecordBindingSource,
+                context: context, owner: nil))
+            let other = Prompt14SessionOwner(userID: C11WireFixtures.userID,
+                dependencies: fixture.dependencies, enablesMealRecordBinding: true)
+            await other.awaitPatientTimeZoneResolution()
+            #expect(!GuidedTutorialFacts.confirmedMealEditingIsAvailable(source: fixture.dependencies.mealRecordBindingSource,
+                context: context, owner: other))
+            await other.endSession()
+            fixture.driver.invalidateSynchronously()
+            #expect(!GuidedTutorialFacts.confirmedMealEditingIsAvailable(source: fixture.dependencies.mealRecordBindingSource,
+                context: context, owner: fixture.owner))
+            #expect(!fixture.owner.isInvalidated)
+            #expect(await fixture.bindProbe.bindLeaseCalls == 1)
+            #expect(await fixture.server.requestCount == 0)
+            #expect(fixture.keys.count == 0)
+        }
+    }
+
+    @Test("Closing only the original meal scope removes the explanation from an open tour without resetting its step")
+    func confirmedMealTutorialRemovesClosedScopeFromOpenTour() async throws {
+        try await withWireFixture { fixture in
+            let context = try #require(await fixture.driver.synchronize(expected: fixture.driver.taskID))
+            @MainActor func currentFacts() -> GuidedTutorialFacts {
+                GuidedTutorialFacts(mealMedia: false, planDrafts: false, planImport: false,
+                    reminders: false, realAccount: true,
+                    confirmedMealEditing: GuidedTutorialFacts.confirmedMealEditingIsAvailable(
+                        source: fixture.dependencies.mealRecordBindingSource, context: context, owner: fixture.owner))
+            }
+            let ownerKey = LocalReminderPlanner.ownerKey(for: C11WireFixtures.userID)
+            let tour = GuidedTourModel(steps: GuidedTourContent.steps(facts: currentFacts()), origin: .profile,
+                ownerKey: ownerKey, returnTab: .profile, isSessionActive: { !fixture.owner.isInvalidated })
+            for _ in 0..<7 { tour.next() }
+            #expect(tour.current.id == "trail")
+            #expect(tour.current.additionalLineKey == "tutorial.history.confirmed-meal-editing")
+            let originalIndex = tour.index
+            let originalIDs = tour.steps.map(\.id)
+            var textProgress = GuidedTutorialProgress(stepCount: GuidedTutorialContent.steps(facts: currentFacts()).count)
+            textProgress.jump(to: 1)
+            #expect(GuidedTutorialContent.steps(facts: currentFacts())[textProgress.index].lineKeys.contains("tutorial.history.confirmed-meal-editing"))
+            fixture.driver.invalidateSynchronously()
+            #expect(!context.isActive)
+            #expect(!fixture.owner.isInvalidated)
+            tour.updateFacts(currentFacts(), ownerKey: ownerKey)
+            #expect(tour.index == originalIndex)
+            #expect(tour.steps.map(\.id) == originalIDs)
+            #expect(tour.steps.count == 8)
+            #expect(tour.current.additionalLineKey == nil)
+            let updatedText = GuidedTutorialContent.steps(facts: currentFacts())
+            #expect(updatedText.count == textProgress.stepCount)
+            #expect(updatedText[textProgress.index].area == .today)
+            #expect(!updatedText[textProgress.index].lineKeys.contains("tutorial.history.confirmed-meal-editing"))
+            #expect(await fixture.bindProbe.bindLeaseCalls == 1)
+            #expect(await fixture.server.requestCount == 0)
+            #expect(fixture.keys.count == 0)
+        }
+    }
+
 }
 
 enum C11WireSourceCase: CaseIterable, Sendable { case disabled, demo, wrongClient, missingLifecycle, enabled }

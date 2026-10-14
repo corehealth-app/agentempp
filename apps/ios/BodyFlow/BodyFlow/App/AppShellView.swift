@@ -351,7 +351,10 @@ struct AppShellView: View {
             showsBlock7700: !sessionOwner.isInvalidated
                 && (todayViewModel.state.presentation.value?.blockPresentationPolicy.showsBlock ?? false),
             // Same availability as Profile's row and the route's model.
-            currentObjective: currentObjectiveModel != nil
+            currentObjective: currentObjectiveModel != nil,
+            confirmedMealEditing: GuidedTutorialFacts.confirmedMealEditingIsAvailable(
+                source: dependencies.mealRecordBindingSource,
+                context: mealRecordContext, owner: sessionOwner)
         )
     }
 

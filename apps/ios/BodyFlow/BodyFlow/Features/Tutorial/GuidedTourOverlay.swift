@@ -139,6 +139,13 @@ struct GuidedTourOverlay: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("tour.body.\(step.id)")
             if step.kind == .trail { trail(showsBlock7700: step.showsBlock7700, planLineKey: step.planLineKey) }
+            if let additionalLineKey = step.additionalLineKey {
+                Text(copy(additionalLineKey))
+                    .font(BodyFlowTypography.body)
+                    .foregroundStyle(BodyFlowColor.primaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("tour.additional.\(step.id)")
+            }
         }
         .padding(BodyFlowSpacing.md)
     }

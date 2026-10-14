@@ -63,6 +63,8 @@ struct GuidedTutorialView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(copy("tutorial.close")) { end(.closedEarly) }
+                        .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                        .contentShape(Rectangle())
                         .accessibilityIdentifier("tutorial.close")
                 }
             }

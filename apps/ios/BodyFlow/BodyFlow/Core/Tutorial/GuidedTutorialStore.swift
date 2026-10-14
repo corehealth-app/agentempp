@@ -111,6 +111,18 @@ struct GuidedTutorialFacts: Equatable, Sendable {
     var showsBlock7700: Bool = false
     /// The current-objective screen is available; its values may still be unavailable.
     var currentObjective: Bool = false
+    /// Confirmed meal correction/deletion is admitted for this original session.
+    var confirmedMealEditing: Bool = false
+
+    /// A synchronous presentation fact, never an authority or a request.
+    @MainActor
+    static func confirmedMealEditingIsAvailable(source: MealRecordSessionBindingSource?,
+        context: MealRecordReadyContext?, owner: Prompt14SessionOwner?) -> Bool {
+        guard source != nil, let context, let owner, context.isActive,
+              context.activation.userID == owner.userID, !owner.isInvalidated,
+              owner.mealRecordBinding?.capability === context.capability else { return false }
+        return true
+    }
 }
 
 enum GuidedTutorialOffer {

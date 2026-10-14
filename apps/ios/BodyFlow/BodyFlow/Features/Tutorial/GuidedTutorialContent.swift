@@ -34,7 +34,8 @@ enum GuidedTutorialContent {
                     "tutorial.today.balance",
                     "tutorial.today.refresh",
                     "tutorial.today.details",
-                ],
+                    facts.confirmedMealEditing ? "tutorial.history.confirmed-meal-editing" : nil,
+                ].compactMap { $0 },
                 symbol: .energy
             ),
             GuidedTutorialStep(

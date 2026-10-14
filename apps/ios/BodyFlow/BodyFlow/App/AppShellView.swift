@@ -41,6 +41,8 @@ struct AppShellView: View {
     /// without an account action.
     let signOut: (@MainActor () async -> Void)?
     let mealRecordContext: MealRecordReadyContext?
+    let mealRecordRecoveryAvailability: MealRecordRecoveryAvailability
+    let recoverMealRecord: (@MainActor () async -> Void)?
 
     init(
         userID: String,
@@ -48,7 +50,9 @@ struct AppShellView: View {
         sessionOwner: Prompt14SessionOwner,
         accountEmail: String? = nil,
         signOut: (@MainActor () async -> Void)? = nil,
-        mealRecordContext: MealRecordReadyContext? = nil
+        mealRecordContext: MealRecordReadyContext? = nil,
+        mealRecordRecoveryAvailability: MealRecordRecoveryAvailability = .unavailable,
+        recoverMealRecord: (@MainActor () async -> Void)? = nil
     ) {
         self.userID = userID
         self.dependencies = dependencies
@@ -56,6 +60,8 @@ struct AppShellView: View {
         self.accountEmail = accountEmail
         self.signOut = signOut
         self.mealRecordContext = mealRecordContext
+        self.mealRecordRecoveryAvailability = mealRecordRecoveryAvailability
+        self.recoverMealRecord = recoverMealRecord
         #if DEBUG
         let launch = AppLaunchConfiguration.current()
         if launch.mode == .demo, launch.block7700Scenario != nil,
@@ -613,7 +619,9 @@ struct AppShellView: View {
                 localRow: historyCoordinator.mealLogRow(for: route),
                 context: mealRecordContext,
                 owner: sessionOwner,
-                sessions: mealRecordSessions
+                sessions: mealRecordSessions,
+                recoveryAvailability: mealRecordRecoveryAvailability,
+                recover: recoverMealRecord
             )
         case .historyWorkout:
             HistoryWorkoutDetailView(
@@ -750,6 +758,10 @@ struct MealRecordHistoryDestination: View {
     let context: MealRecordReadyContext?
     let owner: Prompt14SessionOwner
     let sessions: MealRecordShellSessionCoordinator
+    var recoveryAvailability: MealRecordRecoveryAvailability = .unavailable
+    var recover: (@MainActor () async -> Void)? = nil
+    @Environment(\.locale) private var recoveryLocale
+    @State private var recoveryRequests = MealRecordRecoveryPresentationCoordinator()
     @State private var prepared: Prepared?
 
     private struct Prepared {
@@ -767,6 +779,8 @@ struct MealRecordHistoryDestination: View {
 
     var body: some View {
         let originalTaskID = taskID
+        let originalRecoveryRequest = recoveryRequests.current
+        let originalRecoveryTaskID = recoveryRequests.taskID
         return Group {
             if let prepared, prepared.model.recordID == recordID,
                prepared.context.activation == context?.activation,
@@ -775,11 +789,51 @@ struct MealRecordHistoryDestination: View {
                 MealRecordDetailView(model: prepared.model, localRow: localRow)
             } else {
                 HistoryMealLogDetailView(row: localRow)
+                    .safeAreaInset(edge: .bottom, spacing: 0) { recoveryFooter }
             }
         }
         .task(id: originalTaskID) {
             synchronizePresentation(expected: originalTaskID)
         }
+        .task(id: originalRecoveryTaskID) {
+            guard let original = originalRecoveryRequest else { return }
+            await recoveryRequests.run(original)
+        }
+        .onDisappear { recoveryRequests.dismiss() }
+    }
+
+    @ViewBuilder
+    private var recoveryFooter: some View {
+        switch recoveryAvailability {
+        case .unavailable:
+            EmptyView()
+        case .available, .processing:
+            BodyFlowCard {
+                VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+                    Text(recoveryCopy("meal-record.recovery.notice"))
+                        .font(BodyFlowTypography.supporting)
+                        .foregroundStyle(BodyFlowColor.primaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("meal-record.recovery.notice")
+                    Button {
+                        guard case let .available(originalOffer) = recoveryAvailability,
+                              let originalAction = recover else { return }
+                        recoveryRequests.enqueue(offer: originalOffer, perform: originalAction)
+                    } label: {
+                        Text(recoveryCopy("meal-record.recovery.action"))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(BodyFlowButtonStyle(role: .primary, isLoading: recoveryAvailability == .processing))
+                    .disabled(recoveryAvailability == .processing || recover == nil)
+                    .accessibilityIdentifier("meal-record.recovery.action")
+                }
+            }
+            .padding(BodyFlowSpacing.md)
+        }
+    }
+
+    private func recoveryCopy(_ key: String) -> String {
+        MealRecordCopy.string(key, language: BodyFlowPresentationLanguage.resolve(recoveryLocale))
     }
 
     private func synchronizePresentation(expected: TaskID) {

@@ -123,6 +123,16 @@ struct AppRootView: View {
         // H05's scoped finisher belongs to its later integration, not an automatic recovery.
     }
 
+    /// This closure belongs to the exact presented offer and original owner.
+    /// A retained button callback never looks up the next offer/session.
+    private func mealRecordRecoveryAction(for owner: Prompt14SessionOwner) -> (@MainActor () async -> Void)? {
+        guard case let .available(offer) = mealRecordDriver.recoveryAvailability(for: owner) else { return nil }
+        let originalOffer = offer
+        let originalOwner = owner
+        let originalDriver = mealRecordDriver
+        return { _ = await originalDriver.recover(offer: originalOffer, owner: originalOwner) }
+    }
+
     private var isSignedOut: Bool {
         if case .signedOut = model.state { return true }
         return false
@@ -182,7 +192,9 @@ struct AppRootView: View {
                         accountEmail: dependencies.presentsRealAccountIdentity
                             ? model.currentSession?.email : nil,
                         signOut: accountSignOut,
-                        mealRecordContext: mealRecordDriver.readyContext
+                        mealRecordContext: mealRecordDriver.readyContext,
+                        mealRecordRecoveryAvailability: mealRecordDriver.recoveryAvailability(for: owner),
+                        recoverMealRecord: mealRecordRecoveryAction(for: owner)
                     )
                     .id(userID)
                 } else {

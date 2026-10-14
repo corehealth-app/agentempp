@@ -38,6 +38,22 @@ enum SignUpRenderingProbe {
         }
     }
 
+    /// Frames measured in the same screen coordinate space as Node.frame.
+    /// Reporting this geometry does not resize the view or expand a viewport.
+    struct Geometry: CustomStringConvertible {
+        let bounds: CGRect
+        let frameInSuperview: CGRect
+        let frameOnScreen: CGRect
+        let windowBounds: CGRect?
+        let windowFrameOnScreen: CGRect?
+        let isMounted: Bool
+
+        var description: String {
+            "bounds=\(bounds), frameInSuperview=\(frameInSuperview), hostScreen=\(frameOnScreen), "
+                + "windowBounds=\(String(describing: windowBounds)), windowScreen=\(String(describing: windowFrameOnScreen)), mounted=\(isMounted)"
+        }
+    }
+
     /// One hosted view that a test can read more than once (after a model
     /// change, after scrolling).
     @MainActor
@@ -62,6 +78,24 @@ enum SignUpRenderingProbe {
             UIAccessibility.post(notification: .screenChanged, argument: controller.view)
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
             return SignUpRenderingProbe.nodes(in: controller.view)
+        }
+
+        /// Pure observation of the actual hosting view and its UIWindow.
+        /// AX nodes report accessibilityFrame in screen coordinates, so use
+        /// UIKit's conversion of the measured bounds rather than assuming
+        /// the hosting window's origin or enlarging a logical viewport.
+        func geometry() -> Geometry {
+            settle()
+            let view = controller.view!
+            let window = view.window
+            return Geometry(
+                bounds: view.bounds,
+                frameInSuperview: view.frame,
+                frameOnScreen: UIAccessibility.convertToScreenCoordinates(view.bounds, in: view),
+                windowBounds: window?.bounds,
+                windowFrameOnScreen: window.map { UIAccessibility.convertToScreenCoordinates($0.bounds, in: $0) },
+                isMounted: window != nil && view.superview != nil
+            )
         }
 
         /// The scroll views SwiftUI made for the hosted view.

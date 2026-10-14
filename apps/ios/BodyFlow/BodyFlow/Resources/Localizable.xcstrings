@@ -1,6 +1,38 @@
 {
   "sourceLanguage" : "pt-BR",
   "strings" : {
+  "meal-record.recovery.notice": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Edição pausada. Histórico disponível."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Editing paused. History available."
+        }
+      }
+    }
+  },
+  "meal-record.recovery.action": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Retomar edição"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Resume editing"
+        }
+      }
+    }
+  },
   "confirmed-meal.title": {
     "localizations": {
       "pt-BR": {

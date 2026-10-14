@@ -86,6 +86,7 @@ struct BodyFlowApp: App {
                 mealRecordLifetime: mealRecordLifetime
             )
             #if DEBUG
+            .modifier(C11ForegroundRestoreModifier(originalModel: model, fixture: c11NavigationFixture))
             .overlay(alignment: .bottomLeading) {
                 if let fixture = c11NavigationFixture {
                     C11RootNavigationDiagnosticView(selection: fixture.selection, probe: fixture.probe)

@@ -10,6 +10,12 @@ struct MealRecordCompletion: Equatable, Sendable {
 @MainActor
 @Observable
 final class MealRecordModel {
+    /// A local observation of this read attempt, not server cancellation or
+    /// permission to reuse data. Only a published response/error is settled.
+    enum LoadOutcome: Equatable, Sendable {
+        case settled, notStarted, cancelled, superseded
+    }
+
     let recordID: String
     private let provider: any MealRecordProviding
     private let time: any TimeProviding
@@ -143,13 +149,16 @@ final class MealRecordModel {
 
     /// Explicit reads never replay a command. A committed receipt survives a
     /// later GET failure; a working form survives refresh/conflict.
-    func load() async {
-        guard !isSubmitting, isSessionActive(), let id = recoveryID else { return }
+    @discardableResult
+    func load() async -> LoadOutcome {
+        guard !isSubmitting, isSessionActive(), let id = recoveryID else { return .notStarted }
         let operation = begin(); isLoading = true; readFailure = nil
-        await withTaskCancellationHandler {
+        let outcome: LoadOutcome = await withTaskCancellationHandler {
             do {
                 let response = try await provider.mealRecord(id: id)
-                guard publish(operation) else { return }
+                guard publish(operation) else {
+                    return Task.isCancelled ? .cancelled : .superseded
+                }
                 detail = response
                 lastReadSequence = operation.sequence
                 if requiresFreshPresentationRead {
@@ -171,14 +180,20 @@ final class MealRecordModel {
                     deletionSelection = [recordID]
                 }
                 readFailure = nil
+                return .settled
             } catch is CancellationError {
                 // No server outcome is inferred from cancellation.
+                return .cancelled
             } catch {
-                guard publish(operation) else { return }
+                guard publish(operation) else {
+                    return Task.isCancelled ? .cancelled : .superseded
+                }
                 readFailure = Self.failure(error)
+                return .settled
             }
         } onCancel: { operation.ownership.invalidate() }
         finish(operation)
+        return outcome
     }
 
     /// The same eligibility used by reviewLatest(), exposed to its controls.

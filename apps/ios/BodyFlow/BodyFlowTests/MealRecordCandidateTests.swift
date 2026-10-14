@@ -765,6 +765,138 @@ struct MealRecordCandidateTests {
         #expect(unavailableKeys.count == 1)
     }
 
+    @Test("automatic-read outcome settles published success or error and keeps explicit read retry")
+    func presentationLoadOutcomeSettlesPublishedReadAndFailure() async {
+        let provider = C11PresentationReadProvider(results: [.success, .offline, .success])
+        let keys = C11FixtureKeys()
+        let center = FeatureInvalidationCenter()
+        let model = makeModel(provider, keys: keys, center: center)
+        #expect(await model.load() == .settled)
+        #expect(model.detail == C11RecordFixtures.open)
+        model.draft?.items[0].foodName = "Synthetic retained typed fields"
+        let draft = model.draft
+        #expect(await model.load() == .settled)
+        #expect(model.readFailure == .capability(.offline))
+        #expect(model.detail == C11RecordFixtures.open)
+        #expect(model.draft == draft)
+        #expect(!model.isLoading)
+        // Explicit Retry still calls load; the presentation hint does not turn
+        // the Model into a cache that blocks this official read.
+        #expect(await model.load() == .settled)
+        #expect(model.readFailure == nil)
+        #expect(model.draft == draft)
+        #expect(await provider.reads == [C11RecordFixtures.a, C11RecordFixtures.a, C11RecordFixtures.a])
+        #expect(keys.count == 0)
+        #expect(center.revision(for: .today) == 0)
+        #expect(center.revision(for: .history) == 0)
+    }
+
+    @Test("ineligible read returns not-started without completing a presentation or disturbing a command")
+    func presentationLoadOutcomeNotStartedForEachAdmissionGuard() async {
+        let provider = C11PresentationReadProvider(results: [.success])
+        let eligibility = C11PresentationReadEligibility()
+        eligibility.active = false
+        let model = MealRecordModel(recordID: C11RecordFixtures.a, provider: provider,
+            time: C11FixtureTime(), keys: C11FixtureKeys(), invalidation: FeatureInvalidationCenter(),
+            isSessionActive: { eligibility.active })
+        #expect(await model.load() == .notStarted)
+        #expect(await provider.reads.isEmpty)
+        #expect(model.detail == nil && model.readFailure == nil && !model.isLoading)
+        eligibility.active = true
+        #expect(await model.load() == .settled)
+        // endSession clears recoveryID while the separate eligibility closure
+        // stays true, so this covers the nil-ID guard independently.
+        model.endSession()
+        #expect(await model.load() == .notStarted)
+        #expect(await provider.reads == [C11RecordFixtures.a])
+        #expect(model.detail == nil && model.draft == nil && !model.isLoading)
+
+        let busyProvider = C11DeferredProvider()
+        let busyKeys = C11FixtureKeys()
+        let busyModel = makeModel(busyProvider, keys: busyKeys)
+        #expect(await busyModel.load() == .settled)
+        let saving = Task { await busyModel.save(language: .portugueseBrazil) }
+        await busyProvider.waitUntilPatchStarted()
+        let attempt = busyModel.retainedAttempt
+        #expect(busyModel.isSubmitting && attempt != nil)
+        #expect(await busyModel.load() == .notStarted)
+        #expect(busyModel.isSubmitting)
+        #expect(busyModel.retainedAttempt == attempt)
+        #expect(busyModel.detail == C11RecordFixtures.open)
+        #expect(busyKeys.count == 1)
+        await busyProvider.resolve()
+        await saving.value
+        #expect(busyModel.confirmedReceipt != nil)
+        #expect(busyKeys.count == 1)
+    }
+
+    @Test("provider CancellationError without cancelling the parent never settles the automatic read")
+    func presentationLoadOutcomeProviderCancellationDoesNotSettle() async {
+        let provider = C11PresentationReadProvider(results: [.cancelled, .success])
+        let keys = C11FixtureKeys()
+        let model = makeModel(provider, keys: keys)
+        #expect(!Task.isCancelled)
+        #expect(await model.load() == .cancelled)
+        #expect(!Task.isCancelled)
+        #expect(model.detail == nil && model.draft == nil && model.readFailure == nil)
+        #expect(!model.isLoading)
+        #expect(await model.load() == .settled)
+        #expect(model.detail == C11RecordFixtures.open && model.canStartMutation)
+        #expect(await provider.reads == [C11RecordFixtures.a, C11RecordFixtures.a])
+        #expect(keys.count == 0)
+    }
+
+    @Test("a held initial read cancelled on disappearance stays eligible for a fresh read")
+    func presentationLoadOutcomeCancelledInitialReadCanReadAgain() async {
+        let provider = C11PresentationReadProvider(results: [.success, .success], holdFirstRead: true)
+        let keys = C11FixtureKeys()
+        let model = makeModel(provider, keys: keys)
+        let pending = Task {
+            let outcome = await model.load()
+            return (outcome, Task.isCancelled)
+        }
+        await provider.waitForHeldRead()
+        pending.cancel()
+        model.discardPresentation()
+        // The provider deliberately ignores cancellation until released. Its
+        // old result must not turn a cancelled appearance into a settled one.
+        await provider.releaseHeldRead()
+        let finished = await pending.value
+        #expect(finished.0 == .cancelled && finished.1)
+        #expect(model.detail == nil && model.draft == nil && model.readFailure == nil)
+        #expect(!model.isLoading)
+        model.beginPresentation()
+        #expect(await model.load() == .settled)
+        #expect(model.detail == C11RecordFixtures.open && model.canStartMutation)
+        #expect(await provider.reads == [C11RecordFixtures.a, C11RecordFixtures.a])
+        #expect(keys.count == 0)
+    }
+
+    @Test("a discarded held success or error cannot settle without publication even if the parent is not cancelled",
+          arguments: [false, true])
+    func presentationLoadOutcomeSupersededReadDoesNotSettle(returnsError: Bool) async {
+        let provider = C11PresentationReadProvider(
+            results: [returnsError ? .offline : .success, .success], holdFirstRead: true)
+        let keys = C11FixtureKeys()
+        let model = makeModel(provider, keys: keys)
+        let pending = Task {
+            let outcome = await model.load()
+            return (outcome, Task.isCancelled)
+        }
+        await provider.waitForHeldRead()
+        model.discardPresentation() // Invalidate actual Model publication, not the parent Task.
+        await provider.releaseHeldRead()
+        let finished = await pending.value
+        #expect(finished.0 == .superseded && !finished.1)
+        #expect(model.detail == nil && model.draft == nil && model.readFailure == nil)
+        #expect(!model.isLoading)
+        model.beginPresentation()
+        #expect(await model.load() == .settled)
+        #expect(model.detail == C11RecordFixtures.open && model.canStartMutation)
+        #expect(await provider.reads == [C11RecordFixtures.a, C11RecordFixtures.a])
+        #expect(keys.count == 0)
+    }
+
     private func makeModel(_ provider: any MealRecordProviding,
                            keys: C11FixtureKeys = C11FixtureKeys(),
                            center: FeatureInvalidationCenter = FeatureInvalidationCenter()) -> MealRecordModel {
@@ -921,5 +1053,63 @@ private actor C11TransportStub: MobileAPIEnvelopeExecuting {
         default: throw MobileAPITransportError.invalidResponse
         }
         return try JSONDecoder().decode(MobileResponse<Response>.self, from: data)
+    }
+}
+
+@MainActor
+private final class C11PresentationReadEligibility {
+    var active = true
+}
+
+/// Only the provider boundary is controlled; the actual Model owns admission,
+/// publication, cancellation, drafts, read errors and command state.
+private actor C11PresentationReadProvider: MealRecordProviding {
+    enum Result: Sendable { case success, offline, cancelled }
+    private var results: [Result]
+    private let holdFirstRead: Bool
+    private var heldRead: CheckedContinuation<Void, Never>?
+    private var startedWaiters: [CheckedContinuation<Void, Never>] = []
+    private(set) var reads: [String] = []
+
+    init(results: [Result], holdFirstRead: Bool = false) {
+        self.results = results
+        self.holdFirstRead = holdFirstRead
+    }
+
+    func mealRecord(id: String) async throws -> MealRecordResponse {
+        reads.append(id)
+        let result = results.isEmpty ? .success : results.removeFirst()
+        if holdFirstRead, reads.count == 1 {
+            await withCheckedContinuation { continuation in
+                heldRead = continuation
+                let ready = startedWaiters
+                startedWaiters.removeAll()
+                for waiter in ready { waiter.resume() }
+            }
+        }
+        switch result {
+        case .success: return C11RecordFixtures.open
+        case .offline: throw MealRecordFailure.capability(.offline)
+        case .cancelled: throw CancellationError()
+        }
+    }
+
+    func waitForHeldRead() async {
+        if heldRead != nil { return }
+        await withCheckedContinuation { startedWaiters.append($0) }
+    }
+
+    func releaseHeldRead() {
+        let held = heldRead
+        heldRead = nil
+        held?.resume()
+    }
+
+    func patch(_ attempt: MutationAttempt<MealRecordPatchCommand>) async throws -> MealRecordMutationResponse {
+        throw BodyFlowCapabilityError.operationUnavailable
+    }
+
+    func delete(_ attempt: MutationAttempt<MealRecordDeleteCommand>) async throws -> MealRecordMutationResponse {
+        throw BodyFlowCapabilityError.operationUnavailable
     }
 }

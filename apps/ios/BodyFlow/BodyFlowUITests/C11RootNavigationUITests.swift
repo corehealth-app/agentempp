@@ -761,6 +761,253 @@ final class C11RootNavigationUITests: XCTestCase {
         capture(app, name: "c11-root-h05-explicit-recovery-official-detail-no-mutation")
     }
 
+    /// Actual same-process background/foreground restores the same record.
+    /// The DEBUG scene task calls existing Model.start; no app reauth button.
+    func testRealRootSameRecordForegroundRestoreRenewsGrantAndPreservesHistoryAndPlanDetail() throws {
+        let app = try launchFixture("--ui-testing-c11-root-same-record-foreground-restore", selection: "same-record-foreground")
+        let status = element("c11.fixture.status", in: app)
+        let initial = "C11 same-record-foreground: get=0 bind=1 refresh=0 blocked=0 bg=0 restore=0 finished=0 cancelled=0 disappeared=0 preRetained=0 preclosed=0 oldClosed=0 captures=1 distinct=0 sameUser=0 sameGeneration=0 ticketChanged=0 samePublic=0 bodyAbsent=0 keyAbsent=0 commands=0"
+        let prepared = "C11 same-record-foreground: get=1 bind=1 refresh=0 blocked=0 bg=0 restore=0 finished=0 cancelled=0 disappeared=0 preRetained=0 preclosed=0 oldClosed=0 captures=1 distinct=0 sameUser=0 sameGeneration=0 ticketChanged=0 samePublic=0 bodyAbsent=1 keyAbsent=1 commands=0"
+        let restored = "C11 same-record-foreground: get=2 bind=2 refresh=0 blocked=0 bg=1 restore=1 finished=1 cancelled=0 disappeared=0 preRetained=1 preclosed=0 oldClosed=1 captures=2 distinct=1 sameUser=1 sameGeneration=1 ticketChanged=1 samePublic=1 bodyAbsent=1 keyAbsent=1 commands=0"
+        func requireStatus(_ expected: String, phase: String) -> Bool {
+            let ready = XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "label == %@", expected), object: status)], timeout: 8) == .completed
+            if !ready { capture(app, name: "c11-root-foreground-" + phase) }
+            XCTAssertTrue(ready, "ACTION_OBSERVATION: actual foreground restore counters/variant must match " + phase)
+            if status.exists { XCTAssertEqual(status.label, expected) }
+            return ready
+        }
+        func tab(_ identifier: String) -> Bool {
+            let button = app.buttons[identifier]
+            guard button.waitForExistence(timeout: 5), button.isEnabled, button.isHittable,
+                  app.frame.contains(button.frame) else {
+                capture(app, name: "c11-root-foreground-tab-setup")
+                XCTFail("SETUP_NOT_RED: actual tab must be mounted/enabled/hittable")
+                return false
+            }
+            button.tap()
+            return true
+        }
+        guard requireStatus(initial, phase: "initial-root-with-one-binding") else { return }
+        guard tab("tab.plano") else { return }
+        let planRoot = element("screen.plano", in: app)
+        guard planRoot.waitForExistence(timeout: 5) else { XCTFail("SETUP_NOT_RED: actual Plan root must mount"); return }
+        let link = element("plan.detail", in: app)
+        let planScrolls = app.scrollViews
+        guard planScrolls.count == 1 else {
+            capture(app, name: "c11-root-foreground-plan-scroll-setup")
+            XCTFail("SETUP_NOT_RED: expected one actual active Plan ScrollView; observe AX before selecting a different container")
+            return
+        }
+        let planScroll = planScrolls.element(boundBy: 0)
+        for _ in 0..<6 {
+            if link.exists && link.isHittable && app.frame.contains(link.frame) && !link.frame.intersects(status.frame) { break }
+            planScroll.swipeUp()
+        }
+        guard link.exists, link.isHittable, link.frame.width >= 44, link.frame.height >= 44,
+              app.frame.contains(link.frame), !link.frame.intersects(status.frame) else {
+            capture(app, name: "c11-root-foreground-plan-detail-link-setup")
+            XCTFail("SETUP_NOT_RED: loaded real Plan detail link must be wholly visible before normal input")
+            return
+        }
+        link.tap()
+        let planDetail = element("screen.plan.detail", in: app)
+        XCTAssertTrue(planDetail.waitForExistence(timeout: 5), "A real adjacent detail, not a tab/root identifier, is required")
+        guard planDetail.exists else { capture(app, name: "c11-root-foreground-plan-detail-not-mounted"); return }
+        let detailScrolls = app.scrollViews
+        guard detailScrolls.count == 1 else { XCTFail("SETUP_NOT_RED: one active actual Plan detail ScrollView required"); return }
+        let noteMatches = app.staticTexts.matching(NSPredicate(
+            format: "identifier == %@ AND label == %@",
+            "plan.training", "Observações, Plano sintético para demonstração"))
+        let note = noteMatches.firstMatch
+        for _ in 0..<6 {
+            if note.exists && note.isHittable && app.frame.contains(note.frame) && !note.frame.intersects(status.frame) { break }
+            detailScrolls.element(boundBy: 0).swipeUp()
+        }
+        XCTAssertEqual(noteMatches.count, 1, "SETUP_NOT_RED: one actual combined Plan note StaticText required")
+        guard noteMatches.count == 1 else {
+            capture(app, name: "c11-root-foreground-plan-note-selector-setup")
+            return
+        }
+        // Diagnostic only: capture the actual synthetic Plan AX tree before
+        // interpreting the unchanged note selector. No authentication output.
+        guard app.state == .runningForeground else {
+            capture(app, name: "c11-root-foreground-plan-note-not-foreground")
+            XCTFail("SETUP_NOT_RED: actual foreground app required before synthetic Plan AX observation")
+            return
+        }
+        let noteAXAttachment = XCTAttachment(string: app.debugDescription)
+        noteAXAttachment.name = "c11-root-foreground-plan-note-actual-ax"
+        noteAXAttachment.lifetime = .keepAlways
+        add(noteAXAttachment)
+        XCTAssertTrue(note.exists && note.isHittable)
+        guard note.exists, note.isHittable else { capture(app, name: "c11-root-foreground-plan-note-setup"); return }
+        XCTAssertTrue(note.label.contains("Plano sintético para demonstração"), "Actual loaded DTO content is required in PlanDetailView")
+        XCTAssertTrue(app.navigationBars["Detalhes do plano"].exists)
+        let noteLabel = note.label, noteFrame = note.frame
+        capture(app, name: "c11-root-foreground-meaningful-adjacent-plan-detail-before")
+        guard tab("tab.hoje") else { return }
+        try openActualHistoryRow(in: app)
+        let detail = element("screen.meal-record", in: app)
+        let name = app.textFields["meal-record.field.name"]
+        guard detail.waitForExistence(timeout: 8), name.waitForExistence(timeout: 5) else {
+            XCTFail("SETUP_NOT_RED: first actual official Form must mount before background"); return
+        }
+        XCTAssertEqual(name.value as? String, "Synthetic C11 confirmed food")
+        name.tap()
+        name.typeKey("a", modifierFlags: .command)
+        name.typeText("Synthetic unsent A1 draft")
+        XCTAssertEqual(name.value as? String, "Synthetic unsent A1 draft")
+        let done = app.buttons["keyboard.done"]
+        guard done.waitForExistence(timeout: 5), done.isHittable else { XCTFail("SETUP_NOT_RED: actual keyboard Done required"); return }
+        done.tap()
+        guard requireStatus(prepared, phase: "official-form-unsent-draft-before-background") else { return }
+        capture(app, name: "c11-root-foreground-a1-unsent-draft-current-history-route")
+        XCUIDevice.shared.press(.home)
+        let backgroundStates = [NSNumber(value: XCUIApplication.State.runningBackground.rawValue),
+                                NSNumber(value: XCUIApplication.State.runningBackgroundSuspended.rawValue)]
+        let background = XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "state IN %@", backgroundStates), object: app)], timeout: 5) == .completed
+        XCTAssertTrue(background, "SETUP_NOT_RED: a real Home/background transition is required, not a ScenePhase setter")
+        guard background else { return }
+        app.activate() // Same process; never terminate/relaunch to manufacture restoration.
+        guard requireStatus(restored, phase: "same-record-scope-restored-or-concrete-lifecycle-variant") else { return }
+        XCTAssertTrue(detail.exists, "The current History detail must survive without navigating to the row again")
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        guard name.exists else { capture(app, name: "c11-root-foreground-new-form-not-mounted"); return }
+        XCTAssertEqual(name.value as? String, "Synthetic C11 foreground restored official food")
+        XCTAssertNotEqual(name.value as? String, "Synthetic unsent A1 draft")
+        XCTAssertTrue(name.isHittable)
+        for id in ["screen.history.meal-detail", "meal-record.recovery.notice", "meal-record.recovery.action",
+                   "meal-record.failure", "meal-record.read-failure", "meal-record.saved", "screen.auth.sign-in"] {
+            XCTAssertFalse(element(id, in: app).exists)
+        }
+        capture(app, name: "c11-root-foreground-a2-official-form-on-preserved-route")
+        guard tab("tab.plano") else { return }
+        XCTAssertTrue(planDetail.waitForExistence(timeout: 5), "The adjacent actual Plan detail must remain open instead of returning to its root")
+        XCTAssertTrue(app.navigationBars["Detalhes do plano"].exists)
+        XCTAssertTrue(note.exists && note.isHittable)
+        guard note.exists, note.isHittable else { capture(app, name: "c11-root-foreground-adjacent-plan-reading-lost"); return }
+        XCTAssertEqual(note.label, noteLabel)
+        XCTAssertEqual(note.frame.minY, noteFrame.minY, accuracy: 1, "Preserve the actual adjacent reading landmark")
+        capture(app, name: "c11-root-foreground-plan-detail-and-reading-retained-after")
+        guard tab("tab.hoje") else { return }
+        XCTAssertTrue(detail.waitForExistence(timeout: 5))
+        XCTAssertEqual(name.value as? String, "Synthetic C11 foreground restored official food")
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        guard back.exists, back.isEnabled, back.isHittable else { XCTFail("SETUP_NOT_RED: actual native History detail Back required"); return }
+        back.tap()
+        XCTAssertTrue(element("screen.history", in: app).waitForExistence(timeout: 5), "The original History stack must still precede the current detail")
+        XCTAssertEqual(status.label, restored, "No third bind/GET, mutation, retry or second foreground restore")
+        capture(app, name: "c11-root-foreground-two-meaningful-stacks-preserved-no-mutation")
+    }
+
+    /// A tab change preserves this logical presentation; native Back/reentry
+    /// creates another presentation and must still read the official record.
+    func testRealRootTabReturnPreservesDraftAndActualReopeningReadsAgain() throws {
+        let app = try launchFixture("--ui-testing-c11-root-source-on", selection: "on")
+        let status = element("c11.fixture.status", in: app)
+        let firstRead = "C11 on: get=1 bind=1 refresh=0 blocked=0"
+        let reopenedRead = "C11 on: get=2 bind=1 refresh=0 blocked=0"
+        let draft = "Synthetic unsent tab draft"
+        let continuedDraft = "Synthetic revised tab draft"
+        let detail = element("screen.meal-record", in: app)
+        let name = app.textFields["meal-record.field.name"]
+        func requireEditableForm(_ phase: String) -> Bool {
+            let ready = XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "exists == true AND enabled == true AND hittable == true"),
+                object: name)], timeout: 8) == .completed
+            if !ready { capture(app, name: "c11-root-presentation-form-" + phase) }
+            XCTAssertTrue(ready, "ACTION_OBSERVATION: actual official Form must be editable for " + phase)
+            XCTAssertTrue(detail.exists, "The actual C11 destination must remain mounted for " + phase)
+            return ready && detail.exists
+        }
+        func tapTab(_ identifier: String) -> Bool {
+            let button = app.buttons[identifier]
+            guard button.waitForExistence(timeout: 5), button.isEnabled, button.isHittable,
+                  app.frame.contains(button.frame) else {
+                capture(app, name: "c11-root-presentation-tab-setup")
+                XCTFail("SETUP_NOT_RED: actual tab must be mounted/enabled/hittable")
+                return false
+            }
+            button.tap()
+            return true
+        }
+        try openActualHistoryRow(in: app)
+        guard requireEditableForm("initial-official-read") else { return }
+        XCTAssertEqual(name.value as? String, "Synthetic C11 confirmed food")
+        XCTAssertEqual(app.textFields["meal-record.field.quantity"].value as? String, "50")
+        XCTAssertEqual(status.label, firstRead, "Exactly one real initial GET, no new binding or unexpected endpoint")
+        name.tap()
+        name.typeKey("a", modifierFlags: .command)
+        name.typeText(draft)
+        XCTAssertEqual(name.value as? String, draft)
+        let done = app.buttons["keyboard.done"]
+        guard done.waitForExistence(timeout: 5), done.isEnabled, done.isHittable else {
+            XCTFail("SETUP_NOT_RED: actual keyboard Done must dismiss input before changing tabs")
+            return
+        }
+        done.tap()
+        guard tapTab("tab.perfil") else { return }
+        let profile = element("screen.perfil", in: app)
+        guard profile.waitForExistence(timeout: 5) else {
+            capture(app, name: "c11-root-presentation-profile-not-mounted")
+            XCTFail("SETUP_NOT_RED: actual Profile must appear between the two Today tab selections")
+            return
+        }
+        guard tapTab("tab.hoje"), requireEditableForm("same-route-after-tab-return") else { return }
+        XCTAssertEqual(name.value as? String, draft, "The same presentation must preserve the unsent form on tab return")
+        // Exercise the returned field and its actual Done action before reading
+        // counters; an old element existing before reappearance is insufficient.
+        name.tap()
+        name.typeKey("a", modifierFlags: .command)
+        name.typeText(continuedDraft)
+        XCTAssertEqual(name.value as? String, continuedDraft)
+        guard done.waitForExistence(timeout: 5), done.isEnabled, done.isHittable else {
+            XCTFail("SETUP_NOT_RED: returned form must expose its actual keyboard Done")
+            return
+        }
+        done.tap()
+        guard requireEditableForm("returned-form-after-real-input") else { return }
+        XCTAssertEqual(status.label, firstRead,
+            "TAB_REAPPEARANCE_MUST_NOT_READ: an already loaded logical presentation must not issue GET2")
+        capture(app, name: "c11-root-presentation-tab-return-unsent-form-no-new-get")
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        guard back.exists, back.isEnabled, back.isHittable else {
+            XCTFail("SETUP_NOT_RED: native Detail Back must remain reachable")
+            return
+        }
+        back.tap()
+        let history = element("screen.history", in: app)
+        guard history.waitForExistence(timeout: 5) else {
+            XCTFail("SETUP_NOT_RED: real Back must return to the original History stack")
+            return
+        }
+        let row = element("history.meal.\(rowID)", in: app)
+        guard row.waitForExistence(timeout: 5), row.isEnabled, row.isHittable else {
+            XCTFail("SETUP_NOT_RED: same actual History UUID row must support a new navigation")
+            return
+        }
+        row.tap()
+        let reread = XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", reopenedRead), object: status)], timeout: 8) == .completed
+        if !reread { capture(app, name: "c11-root-presentation-reopen-counter-failure") }
+        XCTAssertTrue(reread,
+            "NEW_PRESENTATION_MUST_READ: actual pop/reopen requires exactly one fresh official GET2")
+        guard requireEditableForm("new-presentation-after-real-reopening") else { return }
+        // The cache intentionally retains unsent input across real dismissal;
+        // the new transport counter proves revalidation, not overwriting draft.
+        XCTAssertEqual(name.value as? String, continuedDraft)
+        XCTAssertEqual(app.textFields["meal-record.field.quantity"].value as? String, "50")
+        XCTAssertEqual(status.label, reopenedRead,
+            "Exactly two presentation reads overall, one bind, no refresh or unexpected endpoint")
+        for identifier in ["screen.history.meal-detail", "meal-record.read-failure", "meal-record.failure",
+                           "meal-record.saved", "meal-record.recovery.notice", "screen.auth.sign-in"] {
+            XCTAssertFalse(element(identifier, in: app).exists)
+        }
+        capture(app, name: "c11-root-presentation-actual-reopen-official-get2-draft-retained")
+    }
+
     private func launchFixture(_ argument: String, selection: String) throws -> XCUIApplication {
         let app = XCUIApplication()
         runningApp = app

@@ -13,8 +13,12 @@ struct MealRecordDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var asksToDelete = false
     @FocusState private var focusedField: Field?
+    // One settled automatic read per model in this destination's lifetime.
+    // Retain the instance so ObjectIdentifier reuse cannot impersonate it.
+    @State private var completedAutomaticReadModel: MealRecordModel?
 
     var body: some View {
+        let originalModel = model
         let presentation = MealRecordDetailPresentation.make(model: model, localRow: localRow)
         Form {
             receipt
@@ -40,9 +44,14 @@ struct MealRecordDetailView: View {
                 .accessibilityIdentifier("keyboard.done")
             }
         }
-        .task {
-            model.beginPresentation()
-            await model.load()
+        .task(id: ObjectIdentifier(originalModel)) {
+            guard completedAutomaticReadModel !== originalModel else { return }
+            originalModel.beginPresentation()
+            let outcome = await originalModel.load()
+            // Provider cancellation and a refused publication can return even
+            // when this Task was not cancelled; neither completes an appearance.
+            guard outcome == .settled, !Task.isCancelled else { return }
+            completedAutomaticReadModel = originalModel
         }
         .onDisappear { model.discardPresentation() }
         .confirmationDialog(

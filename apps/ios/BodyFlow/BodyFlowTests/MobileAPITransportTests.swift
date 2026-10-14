@@ -818,7 +818,7 @@ struct MobileAPITransportTests {
         await harness.lifecycle.holdNextFinish()
         let operation = Task { @MainActor in
             switch method {
-            case .get: await model.load()
+            case .get: _ = await model.load()
             case .patch: await model.save(language: .englishUnitedStates)
             case .delete: await model.delete()
             case .post: Issue.record("POST is outside this C11 test matrix")
@@ -2512,7 +2512,7 @@ struct MobileAPITransportTests {
                 call == 1 ? .failure(status: 401, code: "expired_token") : success
             }
             await f.runtime.lifecycle.holdNextFinish()
-            let pending = Task { @MainActor in await oldModel.load() }
+            let pending = Task { @MainActor in _ = await oldModel.load() }
             oldRead = pending
             // finishPatientWork is reached only after networkTask.value returned.
             // Do not hold URLProtocol before delivering the first real 401.

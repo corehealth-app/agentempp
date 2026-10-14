@@ -8,6 +8,7 @@ enum C11RootNavigationSelection: String, Sendable {
     case sourceOn = "on"
     case sourceOff = "off"
     case logoutMarkerFailure = "h05-marker-failure"
+    case sameRecordForeground = "same-record-foreground"
     case getUnauthorizedThenSuccess = "get-401-200"
     case getUnauthorizedTwice = "get-401-401"
     case getUnauthorizedTwiceThenRetrySuccess = "get-401-401-retry-200"
@@ -20,6 +21,7 @@ enum C11RootNavigationSelection: String, Sendable {
             (.sourceOn, "--ui-testing-c11-root-source-on"),
             (.sourceOff, "--ui-testing-c11-root-source-off"),
             (.logoutMarkerFailure, "--ui-testing-c11-root-h05-marker-failure"),
+            (.sameRecordForeground, "--ui-testing-c11-root-same-record-foreground-restore"),
             (.getUnauthorizedThenSuccess, "--ui-testing-c11-root-get-401-200"),
             (.getUnauthorizedTwice, "--ui-testing-c11-root-get-401-401"),
             (.getUnauthorizedTwiceThenRetrySuccess, "--ui-testing-c11-root-get-401-401-retry-200"),
@@ -33,7 +35,7 @@ enum C11RootNavigationSelection: String, Sendable {
 
     var suppliesMealRecordSource: Bool {
         switch self {
-        case .sourceOn, .logoutMarkerFailure, .getUnauthorizedThenSuccess, .getUnauthorizedTwice, .getUnauthorizedTwiceThenRetrySuccess, .patchUnauthorizedThenSuccess, .deleteUnauthorizedThenSuccess: true
+        case .sourceOn, .logoutMarkerFailure, .sameRecordForeground, .getUnauthorizedThenSuccess, .getUnauthorizedTwice, .getUnauthorizedTwiceThenRetrySuccess, .patchUnauthorizedThenSuccess, .deleteUnauthorizedThenSuccess: true
         case .sourceOff: false
         }
     }
@@ -61,7 +63,8 @@ struct C11RootNavigationFixture {
         let remote = C11RootNavigationRemote(probe: probe, selection: selection)
         let lifecycle = SessionLifecycleCoordinator(store: store, remote: remote,
             refreshPolicy: SessionRefreshPolicy(now: { Date(timeIntervalSince1970: 1000) }, leeway: 60))
-        let bindingProbe = C11RootNavigationLifecycleProbe(base: lifecycle, probe: probe)
+        let bindingProbe = C11RootNavigationLifecycleProbe(base: lifecycle, probe: probe,
+            capturesForegroundGrants: selection == .sameRecordForeground)
         let patchState = selection == .patchUnauthorizedThenSuccess ? C11RootNavigationPatchState(probe: probe) : nil
         let deleteState = selection == .deleteUnauthorizedThenSuccess ? C11RootNavigationDeleteState(probe: probe) : nil
         let server = C11RootNavigationServer(probe: probe, selection: selection,
@@ -79,6 +82,11 @@ struct C11RootNavigationFixture {
         let scaffold = AppDependencies.scaffold()
         let unavailable = UnavailableBodyFlowCapabilities()
         let reads = C11RootNavigationReads()
+        let plan: any PlanProviding
+        if selection == .sameRecordForeground {
+            // Existing loaded DEBUG provider; scaffold().plan is unavailable.
+            plan = DemoBodyFlowRepository(scenario: .loaded)
+        } else { plan = unavailable }
         let today: any TodayProviding
         let history: any HistoryProviding
         if let patchState {
@@ -97,7 +105,7 @@ struct C11RootNavigationFixture {
         let dependencies = AppDependencies(apiClient: transport, authentication: authentication,
             onboarding: C11RootNavigationOnboarding(), coachPersona: scaffold.coachPersona,
             secureStore: secure, telemetry: DisabledTelemetryClient(), today: today, history: history,
-            plan: unavailable, progress: unavailable, mealDetection: unavailable,
+            plan: plan, progress: unavailable, mealDetection: unavailable,
             registration: unavailable, hydration: unavailable, weight: unavailable,
             routine: unavailable, me: unavailable,
             publishedContentSessions: UnavailablePublishedContentSessionFactory(),
@@ -143,6 +151,87 @@ final class C11RootNavigationProbe {
         recoveryMarkerFailures == 1 && binds == 2 && refreshes == 0
             && recoveryRemoteRevokes == 0 && recoveryCommands == 0
     }
+    private struct ForegroundGrant {
+        let capability: MealRecordSessionCapability
+        let userID: String
+        let generation: UInt64
+    }
+    @ObservationIgnored private var foregroundFirst: ForegroundGrant?
+    @ObservationIgnored private var foregroundSecond: ForegroundGrant?
+    private(set) var foregroundCaptures = 0
+    private(set) var foregroundBackgrounds = 0
+    private(set) var foregroundRestores = 0
+    private(set) var foregroundFinished = 0
+    private(set) var foregroundCancelled = 0
+    private(set) var foregroundDisappeared = 0
+    private(set) var foregroundPreRetained = false
+    private(set) var foregroundPreclosed = false
+    private(set) var foregroundOldClosed = false
+    private(set) var foregroundDistinct = false
+    private(set) var foregroundSameUser = false
+    private(set) var foregroundSameGeneration = false
+    private(set) var foregroundTicketChanged = false
+    private(set) var foregroundSamePublic = false
+    private(set) var foregroundBodyAbsent = false
+    private(set) var foregroundKeyAbsent = false
+    private(set) var foregroundCommands = 0
+
+    /// Original real result only; at most two caps, never SessionLease/bearer.
+    func recordForegroundGrant(_ capability: MealRecordSessionCapability, userID: String, generation: UInt64) {
+        foregroundCaptures += 1
+        let capture = ForegroundGrant(capability: capability, userID: userID, generation: generation)
+        if foregroundCaptures == 1 { foregroundFirst = capture }
+        else if foregroundCaptures == 2, let first = foregroundFirst {
+            foregroundSecond = capture
+            foregroundDistinct = first.capability !== capability
+            foregroundSameUser = first.userID == userID
+            foregroundSameGeneration = first.generation == generation
+        }
+        // Unexpected third results are counted but not retained.
+    }
+    func armForegroundAfterRealBackground() -> Bool {
+        guard foregroundBackgrounds == 0, foregroundRestores == 0, foregroundDisappeared == 0,
+              gets == 1, binds == 1, foregroundCaptures == 1, foregroundFirst != nil,
+              refreshes == 0, blocked == 0, foregroundCommands == 0 else { return false }
+        foregroundBackgrounds = 1
+        return true
+    }
+    func observeForegroundPreStartRetained() -> Bool {
+        let retained = foregroundDisappeared == 0 && foregroundFirst?.capability.hasRetainedCapability == true
+        foregroundPreRetained = retained
+        foregroundPreclosed = !retained
+        return retained
+    }
+    func recordForegroundRestoreStarted() { foregroundRestores += 1 }
+    func recordForegroundRestoreFinished(cancelled: Bool, samePublicSession: Bool, ticketChanged: Bool) {
+        foregroundFinished += 1
+        if cancelled { foregroundCancelled += 1 }
+        foregroundSamePublic = samePublicSession
+        foregroundTicketChanged = ticketChanged
+        if let first = foregroundFirst { foregroundOldClosed = !first.capability.hasRetainedCapability }
+        clearForegroundReferencesIfDisappearedAndIdle()
+    }
+    func recordForegroundDisappearance() {
+        foregroundDisappeared += 1
+        clearForegroundReferencesIfDisappearedAndIdle()
+    }
+    private func clearForegroundReferencesIfDisappearedAndIdle() {
+        guard foregroundDisappeared > 0, foregroundRestores == foregroundFinished else { return }
+        // Drop observation, never close/reset actual authority.
+        foregroundFirst = nil
+        foregroundSecond = nil
+    }
+    func recordForegroundCommand() { foregroundCommands += 1 }
+    func recordForegroundReadMetadata(bodyAbsent: Bool, keyAbsent: Bool) {
+        foregroundBodyAbsent = bodyAbsent
+        foregroundKeyAbsent = keyAbsent
+    }
+    func canServeForegroundRead(attempt: Int) -> Bool {
+        guard refreshes == 0, foregroundCommands == 0, foregroundDisappeared == 0 else { return false }
+        if attempt == 1 { return foregroundCaptures == 1 && foregroundRestores == 0 }
+        return attempt == 2 && foregroundRestores == 1 && foregroundPreRetained
+            && foregroundCaptures == 2 && foregroundDistinct && foregroundSameUser && foregroundSameGeneration
+    }
     func recordPATCH(uniqueKeys: Int) { patches += 1; self.uniqueKeys = uniqueKeys }
     func recordDELETE(uniqueKeys: Int) { deletes += 1; self.uniqueKeys = uniqueKeys }
     func recordTodayRead() { todayReads += 1 }
@@ -174,6 +263,12 @@ struct C11RootNavigationDiagnosticView: View {
     let probe: C11RootNavigationProbe
     private var diagnostic: String {
         let counts = "C11 \(selection.rawValue): get=\(probe.gets) bind=\(probe.binds) refresh=\(probe.refreshes) blocked=\(probe.blocked)"
+        if selection == .sameRecordForeground {
+            return counts + " bg=\(probe.foregroundBackgrounds) restore=\(probe.foregroundRestores) finished=\(probe.foregroundFinished) cancelled=\(probe.foregroundCancelled) disappeared=\(probe.foregroundDisappeared)"
+                + " preRetained=\(probe.foregroundPreRetained ? 1 : 0) preclosed=\(probe.foregroundPreclosed ? 1 : 0) oldClosed=\(probe.foregroundOldClosed ? 1 : 0) captures=\(probe.foregroundCaptures) distinct=\(probe.foregroundDistinct ? 1 : 0)"
+                + " sameUser=\(probe.foregroundSameUser ? 1 : 0) sameGeneration=\(probe.foregroundSameGeneration ? 1 : 0) ticketChanged=\(probe.foregroundTicketChanged ? 1 : 0) samePublic=\(probe.foregroundSamePublic ? 1 : 0)"
+                + " bodyAbsent=\(probe.foregroundBodyAbsent ? 1 : 0) keyAbsent=\(probe.foregroundKeyAbsent ? 1 : 0) commands=\(probe.foregroundCommands)"
+        }
         if selection == .logoutMarkerFailure {
             return counts + " markerFailures=\(probe.recoveryMarkerFailures) revokes=\(probe.recoveryRemoteRevokes) commands=\(probe.recoveryCommands)"
                 + " bodyAbsent=\(probe.recoveryReadBodyAbsent ? 1 : 0) keyAbsent=\(probe.recoveryReadKeyAbsent ? 1 : 0)"
@@ -202,6 +297,54 @@ struct C11RootNavigationDiagnosticView: View {
             .foregroundStyle(.white)
             .accessibilityIdentifier("c11.fixture.status")
             .allowsHitTesting(false)
+    }
+}
+
+/// DEBUG-only and one-shot. Normal/other fixtures install no effects.
+@MainActor
+struct C11ForegroundRestoreModifier: ViewModifier {
+    private let originalModel: AppFlowModel
+    private let probe: C11RootNavigationProbe?
+    @Environment(\.scenePhase) private var phase
+    @State private var armed = false
+    @State private var consumed = false
+
+    init(originalModel: AppFlowModel, fixture: C11RootNavigationFixture?) {
+        self.originalModel = originalModel
+        probe = fixture?.selection == .sameRecordForeground ? fixture?.probe : nil
+    }
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let probe {
+            content
+                .onChange(of: phase) { _, current in
+                    if current == .background, !consumed { armed = probe.armForegroundAfterRealBackground() }
+                }
+                .task(id: phase) {
+                    guard phase == .active, armed, !consumed, !Task.isCancelled else { return }
+                    consumed = true
+                    armed = false
+                    // No await before this original grant observation.
+                    guard probe.observeForegroundPreStartRetained() else { return }
+                    let originalSession = originalModel.currentSession
+                    let originalActivation = originalModel.mealRecordActivation
+                    probe.recordForegroundRestoreStarted()
+                    defer {
+                        let current = originalModel.mealRecordActivation
+                        probe.recordForegroundRestoreFinished(cancelled: Task.isCancelled,
+                            samePublicSession: originalSession != nil && originalModel.currentSession == originalSession,
+                            ticketChanged: originalActivation != nil && current != nil
+                                && originalActivation?.ticket != current?.ticket)
+                    }
+                    // Existing restore creates its own ticket/grant.
+                    await originalModel.start()
+                }
+                .onDisappear {
+                    armed = false
+                    probe.recordForegroundDisappearance()
+                    // SwiftUI owns/cancels task. Do not close/reset authority.
+                }
+        } else { content }
     }
 }
 
@@ -248,6 +391,15 @@ private enum C11RootNavigationFacts {
         return MealRecordResponse(data: MealRecordSnapshot(recordID: recordID, scope: .item,
             expectedVersion: "opaque-c11-ui-version", itemIDs: [recordID], items: [item], editable: true,
             dayClosed: false, localDate: "2026-10-13", timezone: "America/Sao_Paulo", editBlockReason: nil), meta: meta)
+    }
+    static func foregroundDetail() -> MealRecordResponse {
+        let item = MealRecordItemSnapshot(id: recordID, foodName: "Synthetic C11 foreground restored official food",
+            quantityG: 50, kcal: 100, proteinG: 1, carbsG: 2, fatG: 3, source: "canonical_exact",
+            consumedAt: APITimestamp(value: date), mealType: "almoco")
+        return MealRecordResponse(data: MealRecordSnapshot(recordID: recordID, scope: .item,
+            expectedVersion: "opaque-c11-ui-version", itemIDs: [recordID], items: [item], editable: true,
+            dayClosed: false, localDate: "2026-10-13", timezone: "America/Sao_Paulo", editBlockReason: nil),
+            meta: MobileResponseMetadata(apiVersion: "v1", requestID: "c11-ui-foreground-get-200"))
     }
     /// Distinct canned official read after explicit recovery; History's local row stays unchanged.
     static func recoveredDetail() -> MealRecordResponse {
@@ -554,6 +706,7 @@ private actor C11RootNavigationServer {
     }
 
     func respond(to request: URLRequest) async throws -> C11RootNavigationHTTPResponse {
+        if selection == .sameRecordForeground { return try await respondToForegroundRead(request) }
         if selection == .logoutMarkerFailure { return try await respondToRecoveryRead(request) }
         guard request.url?.absoluteString == "https://c11-ui.fixture.invalid/api/mobile/v1/meal-records/11111111-1111-4111-8111-111111111111" else {
             await probe.recordBlocked()
@@ -634,6 +787,27 @@ private actor C11RootNavigationServer {
             await probe.recordBlocked()
             throw MobileAPITransportError.invalidResponse
         }
+    }
+
+    private func respondToForegroundRead(_ request: URLRequest) async throws -> C11RootNavigationHTTPResponse {
+        if request.httpMethod == "GET" {
+            attemptedGETs += 1
+            await probe.recordGET()
+        } else { await probe.recordForegroundCommand() }
+        let logical = LogicalRequest(request)
+        let bearer = request.value(forHTTPHeaderField: "Authorization")
+        let allowed = await probe.canServeForegroundRead(attempt: attemptedGETs)
+        guard allowed, logical.method == "GET", logical.isValidRead,
+              request.url?.absoluteString == "https://c11-ui.fixture.invalid/api/mobile/v1/meal-records/11111111-1111-4111-8111-111111111111",
+              bearer?.hasPrefix("Bearer ") == true, (bearer?.count ?? 0) > 7 else {
+            await probe.recordBlocked()
+            throw MobileAPITransportError.invalidResponse
+        }
+        await probe.recordForegroundReadMetadata(bodyAbsent: logical.bodyIsAbsent,
+            keyAbsent: logical.idempotencyKey == nil)
+        return C11RootNavigationHTTPResponse(statusCode: 200,
+            data: try JSONEncoder().encode(attemptedGETs == 1
+                ? C11RootNavigationFacts.detail() : C11RootNavigationFacts.foregroundDetail()))
     }
 
     /// One fresh official read, only after actual failed logout and explicit new binding.
@@ -775,7 +949,11 @@ private actor C11RootNavigationServer {
 private actor C11RootNavigationLifecycleProbe: SessionLifecycleProviding {
     let base: SessionLifecycleCoordinator
     let probe: C11RootNavigationProbe
-    init(base: SessionLifecycleCoordinator, probe: C11RootNavigationProbe) { self.base = base; self.probe = probe }
+    private let capturesForegroundGrants: Bool
+    init(base: SessionLifecycleCoordinator, probe: C11RootNavigationProbe, capturesForegroundGrants: Bool = false) {
+        self.base = base; self.probe = probe
+        self.capturesForegroundGrants = capturesForegroundGrants
+    }
     func currentBearerToken() async -> String? { await base.currentBearerToken() }
     func restorePublicSession() async throws -> AuthSession? { try await base.restorePublicSession() }
     func `switch`(to record: AuthenticationSessionRecord) async throws { try await base.switch(to: record) }
@@ -798,7 +976,19 @@ private actor C11RootNavigationLifecycleProbe: SessionLifecycleProviding {
     }
     func performVisiblePatientStateOperation<Value: Sendable>(lease: SessionLease,
         operation: @MainActor @Sendable () throws -> Value) async throws -> Value {
-        try await base.performVisiblePatientStateOperation(lease: lease, operation: operation)
+        guard capturesForegroundGrants else {
+            return try await base.performVisiblePatientStateOperation(lease: lease, operation: operation)
+        }
+        let probe = probe
+        // Copy only non-secret fields; never retain SessionLease/bearer.
+        let userID = lease.userID, generation = lease.generation
+        return try await base.performVisiblePatientStateOperation(lease: lease) {
+            let original = try operation()
+            if let capability = original as? MealRecordSessionCapability {
+                probe.recordForegroundGrant(capability, userID: userID, generation: generation)
+            }
+            return original
+        }
     }
 }
 

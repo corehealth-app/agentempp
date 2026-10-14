@@ -161,7 +161,7 @@ struct MealRecordDetailView: View {
 
     private func formRows(_ rows: [MealRecordDetailPresentation.Row]) -> some View {
         ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-            Section(row.official.foodName) {
+            Section {
                 savedValues(row.official)
                 if let draftIndex = row.draftIndex {
                     editFields(index: draftIndex)
@@ -170,9 +170,11 @@ struct MealRecordDetailView: View {
                 Toggle(copy("confirmed-meal.item.select-for-deletion"), isOn: deletionBinding(row.id))
                     .disabled(!model.canStartMutation)
                     .accessibilityIdentifier("meal-record.delete-selection.\(row.id)")
+            } header: {
+                Text(row.official.foodName)
+                    .accessibilityIdentifier("meal-record.item.\(index)")
             }
             .bodyFlowListRow()
-            .accessibilityIdentifier("meal-record.item.\(index)")
         }
     }
 

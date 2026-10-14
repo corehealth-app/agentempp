@@ -10,7 +10,8 @@
     "./protocol": "./src/protocol-router.ts",
     "./progress": "./src/progress-calc.ts",
     "./nutrition": "./src/nutrition.ts",
-    "./types": "./src/types.ts"
+    "./types": "./src/types.ts",
+    "./workout-strength-classification": "./src/workout-strength-classification.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

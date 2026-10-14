@@ -1154,6 +1154,151 @@ final class C11RootNavigationUITests: XCTestCase {
         capture(app, name: "c11-held401-cancelled-real-consumer-no-remote-refresh-current-a2-form")
     }
 
+    /// Real in-flight refresh loses to an actual newer same-user record switch.
+    /// Preserves the actual History route and an adjacent Plan reading landmark.
+    func testRealRootNewSameUserCredentialWinsInflightRefreshAndPreservesHistoryAndPlan() throws {
+        let app = try launchFixture("--ui-testing-c11-root-new-credential-refresh", selection: "new-credential-refresh")
+        let status = element("c11.fixture.status", in: app)
+        func requireI4(_ counters: [String: Int], phase: String) -> Bool {
+            let predicates = counters.sorted { $0.key < $1.key }.map { key, value in
+                NSPredicate(format: "label MATCHES %@", ".*\\b\(key)=\(value)\\b.*")
+            }
+            let ready = XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                predicate: NSCompoundPredicate(andPredicateWithSubpredicates: predicates), object: status)], timeout: 8) == .completed
+            if !ready { capture(app, name: "c11-i4-" + phase + "-counters") }
+            XCTAssertTrue(ready,
+                "SETUP_NOT_VERIFIED_OR_I4_FAILURE: actual refresh, switch, old completion and current N must match " + phase)
+            return ready
+        }
+        func tab(_ identifier: String) -> Bool {
+            let button = app.buttons[identifier]
+            guard button.waitForExistence(timeout: 5), button.isEnabled, button.isHittable,
+                  app.frame.contains(button.frame) else {
+                capture(app, name: "c11-i4-tab-setup")
+                XCTFail("SETUP_NOT_VERIFIED: actual mounted tab required")
+                return false
+            }
+            button.tap()
+            return true
+        }
+        guard requireI4(["get": 0, "bind": 1, "refresh": 0, "blocked": 0,
+                         "captures": 1, "fixturesDistinct": 1, "started": 0, "completed": 0],
+                        phase: "initial-root") else { return }
+        guard tab("tab.plano") else { return }
+        guard element("screen.plano", in: app).waitForExistence(timeout: 5) else {
+            XCTFail("SETUP_NOT_VERIFIED: loaded actual Plan root required"); return
+        }
+        let link = element("plan.detail", in: app)
+        let planScrolls = app.scrollViews
+        guard planScrolls.count == 1 else {
+            capture(app, name: "c11-i4-plan-scroll-setup")
+            XCTFail("SETUP_NOT_VERIFIED: one actual Plan ScrollView required"); return
+        }
+        for _ in 0..<6 {
+            if link.exists && link.isHittable && app.frame.contains(link.frame) && !link.frame.intersects(status.frame) { break }
+            planScrolls.element(boundBy: 0).swipeUp()
+        }
+        guard link.exists, link.isHittable, link.frame.width >= 44, link.frame.height >= 44,
+              app.frame.contains(link.frame), !link.frame.intersects(status.frame) else {
+            capture(app, name: "c11-i4-plan-detail-link-setup")
+            XCTFail("SETUP_NOT_VERIFIED: actual Plan detail link must be fully reachable"); return
+        }
+        link.tap()
+        let planDetail = element("screen.plan.detail", in: app)
+        guard planDetail.waitForExistence(timeout: 5) else {
+            XCTFail("SETUP_NOT_VERIFIED: actual adjacent Plan detail required"); return
+        }
+        let detailScrolls = app.scrollViews
+        guard detailScrolls.count == 1 else { XCTFail("SETUP_NOT_VERIFIED: one actual Plan detail ScrollView required"); return }
+        let notes = app.staticTexts.matching(NSPredicate(format: "identifier == %@ AND label == %@",
+            "plan.training", "Observações, Plano sintético para demonstração"))
+        let note = notes.firstMatch
+        for _ in 0..<6 {
+            if note.exists && note.isHittable && app.frame.contains(note.frame) && !note.frame.intersects(status.frame) { break }
+            detailScrolls.element(boundBy: 0).swipeUp()
+        }
+        guard notes.count == 1, note.exists, note.isHittable, app.frame.contains(note.frame),
+              !note.frame.intersects(status.frame), app.navigationBars["Detalhes do plano"].exists else {
+            capture(app, name: "c11-i4-plan-reading-setup")
+            XCTFail("SETUP_NOT_VERIFIED: actual unique combined Plan note must be visible before restoration"); return
+        }
+        let noteLabel = note.label, noteFrame = note.frame
+        capture(app, name: "c11-i4-adjacent-plan-detail-reading-before")
+        guard tab("tab.hoje") else { return }
+        try openActualHistoryRow(in: app)
+        guard requireI4(
+            ["get": 1, "bind": 1, "refresh": 1, "blocked": 0,
+             "started": 1, "completed": 0, "remoteHeld": 1, "remoteCancelled": 0,
+             "fixturesDistinct": 1, "oldInput": 1, "oldAccount": 1, "rejected": 0,
+             "switches": 0, "storedNewAfterSwitch": 0, "normalRelease": 0, "controllerError": 0,
+             "consumer": 1, "entryCancelled": 0, "ownerGeneration": 1,
+             "oldOutcome": 0, "oldCancelled": 0, "storedNewAfterOld": 0,
+             "firstUsesOld": 1, "secondUsesNew": 0, "newReadID": 0,
+             "bg": 0, "restore": 0, "finished": 0, "controllerCancelled": 0, "disappeared": 0,
+             "captures": 1, "originalLive": 1, "bodyAbsent": 1, "keyAbsent": 1, "commands": 0],
+            phase: "actual-old-remote-held-before-home") else { return }
+        let detail = element("screen.meal-record", in: app)
+        guard detail.exists, element("meal-record.progress", in: app).waitForExistence(timeout: 5),
+              !app.textFields["meal-record.field.name"].exists,
+              !element("meal-record.read-failure", in: app).exists else {
+            capture(app, name: "c11-i4-first-read-not-pending")
+            XCTFail("SETUP_NOT_VERIFIED: actual first read remains pending during the real shared remote refresh"); return
+        }
+        capture(app, name: "c11-i4-actual-inflight-refresh-before-same-user-switch")
+        XCUIDevice.shared.press(.home)
+        let backgroundStates = [NSNumber(value: XCUIApplication.State.runningBackground.rawValue),
+                                NSNumber(value: XCUIApplication.State.runningBackgroundSuspended.rawValue)]
+        let background = XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "state IN %@", backgroundStates), object: app)], timeout: 5) == .completed
+        guard background else { XCTFail("SETUP_NOT_VERIFIED: actual Home/background required"); return }
+        app.activate() // Same running process; no relaunch or simulated sign-in.
+        guard requireI4(
+            ["get": 2, "bind": 2, "refresh": 1, "blocked": 0,
+             "started": 1, "completed": 1, "remoteHeld": 1, "remoteCancelled": 0,
+             "fixturesDistinct": 1, "oldInput": 1, "oldAccount": 1, "rejected": 0,
+             "switches": 1, "storedNewAfterSwitch": 1, "normalRelease": 1, "controllerError": 0,
+             "consumer": 1, "entryCancelled": 0, "ownerGeneration": 1,
+             "oldOutcome": 1, "oldCancelled": 1, "oldCancellationOutcome": 1, "storedNewAfterOld": 1,
+             "firstUsesOld": 1, "secondUsesNew": 1, "newReadID": 1,
+             "bg": 1, "restore": 1, "finished": 1, "controllerCancelled": 0, "disappeared": 0,
+             "captures": 2, "preRetained": 1, "originalLive": 0, "oldClosed": 1, "distinct": 1,
+             "sameUser": 1, "sameGeneration": 1, "ticketChanged": 1, "samePublic": 1,
+             "bodyAbsent": 1, "keyAbsent": 1, "commands": 0], phase: "newest-wins-after-real-old-outcome") else { return }
+        let name = app.textFields["meal-record.field.name"]
+        guard detail.exists, name.waitForExistence(timeout: 5), name.isHittable else {
+            capture(app, name: "c11-i4-a2-current-form-missing")
+            XCTFail("I4_COMPOSITION: actual current A2 Form must survive the late old shared outcome"); return
+        }
+        XCTAssertEqual(name.value as? String, "Synthetic C11 foreground restored official food")
+        XCTAssertEqual(app.textFields["meal-record.field.quantity"].value as? String, "50")
+        for identifier in ["screen.history.meal-detail", "meal-record.read-failure", "meal-record.failure",
+                           "meal-record.saved", "meal-record.recovery.notice", "meal-record.recovery.action",
+                           "screen.auth.sign-in"] {
+            XCTAssertFalse(element(identifier, in: app).exists)
+        }
+        let finalCounters = status.label
+        capture(app, name: "c11-i4-newest-n-current-a2-form-after-old-r-drained")
+        guard tab("tab.plano") else { return }
+        XCTAssertTrue(planDetail.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Detalhes do plano"].exists)
+        guard note.exists, note.isHittable else {
+            capture(app, name: "c11-i4-adjacent-plan-reading-lost")
+            XCTFail("I4_COMPOSITION: original Plan reading landmark must survive"); return
+        }
+        XCTAssertEqual(note.label, noteLabel)
+        XCTAssertEqual(note.frame.minY, noteFrame.minY, accuracy: 1)
+        capture(app, name: "c11-i4-adjacent-plan-detail-and-reading-preserved")
+        guard tab("tab.hoje") else { return }
+        XCTAssertTrue(detail.waitForExistence(timeout: 5))
+        XCTAssertEqual(name.value as? String, "Synthetic C11 foreground restored official food")
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        guard back.exists, back.isEnabled, back.isHittable else { XCTFail("SETUP_NOT_VERIFIED: actual History Back required"); return }
+        back.tap()
+        XCTAssertTrue(element("screen.history", in: app).waitForExistence(timeout: 5))
+        XCTAssertEqual(status.label, finalCounters, "No third GET, new refresh, extra switch or old replay after observing both preserved stacks")
+        capture(app, name: "c11-i4-real-history-parent-and-plan-preserved-no-extra-requests")
+    }
+
     private func requireDeliveryStatus(in app: XCUIApplication, counters: [String: Int]) -> Bool {
         let status = element("c11.fixture.status", in: app)
         // Word boundaries prevent get=1 from accepting get=10. Expected

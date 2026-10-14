@@ -18,6 +18,7 @@ enum C11RootNavigationSelection: String, Sendable {
     case observeDeliveryFailure = "observe-delivery-failure"
     case observeDeliveryCancellation = "observe-delivery-cancellation"
     case completed401Foreground = "held401-foreground"
+    case newCredentialRefresh = "new-credential-refresh"
 
     var observesDelivery: Bool {
         self == .observeCompleted401 || self == .observeDeliveryFailure || self == .observeDeliveryCancellation
@@ -38,7 +39,8 @@ enum C11RootNavigationSelection: String, Sendable {
             (.observeCompleted401, "--ui-testing-c11-root-observe-completed401"),
             (.observeDeliveryFailure, "--ui-testing-c11-root-observe-delivery-failure"),
             (.observeDeliveryCancellation, "--ui-testing-c11-root-observe-delivery-cancellation"),
-            (.completed401Foreground, "--ui-testing-c11-root-held401-foreground")
+            (.completed401Foreground, "--ui-testing-c11-root-held401-foreground"),
+            (.newCredentialRefresh, "--ui-testing-c11-root-new-credential-refresh")
         ]
         let selected = choices.filter { arguments.contains($0.1) }
         guard selected.count == 1 else { return nil }
@@ -48,7 +50,7 @@ enum C11RootNavigationSelection: String, Sendable {
     var suppliesMealRecordSource: Bool {
         switch self {
         case .sourceOn, .logoutMarkerFailure, .sameRecordForeground, .getUnauthorizedThenSuccess, .getUnauthorizedTwice, .getUnauthorizedTwiceThenRetrySuccess, .patchUnauthorizedThenSuccess, .deleteUnauthorizedThenSuccess: true
-        case .observeCompleted401, .observeDeliveryFailure, .observeDeliveryCancellation, .completed401Foreground: true
+        case .observeCompleted401, .observeDeliveryFailure, .observeDeliveryCancellation, .completed401Foreground, .newCredentialRefresh: true
         case .sourceOff: false
         }
     }
@@ -63,6 +65,7 @@ struct C11RootNavigationFixture {
     let dependencies: AppDependencies
     let probe: C11RootNavigationProbe
     fileprivate let held401Checkpoint: C11RootHeld401Checkpoint?
+    fileprivate let newCredentialDriver: C11RootI4Driver?
 
     static func make(selection: C11RootNavigationSelection) throws -> Self {
         let configuration = AppLaunchConfiguration(mode: .releaseUnavailable,
@@ -70,17 +73,28 @@ struct C11RootNavigationFixture {
             preloadsSyntheticOnboardingValues: false, authBehavior: .succeed(after: nil))
         let held401State = selection == .completed401Foreground ? C11RootHeld401State() : nil
         let held401Checkpoint = held401State.map { _ in C11RootHeld401Checkpoint() }
-        let probe = C11RootNavigationProbe(held401: held401State)
-        let record = try C11RootNavigationFacts.record()
+        let newCredentialState = selection == .newCredentialRefresh ? C11RootI4State() : nil
+        let newCredentialHold = newCredentialState.map { _ in C11RootI4RefreshHold() }
+        let probe = C11RootNavigationProbe(held401: held401State, newCredential: newCredentialState)
+        let record: AuthenticationSessionRecord
+        if selection == .newCredentialRefresh { record = C11RootI4Facts.old }
+        else { record = try C11RootNavigationFacts.record() }
         let secure = try C11RootNavigationSecureStore(record: record,
             markerFailureProbe: selection == .logoutMarkerFailure ? probe : nil)
         let store = AuthenticationSessionStore(secureStore: secure,
             now: { Date(timeIntervalSince1970: 1000) })
-        let remote = C11RootNavigationRemote(probe: probe, selection: selection)
+        let heldRemote = newCredentialState.flatMap { state in
+            newCredentialHold.map { C11RootI4Remote(probe: probe, state: state, hold: $0) }
+        }
+        let remote = C11RootNavigationRemote(probe: probe, selection: selection, newCredentialRemote: heldRemote)
         let lifecycle = SessionLifecycleCoordinator(store: store, remote: remote,
             refreshPolicy: SessionRefreshPolicy(now: { Date(timeIntervalSince1970: 1000) }, leeway: 60))
+        let newCredentialDriver = newCredentialState.flatMap { state in
+            newCredentialHold.map { C11RootI4Driver(lifecycle: lifecycle, store: store, state: state, hold: $0) }
+        }
         let bindingProbe = C11RootNavigationLifecycleProbe(base: lifecycle, probe: probe,
-            capturesForegroundGrants: selection == .sameRecordForeground || selection == .completed401Foreground)
+            capturesForegroundGrants: selection == .sameRecordForeground || selection == .completed401Foreground
+                || selection == .newCredentialRefresh)
         let patchState = selection == .patchUnauthorizedThenSuccess ? C11RootNavigationPatchState(probe: probe) : nil
         let deleteState = selection == .deleteUnauthorizedThenSuccess ? C11RootNavigationDeleteState(probe: probe) : nil
         let observation = selection.observesDelivery || selection == .completed401Foreground
@@ -91,7 +105,9 @@ struct C11RootNavigationFixture {
         let sessionConfiguration = URLSessionConfiguration.ephemeral
         sessionConfiguration.protocolClasses = [C11RootNavigationURLProtocol.self]
         let transportLifecycle: any SessionLifecycleProviding
-        if let held401State, let held401Checkpoint {
+        if let newCredentialDriver {
+            transportLifecycle = C11RootI4Lifecycle(driver: newCredentialDriver, probe: probe)
+        } else if let held401State, let held401Checkpoint {
             transportLifecycle = C11RootHeld401Lifecycle(base: lifecycle, probe: probe,
                 state: held401State, checkpoint: held401Checkpoint)
         } else if selection == .observeDeliveryCancellation {
@@ -108,7 +124,7 @@ struct C11RootNavigationFixture {
         let unavailable = UnavailableBodyFlowCapabilities()
         let reads = C11RootNavigationReads()
         let plan: any PlanProviding
-        if selection == .sameRecordForeground {
+        if selection == .sameRecordForeground || selection == .newCredentialRefresh {
             // Existing loaded DEBUG provider; scaffold().plan is unavailable.
             plan = DemoBodyFlowRepository(scenario: .loaded)
         } else { plan = unavailable }
@@ -140,7 +156,7 @@ struct C11RootNavigationFixture {
             patientTimeZoneStore: PatientTimeZoneStore(seed: PatientTimeZoneContext(documentedIANAIdentifier: nil)),
             flowChat: scaffold.flowChat, mealRecordBindingSource: source)
         return Self(selection: selection, configuration: configuration, dependencies: dependencies, probe: probe,
-            held401Checkpoint: held401Checkpoint)
+            held401Checkpoint: held401Checkpoint, newCredentialDriver: newCredentialDriver)
     }
 }
 
@@ -149,7 +165,10 @@ struct C11RootNavigationFixture {
 @Observable
 final class C11RootNavigationProbe {
     fileprivate let held401: C11RootHeld401State?
-    fileprivate init(held401: C11RootHeld401State? = nil) { self.held401 = held401 }
+    fileprivate let newCredential: C11RootI4State?
+    fileprivate init(held401: C11RootHeld401State? = nil, newCredential: C11RootI4State? = nil) {
+        self.held401 = held401; self.newCredential = newCredential
+    }
     fileprivate func matchesFirstForegroundOwner(userID: String, generation: UInt64) -> Bool {
         foregroundFirst?.userID == userID && foregroundFirst?.generation == generation
     }
@@ -285,6 +304,26 @@ final class C11RootNavigationProbe {
         return attempt == 2 && foregroundRestores == 1 && foregroundPreRetained
             && foregroundCaptures == 2 && foregroundDistinct && foregroundSameUser && foregroundSameGeneration
     }
+    fileprivate func armNewCredentialAfterRealBackground() -> Bool {
+        guard let current = newCredential, current.remoteStarted == 1, current.remoteCompleted == 0,
+              current.remoteHeld, foregroundBackgrounds == 0, foregroundRestores == 0,
+              foregroundDisappeared == 0, gets == 1, binds == 1, foregroundCaptures == 1,
+              foregroundFirst?.capability.hasRetainedCapability == true, refreshes == 1,
+              blocked == 0, foregroundCommands == 0 else { return false }
+        foregroundBackgrounds = 1
+        return true
+    }
+    fileprivate func canServeNewCredentialRead(attempt: Int) -> Bool {
+        guard let current = newCredential, blocked == 0, foregroundCommands == 0,
+              foregroundDisappeared == 0 else { return false }
+        if attempt == 1 {
+            return refreshes == 0 && foregroundCaptures == 1 && foregroundRestores == 0
+        }
+        return attempt == 2 && refreshes == 1 && foregroundRestores == 1
+            && foregroundFinished == 1 && current.normalRelease == 1
+            && current.storedNewAfterSwitch && foregroundPreRetained
+            && foregroundCaptures == 2 && foregroundDistinct && foregroundSameUser && foregroundSameGeneration
+    }
     func recordPATCH(uniqueKeys: Int) { patches += 1; self.uniqueKeys = uniqueKeys }
     func recordDELETE(uniqueKeys: Int) { deletes += 1; self.uniqueKeys = uniqueKeys }
     func recordTodayRead() { todayReads += 1 }
@@ -316,6 +355,17 @@ struct C11RootNavigationDiagnosticView: View {
     let probe: C11RootNavigationProbe
     private var diagnostic: String {
         let counts = "C11 \(selection.rawValue): get=\(probe.gets) bind=\(probe.binds) refresh=\(probe.refreshes) blocked=\(probe.blocked)"
+        if selection == .newCredentialRefresh, let current = probe.newCredential {
+            return counts + " started=\(current.remoteStarted) completed=\(current.remoteCompleted) remoteCancelled=\(current.remoteCancelled ? 1 : 0) remoteHeld=\(current.remoteHeld ? 1 : 0)"
+                + " fixturesDistinct=\(current.fixturesDistinct ? 1 : 0) oldInput=\(current.oldCredentialInputMatches ? 1 : 0) oldAccount=\(current.oldAccountMatches ? 1 : 0) rejected=\(current.rejected)"
+                + " switches=\(current.switches) storedNewAfterSwitch=\(current.storedNewAfterSwitch ? 1 : 0) normalRelease=\(current.normalRelease) controllerError=\(current.controllerErrors)"
+                + " consumer=\(current.consumerEntries) entryCancelled=\(current.consumerCancelledAtEntry ? 1 : 0) ownerGeneration=\(current.originalOwnerGeneration ? 1 : 0) oldOutcome=\(current.oldOutcomes) oldCancelled=\(current.oldCancelledAtOutcome ? 1 : 0) oldCancellationOutcome=\(current.oldCancellationOutcome ? 1 : 0) storedNewAfterOld=\(current.storedNewAfterOld ? 1 : 0)"
+                + " firstUsesOld=\(current.firstReadUsesOld ? 1 : 0) secondUsesNew=\(current.secondReadUsesNew ? 1 : 0) newReadID=\(current.newReadID ? 1 : 0)"
+                + " bg=\(probe.foregroundBackgrounds) restore=\(probe.foregroundRestores) finished=\(probe.foregroundFinished) controllerCancelled=\(probe.foregroundCancelled) disappeared=\(probe.foregroundDisappeared)"
+                + " captures=\(probe.foregroundCaptures) preRetained=\(probe.foregroundPreRetained ? 1 : 0) originalLive=\(probe.firstForegroundCapabilityIsRetained ? 1 : 0) oldClosed=\(probe.foregroundOldClosed ? 1 : 0) distinct=\(probe.foregroundDistinct ? 1 : 0)"
+                + " sameUser=\(probe.foregroundSameUser ? 1 : 0) sameGeneration=\(probe.foregroundSameGeneration ? 1 : 0) ticketChanged=\(probe.foregroundTicketChanged ? 1 : 0) samePublic=\(probe.foregroundSamePublic ? 1 : 0)"
+                + " bodyAbsent=\(probe.foregroundBodyAbsent ? 1 : 0) keyAbsent=\(probe.foregroundKeyAbsent ? 1 : 0) commands=\(probe.foregroundCommands)"
+        }
         if selection == .completed401Foreground, let held = probe.held401 {
             let delivery = probe.delivery
             return counts + " client401=\(delivery.completed401) deliverySuccess=\(delivery.success) deliveryError=\(delivery.error) stopBefore=\(delivery.stopBefore)"
@@ -363,6 +413,8 @@ struct C11RootNavigationDiagnosticView: View {
     }
     var body: some View {
         Text(diagnostic)
+            .lineLimit(selection == .newCredentialRefresh ? 1 : nil)
+            .accessibilityLabel(diagnostic)
             .font(.system(size: 9, design: .monospaced))
             .padding(2)
             .background(.black.opacity(0.85))
@@ -379,6 +431,8 @@ struct C11ForegroundRestoreModifier: ViewModifier {
     private let probe: C11RootNavigationProbe?
     private let held401Probe: C11RootNavigationProbe?
     private let held401Checkpoint: C11RootHeld401Checkpoint?
+    private let newCredentialDriver: C11RootI4Driver?
+    private let newCredentialProbe: C11RootNavigationProbe?
     @Environment(\.scenePhase) private var phase
     @State private var armed = false
     @State private var consumed = false
@@ -388,6 +442,8 @@ struct C11ForegroundRestoreModifier: ViewModifier {
         probe = fixture?.selection == .sameRecordForeground ? fixture?.probe : nil
         held401Probe = fixture?.selection == .completed401Foreground ? fixture?.probe : nil
         held401Checkpoint = fixture?.held401Checkpoint
+        newCredentialDriver = fixture?.newCredentialDriver
+        newCredentialProbe = fixture?.selection == .newCredentialRefresh ? fixture?.probe : nil
     }
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -423,6 +479,9 @@ struct C11ForegroundRestoreModifier: ViewModifier {
         } else if let held401Probe, let held401Checkpoint {
             content.modifier(C11RootHeld401ForegroundModifier(originalModel: originalModel,
                 probe: held401Probe, checkpoint: held401Checkpoint))
+        } else if let newCredentialDriver, let newCredentialProbe {
+            content.modifier(C11RootI4ForegroundModifier(originalModel: originalModel,
+                probe: newCredentialProbe, driver: newCredentialDriver))
         } else { content }
     }
 }
@@ -649,6 +708,255 @@ private struct C11RootHeld401ForegroundModifier: ViewModifier {
     }
 }
 
+/// No actual credential/record/hash is retained in observations. Expected
+/// fixture records below are immutable synthetic operation inputs, not probes.
+@MainActor
+@Observable
+fileprivate final class C11RootI4State {
+    var fixturesDistinct = C11RootI4Facts.credentialsAreDistinct
+    var remoteStarted = 0
+    var remoteCompleted = 0
+    var remoteHeld = false // Historical fact: the actual remote entered its hold.
+    var remoteCancelled = false
+    var oldCredentialInputMatches = false
+    var oldAccountMatches = false
+    var rejected = 0
+    var switches = 0
+    var storedNewAfterSwitch = false
+    var normalRelease = 0
+    var controllerErrors = 0
+    var consumerEntries = 0
+    var consumerCancelledAtEntry = false
+    var originalOwnerGeneration = false
+    var oldOutcomes = 0
+    var oldCancelledAtOutcome = false
+    var oldCancellationOutcome = false
+    var storedNewAfterOld = false
+    var firstReadUsesOld = false
+    var secondReadUsesNew = false
+    var newReadID = false
+}
+
+/// One actual remote await. Release is owned by the structured foreground
+/// controller; old caller cancellation cannot release/erase this schedule.
+fileprivate final class C11RootI4RefreshHold: @unchecked Sendable {
+    private let lock = NSLock()
+    private var entered = false
+    private var released = false
+    private var waiter: CheckedContinuation<Void, Never>?
+    var isHeld: Bool { lock.withLock { entered && !released } }
+    func enter() -> Bool {
+        lock.withLock {
+            guard !entered, !released else { return false }
+            entered = true
+            return true
+        }
+    }
+    func waitForRelease() async {
+        await withCheckedContinuation { continuation in
+            let releaseNow = lock.withLock {
+                if released { return true }
+                waiter = continuation
+                return false
+            }
+            if releaseNow { continuation.resume() }
+        }
+    }
+    func release() {
+        let pending = lock.withLock {
+            released = true
+            let pending = waiter
+            waiter = nil
+            return pending
+        }
+        pending?.resume() // Never under the hold lock or a client callback lock.
+    }
+}
+
+fileprivate struct C11RootI4Driver: Sendable {
+    let lifecycle: SessionLifecycleCoordinator
+    let store: AuthenticationSessionStore
+    let state: C11RootI4State
+    let hold: C11RootI4RefreshHold
+}
+
+/// The real coordinator-owned shared task calls this through its actual remote.
+/// It receives its real operation record as required by the protocol. Only
+/// transient comparisons over that argument are copied into boolean probes.
+private actor C11RootI4Remote {
+    let probe: C11RootNavigationProbe
+    let state: C11RootI4State
+    let hold: C11RootI4RefreshHold
+    init(probe: C11RootNavigationProbe, state: C11RootI4State, hold: C11RootI4RefreshHold) {
+        self.probe = probe; self.state = state; self.hold = hold
+    }
+    func refresh(record: AuthenticationSessionRecord) async throws -> AuthenticationSessionRecord {
+        await probe.recordRefresh() // Count every actual call before any guard/response.
+        let oldMatches = record == C11RootI4Facts.old
+        let accountMatches = record.publicSession == C11RootI4Facts.old.publicSession
+        await MainActor.run {
+            state.remoteStarted += 1
+            if state.remoteStarted == 1 {
+                state.oldCredentialInputMatches = oldMatches
+                state.oldAccountMatches = accountMatches
+            }
+        }
+        guard oldMatches, accountMatches, hold.enter() else {
+            await MainActor.run { state.rejected += 1 }
+            throw SupabaseAuthRemoteError.requestFailed
+        }
+        await MainActor.run { state.remoteHeld = true }
+        await hold.waitForRelease() // The operation's own record is not copied into observation.
+        let cancelled = Task.isCancelled
+        await MainActor.run {
+            state.remoteCompleted += 1
+            state.remoteCancelled = cancelled
+        }
+        // Valid STALE R, intentionally different from installed N. Its actual
+        // outcome must traverse the real coordinator's revision/operation guard.
+        return C11RootI4Facts.stale
+    }
+}
+
+/// Real transport call-through only. The post-base observation occurs after
+/// its real shared refresh task completed, including commitRefresh resolution.
+/// No extra auth getter, fresh lease or credential copy is used for observation.
+private actor C11RootI4Lifecycle: SessionLifecycleProviding {
+    let driver: C11RootI4Driver
+    let probe: C11RootNavigationProbe
+    init(driver: C11RootI4Driver, probe: C11RootNavigationProbe) {
+        self.driver = driver; self.probe = probe
+    }
+    func currentBearerToken() async -> String? { await driver.lifecycle.currentBearerToken() }
+    func restorePublicSession() async throws -> AuthSession? { try await driver.lifecycle.restorePublicSession() }
+    func `switch`(to record: AuthenticationSessionRecord) async throws { try await driver.lifecycle.switch(to: record) }
+    func leaseForRequest() async throws -> SessionLease { try await driver.lifecycle.leaseForRequest() }
+    func validate(_ lease: SessionLease) async throws { try await driver.lifecycle.validate(lease) }
+    func signOut() async -> RemoteRevocationOutcome { await driver.lifecycle.signOut() }
+    func beginPatientWork(lease: SessionLease, cancel: @escaping @Sendable () -> Void) async throws -> UUID {
+        try await driver.lifecycle.beginPatientWork(lease: lease, cancel: cancel)
+    }
+    func finishPatientWork(_ id: UUID) async { await driver.lifecycle.finishPatientWork(id) }
+    func refreshAfterUnauthorized(lease: SessionLease) async throws -> SessionLease {
+        let cancelledAtEntry = Task.isCancelled // Before the first await.
+        let userID = lease.userID, generation = lease.generation
+        await MainActor.run {
+            driver.state.consumerEntries += 1
+            if driver.state.consumerEntries == 1 {
+                driver.state.consumerCancelledAtEntry = cancelledAtEntry
+                driver.state.originalOwnerGeneration = probe.matchesFirstForegroundOwner(userID: userID, generation: generation)
+            }
+        }
+        do {
+            let result = try await driver.lifecycle.refreshAfterUnauthorized(lease: lease)
+            await recordOldOutcome(cancellationOutcome: false)
+            return result // Actual protocol result, unchanged; never placed in a probe.
+        } catch let error as CancellationError {
+            await recordOldOutcome(cancellationOutcome: true)
+            throw error
+        } catch {
+            await recordOldOutcome(cancellationOutcome: false)
+            throw error
+        }
+    }
+    private func recordOldOutcome(cancellationOutcome: Bool) async {
+        let cancelled = Task.isCancelled
+        // Compare within this expression. No observed record/bearer/hash
+        // crosses the next await; only the boolean survives.
+        let newestStillStored = (await driver.store.currentRecord()) == C11RootI4Facts.newest
+        await MainActor.run {
+            driver.state.oldOutcomes += 1
+            if driver.state.oldOutcomes == 1 {
+                driver.state.oldCancelledAtOutcome = cancelled
+                driver.state.oldCancellationOutcome = cancellationOutcome
+                driver.state.storedNewAfterOld = newestStillStored
+            }
+        }
+    }
+    func performPatientStateOperation<Value: Sendable>(lease: SessionLease,
+        operation: @Sendable () throws -> Value) async throws -> Value {
+        try await driver.lifecycle.performPatientStateOperation(lease: lease, operation: operation)
+    }
+    func performVisiblePatientStateOperation<Value: Sendable>(lease: SessionLease,
+        operation: @MainActor @Sendable () throws -> Value) async throws -> Value {
+        try await driver.lifecycle.performVisiblePatientStateOperation(lease: lease, operation: operation)
+    }
+}
+
+/// Existing public same-user replacement, followed by the original Root Model.
+/// Release happens immediately after start returns and before any A2/join wait.
+@MainActor
+private struct C11RootI4ForegroundModifier: ViewModifier {
+    let originalModel: AppFlowModel
+    let probe: C11RootNavigationProbe
+    let driver: C11RootI4Driver
+    @Environment(\.scenePhase) private var phase
+    @State private var armed = false
+    @State private var consumed = false
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: phase) { _, current in
+                if current == .background, !consumed, driver.hold.isHeld {
+                    armed = probe.armNewCredentialAfterRealBackground()
+                }
+            }
+            .task(id: phase) {
+                guard phase == .active, armed, !consumed, !Task.isCancelled else { return }
+                consumed = true
+                armed = false
+                await withTaskCancellationHandler {
+                    defer { driver.hold.release() }
+                    guard driver.hold.isHeld, probe.observeForegroundPreStartRetained() else { return }
+                    let originalSession = originalModel.currentSession
+                    let originalActivation = originalModel.mealRecordActivation
+                    do {
+                        try await driver.lifecycle.switch(to: C11RootI4Facts.newest)
+                        let storedNew = (await driver.store.currentRecord()) == C11RootI4Facts.newest
+                        driver.state.switches += 1
+                        driver.state.storedNewAfterSwitch = storedNew
+                        guard storedNew, !Task.isCancelled else { return }
+                        probe.recordForegroundRestoreStarted()
+                        await originalModel.start()
+                        let current = originalModel.mealRecordActivation
+                        let samePublic = originalSession != nil && originalModel.currentSession == originalSession
+                        let changedTicket = originalActivation != nil && current != nil
+                            && originalActivation?.ticket != current?.ticket
+                        probe.recordForegroundRestoreFinished(cancelled: Task.isCancelled,
+                            samePublicSession: samePublic, ticketChanged: changedTicket)
+                        if !Task.isCancelled, samePublic, changedTicket { driver.state.normalRelease += 1 }
+                        driver.hold.release() // No await/A2/grant2/Form/join before release.
+                    } catch { driver.state.controllerErrors += 1 }
+                } onCancel: {
+                    driver.hold.release() // Synchronous/idempotent; no orphan cleanup Task.
+                }
+            }
+            .onDisappear {
+                armed = false
+                driver.hold.release()
+                probe.recordForegroundDisappearance()
+            }
+    }
+}
+
+/// Exact precomputed synthetic JWT bytes; never regenerated from an unordered
+/// JSON dictionary. A/N/R all have the same public account and future expiry.
+private enum C11RootI4Facts {
+    static let old = record(access: "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhYWFhYWFhYS1hYWFhLTRhYWEtOGFhYS1hYWFhYWFhYWFhYWEiLCJmaXh0dXJlIjoiYzExLWk0LUEifQ.synthetic-signature", refresh: "synthetic-i4-old", expiry: 2000)
+    static let newest = record(access: "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhYWFhYWFhYS1hYWFhLTRhYWEtOGFhYS1hYWFhYWFhYWFhYWEiLCJmaXh0dXJlIjoiYzExLWk0LU4ifQ.synthetic-signature", refresh: "synthetic-i4-newest", expiry: 4000)
+    static let stale = record(access: "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhYWFhYWFhYS1hYWFhLTRhYWEtOGFhYS1hYWFhYWFhYWFhYWEiLCJmaXh0dXJlIjoiYzExLWk0LVIifQ.synthetic-signature", refresh: "synthetic-i4-stale", expiry: 3000)
+    static var credentialsAreDistinct: Bool {
+        old.publicSession == newest.publicSession && newest.publicSession == stale.publicSession
+            && old.accessToken != newest.accessToken && old.accessToken != stale.accessToken
+            && newest.accessToken != stale.accessToken && old.refreshToken != newest.refreshToken
+            && old.refreshToken != stale.refreshToken && newest.refreshToken != stale.refreshToken
+    }
+    private static func record(access: String, refresh: String, expiry: TimeInterval) -> AuthenticationSessionRecord {
+        AuthenticationSessionRecord(userID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", email: "c11-root@example.invalid",
+            isEmailConfirmed: true, isOnboardingCompleted: true, accessToken: access,
+            refreshToken: refresh, expiresAt: Date(timeIntervalSince1970: expiry))
+    }
+}
+
 private enum C11RootNavigationFacts {
     static let userID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     static let recordID = "11111111-1111-4111-8111-111111111111"
@@ -739,9 +1047,12 @@ private final class C11RootNavigationSecureStore: SecureStoring, @unchecked Send
 private actor C11RootNavigationRemote: SupabaseAuthRemoteOperating {
     let probe: C11RootNavigationProbe
     let selection: C11RootNavigationSelection
-    init(probe: C11RootNavigationProbe, selection: C11RootNavigationSelection) {
+    private let newCredentialRemote: C11RootI4Remote?
+    init(probe: C11RootNavigationProbe, selection: C11RootNavigationSelection,
+        newCredentialRemote: C11RootI4Remote? = nil) {
         self.probe = probe
         self.selection = selection
+        self.newCredentialRemote = newCredentialRemote
     }
     func signIn(email: String, password: String) throws -> AuthenticationSessionRecord {
         throw SupabaseAuthRemoteError.requestFailed
@@ -751,6 +1062,7 @@ private actor C11RootNavigationRemote: SupabaseAuthRemoteOperating {
     }
     func requestPasswordRecovery(email: String) throws { throw SupabaseAuthRemoteError.requestFailed }
     func refresh(record: AuthenticationSessionRecord) async throws -> AuthenticationSessionRecord {
+        if let newCredentialRemote { return try await newCredentialRemote.refresh(record: record) }
         await probe.recordRefresh()
         guard selection == .getUnauthorizedThenSuccess || selection == .getUnauthorizedTwice
             || selection == .getUnauthorizedTwiceThenRetrySuccess || selection == .patchUnauthorizedThenSuccess
@@ -1011,6 +1323,7 @@ private actor C11RootNavigationServer {
     }
 
     func respond(to request: URLRequest) async throws -> C11RootNavigationHTTPResponse {
+        if selection == .newCredentialRefresh { return try await respondToNewCredentialRefresh(request) }
         if selection == .completed401Foreground { return try await respondToHeld401Foreground(request) }
         if selection.observesDelivery { return try await respondToDeliveryControl(request) }
         if selection == .sameRecordForeground { return try await respondToForegroundRead(request) }
@@ -1096,6 +1409,43 @@ private actor C11RootNavigationServer {
         }
     }
 
+
+    /// A1=401 over A; separate A2=200 over N. Never admit old A1 replay as A2.
+    private func respondToNewCredentialRefresh(_ request: URLRequest) async throws -> C11RootNavigationHTTPResponse {
+        if request.httpMethod == "GET" {
+            attemptedGETs += 1
+            await probe.recordGET()
+        } else { await probe.recordForegroundCommand() }
+        let logical = LogicalRequest(request)
+        let allowed = await probe.canServeNewCredentialRead(attempt: attemptedGETs)
+        guard allowed, logical.method == "GET", logical.isValidRead,
+              request.url?.absoluteString == "https://c11-ui.fixture.invalid/api/mobile/v1/meal-records/11111111-1111-4111-8111-111111111111" else {
+            await probe.recordBlocked(); throw MobileAPITransportError.invalidResponse
+        }
+        await probe.recordForegroundReadMetadata(bodyAbsent: logical.bodyIsAbsent,
+            keyAbsent: logical.idempotencyKey == nil)
+        if attemptedGETs == 1 {
+            let usesOld = request.value(forHTTPHeaderField: "Authorization") == "Bearer " + C11RootI4Facts.old.accessToken
+            await MainActor.run { probe.newCredential?.firstReadUsesOld = usesOld }
+            guard usesOld else { await probe.recordBlocked(); throw MobileAPITransportError.invalidResponse }
+            firstLogicalRequest = logical // Safe metadata only; no authorization copy.
+            let error = ["error": ["code": "expired_token", "message": "Synthetic I4 unauthorized",
+                                     "request_id": "c11-ui-i4-401"]]
+            return C11RootNavigationHTTPResponse(statusCode: 401,
+                data: try JSONSerialization.data(withJSONObject: error))
+        }
+        let distinct = attemptedGETs == 2 && logical.requestID != firstLogicalRequest?.requestID
+        let usesNewest = request.value(forHTTPHeaderField: "Authorization") == "Bearer " + C11RootI4Facts.newest.accessToken
+        await MainActor.run {
+            probe.newCredential?.newReadID = distinct
+            probe.newCredential?.secondReadUsesNew = usesNewest
+        }
+        guard distinct, usesNewest else { await probe.recordBlocked(); throw MobileAPITransportError.invalidResponse }
+        // This admission intentionally does not wait for an old-outcome counter.
+        // Final UI separately requires the real old post-base outcome and storeN.
+        return C11RootNavigationHTTPResponse(statusCode: 200,
+            data: try JSONEncoder().encode(C11RootNavigationFacts.foregroundDetail()))
+    }
 
     /// A1 is an actual completed401; A2 is a separate current read, never replay.
     private func respondToHeld401Foreground(_ request: URLRequest) async throws -> C11RootNavigationHTTPResponse {

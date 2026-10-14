@@ -41,6 +41,12 @@ enum OnboardingLoadFailure: Equatable, Sendable {
     case temporary
 }
 
+/// C11-only offer: public session facts and the original local ticket, no bearer.
+struct MealRecordRecoveryOffer: Equatable, Sendable {
+    let anchorTicket: MealRecordAuthenticationTicket
+    let session: AuthSession
+}
+
 @MainActor
 @Observable
 final class AppFlowModel {
@@ -56,6 +62,16 @@ final class AppFlowModel {
     private let cleanupCoordinator: SignupBodyPhotoCleanupRootCoordinator
     @ObservationIgnored private let mealRecordAuthenticationLifetime: MealRecordAuthenticationLifetime?
     @ObservationIgnored private var mealRecordOnboardingContinuity: MealRecordOnboardingContinuity?
+
+    // Local C11 activity bookkeeping; neither auth authority nor PatientWorkRegistry.
+    private var pendingMealRecordAuthActivities: Set<UUID> = []
+    private var storedMealRecordRecoveryOffer: MealRecordRecoveryOffer?
+    private var currentMealRecordRecoveryAttempt: MealRecordRecoveryAttempt?
+
+    private struct MealRecordRecoveryAttempt {
+        let activation: MealRecordAuthenticatedActivation
+        let session: AuthSession
+    }
 
     // A visible-form version, not authentication authority or a photos token.
     private struct MealRecordOnboardingContinuity {
@@ -87,6 +103,54 @@ final class AppFlowModel {
               userID == activation.userID,
               lifetime.isCurrent(activation.ticket) else { return nil }
         return activation
+    }
+
+    var isMealRecordAuthenticationBusy: Bool { !pendingMealRecordAuthActivities.isEmpty }
+    var isMealRecordRecoveryInProgress: Bool { currentMealRecordRecoveryAttempt != nil }
+
+    var availableMealRecordRecoveryOffer: MealRecordRecoveryOffer? {
+        guard !isCancellationRequested, !isMealRecordAuthenticationBusy,
+              !isMealRecordRecoveryInProgress, authOperationState != .submitting,
+              let offer = storedMealRecordRecoveryOffer,
+              mealRecordAuthenticationLifetime?.isCurrent(offer.anchorTicket) == true,
+              eligibleMealRecordRecoverySession() == offer.session else { return nil }
+        return offer
+    }
+
+    /// Called only by the explicit C11 consumer after its source/owner admission.
+    /// Recovery never starts authentication or changes its presentation fields.
+    func beginMealRecordRecovery(offer: MealRecordRecoveryOffer) -> MealRecordAuthenticatedActivation? {
+        guard availableMealRecordRecoveryOffer == offer,
+              let lifetime = mealRecordAuthenticationLifetime else { return nil }
+        storedMealRecordRecoveryOffer = nil
+        mealRecordOnboardingContinuity = nil
+        let ticket = lifetime.beginAuthenticationBoundary()
+        guard let activation = lifetime.publishAuthenticated(userID: offer.session.userID, ticket: ticket)
+        else { return nil }
+        currentMealRecordRecoveryAttempt = MealRecordRecoveryAttempt(activation: activation, session: offer.session)
+        return activation
+    }
+
+    /// A late result can finish only its original recovery attempt.
+    /// A failure offers another explicit action; it never starts a retry itself.
+    func finishMealRecordRecovery(_ activation: MealRecordAuthenticatedActivation, succeeded: Bool) {
+        guard let attempt = currentMealRecordRecoveryAttempt, attempt.activation == activation,
+              let lifetime = mealRecordAuthenticationLifetime,
+              lifetime.isCurrent(activation.ticket) else { return }
+        currentMealRecordRecoveryAttempt = nil
+        if succeeded, !isCancellationRequested, lifetime.currentActivation == activation,
+           eligibleMealRecordRecoverySession() == attempt.session {
+            storedMealRecordRecoveryOffer = nil
+            return
+        }
+        lifetime.withdrawVisibleActivation(ticket: activation.ticket)
+        // PW may still be held without changing this ticket. Store only a
+        // candidate; the getter blocks it until all activity has settled.
+        guard let session = eligibleMealRecordRecoverySession(), session == attempt.session else {
+            storedMealRecordRecoveryOffer = nil
+            return
+        }
+        storedMealRecordRecoveryOffer = MealRecordRecoveryOffer(anchorTicket: activation.ticket, session: session)
     }
 
     /// The immutable scope used by the restore is also the model's repository.
@@ -159,6 +223,7 @@ final class AppFlowModel {
     func start() async {
         presentationError = nil
         let c11Ticket = beginMealRecordAuthenticationBoundary()
+        defer { finishMealRecordAuthActivity(c11Ticket?.id) }
 
         do {
             let restoredSession = try await authentication.restoreSession()
@@ -179,7 +244,9 @@ final class AppFlowModel {
     }
 
     func signOut() async {
+        let c11RecoverySession = eligibleMealRecordRecoverySession()
         let c11Ticket = beginMealRecordAuthenticationBoundary()
+        defer { finishMealRecordAuthActivity(c11Ticket?.id) }
         do {
             try await authentication.signOut()
             guard !isCancellationRequested else { return }
@@ -188,9 +255,12 @@ final class AppFlowModel {
         } catch {
             guard !isCancellationRequested else { return }
             withdrawMealRecordAuthentication(ticket: c11Ticket)
+            let originalC11SignOutError = error
             let error = presentationError(for: error)
             presentationError = error
             authOperationState = .failed(error)
+            offerMealRecordRecovery(afterSignOutFailure: originalC11SignOutError,
+                session: c11RecoverySession, ticket: c11Ticket)
         }
     }
 
@@ -274,6 +344,7 @@ final class AppFlowModel {
     func signIn(email: String, password: String) async {
         guard beginAuthOperation() else { return }
         let c11Ticket = beginMealRecordAuthenticationBoundary()
+        defer { finishMealRecordAuthActivity(c11Ticket?.id) }
 
         do {
             let session = try await authentication.signIn(
@@ -305,6 +376,7 @@ final class AppFlowModel {
     func signUp(email: String, password: String) async {
         guard beginAuthOperation() else { return }
         let c11Ticket = beginMealRecordAuthenticationBoundary()
+        defer { finishMealRecordAuthActivity(c11Ticket?.id) }
 
         do {
             let result = try await authentication.signUp(
@@ -346,6 +418,7 @@ final class AppFlowModel {
     func confirmEmailForDevelopment() async {
         guard beginAuthOperation() else { return }
         let c11Ticket = beginMealRecordAuthenticationBoundary()
+        defer { finishMealRecordAuthActivity(c11Ticket?.id) }
 
         do {
             let session = try await authentication.confirmEmailForDevelopment()
@@ -373,6 +446,8 @@ final class AppFlowModel {
 
     func requestPasswordRecovery(email: String) async {
         guard beginAuthOperation() else { return }
+        let c11Activity = beginMealRecordNonAuthorityActivity()
+        defer { finishMealRecordAuthActivity(c11Activity) }
 
         do {
             try await authentication.requestPasswordRecovery(email: email)
@@ -678,9 +753,42 @@ final class AppFlowModel {
         ))
     }
 
+    private func eligibleMealRecordRecoverySession() -> AuthSession? {
+        guard case let .authenticated(userID) = state,
+              let session = currentSession, session.userID == userID,
+              session.isEmailConfirmed, session.isOnboardingCompleted else { return nil }
+        return session
+    }
+
+    private func offerMealRecordRecovery(afterSignOutFailure error: Error,
+        session: AuthSession?, ticket: MealRecordAuthenticationTicket?) {
+        guard let authenticationError = error as? AuthenticationError,
+              authenticationError == .storageUnavailable,
+              let session, let ticket, !isCancellationRequested,
+              mealRecordAuthenticationLifetime?.isCurrent(ticket) == true,
+              eligibleMealRecordRecoverySession() == session else { return }
+        storedMealRecordRecoveryOffer = MealRecordRecoveryOffer(anchorTicket: ticket, session: session)
+    }
+
+    private func beginMealRecordNonAuthorityActivity() -> UUID? {
+        guard mealRecordAuthenticationLifetime != nil else { return nil }
+        let id = UUID()
+        pendingMealRecordAuthActivities.insert(id)
+        return id
+    }
+
+    private func finishMealRecordAuthActivity(_ id: UUID?) {
+        guard let id else { return }
+        pendingMealRecordAuthActivities.remove(id)
+    }
+
     private func beginMealRecordAuthenticationBoundary() -> MealRecordAuthenticationTicket? {
         mealRecordOnboardingContinuity = nil
-        return mealRecordAuthenticationLifetime?.beginAuthenticationBoundary()
+        storedMealRecordRecoveryOffer = nil
+        currentMealRecordRecoveryAttempt = nil
+        guard let ticket = mealRecordAuthenticationLifetime?.beginAuthenticationBoundary() else { return nil }
+        pendingMealRecordAuthActivities.insert(ticket.id)
+        return ticket
     }
 
     private func withdrawMealRecordAuthentication(ticket: MealRecordAuthenticationTicket?) {

@@ -2031,6 +2031,462 @@ struct MobileAPITransportTests {
     }
 
 
+
+    @MainActor
+    @Test("C11 H05: real local marker failure preserves authentication and closes only the original meal grant")
+    func c11H05RealMarkerFailureClosesOldGrant() async throws {
+        let f = try await C11H05Fixture.make()
+        do {
+            let session = f.model.currentSession
+            let original = f.originalContext.activation
+            let calls = await f.runtime.counted.leaseCalls
+            await f.failLogout()
+            #expect(f.model.state == .authenticated(userID: original.userID))
+            #expect(f.model.currentSession == session)
+            #expect(f.model.presentationError == .storageUnavailable)
+            #expect(f.model.authOperationState == .failed(.storageUnavailable))
+            #expect(await f.runtime.store.currentRecord() == f.runtime.original)
+            try await f.runtime.session.validate(f.runtime.originalLease)
+            #expect(!f.originalContext.isActive)
+            #expect(!f.originalContext.capability.hasRetainedCapability)
+            #expect(f.model.mealRecordActivation == nil)
+            #expect(!f.model.isMealRecordAuthenticationBusy)
+            let offer = try #require(f.model.availableMealRecordRecoveryOffer)
+            #expect(offer.session == session)
+            #expect(offer.anchorTicket != original.ticket)
+            #expect(f.tickets.issued.count == 2)
+            #expect(await f.runtime.counted.leaseCalls == calls)
+            #expect(await f.runtime.remote.counts() == [0, 0, 0, 0, 0])
+            #expect(await f.runtime.stub.requests().isEmpty)
+            let neighbor = try await f.owner.progress.progress()
+            #expect(neighbor.meta.requestID == "progress-presentation-0001")
+            await f.end()
+        } catch { await f.end(); throw error }
+    }
+
+    @MainActor
+    @Test("C11 H05: remote-unconfirmed with local success is signed out and never offers recovery")
+    func c11H05RemoteUnconfirmedCannotRecover() async throws {
+        let f = try await C11H05Fixture.make()
+        await f.runtime.remote.setRevocation(.unconfirmed)
+        await f.model.signOut()
+        #expect(f.model.state == .signedOut(.signIn))
+        #expect(f.model.currentSession == nil)
+        #expect(f.model.availableMealRecordRecoveryOffer == nil)
+        #expect(f.model.mealRecordActivation == nil)
+        #expect(!f.model.isMealRecordAuthenticationBusy)
+        #expect(await f.runtime.remote.counts() == [0, 0, 0, 0, 1])
+        await #expect(throws: SessionLifecycleError.missingSession) {
+            try await f.runtime.session.validate(f.runtime.originalLease)
+        }
+        #expect(await f.runtime.stub.requests().isEmpty)
+        await f.end()
+    }
+
+    @MainActor
+    @Test("C11 H05: one explicit action grants a new ticket and leaf, double tap adds no lease or auth")
+    func c11H05ExplicitRecoveryAndDoubleTap() async throws {
+        let f = try await C11H05Fixture.make()
+        do {
+            await f.failLogout()
+            let offer = try #require(f.model.availableMealRecordRecoveryOffer)
+            let core = C11AuthenticationCoreSnapshot(f.model)
+            let telemetry = await f.telemetry.snapshot()
+            let calls = await f.runtime.counted.leaseCalls
+            let oldBinding = try #require(f.owner.mealRecordBinding)
+            let recovery = try #require(f.model.beginMealRecordRecovery(offer: offer))
+            #expect(recovery.ticket != offer.anchorTicket)
+            #expect(f.model.isMealRecordRecoveryInProgress)
+            #expect(f.model.beginMealRecordRecovery(offer: offer) == nil)
+            #expect(f.tickets.issued.count == 3)
+            let operation = try #require(f.root.beginBinding(activation: recovery, owner: f.owner))
+            #expect(f.owner.mealRecordBinding !== oldBinding)
+            let current = try #require(try await f.root.completeBinding(operation))
+            f.model.finishMealRecordRecovery(recovery, succeeded: true)
+            #expect(!f.model.isMealRecordRecoveryInProgress)
+            #expect(f.model.availableMealRecordRecoveryOffer == nil)
+            #expect(current.isActive)
+            #expect(f.root.readyContext === current)
+            #expect(await f.runtime.counted.leaseCalls == calls + 1)
+            #expect(await f.runtime.stub.requests().isEmpty)
+            await #expect(throws: CancellationError.self) {
+                _ = try await f.originalContext.capability.mealRecord(id: C11RealLifecycleTransportHarness.recordID)
+            }
+            #expect(await f.runtime.stub.requests().isEmpty)
+            let detail = try await current.capability.mealRecord(id: C11RealLifecycleTransportHarness.recordID)
+            #expect(detail.meta.requestID == "c11-owner-fixture")
+            #expect(detail.data.recordID == C11RealLifecycleTransportHarness.recordID)
+            #expect(await f.runtime.stub.requests().count == 1)
+            #expect(C11AuthenticationCoreSnapshot(f.model) == core)
+            #expect(await f.telemetry.snapshot() == telemetry)
+            #expect(await f.runtime.authentication.entries == [.start, .signOut])
+            #expect(await f.runtime.remote.counts() == [0, 0, 0, 0, 0])
+            await f.end()
+        } catch { await f.end(); throw error }
+    }
+
+    @MainActor
+    @Test("C11 H05: each admitted auth boundary blocks recovery while it is actually held",
+          arguments: [C11AuthenticationEntry.start, .signOut, .signIn, .signUp, .confirmDevelopment])
+    func c11H05AcceptedAuthIsBusy(entry: C11AuthenticationEntry) async throws {
+        let f = try await C11H05Fixture.make()
+        await f.failLogout()
+        let held = C11BoundaryHold()
+        await f.runtime.authentication.hold(entry, using: held)
+        let work = Task { await C11AuthenticationFixtures.invoke(entry, model: f.model) }
+        do {
+            await held.waitUntilEntered()
+            #expect(f.model.isMealRecordAuthenticationBusy)
+            #expect(f.model.availableMealRecordRecoveryOffer == nil)
+            let tickets = f.tickets.issued.count
+            let calls = await f.runtime.counted.leaseCalls
+            let session = try #require(f.model.currentSession)
+            let fabricated = MealRecordRecoveryOffer(anchorTicket: try #require(f.tickets.issued.last), session: session)
+            #expect(f.model.beginMealRecordRecovery(offer: fabricated) == nil)
+            #expect(f.tickets.issued.count == tickets)
+            #expect(await f.runtime.counted.leaseCalls == calls)
+            await held.release()
+            await work.value
+            #expect(!f.model.isMealRecordAuthenticationBusy)
+            #expect(await f.runtime.stub.requests().isEmpty)
+            await f.end()
+        } catch {
+            await held.release(); await work.value; await f.end(); throw error
+        }
+    }
+
+    @MainActor
+    @Test("C11 H05: overlapping start/logout release only their own pending identities",
+          arguments: [C11H05ReleaseOrder.olderFirst, .newerFirst])
+    func c11H05OverlappingAuthIsScoped(order: C11H05ReleaseOrder) async throws {
+        let f = try await C11H05Fixture.make()
+        await f.failLogout()
+        let older = C11BoundaryHold(), newer = C11BoundaryHold()
+        await f.runtime.authentication.hold(.start, using: older)
+        let first = Task { await f.model.start() }
+        await older.waitUntilEntered()
+        await f.runtime.authentication.hold(.signOut, using: newer)
+        let second = Task { await f.model.signOut() }
+        do {
+            await newer.waitUntilEntered()
+            #expect(f.model.isMealRecordAuthenticationBusy)
+            if order == .olderFirst { await older.release(); await first.value }
+            else { await newer.release(); await second.value }
+            #expect(f.model.isMealRecordAuthenticationBusy)
+            #expect(f.model.availableMealRecordRecoveryOffer == nil)
+            let count = f.tickets.issued.count
+            let candidate = MealRecordRecoveryOffer(anchorTicket: try #require(f.tickets.issued.last),
+                session: try #require(f.model.currentSession))
+            #expect(f.model.beginMealRecordRecovery(offer: candidate) == nil)
+            #expect(f.tickets.issued.count == count)
+            await older.release(); await newer.release()
+            await first.value; await second.value
+            #expect(!f.model.isMealRecordAuthenticationBusy)
+            let offer = try #require(f.model.availableMealRecordRecoveryOffer)
+            #expect(offer.anchorTicket == f.tickets.issued.last)
+            #expect(f.tickets.issued.count == 4)
+            #expect(await f.runtime.counted.leaseCalls == 1)
+            #expect(await f.runtime.stub.requests().isEmpty)
+            await f.end()
+        } catch {
+            await older.release(); await newer.release()
+            await first.value; await second.value; await f.end(); throw error
+        }
+    }
+
+    @MainActor
+    @Test("C11 H05: password recovery is busy-only and remains scoped after a late start/logout")
+    func c11H05PasswordRecoveryHasNoAuthority() async throws {
+        let f = try await C11H05Fixture.make()
+        let firstPW = C11BoundaryHold()
+        await f.runtime.authentication.hold(.passwordRecovery, using: firstPW)
+        let initial = Task { await f.model.requestPasswordRecovery(email: C11AuthenticationFixtures.email) }
+        do {
+            await firstPW.waitUntilEntered()
+            #expect(f.model.isMealRecordAuthenticationBusy)
+            #expect(f.originalContext.isActive)
+            #expect(f.originalContext.capability.hasRetainedCapability)
+            #expect(f.tickets.issued.count == 1)
+            await firstPW.release(); await initial.value
+            #expect(!f.model.isMealRecordAuthenticationBusy)
+            #expect(f.model.authOperationState == .recoveryConfirmation)
+            await f.failLogout()
+            let authHold = C11BoundaryHold(), pwHold = C11BoundaryHold()
+            await f.runtime.authentication.hold(.start, using: authHold)
+            let auth = Task { await f.model.start() }
+            await authHold.waitUntilEntered()
+            await f.runtime.authentication.hold(.passwordRecovery, using: pwHold)
+            let pw = Task { await f.model.requestPasswordRecovery(email: C11AuthenticationFixtures.email) }
+            do {
+                await pwHold.waitUntilEntered()
+                await f.model.signOut() // Real marker failure sets .failed while PW is still held.
+                await authHold.release(); await auth.value
+                #expect(f.model.authOperationState == .failed(.storageUnavailable))
+                #expect(f.model.isMealRecordAuthenticationBusy)
+                #expect(f.model.availableMealRecordRecoveryOffer == nil)
+                let count = f.tickets.issued.count
+                #expect(count == 4)
+                let candidate = MealRecordRecoveryOffer(anchorTicket: try #require(f.tickets.issued.last),
+                    session: try #require(f.model.currentSession))
+                #expect(f.model.beginMealRecordRecovery(offer: candidate) == nil)
+                #expect(f.tickets.issued.count == count)
+                await pwHold.release(); await pw.value
+                #expect(!f.model.isMealRecordAuthenticationBusy)
+                #expect(f.model.authOperationState == .recoveryConfirmation)
+                #expect(f.model.availableMealRecordRecoveryOffer != nil)
+                #expect(f.tickets.issued.count == count)
+                #expect(await f.runtime.remote.counts() == [0, 0, 2, 0, 0])
+                #expect(await f.runtime.stub.requests().isEmpty)
+            } catch {
+                await authHold.release(); await pwHold.release()
+                await auth.value; await pw.value; throw error
+            }
+            await f.end()
+        } catch { await firstPW.release(); await initial.value; await f.end(); throw error }
+    }
+
+    @MainActor
+    @Test("C11 H05: a real missing/wrong-account lease never installs recovery",
+          arguments: [C11RootLeaseFailure.missing, .wrongUser])
+    func c11H05RealLeaseFailureStaysNeutral(reason: C11RootLeaseFailure) async throws {
+        let f = try await C11H05Fixture.make()
+        do {
+            await f.failLogout()
+            let offer = try #require(f.model.availableMealRecordRecoveryOffer)
+            let core = C11AuthenticationCoreSnapshot(f.model)
+            if reason == .missing {
+                await f.runtime.secure.rejectMarker(false)
+                #expect(await f.runtime.session.signOut() == .confirmed)
+            } else {
+                try await f.runtime.session.switch(to: C11RealLifecycleTransportHarness.record(
+                    userID: C11AuthenticationFixtures.b, ordinal: 2))
+            }
+            let activation = try #require(f.model.beginMealRecordRecovery(offer: offer))
+            let operation = try #require(f.root.beginBinding(activation: activation, owner: f.owner))
+            let expected = reason == .missing ? SessionLifecycleError.missingSession : .sessionSuperseded
+            await #expect(throws: expected) { _ = try await f.root.completeBinding(operation) }
+            f.model.finishMealRecordRecovery(activation, succeeded: false)
+            #expect(f.root.readyContext == nil)
+            #expect(f.model.mealRecordActivation == nil)
+            #expect(!f.model.isMealRecordRecoveryInProgress)
+            #expect(f.owner.mealRecordBinding?.isOpen == false)
+            #expect(await f.runtime.counted.leaseCalls == 2)
+            #expect(await f.runtime.stub.requests().isEmpty)
+            #expect(C11AuthenticationCoreSnapshot(f.model) == core)
+            await f.end()
+        } catch { await f.end(); throw error }
+    }
+
+    @MainActor
+    @Test("C11 H05: cancellation/late ABA finishes only the original recovery",
+          arguments: [C11H05RecoveryTerminal.callerCancelled, .lateABA])
+    func c11H05RecoveryTerminalIsScoped(terminal: C11H05RecoveryTerminal) async throws {
+        let f = try await C11H05Fixture.make()
+        await f.failLogout()
+        var oldCaller: Task<MealRecordReadyContext?, any Error>?
+        var newCaller: Task<MealRecordReadyContext?, any Error>?
+        do {
+            let offer = try #require(f.model.availableMealRecordRecoveryOffer)
+            let old = try #require(f.model.beginMealRecordRecovery(offer: offer))
+            await f.runtime.lifecycle.holdNextLease(completeEvenIfCancelled: true)
+            let operation = try #require(f.root.beginBinding(activation: old, owner: f.owner))
+            await f.runtime.lifecycle.leaseHold.waitUntilEntered()
+            if terminal == .callerCancelled {
+                let caller = Task {
+                    withUnsafeCurrentTask { $0?.cancel() }
+                    return try await f.root.completeBinding(operation)
+                }
+                oldCaller = caller
+                await #expect(throws: CancellationError.self) { _ = try await caller.value }
+                f.model.finishMealRecordRecovery(old, succeeded: false)
+                #expect(!f.model.isMealRecordRecoveryInProgress)
+                #expect(f.model.mealRecordActivation == nil)
+                #expect(f.owner.mealRecordBinding?.isOpen == false)
+                #expect(f.model.availableMealRecordRecoveryOffer != nil)
+                #expect(f.tickets.issued.count == 3)
+                try await f.runtime.session.validate(f.runtime.originalLease)
+                await f.runtime.lifecycle.leaseHold.release()
+            } else {
+                let caller = Task { try await f.root.completeBinding(operation) }
+                oldCaller = caller
+                await f.runtime.remote.setSignIns([
+                    C11RealLifecycleTransportHarness.record(userID: C11AuthenticationFixtures.b, ordinal: 2),
+                    C11RealLifecycleTransportHarness.record(userID: C11AuthenticationFixtures.a, ordinal: 3)
+                ])
+                await f.model.signIn(email: C11AuthenticationFixtures.email, password: C11AuthenticationFixtures.syntheticPassword)
+                await f.model.signIn(email: C11AuthenticationFixtures.email, password: C11AuthenticationFixtures.syntheticPassword)
+                await f.model.signOut() // Actual marker failure under A2.
+                let nextOffer = try #require(f.model.availableMealRecordRecoveryOffer)
+                let next = try #require(f.model.beginMealRecordRecovery(offer: nextOffer))
+                #expect(next.ticket != old.ticket)
+                await f.runtime.lifecycle.holdNextVisibleReturn()
+                let nextOperation = try #require(f.root.beginBinding(activation: next, owner: f.owner))
+                let nextCaller = Task { try await f.root.completeBinding(nextOperation) }
+                newCaller = nextCaller
+                await f.runtime.lifecycle.visibleReturnHold.waitUntilEntered()
+                await f.runtime.lifecycle.leaseHold.release()
+                await #expect(throws: CancellationError.self) { _ = try await caller.value }
+                f.model.finishMealRecordRecovery(old, succeeded: false)
+                #expect(f.model.isMealRecordRecoveryInProgress)
+                #expect(f.model.mealRecordActivation == next)
+                #expect(f.lifetime.currentActivation == next)
+                #expect(f.model.beginMealRecordRecovery(offer: offer) == nil)
+                await f.runtime.lifecycle.visibleReturnHold.release()
+                let ready = try #require(try await nextCaller.value)
+                f.model.finishMealRecordRecovery(next, succeeded: true)
+                #expect(ready.isActive)
+                #expect(f.root.readyContext === ready)
+                #expect(!f.model.isMealRecordRecoveryInProgress)
+                #expect(f.model.availableMealRecordRecoveryOffer == nil)
+                #expect(await f.runtime.counted.leaseCalls == 3)
+                #expect(await f.runtime.remote.counts() == [2, 0, 0, 0, 0])
+            }
+            #expect(await f.runtime.stub.requests().isEmpty)
+            await f.end()
+        } catch {
+            await f.runtime.releaseAll()
+            if let oldCaller { _ = try? await oldCaller.value }
+            if let newCaller { _ = try? await newCaller.value }
+            await f.end(); throw error
+        }
+    }
+
+    @MainActor
+    @Test("C11 H05: nonlocal errors, absent lifetime and incomplete onboarding cannot offer recovery",
+          arguments: [C11H05NoOffer.serviceUnavailable, .defaultNil, .incomplete])
+    func c11H05IneligibleSessionHasNoOffer(reason: C11H05NoOffer) async throws {
+        let runtime = try await C11H05Runtime()
+        let tickets = C11AuthenticationTicketFactorySpy()
+        let lifetime = MealRecordAuthenticationLifetime(ticketFactory: { tickets.next() })
+        let model = AppFlowModel(authentication: runtime.authentication,
+            onboarding: C11AuthenticationOnboardingPeer(completed: reason != .incomplete),
+            persona: AppDependencies.scaffold().coachPersona, telemetry: InMemoryTelemetryClient(),
+            mealRecordAuthenticationLifetime: reason == .defaultNil ? nil : lifetime)
+        await model.start()
+        if reason == .serviceUnavailable { await runtime.authentication.forceNextLogoutError(.serviceUnavailable) }
+        else { await runtime.secure.rejectMarker() }
+        await model.signOut()
+        #expect(model.availableMealRecordRecoveryOffer == nil)
+        #expect(model.mealRecordActivation == nil)
+        #expect(!model.isMealRecordAuthenticationBusy)
+        #expect(!model.isMealRecordRecoveryInProgress)
+        #expect(await runtime.counted.leaseCalls == 0)
+        #expect(await runtime.stub.requests().isEmpty)
+        #expect(await runtime.remote.counts() == [0, 0, 0, 0, 0])
+        #expect(tickets.issued.count == (reason == .defaultNil ? 0 : 2))
+        await lifetime.endSession()
+    }
+
+    @MainActor
+    @Test("C11 H05: rejected sign-in/sign-up/confirm/password operations add no activity",
+          arguments: [C11AuthenticationEntry.signIn, .signUp, .confirmDevelopment, .passwordRecovery])
+    func c11H05RejectedAuthAddsNoActivity(entry: C11AuthenticationEntry) async throws {
+        let f = try await C11H05Fixture.make()
+        let hold = C11BoundaryHold()
+        await f.runtime.authentication.hold(.passwordRecovery, using: hold)
+        let pw = Task { await f.model.requestPasswordRecovery(email: C11AuthenticationFixtures.email) }
+        await hold.waitUntilEntered()
+        #expect(f.model.isMealRecordAuthenticationBusy)
+        await C11AuthenticationFixtures.invoke(entry, model: f.model)
+        #expect(f.originalContext.isActive)
+        #expect(f.tickets.issued.count == 1)
+        #expect(await f.runtime.authentication.entries == [.start, .passwordRecovery])
+        await hold.release(); await pw.value
+        #expect(!f.model.isMealRecordAuthenticationBusy)
+        #expect(f.model.authOperationState == .recoveryConfirmation)
+        #expect(await f.runtime.counted.leaseCalls == 1)
+        #expect(await f.runtime.stub.requests().isEmpty)
+        await f.end()
+    }
+
+    @MainActor
+    @Test("C11 H05: a public late same-user session snapshot cannot spend the newer logout offer")
+    func c11H05LateSameUserSnapshotRejectsOffer() async throws {
+        let f = try await C11H05Fixture.make()
+        await f.failLogout()
+        let hold = C11BoundaryHold()
+        await f.runtime.authentication.holdNextRestoredSession(using: hold)
+        let old = Task { await f.model.start() }
+        do {
+            await hold.waitUntilEntered() // The real adapter has already captured old A.
+            let record = C11RealLifecycleTransportHarness.record(userID: C11AuthenticationFixtures.a, ordinal: 2)
+            let different = AuthenticationSessionRecord(userID: record.userID,
+                email: "same-user-new-snapshot@example.invalid", isEmailConfirmed: true,
+                isOnboardingCompleted: true, accessToken: record.accessToken,
+                refreshToken: record.refreshToken, expiresAt: record.expiresAt)
+            await f.runtime.remote.setSignIns([different])
+            await f.model.signIn(email: C11AuthenticationFixtures.email,
+                password: C11AuthenticationFixtures.syntheticPassword)
+            await f.model.signOut() // Real marker failure captures the NEW public snapshot.
+            let latest = try #require(f.model.currentSession)
+            let candidate = MealRecordRecoveryOffer(anchorTicket: try #require(f.tickets.issued.last), session: latest)
+            let count = f.tickets.issued.count
+            #expect(f.model.isMealRecordAuthenticationBusy)
+            #expect(f.model.beginMealRecordRecovery(offer: candidate) == nil)
+            #expect(f.tickets.issued.count == count)
+            await hold.release(); await old.value
+            #expect(!f.model.isMealRecordAuthenticationBusy)
+            #expect(f.model.state == .authenticated(userID: latest.userID))
+            #expect(f.model.currentSession?.userID == latest.userID)
+            #expect(f.model.currentSession != latest)
+            #expect(f.model.availableMealRecordRecoveryOffer == nil)
+            #expect(f.model.beginMealRecordRecovery(offer: candidate) == nil)
+            #expect(f.tickets.issued.count == count)
+            #expect(await f.runtime.counted.leaseCalls == 1)
+            #expect(await f.runtime.stub.requests().isEmpty)
+            await f.end()
+        } catch { await hold.release(); await old.value; await f.end(); throw error }
+    }
+
+    @MainActor
+    @Test("C11 H05: cancelled recovery retains its explicit retry offer while password recovery is still held")
+    func c11H05RecoveryFailureDuringPWRetainsOffer() async throws {
+        let f = try await C11H05Fixture.make()
+        var caller: Task<MealRecordReadyContext?, any Error>?
+        var pw: Task<Void, Never>?
+        do {
+            await f.failLogout()
+            let offer = try #require(f.model.availableMealRecordRecoveryOffer)
+            let recovery = try #require(f.model.beginMealRecordRecovery(offer: offer))
+            await f.runtime.lifecycle.holdNextLease(completeEvenIfCancelled: true)
+            let operation = try #require(f.root.beginBinding(activation: recovery, owner: f.owner))
+            await f.runtime.lifecycle.leaseHold.waitUntilEntered()
+            let pwHold = C11BoundaryHold()
+            await f.runtime.authentication.hold(.passwordRecovery, using: pwHold)
+            let pendingPW = Task { await f.model.requestPasswordRecovery(email: C11AuthenticationFixtures.email) }
+            pw = pendingPW
+            await pwHold.waitUntilEntered()
+            let cancelling = Task {
+                withUnsafeCurrentTask { $0?.cancel() }
+                return try await f.root.completeBinding(operation)
+            }
+            caller = cancelling
+            await #expect(throws: CancellationError.self) { _ = try await cancelling.value }
+            f.model.finishMealRecordRecovery(recovery, succeeded: false)
+            #expect(f.model.isMealRecordAuthenticationBusy)
+            #expect(!f.model.isMealRecordRecoveryInProgress)
+            #expect(f.model.availableMealRecordRecoveryOffer == nil)
+            #expect(f.model.mealRecordActivation == nil)
+            let issued = f.tickets.issued.count
+            #expect(issued == 3)
+            await pwHold.release(); await pendingPW.value
+            #expect(!f.model.isMealRecordAuthenticationBusy)
+            let next = try #require(f.model.availableMealRecordRecoveryOffer)
+            #expect(next.anchorTicket == recovery.ticket)
+            #expect(next.session == offer.session)
+            #expect(f.tickets.issued.count == issued)
+            #expect(await f.runtime.counted.leaseCalls == 2)
+            #expect(await f.runtime.stub.requests().isEmpty)
+            await f.runtime.lifecycle.leaseHold.release()
+            await f.end()
+        } catch {
+            await f.runtime.releaseAll()
+            if let caller { _ = try? await caller.value }
+            if let pw { await pw.value }
+            await f.end(); throw error
+        }
+    }
+
 }
 
 private actor RejectingRegistrationLifecycle: SessionLifecycleProviding {
@@ -3102,6 +3558,206 @@ private struct C11RootBindingFixture {
 
     func end() async {
         await coordinator.endSession()
+        await lifetime.endSession()
+        await owner.endSession()
+    }
+}
+
+// H05 private helpers; all authority delegates to the real store/coordinator/adapter.
+enum C11H05ReleaseOrder: Equatable, Sendable { case olderFirst, newerFirst }
+enum C11H05RecoveryTerminal: Equatable, Sendable { case callerCancelled, lateABA }
+enum C11H05NoOffer: Equatable, Sendable { case serviceUnavailable, defaultNil, incomplete }
+
+private actor C11H05MarkerStore: SecureStoring {
+    private var values: [String: Data] = [:]
+    private var rejectsMarker = false
+    func data(forKey key: String) -> Data? { values[key] }
+    func store(_ data: Data, forKey key: String) throws {
+        if key == AuthenticationSessionStore.invalidationMarkerKey, rejectsMarker {
+            throw AuthenticationSessionStoreError.localInvalidationFailed
+        }
+        values[key] = data
+    }
+    func removeData(forKey key: String) { values[key] = nil }
+    func rejectMarker(_ value: Bool = true) { rejectsMarker = value }
+}
+
+private actor C11H05Remote: SupabaseAuthRemoteOperating {
+    private let original: AuthenticationSessionRecord
+    private var signIns: [AuthenticationSessionRecord] = []
+    private var revocation: RemoteRevocationOutcome = .confirmed
+    private var counters = [0, 0, 0, 0, 0]
+    init(record: AuthenticationSessionRecord) { original = record }
+    func setSignIns(_ records: [AuthenticationSessionRecord]) { signIns = records }
+    func setRevocation(_ value: RemoteRevocationOutcome) { revocation = value }
+    func counts() -> [Int] { counters }
+    func signIn(email: String, password: String) -> AuthenticationSessionRecord {
+        counters[0] += 1
+        return signIns.isEmpty ? original : signIns.removeFirst()
+    }
+    func signUp(email: String, password: String) -> SupabaseRemoteSignUpResult {
+        counters[1] += 1; return .authenticated(original)
+    }
+    func requestPasswordRecovery(email: String) { counters[2] += 1 }
+    func refresh(record: AuthenticationSessionRecord) -> AuthenticationSessionRecord {
+        counters[3] += 1; return record
+    }
+    func revokeCurrentSession(accessToken: String) -> RemoteRevocationOutcome {
+        counters[4] += 1; return revocation
+    }
+}
+
+private actor C11H05Authentication: AuthenticationService {
+    private let base: SupabaseAuthenticationService
+    private var pendingHolds: [(C11AuthenticationEntry, C11BoundaryHold)] = []
+    private var allHolds: [C11BoundaryHold] = []
+    private var logoutError: AuthenticationError?
+    private var nextRestoredSessionHold: C11BoundaryHold?
+    private(set) var entries: [C11AuthenticationEntry] = []
+    init(base: SupabaseAuthenticationService) { self.base = base }
+    func hold(_ entry: C11AuthenticationEntry, using hold: C11BoundaryHold) {
+        pendingHolds.append((entry, hold)); allHolds.append(hold)
+    }
+    func forceNextLogoutError(_ error: AuthenticationError) { logoutError = error }
+    func holdNextRestoredSession(using hold: C11BoundaryHold) {
+        nextRestoredSessionHold = hold; allHolds.append(hold)
+    }
+    func releaseAll() async { for hold in allHolds { await hold.release() } }
+    private func enter(_ entry: C11AuthenticationEntry) async {
+        entries.append(entry)
+        if let index = pendingHolds.firstIndex(where: { $0.0 == entry }) {
+            let held = pendingHolds.remove(at: index).1
+            await held.enterAndWait()
+        }
+    }
+    func restoreSession() async throws -> AuthSession? {
+        await enter(.start)
+        let captured = try await base.restoreSession()
+        if let hold = nextRestoredSessionHold {
+            nextRestoredSessionHold = nil
+            await hold.enterAndWait()
+        }
+        return captured
+    }
+    func signIn(email: String, password: String) async throws -> AuthSession {
+        await enter(.signIn); return try await base.signIn(email: email, password: password)
+    }
+    func signUp(email: String, password: String) async throws -> AuthSignUpResult {
+        await enter(.signUp); return try await base.signUp(email: email, password: password)
+    }
+    func confirmEmailForDevelopment() async throws -> AuthSession {
+        await enter(.confirmDevelopment); return try await base.confirmEmailForDevelopment()
+    }
+    func requestPasswordRecovery(email: String) async throws {
+        await enter(.passwordRecovery); try await base.requestPasswordRecovery(email: email)
+    }
+    func signOut() async throws {
+        await enter(.signOut)
+        if let error = logoutError { logoutError = nil; throw error }
+        try await base.signOut()
+    }
+}
+
+private struct C11H05Runtime: Sendable {
+    let secure: C11H05MarkerStore
+    let store: AuthenticationSessionStore
+    let remote: C11H05Remote
+    let lifecycle: C11HoldingLifecycle
+    let counted: C11RootCountingLifecycle
+    let session: SessionLifecycleCoordinator
+    let authentication: C11H05Authentication
+    let transport: MobileAPITransport
+    let stub: TransportStubStore
+    let original: AuthenticationSessionRecord
+    let originalLease: SessionLease
+    init() async throws {
+        let original = C11RealLifecycleTransportHarness.record(userID: C11AuthenticationFixtures.a, ordinal: 1)
+        let secure = C11H05MarkerStore()
+        let store = AuthenticationSessionStore(secureStore: secure, now: { Date(timeIntervalSince1970: 1000) })
+        try await store.replace(with: original)
+        let remote = C11H05Remote(record: original)
+        let session = SessionLifecycleCoordinator(store: store, remote: remote,
+            refreshPolicy: SessionRefreshPolicy(now: { Date(timeIntervalSince1970: 1000) }, leeway: 60))
+        let lifecycle = C11HoldingLifecycle(base: session)
+        let counted = C11RootCountingLifecycle(base: lifecycle)
+        let stub = TransportStubStore()
+        await StubURLProtocol.install(store: stub)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubURLProtocol.self]
+        self.secure = secure; self.store = store; self.remote = remote
+        self.session = session; self.lifecycle = lifecycle; self.counted = counted; self.stub = stub
+        self.authentication = C11H05Authentication(base: SupabaseAuthenticationService(remote: remote, lifecycle: session))
+        self.transport = MobileAPITransport(
+            configuration: try MobileAPIConfiguration(originString: "https://staging.example.test"),
+            sessionLifecycle: lifecycle, session: URLSession(configuration: config),
+            clock: ContinuousClock(), timeout: .seconds(2))
+        self.original = original
+        self.originalLease = try await session.leaseForRequest()
+    }
+    func respond() async throws {
+        await stub.respond(with: StubResponse(status: 200,
+            body: try JSONEncoder().encode(C11RealLifecycleTransportHarness.detail())))
+    }
+    func releaseAll() async {
+        await authentication.releaseAll()
+        await lifecycle.leaseHold.release()
+        await lifecycle.visibleReturnHold.release()
+    }
+}
+
+@MainActor
+private struct C11H05Fixture {
+    let runtime: C11H05Runtime
+    let lifetime: MealRecordAuthenticationLifetime
+    let tickets: C11AuthenticationTicketFactorySpy
+    let model: AppFlowModel
+    let telemetry: InMemoryTelemetryClient
+    let owner: Prompt14SessionOwner
+    let root: MealRecordRootBindingCoordinator
+    let originalContext: MealRecordReadyContext
+    static func make() async throws -> Self {
+        let runtime = try await C11H05Runtime()
+        let tickets = C11AuthenticationTicketFactorySpy()
+        let lifetime = MealRecordAuthenticationLifetime(ticketFactory: { tickets.next() })
+        var preparedOwner: Prompt14SessionOwner?
+        var preparedRoot: MealRecordRootBindingCoordinator?
+        do {
+            let telemetry = InMemoryTelemetryClient()
+            let model = AppFlowModel(authentication: runtime.authentication,
+                onboarding: C11AuthenticationOnboardingPeer(completed: true),
+                persona: AppDependencies.scaffold().coachPersona, telemetry: telemetry,
+                mealRecordAuthenticationLifetime: lifetime,
+                developmentConsentAvailability: .syntheticDevelopment)
+            await model.start()
+            let activation = try #require(model.mealRecordActivation)
+            let owner = Prompt14SessionOwner(userID: activation.userID,
+                dependencies: C11BindingTestDependencies.make(), enablesMealRecordBinding: true)
+            preparedOwner = owner
+            await owner.awaitPatientTimeZoneResolution()
+            let root = MealRecordRootBindingCoordinator(lifetime: lifetime,
+                source: MealRecordSessionBindingSource(transport: runtime.transport, lifecycle: runtime.counted),
+                currentActivation: { [weak model] in model?.mealRecordActivation })
+            preparedRoot = root
+            let operation = try #require(root.beginBinding(activation: activation, owner: owner))
+            let context = try #require(try await root.completeBinding(operation))
+            try await runtime.respond()
+            return Self(runtime: runtime, lifetime: lifetime, tickets: tickets, model: model,
+                telemetry: telemetry, owner: owner, root: root, originalContext: context)
+        } catch {
+            await runtime.releaseAll()
+            await preparedRoot?.endSession()
+            await lifetime.endSession()
+            await preparedOwner?.endSession()
+            throw error
+        }
+    }
+    func failLogout() async {
+        await runtime.secure.rejectMarker()
+        await model.signOut()
+    }
+    func end() async {
+        await runtime.releaseAll()
+        await root.endSession()
         await lifetime.endSession()
         await owner.endSession()
     }

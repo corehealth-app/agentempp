@@ -8,6 +8,7 @@ enum C11RootNavigationSelection: String, Sendable {
     case sourceOn = "on"
     case sourceOff = "off"
     case getUnauthorizedThenSuccess = "get-401-200"
+    case getUnauthorizedTwice = "get-401-401"
     case patchUnauthorizedThenSuccess = "patch-401-200"
     case deleteUnauthorizedThenSuccess = "delete-401-200"
 
@@ -17,6 +18,7 @@ enum C11RootNavigationSelection: String, Sendable {
             (.sourceOn, "--ui-testing-c11-root-source-on"),
             (.sourceOff, "--ui-testing-c11-root-source-off"),
             (.getUnauthorizedThenSuccess, "--ui-testing-c11-root-get-401-200"),
+            (.getUnauthorizedTwice, "--ui-testing-c11-root-get-401-401"),
             (.patchUnauthorizedThenSuccess, "--ui-testing-c11-root-patch-401-200"),
             (.deleteUnauthorizedThenSuccess, "--ui-testing-c11-root-delete-401-200")
         ]
@@ -27,7 +29,7 @@ enum C11RootNavigationSelection: String, Sendable {
 
     var suppliesMealRecordSource: Bool {
         switch self {
-        case .sourceOn, .getUnauthorizedThenSuccess, .patchUnauthorizedThenSuccess, .deleteUnauthorizedThenSuccess: true
+        case .sourceOn, .getUnauthorizedThenSuccess, .getUnauthorizedTwice, .patchUnauthorizedThenSuccess, .deleteUnauthorizedThenSuccess: true
         case .sourceOff: false
         }
     }
@@ -148,7 +150,7 @@ struct C11RootNavigationDiagnosticView: View {
             return counts + " patch=\(probe.patches) sameLogical=\(probe.sameLogicalRequest ? 1 : 0) bearerChanged=\(probe.bearerChanged ? 1 : 0)"
                 + " keys=\(probe.uniqueKeys) today=\(probe.todayReads) history=\(probe.historyReads) commits=\(probe.fixtureCommits)"
         }
-        guard selection == .getUnauthorizedThenSuccess else { return counts }
+        guard selection == .getUnauthorizedThenSuccess || selection == .getUnauthorizedTwice else { return counts }
         return counts + " sameLogical=\(probe.sameLogicalRequest ? 1 : 0) bearerChanged=\(probe.bearerChanged ? 1 : 0)"
     }
     var body: some View {
@@ -236,7 +238,8 @@ private actor C11RootNavigationRemote: SupabaseAuthRemoteOperating {
     func requestPasswordRecovery(email: String) throws { throw SupabaseAuthRemoteError.requestFailed }
     func refresh(record: AuthenticationSessionRecord) async throws -> AuthenticationSessionRecord {
         await probe.recordRefresh()
-        guard selection == .getUnauthorizedThenSuccess || selection == .patchUnauthorizedThenSuccess
+        guard selection == .getUnauthorizedThenSuccess || selection == .getUnauthorizedTwice
+            || selection == .patchUnauthorizedThenSuccess
             || selection == .deleteUnauthorizedThenSuccess else {
             throw SupabaseAuthRemoteError.requestFailed
         }
@@ -499,7 +502,7 @@ private actor C11RootNavigationServer {
         }
         attemptedGETs += 1
         await probe.recordGET()
-        guard selection == .getUnauthorizedThenSuccess else {
+        guard selection == .getUnauthorizedThenSuccess || selection == .getUnauthorizedTwice else {
             return C11RootNavigationHTTPResponse(statusCode: 200,
                 data: try JSONEncoder().encode(C11RootNavigationFacts.detail()))
         }
@@ -520,6 +523,12 @@ private actor C11RootNavigationServer {
                 && firstAuthorization != currentAuthorization
             firstAuthorization = nil
             await probe.recordReplayComparison(sameLogical: sameLogical, bearerChanged: changed)
+            if selection == .getUnauthorizedTwice {
+                let error = ["error": ["code": "invalid_access_token", "message": "Synthetic fixture second unauthorized",
+                                         "request_id": "c11-ui-second-unauthorized"]]
+                return C11RootNavigationHTTPResponse(statusCode: 401,
+                    data: try JSONSerialization.data(withJSONObject: error))
+            }
             return C11RootNavigationHTTPResponse(statusCode: 200,
                 data: try JSONEncoder().encode(C11RootNavigationFacts.detail()))
         default:

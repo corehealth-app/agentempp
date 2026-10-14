@@ -413,6 +413,89 @@ final class C11RootNavigationUITests: XCTestCase {
         capture(app, name: "c11-root-delete401-empty-history-today-zero")
     }
 
+    func testRealRootSecondGET401EndsWithoutThirdRequestAndKeepsVisibleReadOnlyHistoryData() throws {
+        let app = try launchFixture("--ui-testing-c11-root-get-401-401", selection: "get-401-401")
+        try openActualHistoryRow(in: app)
+        let detail = element("screen.meal-record", in: app)
+        let entered = detail.waitForExistence(timeout: 8)
+        XCTAssertTrue(entered, "CHARACTERIZATION: terminal second HTTP401 remains on the real admitted C11 destination")
+        guard entered else { capture(app, name: "c11-root-second401-destination"); return }
+        let warning = element("meal-record.read-failure", in: app)
+        let failedRead = warning.waitForExistence(timeout: 8)
+        XCTAssertTrue(failedRead, "The actual repository/Model must publish its completed read failure after two real HTTP401 responses")
+        guard failedRead else { capture(app, name: "c11-root-second401-read-not-terminal"); return }
+        let status = element("c11.fixture.status", in: app)
+        let expected = "C11 get-401-401: get=2 bind=1 refresh=1 blocked=0 sameLogical=1 bearerChanged=1"
+        wait(for: [expectation(for: NSPredicate(format: "label == %@", expected), evaluatedWith: status)], timeout: 5)
+        XCTAssertEqual(status.label, expected,
+            "Two actual GETs and one real refresh retain the logical request, change bearer and stop without a third automatic attempt")
+        let localRows = app.staticTexts.matching(identifier: "meal-record.local-row")
+        let food = localRows.matching(NSPredicate(format: "label == %@", "Synthetic C11 confirmed food")).element
+        let quantity = localRows.matching(NSPredicate(format: "label == %@", "Quantidade: 50 g")).element
+        let energy = localRows.matching(NSPredicate(format: "label == %@", "Energia: 100 kcal")).element
+        XCTAssertTrue(element("meal-record.local-row", in: app).exists)
+        for row in localRows.allElementsBoundByIndex {
+            print("C11_SECOND401_LOCAL_AX type=\(row.elementType.rawValue) id=\(row.identifier) label=\(row.label) hittable=\(row.isHittable) frame=\(row.frame)")
+        }
+        for value in [food, quantity, energy] {
+            let valueExists = value.exists
+            XCTAssertTrue(valueExists, "History's own local food/quantity/energy must remain in the real read-only rows")
+            guard valueExists else {
+                capture(app, name: "c11-root-second401-local-value-not-mounted")
+                return
+            }
+            XCTAssertTrue(value.isHittable, "The preserved local values must be visibly reachable, not only in offscreen AX")
+        }
+        let form = app.collectionViews["screen.meal-record"]
+        let retry = app.buttons["meal-record.retry-read"]
+        func failureControlsFullyVisible() -> Bool {
+            guard warning.exists, retry.exists, status.exists else { return false }
+            let viewport = form.frame.intersection(app.frame)
+            let notice = warning.frame
+            let button = retry.frame
+            let diagnostic = status.frame
+            return !viewport.isNull && viewport.width > 0 && viewport.height > 0
+                && notice.width > 0 && notice.height > 0 && button.width > 0 && button.height >= 44
+                && diagnostic.width > 0 && diagnostic.height > 0
+                && viewport.contains(notice) && viewport.contains(button)
+                && !notice.intersects(diagnostic) && !button.intersects(diagnostic)
+                && warning.isHittable && retry.isEnabled && retry.isHittable
+        }
+        for _ in 0..<6 {
+            if !warning.exists || !retry.exists { form.swipeUp(); continue }
+            if failureControlsFullyVisible() { break }
+            form.swipeUp()
+        }
+        XCTAssertTrue(warning.exists && retry.exists,
+            "SETUP_VISIBLE_CONTROL: actual warning/retry rows must mount before frame or trait inspection")
+        guard warning.exists && retry.exists else {
+            capture(app, name: "c11-root-second401-controls-not-mounted")
+            return
+        }
+        let controlsReady = failureControlsFullyVisible()
+        XCTAssertTrue(controlsReady,
+            "The whole warning and accessible retry button must fit the actual Form/app viewport clear of diagnostics")
+        XCTAssertEqual(warning.label,
+            "Não foi possível abrir este registro para alteração agora. Estes são os dados que já estavam no app.")
+        XCTAssertEqual(retry.label, "Tentar abrir novamente")
+        XCTAssertTrue(retry.isEnabled && retry.isHittable)
+        print("C11_SECOND401_TERMINAL_AX app=\(app.frame) form=\(form.frame) warning=\(warning.frame) retry=\(retry.frame) diagnostic=\(status.frame) label=\(warning.label) status=\(status.label)")
+        capture(app, name: "c11-root-second401-visible-local-data-warning-and-retry")
+        guard controlsReady else { return }
+        for id in ["meal-record.field.name", "meal-record.field.quantity", "meal-record.field.kcal",
+                   "meal-record.patch", "meal-record.delete", "meal-record.saved", "meal-record.failure",
+                   "meal-record.recovery.notice", "meal-record.recovery.action", "meal-record.progress",
+                   "screen.history.meal-detail", "screen.auth.sign-in", "screen.auth.sign-up"] {
+            XCTAssertFalse(element(id, in: app).exists,
+                "A terminal failed read preserves protected local data without exposing editing, a mutation result or recovery authority: \(id)")
+        }
+        // Do not tap retry: this case characterizes the automatic terminal load,
+        // not a subsequent explicit read. Terminal visible controls end the wait.
+        XCTAssertEqual(status.label, expected)
+        XCTAssertTrue(detail.exists)
+        capture(app, name: "c11-root-second401-no-third-http-no-false-recovery")
+    }
+
     private func launchFixture(_ argument: String, selection: String) throws -> XCUIApplication {
         let app = XCUIApplication()
         runningApp = app

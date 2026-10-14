@@ -1674,6 +1674,363 @@ struct MobileAPITransportTests {
     }
 
 
+    @MainActor
+    @Test("C11 H02: original pending A1 cannot publish or remove A2 after A-B-A",
+          arguments: [C11RootOldCompletion.normal, .cancelledCaller])
+    func c11H02OriginalPendingBindingCannotEraseA2(boundary: C11RootOldCompletion) async throws {
+        let fixture = try await C11RootBindingFixture.make()
+        await fixture.wire.lifecycle.holdNextLease(completeEvenIfCancelled: true)
+        var first: Task<MealRecordReadyContext?, any Error>? = nil
+        do {
+            let original = try #require(fixture.coordinator.beginBinding(
+                activation: fixture.activation, owner: fixture.owner))
+            let completion = Task { try await fixture.coordinator.completeBinding(original) }
+            first = completion
+            let originalBinding = try #require(fixture.owner.mealRecordBinding)
+            await fixture.wire.lifecycle.leaseHold.waitUntilEntered()
+            #expect(fixture.coordinator.readyContext == nil)
+            #expect(originalBinding.capability == nil)
+            #expect(await fixture.countedLifecycle.leaseCalls == 1)
+            #expect(await fixture.wire.stub.requests().isEmpty)
+            await C11AuthenticationFixtures.cycleThroughBAndBackToA(
+                model: fixture.model, peer: fixture.authentication)
+            let current = try #require(fixture.model.mealRecordActivation)
+            #expect(current.ticket != fixture.activation.ticket)
+            #expect(!originalBinding.isOpen)
+            #expect(originalBinding.capability == nil)
+            #expect(originalBinding.capturedLease == nil)
+            #expect(!fixture.owner.isInvalidated)
+            let second = try #require(fixture.coordinator.beginBinding(
+                activation: current, owner: fixture.owner))
+            let currentBinding = try #require(fixture.owner.mealRecordBinding)
+            #expect(currentBinding !== originalBinding)
+            let ready = try #require(try await fixture.coordinator.completeBinding(second))
+            #expect(ready.activation == current)
+            #expect(ready.isActive)
+            #expect(fixture.coordinator.readyContext === ready)
+            #expect(await fixture.countedLifecycle.leaseCalls == 2)
+            #expect(await fixture.wire.stub.requests().isEmpty)
+            #expect(fixture.coordinator.beginBinding(activation: fixture.activation, owner: fixture.owner) == nil)
+            #expect(fixture.coordinator.readyContext === ready)
+            #expect(await fixture.countedLifecycle.leaseCalls == 2)
+            if boundary == .cancelledCaller { completion.cancel() }
+            await fixture.wire.lifecycle.leaseHold.release()
+            let oldResult = await completion.result
+            switch oldResult {
+            case .success: Issue.record("Original A1 completion must be terminal")
+            case .failure(let error): #expect(error is CancellationError)
+            }
+            #expect(fixture.coordinator.readyContext === ready)
+            #expect(ready.isActive)
+            #expect(fixture.lifetime.currentActivation == current)
+            #expect(originalBinding.capability == nil)
+            #expect(originalBinding.capturedLease == nil)
+            #expect(await fixture.wire.stub.requests().isEmpty)
+            let detail = try await ready.capability.mealRecord(id: C11RealLifecycleTransportHarness.recordID)
+            #expect(detail.data.recordID == C11RealLifecycleTransportHarness.recordID)
+            #expect(await fixture.wire.stub.requests().count == 1)
+            #expect(await fixture.countedLifecycle.leaseCalls == 2)
+            #expect(try await fixture.owner.progress.progress() == BodyFlowTestFixtures.progressResponse)
+            await fixture.end()
+        } catch {
+            await fixture.wire.lifecycle.leaseHold.release()
+            _ = await first?.result
+            await fixture.end()
+            throw error
+        }
+    }
+
+    @MainActor
+    @Test("C11 H02: duplicate pending and ready admission share one operation, lease and context")
+    func c11H02DuplicateAdmissionCoalescesOneLease() async throws {
+        let fixture = try await C11RootBindingFixture.make()
+        await fixture.wire.lifecycle.holdNextLease(completeEvenIfCancelled: true)
+        do {
+            let first = try #require(fixture.coordinator.beginBinding(
+                activation: fixture.activation, owner: fixture.owner))
+            await fixture.wire.lifecycle.leaseHold.waitUntilEntered()
+            let duplicate = try #require(fixture.coordinator.beginBinding(
+                activation: fixture.activation, owner: fixture.owner))
+            #expect(duplicate === first)
+            #expect(fixture.coordinator.readyContext == nil)
+            #expect(await fixture.countedLifecycle.leaseCalls == 1)
+            let completion1 = Task { try await fixture.coordinator.completeBinding(first) }
+            let completion2 = Task { try await fixture.coordinator.completeBinding(duplicate) }
+            await fixture.wire.lifecycle.leaseHold.release()
+            let result1 = await completion1.result
+            let result2 = await completion2.result
+            let ready1 = try #require(try result1.get())
+            let ready2 = try #require(try result2.get())
+            #expect(ready1 === ready2)
+            #expect(ready1.isActive)
+            #expect(fixture.coordinator.readyContext === ready1)
+            let alreadyReady = try #require(fixture.coordinator.beginBinding(
+                activation: fixture.activation, owner: fixture.owner))
+            #expect(alreadyReady === first)
+            #expect(try await fixture.coordinator.completeBinding(alreadyReady) === ready1)
+            #expect(await fixture.countedLifecycle.leaseCalls == 1)
+            #expect(await fixture.wire.stub.requests().isEmpty)
+            await fixture.end()
+        } catch {
+            await fixture.wire.lifecycle.leaseHold.release()
+            await fixture.end()
+            throw error
+        }
+    }
+
+    @MainActor
+    @Test("C11 Root source/owner OFF stays neutral without a lease or meal request",
+          arguments: [C11RootOffSource.source, .owner])
+    func c11H02OffAndConstructionDoNotStartMeals(off: C11RootOffSource) async throws {
+        let fixture = try await C11RootBindingFixture.make(
+            sourceEnabled: off != .source, ownerEnabled: off != .owner)
+        #expect(await fixture.countedLifecycle.leaseCalls == 0)
+        #expect(await fixture.wire.stub.requests().isEmpty)
+        let originalBinding = fixture.owner.mealRecordBinding
+        #expect(fixture.coordinator.readyContext == nil)
+        #expect(fixture.coordinator.beginBinding(activation: fixture.activation, owner: fixture.owner) == nil)
+        #expect(fixture.coordinator.readyContext == nil)
+        #expect(fixture.owner.mealRecordBinding === originalBinding)
+        #expect(await fixture.countedLifecycle.leaseCalls == 0)
+        #expect(await fixture.wire.stub.requests().isEmpty)
+        #expect(!fixture.owner.isInvalidated)
+        await fixture.end()
+    }
+
+    @MainActor
+    @Test("C11 context denies access at pre-auth close while model and Root have not redrawn")
+    func c11H02ContextClosesBeforeRootRedraw() async throws {
+        let fixture = try await C11RootBindingFixture.make()
+        var signOut: Task<Void, Never>? = nil
+        do {
+            let operation = try #require(fixture.coordinator.beginBinding(
+                activation: fixture.activation, owner: fixture.owner))
+            let ready = try #require(try await fixture.coordinator.completeBinding(operation))
+            let binding = try #require(fixture.owner.mealRecordBinding)
+            let lease = try #require(binding.capturedLease)
+            #expect(ready.isActive)
+            await fixture.authentication.holdNextEntry(.signOut)
+            signOut = Task { await fixture.model.signOut() }
+            await fixture.authentication.entryHold.waitUntilEntered()
+            #expect(fixture.model.state == .authenticated(userID: C11AuthenticationFixtures.a))
+            #expect(!fixture.owner.isInvalidated)
+            #expect(!ready.isActive)
+            #expect(fixture.coordinator.readyContext == nil)
+            #expect(fixture.model.mealRecordActivation == nil)
+            // Parent A1 is still a real valid session: denial comes from C11 pre-close.
+            try await fixture.wire.coordinator.validate(lease)
+            await #expect(throws: CancellationError.self) {
+                _ = try await ready.capability.mealRecord(id: C11RealLifecycleTransportHarness.recordID)
+            }
+            #expect(await fixture.wire.stub.requests().isEmpty)
+            #expect(await fixture.countedLifecycle.leaseCalls == 1)
+            await fixture.authentication.entryHold.release()
+            await signOut?.value
+            await fixture.end()
+        } catch {
+            await fixture.authentication.entryHold.release()
+            await signOut?.value
+            await fixture.end()
+            throw error
+        }
+    }
+
+    @MainActor
+    @Test("C11 Root rejects stale projection, owner and closed owner before lease",
+          arguments: [C11RootRejectedAdmission.staleTicket, .wrongOwner, .closedOwner, .missingProjection])
+    func c11H02RejectedAdmissionHasNoLease(reason: C11RootRejectedAdmission) async throws {
+        let fixture = try await C11RootBindingFixture.make()
+        let wrongOwner = Prompt14SessionOwner(userID: C11AuthenticationFixtures.b,
+            dependencies: C11BindingTestDependencies.make(), enablesMealRecordBinding: true)
+        await wrongOwner.awaitPatientTimeZoneResolution()
+        switch reason {
+        case .staleTicket:
+            _ = fixture.lifetime.beginAuthenticationBoundary()
+        case .wrongOwner: break
+        case .closedOwner: fixture.owner.invalidateSynchronously()
+        case .missingProjection:
+            fixture.lifetime.withdrawVisibleActivation(ticket: fixture.activation.ticket)
+        }
+        let owner = reason == .wrongOwner ? wrongOwner : fixture.owner
+        #expect(fixture.coordinator.beginBinding(activation: fixture.activation, owner: owner) == nil)
+        #expect(fixture.coordinator.readyContext == nil)
+        #expect(await fixture.countedLifecycle.leaseCalls == 0)
+        #expect(await fixture.wire.stub.requests().isEmpty)
+        await fixture.end()
+        await wrongOwner.endSession()
+    }
+
+    @MainActor
+    @Test("C11 Root never accepts missing or mismatched actual lease",
+          arguments: [C11RootLeaseFailure.missing, .wrongUser])
+    func c11H02ActualLeaseFailureStaysNeutral(failure: C11RootLeaseFailure) async throws {
+        let fixture = try await C11RootBindingFixture.make()
+        do {
+            if failure == .missing {
+                _ = await fixture.wire.coordinator.signOut()
+            } else {
+                try await fixture.wire.coordinator.switch(to:
+                    C11RealLifecycleTransportHarness.record(userID: C11AuthenticationFixtures.b, ordinal: 2))
+            }
+            // The visible model still presents A; only real lease validation rejects this.
+            #expect(fixture.model.mealRecordActivation == fixture.activation)
+            let operation = try #require(fixture.coordinator.beginBinding(
+                activation: fixture.activation, owner: fixture.owner))
+            let expected: SessionLifecycleError = failure == .missing ? .missingSession : .sessionSuperseded
+            await #expect(throws: expected) { _ = try await fixture.coordinator.completeBinding(operation) }
+            #expect(fixture.coordinator.readyContext == nil)
+            #expect(fixture.owner.mealRecordBinding?.capability == nil)
+            #expect(fixture.owner.mealRecordBinding?.capturedLease == nil)
+            #expect(fixture.owner.mealRecordBinding?.isOpen == false)
+            #expect(await fixture.countedLifecycle.leaseCalls == 1)
+            #expect(await fixture.wire.stub.requests().isEmpty)
+            await fixture.end()
+        } catch {
+            await fixture.end()
+            throw error
+        }
+    }
+
+    @MainActor
+    @Test("C11 Root: cancellation before complete closes the already-started original reservation")
+    func c11H02CancellationBeforeCompleteClosesOriginal() async throws {
+        let fixture = try await C11RootBindingFixture.make()
+        do {
+            let originalLease = try await fixture.wire.coordinator.leaseForRequest()
+            await fixture.wire.lifecycle.holdNextLease(completeEvenIfCancelled: true)
+            let operation = try #require(fixture.coordinator.beginBinding(
+                activation: fixture.activation, owner: fixture.owner))
+            await fixture.wire.lifecycle.leaseHold.waitUntilEntered()
+            let binding = try #require(fixture.owner.mealRecordBinding)
+            #expect(binding.isOpen)
+            let completion = Task {
+                withUnsafeCurrentTask { $0?.cancel() }
+                return try await fixture.coordinator.completeBinding(operation)
+            }
+            let result = await completion.result
+            switch result {
+            case .success: Issue.record("A caller cancelled before entry must not receive a context")
+            case .failure(let error): #expect(error is CancellationError)
+            }
+            // Resolver is still held and original A1 remains valid; cleanup is synchronous.
+            try await fixture.wire.coordinator.validate(originalLease)
+            #expect(fixture.lifetime.currentActivation == fixture.activation)
+            #expect(!fixture.owner.isInvalidated)
+            #expect(!binding.isOpen)
+            #expect(binding.capability == nil)
+            #expect(binding.capturedLease == nil)
+            #expect(fixture.coordinator.readyContext == nil)
+            #expect(await fixture.wire.stub.requests().isEmpty)
+            await fixture.wire.lifecycle.leaseHold.release()
+            await fixture.end()
+            #expect(binding.capability == nil)
+            #expect(binding.capturedLease == nil)
+            #expect(await fixture.countedLifecycle.leaseCalls == 1)
+            #expect(await fixture.wire.stub.requests().isEmpty)
+        } catch {
+            await fixture.wire.lifecycle.leaseHold.release()
+            await fixture.end()
+            throw error
+        }
+    }
+
+    @MainActor
+    @Test("C11 Root projection closes context for late core signed-out while A2 authority stays valid")
+    func c11H02ActualModelProjectionGuardsContextWithoutRedraw() async throws {
+        let fixture = try await C11RootBindingFixture.make()
+        await fixture.authentication.holdNextEntry(.start,
+            forcedRestore: C11AuthenticationFixtures.lateReturn(.missing))
+        let oldRestore = Task { await fixture.model.start() }
+        do {
+            await fixture.authentication.entryHold.waitUntilEntered()
+            await C11AuthenticationFixtures.cycleThroughBAndBackToA(
+                model: fixture.model, peer: fixture.authentication)
+            let current = try #require(fixture.model.mealRecordActivation)
+            let operation = try #require(fixture.coordinator.beginBinding(
+                activation: current, owner: fixture.owner))
+            let ready = try #require(try await fixture.coordinator.completeBinding(operation))
+            let binding = try #require(fixture.owner.mealRecordBinding)
+            let lease = try #require(binding.capturedLease)
+            #expect(ready.isActive)
+            await fixture.authentication.entryHold.release()
+            await oldRestore.value
+            #expect(fixture.model.state == .signedOut(.signIn))
+            #expect(fixture.model.mealRecordActivation == nil)
+            #expect(fixture.lifetime.currentActivation == current)
+            #expect(fixture.lifetime.isCurrent(current.ticket))
+            #expect(!fixture.owner.isInvalidated)
+            #expect(binding.isOpen)
+            #expect(binding.capability === ready.capability)
+            #expect(ready.capability.hasRetainedCapability)
+            try await fixture.wire.coordinator.validate(lease)
+            // No Root transition or redraw has happened since the old terminal.
+            #expect(!ready.isActive)
+            #expect(fixture.coordinator.readyContext == nil)
+            #expect(fixture.coordinator.beginBinding(activation: current, owner: fixture.owner) == nil)
+            #expect(await fixture.countedLifecycle.leaseCalls == 1)
+            #expect(await fixture.wire.stub.requests().isEmpty)
+            await fixture.end()
+        } catch {
+            await fixture.authentication.entryHold.release()
+            await oldRestore.value
+            await fixture.end()
+            throw error
+        }
+    }
+
+    @MainActor
+    @Test("C11 Root rejects another live owner of the same user before retiring the current grant")
+    func c11H02ForeignSameUserOwnerPreservesCurrentGrant() async throws {
+        let fixture = try await C11RootBindingFixture.make()
+        let foreignOwner = Prompt14SessionOwner(userID: C11AuthenticationFixtures.a,
+            dependencies: C11BindingTestDependencies.make(), enablesMealRecordBinding: true)
+        await foreignOwner.awaitPatientTimeZoneResolution()
+        do {
+            let operation = try #require(fixture.coordinator.beginBinding(
+                activation: fixture.activation, owner: fixture.owner))
+            let ready = try #require(try await fixture.coordinator.completeBinding(operation))
+            let binding = try #require(fixture.owner.mealRecordBinding)
+            let lease = try #require(binding.capturedLease)
+            #expect(ready.isActive)
+            #expect(fixture.coordinator.readyContext === ready)
+            #expect(foreignOwner !== fixture.owner)
+            #expect(foreignOwner.userID == fixture.activation.userID)
+            #expect(!foreignOwner.isInvalidated)
+            #expect(await fixture.countedLifecycle.leaseCalls == 1)
+            #expect(await fixture.wire.stub.requests().isEmpty)
+            let foreignBinding = foreignOwner.mealRecordBinding
+            #expect(fixture.coordinator.beginBinding(activation: fixture.activation, owner: foreignOwner) == nil)
+            #expect(foreignOwner.mealRecordBinding === foreignBinding)
+            #expect(fixture.owner.mealRecordBinding === binding)
+            #expect(binding.isOpen)
+            #expect(binding.capability === ready.capability)
+            #expect(binding.capturedLease == lease)
+            #expect(ready.capability.hasRetainedCapability)
+            #expect(ready.isActive)
+            #expect(fixture.coordinator.readyContext === ready)
+            #expect(fixture.lifetime.currentActivation == fixture.activation)
+            #expect(!fixture.owner.isInvalidated)
+            #expect(!foreignOwner.isInvalidated)
+            #expect(await fixture.countedLifecycle.leaseCalls == 1)
+            #expect(await fixture.wire.stub.requests().isEmpty)
+            try await fixture.wire.coordinator.validate(lease)
+            let detail = try await ready.capability.mealRecord(id: C11RealLifecycleTransportHarness.recordID)
+            #expect(detail.data.recordID == C11RealLifecycleTransportHarness.recordID)
+            #expect(await fixture.wire.stub.requests().count == 1)
+            #expect(await fixture.countedLifecycle.leaseCalls == 1)
+            // The single request is the accepted original grant; foreign admission made none.
+            #expect(fixture.coordinator.beginBinding(activation: fixture.activation, owner: fixture.owner) === operation)
+            #expect(await fixture.countedLifecycle.leaseCalls == 1)
+            await foreignOwner.endSession()
+            await fixture.end()
+        } catch {
+            await foreignOwner.endSession()
+            await fixture.end()
+            throw error
+        }
+    }
+
+
 }
 
 private actor RejectingRegistrationLifecycle: SessionLifecycleProviding {
@@ -2663,4 +3020,89 @@ private func c11OwnerRenewalBindMustSucceed(
 private func c11OwnerRenewalReleaseHolds(_ harness: C11RealLifecycleTransportHarness) async {
     await harness.lifecycle.leaseHold.release()
     await harness.lifecycle.visibleReturnHold.release()
+}
+
+
+// Root C11 test parameters remain internal for Swift Testing parameter access.
+enum C11RootOldCompletion: Equatable, Sendable { case normal, cancelledCaller }
+enum C11RootOffSource: Equatable, Sendable { case source, owner }
+enum C11RootRejectedAdmission: Equatable, Sendable { case staleTicket, wrongOwner, closedOwner, missingProjection }
+enum C11RootLeaseFailure: Equatable, Sendable { case missing, wrongUser }
+
+/// Counts explicit binding lease calls, delegating every authority boundary to
+/// the very same real coordinator used by the actual MobileAPITransport.
+private actor C11RootCountingLifecycle: SessionLifecycleProviding {
+    private let base: C11HoldingLifecycle
+    private(set) var leaseCalls = 0
+    init(base: C11HoldingLifecycle) { self.base = base }
+    func currentBearerToken() async -> String? { await base.currentBearerToken() }
+    func leaseForRequest() async throws -> SessionLease {
+        leaseCalls += 1
+        return try await base.leaseForRequest()
+    }
+    func refreshAfterUnauthorized(lease: SessionLease) async throws -> SessionLease {
+        try await base.refreshAfterUnauthorized(lease: lease)
+    }
+    func validate(_ lease: SessionLease) async throws { try await base.validate(lease) }
+    func signOut() async -> RemoteRevocationOutcome { await base.signOut() }
+    func beginPatientWork(lease: SessionLease, cancel: @escaping @Sendable () -> Void) async throws -> UUID {
+        try await base.beginPatientWork(lease: lease, cancel: cancel)
+    }
+    func finishPatientWork(_ id: UUID) async { await base.finishPatientWork(id) }
+    func performPatientStateOperation<Value: Sendable>(lease: SessionLease,
+        operation: @Sendable () throws -> Value) async throws -> Value {
+        try await base.performPatientStateOperation(lease: lease, operation: operation)
+    }
+    func performVisiblePatientStateOperation<Value: Sendable>(lease: SessionLease,
+        operation: @MainActor @Sendable () throws -> Value) async throws -> Value {
+        try await base.performVisiblePatientStateOperation(lease: lease, operation: operation)
+    }
+}
+
+@MainActor
+private struct C11RootBindingFixture {
+    let wire: C11RealLifecycleTransportHarness
+    let countedLifecycle: C11RootCountingLifecycle
+    let authentication: C11AuthenticationEntryPeer
+    let model: AppFlowModel
+    let lifetime: MealRecordAuthenticationLifetime
+    let activation: MealRecordAuthenticatedActivation
+    let owner: Prompt14SessionOwner
+    let coordinator: MealRecordRootBindingCoordinator
+
+    static func make(sourceEnabled: Bool = true, ownerEnabled: Bool = true) async throws -> Self {
+        let wire = try await C11RealLifecycleTransportHarness()
+        let lifetime = MealRecordAuthenticationLifetime()
+        var preparedOwner: Prompt14SessionOwner? = nil
+        do {
+            let authentication = C11AuthenticationEntryPeer(coordinator: wire.coordinator)
+            let model = C11AuthenticationFixtures.model(peer: authentication,
+                onboarding: C11AuthenticationOnboardingPeer(completed: true),
+                lifetime: lifetime, telemetry: InMemoryTelemetryClient())
+            await model.start()
+            let activation = try #require(model.mealRecordActivation)
+            let owner = Prompt14SessionOwner(userID: activation.userID,
+                dependencies: C11BindingTestDependencies.make(), enablesMealRecordBinding: ownerEnabled)
+            preparedOwner = owner
+            await owner.awaitPatientTimeZoneResolution()
+            let counted = C11RootCountingLifecycle(base: wire.lifecycle)
+            let source = MealRecordSessionBindingSource(transport: wire.transport, lifecycle: counted)
+            let coordinator = MealRecordRootBindingCoordinator(lifetime: lifetime,
+                source: sourceEnabled ? source : nil,
+                currentActivation: { [weak model] in model?.mealRecordActivation })
+            try await wire.respondWithMealDetail()
+            return Self(wire: wire, countedLifecycle: counted, authentication: authentication,
+                model: model, lifetime: lifetime, activation: activation, owner: owner, coordinator: coordinator)
+        } catch {
+            await lifetime.endSession()
+            await preparedOwner?.endSession()
+            throw error
+        }
+    }
+
+    func end() async {
+        await coordinator.endSession()
+        await lifetime.endSession()
+        await owner.endSession()
+    }
 }

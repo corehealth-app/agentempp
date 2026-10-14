@@ -8,6 +8,7 @@ import type { Json, ServiceClient } from '@mpp/db'
 import type { MobileAuthContext } from './auth'
 import type { HistoryQuery, TrendsQuery } from './contracts'
 import { MobileApiError } from './http'
+import { loadProgressBodyFatOrigin } from './progress-body-fat-origin'
 
 type JsonRecord = Record<string, Json | undefined>
 
@@ -230,12 +231,16 @@ function profileBodyFatPercent(value: unknown): number | null {
  * writes `user_progress.current_bf_percent`: the sign-up stores the value in
  * `user_profiles.body_fat_percent`. The answer now carries the profile's value
  * when the progress row has none; a value stored in the progress row wins.
- * Same keys, same types, two reads, no write; presentation only, no number of
- * the method changes. Decisão do orquestrador, anunciada ao dono em
+ * The 14 existing values/types remain; current_bf_origin is additive and reads
+ * one closed snapshot only for a nonnull profile fallback. Presentation only,
+ * no write or method-number change. Decisão do orquestrador, anunciada ao dono em
  * 2026-10-10, que pode riscar qualquer uma (it is not the owner's nor the
  * physician's approval). Golden: progress-body-fat.audit-10-10.test.ts.
  */
 export async function loadProgress(supabase: ServiceClient, userId: string) {
+  // The generated DB types predate completed_at; reuse the existing narrow profile adapter.
+  const selectProfile: ProfileQuery = (columns) =>
+    (supabase.from('user_profiles') as unknown as { select: ProfileQuery }).select(columns)
   const [progress, profile] = await Promise.all([
     supabase
       .from('user_progress')
@@ -244,9 +249,9 @@ export async function loadProgress(supabase: ServiceClient, userId: string) {
       )
       .eq('user_id', userId)
       .maybeSingle(),
-    supabase
-      .from('user_profiles')
-      .select('current_protocol, body_fat_percent')
+    selectProfile(
+      'current_protocol, body_fat_percent, user_id, onboarding_completed, onboarding_completed_at',
+    )
       .eq('user_id', userId)
       .maybeSingle(),
   ])
@@ -254,10 +259,16 @@ export async function loadProgress(supabase: ServiceClient, userId: string) {
   throwQueryError(profile.error, 'Progress objective lookup')
   if (!progress.data) return null
   const currentProtocol = normalizeProtocol(profile.data?.current_protocol)
+  const currentBodyFatPercent =
+    progress.data.current_bf_percent ?? profileBodyFatPercent(profile.data?.body_fat_percent)
+  const currentBodyFatOrigin =
+    progress.data.current_bf_percent == null && currentBodyFatPercent !== null
+      ? await loadProgressBodyFatOrigin(supabase, userId, profile.data, currentBodyFatPercent)
+      : null
   return {
     ...progress.data,
-    current_bf_percent:
-      progress.data.current_bf_percent ?? profileBodyFatPercent(profile.data?.body_fat_percent),
+    current_bf_percent: currentBodyFatPercent,
+    current_bf_origin: currentBodyFatOrigin,
     current_protocol: currentProtocol,
     block_7700_enabled: resolveFlowBloco7700Policy(currentProtocol).enabled,
   }

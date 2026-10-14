@@ -87,6 +87,7 @@ const PROGRESS_KEYS = [
   'badges_earned',
   'block_7700_enabled',
   'blocks_completed',
+  'current_bf_origin',
   'current_bf_percent',
   'current_protocol',
   'current_streak',
@@ -159,6 +160,7 @@ describe('GET /api/mobile/v1/progress', () => {
           ? protocol
           : null,
       block_7700_enabled: enabled,
+      current_bf_origin: null,
     })
     expect(db.progress(USER)).toEqual(original)
     expect(db.writes).toEqual([])

@@ -1313,6 +1313,15 @@ saldo anterior, sem consultar nem gravar staging.
   mantém `data:null`; perfil ausente/inválido oculta, erro de leitura falha com
   `500 data_access_failed`. Não escreve dados nem faz leitura do worker legado.
   O fechamento sob demanda continua anterior à leitura, com suas travas.
+  P-DEPOIS-1 acrescenta `current_bf_origin: "signup_photos" | null` sem alterar
+  esses 14 valores. Só o BF selecionado do fallback não nulo consulta uma vez
+  o snapshot fechado de confirmação; BF persistido no progresso, mesmo igual,
+  não herda origem. A leitura seletiva do perfil também obtém dono e geração
+  para correlacionar recibo ativo; igualdade com a estimativa pública não basta.
+  Recibo já invalidado continua negativo, até com valor antigo diferente;
+  aceite não invalidado divergente é erro de contexto. Não há gravação, regra
+  nutricional, fórmula ou ajuste de meta novo. Contrato, erros e gates de
+  serialização/publicação em `docs/mobile/api-v1.md`, seção P-DEPOIS-1.
   Sem transação/versão, as duas leituras não garantem atomicidade entre perfil
   e progresso. O contrato aditivo conserva `bodyflow.daily-state.v3` e não
   comprova por si só que staging foi publicado. O consumo iOS local de

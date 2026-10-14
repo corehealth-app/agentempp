@@ -845,13 +845,20 @@ oficial é separado do protocolo histórico usado para calcular a energia do dia
   perfil (`user_profiles.body_fat_percent`, a que a pessoa informou no
   cadastro), como número — só número finito ou texto em formato decimal;
   qualquer outra coisa é `null`. Nenhum caminho do app grava
-  `user_progress.current_bf_percent` hoje. A resposta não diz a origem nem a
-  data do número (RC BF-2). É decisão do orquestrador, anunciada ao dono em
+  `user_progress.current_bf_percent` hoje. P-DEPOIS-1 acrescenta somente
+  `current_bf_origin: "signup_photos" | null`, como 15º campo, quando há
+  progresso. A marca exige recibo confirmado ativo do BF vindo do fallback do
+  perfil; valor persistido no progresso não herda origem, nem se for igual.
+  Não há data de medição nova (limites históricos em RC BF-2).
+  O fallback é decisão do orquestrador, anunciada ao dono em
   2026-10-10, que pode riscar qualquer uma; não é aprovação do dono nem do
   médico (ver "Gordura corporal do cadastro em Progresso", abaixo).
-  A leitura seletiva de `user_profiles` (`current_protocol` e
-  `body_fat_percent`) e a de `user_progress` ocorrem em paralelo, com
-  `user_id` autenticado nas duas. Não se aceita um objetivo vindo de body,
+  A leitura seletiva de `user_profiles` (`current_protocol`,
+  `body_fat_percent`, `user_id`, `onboarding_completed` e
+  `onboarding_completed_at`) e a de `user_progress` ocorrem em paralelo, com
+  `user_id` autenticado nas duas. Somente fallback de BF não nulo pode fazer
+  uma leitura adicional do snapshot fechado já existente; veja P-DEPOIS-1
+  abaixo. Não se aceita um objetivo vindo de body,
   mensagem ou snapshot para decidir a apresentação.
 - Ausência de progresso mantém `data:null`. Perfil ausente/nulo/inválido
   produz `current_protocol:null` e flag `false`. Erro em qualquer query produz
@@ -916,10 +923,13 @@ de reavaliação só recebe um argumento com esse nome). O valor do cadastro é
 gravado por `complete_mobile_onboarding_atomic` em
 `user_profiles.body_fat_percent`, a mesma coluna que `GET /profile` já devolve.
 
-Mudança. `GET /progress` responde a gordura do perfil quando a do progresso é
-nula. As mesmas 14 chaves e os mesmos tipos: o build 1.0 (3), que decodifica o
-campo como decimal opcional, passa a mostrar "15%" sem atualização. Duas
-leituras, nenhuma escrita. O valor persistido no progresso, quando existe,
+Mudança original de 2026-10-10. `GET /progress` passou a responder a gordura
+do perfil quando a do progresso é nula, preservando as 14 chaves/tipos de
+então: o build 1.0 (3), que decodifica o campo como decimal opcional, passa a
+mostrar "15%" sem atualização. P-DEPOIS-1, abaixo, preserva esses 14 valores e
+acrescenta apenas a origem nullable. As duas leituras paralelas continuam;
+somente o fallback de BF não nulo consulta também um snapshot fechado.
+Nenhuma escrita nova. O valor persistido no progresso, quando existe,
 vence. Só número finito ou texto em formato decimal (dígitos, com parte
 decimal opcional, sem sinal nem expoente) vira número; o resto é `null` — uma
 conversão direta responderia 0 para texto vazio e 1 para `true`, e o app
@@ -935,8 +945,10 @@ Não foi aprovada por escrito pelo dono nem pelo médico. Riscar é tirar o
 
 O que a tela mostra (lido no app, sem alterar): a linha fica no grupo
 "Medidas" / "Measurements", com o título "Gordura corporal" / "Body fat" e o
-valor "15%". A linha não diz que o número foi informado pela pessoa nem
-quando; a resposta não tem campo de origem (RC BF-2).
+valor "15%". Essa observação de 2026-10-10 não provava origem nem data. A
+adição servidor P-DEPOIS-1 não comprova que o iOS já mostra o novo rótulo;
+decode, apresentação localizada e conferência física seguem gates próprios.
+As linhas RC BF abaixo preservam o registro histórico e suas pendências.
 
 O que NÃO mudou de propósito: as propostas de treino e de cardápio do Flow
 continuam lendo `user_progress.current_bf_percent` e entregando `bf_percent`
@@ -947,7 +959,45 @@ ao modelo e não foi relatado: está travado em
 
 Golden: `apps/admin/src/lib/mobile-api/progress-body-fat.audit-10-10.test.ts`
 (o handler real de `GET /progress`, banco em memória, sem rede). O teste de
-rota `progress/route.test.ts` ficou como estava.
+rota `progress/route.test.ts` preserva os cenários e valores anteriores,
+com ajuste explícito da chave aditiva nullable.
+
+#### Origem confirmada da gordura em Progresso (P-DEPOIS-1, servidor local)
+
+`current_bf_origin` é `signup_photos` somente para BF efetivamente selecionado
+do fallback do perfil e comprovado por recibo aceito ativo; nos outros dados
+não nulos é `null`. Progresso persistido com BF vence, mesmo que igual ao
+perfil/recibo, sem consulta de origem. Ausência de progresso mantém
+`data:null`; ausência de BF/perfil não cria consulta nem percentual.
+
+O servidor usa uma vez `loadSignupPhotoSnapshot(client, userId, false)` e
+seu RPC existente, sem fotos abertas nem acesso direto à tabela privada.
+Correlaciona dono, perfil presente, geração persistida e valor oficial.
+Somente `accepted`/`arithmetic_mean_v1`, ativo, sem invalidação, com geração
+concluída e valor confirmado igual ao selecionado autoriza a marca.
+`bf_source`, estimativa pública e igualdade numérica isolada não provam
+confirmação. Captura OFF não apaga uma origem histórica ainda válida.
+
+Recibo ausente/recusado ou já invalidado é negativo legítimo. Um recibo
+invalidado pode conservar valor antigo diferente após edição manual.
+Aceite sem invalidação com valor divergente é erro, inclusive `active=false`;
+contradições de dono/geração/estado também falham como `500 data_access_failed`.
+O loader conserva sua exceção exata `P0002/onboarding_user_not_found` como
+`404 patient_not_found`; erros brutos e prova privada não são expostos.
+
+A comparação usa os literais oficiais com microssegundos, sem arredondar a
+milissegundos. Serialização consistente entre perfil e snapshot, presença
+das migrações/RPC/ACL e publicação no alvo continuam gates separados. Isso
+não é regra clínica sobre notações ISO equivalentes nem garantia de
+serialização global das leituras. Não há fórmula, corte, objetivo ou meta
+nova; B4c, WhatsApp e os textos B5 aprovados permanecem intactos.
+
+Só o enum chega ao cliente, sem recibo, fontes, fingerprint, geração, notas ou
+leituras individuais. O teste novo
+`apps/admin/src/lib/mobile-api/progress-photo-origin.audit-10-14.test.ts` usa o
+handler real e fronteiras sintéticas; não prova SQL live, redação clínica,
+interface iOS, VoiceOver ou QA físico. As linhas RC BF datadas abaixo não são
+encerradas por esta adição de servidor.
 
 > RC BF-1 — cenário conta que informou 15% de gordura no cadastro e lê "Gordura corporal — Não disponível" em Progresso variante cadastro concluído de verdade contra o banco (a função complete_mobile_onboarding_atomic gravando user_profiles.body_fat_percent) e a tela vista no iPhone com o build 1.0 (3) NÃO coberta nesta PR (pendência da audit 2026-10-10). O golden parte do estado que o cadastro deixa (perfil com 15, progresso sem gordura); nenhum banco foi lido e nada foi publicado. Devolver a gordura do perfil quando a do progresso é nula é decisão do orquestrador, anunciada ao dono em 2026-10-10, que pode riscar qualquer uma.
 

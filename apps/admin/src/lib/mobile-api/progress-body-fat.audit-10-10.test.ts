@@ -21,8 +21,10 @@
  * the column `GET /profile` already returns.
  *
  * THE FIX. `GET /progress` answers the profile's `body_fat_percent` when
- * `user_progress.current_bf_percent` is null. Same 14 keys, same types, two
- * reads, no write; a stored progress value wins. Only a finite number, or a
+ * `user_progress.current_bf_percent` is null. The 14 original values/types and
+ * two parallel table reads remain. P-DEPOIS-1 adds nullable origin and one
+ * closed receipt read only for a nonnull profile fallback. No write; a stored
+ * progress value wins. Only a finite number, or a
  * text in decimal format, becomes a number: anything else is null (a bare
  * conversion would turn an empty text into 0% and `true` into 1%). It is
  * presentation only: no number, threshold or conduct of the method changes.
@@ -78,6 +80,8 @@ function database(profileBodyFat: unknown = 15) {
       height_cm: 180,
       weight_kg: 75,
       body_fat_percent: profileBodyFat,
+      onboarding_completed: true,
+      onboarding_completed_at: null,
       activity_level: 'moderado',
       training_frequency: 5,
       water_intake: 'moderado',
@@ -95,7 +99,35 @@ function context(db: DayCloseMemoryDb): MobileRouteContext {
   return {
     request: new Request('https://bodyflow.test/api/mobile/v1/progress'),
     requestId: 'request-progress-body-fat',
-    supabase: db.client,
+    supabase: {
+      from: (table: string) => db.from(table),
+      rpc: async (name: string, params: Record<string, unknown>) => {
+        if (name !== 'get_mobile_signup_body_photo_snapshot')
+          throw new Error('Unexpected progress body-fat fixture RPC')
+        expect(params).toEqual({ p_user_id: USER, p_include_open_photos: false })
+        return {
+          data: {
+            version: 1,
+            user_id: USER,
+            profile_present: true,
+            locale: 'pt-BR',
+            timezone: 'America/Sao_Paulo',
+            generation_token: {
+              onboarding_completed: true,
+              onboarding_completed_at: null,
+              receipt_count: 0,
+            },
+            poses: [],
+            remaining_uploads: 0,
+            consent: null,
+            estimate: null,
+            candidate: null,
+            confirmation: null,
+          },
+          error: null,
+        }
+      },
+    } as unknown as MobileRouteContext['supabase'],
     auth: {
       accessToken: 'redacted',
       authUserId: USER,
@@ -116,11 +148,12 @@ function context(db: DayCloseMemoryDb): MobileRouteContext {
   }
 }
 
-/** The 14 keys of the answer, as app/api/mobile/v1/progress/route.test.ts pins them. */
+/** The 14 original keys plus nullable origin, as progress/route.test.ts pins them. */
 const PROGRESS_KEYS = [
   'badges_earned',
   'block_7700_enabled',
   'blocks_completed',
+  'current_bf_origin',
   'current_bf_percent',
   'current_protocol',
   'current_streak',
@@ -168,10 +201,10 @@ describe('audit 2026-10-10 — GET /api/mobile/v1/progress and the body fat of t
 
     expect(status).toBe(200)
     expect(body.data?.current_bf_percent).toBe(15)
-    // Same shape: the 14 keys, nothing added.
+    // Fourteen original fields plus the additive nullable origin.
     expect(Object.keys(body.data ?? {}).sort()).toEqual(PROGRESS_KEYS)
     expect(body.data).toMatchObject({ current_protocol: 'ganho_massa', block_7700_enabled: false })
-    // Two reads, both by the authenticated user only, and no write.
+    // Two scoped table reads plus the closed origin RPC; no write.
     expect(db.writes).toEqual([])
     expect(db.operations.map((operation) => `${operation.kind}:${operation.target}`).sort()).toEqual([
       'select:user_profiles',

@@ -222,6 +222,7 @@ actor SessionLifecycleCoordinator: SessionLifecycleProviding {
         record expectedRecord: AuthenticationSessionRecord,
         generation expectedGeneration: UInt64
     ) async throws -> SessionLease {
+        try Task.checkCancellation()
         let operation: RefreshOperation
         if let current = refreshOperation,
            current.userID == expectedRecord.userID,

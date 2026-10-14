@@ -2487,6 +2487,144 @@ struct MobileAPITransportTests {
         }
     }
 
+    @MainActor
+    @Test("C11 I3: same-record Model.start cancels a completed 401 before unauthorized refresh")
+    func c11I3Completed401CannotRefreshAfterSameRecordStart() async throws {
+        let f = try await C11H05Fixture.make()
+        var oldRead: Task<Void, Never>?
+        do {
+            let originalActivation = try #require(f.model.mealRecordActivation)
+            let originalSession = try #require(f.model.currentSession)
+            let originalBinding = try #require(f.owner.mealRecordBinding)
+            let originalLease = try #require(originalBinding.capturedLease)
+            #expect(f.originalContext.isActive)
+            #expect(f.root.readyContext === f.originalContext)
+            let center = FeatureInvalidationCenter()
+            let keys = C11OwnerFixtureKeys()
+            let oldModel = MealRecordModel(
+                recordID: C11RealLifecycleTransportHarness.recordID,
+                provider: f.originalContext.capability, time: C11OwnerFixtureTime(),
+                keys: keys, invalidation: center,
+                isSessionActive: { f.originalContext.isActive })
+            let official = C11RealLifecycleTransportHarness.detail()
+            let success = StubResponse(status: 200, body: try JSONEncoder().encode(official))
+            await f.runtime.stub.respond { _, call in
+                call == 1 ? .failure(status: 401, code: "expired_token") : success
+            }
+            await f.runtime.lifecycle.holdNextFinish()
+            let pending = Task { @MainActor in await oldModel.load() }
+            oldRead = pending
+            // finishPatientWork is reached only after networkTask.value returned.
+            // Do not hold URLProtocol before delivering the first real 401.
+            await f.runtime.lifecycle.finishHold.waitUntilEntered()
+            #expect(await f.runtime.stub.requests().count == 1)
+            #expect(await f.runtime.remote.counts() == [0, 0, 0, 0, 0])
+            #expect(oldModel.isLoading)
+            #expect(oldModel.detail == nil)
+            #expect(oldModel.draft == nil)
+            #expect(await f.runtime.lifecycle.heldFinishReturnedWhileCancelled == nil)
+
+            // This accepted public boundary closes the registered old leaf.
+            // The test does not close a gate, cancel the request or switch a record.
+            await f.model.start()
+            let currentActivation = try #require(f.model.mealRecordActivation)
+            #expect(currentActivation.ticket != originalActivation.ticket)
+            #expect(currentActivation.userID == originalActivation.userID)
+            #expect(f.model.currentSession == originalSession)
+            #expect(f.model.state == .authenticated(userID: originalSession.userID))
+            #expect(!f.owner.isInvalidated)
+            #expect(!originalBinding.isOpen)
+            #expect(originalBinding.capability == nil)
+            #expect(originalBinding.capturedLease == nil)
+            #expect(!f.originalContext.isActive)
+            #expect(!f.originalContext.capability.hasRetainedCapability)
+            #expect(f.root.readyContext == nil)
+            let sameRecordLease = try await f.runtime.session.leaseForRequest()
+            #expect(sameRecordLease.userID == originalLease.userID)
+            #expect(sameRecordLease.generation == originalLease.generation)
+            let sameBearer = sameRecordLease.bearer == originalLease.bearer
+            #expect(sameBearer)
+            try await f.runtime.session.validate(originalLease)
+            #expect(await f.runtime.stub.requests().count == 1)
+            #expect(await f.runtime.remote.counts() == [0, 0, 0, 0, 0])
+
+            // A separate actual grant/read is the current-scope positive control.
+            // It never returns 401, so any refresh can only come from old A1.
+            let operation = try #require(f.root.beginBinding(
+                activation: currentActivation, owner: f.owner))
+            let currentBinding = try #require(f.owner.mealRecordBinding)
+            #expect(currentBinding !== originalBinding)
+            let current = try #require(try await f.root.completeBinding(operation))
+            #expect(current.activation == currentActivation)
+            #expect(current.capability !== f.originalContext.capability)
+            #expect(current.isActive)
+            #expect(await f.runtime.counted.leaseCalls == 2)
+            let currentModel = MealRecordModel(
+                recordID: C11RealLifecycleTransportHarness.recordID,
+                provider: current.capability, time: C11OwnerFixtureTime(),
+                keys: keys, invalidation: center,
+                isSessionActive: { current.isActive })
+            await currentModel.load()
+            #expect(currentModel.detail == official)
+            #expect(currentModel.readFailure == nil)
+            #expect(currentModel.canStartMutation)
+            currentModel.draft?.items[0].quantityText = "75"
+            #expect(currentModel.canSave(language: .englishUnitedStates))
+            let beforeRelease = await f.runtime.stub.requests()
+            try #require(beforeRelease.count == 2)
+            let separateLogicalRead = beforeRelease[0].value(forHTTPHeaderField: "X-Request-Id") != nil
+                && beforeRelease[1].value(forHTTPHeaderField: "X-Request-Id") != nil
+                && beforeRelease[0].value(forHTTPHeaderField: "X-Request-Id")
+                    != beforeRelease[1].value(forHTTPHeaderField: "X-Request-Id")
+            #expect(separateLogicalRead)
+            #expect(beforeRelease.allSatisfy { $0.httpMethod == "GET" })
+            let noMutationMetadata = beforeRelease.allSatisfy {
+                $0.httpBody == nil && $0.httpBodyStream == nil
+                    && $0.value(forHTTPHeaderField: "Idempotency-Key") == nil
+            }
+            #expect(noMutationMetadata)
+
+            // Resume the completed old response only after its real leaf closed.
+            await f.runtime.lifecycle.finishHold.release()
+            await pending.value
+            #expect(await f.runtime.lifecycle.heldFinishReturnedWhileCancelled == true)
+            let remoteCounts = await f.runtime.remote.counts()
+            #expect(remoteCounts[3] == 0,
+                "A cancelled old same-generation 401 must not initiate unauthorized refresh")
+            #expect(remoteCounts[0] == 0 && remoteCounts[1] == 0
+                && remoteCounts[2] == 0 && remoteCounts[4] == 0)
+            #expect(await f.runtime.stub.requests().count == 2,
+                "One old 401 plus one new-scope 200; never an old HTTP replay")
+            #expect(oldModel.detail == nil)
+            #expect(oldModel.draft == nil)
+            #expect(oldModel.readFailure == nil)
+            #expect(oldModel.failure == nil)
+            #expect(oldModel.retainedAttempt == nil)
+            #expect(oldModel.confirmedReceipt == nil)
+            #expect(oldModel.completedMutations.isEmpty)
+            #expect(currentModel.detail == official)
+            #expect(currentModel.draft?.items[0].quantityText == "75")
+            #expect(currentModel.canSave(language: .englishUnitedStates))
+            #expect(currentModel.readFailure == nil)
+            #expect(currentModel.failure == nil)
+            #expect(currentModel.confirmedReceipt == nil)
+            #expect(current.isActive)
+            #expect(f.root.readyContext === current)
+            #expect(f.model.mealRecordActivation == currentActivation)
+            #expect(f.model.currentSession == originalSession)
+            #expect(center.revision(for: .today) == 0)
+            #expect(center.revision(for: .history) == 0)
+            #expect(keys.count == 0)
+            await f.end()
+        } catch {
+            // Release before join/end on every throwing setup/assertion path.
+            await f.runtime.lifecycle.finishHold.release()
+            await oldRead?.value
+            await f.end()
+            throw error
+        }
+    }
+
 }
 
 private actor RejectingRegistrationLifecycle: SessionLifecycleProviding {
@@ -2945,6 +3083,8 @@ private actor C11HoldingLifecycle: SessionLifecycleProviding {
     private var nextFinishIsHeld = false
     private var nextVisibleReturnIsHeld = false
     private(set) var lastReturnedGeneration: UInt64?
+    // Observation only: preserve the real cancelled task across finish's await.
+    private(set) var heldFinishReturnedWhileCancelled: Bool?
 
     init(base: SessionLifecycleCoordinator) { self.base = base }
     func holdNextLease(completeEvenIfCancelled: Bool = false) {
@@ -2985,7 +3125,10 @@ private actor C11HoldingLifecycle: SessionLifecycleProviding {
     func finishPatientWork(_ id: UUID) async {
         let held = nextFinishIsHeld
         nextFinishIsHeld = false
-        if held { await finishHold.enterAndWait() }
+        if held {
+            await finishHold.enterAndWait()
+            heldFinishReturnedWhileCancelled = Task.isCancelled
+        }
         await base.finishPatientWork(id)
     }
     func performPatientStateOperation<Value: Sendable>(

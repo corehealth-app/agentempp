@@ -496,6 +496,115 @@ final class C11RootNavigationUITests: XCTestCase {
         capture(app, name: "c11-root-second401-no-third-http-no-false-recovery")
     }
 
+    func testRealRootManualReadRetryAfterSecond401UsesNewReadIDAndCurrentBearerForOfficialGET() throws {
+        let app = try launchFixture("--ui-testing-c11-root-get-401-401-retry-200", selection: "get-401-401-retry-200")
+        try openActualHistoryRow(in: app)
+        let detail = element("screen.meal-record", in: app)
+        let entered = detail.waitForExistence(timeout: 8)
+        XCTAssertTrue(entered, "CHARACTERIZATION: manual retry must use the actual admitted Root/History/C11 destination")
+        guard entered else { capture(app, name: "c11-root-manual-read-retry-destination"); return }
+        let warning = element("meal-record.read-failure", in: app)
+        let terminalRead = warning.waitForExistence(timeout: 8)
+        XCTAssertTrue(terminalRead, "The first read must terminate after two actual HTTP401 responses before an explicit retry")
+        guard terminalRead else { capture(app, name: "c11-root-manual-read-retry-not-terminal"); return }
+        let status = element("c11.fixture.status", in: app)
+        let before = "C11 get-401-401-retry-200: get=2 bind=1 refresh=1 blocked=0 sameLogical=1 bearerChanged=1 newReadID=0 currentBearerSame=0 bodyAbsent=0 keyAbsent=0"
+        wait(for: [expectation(for: NSPredicate(format: "label == %@", before), evaluatedWith: status)], timeout: 5)
+        XCTAssertEqual(status.label, before)
+        guard status.label == before else { capture(app, name: "c11-root-manual-read-retry-before-counts"); return }
+        let localRows = app.staticTexts.matching(identifier: "meal-record.local-row")
+        for label in ["Synthetic C11 confirmed food", "Quantidade: 50 g", "Energia: 100 kcal"] {
+            let value = localRows.matching(NSPredicate(format: "label == %@", label)).element
+            let present = value.exists
+            XCTAssertTrue(present, "The terminal read preserves History's own local food/quantity/energy")
+            guard present else { capture(app, name: "c11-root-manual-read-retry-local-row-not-mounted"); return }
+            XCTAssertTrue(value.isHittable)
+        }
+        for id in ["meal-record.field.name", "meal-record.field.quantity", "meal-record.field.kcal",
+                   "meal-record.patch", "meal-record.delete", "meal-record.saved", "meal-record.failure",
+                   "meal-record.recovery.notice", "meal-record.recovery.action", "meal-record.progress",
+                   "screen.history.meal-detail", "screen.auth.sign-in", "screen.auth.sign-up"] {
+            XCTAssertFalse(element(id, in: app).exists,
+                "A terminal read must not invent official editing, a mutation result or recovery authority: \(id)")
+        }
+        let form = app.collectionViews["screen.meal-record"]
+        let retry = app.buttons["meal-record.retry-read"]
+        func terminalControlsFullyVisible() -> Bool {
+            guard warning.exists, retry.exists, status.exists else { return false }
+            let viewport = form.frame.intersection(app.frame)
+            let notice = warning.frame, button = retry.frame, diagnostic = status.frame
+            return !viewport.isNull && viewport.width > 0 && viewport.height > 0
+                && notice.width > 0 && notice.height > 0 && button.width >= 44 && button.height >= 44
+                && diagnostic.width > 0 && diagnostic.height > 0
+                && viewport.contains(notice) && viewport.contains(button)
+                && !notice.intersects(diagnostic) && !button.intersects(diagnostic)
+                && warning.isHittable && retry.isEnabled && retry.isHittable
+        }
+        for _ in 0..<6 {
+            if !warning.exists || !retry.exists { form.swipeUp(); continue }
+            if terminalControlsFullyVisible() { break }
+            form.swipeUp()
+        }
+        XCTAssertTrue(warning.exists && retry.exists, "SETUP_VISIBLE_CONTROL: mount the actual warning/retry before querying frames")
+        guard warning.exists && retry.exists else { capture(app, name: "c11-root-manual-read-retry-controls-not-mounted"); return }
+        let retryReady = terminalControlsFullyVisible()
+        XCTAssertTrue(retryReady, "The entire enabled retry action must fit Form/app clear of diagnostics before a normal tap")
+        XCTAssertEqual(warning.label, "Não foi possível abrir este registro para alteração agora. Estes são os dados que já estavam no app.")
+        XCTAssertEqual(retry.label, "Tentar abrir novamente")
+        XCTAssertEqual(status.label, before, "Re-read GET2 immediately before the single explicit retry")
+        capture(app, name: "c11-root-manual-read-retry-terminal-full-button-before-tap")
+        guard retryReady, status.label == before else { return }
+        // Exactly one real user action. No driver/model setter, forced coordinate,
+        // lease/grant diagnostic or replay of a mutation command.
+        retry.tap()
+        let admitted = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label BEGINSWITH %@",
+            "C11 get-401-401-retry-200: get=3 "), object: status)
+        let observedGET3 = XCTWaiter.wait(for: [admitted], timeout: 8) == .completed
+        XCTAssertTrue(observedGET3, "ACTION_OBSERVATION: the explicit retry must issue the third actual GET")
+        guard observedGET3 else { capture(app, name: "c11-root-manual-read-retry-no-third-get"); return }
+        let name = app.textFields["meal-record.field.name"]
+        let quantity = app.textFields["meal-record.field.quantity"]
+        for _ in 0..<6 {
+            if name.exists && quantity.exists && name.isHittable && quantity.isHittable { break }
+            form.swipeDown()
+        }
+        XCTAssertTrue(name.exists && quantity.exists, "The official third GET must reach the actual Form's own field identifiers")
+        guard name.exists && quantity.exists else { capture(app, name: "c11-root-manual-read-retry-official-fields-not-mounted"); return }
+        XCTAssertTrue(name.isHittable && quantity.isHittable)
+        XCTAssertEqual(name.value as? String, "Synthetic C11 confirmed food")
+        XCTAssertEqual(quantity.value as? String, "50")
+        let kcalOverride = app.textFields["meal-record.field.kcal"]
+        for _ in 0..<6 {
+            if kcalOverride.exists { break }
+            form.swipeUp()
+        }
+        XCTAssertTrue(kcalOverride.exists, "SETUP: mount the existing manual override row before reading its value")
+        guard kcalOverride.exists else { capture(app, name: "c11-root-manual-read-retry-override-row-not-mounted"); return }
+        let placeholder = kcalOverride.placeholderValue
+        XCTAssertNotNil(placeholder)
+        XCTAssertEqual(placeholder, "Novo total de calorias (opcional)")
+        guard let placeholder, placeholder == "Novo total de calorias (opcional)" else {
+            capture(app, name: "c11-root-manual-read-retry-override-placeholder-unexpected")
+            return
+        }
+        let currentValue = kcalOverride.value as? String
+        XCTAssertNotNil(currentValue, "The mounted field must expose a string AX value before interpreting empty state")
+        XCTAssertTrue(currentValue == "" || currentValue == placeholder,
+            "The official response preserves the existing blank manual calorie override")
+        for id in ["meal-record.read-failure", "meal-record.retry-read", "meal-record.progress", "meal-record.saved",
+                   "meal-record.failure", "meal-record.recovery.notice", "meal-record.recovery.action",
+                   "screen.history.meal-detail", "screen.auth.sign-in", "screen.auth.sign-up"] {
+            XCTAssertFalse(element(id, in: app).exists,
+                "Completed official read must remove the retry warning without inventing mutation or auth recovery: \(id)")
+        }
+        let after = "C11 get-401-401-retry-200: get=3 bind=1 refresh=1 blocked=0 sameLogical=1 bearerChanged=1 newReadID=1 currentBearerSame=1 bodyAbsent=1 keyAbsent=1"
+        wait(for: [expectation(for: NSPredicate(format: "label == %@", after), evaluatedWith: status)], timeout: 5)
+        XCTAssertEqual(status.label, after,
+            "A new read ID uses the current refreshed bearer with no body/key and no extra refresh/source binding")
+        XCTAssertTrue(detail.exists)
+        capture(app, name: "c11-root-manual-read-retry-official-third-get")
+    }
+
     private func launchFixture(_ argument: String, selection: String) throws -> XCUIApplication {
         let app = XCUIApplication()
         runningApp = app

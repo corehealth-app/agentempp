@@ -9,6 +9,7 @@ enum C11RootNavigationSelection: String, Sendable {
     case sourceOff = "off"
     case getUnauthorizedThenSuccess = "get-401-200"
     case getUnauthorizedTwice = "get-401-401"
+    case getUnauthorizedTwiceThenRetrySuccess = "get-401-401-retry-200"
     case patchUnauthorizedThenSuccess = "patch-401-200"
     case deleteUnauthorizedThenSuccess = "delete-401-200"
 
@@ -19,6 +20,7 @@ enum C11RootNavigationSelection: String, Sendable {
             (.sourceOff, "--ui-testing-c11-root-source-off"),
             (.getUnauthorizedThenSuccess, "--ui-testing-c11-root-get-401-200"),
             (.getUnauthorizedTwice, "--ui-testing-c11-root-get-401-401"),
+            (.getUnauthorizedTwiceThenRetrySuccess, "--ui-testing-c11-root-get-401-401-retry-200"),
             (.patchUnauthorizedThenSuccess, "--ui-testing-c11-root-patch-401-200"),
             (.deleteUnauthorizedThenSuccess, "--ui-testing-c11-root-delete-401-200")
         ]
@@ -29,7 +31,7 @@ enum C11RootNavigationSelection: String, Sendable {
 
     var suppliesMealRecordSource: Bool {
         switch self {
-        case .sourceOn, .getUnauthorizedThenSuccess, .getUnauthorizedTwice, .patchUnauthorizedThenSuccess, .deleteUnauthorizedThenSuccess: true
+        case .sourceOn, .getUnauthorizedThenSuccess, .getUnauthorizedTwice, .getUnauthorizedTwiceThenRetrySuccess, .patchUnauthorizedThenSuccess, .deleteUnauthorizedThenSuccess: true
         case .sourceOff: false
         }
     }
@@ -130,6 +132,16 @@ final class C11RootNavigationProbe {
     func recordBind() { binds += 1 }
     func recordRefresh() { refreshes += 1 }
     func recordBlocked() { blocked += 1 }
+    private(set) var manualReadHasNewRequestID = false
+    private(set) var manualReadHasSameCurrentBearer = false
+    private(set) var manualReadBodyAbsent = false
+    private(set) var manualReadKeyAbsent = false
+    func recordManualReadComparison(newRequestID: Bool, sameCurrentBearer: Bool, bodyAbsent: Bool, keyAbsent: Bool) {
+        manualReadHasNewRequestID = newRequestID
+        manualReadHasSameCurrentBearer = sameCurrentBearer
+        manualReadBodyAbsent = bodyAbsent
+        manualReadKeyAbsent = keyAbsent
+    }
     func recordReplayComparison(sameLogical: Bool, bearerChanged: Bool) {
         sameLogicalRequest = sameLogical
         self.bearerChanged = bearerChanged
@@ -149,6 +161,11 @@ struct C11RootNavigationDiagnosticView: View {
         if selection == .patchUnauthorizedThenSuccess {
             return counts + " patch=\(probe.patches) sameLogical=\(probe.sameLogicalRequest ? 1 : 0) bearerChanged=\(probe.bearerChanged ? 1 : 0)"
                 + " keys=\(probe.uniqueKeys) today=\(probe.todayReads) history=\(probe.historyReads) commits=\(probe.fixtureCommits)"
+        }
+        if selection == .getUnauthorizedTwiceThenRetrySuccess {
+            return counts + " sameLogical=\(probe.sameLogicalRequest ? 1 : 0) bearerChanged=\(probe.bearerChanged ? 1 : 0)"
+                + " newReadID=\(probe.manualReadHasNewRequestID ? 1 : 0) currentBearerSame=\(probe.manualReadHasSameCurrentBearer ? 1 : 0)"
+                + " bodyAbsent=\(probe.manualReadBodyAbsent ? 1 : 0) keyAbsent=\(probe.manualReadKeyAbsent ? 1 : 0)"
         }
         guard selection == .getUnauthorizedThenSuccess || selection == .getUnauthorizedTwice else { return counts }
         return counts + " sameLogical=\(probe.sameLogicalRequest ? 1 : 0) bearerChanged=\(probe.bearerChanged ? 1 : 0)"
@@ -239,7 +256,7 @@ private actor C11RootNavigationRemote: SupabaseAuthRemoteOperating {
     func refresh(record: AuthenticationSessionRecord) async throws -> AuthenticationSessionRecord {
         await probe.recordRefresh()
         guard selection == .getUnauthorizedThenSuccess || selection == .getUnauthorizedTwice
-            || selection == .patchUnauthorizedThenSuccess
+            || selection == .getUnauthorizedTwiceThenRetrySuccess || selection == .patchUnauthorizedThenSuccess
             || selection == .deleteUnauthorizedThenSuccess else {
             throw SupabaseAuthRemoteError.requestFailed
         }
@@ -435,6 +452,10 @@ private actor C11RootNavigationServer {
     private var attemptedGETs = 0
     private var firstLogicalRequest: LogicalRequest?
     private var firstAuthorization: String?
+    // Private comparisons for the new explicit manual-read scenario only.
+    // Neither metadata IDs nor authorization values enter diagnostics.
+    private var manualRetrySecondLogical: LogicalRequest?
+    private var manualRetrySecondAuthorization: String?
     let patchState: C11RootNavigationPatchState?
     let deleteState: C11RootNavigationDeleteState?
     private var attemptedDELETEs = 0
@@ -502,7 +523,8 @@ private actor C11RootNavigationServer {
         }
         attemptedGETs += 1
         await probe.recordGET()
-        guard selection == .getUnauthorizedThenSuccess || selection == .getUnauthorizedTwice else {
+        guard selection == .getUnauthorizedThenSuccess || selection == .getUnauthorizedTwice
+            || selection == .getUnauthorizedTwiceThenRetrySuccess else {
             return C11RootNavigationHTTPResponse(statusCode: 200,
                 data: try JSONEncoder().encode(C11RootNavigationFacts.detail()))
         }
@@ -523,11 +545,40 @@ private actor C11RootNavigationServer {
                 && firstAuthorization != currentAuthorization
             firstAuthorization = nil
             await probe.recordReplayComparison(sameLogical: sameLogical, bearerChanged: changed)
-            if selection == .getUnauthorizedTwice {
+            if selection == .getUnauthorizedTwiceThenRetrySuccess {
+                manualRetrySecondLogical = second
+                manualRetrySecondAuthorization = currentAuthorization
+            }
+            if selection == .getUnauthorizedTwice || selection == .getUnauthorizedTwiceThenRetrySuccess {
                 let error = ["error": ["code": "invalid_access_token", "message": "Synthetic fixture second unauthorized",
                                          "request_id": "c11-ui-second-unauthorized"]]
                 return C11RootNavigationHTTPResponse(statusCode: 401,
                     data: try JSONSerialization.data(withJSONObject: error))
+            }
+            return C11RootNavigationHTTPResponse(statusCode: 200,
+                data: try JSONEncoder().encode(C11RootNavigationFacts.detail()))
+        case 3:
+            guard selection == .getUnauthorizedTwiceThenRetrySuccess,
+                  let first = firstLogicalRequest, let second = manualRetrySecondLogical else {
+                await probe.recordBlocked()
+                throw MobileAPITransportError.invalidResponse
+            }
+            let third = LogicalRequest(request)
+            let thirdAuthorization = request.value(forHTTPHeaderField: "Authorization")
+            let newID = third.requestID?.isEmpty == false
+                && third.requestID != first.requestID && third.requestID != second.requestID
+            let sameCurrentBearer = manualRetrySecondAuthorization?.hasPrefix("Bearer ") == true
+                && thirdAuthorization?.hasPrefix("Bearer ") == true
+                && manualRetrySecondAuthorization == thirdAuthorization
+            let noBody = third.bodyIsAbsent
+            let noKey = third.idempotencyKey == nil
+            manualRetrySecondAuthorization = nil
+            await probe.recordManualReadComparison(newRequestID: newID, sameCurrentBearer: sameCurrentBearer,
+                bodyAbsent: noBody, keyAbsent: noKey)
+            guard first == second, second.isValidRead, third.method == second.method,
+                  third.url == second.url, third.isValidRead, newID, sameCurrentBearer, noBody, noKey else {
+                await probe.recordBlocked()
+                throw MobileAPITransportError.invalidResponse
             }
             return C11RootNavigationHTTPResponse(statusCode: 200,
                 data: try JSONEncoder().encode(C11RootNavigationFacts.detail()))

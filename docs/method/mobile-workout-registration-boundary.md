@@ -90,8 +90,8 @@ Os wrappers públicos executam o guard backend real e exigem READ COMMITTED.
 O de 13 argumentos adquire `:workouts` em um statement e consulta a proteção
 em outro, após a espera, antes de qualquer UPSERT de snapshot. O strength
 mantém a ordem catálogo SHARE → `:workouts` e consulta a key congelada do
-command exato antes do replay F1 ou da deduplicação. A futura confirmação CAS
-chamará a seam privada somente depois de verificar sua autoridade.
+command exato antes do replay F1 ou da deduplicação. A confirmação CAS dormente
+chama a seam privada somente depois de verificar sua autoridade.
 
 Uma key pertence à revisão quando sua admissão tem revisão não NULL e
 `pending_id` histórico não NULL. O detector considera a key inicial e as keys
@@ -167,3 +167,54 @@ cruzando a validade enquanto a row está bloqueada. A janela de teste é armada
 uma vez antes do segundo ator; não rearma o FK depois do bloqueio. A execução
 e os resultados pertencem ao diário operacional; a existência desses testes
 não demonstra integração ou disponibilidade do beta.
+
+## Confirmação UI atômica dormente
+
+`confirm_mobile_workout_registration(owner, pending, expected_revision,
+legacy_arguments, catalogue_observation, catalogue_decision)` é exclusiva do
+backend e acrescenta uma função, sem alterar os corpos 13/S7/S8 ou fórmulas.
+Ainda não há caller BFF/Swift ou ativação. Catálogo SHARE precede `:workouts`,
+usuário, epoch, todas as admissões owned, pending sem filtro de status e vida.
+A validade usa relógio DB depois dos locks; respostas antigas não autorizam
+uma confirmação de outra revisão.
+
+O provider da revisão zero é a key inicial. Nas demais revisões, deve existir
+receipt EDIT owned com a mesma key literal e a revisão resultante atual. Não
+se reconstrói o hash do input a partir do proposal. A operation key é derivada
+pelo servidor: `ui:<admission UUID>:r:<revision>`, com tipo original literal.
+O preparo escolhido pelo S7 deve corresponder ao owner, tipo, duração,
+intensidade, provider atual e instante absoluto; replacement UI é false/NULL.
+O JSONB original permanece inteiro, incluindo escala numérica e NULLs.
+Calorias, metas, notes e data são do primeiro preparo oficial atual: não são
+forçadas aos valores antigos do preview, nem recalculadas pelo SQL ou retry.
+
+Sem preparo existente, SQL NULL retorna `preparation_required` sem criar vida.
+A vida existente precisa estar provada e aberta no ponteiro atual; vida órfã
+não é adotada. Se nenhuma vida existe, a criação e o ponteiro pertencem ao
+mesmo bloco transacional que S7, captura real S8, vínculo da admissão e status
+confirmed/resolved_at. A UI não fabrica mensagem IN nem admissão Flow.
+
+Uma negativa JSON legítima do S8 desfaz todo esse bloco antes de retornar
+`capture_not_accepted`, com rascunho inalterado e wire real da captura. O sinal
+privado P17D0 só é consumido quando marcado localmente para essa negativa;
+erros de writer, constraints e P17D0 externo propagam e revertem a operação.
+O sucesso prova operation owned, resultado legado armazenado e resolver real.
+Preserva as quatro resoluções e o gap legado legítimo, sem inventar um novo
+workout/fact/snapshot para dedup, nem reclassificar ou fazer backfill.
+
+Uma confirmação já persistida exige revisão, vínculo da vida original,
+ponteiro e operation existentes. Recupera somente o resultado original e o
+fact atual pelo resolver, inclusive resposta S9 posterior. Não entra novamente
+no writer, não renova clocks e ignora preparo/catálogo novos ou inválidos.
+Binding ausente, tombstone ou vida obsoleta não autorizam recriar a captura.
+O DTO/whitelist e a apresentação desses resultados ainda pertencem à integração.
+
+`mobile_workout_registration_confirmation.sql` define 39 checks sequenciais,
+incluindo os vínculos 13, recuperação, dedups/X26, precisão e falhas após cada
+gravação. X26 por padding cobre a compatibilidade do core pelo Flow/S7/S8
+reais: a admissão UI rejeita tipo com espaços nas pontas, e essa rejeição também
+é exigida sem efeitos. Não se fabrica uma confirmação UI para alcançar X26.
+Seu driver define 19 corridas reais, com catálogo primeiro, relógio
+cruzando validade, reset/DELETE e confirmação/edição/cancelamento. As fontes
+foram congeladas e revisadas antes do body; execução e evidências pertencem ao
+diário operacional. Isso não constitui aceite do beta ou publicação.

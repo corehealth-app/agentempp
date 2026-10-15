@@ -1,4 +1,4 @@
-/** Backend read adapter. Shape checks do not authenticate DB provenance.
+/** Backend RPC adapter. Shape checks do not authenticate DB provenance.
  * The trusted SQL producer, lifecycle and future callers remain separate gates. */
 import type {
   WorkoutCatalogueObservation,
@@ -82,15 +82,53 @@ export type WorkoutStrengthCaptureResult =
         | 'source_observation_changed'
         | 'invalid_authority'
     }
+export interface AnswerWorkoutStrengthInput extends WorkoutOwnerScope {
+  readonly workoutLogID: string
+  readonly expectedFactRevision: number
+  readonly questionKey: string
+  readonly answer: 'yes' | 'no'
+  readonly operationKey: string
+}
+export type AnswerWorkoutStrengthResult =
+  | {
+      readonly status: 'accepted' | 'reuse_existing'
+      readonly receipt: StoredStrengthAnswerReceipt
+    }
+  | {
+      readonly status: 'conflict' | 'forbidden' | 'not_available'
+      readonly reason:
+        | 'answer_already_differs'
+        | 'operation_content_conflict'
+        | 'mixed_owner'
+        | 'stale_workout'
+        | 'stale_lifecycle'
+        | 'stale_fact'
+        | 'not_unrecognized'
+    }
 export interface WorkoutStrengthRepositoryPort {
   rpc(
-    name: 'resolve_confirmed_workout_strength_capture',
-    args: {
-      readonly p_user_id: string
-      readonly p_expected_lifecycle_key: string
-      readonly p_operation_key: string
-      readonly p_original_operation_type: string
-    },
+    ...request:
+      | [
+          name: 'resolve_confirmed_workout_strength_capture',
+          args: {
+            readonly p_user_id: string
+            readonly p_expected_lifecycle_key: string
+            readonly p_operation_key: string
+            readonly p_original_operation_type: string
+          },
+        ]
+      | [
+          name: 'answer_confirmed_workout_strength',
+          args: {
+            readonly p_user_id: string
+            readonly p_expected_lifecycle_key: string
+            readonly p_workout_log_id: string
+            readonly p_expected_fact_revision: number
+            readonly p_question_key: string
+            readonly p_answer: 'yes' | 'no'
+            readonly p_operation_key: string
+          },
+        ]
   ): PromiseLike<{ data: unknown; error: unknown | null }>
 }
 export interface WorkoutStrengthRepository {
@@ -99,6 +137,9 @@ export interface WorkoutStrengthRepository {
     operationKey: string,
     originalOperationType: string,
   ): Promise<WorkoutStrengthCaptureResult>
+  answerConfirmedWorkoutStrength(
+    input: AnswerWorkoutStrengthInput,
+  ): Promise<AnswerWorkoutStrengthResult>
 }
 
 export function createWorkoutStrengthRepository(
@@ -140,6 +181,60 @@ export function createWorkoutStrengthRepository(
       if (reply.error !== null) throw new Error('Workout strength RPC failed')
       return parseResult(reply.data, request, operationKey, originalOperationType)
     },
+    async answerConfirmedWorkoutStrength(input) {
+      if (!isRecord(input)) throw new TypeError('Invalid workout strength request')
+      const ownerID = input.ownerID
+      const expectedLifecycleKey = input.expectedLifecycleKey
+      const workoutLogID = input.workoutLogID
+      const expectedFactRevision = input.expectedFactRevision
+      const questionKey = input.questionKey
+      const answer = input.answer
+      const operationKey = input.operationKey
+      if (
+        !isUUID(ownerID) ||
+        !isUUID(expectedLifecycleKey) ||
+        !isUUID(workoutLogID) ||
+        !Number.isInteger(expectedFactRevision) ||
+        expectedFactRevision < 0 ||
+        expectedFactRevision > 2147483647 ||
+        !isUUID(questionKey) ||
+        (answer !== 'yes' && answer !== 'no') ||
+        typeof operationKey !== 'string' ||
+        operationKey === ''
+      )
+        throw new TypeError('Invalid workout strength request')
+      const request = {
+        ownerID,
+        expectedLifecycleKey,
+        workoutLogID,
+        expectedFactRevision,
+        questionKey,
+        answer,
+        operationKey,
+      }
+      const rpc = port?.rpc
+      if (typeof rpc !== 'function') {
+        throw new TypeError('Workout strength port requires a callable rpc')
+      }
+      const reply: unknown = await rpc.call(port, 'answer_confirmed_workout_strength', {
+        p_user_id: ownerID,
+        p_expected_lifecycle_key: expectedLifecycleKey,
+        p_workout_log_id: workoutLogID,
+        p_expected_fact_revision: expectedFactRevision,
+        p_question_key: questionKey,
+        p_answer: answer,
+        p_operation_key: operationKey,
+      })
+      if (
+        !isRecord(reply) ||
+        !Object.hasOwn(reply, 'data') ||
+        !Object.hasOwn(reply, 'error') ||
+        reply.error === undefined
+      )
+        return invalidWire()
+      if (reply.error !== null) throw new Error('Workout strength RPC failed')
+      return parseAnswerResult(reply.data, request)
+    },
   }
 }
 
@@ -176,6 +271,41 @@ function parseResult(
       reason !== 'mixed_owner' &&
       reason !== 'source_observation_changed' &&
       reason !== 'invalid_authority'
+    )
+      return invalidWire()
+    return { status: value.status, reason }
+  }
+  return invalidWire()
+}
+
+function parseAnswerResult(
+  value: unknown,
+  request: AnswerWorkoutStrengthInput,
+): AnswerWorkoutStrengthResult {
+  if (!isRecord(value)) return invalidWire()
+  if (value.status === 'accepted' || value.status === 'reuse_existing') {
+    shape(value, ['status', 'receipt'])
+    const receipt = parseReceipt(value.receipt, request)
+    if (receipt.questionKey !== request.questionKey || receipt.answer !== request.answer)
+      return invalidWire()
+    // A second operation may legitimately receive the first operation's receipt.
+    return { status: value.status, receipt }
+  }
+  if (
+    value.status === 'conflict' ||
+    value.status === 'forbidden' ||
+    value.status === 'not_available'
+  ) {
+    shape(value, ['status', 'reason'])
+    const reason = value.reason
+    if (
+      reason !== 'answer_already_differs' &&
+      reason !== 'operation_content_conflict' &&
+      reason !== 'mixed_owner' &&
+      reason !== 'stale_workout' &&
+      reason !== 'stale_lifecycle' &&
+      reason !== 'stale_fact' &&
+      reason !== 'not_unrecognized'
     )
       return invalidWire()
     return { status: value.status, reason }
@@ -400,7 +530,14 @@ function parseClarification(value: unknown, anchor: ConfirmedWorkoutAnchor): Wor
   }
   if (value.status !== 'answered') return invalidWire()
   shape(value, ['status', 'receipt'])
-  const r = shape(value.receipt, [
+  return { status: 'answered', receipt: parseReceipt(value.receipt, anchor) }
+}
+
+function parseReceipt(
+  value: unknown,
+  anchor: Pick<StoredStrengthAnswerReceipt, 'ownerID' | 'workoutLogID'>,
+): StoredStrengthAnswerReceipt {
+  const r = shape(value, [
     'ownerID',
     'workoutLogID',
     'questionKey',
@@ -420,15 +557,12 @@ function parseClarification(value: unknown, anchor: ConfirmedWorkoutAnchor): Wor
   )
     return invalidWire()
   return {
-    status: 'answered',
-    receipt: {
-      ownerID,
-      workoutLogID,
-      questionKey: uuid(r.questionKey),
-      answer,
-      operationKey,
-      acceptedAt: instant(r.acceptedAt),
-    },
+    ownerID,
+    workoutLogID,
+    questionKey: uuid(r.questionKey),
+    answer,
+    operationKey,
+    acceptedAt: instant(r.acceptedAt),
   }
 }
 

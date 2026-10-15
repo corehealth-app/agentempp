@@ -5,6 +5,8 @@
 import * as classificationCore from '@mpp/core/workout-strength-classification'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  type AnswerWorkoutStrengthInput,
+  type AnswerWorkoutStrengthResult,
   createWorkoutStrengthRepository,
   type WorkoutOwnerScope,
   type WorkoutStrengthCaptureResult,
@@ -772,6 +774,748 @@ describe('pending identity, payload copies and independent concurrent operations
     expect(
       await h.repository.resolveConfirmedWorkoutStrengthCapture(scope(), KEY, RAW),
     ).toStrictEqual(matched())
+    expect(h.rpc).toHaveBeenCalledTimes(2)
+  })
+})
+
+// S10 test-first: injected unknown RPC boundary only. No SQL authority is faked.
+// Missing future exports/method are SETUP, not a causal product RED.
+type S10MutableInput = {
+  -readonly [K in keyof AnswerWorkoutStrengthInput]: AnswerWorkoutStrengthInput[K]
+}
+type S10Success = Extract<AnswerWorkoutStrengthResult, { status: 'accepted' | 'reuse_existing' }>
+type S10ResolveArgs = {
+  readonly p_user_id: string
+  readonly p_expected_lifecycle_key: string
+  readonly p_operation_key: string
+  readonly p_original_operation_type: string
+}
+type S10AnswerArgs = {
+  readonly p_user_id: string
+  readonly p_expected_lifecycle_key: string
+  readonly p_workout_log_id: string
+  readonly p_expected_fact_revision: number
+  readonly p_question_key: string
+  readonly p_answer: 'yes' | 'no'
+  readonly p_operation_key: string
+}
+type S10ExpectedInput = {
+  readonly ownerID: string
+  readonly expectedLifecycleKey: string
+  readonly workoutLogID: string
+  readonly expectedFactRevision: number
+  readonly questionKey: string
+  readonly answer: 'yes' | 'no'
+  readonly operationKey: string
+}
+type S10ExpectedResult =
+  | {
+      readonly status: 'accepted' | 'reuse_existing'
+      readonly receipt: {
+        readonly ownerID: string
+        readonly workoutLogID: string
+        readonly questionKey: string
+        readonly answer: 'yes' | 'no'
+        readonly operationKey: string
+        readonly acceptedAt: string
+      }
+    }
+  | {
+      readonly status: 'conflict' | 'forbidden' | 'not_available'
+      readonly reason:
+        | 'answer_already_differs'
+        | 'operation_content_conflict'
+        | 'mixed_owner'
+        | 'stale_workout'
+        | 'stale_lifecycle'
+        | 'stale_fact'
+        | 'not_unrecognized'
+    }
+type S10ExpectedRpcParameters =
+  | [name: 'resolve_confirmed_workout_strength_capture', args: S10ResolveArgs]
+  | [name: 'answer_confirmed_workout_strength', args: S10AnswerArgs]
+type S10Equal<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false
+const S10_RPC = 'answer_confirmed_workout_strength' as const
+const S10_KEY = 'answer-A'
+const S10_TIME = '2026-10-12T15:02:03.654321Z'
+function s10Input(patch: Partial<S10MutableInput> = {}): S10MutableInput {
+  return {
+    ownerID: OWNER,
+    expectedLifecycleKey: LIFE,
+    workoutLogID: WORKOUT,
+    expectedFactRevision: 0,
+    questionKey: QUESTION,
+    answer: 'yes',
+    operationKey: S10_KEY,
+    ...patch,
+  }
+}
+function s10Success(
+  status: 'accepted' | 'reuse_existing' = 'accepted',
+  answer: 'yes' | 'no' = 'yes',
+): S10Success {
+  return {
+    status,
+    receipt: {
+      ownerID: OWNER,
+      workoutLogID: WORKOUT,
+      questionKey: QUESTION,
+      answer,
+      operationKey: S10_KEY,
+      acceptedAt: S10_TIME,
+    },
+  }
+}
+function s10Args(input: AnswerWorkoutStrengthInput): S10AnswerArgs {
+  return {
+    p_user_id: input.ownerID,
+    p_expected_lifecycle_key: input.expectedLifecycleKey,
+    p_workout_log_id: input.workoutLogID,
+    p_expected_fact_revision: input.expectedFactRevision,
+    p_question_key: input.questionKey,
+    p_answer: input.answer,
+    p_operation_key: input.operationKey,
+  }
+}
+function s10Read(data: unknown, input = s10Input()) {
+  const h = portFor({ data, error: null })
+  return { ...h, result: h.repository.answerConfirmedWorkoutStrength(input) }
+}
+async function s10InvalidData(data: unknown) {
+  const h = s10Read(data)
+  await expect(h.result).rejects.toEqual(new TypeError('Invalid workout strength reply'))
+  expect(h.rpc).toHaveBeenCalledTimes(1)
+}
+const s10InvalidInputs: readonly (readonly [string, unknown])[] = [
+  ['whole_null', null],
+  ['whole_undefined', undefined],
+  ['whole_array', []],
+  ['whole_empty', {}],
+  ['whole_number', 0],
+  ['owner_null', { ...s10Input(), ownerID: null }],
+  ['owner_uppercase', { ...s10Input(), ownerID: OWNER.toUpperCase() }],
+  ['owner_nonuuid', { ...s10Input(), ownerID: 'owner' }],
+  ['life_null', { ...s10Input(), expectedLifecycleKey: null }],
+  ['life_uppercase', { ...s10Input(), expectedLifecycleKey: LIFE.toUpperCase() }],
+  ['life_nonuuid', { ...s10Input(), expectedLifecycleKey: 'life' }],
+  ['workout_null', { ...s10Input(), workoutLogID: null }],
+  ['workout_uppercase', { ...s10Input(), workoutLogID: WORKOUT.toUpperCase() }],
+  ['workout_nonuuid', { ...s10Input(), workoutLogID: 'workout' }],
+  ['question_null', { ...s10Input(), questionKey: null }],
+  ['question_uppercase', { ...s10Input(), questionKey: QUESTION.toUpperCase() }],
+  ['question_nonuuid', { ...s10Input(), questionKey: 'question' }],
+  ['revision_null', { ...s10Input(), expectedFactRevision: null }],
+  ['revision_undefined', { ...s10Input(), expectedFactRevision: undefined }],
+  ['revision_string', { ...s10Input(), expectedFactRevision: '0' }],
+  ['revision_negative', { ...s10Input(), expectedFactRevision: -1 }],
+  ['revision_fraction', { ...s10Input(), expectedFactRevision: 0.5 }],
+  ['revision_nan', { ...s10Input(), expectedFactRevision: Number.NaN }],
+  ['revision_infinity', { ...s10Input(), expectedFactRevision: Number.POSITIVE_INFINITY }],
+  ['revision_int32_overflow', { ...s10Input(), expectedFactRevision: 2147483648 }],
+  [
+    'revision_safe_integer_not_int32',
+    { ...s10Input(), expectedFactRevision: Number.MAX_SAFE_INTEGER },
+  ],
+  ['answer_null', { ...s10Input(), answer: null }],
+  ['answer_case', { ...s10Input(), answer: 'YES' }],
+  ['answer_padded', { ...s10Input(), answer: 'yes ' }],
+  ['answer_empty', { ...s10Input(), answer: '' }],
+  ['answer_boolean', { ...s10Input(), answer: false }],
+  ['key_null', { ...s10Input(), operationKey: null }],
+  ['key_undefined', { ...s10Input(), operationKey: undefined }],
+  ['key_number', { ...s10Input(), operationKey: 0 }],
+  ['key_empty', { ...s10Input(), operationKey: '' }],
+]
+const s10NegativeCases = [
+  ['conflict', 'answer_already_differs'],
+  ['conflict', 'operation_content_conflict'],
+  ['conflict', 'mixed_owner'],
+  ['conflict', 'stale_workout'],
+  ['conflict', 'stale_lifecycle'],
+  ['conflict', 'stale_fact'],
+  ['conflict', 'not_unrecognized'],
+  ['forbidden', 'answer_already_differs'],
+  ['forbidden', 'operation_content_conflict'],
+  ['forbidden', 'mixed_owner'],
+  ['forbidden', 'stale_workout'],
+  ['forbidden', 'stale_lifecycle'],
+  ['forbidden', 'stale_fact'],
+  ['forbidden', 'not_unrecognized'],
+  ['not_available', 'answer_already_differs'],
+  ['not_available', 'operation_content_conflict'],
+  ['not_available', 'mixed_owner'],
+  ['not_available', 'stale_workout'],
+  ['not_available', 'stale_lifecycle'],
+  ['not_available', 'stale_fact'],
+  ['not_available', 'not_unrecognized'],
+] as const
+const s10MalformedOuter: readonly (readonly [string, unknown])[] = [
+  ['null', null],
+  ['undefined', undefined],
+  ['array', []],
+  ['number', 0],
+  ['empty', {}],
+  ['missing_status', { receipt: s10Success().receipt }],
+  ['unknown_status', { ...s10Success(), status: 'committed' }],
+  ['numeric_status', { ...s10Success(), status: 1 }],
+  ['missing_receipt', { status: 'accepted' }],
+  ['null_receipt', { status: 'accepted', receipt: null }],
+  ['array_receipt', { status: 'accepted', receipt: [] }],
+  ['empty_receipt', { status: 'accepted', receipt: {} }],
+  ['extra_root', { ...s10Success(), extra: true }],
+  ['success_reason', { ...s10Success(), reason: 'stale_fact' }],
+  ['negative_missing_reason', { status: 'forbidden' }],
+  ['negative_null_reason', { status: 'conflict', reason: null }],
+  ['negative_unknown_reason', { status: 'not_available', reason: 'temporary' }],
+  ['negative_other_union_reason', { status: 'forbidden', reason: 'catalogue_read_error' }],
+  ['negative_receipt', { status: 'conflict', reason: 'stale_fact', receipt: null }],
+  ['negative_extra', { status: 'forbidden', reason: 'stale_workout', extra: true }],
+]
+const s10ReceiptInvalid: readonly (readonly [string, string, unknown])[] = [
+  ['owner_other', 'ownerID', OTHER],
+  ['owner_uppercase', 'ownerID', OWNER.toUpperCase()],
+  ['owner_nonuuid', 'ownerID', 'owner'],
+  ['owner_null', 'ownerID', null],
+  ['workout_other', 'workoutLogID', OTHER],
+  ['workout_uppercase', 'workoutLogID', WORKOUT.toUpperCase()],
+  ['workout_nonuuid', 'workoutLogID', 'workout'],
+  ['workout_null', 'workoutLogID', null],
+  ['question_other', 'questionKey', OTHER],
+  ['question_uppercase', 'questionKey', QUESTION.toUpperCase()],
+  ['question_nonuuid', 'questionKey', 'question'],
+  ['question_null', 'questionKey', null],
+  ['answer_different_literal', 'answer', 'no'],
+  ['answer_case', 'answer', 'YES'],
+  ['answer_null', 'answer', null],
+  ['answer_number', 'answer', 0],
+  ['winner_key_empty', 'operationKey', ''],
+  ['winner_key_null', 'operationKey', null],
+  ['winner_key_number', 'operationKey', 0],
+]
+const s10BadTimes: readonly unknown[] = [
+  '0000-01-01T00:00:00.000000Z',
+  '10000-01-01T00:00:00.000000Z',
+  '1900-02-29T00:00:00.000000Z',
+  '2100-02-29T00:00:00.000000Z',
+  '2026-04-31T00:00:00.000000Z',
+  '2026-13-01T00:00:00.000000Z',
+  '2026-01-00T00:00:00.000000Z',
+  '2026-10-12T24:00:00.000000Z',
+  '2026-10-12T00:60:00.000000Z',
+  '2026-10-12T00:00:60.000000Z',
+  '2026-10-12T00:00:00.123Z',
+  '2026-10-12T00:00:00.1234567Z',
+  '2026-10-12T00:00:00.123456+00:00',
+  '2026-10-12T00:00:00.123456z',
+  ' 2026-10-12T00:00:00.123456Z',
+  'infinity',
+  'now',
+  null,
+  0,
+]
+
+describe('S10 correlated RPC types and lazy exact invocation', () => {
+  it('S10 type contract preserves Parameters correlation and rejects both swapped name/args pairs', () => {
+    type Actual = Parameters<WorkoutStrengthRepositoryPort['rpc']>
+    const exact: S10Equal<Actual, S10ExpectedRpcParameters> = true
+    const inputFieldsExact: S10Equal<AnswerWorkoutStrengthInput, S10ExpectedInput> = true
+    const resultFieldsExact: S10Equal<AnswerWorkoutStrengthResult, S10ExpectedResult> = true
+    const swappedAnswerRejected: [
+      'answer_confirmed_workout_strength',
+      S10ResolveArgs,
+    ] extends Actual
+      ? false
+      : true = true
+    const swappedResolveRejected: [
+      'resolve_confirmed_workout_strength_capture',
+      S10AnswerArgs,
+    ] extends Actual
+      ? false
+      : true = true
+    type Method = ReturnType<
+      typeof createWorkoutStrengthRepository
+    >['answerConfirmedWorkoutStrength']
+    const inputExact: S10Equal<Parameters<Method>, [input: AnswerWorkoutStrengthInput]> = true
+    const resultExact: S10Equal<ReturnType<Method>, Promise<AnswerWorkoutStrengthResult>> = true
+    expect([
+      exact,
+      inputFieldsExact,
+      resultFieldsExact,
+      swappedAnswerRejected,
+      swappedResolveRejected,
+      inputExact,
+      resultExact,
+    ]).toStrictEqual([true, true, true, true, true, true, true])
+  })
+  it('S10 factory is lazy and captures a one-use rpc getter exactly once', async () => {
+    const rpc = vi
+      .fn<WorkoutStrengthRepositoryPort['rpc']>()
+      .mockResolvedValue({ data: s10Success(), error: null })
+    const secondRead = new Error('S10 second rpc getter access')
+    let reads = 0
+    const getter = vi.fn(() => {
+      reads += 1
+      if (reads > 1) throw secondRead
+      return rpc
+    })
+    const port = Object.defineProperty({}, 'rpc', { get: getter }) as WorkoutStrengthRepositoryPort
+    const repository = createWorkoutStrengthRepository(port)
+    expect(getter).not.toHaveBeenCalled()
+    expect(await repository.answerConfirmedWorkoutStrength(s10Input())).toStrictEqual(s10Success())
+    expect(getter).toHaveBeenCalledTimes(1)
+    expect(rpc).toHaveBeenCalledTimes(1)
+  })
+  it('S10 preserves this and sends exactly seven original arguments without classification', async () => {
+    const classify = vi.spyOn(classificationCore, 'classifyConfirmedWorkoutType')
+    const input = s10Input()
+    const wire = s10Success()
+    const port: WorkoutStrengthRepositoryPort = {
+      rpc(name, args) {
+        expect(this).toBe(port)
+        expect([name, args]).toStrictEqual([S10_RPC, s10Args(input)])
+        return Promise.resolve({ data: wire, error: null })
+      },
+    }
+    const rpc = vi.spyOn(port, 'rpc')
+    expect(
+      await createWorkoutStrengthRepository(port).answerConfirmedWorkoutStrength(input),
+    ).toStrictEqual(wire)
+    expect(rpc).toHaveBeenCalledTimes(1)
+    expect(classify).not.toHaveBeenCalled()
+  })
+  it('S10 supports a genuine PromiseLike RPC builder without a client SDK', async () => {
+    const reply: Reply = { data: s10Success(), error: null }
+    const thenable: PromiseLike<Reply> = {
+      // biome-ignore lint/suspicious/noThenProperty: Exercise the explicit PromiseLike RPC builder contract.
+      then(onfulfilled, onrejected) {
+        return Promise.resolve(reply).then(onfulfilled, onrejected)
+      },
+    }
+    const h = portFor(null)
+    h.rpc.mockReturnValue(thenable)
+    expect(await h.repository.answerConfirmedWorkoutStrength(s10Input())).toStrictEqual(
+      s10Success(),
+    )
+    expect(h.rpc).toHaveBeenCalledTimes(1)
+  })
+  it('S10 reads the seven scalar getters once before obtaining rpc and never after await', async () => {
+    const input = s10Input()
+    const counts = {
+      ownerID: 0,
+      expectedLifecycleKey: 0,
+      workoutLogID: 0,
+      expectedFactRevision: 0,
+      questionKey: 0,
+      answer: 0,
+      operationKey: 0,
+    }
+    const keys: readonly (keyof S10MutableInput)[] = [
+      'ownerID',
+      'expectedLifecycleKey',
+      'workoutLogID',
+      'expectedFactRevision',
+      'questionKey',
+      'answer',
+      'operationKey',
+    ]
+    for (const key of keys) {
+      const value = input[key]
+      Object.defineProperty(input, key, {
+        enumerable: true,
+        get() {
+          counts[key] += 1
+          return value
+        },
+      })
+    }
+    const rpc = vi
+      .fn<WorkoutStrengthRepositoryPort['rpc']>()
+      .mockResolvedValue({ data: s10Success(), error: null })
+    const getter = vi.fn(() => {
+      expect(counts).toStrictEqual({
+        ownerID: 1,
+        expectedLifecycleKey: 1,
+        workoutLogID: 1,
+        expectedFactRevision: 1,
+        questionKey: 1,
+        answer: 1,
+        operationKey: 1,
+      })
+      return rpc
+    })
+    const port = Object.defineProperty({}, 'rpc', { get: getter }) as WorkoutStrengthRepositoryPort
+    const repository = createWorkoutStrengthRepository(port)
+    expect(getter).not.toHaveBeenCalled()
+    expect(await repository.answerConfirmedWorkoutStrength(input)).toStrictEqual(s10Success())
+    expect(counts).toStrictEqual({
+      ownerID: 1,
+      expectedLifecycleKey: 1,
+      workoutLogID: 1,
+      expectedFactRevision: 1,
+      questionKey: 1,
+      answer: 1,
+      operationKey: 1,
+    })
+    expect(getter).toHaveBeenCalledTimes(1)
+    expect(rpc).toHaveBeenCalledTimes(1)
+  })
+  it.each([
+    'ownerID',
+    'expectedLifecycleKey',
+    'workoutLogID',
+    'expectedFactRevision',
+    'questionKey',
+    'answer',
+    'operationKey',
+  ] as const)('S10 propagates original input getter defect at %s before rpc access', async (field) => {
+    const input = s10Input()
+    const failure = new Error('S10 input getter ' + field)
+    Object.defineProperty(input, field, {
+      enumerable: true,
+      get() {
+        throw failure
+      },
+    })
+    const rpc = vi.fn<WorkoutStrengthRepositoryPort['rpc']>()
+    const getter = vi.fn(() => rpc)
+    const port = Object.defineProperty({}, 'rpc', { get: getter }) as WorkoutStrengthRepositoryPort
+    const repository = createWorkoutStrengthRepository(port)
+    await expect(repository.answerConfirmedWorkoutStrength(input)).rejects.toBe(failure)
+    expect(getter).not.toHaveBeenCalled()
+    expect(rpc).not.toHaveBeenCalled()
+  })
+  it.each(
+    s10InvalidInputs,
+  )('S10 rejects invalid input %s before rpc getter and any RPC', async (_label, input) => {
+    const rpc = vi.fn<WorkoutStrengthRepositoryPort['rpc']>()
+    const getter = vi.fn(() => rpc)
+    const port = Object.defineProperty({}, 'rpc', { get: getter }) as WorkoutStrengthRepositoryPort
+    const repository = createWorkoutStrengthRepository(port)
+    // Deliberately malformed input at the public request boundary only.
+    await expect(
+      repository.answerConfirmedWorkoutStrength(input as AnswerWorkoutStrengthInput),
+    ).rejects.toEqual(new TypeError('Invalid workout strength request'))
+    expect(getter).not.toHaveBeenCalled()
+    expect(rpc).not.toHaveBeenCalled()
+  })
+  it.each([
+    0, 1, 2, 2147483647,
+  ])('S10 admits representable revision %i without inventing a current CAS', async (expectedFactRevision) => {
+    const input = s10Input({ expectedFactRevision })
+    const wire = { status: 'conflict', reason: 'stale_fact' }
+    const h = s10Read(wire, input)
+    expect(await h.result).toStrictEqual(wire)
+    expect(h.rpc).toHaveBeenCalledTimes(1)
+    expect(h.rpc).toHaveBeenCalledWith(S10_RPC, s10Args(input))
+  })
+  it.each([
+    ' ',
+    ' answer-A ',
+    'answer-a',
+    '\t',
+  ])('S10 preserves nonempty literal operation key %j', async (operationKey) => {
+    const input = s10Input({ operationKey })
+    const h = s10Read(s10Success('reuse_existing'), input)
+    expect(await h.result).toStrictEqual(s10Success('reuse_existing'))
+    expect(h.rpc).toHaveBeenCalledTimes(1)
+    expect(h.rpc).toHaveBeenCalledWith(S10_RPC, s10Args(input))
+  })
+  it.each([
+    null,
+    undefined,
+    {},
+    { rpc: null },
+    { rpc: 17 },
+  ])('S10 rejects invalid port %# only on invocation', async (port) => {
+    const repository = createWorkoutStrengthRepository(
+      port as unknown as WorkoutStrengthRepositoryPort,
+    )
+    await expect(repository.answerConfirmedWorkoutStrength(s10Input())).rejects.toEqual(
+      new TypeError('Workout strength port requires a callable rpc'),
+    )
+  })
+  it('S10 propagates the original port getter defect without transport fallback', async () => {
+    const failure = new Error('S10 rpc getter defect')
+    const getter = vi.fn(() => {
+      throw failure
+    })
+    const port = Object.defineProperty({}, 'rpc', { get: getter }) as WorkoutStrengthRepositoryPort
+    const repository = createWorkoutStrengthRepository(port)
+    expect(getter).not.toHaveBeenCalled()
+    await expect(repository.answerConfirmedWorkoutStrength(s10Input())).rejects.toBe(failure)
+    expect(getter).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('S10 exact R2 answer branches, correlations and receipt copies', () => {
+  it.each([
+    ['accepted_yes', 'accepted', 'yes', 0, S10_KEY],
+    ['accepted_no', 'accepted', 'no', 0, S10_KEY],
+    ['replay_A0_yes', 'reuse_existing', 'yes', 0, S10_KEY],
+    ['replay_A0_no', 'reuse_existing', 'no', 0, S10_KEY],
+    ['B1_receiptA_yes', 'reuse_existing', 'yes', 1, 'answer-B'],
+    ['B1_receiptA_no', 'reuse_existing', 'no', 1, 'answer-B'],
+  ] as const)('S10 accepts %s with the exact winning receipt', async (_label, status, answer, expectedFactRevision, operationKey) => {
+    const input = s10Input({ answer, expectedFactRevision, operationKey })
+    const wire = s10Success(status, answer)
+    const h = s10Read(wire, input)
+    expect(await h.result).toStrictEqual(wire)
+    expect(h.rpc).toHaveBeenCalledTimes(1)
+    expect(h.rpc).toHaveBeenCalledWith(S10_RPC, s10Args(input))
+    expect(wire.receipt.operationKey).toBe(S10_KEY)
+  })
+  it.each(
+    s10NegativeCases,
+  )('S10 accepts declared negative %s/%s without synthesis', async (status, reason) => {
+    const wire = { status, reason }
+    const h = s10Read(wire)
+    const result = await h.result
+    expect(result).toStrictEqual(wire)
+    expect(result).not.toBe(wire)
+    expect(h.rpc).toHaveBeenCalledTimes(1)
+  })
+  it.each(s10MalformedOuter)('S10 rejects malformed outer result %s', async (_label, wire) => {
+    await s10InvalidData(wire)
+  })
+  it.each(s10ReceiptInvalid)('S10 rejects forged receipt %s', async (_label, key, value) => {
+    await s10InvalidData(change(s10Success(), ['receipt.' + key, value]))
+  })
+  it.each([
+    'ownerID',
+    'workoutLogID',
+    'questionKey',
+    'answer',
+    'operationKey',
+    'acceptedAt',
+  ])('S10 rejects a missing receipt field %s', async (key) => {
+    await s10InvalidData(change(s10Success(), ['receipt.' + key, MISSING]))
+  })
+  it('S10 rejects an extra receipt field instead of silently dropping it', async () => {
+    await s10InvalidData(change(s10Success(), ['receipt.extra', true]))
+  })
+  it.each([
+    'root',
+    'receipt',
+  ] as const)('S10 rejects inherited domain fields at %s', async (where) => {
+    const wire =
+      where === 'root'
+        ? Object.create(s10Success())
+        : { ...s10Success(), receipt: Object.create(s10Success().receipt) }
+    await s10InvalidData(wire)
+  })
+  it.each([
+    '0001-01-01T00:00:00.000000Z',
+    '2000-02-29T23:59:59.123456Z',
+    '2024-02-29T00:00:00.000001Z',
+    '9999-12-31T23:59:59.999999Z',
+  ])('S10 preserves exact acceptedAt UTC US6 boundary %s', async (acceptedAt) => {
+    const wire = change(s10Success(), ['receipt.acceptedAt', acceptedAt])
+    expect(await s10Read(wire).result).toStrictEqual(wire)
+  })
+  it.each(
+    s10BadTimes,
+  )('S10 rejects noncanonical or impossible receipt time %#', async (acceptedAt) => {
+    await s10InvalidData(change(s10Success(), ['receipt.acceptedAt', acceptedAt]))
+  })
+})
+
+describe('S10 envelope and uncaught operational/configuration defects', () => {
+  it('S10 accepts transport metadata but emits only the copied exact domain object', async () => {
+    const wire = s10Success()
+    const h = portFor({ data: wire, error: null, status: 200, statusText: 'OK', count: null })
+    const result = await h.repository.answerConfirmedWorkoutStrength(s10Input())
+    expect(result).toStrictEqual(wire)
+    expect(result).not.toBe(wire)
+    if (result.status === 'accepted' || result.status === 'reuse_existing')
+      expect(result.receipt).not.toBe(wire.receipt)
+    expect(h.rpc).toHaveBeenCalledTimes(1)
+  })
+  it.each([
+    false,
+    0,
+    '',
+    { message: 'synthetic private detail must not enter the error' },
+  ])('S10 rejects every non-null error %# with the fixed operational error', async (error) => {
+    const h = portFor({ data: s10Success(), error })
+    await expect(h.repository.answerConfirmedWorkoutStrength(s10Input())).rejects.toEqual(
+      new Error('Workout strength RPC failed'),
+    )
+    expect(h.rpc).toHaveBeenCalledTimes(1)
+  })
+  it.each([
+    null,
+    [],
+    {},
+    { data: s10Success() },
+    { error: null },
+    { data: s10Success(), error: undefined },
+    Object.create({ data: s10Success(), error: null }),
+  ])('S10 rejects malformed or inherited envelope %#', async (reply) => {
+    const h = portFor(reply)
+    await expect(h.repository.answerConfirmedWorkoutStrength(s10Input())).rejects.toEqual(
+      new TypeError('Invalid workout strength reply'),
+    )
+    expect(h.rpc).toHaveBeenCalledTimes(1)
+  })
+  it.each([
+    'throw',
+    'reject',
+  ] as const)('S10 propagates the original transport %s object unchanged', async (mode) => {
+    const failure = { synthetic: 'S10 original transport object' }
+    const h = portFor(null)
+    h.rpc.mockImplementation(() => {
+      if (mode === 'throw') throw failure
+      return Promise.reject(failure)
+    })
+    await expect(h.repository.answerConfirmedWorkoutStrength(s10Input())).rejects.toBe(failure)
+    expect(h.rpc).toHaveBeenCalledTimes(1)
+  })
+  it.each([
+    'data',
+    'error',
+    'status',
+    'ownerID',
+    'acceptedAt',
+  ] as const)('S10 propagates original parser getter defect at %s', async (field) => {
+    const failure = new Error('S10 parser getter ' + field)
+    const wire = s10Success()
+    const reply = { data: wire, error: null }
+    const target =
+      field === 'data' || field === 'error' ? reply : field === 'status' ? wire : wire.receipt
+    Object.defineProperty(target, field, {
+      enumerable: true,
+      get() {
+        throw failure
+      },
+    })
+    const h = portFor(reply)
+    await expect(h.repository.answerConfirmedWorkoutStrength(s10Input())).rejects.toBe(failure)
+    expect(h.rpc).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('S10 request snapshots, returned copies and isolated pending calls', () => {
+  it('S10 preserves all seven original scalars and RPC args after input mutation during await', async () => {
+    const h = portFor(null)
+    const gate = deferred<Reply>()
+    const entered = deferred<void>()
+    h.rpc.mockImplementation(() => {
+      entered.resolve(undefined)
+      return gate.promise
+    })
+    const input = s10Input()
+    const original = structuredClone(input)
+    const result = h.repository.answerConfirmedWorkoutStrength(input)
+    input.ownerID = OTHER
+    input.expectedLifecycleKey = OTHER
+    input.workoutLogID = OTHER
+    input.expectedFactRevision = 2
+    input.questionKey = OTHER
+    input.answer = 'no'
+    input.operationKey = 'changed-B'
+    await Promise.race([entered.promise, result.then(() => undefined)])
+    expect(h.rpc).toHaveBeenCalledTimes(1)
+    const args = h.rpc.mock.calls[0]?.[1]
+    expect(args).toStrictEqual(s10Args(original))
+    gate.resolve({ data: s10Success(), error: null })
+    expect(await result).toStrictEqual(s10Success())
+    expect(args).toStrictEqual(s10Args(original))
+  })
+  it('S10 rejects a coherent foreign receipt matching mutated input against the original snapshot', async () => {
+    const h = portFor(null)
+    const gate = deferred<Reply>()
+    h.rpc.mockReturnValue(gate.promise)
+    const input = s10Input()
+    const original = structuredClone(input)
+    const result = h.repository.answerConfirmedWorkoutStrength(input)
+    input.ownerID = OTHER
+    input.expectedLifecycleKey = OTHER
+    input.workoutLogID = OTHER
+    input.expectedFactRevision = 1
+    input.questionKey = OTHER
+    input.answer = 'no'
+    input.operationKey = 'foreign-B'
+    const wire = change(
+      s10Success(),
+      ['receipt.ownerID', OTHER],
+      ['receipt.workoutLogID', OTHER],
+      ['receipt.questionKey', OTHER],
+      ['receipt.answer', 'no'],
+    )
+    gate.resolve({ data: wire, error: null })
+    await expect(result).rejects.toEqual(new TypeError('Invalid workout strength reply'))
+    expect(h.rpc).toHaveBeenCalledTimes(1)
+    expect(h.rpc).toHaveBeenCalledWith(S10_RPC, s10Args(original))
+  })
+  it.each([
+    ['accepted', s10Success()],
+    ['reuse_existing', s10Success('reuse_existing')],
+    ['negative', { status: 'conflict', reason: 'stale_fact' }],
+  ] as const)('S10 detaches returned %s result from all later port payload mutations', async (_label, wire) => {
+    const before = structuredClone(wire)
+    const result = await s10Read(wire).result
+    expect(result).toStrictEqual(before)
+    const root = record(wire)
+    if (root.receipt !== undefined) {
+      const receipt = record(root.receipt)
+      receipt.ownerID = OTHER
+      receipt.workoutLogID = OTHER
+      receipt.questionKey = OTHER
+      receipt.answer = 'no'
+      receipt.operationKey = 'changed'
+      receipt.acceptedAt = '9999-12-31T23:59:59.999999Z'
+    }
+    root.status = 'changed'
+    root.reason = 'changed'
+    expect(result).toStrictEqual(before)
+  })
+  it('S10 keeps A/B isolated when B completes before A on the same repository', async () => {
+    const a = deferred<Reply>()
+    const b = deferred<Reply>()
+    const h = portFor(null)
+    h.rpc.mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise)
+    const inputA = s10Input()
+    const inputB = s10Input({
+      ownerID: OTHER,
+      expectedLifecycleKey: OTHER,
+      workoutLogID: OTHER,
+      expectedFactRevision: 1,
+      questionKey: OTHER,
+      answer: 'no',
+      operationKey: 'request-B',
+    })
+    const wireB = change(
+      s10Success('reuse_existing', 'no'),
+      ['receipt.ownerID', OTHER],
+      ['receipt.workoutLogID', OTHER],
+      ['receipt.questionKey', OTHER],
+      ['receipt.operationKey', 'original-winner-B'],
+    )
+    const first = h.repository.answerConfirmedWorkoutStrength(inputA)
+    const second = h.repository.answerConfirmedWorkoutStrength(inputB)
+    b.resolve({ data: wireB, error: null })
+    expect(await second).toStrictEqual(wireB)
+    a.resolve({ data: s10Success(), error: null })
+    expect(await first).toStrictEqual(s10Success())
+    expect(h.rpc).toHaveBeenCalledTimes(2)
+    expect(h.rpc.mock.calls.map((call) => call)).toStrictEqual([
+      [S10_RPC, s10Args(inputA)],
+      [S10_RPC, s10Args(inputB)],
+    ])
+  })
+  it('S10 neither retries nor caches a failure and allows a separate subsequent request', async () => {
+    const h = portFor(null)
+    h.rpc
+      .mockReturnValueOnce(Promise.resolve({ data: null, error: false }))
+      .mockReturnValueOnce(Promise.resolve({ data: s10Success(), error: null }))
+    await expect(h.repository.answerConfirmedWorkoutStrength(s10Input())).rejects.toEqual(
+      new Error('Workout strength RPC failed'),
+    )
+    expect(h.rpc).toHaveBeenCalledTimes(1)
+    expect(await h.repository.answerConfirmedWorkoutStrength(s10Input())).toStrictEqual(
+      s10Success(),
+    )
     expect(h.rpc).toHaveBeenCalledTimes(2)
   })
 })

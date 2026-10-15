@@ -11,7 +11,10 @@
     "./progress": "./src/progress-calc.ts",
     "./nutrition": "./src/nutrition.ts",
     "./types": "./src/types.ts",
-    "./workout-strength-classification": "./src/workout-strength-classification.ts"
+    "./workout-strength-classification": "./src/workout-strength-classification.ts",
+    "./strength-training-week": {
+      "types": "./src/strength-training-week.ts"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

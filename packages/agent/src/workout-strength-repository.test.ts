@@ -2,12 +2,16 @@
  * No factory/type/fixture authenticates SQL provenance. Missing module is SETUP,
  * never causal RED. S1 and S2 implementations/tests remain unchanged here.
  */
+import type { StrengthWeekWorkout } from '@mpp/core/strength-training-week'
 import * as classificationCore from '@mpp/core/workout-strength-classification'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   type AnswerWorkoutStrengthInput,
   type AnswerWorkoutStrengthResult,
   createWorkoutStrengthRepository,
+  type PrepareWorkoutStrengthCalendarScopeResult,
+  type StrengthWorkoutProjection,
+  type TrustedStrengthWorkoutCalendarScope,
   type WorkoutOwnerScope,
   type WorkoutStrengthCaptureResult,
   type WorkoutStrengthRepositoryPort,
@@ -834,6 +838,8 @@ type S10ExpectedResult =
 type S10ExpectedRpcParameters =
   | [name: 'resolve_confirmed_workout_strength_capture', args: S10ResolveArgs]
   | [name: 'answer_confirmed_workout_strength', args: S10AnswerArgs]
+  | [name: 'prepare_workout_strength_calendar_scope', args: S13PrepareArgs]
+  | [name: 'get_confirmed_workouts_for_strength_week', args: S13ProjectArgs]
 type S10Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false
 const S10_RPC = 'answer_confirmed_workout_strength' as const
@@ -1516,6 +1522,997 @@ describe('S10 request snapshots, returned copies and isolated pending calls', ()
     expect(await h.repository.answerConfirmedWorkoutStrength(s10Input())).toStrictEqual(
       s10Success(),
     )
+    expect(h.rpc).toHaveBeenCalledTimes(2)
+  })
+})
+
+// S13 test-first: unknown RPC boundary only. Missing methods/type export are SETUP,
+// not product RED. These DTO checks never authenticate calendar/history authority.
+type S13PrepareArgs = {
+  readonly p_user_id: string
+  readonly p_expected_lifecycle_key: string
+}
+type S13ProjectArgs = {
+  readonly p_user_id: string
+  readonly p_expected_lifecycle_key: string
+  readonly p_scope_key: string
+  readonly p_time_zone: string
+  readonly p_week_start_date: string
+  readonly p_as_of_local_date: string
+}
+type S13ExpectedScope = {
+  readonly ownerID: string
+  readonly lifecycleKey: string
+  readonly scopeKey: string
+  readonly timeZone: string
+  readonly weekStartDate: string
+  readonly asOfLocalDate: string
+}
+type S13ExpectedPrepare =
+  | { readonly status: 'prepared' | 'reuse_existing'; readonly scope: S13ExpectedScope }
+  | { readonly status: 'forbidden'; readonly reason: 'stale_lifecycle' }
+  | { readonly status: 'unavailable'; readonly reason: 'zone_unproved' | 'calendar_unproved' }
+type S13ExpectedProjection =
+  | { readonly status: 'available'; readonly workouts: readonly StrengthWeekWorkout[] }
+  | {
+      readonly status: 'unavailable'
+      readonly reason: 'provenance_gap' | 'calendar_unproved' | 'identity_unproved'
+      readonly workouts: null
+    }
+type S13MutableCalendar = {
+  -readonly [K in keyof TrustedStrengthWorkoutCalendarScope]: TrustedStrengthWorkoutCalendarScope[K]
+}
+type S13MutableEvent = { -readonly [K in keyof StrengthWeekWorkout]: StrengthWeekWorkout[K] }
+type S13Method = 'prepare' | 'project'
+const S13_METHODS = ['prepare', 'project'] as const
+const S13_PREPARE = 'prepare_workout_strength_calendar_scope' as const
+const S13_PROJECT = 'get_confirmed_workouts_for_strength_week' as const
+function s13Calendar(patch: Partial<S13MutableCalendar> = {}): S13MutableCalendar {
+  return {
+    ownerID: OWNER,
+    lifecycleKey: LIFE,
+    scopeKey: QUESTION,
+    timeZone: 'America/Sao_Paulo',
+    weekStartDate: '2026-10-12',
+    asOfLocalDate: '2026-10-18',
+    ...patch,
+  }
+}
+function s13Prepared(status: 'prepared' | 'reuse_existing' = 'prepared', calendar = s13Calendar()) {
+  return { status, scope: { ...calendar } }
+}
+function s13Event(patch: Partial<S13MutableEvent> = {}): S13MutableEvent {
+  return {
+    ownerKey: OWNER,
+    workoutKey: WORKOUT,
+    localDate: '2026-10-12',
+    state: 'confirmed',
+    catalogueCategory: null,
+    storedStrengthAnswer: null,
+    ...patch,
+  }
+}
+function s13Answered(answer: 'yes' | 'no' = 'yes'): S13MutableEvent {
+  return s13Event({ storedStrengthAnswer: { ownerKey: OWNER, workoutKey: WORKOUT, answer } })
+}
+function s13Available(events: readonly StrengthWeekWorkout[] = [s13Event()]) {
+  return {
+    status: 'available' as const,
+    workouts: events.map((e) => ({
+      ...e,
+      storedStrengthAnswer: e.storedStrengthAnswer === null ? null : { ...e.storedStrengthAnswer },
+    })),
+  }
+}
+function s13Invoke(
+  repository: ReturnType<typeof createWorkoutStrengthRepository>,
+  method: S13Method,
+  owner: WorkoutOwnerScope = scope(),
+  calendar: TrustedStrengthWorkoutCalendarScope = s13Calendar(),
+) {
+  return method === 'prepare'
+    ? repository.prepareWorkoutStrengthCalendarScope(owner)
+    : repository.projectConfirmedWorkoutsForStrengthWeek(owner, calendar)
+}
+function s13Wire(method: S13Method): unknown {
+  return method === 'prepare' ? s13Prepared() : s13Available()
+}
+function s13Args(
+  method: S13Method,
+  owner: WorkoutOwnerScope = scope(),
+  calendar = s13Calendar(),
+): S13PrepareArgs | S13ProjectArgs {
+  const base = { p_user_id: owner.ownerID, p_expected_lifecycle_key: owner.expectedLifecycleKey }
+  return method === 'prepare'
+    ? base
+    : {
+        ...base,
+        p_scope_key: calendar.scopeKey,
+        p_time_zone: calendar.timeZone,
+        p_week_start_date: calendar.weekStartDate,
+        p_as_of_local_date: calendar.asOfLocalDate,
+      }
+}
+async function s13InvalidWire(method: S13Method, data: unknown) {
+  const h = portFor({ data, error: null })
+  await expect(s13Invoke(h.repository, method)).rejects.toEqual(
+    new TypeError('Invalid workout strength reply'),
+  )
+  expect(h.rpc).toHaveBeenCalledTimes(1)
+}
+/** Fixture prototypes are allowed only here at the unknown wire boundary. */
+function s13Inherited(value: unknown, key: string): unknown {
+  const own = { ...record(value) }
+  const inherited = own[key]
+  delete own[key]
+  const target: unknown = Object.create({ [key]: inherited })
+  return Object.assign(target as object, own)
+}
+function s13Rows(value: unknown): readonly unknown[] {
+  if (!Array.isArray(value)) throw new Error('S13_SETUP_ARRAY')
+  return value as readonly unknown[]
+}
+
+const s13BadCalendar = [
+  ['owner malformed', 'ownerID', 'not-uuid'],
+  ['owner foreign', 'ownerID', OTHER],
+  ['life malformed', 'lifecycleKey', LIFE.toUpperCase()],
+  ['life foreign', 'lifecycleKey', OTHER],
+  ['key malformed', 'scopeKey', 'key'],
+  ['zone empty', 'timeZone', ''],
+  ['zone nonstring', 'timeZone', 0],
+  ['week year zero', 'weekStartDate', '0000-01-01'],
+  ['week expanded year', 'weekStartDate', '10000-01-01'],
+  ['week nonMonday', 'weekStartDate', '2026-10-13'],
+  ['asOf before', 'asOfLocalDate', '2026-10-11'],
+  ['asOf day7', 'asOfLocalDate', '2026-10-19'],
+  ['asOf noncivil', 'asOfLocalDate', '2026-10-18T00:00:00Z'],
+  ...['ownerID', 'lifecycleKey', 'scopeKey', 'timeZone', 'weekStartDate', 'asOfLocalDate'].map(
+    (field) => ['missing ' + field, field, MISSING] as const,
+  ),
+] as const
+const s13CalendarGoldens = [
+  ['0001-01-01', '0001-01-07', '0001-01-01'],
+  ['1900-02-26', '1900-03-04', '1900-03-01'],
+  ['2000-02-28', '2000-03-05', '2000-02-29'],
+  ['2100-02-22', '2100-02-28', '2100-02-28'],
+  ['9999-12-27', '9999-12-31', '9999-12-31'],
+] as const
+const s13PrepareNegatives = [
+  { status: 'forbidden', reason: 'stale_lifecycle' },
+  { status: 'unavailable', reason: 'zone_unproved' },
+  { status: 'unavailable', reason: 'calendar_unproved' },
+] as const
+const s13ProjectionNegatives = ['provenance_gap', 'calendar_unproved', 'identity_unproved'] as const
+const s13BadPrepareOuter: readonly (readonly [string, unknown])[] = [
+  ['null', null],
+  ['array', []],
+  ['empty', {}],
+  ['unknown status', { status: 'accepted', scope: s13Calendar() }],
+  ['scope null', { status: 'prepared', scope: null }],
+  ['success extra', { ...s13Prepared(), reason: 'zone_unproved' }],
+  ['success missing status', { scope: s13Calendar() }],
+  ['success inherited status', s13Inherited(s13Prepared(), 'status')],
+  ['scope inherited owner', { status: 'prepared', scope: s13Inherited(s13Calendar(), 'ownerID') }],
+  [
+    'scope extra created_at',
+    { status: 'prepared', scope: { ...s13Calendar(), created_at: INSTANT } },
+  ],
+  ['negative extra', { ...s13PrepareNegatives[0], scope: null }],
+  ['forbidden wrong reason', { status: 'forbidden', reason: 'zone_unproved' }],
+  ['unavailable wrong reason', { status: 'unavailable', reason: 'stale_lifecycle' }],
+  ['negative missing reason', { status: 'unavailable' }],
+  ['negative inherited reason', s13Inherited(s13PrepareNegatives[1], 'reason')],
+]
+const s13BadProjectOuter: readonly (readonly [string, unknown])[] = [
+  ['null', null],
+  ['array', []],
+  ['empty', {}],
+  ['unknown status', { status: 'prepared', workouts: [] }],
+  ['available null', { status: 'available', workouts: null }],
+  ['available missing', { status: 'available' }],
+  ['available inherited', s13Inherited(s13Available(), 'workouts')],
+  ['available extra', { ...s13Available(), scope: s13Calendar() }],
+  ['negative missing null', { status: 'unavailable', reason: 'calendar_unproved' }],
+  ['negative array', { status: 'unavailable', reason: 'calendar_unproved', workouts: [] }],
+  ['negative wrong reason', { status: 'unavailable', reason: 'stale_lifecycle', workouts: null }],
+  ['negative wrong status', { status: 'forbidden', reason: 'identity_unproved', workouts: null }],
+  [
+    'negative extra',
+    { status: 'unavailable', reason: 'provenance_gap', workouts: null, issues: [] },
+  ],
+  ['event null', { status: 'available', workouts: [null] }],
+  [
+    'event inherited owner',
+    { status: 'available', workouts: [s13Inherited(s13Event(), 'ownerKey')] },
+  ],
+  [
+    'answer inherited answer',
+    {
+      status: 'available',
+      workouts: [
+        {
+          ...s13Event(),
+          storedStrengthAnswer: s13Inherited(s13Answered().storedStrengthAnswer, 'answer'),
+        },
+      ],
+    },
+  ],
+]
+const s13BadEvent: readonly (readonly [string, string, unknown])[] = [
+  ['owner malformed', 'ownerKey', 'invalid'],
+  ['owner foreign', 'ownerKey', OTHER],
+  ['workout uppercase', 'workoutKey', WORKOUT.toUpperCase()],
+  ['workout malformed', 'workoutKey', 'id'],
+  ['date before', 'localDate', '2026-10-11'],
+  ['date after', 'localDate', '2026-10-19'],
+  ['date instant', 'localDate', INSTANT],
+  ['pending', 'state', 'pending'],
+  ['cancelled', 'state', 'cancelled'],
+  ['unknown state', 'state', 'done'],
+  ['category unknown', 'catalogueCategory', 'forca'],
+  ['category case', 'catalogueCategory', 'Musculacao'],
+  ['answer undefined', 'storedStrengthAnswer', undefined],
+  ...[
+    'ownerKey',
+    'workoutKey',
+    'localDate',
+    'state',
+    'catalogueCategory',
+    'storedStrengthAnswer',
+  ].map((field) => ['missing ' + field, field, MISSING] as const),
+  ['extra metadata', 'extra', 'not allowed'],
+]
+const s13BadAnswer: readonly (readonly [string, string, unknown])[] = [
+  ['owner foreign', 'ownerKey', OTHER],
+  ['owner malformed', 'ownerKey', 'id'],
+  ['workout foreign', 'workoutKey', SNAPSHOT],
+  ['workout malformed', 'workoutKey', 'bad'],
+  ['value uppercase', 'answer', 'YES'],
+  ['value bool', 'answer', true],
+  ['missing owner', 'ownerKey', MISSING],
+  ['missing workout', 'workoutKey', MISSING],
+  ['missing value', 'answer', MISSING],
+  ['receipt extra', 'operationKey', KEY],
+]
+
+describe('S13 exact types, requests and source-independent calendar goldens', () => {
+  it('S13 keeps the four exact mutable RPC tuples and exact core-derived models/methods', () => {
+    type Actual = Parameters<WorkoutStrengthRepositoryPort['rpc']>
+    const all: S10Equal<Actual, S10ExpectedRpcParameters> = true
+    const calendar: S10Equal<TrustedStrengthWorkoutCalendarScope, S13ExpectedScope> = true
+    const prepare: S10Equal<PrepareWorkoutStrengthCalendarScopeResult, S13ExpectedPrepare> = true
+    const projection: S10Equal<StrengthWorkoutProjection, S13ExpectedProjection> = true
+    type Repository = ReturnType<typeof createWorkoutStrengthRepository>
+    const prepareInput: S10Equal<
+      Parameters<Repository['prepareWorkoutStrengthCalendarScope']>,
+      [scope: WorkoutOwnerScope]
+    > = true
+    const prepareOutput: S10Equal<
+      ReturnType<Repository['prepareWorkoutStrengthCalendarScope']>,
+      Promise<PrepareWorkoutStrengthCalendarScopeResult>
+    > = true
+    const projectInput: S10Equal<
+      Parameters<Repository['projectConfirmedWorkoutsForStrengthWeek']>,
+      [scope: WorkoutOwnerScope, calendarScope: TrustedStrengthWorkoutCalendarScope]
+    > = true
+    const projectOutput: S10Equal<
+      ReturnType<Repository['projectConfirmedWorkoutsForStrengthWeek']>,
+      Promise<StrengthWorkoutProjection>
+    > = true
+    const missingProjectionFields: [
+      'get_confirmed_workouts_for_strength_week',
+      S13PrepareArgs,
+    ] extends Actual
+      ? false
+      : true = true
+    const wrongOwnerType: [
+      'prepare_workout_strength_calendar_scope',
+      { readonly p_user_id: number; readonly p_expected_lifecycle_key: string },
+    ] extends Actual
+      ? false
+      : true = true
+    expect([
+      all,
+      calendar,
+      prepare,
+      projection,
+      prepareInput,
+      prepareOutput,
+      projectInput,
+      projectOutput,
+      missingProjectionFields,
+      wrongOwnerType,
+    ]).toStrictEqual([true, true, true, true, true, true, true, true, true, true])
+  })
+  it.each(
+    S13_METHODS,
+  )('S13 %s preserves this and sends exactly one declared RPC without implicit prepare', async (method) => {
+    const reply = { data: s13Wire(method), error: null }
+    const port: WorkoutStrengthRepositoryPort = {
+      rpc(...request) {
+        expect(this).toBe(port)
+        expect(request).toStrictEqual([
+          method === 'prepare' ? S13_PREPARE : S13_PROJECT,
+          s13Args(method),
+        ])
+        return Promise.resolve(reply)
+      },
+    }
+    const rpc = vi.spyOn(port, 'rpc')
+    expect(await s13Invoke(createWorkoutStrengthRepository(port), method)).toStrictEqual(reply.data)
+    expect(rpc).toHaveBeenCalledTimes(1)
+  })
+  it.each(
+    S13_METHODS,
+  )('S13 %s factory is lazy with a one-use rpc getter and PromiseLike builder', async (method) => {
+    const reply = { data: s13Wire(method), error: null }
+    const thenable: PromiseLike<Reply> = {
+      // biome-ignore lint/suspicious/noThenProperty: Exercise the explicit PromiseLike RPC port.
+      then(onfulfilled, onrejected) {
+        return Promise.resolve(reply).then(onfulfilled, onrejected)
+      },
+    }
+    const rpc = vi.fn<WorkoutStrengthRepositoryPort['rpc']>().mockReturnValue(thenable)
+    let reads = 0
+    const port = Object.defineProperty({}, 'rpc', {
+      get() {
+        if (++reads !== 1) throw new Error('S13 rpc reread')
+        return rpc
+      },
+    }) as WorkoutStrengthRepositoryPort
+    const repository = createWorkoutStrengthRepository(port)
+    expect(reads).toBe(0)
+    expect(await s13Invoke(repository, method)).toStrictEqual(reply.data)
+    expect(reads).toBe(1)
+    expect(rpc).toHaveBeenCalledTimes(1)
+  })
+  it.each(
+    S13_METHODS,
+  )('S13 %s accepts inherited required input fields and unrelated extra input keys', async (method) => {
+    const owner = Object.assign(Object.create(scope()), { extra: 'allowed' }) as WorkoutOwnerScope
+    const calendar = Object.assign(Object.create(s13Calendar()), {
+      extra: 'allowed',
+    }) as TrustedStrengthWorkoutCalendarScope
+    const h = portFor({ data: s13Wire(method), error: null })
+    expect(await s13Invoke(h.repository, method, owner, calendar)).toStrictEqual(s13Wire(method))
+    expect(h.rpc).toHaveBeenCalledWith(
+      method === 'prepare' ? S13_PREPARE : S13_PROJECT,
+      s13Args(method),
+    )
+  })
+  it.each([
+    null,
+    {},
+    { ownerID: OTHER, expectedLifecycleKey: 'bad' },
+    { ownerID: OWNER.toUpperCase(), expectedLifecycleKey: LIFE },
+  ])('S13 rejects invalid owner scope %# before reading either new port', async (input) => {
+    for (const method of S13_METHODS) {
+      const getter = vi.fn(() => {
+        throw new Error('S13 must not reach port')
+      })
+      const port = Object.defineProperty({}, 'rpc', {
+        get: getter,
+      }) as WorkoutStrengthRepositoryPort
+      await expect(
+        s13Invoke(createWorkoutStrengthRepository(port), method, input as WorkoutOwnerScope),
+      ).rejects.toEqual(new TypeError('Invalid workout strength request'))
+      expect(getter).not.toHaveBeenCalled()
+    }
+  })
+  it.each(
+    s13BadCalendar,
+  )('S13 rejects bad calendar %s as input and as prepared wire', async (_label, field, value) => {
+    const invalid = change(s13Calendar(), [field, value])
+    const h = portFor(null)
+    const getter = vi.fn(() => h.rpc)
+    Object.defineProperty(h.port, 'rpc', { get: getter })
+    await expect(
+      h.repository.projectConfirmedWorkoutsForStrengthWeek(
+        scope(),
+        invalid as TrustedStrengthWorkoutCalendarScope,
+      ),
+    ).rejects.toEqual(new TypeError('Invalid workout strength request'))
+    expect(getter).not.toHaveBeenCalled()
+    expect(h.rpc).not.toHaveBeenCalled()
+    await s13InvalidWire('prepare', { status: 'prepared', scope: invalid })
+  })
+  it.each([
+    ['1900-02-26', '1900-02-29'],
+    ['2100-03-01', '2100-02-29'],
+    ['2026-03-02', '2026-02-30'],
+  ] as const)('S13 rejects impossible date %s..%s even when ordinal normalization could fall inside', async (weekStartDate, asOfLocalDate) => {
+    const calendar = s13Calendar({ weekStartDate, asOfLocalDate })
+    const h = portFor(null)
+    await expect(
+      h.repository.projectConfirmedWorkoutsForStrengthWeek(scope(), calendar),
+    ).rejects.toEqual(new TypeError('Invalid workout strength request'))
+    expect(h.rpc).not.toHaveBeenCalled()
+    await s13InvalidWire('prepare', s13Prepared('prepared', calendar))
+  })
+  it.each(
+    s13CalendarGoldens,
+  )('S13 validates static Gregorian week %s..%s with event %s', async (weekStartDate, asOfLocalDate, localDate) => {
+    const calendar = s13Calendar({ weekStartDate, asOfLocalDate })
+    const prepared = portFor({ data: s13Prepared('prepared', calendar), error: null })
+    expect(await prepared.repository.prepareWorkoutStrengthCalendarScope(scope())).toStrictEqual(
+      s13Prepared('prepared', calendar),
+    )
+    const wire = s13Available([s13Event({ localDate })])
+    const h = portFor({ data: wire, error: null })
+    expect(
+      await h.repository.projectConfirmedWorkoutsForStrengthWeek(scope(), calendar),
+    ).toStrictEqual(wire)
+    expect(h.rpc).toHaveBeenCalledWith(S13_PROJECT, s13Args('project', scope(), calendar))
+  })
+  it.each([
+    ' UTC ',
+    ' ',
+    'C59S13/NoCurrentCatalogue',
+    'utc',
+  ])('S13 preserves nonempty literal zone %j without trimming or allowlisting', async (timeZone) => {
+    const calendar = s13Calendar({ timeZone })
+    const h = portFor({ data: s13Prepared('prepared', calendar), error: null })
+    expect(await h.repository.prepareWorkoutStrengthCalendarScope(scope())).toStrictEqual(
+      s13Prepared('prepared', calendar),
+    )
+    const p = portFor({ data: { status: 'available', workouts: [] }, error: null })
+    expect(
+      await p.repository.projectConfirmedWorkoutsForStrengthWeek(scope(), calendar),
+    ).toStrictEqual({ status: 'available', workouts: [] })
+    expect(p.rpc).toHaveBeenCalledWith(S13_PROJECT, s13Args('project', scope(), calendar))
+  })
+})
+
+describe('S13 strict wire, frozen categories and exact null negatives', () => {
+  it.each([
+    'prepared',
+    'reuse_existing',
+  ] as const)('S13 accepts prepare %s and copies scope6', async (status) => {
+    const wire = s13Prepared(status)
+    const h = portFor({ data: wire, error: null })
+    const result = await h.repository.prepareWorkoutStrengthCalendarScope(scope())
+    expect(result).toStrictEqual(wire)
+    expect(result).not.toBe(wire)
+    if (result.status === 'prepared' || result.status === 'reuse_existing')
+      expect(result.scope).not.toBe(wire.scope)
+  })
+  it.each(s13PrepareNegatives)('S13 accepts exact prepare negative %#', async (wire) => {
+    const h = portFor({ data: wire, error: null })
+    const result = await h.repository.prepareWorkoutStrengthCalendarScope(scope())
+    expect(result).toStrictEqual(wire)
+    expect(result).not.toBe(wire)
+  })
+  it.each(
+    s13ProjectionNegatives,
+  )('S13 keeps projection unavailable/%s as null, never zero or a partial list', async (reason) => {
+    const wire = { status: 'unavailable', reason, workouts: null }
+    const h = portFor({ data: wire, error: null })
+    const result = await h.repository.projectConfirmedWorkoutsForStrengthWeek(
+      scope(),
+      s13Calendar(),
+    )
+    expect(result).toStrictEqual(wire)
+    expect(result).not.toBe(wire)
+  })
+  it('S13 accepts complete empty projection without inventing a prepare RPC', async () => {
+    const h = portFor({ data: { status: 'available', workouts: [] }, error: null })
+    expect(
+      await h.repository.projectConfirmedWorkoutsForStrengthWeek(scope(), s13Calendar()),
+    ).toStrictEqual({ status: 'available', workouts: [] })
+    expect(h.rpc).toHaveBeenCalledTimes(1)
+    expect(h.rpc.mock.calls[0]?.[0]).toBe(S13_PROJECT)
+  })
+  it.each([
+    'musculacao',
+    'cardio',
+    'esporte',
+    'mobilidade',
+    null,
+  ] as const)('S13 preserves frozen category %s', async (catalogueCategory) => {
+    const wire = s13Available([s13Event({ catalogueCategory })])
+    const h = portFor({ data: wire, error: null })
+    expect(
+      await h.repository.projectConfirmedWorkoutsForStrengthWeek(scope(), s13Calendar()),
+    ).toStrictEqual(wire)
+  })
+  it.each([
+    'yes',
+    'no',
+  ] as const)('S13 accepts genuine unrecognized persisted %s answer3', async (answer) => {
+    const wire = s13Available([s13Answered(answer)])
+    const h = portFor({ data: wire, error: null })
+    expect(
+      await h.repository.projectConfirmedWorkoutsForStrengthWeek(scope(), s13Calendar()),
+    ).toStrictEqual(wire)
+  })
+  it.each(s13BadPrepareOuter)('S13 rejects prepare wire %s', async (_label, data) => {
+    await s13InvalidWire('prepare', data)
+  })
+  it.each(s13BadProjectOuter)('S13 rejects project wire %s', async (_label, data) => {
+    await s13InvalidWire('project', data)
+  })
+  it.each(s13BadEvent)('S13 rejects event %s', async (_label, field, value) => {
+    await s13InvalidWire('project', {
+      status: 'available',
+      workouts: [change(s13Event(), [field, value])],
+    })
+  })
+  it.each(s13BadAnswer)('S13 rejects stored answer %s', async (_label, field, value) => {
+    const answer = change(s13Answered().storedStrengthAnswer, [field, value])
+    await s13InvalidWire('project', {
+      status: 'available',
+      workouts: [{ ...s13Event(), storedStrengthAnswer: answer }],
+    })
+  })
+  it('S13 rejects a non-null category with an otherwise valid persisted answer', async () => {
+    await s13InvalidWire(
+      'project',
+      s13Available(
+        [s13Answered()].map((e) => ({ ...e, catalogueCategory: 'musculacao' as const })),
+      ),
+    )
+  })
+  it('S13 rejects an impossible event civil date lexically inside a valid window', async () => {
+    const calendar = s13Calendar({ weekStartDate: '2026-04-27', asOfLocalDate: '2026-05-03' })
+    const h = portFor({ data: s13Available([s13Event({ localDate: '2026-04-31' })]), error: null })
+    await expect(
+      h.repository.projectConfirmedWorkoutsForStrengthWeek(scope(), calendar),
+    ).rejects.toEqual(new TypeError('Invalid workout strength reply'))
+    expect(h.rpc).toHaveBeenCalledTimes(1)
+  })
+  it('S13 accepts strict date then UUID order with distinct PKs', async () => {
+    const wire = s13Available([
+      s13Event(),
+      s13Event({ workoutKey: SNAPSHOT }),
+      s13Event({ workoutKey: OTHER, localDate: '2026-10-13' }),
+    ])
+    const h = portFor({ data: wire, error: null })
+    expect(
+      await h.repository.projectConfirmedWorkoutsForStrengthWeek(scope(), s13Calendar()),
+    ).toStrictEqual(wire)
+  })
+  it.each([
+    ['reverse UUID', [s13Event({ workoutKey: SNAPSHOT }), s13Event()]],
+    ['reverse dates', [s13Event({ workoutKey: SNAPSHOT, localDate: '2026-10-13' }), s13Event()]],
+    ['same UUID same date', [s13Event(), s13Event()]],
+    ['same UUID different date', [s13Event(), s13Event({ localDate: '2026-10-13' })]],
+  ] as const)('S13 rejects %s without sorting/dedup/filter/repair', async (_label, events) => {
+    const wire = s13Available(events)
+    const before = structuredClone(wire)
+    await s13InvalidWire('project', wire)
+    expect(wire).toStrictEqual(before)
+  })
+})
+
+describe('S13 envelope, input getter and operational exception boundaries', () => {
+  it.each(
+    S13_METHODS,
+  )('S13 %s accepts transport metadata and reads error/data only once', async (method) => {
+    const wire = s13Wire(method)
+    let errors = 0
+    let data = 0
+    const reply = Object.defineProperties(
+      { status: 200, count: null },
+      {
+        error: {
+          enumerable: true,
+          get() {
+            if (++errors > 1) throw new Error('S13 error reread')
+            return null
+          },
+        },
+        data: {
+          enumerable: true,
+          get() {
+            if (++data > 1) throw new Error('S13 data reread')
+            return wire
+          },
+        },
+      },
+    )
+    const h = portFor(reply)
+    expect(await s13Invoke(h.repository, method)).toStrictEqual(wire)
+    expect([errors, data]).toStrictEqual([1, 1])
+    expect(h.rpc).toHaveBeenCalledTimes(1)
+  })
+  it.each(
+    S13_METHODS,
+  )('S13 %s checks non-null error before touching data and never leaks private content', async (method) => {
+    for (const error of [false, 0, '', { privateDetail: 'synthetic must not leak' }]) {
+      const data = vi.fn(() => {
+        throw new Error('S13 data must not be read on error')
+      })
+      const errorGetter = vi.fn(() => error)
+      const reply = Object.defineProperties(
+        {},
+        { error: { enumerable: true, get: errorGetter }, data: { enumerable: true, get: data } },
+      )
+      const h = portFor(reply)
+      await expect(s13Invoke(h.repository, method)).rejects.toEqual(
+        new Error('Workout strength RPC failed'),
+      )
+      expect(errorGetter).toHaveBeenCalledTimes(1)
+      expect(data).not.toHaveBeenCalled()
+      expect(h.rpc).toHaveBeenCalledTimes(1)
+    }
+  })
+  it.each(S13_METHODS)('S13 %s rejects malformed or inherited envelopes', async (method) => {
+    const wire = s13Wire(method)
+    for (const reply of [
+      null,
+      [],
+      {},
+      { data: wire },
+      { error: null },
+      { data: wire, error: undefined },
+      s13Inherited({ data: wire, error: null }, 'data'),
+      s13Inherited({ data: wire, error: null }, 'error'),
+    ]) {
+      const h = portFor(reply)
+      await expect(s13Invoke(h.repository, method)).rejects.toEqual(
+        new TypeError('Invalid workout strength reply'),
+      )
+      expect(h.rpc).toHaveBeenCalledTimes(1)
+    }
+    const data = vi.fn(() => {
+      throw new Error('S13 undefined error must not touch data')
+    })
+    const error = vi.fn(() => undefined)
+    const reply = Object.defineProperties(
+      {},
+      { error: { enumerable: true, get: error }, data: { enumerable: true, get: data } },
+    )
+    const h = portFor(reply)
+    await expect(s13Invoke(h.repository, method)).rejects.toEqual(
+      new TypeError('Invalid workout strength reply'),
+    )
+    expect(error).toHaveBeenCalledTimes(1)
+    expect(data).not.toHaveBeenCalled()
+  })
+  it.each(
+    S13_METHODS,
+  )('S13 %s propagates original rpc getter, sync throw and rejection without retry', async (method) => {
+    const failure = { synthetic: 'S13 original operational object' }
+    const getter = vi.fn(() => {
+      throw failure
+    })
+    const port = Object.defineProperty({}, 'rpc', { get: getter }) as WorkoutStrengthRepositoryPort
+    await expect(s13Invoke(createWorkoutStrengthRepository(port), method)).rejects.toBe(failure)
+    expect(getter).toHaveBeenCalledTimes(1)
+    for (const mode of ['throw', 'reject']) {
+      const h = portFor(null)
+      h.rpc.mockImplementation(() => {
+        if (mode === 'throw') throw failure
+        return Promise.reject(failure)
+      })
+      await expect(s13Invoke(h.repository, method)).rejects.toBe(failure)
+      expect(h.rpc).toHaveBeenCalledTimes(1)
+    }
+  })
+  it.each(
+    S13_METHODS,
+  )('S13 %s defers invalid port configuration until invocation', async (method) => {
+    for (const port of [null, {}, { rpc: false }]) {
+      const repository = createWorkoutStrengthRepository(
+        port as unknown as WorkoutStrengthRepositoryPort,
+      )
+      await expect(s13Invoke(repository, method)).rejects.toEqual(
+        new TypeError('Workout strength port requires a callable rpc'),
+      )
+    }
+  })
+  it.each([
+    ['prepare', 'owner', 'ownerID'],
+    ['prepare', 'owner', 'expectedLifecycleKey'],
+    ['project', 'owner', 'ownerID'],
+    ['project', 'owner', 'expectedLifecycleKey'],
+    ['project', 'calendar', 'ownerID'],
+    ['project', 'calendar', 'lifecycleKey'],
+    ['project', 'calendar', 'scopeKey'],
+    ['project', 'calendar', 'timeZone'],
+    ['project', 'calendar', 'weekStartDate'],
+    ['project', 'calendar', 'asOfLocalDate'],
+  ] as const)('S13 propagates original %s %s.%s input getter before port', async (method, target, key) => {
+    const owner = scope()
+    const calendar = s13Calendar()
+    const failure = new Error('S13 input getter ' + key)
+    Object.defineProperty(target === 'owner' ? owner : calendar, key, {
+      enumerable: true,
+      get() {
+        throw failure
+      },
+    })
+    const getter = vi.fn(() => {
+      throw new Error('S13 port must not be inspected after input getter defect')
+    })
+    const port = Object.defineProperty({}, 'rpc', { get: getter }) as WorkoutStrengthRepositoryPort
+    await expect(
+      s13Invoke(createWorkoutStrengthRepository(port), method, owner, calendar),
+    ).rejects.toBe(failure)
+    expect(getter).not.toHaveBeenCalled()
+  })
+  it.each([
+    ['prepare', 'data'],
+    ['prepare', 'error'],
+    ['prepare', 'status'],
+    ['prepare', 'scope'],
+    ['prepare', 'scopeKey'],
+    ['project', 'data'],
+    ['project', 'error'],
+    ['project', 'status'],
+    ['project', 'workouts'],
+    ['project', 'ownerKey'],
+    ['project', 'answer'],
+  ] as const)('S13 propagates original %s wire getter %s', async (method, key) => {
+    const wire = method === 'prepare' ? s13Prepared() : s13Available([s13Answered()])
+    const reply = { data: wire, error: null }
+    const failure = new Error('S13 wire getter ' + key)
+    let target: Record<string, unknown>
+    if (key === 'data' || key === 'error') target = record(reply)
+    else if (key === 'scopeKey') target = record(record(wire).scope)
+    else if (key === 'ownerKey') target = record(s13Rows(record(wire).workouts)[0])
+    else if (key === 'answer')
+      target = record(record(s13Rows(record(wire).workouts)[0]).storedStrengthAnswer)
+    else target = record(wire)
+    Object.defineProperty(target, key, {
+      enumerable: true,
+      get() {
+        throw failure
+      },
+    })
+    const h = portFor(reply)
+    await expect(s13Invoke(h.repository, method)).rejects.toBe(failure)
+    expect(h.rpc).toHaveBeenCalledTimes(1)
+  })
+  it('S13 calendar validation uses static Gregorian literals without Date/Intl parsing', async () => {
+    const calendar = s13Calendar({
+      weekStartDate: '0001-01-01',
+      asOfLocalDate: '0001-01-07',
+      timeZone: 'C59S13/NoCurrentCatalogue',
+    })
+    const prepared = portFor({ data: s13Prepared('prepared', calendar), error: null })
+    const wire = s13Available([s13Event({ localDate: '0001-01-01' })])
+    const projected = portFor({ data: wire, error: null })
+    const failure = new Error('S13 environment calendar access')
+    const utc = vi.spyOn(Date, 'UTC').mockImplementation(() => {
+      throw failure
+    })
+    const parse = vi.spyOn(Date, 'parse').mockImplementation(() => {
+      throw failure
+    })
+    const intl = vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(() => {
+      throw failure
+    })
+    const dateConstructorSpy = vi.spyOn(globalThis, 'Date').mockImplementation(() => {
+      throw failure
+    })
+    try {
+      expect(await prepared.repository.prepareWorkoutStrengthCalendarScope(scope())).toStrictEqual(
+        s13Prepared('prepared', calendar),
+      )
+      expect(
+        await projected.repository.projectConfirmedWorkoutsForStrengthWeek(scope(), calendar),
+      ).toStrictEqual(wire)
+      expect(dateConstructorSpy).not.toHaveBeenCalled()
+      expect(utc).not.toHaveBeenCalled()
+      expect(parse).not.toHaveBeenCalled()
+      expect(intl).not.toHaveBeenCalled()
+    } finally {
+      vi.restoreAllMocks()
+    }
+  })
+})
+
+describe('S13 scalar snapshots, copies and B-before-A isolation', () => {
+  it.each(
+    S13_METHODS,
+  )('S13 %s reads every scalar once before rpc getter and never rereads after mutation', async (method) => {
+    const backingOwner = scope()
+    const backingCalendar = s13Calendar()
+    const originalOwner = { ...backingOwner }
+    const originalCalendar = { ...backingCalendar }
+    const owner = {} as WorkoutOwnerScope
+    const calendar = {} as TrustedStrengthWorkoutCalendarScope
+    const counts = new Map<string, number>()
+    for (const key of ['ownerID', 'expectedLifecycleKey'] as const)
+      Object.defineProperty(owner, key, {
+        enumerable: true,
+        get() {
+          counts.set('owner.' + key, (counts.get('owner.' + key) ?? 0) + 1)
+          return backingOwner[key]
+        },
+      })
+    for (const key of [
+      'ownerID',
+      'lifecycleKey',
+      'scopeKey',
+      'timeZone',
+      'weekStartDate',
+      'asOfLocalDate',
+    ] as const)
+      Object.defineProperty(calendar, key, {
+        enumerable: true,
+        get() {
+          counts.set('calendar.' + key, (counts.get('calendar.' + key) ?? 0) + 1)
+          return backingCalendar[key]
+        },
+      })
+    const rpc = vi
+      .fn<WorkoutStrengthRepositoryPort['rpc']>()
+      .mockResolvedValue({ data: s13Wire(method), error: null })
+    const getter = vi.fn(() => {
+      expect(counts.get('owner.ownerID')).toBe(1)
+      expect(counts.get('owner.expectedLifecycleKey')).toBe(1)
+      if (method === 'project')
+        for (const key of [
+          'ownerID',
+          'lifecycleKey',
+          'scopeKey',
+          'timeZone',
+          'weekStartDate',
+          'asOfLocalDate',
+        ])
+          expect(counts.get('calendar.' + key)).toBe(1)
+      Object.assign(backingOwner, { ownerID: OTHER, expectedLifecycleKey: OTHER })
+      Object.assign(backingCalendar, {
+        ownerID: OTHER,
+        lifecycleKey: OTHER,
+        scopeKey: OTHER,
+        timeZone: 'changed',
+        weekStartDate: '9999-12-27',
+        asOfLocalDate: '9999-12-31',
+      })
+      return rpc
+    })
+    const port = Object.defineProperty({}, 'rpc', { get: getter }) as WorkoutStrengthRepositoryPort
+    expect(
+      await s13Invoke(createWorkoutStrengthRepository(port), method, owner, calendar),
+    ).toStrictEqual(s13Wire(method))
+    expect(rpc).toHaveBeenCalledWith(
+      method === 'prepare' ? S13_PREPARE : S13_PROJECT,
+      s13Args(method, originalOwner, originalCalendar),
+    )
+    expect([...counts.values()].every((count) => count === 1)).toBe(true)
+    expect(counts.size).toBe(method === 'prepare' ? 2 : 8)
+    expect(getter).toHaveBeenCalledTimes(1)
+  })
+  it.each(
+    S13_METHODS,
+  )('S13 %s snapshots all original scalars during await and detaches RPC argument objects', async (method) => {
+    const h = portFor(null)
+    const gate = deferred<Reply>()
+    h.rpc.mockReturnValue(gate.promise)
+    const owner = scope()
+    const calendar = s13Calendar()
+    const originalOwner = { ...owner }
+    const originalCalendar = { ...calendar }
+    const result = s13Invoke(h.repository, method, owner, calendar)
+    Object.assign(owner, { ownerID: OTHER, expectedLifecycleKey: OTHER })
+    Object.assign(calendar, {
+      ownerID: OTHER,
+      lifecycleKey: OTHER,
+      scopeKey: OTHER,
+      timeZone: ' UTC ',
+      weekStartDate: '9999-12-27',
+      asOfLocalDate: '9999-12-31',
+    })
+    expect(h.rpc).toHaveBeenCalledTimes(1)
+    expect(h.rpc.mock.calls[0]?.[1]).toStrictEqual(s13Args(method, originalOwner, originalCalendar))
+    // A port may mutate its own argument object; this must not change reply-validation identity.
+    const sent = h.rpc.mock.calls[0]?.[1]
+    if (sent === undefined) throw new Error('S13_SETUP_RPC_ARGS')
+    const mutable = record(sent)
+    mutable.p_user_id = OTHER
+    mutable.p_expected_lifecycle_key = OTHER
+    if (method === 'project') {
+      mutable.p_scope_key = OTHER
+      mutable.p_time_zone = 'changed'
+      mutable.p_week_start_date = '9999-12-27'
+      mutable.p_as_of_local_date = '9999-12-31'
+    }
+    gate.resolve({ data: s13Wire(method), error: null })
+    expect(await result).toStrictEqual(s13Wire(method))
+  })
+  it.each(
+    S13_METHODS,
+  )('S13 %s rejects a coherent foreign reply matching later mutated caller input', async (method) => {
+    const h = portFor(null)
+    const gate = deferred<Reply>()
+    h.rpc.mockReturnValue(gate.promise)
+    const owner = scope()
+    const calendar = s13Calendar()
+    const pending = s13Invoke(h.repository, method, owner, calendar)
+    Object.assign(owner, { ownerID: OTHER, expectedLifecycleKey: OTHER })
+    Object.assign(calendar, { ownerID: OTHER, lifecycleKey: OTHER, scopeKey: OTHER })
+    const data =
+      method === 'prepare'
+        ? s13Prepared('prepared', calendar)
+        : s13Available([s13Event({ ownerKey: OTHER })])
+    gate.resolve({ data, error: null })
+    await expect(pending).rejects.toEqual(new TypeError('Invalid workout strength reply'))
+    expect(h.rpc).toHaveBeenCalledTimes(1)
+  })
+  it.each(
+    S13_METHODS,
+  )('S13 %s copies every returned container and stays independent across repeated payloads', async (method) => {
+    const wire = s13Wire(method === 'prepare' ? 'prepare' : 'project')
+    // Project includes answer3 so every nested mutable container is exercised.
+    const payload = method === 'prepare' ? wire : s13Available([s13Answered()])
+    const before = structuredClone(payload)
+    const h = portFor({ data: payload, error: null })
+    const first = await s13Invoke(h.repository, method)
+    const second = await s13Invoke(h.repository, method)
+    expect(first).toStrictEqual(before)
+    expect(second).toStrictEqual(before)
+    expect(first).not.toBe(second)
+    expect(first).not.toBe(payload)
+    if (method === 'prepare') {
+      expect(record(first).scope).not.toBe(record(payload).scope)
+      expect(record(first).scope).not.toBe(record(second).scope)
+      record(record(first).scope).ownerID = OTHER
+      record(record(payload).scope).timeZone = 'changed'
+    } else {
+      expect(record(first).workouts).not.toBe(record(payload).workouts)
+      expect(record(first).workouts).not.toBe(record(second).workouts)
+      const a = record(s13Rows(record(first).workouts)[0])
+      const b = record(s13Rows(record(payload).workouts)[0])
+      const c = record(s13Rows(record(second).workouts)[0])
+      expect(a).not.toBe(b)
+      expect(a).not.toBe(c)
+      expect(a.storedStrengthAnswer).not.toBe(b.storedStrengthAnswer)
+      expect(a.storedStrengthAnswer).not.toBe(c.storedStrengthAnswer)
+      record(a.storedStrengthAnswer).answer = 'no'
+      b.localDate = '9999-12-31'
+      record(b.storedStrengthAnswer).ownerKey = OTHER
+    }
+    expect(second).toStrictEqual(before)
+    expect(h.rpc).toHaveBeenCalledTimes(2)
+  })
+  it.each(
+    S13_METHODS,
+  )('S13 %s isolates two pending operations completing B before A', async (method) => {
+    const a = deferred<Reply>()
+    const b = deferred<Reply>()
+    const h = portFor(null)
+    h.rpc.mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise)
+    const ownerA = scope()
+    const calendarA = s13Calendar()
+    const ownerB = { ownerID: OTHER, expectedLifecycleKey: OTHER }
+    const calendarB = s13Calendar({
+      ownerID: OTHER,
+      lifecycleKey: OTHER,
+      scopeKey: OTHER,
+      timeZone: ' UTC ',
+    })
+    const wireA = s13Wire(method)
+    const wireB =
+      method === 'prepare'
+        ? s13Prepared('reuse_existing', calendarB)
+        : s13Available([s13Event({ ownerKey: OTHER, workoutKey: SNAPSHOT })])
+    const first = s13Invoke(h.repository, method, ownerA, calendarA)
+    const second = s13Invoke(h.repository, method, ownerB, calendarB)
+    b.resolve({ data: wireB, error: null })
+    expect(await second).toStrictEqual(wireB)
+    a.resolve({ data: wireA, error: null })
+    expect(await first).toStrictEqual(wireA)
+    expect(h.rpc.mock.calls).toStrictEqual([
+      [method === 'prepare' ? S13_PREPARE : S13_PROJECT, s13Args(method, ownerA, calendarA)],
+      [method === 'prepare' ? S13_PREPARE : S13_PROJECT, s13Args(method, ownerB, calendarB)],
+    ])
+  })
+  it.each(
+    S13_METHODS,
+  )('S13 %s neither caches nor retries a failure and permits a separate next operation', async (method) => {
+    const h = portFor(null)
+    h.rpc
+      .mockResolvedValueOnce({ data: null, error: false })
+      .mockResolvedValueOnce({ data: s13Wire(method), error: null })
+    await expect(s13Invoke(h.repository, method)).rejects.toEqual(
+      new Error('Workout strength RPC failed'),
+    )
+    expect(h.rpc).toHaveBeenCalledTimes(1)
+    expect(await s13Invoke(h.repository, method)).toStrictEqual(s13Wire(method))
     expect(h.rpc).toHaveBeenCalledTimes(2)
   })
 })

@@ -1,5 +1,6 @@
 /** Backend RPC adapter. Shape checks do not authenticate DB provenance.
  * The trusted SQL producer, lifecycle and future callers remain separate gates. */
+import type { StrengthWeekWorkout } from '@mpp/core/strength-training-week'
 import type {
   WorkoutCatalogueObservation,
   WorkoutCatalogueRow,
@@ -105,6 +106,28 @@ export type AnswerWorkoutStrengthResult =
         | 'stale_fact'
         | 'not_unrecognized'
     }
+export interface TrustedStrengthWorkoutCalendarScope {
+  readonly ownerID: string
+  readonly lifecycleKey: string
+  readonly scopeKey: string
+  readonly timeZone: string
+  readonly weekStartDate: string
+  readonly asOfLocalDate: string
+}
+export type PrepareWorkoutStrengthCalendarScopeResult =
+  | {
+      readonly status: 'prepared' | 'reuse_existing'
+      readonly scope: TrustedStrengthWorkoutCalendarScope
+    }
+  | { readonly status: 'forbidden'; readonly reason: 'stale_lifecycle' }
+  | { readonly status: 'unavailable'; readonly reason: 'zone_unproved' | 'calendar_unproved' }
+export type StrengthWorkoutProjection =
+  | { readonly status: 'available'; readonly workouts: readonly StrengthWeekWorkout[] }
+  | {
+      readonly status: 'unavailable'
+      readonly reason: 'provenance_gap' | 'calendar_unproved' | 'identity_unproved'
+      readonly workouts: null
+    }
 export interface WorkoutStrengthRepositoryPort {
   rpc(
     ...request:
@@ -129,6 +152,24 @@ export interface WorkoutStrengthRepositoryPort {
             readonly p_operation_key: string
           },
         ]
+      | [
+          name: 'prepare_workout_strength_calendar_scope',
+          args: {
+            readonly p_user_id: string
+            readonly p_expected_lifecycle_key: string
+          },
+        ]
+      | [
+          name: 'get_confirmed_workouts_for_strength_week',
+          args: {
+            readonly p_user_id: string
+            readonly p_expected_lifecycle_key: string
+            readonly p_scope_key: string
+            readonly p_time_zone: string
+            readonly p_week_start_date: string
+            readonly p_as_of_local_date: string
+          },
+        ]
   ): PromiseLike<{ data: unknown; error: unknown | null }>
 }
 export interface WorkoutStrengthRepository {
@@ -140,6 +181,13 @@ export interface WorkoutStrengthRepository {
   answerConfirmedWorkoutStrength(
     input: AnswerWorkoutStrengthInput,
   ): Promise<AnswerWorkoutStrengthResult>
+  prepareWorkoutStrengthCalendarScope(
+    scope: WorkoutOwnerScope,
+  ): Promise<PrepareWorkoutStrengthCalendarScopeResult>
+  projectConfirmedWorkoutsForStrengthWeek(
+    scope: WorkoutOwnerScope,
+    calendarScope: TrustedStrengthWorkoutCalendarScope,
+  ): Promise<StrengthWorkoutProjection>
 }
 
 export function createWorkoutStrengthRepository(
@@ -234,6 +282,67 @@ export function createWorkoutStrengthRepository(
         return invalidWire()
       if (reply.error !== null) throw new Error('Workout strength RPC failed')
       return parseAnswerResult(reply.data, request)
+    },
+    async prepareWorkoutStrengthCalendarScope(scope) {
+      if (!isRecord(scope)) throw new TypeError('Invalid workout strength request')
+      const ownerID = scope.ownerID
+      const expectedLifecycleKey = scope.expectedLifecycleKey
+      if (!isUUID(ownerID) || !isUUID(expectedLifecycleKey))
+        throw new TypeError('Invalid workout strength request')
+      const request = { ownerID, expectedLifecycleKey }
+      const rpc = port?.rpc
+      if (typeof rpc !== 'function')
+        throw new TypeError('Workout strength port requires a callable rpc')
+      const reply: unknown = await rpc.call(port, 'prepare_workout_strength_calendar_scope', {
+        p_user_id: ownerID,
+        p_expected_lifecycle_key: expectedLifecycleKey,
+      })
+      return parsePreparedCalendar(readCalendarReply(reply), request)
+    },
+    async projectConfirmedWorkoutsForStrengthWeek(scope, calendarScope) {
+      if (!isRecord(scope) || !isRecord(calendarScope))
+        throw new TypeError('Invalid workout strength request')
+      const ownerID = scope.ownerID
+      const expectedLifecycleKey = scope.expectedLifecycleKey
+      const calendarOwnerID = calendarScope.ownerID
+      const lifecycleKey = calendarScope.lifecycleKey
+      const scopeKey = calendarScope.scopeKey
+      const timeZone = calendarScope.timeZone
+      const weekStartDate = calendarScope.weekStartDate
+      const asOfLocalDate = calendarScope.asOfLocalDate
+      if (
+        !isUUID(ownerID) ||
+        !isUUID(expectedLifecycleKey) ||
+        calendarOwnerID !== ownerID ||
+        lifecycleKey !== expectedLifecycleKey ||
+        !isUUID(scopeKey) ||
+        typeof timeZone !== 'string' ||
+        timeZone === '' ||
+        !validCalendarWindow(weekStartDate, asOfLocalDate)
+      )
+        throw new TypeError('Invalid workout strength request')
+      // Detached scalar snapshots also survive a port mutating its own arguments.
+      const request = { ownerID, expectedLifecycleKey }
+      const calendar = {
+        ownerID: calendarOwnerID,
+        lifecycleKey,
+        scopeKey,
+        timeZone,
+        weekStartDate,
+        asOfLocalDate,
+      }
+      const rpc = port?.rpc
+      if (typeof rpc !== 'function')
+        throw new TypeError('Workout strength port requires a callable rpc')
+      const reply: unknown = await rpc.call(port, 'get_confirmed_workouts_for_strength_week', {
+        p_user_id: ownerID,
+        p_expected_lifecycle_key: expectedLifecycleKey,
+        p_scope_key: scopeKey,
+        p_time_zone: timeZone,
+        p_week_start_date: weekStartDate,
+        p_as_of_local_date: asOfLocalDate,
+      })
+      return parseWorkoutProjection(readCalendarReply(reply), request, calendar)
     },
   }
 }
@@ -592,4 +701,170 @@ function hasSQLBtrimContent(value: unknown): value is string {
 }
 function invalidWire(): never {
   throw new TypeError('Invalid workout strength reply')
+}
+
+function readCalendarReply(reply: unknown): unknown {
+  if (!isRecord(reply) || !Object.hasOwn(reply, 'data') || !Object.hasOwn(reply, 'error'))
+    return invalidWire()
+  const error = reply.error
+  if (error === undefined) return invalidWire()
+  if (error !== null) throw new Error('Workout strength RPC failed')
+  return reply.data
+}
+
+function parsePreparedCalendar(
+  value: unknown,
+  request: WorkoutOwnerScope,
+): PrepareWorkoutStrengthCalendarScopeResult {
+  if (!isRecord(value)) return invalidWire()
+  const status = value.status
+  if (status === 'prepared' || status === 'reuse_existing') {
+    shape(value, ['status', 'scope'])
+    const v = shape(value.scope, [
+      'ownerID',
+      'lifecycleKey',
+      'scopeKey',
+      'timeZone',
+      'weekStartDate',
+      'asOfLocalDate',
+    ])
+    const ownerID = uuid(v.ownerID)
+    const lifecycleKey = uuid(v.lifecycleKey)
+    const scopeKey = uuid(v.scopeKey)
+    const timeZone = text(v.timeZone)
+    const weekStartDate = civilDate(v.weekStartDate)
+    const asOfLocalDate = civilDate(v.asOfLocalDate)
+    if (
+      ownerID !== request.ownerID ||
+      lifecycleKey !== request.expectedLifecycleKey ||
+      timeZone === '' ||
+      !validCalendarWindow(weekStartDate, asOfLocalDate)
+    )
+      return invalidWire()
+    return {
+      status,
+      scope: { ownerID, lifecycleKey, scopeKey, timeZone, weekStartDate, asOfLocalDate },
+    }
+  }
+  shape(value, ['status', 'reason'])
+  const reason = value.reason
+  if (status === 'forbidden' && reason === 'stale_lifecycle') return { status, reason }
+  if (status === 'unavailable' && (reason === 'zone_unproved' || reason === 'calendar_unproved'))
+    return { status, reason }
+  return invalidWire()
+}
+
+function parseWorkoutProjection(
+  value: unknown,
+  request: WorkoutOwnerScope,
+  calendar: TrustedStrengthWorkoutCalendarScope,
+): StrengthWorkoutProjection {
+  if (!isRecord(value)) return invalidWire()
+  const status = value.status
+  if (status === 'unavailable') {
+    shape(value, ['status', 'reason', 'workouts'])
+    const reason = value.reason
+    if (
+      (reason !== 'provenance_gap' &&
+        reason !== 'calendar_unproved' &&
+        reason !== 'identity_unproved') ||
+      value.workouts !== null
+    )
+      return invalidWire()
+    return { status, reason, workouts: null }
+  }
+  if (status !== 'available') return invalidWire()
+  shape(value, ['status', 'workouts'])
+  const rawWorkouts = value.workouts
+  if (!Array.isArray(rawWorkouts)) return invalidWire()
+  const workouts: StrengthWeekWorkout[] = []
+  const seen = new Set<string>()
+  let previous: StrengthWeekWorkout | undefined
+  for (const raw of rawWorkouts) {
+    const v = shape(raw, [
+      'ownerKey',
+      'workoutKey',
+      'localDate',
+      'state',
+      'catalogueCategory',
+      'storedStrengthAnswer',
+    ])
+    const ownerKey = uuid(v.ownerKey)
+    const workoutKey = uuid(v.workoutKey)
+    const localDate = civilDate(v.localDate)
+    const state = v.state
+    const catalogueCategory = v.catalogueCategory
+    const rawAnswer = v.storedStrengthAnswer
+    if (
+      ownerKey !== request.ownerID ||
+      state !== 'confirmed' ||
+      localDate < calendar.weekStartDate ||
+      localDate > calendar.asOfLocalDate ||
+      (catalogueCategory !== null &&
+        catalogueCategory !== 'musculacao' &&
+        catalogueCategory !== 'cardio' &&
+        catalogueCategory !== 'esporte' &&
+        catalogueCategory !== 'mobilidade') ||
+      (catalogueCategory !== null && rawAnswer !== null) ||
+      seen.has(workoutKey) ||
+      (previous !== undefined &&
+        (localDate < previous.localDate ||
+          (localDate === previous.localDate && workoutKey <= previous.workoutKey)))
+    )
+      return invalidWire()
+    const storedStrengthAnswer = parseProjectedAnswer(rawAnswer, ownerKey, workoutKey)
+    const event: StrengthWeekWorkout = {
+      ownerKey,
+      workoutKey,
+      localDate,
+      state,
+      catalogueCategory,
+      storedStrengthAnswer,
+    }
+    seen.add(workoutKey)
+    workouts.push(event)
+    previous = event
+  }
+  return { status, workouts }
+}
+
+function parseProjectedAnswer(
+  value: unknown,
+  ownerID: string,
+  workoutID: string,
+): StrengthWeekWorkout['storedStrengthAnswer'] {
+  if (value === null) return null
+  const v = shape(value, ['ownerKey', 'workoutKey', 'answer'])
+  const ownerKey = uuid(v.ownerKey)
+  const workoutKey = uuid(v.workoutKey)
+  const answer = v.answer
+  if (ownerKey !== ownerID || workoutKey !== workoutID || (answer !== 'yes' && answer !== 'no'))
+    return invalidWire()
+  return { ownerKey, workoutKey, answer }
+}
+
+function validCalendarWindow(weekStart: unknown, asOf: unknown): boolean {
+  if (!isCivilDate(weekStart) || !isCivilDate(asOf)) return false
+  const monday = civilOrdinal(weekStart)
+  const observed = civilOrdinal(asOf)
+  return monday % 7 === 0 && observed >= monday && observed <= monday + 6
+}
+
+/** Validated Gregorian civil dates only. 0001-01-01 is Monday, ordinal zero. */
+function civilOrdinal(value: string): number {
+  const year = Number(value.slice(0, 4))
+  const month = Number(value.slice(5, 7))
+  const day = Number(value.slice(8, 10))
+  const priorYear = year - 1
+  let ordinal =
+    365 * priorYear +
+    Math.floor(priorYear / 4) -
+    Math.floor(priorYear / 100) +
+    Math.floor(priorYear / 400) +
+    day -
+    1
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
+  for (let m = 1; m < month; m++)
+    ordinal += m === 2 ? (leap ? 29 : 28) : [4, 6, 9, 11].includes(m) ? 30 : 31
+  return ordinal
 }

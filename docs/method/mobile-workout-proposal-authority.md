@@ -1,5 +1,10 @@
 # Autoridade da proposta de treino do app
 
+A [fronteira de revisão](mobile-workout-registration-boundary.md) adicionada
+posteriormente mantém os corpos S16 e retira o EXECUTE direto de service_role
+nestas duas RPCs. Novos wrappers owned as reutilizam. As garantias desta
+fundação permanecem; os novos callers continuam pendentes de integração.
+
 Fundação dormente para o produtor real do iOS:
 `registrations/propose → pending_registrations → confirmRegistration`.
 O chat Flow só permite ferramentas de leitura e propostas de plano; não produz

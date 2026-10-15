@@ -3,6 +3,23 @@ import SwiftUI
 enum RegistrationOperationAction: Equatable, Sendable {
     case retry
     case newProposal
+    case reviewCurrent
+
+    var titleKey: String.LocalizationValue {
+        switch self {
+        case .retry: "state.retry"
+        case .newProposal: "registration.operation.new-proposal"
+        case .reviewCurrent: "registration.operation.review-current"
+        }
+    }
+
+    var accessibilityIdentifier: String {
+        switch self {
+        case .retry: "registration.mutation.retry"
+        case .newProposal: "registration.mutation.new-proposal"
+        case .reviewCurrent: "registration.mutation.review-current"
+        }
+    }
 }
 
 struct RegistrationOperationSummaryDescriptor: Equatable {
@@ -22,13 +39,18 @@ struct RegistrationOperationSummaryDescriptor: Equatable {
             message = Self.copy("state.unavailable.title", language: language)
             action = nil
             kind = .unavailable
-        case let .failed(_, error):
+        case let .failed(attempt, error):
             message = Self.message(for: error, language: language)
-            action = Self.action(for: error)
+            action = Self.action(for: error, registrationID: attempt.registrationID)
             kind = error == .operationUnavailable ? .unavailable : .error
         case let .succeeded(receipt):
             message = Self.successMessage(for: receipt, language: language)
-            action = nil
+            if case let .workoutCurrent(response) = receipt,
+               ["cancelled", "expired"].contains(response.data.status) {
+                action = .newProposal
+            } else {
+                action = nil
+            }
             kind = Self.kind(for: receipt)
         case .idle, .submitting:
             if let captureError {
@@ -59,13 +81,18 @@ struct RegistrationOperationSummaryDescriptor: Equatable {
     }
 
     private static func action(
-        for error: BodyFlowCapabilityError
+        for error: BodyFlowCapabilityError,
+        registrationID: String? = nil
     ) -> RegistrationOperationAction? {
         switch error {
         // An already saved record is neither retried nor proposed again.
         case .operationUnavailable, .registrationAlreadyConfirmed:
             nil
         case .registrationExpired, .registrationNotPending:
+            .newProposal
+        case .registrationRevisionConflict, .registrationReviewRequired:
+            registrationID == nil ? .newProposal : .reviewCurrent
+        case .registrationAuthorityStale:
             .newProposal
         default:
             .retry
@@ -76,9 +103,13 @@ struct RegistrationOperationSummaryDescriptor: Equatable {
         for error: BodyFlowCapabilityError,
         language: SupportedAppLanguage
     ) -> String {
-        error == .operationUnavailable
-            ? copy("state.unavailable.title", language: language)
-            : copy("registration.operation.failed", language: language)
+        switch error {
+        case .operationUnavailable: copy("state.unavailable.title", language: language)
+        case .registrationRevisionConflict: copy("registration.operation.revision-conflict", language: language)
+        case .registrationReviewRequired: copy("registration.operation.review-required", language: language)
+        case .registrationAuthorityStale: copy("registration.operation.authority-stale", language: language)
+        default: copy("registration.operation.failed", language: language)
+        }
     }
 
     private static func successMessage(
@@ -94,6 +125,13 @@ struct RegistrationOperationSummaryDescriptor: Equatable {
         // patient just asked for did not happen, and the message says so.
         case .alreadyConfirmed:
             copy("registration.operation.already-confirmed", language: language)
+        case let .workoutCurrent(response):
+            switch response.data.status {
+            case "pending": copy("registration.operation.current-pending", language: language)
+            case "confirmed": copy("registration.operation.current-confirmed", language: language)
+            case "cancelled": copy("registration.operation.current-cancelled", language: language)
+            default: copy("registration.operation.current-expired", language: language)
+            }
         }
     }
 
@@ -105,6 +143,7 @@ struct RegistrationOperationSummaryDescriptor: Equatable {
     ) -> BodyFlowStatusLine.Kind {
         switch receipt {
         case .alreadyConfirmed: .warning
+        case let .workoutCurrent(response): response.data.status == "pending" ? .info : .warning
         case .propose, .edit, .confirm, .cancel: .success
         }
     }
@@ -140,6 +179,7 @@ struct RegistrationOperationSummaryDescriptor: Equatable {
 struct RegistrationOperationSummary: View {
     let state: RegistrationMutationState
     let captureError: BodyFlowCapabilityError?
+    var isWorking = false
     let perform: @MainActor (RegistrationOperationAction) -> Void
     @Environment(\.locale) private var locale
 
@@ -157,20 +197,13 @@ struct RegistrationOperationSummary: View {
                         Button {
                             perform(action)
                         } label: {
-                            Text(
-                                action == .newProposal
-                                    ? copy("registration.operation.new-proposal")
-                                    : copy("state.retry")
-                            )
+                            Text(copy(action.titleKey))
                             .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(BodyFlowButtonStyle(role: .secondary))
-                        .accessibilityIdentifier(
-                            action == .newProposal
-                                ? "registration.mutation.new-proposal"
-                                : "registration.mutation.retry"
-                        )
+                        .disabled(isWorking)
+                        .accessibilityIdentifier(action.accessibilityIdentifier)
                     }
                 }
             }

@@ -19,3 +19,8 @@ protocol RegistrationProviding: Sendable {
     ) async throws
         -> RegistrationCancellationResponse
 }
+
+/// Reads the current owned projection without retrying a mutation.
+protocol WorkoutRegistrationReading: Sendable {
+    func loadWorkoutRegistration(id: String) async throws -> RegistrationProposalResponse
+}

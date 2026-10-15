@@ -126,6 +126,12 @@ enum PerformeRegistrationProjection {
         case .failed, .unavailable: return .failed
         case .succeeded(.confirm), .succeeded(.alreadyConfirmed): return .confirmed
         case .succeeded(.propose), .succeeded(.edit): return .ready
+        case let .succeeded(.workoutCurrent(response)):
+            return switch response.data.status {
+            case "pending": .ready
+            case "confirmed": .confirmed
+            default: .cancelled
+            }
         case .succeeded(.cancel), .idle, .submitting: return .cancelled
         }
     }

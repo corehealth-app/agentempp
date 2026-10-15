@@ -14,6 +14,7 @@ final class WorkoutRegistrationModel {
     private let registration: any RegistrationProviding
     private let invalidationCenter: FeatureInvalidationCenter
     private let attemptCoordinator: RegistrationAttemptCoordinator
+    private let registrationProtocol: WorkoutRegistrationProtocol?
     private var activeOwnership: FeatureLoadOwnership?
     private var operationSequence = 0
 
@@ -25,19 +26,30 @@ final class WorkoutRegistrationModel {
     private(set) var captureError: BodyFlowCapabilityError?
     private(set) var phase = WorkoutRegistrationPhase.form
     private(set) var accessibilityFocusTarget: RegistrationAccessibilityFocusTarget?
+    private(set) var retainedFailedAttempt: RegistrationMutationAttempt?
+    private(set) var requiresCurrentReview = false
+    private(set) var isReviewingCurrent = false
 
     var isSubmitting: Bool {
         if case .submitting = mutationState { true } else { false }
+    }
+
+    var isBusy: Bool { isSubmitting || isReviewingCurrent }
+
+    var allowsPendingActions: Bool {
+        currentProposal?.status == "pending" && !isBusy && !requiresCurrentReview
     }
 
     init(
         registration: any RegistrationProviding,
         timeProvider: any TimeProviding,
         keyProvider: any IdempotencyKeyProviding,
-        invalidationCenter: FeatureInvalidationCenter
+        invalidationCenter: FeatureInvalidationCenter,
+        registrationProtocol: WorkoutRegistrationProtocol? = nil
     ) {
         self.registration = registration
         self.invalidationCenter = invalidationCenter
+        self.registrationProtocol = registrationProtocol
         attemptCoordinator = RegistrationAttemptCoordinator(
             timeProvider: timeProvider,
             keyProvider: keyProvider
@@ -46,10 +58,13 @@ final class WorkoutRegistrationModel {
     }
 
     func submit(_ proposal: WorkoutProposalRequest) async {
-        guard !isSubmitting else { return }
+        guard !isBusy, !requiresCurrentReview else { return }
+        if currentProposal?.workoutVersion != nil || registrationProtocol != nil && phase != .form { return }
         do {
-            let attempt = try attemptCoordinator.propose(.workout(proposal))
-            pendingDraft = proposal
+            let attempt = try attemptCoordinator.propose(.workout(
+                Self.input(proposal, protocol: registrationProtocol)
+            ))
+            pendingDraft = Self.input(proposal, protocol: nil)
             await runMutation(.propose(attempt))
         } catch {
             publishAttemptConstructionFailure(error)
@@ -57,14 +72,14 @@ final class WorkoutRegistrationModel {
     }
 
     func saveEdit(_ proposal: WorkoutProposalRequest) async {
-        guard !isSubmitting, let currentProposal,
-              currentProposal.status == "pending" else { return }
+        guard allowsPendingActions, let currentProposal else { return }
         do {
             let attempt = try attemptCoordinator.edit(
                 registrationID: currentProposal.id,
-                proposal: .workout(proposal)
+                proposal: .workout(Self.input(proposal, protocol: nil)),
+                workoutVersion: currentProposal.workoutVersion
             )
-            pendingDraft = proposal
+            pendingDraft = Self.input(proposal, protocol: nil)
             await runMutation(.edit(attempt))
         } catch {
             publishAttemptConstructionFailure(error)
@@ -72,11 +87,11 @@ final class WorkoutRegistrationModel {
     }
 
     func confirm() async {
-        guard !isSubmitting, let currentProposal,
-              currentProposal.status == "pending" else { return }
+        guard allowsPendingActions, let currentProposal else { return }
         do {
             await runMutation(.confirm(try attemptCoordinator.confirm(
-                registrationID: currentProposal.id
+                registrationID: currentProposal.id,
+                workoutVersion: currentProposal.workoutVersion
             )))
         } catch {
             publishAttemptConstructionFailure(error)
@@ -84,11 +99,11 @@ final class WorkoutRegistrationModel {
     }
 
     func cancel() async {
-        guard !isSubmitting, let currentProposal,
-              currentProposal.status == "pending" else { return }
+        guard allowsPendingActions, let currentProposal else { return }
         do {
             await runMutation(.cancel(try attemptCoordinator.cancel(
-                registrationID: currentProposal.id
+                registrationID: currentProposal.id,
+                workoutVersion: currentProposal.workoutVersion
             )))
         } catch {
             publishAttemptConstructionFailure(error)
@@ -96,8 +111,66 @@ final class WorkoutRegistrationModel {
     }
 
     func retry() async {
+        guard !isBusy, captureError != .registrationAuthorityStale else { return }
+        if requiresCurrentReview {
+            await reviewCurrentVersion()
+            return
+        }
         guard case let .failed(attempt, _) = mutationState else { return }
         await runMutation(attempt)
+    }
+
+    /// This is only a read. It never repairs the expected revision or sends
+    /// the failed mutation again; the next patient action is a new intent.
+    func reviewCurrentVersion() async {
+        guard !isBusy, requiresCurrentReview,
+              captureError != .registrationAuthorityStale,
+              let attempt = retainedFailedAttempt,
+              let id = attempt.registrationID else { return }
+        let operation = beginOperation()
+        isReviewingCurrent = true
+        accessibilityFocusTarget = nil
+        await withTaskCancellationHandler {
+            do {
+                guard let reader = registration as? any WorkoutRegistrationReading else {
+                    throw BodyFlowCapabilityError.serviceUnavailable
+                }
+                let response = try await reader.loadWorkoutRegistration(id: id)
+                try Self.validate(response.data, id: id)
+                publishSuccess(.workoutCurrent(response), operation: operation)
+            } catch is CancellationError {
+                return
+            } catch {
+                // Retain the mutation for diagnosis, but retry will remain a
+                // GET until a current owned projection has been reviewed.
+                publishFailure(attempt, error: error, operation: operation, reviewing: true)
+            }
+        } onCancel: {
+            operation.ownership.invalidate()
+        }
+        finishCancelledOperationIfNeeded(operation)
+    }
+
+    /// An explicit new intention after a terminal/stale result. The form
+    /// keeps the authored fields; preparing it performs no request.
+    func prepareNewProposal() {
+        guard !isBusy, phase != .confirmed else { return }
+        guard !requiresCurrentReview || captureError == .registrationAuthorityStale
+                || retainedFailedAttempt?.registrationID == nil else { return }
+        guard registrationProtocol != nil || currentProposal?.workoutVersion != nil
+                || retainedFailedAttempt?.isVersionedWorkout == true || requiresCurrentReview else {
+            startNewProposal()
+            return
+        }
+        invalidateActiveOperation()
+        currentProposal = nil
+        confirmedRegistration = nil
+        retainedFailedAttempt = nil
+        requiresCurrentReview = false
+        mutationState = .idle
+        captureError = nil
+        phase = .form
+        accessibilityFocusTarget = nil
     }
 
     func startNewProposal() {
@@ -105,6 +178,8 @@ final class WorkoutRegistrationModel {
         currentProposal = nil
         pendingDraft = nil
         confirmedRegistration = nil
+        retainedFailedAttempt = nil
+        requiresCurrentReview = false
         mutationState = .idle
         captureError = nil
         phase = .form
@@ -122,8 +197,9 @@ final class WorkoutRegistrationModel {
     }
 
     private func runMutation(_ attempt: RegistrationMutationAttempt) async {
-        guard !isSubmitting else { return }
+        guard !isBusy else { return }
         let operation = beginOperation()
+        if retainedFailedAttempt != attempt { retainedFailedAttempt = nil }
         mutationState = .submitting(attempt)
         captureError = nil
         accessibilityFocusTarget = nil
@@ -145,11 +221,68 @@ final class WorkoutRegistrationModel {
 
     private func perform(_ attempt: RegistrationMutationAttempt) async throws -> RegistrationMutationReceipt {
         switch attempt {
-        case let .propose(attempt): .propose(try await registration.propose(attempt))
-        case let .edit(attempt): .edit(try await registration.edit(attempt))
-        case let .confirm(attempt): .confirm(try await registration.confirm(attempt))
-        case let .cancel(attempt): .cancel(try await registration.cancel(attempt))
+        case let .propose(value):
+            let response = try await registration.propose(value)
+            if attempt.isVersionedWorkout {
+                try Self.validate(response.data)
+                if response.data.status != "pending" || response.data.workoutVersion?.contentRevision != 0 {
+                    return .workoutCurrent(response)
+                }
+            }
+            return .propose(response)
+        case let .edit(value):
+            let response = try await registration.edit(value)
+            if let version = value.payload.workoutVersion {
+                try Self.validate(response.data, id: value.payload.registrationID)
+                guard let receipt = response.data.editReceipt,
+                      receipt.requestKey == "wue1:\(value.key.value)",
+                      receipt.expectedRevision == version.contentRevision,
+                      receipt.resultRevision == version.contentRevision + 1,
+                      response.data.workoutVersion.map({ $0.contentRevision >= receipt.resultRevision }) == true else {
+                    throw BodyFlowCapabilityError.serviceUnavailable
+                }
+                if response.data.status != "pending" || response.data.workoutVersion?.contentRevision != receipt.resultRevision {
+                    return .workoutCurrent(response)
+                }
+            }
+            return .edit(response)
+        case let .confirm(value):
+            let response = try await registration.confirm(value)
+            if let version = value.payload.workoutVersion {
+                try Self.validate(response.data.registration, id: value.payload.registrationID)
+                guard response.data.registration.status == "confirmed",
+                      response.data.registration.workoutVersion == version else {
+                    throw BodyFlowCapabilityError.serviceUnavailable
+                }
+            }
+            return .confirm(response)
+        case let .cancel(value):
+            let response = try await registration.cancel(value)
+            if let version = value.payload.workoutVersion {
+                try Self.validate(response.data, id: value.payload.registrationID)
+                guard response.data.status == "cancelled", response.data.workoutVersion == version else {
+                    throw BodyFlowCapabilityError.serviceUnavailable
+                }
+            }
+            return .cancel(response)
         }
+    }
+
+    private static func validate(_ snapshot: RegistrationSnapshot, id: String? = nil) throws {
+        let matchesID = id.map { snapshot.id.caseInsensitiveCompare($0) == .orderedSame } ?? true
+        guard snapshot.workoutVersion != nil, case .workout = snapshot.proposal,
+              ["pending", "confirmed", "cancelled", "expired"].contains(snapshot.status),
+              matchesID else {
+            throw BodyFlowCapabilityError.serviceUnavailable
+        }
+    }
+
+    private static func input(_ request: WorkoutProposalRequest, protocol value: WorkoutRegistrationProtocol?) -> WorkoutProposalRequest {
+        WorkoutProposalRequest(
+            workoutType: request.workoutType, durationMin: request.durationMin,
+            intensity: request.intensity, performedAt: request.performedAt,
+            registrationProtocol: value
+        )
     }
 
     private func publishSuccess(_ receipt: RegistrationMutationReceipt, operation: ActiveWorkoutOperation) {
@@ -184,15 +317,25 @@ final class WorkoutRegistrationModel {
             confirmedRegistration = nil
             phase = .confirmed
             invalidationCenter.record(.registrationConfirmed)
+        case let .workoutCurrent(response):
+            let snapshot = response.data
+            confirmedRegistration = snapshot.status == "confirmed" ? snapshot : nil
+            currentProposal = snapshot.status == "confirmed" ? nil : snapshot
+            phase = snapshot.status == "confirmed" ? .confirmed : .proposal
+            invalidationCenter.record(keys: snapshot.status == "confirmed" ? [.today, .history] : [.today])
         }
+        if case .workoutCurrent = receipt {} else { retainedFailedAttempt = nil }
+        requiresCurrentReview = false
         mutationState = .succeeded(receipt)
         captureError = nil
         accessibilityFocusTarget = .operationSummary
         clearActiveOperation(operation)
     }
 
-    private func publishFailure(_ attempt: RegistrationMutationAttempt, error: any Error, operation: ActiveWorkoutOperation) {
-        let capabilityError = Self.capabilityError(from: error)
+    private func publishFailure(_ attempt: RegistrationMutationAttempt, error: any Error, operation: ActiveWorkoutOperation, reviewing: Bool = false) {
+        let receivedError = Self.capabilityError(from: error)
+        let capabilityError: BodyFlowCapabilityError = attempt.isVersionedWorkout && receivedError == .registrationAlreadyConfirmed
+            ? .registrationReviewRequired : receivedError
         // `409 registration_already_confirmed`: this proposal's record is
         // already saved. That is the confirmed outcome, not a failure.
         if capabilityError == .registrationAlreadyConfirmed,
@@ -201,13 +344,25 @@ final class WorkoutRegistrationModel {
             return
         }
         guard claimPublication(operation) else { return }
+        let needsReview = [
+            BodyFlowCapabilityError.registrationRevisionConflict, .registrationReviewRequired, .registrationAuthorityStale,
+        ].contains(capabilityError)
+        // A legacy attempt can be refused because the server now requires
+        // a version. Keep that original attempt untouched; only an owned GET
+        // can supply authority for a later, explicit patient action.
+        if attempt.isVersionedWorkout || needsReview || reviewing { retainedFailedAttempt = attempt }
         captureError = capabilityError
-        if Self.invalidatesPending(capabilityError) {
+        if reviewing {
+            requiresCurrentReview = true
+            mutationState = .failed(attempt, capabilityError)
+        } else if Self.invalidatesPending(capabilityError) {
             currentProposal = nil
-            pendingDraft = nil
+            if !attempt.isVersionedWorkout { pendingDraft = nil }
+            requiresCurrentReview = false
             phase = .form
             mutationState = .idle
         } else {
+            if needsReview { requiresCurrentReview = true }
             mutationState = capabilityError == .operationUnavailable
                 ? .unavailable
                 : .failed(attempt, capabilityError)
@@ -235,6 +390,7 @@ final class WorkoutRegistrationModel {
         activeOwnership?.invalidate()
         operationSequence += 1
         activeOwnership = nil
+        isReviewingCurrent = false
     }
 
     private func mayContinue(_ operation: ActiveWorkoutOperation) -> Bool {
@@ -248,7 +404,10 @@ final class WorkoutRegistrationModel {
     }
 
     private func clearActiveOperation(_ operation: ActiveWorkoutOperation) {
-        if activeOwnership === operation.ownership { activeOwnership = nil }
+        if activeOwnership === operation.ownership {
+            activeOwnership = nil
+            isReviewingCurrent = false
+        }
     }
 
     private func finishCancelledOperationIfNeeded(_ operation: ActiveWorkoutOperation) {
@@ -256,6 +415,7 @@ final class WorkoutRegistrationModel {
               activeOwnership === operation.ownership,
               operation.ownership.isInvalidated || Task.isCancelled else { return }
         activeOwnership = nil
+        isReviewingCurrent = false
         if case .submitting = mutationState { mutationState = .idle }
     }
 
@@ -265,6 +425,18 @@ final class WorkoutRegistrationModel {
 
     private static func invalidatesPending(_ error: BodyFlowCapabilityError) -> Bool {
         error == .registrationExpired || error == .registrationNotPending
+    }
+}
+
+private extension RegistrationMutationAttempt {
+    var isVersionedWorkout: Bool {
+        switch self {
+        case let .propose(attempt):
+            if case let .workout(request) = attempt.payload { return request.registrationProtocol == .uiV1 }
+            return false
+        case let .edit(attempt): return attempt.payload.workoutVersion != nil
+        case let .confirm(attempt), let .cancel(attempt): return attempt.payload.workoutVersion != nil
+        }
     }
 }
 

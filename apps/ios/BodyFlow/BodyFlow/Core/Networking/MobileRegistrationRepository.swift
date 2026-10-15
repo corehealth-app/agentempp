@@ -4,7 +4,7 @@ import Foundation
 /// prices every item and owns the pending lifecycle; the client carries
 /// only the patient's input and the attempt's idempotency key, so a retry
 /// replays the same request instead of duplicating it.
-struct MobileRegistrationRepository: RegistrationProviding, HydrationRecording, WeightRecording {
+struct MobileRegistrationRepository: RegistrationProviding, WorkoutRegistrationReading, HydrationRecording, WeightRecording {
     let transport: any MobileAPIEnvelopeExecuting
 
     func propose(

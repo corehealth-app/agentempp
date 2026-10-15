@@ -146,6 +146,9 @@ enum RegistrationMutationReceipt: Equatable, Sendable {
     case edit(RegistrationProposalResponse)
     case confirm(RegistrationConfirmationResponse)
     case cancel(RegistrationCancellationResponse)
+    /// An owned current projection, possibly newer than an edit's receipt.
+    /// Observing it never claims that this operation applied a mutation.
+    case workoutCurrent(RegistrationProposalResponse)
     /// The server refused an edit or a cancellation with
     /// `409 registration_already_confirmed`: the record of this proposal was
     /// already saved (for example the confirmation went through and its
@@ -158,6 +161,7 @@ enum RegistrationMutationReceipt: Equatable, Sendable {
         switch self {
         case let .propose(receipt),
              let .edit(receipt),
+             let .workoutCurrent(receipt),
              let .cancel(receipt):
             receipt.meta.requestID
         case let .confirm(receipt):
@@ -175,7 +179,7 @@ enum RegistrationMutationReceipt: Equatable, Sendable {
             receipt.data.registration.id
         case let .alreadyConfirmed(registrationID):
             registrationID
-        case .propose, .edit, .cancel:
+        case .propose, .edit, .cancel, .workoutCurrent:
             nil
         }
     }

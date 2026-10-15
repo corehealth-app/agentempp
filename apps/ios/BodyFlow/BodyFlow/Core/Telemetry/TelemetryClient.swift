@@ -412,6 +412,9 @@ extension BodyFlowCapabilityError {
              .subscriptionRequired:
             .operationUnavailable
         case .idempotencyConflict,
+             .registrationRevisionConflict,
+             .registrationReviewRequired,
+             .registrationAuthorityStale,
              .contentVersionChanged,
              .idempotencyRequestInProgress:
             .idempotencyConflict

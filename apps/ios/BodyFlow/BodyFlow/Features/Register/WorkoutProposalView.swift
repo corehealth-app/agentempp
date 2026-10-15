@@ -44,6 +44,7 @@ struct WorkoutProposalPresentation: Equatable, Sendable {
 struct WorkoutProposalView: View {
     let proposal: WorkoutProposalPresentation
     let isSubmitting: Bool
+    var requiresCurrentReview = false
     let edit: @MainActor () -> Void
     let confirm: @MainActor () -> Void
     let cancel: @MainActor () -> Void
@@ -71,7 +72,7 @@ struct WorkoutProposalView: View {
             if proposal.allowsPendingActions {
                 WorkoutProposalActionButton(
                     title: copy("registration.proposal.confirm"),
-                    isEnabled: !isSubmitting,
+                    isEnabled: !isSubmitting && !requiresCurrentReview,
                     identifier: "registration.proposal.confirm",
                     role: .primary,
                     action: confirm
@@ -79,23 +80,23 @@ struct WorkoutProposalView: View {
                 // SwiftUI writes the environment's enabled state into a
                 // bridged UIControl after `updateUIView`, so a request in
                 // flight has to be declared here to disable the actions.
-                .disabled(isSubmitting)
+                .disabled(isSubmitting || requiresCurrentReview)
                 WorkoutProposalActionButton(
                     title: copy("registration.proposal.edit"),
-                    isEnabled: !isSubmitting,
+                    isEnabled: !isSubmitting && !requiresCurrentReview,
                     identifier: "registration.proposal.edit",
                     role: .secondary,
                     action: edit
                 )
-                .disabled(isSubmitting)
+                .disabled(isSubmitting || requiresCurrentReview)
                 WorkoutProposalActionButton(
                     title: copy("registration.proposal.cancel"),
-                    isEnabled: !isSubmitting,
+                    isEnabled: !isSubmitting && !requiresCurrentReview,
                     identifier: "registration.proposal.cancel",
                     role: .tertiary,
                     action: cancel
                 )
-                .disabled(isSubmitting)
+                .disabled(isSubmitting || requiresCurrentReview)
             }
         }
         .accessibilityElement(children: .contain)

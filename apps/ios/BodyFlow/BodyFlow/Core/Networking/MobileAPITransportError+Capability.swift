@@ -16,6 +16,13 @@ extension MobileAPITransportError {
                 return .registrationNotPending
             case "registration_already_confirmed":
                 return .registrationAlreadyConfirmed
+            case "registration_revision_conflict":
+                return .registrationRevisionConflict
+            case "registration_authority_stale":
+                return .registrationAuthorityStale
+            case "registration_revision_required", "registration_request_conflict",
+                 "registration_revision_exhausted", "registration_capture_conflict":
+                return .registrationReviewRequired
             case "idempotency_key_conflict":
                 return .idempotencyConflict
             case "idempotency_request_in_progress":

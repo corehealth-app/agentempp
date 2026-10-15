@@ -313,6 +313,10 @@ final class MealRegistrationModel {
             detectedDraft = nil
             phase = .confirmed
             invalidationCenter.record(.registrationConfirmed)
+        case .workoutCurrent:
+            // This model never produces workout observations.
+            clearActiveOperation(operation)
+            return
         }
 
         mutationState = .succeeded(receipt)
@@ -479,45 +483,52 @@ struct RegistrationAttemptCoordinator {
 
     func edit(
         registrationID: String,
-        proposal: RegistrationProposalRequest
+        proposal: RegistrationProposalRequest,
+        workoutVersion: WorkoutRegistrationVersion? = nil
     ) throws -> MutationAttempt<RegistrationEditCommand> {
         MutationAttempt(
             operation: .proposalEdit,
             key: try keyProvider.nextKey(),
             payload: RegistrationEditCommand(
                 registrationID: registrationID,
-                proposal: proposal
+                proposal: proposal,
+                workoutVersion: workoutVersion
             ),
             createdAt: timeProvider.now
         )
     }
 
     func confirm(
-        registrationID: String
+        registrationID: String,
+        workoutVersion: WorkoutRegistrationVersion? = nil
     ) throws -> MutationAttempt<RegistrationIDCommand> {
         try idAttempt(
             operation: .proposalConfirm,
-            registrationID: registrationID
+            registrationID: registrationID,
+            workoutVersion: workoutVersion
         )
     }
 
     func cancel(
-        registrationID: String
+        registrationID: String,
+        workoutVersion: WorkoutRegistrationVersion? = nil
     ) throws -> MutationAttempt<RegistrationIDCommand> {
         try idAttempt(
             operation: .proposalCancel,
-            registrationID: registrationID
+            registrationID: registrationID,
+            workoutVersion: workoutVersion
         )
     }
 
     private func idAttempt(
         operation: MutationOperation,
-        registrationID: String
+        registrationID: String,
+        workoutVersion: WorkoutRegistrationVersion?
     ) throws -> MutationAttempt<RegistrationIDCommand> {
         MutationAttempt(
             operation: operation,
             key: try keyProvider.nextKey(),
-            payload: RegistrationIDCommand(registrationID: registrationID),
+            payload: RegistrationIDCommand(registrationID: registrationID, workoutVersion: workoutVersion),
             createdAt: timeProvider.now
         )
     }
@@ -533,6 +544,8 @@ struct RegistrationOperationCoordinator {
             await model.retry()
         case .newProposal:
             await model.createNewProposalFromDraft()
+        case .reviewCurrent:
+            return
         case nil:
             return
         }

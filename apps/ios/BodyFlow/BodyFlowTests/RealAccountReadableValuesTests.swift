@@ -795,6 +795,29 @@ struct RealAccountReadableValuesTests {
         }
     }
 
+    @Test("a pending workout requiring current-version review disables all real UIKit mutation buttons")
+    func workoutProposalButtonsWhileReviewIsRequired() throws {
+        let flag = SubmittingFlag()
+        let taps = Counter()
+        let identifiers = [
+            "registration.proposal.confirm", "registration.proposal.edit", "registration.proposal.cancel",
+        ]
+        let pending = WorkoutProposalPresentation(registration: DemoBodyFlowFixtures.pendingWorkoutRegistration.data)
+        try Self.withButtons(of: SubmittingHarness(flag: flag) { requiresReview in
+            WorkoutProposalView(
+                proposal: pending, isSubmitting: false, requiresCurrentReview: requiresReview,
+                edit: { taps.value += 1 }, confirm: { taps.value += 1 }, cancel: { taps.value += 1 }
+            )
+        }) { buttons in
+            try Self.expect(identifiers, in: buttons(), enabled: true)
+            flag.isSubmitting = true
+            Self.settle()
+            try Self.expect(identifiers, in: buttons(), enabled: false)
+            for identifier in identifiers { try Self.tap(identifier, in: buttons()) }
+            #expect(taps.value == 0)
+        }
+    }
+
     // MARK: Wording
 
     @Test("the connection error reads the same from the catalog and from the fallback")

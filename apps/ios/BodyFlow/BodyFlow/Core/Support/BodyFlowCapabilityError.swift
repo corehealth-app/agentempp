@@ -6,6 +6,9 @@ enum BodyFlowCapabilityError: Error, Equatable, Sendable {
     case idempotencyConflict
     case registrationNotPending
     case registrationExpired
+    case registrationRevisionConflict
+    case registrationReviewRequired
+    case registrationAuthorityStale
     /// `409 registration_already_confirmed`: the record of this proposal is
     /// already saved on the server. Not a failure to retry and not a reason
     /// to propose again; the registration models show it as confirmed.

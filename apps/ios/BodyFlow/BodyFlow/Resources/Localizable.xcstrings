@@ -6026,6 +6026,42 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Protein" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Proteína" } }
     } },
+    "registration.operation.authority-stale" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This draft is no longer available. Your fields were kept for a new proposal." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Este rascunho não está mais disponível. Seus campos foram mantidos para uma nova proposta." } }
+    } },
+    "registration.operation.current-cancelled" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This draft was cancelled. Your fields were kept for a new proposal." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Este rascunho foi cancelado. Seus campos foram mantidos para uma nova proposta." } }
+    } },
+    "registration.operation.current-confirmed" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This record is already saved. Your fields were kept." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Este registro já está salvo. Seus campos foram mantidos." } }
+    } },
+    "registration.operation.current-expired" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This draft expired. Your fields were kept for a new proposal." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Este rascunho expirou. Seus campos foram mantidos para uma nova proposta." } }
+    } },
+    "registration.operation.current-pending" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Current version loaded. Review it before confirming. Your fields were kept." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Versão atual carregada. Revise antes de confirmar. Seus campos foram mantidos." } }
+    } },
+    "registration.operation.review-current" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Review current version" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Revisar versão atual" } }
+    } },
+    "registration.operation.review-loading" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Checking the current version…" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Consultando a versão atual…" } }
+    } },
+    "registration.operation.review-required" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not validate this draft. Check the current version before continuing." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não foi possível validar este rascunho. Consulte a versão atual antes de continuar." } }
+    } },
+    "registration.operation.revision-conflict" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This draft changed. Check the current version before continuing." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Este rascunho mudou. Consulte a versão atual antes de continuar." } }
+    } },
     "registration.operation.already-confirmed" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "This record was already saved. The change was not applied." } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Este registro já estava salvo. A alteração não foi aplicada." } }

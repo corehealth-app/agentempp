@@ -184,6 +184,11 @@ struct RegistrationSheet: View {
                                 await workoutModel.retry()
                             }
                         },
+                        reviewCurrent: {
+                            perform(.operationAction(.reviewCurrent)) {
+                                await workoutModel.reviewCurrentVersion()
+                            }
+                        },
                         confirm: { perform(.confirm) { await workoutModel.confirm() } },
                         cancel: { perform(.cancel) { await workoutModel.cancel() } },
                         presentsLocalDemonstration: presentsLocalDemonstration
@@ -708,11 +713,12 @@ struct Prompt13RegistrationReceiptPreview: View {
 #endif
 
 @MainActor
-private struct WorkoutRegistrationContent: View {
+struct WorkoutRegistrationContent: View {
     let model: WorkoutRegistrationModel
     let propose: @MainActor (WorkoutProposalRequest) -> Void
     let saveEdit: @MainActor (WorkoutProposalRequest) -> Void
     let retry: @MainActor () -> Void
+    let reviewCurrent: @MainActor () -> Void
     let confirm: @MainActor () -> Void
     let cancel: @MainActor () -> Void
     /// Only the local demonstration opens the new-workout form prefilled.
@@ -727,11 +733,21 @@ private struct WorkoutRegistrationContent: View {
                 content
                 RegistrationOperationSummary(
                     state: model.mutationState,
-                    captureError: model.captureError
+                    captureError: model.captureError,
+                    isWorking: model.isBusy
                 ) { action in
-                    if action == .retry { retry() } else { model.startNewProposal() }
+                    switch action {
+                    case .retry: retry()
+                    case .reviewCurrent: reviewCurrent()
+                    case .newProposal: model.prepareNewProposal()
+                    }
                 }
                 .accessibilityFocused($operationFocus, equals: .operationSummary)
+                if model.isReviewingCurrent {
+                    Text(copy("registration.operation.review-loading"))
+                        .font(BodyFlowTypography.callout)
+                        .foregroundStyle(BodyFlowColor.secondaryText)
+                }
             }
             .padding(BodyFlowSpacing.lg)
         }
@@ -740,7 +756,7 @@ private struct WorkoutRegistrationContent: View {
                 WorkoutRegistrationView(
                     initialPerformedAt: model.initialPerformedAt,
                     initialProposal: draft,
-                    actionTitle: "Salvar", isSubmitting: model.isSubmitting
+                    actionTitle: "Salvar", isSubmitting: model.isBusy || model.requiresCurrentReview
                 ) { edit in
                     showingEditor = false
                     saveEdit(edit)
@@ -767,7 +783,8 @@ private struct WorkoutRegistrationContent: View {
         if let proposal = model.currentProposal {
             WorkoutProposalView(
                 proposal: WorkoutProposalPresentation(registration: proposal),
-                isSubmitting: model.isSubmitting,
+                isSubmitting: model.isBusy,
+                requiresCurrentReview: model.requiresCurrentReview,
                 edit: { showingEditor = true }, confirm: confirm, cancel: cancel
             )
         } else if model.phase == .confirmed {
@@ -780,8 +797,9 @@ private struct WorkoutRegistrationContent: View {
         } else {
             WorkoutRegistrationView(
                 initialPerformedAt: model.initialPerformedAt,
+                initialProposal: model.pendingDraft,
                 presentsLocalDemonstration: presentsLocalDemonstration,
-                isSubmitting: model.isSubmitting, submit: propose
+                isSubmitting: model.isBusy || model.requiresCurrentReview, submit: propose
             )
         }
     }

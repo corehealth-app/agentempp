@@ -15,6 +15,37 @@ struct MeSnapshot: Codable, Equatable, Sendable {
     let countryConfirmed: Bool?
     let status: String?
     let emailConfirmed: Bool?
+    let workoutRegistrationProtocol: String?
+
+    /// Only the exact server-advertised protocol may select a new ui-v1
+    /// intention. Pending proposals carry their own version independently.
+    var supportsVersionedWorkoutRegistration: Bool {
+        workoutRegistrationProtocol == WorkoutRegistrationProtocol.uiV1.rawValue
+    }
+
+    init(
+        id: String,
+        email: String?,
+        name: String?,
+        locale: String?,
+        timezone: String?,
+        country: String?,
+        countryConfirmed: Bool?,
+        status: String?,
+        emailConfirmed: Bool?,
+        workoutRegistrationProtocol: String? = nil
+    ) {
+        self.id = id
+        self.email = email
+        self.name = name
+        self.locale = locale
+        self.timezone = timezone
+        self.country = country
+        self.countryConfirmed = countryConfirmed
+        self.status = status
+        self.emailConfirmed = emailConfirmed
+        self.workoutRegistrationProtocol = workoutRegistrationProtocol
+    }
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -26,6 +57,7 @@ struct MeSnapshot: Codable, Equatable, Sendable {
         case countryConfirmed = "country_confirmed"
         case status
         case emailConfirmed = "email_confirmed"
+        case workoutRegistrationProtocol = "workout_registration_protocol"
     }
 }
 

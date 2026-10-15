@@ -173,12 +173,39 @@ struct WorkoutProposalRequest: Codable, Hashable, Sendable {
     let durationMin: Int
     let intensity: WorkoutIntensity?
     let performedAt: APITimestamp?
+    let registrationProtocol: WorkoutRegistrationProtocol?
+
+    init(
+        workoutType: String,
+        durationMin: Int,
+        intensity: WorkoutIntensity?,
+        performedAt: APITimestamp?,
+        registrationProtocol: WorkoutRegistrationProtocol? = nil
+    ) {
+        self.workoutType = workoutType
+        self.durationMin = durationMin
+        self.intensity = intensity
+        self.performedAt = performedAt
+        self.registrationProtocol = registrationProtocol
+    }
 
     private enum CodingKeys: String, CodingKey {
         case workoutType = "workout_type"
         case durationMin = "duration_min"
         case intensity
         case performedAt = "performed_at"
+        case registrationProtocol = "workout_protocol"
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        workoutType = try container.decode(String.self, forKey: .workoutType)
+        durationMin = try container.decode(Int.self, forKey: .durationMin)
+        intensity = try container.decodeIfPresent(WorkoutIntensity.self, forKey: .intensity)
+        performedAt = try container.decodeIfPresent(APITimestamp.self, forKey: .performedAt)
+        registrationProtocol = container.contains(.registrationProtocol)
+            ? try container.decode(WorkoutRegistrationProtocol.self, forKey: .registrationProtocol)
+            : nil
     }
 }
 
@@ -196,6 +223,7 @@ enum RegistrationProposalRequest: Codable, Hashable, Sendable {
         case durationMin = "duration_min"
         case intensity
         case performedAt = "performed_at"
+        case workoutProtocol = "workout_protocol"
     }
 
     private enum Kind: String, Codable {
@@ -205,9 +233,18 @@ enum RegistrationProposalRequest: Codable, Hashable, Sendable {
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        let workoutProtocol = container.contains(.workoutProtocol)
+            ? try container.decode(WorkoutRegistrationProtocol.self, forKey: .workoutProtocol)
+            : nil
 
         switch try container.decode(Kind.self, forKey: .kind) {
         case .meal:
+            guard workoutProtocol == nil else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .workoutProtocol, in: container,
+                    debugDescription: "Workout protocol cannot authorize a meal"
+                )
+            }
             self = .meal(
                 MealProposalRequest(
                     mealType: try container.decode(MealType.self, forKey: .mealType),
@@ -237,7 +274,8 @@ enum RegistrationProposalRequest: Codable, Hashable, Sendable {
                     performedAt: try container.decodeIfPresent(
                         APITimestamp.self,
                         forKey: .performedAt
-                    )
+                    ),
+                    registrationProtocol: workoutProtocol
                 )
             )
         }
@@ -259,17 +297,48 @@ enum RegistrationProposalRequest: Codable, Hashable, Sendable {
             try container.encode(request.durationMin, forKey: .durationMin)
             try container.encodeIfPresent(request.intensity, forKey: .intensity)
             try container.encodeIfPresent(request.performedAt, forKey: .performedAt)
+            try container.encodeIfPresent(request.registrationProtocol, forKey: .workoutProtocol)
         }
     }
 }
 
-struct RegistrationEditCommand: Hashable, Sendable {
+struct RegistrationEditCommand: Encodable, Hashable, Sendable {
     let registrationID: String
     let proposal: RegistrationProposalRequest
+    let workoutVersion: WorkoutRegistrationVersion?
+
+    init(
+        registrationID: String,
+        proposal: RegistrationProposalRequest,
+        workoutVersion: WorkoutRegistrationVersion? = nil
+    ) {
+        self.registrationID = registrationID
+        self.proposal = proposal
+        self.workoutVersion = workoutVersion
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        switch proposal {
+        case .meal:
+            guard workoutVersion == nil else { throw BodyFlowCapabilityError.invalidInput }
+        case let .workout(request):
+            guard workoutVersion != nil || request.registrationProtocol == nil else {
+                throw BodyFlowCapabilityError.invalidInput
+            }
+        }
+        try proposal.encode(to: encoder)
+        try workoutVersion?.encodeSelection(to: encoder)
+    }
 }
 
 struct RegistrationIDCommand: Hashable, Sendable {
     let registrationID: String
+    let workoutVersion: WorkoutRegistrationVersion?
+
+    init(registrationID: String, workoutVersion: WorkoutRegistrationVersion? = nil) {
+        self.registrationID = registrationID
+        self.workoutVersion = workoutVersion
+    }
 }
 
 struct RegistrationSnapshot: Codable, Hashable, Sendable {
@@ -279,6 +348,28 @@ struct RegistrationSnapshot: Codable, Hashable, Sendable {
     let expiresAt: APITimestamp
     let resolvedAt: APITimestamp?
     let proposal: RegistrationProposalSnapshot
+    let workoutVersion: WorkoutRegistrationVersion?
+    let editReceipt: WorkoutRegistrationEditReceipt?
+
+    init(
+        id: String,
+        status: String,
+        createdAt: APITimestamp,
+        expiresAt: APITimestamp,
+        resolvedAt: APITimestamp?,
+        proposal: RegistrationProposalSnapshot,
+        workoutVersion: WorkoutRegistrationVersion? = nil,
+        editReceipt: WorkoutRegistrationEditReceipt? = nil
+    ) {
+        self.id = id
+        self.status = status
+        self.createdAt = createdAt
+        self.expiresAt = expiresAt
+        self.resolvedAt = resolvedAt
+        self.proposal = proposal
+        self.workoutVersion = workoutVersion
+        self.editReceipt = editReceipt
+    }
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -287,6 +378,67 @@ struct RegistrationSnapshot: Codable, Hashable, Sendable {
         case expiresAt = "expires_at"
         case resolvedAt = "resolved_at"
         case proposal
+        case workoutProtocol = "workout_protocol"
+        case contentRevision = "content_revision"
+        case editReceipt = "receipt"
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        status = try container.decode(String.self, forKey: .status)
+        createdAt = try container.decode(APITimestamp.self, forKey: .createdAt)
+        expiresAt = try container.decode(APITimestamp.self, forKey: .expiresAt)
+        resolvedAt = try container.decodeIfPresent(APITimestamp.self, forKey: .resolvedAt)
+        proposal = try container.decode(RegistrationProposalSnapshot.self, forKey: .proposal)
+        if container.contains(.workoutProtocol) || container.contains(.contentRevision) {
+            _ = try container.decode(WorkoutRegistrationProtocol.self, forKey: .workoutProtocol)
+            let revision = try container.decode(Int.self, forKey: .contentRevision)
+            guard case .workout = proposal,
+                  let version = WorkoutRegistrationVersion(contentRevision: revision) else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .contentRevision, in: container,
+                    debugDescription: "Invalid workout registration version"
+                )
+            }
+            workoutVersion = version
+        } else {
+            workoutVersion = nil
+        }
+        editReceipt = container.contains(.editReceipt)
+            ? try container.decode(WorkoutRegistrationEditReceipt.self, forKey: .editReceipt)
+            : nil
+        if let editReceipt {
+            guard let workoutVersion,
+                  workoutVersion.contentRevision >= editReceipt.resultRevision else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .editReceipt, in: container,
+                    debugDescription: "Edit receipt is newer than its current projection"
+                )
+            }
+        }
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(status, forKey: .status)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(expiresAt, forKey: .expiresAt)
+        try container.encodeIfPresent(resolvedAt, forKey: .resolvedAt)
+        try container.encode(proposal, forKey: .proposal)
+        if let workoutVersion {
+            guard case .workout = proposal else { throw BodyFlowCapabilityError.invalidInput }
+            try container.encode(WorkoutRegistrationProtocol.uiV1, forKey: .workoutProtocol)
+            try container.encode(workoutVersion.contentRevision, forKey: .contentRevision)
+        }
+        if let editReceipt {
+            guard let workoutVersion,
+                  workoutVersion.contentRevision >= editReceipt.resultRevision else {
+                throw BodyFlowCapabilityError.invalidInput
+            }
+            try container.encode(editReceipt, forKey: .editReceipt)
+        }
     }
 }
 

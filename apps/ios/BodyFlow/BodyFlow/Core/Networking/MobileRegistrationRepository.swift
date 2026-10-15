@@ -24,7 +24,7 @@ struct MobileRegistrationRepository: RegistrationProviding, HydrationRecording, 
         try await send(
             .patch,
             path: try Self.registrationPath(attempt.payload.registrationID),
-            body: try encode(attempt.payload.proposal),
+            body: try encode(attempt.payload),
             key: attempt.key
         )
     }
@@ -35,7 +35,7 @@ struct MobileRegistrationRepository: RegistrationProviding, HydrationRecording, 
         try await send(
             .post,
             path: try Self.registrationPath(attempt.payload.registrationID, suffix: "/confirm"),
-            body: nil,
+            body: try selectionBody(attempt.payload),
             key: attempt.key
         )
     }
@@ -46,9 +46,15 @@ struct MobileRegistrationRepository: RegistrationProviding, HydrationRecording, 
         try await send(
             .delete,
             path: try Self.registrationPath(attempt.payload.registrationID),
-            body: nil,
+            body: try selectionBody(attempt.payload),
             key: attempt.key
         )
+    }
+
+    /// Re-read the owned projection after a version conflict. The transport
+    /// carries the session; no owner or revision is supplied by a query.
+    func loadWorkoutRegistration(id: String) async throws -> RegistrationProposalResponse {
+        try await send(.get, path: try Self.registrationPath(id), body: nil)
     }
 
     func record(
@@ -94,11 +100,16 @@ struct MobileRegistrationRepository: RegistrationProviding, HydrationRecording, 
         }
     }
 
+    private func selectionBody(_ command: RegistrationIDCommand) throws -> Data? {
+        guard let version = command.workoutVersion else { return nil }
+        return try encode(WorkoutRegistrationSelectionBody(version: version))
+    }
+
     private func send<Payload: Codable & Sendable>(
         _ method: HTTPMethod,
         path: String,
         body: Data?,
-        key: IdempotencyKey
+        key: IdempotencyKey? = nil
     ) async throws -> MobileResponse<Payload> {
         try await transport.executeCapability {
             try MobileAPIRequest(
@@ -108,5 +119,13 @@ struct MobileRegistrationRepository: RegistrationProviding, HydrationRecording, 
                 idempotencyKey: key
             )
         }
+    }
+}
+
+private struct WorkoutRegistrationSelectionBody: Encodable {
+    let version: WorkoutRegistrationVersion
+
+    func encode(to encoder: any Encoder) throws {
+        try version.encodeSelection(to: encoder)
     }
 }

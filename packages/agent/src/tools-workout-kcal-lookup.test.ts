@@ -319,13 +319,16 @@ describe('who sets the field', () => {
     // (interactive-handler.ts) are not in the list: they never set it.
     expect(mentioning).toEqual([
       'apps/admin/src/lib/mobile-api/registration-service.ts',
-      'packages/agent/src/tools.ts',
       'packages/agent/src/tools/types.ts',
+      'packages/agent/src/workout-registration-preparation.ts',
     ])
   })
 
   it('the tool reads it in one place: the argument of the kcal lookup', () => {
-    const tool = readFileSync(fileURLToPath(new URL('./tools.ts', import.meta.url)), 'utf8')
+    const tool = readFileSync(
+      fileURLToPath(new URL('./workout-registration-preparation.ts', import.meta.url)),
+      'utf8',
+    )
     expect(tool.match(/workoutKcalLookupSlug/g)).toHaveLength(2)
     expect(tool).toContain('p_slug: ctx.workoutKcalLookupSlug ?? args.workout_type,')
   })

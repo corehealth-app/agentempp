@@ -3,9 +3,9 @@
 A migration `20261015115000_mobile_workout_registration_boundary.sql` prepara a
 fronteira de revisão do produtor de treino. A migration
 `20261015160000_mobile_workout_registration_mutations.sql` acrescenta edição e
-cancelamento por revisão. Ainda não habilitam callers no BFF, no Swift, no Flow
-ou no legado de WhatsApp. Confirmação atômica, integração e cutover continuam
-obrigatórios antes da ativação.
+cancelamento por revisão. O BFF tem o caminho explícito `ui-v1` descrito abaixo,
+desativado por padrão. Swift, cutover e QA integrado continuam obrigatórios
+antes da ativação. Não habilita o Flow ou o legado de WhatsApp.
 
 ## Origem e dados históricos
 
@@ -74,10 +74,10 @@ para edição aceita/repetida, o receipt requestKey/expectedRevision/resultRevis
 Conflitos owned incluem projeção atual sem receipt. Exceções de persistência
 propagam e revertem toda a chamada; não são convertidas em sucesso parcial.
 
-Antes de ativar, a integração BFF deve alcançar um receipt aceito mesmo se o
-recálculo posterior estiver indisponível ou peso/horário tiverem mudado. Também
-deverá aplicar a whitelist HTTP existente ao proposal raw. Estes requisitos
-não são demonstrados pela RPC SQL isolada.
+O serviço BFF sonda o receipt antes de calcular e aplica a whitelist HTTP ao
+proposal raw. Isso permite recuperar a edição aceita mesmo se o recálculo
+posterior estiver indisponível ou peso/horário tiverem mudado. A RPC SQL isolada
+não demonstra a integração do cliente ou sua apresentação.
 
 ## Único cálculo e gravação
 
@@ -131,7 +131,7 @@ conteúdo e revisão no mesmo snapshot: usuário ativo, epoch atual, admissão
 owned com revisão, pending original e marker exato. Retorna `ui-v1` e os campos
 já persistidos. Qualquer vínculo ausente devolve `invalid_admission`. Não
 reabre pending, cria lifecycle ou autoriza gravação. O proposal raw é interno;
-o futuro DTO HTTP ainda deverá aplicar a whitelist existente.
+o DTO HTTP aplica a whitelist existente.
 
 ## Limites e verificação
 
@@ -173,7 +173,8 @@ não demonstra integração ou disponibilidade do beta.
 `confirm_mobile_workout_registration(owner, pending, expected_revision,
 legacy_arguments, catalogue_observation, catalogue_decision)` é exclusiva do
 backend e acrescenta uma função, sem alterar os corpos 13/S7/S8 ou fórmulas.
-Ainda não há caller BFF/Swift ou ativação. Catálogo SHARE precede `:workouts`,
+O caller BFF exige protocolo/revisão e a configuração específica do projeto;
+o cliente Swift e a ativação ainda são etapas separadas. Catálogo SHARE precede `:workouts`,
 usuário, epoch, todas as admissões owned, pending sem filtro de status e vida.
 A validade usa relógio DB depois dos locks; respostas antigas não autorizam
 uma confirmação de outra revisão.
@@ -224,8 +225,9 @@ diário operacional. Isso não constitui aceite do beta ou publicação.
 `apps/admin/src/lib/mobile-api/workout-registration-repository.ts` reúne as
 seis RPCs de admissão, materialização, leitura, edição, cancelamento e
 confirmação. A construção é lazy: não lê o port, cria cliente, consulta banco
-ou ativa flag. Ainda não há caller nas rotas, no serviço de registro ou no
-Swift; não há mudança no caminho legado nem no WhatsApp.
+ou ativa flag. O serviço e as rotas abaixo o usam somente no caminho explícito
+habilitado por configuração. O caminho legado recebe apenas o guard negativo
+para recusar um marker protegido sem revisão. O WhatsApp não foi alterado.
 
 O adapter conserva owner, key literal, revisão esperada e os valores de cada
 tentativa. Valida a projeção única `ui-v1`, o ID solicitado e o receipt EDIT
@@ -245,6 +247,61 @@ no banco e não substitui a autenticação do futuro caller.
 
 Os testes do adapter cobrem os parâmetros das seis RPCs, probes e erros
 exatos, owner/ID/revisão/receipt, replay e whitelist. São testes com port
-controlado, sem PostgreSQL ou HTTP. O serviço, o tratamento do cache HTTP no
-replay, a preservação do formulário e a ligação da tentativa à sessão no iOS
-continuam parte da integração antes de ativar.
+controlado, sem PostgreSQL ou HTTP. A preservação do formulário e a ligação da
+tentativa à sessão no iOS continuam parte da integração antes de ativar.
+
+## Serviço e rotas versionadas do app
+
+`workout-registration-service.ts` e `registration-handlers.ts` ligam as seams
+às rotas existentes. O novo `GET /registrations/:id` recupera uma projeção
+owned; os wrappers continuam passando pela autenticação e pelo entitlement.
+`/pending` usa a mesma leitura owned, obtendo a projeção oficial de cada row
+protegida quando o recurso estiver habilitado. Se essa projeção for recusada
+ou tiver virado terminal, não há fallback para um DTO legado daquela row.
+
+O opt-in é explícito por intenção: `workout_protocol: "ui-v1"`, mais
+`expected_revision` na edição, confirmação e cancelamento. A criação mantém
+os campos atuais de workout; a edição acrescenta a revisão. Confirmação e
+cancelamento recebem somente protocolo/revisão. Corpo ausente nessas duas
+rotas mantém o contrato legado; JSON presente inválido não vira ausência.
+Esses metadados entram no hash HTTP, mas são retirados do input enviado ao
+hash SQL S16. Owner, proposal calculado, argumentos13 e authority não vêm do
+cliente. A key HTTP é o UUID literal da tentativa; o servidor acrescenta
+`wui1:` ou `wue1:` sem gerar outro UUID ou normalizar seu case.
+
+`MOBILE_WORKOUT_REGISTRATION_PROJECT_REF` precisa listar o ref da URL
+Supabase configurada; ausente significa OFF, e a produção antiga é sempre
+recusada. OFF retorna 503 para a intenção versionada antes de acessar o port
+ou preparar dados. Os endpoints legados continuam disponíveis. O guard de
+compatibilidade lê o marker opcional sem exigir uma coluna nova de servidores
+anteriores à migration: `select('*')` interno, saída sempre por whitelist.
+Marker não NULL recusa o caller legado antes de status/tool/UPDATE, inclusive
+quando o switch estiver OFF. É somente um guard negativo; marker NULL por
+corrupção do owner não prova ausência de membership ou permissão CAS.
+
+Na criação, a admissão real precede até o claim/cache HTTP. A closure da
+mesma admissão materializa ou recupera o UUID original. No replay HTTP de
+qualquer operação UI, `refreshReplay` reapresenta a mesma intenção/revisão/key
+às seams duráveis para devolver a projeção atual. Não renova a validade ou
+troca silenciosamente a revisão do comando. O cache legado mantém sua regra.
+
+A confirmação começa com argumentos13/observação/decisão SQL NULL. Replay
+confirmado não exige cálculo ou catálogo novo. `preparation_required` permite
+usar o preparo oficial extraído existente e o observer real. Um command S7
+existente, ainda sem capture e recusado no primeiro probe com a negativa
+exata `capture_not_accepted`/`forbidden invalid_authority`, permite apenas uma
+observação e repetição com13 ainda NULL. Nenhuma outra negativa ou erro é
+interpretado como falta de preparo, e nenhuma recusa cai no writer legado.
+
+Conflitos owned incluem somente a projeção sanitizada em
+`error.details.registration`; authority recusada não inclui registro ou IDs
+privados. EDIT devolve o receipt original explícito junto da projeção atual.
+CONFIRM conserva `already_confirmed` e `deduped`; capture e seus dados internos
+não saem no DTO. O kcal do proposal continua sendo o preview estimado:
+`legacy_result.exercise_calories` é total diário e não o substitui.
+
+Os testes de serviço usam o adapter real com port controlado; os de handlers
+usam o executor HTTP de idempotência real com store controlado. Os três casos
+de interoperabilidade executam o builder e o preparador reais para Natação40,
+incluindo70kg/moderada,82kg/alta e fallback70kg, sem chamar writer. São evidência
+local; execução HTTP real, iOS, cutover e QA físico não são inferidos deles.

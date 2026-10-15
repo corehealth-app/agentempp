@@ -4470,6 +4470,50 @@ como antes da mudança; qualquer outro texto responde
 `500 workout_calculation_failed`. Regra, números e pendências:
 `docs/CALCULO-MPP.md` §2d.
 
+### Revisão versionada de treino (`ui-v1`, desativada por padrão)
+
+O servidor implementa o caminho aditivo de treino por revisão. Ele depende de
+`MOBILE_WORKOUT_REGISTRATION_PROJECT_REF` listar o ref Supabase configurado e
+sempre recusa a produção antiga. A ausência da configuração deixa o recurso
+OFF; não representa ativação ou validação do iPhone.
+
+`GET /me` anuncia `workout_registration_protocol: "ui-v1"` somente enquanto
+esse switch estiver ativo; OFF preserva a resposta anterior sem o campo. O
+cliente deve guardar a seleção em cada nova tentativa. Retry conserva essa
+seleção, enquanto edição/confirmar/cancelar usam o protocolo e a revisão da
+proposta que o usuário efetivamente revisou.
+
+| Operação | Corpo da intenção versionada |
+| --- | --- |
+| `POST /registrations/propose` | Campos atuais de workout e `workout_protocol: "ui-v1"` |
+| `PATCH /registrations/:id` | Mesmo input, protocolo e `expected_revision` recebida do servidor |
+| `POST /registrations/:id/confirm` | Somente `workout_protocol` e `expected_revision` |
+| `DELETE /registrations/:id` | Somente `workout_protocol` e `expected_revision` |
+| `GET /registrations/:id` | Sem corpo; recupera o registro versionado owned pela conta autenticada |
+
+Todas as mutações mantêm `Idempotency-Key`, agora um UUID literal para a
+intenção UI. Retry conserva key, input e revisão; o servidor deriva suas keys
+privadas sem aceitar provider/owner/authority/argumentos de cálculo do cliente.
+Uma intenção não versionada continua no contrato legado, e corpo ausente na
+confirmação/cancelamento continua válido. Um registro protegido não pode ser
+alterado pelo caminho legado omitindo a revisão. Corpo JSON presente inválido
+é recusado, inclusive `null` e chaves duplicadas.
+
+A resposta sanitizada acrescenta `workout_protocol: "ui-v1"` e
+`content_revision`. EDIT acrescenta `receipt` com `requestKey`,
+`expectedRevision` e `resultRevision`: um retry antigo pode devolver esse
+receipt com uma projeção mais recente. Isso não significa reaplicar a edição.
+CONFIRM preserva `already_confirmed`/`deduped`; não expõe capture ou dados
+privados. O valor calórico no proposal é a estimativa do preview, sem usar o
+total de exercício do dia como kcal daquele treino.
+
+`registration_revision_conflict` (409) exige revisar a versão atual, preservando
+o formulário. Conflitos owned trazem `error.details.registration` por whitelist;
+`registration_authority_stale` (409) não traz registro ou IDs privados. OFF
+responde `workout_registration_unavailable` (503) sem fallback legado. A leitura
+`/pending` inclui a versão oficial dos registros protegidos quando habilitada.
+Detalhes: [fronteira de revisão](../method/mobile-workout-registration-boundary.md).
+
 ## Edição e exclusão de alimentos confirmados
 
 As rotas `/meal-records/:id` usam um `meal_logs.id` pertencente à conta

@@ -2,13 +2,13 @@ import { updateMe } from '@/lib/mobile-api/commands'
 import { patchMeInputSchema } from '@/lib/mobile-api/contracts'
 import { mobileSuccess, readJsonBody } from '@/lib/mobile-api/http'
 import { executeSupabaseIdempotent } from '@/lib/mobile-api/idempotency'
-import { meDto } from '@/lib/mobile-api/read-model'
 import { createMobileRoute } from '@/lib/mobile-api/route'
+import { meWithWorkoutRegistrationCapability } from '@/lib/mobile-api/workout-registration-service'
 
 export const runtime = 'nodejs'
 
 export const GET = createMobileRoute(async (context) =>
-  mobileSuccess(meDto(context.auth), context.requestId),
+  mobileSuccess(meWithWorkoutRegistrationCapability(context.auth), context.requestId),
 )
 
 export const PATCH = createMobileRoute(async (context) => {

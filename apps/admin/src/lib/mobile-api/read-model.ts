@@ -442,21 +442,36 @@ export async function loadHistory(supabase: ServiceClient, userId: string, query
   }
 }
 
-export async function loadPending(supabase: ServiceClient, userId: string) {
+/** Raw owned rows stay internal; both pending projections share the same query. */
+export async function loadPendingRows(supabase: ServiceClient, userId: string) {
   const { data, error } = await supabase
     .from('pending_registrations')
-    .select('id, proposal, status, created_at, expires_at')
+    .select('*')
     .eq('user_id', userId)
     .eq('status', 'pending')
     .gt('expires_at', new Date().toISOString())
     .order('created_at', { ascending: false })
     .limit(20)
   throwQueryError(error, 'Pending registration lookup')
-  return (data ?? []).map((row) => ({
+  return data ?? []
+}
+
+export function pendingRegistrationDto(row: {
+  id: string
+  status: string
+  created_at: string
+  expires_at: string
+  proposal: Json
+}) {
+  return {
     id: row.id,
     status: row.status,
     created_at: row.created_at,
     expires_at: row.expires_at,
     proposal: sanitizePendingProposal(row.proposal),
-  }))
+  }
+}
+
+export async function loadPending(supabase: ServiceClient, userId: string) {
+  return (await loadPendingRows(supabase, userId)).map(pendingRegistrationDto)
 }

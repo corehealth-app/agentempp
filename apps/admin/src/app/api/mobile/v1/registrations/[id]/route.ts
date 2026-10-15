@@ -1,7 +1,8 @@
-import { registrationProposalInputSchema, resourceIdSchema } from '@/lib/mobile-api/contracts'
-import { mobileSuccess, readJsonBody } from '@/lib/mobile-api/http'
-import { executeSupabaseIdempotent } from '@/lib/mobile-api/idempotency'
-import { cancelRegistration, editRegistration } from '@/lib/mobile-api/registration-service'
+import {
+  handleRegistrationDelete,
+  handleRegistrationGet,
+  handleRegistrationPatch,
+} from '@/lib/mobile-api/registration-handlers'
 import { createMobileRouteWithContext } from '@/lib/mobile-api/route'
 
 export const runtime = 'nodejs'
@@ -12,36 +13,22 @@ interface RegistrationRouteContext {
 
 async function registrationId(routeContext: RegistrationRouteContext): Promise<string> {
   const { id } = await routeContext.params
-  return resourceIdSchema.parse(id)
+  return id
 }
 
 export const PATCH = createMobileRouteWithContext<RegistrationRouteContext>(
   async (context, routeContext) => {
-    const id = await registrationId(routeContext)
-    const input = registrationProposalInputSchema.parse(await readJsonBody(context.request))
-    return executeSupabaseIdempotent(context, { registration_id: id, input }, async () =>
-      mobileSuccess(
-        await editRegistration(
-          context.supabase,
-          context.auth,
-          id,
-          input,
-          context.request.headers.get('idempotency-key') ?? '',
-        ),
-        context.requestId,
-      ),
-    )
+    return handleRegistrationPatch(context, await registrationId(routeContext))
   },
 )
 
 export const DELETE = createMobileRouteWithContext<RegistrationRouteContext>(
   async (context, routeContext) => {
-    const id = await registrationId(routeContext)
-    return executeSupabaseIdempotent(context, { registration_id: id }, async () =>
-      mobileSuccess(
-        await cancelRegistration(context.supabase, context.auth.userId, id),
-        context.requestId,
-      ),
-    )
+    return handleRegistrationDelete(context, await registrationId(routeContext))
   },
+)
+
+export const GET = createMobileRouteWithContext<RegistrationRouteContext>(
+  async (context, routeContext) =>
+    handleRegistrationGet(context, await registrationId(routeContext)),
 )

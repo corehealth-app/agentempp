@@ -59,7 +59,13 @@ import { registraTreino } from '@mpp/agent'
 import type { Json } from '@mpp/db'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { registrationProposalInputSchema } from './contracts'
-import { confirmRegistration, editRegistration, proposeRegistration } from './registration-service'
+import {
+  buildWorkoutRegistrationCandidate,
+  confirmRegistration,
+  editRegistration,
+  prepareWorkoutRegistrationConfirmation,
+  proposeRegistration,
+} from './registration-service'
 
 const USER_ID = '0b9f6f0e-0000-4000-8000-0000000000c7'
 const SNAPSHOT_ID = '0b9f6f0e-0000-4000-8000-0000000000d7'
@@ -734,6 +740,74 @@ describe('workout type typed in the app — the reported case: "Natação", 40 m
     expect(result.proposed.proposal).toMatchObject({ estimated_kcal: 400 })
     expect(result.stored).toEqual([{ workout_type: 'Natação', estimated_kcal: 400 }])
     expect(db.lookups().map((params) => params.p_weight_kg)).toEqual([70, 70])
+  })
+})
+
+describe('versioned workout bridge reuses the real calculation without the legacy writer', () => {
+  it.each([
+    { weightKg: 70, intensity: 'moderada' as const, kcal: 400 },
+    { weightKg: 82, intensity: 'alta' as const, kcal: 586 },
+    { weightKg: null, intensity: 'moderada' as const, kcal: 400 },
+  ])('keeps Natação40 with $weightKg kg/$intensity at $kcal kcal in the official first13', async ({
+    weightKg,
+    intensity,
+    kcal,
+  }) => {
+    const db = database({ weightKg })
+    const key = `wui1:${KEY_1}`
+    const candidate = await buildWorkoutRegistrationCandidate(
+      db.client as never,
+      AUTH as never,
+      {
+        kind: 'workout',
+        workout_type: 'Natação',
+        duration_min: 40,
+        intensity,
+      },
+      key,
+    )
+    const prepared = await prepareWorkoutRegistrationConfirmation(
+      db.client as never,
+      AUTH as never,
+      candidate,
+    )
+    expect(candidate).toMatchObject({
+      workoutType: 'Natação',
+      durationMin: 40,
+      kcalEst: kcal,
+      source_provider_message_id: key,
+    })
+    expect(prepared).toStrictEqual({
+      p_user_id: USER_ID,
+      p_date: LOCAL_DATE,
+      p_workout_type: 'Natação',
+      p_duration_min: 40,
+      p_estimated_kcal: kcal,
+      p_intensity: intensity,
+      p_notes: `[kcal_source=formula, formula=${kcal}, image=n/a]`,
+      p_performed_at: NOW,
+      p_provider_message_id: key,
+      p_calories_target: null,
+      p_protein_target: null,
+      p_replace_recent: false,
+      p_replace_since: null,
+    })
+    expect(db.lookups()).toStrictEqual([
+      {
+        p_slug: 'natacao',
+        p_duration_min: 40,
+        p_intensity: intensity,
+        p_weight_kg: weightKg ?? 70,
+      },
+      {
+        p_slug: 'natacao',
+        p_duration_min: 40,
+        p_intensity: intensity,
+        p_weight_kg: weightKg ?? 70,
+      },
+    ])
+    expect(db.writes()).toStrictEqual([])
+    expect([db.pendings, db.workouts, db.snapshots, db.events]).toStrictEqual([[], [], [], []])
   })
 })
 

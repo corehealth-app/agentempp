@@ -11,14 +11,15 @@ import {
   resolveTrustedNutritionLabel,
   type ToolContext,
 } from '@mpp/agent'
+import { prepareWorkoutRegistration } from '@mpp/agent/workout-registration-preparation'
 import type { Json, ServiceClient } from '@mpp/db'
 import { z } from 'zod'
 import type { MobileAuthContext } from './auth'
 import type { RegistrationProposalInput } from './contracts'
 import { MobileApiError } from './http'
 import { DEFAULT_MEAL_CONFIDENCE_THRESHOLD } from './meal-draft-service'
-import { createSupabaseMediaDependencies } from './supabase-media'
 import { sanitizePendingProposal } from './read-model'
+import { createSupabaseMediaDependencies } from './supabase-media'
 
 interface ProposalTiming {
   localDate: string
@@ -141,9 +142,7 @@ export function buildMealPendingProposal(
     },
     userWarnings: calculation.user_warnings,
     sourceContentType: input.source?.channel ?? 'mobile',
-    ...(input.source?.media_asset_id
-      ? { source_media_asset_id: input.source.media_asset_id }
-      : {}),
+    ...(input.source?.media_asset_id ? { source_media_asset_id: input.source.media_asset_id } : {}),
     source_provider_message_id: timing.requestKey,
     source_timestamp: timing.timestamp,
     source_timezone: timing.timezone,
@@ -249,7 +248,8 @@ function finite(value: unknown): number | null {
 }
 
 function labelValues(value: unknown) {
-  const source = typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {}
+  const source =
+    typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {}
   return {
     kcal: finite(source.kcal),
     protein_g: finite(source.protein_g),
@@ -411,7 +411,9 @@ async function loadOwnedRegistration(
 ) {
   const { data, error } = await supabase
     .from('pending_registrations')
-    .select('id, proposal, status, created_at, expires_at, resolved_at')
+    // Read the optional guard when present, without selecting a new column by
+    // name on servers whose migration has not yet been installed. DTO is closed.
+    .select('*')
     .eq('id', registrationId)
     .eq('user_id', userId)
     .maybeSingle()
@@ -420,6 +422,67 @@ async function loadOwnedRegistration(
   }
   if (!data) throw new MobileApiError(404, 'registration_not_found', 'Registration not found')
   return data
+}
+
+function requireLegacyRegistration(row: object): void {
+  const marker = (row as { workout_ui_admission_id?: unknown }).workout_ui_admission_id
+  if (marker !== null && marker !== undefined) {
+    // Negative compatibility guard only; permission still comes from real CAS.
+    // It also applies when the new feature is OFF or the request omitted it.
+    throw new MobileApiError(
+      409,
+      'registration_revision_required',
+      'Review this workout before changing it.',
+    )
+  }
+}
+
+export async function buildWorkoutRegistrationCandidate(
+  supabase: ServiceClient,
+  auth: MobileAuthContext,
+  input: WorkoutProposalInput,
+  requestKey: string,
+): Promise<Json> {
+  return buildProposal(supabase, auth, input, requestKey, null)
+}
+
+/** Reuse the existing official preparation without executing its legacy writer.
+ * The CAS chooses/persists the first preparation, including kcal/targets/date. */
+export async function prepareWorkoutRegistrationConfirmation(
+  supabase: ServiceClient,
+  auth: MobileAuthContext,
+  rawProposal: Json,
+): Promise<Json> {
+  const parsed = pendingWorkoutProposalSchema.safeParse(rawProposal)
+  if (!parsed.success)
+    throw new MobileApiError(
+      409,
+      'registration_proposal_invalid',
+      'Registration proposal is invalid',
+    )
+  const proposal = parsed.data
+  const referenceTimestamp = new Date(proposal.source_timestamp)
+  const userTimezone = auth.patient.timezone ?? 'UTC'
+  const prepared = await prepareWorkoutRegistration(
+    {
+      workout_type: proposal.workoutType,
+      duration_min: proposal.durationMin,
+      intensity: proposal.intensity,
+    },
+    {
+      supabase,
+      userId: auth.userId,
+      userWpp: '',
+      userCountry: auth.patient.country ?? 'BR',
+      userTimezone,
+      providerMessageId: proposal.source_provider_message_id,
+      referenceTimestamp,
+      workoutKcalLookupSlug: await workoutLookupSlug(supabase, proposal.workoutType),
+    },
+    referenceTimestamp,
+    getLocalDateString(userTimezone, referenceTimestamp),
+  )
+  return prepared.legacyArguments
 }
 
 function pendingDto(row: {
@@ -542,6 +605,7 @@ export async function editRegistration(
   requestKey: string,
 ) {
   const current = await loadOwnedRegistration(supabase, auth.userId, registrationId)
+  requireLegacyRegistration(current)
   // Same answer as the guard below: once it closed the pending, the app's
   // "try again" resends this PATCH and must not be told to propose again.
   if (current.status === 'confirmed') throw alreadyConfirmedError('edit')
@@ -622,6 +686,7 @@ export async function confirmRegistration(
   registrationId: string,
 ) {
   const row = await loadOwnedRegistration(supabase, auth.userId, registrationId)
+  requireLegacyRegistration(row)
   if (row.status === 'confirmed') return { ...pendingDto(row), already_confirmed: true }
   if (row.status !== 'pending') {
     throw new MobileApiError(409, 'registration_not_pending', 'Registration is not pending')
@@ -776,6 +841,7 @@ export async function cancelRegistration(
   registrationId: string,
 ) {
   const current = await loadOwnedRegistration(supabase, userId, registrationId)
+  requireLegacyRegistration(current)
   if (current.status === 'cancelled') return pendingDto(current)
   // The record is saved, and this API has no way to undo it. Answering
   // `registration_not_pending` here made the iPhone drop the proposal and

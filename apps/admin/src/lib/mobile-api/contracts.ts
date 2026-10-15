@@ -202,7 +202,7 @@ const mealProposalInputSchema = z
   })
   .strict()
 
-const workoutProposalInputSchema = z
+export const workoutProposalInputSchema = z
   .object({
     kind: z.literal('workout'),
     workout_type: z.string().trim().min(1).max(80),

@@ -46,7 +46,7 @@
  *
  * > RC BF-1 — cenário conta que informou 15% de gordura no cadastro e lê "Gordura corporal — Não disponível" em Progresso variante cadastro concluído de verdade contra o banco (a função complete_mobile_onboarding_atomic gravando user_profiles.body_fat_percent) e a tela vista no iPhone com o build 1.0 (3) NÃO coberta nesta PR (pendência da audit 2026-10-10). O golden parte do estado que o cadastro deixa (perfil com 15, progresso sem gordura); nenhum banco foi lido e nada foi publicado. Devolver a gordura do perfil quando a do progresso é nula é decisão do orquestrador, anunciada ao dono em 2026-10-10, que pode riscar qualquer uma.
  * > RC BF-2 — cenário gordura corporal em Progresso variante dizer na tela que o número foi informado pela pessoa, e quando (GET /progress não ganhou campo de origem; a linha fica em "Medidas", sem origem nem data) NÃO coberta nesta PR (pendência da audit 2026-10-10)
- * > RC BF-3 — registro histórico de 2026-10-10: os inputs das propostas Flow perdiam o BF do cadastro. A correção local de 2026-10-14 e o golden audit-10-14-flow-generator-body-fat.test.ts cobrem perfil15/progresso null, pós-D2 perfil24, precedência do progresso18 e ausência nas duas fontes, com tools/geradores reais e banco/LLM sintéticos. O cardápio passa a receber o valor; o prompt de treino permanece intacto e não usa BF. Isso não prova staging, confirmação D2 em SQL, resposta de LLM real ou QA físico.
+ * > RC BF-3 — registro histórico de 2026-10-10: os inputs das propostas Flow perdiam o BF do cadastro. A correção local de 2026-10-14 e o golden audit-10-14-flow-generator-body-fat.test.ts cobrem perfil15/progresso null, pós-D2 perfil24, precedência do progresso18 e ausência nas duas fontes, com tools/geradores reais e banco/LLM sintéticos. O cardápio passa a receber o valor; o prompt de treino permanece intacto e não usa BF. Isso não prova conta live, staging, confirmação D2 em SQL, resposta de LLM real, conferência no iPhone ou QA físico.
  * > RC BF-4 — cenário gordura corporal em Progresso variante valor mais novo vindo de reavaliação ou de fotos (nenhum caminho do app grava user_progress.current_bf_percent; se um dia gravar, ele vence o do perfil sem comparar datas) NÃO coberta nesta PR (pendência da audit 2026-10-10)
  */
 import { readFileSync } from 'node:fs'
@@ -293,7 +293,7 @@ describe('audit 2026-10-10 — GET /api/mobile/v1/progress and the body fat of t
   })
 })
 
-describe('audit 2026-10-10 — declared pendencies of the body fat in Progress', () => {
+describe('audit 2026-10-10 — body fat audit record and remaining pendencies in Progress', () => {
   it('G7 every "RC BF" line of this header is in docs/mobile/api-v1.md, identical; and the docs say whose decision it is', () => {
     const header = readFileSync(new URL(import.meta.url), 'utf8')
     const doc = readFileSync(new URL('../../../../../docs/mobile/api-v1.md', import.meta.url), 'utf8')
@@ -309,12 +309,24 @@ describe('audit 2026-10-10 — declared pendencies of the body fat in Progress',
       '> RC BF-4',
     ])
     expect(fromDoc).toEqual(fromHeader)
-    // The project's mandatory wording of a pendency.
-    for (const entry of fromHeader) {
+    // The three unchanged pendencies keep the project's mandatory wording.
+    for (const entry of [fromHeader[0], fromHeader[1], fromHeader[3]]) {
       expect(entry).toMatch(
-        /^> RC BF-\d+ — cenário .+ variante .+ NÃO coberta nesta PR \(pendência da audit 2026-10-10\)(?:$|\. \S)/,
+        /^> RC BF-(?:1|2|4) — cenário .+ variante .+ NÃO coberta nesta PR \(pendência da audit 2026-10-10\)(?:$|\. \S)/,
       )
     }
+    // BF-3 records local source coverage; its exact limits remain mandatory.
+    expect(fromHeader[2]).toBe(
+      [
+        '> RC BF-3 — registro histórico de 2026-10-10: os inputs das propostas Flow perdiam o BF do cadastro.',
+        'A correção local de 2026-10-14 e o golden audit-10-14-flow-generator-body-fat.test.ts cobrem',
+        'perfil15/progresso null, pós-D2 perfil24, precedência do progresso18 e ausência nas duas fontes,',
+        'com tools/geradores reais e banco/LLM sintéticos.',
+        'O cardápio passa a receber o valor; o prompt de treino permanece intacto e não usa BF.',
+        'Isso não prova conta live, staging, confirmação D2 em SQL, resposta de LLM real,',
+        'conferência no iPhone ou QA físico.',
+      ].join(' '),
+    )
 
     // Whose decision it is, in the item of GET /progress of each doc — and never as an approval.
     const flat = (text: string) => text.replace(/\s+/g, ' ')

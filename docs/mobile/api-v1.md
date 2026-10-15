@@ -1012,7 +1012,7 @@ encerradas por esta adição de servidor.
 
 > RC BF-2 — cenário gordura corporal em Progresso variante dizer na tela que o número foi informado pela pessoa, e quando (GET /progress não ganhou campo de origem; a linha fica em "Medidas", sem origem nem data) NÃO coberta nesta PR (pendência da audit 2026-10-10)
 
-> RC BF-3 — registro de 2026-10-10, resolvido localmente no transporte dos inputs em 2026-10-14: perfil15/progresso null e perfil24 pós-D2 chegam aos dois geradores Flow; progresso18 vence perfil24 e null/null permanece desconhecido. O golden cobre o cardápio real com a linha do percentual e o pedido de treino atual sem BF. Não cobre conta live, resposta real do modelo, confirmação D2 em SQL ou conferência no iPhone; esses gates continuam separados.
+> RC BF-3 — registro histórico de 2026-10-10: os inputs das propostas Flow perdiam o BF do cadastro. A correção local de 2026-10-14 e o golden audit-10-14-flow-generator-body-fat.test.ts cobrem perfil15/progresso null, pós-D2 perfil24, precedência do progresso18 e ausência nas duas fontes, com tools/geradores reais e banco/LLM sintéticos. O cardápio passa a receber o valor; o prompt de treino permanece intacto e não usa BF. Isso não prova conta live, staging, confirmação D2 em SQL, resposta de LLM real, conferência no iPhone ou QA físico.
 
 > RC BF-4 — cenário gordura corporal em Progresso variante valor mais novo vindo de reavaliação ou de fotos (nenhum caminho do app grava user_progress.current_bf_percent; se um dia gravar, ele vence o do perfil sem comparar datas) NÃO coberta nesta PR (pendência da audit 2026-10-10)
 

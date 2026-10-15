@@ -218,3 +218,33 @@ Seu driver define 19 corridas reais, com catálogo primeiro, relógio
 cruzando validade, reset/DELETE e confirmação/edição/cancelamento. As fontes
 foram congeladas e revisadas antes do body; execução e evidências pertencem ao
 diário operacional. Isso não constitui aceite do beta ou publicação.
+
+## Adapter de backend, sem ativação
+
+`apps/admin/src/lib/mobile-api/workout-registration-repository.ts` reúne as
+seis RPCs de admissão, materialização, leitura, edição, cancelamento e
+confirmação. A construção é lazy: não lê o port, cria cliente, consulta banco
+ou ativa flag. Ainda não há caller nas rotas, no serviço de registro ou no
+Swift; não há mudança no caminho legado nem no WhatsApp.
+
+O adapter conserva owner, key literal, revisão esperada e os valores de cada
+tentativa. Valida a projeção única `ui-v1`, o ID solicitado e o receipt EDIT
+original, aceitando a revisão atual posterior no replay. Materialização e
+edição com candidato SQL NULL podem retornar o sinal interno
+`preparation_required` somente para a exceção exata
+`22023/invalid_mobile_workout_proposal_candidate`. Com candidato real ou outro
+erro, a falha propaga. A confirmação conserva o resultado SQL, inclusive
+`capture_not_accepted`; essa negativa nunca é convertida em falta de preparo.
+
+`toWorkoutRegistrationDto` usa uma lista fechada com protocolo/revisão e a
+whitelist existente do proposal. Admission, provider, raw_args, hashes,
+argumentos13 e capture não entram nessa projeção HTTP. O capture permanece
+JSON interno, sem reinterpretação de calorias ou classificação: sua prova é
+feita pela transação SQL e pelo resolver. Validar o formato não prova origem
+no banco e não substitui a autenticação do futuro caller.
+
+Os testes do adapter cobrem os parâmetros das seis RPCs, probes e erros
+exatos, owner/ID/revisão/receipt, replay e whitelist. São testes com port
+controlado, sem PostgreSQL ou HTTP. O serviço, o tratamento do cache HTTP no
+replay, a preservação do formulário e a ligação da tentativa à sessão no iOS
+continuam parte da integração antes de ativar.

@@ -1,9 +1,11 @@
 # Fronteira de revisão do treino no app
 
 A migration `20261015115000_mobile_workout_registration_boundary.sql` prepara a
-fronteira de revisão do produtor de treino. Ainda não habilita callers no BFF,
-no Swift, no Flow ou no legado de WhatsApp. Editar/cancelar/confirmar com CAS,
-a integração e o cutover são etapas obrigatórias antes da ativação.
+fronteira de revisão do produtor de treino. A migration
+`20261015160000_mobile_workout_registration_mutations.sql` acrescenta edição e
+cancelamento por revisão. Ainda não habilitam callers no BFF, no Swift, no Flow
+ou no legado de WhatsApp. Confirmação atômica, integração e cutover continuam
+obrigatórios antes da ativação.
 
 ## Origem e dados históricos
 
@@ -21,9 +23,61 @@ reverte a operação inteira. Um replay exige o marker existente; não o repara.
 A ausência posterior do pending conserva o histórico e não cria substituto.
 
 `mobile_workout_registration_edit_receipts` reserva receipts owned de edições
-aceitas, com revisão sucessora e hash. Esta etapa não oferece uma API EDIT.
-Fixtures de teste podem inserir um receipt sintético como owner para exercitar
-o detector; isso não demonstra uma edição funcional.
+aceitas, com revisão sucessora e hash do input. Os testes da fronteira S17B
+inserem receipts sintéticos para exercitar o detector; os testes das mutações
+executam edições reais sobre admissões/materializações reais.
+
+## Edição e cancelamento por revisão
+
+As duas RPCs novas são DEFINER, VOLATILE, owner postgres e search_path restrito
+a pg_catalog. Somente o backend tem EXECUTE; o guard backend real precede os
+argumentos. Exigem READ COMMITTED. Não criam tabelas, colunas ou lifecycle, não
+chamam os writers de treino e não recalculam calorias.
+
+A ordem é advisory workouts → usuário ativo FOR NO KEY UPDATE → epoch →
+admissão → pending original FOR UPDATE. O journal owned localiza a admissão
+por pending histórico, sem usar o marker como prova. Admissão ausente,
+ambígua ou com revisão NULL é inválida; epoch antiga precede pending removido.
+Depois do rowlock, o marker deve corresponder à admissão e o pending original
+deve existir. Lifecycle não NULL com status diferente de confirmed é inválido.
+Negativos de autoridade retornam somente status/reason, sem dados do registro.
+
+`edit_mobile_workout_registration(owner, pending, expected_revision, key,
+input, proposal)` aceita key literal `wue1:<UUID>`, distinta da criação `wui1`.
+Preserva case dos dígitos e usa collation C. Uma key de outra admissão do mesmo
+owner, inclusive de outro epoch ou ainda sem pending, conflita. Outro owner
+mantém seu domínio independente. O domínio amplo do produtor S16 permanece.
+
+Um receipt existente compara o hash S16 do input e a revisão esperada, sem
+validar a proposta recalculada. Seu replay retorna o receipt original e a
+projeção atual: depois de 0→1→2, o primeiro retry retorna receipt 0/1 com
+conteúdo/revisão 2. Não renova validade, reverte conteúdo nem recria pending.
+Sem receipt, a precedência é confirmed, outro terminal, revisão divergente,
+timestamp vencido, colisão da key, validação do candidato e limite de revisão.
+
+A nova edição valida os mesmos doze campos do candidato S16; somente o
+provider passa a ser a key EDIT. Mantém a truncagem de submilissegundos do
+builder JS quando performed_at foi informado. Atualiza somente proposta e
+validade do mesmo pending, incrementa a revisão e insere um receipt de seis
+campos, atomicamente. A validade é clock_timestamp após os locks mais 24 horas
+transcorridas. Revisão 2147483647 recusa nova edição; receipts aceitos que
+chegaram a esse limite ainda podem ser repetidos.
+
+`cancel_mobile_workout_registration(owner, pending, expected_revision)` recusa
+confirmed antes da revisão; depois verifica revisão, cancelled e demais
+terminais. Cancelled na mesma revisão é replay. Pending com timestamp vencido
+continua cancelável, como no serviço existente. Só status e resolved_at mudam;
+conteúdo, validade, revisão e receipts permanecem.
+
+Os resultados incluem a mesma projeção interna de oito campos, `ui-v1`, e,
+para edição aceita/repetida, o receipt requestKey/expectedRevision/resultRevision.
+Conflitos owned incluem projeção atual sem receipt. Exceções de persistência
+propagam e revertem toda a chamada; não são convertidas em sucesso parcial.
+
+Antes de ativar, a integração BFF deve alcançar um receipt aceito mesmo se o
+recálculo posterior estiver indisponível ou peso/horário tiverem mudado. Também
+deverá aplicar a whitelist HTTP existente ao proposal raw. Estes requisitos
+não são demonstrados pela RPC SQL isolada.
 
 ## Único cálculo e gravação
 
@@ -102,3 +156,14 @@ INSERT/EDIT legados com proposta, validade e demais dados exatos, primeiro sem
 operação anterior e depois de um INSERT real pelo owner. Os dois cenários
 exigem sucesso, rollback integral e ausência de USAGE em `private` para o
 service_role; uma falha anterior não é convertida em resultado esperado.
+
+`supabase/tests/mobile_workout_registration_mutations.sql` define 45 checks
+sequenciais: Natação 40→45, replay após revisão 2, cancelamento, validação,
+autoridade, keys históricas, overflow e rollback após gravações reais. Inclui
+uma admissão vizinha real ainda sem pending e verifica a proteção dos writers
+13/S8 após EDIT aceito seguido de reset/DELETE. O driver de mutações define
+16 corridas reais com COMMIT/ROLLBACK, terminal legado, reset, DELETE e relógio
+cruzando a validade enquanto a row está bloqueada. A janela de teste é armada
+uma vez antes do segundo ator; não rearma o FK depois do bloqueio. A execução
+e os resultados pertencem ao diário operacional; a existência desses testes
+não demonstra integração ou disponibilidade do beta.

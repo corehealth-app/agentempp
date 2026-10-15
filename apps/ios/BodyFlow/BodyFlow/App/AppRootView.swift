@@ -12,6 +12,7 @@ struct AppRootView: View {
     @State private var onboardingCoordinator = OnboardingRootCoordinator()
     @State private var authenticatedShellCoordinator: Prompt14AuthenticatedShellCoordinator
     @State private var mealRecordDriver: MealRecordRootWiringDriver
+    private let workoutAuthenticationLifetime: MealRecordAuthenticationLifetime?
     @State private var onboardingRetryTask: Task<Void, Never>?
     @State private var appearance: BodyFlowAppearanceStore
     @Environment(\.scenePhase) private var scenePhase
@@ -26,6 +27,7 @@ struct AppRootView: View {
         self.model = model
         self.dependencies = dependencies
         self.configuration = configuration
+        workoutAuthenticationLifetime = mealRecordLifetime
         let shellCoordinator = Prompt14AuthenticatedShellCoordinator(
             dependencies: dependencies,
             enablesMealRecordBinding: mealRecordLifetime != nil
@@ -41,6 +43,7 @@ struct AppRootView: View {
 
     var body: some View {
         let originalMealRecordTaskID = mealRecordDriver.taskID
+        let originalWorkoutTaskID = workoutTaskID
         return Group {
             rootContent
                 .transition(
@@ -102,6 +105,9 @@ struct AppRootView: View {
         .task(id: originalMealRecordTaskID) {
             await synchronizeMealRecords(expected: originalMealRecordTaskID)
         }
+        .task(id: originalWorkoutTaskID) {
+            await synchronizeWorkout(expected: originalWorkoutTaskID)
+        }
         .task(id: isSignedOut) {
             // No local reminder survives without a signed-in account: this
             // also finishes a clean-up that a sign-out could not complete
@@ -121,6 +127,25 @@ struct AppRootView: View {
         let original = expected
         _ = await mealRecordDriver.synchronize(expected: original)
         // H05's scoped finisher belongs to its later integration, not an automatic recovery.
+    }
+
+    private var workoutTaskID: MealRecordRootTaskID? {
+        guard dependencies.workoutRegistrationSessionSource != nil,
+              let activation = model.mealRecordActivation,
+              let owner = authenticatedShellCoordinator.renderableOwner(for: activation.userID) else { return nil }
+        return MealRecordRootTaskID(activation: activation, owner: ObjectIdentifier(owner))
+    }
+
+    private func synchronizeWorkout(expected: MealRecordRootTaskID?) async {
+        guard !Task.isCancelled, let expected, workoutTaskID == expected,
+              let lifetime = workoutAuthenticationLifetime,
+              let activation = model.mealRecordActivation, activation == expected.activation,
+              let owner = authenticatedShellCoordinator.renderableOwner(for: activation.userID),
+              ObjectIdentifier(owner) == expected.owner,
+              let binding = owner.reserveWorkoutRegistrationBinding(activation: activation,
+                lifetime: lifetime, currentActivation: { [weak model] in model?.mealRecordActivation }) else { return }
+        // Only these original values cross the await; no callback looks up A2.
+        await owner.resolveWorkoutRegistration(binding)
     }
 
     /// This closure belongs to the exact presented offer and original owner.
@@ -196,7 +221,7 @@ struct AppRootView: View {
                         mealRecordRecoveryAvailability: mealRecordDriver.recoveryAvailability(for: owner),
                         recoverMealRecord: mealRecordRecoveryAction(for: owner)
                     )
-                    .id(userID)
+                    .id(ObjectIdentifier(owner))
                 } else {
                     authenticatedSessionLoading
                 }

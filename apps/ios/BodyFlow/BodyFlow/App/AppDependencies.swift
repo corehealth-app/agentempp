@@ -51,6 +51,8 @@ struct AppDependencies: Sendable {
 
     /// Explicit local wiring permission; nil preserves the read-only history.
     var mealRecordBindingSource: MealRecordSessionBindingSource? = nil
+    /// Real lifecycle only; the server's scoped `/me` response selects the protocol.
+    var workoutRegistrationSessionSource: WorkoutRegistrationSessionBindingSource? = nil
 
     var patientTimeZone: PatientTimeZoneContext {
         patientTimeZoneStore.current
@@ -242,6 +244,12 @@ struct AppDependencies: Sendable {
             enabled: enablesConfirmedMealEditing, mode: configuration.mode,
             client: apiClient, lifecycle: releaseLifecycle
         )
+        let workoutRegistrationSessionSource: WorkoutRegistrationSessionBindingSource?
+        if configuration.mode != .demo, let transport = apiClient as? MobileAPITransport,
+           let releaseLifecycle {
+            workoutRegistrationSessionSource = WorkoutRegistrationSessionBindingSource(
+                transport: transport, lifecycle: releaseLifecycle)
+        } else { workoutRegistrationSessionSource = nil }
 
         #if DEBUG
         let timeProvider: any TimeProviding
@@ -741,7 +749,8 @@ struct AppDependencies: Sendable {
             signupBodyPhotoCleanup: signupBodyPhotoCleanup,
             signupBodyPhotoCapture: signupBodyPhotoCapture,
             guidedTutorial: guidedTutorial,
-            mealRecordBindingSource: mealRecordBindingSource
+            mealRecordBindingSource: mealRecordBindingSource,
+            workoutRegistrationSessionSource: workoutRegistrationSessionSource
         )
     }
 

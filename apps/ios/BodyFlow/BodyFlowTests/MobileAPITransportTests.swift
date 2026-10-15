@@ -3322,12 +3322,17 @@ private actor StubRegistry {
 // existing SessionLifecycleCoordinator, PatientWorkRegistry and MobileAPITransport.
 private actor C11BoundaryHold {
     private var entered = false
+    private var completed = false
+    private var entryOrCompletionWaiters: [CheckedContinuation<Bool, Never>] = []
     private var opened = false
     private var enteredWaiters: [CheckedContinuation<Void, Never>] = []
     private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
 
     func enterAndWait() async {
         entered = true
+        let completionWaiters = entryOrCompletionWaiters
+        entryOrCompletionWaiters.removeAll()
+        completionWaiters.forEach { $0.resume(returning: true) }
         let enteredWaiters = enteredWaiters
         self.enteredWaiters.removeAll()
         enteredWaiters.forEach { $0.resume() }
@@ -3337,6 +3342,18 @@ private actor C11BoundaryHold {
     func waitUntilEntered() async {
         guard !entered else { return }
         await withCheckedContinuation { enteredWaiters.append($0) }
+    }
+    // Additive completion escape for new H2 tests; existing entry waits stay unchanged.
+    func noteCompletion() {
+        completed = true
+        let waiters = entryOrCompletionWaiters
+        entryOrCompletionWaiters.removeAll()
+        waiters.forEach { $0.resume(returning: entered) }
+    }
+    func waitUntilEnteredOrCompleted() async -> Bool {
+        if entered { return true }
+        if completed { return false }
+        return await withCheckedContinuation { entryOrCompletionWaiters.append($0) }
     }
     func release() {
         opened = true
@@ -4375,5 +4392,666 @@ private func c11WithI5Binding(_ body: (C11I5BindingFixture) async throws -> Void
         await runtime.releaseAll()
         await owner.endSession()
         throw error
+    }
+}
+
+// Append to MobileAPITransportTests.swift, in the SAME file and serialized
+// suite as its existing private C11/HTTP helpers. No new @Suite/URLProtocol.
+extension MobileAPITransportTests {
+    @MainActor
+    @Test("H2: one original scope reads Me and serves the owned projection; only exact ui-v1 opts in",
+          arguments: ["ui-v1", "ui-v2", "absent"])
+    func h2OneCapturedScopeAndExplicitMeProtocol(advertised: String) async throws {
+        try await h2WithWire { fixture in
+            let wire = fixture.wire
+            #expect(await fixture.counted.leaseCalls == 0)
+            #expect(await wire.stub.requests().isEmpty)
+            let original = try await wire.coordinator.leaseForRequest()
+            let me = try h2Me(owner: fixture.activation.userID, advertised: advertised)
+            let projection = try h2Projection()
+            await wire.stub.respond { request, _ in
+                switch request.url?.path {
+                case "/api/mobile/v1/me": return StubResponse(status: 200, body: me)
+                case "/api/mobile/v1/registrations/\(h2RegistrationID)": return StubResponse(status: 200, body: projection)
+                default: throw H2UnexpectedRequest()
+                }
+            }
+            let binding = try fixture.reserve()
+            #expect(await fixture.counted.leaseCalls == 0)
+            #expect(binding.readyContext == nil)
+            let context = try await fixture.source.bind(binding)
+            #expect(context.isActive)
+            #expect(context.registrationProtocol == (advertised == "ui-v1" ? .uiV1 : nil))
+            #expect(binding.readyContext != nil)
+            #expect(binding.capturedLease?.userID == original.userID)
+            #expect(binding.capturedLease?.generation == original.generation)
+            #expect(await fixture.counted.leaseCalls == 1)
+            if advertised == "ui-v1" {
+                let response = try await context.provider.loadWorkoutRegistration(id: h2RegistrationID)
+                #expect(response.data.id == h2RegistrationID)
+                #expect(response.data.workoutVersion?.contentRevision == 0)
+            }
+            let requests = await wire.stub.requests()
+            let paths = advertised == "ui-v1"
+                ? ["/api/mobile/v1/me", "/api/mobile/v1/registrations/\(h2RegistrationID)"]
+                : ["/api/mobile/v1/me"]
+            #expect(requests.compactMap { $0.url?.path } == paths)
+            #expect(requests.allSatisfy { $0.httpMethod == "GET" })
+            #expect(requests.allSatisfy { $0.value(forHTTPHeaderField: "Idempotency-Key") == nil })
+            #expect(requests.allSatisfy { $0.value(forHTTPHeaderField: "Authorization") == "Bearer \(original.bearer)" })
+            #expect(await fixture.counted.leaseCalls == 1)
+        }
+    }
+
+    @MainActor
+    @Test("H2: failed Me stays unready and explicit retry retains the original scope")
+    func h2MeRetryDoesNotCaptureAnotherLease() async throws {
+        try await h2WithWire { fixture in
+            let me = try h2Me(owner: fixture.activation.userID, advertised: "ui-v1")
+            await fixture.wire.stub.respond { request, call in
+                guard request.url?.path == "/api/mobile/v1/me", request.httpMethod == "GET" else { throw H2UnexpectedRequest() }
+                return call == 1 ? .failure(status: 503, code: "internal_error") : StubResponse(status: 200, body: me)
+            }
+            let binding = try fixture.reserve()
+            do {
+                _ = try await fixture.source.bind(binding)
+                Issue.record("ME_FAILURE_MUST_NOT_PUBLISH_A_READY_OR_LEGACY_CONTEXT")
+            } catch { #expect(!(error is CancellationError)) }
+            #expect(binding.readyContext == nil)
+            #expect(binding.canRetryMe)
+            #expect(binding.isOpen)
+            let original = try #require(binding.capturedLease)
+            #expect(await fixture.counted.leaseCalls == 1)
+            #expect(await fixture.wire.stub.requests().count == 1)
+            let context = try await fixture.source.retryMe(binding)
+            #expect(context.isActive)
+            #expect(context.registrationProtocol == .uiV1)
+            #expect(binding.capturedLease?.userID == original.userID)
+            #expect(binding.capturedLease?.generation == original.generation)
+            #expect(await fixture.counted.leaseCalls == 1)
+            let requests = await fixture.wire.stub.requests()
+            #expect(requests.count == 2)
+            #expect(requests.allSatisfy { $0.url?.path == "/api/mobile/v1/me" && $0.httpMethod == "GET" })
+            #expect(requests.allSatisfy { $0.value(forHTTPHeaderField: "Authorization") == "Bearer \(original.bearer)" })
+        }
+    }
+
+    @MainActor
+    @Test("H2: a reserved old ticket cannot adopt a returned current lease, including A to B to A",
+          arguments: [false, true])
+    func h2HeldLeaseCannotRenewAnOldTicket(actualABA: Bool) async throws {
+        try await h2WithWire { fixture in
+            let wire = fixture.wire
+            let original = try await wire.coordinator.leaseForRequest()
+            let old = try fixture.reserve()
+            await wire.lifecycle.holdNextLease(completeEvenIfCancelled: true)
+            let pending = Task {
+                do {
+                    let context = try await fixture.source.bind(old)
+                    await wire.lifecycle.leaseHold.noteCompletion()
+                    return context
+                } catch {
+                    await wire.lifecycle.leaseHold.noteCompletion()
+                    throw error
+                }
+            }
+            do {
+                let entered = await wire.lifecycle.leaseHold.waitUntilEnteredOrCompleted()
+                try #require(entered, "Bind must reach the real lease API before the held-lease oracle")
+                let ticket = fixture.lifetime.beginAuthenticationBoundary()
+                let current = try #require(fixture.lifetime.publishAuthenticated(userID: original.userID, ticket: ticket))
+                #expect(current.ticket != fixture.activation.ticket)
+                #expect(!fixture.owner.isInvalidated) // ticket, not owner close, withdraws the old grant
+                #expect(!old.isOpen)
+                if actualABA { try await wire.replaceSession(returnToA: true) }
+                let currentLease = try await wire.coordinator.leaseForRequest()
+                #expect(currentLease.userID == original.userID)
+                #expect((currentLease.generation != original.generation) == actualABA)
+                await wire.lifecycle.leaseHold.release()
+                await #expect(throws: CancellationError.self) { _ = try await pending.value }
+                #expect(old.readyContext == nil)
+                #expect(await wire.stub.requests().isEmpty)
+                let me = try h2Me(owner: current.userID, advertised: "ui-v1")
+                await wire.stub.respond(with: StubResponse(status: 200, body: me))
+                let next = try fixture.reserve(activation: current)
+                #expect(next !== old)
+                let ready = try await fixture.source.bind(next)
+                #expect(ready.isActive)
+                #expect(next.capturedLease?.generation == currentLease.generation)
+                #expect(await wire.stub.requests().count == 1)
+                await old.endSession()
+                #expect(ready.isActive)
+            } catch {
+                await wire.lifecycle.leaseHold.release()
+                _ = await pending.result
+                throw error
+            }
+        }
+    }
+
+    @MainActor
+    @Test("H2: a retained provider cannot send a mutation or owned GET under B or later A",
+          arguments: [H2WorkoutCall.propose, .edit, .confirm, .cancel, .get])
+    func h2RetainedProviderCannotSendAfterABA(call: H2WorkoutCall) async throws {
+        try await h2WithWire { fixture in
+            let me = try h2Me(owner: fixture.activation.userID, advertised: "ui-v1")
+            await fixture.wire.stub.respond(with: StubResponse(status: 200, body: me))
+            let binding = try fixture.reserve()
+            let context = try await fixture.source.bind(binding)
+            #expect(context.isActive)
+            #expect(await fixture.wire.stub.requests().count == 1)
+            _ = fixture.lifetime.beginAuthenticationBoundary()
+            try await fixture.wire.replaceSession(returnToA: true)
+            #expect(!context.isActive)
+            await #expect(throws: CancellationError.self) {
+                try await h2Invoke(call, provider: context.provider)
+            }
+            #expect(await fixture.wire.stub.requests().count == 1)
+            #expect(await fixture.wire.remote.refreshCount == 0)
+            #expect(binding.readyContext == nil)
+        }
+    }
+
+    @MainActor
+    @Test("H2: a completed real EDIT success or error cannot publish after its original ticket retires",
+          arguments: [false, true])
+    func h2LateWorkoutModelResultIsNotPublished(failure: Bool) async throws {
+        try await h2WithWire { fixture in
+            let me = try h2Me(owner: fixture.activation.userID, advertised: "ui-v1")
+            let pending = try h2Projection()
+            let edited = try h2Projection(revision: 1, duration: 61, receiptKey: "wue1:\(H2WorkoutKeys.literal(2))")
+            await fixture.wire.stub.respond { request, _ in
+                switch (request.httpMethod, request.url?.path) {
+                case ("GET", "/api/mobile/v1/me"): return StubResponse(status: 200, body: me)
+                case ("POST", "/api/mobile/v1/registrations/propose"): return StubResponse(status: 200, body: pending)
+                case ("PATCH", "/api/mobile/v1/registrations/\(h2RegistrationID)"):
+                    return failure ? .failure(status: 409, code: "registration_revision_conflict") : StubResponse(status: 200, body: edited)
+                default: throw H2UnexpectedRequest()
+                }
+            }
+            let context = try await fixture.source.bind(fixture.reserve())
+            let controlled = H2CompletedEditHold(base: context.provider)
+            let center = FeatureInvalidationCenter()
+            let model = WorkoutRegistrationModel(registration: controlled,
+                timeProvider: C11OwnerFixtureTime(), keyProvider: H2WorkoutKeys(),
+                invalidationCenter: center, registrationProtocol: context.registrationProtocol,
+                isSessionActive: { context.isActive })
+            await model.submit(h2Draft)
+            #expect(model.currentProposal?.id == h2RegistrationID)
+            #expect(center.revision(for: .today) == 1)
+            let operation = Task {
+                await model.saveEdit(h2EditedDraft)
+                await controlled.completed.noteCompletion()
+            }
+            do {
+                let entered = await controlled.completed.waitUntilEnteredOrCompleted()
+                try #require(entered)
+                #expect(await fixture.wire.stub.requests().count == 3)
+                #expect(model.captureError == nil)
+                _ = fixture.lifetime.beginAuthenticationBoundary()
+                try await fixture.wire.replaceSession(returnToA: true)
+                #expect(!context.isActive)
+                await controlled.completed.release()
+                await operation.value
+                #expect(model.currentProposal?.workoutVersion?.contentRevision == 0)
+                #expect(model.pendingDraft?.workoutType == h2EditedDraft.workoutType)
+                #expect(model.pendingDraft?.durationMin == h2EditedDraft.durationMin)
+                #expect(model.pendingDraft?.intensity == h2EditedDraft.intensity)
+                #expect(model.pendingDraft?.performedAt == h2EditedDraft.performedAt)
+                #expect(model.captureError == nil)
+                #expect(model.mutationState.receipt == nil)
+                #expect(model.accessibilityFocusTarget == nil)
+                #expect(center.revision(for: .today) == 1)
+                #expect(center.revision(for: .history) == 0)
+                let before = await fixture.wire.stub.requests().count
+                await model.confirm()
+                await model.cancel()
+                #expect(await fixture.wire.stub.requests().count == before)
+            } catch {
+                await controlled.completed.release()
+                await operation.value
+                throw error
+            }
+        }
+    }
+
+    @MainActor
+    @Test("H2: a real timed-out EDIT completed after ticket retirement throws cancellation directly from the provider")
+    func h2ProviderLateErrorCannotEscapeItsRetiredTicket() async throws {
+        try await h2WithWire { fixture in
+            let wire = fixture.wire
+            let me = try h2Me(owner: fixture.activation.userID, advertised: "ui-v1")
+            await wire.stub.respond(with: StubResponse(status: 200, body: me))
+            let binding = try fixture.reserve()
+            let context = try await fixture.source.bind(binding)
+            let original = try #require(binding.capturedLease)
+            await wire.stub.respond { request, _ in
+                guard request.httpMethod == "PATCH",
+                      request.url?.path == "/api/mobile/v1/registrations/\(h2RegistrationID)" else {
+                    throw H2UnexpectedRequest()
+                }
+                throw URLError(.timedOut)
+            }
+            await wire.lifecycle.holdNextFinish()
+            let version = try #require(WorkoutRegistrationVersion(contentRevision: 0))
+            let attempt = MutationAttempt(operation: .proposalEdit,
+                key: try IdempotencyKey(validating: H2WorkoutKeys.literal(8)),
+                payload: RegistrationEditCommand(registrationID: h2RegistrationID,
+                    proposal: .workout(h2EditedDraft), workoutVersion: version),
+                createdAt: C11OwnerFixtureTime().now)
+            let pending = Task {
+                do {
+                    let response = try await context.provider.edit(attempt)
+                    await wire.lifecycle.finishHold.noteCompletion()
+                    return response
+                } catch {
+                    await wire.lifecycle.finishHold.noteCompletion()
+                    throw error
+                }
+            }
+            do {
+                let entered = await wire.lifecycle.finishHold.waitUntilEnteredOrCompleted()
+                try #require(entered, "Provider EDIT must reach the completed real HTTP failure before retirement")
+                let requests = await wire.stub.requests()
+                try #require(requests.count == 2)
+                #expect(requests.last?.httpMethod == "PATCH")
+                #expect(requests.last?.url?.path == "/api/mobile/v1/registrations/\(h2RegistrationID)")
+                #expect(requests.last?.value(forHTTPHeaderField: "Idempotency-Key") == attempt.key.value)
+                _ = fixture.lifetime.beginAuthenticationBoundary()
+                #expect(!context.isActive)
+                #expect(!binding.isOpen)
+                #expect(!fixture.owner.isInvalidated)
+                // No session switch or model discard can mask the leaf's error barrier.
+                try await wire.coordinator.validate(original)
+                let current = try await wire.coordinator.leaseForRequest()
+                #expect(current.userID == original.userID)
+                #expect(current.generation == original.generation)
+                await wire.lifecycle.finishHold.release()
+                await #expect(throws: CancellationError.self) { _ = try await pending.value }
+                #expect(await wire.stub.requests().count == 2)
+                #expect(await wire.remote.refreshCount == 0)
+                #expect(await wire.lifecycle.heldFinishReturnedWhileCancelled == true)
+            } catch {
+                await wire.lifecycle.finishHold.release()
+                _ = await pending.result
+                throw error
+            }
+        }
+    }
+
+    @MainActor
+    @Test("H2: same-generation401 refresh preserves the exact versioned command and original grant")
+    func h2SameGenerationRefreshKeepsTheWorkoutCommand() async throws {
+        try await h2WithWire { fixture in
+            let me = try h2Me(owner: fixture.activation.userID, advertised: "ui-v1")
+            await fixture.wire.stub.respond(with: StubResponse(status: 200, body: me))
+            let binding = try fixture.reserve()
+            let context = try await fixture.source.bind(binding)
+            let original = try #require(binding.capturedLease)
+            let bodies = C11RequestBodyCapture()
+            let confirmed = try h2Projection(status: "confirmed", confirmation: true)
+            await fixture.wire.stub.respond { request, call in
+                guard request.httpMethod == "POST", request.url?.path == "/api/mobile/v1/registrations/\(h2RegistrationID)/confirm" else { throw H2UnexpectedRequest() }
+                try await bodies.capture(request)
+                return call == 2 ? .failure(status: 401, code: "expired_token") : StubResponse(status: 200, body: confirmed)
+            }
+            let key = try IdempotencyKey(validating: H2WorkoutKeys.literal(7))
+            let version = try #require(WorkoutRegistrationVersion(contentRevision: 0))
+            let attempt = MutationAttempt(operation: .proposalConfirm, key: key,
+                payload: RegistrationIDCommand(registrationID: h2RegistrationID, workoutVersion: version),
+                createdAt: C11OwnerFixtureTime().now)
+            let result = try await context.provider.confirm(attempt)
+            #expect(result.data.registration.status == "confirmed")
+            #expect(context.isActive)
+            #expect(context.registrationProtocol == .uiV1)
+            #expect(await fixture.counted.leaseCalls == 1)
+            #expect(await fixture.wire.remote.refreshCount == 1)
+            let current = try await fixture.wire.coordinator.leaseForRequest()
+            #expect(current.generation == original.generation)
+            let requests = Array((await fixture.wire.stub.requests()).dropFirst())
+            #expect(requests.count == 2)
+            let first = try #require(requests.first)
+            let second = try #require(requests.last)
+            #expect(first.httpMethod == second.httpMethod)
+            #expect(first.url == second.url)
+            #expect(first.value(forHTTPHeaderField: "Idempotency-Key") == key.value)
+            #expect(second.value(forHTTPHeaderField: "Idempotency-Key") == key.value)
+            #expect(first.value(forHTTPHeaderField: "X-Request-Id") == second.value(forHTTPHeaderField: "X-Request-Id"))
+            #expect(first.value(forHTTPHeaderField: "Authorization") != second.value(forHTTPHeaderField: "Authorization"))
+            let capturedBodies = await bodies.bodies()
+            #expect(capturedBodies.count == 2)
+            #expect(capturedBodies[0] == capturedBodies[1])
+            let object = try #require(capturedBodies[0].flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] })
+            #expect(Set(object.keys) == ["workout_protocol", "expected_revision"])
+            #expect(object["workout_protocol"] as? String == "ui-v1")
+            #expect(object["expected_revision"] as? Int == 0)
+        }
+    }
+
+    @MainActor
+    @Test("H2: an admitted work UUID returned after retirement is retained and finished once across reentrant end")
+    func h2LateWorkIDAndReentrantEndHaveOneOwner() async throws {
+        let runtime = try await C11I5BindingRuntime()
+        let lifetime = MealRecordAuthenticationLifetime()
+        let ticket = lifetime.beginAuthenticationBoundary()
+        let activation = try #require(lifetime.publishAuthenticated(userID: runtime.original.userID, ticket: ticket))
+        let owner = Prompt14SessionOwner(userID: activation.userID, dependencies: C11BindingTestDependencies.make())
+        await owner.awaitPatientTimeZoneResolution()
+        let reservation = owner.reserveWorkoutRegistrationBinding(activation: activation,
+            lifetime: lifetime, currentActivation: { lifetime.currentActivation })
+        let binding = try #require(reservation)
+        let source = WorkoutRegistrationSessionBindingSource(transport: runtime.transport, lifecycle: runtime.probe)
+        await runtime.probe.holdNextBeginReturn()
+        let pending = Task {
+            do {
+                let value = try await source.bind(binding)
+                await runtime.probe.beginReturn.noteCompletion()
+                return value
+            } catch {
+                await runtime.probe.beginReturn.noteCompletion()
+                throw error
+            }
+        }
+        var first: Task<Void, Never>?
+        var second: Task<Void, Never>?
+        do {
+            let entered = await runtime.probe.beginReturn.waitUntilEnteredOrCompleted()
+            try #require(entered, "Binding must subscribe through the real beginPatientWork API")
+            let admitted = await runtime.probe.admittedIDs
+            try #require(admitted.count == 1)
+            #expect(await runtime.registry.activeCount == 1)
+            _ = lifetime.beginAuthenticationBoundary()
+            #expect(!binding.isOpen)
+            #expect(binding.readyContext == nil)
+            let ends = C11ConcurrentEndProbe()
+            let one = Task { @MainActor in ends.didStart(); await binding.endSession(); ends.didFinish() }
+            let two = Task { @MainActor in ends.didStart(); await binding.endSession(); ends.didFinish() }
+            first = one; second = two
+            await ends.waitForBothStarts()
+            #expect(ends.finishedCount == 0)
+            await runtime.probe.beginReturn.release()
+            await #expect(throws: CancellationError.self) { _ = try await pending.value }
+            await one.value
+            await two.value
+            #expect(ends.finishedCount == 2)
+            #expect(await runtime.probe.finishedIDs == admitted)
+            #expect(await runtime.registry.activeCount == 0)
+            #expect(await runtime.stub.requests().isEmpty)
+            await binding.endSession()
+            #expect(await runtime.probe.finishedIDs == admitted)
+            await lifetime.endSession()
+            await owner.endSession()
+        } catch {
+            await runtime.releaseAll()
+            _ = await pending.result
+            await first?.value
+            await second?.value
+            await lifetime.endSession()
+            await owner.endSession()
+            throw error
+        }
+    }
+}
+
+enum H2WorkoutCall: Sendable { case propose, edit, confirm, cancel, get }
+
+private let h2RegistrationID = "11111111-1111-4111-8111-111111111111"
+private let h2Draft = WorkoutProposalRequest(workoutType: "Natação", durationMin: 47, intensity: .high,
+    performedAt: APITimestamp(value: Date(timeIntervalSince1970: 1_790_000_321)))
+private let h2EditedDraft = WorkoutProposalRequest(workoutType: "Remo indoor", durationMin: 61, intensity: .light,
+    performedAt: APITimestamp(value: Date(timeIntervalSince1970: 1_790_000_654)))
+private struct H2UnexpectedRequest: Error {}
+
+private func h2Me(owner: String, advertised: String) throws -> Data {
+    var row: [String: Any] = ["id": owner, "timezone": "America/Sao_Paulo"]
+    if advertised != "absent" { row["workout_registration_protocol"] = advertised }
+    return try JSONSerialization.data(withJSONObject: ["data": row,
+        "meta": ["api_version": "v1", "request_id": "s17h2-me-synthetic"]], options: [.sortedKeys])
+}
+private func h2Projection(revision: Int = 0, status: String = "pending", duration: Int = 47,
+    receiptKey: String? = nil, confirmation: Bool = false) throws -> Data {
+    var row: [String: Any] = ["id": h2RegistrationID, "status": status,
+        "created_at": "2026-10-15T15:00:00.123456+00:00", "expires_at": "2026-10-16T15:00:00.123456+00:00",
+        "resolved_at": status == "pending" ? NSNull() as Any : "2026-10-15T15:01:00.123456+00:00" as Any,
+        "workout_protocol": "ui-v1", "content_revision": revision,
+        "proposal": ["kind": "workout", "workout_type": duration == 47 ? "Natação" : "Remo indoor",
+            "duration_min": duration, "estimated_kcal": 333, "intensity": duration == 47 ? "alta" : "leve"]]
+    if let receiptKey { row["receipt"] = ["requestKey": receiptKey, "expectedRevision": 0, "resultRevision": 1] }
+    if confirmation { row["already_confirmed"] = false; row["deduped"] = false }
+    return try JSONSerialization.data(withJSONObject: ["data": row,
+        "meta": ["api_version": "v1", "request_id": "s17h2-registration-synthetic"]], options: [.sortedKeys])
+}
+
+@MainActor
+private struct H2WireFixture {
+    let wire: C11RealLifecycleTransportHarness
+    let counted: C11RootCountingLifecycle
+    let source: WorkoutRegistrationSessionBindingSource
+    let lifetime: MealRecordAuthenticationLifetime
+    let activation: MealRecordAuthenticatedActivation
+    let owner: Prompt14SessionOwner
+    func reserve(activation incoming: MealRecordAuthenticatedActivation? = nil) throws -> WorkoutRegistrationSessionBinding {
+        let lifetime = self.lifetime
+        let reservation = owner.reserveWorkoutRegistrationBinding(activation: incoming ?? activation,
+            lifetime: lifetime, currentActivation: { lifetime.currentActivation })
+        return try #require(reservation)
+    }
+    func end() async {
+        await wire.lifecycle.leaseHold.release()
+        await wire.lifecycle.finishHold.release()
+        await wire.lifecycle.visibleReturnHold.release()
+        await lifetime.endSession()
+        await owner.endSession()
+    }
+}
+
+@MainActor
+private func h2WithWire(_ body: (H2WireFixture) async throws -> Void) async throws {
+    let wire = try await C11RealLifecycleTransportHarness()
+    let lifetime = MealRecordAuthenticationLifetime()
+    let ticket = lifetime.beginAuthenticationBoundary()
+    let activation = try #require(lifetime.publishAuthenticated(userID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", ticket: ticket))
+    let owner = Prompt14SessionOwner(userID: activation.userID, dependencies: C11BindingTestDependencies.make())
+    await owner.awaitPatientTimeZoneResolution()
+    let counted = C11RootCountingLifecycle(base: wire.lifecycle)
+    let source = WorkoutRegistrationSessionBindingSource(transport: wire.transport, lifecycle: counted)
+    let fixture = H2WireFixture(wire: wire, counted: counted, source: source, lifetime: lifetime, activation: activation, owner: owner)
+    do { try await body(fixture); await fixture.end() }
+    catch { await fixture.end(); throw error }
+}
+
+private func h2Invoke(_ call: H2WorkoutCall, provider: any RegistrationProviding & WorkoutRegistrationReading) async throws {
+    let key = try IdempotencyKey(validating: H2WorkoutKeys.literal(1))
+    let version = WorkoutRegistrationVersion(contentRevision: 0)!
+    let at = C11OwnerFixtureTime().now
+    switch call {
+    case .propose:
+        let request = WorkoutProposalRequest(workoutType: h2Draft.workoutType, durationMin: h2Draft.durationMin,
+            intensity: h2Draft.intensity, performedAt: h2Draft.performedAt, registrationProtocol: .uiV1)
+        _ = try await provider.propose(MutationAttempt(operation: .proposalCreate, key: key, payload: .workout(request), createdAt: at))
+    case .edit:
+        _ = try await provider.edit(MutationAttempt(operation: .proposalEdit, key: key,
+            payload: RegistrationEditCommand(registrationID: h2RegistrationID, proposal: .workout(h2EditedDraft), workoutVersion: version), createdAt: at))
+    case .confirm:
+        _ = try await provider.confirm(MutationAttempt(operation: .proposalConfirm, key: key,
+            payload: RegistrationIDCommand(registrationID: h2RegistrationID, workoutVersion: version), createdAt: at))
+    case .cancel:
+        _ = try await provider.cancel(MutationAttempt(operation: .proposalCancel, key: key,
+            payload: RegistrationIDCommand(registrationID: h2RegistrationID, workoutVersion: version), createdAt: at))
+    case .get: _ = try await provider.loadWorkoutRegistration(id: h2RegistrationID)
+    }
+}
+
+private final class H2WorkoutKeys: IdempotencyKeyProviding, @unchecked Sendable {
+    private let lock = NSLock()
+    private var issued = 0
+    static func literal(_ value: Int) -> String {
+        let tail = String(value, radix: 16, uppercase: true)
+        return "A17F0000-0000-4000-8000-" + String(repeating: "0", count: 12 - tail.count) + tail
+    }
+    func nextKey() throws -> IdempotencyKey {
+        try lock.withLock { issued += 1; return try IdempotencyKey(validating: Self.literal(issued)) }
+    }
+}
+
+// Holds only the delivery of an ACTUAL provider result (including its catch).
+// It does not decide authority, manufacture HTTP results or replace the real
+// registration repository / session / transport / ticket / registry.
+private actor H2CompletedEditHold: RegistrationProviding, WorkoutRegistrationReading {
+    let completed = C11I5BindingCheckpoint()
+    private let base: any RegistrationProviding & WorkoutRegistrationReading
+    init(base: any RegistrationProviding & WorkoutRegistrationReading) { self.base = base }
+    func propose(_ attempt: MutationAttempt<RegistrationProposalRequest>) async throws -> RegistrationProposalResponse { try await base.propose(attempt) }
+    func edit(_ attempt: MutationAttempt<RegistrationEditCommand>) async throws -> RegistrationProposalResponse {
+        let result: Result<RegistrationProposalResponse, any Error>
+        do { result = .success(try await base.edit(attempt)) } catch { result = .failure(error) }
+        await completed.enterAndWait()
+        return try result.get()
+    }
+    func confirm(_ attempt: MutationAttempt<RegistrationIDCommand>) async throws -> RegistrationConfirmationResponse { try await base.confirm(attempt) }
+    func cancel(_ attempt: MutationAttempt<RegistrationIDCommand>) async throws -> RegistrationCancellationResponse { try await base.cancel(attempt) }
+    func loadWorkoutRegistration(id: String) async throws -> RegistrationProposalResponse { try await base.loadWorkoutRegistration(id: id) }
+}
+
+extension MobileAPITransportTests {
+    @MainActor
+    @Test("H2: ending the workout leaf preserves meal editing; the shared auth boundary withdraws both")
+    func h2WorkoutAndMealLeavesRemainIndependent() async throws {
+        try await h2WithWire { fixture in
+            let owner = Prompt14SessionOwner(userID: fixture.activation.userID,
+                dependencies: C11BindingTestDependencies.make(), enablesMealRecordBinding: true)
+            await owner.awaitPatientTimeZoneResolution()
+            do {
+                let meal = try #require(owner.mealRecordBinding)
+                try #require(fixture.lifetime.register(binding: meal, owner: owner, activation: fixture.activation))
+                let mealProvider = try await meal.bind(transport: fixture.wire.transport, lifecycle: fixture.counted)
+                let me = try h2Me(owner: fixture.activation.userID, advertised: "ui-v1")
+                let detail = try JSONEncoder().encode(C11RealLifecycleTransportHarness.detail())
+                await fixture.wire.stub.respond { request, _ in
+                    switch request.url?.path {
+                    case "/api/mobile/v1/me": return StubResponse(status: 200, body: me)
+                    case "/api/mobile/v1/meal-records/\(h2RegistrationID)": return StubResponse(status: 200, body: detail)
+                    default: throw H2UnexpectedRequest()
+                    }
+                }
+                let lifetime = fixture.lifetime
+                let reservation = owner.reserveWorkoutRegistrationBinding(activation: fixture.activation,
+                    lifetime: lifetime, currentActivation: { lifetime.currentActivation })
+                let workout = try #require(reservation)
+                let context = try await fixture.source.bind(workout)
+                #expect(context.isActive)
+                #expect(meal.isOpen)
+                await workout.endSession()
+                #expect(!context.isActive)
+                #expect(!owner.isInvalidated)
+                #expect(meal.isOpen)
+                let response = try await mealProvider.mealRecord(id: h2RegistrationID)
+                #expect(response.data.recordID == h2RegistrationID)
+                _ = lifetime.beginAuthenticationBoundary()
+                #expect(!meal.isOpen)
+                #expect(!workout.isOpen)
+                let before = await fixture.wire.stub.requests().count
+                await #expect(throws: CancellationError.self) { _ = try await mealProvider.mealRecord(id: h2RegistrationID) }
+                #expect(await fixture.wire.stub.requests().count == before)
+                await owner.endSession()
+            } catch {
+                await owner.endSession()
+                throw error
+            }
+        }
+    }
+}
+
+extension MobileAPITransportTests {
+    @MainActor
+    @Test("H2: a new ticket binds through the real owner wrapper while the old lease resolver is still pending")
+    func h2OwnerCannotLoseTheNewTicketBehindOldResolution() async throws {
+        try await h2WithWire { fixture in
+            var dependencies = C11BindingTestDependencies.make()
+            dependencies.workoutRegistrationSessionSource = fixture.source
+            let owner = Prompt14SessionOwner(userID: fixture.activation.userID, dependencies: dependencies)
+            let lifetime = fixture.lifetime
+            let firstReservation = owner.reserveWorkoutRegistrationBinding(activation: fixture.activation,
+                lifetime: lifetime, currentActivation: { lifetime.currentActivation })
+            let first = try #require(firstReservation)
+            let starts = C11ConcurrentEndProbe()
+            await fixture.wire.lifecycle.holdNextLease(completeEvenIfCancelled: true)
+            let oldTask = Task {
+                starts.didStart()
+                await owner.resolveWorkoutRegistration(first)
+                await fixture.wire.lifecycle.leaseHold.noteCompletion()
+            }
+            var newTask: Task<Void, Never>?
+            do {
+                let entered = await fixture.wire.lifecycle.leaseHold.waitUntilEnteredOrCompleted()
+                try #require(entered)
+                let ticket = lifetime.beginAuthenticationBoundary()
+                let activation = try #require(lifetime.publishAuthenticated(userID: fixture.activation.userID, ticket: ticket))
+                let me = try h2Me(owner: activation.userID, advertised: "ui-v1")
+                await fixture.wire.stub.respond(with: StubResponse(status: 200, body: me))
+                let nextReservation = owner.reserveWorkoutRegistrationBinding(activation: activation,
+                    lifetime: lifetime, currentActivation: { lifetime.currentActivation })
+                let next = try #require(nextReservation)
+                let task = Task {
+                    starts.didStart()
+                    await owner.resolveWorkoutRegistration(next)
+                }
+                newTask = task
+                await starts.waitForBothStarts()
+                await fixture.wire.lifecycle.leaseHold.release()
+                await oldTask.value
+                await task.value
+                #expect(owner.workoutRegistrationContext?.activation == activation)
+                #expect(owner.workoutRegistrationContext?.isActive == true)
+                #expect(!owner.isResolvingWorkoutRegistration)
+                #expect(first.readyContext == nil)
+                #expect(await fixture.wire.stub.requests().count == 1)
+                await owner.endSession()
+            } catch {
+                await fixture.wire.lifecycle.leaseHold.release()
+                await oldTask.value
+                await newTask?.value
+                await owner.endSession()
+                throw error
+            }
+        }
+    }
+
+    @MainActor
+    @Test("H2: foreground recovers an offline initial Me on its retained scope without a workout-sheet visit")
+    func h2ForegroundRestoresTheDocumentedTimeZoneAfterOfflineMe() async throws {
+        try await h2WithWire { fixture in
+            var dependencies = C11BindingTestDependencies.make()
+            dependencies.workoutRegistrationSessionSource = fixture.source
+            let owner = Prompt14SessionOwner(userID: fixture.activation.userID, dependencies: dependencies)
+            let lifetime = fixture.lifetime
+            let reservation = owner.reserveWorkoutRegistrationBinding(activation: fixture.activation,
+                lifetime: lifetime, currentActivation: { lifetime.currentActivation })
+            let binding = try #require(reservation)
+            do {
+                await fixture.wire.stub.respond(with: .failure(status: 503, code: "internal_error"))
+                await owner.resolveWorkoutRegistration(binding)
+                #expect(binding.canRetryMe)
+                #expect(!dependencies.patientTimeZoneStore.isSettled)
+                #expect(owner.workoutRegistrationContext == nil)
+                let me = try h2Me(owner: fixture.activation.userID, advertised: "ui-v1")
+                await fixture.wire.stub.respond(with: StubResponse(status: 200, body: me))
+                await owner.refreshPatientTimeZone()
+                #expect(dependencies.patientTimeZone.documentedIANAIdentifier == "America/Sao_Paulo")
+                #expect(dependencies.patientTimeZoneStore.isSettled)
+                #expect(owner.workoutRegistrationContext?.isActive == true)
+                #expect(owner.workoutRegistrationContext?.registrationProtocol == .uiV1)
+                #expect(await fixture.wire.stub.requests().count == 2)
+                #expect(await fixture.counted.leaseCalls == 1)
+                let originalContext = owner.workoutRegistrationContext
+                let laterMe = try h2Me(owner: fixture.activation.userID, advertised: "ui-v2")
+                await fixture.wire.stub.respond(with: StubResponse(status: 200, body: laterMe))
+                await owner.refreshPatientTimeZone()
+                #expect(owner.workoutRegistrationContext === originalContext)
+                #expect(owner.workoutRegistrationContext?.registrationProtocol == .uiV1)
+                #expect(await fixture.wire.stub.requests().count == 3)
+                await owner.endSession()
+            }
+        }
     }
 }

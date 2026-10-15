@@ -2,6 +2,7 @@ import Foundation
 import Observation
 
 @MainActor
+@Observable
 final class Prompt14SessionOwner {
     let userID: String
     let contentListing: any PublishedContentListing
@@ -12,6 +13,13 @@ final class Prompt14SessionOwner {
     let coverLoader: any ContentCoverLoading
 
     private(set) var mealRecordBinding: MealRecordSessionBinding?
+    private(set) var workoutRegistrationBinding: WorkoutRegistrationSessionBinding?
+    private(set) var isResolvingWorkoutRegistration = false
+    private(set) var workoutRegistrationError: BodyFlowCapabilityError?
+    private let workoutRegistrationSource: WorkoutRegistrationSessionBindingSource?
+    private var workoutResolutionTask: Task<Void, Never>?
+    private var workoutResolutionSequence: UInt64 = 0
+    private var retiredWorkouts: Task<Void, Never>?
 
     private let permitsMealRecordBinding: Bool
     private let gate: Prompt14SessionOperationGate
@@ -33,6 +41,7 @@ final class Prompt14SessionOwner {
     init(userID: String, dependencies: AppDependencies, enablesMealRecordBinding: Bool = false) {
         self.userID = userID
         permitsMealRecordBinding = enablesMealRecordBinding
+        workoutRegistrationSource = dependencies.workoutRegistrationSessionSource
 
         let contentSession = dependencies.publishedContentSessions.makeSession(
             userID: userID
@@ -65,7 +74,7 @@ final class Prompt14SessionOwner {
         // The documented time zone belongs to this session: it is read from
         // `/me` through the same gate as every other capability, so a closed
         // session never writes it, and `endSession` puts the seed back.
-        timeZoneResolution = Task {
+        timeZoneResolution = dependencies.workoutRegistrationSessionSource == nil ? Task {
             let response = try? await gate.perform {
                 guard let me = meReference.current() else {
                     throw CancellationError()
@@ -76,7 +85,7 @@ final class Prompt14SessionOwner {
             patientTimeZoneStore.resolve(
                 documentedIANAIdentifier: response.data.timezone
             )
-        }
+        } : nil
         contentListing = Prompt14ContentListingCapability(
             gate: gate,
             reference: listingReference
@@ -127,6 +136,78 @@ final class Prompt14SessionOwner {
         return replacement
     }
 
+    /// Uses the existing authentication ticket; a same-user new ticket cannot
+    /// revive the previous leaf while its lease resolver is still returning.
+    func reserveWorkoutRegistrationBinding(
+        activation: MealRecordAuthenticatedActivation,
+        lifetime: MealRecordAuthenticationLifetime,
+        currentActivation: @escaping @MainActor @Sendable () -> MealRecordAuthenticatedActivation?
+    ) -> WorkoutRegistrationSessionBinding? {
+        guard !ended, endTask == nil, !gate.isClosed,
+              activation.userID == userID, currentActivation() == activation,
+              lifetime.currentActivation == activation, lifetime.isCurrent(activation.ticket) else { return nil }
+        if let binding = workoutRegistrationBinding, binding.isOpen {
+            return binding.activation == activation ? binding : nil
+        }
+        let old = workoutRegistrationBinding
+        let oldResolution = workoutResolutionTask
+        old?.invalidateSynchronously()
+        oldResolution?.cancel()
+        workoutResolutionTask = nil
+        workoutResolutionSequence &+= 1
+        isResolvingWorkoutRegistration = false
+        workoutRegistrationError = nil
+        let binding = WorkoutRegistrationSessionBinding(owner: self, parentGate: gate,
+            activation: activation, lifetime: lifetime, currentActivation: currentActivation,
+            timeZoneStore: patientTimeZoneStore)
+        workoutRegistrationBinding = binding
+        if let old {
+            let predecessor = retiredWorkouts
+            retiredWorkouts = Task {
+                await predecessor?.value
+                await oldResolution?.value
+                await old.endSession()
+            }
+        }
+        guard lifetime.registerWorkout(binding: binding, owner: self, activation: activation) else {
+            workoutRegistrationBinding = nil
+            return nil
+        }
+        return binding
+    }
+
+    var workoutRegistrationContext: WorkoutRegistrationReadyContext? {
+        guard let context = workoutRegistrationBinding?.readyContext, context.isActive else { return nil }
+        return context
+    }
+
+    func resolveWorkoutRegistration(_ binding: WorkoutRegistrationSessionBinding, retrying: Bool = false) async {
+        guard workoutRegistrationBinding === binding, binding.isOpen,
+              let source = workoutRegistrationSource, workoutRegistrationContext == nil else { return }
+        if let task = workoutResolutionTask { await task.value; return }
+        guard retrying ? binding.canRetryMe : !binding.canRetryMe else { return }
+        workoutResolutionSequence &+= 1
+        let sequence = workoutResolutionSequence
+        isResolvingWorkoutRegistration = true
+        workoutRegistrationError = nil
+        let task = Task {
+            do {
+                if retrying { _ = try await source.retryMe(binding) }
+                else { _ = try await source.bind(binding) }
+            } catch is CancellationError {
+                // The old session can only withdraw its own presentation.
+            } catch {
+                guard self.workoutRegistrationBinding === binding, binding.isOpen else { return }
+                self.workoutRegistrationError = error as? BodyFlowCapabilityError ?? .serviceUnavailable
+            }
+        }
+        workoutResolutionTask = task
+        await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
+        guard workoutResolutionSequence == sequence else { return }
+        workoutResolutionTask = nil
+        isResolvingWorkoutRegistration = false
+    }
+
     var isInvalidated: Bool {
         gate.isClosed
     }
@@ -141,12 +222,14 @@ final class Prompt14SessionOwner {
             || lifetimeEndpoint.hasValue
             || coverEndpoint.hasValue
             || mealRecordBinding?.hasRetainedCapability == true
+            || workoutRegistrationBinding?.hasRetainedCapability == true
     }
 
     /// Lets a caller wait for the `/me` resolution to settle (tests and
     /// diagnostics); the screens simply read the store when they render.
     func awaitPatientTimeZoneResolution() async {
         await timeZoneResolution?.value
+        await workoutResolutionTask?.value
     }
 
     /// Reads `/me` again through the same gate (back in the foreground): a
@@ -155,6 +238,16 @@ final class Prompt14SessionOwner {
     func refreshPatientTimeZone() async {
         await timeZoneResolution?.value
         guard !ended, !gate.isClosed else { return }
+        if workoutRegistrationSource != nil {
+            await workoutResolutionTask?.value
+            guard !ended, !gate.isClosed else { return }
+            if let binding = workoutRegistrationBinding, binding.canRetryMe {
+                await resolveWorkoutRegistration(binding, retrying: true)
+                return
+            }
+            await workoutRegistrationBinding?.refreshPatientTimeZone()
+            return
+        }
         let meReference = meReference
         let gate = gate
         let response = try? await gate.perform {
@@ -171,6 +264,8 @@ final class Prompt14SessionOwner {
 
     func invalidateSynchronously() {
         mealRecordBinding?.invalidateSynchronously()
+        workoutRegistrationBinding?.invalidateSynchronously()
+        workoutResolutionTask?.cancel()
         gate.close()
     }
 
@@ -184,6 +279,15 @@ final class Prompt14SessionOwner {
         } else {
             task = Task {
                 timeZoneResolution?.cancel()
+                workoutResolutionTask?.cancel()
+                await workoutResolutionTask?.value
+                workoutResolutionTask = nil
+                isResolvingWorkoutRegistration = false
+                workoutRegistrationError = nil
+                await workoutRegistrationBinding?.endSession()
+                workoutRegistrationBinding = nil
+                await retiredWorkouts?.value
+                retiredWorkouts = nil
                 // Invalidation above denies further reservations synchronously.
                 let retiredMealRecords = mealRecordRetirementTask
                 await mealRecordBinding?.endSession()

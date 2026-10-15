@@ -6046,6 +6046,14 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Current version loaded. Review it before confirming. Your fields were kept." } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Versão atual carregada. Revise antes de confirmar. Seus campos foram mantidos." } }
     } },
+    "registration.workout.session-loading" : { "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Preparing workout registration…" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Preparando o registro de treino…" } }
+    } },
+    "registration.workout.session-unavailable" : { "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Workout registration is unavailable for this session. Close this screen or try again when available." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O registro de treino não está disponível nesta sessão. Feche esta tela ou tente novamente quando disponível." } }
+    } },
     "registration.operation.review-current" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Review current version" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Revisar versão atual" } }

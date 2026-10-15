@@ -60,9 +60,9 @@ struct BodyFlowApp: App {
             supabaseAuthConfiguration: runtime?.supabase
         )
         #endif
-        let mealRecordLifetime = dependencies.mealRecordBindingSource.map { _ in
-            MealRecordAuthenticationLifetime()
-        }
+        let mealRecordLifetime: MealRecordAuthenticationLifetime? =
+            dependencies.mealRecordBindingSource != nil || dependencies.workoutRegistrationSessionSource != nil
+                ? MealRecordAuthenticationLifetime() : nil
         self.mealRecordLifetime = mealRecordLifetime
         self.configuration = configuration
         self.dependencies = dependencies

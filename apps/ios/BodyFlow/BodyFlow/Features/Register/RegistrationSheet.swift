@@ -12,7 +12,7 @@ struct RegistrationSheet: View {
     @State private var mealModel: MealRegistrationModel
     @State private var mealDraftModel: MealDraftModel
     @State private var mealRecorder: MealAudioRecorder
-    @State private var workoutModel: WorkoutRegistrationModel
+    @State private var workoutModel: WorkoutRegistrationModel?
     @State private var hydrationModel: HydrationRegistrationModel
     @State private var weightModel: WeightRegistrationModel
     @State private var taskCoordinator = RegistrationSheetTaskCoordinator()
@@ -21,7 +21,8 @@ struct RegistrationSheet: View {
     init(
         sheet: AppSheet,
         dependencies: AppDependencies,
-        invalidationCenter: FeatureInvalidationCenter
+        invalidationCenter: FeatureInvalidationCenter,
+        workoutContext: WorkoutRegistrationReadyContext? = nil
     ) {
         self.sheet = sheet
         self.dependencies = dependencies
@@ -44,12 +45,9 @@ struct RegistrationSheet: View {
             keyProvider: dependencies.idempotencyKeyProvider
         ))
         _mealRecorder = State(initialValue: MealAudioRecorder(staging: staging))
-        _workoutModel = State(initialValue: WorkoutRegistrationModel(
-            registration: dependencies.registration,
-            timeProvider: dependencies.timeProvider,
-            keyProvider: dependencies.idempotencyKeyProvider,
-            invalidationCenter: invalidationCenter
-        ))
+        _workoutModel = State(initialValue: WorkoutRegistrationSheetModelFactory.make(
+            dependencies: dependencies, context: workoutContext,
+            invalidationCenter: invalidationCenter))
         _hydrationModel = State(initialValue: HydrationRegistrationModel(
             recording: dependencies.hydration,
             timeProvider: dependencies.timeProvider,
@@ -167,6 +165,7 @@ struct RegistrationSheet: View {
                     )
                         .accessibilityIdentifier(sheet.id)
                 } else if kind == .training {
+                    if let workoutModel {
                     WorkoutRegistrationContent(
                         model: workoutModel,
                         propose: { proposal in
@@ -194,6 +193,10 @@ struct RegistrationSheet: View {
                         presentsLocalDemonstration: presentsLocalDemonstration
                     )
                     .accessibilityIdentifier(sheet.id)
+                    } else {
+                        Text("registration.workout.session-unavailable")
+                            .multilineTextAlignment(.center).padding()
+                    }
                 } else if kind == .hydration {
                     HydrationRegistrationContent(
                         model: hydrationModel,
@@ -379,7 +382,7 @@ struct RegistrationSheet: View {
         mealRecorder.discard()
         mealDraftModel.discardSheet()
         mealModel.discardSheet()
-        workoutModel.discardSheet()
+        workoutModel?.discardSheet()
         hydrationModel.discardSheet()
         weightModel.discardSheet()
     }
@@ -389,6 +392,7 @@ struct RegistrationSheet: View {
         case .meal:
             return PerformeRegistrationProjection.meal(intent: intent, draft: mealDraftModel.phase, mutation: mealModel.mutationState, captureError: mealModel.captureError)
         case .training:
+            guard let workoutModel else { return .cancelled }
             return PerformeRegistrationProjection.registration(workoutModel.mutationState, captureError: workoutModel.captureError)
         case .hydration:
             if hydrationModel.captureError != nil { return .failed }
@@ -407,6 +411,7 @@ struct RegistrationSheet: View {
         case .meal:
             return PerformeRegistrationProjection.confirmation(for: mealModel.mutationState)
         case .training:
+            guard let workoutModel else { return nil }
             return PerformeRegistrationProjection.confirmation(for: workoutModel.mutationState)
         case .hydration:
             return hydrationModel.receipt.map { .hydration($0.data.hydrationLogID) }

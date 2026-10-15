@@ -430,6 +430,77 @@ struct VersionedWorkoutRegistrationModelTests {
         #expect(!h.model.isReviewingCurrent)
     }
 
+    @Test("an ended original session cannot start a workout mutation or an owned GET")
+    func endedSessionDeniesNewWork() async throws {
+        let activity = WorkoutSessionActivityProbe()
+        let service = VersionedModelService(propose: [.success(try Self.response())])
+        let center = FeatureInvalidationCenter()
+        let model = Self.model(provider: service, center: center,
+            isSessionActive: { activity.isActive })
+        activity.isActive = false
+        await model.submit(Self.authored)
+        await model.retry()
+        await model.reviewCurrentVersion()
+        #expect(await service.calls.isEmpty)
+        #expect(model.currentProposal == nil)
+        #expect(model.pendingDraft == nil)
+        #expect(model.captureError == nil)
+        #expect(center.revision(for: .today) == 0)
+    }
+
+    @Test("A1 ending during EDIT suppresses late success and late error, including focus and invalidation",
+          arguments: [false, true])
+    func endedSessionSuppressesLateEdit(failure: Bool) async throws {
+        let activity = WorkoutSessionActivityProbe()
+        let service = VersionedModelService(propose: [.success(try Self.response())], edit: [.hold])
+        let center = FeatureInvalidationCenter()
+        let model = Self.model(provider: service, center: center,
+            isSessionActive: { activity.isActive })
+        await model.submit(Self.authored)
+        let priorProposal = model.currentProposal
+        let priorRevision = center.revision(for: .today)
+        let task = Task { await model.saveEdit(Self.edited) }
+        await service.waitUntilEditHeld()
+        let authoredEdit = model.pendingDraft
+        Self.expectFields(try #require(authoredEdit), equalTo: Self.edited)
+        activity.isActive = false
+        try await service.finishEdit(failure ? .failure(.registrationRevisionConflict)
+            : .success(Self.response(revision: 1, receiptKey: Self.sqlKey(2))))
+        await task.value
+        #expect(model.currentProposal == priorProposal)
+        #expect(model.pendingDraft == authoredEdit)
+        #expect(model.captureError == nil)
+        #expect(model.accessibilityFocusTarget == nil)
+        #expect(center.revision(for: .today) == priorRevision)
+        #expect(!model.isBusy)
+    }
+
+    @Test("A1 ending during owned GET suppresses late success and late error",
+          arguments: [false, true])
+    func endedSessionSuppressesLateReview(failure: Bool) async throws {
+        let activity = WorkoutSessionActivityProbe()
+        let service = VersionedModelService(propose: [.success(try Self.response())],
+            edit: [.failure(.registrationRevisionConflict)], reads: [.hold])
+        let center = FeatureInvalidationCenter()
+        let model = Self.model(provider: service, center: center,
+            isSessionActive: { activity.isActive })
+        await model.submit(Self.authored)
+        await model.saveEdit(Self.edited)
+        let priorProposal = model.currentProposal
+        let priorRevision = center.revision(for: .today)
+        let task = Task { await model.reviewCurrentVersion() }
+        await service.waitUntilReadHeld()
+        activity.isActive = false
+        try await service.finishRead(failure ? .failure(.offline)
+            : .success(Self.response(revision: 2, status: "confirmed")))
+        await task.value
+        #expect(model.currentProposal == priorProposal)
+        #expect(model.confirmedRegistration == nil)
+        #expect(model.captureError == .registrationRevisionConflict)
+        #expect(center.revision(for: .today) == priorRevision)
+        #expect(!model.isBusy)
+    }
+
     @Test("a legacy edit refused for missing revision preserves its attempt and reads official authority explicitly", arguments: [false, true])
     func legacyRevisionRequiredCanRecoverWithoutPromotingTheAttempt(permanentlyStale: Bool) async throws {
         let current = try Self.response(revision: 2)
@@ -532,13 +603,16 @@ struct VersionedWorkoutRegistrationModelTests {
     }
 
     private static func model(provider: any RegistrationProviding, selection: WorkoutRegistrationProtocol? = .uiV1,
-        center: FeatureInvalidationCenter) -> WorkoutRegistrationModel {
+        center: FeatureInvalidationCenter,
+        isSessionActive: @escaping @MainActor @Sendable () -> Bool = { true }) -> WorkoutRegistrationModel {
         if let selection {
             return WorkoutRegistrationModel(registration: provider, timeProvider: FixedTimeProvider(value: now),
-                keyProvider: VersionedUUIDKeys(), invalidationCenter: center, registrationProtocol: selection)
+                keyProvider: VersionedUUIDKeys(), invalidationCenter: center, registrationProtocol: selection,
+                isSessionActive: isSessionActive)
         }
         return WorkoutRegistrationModel(registration: provider, timeProvider: FixedTimeProvider(value: now),
-            keyProvider: VersionedUUIDKeys(), invalidationCenter: center)
+            keyProvider: VersionedUUIDKeys(), invalidationCenter: center,
+            isSessionActive: isSessionActive)
     }
 
     private static func harness(propose: [VersionedModelOutcome<RegistrationProposalResponse>]? = nil,
@@ -593,6 +667,11 @@ private struct VersionedVisibleState: Equatable {
     let retained: RegistrationMutationAttempt?
     let today: Int
     let history: Int
+}
+
+@MainActor
+private final class WorkoutSessionActivityProbe {
+    var isActive = true
 }
 
 private final class VersionedUUIDKeys: IdempotencyKeyProviding, @unchecked Sendable {

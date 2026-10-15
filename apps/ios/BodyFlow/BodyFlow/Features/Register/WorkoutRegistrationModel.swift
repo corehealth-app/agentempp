@@ -15,6 +15,7 @@ final class WorkoutRegistrationModel {
     private let invalidationCenter: FeatureInvalidationCenter
     private let attemptCoordinator: RegistrationAttemptCoordinator
     private let registrationProtocol: WorkoutRegistrationProtocol?
+    private let isSessionActive: @MainActor @Sendable () -> Bool
     private var activeOwnership: FeatureLoadOwnership?
     private var operationSequence = 0
 
@@ -37,7 +38,7 @@ final class WorkoutRegistrationModel {
     var isBusy: Bool { isSubmitting || isReviewingCurrent }
 
     var allowsPendingActions: Bool {
-        currentProposal?.status == "pending" && !isBusy && !requiresCurrentReview
+        isSessionActive() && currentProposal?.status == "pending" && !isBusy && !requiresCurrentReview
     }
 
     init(
@@ -45,11 +46,13 @@ final class WorkoutRegistrationModel {
         timeProvider: any TimeProviding,
         keyProvider: any IdempotencyKeyProviding,
         invalidationCenter: FeatureInvalidationCenter,
-        registrationProtocol: WorkoutRegistrationProtocol? = nil
+        registrationProtocol: WorkoutRegistrationProtocol? = nil,
+        isSessionActive: @escaping @MainActor @Sendable () -> Bool = { true }
     ) {
         self.registration = registration
         self.invalidationCenter = invalidationCenter
         self.registrationProtocol = registrationProtocol
+        self.isSessionActive = isSessionActive
         attemptCoordinator = RegistrationAttemptCoordinator(
             timeProvider: timeProvider,
             keyProvider: keyProvider
@@ -58,7 +61,7 @@ final class WorkoutRegistrationModel {
     }
 
     func submit(_ proposal: WorkoutProposalRequest) async {
-        guard !isBusy, !requiresCurrentReview else { return }
+        guard isSessionActive(), !isBusy, !requiresCurrentReview else { return }
         if currentProposal?.workoutVersion != nil || registrationProtocol != nil && phase != .form { return }
         do {
             let attempt = try attemptCoordinator.propose(.workout(
@@ -111,7 +114,7 @@ final class WorkoutRegistrationModel {
     }
 
     func retry() async {
-        guard !isBusy, captureError != .registrationAuthorityStale else { return }
+        guard isSessionActive(), !isBusy, captureError != .registrationAuthorityStale else { return }
         if requiresCurrentReview {
             await reviewCurrentVersion()
             return
@@ -123,7 +126,7 @@ final class WorkoutRegistrationModel {
     /// This is only a read. It never repairs the expected revision or sends
     /// the failed mutation again; the next patient action is a new intent.
     func reviewCurrentVersion() async {
-        guard !isBusy, requiresCurrentReview,
+        guard isSessionActive(), !isBusy, requiresCurrentReview,
               captureError != .registrationAuthorityStale,
               let attempt = retainedFailedAttempt,
               let id = attempt.registrationID else { return }
@@ -154,7 +157,7 @@ final class WorkoutRegistrationModel {
     /// An explicit new intention after a terminal/stale result. The form
     /// keeps the authored fields; preparing it performs no request.
     func prepareNewProposal() {
-        guard !isBusy, phase != .confirmed else { return }
+        guard isSessionActive(), !isBusy, phase != .confirmed else { return }
         guard !requiresCurrentReview || captureError == .registrationAuthorityStale
                 || retainedFailedAttempt?.registrationID == nil else { return }
         guard registrationProtocol != nil || currentProposal?.workoutVersion != nil
@@ -174,6 +177,7 @@ final class WorkoutRegistrationModel {
     }
 
     func startNewProposal() {
+        guard isSessionActive() else { return }
         invalidateActiveOperation()
         currentProposal = nil
         pendingDraft = nil
@@ -197,7 +201,7 @@ final class WorkoutRegistrationModel {
     }
 
     private func runMutation(_ attempt: RegistrationMutationAttempt) async {
-        guard !isBusy else { return }
+        guard isSessionActive(), !isBusy else { return }
         let operation = beginOperation()
         if retainedFailedAttempt != attempt { retainedFailedAttempt = nil }
         mutationState = .submitting(attempt)
@@ -372,6 +376,7 @@ final class WorkoutRegistrationModel {
     }
 
     private func publishAttemptConstructionFailure(_ error: any Error) {
+        guard isSessionActive() else { return }
         let capabilityError = Self.capabilityError(from: error)
         captureError = capabilityError
         if capabilityError == .operationUnavailable { mutationState = .unavailable }
@@ -394,7 +399,7 @@ final class WorkoutRegistrationModel {
     }
 
     private func mayContinue(_ operation: ActiveWorkoutOperation) -> Bool {
-        !Task.isCancelled && !operation.ownership.isInvalidated
+        isSessionActive() && !Task.isCancelled && !operation.ownership.isInvalidated
             && operation.sequence == operationSequence
             && activeOwnership === operation.ownership
     }
@@ -413,7 +418,7 @@ final class WorkoutRegistrationModel {
     private func finishCancelledOperationIfNeeded(_ operation: ActiveWorkoutOperation) {
         guard operation.sequence == operationSequence,
               activeOwnership === operation.ownership,
-              operation.ownership.isInvalidated || Task.isCancelled else { return }
+              operation.ownership.isInvalidated || Task.isCancelled || !isSessionActive() else { return }
         activeOwnership = nil
         isReviewingCurrent = false
         if case .submitting = mutationState { mutationState = .idle }

@@ -275,9 +275,9 @@ struct RealAccountSampleDataTests {
     }
 
     @Test("the sheet hands the form the same account kind as the rest of Register")
-    func sheetThreadsTheAccountKindIntoTheWorkoutForm() throws {
+    func sheetThreadsTheAccountKindIntoTheWorkoutForm() async throws {
         // The whole Register sheet, drawn with each kind of dependencies.
-        let realAccount = try Self.workoutForm(inSheetWith: Self.realAccountDependencies())
+        let realAccount = try await Self.readyRealAccountWorkoutForm()
         #expect(realAccount.type == "")
         #expect(realAccount.duration == "")
         #expect(!realAccount.proposeEnabled)
@@ -663,7 +663,10 @@ struct RealAccountSampleDataTests {
         try String(contentsOf: projectRoot.appendingPathComponent(path), encoding: .utf8)
     }
 
-    static func realAccountDependencies() throws -> AppDependencies {
+    static func realAccountDependencies(
+        mobileAPISession: URLSession = .shared,
+        sessionLifecycle: (any SessionLifecycleProviding)? = nil
+    ) throws -> AppDependencies {
         AppDependencies.make(
             configuration: .resolve(arguments: [], buildFlavor: .release),
             mobileAPIConfigurationProvider: StaticMobileAPIConfigurationProvider(
@@ -671,6 +674,7 @@ struct RealAccountSampleDataTests {
                     originString: "https://mobile.example.test"
                 )
             ),
+            mobileAPISession: mobileAPISession,
             supabaseAuthConfiguration: try SupabaseAuthConfiguration(
                 originString: "https://project.example.test",
                 key: "sb_publishable_synthetic"
@@ -678,8 +682,92 @@ struct RealAccountSampleDataTests {
             authenticationSessionStore: AuthenticationSessionStore(
                 secureStore: InMemorySecureStore()
             ),
-            supabaseAuthFetch: { _ in throw URLError(.notConnectedToInternet) }
+            supabaseAuthFetch: { _ in throw URLError(.notConnectedToInternet) },
+            sessionLifecycleOverride: sessionLifecycle
         )
+    }
+
+    /// The real sheet is drawn only after the same original lease has read Me.
+    /// Protocol absence keeps this M1 fixture on the authenticated legacy path.
+    private static func readyRealAccountWorkoutForm() async throws -> WorkoutForm {
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let userID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        let store = AuthenticationSessionStore(
+            secureStore: InMemorySecureStore(), now: { now }
+        )
+        // Unsigned synthetic subject-bearing fixture; never sent to an auth server.
+        let payload = Data(#"{"sub":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}"#.utf8)
+            .base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        let record = AuthenticationSessionRecord(
+            userID: userID, email: "sample-data@example.invalid", isEmailConfirmed: true,
+            isOnboardingCompleted: true, accessToken: "e30.\(payload).synthetic",
+            refreshToken: "sample-data-synthetic-refresh", expiresAt: now.addingTimeInterval(3_600)
+        )
+        try await store.replace(with: record)
+        let remote = SupabaseAuthRemoteClient(
+            configuration: try SupabaseAuthConfiguration(
+                originString: "https://project.example.test", key: "sb_publishable_synthetic"
+            ),
+            fetch: { _ in throw URLError(.notConnectedToInternet) }
+        )
+        let registry = PatientWorkRegistry()
+        let lifecycle = SessionLifecycleCoordinator(
+            store: store, remote: remote, patientWorkRegistry: registry,
+            refreshPolicy: SessionRefreshPolicy(now: { now }, leeway: 60)
+        )
+        let originalLease = try await lifecycle.leaseForRequest()
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [SampleDataWorkoutMeURLProtocol.self]
+        let session = URLSession(configuration: sessionConfiguration)
+        defer { session.invalidateAndCancel() }
+        let dependencies = try realAccountDependencies(
+            mobileAPISession: session, sessionLifecycle: lifecycle
+        )
+        #expect(dependencies.presentsRealAccountIdentity)
+        #expect(dependencies.workoutRegistrationSessionSource != nil)
+        let owner = Prompt14SessionOwner(userID: userID, dependencies: dependencies)
+        let lifetime = MealRecordAuthenticationLifetime()
+        do {
+            let ticket = lifetime.beginAuthenticationBoundary()
+            let published = lifetime.publishAuthenticated(userID: userID, ticket: ticket)
+            let activation = try #require(published)
+            let reservation = owner.reserveWorkoutRegistrationBinding(
+                activation: activation, lifetime: lifetime,
+                currentActivation: { lifetime.currentActivation }
+            )
+            let binding = try #require(reservation)
+            #expect(owner.workoutRegistrationContext == nil)
+            await owner.resolveWorkoutRegistration(binding)
+            let publishedContext = owner.workoutRegistrationContext
+            let context = try #require(publishedContext)
+            #expect(context.isActive)
+            #expect(context.activation == activation)
+            #expect(context.registrationProtocol == nil)
+            let captured = binding.capturedLease
+            let capturedLease = try #require(captured)
+            #expect(capturedLease == originalLease)
+            try await lifecycle.validate(capturedLease)
+            let admittedWork = await registry.activeCount
+            #expect(admittedWork == 1)
+
+            let form = try workoutForm(inSheetWith: dependencies, workoutOwner: owner)
+            await lifetime.endSession()
+            await owner.endSession()
+            #expect(!context.isActive)
+            let remainingWork = await registry.activeCount
+            #expect(remainingWork == 0)
+            return form
+        } catch {
+            // Join the same teardown before propagating; never launch detached cleanup.
+            await lifetime.endSession()
+            await owner.endSession()
+            let remainingWork = await registry.activeCount
+            #expect(remainingWork == 0)
+            throw error
+        }
     }
 
     static func document(key: String, purpose: String) -> OnboardingLegalDocument {
@@ -786,8 +874,20 @@ struct RealAccountSampleDataTests {
     }
 
     /// The workout form as the Register sheet itself draws it.
-    private static func workoutForm(inSheetWith dependencies: AppDependencies) throws -> WorkoutForm {
-        try workoutForm(in: RegistrationSheet(
+    private static func workoutForm(
+        inSheetWith dependencies: AppDependencies,
+        workoutOwner: Prompt14SessionOwner? = nil
+    ) throws -> WorkoutForm {
+        if dependencies.presentsRealAccountIdentity {
+            let owner = try #require(workoutOwner)
+            return try workoutForm(in: WorkoutRegistrationSessionSheet(
+                sheet: .registration(.training), owner: owner, dependencies: dependencies,
+                invalidationCenter: FeatureInvalidationCenter()
+            )
+            .environment(AppRouter())
+            .installAppDependencies(dependencies))
+        }
+        return try workoutForm(in: RegistrationSheet(
             sheet: .registration(.training),
             dependencies: dependencies,
             invalidationCenter: FeatureInvalidationCenter()
@@ -949,4 +1049,27 @@ private actor InertOnboardingRepository: OnboardingRepository {
 private actor InertPersonaRepository: CoachPersonaRepository {
     func selectedPersona(for userID: String) async throws -> CoachPersona? { nil }
     func setPersona(_ persona: CoachPersona, for userID: String) async throws {}
+}
+
+/// Local URLSession boundary only. No global URLProtocol registration or mutable handler.
+private final class SampleDataWorkoutMeURLProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let url = request.url, url.scheme == "https", url.host == "mobile.example.test",
+              url.path == "/api/mobile/v1/me", request.httpMethod == "GET",
+              let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil,
+                  headerFields: ["Content-Type": "application/json"]) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.unsupportedURL))
+            return
+        }
+        // Exact absence of workout_registration_protocol: authenticated M1 legacy, not demo.
+        let body = Data(#"{"data":{"id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","timezone":"America/Sao_Paulo"},"meta":{"api_version":"v1","request_id":"sample-data-workout-me"}}"#.utf8)
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }

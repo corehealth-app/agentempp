@@ -141,7 +141,7 @@ describe('authoritative Mobile API source surface', () => {
     console.info(`SOURCE_ROUTE_EXPORT_STREAM_SHA256=${hash}`)
 
     expect(records).toHaveLength(54)
-    expect(hash).toBe('02439f2a606fa6914be5d4c54a5e4758018f448ea69aae3af72dc6ded10d386b')
+    expect(hash).toBe('0f076fc83228e8742e107ba4bb9631019b6d1e6edc74fbd36039c574b228c1a3')
   })
 
   test('contains no export outside the Next Route Handler allowlist', () => {
@@ -333,17 +333,21 @@ describe('authoritative Mobile API source surface', () => {
     expect(surface.forbiddenWorkerTraceReferences).toEqual([])
     expect(surface.forbiddenAdministrativeBundleReferences).toEqual([])
     expect(surface.forbiddenAdministrativeTraceReferences).toEqual([])
-    // Original50, excluding the single approved B4a finalization chunk, still
-    // retain5303 references/175 targets. C11 adds107 references and its manifest.
+    // Original50, excluding the single approved B4a finalization chunk, retain
+    // 5320 references/175 targets. The provenance/read-model split adds one
+    // chunk reference to 11 routes. Workout capability in /me and /pending
+    // adds three more each: its chunk, the existing media/client chunk and
+    // the Inngest package manifest. No new non-chunk target is introduced.
+    // C11 adds107 references and its manifest.
     // Each body-photo route adds109: the106 media references, its prior shared
     // handler chunk, B4a's finalization chunk, and the agent package manifest
     // needed by the pure signup-body-fat-estimate leaf (no agent barrel chunks).
     // That finalization chunk is
     // referenced by exactly onboarding plus the three body-photo routes.
-    // 5303 + 1 + 107 + 3 x 109 = 5738 references; 175 + 1 + 1 + 3 + 1 = 181 targets.
+    // 5320 + 1 + 107 + 3 x 109 = 5755 references; 175 + 1 + 1 + 3 + 1 = 181 targets.
     // The agent manifest already belongs to the original50: no new unique target.
     // Keep exact totals, original50 sans this chunk, nine Flow catalogs and guards.
-    expect(surface.nftReferenceCount).toBe(5738)
+    expect(surface.nftReferenceCount).toBe(5755)
     expect(surface.nftUniqueTargetCount).toBe(181)
     expect(surface.nftRegularFileTargetCount).toBe(179)
     expect(surface.nftDirectoryTargetCount).toBe(2)
@@ -414,7 +418,7 @@ describe('authoritative Mobile API source surface', () => {
       baselineReferences += targets.length
       for (const target of targets) baselineTargets.add(target)
     }
-    expect(baselineReferences).toBe(5303)
+    expect(baselineReferences).toBe(5320)
     expect(baselineTargets.size).toBe(175)
 
     const beyondBaseline = (route: string): string[] =>
@@ -453,6 +457,40 @@ describe('authoritative Mobile API source surface', () => {
         .filter((route) => physicalTargets(route).includes(sharedChunk))
         .sort(byName),
     ).toEqual([...bodyPhotoRoutes].sort(byName))
+  })
+
+  test('limits the versioned workout capability chunk to its five review routes', () => {
+    const chunks = walkFiles(resolve(buildRoot, 'server/chunks')).filter(
+      (path) =>
+        path.endsWith('.js') &&
+        readFileSync(path, 'utf8').includes('get_mobile_workout_registration'),
+    )
+    expect(chunks).toHaveLength(1)
+    const workoutChunk = realpathSync(chunks[0])
+    const source = readFileSync(workoutChunk, 'utf8')
+    for (const operation of ['admit', 'materialize', 'get', 'edit', 'cancel', 'confirm']) {
+      expect(source).toContain(`${operation}_mobile_workout_registration`)
+    }
+    expect(source).toContain('MOBILE_WORKOUT_REGISTRATION_PROJECT_REF')
+    expect(source).toContain('ui-v1')
+
+    const routes = Object.entries(currentAppPathsManifest())
+      .filter(([, target]) => {
+        const tracePath = resolve(buildRoot, 'server', `${target}.nft.json`)
+        const trace: { files: string[] } = JSON.parse(readFileSync(tracePath, 'utf8'))
+        return trace.files.some(
+          (reference) => realpathSync(resolve(dirname(tracePath), reference)) === workoutChunk,
+        )
+      })
+      .map(([route]) => route)
+      .sort()
+    expect(routes).toEqual([
+      '/api/mobile/v1/me/route',
+      '/api/mobile/v1/pending/route',
+      '/api/mobile/v1/registrations/[id]/confirm/route',
+      '/api/mobile/v1/registrations/[id]/route',
+      '/api/mobile/v1/registrations/propose/route',
+    ])
   })
 
   test('traces the nine byte-exact approved catalogs only from the Flow route', () => {

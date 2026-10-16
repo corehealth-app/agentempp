@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve, sep } from 'node:path'
@@ -83,6 +84,30 @@ function hashRecords(records: RouteRecord[]) {
 }
 
 describe('dedicated Mobile BFF wrapper mirror', () => {
+  test('accepts the 54-route mirror including the registration review GET in the CLI gate', () => {
+    const registration = sourceRecords().find(
+      (record) => record.path === 'registrations/[id]/route.ts',
+    )
+    expect(registration?.exports).toEqual(['DELETE', 'GET', 'PATCH', 'runtime'])
+
+    const result = spawnSync(
+      process.execPath,
+      [resolve(testDirectory, '../scripts/verify-route-mirror.mjs')],
+      { encoding: 'utf8', timeout: 30_000 },
+    )
+
+    expect(result.error).toBeUndefined()
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain('SOURCE_ROUTE_EXPORT_COUNT=54')
+    expect(result.stdout).toContain('WRAPPER_ROUTE_EXPORT_COUNT=54')
+    for (const surface of ['SOURCE', 'WRAPPER']) {
+      expect(result.stdout).toContain(
+        `${surface}_ROUTE_EXPORT_STREAM_SHA256=0f076fc83228e8742e107ba4bb9631019b6d1e6edc74fbd36039c574b228c1a3`,
+      )
+    }
+    expect(result.stdout).toContain('ROUTE_MIRROR_STATUS=VERIFIED')
+  })
+
   test('mirrors every frozen source route with one exact named handler re-export', () => {
     const sources = sourceRecords()
     const wrappers = wrapperRecords()

@@ -14,21 +14,50 @@ final class MealAudioRecorder: NSObject, AVAudioRecorderDelegate {
         case failed(MealCaptureFailure)
     }
 
+    @MainActor
+    struct SessionAccess {
+        let requestPermission: @MainActor () async -> Bool
+        let configureActivate: @MainActor () throws -> Void
+        let deactivate: @MainActor () throws -> Void
+    }
+
     private let staging: MediaStagingStore
+    private let sessionAccess: SessionAccess
+    private var ownsAudioSession = false
     private var recorder: AVAudioRecorder?
     private var ticker: Task<Void, Never>?
 
     private(set) var state = State.idle
     private(set) var elapsed: TimeInterval = 0
     private var isStarting = false
+    private var pendingStartID: UUID?
 
     /// The recorder stops a little before the limit: the file measures a few
     /// milliseconds more than was asked, and a recording that ran to the end
     /// must not be refused as too long.
     static let recordingLimit = MealMediaLimits.maximumAudioDuration - 0.5
 
-    init(staging: MediaStagingStore) {
+    init(
+        staging: MediaStagingStore,
+        sessionAccess: SessionAccess? = nil
+    ) {
         self.staging = staging
+        self.sessionAccess = sessionAccess ?? SessionAccess(
+            requestPermission: {
+                await AVAudioApplication.requestRecordPermission()
+            },
+            configureActivate: {
+                let session = AVAudioSession.sharedInstance()
+                try session.setCategory(.record, mode: .default)
+                try session.setActive(true)
+            },
+            deactivate: {
+                try AVAudioSession.sharedInstance().setActive(
+                    false,
+                    options: .notifyOthersOnDeactivation
+                )
+            }
+        )
     }
 
     static let settings: [String: Any] = [
@@ -42,16 +71,22 @@ final class MealAudioRecorder: NSObject, AVAudioRecorderDelegate {
     func start() async {
         guard state != .recording, !isStarting else { return }
         isStarting = true
-        defer { isStarting = false }
         discard()
-        guard await AVAudioApplication.requestRecordPermission() else {
+        let startID = UUID()
+        pendingStartID = startID
+        defer {
+            isStarting = false
+            if pendingStartID == startID { pendingStartID = nil }
+        }
+        let permissionGranted = await sessionAccess.requestPermission()
+        guard pendingStartID == startID else { return }
+        guard permissionGranted else {
             state = .failed(.permissionDenied)
             return
         }
         do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.record, mode: .default)
-            try session.setActive(true)
+            try sessionAccess.configureActivate()
+            ownsAudioSession = true
             let url = try staging.makeFileURL(fileExtension: "m4a")
             let recorder = try AVAudioRecorder(url: url, settings: Self.settings)
             recorder.delegate = self
@@ -76,6 +111,7 @@ final class MealAudioRecorder: NSObject, AVAudioRecorderDelegate {
 
     /// Drops the recording in hand, whatever its state.
     func discard() {
+        pendingStartID = nil
         ticker?.cancel()
         ticker = nil
         if let recorder {
@@ -152,9 +188,12 @@ final class MealAudioRecorder: NSObject, AVAudioRecorderDelegate {
     }
 
     private func releaseSession() {
-        try? AVAudioSession.sharedInstance().setActive(
-            false,
-            options: .notifyOthersOnDeactivation
-        )
+        guard ownsAudioSession else { return }
+        do {
+            try sessionAccess.deactivate()
+            ownsAudioSession = false
+        } catch {
+            // Keep the cleanup obligation so a later discard can retry.
+        }
     }
 }

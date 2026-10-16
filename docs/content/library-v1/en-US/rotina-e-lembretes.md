@@ -1,4 +1,4 @@
-The Routine tab gathers the items that are part of your day in the program, such as meals, hydration, workouts and supplement or medication items recorded in your routine. Reminders help you remember what you already planned.
+The Today tab gathers the items that are part of your day in the program, such as meals, hydration, workouts and supplement or medication items recorded in your routine. Reminders help you remember what you already planned.
 
 ## How reminders work
 

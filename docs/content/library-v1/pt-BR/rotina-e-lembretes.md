@@ -1,4 +1,4 @@
-A aba Rotina reúne os itens que fazem parte do seu dia no programa, como refeições, hidratação, treino e itens de suplementação ou medicação registrados na sua rotina. Os lembretes ajudam a não esquecer o que você mesmo planejou.
+A aba Hoje reúne os itens que fazem parte do seu dia no programa, como refeições, hidratação, treino e itens de suplementação ou medicação registrados na sua rotina. Os lembretes ajudam a não esquecer o que você mesmo planejou.
 
 ## Como os lembretes funcionam
 

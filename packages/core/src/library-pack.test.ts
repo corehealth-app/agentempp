@@ -51,6 +51,13 @@ const SOURCES_HEADING: Record<(typeof LOCALES)[number], string> = {
   'pt-BR': '## Fontes e leitura complementar',
   'en-US': '## Sources and further reading',
 }
+const ROUTINE_NAVIGATION: Record<
+  (typeof LOCALES)[number],
+  { destination: string; obsoleteTab: RegExp }
+> = {
+  'pt-BR': { destination: 'Hoje', obsoleteTab: /\baba Rotina\b/i },
+  'en-US': { destination: 'Today', obsoleteTab: /\bRoutine tab\b/i },
+}
 
 function body(entry: LocaleEntry): string {
   return readFileSync(new URL(entry.file, packURL), 'utf8')
@@ -115,6 +122,18 @@ describe('Performe AI Library pack v1', () => {
         })
       })
     }
+  }
+
+  for (const locale of LOCALES) {
+    it(`directs routine readers to the current Today destination (${locale})`, () => {
+      const article = pack.articles.find((candidate) => candidate.slug === 'rotina-e-lembretes')
+      if (!article) throw new Error('Routine article missing from the Library pack')
+      const entry = article.locales[locale] as LocaleEntry
+      const introduction = validateContentMarkdown(body(entry)).normalized.split('\n\n')[0]
+      const navigation = ROUTINE_NAVIGATION[locale]
+      expect(introduction).toContain(navigation.destination)
+      expect(introduction).not.toMatch(navigation.obsoleteTab)
+    })
   }
 
   it('keeps every verified source dated on the day it was checked', () => {

@@ -4808,6 +4808,17 @@ private func h2Me(owner: String, advertised: String) throws -> Data {
     return try JSONSerialization.data(withJSONObject: ["data": row,
         "meta": ["api_version": "v1", "request_id": "s17h2-me-synthetic"]], options: [.sortedKeys])
 }
+
+// `/me.id` belongs to the patient row, while leases and authentication
+// activations belong to Supabase Auth. The server permits these UUIDs to differ.
+private let h2DistinctPatientID = "00000000-0000-4000-8000-000000000001"
+
+private func h2PatientMe(timezone: String, advertised: String = "absent") throws -> Data {
+    var row: [String: Any] = ["id": h2DistinctPatientID, "timezone": timezone]
+    if advertised != "absent" { row["workout_registration_protocol"] = advertised }
+    return try JSONSerialization.data(withJSONObject: ["data": row,
+        "meta": ["api_version": "v1", "request_id": "m1-distinct-patient-me"]], options: [.sortedKeys])
+}
 private func h2Projection(revision: Int = 0, status: String = "pending", duration: Int = 47,
     receiptKey: String? = nil, confirmation: Bool = false) throws -> Data {
     var row: [String: Any] = ["id": h2RegistrationID, "status": status,
@@ -5052,6 +5063,137 @@ extension MobileAPITransportTests {
                 #expect(await fixture.wire.stub.requests().count == 3)
                 await owner.endSession()
             }
+        }
+    }
+
+    @MainActor
+    @Test("M1 physical regression: a patient UUID distinct from Auth opens workout; A-B-A retires its original capability",
+          arguments: ["absent", "ui-v1"])
+    func m1DistinctPatientIDOpensWorkoutWithoutRenewingRetiredAuth(advertised: String) async throws {
+        try await h2WithWire { fixture in
+            #expect(fixture.activation.userID != h2DistinctPatientID)
+            var dependencies = C11BindingTestDependencies.make()
+            dependencies.workoutRegistrationSessionSource = fixture.source
+            let owner = Prompt14SessionOwner(userID: fixture.activation.userID, dependencies: dependencies)
+            await owner.awaitPatientTimeZoneResolution()
+            let lifetime = fixture.lifetime
+            let reservation = owner.reserveWorkoutRegistrationBinding(activation: fixture.activation,
+                lifetime: lifetime, currentActivation: { lifetime.currentActivation })
+            let binding = try #require(reservation)
+            do {
+                let me = try h2PatientMe(timezone: "America/Sao_Paulo", advertised: advertised)
+                await fixture.wire.stub.respond(with: StubResponse(status: 200, body: me))
+                await owner.resolveWorkoutRegistration(binding)
+                #expect(owner.workoutRegistrationError == nil)
+                let context = try #require(owner.workoutRegistrationContext,
+                    "A successful patient /me must make the real-account workout form available")
+                #expect(context.isActive)
+                #expect(context.registrationProtocol == (advertised == "ui-v1" ? .uiV1 : nil))
+                #expect(dependencies.patientTimeZone.documentedIANAIdentifier == "America/Sao_Paulo")
+                #expect(binding.capturedLease?.userID == fixture.activation.userID)
+                #expect(await fixture.counted.leaseCalls == 1)
+                let requests = await fixture.wire.stub.requests()
+                #expect(requests.count == 1)
+                #expect(requests.first?.httpMethod == "GET")
+                #expect(requests.first?.url?.path == "/api/mobile/v1/me")
+
+                try await fixture.wire.replaceSession(returnToA: true)
+                #expect(!context.isActive)
+                #expect(owner.workoutRegistrationContext == nil)
+                await #expect(throws: CancellationError.self) {
+                    _ = try await context.provider.loadWorkoutRegistration(id: h2RegistrationID)
+                }
+                #expect(await fixture.wire.stub.requests().count == 1)
+                await owner.endSession()
+            } catch {
+                await owner.endSession()
+                throw error
+            }
+        }
+    }
+
+    @MainActor
+    @Test("M1 physical regression: explicit workout GET retry accepts the documented patient ID on the original auth lease")
+    func m1DistinctPatientIDRecoversThroughWorkoutRetry() async throws {
+        try await h2WithWire { fixture in
+            var dependencies = C11BindingTestDependencies.make()
+            dependencies.workoutRegistrationSessionSource = fixture.source
+            let owner = Prompt14SessionOwner(userID: fixture.activation.userID, dependencies: dependencies)
+            await owner.awaitPatientTimeZoneResolution()
+            let lifetime = fixture.lifetime
+            let reservation = owner.reserveWorkoutRegistrationBinding(activation: fixture.activation,
+                lifetime: lifetime, currentActivation: { lifetime.currentActivation })
+            let binding = try #require(reservation)
+            do {
+                await fixture.wire.stub.respond(with: .failure(status: 503, code: "internal_error"))
+                await owner.resolveWorkoutRegistration(binding)
+                #expect(owner.workoutRegistrationContext == nil)
+                #expect(binding.canRetryMe)
+                let lease = try #require(binding.capturedLease)
+                let me = try h2PatientMe(timezone: "Pacific/Tahiti")
+                await fixture.wire.stub.respond(with: StubResponse(status: 200, body: me))
+                await owner.resolveWorkoutRegistration(binding, retrying: true)
+                #expect(owner.workoutRegistrationError == nil)
+                #expect(owner.workoutRegistrationContext?.isActive == true)
+                #expect(dependencies.patientTimeZone.documentedIANAIdentifier == "Pacific/Tahiti")
+                #expect(binding.capturedLease == lease)
+                #expect(await fixture.counted.leaseCalls == 1)
+                let requests = await fixture.wire.stub.requests()
+                #expect(requests.count == 2)
+                #expect(requests.allSatisfy { $0.httpMethod == "GET" && $0.url?.path == "/api/mobile/v1/me" })
+                await owner.endSession()
+            } catch {
+                await owner.endSession()
+                throw error
+            }
+        }
+    }
+
+    @MainActor
+    @Test("M1: foreground refresh keeps the patient timezone current without changing the visible workout protocol")
+    func m1DistinctPatientIDRefreshesTimezoneOnItsOriginalScope() async throws {
+        try await h2WithWire { fixture in
+            let dependencies = C11BindingTestDependencies.make()
+            let owner = Prompt14SessionOwner(userID: fixture.activation.userID, dependencies: dependencies)
+            await owner.awaitPatientTimeZoneResolution()
+            let lifetime = fixture.lifetime
+            let reservation = owner.reserveWorkoutRegistrationBinding(activation: fixture.activation,
+                lifetime: lifetime, currentActivation: { lifetime.currentActivation })
+            let binding = try #require(reservation)
+            do {
+                let me = try h2PatientMe(timezone: "America/Sao_Paulo", advertised: "ui-v1")
+                await fixture.wire.stub.respond(with: StubResponse(status: 200, body: me))
+                let context = try await fixture.source.bind(binding)
+                let refreshed = try h2PatientMe(timezone: "Pacific/Tahiti", advertised: "ui-v2")
+                await fixture.wire.stub.respond(with: StubResponse(status: 200, body: refreshed))
+                await binding.refreshPatientTimeZone()
+                #expect(dependencies.patientTimeZone.documentedIANAIdentifier == "Pacific/Tahiti")
+                #expect(binding.readyContext === context)
+                #expect(context.isActive)
+                #expect(context.registrationProtocol == .uiV1)
+                #expect(await fixture.counted.leaseCalls == 1)
+                #expect(await fixture.wire.stub.requests().count == 2)
+                await owner.endSession()
+            } catch {
+                await owner.endSession()
+                throw error
+            }
+        }
+    }
+
+    @MainActor
+    @Test("M1: accepting a distinct patient UUID does not admit an empty Me identity")
+    func m1EmptyPatientIDDoesNotPublishWorkoutContext() async throws {
+        try await h2WithWire { fixture in
+            let me = try h2Me(owner: "", advertised: "ui-v1")
+            await fixture.wire.stub.respond(with: StubResponse(status: 200, body: me))
+            let binding = try fixture.reserve()
+            await #expect(throws: BodyFlowCapabilityError.serviceUnavailable) {
+                _ = try await fixture.source.bind(binding)
+            }
+            #expect(binding.readyContext == nil)
+            #expect(binding.canRetryMe)
+            #expect(await fixture.wire.stub.requests().count == 1)
         }
     }
 }

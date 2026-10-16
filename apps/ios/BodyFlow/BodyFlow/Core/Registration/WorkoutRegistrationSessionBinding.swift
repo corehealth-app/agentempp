@@ -192,7 +192,9 @@ final class WorkoutRegistrationSessionBinding {
         }
         let response = try await reader.me()
         try Task.checkCancellation()
-        guard response.data.id == activation.userID else { throw BodyFlowCapabilityError.serviceUnavailable }
+        // `/me.id` is the patient row key, not the Supabase Auth subject.
+        // The original scoped transport and lease govern session ownership.
+        guard !response.data.id.isEmpty else { throw BodyFlowCapabilityError.serviceUnavailable }
         return try await lifecycle.performVisiblePatientStateOperation(lease: lease) {
             guard self.isOpen, grant.isOpen, self.readyContext == nil else { throw CancellationError() }
             let context = WorkoutRegistrationReadyContext(binding: self, provider: repository,
@@ -222,7 +224,7 @@ final class WorkoutRegistrationSessionBinding {
               let lease = capturedLease, let grant else { return }
         do {
             let response = try await reader.me()
-            guard response.data.id == activation.userID else { return }
+            guard !response.data.id.isEmpty else { return }
             try await lifecycle.performVisiblePatientStateOperation(lease: lease) {
                 guard self.isOpen, grant.isOpen else { throw CancellationError() }
                 self.timeZoneStore.resolve(documentedIANAIdentifier: response.data.timezone)

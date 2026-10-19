@@ -40,6 +40,37 @@ export interface FlowInboundAuthoritySource {
   capture(input: CaptureFlowInboundInput): Promise<CapturedFlowInboundAuthority>
 }
 
+/** Request-local wiring must never turn a missing or mixed handle into legacy execution. */
+export function assertCapturedFlowInboundAuthority(
+  handle: CapturedFlowInboundAuthority | undefined,
+  input: CaptureFlowInboundInput,
+): asserts handle is CapturedFlowInboundAuthority {
+  if (
+    !handle ||
+    handle.userId.toLowerCase() !== input.userId.toLowerCase() ||
+    handle.requestKey !== input.requestKey ||
+    handle.text !== input.text
+  )
+    throw invalidInput()
+}
+
+/** A point-in-time replay gate, not a transaction with HTTP, provider or OUT. */
+export async function verifyCapturedFlowInboundReplay(
+  handle: CapturedFlowInboundAuthority,
+  inboundId?: string,
+): Promise<void> {
+  const result = await handle.probe()
+  if (
+    result.status !== 'bound' ||
+    (inboundId !== undefined && result.inbound.id.toLowerCase() !== inboundId.toLowerCase())
+  )
+    throw new MobileApiError(
+      409,
+      'flow_request_authority_conflict',
+      'Flow request authority could not be verified',
+    )
+}
+
 type RefusalReason =
   | 'invalid_admission'
   | 'stale_epoch'

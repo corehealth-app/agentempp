@@ -1,6 +1,12 @@
 import type { FlowStatusPhraseContext } from '@mpp/agent'
 import { prepareFlowStatusPhraseReply } from '@mpp/agent/flow-curated-phrases'
 import type { ServiceClient } from '@mpp/db'
+import {
+  assertCapturedFlowInboundAuthority,
+  type CapturedFlowInboundAuthority,
+  type FlowInboundAuthoritySource,
+  verifyCapturedFlowInboundReplay,
+} from './flow-inbound-authority'
 import type {
   FlowPhraseEventIdentity,
   FlowPhraseReplyCommit,
@@ -104,7 +110,7 @@ export interface FlowInboundTransition {
   expectedAttemptStartedAt: string | null
   /** When set, the attempt must also still belong to this request. */
   expectedRequestId?: string
-  /** C5 pins the real row generation, including across reset/recreation. */
+  /** C5 and captured IN authority pin the row generation across reset/recreation. */
   expectedInboundId?: string
   errorCode?: string
 }
@@ -123,7 +129,11 @@ export interface FlowChatStore {
     change: FlowInboundTransition,
   ): Promise<boolean>
   insertAssistant(input: NewFlowMessage): Promise<StoredFlowMessage>
-  completeInbound(userId: string, providerMessageId: string): Promise<void>
+  completeInbound(
+    userId: string,
+    providerMessageId: string,
+    expectedInboundId?: string,
+  ): Promise<void>
   failInbound(userId: string, providerMessageId: string, code?: string): Promise<void>
 }
 
@@ -157,6 +167,8 @@ export interface FlowChatDependencies {
   /** Absent where plan drafts do not exist; the reply then carries none. */
   drafts?: FlowDraftLookup
   phraseReplies?: FlowPhraseReplyStore
+  /** Injection only; production composition remains without this source. */
+  inboundAuthority?: FlowInboundAuthoritySource
 }
 
 type Settled<T> = { ok: true; value: T } | { ok: false; error: unknown }
@@ -191,10 +203,15 @@ async function completeTurn(
   dependencies: FlowChatDependencies,
   userId: string,
   turnProviderMessageId: string,
+  inboundId?: string,
 ): Promise<FlowTurnDraft | null> {
   const drafts = dependencies.drafts
   const [completed, draft] = await Promise.all([
-    settle(() => dependencies.store.completeInbound(userId, turnProviderMessageId)),
+    settle(() =>
+      inboundId === undefined
+        ? dependencies.store.completeInbound(userId, turnProviderMessageId)
+        : dependencies.store.completeInbound(userId, turnProviderMessageId, inboundId),
+    ),
     settle(async () => (drafts ? drafts.findForTurn(userId, turnProviderMessageId) : null)),
   ])
   unwrap(completed)
@@ -255,6 +272,7 @@ export interface SendFlowMessageInput {
   idempotencyKey: string
   requestId: string
   now: Date
+  inboundAuthority?: CapturedFlowInboundAuthority
 }
 
 export interface FlowMessageDTO {
@@ -496,7 +514,9 @@ async function resumeTurn(
       attempt: inbound.attempt ?? { startedAt, providerStartedAt: null, retryStartedAt: [] },
       expectedAttemptStartedAt: inbound.attempt?.startedAt ?? null,
       errorCode: 'flow_turn_interrupted',
-      ...(dependencies.phraseReplies ? { expectedInboundId: inboundId } : {}),
+      ...(dependencies.phraseReplies || input.inboundAuthority
+        ? { expectedInboundId: inboundId }
+        : {}),
     })
     if (!closed) throw inProgress()
     // The provider may have been called (and charged) and its effects are
@@ -521,7 +541,9 @@ async function resumeTurn(
       requestId: input.requestId,
       attempt,
       expectedAttemptStartedAt: inbound.attempt?.startedAt ?? null,
-      ...(dependencies.phraseReplies ? { expectedInboundId: inboundId } : {}),
+      ...(dependencies.phraseReplies || input.inboundAuthority
+        ? { expectedInboundId: inboundId }
+        : {}),
     })
   } catch {
     // The claim may or may not have been written.
@@ -542,8 +564,8 @@ async function resumeTurn(
 /**
  * Best effort: a turn this request recorded as `processing` goes back to
  * `failed` (only if it is still this request's attempt), so a storage error
- * never leaves it "in progress" for the whole lease. The provider was not
- * called on any path that uses it.
+ * never leaves it "in progress" for the whole lease. Captured authority also
+ * uses this fenced cleanup after provider failure; it never proves server cancellation.
  */
 async function releaseTurn(
   dependencies: FlowChatDependencies,
@@ -569,6 +591,7 @@ async function releaseTurn(
       .catch(() => false)
     return
   }
+  if (input.inboundAuthority && inboundId === undefined) return
   await dependencies.store
     .transitionInbound(input.userId, providerMessageId, {
       from: 'processing',
@@ -577,6 +600,7 @@ async function releaseTurn(
       attempt,
       expectedAttemptStartedAt: attempt.startedAt,
       expectedRequestId: input.requestId,
+      ...(input.inboundAuthority ? { expectedInboundId: inboundId } : {}),
       errorCode,
     })
     .catch(() => false)
@@ -628,6 +652,7 @@ interface FlowTurnMarks {
 }
 
 const TIMED_REFUSAL_CODES = new Set([
+  'flow_request_authority_conflict',
   'idempotency_key_conflict',
   'idempotency_request_in_progress',
   'flow_rate_limited',
@@ -720,18 +745,42 @@ async function runFlowTurn(
   marks: FlowTurnMarks,
 ) {
   const store = dependencies.store
+  const authority = input.inboundAuthority
+  if (dependencies.inboundAuthority || authority) {
+    if (!dependencies.inboundAuthority) {
+      throw new MobileApiError(
+        500,
+        'flow_request_authority_invalid_input',
+        'Invalid Flow request authority input',
+      )
+    }
+    assertCapturedFlowInboundAuthority(authority, {
+      userId: input.userId,
+      requestKey: input.idempotencyKey,
+      text: input.text,
+    })
+  }
   const scopedInboundId = scopedFlowProviderMessageId(input.userId, input.idempotencyKey)
   const assistantProviderId = scopedReplyProviderMessageId(input.userId, input.idempotencyKey)
 
-  // First wave: the four reads every turn may need, none of which depends on
+  // OFF first wave: the four reads every turn may need, none of which depends on
   // another. They used to run one after the other (five round trips). Each
   // outcome — value or error — is consumed below in the same order and under
   // the same conditions as before; one that the sequential code would not
   // have read (the legacy row when a scoped one exists, the count on a
-  // replay) is ignored, error included.
+  // replay) is ignored, error included. ON replaces both IN lookups with the
+  // captured authority's probe, retaining the independent OUT/count reads.
   const [scopedInbound, legacyInbound, scopedReply, counted] = await Promise.all([
-    settle(() => store.findInbound(input.userId, scopedInboundId)),
-    settle(() => store.findInbound(input.userId, input.idempotencyKey)),
+    settle(() =>
+      authority
+        ? phrasePhase(() => authority.probe(), marks).then((result) =>
+            result.status === 'bound' ? mapRow(result.inbound) : null,
+          )
+        : store.findInbound(input.userId, scopedInboundId),
+    ),
+    settle(() =>
+      authority ? Promise.resolve(null) : store.findInbound(input.userId, input.idempotencyKey),
+    ),
     settle(() => store.findAssistant(input.userId, assistantProviderId)),
     settle(() => store.countRecentExecutions(input.userId, executionWindowStart(input))),
   ])
@@ -752,6 +801,29 @@ async function runFlowTurn(
   }
   // Capture this generation once; a later read/reset cannot reassociate it.
   let capturedInboundId = existingInbound?.id
+  const verifyReplay = () => {
+    if (!authority) return Promise.resolve()
+    // A later bound row cannot repair an orphan OUT seen with an unbound initial probe.
+    if (capturedInboundId === undefined) {
+      throw new MobileApiError(
+        409,
+        'flow_request_authority_conflict',
+        'Flow request authority could not be verified',
+      )
+    }
+    return phrasePhase(() => verifyCapturedFlowInboundReplay(authority, capturedInboundId), marks)
+  }
+  const replayLegacy = async (stored: StoredFlowMessage) => {
+    await verifyReplay()
+    const draft = await completeTurn(
+      dependencies,
+      input.userId,
+      inboundProviderId,
+      capturedInboundId,
+    )
+    await verifyReplay()
+    return { response: turnResponse(stored, draft), replayed: true }
+  }
   // Same key, different text: a new request under a used key, never a replay.
   if (existingInbound && existingInbound.content !== input.text) {
     throw new MobileApiError(
@@ -784,6 +856,7 @@ async function runFlowTurn(
     // A reply stored empty before tags were flattened is never replayed as a
     // successful turn (and is not re-executed: the patient sends it again).
     if (existing.content.trim().length === 0) throw providerFailed()
+    if (authority) await verifyReplay()
     const phraseReplies = dependencies.phraseReplies
     if (phraseReplies) {
       const inboundId = capturedInboundId
@@ -811,9 +884,11 @@ async function runFlowTurn(
           inboundProviderId,
           marks,
         )
+        if (authority) await verifyReplay()
         return { response: turnResponse(classified.message, draft), replayed: true }
       }
     }
+    if (authority) return replayLegacy(existing)
     const draft = await completeTurn(dependencies, input.userId, inboundProviderId)
     return { response: turnResponse(existing, draft), replayed: true }
   }
@@ -833,40 +908,62 @@ async function runFlowTurn(
 
     const createdAt = input.now.toISOString()
     attempt = { startedAt: createdAt, providerStartedAt: null, retryStartedAt: [] }
-    try {
-      existingInbound = await store.insertInbound({
-        userId: input.userId,
-        content: input.text,
-        providerMessageId: inboundProviderId,
-        requestId: input.requestId,
-        state: 'processing',
-        createdAt,
-        attempt,
-      })
+    if (authority) {
+      // A lost response proves no UUID. Never enter the legacy INSERT cleanup path.
+      const persisted = await phrasePhase(
+        () => authority.persist({ requestId: input.requestId, startedAt: createdAt }),
+        marks,
+      )
+      if (persisted.status !== 'inserted') throw inProgress()
+      existingInbound = mapRow(persisted.inbound)
       capturedInboundId = existingInbound.id
-    } catch (error) {
-      // The same turn was stored by a concurrent request; Flow is not called.
-      if (error instanceof FlowMessageAlreadyStoredError) throw inProgress()
-      // Any other error may still have written the row.
-      await releaseTurn(dependencies, input, inboundProviderId, attempt, 'flow_provider_failed')
-      throw providerFailed()
-    }
+      if (!existingInbound.attempt) throw providerFailed()
+      attempt = existingInbound.attempt
+    } else
+      try {
+        existingInbound = await store.insertInbound({
+          userId: input.userId,
+          content: input.text,
+          providerMessageId: inboundProviderId,
+          requestId: input.requestId,
+          state: 'processing',
+          createdAt,
+          attempt,
+        })
+        capturedInboundId = existingInbound.id
+      } catch (error) {
+        // The same turn was stored by a concurrent request; Flow is not called.
+        if (error instanceof FlowMessageAlreadyStoredError) throw inProgress()
+        // Any other error may still have written the row.
+        await releaseTurn(dependencies, input, inboundProviderId, attempt, 'flow_provider_failed')
+        throw providerFailed()
+      }
   }
 
   const failTurn = async () => {
-    if (dependencies.phraseReplies) {
+    if (dependencies.phraseReplies || authority) {
       if (capturedInboundId) {
-        await withinTurnLimit(
-          dependencies.phraseReplies.failOwnedAttempt({
-            userId: input.userId,
-            inboundId: capturedInboundId,
-            inboundProviderMessageId: inboundProviderId,
-            expectedRequestId: input.requestId,
-            expectedAttemptStartedAt: attempt.startedAt,
-            errorCode: 'flow_provider_failed',
-          }),
-          performance.now() - marks.startedAt,
-        ).catch(() => false)
+        if (dependencies.phraseReplies)
+          await withinTurnLimit(
+            dependencies.phraseReplies.failOwnedAttempt({
+              userId: input.userId,
+              inboundId: capturedInboundId,
+              inboundProviderMessageId: inboundProviderId,
+              expectedRequestId: input.requestId,
+              expectedAttemptStartedAt: attempt.startedAt,
+              errorCode: 'flow_provider_failed',
+            }),
+            performance.now() - marks.startedAt,
+          ).catch(() => false)
+        else
+          await releaseTurn(
+            dependencies,
+            input,
+            inboundProviderId,
+            attempt,
+            'flow_provider_failed',
+            capturedInboundId,
+          )
       }
       return providerFailed()
     }
@@ -897,7 +994,7 @@ async function runFlowTurn(
       attempt: providerAttempt,
       expectedAttemptStartedAt: attempt.startedAt,
       expectedRequestId: input.requestId,
-      ...(dependencies.phraseReplies ? { expectedInboundId: capturedInboundId } : {}),
+      ...(dependencies.phraseReplies || authority ? { expectedInboundId: capturedInboundId } : {}),
     })
   } catch {
     // The provider was not called: give the turn back as failed so a retry
@@ -942,6 +1039,7 @@ async function runFlowTurn(
     logTurnFailure('empty_reply')
     throw await failTurn()
   }
+  if (authority) await verifyReplay()
 
   const phraseReplies = dependencies.phraseReplies
   if (phraseReplies && reply.flowStatusPhrase) {
@@ -954,17 +1052,16 @@ async function runFlowTurn(
       assistantProviderMessageId: assistantProviderId,
       expectedInboundContent: input.text,
     }
-    const confirmed = async (message: StoredFlowMessage, replayed: boolean) => ({
-      response: turnResponse(
-        message,
-        await lookupConfirmedDraft(dependencies, input.userId, inboundProviderId, marks),
-      ),
-      replayed,
-    })
+    const confirmed = async (message: StoredFlowMessage, replayed: boolean) => {
+      const draft = await lookupConfirmedDraft(dependencies, input.userId, inboundProviderId, marks)
+      if (authority) await verifyReplay()
+      return { response: turnResponse(message, draft), replayed }
+    }
     try {
       const prior = await phrasePhase(() => phraseReplies.loadEventReply(identity), marks)
       if (prior?.kind === 'c5') return confirmed(prior.message, true)
       if (prior?.kind === 'legacy') {
+        if (authority) return replayLegacy(prior.message)
         return {
           response: turnResponse(
             prior.message,
@@ -1049,6 +1146,7 @@ async function runFlowTurn(
     if (error instanceof FlowMessageAlreadyStoredError) {
       const stored = await store.findAssistant(input.userId, assistantProviderId).catch(() => null)
       if (stored) {
+        if (authority) return replayLegacy(stored)
         const draft = await completeTurn(dependencies, input.userId, inboundProviderId)
         return { response: turnResponse(stored, draft), replayed: true }
       }
@@ -1058,10 +1156,19 @@ async function runFlowTurn(
 
   let draft: FlowTurnDraft | null
   try {
-    draft = await completeTurn(dependencies, input.userId, inboundProviderId)
-  } catch {
+    draft = authority
+      ? await completeTurn(dependencies, input.userId, inboundProviderId, capturedInboundId)
+      : await completeTurn(dependencies, input.userId, inboundProviderId)
+  } catch (error) {
+    if (
+      authority &&
+      error instanceof MobileApiError &&
+      error.code === 'flow_request_authority_conflict'
+    )
+      throw error
     throw await failTurn()
   }
+  if (authority) await verifyReplay()
   return { response: turnResponse(assistant, draft), replayed: false }
 }
 
@@ -1338,14 +1445,27 @@ export function createSupabaseFlowChatStore(supabase: ServiceClient): FlowChatSt
       if (error) throw new Error('Unable to update Flow input')
       return (data ?? []).length > 0
     },
-    async completeInbound(userId, providerMessageId) {
-      const { error } = await supabase
+    async completeInbound(userId, providerMessageId, expectedInboundId) {
+      const query = supabase
         .from('messages')
         .update({ delivery_status: 'completed', delivery_error: null })
         .eq('user_id', userId)
         .eq('provider', 'mobile_flow')
         .eq('provider_message_id', providerMessageId)
         .eq('direction', 'in')
+      if (expectedInboundId !== undefined) {
+        const { data, error } = await query.eq('id', expectedInboundId).select('id')
+        if (error) throw new Error('Unable to complete Flow input')
+        if ((data ?? []).length !== 1) {
+          throw new MobileApiError(
+            409,
+            'flow_request_authority_conflict',
+            'Flow request authority could not be verified',
+          )
+        }
+        return
+      }
+      const { error } = await query
       if (error) throw new Error('Unable to complete Flow input')
     },
     async failInbound(userId, providerMessageId, code = 'flow_provider_failed') {

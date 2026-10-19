@@ -152,5 +152,34 @@ ou retry automático, e reused nunca equivale a inserted.
 Capturar pode gravar uma admissão, probe pode gravar a recusa durável prevista
 no SQL, e persist pode criar o IN. São efeitos da futura chamada backend, não
 operações somente leitura. Os testes deste adapter usam um port controlado;
-não chamam Supabase, não comprovam isolamento SQL ou o fluxo HTTP real. Faltam
-a captura na rota, o serviço, cutover e os gates de ativação do S17J.
+não chamam Supabase, não comprovam isolamento SQL ou o fluxo HTTP real. O adapter
+isolado não prova a integração descrita abaixo, cutover ou ativação do S17J.
+
+## Integração TS dormente do handler e serviço
+
+O POST aceita a fonte somente nas dependências internas. Após validar o texto e
+a chave, captura uma admissão antes do ledger HTTP. O callback claimed recebe
+o mesmo handle; o hook beforeReplay exige bound sem criar IN, attempt ou clock.
+Owner, chave e texto divergentes, fonte sem handle e handle sem fonte recusam a
+operação. O payload público continua somente text. GET não captura autoridade.
+
+No serviço ON, probe substitui as duas buscas de IN scoped/bare. Persist ocorre
+somente depois do primeiro orçamento; reused recusa a corrida mesmo com request
+ID e horário iguais. Uma resposta de persist perdida não comprova UUID e não
+autoriza limpeza inferida por chave. Retries posteriores partem da prova bound
+do recibo original e conservam lease, orçamento e CAS atuais.
+
+CAS, cleanup e conclusão ON sem C5 também fixam o UUID. Conclusão usa retorno
+de linhas e recusa zero resultados; a chamada OFF mantém seus dois argumentos
+e filtros anteriores. O gate da mesma admissão e UUID original verifica os
+replays iniciais, segunda leitura de OUT, C5 prior/commit/recovery e colisão OUT.
+Não adota um IN posterior para reparar um OUT observado inicialmente sem vínculo.
+Os probes do serviço usam o saldo do prazo original de 165 segundos; os três
+conflitos de cursor C5 e seu resultado confirmado não são reescritos pelo gate.
+
+Os testes executam handler, ledger e serviço reais com ports controlados. Não
+substituem SQL/HTTP/iPhone reais nem comprovam cutover. A composição route.ts
+continua sem fonte e a flag UI não a habilita. A seleção sticky de protocolo e
+os gates de ativação seguem pendentes. Probe não torna retorno HTTP, provider,
+OUT, ferramentas ou reset uma única transação. O grupo não altera WhatsApp,
+motor compartilhado, migrations, regras nutricionais ou contratos do iOS.

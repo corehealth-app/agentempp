@@ -1,4 +1,7 @@
-import { type FlowPresentationObjective, projectStoredFlowMetricAnswer } from '@mpp/agent/flow-public-metrics'
+import {
+  type FlowPresentationObjective,
+  projectStoredFlowMetricAnswer,
+} from '@mpp/agent/flow-public-metrics'
 import { flowChatInputSchema, flowChatLimitSchema } from '@/lib/mobile-api/contracts'
 import type {
   FlowChatDependencies,
@@ -6,13 +9,20 @@ import type {
   SendFlowMessageInput,
   sendFlowMessage,
 } from '@/lib/mobile-api/flow-chat-service'
+import {
+  assertCapturedFlowInboundAuthority,
+  type CapturedFlowInboundAuthority,
+  verifyCapturedFlowInboundReplay,
+} from '@/lib/mobile-api/flow-inbound-authority'
 import { MobileApiError, mobileSuccess, readJsonBody } from '@/lib/mobile-api/http'
+import { type executeSupabaseIdempotent, requireIdempotencyKey } from '@/lib/mobile-api/idempotency'
 import type { MobileRouteContext } from '@/lib/mobile-api/route'
 
 type ExecuteIdempotent = (
   context: MobileRouteContext,
   payload: unknown,
   operation: (idempotencyKey: string) => Promise<Response>,
+  options?: Parameters<typeof executeSupabaseIdempotent>[3],
 ) => Promise<Response>
 
 export interface FlowChatRouteDependencies {
@@ -48,11 +58,24 @@ function validateMessage(value: unknown): asserts value is Record<string, unknow
     throw invalidResponse()
 }
 
-function publicMessage(value: unknown, locale: string | null, objective: FlowPresentationObjective, hasSuggestion = false) {
+function publicMessage(
+  value: unknown,
+  locale: string | null,
+  objective: FlowPresentationObjective,
+  hasSuggestion = false,
+) {
   validateMessage(value)
   return value.role === 'user'
     ? value
-    : { ...value, content: projectStoredFlowMetricAnswer(value.content as string, locale, hasSuggestion, objective) }
+    : {
+        ...value,
+        content: projectStoredFlowMetricAnswer(
+          value.content as string,
+          locale,
+          hasSuggestion,
+          objective,
+        ),
+      }
 }
 
 export async function handleFlowChatGet(
@@ -87,16 +110,43 @@ export async function handleFlowChatPost(
 ): Promise<Response> {
   const input = flowChatInputSchema.parse(await readJsonBody(context.request, 16 * 1024))
   const chat = dependencies.createChatDependencies(context)
-  const response = await dependencies.executeIdempotent(context, input, async (idempotencyKey) => {
+  const userId = context.auth.userId
+  const requestId = context.requestId
+  const source = chat.inboundAuthority
+  let authority: CapturedFlowInboundAuthority | undefined
+  if (source) {
+    const requestKey = requireIdempotencyKey(context.request)
+    authority = await source.capture({ userId, requestKey, text: input.text })
+    assertCapturedFlowInboundAuthority(authority, {
+      userId,
+      requestKey,
+      text: input.text,
+    })
+  }
+  const operation = async (idempotencyKey: string) => {
+    if (authority) {
+      assertCapturedFlowInboundAuthority(authority, {
+        userId,
+        requestKey: idempotencyKey,
+        text: input.text,
+      })
+    }
     const sendInput: SendFlowMessageInput = {
-      userId: context.auth.userId,
+      userId,
       text: input.text,
       idempotencyKey,
-      requestId: context.requestId,
+      requestId,
       now: dependencies.now(),
+      ...(authority ? { inboundAuthority: authority } : {}),
     }
-    return mobileSuccess(await dependencies.sendMessage(chat, sendInput), context.requestId, 201)
-  })
+    return mobileSuccess(await dependencies.sendMessage(chat, sendInput), requestId, 201)
+  }
+  const capturedAuthority = authority
+  const response = capturedAuthority
+    ? await dependencies.executeIdempotent(context, input, operation, {
+        beforeReplay: () => verifyCapturedFlowInboundReplay(capturedAuthority),
+      })
+    : await dependencies.executeIdempotent(context, input, operation)
   // This must run AFTER idempotency: a cached HTTP reply bypasses sendMessage.
   if (!response.ok) return response
   let body: unknown

@@ -48,6 +48,150 @@ function store(claim: IdempotencyClaim): MobileIdempotencyStore {
 }
 
 describe('mobile mutation idempotency', () => {
+  it.each([
+    false,
+    true,
+  ])('refuses a cached response before replay projection or refresh (refresh=%s)', async (refresh) => {
+    const body = {
+      data: { ok: true },
+      meta: { api_version: 'v1', request_id: 'request-original' },
+    }
+    const saved = JSON.stringify(body)
+    const persistence = store({ action: 'replay', status: 201, body })
+    const operation = vi.fn()
+    const refusal = new Error('original admission is no longer valid')
+    const responseBodyForReplay = vi.fn((value: unknown) => value)
+    const refreshReplay = vi.fn(async () => Response.json(body, { status: 201 }))
+    const options = {
+      beforeReplay: async () => {
+        throw refusal
+      },
+      responseBodyForReplay,
+      ...(refresh ? { refreshReplay } : {}),
+    }
+
+    await expect(
+      executeIdempotent(
+        context('mobile-request-0001'),
+        { text: 'test' },
+        persistence,
+        operation,
+        options,
+      ),
+    ).rejects.toBe(refusal)
+
+    expect(operation).not.toHaveBeenCalled()
+    expect(responseBodyForReplay).not.toHaveBeenCalled()
+    expect(refreshReplay).not.toHaveBeenCalled()
+    expect(persistence.complete).not.toHaveBeenCalled()
+    expect(persistence.fail).not.toHaveBeenCalled()
+    expect(JSON.stringify(body)).toBe(saved)
+  })
+
+  it.each([
+    false,
+    true,
+  ])('awaits the replay guard before producing a response (refresh=%s)', async (refresh) => {
+    const events: string[] = []
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const body = {
+      data: { ok: true },
+      meta: { api_version: 'v1', request_id: 'request-original' },
+    }
+    const persistence = store({ action: 'replay', status: 201, body })
+    const operation = vi.fn()
+    const options = {
+      beforeReplay: async () => {
+        events.push('guard-start')
+        await gate
+        events.push('guard-finished')
+      },
+      responseBodyForReplay: (value: unknown) => {
+        events.push('projection')
+        return value
+      },
+      ...(refresh
+        ? {
+            refreshReplay: async () => {
+              events.push('refresh')
+              return Response.json(body, { status: 201 })
+            },
+          }
+        : {}),
+    }
+    let returned = false
+    const pending = executeIdempotent(
+      context('mobile-request-0001'),
+      { text: 'test' },
+      persistence,
+      operation,
+      options,
+    ).then((response) => {
+      returned = true
+      return response
+    })
+
+    try {
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(events).toEqual(['guard-start'])
+      expect(returned).toBe(false)
+    } finally {
+      release()
+    }
+
+    const response = await pending
+    expect(events).toEqual(['guard-start', 'guard-finished', refresh ? 'refresh' : 'projection'])
+    expect(response.status).toBe(201)
+    expect(response.headers.get('idempotency-replayed')).toBe('true')
+    expect(response.headers.get('x-request-id')).toBe('request-current')
+    expect(await response.json()).toEqual(
+      refresh
+        ? body
+        : { data: { ok: true }, meta: { api_version: 'v1', request_id: 'request-current' } },
+    )
+    expect(operation).not.toHaveBeenCalled()
+    expect(persistence.complete).not.toHaveBeenCalled()
+    expect(persistence.fail).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    'claimed',
+    'conflict',
+    'in_progress',
+  ] as const)('does not run a replay guard for a %s claim', async (action) => {
+    const persistence = store(action === 'claimed' ? { action, claimId: 'claim-1' } : { action })
+    const beforeReplay = vi.fn(async () => {})
+    const operation = vi.fn(async () => Response.json({ data: { ok: true } }, { status: 201 }))
+    const options = { beforeReplay, responseBodyForReplay: (value: unknown) => value }
+    const result = executeIdempotent(
+      context('mobile-request-0001'),
+      { text: 'test' },
+      persistence,
+      operation,
+      options,
+    )
+
+    if (action === 'claimed') {
+      expect((await result).status).toBe(201)
+      expect(operation).toHaveBeenCalledOnce()
+      expect(persistence.complete).toHaveBeenCalledOnce()
+    } else {
+      await expect(result).rejects.toMatchObject({
+        status: 409,
+        code:
+          action === 'conflict' ? 'idempotency_key_conflict' : 'idempotency_request_in_progress',
+      })
+      expect(operation).not.toHaveBeenCalled()
+      expect(persistence.complete).not.toHaveBeenCalled()
+    }
+    expect(beforeReplay).not.toHaveBeenCalled()
+    expect(persistence.fail).not.toHaveBeenCalled()
+  })
+
   it('requires an idempotency key before running a mutation', async () => {
     const persistence = store({ action: 'claimed', claimId: 'claim-1' })
 

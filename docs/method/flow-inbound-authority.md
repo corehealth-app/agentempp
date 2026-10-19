@@ -110,3 +110,19 @@ Um novo commit DDL; continuação reconhece o produto instalado sem reinstalar.
 O baseline local de entrada não contém admissions preenchidas: não é evidência
 de upgrade de linhas antigas populadas. Não há escrita no staging, publicação
 ou mudança na produção antiga autorizada por esta documentação.
+
+## Primeiro gate de integração HTTP
+
+O executor de idempotência mobile aceita um hook opcional `beforeReplay`.
+Somente uma claim `replay` executa e aguarda esse hook, antes de atualizar uma
+capacidade temporária (`refreshReplay`), projetar o corpo ou devolver a resposta
+armazenada. Se a checagem falhar, o erro propaga sem executar a mutação, liberar
+a claim concluída ou regravar seu cache. Claims novas, conflitos e tentativas
+em andamento não executam o hook; sem ele, o caminho anterior é preservado.
+
+Os testes exercitam o executor real com um store controlado: recusa, checagem
+assíncrona pendente e os dois caminhos de replay, além dos ramos sem replay.
+Isso prepara o ponto de checagem do S17J. Nenhuma rota produtiva fornece o hook
+neste grupo. Adapter, admissão capturada, integração do serviço, cutover e
+validação com SQL/HTTP reais continuam pendentes; esse ponto isolado não cerca
+reset, provider, OUT ou ferramentas e não ativa o novo protocolo do Flow.

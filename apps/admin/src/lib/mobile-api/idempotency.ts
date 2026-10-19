@@ -25,6 +25,8 @@ export interface MobileIdempotencyStore {
 }
 
 interface ExecuteIdempotentOptions {
+  /** Refuse a completed replay before projecting/refreshing it; never rerun its mutation. */
+  beforeReplay?: () => Promise<void>
   refreshReplay?: (claim: Extract<IdempotencyClaim, { action: 'replay' }>) => Promise<Response>
   /** Redact an old response on output without repeating or rewriting its mutation. */
   responseBodyForReplay?: (body: unknown) => unknown
@@ -205,6 +207,7 @@ export async function executeIdempotent(
     )
   }
   if (claim.action === 'replay') {
+    if (options.beforeReplay) await options.beforeReplay()
     if (options.refreshReplay) {
       return markResponseAsReplay(await options.refreshReplay(claim), context.requestId)
     }

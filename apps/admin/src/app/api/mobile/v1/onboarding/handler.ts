@@ -7,7 +7,11 @@ import {
 } from '@/lib/mobile-api/contracts'
 import { prepareEvaluationAccess } from '@/lib/mobile-api/evaluation-access'
 import { MobileApiError, mobileSuccess, readJsonBody } from '@/lib/mobile-api/http'
-import { executeSupabaseIdempotent, requireIdempotencyKey } from '@/lib/mobile-api/idempotency'
+import {
+  executeSupabaseIdempotent,
+  hashMobileRequest,
+  requireIdempotencyKey,
+} from '@/lib/mobile-api/idempotency'
 import { assertOnboardingObjectiveEligible } from '@/lib/mobile-api/onboarding-eligibility-guard'
 import {
   completeOnboarding,
@@ -29,6 +33,12 @@ import { signupBodyPhotosUnavailable } from '@/lib/mobile-api/signup-body-photo-
 import { loadSignupPhotoSnapshot } from '@/lib/mobile-api/signup-body-photo-snapshot'
 import { signupBodyPhotosEnabled } from '@/lib/mobile-api/signup-body-photo-switch'
 import {
+  type SignupStrengthAuthoritySource,
+  type SignupStrengthRequestIdentity,
+  snapshotSignupStrengthEpoch,
+  snapshotSignupStrengthRequest,
+} from '@/lib/mobile-api/signup-strength-authority'
+import {
   createSupabaseOnboardingRepository,
   type SupabaseOnboardingOptions,
 } from '@/lib/mobile-api/supabase-onboarding'
@@ -43,6 +53,7 @@ export interface OnboardingRouteDependencies {
     options?: SupabaseOnboardingOptions,
   ): OnboardingRepository
   executeIdempotent: typeof executeSupabaseIdempotent
+  signupStrengthAuthority?: SignupStrengthAuthoritySource
   saveLegacyOnboarding: typeof saveOnboarding
   readSignupBodyPhotoCleanupScope?: typeof readSignupBodyPhotoCleanupScope
   finalizeSignupBodyPhotos(
@@ -188,10 +199,19 @@ export async function handleOnboardingPost(
   // the objective corrected would be answered 409 idempotency_key_conflict,
   // and the published app keeps its key after a refusal. So the header is only
   // read here (without it the answer is still 400, before anything is read),
-  // and a refusal leaves no record at all.
-  requireIdempotencyKey(context.request)
+  // and a refusal leaves no record in the HTTP idempotency ledger. The optional
+  // authority observation may ensure an epoch fence, without binding the key/hash.
+  const requestKey = requireIdempotencyKey(context.request)
   if (input.body_photo_confirmation && !signupBodyPhotoFinalizationTargetAllowed()) {
     throw signupBodyPhotosUnavailable()
+  }
+  const source = dependencies.signupStrengthAuthority
+  let identity: SignupStrengthRequestIdentity | undefined
+  if (source) {
+    const userId = context.auth.userId
+    const requestHash = hashMobileRequest(input)
+    const expectedEpoch = snapshotSignupStrengthEpoch(await source.observe({ userId }), userId)
+    identity = Object.freeze({ userId, requestKey, requestHash, expectedEpoch })
   }
   const prepare = async () => {
     const prepared = await prepareSignupPhotoConfirmation(context, input, {
@@ -223,9 +243,15 @@ export async function handleOnboardingPost(
     return prepared
   }
   const prepared = await prepare()
+  // A refusal above leaves the key unbound, so the corrected payload can reuse it.
+  const authority =
+    source && identity
+      ? snapshotSignupStrengthRequest(await source.bind(identity), identity)
+      : undefined
   const createResponse = async (current: PreparedSignupPhotoConfirmation) => {
     const repository = dependencies.createOnboardingRepository(context.supabase, {
       signupPhotoConfirmation: current,
+      ...(authority ? { signupStrengthRequest: authority } : {}),
     })
     // Evaluation access is off unless the test environment switched it on
     // (see the module header); off, it reads nothing and the returned function
@@ -246,9 +272,19 @@ export async function handleOnboardingPost(
       context.requestId,
     )
   }
-  return dependencies.executeIdempotent(context, input, () => createResponse(prepared), {
-    refreshReplay: async () =>
-      createResponse(prepared.mode === 'legacy' ? prepared : await prepare()),
-    responseBodyForStorage: completionBodyForStorage,
-  })
+  return dependencies.executeIdempotent(
+    context,
+    input,
+    async (idempotencyKey) => {
+      if (authority && idempotencyKey !== authority.requestKey)
+        throw new Error('Invalid signup request authority')
+      return createResponse(prepared)
+    },
+    {
+      ...(authority ? { beforeReplay: () => authority.verifyReplay() } : {}),
+      refreshReplay: async () =>
+        createResponse(prepared.mode === 'legacy' ? prepared : await prepare()),
+      responseBodyForStorage: completionBodyForStorage,
+    },
+  )
 }

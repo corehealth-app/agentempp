@@ -11,6 +11,7 @@ import {
   OnboardingRepositoryError,
 } from './onboarding-service'
 import type { PreparedSignupPhotoConfirmation } from './signup-body-photo-confirmation'
+import type { CapturedSignupStrengthRequest } from './signup-strength-authority'
 import { signupBodyPhotoFinalizationTargetAllowed } from './supabase-signup-body-photo-finalization'
 
 const documentSchema = z
@@ -151,6 +152,7 @@ interface UntypedClient {
 }
 
 export interface SupabaseOnboardingOptions {
+  signupStrengthRequest?: CapturedSignupStrengthRequest
   signupPhotoConfirmation?: PreparedSignupPhotoConfirmation
   allowedLegalOrigins?: string[]
   fetchLegalContent?: (input: string, init: RequestInit) => Promise<Response>
@@ -372,6 +374,9 @@ export function createSupabaseOnboardingRepository(
   supabase: ServiceClient,
   options: SupabaseOnboardingOptions = {},
 ): OnboardingRepository {
+  // The keyed SQL writer is a separate gate. Never ignore ON context and use a legacy RPC.
+  if (options.signupStrengthRequest !== undefined)
+    throw new Error('Signup strength writer is not connected')
   const client = supabase as unknown as UntypedClient
   const allowedOrigins = new Set(options.allowedLegalOrigins ?? configuredOrigins())
   const fetchLegalContent = options.fetchLegalContent ?? fetch

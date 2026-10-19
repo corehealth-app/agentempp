@@ -287,6 +287,7 @@ class SignupMemoryDb {
   readonly profileReads: string[] = []
   readonly signupSnapshotReads: Record<string, unknown>[] = []
   signupSnapshotOverride: unknown | undefined
+  afterSignupSnapshotRead: (() => void) | undefined
   /** Actual awaited photo reads, including their account/kind/status filters. */
   readonly bodyPhotoReads: SignupBodyPhotoMemoryRead[] = []
   readonly bodyPhotoReadSignals: AbortSignal[] = []
@@ -539,8 +540,11 @@ class SignupMemoryDb {
         if (params.p_user_id !== USER_ID || typeof params.p_include_open_photos !== 'boolean')
           throw new Error('unexpected signup snapshot arguments')
         this.signupSnapshotReads.push(structuredClone(params))
-        if (this.signupSnapshotOverride !== undefined)
-          return { data: structuredClone(this.signupSnapshotOverride), error: null }
+        if (this.signupSnapshotOverride !== undefined) {
+          const data = structuredClone(this.signupSnapshotOverride)
+          this.afterSignupSnapshotRead?.()
+          return { data, error: null }
+        }
         return {
           data: {
             version: 1,
@@ -2507,5 +2511,475 @@ describe('official signup cleanup scope', () => {
     const response = await handleOnboardingPost(context(validBody()), deps)
     expect((await response.json()).data).not.toHaveProperty('body_photo_cleanup')
     expect(deps.readSignupBodyPhotoCleanupScope).not.toHaveBeenCalled()
+  })
+})
+
+// Request-local authority only; native receipt/epoch atomicity has separate SQL gates.
+const C59A_E0 = '00000000-0000-4000-8000-000000000e01'
+const C59A_E1 = '00000000-0000-4000-8000-000000000e02'
+interface C59aBindInput {
+  userId: string
+  requestKey: string
+  requestHash: string
+  expectedEpoch: string
+}
+
+function c59aHarness(db: SignupMemoryDb, repo = recordingRepository()) {
+  const state = ledger()
+  const observation = { userId: USER_ID, epoch: C59A_E0 }
+  const callbacks = { beforeClaim: () => {} }
+  const verifyReplay = vi.fn(async () => {})
+  const captured = (input: C59aBindInput) => ({
+    userId: input.userId,
+    requestKey: input.requestKey,
+    requestHash: input.requestHash,
+    epoch: input.expectedEpoch,
+    admissionId: '00000000-0000-4000-8000-000000000e03',
+    verifyReplay,
+  })
+  const source = {
+    observe: vi.fn(async (_input: { userId: string }) => {
+      db.operations.push('authority:observe')
+      return observation
+    }),
+    bind: vi.fn(async (input: C59aBindInput) => {
+      db.operations.push('authority:bind')
+      return captured(input)
+    }),
+  }
+  // Structural variable: before implementation this extra port is simply ignored.
+  // The real executor/ledger, never the fixture's fake normalized-key callback.
+  const deps = {
+    ...dependencies(repo),
+    signupStrengthAuthority: source,
+    createOnboardingRepository: vi.fn(
+      (..._args: Parameters<OnboardingRouteDependencies['createOnboardingRepository']>) => {
+        db.operations.push('repository:factory')
+        return repo
+      },
+    ),
+    executeIdempotent: vi.fn(
+      async (...args: Parameters<OnboardingRouteDependencies['executeIdempotent']>) => {
+        db.operations.push('http:claim')
+        callbacks.beforeClaim()
+        return state.execute(...args)
+      },
+    ),
+  }
+  return { state, source, observation, callbacks, verifyReplay, captured, deps, repo }
+}
+
+function c59aPhotoSnapshot() {
+  const sources = {
+    front: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    side: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    back: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+  }
+  const body = 'Synthetic unpublished consent.'
+  return {
+    sources,
+    snapshot: {
+      version: 1,
+      user_id: USER_ID,
+      profile_present: true,
+      locale: 'pt-BR',
+      timezone: 'America/Sao_Paulo',
+      generation_token: {
+        onboarding_completed: false,
+        onboarding_completed_at: null,
+        receipt_count: 0,
+      },
+      poses: (['front', 'side', 'back'] as const).map((pose) => ({
+        pose,
+        photo: { id: sources[pose], status: 'read', created_at: COMPLETED_AT },
+      })),
+      remaining_uploads: 6,
+      consent: {
+        legal_document_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        document_key: 'body_photo_estimate_consent',
+        version: 'synthetic-v1',
+        locale: 'pt-BR',
+        body,
+        body_hash: createHash('sha256').update(body).digest('hex'),
+        accepted_at: COMPLETED_AT,
+      },
+      estimate: {
+        is_estimate: true,
+        by_sex: {
+          masculino: { usable: true, body_fat_percent: 24 },
+          feminino: { usable: true, body_fat_percent: 24 },
+        },
+      },
+      candidate: {
+        method: 'arithmetic_mean_v1',
+        body_fat_percent: 24,
+        source_ids: sources,
+        fingerprint: 'a'.repeat(64),
+      },
+      confirmation: null,
+    },
+  }
+}
+
+describe('C59a signup request authority boundary', () => {
+  it('C59a H1 original identity observed before prepare', async () => {
+    const db = new SignupMemoryDb().addAccount()
+    const h = c59aHarness(db)
+    const original = validBody()
+    const key = 'c59a-original-key-1'
+    const ctx = completionContext(original, `  ${key}  `)
+    ctx.supabase = db.client
+    const response = await handleOnboardingPost(ctx, h.deps)
+    expect(response.status).toBe(200)
+    expect(h.source.observe).toHaveBeenCalledTimes(1)
+    expect(h.source.observe).toHaveBeenCalledWith({ userId: USER_ID })
+    const identity = {
+      userId: USER_ID,
+      requestKey: key,
+      requestHash: hashMobileRequest(original),
+      expectedEpoch: C59A_E0,
+    }
+    expect(h.source.bind).toHaveBeenCalledTimes(1)
+    expect(h.source.bind).toHaveBeenCalledWith(identity)
+    expect(db.operations.indexOf('authority:observe')).toBeLessThan(
+      db.operations.indexOf(SNAPSHOT_READ),
+    )
+    expect(db.operations.indexOf(CONFIG_READ)).toBeLessThan(db.operations.indexOf('authority:bind'))
+    expect(db.operations.indexOf('authority:bind')).toBeLessThan(
+      db.operations.indexOf('http:claim'),
+    )
+    expect(db.operations.indexOf('http:claim')).toBeLessThan(
+      db.operations.indexOf('repository:factory'),
+    )
+    expect(h.deps.createOnboardingRepository).toHaveBeenCalledWith(
+      db.client,
+      expect.objectContaining({
+        signupStrengthRequest: expect.objectContaining({
+          userId: USER_ID,
+          requestKey: key,
+          requestHash: hashMobileRequest(original),
+          epoch: C59A_E0,
+        }),
+      }),
+    )
+    expect(h.state.rows.rows).toMatchObject([
+      { idempotency_key: key, request_hash: hashMobileRequest(original), state: 'completed' },
+    ])
+    expect(h.repo.complete).toHaveBeenCalledTimes(1)
+    expect(h.repo.complete).toHaveBeenCalledWith(USER_ID, original)
+  })
+
+  it('C59a H2 photos use effective BF but original identity', async () => {
+    vi.stubEnv('MOBILE_SIGNUP_BODY_PHOTOS_PROJECT_REF', 'xitugspwfxkcluxvrdeg')
+    const db = new SignupMemoryDb().addAccount()
+    const { snapshot, sources } = c59aPhotoSnapshot()
+    db.signupSnapshotOverride = snapshot
+    const original = {
+      ...validBody(),
+      body_photo_confirmation: {
+        decision: 'accept',
+        source_ids: sources,
+        fingerprint: 'a'.repeat(64),
+      },
+    }
+    const h = c59aHarness(db)
+    const key = 'c59a-photos-key-1'
+    const ctx = completionContext(original, key)
+    ctx.supabase = db.client
+    const response = await handleOnboardingPost(ctx, h.deps)
+    expect(response.status).toBe(200)
+    expect(h.source.bind).toHaveBeenCalledTimes(1)
+    expect(h.source.bind).toHaveBeenCalledWith({
+      userId: USER_ID,
+      requestKey: key,
+      requestHash: hashMobileRequest(original),
+      expectedEpoch: C59A_E0,
+    })
+    expect(h.deps.createOnboardingRepository).toHaveBeenCalledWith(
+      db.client,
+      expect.objectContaining({
+        signupPhotoConfirmation: expect.objectContaining({
+          effectiveSubmission: expect.objectContaining({ body_fat_percent: 24 }),
+        }),
+        signupStrengthRequest: expect.objectContaining({
+          requestHash: hashMobileRequest(original),
+          requestKey: key,
+        }),
+      }),
+    )
+    expect(h.state.rows.rows[0].request_hash).toBe(hashMobileRequest(original))
+    expect(h.state.rows.rows[0].request_hash).not.toBe(
+      hashMobileRequest({ ...original, body_fat_percent: 24 }),
+    )
+    expect(original).not.toHaveProperty('body_fat_percent')
+    expect(h.repo.complete).toHaveBeenCalledWith(USER_ID, original)
+  })
+
+  it('C59a H3 refused payload does not bind key before corrected retry', async () => {
+    const db = new SignupMemoryDb().addAccount()
+    const h = c59aHarness(db)
+    const key = 'c59a-corrected-key-1'
+    const refused = man({ body_fat_percent: 20, objective: 'manutencao' })
+    const corrected = man({ body_fat_percent: 20, objective: 'recomposicao' })
+    const send = (body: unknown) =>
+      createMobileRoute(
+        (ctx) => handleOnboardingPost(ctx, h.deps),
+        runtime(db),
+      )(
+        new Request(ENDPOINT, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': key },
+          body: JSON.stringify(body),
+        }),
+      )
+    expect((await send(refused)).status).toBe(422)
+    expect((await send(refused)).status).toBe(422)
+    expect(h.source.bind).not.toHaveBeenCalled()
+    expect(h.deps.executeIdempotent).not.toHaveBeenCalled()
+    expect(h.repo.complete).not.toHaveBeenCalled()
+    expect(h.state.rows.rows).toEqual([])
+    expect((await send(corrected)).status).toBe(200)
+    expect(h.source.observe).toHaveBeenCalledTimes(3)
+    expect(h.source.bind).toHaveBeenCalledTimes(1)
+    expect(h.source.bind).toHaveBeenCalledWith({
+      userId: USER_ID,
+      requestKey: key,
+      requestHash: hashMobileRequest(corrected),
+      expectedEpoch: C59A_E0,
+    })
+    expect(h.state.rows.rows).toMatchObject([
+      { idempotency_key: key, request_hash: hashMobileRequest(corrected), state: 'completed' },
+    ])
+    expect(h.repo.complete).toHaveBeenCalledTimes(1)
+    expect(h.deps.finalizeSignupBodyPhotos).toHaveBeenCalledTimes(1)
+  })
+
+  it('C59a H4 reset between skipped guard snapshot and bind rejects original epoch', async () => {
+    const original = man({ body_fat_percent: 20, objective: 'manutencao' })
+    const db = new SignupMemoryDb().addCompletedAccount(original, EARLIER_COMPLETION)
+    db.signupSnapshotOverride = {
+      ...snapshotWithCompletionTime(EARLIER_COMPLETION),
+      generation_token: {
+        onboarding_completed: true,
+        onboarding_completed_at: EARLIER_COMPLETION,
+        receipt_count: 0,
+      },
+    }
+    const h = c59aHarness(db)
+    const stale = new Error('synthetic stale signup epoch')
+    let currentEpoch = C59A_E0
+    db.afterSignupSnapshotRead = () => {
+      currentEpoch = C59A_E1
+      h.observation.epoch = C59A_E1 // A producer alias must not renew the captured E0.
+      db.profile = { ...NEW_ACCOUNT }
+    }
+    h.source.bind.mockImplementation(async (identity) => {
+      if (identity.expectedEpoch !== currentEpoch) throw stale
+      return h.captured(identity)
+    })
+    const ctx = completionContext(original, 'c59a-reset-before-bind-1')
+    ctx.supabase = db.client
+    await expect(handleOnboardingPost(ctx, h.deps)).rejects.toBe(stale)
+    expect(h.source.bind).toHaveBeenCalledWith(expect.objectContaining({ expectedEpoch: C59A_E0 }))
+    expect(db.operations).not.toContain(CONFIG_READ) // The already-read timestamp skipped the guard.
+    expect(h.state.rows.rows).toEqual([])
+    expect(h.deps.createOnboardingRepository).not.toHaveBeenCalled()
+    expect(h.deps.executeIdempotent).not.toHaveBeenCalled()
+    expect(h.repo.complete).not.toHaveBeenCalled()
+    expect(h.deps.finalizeSignupBodyPhotos).not.toHaveBeenCalled()
+  })
+
+  it('C59a H5 stale admission is checked before replay refresh', async () => {
+    const original = validBody()
+    const db = new SignupMemoryDb().addAccount()
+    const h = c59aHarness(db)
+    const key = 'c59a-stale-replay-1'
+    const seed = completionContext(original, key)
+    seed.supabase = db.client
+    await h.state.execute(seed, original, async () => Response.json({ data: { cached: true } }))
+    const stale = new Error('synthetic stale original admission')
+    let current = true
+    h.verifyReplay.mockImplementation(async () => {
+      if (!current) throw stale
+    })
+    h.callbacks.beforeClaim = () => {
+      current = false
+    }
+    const ctx = completionContext(original, key)
+    ctx.supabase = db.client
+    await expect(handleOnboardingPost(ctx, h.deps)).rejects.toBe(stale)
+    expect(h.source.observe).toHaveBeenCalledTimes(1)
+    expect(h.source.bind).toHaveBeenCalledTimes(1)
+    expect(h.verifyReplay).toHaveBeenCalledTimes(1)
+    // Initial prepare precedes the claim; stale replay must prevent only its refresh.
+    expect(db.signupSnapshotReads).toHaveLength(1)
+    expect(h.deps.createOnboardingRepository).not.toHaveBeenCalled()
+    expect(h.repo.complete).not.toHaveBeenCalled()
+    expect(h.deps.finalizeSignupBodyPhotos).not.toHaveBeenCalled()
+    expect(h.state.rows.rows[0].state).toBe('completed')
+  })
+
+  it.each([
+    ['userId', AUTH_USER_ID],
+    ['epoch', ''],
+    ['epoch', undefined],
+  ])('C59a H7 rejects invalid observation %s=%s before prepare', async (field, value) => {
+    const db = new SignupMemoryDb().addAccount()
+    const h = c59aHarness(db)
+    Reflect.set(h.observation, field, value)
+    const ctx = completionContext(validBody(), 'c59a-invalid-observation-1')
+    ctx.supabase = db.client
+    await expect(handleOnboardingPost(ctx, h.deps)).rejects.toBeInstanceOf(Error)
+    expect(db.signupSnapshotReads).toHaveLength(0)
+    expect(h.source.bind).not.toHaveBeenCalled()
+    expect(h.deps.executeIdempotent).not.toHaveBeenCalled()
+    expect(h.deps.createOnboardingRepository).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['userId', AUTH_USER_ID],
+    ['requestKey', 'c59a-another-key-1'],
+    ['requestHash', 'b'.repeat(64)],
+    ['epoch', C59A_E1],
+    ['admissionId', ''],
+    ['verifyReplay', undefined],
+  ])('C59a H8 rejects mixed admission %s before claim', async (field, value) => {
+    const db = new SignupMemoryDb().addAccount()
+    const h = c59aHarness(db)
+    h.source.bind.mockImplementation(async (identity) => {
+      const handle = h.captured(identity)
+      Reflect.set(handle, field, value)
+      return handle
+    })
+    const ctx = completionContext(validBody(), 'c59a-mixed-admission-1')
+    ctx.supabase = db.client
+    await expect(handleOnboardingPost(ctx, h.deps)).rejects.toBeInstanceOf(Error)
+    expect(h.source.bind).toHaveBeenCalledTimes(1)
+    expect(h.deps.executeIdempotent).not.toHaveBeenCalled()
+    expect(h.deps.createOnboardingRepository).not.toHaveBeenCalled()
+    expect(h.repo.complete).not.toHaveBeenCalled()
+  })
+
+  it('C59a H9 rejects a mismatched executor key before any completion effect', async () => {
+    const db = new SignupMemoryDb().addAccount()
+    const h = c59aHarness(db)
+    h.deps.executeIdempotent.mockImplementation(async (_ctx, _input, operation) =>
+      operation('c59a-wrong-callback-key'),
+    )
+    const ctx = completionContext(validBody(), 'c59a-right-callback-key')
+    ctx.supabase = db.client
+    await expect(handleOnboardingPost(ctx, h.deps)).rejects.toBeInstanceOf(Error)
+    expect(h.deps.createOnboardingRepository).not.toHaveBeenCalled()
+    expect(h.repo.complete).not.toHaveBeenCalled()
+    expect(h.deps.finalizeSignupBodyPhotos).not.toHaveBeenCalled()
+    expect(db.operations).not.toContain('select:user_access_grants')
+  })
+
+  it('C59a H10 snapshots admission identity before the executor awaits', async () => {
+    const db = new SignupMemoryDb().addAccount()
+    const h = c59aHarness(db)
+    const original = validBody()
+    const key = 'c59a-mutable-admission-1'
+    const admission = h.captured({
+      userId: USER_ID,
+      requestKey: key,
+      requestHash: hashMobileRequest(original),
+      expectedEpoch: C59A_E0,
+    })
+    h.source.bind.mockResolvedValueOnce(admission)
+    h.callbacks.beforeClaim = () => {
+      admission.userId = AUTH_USER_ID
+      admission.epoch = C59A_E1
+      admission.requestKey = 'c59a-mutated-key-1'
+    }
+    const ctx = completionContext(original, key)
+    ctx.supabase = db.client
+    expect((await handleOnboardingPost(ctx, h.deps)).status).toBe(200)
+    expect(h.deps.createOnboardingRepository).toHaveBeenCalledWith(
+      db.client,
+      expect.objectContaining({
+        signupStrengthRequest: expect.objectContaining({
+          userId: USER_ID,
+          requestKey: key,
+          epoch: C59A_E0,
+        }),
+      }),
+    )
+    expect(h.repo.complete).toHaveBeenCalledTimes(1)
+  })
+
+  it('C59a H11 verifies a valid replay before refresh with the same admission', async () => {
+    const db = new SignupMemoryDb().addAccount()
+    const h = c59aHarness(db)
+    const original = validBody()
+    const key = 'c59a-valid-replay-1'
+    const seed = completionContext(original, key)
+    seed.supabase = db.client
+    await h.state.execute(seed, original, async () => Response.json({ data: { cached: true } }))
+    h.verifyReplay.mockImplementation(async () => {
+      db.operations.push('authority:verify-replay')
+    })
+    const ctx = completionContext(original, key)
+    ctx.supabase = db.client
+    const response = await handleOnboardingPost(ctx, h.deps)
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Idempotency-Replayed')).toBe('true')
+    expect(h.source.observe).toHaveBeenCalledTimes(1)
+    expect(h.source.bind).toHaveBeenCalledTimes(1)
+    expect(h.verifyReplay).toHaveBeenCalledTimes(1)
+    expect(db.signupSnapshotReads).toHaveLength(2)
+    expect(db.operations.lastIndexOf(SNAPSHOT_READ)).toBeGreaterThan(
+      db.operations.indexOf('authority:verify-replay'),
+    )
+    expect(h.deps.createOnboardingRepository).toHaveBeenCalledTimes(1)
+    expect(h.deps.createOnboardingRepository).toHaveBeenCalledWith(
+      db.client,
+      expect.objectContaining({
+        signupStrengthRequest: expect.objectContaining({
+          userId: USER_ID,
+          requestKey: key,
+          requestHash: hashMobileRequest(original),
+          epoch: C59A_E0,
+          admissionId: '00000000-0000-4000-8000-000000000e03',
+        }),
+      }),
+    )
+    expect(h.repo.complete).toHaveBeenCalledTimes(1)
+  })
+
+  it('C59a H12 partial update bypasses the completion authority', async () => {
+    const db = new SignupMemoryDb().addAccount()
+    const h = c59aHarness(db)
+    const key = 'c59a-partial-update-1'
+    const ctx = completionContext({ height_cm: 180 }, key)
+    ctx.supabase = db.client
+    expect((await handleOnboardingPost(ctx, h.deps)).status).toBe(200)
+    expect(h.source.observe).not.toHaveBeenCalled()
+    expect(h.source.bind).not.toHaveBeenCalled()
+    expect(h.deps.saveLegacyOnboarding).toHaveBeenCalledWith(
+      db.client,
+      ctx.auth,
+      { height_cm: 180 },
+      key,
+    )
+    expect(h.deps.createOnboardingRepository).not.toHaveBeenCalled()
+    expect(db.signupSnapshotReads).toHaveLength(0)
+  })
+
+  it.each([
+    'observe',
+    'bind',
+  ] as const)('C59a H13 propagates %s failure without fallback', async (method) => {
+    const db = new SignupMemoryDb().addAccount()
+    const h = c59aHarness(db)
+    const failure = new Error(`synthetic ${method} failure`)
+    h.source[method].mockRejectedValueOnce(failure)
+    const ctx = completionContext(validBody(), 'c59a-port-error-1')
+    ctx.supabase = db.client
+    await expect(handleOnboardingPost(ctx, h.deps)).rejects.toBe(failure)
+    expect(h.deps.executeIdempotent).not.toHaveBeenCalled()
+    expect(h.deps.createOnboardingRepository).not.toHaveBeenCalled()
+    expect(h.repo.complete).not.toHaveBeenCalled()
+    expect(h.deps.finalizeSignupBodyPhotos).not.toHaveBeenCalled()
   })
 })

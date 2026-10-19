@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import type { ServiceClient } from '@mpp/db'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { OnboardingCompletionInput } from './contracts'
+import { hashMobileRequest } from './idempotency'
 import { OnboardingRepositoryError } from './onboarding-service'
 import type { PreparedSignupPhotoConfirmation } from './signup-body-photo-confirmation'
 import { createSupabaseOnboardingRepository } from './supabase-onboarding'
@@ -597,5 +598,48 @@ describe('Supabase onboarding adapter', () => {
     await expect(repository.complete(USER_ID, completionInput())).rejects.toEqual(
       new OnboardingRepositoryError('already_completed'),
     )
+  })
+})
+
+describe('C59a signup authority cannot fall back to legacy completion', () => {
+  it('C59a H6 injected authority refuses the real adapter until the keyed writer exists', async () => {
+    const from = vi.fn()
+    const fetchLegalContent = vi.fn()
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        user_id: USER_ID,
+        onboarding_completed: true,
+        completed_at: '2026-09-15T15:00:00.000Z',
+        objective: 'recomposicao',
+        persona: 'focus',
+        document_actions: [],
+      },
+      error: null,
+    })
+    const input = completionInput()
+    // Existing option keeps the structural variable valid before the new port exists.
+    const options = {
+      now: () => new Date('2026-10-19T12:00:00Z'),
+      fetchLegalContent,
+      signupStrengthRequest: {
+        userId: USER_ID,
+        requestKey: 'c59a-no-fallback-1',
+        requestHash: hashMobileRequest(input),
+        epoch: '00000000-0000-4000-8000-000000000e01',
+        admissionId: '00000000-0000-4000-8000-000000000e03',
+        verifyReplay: vi.fn(async () => {}),
+      },
+    }
+    await expect(
+      Promise.resolve().then(() =>
+        createSupabaseOnboardingRepository(
+          { rpc, from } as unknown as ServiceClient,
+          options,
+        ).complete(USER_ID, input),
+      ),
+    ).rejects.toEqual(new Error('Signup strength writer is not connected'))
+    expect(rpc).not.toHaveBeenCalled()
+    expect(from).not.toHaveBeenCalled()
+    expect(fetchLegalContent).not.toHaveBeenCalled()
   })
 })

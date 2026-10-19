@@ -123,6 +123,34 @@ em andamento não executam o hook; sem ele, o caminho anterior é preservado.
 Os testes exercitam o executor real com um store controlado: recusa, checagem
 assíncrona pendente e os dois caminhos de replay, além dos ramos sem replay.
 Isso prepara o ponto de checagem do S17J. Nenhuma rota produtiva fornece o hook
-neste grupo. Adapter, admissão capturada, integração do serviço, cutover e
+neste grupo. Captura na rota, integração do serviço, cutover e
 validação com SQL/HTTP reais continuam pendentes; esse ponto isolado não cerca
 reset, provider, OUT ou ferramentas e não ativa o novo protocolo do Flow.
+
+## Adapter backend por injeção
+
+`flow-inbound-authority.ts` prepara uma fonte de handles capturados, sem caller
+na composição produtiva. A fonte usa somente as duas RPCs existentes: admissão
+e acesso ao IN. Captura escalares e o método RPC com seu cliente original antes
+da primeira espera; owner UUID é comparado por identidade, enquanto chave,
+texto e SHA256 UTF8 permanecem literais. O handle é imutável e conserva a
+admissão original em probe e persist; nunca inicializa lifecycle ou tenta um
+writer alternativo. Uma vez observado o UUID do IN, não adota outro UUID nem
+uma resposta unbound posterior no mesmo handle.
+
+Os parsers fechados verificam status por modo, recibos e os seis campos do IN.
+Preservam timestamps ISO3/ISO6 e os valores JSON operacionais de bound/reused,
+inclusive chaves aninhadas, sem reinterpretá-los como attempts válidos. Já
+inserted exige o instante ISO3 exato da tentativa, status processing e os cinco
+campos iniciais definidos pelo INSERT SQL, com request ID e relógio originais.
+Uma resposta contraditória não concede autoria da execução nem fixa o UUID.
+Recusas conservam motivo
+interno distinto, com HTTP 409 opaco; erros de entrada interna, wire ou transporte
+retornam HTTP 500 sem paths Zod ou mensagens SQL. Nenhuma falha produz fallback
+ou retry automático, e reused nunca equivale a inserted.
+
+Capturar pode gravar uma admissão, probe pode gravar a recusa durável prevista
+no SQL, e persist pode criar o IN. São efeitos da futura chamada backend, não
+operações somente leitura. Os testes deste adapter usam um port controlado;
+não chamam Supabase, não comprovam isolamento SQL ou o fluxo HTTP real. Faltam
+a captura na rota, o serviço, cutover e os gates de ativação do S17J.

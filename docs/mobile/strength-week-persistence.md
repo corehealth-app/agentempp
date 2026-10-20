@@ -48,6 +48,10 @@ A instrumentação de observação pertenceu somente à cópia local instalada; 
 
 Em 20/10, o teste nativo local do produtor real de plano de 42 dias passou na leitura, freeze e winner após o RED correspondente. Também passaram as fronteiras inclusivas de um microssegundo, leitura tardia, plano B expirado, zero/ausência/desconhecido e regressão RC/RR. As quatro transações foram desfeitas; isso não comprova instalação durável, HTTP, concorrência ou ativação do candidato. As evidências e limites atuais ficam no checkpoint operacional de M3A e no diário local.
 
-Antes de publicar X/Y, o consumidor ainda precisa integrar o resultado atômico ao parser e ao core, mantendo target, binding e calendário coerentes e usando somente os treinos confirmados oficiais. Geração e lifecycle são identidades distintas. A aquisição do target isoladamente não é um contador completo.
+A publicação de X/Y exige target, binding e calendário coerentes e somente os treinos confirmados oficiais. Geração e lifecycle são identidades distintas. A aquisição do target isoladamente não é um contador completo.
+
+Essa composição interna está preparada em `readStrengthTrainingWeek`: aquisição oficial, uma RPC de projeção atômica e o resumo puro do core. O parser compara o target completo com o winner do CAS, mantém as nove provas do binding e reutiliza os parsers de calendário/treinos pelo subpath explícito `@mpp/agent/workout-strength-projection`. A frequência original do cadastro no binding pode diferir da fonte semanal selecionada. Indisponibilidade e conflito não produzem resumo parcial nem lista vazia; somente uma projeção disponível chega ao core. Não há retry implícito, mudança de fórmula ou acesso separado a calendário/vínculo durante essa composição.
+
+O repositório continua desligado por padrão. A composição ainda não é chamada por HTTP, Hoje ou iOS. Os testes de contrato usam respostas de RPC controladas; os testes nativos de P5 foram executados separadamente. Isso não comprova a integração HTTP/autenticação/PostgreSQL completa nem a publicação de X/Y no app.
 
 Também permanecem os gates integrados de durabilidade/concorrência/HTTP dos escritores reais, leitura dos consumidores, interface e ativação. Registros legados sem origem comprovada não podem virar histórico inventado nem um contador completo artificialmente zerado.

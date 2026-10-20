@@ -342,7 +342,7 @@ export function createWorkoutStrengthRepository(
         p_week_start_date: weekStartDate,
         p_as_of_local_date: asOfLocalDate,
       })
-      return parseWorkoutProjection(readCalendarReply(reply), request, calendar)
+      return parseTrustedStrengthWorkoutProjection(readCalendarReply(reply), request, calendar)
     },
   }
 }
@@ -720,31 +720,7 @@ function parsePreparedCalendar(
   const status = value.status
   if (status === 'prepared' || status === 'reuse_existing') {
     shape(value, ['status', 'scope'])
-    const v = shape(value.scope, [
-      'ownerID',
-      'lifecycleKey',
-      'scopeKey',
-      'timeZone',
-      'weekStartDate',
-      'asOfLocalDate',
-    ])
-    const ownerID = uuid(v.ownerID)
-    const lifecycleKey = uuid(v.lifecycleKey)
-    const scopeKey = uuid(v.scopeKey)
-    const timeZone = text(v.timeZone)
-    const weekStartDate = civilDate(v.weekStartDate)
-    const asOfLocalDate = civilDate(v.asOfLocalDate)
-    if (
-      ownerID !== request.ownerID ||
-      lifecycleKey !== request.expectedLifecycleKey ||
-      timeZone === '' ||
-      !validCalendarWindow(weekStartDate, asOfLocalDate)
-    )
-      return invalidWire()
-    return {
-      status,
-      scope: { ownerID, lifecycleKey, scopeKey, timeZone, weekStartDate, asOfLocalDate },
-    }
+    return { status, scope: parseTrustedStrengthWorkoutCalendarScope(value.scope, request) }
   }
   shape(value, ['status', 'reason'])
   const reason = value.reason
@@ -754,7 +730,36 @@ function parsePreparedCalendar(
   return invalidWire()
 }
 
-function parseWorkoutProjection(
+/** Pure scope parser; ownership/lifecycle are supplied by the trusted caller. */
+export function parseTrustedStrengthWorkoutCalendarScope(
+  value: unknown,
+  request: WorkoutOwnerScope,
+): TrustedStrengthWorkoutCalendarScope {
+  const v = shape(value, [
+    'ownerID',
+    'lifecycleKey',
+    'scopeKey',
+    'timeZone',
+    'weekStartDate',
+    'asOfLocalDate',
+  ])
+  const ownerID = uuid(v.ownerID)
+  const lifecycleKey = uuid(v.lifecycleKey)
+  const scopeKey = uuid(v.scopeKey)
+  const timeZone = text(v.timeZone)
+  const weekStartDate = civilDate(v.weekStartDate)
+  const asOfLocalDate = civilDate(v.asOfLocalDate)
+  if (
+    ownerID !== request.ownerID ||
+    lifecycleKey !== request.expectedLifecycleKey ||
+    timeZone === '' ||
+    !validCalendarWindow(weekStartDate, asOfLocalDate)
+  )
+    return invalidWire()
+  return { ownerID, lifecycleKey, scopeKey, timeZone, weekStartDate, asOfLocalDate }
+}
+
+export function parseTrustedStrengthWorkoutProjection(
   value: unknown,
   request: WorkoutOwnerScope,
   calendar: TrustedStrengthWorkoutCalendarScope,

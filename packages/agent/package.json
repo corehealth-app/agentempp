@@ -12,7 +12,8 @@
     "./signup-body-fat-estimate": "./src/signup-body-fat-estimate.ts",
     "./workout-registration-preparation": "./src/workout-registration-preparation.ts",
     "./workout-strength-catalogue": "./src/workout-strength-catalogue.ts",
-    "./testing/day-close-memory-db": "./src/testing/day-close-memory-db.ts"
+    "./testing/day-close-memory-db": "./src/testing/day-close-memory-db.ts",
+    "./workout-strength-projection": "./src/workout-strength-projection.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

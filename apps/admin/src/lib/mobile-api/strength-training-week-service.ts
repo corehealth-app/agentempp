@@ -1,4 +1,10 @@
 import {
+  parseTrustedStrengthWorkoutCalendarScope,
+  parseTrustedStrengthWorkoutProjection,
+  type StrengthWorkoutProjection,
+  type TrustedStrengthWorkoutCalendarScope,
+} from '@mpp/agent/workout-strength-projection'
+import {
   type ResolveStrengthWeekTargetInput,
   resolveStrengthWeekTarget,
 } from '@mpp/core/strength-training-week'
@@ -182,6 +188,51 @@ export interface StrengthWeekRepository {
   compareAndFreeze(input: StrengthWeekFreezeInput): Promise<StrengthWeekFreezeResult>
 }
 
+export interface StrengthWeekLifecycleProof {
+  readonly ownerID: string
+  readonly generation: string
+  readonly epoch: string
+  readonly lifecycleKey: string
+  readonly signupAdmissionID: string
+  /** Original signup frequency, which can differ from a later weekly source. */
+  readonly frequencySourceVersionID: string
+  readonly workoutAdmissionID: string
+  readonly workoutContentRevision: number
+  readonly boundAt: StrengthWeekTimestamp
+}
+
+export type StrengthWeekProjectionResult =
+  | { readonly status: 'disabled' }
+  | {
+      readonly status: 'unavailable'
+      readonly reason:
+        | 'binding_unproved'
+        | 'zone_unproved'
+        | 'calendar_unproved'
+        | 'timezone_incompatible'
+        | 'provenance_gap'
+        | 'identity_unproved'
+    }
+  | {
+      readonly status: 'conflict'
+      readonly reason: 'generation_changed' | 'target_changed' | 'week_changed'
+    }
+  | {
+      readonly status: 'available'
+      readonly target: StrengthWeekTarget
+      readonly binding: StrengthWeekLifecycleProof
+      readonly calendar: TrustedStrengthWorkoutCalendarScope
+      readonly projection: Extract<StrengthWorkoutProjection, { readonly status: 'available' }>
+      readonly observed_at: StrengthWeekTimestamp
+    }
+
+export interface StrengthWeekProjectionRepository extends StrengthWeekRepository {
+  projectAcquiredTarget(
+    userId: StrengthWeekUUID,
+    target: StrengthWeekTarget,
+  ): Promise<StrengthWeekProjectionResult>
+}
+
 /** SQL wire parameters only; there is no public clock override. */
 export interface StrengthWeekReadRpcParameters {
   readonly p_user_id: StrengthWeekUUID
@@ -194,6 +245,12 @@ export interface StrengthWeekFreezeRpcParameters {
   readonly p_expected_week_start: StrengthWeekLocalMonday
   readonly p_source_proof: StrengthWeekSourceProof
   readonly p_proposal: StrengthWeekProposal
+}
+
+export interface StrengthWeekProjectionRpcParameters {
+  readonly p_user_id: StrengthWeekUUID
+  readonly p_expected_generation: StrengthWeekUUID
+  readonly p_target_id: StrengthWeekUUID
 }
 
 export type StrengthWeekErrorCode =
@@ -218,6 +275,10 @@ export interface StrengthWeekRpc {
   (
     name: 'freeze_mobile_strength_week_target',
     parameters: StrengthWeekFreezeRpcParameters,
+  ): PromiseLike<StrengthWeekRpcResponse>
+  (
+    name: 'get_mobile_strength_week_projection',
+    parameters: StrengthWeekProjectionRpcParameters,
   ): PromiseLike<StrengthWeekRpcResponse>
 }
 
@@ -468,6 +529,51 @@ const freezeInputSchema = z
   })
   .strict()
 
+const lifecycleProofSchema = z
+  .object({
+    ownerID: uuidSchema,
+    generation: uuidSchema,
+    epoch: uuidSchema,
+    lifecycleKey: uuidSchema,
+    signupAdmissionID: uuidSchema,
+    frequencySourceVersionID: uuidSchema,
+    workoutAdmissionID: uuidSchema,
+    workoutContentRevision: z.number().int().min(0).max(2147483647),
+    boundAt: timestampSchema,
+  })
+  .strict()
+const projectionResultSchema = z.discriminatedUnion('status', [
+  z
+    .object({
+      status: z.literal('unavailable'),
+      reason: z.enum([
+        'binding_unproved',
+        'zone_unproved',
+        'calendar_unproved',
+        'timezone_incompatible',
+        'provenance_gap',
+        'identity_unproved',
+      ]),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal('conflict'),
+      reason: z.enum(['generation_changed', 'target_changed', 'week_changed']),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal('available'),
+      target: targetSchema,
+      binding: lifecycleProofSchema,
+      calendar: z.unknown(),
+      projection: z.unknown(),
+      observed_at: timestampSchema,
+    })
+    .strict(),
+])
+
 function invalidInput(): MobileApiError {
   return new MobileApiError(422, 'strength_week_invalid_input', 'Invalid strength week input')
 }
@@ -477,10 +583,23 @@ function invalidResponse(): MobileApiError {
 function dataAccessFailed(): MobileApiError {
   return new MobileApiError(500, 'strength_week_data_access_failed', 'Strength week lookup failed')
 }
-function providerError(error: NonNullable<StrengthWeekRpcResponse['error']>): MobileApiError {
-  if (error.code === '22023' && error.message === 'invalid_mobile_strength_week_input')
+function providerError(
+  error: NonNullable<StrengthWeekRpcResponse['error']>,
+  projection: boolean,
+): MobileApiError {
+  if (
+    error.code === '22023' &&
+    error.message ===
+      (projection ? 'invalid_strength_week_projection_input' : 'invalid_mobile_strength_week_input')
+  )
     return invalidInput()
-  if (error.code === 'P0002' && error.message === 'mobile_strength_week_patient_not_found') {
+  if (
+    error.code === 'P0002' &&
+    error.message ===
+      (projection
+        ? 'strength_week_projection_patient_not_found'
+        : 'mobile_strength_week_patient_not_found')
+  ) {
     return new MobileApiError(404, 'strength_week_patient_not_found', 'Patient profile not found')
   }
   if (error.code === '42501') {
@@ -507,6 +626,7 @@ function parse<T>(schema: z.ZodType<T>, value: unknown, failure: () => MobileApi
 async function callRpc(
   client: ServiceClient,
   invoke: (rpc: StrengthWeekRpc) => PromiseLike<StrengthWeekRpcResponse>,
+  projection = false,
 ): Promise<unknown> {
   let response: StrengthWeekRpcResponse
   try {
@@ -519,7 +639,7 @@ async function callRpc(
   if (response === null || typeof response !== 'object') throw invalidResponse()
   if (response.error !== null) {
     if (typeof response.error !== 'object' || response.error === undefined) throw dataAccessFailed()
-    throw providerError(response.error)
+    throw providerError(response.error, projection)
   }
   return response.data
 }
@@ -715,7 +835,7 @@ export function prepareStrengthWeekFreeze(
 export function createStrengthWeekRepository(
   client: ServiceClient,
   options?: StrengthWeekRepositoryOptions,
-): StrengthWeekRepository {
+): StrengthWeekProjectionRepository {
   const enabled = options?.enabled === true
   return {
     async readContext(userId) {
@@ -762,6 +882,53 @@ export function createStrengthWeekRepository(
           throw invalidResponse()
       }
       return result
+    },
+    async projectAcquiredTarget(userId, target) {
+      if (!enabled) return { status: 'disabled' }
+      const owner = parse(uuidSchema, userId, invalidInput)
+      const expected = parse(targetSchema, target, invalidInput)
+      if (expected.user_id !== owner || !targetConsistent(expected)) throw invalidInput()
+      const raw = await callRpc(
+        client,
+        (rpc) =>
+          rpc('get_mobile_strength_week_projection', {
+            p_user_id: owner,
+            p_expected_generation: expected.generation,
+            p_target_id: expected.target_id,
+          }),
+        true,
+      )
+      const result = parse(projectionResultSchema, raw, invalidResponse)
+      if (result.status !== 'available') return result
+      // Both targets passed the same strict schema, which fixes key order.
+      // Preserve every original clock/proof field; equality is never by ID only.
+      if (
+        JSON.stringify(result.target) !== JSON.stringify(expected) ||
+        result.binding.ownerID !== owner ||
+        result.binding.generation !== expected.generation ||
+        result.observed_at < expected.frozen_at ||
+        result.observed_at < result.binding.boundAt
+      )
+        throw invalidResponse()
+      try {
+        const request = { ownerID: owner, expectedLifecycleKey: result.binding.lifecycleKey }
+        const calendar = parseTrustedStrengthWorkoutCalendarScope(result.calendar, request)
+        if (
+          calendar.timeZone !== expected.timezone_at_freeze ||
+          calendar.weekStartDate !== expected.week_start
+        )
+          throw invalidResponse()
+        const projection = parseTrustedStrengthWorkoutProjection(
+          result.projection,
+          request,
+          calendar,
+        )
+        if (projection.status !== 'available') throw invalidResponse()
+        return { ...result, calendar, projection }
+      } catch {
+        // Only pure wire parsing occurs here; operational RPC errors stay above.
+        throw invalidResponse()
+      }
     },
   }
 }

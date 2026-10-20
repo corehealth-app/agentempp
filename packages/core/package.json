@@ -13,7 +13,8 @@
     "./types": "./src/types.ts",
     "./workout-strength-classification": "./src/workout-strength-classification.ts",
     "./strength-training-week": {
-      "types": "./src/strength-training-week.ts"
+      "types": "./src/strength-training-week.ts",
+      "default": "./src/strength-training-week.ts"
     }
   },
   "scripts": {

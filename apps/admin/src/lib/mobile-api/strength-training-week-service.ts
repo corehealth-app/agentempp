@@ -1,3 +1,7 @@
+import {
+  type ResolveStrengthWeekTargetInput,
+  resolveStrengthWeekTarget,
+} from '@mpp/core/strength-training-week'
 import type { ServiceClient } from '@mpp/db'
 import { z } from 'zod'
 import { MobileApiError } from './http'
@@ -164,6 +168,10 @@ export interface StrengthWeekFreezeInput {
   readonly sourceProof: StrengthWeekSourceProof
   readonly proposal: StrengthWeekProposal
 }
+
+export type StrengthWeekFreezePreparation =
+  | Exclude<StrengthWeekReadResult, { readonly status: 'ready' }>
+  | { readonly status: 'prepared'; readonly input: StrengthWeekFreezeInput }
 
 export interface StrengthWeekRepositoryOptions {
   readonly enabled?: boolean
@@ -614,6 +622,94 @@ function contextConsistent(context: StrengthWeekContext, userId: string): boolea
     context.frequency.coverage === 'covered' &&
     context.frequency.receipt.observed_timezone === context.timezone
   )
+}
+
+/**
+ * Pure preparation only. Even an existing winner is revalidated by the future
+ * caller through compareAndFreeze. Publish only its returned frozen/reused
+ * target, never this proposal or the target observed by an earlier read.
+ */
+export function prepareStrengthWeekFreeze(
+  read: StrengthWeekReadResult,
+): StrengthWeekFreezePreparation {
+  if (read.status === 'disabled') return { status: 'disabled' }
+  const result = parse(readResultSchema, read, invalidResponse)
+  if (result.status === 'unavailable') return result
+  const context = result.context
+  if (!contextConsistent(context, context.user_id)) throw invalidResponse()
+
+  const scope = { ownerKey: context.user_id, weekStartDate: context.week_start }
+  let input: ResolveStrengthWeekTargetInput
+  let sourceProof: StrengthWeekSourceProof
+  if (context.kind === 'existing_target') {
+    const target = context.target
+    input = {
+      scope,
+      existingRecord: {
+        ...scope,
+        source: target.source,
+        plannedDays: target.planned_days,
+        sourceKey: target.source_key,
+      },
+      effectiveSources: null,
+    }
+    sourceProof = target.source_proof
+  } else {
+    // Coverage and ownership were checked above. Keep the expired receipt in
+    // the original proof while projecting no applicable plan into the core.
+    const plan = context.plan.coverage === 'covered' ? context.plan.receipt : null
+    const frequency = context.frequency.coverage === 'covered' ? context.frequency.receipt : null
+    const applicablePlan =
+      plan?.fact === 'value' &&
+      (plan.source_valid_until === null || plan.source_valid_until >= context.week_start_at)
+    input = {
+      scope,
+      existingRecord: null,
+      effectiveSources: {
+        ...scope,
+        plan: applicablePlan
+          ? {
+              ownerKey: plan.user_id,
+              sourceKey: plan.source_version_id,
+              state: 'accepted',
+              daysPerWeek: plan.planned_days,
+            }
+          : null,
+        informedFrequency:
+          frequency?.fact === 'value'
+            ? {
+                ownerKey: frequency.user_id,
+                sourceKey: frequency.source_version_id,
+                daysPerWeek: frequency.planned_days,
+              }
+            : null,
+      },
+    }
+    sourceProof = context.source_proof
+  }
+  const resolved = resolveStrengthWeekTarget(input)
+  if (resolved.status !== 'propose_new' && resolved.status !== 'reuse_existing')
+    throw invalidResponse()
+  const proposal = parse(
+    proposalSchema,
+    {
+      source: resolved.record.source,
+      planned_days: resolved.record.plannedDays,
+      source_key: resolved.record.sourceKey,
+    },
+    invalidResponse,
+  )
+  return {
+    status: 'prepared',
+    input: {
+      userId: context.user_id,
+      expectedGeneration: context.generation,
+      expectedTimezone: context.timezone,
+      expectedWeekStart: context.week_start,
+      sourceProof,
+      proposal,
+    },
+  }
 }
 
 export function createStrengthWeekRepository(

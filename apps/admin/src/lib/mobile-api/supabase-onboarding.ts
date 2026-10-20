@@ -11,7 +11,10 @@ import {
   OnboardingRepositoryError,
 } from './onboarding-service'
 import type { PreparedSignupPhotoConfirmation } from './signup-body-photo-confirmation'
-import type { CapturedSignupStrengthRequest } from './signup-strength-authority'
+import {
+  type CapturedSignupStrengthRequest,
+  snapshotSignupStrengthRequest,
+} from './signup-strength-authority'
 import { signupBodyPhotoFinalizationTargetAllowed } from './supabase-signup-body-photo-finalization'
 
 const documentSchema = z
@@ -374,10 +377,29 @@ export function createSupabaseOnboardingRepository(
   supabase: ServiceClient,
   options: SupabaseOnboardingOptions = {},
 ): OnboardingRepository {
-  // The keyed SQL writer is a separate gate. Never ignore ON context and use a legacy RPC.
-  if (options.signupStrengthRequest !== undefined)
-    throw new Error('Signup strength writer is not connected')
   const client = supabase as unknown as UntypedClient
+  const handle = options.signupStrengthRequest
+  const keyedRequest =
+    handle === undefined
+      ? undefined
+      : snapshotSignupStrengthRequest(handle, {
+          userId: handle.userId,
+          requestKey: handle.requestKey,
+          requestHash: handle.requestHash,
+          expectedEpoch: handle.epoch,
+        })
+  // Request-scoped ON context is captured before prepareEvaluationAccess can await.
+  // OFF retains its historical selector timing and RPC bindings.
+  const keyedRpc = keyedRequest ? client.rpc.bind(client) : undefined
+  const keyedToken =
+    keyedRequest && options.signupPhotoConfirmation?.snapshot
+      ? { ...options.signupPhotoConfirmation.snapshot.generation_token }
+      : undefined
+  const keyedPath = keyedToken
+    ? signupBodyPhotoFinalizationTargetAllowed()
+      ? 'cleanup_scope'
+      : 'body_photo_confirmation'
+    : 'atomic'
   const allowedOrigins = new Set(options.allowedLegalOrigins ?? configuredOrigins())
   const fetchLegalContent = options.fetchLegalContent ?? fetch
   const legalContentTimeoutMs =
@@ -564,27 +586,66 @@ export function createSupabaseOnboardingRepository(
     },
 
     async complete(userId: string, input: OnboardingCompletionInput) {
+      if (keyedRequest && keyedRequest.userId !== userId)
+        throw new OnboardingRepositoryError('internal')
       const prepared = options.signupPhotoConfirmation
-      const token = prepared?.snapshot?.generation_token
-      const { body_photo_confirmation: intent, ...official } = input
-      const { data, error } = token
-        ? await client.rpc(
-            signupBodyPhotoFinalizationTargetAllowed()
-              ? 'complete_mobile_onboarding_with_cleanup_scope'
-              : 'complete_mobile_onboarding_with_body_photo_confirmation',
-            {
-              p_user_id: userId,
-              p_submission: official,
-              p_confirmation: intent ?? null,
-              p_expected_completed: token.onboarding_completed,
-              p_expected_completed_at: token.onboarding_completed_at,
-              p_expected_receipt_count: token.receipt_count,
-            },
-          )
-        : await client.rpc('complete_mobile_onboarding_atomic', {
+      const token = keyedRequest ? keyedToken : prepared?.snapshot?.generation_token
+      const original = keyedRequest ? structuredClone(input) : input
+      const { body_photo_confirmation: intent, ...official } = original
+      let response: QueryResult
+      if (keyedRequest && keyedRpc) {
+        try {
+          response = await keyedRpc('complete_mobile_onboarding_keyed', {
             p_user_id: userId,
-            p_submission: input,
+            p_submission: token ? official : original,
+            p_completion_path: keyedPath,
+            p_request_key: keyedRequest.requestKey,
+            p_request_hash: keyedRequest.requestHash,
+            p_expected_epoch: keyedRequest.epoch,
+            p_admission_id: keyedRequest.admissionId,
+            p_confirmation: token ? (intent ?? null) : null,
+            p_expected_completed: token ? token.onboarding_completed : null,
+            p_expected_completed_at: token ? token.onboarding_completed_at : null,
+            p_expected_receipt_count: token ? token.receipt_count : null,
           })
+        } catch {
+          throw new OnboardingRepositoryError('internal')
+        }
+      } else {
+        response = token
+          ? await client.rpc(
+              signupBodyPhotoFinalizationTargetAllowed()
+                ? 'complete_mobile_onboarding_with_cleanup_scope'
+                : 'complete_mobile_onboarding_with_body_photo_confirmation',
+              {
+                p_user_id: userId,
+                p_submission: official,
+                p_confirmation: intent ?? null,
+                p_expected_completed: token.onboarding_completed,
+                p_expected_completed_at: token.onboarding_completed_at,
+                p_expected_receipt_count: token.receipt_count,
+              },
+            )
+          : await client.rpc('complete_mobile_onboarding_atomic', {
+              p_user_id: userId,
+              p_submission: input,
+            })
+      }
+      const { data, error } = response
+      if (
+        keyedRequest &&
+        error?.code === '40001' &&
+        [
+          'mobile_signup_strength_stale_epoch',
+          'mobile_signup_strength_invalid_admission',
+          'mobile_signup_strength_existing_scope',
+        ].includes(error.message ?? '')
+      )
+        throw new MobileApiError(
+          409,
+          error.message ?? '',
+          'Reload and review the signup state before trying again',
+        )
       if (token && error) {
         const status: Record<string, number> = {
           onboarding_generation_changed: 409,

@@ -2,7 +2,9 @@
 
 ## Estado
 
-Esta migration adiciona armazenamento e primitivas dormentes. Não conecta os escritores de plano/perfil/reset, não abre gerações automaticamente e não publica um contador no app. A regra pura está em `packages/core/src/strength-training-week.ts`; o adaptador desligado está em `apps/admin/src/lib/mobile-api/strength-training-week-service.ts`.
+O conjunto local adiciona armazenamento, fontes e composição dormentes. A conclusão do cadastro pode abrir a geração comprovada; a confirmação de plano captura uma fonte apenas quando essa geração está legitimamente aberta. Essas integrações estão nas migrations de conclusão do cadastro, vínculo de lifecycle e confirmação de plano; não são uma adoção automática do histórico legado. Elas ainda dependem dos gates próprios de ativação no ambiente de destino.
+
+A regra pura está em `packages/core/src/strength-training-week.ts`. O repositório de `apps/admin/src/lib/mobile-api/strength-training-week-service.ts` permanece desligado por padrão. Seu preparador puro reutiliza o resolver pelo subpath específico `@mpp/core/strength-training-week`, sem modificar a fórmula. `strength-training-week-composer.ts` compõe leitura, preparação e CAS; não há caller HTTP/Hoje/iOS instalado por essa composição.
 
 ## Contrato
 
@@ -12,7 +14,9 @@ Esta migration adiciona armazenamento e primitivas dormentes. Não conecta os es
 - Escritas usam READ COMMITTED, lock do usuário antes da geração e relógio depois do lock. O resultado retornado antes do COMMIT continua provisório.
 - Recibos de mudança passam a valer na próxima segunda-feira local; desempate usa ordem bigint do banco, preservada como string, e instantes UTC com seis casas.
 - Leitura e congelamento verificam dono, geração, fuso e semana. Um alvo já gravado prevalece sobre proposta/prova de origem antigas bem formadas; sem alvo, a prova completa deve corresponder ao snapshot atual.
-- Leituras não criam geração nem inferem histórico a partir do perfil/plano atual. Guardas conservadoras de calendário/validade sinalizam indisponibilidade; a integração completa de validade e mudança de fuso é trabalho seguinte, antes de ativar consumidores.
+- Leituras não criam geração nem inferem histórico a partir do perfil/plano atual. A última fonte elegível é selecionada antes de avaliar sua validade inclusiva na segunda-feira civil à meia-noite. Expirar durante a semana não troca o alvo; na segunda seguinte, uma fonte expirada permite somente o fallback comprovado, sem ressuscitar um plano substituído.
+- O contexto `source_facts` fornece `week_start_at` UTC com seis casas. O adaptador mantém os instantes e ordens bigint como strings, sem `Date`/`Number` para decidir validade ou desempate. Um plano expirado é projetado como `plan:null` apenas para o core; seu recibo original permanece na prova enviada ao CAS.
+- Mesmo diante de `existing_target`, o compositor revalida geração, semana e fuso pelo CAS. Somente seu resultado `frozen/reused` fornece um target ao consumidor. Conflitos, indisponibilidade e erros não viram uma proposta publicada, não usam o winner de uma leitura anterior e não iniciam retry automático.
 
 Somente `get_mobile_strength_week_context(uuid)` e `freeze_mobile_strength_week_target(uuid,uuid,text,date,jsonb,jsonb)` são RPCs públicas, restritas ao backend confiável. Tabelas, sequências e helpers privados não têm acesso direto para anon, authenticated ou service_role. Os helpers privados de teste com relógio explícito não são endpoints públicos.
 
@@ -34,4 +38,8 @@ A instrumentação de observação pertenceu somente à cópia local instalada; 
 
 ## Próximas integrações
 
-Antes de ativar, concluir o vínculo e as provas de concorrência dos escritores reais/reset, cobertura e regras de calendário/validade, proveniência dos treinos confirmados, leitura dos consumidores e interface. Registros legados sem origem comprovada não podem virar histórico inventado nem um contador completo artificialmente zerado.
+Em 20/10, o teste nativo local do produtor real de plano de 42 dias passou na leitura, freeze e winner após o RED correspondente. Também passaram as fronteiras inclusivas de um microssegundo, leitura tardia, plano B expirado, zero/ausência/desconhecido e regressão RC/RR. As quatro transações foram desfeitas; isso não comprova instalação durável, HTTP, concorrência ou ativação do candidato. As evidências e limites atuais ficam no checkpoint operacional de M3A e no diário local.
+
+Antes de publicar X/Y, o consumidor ainda precisa obter a autoridade de lifecycle sem criá-la na leitura, conferir o binding geração/lifecycle, preparar calendário compatível com o target e projetar os treinos confirmados oficiais. Geração e lifecycle são identidades distintas. A aquisição do target isoladamente não é um contador completo.
+
+Também permanecem os gates integrados de durabilidade/concorrência/HTTP dos escritores reais, leitura dos consumidores, interface e ativação. Registros legados sem origem comprovada não podem virar histórico inventado nem um contador completo artificialmente zerado.

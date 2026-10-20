@@ -11,6 +11,86 @@ import {
   type StrengthWeekTarget,
 } from './strength-training-week-service'
 
+// Finite validity is evaluated against the official civil Monday supplied by SQL.
+// The repository preserves source B even when that source has expired for this week.
+describe('finite plan validity from official Monday', () => {
+  const mondayAt = '2026-10-12T03:00:00.000000Z'
+  function finiteWire(validUntil: string, fallback: 'unknown' | 'zero' | 'absent' = 'unknown') {
+    return {
+      status: 'ready',
+      context: {
+        ...contextBase(),
+        kind: 'source_facts',
+        week_start_at: mondayAt,
+        plan: {
+          coverage: 'covered',
+          receipt: { ...planReceipt(), source_valid_until: validUntil },
+        },
+        frequency:
+          fallback === 'unknown'
+            ? { coverage: 'unknown' }
+            : {
+                coverage: 'covered',
+                receipt:
+                  fallback === 'zero'
+                    ? frequencyReceipt()
+                    : { ...frequencyReceipt(), fact: 'absent', planned_days: null },
+              },
+        source_proof: fallback === 'unknown' ? proof() : bothProof(),
+      },
+    }
+  }
+
+  it.each([
+    ['exactly Monday', mondayAt],
+    ['one microsecond after Monday', '2026-10-12T03:00:00.000001Z'],
+    ['real 42 day validity', '2026-11-19T12:00:00.123456Z'],
+    ['valid through the observation instant', '2026-10-14T18:20:30.123456Z'],
+  ])('preserves an applicable finite plan: %s', async (_label, validUntil) => {
+    const wire = finiteWire(validUntil)
+    const boundary = success(wire)
+    await expect(enabled(boundary.client).readContext(owner)).resolves.toEqual(wire)
+    expect(boundary.calls).toEqual([
+      { name: 'get_mobile_strength_week_context', parameters: { p_user_id: owner } },
+    ])
+  })
+
+  it.each([
+    'zero',
+    'absent',
+  ] as const)('retains expired plan B and its exact proof with %s frequency', async (fallback) => {
+    const wire = finiteWire('2026-10-12T02:59:59.999999Z', fallback)
+    const before = structuredClone(wire)
+    const boundary = success(wire)
+    await expect(enabled(boundary.client).readContext(owner)).resolves.toEqual(before)
+    expect(wire).toEqual(before)
+    expect(boundary.calls).toHaveLength(1)
+  })
+
+  it('keeps the Monday plan when first read on Friday after Wednesday expiry', async () => {
+    const wire = finiteWire('2026-10-14T03:00:00.000000Z')
+    wire.context.observed_at = '2026-10-16T18:00:00.000000Z'
+    const boundary = success(wire)
+    await expect(enabled(boundary.client).readContext(owner)).resolves.toEqual(wire)
+  })
+
+  it('requires proved fallback when the latest selected plan expired before Monday', async () => {
+    const boundary = success(finiteWire('2026-10-12T02:59:59.999999Z'))
+    await invalidResponse(enabled(boundary.client).readContext(owner))
+  })
+
+  it.each([
+    '2026-10-12T03:00:00Z',
+    '2026-10-12T03:00:00.000000-03:00',
+    '0000-10-12T03:00:00.000000Z',
+  ])('refuses a noncanonical official Monday instant: %s', async (instant) => {
+    const wire = finiteWire('2026-11-19T12:00:00.123456Z')
+    wire.context.week_start_at = instant
+    const boundary = success(wire)
+    await invalidResponse(enabled(boundary.client).readContext(owner))
+  })
+})
+
 // Test-first source only. The future service is imported directly; no parser/core is mocked.
 // RPC fixtures assert repository contracts, never real SQL locks/calendar/durability.
 const owner = 'a1000000-0000-4000-8000-000000000001'
@@ -112,6 +192,7 @@ function readyPlan() {
     context: {
       ...contextBase(),
       kind: 'source_facts',
+      week_start_at: '2026-10-12T03:00:00.000000Z',
       plan: { coverage: 'covered', receipt: planReceipt() },
       frequency: { coverage: 'unknown' },
       source_proof: proof(),
@@ -124,6 +205,7 @@ function readyFrequency() {
     context: {
       ...contextBase(),
       kind: 'source_facts',
+      week_start_at: '2026-10-12T03:00:00.000000Z',
       plan: { coverage: 'covered', receipt: planAbsent() },
       frequency: { coverage: 'covered', receipt: frequencyReceipt() },
       source_proof: bothProof(),
@@ -258,6 +340,13 @@ type WireMutation = {
 const malformedReads: readonly WireMutation[] = [
   { name: 'top-level extra', base: readyPlan, path: 'debug', value: true },
   { name: 'context extra', base: readyPlan, path: 'context.profile', value: {} },
+  { name: 'missing official Monday', base: readyPlan, path: 'context.week_start_at', remove: true },
+  {
+    name: 'official Monday after observation',
+    base: readyPlan,
+    path: 'context.week_start_at',
+    value: '2026-10-15T03:00:00.000000Z',
+  },
   {
     name: 'context required field missing',
     base: readyPlan,
@@ -489,10 +578,10 @@ const malformedReads: readonly WireMutation[] = [
     value: 'Asia/Tokyo',
   },
   {
-    name: 'required selected plan finite validity',
+    name: 'expired selected plan without frequency proof',
     base: readyPlan,
     path: 'context.plan.receipt.source_valid_until',
-    value: observed,
+    value: '2026-10-12T02:59:59.999999Z',
   },
   { name: 'proof extra', base: readyPlan, path: 'context.source_proof.actor', value: owner },
   {

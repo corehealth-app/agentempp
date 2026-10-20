@@ -115,6 +115,8 @@ export type StrengthWeekContext =
     })
   | (StrengthWeekContextBase & {
       readonly kind: 'source_facts'
+      /** Official civil Monday as UTC with six fractional digits, supplied by SQL. */
+      readonly week_start_at: StrengthWeekTimestamp
       readonly plan: StrengthWeekSourceFact<'accepted_plan'>
       readonly frequency: StrengthWeekSourceFact<'informed_frequency'>
       readonly source_proof: StrengthWeekSourceProof
@@ -413,6 +415,7 @@ const contextSchema = z.discriminatedUnion('kind', [
     .object({
       ...contextShape,
       kind: z.literal('source_facts'),
+      week_start_at: timestampSchema,
       plan: planFactSchema,
       frequency: frequencyFactSchema,
       source_proof: sourceProofSchema,
@@ -596,11 +599,17 @@ function contextConsistent(context: StrengthWeekContext, userId: string): boolea
     return false
   // SQL supplies the official calendar and source coverage. Validate the facts it
   // returned; do not infer missing history or inspect any live profile/plan here.
+  if (context.week_start_at > context.observed_at) return false
   if (context.plan.coverage !== 'covered') return false
   const plan = context.plan.receipt
   if (plan.observed_timezone !== context.timezone) return false
-  if (plan.fact === 'value') return plan.source_valid_until === null
-  // Lower-kind foreign-zone data is relevant only when plan is explicitly absent.
+  if (
+    plan.fact === 'value' &&
+    (plan.source_valid_until === null || plan.source_valid_until >= context.week_start_at)
+  )
+    return true
+  // Preserve the selected expired plan and its proof. Frequency is required
+  // when that plan does not apply at the official start of this exact week.
   return (
     context.frequency.coverage === 'covered' &&
     context.frequency.receipt.observed_timezone === context.timezone

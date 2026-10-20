@@ -416,14 +416,30 @@ BEGIN
     o:=c59a2_fixture.new_owner('F1-C-'||extract(year FROM until_at));
     p:=c59a2_fixture.plan(o,3::smallint,'F1-C-finite','2026-10-08T00:00:00.000000Z',until_at);
     f:=c59a2_fixture.frequency(o,4::smallint,'F1-C-fallback');
-    PERFORM c59a2_fixture.ok(c59a2_fixture.read_at(o)='{"status":"unavailable","reason":"calendar_unsupported"}',
-      'F1-C:finite_selected_plan_never_interpreted');
+    r:=c59a2_fixture.read_at(o);
+    PERFORM c59a2_fixture.ok(r->>'status'='ready' AND r#>>'{context,kind}'='source_facts'
+      AND r#>'{context,plan,receipt}'=p AND r#>'{context,frequency,receipt}'=f
+      AND r#>>'{context,week_start_at}'='2026-10-12T03:00:00.000000Z',
+      'F1-C:finite_selected_proof_preserved');
     q:=jsonb_build_object('plan',jsonb_build_object('coverage','covered','source_version_id',p->'source_version_id','source_order',p->'source_order'),
       'frequency',jsonb_build_object('coverage','covered','source_version_id',f->'source_version_id','source_order',f->'source_order'));
-    PERFORM c59a2_fixture.ok(private.freeze_mobile_strength_week_target_at((o->>'user_id')::uuid,(o->>'generation')::uuid,
-      'America/Sao_Paulo','2026-10-12',q,c59a2_fixture.proposal('accepted_plan',3::smallint,p->>'source_version_id'),
-      '2026-10-12T12:00Z')='{"status":"unavailable","reason":"calendar_unsupported"}',
-      'F1-C:freeze_same_guard_as_read');
+    IF until_at<timestamptz '2026-10-12T03:00:00.000000Z' THEN
+      PERFORM c59a2_fixture.ok(private.freeze_mobile_strength_week_target_at((o->>'user_id')::uuid,(o->>'generation')::uuid,
+        'America/Sao_Paulo','2026-10-12',q,c59a2_fixture.proposal('accepted_plan',3::smallint,p->>'source_version_id'),
+        '2026-10-12T12:00Z')='{"status":"conflict","reason":"proposal_mismatch"}',
+        'F1-C:expired_plan_proposal_rejected');
+      old:=private.freeze_mobile_strength_week_target_at((o->>'user_id')::uuid,(o->>'generation')::uuid,
+        'America/Sao_Paulo','2026-10-12',q,c59a2_fixture.proposal('informed_frequency',4::smallint,f->>'source_version_id'),'2026-10-12T12:00Z');
+      PERFORM c59a2_fixture.ok(old->>'status'='frozen' AND old#>>'{target,source}'='informed_frequency'
+        AND old#>>'{target,planned_days}'='4' AND old#>'{target,source_proof}'=q,
+        'F1-C:expired_plan_falls_back_with_original_proof');
+    ELSE
+      old:=private.freeze_mobile_strength_week_target_at((o->>'user_id')::uuid,(o->>'generation')::uuid,
+        'America/Sao_Paulo','2026-10-12',q,c59a2_fixture.proposal('accepted_plan',3::smallint,p->>'source_version_id'),'2026-10-12T12:00Z');
+      PERFORM c59a2_fixture.ok(old->>'status'='frozen' AND old#>>'{target,source}'='accepted_plan'
+        AND old#>>'{target,planned_days}'='3' AND old#>'{target,source_proof}'=q,
+        'F1-C:valid_finite_plan_freezes_with_original_proof');
+    END IF;
   END LOOP;
   FOREACH variant IN ARRAY ARRAY['unknown','foreign-pending'] LOOP
     o:=c59a2_fixture.new_owner('F1-D-'||variant);
@@ -473,16 +489,21 @@ BEGIN
   o:=c59a2_fixture.new_owner('F1-G');p:=c59a2_fixture.plan(o,3::smallint,'F1-G-current');
   f:=c59a2_fixture.plan(o,5::smallint,'F1-G-future','2026-10-15T00:00:00.000000Z','2099-12-31T00:00:00.000000Z');
   r:=c59a2_fixture.read_at(o);old:=c59a2_fixture.freeze_at(o,r,c59a2_fixture.proposal('accepted_plan',3::smallint,p->>'source_version_id'));
+  r:=c59a2_fixture.read_at(o,'2026-10-19T12:00Z');
   PERFORM c59a2_fixture.ok(old->>'status'='frozen' AND old#>>'{target,planned_days}'='3'
-    AND c59a2_fixture.read_at(o,'2026-10-19T12:00Z')='{"status":"unavailable","reason":"calendar_unsupported"}',
-    'F1-G:future_same_zone_validity_only_when_selected');
+    AND r->>'status'='ready' AND r#>'{context,plan,receipt}'=f
+    AND r#>>'{context,frequency,coverage}'='unknown'
+    AND c59a2_fixture.read_at(o)#>'{context,target}'=old->'target',
+    'F1-G:future_finite_plan_selected_prior_target_retained');
   q:=jsonb_build_object('plan',jsonb_build_object('coverage','covered','source_version_id',f->'source_version_id','source_order',f->'source_order'),
     'frequency',jsonb_build_object('coverage','unknown'));
-  PERFORM c59a2_fixture.ok(private.freeze_mobile_strength_week_target_at((o->>'user_id')::uuid,(o->>'generation')::uuid,
-    'America/Sao_Paulo','2026-10-19',q,c59a2_fixture.proposal('accepted_plan',5::smallint,f->>'source_version_id'),
-    '2026-10-19T12:00Z')='{"status":"unavailable","reason":"calendar_unsupported"}' AND
-    (SELECT count(*)=1 FROM private.strength_week_targets WHERE user_id=(o->>'user_id')::uuid),
-    'F1-G:future_selected_freeze_blocked_prior_target_retained');
+  r:=private.freeze_mobile_strength_week_target_at((o->>'user_id')::uuid,(o->>'generation')::uuid,
+    'America/Sao_Paulo','2026-10-19',q,c59a2_fixture.proposal('accepted_plan',5::smallint,f->>'source_version_id'),'2026-10-19T12:00Z');
+  PERFORM c59a2_fixture.ok(r->>'status'='frozen' AND r#>>'{target,source}'='accepted_plan'
+    AND r#>>'{target,planned_days}'='5' AND r#>'{target,source_proof}'=q
+    AND (SELECT count(*)=2 FROM private.strength_week_targets WHERE user_id=(o->>'user_id')::uuid)
+    AND c59a2_fixture.read_at(o)#>'{context,target}'=old->'target',
+    'F1-G:future_finite_plan_freezes_prior_target_unchanged');
   -- F1-H is exactly W1 fallback-zero/both-absent, not another copied algorithm.
   PERFORM c59a2_fixture.ok((SELECT count(*)=2 FROM private.strength_week_targets t JOIN public.users u ON u.id=t.user_id
     WHERE u.name IN ('W1-fallback-zero','W1-both-absent') AND

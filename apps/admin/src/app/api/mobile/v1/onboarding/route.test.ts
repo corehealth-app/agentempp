@@ -2990,7 +2990,15 @@ describe('C59a signup request authority boundary', () => {
 // is controlled. These tests do not simulate native SQL receipt/Y atomicity.
 describe('C59c concrete signup request integration', () => {
   function harness(
-    options: { bindStale?: boolean; verifyStale?: boolean; writerStale?: boolean } = {},
+    options: {
+      bindStale?: boolean
+      bindConflict?: boolean
+      verifyStale?: boolean
+      writerStale?: boolean
+      observedEpoch?: string
+      reuseAdmission?: boolean
+    } = {},
+    reclaimedHttpStore?: MobileIdempotencyStore,
   ) {
     const db = new SignupMemoryDb().addAccount()
     const state = ledger()
@@ -3022,7 +3030,7 @@ describe('C59c concrete signup request integration', () => {
                 status: 'observed',
                 observation: {
                   ownerID: USER_ID,
-                  epoch: C59A_E0,
+                  epoch: options.observedEpoch ?? C59A_E0,
                   changedAt: '2026-10-20T10:00:00.123456Z',
                 },
               },
@@ -3033,6 +3041,16 @@ describe('C59c concrete signup request integration', () => {
             db.operations.push('authority:bind')
             if (options.bindStale)
               return { data: { status: 'forbidden', reason: 'stale_epoch' }, error: null }
+            if (options.bindConflict)
+              return {
+                data: { status: 'conflict', reason: 'request_content_conflict' },
+                error: null,
+              }
+            if (options.reuseAdmission && admitted)
+              return {
+                data: { status: 'reused', admission: structuredClone(admitted) },
+                error: null,
+              }
             admitted = {
               ownerID: USER_ID,
               epoch: C59A_E0,
@@ -3090,6 +3108,10 @@ describe('C59c concrete signup request integration', () => {
       executeIdempotent: vi.fn(
         async (...args: Parameters<OnboardingRouteDependencies['executeIdempotent']>) => {
           db.operations.push('http:claim')
+          if (reclaimedHttpStore) {
+            const [requestContext, payload, operation, config] = args
+            return executeIdempotent(requestContext, payload, reclaimedHttpStore, operation, config)
+          }
           return state.execute(...args)
         },
       ),
@@ -3229,5 +3251,119 @@ describe('C59c concrete signup request integration', () => {
     ).toEqual([])
     expect(h.deps.finalizeSignupBodyPhotos).not.toHaveBeenCalled()
     expect(h.state.rows.rows[0].state).toBe('failed')
+  })
+
+  // HTTP expiry is proved by the SQL ledger test. Here the real executor sees
+  // that RPC's `claimed` branch, including a reclaim of an existing claim ID;
+  // this fixture does not implement another clock or TTL algorithm.
+  function reclaimedHttpStore() {
+    return {
+      claim: vi.fn(async (_input: Parameters<MobileIdempotencyStore['claim']>[0]) => ({
+        action: 'claimed' as const,
+        claimId: '00000000-0000-4000-8000-000000000e04',
+      })),
+      complete: vi.fn(async () => {}),
+      fail: vi.fn(async () => {}),
+    }
+  }
+
+  it('W4B reclaims an expired HTTP key using the original durable admission and keyed tuple', async () => {
+    const store = reclaimedHttpStore()
+    const h = harness({ reuseAdmission: true }, store)
+    const original = validBody()
+    const key = 'w4b-expired-http-same-durable-admission'
+    const first = await handleOnboardingPost(h.contextFor(original, key), h.deps)
+    const resumed = await handleOnboardingPost(h.contextFor(original, key), h.deps)
+    expect(first.status).toBe(200)
+    expect(resumed.status).toBe(200)
+    expect(resumed.headers.get('Idempotency-Replayed')).toBeNull()
+    expect(store.claim).toHaveBeenCalledTimes(2)
+    expect(store.claim.mock.calls[1]).toEqual(store.claim.mock.calls[0])
+    const writes = h.calls.filter((call) => call.name === 'complete_mobile_onboarding_keyed')
+    expect(writes).toHaveLength(2)
+    expect(writes[1].params).toEqual(writes[0].params)
+    expect(writes[1].params).toMatchObject({
+      p_request_key: key,
+      p_request_hash: hashMobileRequest(original),
+      p_expected_epoch: C59A_E0,
+      p_admission_id: '00000000-0000-4000-8000-000000000e03',
+    })
+    // beforeReplay belongs only to a completed HTTP replay. Reclaim must reach
+    // the keyed SQL writer, which owns durable receipt replay and epoch checks.
+    expect(h.calls.filter((call) => call.name === 'verify_mobile_signup_strength_request')).toEqual(
+      [],
+    )
+    expect(store.complete).toHaveBeenCalledTimes(2)
+    expect(store.fail).not.toHaveBeenCalled()
+    expect(
+      h.calls.filter((call) =>
+        [
+          'complete_mobile_onboarding_atomic',
+          'complete_mobile_onboarding_with_body_photo_confirmation',
+          'complete_mobile_onboarding_with_cleanup_scope',
+        ].includes(call.name),
+      ),
+    ).toEqual([])
+  })
+
+  it.each([
+    'reset',
+    'different payload',
+  ] as const)('W4B refuses %s before an expired HTTP key can be reclaimed', async (scenario) => {
+    enableEvaluation()
+    const store = reclaimedHttpStore()
+    const options = {
+      observedEpoch: C59A_E0,
+      reuseAdmission: true,
+      bindStale: false,
+      bindConflict: false,
+    }
+    const h = harness(options, store)
+    const original = validBody()
+    const key = 'w4b-expired-http-refused-binding'
+    expect((await handleOnboardingPost(h.contextFor(original, key), h.deps)).status).toBe(200)
+    expect(h.calls.filter((call) => call.name === 'apply_entitlement_event')).toHaveLength(1)
+    store.claim.mockClear()
+    store.complete.mockClear()
+    h.deps.executeIdempotent.mockClear()
+    h.deps.createOnboardingRepository.mockClear()
+    h.deps.finalizeSignupBodyPhotos.mockClear()
+    h.calls.length = 0
+    if (scenario === 'reset') {
+      options.observedEpoch = C59A_E1
+      options.bindStale = true
+    } else {
+      options.bindConflict = true
+    }
+    const submitted = scenario === 'reset' ? original : { ...original, name: 'Other QA name' }
+    await expect(handleOnboardingPost(h.contextFor(submitted, key), h.deps)).rejects.toMatchObject({
+      status: 409,
+      code:
+        scenario === 'reset'
+          ? 'mobile_signup_strength_stale_epoch'
+          : 'mobile_signup_strength_request_content_conflict',
+    })
+    expect(
+      h.calls.find((call) => call.name === 'admit_mobile_signup_strength_request')?.params,
+    ).toMatchObject({
+      p_request_key: key,
+      p_request_hash: hashMobileRequest(submitted),
+      p_expected_epoch: scenario === 'reset' ? C59A_E1 : C59A_E0,
+    })
+    expect(store.claim).not.toHaveBeenCalled()
+    expect(store.complete).not.toHaveBeenCalled()
+    expect(store.fail).not.toHaveBeenCalled()
+    expect(h.deps.executeIdempotent).not.toHaveBeenCalled()
+    expect(h.deps.createOnboardingRepository).not.toHaveBeenCalled()
+    expect(h.deps.finalizeSignupBodyPhotos).not.toHaveBeenCalled()
+    expect(
+      h.calls.filter((call) =>
+        [
+          'complete_mobile_onboarding_keyed',
+          'apply_entitlement_event',
+          'resolve_user_entitlement',
+        ].includes(call.name),
+      ),
+    ).toEqual([])
   })
 })

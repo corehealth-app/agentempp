@@ -16,6 +16,8 @@ import {
   type MobileRouteContext,
   type MobileRouteRuntime,
 } from '@/lib/mobile-api/route'
+import { createSupabaseOnboardingRepository } from '@/lib/mobile-api/supabase-onboarding'
+import { createSupabaseSignupStrengthAuthoritySource } from '@/lib/mobile-api/supabase-signup-strength-authority'
 import { handleOnboardingEligibilityPost } from './eligibility/handler'
 import {
   handleOnboardingGet,
@@ -2981,5 +2983,251 @@ describe('C59a signup request authority boundary', () => {
     expect(h.deps.createOnboardingRepository).not.toHaveBeenCalled()
     expect(h.repo.complete).not.toHaveBeenCalled()
     expect(h.deps.finalizeSignupBodyPhotos).not.toHaveBeenCalled()
+  })
+})
+
+// Real handler, HTTP idempotency, concrete authority and repository; only SQL IO
+// is controlled. These tests do not simulate native SQL receipt/Y atomicity.
+describe('C59c concrete signup request integration', () => {
+  function harness(
+    options: { bindStale?: boolean; verifyStale?: boolean; writerStale?: boolean } = {},
+  ) {
+    const db = new SignupMemoryDb().addAccount()
+    const state = ledger()
+    const calls: Array<{ name: string; params: Record<string, unknown> }> = []
+    const base = db.client as unknown as {
+      rpc(name: string, params: Record<string, unknown>): Promise<DbResult>
+      from(table: string): unknown
+    }
+    let admitted: Record<string, unknown> | undefined
+    const client = {
+      from(table: string) {
+        if (table === 'entitlement_events') {
+          const query = {
+            select: (_columns: string) => query,
+            eq: (_column: string, _owner: string) => query,
+            limit: (_count: number) => Promise.resolve({ data: [], error: null }),
+          }
+          return query
+        }
+        return base.from(table)
+      },
+      rpc(name: string, params: Record<string, unknown>) {
+        const invoke = async () => {
+          calls.push({ name, params: structuredClone(params) })
+          if (name === 'observe_mobile_signup_strength_epoch') {
+            db.operations.push('authority:observe')
+            return {
+              data: {
+                status: 'observed',
+                observation: {
+                  ownerID: USER_ID,
+                  epoch: C59A_E0,
+                  changedAt: '2026-10-20T10:00:00.123456Z',
+                },
+              },
+              error: null,
+            }
+          }
+          if (name === 'admit_mobile_signup_strength_request') {
+            db.operations.push('authority:bind')
+            if (options.bindStale)
+              return { data: { status: 'forbidden', reason: 'stale_epoch' }, error: null }
+            admitted = {
+              ownerID: USER_ID,
+              epoch: C59A_E0,
+              admissionID: '00000000-0000-4000-8000-000000000e03',
+              requestKey: params.p_request_key,
+              requestHash: params.p_request_hash,
+              admittedAt: '2026-10-20T10:00:01.123456Z',
+            }
+            return { data: { status: 'admitted', admission: admitted }, error: null }
+          }
+          if (name === 'verify_mobile_signup_strength_request') {
+            db.operations.push('authority:verify')
+            return {
+              data: options.verifyStale
+                ? { status: 'forbidden', reason: 'stale_epoch' }
+                : { status: 'verified', admission: admitted },
+              error: null,
+            }
+          }
+          if (name === 'complete_mobile_onboarding_keyed') {
+            db.operations.push('writer:keyed')
+            if (options.writerStale)
+              return {
+                data: null,
+                error: { code: '40001', message: 'mobile_signup_strength_stale_epoch' },
+              }
+            return {
+              data: {
+                user_id: USER_ID,
+                onboarding_completed: true,
+                completed_at: COMPLETED_AT,
+                objective: 'recomposicao',
+                persona: 'focus',
+                document_actions: [],
+              },
+              error: null,
+            }
+          }
+          if (name === 'resolve_user_entitlement')
+            return { data: { has_active_access: false, reason: 'no_entitlement' }, error: null }
+          if (name === 'apply_entitlement_event') {
+            db.operations.push('access:grant')
+            return { data: { result: 'applied' }, error: null }
+          }
+          return base.rpc(name, params)
+        }
+        const pending = invoke()
+        return Object.assign(pending, { abortSignal: (_signal: AbortSignal) => pending })
+      },
+    } as unknown as ServiceClient
+    const deps = {
+      ...dependencies(recordingRepository()),
+      signupStrengthAuthority: createSupabaseSignupStrengthAuthoritySource(client),
+      createOnboardingRepository: vi.fn(createSupabaseOnboardingRepository),
+      executeIdempotent: vi.fn(
+        async (...args: Parameters<OnboardingRouteDependencies['executeIdempotent']>) => {
+          db.operations.push('http:claim')
+          return state.execute(...args)
+        },
+      ),
+      finalizeSignupBodyPhotos: vi.fn(async () => {
+        db.operations.push('photos:finalize')
+      }),
+    }
+    const contextFor = (body: unknown, key: string) => ({
+      ...completionContext(body, key),
+      supabase: client,
+    })
+    return { db, calls, state, deps, contextFor }
+  }
+
+  function enableEvaluation() {
+    vi.stubEnv('MOBILE_EVALUATION_ACCESS_DAYS', '30')
+    vi.stubEnv('MOBILE_EVALUATION_ACCESS_PROJECT_REF', 'xitugspwfxkcluxvrdeg')
+    vi.stubEnv('MOBILE_EVALUATION_ACCESS_ACTOR_ID', '00000000-0000-4000-8000-000000000f01')
+  }
+
+  it('passes ORIGINAL identity through the concrete components and grants only after SQL success', async () => {
+    enableEvaluation()
+    const h = harness()
+    const original = validBody()
+    const key = 'c59c-concrete-success'
+    const response = await handleOnboardingPost(h.contextFor(original, key), h.deps)
+    expect(response.status).toBe(200)
+    expect(
+      h.calls.find((call) => call.name === 'admit_mobile_signup_strength_request')?.params,
+    ).toEqual({
+      p_user_id: USER_ID,
+      p_request_key: key,
+      p_request_hash: hashMobileRequest(original),
+      p_expected_epoch: C59A_E0,
+    })
+    expect(
+      h.calls.find((call) => call.name === 'complete_mobile_onboarding_keyed')?.params,
+    ).toEqual({
+      p_user_id: USER_ID,
+      p_submission: original,
+      p_completion_path: 'cleanup_scope',
+      p_request_key: key,
+      p_request_hash: hashMobileRequest(original),
+      p_expected_epoch: C59A_E0,
+      p_admission_id: '00000000-0000-4000-8000-000000000e03',
+      p_confirmation: null,
+      p_expected_completed: false,
+      p_expected_completed_at: null,
+      p_expected_receipt_count: 0,
+    })
+    expect(
+      h.db.operations.filter((step) =>
+        [
+          'authority:observe',
+          'authority:bind',
+          'http:claim',
+          'writer:keyed',
+          'access:grant',
+          'photos:finalize',
+        ].includes(step),
+      ),
+    ).toEqual([
+      'authority:observe',
+      'authority:bind',
+      'http:claim',
+      'writer:keyed',
+      'access:grant',
+      'photos:finalize',
+    ])
+    expect(h.state.rows.rows).toMatchObject([
+      { idempotency_key: key, request_hash: hashMobileRequest(original), state: 'completed' },
+    ])
+    expect(
+      h.calls.filter((call) =>
+        [
+          'complete_mobile_onboarding_atomic',
+          'complete_mobile_onboarding_with_body_photo_confirmation',
+          'complete_mobile_onboarding_with_cleanup_scope',
+        ].includes(call.name),
+      ),
+    ).toEqual([])
+  })
+
+  it('does not claim HTTP, complete or finalize after a concrete stale bind', async () => {
+    const h = harness({ bindStale: true })
+    await expect(
+      handleOnboardingPost(h.contextFor(validBody(), 'c59c-stale-bind'), h.deps),
+    ).rejects.toMatchObject({ status: 409, code: 'mobile_signup_strength_stale_epoch' })
+    expect(h.deps.executeIdempotent).not.toHaveBeenCalled()
+    expect(h.deps.createOnboardingRepository).not.toHaveBeenCalled()
+    expect(h.deps.finalizeSignupBodyPhotos).not.toHaveBeenCalled()
+    expect(h.state.rows.rows).toEqual([])
+    expect(
+      h.calls.map((call) => call.name).filter((name) => name.includes('mobile_signup_strength')),
+    ).toEqual(['observe_mobile_signup_strength_epoch', 'admit_mobile_signup_strength_request'])
+  })
+
+  it('stops a completed HTTP replay at concrete verify before repository refresh', async () => {
+    const h = harness({ verifyStale: true })
+    const original = validBody()
+    const key = 'c59c-stale-concrete-replay'
+    await h.state.execute(h.contextFor(original, key), original, async () =>
+      Response.json({ data: { cached: true } }),
+    )
+    await expect(handleOnboardingPost(h.contextFor(original, key), h.deps)).rejects.toMatchObject({
+      status: 409,
+      code: 'mobile_signup_strength_stale_epoch',
+    })
+    expect(h.db.signupSnapshotReads).toHaveLength(1)
+    expect(h.deps.createOnboardingRepository).not.toHaveBeenCalled()
+    expect(h.deps.finalizeSignupBodyPhotos).not.toHaveBeenCalled()
+    expect(h.calls.filter((call) => call.name === 'complete_mobile_onboarding_keyed')).toEqual([])
+    expect(
+      h.calls.filter((call) => call.name === 'verify_mobile_signup_strength_request'),
+    ).toHaveLength(1)
+    expect(h.state.rows.rows[0].state).toBe('completed')
+  })
+
+  it('propagates the keyed writer conflict without granting or finalizing', async () => {
+    enableEvaluation()
+    const h = harness({ writerStale: true })
+    await expect(
+      handleOnboardingPost(h.contextFor(validBody(), 'c59c-stale-concrete-writer'), h.deps),
+    ).rejects.toMatchObject({ status: 409, code: 'mobile_signup_strength_stale_epoch' })
+    expect(h.calls.filter((call) => call.name === 'complete_mobile_onboarding_keyed')).toHaveLength(
+      1,
+    )
+    expect(
+      h.calls.filter((call) =>
+        [
+          'apply_entitlement_event',
+          'resolve_user_entitlement',
+          'complete_mobile_onboarding_atomic',
+          'complete_mobile_onboarding_with_cleanup_scope',
+        ].includes(call.name),
+      ),
+    ).toEqual([])
+    expect(h.deps.finalizeSignupBodyPhotos).not.toHaveBeenCalled()
+    expect(h.state.rows.rows[0].state).toBe('failed')
   })
 })

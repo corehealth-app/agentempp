@@ -126,6 +126,27 @@ troca apenas as três referências ao predicate. Não concede USAGE em
 uma conexão nova do backend; EXECUTE na função, sozinho, não dava acesso ao
 nome no schema privado. Não introduz um caller no aplicativo.
 
+A presença anterior de USAGE em `private` também é compatível e deve ser
+preservada: as migrations `20260720220813` (coach) e `20260722172407` (rotina)
+já concedem essa capacidade ao backend. A followup não exige que ela esteja
+ausente, não a revoga e compara os dois schemas integralmente antes/depois.
+Mantém as verificações exatas de owner, corpo, OID, dependências e EXECUTE
+das duas funções; acesso adicional de `anon` ou `authenticated` continua
+recusado. Assim, não retira uma capacidade usada pelos caminhos antigos.
+
+`mobile_workout_registration_visibility_schema_usage.sql` reproduz essa
+compatibilidade no prefixo real completo até `20261015115000`, antes da
+followup. O controlador local fornece `visibility_payload` com o DO literal
+da migration, sem seu BEGIN/COMMIT, pois o teste possui a transação e sempre
+faz ROLLBACK. `with_private_usage=true` exige o grant real da cadeia;
+`false` o retira somente dentro do teste. Ambos devem preservar os schemas,
+as funções e a chamada booleana sob `service_role`. O negativo
+`reject_extra_execute=true`, com USAGE false, deve falhar com o erro exato
+`42501/mobile_workout_registration_visibility_acl_drift`; o controlador
+confere o catálogo em uma nova conexão após o término do backend. Os testes
+antigos com alvo C5 explícito continuam cobrindo o baseline sem USAGE, sem
+alterar seus guards. Esses checks SQL não provam autenticação JWT ou HTTP.
+
 `get_mobile_workout_registration(owner, pending)` usa um SELECT para obter
 conteúdo e revisão no mesmo snapshot: usuário ativo, epoch atual, admissão
 owned com revisão, pending original e marker exato. Retorna `ui-v1` e os campos

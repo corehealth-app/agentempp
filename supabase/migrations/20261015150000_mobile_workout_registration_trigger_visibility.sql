@@ -57,8 +57,7 @@ BEGIN
       (SELECT * FROM actual EXCEPT ALL SELECT * FROM expected)
       UNION ALL (SELECT * FROM expected EXCEPT ALL SELECT * FROM actual)
     ) SELECT 1 FROM differences
-  ) OR has_schema_privilege('service_role',old_namespace,'USAGE')
-    OR NOT has_schema_privilege('service_role',new_namespace,'USAGE')
+  ) OR NOT has_schema_privilege('service_role',new_namespace,'USAGE')
     OR NOT has_function_privilege('service_role',helper,'EXECUTE')
     OR has_function_privilege('anon',helper,'EXECUTE')
     OR has_function_privilege('authenticated',helper,'EXECUTE') THEN
@@ -101,7 +100,6 @@ BEGIN
     OR (SELECT jsonb_agg(to_jsonb(n) ORDER BY n.oid) FROM pg_namespace n WHERE oid IN(old_namespace,new_namespace))
       IS DISTINCT FROM namespaces_before
     OR dependencies_after IS DISTINCT FROM dependencies_expected
-    OR has_schema_privilege('service_role',old_namespace,'USAGE')
     OR NOT has_schema_privilege('service_role',new_namespace,'USAGE') THEN
     RAISE EXCEPTION 'mobile_workout_registration_visibility_unexpected_delta' USING ERRCODE='55000';
   END IF;

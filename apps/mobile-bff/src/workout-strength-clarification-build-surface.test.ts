@@ -61,21 +61,22 @@ function routesReaching(marker: string) {
 }
 
 describe('current-authority clarification in the fresh mobile server build', () => {
-  it('adds exactly one mirrored route while preserving the prior 55-route export stream', () => {
+  it('adds exactly one mirrored route while preserving the prior 54-route export stream', () => {
     const appRoot = resolve(root, '../..')
     const source = exportStream(resolve(appRoot, '../admin/src/app/api/mobile/v1'), false)
     const mirror = exportStream(resolve(appRoot, 'src/app/api/mobile/v1'), true)
     expect(source).toEqual(mirror)
-    expect(source).toHaveLength(56)
+    expect(source.some((record) => record.path === 'auth/password-recovery/route.ts')).toBe(false)
+    expect(source).toHaveLength(55)
     expect(source.find((record) => record.path === addition)).toEqual({
       path: addition,
       exports: ['GET', 'POST', 'runtime'],
     })
     const old = source.filter((record) => record.path !== addition)
-    expect(old).toHaveLength(55)
+    expect(old).toHaveLength(54)
     const stream = old.map((record) => `${record.path}\0${record.exports.join(',')}\n`).join('')
     expect(createHash('sha256').update(stream).digest('hex')).toBe(
-      '50941ba8c634af8037675542a9312aac9a83730b12aaefb6bb05700c0495c1cd',
+      '0f076fc83228e8742e107ba4bb9631019b6d1e6edc74fbd36039c574b228c1a3',
     )
     expect(readFileSync(resolve(appRoot, 'src/app/api/mobile/v1', addition), 'utf8').trim()).toBe(
       "export { GET, POST, runtime } from '@/app/api/mobile/v1/workouts/[id]/strength-clarification/route'",

@@ -133,15 +133,23 @@ function withSyntheticBuild<T>(
 }
 
 describe('authoritative Mobile API source surface', () => {
-  test('keeps the frozen 54-route path and named-export manifest', () => {
+  test('keeps the approved 55-route path and named-export manifest', () => {
     const records = sourceRecords()
     const hash = hashRecords(records)
 
     console.info(`SOURCE_ROUTE_EXPORT_COUNT=${records.length}`)
     console.info(`SOURCE_ROUTE_EXPORT_STREAM_SHA256=${hash}`)
 
-    expect(records).toHaveLength(54)
-    expect(hash).toBe('0f076fc83228e8742e107ba4bb9631019b6d1e6edc74fbd36039c574b228c1a3')
+    expect(records).toHaveLength(55)
+    expect(hash).toBe('96da71b91e2f8f7a730c98b2388128fdd840846437a4bbcf238dd8dd2fb4a62d')
+    const previous = records.filter(
+      (record) => record.path !== 'workouts/[id]/strength-clarification/route.ts',
+    )
+    expect(previous).toHaveLength(54)
+    expect(hashRecords(previous)).toBe(
+      '0f076fc83228e8742e107ba4bb9631019b6d1e6edc74fbd36039c574b228c1a3',
+    )
+    expect(records.some((record) => record.path === 'auth/password-recovery/route.ts')).toBe(false)
   })
 
   test('contains no export outside the Next Route Handler allowlist', () => {
@@ -194,7 +202,7 @@ describe('authoritative Mobile API source surface', () => {
     expect(hasServerActionDirective(inlineServerAction)).toBe(true)
   })
 
-  test('keeps the structured Next build surface limited to the 54 Mobile API routes', () => {
+  test('keeps the structured Next build surface limited to the 55 Mobile API routes', () => {
     const surface = inspectBuildSurface(buildRoot)
 
     console.info(`BUILD_ROUTE_PATH_COUNT=${surface.routePaths.length}`)
@@ -209,10 +217,19 @@ describe('authoritative Mobile API source surface', () => {
     console.info(`BUILD_MIDDLEWARE_COUNT=${surface.middlewareEntries.length}`)
     console.info(`BUILD_SERVER_ACTION_REFERENCE_COUNT=${surface.serverActionReferences.length}`)
 
-    expect(surface.routePaths).toHaveLength(54)
+    expect(surface.routePaths).toHaveLength(55)
     expect(surface.routePathHash).toBe(
-      '575bdb7757a730761d443ee35ee9749c90df5e85263e482e5bd70446bfef3d2b',
+      '5518c2a2938b4d95b86d7ac6c00d20b1dd2cdb4cfd716d141682708edbabd1b7',
     )
+    const previous = surface.routePaths.filter(
+      (route) => route !== '/api/mobile/v1/workouts/[id]/strength-clarification',
+    )
+    expect(previous).toHaveLength(54)
+    expect(
+      createHash('sha256')
+        .update(previous.map((route) => `${route}\n`).join(''))
+        .digest('hex'),
+    ).toBe('575bdb7757a730761d443ee35ee9749c90df5e85263e482e5bd70446bfef3d2b')
     expect(surface.routesOutsideMobilePrefix).toEqual([])
     expect(surface.forbiddenAdminRoutes).toEqual([])
     expect(surface.forbiddenInngestRoutes).toEqual([])
@@ -257,14 +274,14 @@ describe('authoritative Mobile API source surface', () => {
       mutate: (appPaths: Record<string, string>) => ({ ...appPaths }),
       omittedTargets: ['app/api/mobile/v1/today/route.js'],
     },
-  ])('rejects $name while the same 54 URL keys remain', ({
+  ])('rejects $name while the same 55 URL keys remain', ({
     expectedError,
     mutate,
     omittedTargets,
   }) => {
     const appPaths = mutate(currentAppPathsManifest())
 
-    expect(Object.keys(appPaths)).toHaveLength(54)
+    expect(Object.keys(appPaths)).toHaveLength(55)
     expect(() => withSyntheticBuild(appPaths, inspectBuildSurface, omittedTargets)).toThrow(
       expectedError,
     )
@@ -344,12 +361,16 @@ describe('authoritative Mobile API source surface', () => {
     // needed by the pure signup-body-fat-estimate leaf (no agent barrel chunks).
     // That finalization chunk is
     // referenced by exactly onboarding plus the three body-photo routes.
-    // 5320 + 1 + 107 + 3 x 109 = 5755 references; 175 + 1 + 1 + 3 + 1 = 181 targets.
+    // Baseline54: 5320 + 1 + 107 + 3 x 109 = 5755 references/181 targets.
+    // Clarification adds105 references/its manifest; the pure fact parser adds
+    // one reference to each of six old routes and one unique chunk.
+    // Current55: 5755 + 105 + 6 = 5866 references/183 targets.
+    // Auth is excluded. Its observed vendor split is not this release surface.
     // The agent manifest already belongs to the original50: no new unique target.
     // Keep exact totals, original50 sans this chunk, nine Flow catalogs and guards.
-    expect(surface.nftReferenceCount).toBe(5755)
-    expect(surface.nftUniqueTargetCount).toBe(181)
-    expect(surface.nftRegularFileTargetCount).toBe(179)
+    expect(surface.nftReferenceCount).toBe(5866)
+    expect(surface.nftUniqueTargetCount).toBe(183)
+    expect(surface.nftRegularFileTargetCount).toBe(181)
     expect(surface.nftDirectoryTargetCount).toBe(2)
 
     const bodyPhotoRoutes = [
@@ -357,7 +378,9 @@ describe('authoritative Mobile API source surface', () => {
       '/api/mobile/v1/onboarding/body-photos/consent/route',
       '/api/mobile/v1/onboarding/body-photos/[id]/complete/route',
     ]
+    const clarificationRoute = '/api/mobile/v1/workouts/[id]/strength-clarification/route'
     const addedRoutes: Record<string, number> = {
+      [clarificationRoute]: 105,
       '/api/mobile/v1/meal-records/[id]/route': 107,
       ...Object.fromEntries(bodyPhotoRoutes.map((route) => [route, 109])),
     }
@@ -375,6 +398,38 @@ describe('authoritative Mobile API source surface', () => {
           `server/app${route.slice(0, -'/route'.length)}/route_client-reference-manifest.js`,
         ),
       )
+
+    // Identify the pure fact parser by stable semantics and exact reachability.
+    // Generated chunk numbers are never an allowlist.
+    const factChunks = walkFiles(resolve(buildRoot, 'server/chunks')).filter((path) => {
+      if (!path.endsWith('.js')) return false
+      const source = readFileSync(path, 'utf8')
+      return ['provider_type_dedup', 'recent6h_dedup', 'catalogue_incomplete'].every((marker) =>
+        source.includes(marker),
+      )
+    })
+    expect(factChunks).toHaveLength(1)
+    const factChunk = realpathSync(factChunks[0])
+    const factRoutes = [
+      '/api/mobile/v1/me/route',
+      '/api/mobile/v1/pending/route',
+      '/api/mobile/v1/registrations/[id]/confirm/route',
+      '/api/mobile/v1/registrations/[id]/route',
+      '/api/mobile/v1/registrations/propose/route',
+      '/api/mobile/v1/today/route',
+      clarificationRoute,
+    ].sort()
+    expect(
+      Object.keys(currentAppPathsManifest())
+        .filter((route) => physicalTargets(route).includes(factChunk))
+        .sort(),
+    ).toEqual(factRoutes)
+    for (const route of factRoutes) {
+      expect(
+        physicalTargets(route).filter((target) => target === factChunk),
+        route,
+      ).toEqual([factChunk])
+    }
 
     // Identify the sole new chunk by physical identity, not a generated number.
     // The original49 other routes cannot reference it; the onboarding manifest
@@ -414,7 +469,9 @@ describe('authoritative Mobile API source surface', () => {
     let baselineReferences = 0
     for (const route of Object.keys(currentAppPathsManifest())) {
       if (Object.hasOwn(addedRoutes, route)) continue
-      const targets = physicalTargets(route).filter((target) => target !== finalizationChunk)
+      const targets = physicalTargets(route).filter(
+        (target) => target !== finalizationChunk && target !== factChunk,
+      )
       baselineReferences += targets.length
       for (const target of targets) baselineTargets.add(target)
     }
@@ -429,6 +486,10 @@ describe('authoritative Mobile API source surface', () => {
     expect(beyondBaseline('/api/mobile/v1/meal-records/[id]/route')).toEqual([
       ownManifest('/api/mobile/v1/meal-records/[id]/route'),
     ])
+
+    expect(beyondBaseline(clarificationRoute).sort(byName)).toEqual(
+      [ownManifest(clarificationRoute), factChunk].sort(byName),
+    )
 
     // The one chunk the three body-photo routes share, whatever number the
     // bundler gives it: inside the build's own chunks, and of these three only.

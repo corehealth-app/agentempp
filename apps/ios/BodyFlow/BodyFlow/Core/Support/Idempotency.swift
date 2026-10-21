@@ -60,6 +60,7 @@ enum MutationOperation: Hashable, Sendable {
     case planImport
     case mealRecordPatch
     case mealRecordDelete
+    case workoutStrengthAnswer
 }
 
 struct MutationAttempt<Payload: Hashable & Sendable>: Hashable, Sendable {

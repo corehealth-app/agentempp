@@ -350,6 +350,8 @@ struct RegistrationSnapshot: Codable, Hashable, Sendable {
     let proposal: RegistrationProposalSnapshot
     let workoutVersion: WorkoutRegistrationVersion?
     let editReceipt: WorkoutRegistrationEditReceipt?
+    /// Optional identity of the saved workout, distinct from this proposal ID.
+    let confirmedWorkoutID: String?
 
     init(
         id: String,
@@ -359,7 +361,8 @@ struct RegistrationSnapshot: Codable, Hashable, Sendable {
         resolvedAt: APITimestamp?,
         proposal: RegistrationProposalSnapshot,
         workoutVersion: WorkoutRegistrationVersion? = nil,
-        editReceipt: WorkoutRegistrationEditReceipt? = nil
+        editReceipt: WorkoutRegistrationEditReceipt? = nil,
+        confirmedWorkoutID: String? = nil
     ) {
         self.id = id
         self.status = status
@@ -369,6 +372,7 @@ struct RegistrationSnapshot: Codable, Hashable, Sendable {
         self.proposal = proposal
         self.workoutVersion = workoutVersion
         self.editReceipt = editReceipt
+        self.confirmedWorkoutID = Self.validConfirmedWorkoutID(confirmedWorkoutID, status: status, proposal: proposal)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -381,6 +385,7 @@ struct RegistrationSnapshot: Codable, Hashable, Sendable {
         case workoutProtocol = "workout_protocol"
         case contentRevision = "content_revision"
         case editReceipt = "receipt"
+        case confirmedWorkoutID = "confirmed_workout_id"
     }
 
     init(from decoder: any Decoder) throws {
@@ -417,6 +422,11 @@ struct RegistrationSnapshot: Codable, Hashable, Sendable {
                 )
             }
         }
+        // This optional enrichment was previously ignored by the decoder.
+        // Validate the principal snapshot first; an invalid optional identity
+        // disables only clarification, never a valid persisted confirmation.
+        let identity = try? container.decode(String.self, forKey: .confirmedWorkoutID)
+        confirmedWorkoutID = Self.validConfirmedWorkoutID(identity, status: status, proposal: proposal)
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -439,6 +449,13 @@ struct RegistrationSnapshot: Codable, Hashable, Sendable {
             }
             try container.encode(editReceipt, forKey: .editReceipt)
         }
+        try container.encodeIfPresent(confirmedWorkoutID, forKey: .confirmedWorkoutID)
+    }
+
+    private static func validConfirmedWorkoutID(_ value: String?, status: String,
+                                               proposal: RegistrationProposalSnapshot) -> String? {
+        guard status == "confirmed", case .workout = proposal, let value else { return nil }
+        return WorkoutStrengthWire.uuid(value)
     }
 }
 

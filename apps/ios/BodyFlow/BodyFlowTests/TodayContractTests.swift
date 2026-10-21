@@ -319,3 +319,133 @@ private struct TodayProviderStub: TodayProviding {
         response
     }
 }
+
+@Suite("Today Weekly Strength Contract")
+struct TodayWeeklyStrengthContractTests {
+    static func section() -> [String: Any] {
+        [
+            "status": "available", "week_start": "2026-10-12",
+            "as_of_local_date": "2026-10-14", "time_zone": "UTC",
+            "observed_at": "2026-10-14T12:00:00.123457Z",
+            "completed_strength_days": 2, "planned_days": 3,
+            "target_source": "accepted_plan", "target_availability": "available", "percentage": 67,
+        ]
+    }
+
+    static func response(_ section: [String: Any]) throws -> TodayResponse {
+        try BodyFlowTestFixtures.decodeToday { $0["strength_training_week"] = section }
+    }
+
+    @Test("old and OFF servers retain the previous optional contract")
+    func oldServerAndNull() throws {
+        #expect(try BodyFlowTestFixtures.decodeInconsistentToday().data.strengthTrainingWeek == nil)
+        let response = try BodyFlowTestFixtures.decodeToday { $0["strength_training_week"] = NSNull() }
+        #expect(response.data.strengthTrainingWeek == nil)
+        #expect(response.data.remainingFoodKcal == 731)
+    }
+
+    @Test("weekly dates, UTC6 and counts remain official independent literals")
+    func officialWeeklyValues() throws {
+        let response = try Self.response(Self.section())
+        guard case let .available(value)? = response.data.strengthTrainingWeek else {
+            Issue.record("Expected the official weekly section"); return
+        }
+        #expect(response.data.localDate == "2026-07-20")
+        #expect(value.weekStart == "2026-10-12")
+        #expect(value.asOfLocalDate == "2026-10-14")
+        #expect(value.timeZone == "UTC")
+        #expect(value.observedAt == "2026-10-14T12:00:00.123457Z")
+        #expect(value.completedStrengthDays == 2 && value.plannedDays == 3 && value.percentage == 67)
+        #expect(value.targetSource == .acceptedPlan && value.targetAvailability == .available)
+        let encoded = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(response.data.strengthTrainingWeek)) as? [String: Any])
+        #expect(encoded["observed_at"] as? String == value.observedAt)
+        #expect(Set(encoded.keys) == Set(Self.section().keys))
+    }
+
+    @Test("X may exceed Y and the client never recomputes a supplied percentage")
+    func noClientFormula() throws {
+        var section = Self.section()
+        section["completed_strength_days"] = 4; section["percentage"] = 100
+        guard case let .available(over)? = try Self.response(section).data.strengthTrainingWeek else {
+            Issue.record("Expected weekly values"); return
+        }
+        #expect(over.completedStrengthDays == 4 && over.plannedDays == 3 && over.percentage == 100)
+        section["completed_strength_days"] = 2; section["percentage"] = 91
+        guard case let .available(literal)? = try Self.response(section).data.strengthTrainingWeek else {
+            Issue.record("Expected weekly values"); return
+        }
+        #expect(literal.percentage == 91)
+    }
+
+    @Test("zero and absence preserve X with explicit nullable fields", arguments: ["zero", "absent"])
+    func nullableTargets(kind: String) throws {
+        var section = Self.section()
+        section["target_availability"] = kind
+        if kind == "zero" { section["planned_days"] = 0 }
+        else { section["planned_days"] = NSNull() }
+        section["target_source"] = kind == "zero" ? "informed_frequency" : "absent"
+        section["percentage"] = NSNull()
+        let response = try Self.response(section)
+        guard case let .available(value)? = response.data.strengthTrainingWeek else {
+            Issue.record("Expected zero or absent target"); return
+        }
+        #expect(value.completedStrengthDays == 2)
+        #expect(value.plannedDays == (kind == "zero" ? 0 : nil))
+        #expect(value.percentage == nil)
+        let encoded = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(response.data.strengthTrainingWeek)) as? [String: Any])
+        #expect(encoded["percentage"] is NSNull)
+        #expect(encoded["planned_days"] != nil)
+    }
+
+    @Test("negative and future statuses never acquire partial counters")
+    func safeNegativeStates() throws {
+        #expect(try Self.response(["status": "unavailable", "reason": "missing_scope", "completed_strength_days": 6]).data.strengthTrainingWeek == .unavailable(reason: "missing_scope"))
+        #expect(try Self.response(["status": "conflict", "reason": "week_changed", "planned_days": 7]).data.strengthTrainingWeek == .conflict(reason: "week_changed"))
+        #expect(try Self.response(["status": "future_status", "completed_strength_days": 7]).data.strengthTrainingWeek == .unsupported(status: "future_status"))
+        #expect(throws: DecodingError.self) { try Self.response(["status": "unavailable"]) }
+    }
+
+    @Test("a UTC observation may belong to the previous local date")
+    func localObservationBoundary() throws {
+        var section = Self.section()
+        section["time_zone"] = "America/Los_Angeles"
+        section["as_of_local_date"] = "2026-10-13"
+        section["observed_at"] = "2026-10-14T00:30:00.123457Z"
+        guard case let .available(value)? = try Self.response(section).data.strengthTrainingWeek else {
+            Issue.record("Expected local civil scope"); return
+        }
+        #expect(value.asOfLocalDate == "2026-10-13")
+        #expect(value.observedAt == "2026-10-14T00:30:00.123457Z")
+    }
+
+    @Test("malformed available sections fail without coercion or zero fallback", arguments: [
+        "fractionalX", "booleanX", "negativeX", "excessX", "stringY", "source", "missingY", "missingPercentage",
+        "zeroPositiveTarget", "absentWithY", "missingObservation", "milliseconds", "newlineObservation",
+        "impossibleDate", "notMonday", "outsideWeek", "unknownZone", "percentageRange", "booleanStatus",
+    ])
+    func malformed(kind: String) throws {
+        var section = Self.section()
+        switch kind {
+        case "fractionalX": section["completed_strength_days"] = 2.5
+        case "booleanX": section["completed_strength_days"] = true
+        case "negativeX": section["completed_strength_days"] = -1
+        case "excessX": section["completed_strength_days"] = 8
+        case "stringY": section["planned_days"] = "3"
+        case "source": section["target_source"] = "future_source"
+        case "missingY": section.removeValue(forKey: "planned_days")
+        case "missingPercentage": section.removeValue(forKey: "percentage")
+        case "zeroPositiveTarget": section["planned_days"] = 0
+        case "absentWithY": section["target_availability"] = "absent"
+        case "missingObservation": section.removeValue(forKey: "observed_at")
+        case "milliseconds": section["observed_at"] = "2026-10-14T12:00:00.123Z"
+        case "newlineObservation": section["observed_at"] = "2026-10-14T12:00:00.123457Z\n"
+        case "impossibleDate": section["as_of_local_date"] = "2026-02-30"
+        case "notMonday": section["week_start"] = "2026-10-13"
+        case "outsideWeek": section["as_of_local_date"] = "2026-10-19"
+        case "unknownZone": section["time_zone"] = "Unknown/NoZone"
+        case "percentageRange": section["percentage"] = 101
+        default: section["status"] = true
+        }
+        #expect(throws: DecodingError.self) { try Self.response(section) }
+    }
+}

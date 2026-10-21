@@ -33,6 +33,48 @@ struct TodayViewModelTests {
         #expect(model.state == .empty)
     }
 
+    @Test("a day without records preserves its independent weekly section", arguments: [
+        "available", "unavailable", "conflict",
+    ])
+    func noRecordsPreservesStrengthWeek(status: String) async throws {
+        let response = try BodyFlowTestFixtures.decodeToday { data in
+            data["meals"] = []
+            data["workouts"] = []
+            data["consumed"] = [
+                "calories_kcal": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0,
+                "source": "meal_logs",
+            ] as [String: Any]
+            data["exercise_kcal"] = 0
+            data["completion_status"] = [
+                "status": "no_records", "day_closed": false, "has_sufficient_data": false,
+            ] as [String: Any]
+            if status == "available" {
+                data["strength_training_week"] = [
+                    "status": "available",
+                    "week_start": "2026-10-12",
+                    "as_of_local_date": "2026-10-14",
+                    "time_zone": "UTC",
+                    "observed_at": "2026-10-14T12:00:00.123457Z",
+                    "completed_strength_days": 2,
+                    "planned_days": 3,
+                    "target_source": "accepted_plan",
+                    "target_availability": "available",
+                    "percentage": 67,
+                ] as [String: Any]
+            } else {
+                data["strength_training_week"] = [
+                    "status": status,
+                    "reason": status == "conflict" ? "week_changed" : "missing_scope",
+                ]
+            }
+        }
+        let model = TodayViewModel(provider: TodayQueueProvider([.success(response)]))
+
+        await model.load(revision: 0)
+
+        #expect(model.state == .loaded(response.data))
+    }
+
     @Test("initial offline is retryable without invented content")
     func initialOffline() async {
         let model = TodayViewModel(

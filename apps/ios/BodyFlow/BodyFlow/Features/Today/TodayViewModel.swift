@@ -127,6 +127,7 @@ final class TodayViewModel {
             completedRevisions.insert(identity.revision)
             isRefreshing = false
             state = response.data.completionStatus.status == "no_records"
+                && response.data.strengthTrainingWeek == nil
                 ? .empty
                 : .loaded(response.data)
         } catch is CancellationError {

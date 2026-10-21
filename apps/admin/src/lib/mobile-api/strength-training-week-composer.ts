@@ -15,7 +15,7 @@ import {
 /**
  * Acquires the repository's stored winner, never an earlier read or proposal.
  * Conflicts and failures remain visible; the caller decides when to refresh.
- * No HTTP caller or activation is installed by this dormant composition.
+ * The caller controls activation; this composition never enables itself.
  */
 export async function acquireStrengthWeekTarget(
   repository: StrengthWeekRepository,
@@ -34,7 +34,7 @@ export type StrengthWeekSummaryResult =
       readonly summary: StrengthTrainingWeekSummary
     })
 
-/** Dormant internal composition: no HTTP/UI activation or implicit retries. */
+/** Internal composition with no implicit activation or retries. */
 export async function readStrengthTrainingWeek(
   repository: StrengthWeekProjectionRepository,
   userId: StrengthWeekUUID,

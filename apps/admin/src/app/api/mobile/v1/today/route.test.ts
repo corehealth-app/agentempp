@@ -95,6 +95,7 @@ beforeEach(() => {
   readModel.loadToday.mockReset()
   vi.stubEnv('MOBILE_DAY_CLOSE_FROM', '')
   vi.stubEnv('MOBILE_DAY_CLOSE_PROJECT_REF', '')
+  vi.stubEnv('MOBILE_STRENGTH_WEEK_PROJECT_REF', '')
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', `https://${STAGING_REF}.supabase.co`)
 })
 

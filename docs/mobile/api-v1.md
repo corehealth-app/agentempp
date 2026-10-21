@@ -595,6 +595,54 @@ em `PATCH /me` confirma o país.
 não recalcula metas, não incorpora exercício em `remaining_food_kcal` e não projeta
 crédito do bloco para um dia ainda aberto.
 
+### Acompanhamento semanal de força (preparado, OFF por padrão)
+
+O caller opcional de `GET /today` acrescenta `strength_training_week` somente
+quando o switch independente `MOBILE_STRENGTH_WEEK_PROJECT_REF` permite o projeto
+Supabase configurado e `current_protocol` é `recomposicao`, `ganho_massa` ou
+`manutencao`. A produção antiga é recusada inclusive em uma lista mista. OFF
+omite o campo, preserva o objeto diário e não acessa as RPCs semanais.
+
+Exemplo da seção disponível (as chaves internas de persistência não são públicas):
+
+```json
+{
+  "strength_training_week": {
+    "status": "available",
+    "week_start": "2026-10-12",
+    "as_of_local_date": "2026-10-14",
+    "time_zone": "UTC",
+    "observed_at": "2026-10-14T12:00:00.123457Z",
+    "completed_strength_days": 2,
+    "planned_days": 3,
+    "target_source": "accepted_plan",
+    "target_availability": "available",
+    "percentage": 67
+  }
+}
+```
+
+`target_source` é `accepted_plan`, `informed_frequency` ou `absent`.
+`target_availability` distingue `available` (Y positivo), `zero` (Y=0) e
+`absent` (Y nulo). X é preservado nestes três estados; os dois últimos mantêm
+`percentage:null`. X pode ultrapassar Y sem ultrapassar 100%: quatro de três
+permanece quatro de três. O cliente não recalcula esses valores.
+
+Resultados negativos têm somente `{status:"unavailable",reason:...}` ou
+`{status:"conflict",reason:...}`, com os motivos tipados do compositor; não
+contêm calendário ou contadores parciais. Conflito exige nova leitura explícita,
+sem retry do servidor. Falha de RPC ou resposta inválida permanece erro no
+envelope existente. `disabled` é interno e nunca aparece na seção pública.
+
+A seção é lida após auth/entitlement, fechamento e leitura diária. Seu calendário
+e instante são oficiais próprios: as leituras não são uma transação única e o
+cliente não deriva a semana de `local_date` diário, do fuso do aparelho ou do
+instante de recebimento. O compartilhado `loadToday`, `/protocol` e Flow não
+chamam esse compositor. Persistência e limites em
+[strength-week-persistence.md](strength-week-persistence.md).
+
+### Estrutura diária
+
 Estrutura resumida:
 
 ```json

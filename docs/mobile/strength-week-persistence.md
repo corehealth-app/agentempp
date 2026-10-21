@@ -4,7 +4,7 @@
 
 O conjunto local adiciona armazenamento, fontes e composição dormentes. A conclusão do cadastro pode abrir a geração comprovada; a confirmação de plano captura uma fonte apenas quando essa geração está legitimamente aberta. Essas integrações estão nas migrations de conclusão do cadastro, vínculo de lifecycle e confirmação de plano; não são uma adoção automática do histórico legado. Elas ainda dependem dos gates próprios de ativação no ambiente de destino.
 
-A regra pura está em `packages/core/src/strength-training-week.ts`. O repositório de `apps/admin/src/lib/mobile-api/strength-training-week-service.ts` permanece desligado por padrão. Seu preparador puro reutiliza o resolver pelo subpath específico `@mpp/core/strength-training-week`, sem modificar a fórmula. `strength-training-week-composer.ts` compõe leitura, preparação e CAS; não há caller HTTP/Hoje/iOS instalado por essa composição.
+A regra pura está em `packages/core/src/strength-training-week.ts`. O repositório de `apps/admin/src/lib/mobile-api/strength-training-week-service.ts` permanece desligado por padrão. Seu preparador puro reutiliza o resolver pelo subpath específico `@mpp/core/strength-training-week`, sem modificar a fórmula. `strength-training-week-composer.ts` compõe leitura, preparação e CAS; o caller de `GET /today` tem um switch independente, também desligado por padrão. Não há ativação remota ou interface iOS nesta fatia.
 
 ## Contrato
 
@@ -60,6 +60,16 @@ A publicação de X/Y exige target, binding e calendário coerentes e somente os
 
 Essa composição interna está preparada em `readStrengthTrainingWeek`: aquisição oficial, uma RPC de projeção atômica e o resumo puro do core. O parser compara o target completo com o winner do CAS, mantém as nove provas do binding e reutiliza os parsers de calendário/treinos pelo subpath explícito `@mpp/agent/workout-strength-projection`. A frequência original do cadastro no binding pode diferir da fonte semanal selecionada. Indisponibilidade e conflito não produzem resumo parcial nem lista vazia; somente uma projeção disponível chega ao core. Não há retry implícito, mudança de fórmula ou acesso separado a calendário/vínculo durante essa composição.
 
-O repositório continua desligado por padrão. A composição ainda não é chamada por HTTP, Hoje ou iOS. Os testes de contrato usam respostas de RPC controladas; os testes nativos de P5 foram executados separadamente. Isso não comprova a integração HTTP/autenticação/PostgreSQL completa nem a publicação de X/Y no app.
+O repositório continua desligado por padrão. `GET /today` tem um caller preparado, descrito abaixo; o iOS ainda não consome a seção. Os testes HTTP usam wrapper real, autenticação controlada e respostas de RPC controladas; os testes nativos de P5/P7 foram executados separadamente. Isso não comprova a integração HTTP/autenticação/PostgreSQL completa nem a publicação de X/Y no app.
 
 Também permanecem os gates integrados de durabilidade/concorrência/HTTP dos escritores reais, leitura dos consumidores, interface e ativação. Registros legados sem origem comprovada não podem virar histórico inventado nem um contador completo artificialmente zerado.
+
+## Seção semanal opcional em Hoje
+
+Somente `GET /today`, após autenticação, autorização de acesso, fechamento sob demanda e leitura diária bem-sucedida, chama o compositor semanal. `loadToday` compartilhado com `/protocol` e Flow permanece inalterado. O caller usa o mesmo cliente de serviço e o identificador interno do paciente autenticado, nunca parâmetros de query ou o UUID do Auth.
+
+`MOBILE_STRENGTH_WEEK_PROJECT_REF` precisa listar explicitamente o projeto da URL Supabase configurada. Ausência, alvo não comprovado ou produção antiga, inclusive em lista mista, mantém OFF. O switch de treino versionado não o habilita. OFF ou objetivo atual fora de recomposição, ganho e manutenção omite `strength_training_week` sem acessar RPC semanal e preserva a resposta diária anterior.
+
+A seção disponível contém somente calendário semanal, instante observado literal, X, Y, origem, disponibilidade e percentual do core. Zero e ausência de Y preservam X e percentual nulo. Conflito e indisponibilidade contêm somente status e motivo; falhas operacionais ou de contrato continuam sendo erros HTTP, sem retry ou contador artificial. IDs, geração, binding, recibos e identidades de treinos não são publicados.
+
+As leituras diária e semanal são independentes: não há alegação de transação ou relógio único entre elas. A seção semanal conserva `week_start`, `as_of_local_date`, `time_zone` e `observed_at` oficiais próprios, mesmo se a data diária ou o fuso lido anteriormente diferir. A interface deve rotular esse escopo explicitamente e não reinterpretá-lo pelo relógio do aparelho. A pergunta persistida para treino desconhecido ainda exige seu próprio contrato HTTP e fluxo iOS; somente este card não encerra M3A.

@@ -224,6 +224,216 @@ function confirmation(status = 'confirmed', resultCapture = capture()) {
   return { status, registration: registration(0, 'confirmed'), capture: resultCapture }
 }
 
+const CONFIRMED_WORKOUT = '00000000-0000-4000-8000-000000000009'
+const WORKOUT_LIFECYCLE = '00000000-0000-4000-8000-000000000010'
+const WORKOUT_SNAPSHOT = '00000000-0000-4000-8000-000000000011'
+const STRENGTH_QUESTION = '00000000-0000-4000-8000-000000000012'
+
+// Complete trusted-producer wire fixture, unlike the deliberately opaque
+// compatibility capture above. Only the transport is controlled in these tests.
+function provenCapture(unrecognized = true, replay = false) {
+  return {
+    legacy_result: { success: true, exercise_calories: 900, deduped: false },
+    strength: {
+      status: replay ? 'reuse_existing' : 'committed',
+      binding: {
+        ownerID: OWNER,
+        lifecycleKey: WORKOUT_LIFECYCLE,
+        operationKey: `ui:${ADMISSION}:r:0`,
+        originalOperationType: 'Natação',
+        workoutLogID: CONFIRMED_WORKOUT,
+        resolution: replay ? 'sql_replay' : 'sql_insert',
+      },
+      fact: {
+        anchor: {
+          ownerID: OWNER,
+          workoutLogID: CONFIRMED_WORKOUT,
+          lifecycleKey: WORKOUT_LIFECYCLE,
+          snapshotID: WORKOUT_SNAPSHOT,
+          storedWorkoutType: 'Natação',
+          performedAt: '2026-10-15T15:00:00.123456Z',
+          snapshotDate: '2026-10-15',
+        },
+        classification: unrecognized
+          ? { status: 'unrecognized', observation: OBSERVATION, reason: 'no_active_match' }
+          : {
+              status: 'matched',
+              observation: OBSERVATION,
+              method: 'active_slug',
+              catalogue: CATALOGUE_ROW,
+            },
+        calendar: {
+          status: 'proven',
+          performedAt: '2026-10-15T15:00:00.123456Z',
+          localDate: '2026-10-15',
+          timeZone: 'America/Sao_Paulo',
+          zoneSource: 'official_owner_zone_at_recording',
+          zoneObservedAt: '2026-10-15T14:59:59.654321Z',
+          snapshotID: WORKOUT_SNAPSHOT,
+          snapshotDate: '2026-10-15',
+        },
+        clarification: unrecognized
+          ? { status: 'unanswered', questionKey: STRENGTH_QUESTION }
+          : { status: 'not_applicable' },
+        revision: 0,
+      },
+    },
+  }
+}
+
+function confirmedWithStrength(strength: Json, replay = false) {
+  const result = confirmation(replay ? 'reused' : 'confirmed')
+  return { ...result, capture: { ...result.capture, strength } }
+}
+
+describe('confirmed workout identity for strength clarification', () => {
+  it.each([
+    { unrecognized: true, replay: false },
+    { unrecognized: false, replay: false },
+    { unrecognized: true, replay: true },
+  ])('exposes only the proven workout UUID: $unrecognized / replay $replay', async ({
+    unrecognized,
+    replay,
+  }) => {
+    const h = harness([
+      {
+        name: 'confirm_mobile_workout_registration',
+        args: nullConfirmArgs(),
+        data: confirmedWithStrength(provenCapture(unrecognized, replay).strength, replay),
+      },
+    ])
+    const result = await confirmVersionedWorkoutRegistration(h.supabase, AUTH, ID, 0)
+    expect(result).toStrictEqual({
+      ...dto(0, 'confirmed'),
+      already_confirmed: replay,
+      deduped: false,
+      confirmed_workout_id: CONFIRMED_WORKOUT,
+    })
+    expect(result.id).toBe(ID)
+    expect(result.content_revision).toBe(0)
+    expect(result.proposal).toMatchObject({ estimated_kcal: 400 })
+    for (const privateField of [
+      'capture',
+      'binding',
+      'fact',
+      'questionKey',
+      'lifecycleKey',
+      'ownerID',
+    ]) {
+      expect(result).not.toHaveProperty(privateField)
+    }
+    expect(mocks.prepareConfirmation).not.toHaveBeenCalled()
+    expect(mocks.observeCatalogue).not.toHaveBeenCalled()
+    h.done()
+  })
+
+  it.each([
+    'classification_unavailable',
+    'calendar_unavailable',
+    'answered',
+    'dedup_stored_type',
+  ])('retains proven identity independently of %s', async (scenario) => {
+    const strength: Record<string, Json> = provenCapture().strength
+    const fact = strength.fact as Record<string, Json>
+    if (scenario === 'classification_unavailable') {
+      fact.classification = { status: 'unavailable', reason: 'catalogue_read_error' }
+      fact.clarification = { status: 'not_applicable' }
+    } else if (scenario === 'calendar_unavailable') {
+      fact.calendar = { status: 'unavailable', reason: 'zone_unproved' }
+    } else if (scenario === 'answered') {
+      fact.revision = 1
+      fact.clarification = {
+        status: 'answered',
+        receipt: {
+          ownerID: OWNER,
+          workoutLogID: CONFIRMED_WORKOUT,
+          questionKey: STRENGTH_QUESTION,
+          answer: 'yes',
+          operationKey: 'winner-answer-key-not-capture',
+          acceptedAt: '2026-10-15T15:01:00.654321Z',
+        },
+      }
+    } else {
+      const binding = strength.binding as Record<string, Json>
+      binding.resolution = 'provider_type_dedup'
+      strength.status = 'reuse_existing'
+      const anchor = fact.anchor as Record<string, Json>
+      anchor.storedWorkoutType = 'Natação livre'
+    }
+    const h = harness([
+      {
+        name: 'confirm_mobile_workout_registration',
+        args: nullConfirmArgs(),
+        data: confirmedWithStrength(strength),
+      },
+    ])
+    expect(await confirmVersionedWorkoutRegistration(h.supabase, AUTH, ID, 0)).toStrictEqual({
+      ...dto(0, 'confirmed'),
+      already_confirmed: false,
+      deduped: false,
+      confirmed_workout_id: CONFIRMED_WORKOUT,
+    })
+    h.done()
+  })
+
+  it.each([
+    ['binding.ownerID', OTHER],
+    ['binding.operationKey', ''],
+    ['binding.originalOperationType', 'Musculação'],
+    ['binding.workoutLogID', ID],
+    ['binding.lifecycleKey', ADMISSION],
+    ['fact.anchor.ownerID', OTHER],
+    ['fact.anchor.workoutLogID', ID],
+    ['fact.anchor.lifecycleKey', ADMISSION],
+    ['fact.anchor.snapshotID', 'not-a-uuid'],
+    ['fact.anchor.performedAt', NOW],
+    ['fact.revision', 1],
+    ['fact.clarification', { status: 'not_applicable' }],
+    ['unexpected', 'private data'],
+  ] as const)('never exposes a partial identity from incoherent capture %s', async (path, replacement) => {
+    const strength: Record<string, Json> = structuredClone(provenCapture().strength)
+    const keys = path.split('.')
+    const final = keys.pop() as string
+    let parent = strength
+    for (const key of keys) parent = parent[key] as Record<string, Json>
+    parent[final] = replacement as Json
+    const h = harness([
+      {
+        name: 'confirm_mobile_workout_registration',
+        args: nullConfirmArgs(),
+        data: confirmedWithStrength(strength),
+      },
+    ])
+    const result = await confirmVersionedWorkoutRegistration(h.supabase, AUTH, ID, 0)
+    expect(result).toStrictEqual({
+      ...dto(0, 'confirmed'),
+      already_confirmed: false,
+      deduped: false,
+    })
+    h.done()
+  })
+
+  it('retains a confirmed legacy reply without promoting its isolated workout UUID', async () => {
+    const h = harness([
+      {
+        name: 'confirm_mobile_workout_registration',
+        args: nullConfirmArgs(),
+        data: confirmedWithStrength({
+          status: 'unavailable',
+          reason: 'legacy_provenance_gap',
+          confirmedWorkoutLogID: CONFIRMED_WORKOUT,
+        }),
+      },
+    ])
+    expect(await confirmVersionedWorkoutRegistration(h.supabase, AUTH, ID, 0)).toStrictEqual({
+      ...dto(0, 'confirmed'),
+      already_confirmed: false,
+      deduped: false,
+    })
+    h.done()
+  })
+})
+
 function nullConfirmArgs() {
   return {
     p_user_id: OWNER,

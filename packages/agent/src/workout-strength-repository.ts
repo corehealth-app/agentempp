@@ -347,6 +347,44 @@ export function createWorkoutStrengthRepository(
   }
 }
 
+/** Optional identity from the successful SQL confirmation's internal capture.
+ * This checks the entire wire and its authenticated owner/raw operation type;
+ * only the trusted SQL producer proves provenance. An older/invalid capture
+ * must not turn an already committed confirmation into a new HTTP failure.
+ * No RPC, lifecycle adoption, operation choice or current-catalogue read occurs.
+ */
+export function confirmedWorkoutLogIDFromCapture(
+  value: unknown,
+  ownerID: string,
+  originalOperationType: string,
+): string | null {
+  if (
+    !isUUID(ownerID) ||
+    !isRecord(value) ||
+    (value.status !== 'committed' && value.status !== 'reuse_existing') ||
+    !isRecord(value.binding) ||
+    typeof value.binding.operationKey !== 'string' ||
+    value.binding.operationKey === '' ||
+    !hasSQLBtrimContent(originalOperationType)
+  )
+    return null
+  try {
+    const result = parseResult(
+      value,
+      { ownerID, expectedLifecycleKey: uuid(value.binding.lifecycleKey) },
+      text(value.binding.operationKey),
+      originalOperationType,
+    )
+    return 'fact' in result ? result.fact.anchor.workoutLogID : null
+  } catch (error) {
+    // Compatibility is limited to this pure decoder. Operational errors from
+    // confirmation/preparation/RPC are never caught by this optional projection.
+    if (error instanceof TypeError && error.message === 'Invalid workout strength reply')
+      return null
+    throw error
+  }
+}
+
 function parseResult(
   value: unknown,
   scope: WorkoutOwnerScope,

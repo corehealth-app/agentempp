@@ -2,6 +2,7 @@ import {
   observeWorkoutStrengthCatalogue,
   type WorkoutStrengthCataloguePort,
 } from '@mpp/agent/workout-strength-catalogue'
+import { confirmedWorkoutLogIDFromCapture } from '@mpp/agent/workout-strength-identity'
 import type { Json, ServiceClient } from '@mpp/db'
 import type { MobileAuthContext } from './auth'
 import type { RegistrationProposalInput } from './contracts'
@@ -269,10 +270,14 @@ export async function confirmVersionedWorkoutRegistration(
     (legacy === null &&
       ((binding !== null && binding.resolution !== 'sql_insert') ||
         (strength.status === 'unavailable' && strength.reason === 'legacy_provenance_gap')))
+  const rawType = result.registration.proposal.workoutType
+  const confirmedWorkoutID =
+    typeof rawType === 'string' ? confirmedWorkoutLogIDFromCapture(strength, owner, rawType) : null
   return {
     ...toWorkoutRegistrationDto(result.registration),
     already_confirmed: result.status === 'reused',
     deduped,
+    ...(confirmedWorkoutID === null ? {} : { confirmed_workout_id: confirmedWorkoutID }),
   }
 }
 

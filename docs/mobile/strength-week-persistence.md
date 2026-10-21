@@ -88,4 +88,10 @@ X representa dias com treino de força, não quantidade de sessões. Para Y posi
 
 O componente não tem tarefa nem provider. Atualizar reutiliza o coordenador de Hoje, preservando os dados durante a leitura e desabilitando a ação enquanto há atualização. O título é um cabeçalho acessível; as informações são agrupadas separadamente do botão com o estilo compartilhado de 44 pontos mínimos. Essas propriedades de fonte não comprovam acionamento ou leitura física por VoiceOver.
 
+### Identidade do treino após a confirmação
+
+A confirmação versionada pode acrescentar `confirmed_workout_id`, o UUID real de `workout_logs`, quando o capture positivo inteiro passa pelo parser de binding/fact e corresponde ao paciente autenticado e ao tipo original da proposta. Esse ID não substitui o `id` da proposta pendente nem sua `content_revision`. A classificação, o calendário e a resposta persistida são validados sem nova leitura de catálogo, escolha de captura ou RPC adicional. A prova de origem continua pertencendo ao produtor SQL confiável.
+
+O campo é opcional. Captures antigos opacos, indisponíveis ou incoerentes conservam a confirmação anterior sem publicar identidade parcial. Um UUID isolado de legado não é promovido. Erros de RPC, preparação e autoridade continuam propagando como antes; somente o decoder puro dessa identidade opcional tolera wire incompatível. Calorias, dedup e replay permanecem inalterados. A leitura/resposta da pergunta e sua interface ainda são integrações posteriores; esse campo sozinho não ativa o fluxo.
+
 Os probes locais de acessibilidade usados no desenvolvimento retornaram árvores vazias tanto no Root quanto no controle diário isolado. As tentativas e fontes foram preservadas como falhas de harness; não contam como RED do produto ou aprovação de acessibilidade. Testes de apresentação, layout e imagens nativas cobrem camadas próprias. AX do Root, acionamento acessível, VoiceOver físico, integração completa e distribuição permanecem gates separados.

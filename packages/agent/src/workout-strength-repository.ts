@@ -425,6 +425,14 @@ function parseResult(
   return invalidWire()
 }
 
+/** Pure decoder shared with the current-authority HTTP adapter; no RPC factory. */
+export function parseWorkoutStrengthAnswerReply(
+  value: unknown,
+  request: AnswerWorkoutStrengthInput,
+): AnswerWorkoutStrengthResult {
+  return parseAnswerResult(value, request)
+}
+
 function parseAnswerResult(
   value: unknown,
   request: AnswerWorkoutStrengthInput,
@@ -678,6 +686,14 @@ function parseClarification(value: unknown, anchor: ConfirmedWorkoutAnchor): Wor
   if (value.status !== 'answered') return invalidWire()
   shape(value, ['status', 'receipt'])
   return { status: 'answered', receipt: parseReceipt(value.receipt, anchor) }
+}
+
+/** Pure owner/workout receipt decoder; winning operation may differ from attempt. */
+export function parseStoredStrengthAnswerReceipt(
+  value: unknown,
+  anchor: Pick<StoredStrengthAnswerReceipt, 'ownerID' | 'workoutLogID'>,
+): StoredStrengthAnswerReceipt {
+  return parseReceipt(value, anchor)
 }
 
 function parseReceipt(

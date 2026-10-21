@@ -14,7 +14,8 @@
     "./workout-strength-catalogue": "./src/workout-strength-catalogue.ts",
     "./testing/day-close-memory-db": "./src/testing/day-close-memory-db.ts",
     "./workout-strength-projection": "./src/workout-strength-projection.ts",
-    "./workout-strength-identity": "./src/workout-strength-identity.ts"
+    "./workout-strength-identity": "./src/workout-strength-identity.ts",
+    "./workout-strength-clarification": "./src/workout-strength-clarification.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

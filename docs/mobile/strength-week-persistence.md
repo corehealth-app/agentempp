@@ -28,6 +28,14 @@ Somente `available` inclui target, vínculo, calendário, projeção e instante 
 
 Os testes locais de 20/10 usaram cadastro e plano de 42 dias reais, confirmaram um treino com seu timestamp atual e comprovaram o vínculo produzido. A projeção positiva foi observada pela função privada na próxima semana efetiva, com lista vazia esperada; isso não comprova contagem positiva futura nem relógio público futuro. Também passaram replay, preservação do calendário público anterior, conflitos, reset e falhas após INSERT. Um teste separado em REPEATABLE READ comprovou a recusa exata pelo wrapper público literal, sem produzir Y/L ou instalar a migration inteira nesse isolamento. Todas essas transações foram desfeitas.
 
+### Durabilidade, reset concorrente e relógio após espera
+
+Um teste local posterior, também em 20/10, confirmou o setup real em COMMIT, conferiu sua visibilidade por outra conexão e executou quatro cenários com conexões reais: relógio público após espera no usuário, reset desfeito permitindo a projeção, calendário confirmado e replay idêntico em novo backend, e reset confirmado recusando a geração antiga. Os bloqueios foram observados por PID, XID e chave advisory, com identidade e permissões do lock preservadas. A observação do relógio público foi feita somente na cópia local instrumentada, sem alterar o instante usado pelo produto.
+
+A projeção positiva continua sendo a observação privada na semana futura efetiva, com lista vazia esperada. O wrapper público usou o relógio real e recusou esse target futuro. O teste não comprova contagem positiva futura, isolamento entre dois donos, crash, perda de ACK, autenticação HTTP ou interface iOS.
+
+O teste aprovado executou 41 comandos com saída zero e 32 fingerprints dos quatro bancos. Após os quatro atores e seus leitores serem encerrados, o teardown restrito removeu o grafo sintético e restaurou as definições, OIDs e ACLs anteriores. O único delta foi a alocação natural de duas fontes, 141→143; nenhuma sequência foi reiniciada. PostgreSQL ficou parado, com configurações intactas e arquivos de credenciais vazios removidos. Duas tentativas anteriores do harness foram preservadas como falhas, com regressões exatas e limpeza verificada; elas não contam como aprovação dos quatro cenários.
+
 ## Regressão SQL sequencial
 
 Use um banco **local exclusivo e sintético** que já tenha o schema necessário e esta migration. O bootstrap mínimo usado na evidência não comprova compatibilidade com todo o schema remoto nem autenticação criptográfica de JWT. Não executar estes testes em staging ou produção: as inserções com identidade avançam a sequência mesmo quando a transação faz ROLLBACK. Os valores acima de 2^53 são fixtures inseridas com `OVERRIDING SYSTEM VALUE`, não uma alegação de identidades naturais nessa faixa.

@@ -3458,6 +3458,7 @@ private struct C11RealLifecycleTransportHarness: Sendable {
     let stub: TransportStubStore
     let remote: C11OwnerRemote
     let coordinator: SessionLifecycleCoordinator
+    let registry: PatientWorkRegistry
     let lifecycle: C11HoldingLifecycle
     let transport: MobileAPITransport
 
@@ -3467,8 +3468,9 @@ private struct C11RealLifecycleTransportHarness: Sendable {
         )
         try await store.replace(with: Self.record(userID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", ordinal: 1))
         let remote = C11OwnerRemote()
+        let registry = PatientWorkRegistry()
         let coordinator = SessionLifecycleCoordinator(
-            store: store, remote: remote,
+            store: store, remote: remote, patientWorkRegistry: registry,
             refreshPolicy: SessionRefreshPolicy(now: { Date(timeIntervalSince1970: 1000) }, leeway: 60)
         )
         let lifecycle = C11HoldingLifecycle(base: coordinator)
@@ -3479,6 +3481,7 @@ private struct C11RealLifecycleTransportHarness: Sendable {
         self.stub = stub
         self.remote = remote
         self.coordinator = coordinator
+        self.registry = registry
         self.lifecycle = lifecycle
         self.transport = MobileAPITransport(
             configuration: try MobileAPIConfiguration(originString: "https://staging.example.test"),
@@ -3923,6 +3926,8 @@ enum C11RootLeaseFailure: Equatable, Sendable { case missing, wrongUser }
 private actor C11RootCountingLifecycle: SessionLifecycleProviding {
     private let base: C11HoldingLifecycle
     private(set) var leaseCalls = 0
+    private(set) var workoutWorkIDs: [UUID] = []
+    private(set) var finishedWorkoutWorkIDs: [UUID] = []
     init(base: C11HoldingLifecycle) { self.base = base }
     func currentBearerToken() async -> String? { await base.currentBearerToken() }
     func leaseForRequest() async throws -> SessionLease {
@@ -3935,9 +3940,14 @@ private actor C11RootCountingLifecycle: SessionLifecycleProviding {
     func validate(_ lease: SessionLease) async throws { try await base.validate(lease) }
     func signOut() async -> RemoteRevocationOutcome { await base.signOut() }
     func beginPatientWork(lease: SessionLease, cancel: @escaping @Sendable () -> Void) async throws -> UUID {
-        try await base.beginPatientWork(lease: lease, cancel: cancel)
+        let id = try await base.beginPatientWork(lease: lease, cancel: cancel)
+        workoutWorkIDs.append(id)
+        return id
     }
-    func finishPatientWork(_ id: UUID) async { await base.finishPatientWork(id) }
+    func finishPatientWork(_ id: UUID) async {
+        finishedWorkoutWorkIDs.append(id)
+        await base.finishPatientWork(id)
+    }
     func performPatientStateOperation<Value: Sendable>(lease: SessionLease,
         operation: @Sendable () throws -> Value) async throws -> Value {
         try await base.performPatientStateOperation(lease: lease, operation: operation)
@@ -5196,4 +5206,175 @@ extension MobileAPITransportTests {
             #expect(await fixture.wire.stub.requests().count == 1)
         }
     }
+}
+
+// P10D2 uses the existing serialized real lifecycle/URLProtocol harness.
+extension MobileAPITransportTests {
+    @MainActor
+    @Test("P10D2: clarification GET/POST share the admitted scope and 401 keeps tuple and key", arguments: [WorkoutStrengthAnswer.yes, .no])
+    func p10d2ClarificationSharesOriginalScope(answer: WorkoutStrengthAnswer) async throws {
+        try await h2WithWire { fixture in
+            let wire = fixture.wire
+            let me = try h2Me(owner: fixture.activation.userID, advertised: "ui-v1")
+            let question = try p10d2StrengthQuestion()
+            let read = try p10d2StrengthWire(.unanswered(question))
+            let accepted = try p10d2StrengthWire(.answered(try #require(WorkoutStrengthAnswerReceipt(
+                scope: question.scope, questionKey: question.questionKey, answer: answer,
+                acceptedAt: "2026-10-21T01:02:03.123456Z"))))
+            let bodies = C11RequestBodyCapture()
+            await wire.stub.respond { request, call in
+                if request.url?.path == "/api/mobile/v1/me" { return StubResponse(status: 200, body: me) }
+                guard request.url?.path == p10d2StrengthPath else { throw H2UnexpectedRequest() }
+                if request.httpMethod == "GET" { return StubResponse(status: 200, body: read) }
+                guard request.httpMethod == "POST" else { throw H2UnexpectedRequest() }
+                try await bodies.capture(request)
+                return call == 3 ? .failure(status: 401, code: "expired_token") : StubResponse(status: 200, body: accepted)
+            }
+            let binding = try fixture.reserve()
+            #expect(binding.readyContext == nil)
+            let context = try await fixture.source.bind(binding)
+            let original = try #require(binding.capturedLease)
+            let response = try await context.clarificationProvider.load(workoutID: question.scope.workoutID)
+            #expect(response.data == .unanswered(question))
+            let attempt = MutationAttempt(operation: .workoutStrengthAnswer,
+                key: try IdempotencyKey(validating: H2WorkoutKeys.literal(9)),
+                payload: WorkoutStrengthAnswerCommand(question: question, answer: answer),
+                createdAt: C11OwnerFixtureTime().now)
+            let result = try await context.clarificationProvider.answer(attempt)
+            guard case let .answered(receipt) = result.data else { Issue.record("Expected official receipt"); return }
+            #expect(receipt.scope == question.scope)
+            #expect(receipt.answer == answer)
+            #expect(context.isActive)
+            #expect(await fixture.counted.leaseCalls == 1)
+            #expect(await wire.remote.refreshCount == 1)
+            let current = try await wire.coordinator.leaseForRequest()
+            #expect(current.generation == original.generation)
+            let requests = await wire.stub.requests()
+            try #require(requests.count == 4)
+            #expect(requests[1].httpMethod == "GET")
+            #expect(requests[1].value(forHTTPHeaderField: "Authorization") == "Bearer \(original.bearer)")
+            #expect(requests[1].value(forHTTPHeaderField: "Idempotency-Key") == nil)
+            #expect(requests[2].value(forHTTPHeaderField: "Authorization") != requests[3].value(forHTTPHeaderField: "Authorization"))
+            for request in requests.suffix(2) {
+                #expect(request.value(forHTTPHeaderField: "Idempotency-Key") == attempt.key.value)
+                #expect(request.httpMethod == "POST")
+            }
+            let captured = await bodies.bodies()
+            try #require(captured.count == 2)
+            #expect(captured[0] == captured[1])
+            let body = try #require(captured[0])
+            let object = try #require(JSONSerialization.jsonObject(with: body) as? NSDictionary)
+            #expect(object == ["expected_lifecycle_key": question.scope.lifecycleKey,
+                "expected_fact_revision": 0, "question_key": question.questionKey, "answer": answer.rawValue] as NSDictionary)
+            binding.invalidateSynchronously()
+            #expect(!binding.hasRetainedCapability)
+            #expect(!context.isActive)
+            await #expect(throws: CancellationError.self) {
+                _ = try await context.clarificationProvider.load(workoutID: question.scope.workoutID)
+            }
+            #expect(await wire.stub.requests().count == 4)
+            await binding.endSession()
+            await binding.endSession()
+            let workIDs = await fixture.counted.workoutWorkIDs
+            #expect(workIDs.count == 1)
+            #expect(await fixture.counted.finishedWorkoutWorkIDs == workIDs)
+            #expect(await wire.registry.activeCount == 0)
+        }
+    }
+
+    @MainActor
+    @Test("P10D2: retained clarification read and write cannot send after A to B to A", arguments: [false, true])
+    func p10d2ClarificationCannotBorrowNewActivation(write: Bool) async throws {
+        try await h2WithWire { fixture in
+            let me = try h2Me(owner: fixture.activation.userID, advertised: "ui-v1")
+            await fixture.wire.stub.respond(with: StubResponse(status: 200, body: me))
+            let context = try await fixture.source.bind(fixture.reserve())
+            let question = try p10d2StrengthQuestion()
+            _ = fixture.lifetime.beginAuthenticationBoundary()
+            try await fixture.wire.replaceSession(returnToA: true)
+            #expect(!context.isActive)
+            await #expect(throws: CancellationError.self) {
+                if write {
+                    _ = try await context.clarificationProvider.answer(MutationAttempt(operation: .workoutStrengthAnswer,
+                        key: IdempotencyKey(validating: H2WorkoutKeys.literal(9)),
+                        payload: WorkoutStrengthAnswerCommand(question: question, answer: .yes), createdAt: C11OwnerFixtureTime().now))
+                } else { _ = try await context.clarificationProvider.load(workoutID: question.scope.workoutID) }
+            }
+            #expect(await fixture.wire.stub.requests().count == 1)
+            #expect(await fixture.counted.leaseCalls == 1)
+            #expect(await fixture.wire.remote.refreshCount == 0)
+        }
+    }
+
+    @MainActor
+    @Test("P10D2: a late clarification transport error becomes cancellation and end drains its scope")
+    func p10d2ClarificationLateErrorAndDrain() async throws {
+        try await h2WithWire { fixture in
+            let wire = fixture.wire
+            let me = try h2Me(owner: fixture.activation.userID, advertised: "ui-v1")
+            await wire.stub.respond(with: StubResponse(status: 200, body: me))
+            let binding = try fixture.reserve()
+            let context = try await fixture.source.bind(binding)
+            await wire.stub.respond { request, _ in
+                guard request.url?.path == p10d2StrengthPath else { throw H2UnexpectedRequest() }
+                throw URLError(.timedOut)
+            }
+            await wire.lifecycle.holdNextFinish()
+            let pending = Task {
+                do {
+                    let result = try await context.clarificationProvider.load(workoutID: h2RegistrationID)
+                    await wire.lifecycle.finishHold.noteCompletion()
+                    return result
+                } catch {
+                    await wire.lifecycle.finishHold.noteCompletion()
+                    throw error
+                }
+            }
+            var ending: Task<Void, Never>?
+            var endingAgain: Task<Void, Never>?
+            do {
+                let entered = await wire.lifecycle.finishHold.waitUntilEnteredOrCompleted()
+                try #require(entered)
+                #expect(await wire.stub.requests().count == 2)
+                _ = fixture.lifetime.beginAuthenticationBoundary()
+                #expect(!context.isActive)
+                let endProbe = C11ConcurrentEndProbe()
+                let end = Task { @MainActor in endProbe.didStart(); await binding.endSession(); endProbe.didFinish() }
+                ending = end
+                let secondEnd = Task { @MainActor in endProbe.didStart(); await binding.endSession(); endProbe.didFinish() }
+                endingAgain = secondEnd
+                await endProbe.waitForBothStarts()
+                #expect(endProbe.finishedCount == 0)
+                await wire.lifecycle.finishHold.release()
+                await #expect(throws: CancellationError.self) { _ = try await pending.value }
+                await end.value
+                await secondEnd.value
+                #expect(endProbe.finishedCount == 2)
+                let workIDs = await fixture.counted.workoutWorkIDs
+                #expect(workIDs.count == 1)
+                #expect(await fixture.counted.finishedWorkoutWorkIDs == workIDs)
+                #expect(await wire.registry.activeCount == 0)
+                #expect(!binding.hasRetainedCapability)
+                #expect(await fixture.counted.leaseCalls == 1)
+                #expect(await wire.stub.requests().count == 2)
+            } catch {
+                await wire.lifecycle.finishHold.release()
+                _ = await pending.result
+                await ending?.value
+                await endingAgain?.value
+                throw error
+            }
+        }
+    }
+}
+
+private let p10d2StrengthPath = "/api/mobile/v1/workouts/\(h2RegistrationID)/strength-clarification"
+private func p10d2StrengthQuestion() throws -> WorkoutStrengthQuestion {
+    try #require(WorkoutStrengthQuestion(workoutID: h2RegistrationID,
+        lifecycleKey: "c3900000-0000-4000-8000-000000000001", factRevision: 0,
+        questionKey: "d4a00000-0000-4000-8000-000000000001"))
+}
+private func p10d2StrengthWire(_ value: WorkoutStrengthClarification) throws -> Data {
+    try JSONEncoder().encode(MobileResponse(data: value,
+        meta: MobileResponseMetadata(apiVersion: "v1", requestID: "synthetic-owned-question")))
 }

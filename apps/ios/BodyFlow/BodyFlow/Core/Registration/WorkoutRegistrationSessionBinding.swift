@@ -76,6 +76,7 @@ final class WorkoutRegistrationSessionBinding {
     private var grant: WorkoutRegistrationGrant?
     private var reader: MobileBodyFlowRepository?
     private var repository: MobileRegistrationRepository?
+    private var clarificationRepository: MobileWorkoutStrengthClarificationRepository?
     private var lifecycle: (any SessionLifecycleProviding)?
     private var patientWork: (id: UUID, lifecycle: any SessionLifecycleProviding)?
     private var finishing = false
@@ -110,7 +111,7 @@ final class WorkoutRegistrationSessionBinding {
             && grant?.isOpen == true && reader != nil && capturedLease != nil
     }
 
-    var hasRetainedCapability: Bool { repository != nil || reader != nil || grant != nil }
+    var hasRetainedCapability: Bool { repository != nil || clarificationRepository != nil || reader != nil || grant != nil }
 
     func bind(transport: MobileAPITransport,
               lifecycle: any SessionLifecycleProviding) async throws -> WorkoutRegistrationReadyContext {
@@ -173,6 +174,7 @@ final class WorkoutRegistrationSessionBinding {
             self.grant = grant
             self.reader = MobileBodyFlowRepository(transport: envelope)
             self.repository = MobileRegistrationRepository(transport: envelope)
+            self.clarificationRepository = MobileWorkoutStrengthClarificationRepository(transport: envelope)
         }
         try Task.checkCancellation()
         guard isOpen, grant.isOpen else { throw CancellationError() }
@@ -186,7 +188,7 @@ final class WorkoutRegistrationSessionBinding {
     }
 
     private func readMeAndPublish() async throws -> WorkoutRegistrationReadyContext {
-        guard isOpen, let reader, let repository, let grant,
+        guard isOpen, let reader, let repository, let clarificationRepository, let grant,
               let lease = capturedLease, let lifecycle, patientWork != nil else {
             throw CancellationError()
         }
@@ -198,6 +200,7 @@ final class WorkoutRegistrationSessionBinding {
         return try await lifecycle.performVisiblePatientStateOperation(lease: lease) {
             guard self.isOpen, grant.isOpen, self.readyContext == nil else { throw CancellationError() }
             let context = WorkoutRegistrationReadyContext(binding: self, provider: repository,
+                clarificationProvider: clarificationRepository,
                 registrationProtocol: response.data.supportsVersionedWorkoutRegistration ? .uiV1 : nil,
                 grant: grant)
             self.timeZoneStore.resolve(documentedIANAIdentifier: response.data.timezone)
@@ -211,6 +214,7 @@ final class WorkoutRegistrationSessionBinding {
         grant?.release()
         readyContext = nil
         repository = nil
+        clarificationRepository = nil
         reader = nil
         grant = nil
         capturedLease = nil
@@ -259,15 +263,18 @@ final class WorkoutRegistrationSessionBinding {
 final class WorkoutRegistrationReadyContext {
     let activation: MealRecordAuthenticatedActivation
     let provider: MobileRegistrationRepository
+    let clarificationProvider: MobileWorkoutStrengthClarificationRepository
     let registrationProtocol: WorkoutRegistrationProtocol?
     private weak var binding: WorkoutRegistrationSessionBinding?
     private let grant: WorkoutRegistrationGrant
 
     fileprivate init(binding: WorkoutRegistrationSessionBinding, provider: MobileRegistrationRepository,
+                     clarificationProvider: MobileWorkoutStrengthClarificationRepository,
                      registrationProtocol: WorkoutRegistrationProtocol?, grant: WorkoutRegistrationGrant) {
         self.binding = binding
         activation = binding.activation
         self.provider = provider
+        self.clarificationProvider = clarificationProvider
         self.registrationProtocol = registrationProtocol
         self.grant = grant
     }

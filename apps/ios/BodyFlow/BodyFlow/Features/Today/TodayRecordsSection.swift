@@ -80,10 +80,34 @@ struct TodayWorkoutDescriptor: Equatable, Sendable, Identifiable {
 /// The day's confirmed workouts (the meals live in `TodayMealSlotsSection`).
 struct TodayRecordsSection: View {
     let workouts: [TodayWorkoutDescriptor]
+    let strengthTrainingWeek: TodayStrengthTrainingWeekDescriptor?
+    let isRefreshing: Bool
+    let refresh: (() -> Void)?
     @Environment(\.locale) private var locale
 
+    init(
+        workouts: [TodayWorkoutDescriptor],
+        strengthTrainingWeek: TodayStrengthTrainingWeekDescriptor? = nil,
+        isRefreshing: Bool = false,
+        refresh: (() -> Void)? = nil
+    ) {
+        self.workouts = workouts
+        self.strengthTrainingWeek = strengthTrainingWeek
+        self.isRefreshing = isRefreshing
+        self.refresh = refresh
+    }
+
     var body: some View {
-        workoutsSection
+        VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
+            if let strengthTrainingWeek {
+                TodayStrengthTrainingWeekCard(
+                    descriptor: strengthTrainingWeek,
+                    isRefreshing: isRefreshing,
+                    refresh: refresh
+                )
+            }
+            workoutsSection
+        }
     }
 
     private var workoutsSection: some View {

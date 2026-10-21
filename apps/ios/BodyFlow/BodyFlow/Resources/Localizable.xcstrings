@@ -1,6 +1,246 @@
 {
   "sourceLanguage" : "pt-BR",
   "strings" : {
+  "today.strength-week.title": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Força nesta semana"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Strength this week"
+        }
+      }
+    }
+  },
+  "today.strength-week.week": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Semana de %@"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Week of %@"
+        }
+      }
+    }
+  },
+  "today.strength-week.as-of": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Até %@"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "As of %@"
+        }
+      }
+    }
+  },
+  "today.strength-week.zone": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Fuso: %@"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Time zone: %@"
+        }
+      }
+    }
+  },
+  "today.strength-week.ratio": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%@ de %@"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%@ of %@"
+        }
+      }
+    }
+  },
+  "today.strength-week.ratio-detail": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Dias de força confirmados / planejados"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Confirmed / planned strength days"
+        }
+      }
+    }
+  },
+  "today.strength-week.completed-detail": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Dias com treino de força"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Days with strength training"
+        }
+      }
+    }
+  },
+  "today.strength-week.percentage": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%@%% da meta semanal"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%@%% of the weekly target"
+        }
+      }
+    }
+  },
+  "today.strength-week.source-plan": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Origem: plano de treino aceito"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Source: accepted training plan"
+        }
+      }
+    }
+  },
+  "today.strength-week.source-frequency": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Origem: frequência informada"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Source: reported frequency"
+        }
+      }
+    }
+  },
+  "today.strength-week.zero": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Frequência planejada: 0 dias"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Planned frequency: 0 days"
+        }
+      }
+    }
+  },
+  "today.strength-week.absent": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Sem meta informada para esta semana"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "No target reported for this week"
+        }
+      }
+    }
+  },
+  "today.strength-week.unavailable": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Acompanhamento semanal indisponível"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Weekly tracking unavailable"
+        }
+      }
+    }
+  },
+  "today.strength-week.conflict": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "O acompanhamento mudou. Atualize para consultar."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Tracking changed. Refresh to check."
+        }
+      }
+    }
+  },
+  "today.strength-week.refresh-hint": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Atualiza os dados de Hoje."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Refreshes Today’s data."
+        }
+      }
+    }
+  },
   "meal-record.recovery.notice": {
     "localizations": {
       "pt-BR": {

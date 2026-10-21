@@ -2,9 +2,9 @@
 
 ## Estado
 
-O conjunto local adiciona armazenamento, fontes e composição dormentes. A conclusão do cadastro pode abrir a geração comprovada; a confirmação de plano captura uma fonte apenas quando essa geração está legitimamente aberta. Essas integrações estão nas migrations de conclusão do cadastro, vínculo de lifecycle e confirmação de plano; não são uma adoção automática do histórico legado. Elas ainda dependem dos gates próprios de ativação no ambiente de destino.
+O conjunto local adiciona armazenamento, fontes, composição e apresentação iOS preparados. A conclusão do cadastro pode abrir a geração comprovada; a confirmação de plano captura uma fonte apenas quando essa geração está legitimamente aberta. Essas integrações estão nas migrations de conclusão do cadastro, vínculo de lifecycle e confirmação de plano; não são uma adoção automática do histórico legado. Elas ainda dependem dos gates próprios de ativação no ambiente de destino.
 
-A regra pura está em `packages/core/src/strength-training-week.ts`. O repositório de `apps/admin/src/lib/mobile-api/strength-training-week-service.ts` permanece desligado por padrão. Seu preparador puro reutiliza o resolver pelo subpath específico `@mpp/core/strength-training-week`, sem modificar a fórmula. `strength-training-week-composer.ts` compõe leitura, preparação e CAS; o caller de `GET /today` tem um switch independente, também desligado por padrão. Não há ativação remota ou interface iOS nesta fatia.
+A regra pura está em `packages/core/src/strength-training-week.ts`. O repositório de `apps/admin/src/lib/mobile-api/strength-training-week-service.ts` permanece desligado por padrão. Seu preparador puro reutiliza o resolver pelo subpath específico `@mpp/core/strength-training-week`, sem modificar a fórmula. `strength-training-week-composer.ts` compõe leitura, preparação e CAS; o caller de `GET /today` tem um switch independente, também desligado por padrão. O iOS prepara o card condicional; não há ativação remota nesta fatia.
 
 ## Contrato
 
@@ -60,7 +60,7 @@ A publicação de X/Y exige target, binding e calendário coerentes e somente os
 
 Essa composição interna está preparada em `readStrengthTrainingWeek`: aquisição oficial, uma RPC de projeção atômica e o resumo puro do core. O parser compara o target completo com o winner do CAS, mantém as nove provas do binding e reutiliza os parsers de calendário/treinos pelo subpath explícito `@mpp/agent/workout-strength-projection`. A frequência original do cadastro no binding pode diferir da fonte semanal selecionada. Indisponibilidade e conflito não produzem resumo parcial nem lista vazia; somente uma projeção disponível chega ao core. Não há retry implícito, mudança de fórmula ou acesso separado a calendário/vínculo durante essa composição.
 
-O repositório continua desligado por padrão. `GET /today` tem um caller preparado, descrito abaixo; o iOS decodifica e preserva a seção opcional, mas o card ainda é uma etapa de apresentação pendente. Os testes HTTP usam wrapper real, autenticação controlada e respostas de RPC controladas; os testes nativos de P5/P7 foram executados separadamente. Isso não comprova a integração HTTP/autenticação/PostgreSQL completa nem a publicação de X/Y no app.
+O repositório continua desligado por padrão. `GET /today` tem um caller preparado, descrito abaixo; o iOS decodifica e preserva a seção opcional e prepara sua apresentação em Hoje. Os testes HTTP usam wrapper real, autenticação controlada e respostas de RPC controladas; os testes nativos de P5/P7 foram executados separadamente. Isso não comprova a integração HTTP/autenticação/PostgreSQL completa nem a publicação de X/Y no app distribuído.
 
 Também permanecem os gates integrados de durabilidade/concorrência/HTTP dos escritores reais, leitura dos consumidores, interface e ativação. Registros legados sem origem comprovada não podem virar histórico inventado nem um contador completo artificialmente zerado.
 
@@ -78,4 +78,14 @@ As leituras diária e semanal são independentes: não há alegação de transa�
 
 `TodaySnapshot.strengthTrainingWeek` é opcional: servidor antigo ou campo nulo conserva o contrato anterior. O decoder valida o calendário civil fornecido em Gregorian/UTC, a segunda-feira e o intervalo de sete dias, o identificador de fuso e a forma UTC com seis casas. `observedAt` permanece String literal inclusive ao codificar; não passa pelo `APITimestamp`, que converte para `Date`. Isso não é uma nova decisão de semana nem valida a correspondência entre a observação e a data/fuso informados pelo servidor.
 
-Valores disponíveis malformados são erros de contrato. `planned_days` e `percentage` são chaves obrigatórias: zero conserva Y=0 e percentual nulo; ausência conserva ambos nulos. O cliente não recalcula o percentual. Negativos ou status futuros não adquirem métricas parciais. Um dia com `no_records` conserva o snapshot quando há seção semanal; sem essa seção, o estado vazio anterior permanece. A apresentação visual da semana, a pergunta de classificação e a ativação continuam pendentes.
+Valores disponíveis malformados são erros de contrato. `planned_days` e `percentage` são chaves obrigatórias: zero conserva Y=0 e percentual nulo; ausência conserva ambos nulos. O cliente não recalcula o percentual. Negativos ou status futuros não adquirem métricas parciais. Um dia com `no_records` conserva o snapshot quando há seção semanal; sem essa seção, o estado vazio anterior permanece. A pergunta de classificação e a ativação continuam pendentes.
+
+### Apresentação semanal preparada no iOS
+
+`TodayStrengthTrainingWeekDescriptor` formata somente os campos oficiais, em português ou inglês. O card opaco aparece antes dos treinos diários, dentro do mesmo grupo, quando a seção está presente. Semana, data de apuração e fuso são explícitos e independentes do cabeçalho diário. Gregorian/UTC serve apenas para formatar a data civil; o instante observado e o relógio do aparelho não escolhem a data apresentada.
+
+X representa dias com treino de força, não quantidade de sessões. Para Y positivo, X/Y e percentual permanecem literais, inclusive X maior que Y. Zero e ausência mostram X isolado e sua condição explícita, sem percentual ou divisão inventados. Negativos e status futuros mostram mensagem sem métricas parciais ou códigos internos.
+
+O componente não tem tarefa nem provider. Atualizar reutiliza o coordenador de Hoje, preservando os dados durante a leitura e desabilitando a ação enquanto há atualização. O título é um cabeçalho acessível; as informações são agrupadas separadamente do botão com o estilo compartilhado de 44 pontos mínimos. Essas propriedades de fonte não comprovam acionamento ou leitura física por VoiceOver.
+
+Os probes locais de acessibilidade usados no desenvolvimento retornaram árvores vazias tanto no Root quanto no controle diário isolado. As tentativas e fontes foram preservadas como falhas de harness; não contam como RED do produto ou aprovação de acessibilidade. Testes de apresentação, layout e imagens nativas cobrem camadas próprias. AX do Root, acionamento acessível, VoiceOver físico, integração completa e distribuição permanecem gates separados.

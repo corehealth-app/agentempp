@@ -10,6 +10,7 @@ struct TodayPresentation: Equatable, Sendable {
     let meals: [TodayMealDescriptor]
     let mealSlots: TodayMealSlotsDescriptor
     let workouts: [TodayWorkoutDescriptor]
+    let strengthTrainingWeek: TodayStrengthTrainingWeekDescriptor?
     let hydration: TodayHydrationDescriptor
     let routineCollections: [TodayRoutineCollectionDescriptor]
     let block: TodayBlockDescriptor
@@ -94,6 +95,9 @@ struct TodayPresentation: Equatable, Sendable {
                 intensity: workout.intensity,
                 performedAt: workout.performedAt
             )
+        }
+        strengthTrainingWeek = snapshot.strengthTrainingWeek.map {
+            TodayStrengthTrainingWeekDescriptor(section: $0, language: language)
         }
         hydration = TodayHydrationDescriptor(
             consumedML: snapshot.hydration.consumedML,
@@ -520,7 +524,10 @@ struct TodayRootView: View {
                 )
                 .bodyFlowArrival(index: 5)
                 TodayRecordsSection(
-                    workouts: presentation.workouts
+                    workouts: presentation.workouts,
+                    strengthTrainingWeek: presentation.strengthTrainingWeek,
+                    isRefreshing: refreshCoordinator.isRunning || model.isRefreshing,
+                    refresh: retry
                 )
                 .bodyFlowArrival(index: 6)
 

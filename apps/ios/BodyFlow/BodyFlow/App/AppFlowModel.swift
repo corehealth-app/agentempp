@@ -91,6 +91,7 @@ final class AppFlowModel {
     private(set) var restoredOnboardingRequirements: OnboardingRequirements = .unavailable
     private(set) var onboardingRestoreGeneration = 0
     private(set) var restoredHistoricalCompletedAt: String?
+    private(set) var restoredSignupCompletion: OnboardingCompletionCapability?
     /// Set while the root shows the sign-up load error; `nil` everywhere else.
     private(set) var onboardingLoadFailure: OnboardingLoadFailure?
 
@@ -336,6 +337,7 @@ final class AppFlowModel {
         restoredOnboardingDraft = nil
         restoredOnboardingRequirements = .unavailable
         restoredHistoricalCompletedAt = nil
+        restoredSignupCompletion = nil
         onboardingLoadFailure = nil
         state = .authenticated(userID: userID)
         publishMealRecordAuthentication(userID: userID, ticket: c11Ticket)
@@ -478,6 +480,7 @@ final class AppFlowModel {
             restoredOnboardingDraft = nil
             restoredOnboardingRequirements = .unavailable
             restoredHistoricalCompletedAt = nil
+            restoredSignupCompletion = nil
             onboardingLoadFailure = nil
             currentSession = session
             guard !isCancellationRequested else {
@@ -560,7 +563,8 @@ final class AppFlowModel {
                 draft: draft,
                 c11Ticket: c11Ticket,
                 requirements: serverState.requirements,
-                historicalCompletedAt: serverState.completion.completedAt
+                historicalCompletedAt: serverState.completion.completedAt,
+                signupCompletion: serverState.signupCompletion
             )
             finishOnboardingRestoreIfCurrent(restoreID)
             let step = draft.currentStep
@@ -588,6 +592,7 @@ final class AppFlowModel {
 
     private func beginOnboardingRestore() -> UUID {
         restoredOnboardingRepository = nil
+        restoredSignupCompletion = nil
         let restoreID = UUID()
         activeOnboardingRestoreID = restoreID
         return restoreID
@@ -606,6 +611,7 @@ final class AppFlowModel {
     private func invalidateOnboardingRestore() {
         activeOnboardingRestoreID = nil
         restoredOnboardingRepository = nil
+        restoredSignupCompletion = nil
     }
 
     private func publishOnboardingRestore(
@@ -614,6 +620,7 @@ final class AppFlowModel {
         c11Ticket: MealRecordAuthenticationTicket?,
         requirements: OnboardingRequirements = .unavailable,
         historicalCompletedAt: String? = nil,
+        signupCompletion: OnboardingCompletionCapability? = nil,
         error: AppPresentationError? = nil,
         loadFailure: OnboardingLoadFailure? = nil
     ) {
@@ -631,6 +638,7 @@ final class AppFlowModel {
         restoredOnboardingDraft = draft
         restoredOnboardingRequirements = requirements
         restoredHistoricalCompletedAt = historicalCompletedAt
+        restoredSignupCompletion = signupCompletion
         presentationError = error
         onboardingLoadFailure = loadFailure
         onboardingRestoreGeneration += 1
@@ -662,6 +670,7 @@ final class AppFlowModel {
         restoredOnboardingDraft = nil
         restoredOnboardingRequirements = .unavailable
         restoredHistoricalCompletedAt = nil
+        restoredSignupCompletion = nil
         presentationError = nil
         onboardingLoadFailure = nil
         state = .authenticated(userID: session.userID)
@@ -677,6 +686,7 @@ final class AppFlowModel {
         restoredOnboardingDraft = nil
         restoredOnboardingRequirements = .unavailable
         restoredHistoricalCompletedAt = nil
+        restoredSignupCompletion = nil
         onboardingLoadFailure = nil
         currentSession = nil
         state = .signedOut(.signIn)
@@ -702,6 +712,7 @@ final class AppFlowModel {
         restoredOnboardingDraft = nil
         restoredOnboardingRequirements = .unavailable
         restoredHistoricalCompletedAt = nil
+        restoredSignupCompletion = nil
         onboardingLoadFailure = nil
         currentSession = nil
         state = .signedOut(destination)

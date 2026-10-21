@@ -1844,6 +1844,70 @@
       }
     }
   },
+  "onboarding.completion.check-again": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Conferir novamente"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Check again"
+        }
+      }
+    }
+  },
+  "onboarding.completion.review-before-retry": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Revisar cadastro"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Review sign-up"
+        }
+      }
+    }
+  },
+  "onboarding.completion.preparation-uncertain": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "A preparação do cadastro ainda precisa ser conferida. Confira novamente ou revise os dados antes de iniciar outra tentativa."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Your sign-up preparation still needs to be checked. Check again or review your details before starting another attempt."
+        }
+      }
+    }
+  },
+  "onboarding.completion.reconciling": {
+    "localizations": {
+      "pt-BR": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "O cadastro precisa ser conferido com o servidor antes de continuar. Conferir novamente apenas consulta o resultado."
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Your sign-up needs to be checked with the server before continuing. Check again only reads the result."
+        }
+      }
+    }
+  },
   "onboarding.completion.unresolved": {
     "localizations": {
       "pt-BR": {

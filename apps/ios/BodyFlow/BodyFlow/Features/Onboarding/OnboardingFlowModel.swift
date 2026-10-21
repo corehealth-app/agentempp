@@ -7,6 +7,12 @@ enum OnboardingOperationState: Equatable, Sendable {
     case failed(AppPresentationError)
 }
 
+enum OnboardingCompletionStatus: Equatable, Sendable {
+    case preparation
+    case submission
+    case reconciliation
+}
+
 enum OnboardingValidationIssue: Equatable, Sendable {
     case displayNameRequired
     case localeUnsupported
@@ -216,10 +222,38 @@ final class OnboardingFlowModel {
     private let telemetry: any TelemetryClient
     private let now: @MainActor () -> Date
     private let cancellationCheck: @MainActor () -> Bool
+    private var signupCompletion: OnboardingCompletionCapability?
+    private let preparationIDProvider: @MainActor () -> UUID
     private var activeSubmissionID: UUID?
-    private struct PendingCompletion {
-        let key: IdempotencyKey
+    private struct CompletionPreparation {
+        let preparationID: UUID
         let submittedDraft: OnboardingDraft
+    }
+    private enum CompletionTransport {
+        case legacy(IdempotencyKey)
+        case versioned(OnboardingCompletionIntent)
+    }
+    private struct CompletionSubmission {
+        let submittedDraft: OnboardingDraft
+        let transport: CompletionTransport
+    }
+    private enum CompletionAttempt {
+        case preparation(CompletionPreparation)
+        case submission(CompletionSubmission)
+    }
+    private enum PendingCompletion {
+        case preparing(CompletionPreparation)
+        case preparationUncertain(CompletionPreparation)
+        case submission(CompletionSubmission)
+        case reconciling(CompletionAttempt, OnboardingServerState?)
+
+        var attempt: CompletionAttempt {
+            switch self {
+            case .preparing(let value), .preparationUncertain(let value): .preparation(value)
+            case .submission(let value): .submission(value)
+            case .reconciling(let value, _): value
+            }
+        }
     }
     private struct EligibilitySnapshot: Equatable {
         let input: OnboardingEligibilityInput
@@ -252,6 +286,8 @@ final class OnboardingFlowModel {
         developmentConsentAvailability: DevelopmentConsentAvailability,
         requirements: OnboardingRequirements = .unavailable,
         historicalCompletedAt: String? = nil,
+        signupCompletion: OnboardingCompletionCapability? = nil,
+        preparationIDProvider: @escaping @MainActor () -> UUID = UUID.init,
         idempotencyKeyProvider: any IdempotencyKeyProviding = RandomIdempotencyKeyProvider(),
         telemetry: any TelemetryClient = DisabledTelemetryClient(),
         onStepChanged: @escaping @MainActor (OnboardingStep) -> Void,
@@ -268,6 +304,8 @@ final class OnboardingFlowModel {
         self.developmentConsentAvailability = developmentConsentAvailability
         self.requirements = requirements
         self.historicalCompletedAt = historicalCompletedAt
+        self.signupCompletion = signupCompletion
+        self.preparationIDProvider = preparationIDProvider
         self.idempotencyKeyProvider = idempotencyKeyProvider
         self.telemetry = telemetry
         let normalized = OnboardingResumePolicy.normalizedDraft(initialDraft, requirements: requirements,
@@ -313,6 +351,56 @@ final class OnboardingFlowModel {
     var visibleSteps: [OnboardingStep] { isReacceptance ? [.consent, .completion] : OnboardingStep.allCases }
     var unresolvedCompletion: Bool { pendingCompletion != nil }
     var allowsDraftEditing: Bool { isActive && !didComplete && pendingCompletion == nil }
+    var completionStatus: OnboardingCompletionStatus? {
+        switch pendingCompletion {
+        case .preparing, .preparationUncertain: .preparation
+        case .submission: .submission
+        case .reconciling: .reconciliation
+        case nil: nil
+        }
+    }
+    var checksCompletionOnly: Bool {
+        completionStatus == .preparation || completionStatus == .reconciliation
+    }
+    var canReviewCompletion: Bool {
+        guard !isCancellationRequested, !didComplete, operationState != .saving else { return false }
+        switch pendingCompletion {
+        case .preparationUncertain, .reconciling(_, .some): return true
+        default: return false
+        }
+    }
+
+    /// This abandons only preparation, or a conflict already read as incomplete.
+    /// An uncertain completion POST must retain its original receipt and draft.
+    func reviewCompletionBeforeRetry() {
+        guard canReviewCompletion else { return }
+        let officialState: OnboardingServerState?
+        switch pendingCompletion {
+        case .preparationUncertain: officialState = nil
+        case .reconciling(_, let state): officialState = state
+        default: return
+        }
+        activeSubmissionID = nil
+        pendingCompletion = nil
+        operationState = .idle
+        validationIssues = []
+        if let state = officialState {
+            requirements = state.requirements
+            historicalCompletedAt = state.completion.completedAt
+            signupCompletion = state.signupCompletion
+            if let authoritativeDraft = state.draft { draft = authoritativeDraft }
+            draft.localeIdentifier = state.locale
+            draft.documentActions = nil
+            invalidateBodyPhotoConfirmation()
+            clearEligibility()
+            draft.currentStep = isReacceptance ? .consent : .bodyData
+            draft = OnboardingResumePolicy.normalizedDraft(draft, requirements: requirements,
+                developmentConsentAvailability: developmentConsentAvailability,
+                historicalCompletedAt: historicalCompletedAt, now: now())
+            step = draft.currentStep
+            onStepChanged(step)
+        }
+    }
 
     var hasPendingBodyPhotoDeletion: Bool { bodyPhotoDeletionIntent != nil }
 
@@ -520,12 +608,7 @@ final class OnboardingFlowModel {
         guard isActive, step == .completion, draft.currentStep == .completion,
               operationState != .saving, !didComplete, !isCancellationRequested,
               !hasPendingBodyPhotoDeletion else { return }
-        let submittedDraft: OnboardingDraft
-        let key: IdempotencyKey
-        if let pendingCompletion {
-            submittedDraft = pendingCompletion.submittedDraft
-            key = pendingCompletion.key
-        } else {
+        if pendingCompletion == nil {
             guard !requiresBodyPhotoRevalidation else { return }
             validationIssues = OnboardingStepValidator.completionIssues(draft: draft,
                 developmentConsentAvailability: developmentConsentAvailability, requirements: requirements, now: now())
@@ -535,22 +618,75 @@ final class OnboardingFlowModel {
                 await prepareObjectiveIfNeeded()
                 return
             }
-            do { key = try idempotencyKeyProvider.nextKey() }
-            catch { operationState = .failed(presentationError(for: error)); return }
-            submittedDraft = draft
-            pendingCompletion = PendingCompletion(key: key, submittedDraft: submittedDraft)
+            if signupCompletion != nil {
+                pendingCompletion = .preparing(CompletionPreparation(
+                    preparationID: preparationIDProvider(), submittedDraft: draft))
+            } else {
+                do {
+                    pendingCompletion = .submission(CompletionSubmission(submittedDraft: draft,
+                        transport: .legacy(try idempotencyKeyProvider.nextKey())))
+                } catch { operationState = .failed(presentationError(for: error)); return }
+            }
         }
+        guard let pending = pendingCompletion else { return }
         let id = UUID()
         activeSubmissionID = id
         operationState = .saving
+        if case .reconciling(let attempt, _) = pending {
+            await reconcileCompletionIntent(attempt, for: id)
+            return
+        }
+        let submittedDraft: OnboardingDraft
         let acknowledgement: OnboardingCompletionAcknowledgement
         do {
-            acknowledgement = try await repository.completeOfficial(submittedDraft, for: userID, idempotencyKey: key)
+            let submission: CompletionSubmission
+            switch pending {
+            case .preparing(let preparation), .preparationUncertain(let preparation):
+                let receipt: OnboardingCompletionIntent?
+                if case .preparing = pending {
+                    receipt = try await repository.beginCompletionIntent(for: userID,
+                        preparationID: preparation.preparationID)
+                } else {
+                    receipt = try await repository.resolveCompletionIntent(for: userID,
+                        preparationID: preparation.preparationID)
+                }
+                guard canPublish(id) else { finishCancelledSubmission(id); return }
+                guard let receipt, receipt.matches(preparationID: preparation.preparationID) else {
+                    throw OnboardingRepositoryError.serviceUnavailable
+                }
+                submission = CompletionSubmission(submittedDraft: preparation.submittedDraft,
+                    transport: .versioned(receipt))
+                // Freeze the positive tuple before dispatch, including an uncertain wait.
+                pendingCompletion = .submission(submission)
+            case .submission(let value): submission = value
+            case .reconciling: return // Handled above; never dispatch a stale completion.
+            }
+            submittedDraft = submission.submittedDraft
+            switch submission.transport {
+            case .legacy(let key):
+                acknowledgement = try await repository.completeOfficial(submittedDraft, for: userID, idempotencyKey: key)
+            case .versioned(let receipt):
+                acknowledgement = try await repository.completeOfficial(submittedDraft, for: userID, completionIntent: receipt)
+            }
             guard acknowledgement.matches(submittedDraft) else { throw OnboardingRepositoryError.serviceUnavailable }
         } catch is CancellationError {
             finishCancelledSubmission(id); return
         } catch {
             guard canPublish(id) else { finishCancelledSubmission(id); return }
+            if error as? OnboardingRepositoryError == .completionIntentChanged,
+               let attempt = pendingCompletion?.attempt {
+                await reconcileCompletionIntent(attempt, for: id)
+                return
+            }
+            if case .preparing(let preparation) = pendingCompletion {
+                pendingCompletion = .preparationUncertain(preparation)
+                publishFailure(error, for: id)
+                return
+            }
+            if case .preparationUncertain = pendingCompletion {
+                publishFailure(error, for: id)
+                return
+            }
             if error as? OnboardingRepositoryError == .objectiveNotEligible, !isReacceptance {
                 pendingCompletion = nil
                 activeSubmissionID = nil
@@ -584,6 +720,7 @@ final class OnboardingFlowModel {
                     pendingCompletion = nil
                     requirements = state.requirements
                     historicalCompletedAt = state.completion.completedAt
+                    signupCompletion = state.signupCompletion
                     if error as? OnboardingRepositoryError == .bodyPhotoConfirmationChanged, !isReacceptance {
                         activeSubmissionID = nil
                         operationState = .idle
@@ -638,6 +775,38 @@ final class OnboardingFlowModel {
         await telemetry.record(.onboardingCompleted)
     }
 
+    private func reconcileCompletionIntent(_ attempt: CompletionAttempt, for id: UUID) async {
+        guard canPublish(id) else { finishCancelledSubmission(id); return }
+        // A failed read retains this phase. The next gesture repeats GET only.
+        pendingCompletion = .reconciling(attempt, nil)
+        do {
+            let state = try await repository.loadState(for: userID)
+            guard canPublish(id) else { finishCancelledSubmission(id); return }
+            if state.completion.completed {
+                pendingCompletion = nil
+                didComplete = true
+                let cleanup = state.bodyPhotoCleanup.flatMap { scope in
+                    scope.generation == state.completion.completedAt ? scope : nil
+                }
+                await onOfficialCleanupObserved(cleanup)
+                guard canPublish(id) else { finishCancelledSubmission(id); return }
+                activeSubmissionID = nil
+                operationState = .idle
+                notifyRootOnce()
+                return
+            }
+            guard state.completion.completedAt == nil || state.draft != nil else {
+                throw OnboardingRepositoryError.serviceUnavailable
+            }
+            pendingCompletion = .reconciling(attempt, state)
+            publishFailure(OnboardingRepositoryError.completionIntentChanged, for: id)
+        } catch is CancellationError {
+            finishCancelledSubmission(id)
+        } catch {
+            publishFailure(error, for: id)
+        }
+    }
+
     func finishProtocolWelcome() {
         guard isActive, !isCancellationRequested, didComplete, pendingProtocolWelcome != nil else { return }
         pendingProtocolWelcome = nil
@@ -646,6 +815,7 @@ final class OnboardingFlowModel {
 
     func cancelActiveSubmission() {
         guard activeSubmissionID != nil else { return }
+        makePreparationUncertain()
         activeSubmissionID = nil
         operationState = .idle
     }
@@ -736,8 +906,14 @@ final class OnboardingFlowModel {
     private func canPublish(_ id: UUID) -> Bool { activeSubmissionID == id && !isCancellationRequested }
     private func finishCancelledSubmission(_ id: UUID) {
         guard activeSubmissionID == id else { return }
+        makePreparationUncertain()
         activeSubmissionID = nil
         operationState = .idle
+    }
+    private func makePreparationUncertain() {
+        if case .preparing(let preparation) = pendingCompletion {
+            pendingCompletion = .preparationUncertain(preparation)
+        }
     }
     private func publishFailure(_ error: Error, for id: UUID) {
         guard canPublish(id) else { finishCancelledSubmission(id); return }
@@ -752,6 +928,7 @@ final class OnboardingFlowModel {
              OnboardingRepositoryError.requirementsChanged,
              OnboardingRepositoryError.alreadyCompleted,
              OnboardingRepositoryError.bodyPhotoConfirmationChanged,
+             OnboardingRepositoryError.completionIntentChanged,
              OnboardingRepositoryError.developmentConsentForbidden: .operationUnavailable
         case OnboardingRepositoryError.serviceUnavailable, CoachPersonaRepositoryError.serviceUnavailable: .serviceUnavailable
         case OnboardingRepositoryError.storageUnavailable, CoachPersonaRepositoryError.storageUnavailable: .storageUnavailable

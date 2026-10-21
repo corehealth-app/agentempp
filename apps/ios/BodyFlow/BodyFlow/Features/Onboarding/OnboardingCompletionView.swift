@@ -110,24 +110,29 @@ struct OnboardingCompletionView: View {
             .fixedSize(horizontal: false, vertical: true)
 
             if model.unresolvedCompletion {
-                BodyFlowStatusLine(copy("onboarding.completion.unresolved", fallback: "O envio anterior ainda precisa ser confirmado. Tente novamente para conferir o resultado."), kind: .pending)
+                BodyFlowStatusLine(completionStatusMessage, kind: .pending)
                     .accessibilityIdentifier("onboarding.completion.unresolved")
             }
 
-            Button(action: onComplete) {
-                Text(model.operationState.isFailure
-                     ? copy("onboarding.retry", fallback: "Tentar novamente")
-                     : copy("onboarding.completion.finish", fallback: "Concluir cadastro"))
-            }
-            .buttonStyle(BodyFlowButtonStyle(
-                role: .primary,
-                isLoading: model.operationState == .saving
-            ))
-            .disabled(model.operationState == .saving)
-            .accessibilityIdentifier("onboarding.go-to-today")
+            OnboardingCompletionCommands(model: model, onComplete: onComplete)
+
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("screen.onboarding.completion")
+    }
+
+    private var completionStatusMessage: String {
+        switch model.completionStatus {
+        case .preparation:
+            copy("onboarding.completion.preparation-uncertain",
+                fallback: "A preparação do cadastro ainda precisa ser conferida. Confira novamente ou revise os dados antes de iniciar outra tentativa.")
+        case .reconciliation:
+            copy("onboarding.completion.reconciling",
+                fallback: "O cadastro precisa ser conferido com o servidor antes de continuar. Conferir novamente apenas consulta o resultado.")
+        default:
+            copy("onboarding.completion.unresolved",
+                fallback: "O envio anterior ainda precisa ser confirmado. Tente novamente para conferir o resultado.")
+        }
     }
 
     private func reviewRow(_ label: String, value: String) -> some View {
@@ -165,6 +170,47 @@ struct OnboardingCompletionView: View {
         case .consent:
             OnboardingCopy.string("onboarding.completion.action.consent", language: language)
         }
+    }
+}
+
+/// The actual review commands, also hosted by the accessibility geometry tests.
+@MainActor
+struct OnboardingCompletionCommands: View {
+    let model: OnboardingFlowModel
+    let onComplete: @MainActor () -> Void
+    @Environment(\.locale) private var locale
+
+    var body: some View {
+        VStack(spacing: BodyFlowSpacing.sm) {
+            Button(action: onComplete) {
+                Text(model.checksCompletionOnly
+                     ? copy("onboarding.completion.check-again", fallback: "Conferir novamente")
+                     : (model.operationState.isFailure
+                        ? copy("onboarding.retry", fallback: "Tentar novamente")
+                        : copy("onboarding.completion.finish", fallback: "Concluir cadastro")))
+            }
+            .buttonStyle(BodyFlowButtonStyle(
+                role: .primary,
+                isLoading: model.operationState == .saving
+            ))
+            .disabled(model.operationState == .saving)
+            .accessibilityIdentifier("onboarding.go-to-today")
+
+            if model.canReviewCompletion {
+                Button {
+                    model.reviewCompletionBeforeRetry()
+                } label: {
+                    Text(copy("onboarding.completion.review-before-retry", fallback: "Revisar cadastro"))
+                        .frame(maxWidth: .infinity, minHeight: BodyFlowSpacing.minimumTapTarget)
+                }
+                .buttonStyle(BodyFlowButtonStyle(role: .secondary))
+                .accessibilityIdentifier("onboarding.completion.review-before-retry")
+            }
+        }
+    }
+
+    private func copy(_ key: String.LocalizationValue, fallback: String) -> String {
+        PremiumPresentationCopy.string(key, locale: locale, fallback: fallback)
     }
 }
 

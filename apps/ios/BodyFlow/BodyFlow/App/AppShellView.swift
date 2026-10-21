@@ -634,9 +634,12 @@ struct AppShellView: View {
                 recover: recoverMealRecord
             )
         case .historyWorkout:
-            HistoryWorkoutDetailView(
-                row: historyCoordinator.workoutLogRow(for: route)
-            )
+            let row = historyCoordinator.workoutLogRow(for: route)
+            HistoryWorkoutDetailView(row: row,
+                strengthQuestion: WorkoutStrengthQuestionFactory.configuration(
+                    workoutID: row?.id, dependencies: dependencies,
+                    context: sessionOwner.workoutRegistrationContext,
+                    invalidationCenter: invalidationCenter))
         case let .routine(routineRoute):
             switch routineRoute.destination {
             case .list:

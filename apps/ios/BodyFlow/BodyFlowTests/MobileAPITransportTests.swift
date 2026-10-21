@@ -5378,3 +5378,141 @@ private func p10d2StrengthWire(_ value: WorkoutStrengthClarification) throws -> 
     try JSONEncoder().encode(MobileResponse(data: value,
         meta: MobileResponseMetadata(apiVersion: "v1", requestID: "synthetic-owned-question")))
 }
+
+extension MobileAPITransportTests {
+    @MainActor
+    @Test("P10D3: factory preserves legacy/demo/absent/invalid contexts without clarification I/O", arguments: ["ui-v1", "absent", "ui-v2"])
+    func p10d3FactoryUsesOnlyAnnouncedOriginalContext(advertised: String) async throws {
+        try await h2WithWire { fixture in
+            let me = try h2Me(owner: fixture.activation.userID, advertised: advertised)
+            await fixture.wire.stub.respond(with: StubResponse(status: 200, body: me))
+            let context = try await fixture.source.bind(fixture.reserve())
+            let dependencies = try p10d3LiveDependencies()
+            let center = FeatureInvalidationCenter()
+            for id in [nil, "pending-id", "../x"] as [String?] {
+                #expect(WorkoutStrengthQuestionFactory.configuration(workoutID: id,
+                    dependencies: dependencies, context: context, invalidationCenter: center) == nil)
+            }
+            #expect(WorkoutStrengthQuestionFactory.configuration(workoutID: h2RegistrationID,
+                dependencies: .scaffold(), context: context, invalidationCenter: center) == nil)
+            #expect(WorkoutStrengthQuestionFactory.configuration(workoutID: h2RegistrationID,
+                dependencies: dependencies, context: nil, invalidationCenter: center) == nil)
+            let valid = WorkoutStrengthQuestionFactory.configuration(workoutID: h2RegistrationID.uppercased(),
+                dependencies: dependencies, context: context, invalidationCenter: center)
+            #expect((valid != nil) == (advertised == "ui-v1"))
+            #expect(valid?.workoutID == (advertised == "ui-v1" ? h2RegistrationID : nil))
+            #expect(await fixture.wire.stub.requests().count == 1)
+            #expect(await fixture.counted.leaseCalls == 1)
+            _ = fixture.lifetime.beginAuthenticationBoundary()
+            #expect(WorkoutStrengthQuestionFactory.configuration(workoutID: h2RegistrationID,
+                dependencies: dependencies, context: context, invalidationCenter: center) == nil)
+        }
+    }
+
+    @MainActor
+    @Test("P10D3: configuration reuses original session and teardown releases it without a context cycle")
+    func p10d3ContextOwnsAndReleasesQuestionSession() async throws {
+        try await h2WithWire { fixture in
+            let me = try h2Me(owner: fixture.activation.userID, advertised: "ui-v1")
+            let read = try p10d2StrengthWire(.unanswered(try p10d2StrengthQuestion()))
+            await fixture.wire.stub.respond { request, _ in
+                if request.url?.path == "/api/mobile/v1/me" { return StubResponse(status: 200, body: me) }
+                guard request.url?.path == p10d2StrengthPath else { throw H2UnexpectedRequest() }
+                return StubResponse(status: 200, body: read)
+            }
+            let binding = try fixture.reserve()
+            var context: WorkoutRegistrationReadyContext? = try await fixture.source.bind(binding)
+            weak var weakContext = context
+            var configuration = WorkoutStrengthQuestionFactory.configuration(workoutID: h2RegistrationID,
+                dependencies: try p10d3LiveDependencies(), context: context, invalidationCenter: FeatureInvalidationCenter())
+            let presentation = try #require(configuration).attach()
+            await presentation.refresh()
+            #expect(presentation.isReady)
+            #expect(await fixture.counted.leaseCalls == 1)
+            #expect(await fixture.counted.workoutWorkIDs.count == 1)
+            #expect(await fixture.wire.stub.requests().count == 2)
+            binding.invalidateSynchronously()
+            #expect(!presentation.isCurrent)
+            #expect(!presentation.canAnswer)
+            configuration = nil
+            context = nil
+            #expect(weakContext == nil)
+            await presentation.refresh()
+            await presentation.answer(.yes)
+            #expect(await fixture.wire.stub.requests().count == 2)
+            await binding.endSession()
+            #expect(await fixture.wire.registry.activeCount == 0)
+        }
+    }
+}
+
+@MainActor
+private func p10d3LiveDependencies() throws -> AppDependencies {
+    AppDependencies.make(configuration: .resolve(arguments: [], buildFlavor: .release),
+        mobileAPIConfigurationProvider: StaticMobileAPIConfigurationProvider(
+            configuration: try MobileAPIConfiguration(originString: "https://mobile.example.test")),
+        supabaseAuthConfiguration: try SupabaseAuthConfiguration(originString: "https://project.example.test", key: "sb_publishable_synthetic"),
+        authenticationSessionStore: AuthenticationSessionStore(secureStore: InMemorySecureStore()),
+        supabaseAuthFetch: { _ in throw URLError(.notConnectedToInternet) })
+}
+
+extension MobileAPITransportTests {
+    @MainActor
+    @Test("P10D3: confirmed workout identity differs from proposal; absent identity never falls back", arguments: ["valid", "missing", "invalid", "disabled"])
+    func p10d3ConfirmedQuestionNeverUsesPendingID(identity: String) async throws {
+        try await h2WithWire { fixture in
+            let actual = "b2800000-0000-4000-8000-000000000001"
+            let me = try h2Me(owner: fixture.activation.userID, advertised: "ui-v1")
+            let pending = try h2Projection()
+            var envelope = try #require(JSONSerialization.jsonObject(with: h2Projection(status: "confirmed", confirmation: true)) as? [String: Any])
+            var row = try #require(envelope["data"] as? [String: Any])
+            if identity != "missing" { row["confirmed_workout_id"] = identity == "invalid" ? "pending-id" : actual }
+            envelope["data"] = row
+            let confirmed = try JSONSerialization.data(withJSONObject: envelope)
+            let q = try #require(WorkoutStrengthQuestion(workoutID: actual,
+                lifecycleKey: "c3900000-0000-4000-8000-000000000001", factRevision: 0,
+                questionKey: "d4a00000-0000-4000-8000-000000000001"))
+            let questionWire = try p10d2StrengthWire(.unanswered(q))
+            await fixture.wire.stub.respond { request, _ in
+                switch request.url?.path {
+                case "/api/mobile/v1/me": return StubResponse(status: 200, body: me)
+                case "/api/mobile/v1/registrations/propose": return StubResponse(status: 200, body: pending)
+                case "/api/mobile/v1/registrations/\(h2RegistrationID)/confirm": return StubResponse(status: 200, body: confirmed)
+                case "/api/mobile/v1/workouts/\(actual)/strength-clarification":
+                    return identity == "disabled" ? .failure(status: 503, code: "workout_strength_clarification_unavailable") : StubResponse(status: 200, body: questionWire)
+                default: throw H2UnexpectedRequest()
+                }
+            }
+            let context = try await fixture.source.bind(fixture.reserve())
+            let center = FeatureInvalidationCenter()
+            let model = WorkoutRegistrationModel(registration: context.provider, timeProvider: C11OwnerFixtureTime(),
+                keyProvider: H2WorkoutKeys(), invalidationCenter: center, registrationProtocol: .uiV1,
+                isSessionActive: { context.isActive })
+            await model.submit(h2Draft)
+            await model.confirm()
+            #expect(model.phase == .confirmed)
+            #expect(model.confirmedRegistration?.id == h2RegistrationID)
+            let config = WorkoutStrengthQuestionFactory.configuration(workoutID: model.confirmedRegistration?.confirmedWorkoutID,
+                dependencies: try p10d3LiveDependencies(), context: context, invalidationCenter: center)
+            let saved = model.confirmedRegistration
+            if identity == "valid" || identity == "disabled" {
+                let presentation = try #require(config).attach()
+                await presentation.refresh()
+                #expect(presentation.model.workoutID == actual)
+                if identity == "disabled" {
+                    #expect(presentation.model.failure == .disabled)
+                    #expect(!presentation.canAnswer)
+                } else { #expect(presentation.canAnswer) }
+                presentation.end()
+            } else { #expect(config == nil) }
+            #expect(model.phase == .confirmed)
+            #expect(model.confirmedRegistration == saved)
+            let requests = await fixture.wire.stub.requests()
+            #expect(requests.count == (identity == "valid" || identity == "disabled" ? 4 : 3))
+            #expect(!requests.contains { $0.url?.path == p10d2StrengthPath })
+            #expect(await fixture.counted.leaseCalls == 1)
+            #expect(await fixture.counted.workoutWorkIDs.count == 1)
+            #expect(center.revision(for: .history) == 1) // confirmation only; ordinary question GET does not loop
+        }
+    }
+}

@@ -9,6 +9,7 @@ struct RegistrationSheet: View {
     let sheet: AppSheet
     let dependencies: AppDependencies
     let invalidationCenter: FeatureInvalidationCenter
+    private let workoutContext: WorkoutRegistrationReadyContext?
     @State private var mealModel: MealRegistrationModel
     @State private var mealDraftModel: MealDraftModel
     @State private var mealRecorder: MealAudioRecorder
@@ -27,6 +28,7 @@ struct RegistrationSheet: View {
         self.sheet = sheet
         self.dependencies = dependencies
         self.invalidationCenter = invalidationCenter
+        self.workoutContext = workoutContext
         _mealModel = State(initialValue: MealRegistrationModel(
             detector: dependencies.mealDetection,
             registration: dependencies.registration,
@@ -190,7 +192,11 @@ struct RegistrationSheet: View {
                         },
                         confirm: { perform(.confirm) { await workoutModel.confirm() } },
                         cancel: { perform(.cancel) { await workoutModel.cancel() } },
-                        presentsLocalDemonstration: presentsLocalDemonstration
+                        presentsLocalDemonstration: presentsLocalDemonstration,
+                        strengthQuestion: WorkoutStrengthQuestionFactory.configuration(
+                            workoutID: workoutModel.confirmedRegistration?.confirmedWorkoutID,
+                            dependencies: dependencies, context: workoutContext,
+                            invalidationCenter: invalidationCenter)
                     )
                     .accessibilityIdentifier(sheet.id)
                     } else {
@@ -728,6 +734,7 @@ struct WorkoutRegistrationContent: View {
     let cancel: @MainActor () -> Void
     /// Only the local demonstration opens the new-workout form prefilled.
     let presentsLocalDemonstration: Bool
+    var strengthQuestion: WorkoutStrengthQuestionConfiguration? = nil
     @State private var showingEditor = false
     @AccessibilityFocusState private var operationFocus: RegistrationAccessibilityFocusTarget?
     @Environment(\.locale) private var locale
@@ -795,10 +802,11 @@ struct WorkoutRegistrationContent: View {
         } else if model.phase == .confirmed {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
                 Text(copy("registration.confirmed.workout-title")).font(BodyFlowTypography.title).fontWeight(.semibold)
-                Text(copy("registration.confirmed.read-only"))
+                Text(copy(strengthQuestion == nil ? "registration.confirmed.read-only" : "registration.confirmed.workout-note"))
                     .foregroundStyle(BodyFlowColor.secondaryText)
             }
             .accessibilityIdentifier("registration.proposal.confirmed")
+            if let strengthQuestion { WorkoutStrengthQuestionHost(configuration: strengthQuestion) }
         } else {
             WorkoutRegistrationView(
                 initialPerformedAt: model.initialPerformedAt,

@@ -7813,6 +7813,86 @@
     "tour.trail.plan.current" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Plan is your protocol: your current workout and nutrition." } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O Plano é o seu protocolo: treino e alimentação atuais." } }
+    } },
+    "registration.confirmed.workout-note" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Your workout details have been saved." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Os dados do treino foram salvos." } }
+    } },
+    "workout.strength.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "About this workout" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sobre este treino" } }
+    } },
+    "workout.strength.question" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Did this workout include strength exercises?" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Este treino incluiu exercícios de força?" } }
+    } },
+    "workout.strength.saved" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Your workout is already saved. This answer adds to your strength tracking." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O treino já está salvo. Esta resposta complementa o acompanhamento de força." } }
+    } },
+    "workout.strength.yes" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Yes, included strength" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sim, incluiu força" } }
+    } },
+    "workout.strength.no" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Did not include strength" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não incluiu força" } }
+    } },
+    "workout.strength.loading" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Checking the current answer…" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Consultando a resposta atual…" } }
+    } },
+    "workout.strength.saving" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Saving your answer…" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Salvando a resposta…" } }
+    } },
+    "workout.strength.refresh" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Check answer" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Consultar resposta" } }
+    } },
+    "workout.strength.retry" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Retry the same answer" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Repetir a mesma resposta" } }
+    } },
+    "workout.strength.cancel" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Stop waiting" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Parar espera" } }
+    } },
+    "workout.strength.cancel-hint" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Stopping the wait does not cancel a submission the server has already received." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Parar a espera não cancela um envio já recebido pelo servidor." } }
+    } },
+    "workout.strength.uncertain" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "We do not yet know whether your answer was saved. Check the result or retry the same answer." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ainda não sabemos se a resposta foi salva. Consulte o resultado ou repita a mesma resposta." } }
+    } },
+    "workout.strength.read-required" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Check the current answer before responding." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Consulte a resposta atual antes de responder." } }
+    } },
+    "workout.strength.answer-yes" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Saved answer: included strength exercises." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Resposta salva: incluiu exercícios de força." } }
+    } },
+    "workout.strength.answer-no" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Saved answer: did not include strength exercises." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Resposta salva: não incluiu exercícios de força." } }
+    } },
+    "workout.strength.capacity" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "There are pending answers to check in History. Resolve one and try again. Your workout remains saved." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Há respostas pendentes para conferir no Histórico. Conclua uma delas e tente novamente. O treino continua salvo." } }
+    } },
+    "workout.strength.context-changed" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This workout’s context has changed. Check the current answer." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O contexto deste treino mudou. Consulte a resposta atual." } }
+    } },
+    "workout.strength.conflict" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The answer could not be applied to the current state. Check the saved result." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "A resposta não pôde ser aplicada ao estado atual. Consulte o resultado salvo." } }
+    } },
+    "workout.strength.error" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "We could not complete this check or submission. Your workout remains saved." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não foi possível concluir esta consulta ou envio. O treino continua salvo." } }
     } }
   },
   "version" : "1.0"

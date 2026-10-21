@@ -3,13 +3,14 @@ import SwiftUI
 struct HistoryWorkoutDetailView: View {
     @Environment(\.locale) private var locale
     let row: HistoryWorkoutLogRow?
+    var strengthQuestion: WorkoutStrengthQuestionConfiguration? = nil
 
     var body: some View {
         ZStack {
             BodyFlowColor.background.ignoresSafeArea()
             if let row {
                 ScrollView {
-                    // One card: the workout's name, then its figures.
+                    VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
                     BodyFlowCard {
                         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
                             Text(values.workoutType(row.workoutType) ?? copy("history.workout.fallback"))
@@ -29,6 +30,8 @@ struct HistoryWorkoutDetailView: View {
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    if let strengthQuestion { WorkoutStrengthQuestionHost(configuration: strengthQuestion) }
                     }
                     .padding(BodyFlowSpacing.md)
                 }

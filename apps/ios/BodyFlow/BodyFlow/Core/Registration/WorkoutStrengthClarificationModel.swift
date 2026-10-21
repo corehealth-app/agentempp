@@ -19,6 +19,8 @@ final class WorkoutStrengthClarificationModel {
     private(set) var pendingAttempt: MutationAttempt<WorkoutStrengthAnswerCommand>?
     private(set) var isLoading = false
     private(set) var isSubmitting = false
+    /// Local GET publication identity, never the server fact revision.
+    private(set) var readPublicationSequence = 0
 
     private let provider: any WorkoutStrengthClarificationProviding
     private let timeProvider: any TimeProviding
@@ -132,6 +134,7 @@ final class WorkoutStrengthClarificationModel {
     }
 
     private func publishRead(_ value: WorkoutStrengthClarification) {
+        readPublicationSequence += 1
         snapshot = value
         guard let attempt = pendingAttempt else {
             mutationBlock = nil

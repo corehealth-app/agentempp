@@ -212,6 +212,7 @@ final class WorkoutRegistrationSessionBinding {
     func invalidateSynchronously() {
         leafGate.close()
         grant?.release()
+        readyContext?.endStrengthQuestions()
         readyContext = nil
         repository = nil
         clarificationRepository = nil
@@ -267,6 +268,7 @@ final class WorkoutRegistrationReadyContext {
     let registrationProtocol: WorkoutRegistrationProtocol?
     private weak var binding: WorkoutRegistrationSessionBinding?
     private let grant: WorkoutRegistrationGrant
+    private var strengthQuestionStorage: WorkoutStrengthQuestionSession?
 
     fileprivate init(binding: WorkoutRegistrationSessionBinding, provider: MobileRegistrationRepository,
                      clarificationProvider: MobileWorkoutStrengthClarificationRepository,
@@ -280,4 +282,18 @@ final class WorkoutRegistrationReadyContext {
     }
 
     var isActive: Bool { binding?.isOpen == true && grant.isOpen }
+
+    func strengthQuestionSession() -> WorkoutStrengthQuestionSession? {
+        guard isActive else { return nil }
+        if let strengthQuestionStorage { return strengthQuestionStorage }
+        let session = WorkoutStrengthQuestionSession(provider: clarificationProvider,
+            isSessionActive: { [weak self] in self?.isActive == true })
+        strengthQuestionStorage = session
+        return session
+    }
+
+    fileprivate func endStrengthQuestions() {
+        strengthQuestionStorage?.close()
+        strengthQuestionStorage = nil
+    }
 }

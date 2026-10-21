@@ -108,6 +108,88 @@ struct OnboardingDraftBoundTransportTests {
         #expect(!FileManager.default.fileExists(atPath: h.draftStore.root.path))
     }
 
+    @Test("begin refreshes once without changing Q, body or session generation")
+    func beginRefreshKeepsOriginalPreparation() async throws {
+        let qText = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        let q = try #require(UUID(uuidString: qText))
+        let id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        let key = "osc1:cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+        let reply = try JSONSerialization.data(withJSONObject: [
+            "data": ["completion_intent": ["protocol": "osc1", "preparation_id": qText,
+                "intent_id": id, "request_key": key]],
+            "meta": ["api_version": "v1", "request_id": "intent-ok"]
+        ])
+        let h = try await DraftBoundTransportHarness(script: [
+            .http(401, Data(#"{"error":{"code":"unauthorized","message":"Synthetic refusal","request_id":"intent-401"}}"#.utf8)),
+            .http(200, reply)
+        ])
+        defer { h.removeFolder() }
+        let repository = try await h.repository.scoped(for: DraftBoundTransportHarness.a)
+        let before = try await h.lifecycle.leaseForRequest()
+
+        let result = try await repository.beginCompletionIntent(for: DraftBoundTransportHarness.a, preparationID: q)
+
+        #expect(result.preparationID == q)
+        #expect(result.intentID.uuidString.lowercased() == id)
+        #expect(result.requestKey == (try IdempotencyKey(validating: key)))
+        #expect(await h.remote.refreshCount == 1)
+        let after = try await h.lifecycle.leaseForRequest()
+        #expect(before.userID == after.userID)
+        #expect(before.generation == after.generation)
+        let requests = await h.peer.requests
+        let bodies = await h.peer.bodies
+        try #require(requests.count == 2)
+        try #require(bodies.count == 2)
+        let first = try #require(bodies[0])
+        let second = try #require(bodies[1])
+        #expect(first == second)
+        let object = try JSONSerialization.jsonObject(with: first)
+        #expect(object as? [String: String] == ["preparation_id": qText])
+        #expect(requests.allSatisfy {
+            $0.httpMethod == "POST"
+                && $0.url?.absoluteString == "https://mobile.example.test/api/mobile/v1/onboarding/completion-intent"
+                && $0.value(forHTTPHeaderField: "Idempotency-Key") == qText
+        })
+        #expect(requests.map { $0.value(forHTTPHeaderField: "Authorization") } == [
+            "Bearer \(DraftBoundTransportHarness.token(subject: DraftBoundTransportHarness.a, marker: "Initial"))",
+            "Bearer \(DraftBoundTransportHarness.token(subject: DraftBoundTransportHarness.a, marker: "Refreshed"))"
+        ])
+        let requestID = try #require(requests[0].value(forHTTPHeaderField: "X-Request-Id"))
+        #expect(!requestID.isEmpty)
+        #expect(requests[1].value(forHTTPHeaderField: "X-Request-Id") == requestID)
+    }
+
+    @Test("uncertain begin neither retries nor resolves", arguments: [false, true])
+    func uncertainBeginSendsOnce(timeout: Bool) async throws {
+        let qText = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        let q = try #require(UUID(uuidString: qText))
+        let outcome: DraftBoundOutcome = timeout ? .timeout : .http(503,
+            Data(#"{"error":{"code":"unavailable","message":"Synthetic refusal","request_id":"intent-503"}}"#.utf8))
+        let h = try await DraftBoundTransportHarness(script: [outcome])
+        defer { h.removeFolder() }
+        let repository = try await h.repository.scoped(for: DraftBoundTransportHarness.a)
+        let before = try await h.lifecycle.leaseForRequest()
+
+        await #expect(throws: OnboardingRepositoryError.serviceUnavailable) {
+            _ = try await repository.beginCompletionIntent(for: DraftBoundTransportHarness.a, preparationID: q)
+        }
+
+        let requests = await h.peer.requests
+        let bodies = await h.peer.bodies
+        try #require(requests.count == 1)
+        try #require(bodies.count == 1)
+        let body = try #require(bodies[0])
+        #expect(requests[0].httpMethod == "POST")
+        #expect(requests[0].url?.path == "/api/mobile/v1/onboarding/completion-intent")
+        #expect(requests[0].value(forHTTPHeaderField: "Idempotency-Key") == qText)
+        let object = try JSONSerialization.jsonObject(with: body)
+        #expect(object as? [String: String] == ["preparation_id": qText])
+        #expect(await h.remote.refreshCount == 0)
+        let after = try await h.lifecycle.leaseForRequest()
+        #expect(before.userID == after.userID)
+        #expect(before.generation == after.generation)
+    }
+
     private static func request() throws -> MobileAPIRequest<OnboardingEligibilityDecision> {
         try MobileAPIRequest(
             method: .post, path: "/api/mobile/v1/onboarding/eligibility",
@@ -129,7 +211,8 @@ private struct DraftBoundTransportHarness: Sendable {
     let transport: MobileAPITransport
     let repository: MobileOnboardingRepository
 
-    init(firstResponseIsUnauthorized: Bool = false, invalidGrant: Bool = false) async throws {
+    init(firstResponseIsUnauthorized: Bool = false, invalidGrant: Bool = false,
+         script: [DraftBoundOutcome]? = nil) async throws {
         folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("draft-bound-http-\(UUID().uuidString)", isDirectory: true)
         draftStore = OnboardingDeviceDraftStore(directory: folder)
@@ -143,7 +226,7 @@ private struct DraftBoundTransportHarness: Sendable {
             sensitiveStateClearer: OnboardingDeviceDraftSessionClearer(store: draftStore),
             refreshPolicy: SessionRefreshPolicy(now: { Date(timeIntervalSince1970: 1_000) }, leeway: 60)
         )
-        peer = DraftBoundHTTPPeer(firstResponseIsUnauthorized: firstResponseIsUnauthorized)
+        peer = DraftBoundHTTPPeer(firstResponseIsUnauthorized: firstResponseIsUnauthorized, script: script)
         await DraftBoundURLProtocol.install(peer)
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [DraftBoundURLProtocol.self]
@@ -197,13 +280,32 @@ private actor DraftBoundAuthRemote: SupabaseAuthRemoteOperating {
     func revokeCurrentSession(accessToken: String) -> RemoteRevocationOutcome { .confirmed }
 }
 
+private enum DraftBoundOutcome: Sendable {
+    case http(Int, Data)
+    case timeout
+}
+private enum DraftBoundPeerError: Error { case scriptExhausted, bodyReadFailed, bodyTooLarge }
+
 private actor DraftBoundHTTPPeer {
     let firstResponseIsUnauthorized: Bool
+    let script: [DraftBoundOutcome]?
     private(set) var requests: [URLRequest] = []
-    init(firstResponseIsUnauthorized: Bool) { self.firstResponseIsUnauthorized = firstResponseIsUnauthorized }
+    private(set) var bodies: [Data?] = []
+    init(firstResponseIsUnauthorized: Bool, script: [DraftBoundOutcome]? = nil) {
+        self.firstResponseIsUnauthorized = firstResponseIsUnauthorized
+        self.script = script
+    }
 
     func respond(to request: URLRequest) throws -> (Int, Data) {
         requests.append(request)
+        if let script {
+            bodies.append(try Self.captureBody(request))
+            guard requests.count <= script.count else { throw DraftBoundPeerError.scriptExhausted }
+            switch script[requests.count - 1] {
+            case let .http(status, body): return (status, body)
+            case .timeout: throw URLError(.timedOut)
+            }
+        }
         if firstResponseIsUnauthorized, requests.count == 1 {
             return (401, Data("{\"error\":{\"code\":\"unauthorized\",\"message\":\"Synthetic refusal\",\"request_id\":\"draft-bound-401\"}}".utf8))
         }
@@ -211,6 +313,23 @@ private actor DraftBoundHTTPPeer {
         return (200, Data("{\"data\":".utf8) + answer + Data(
             ",\"meta\":{\"api_version\":\"v1\",\"request_id\":\"draft-bound-ok\"}}".utf8
         ))
+    }
+
+    private static func captureBody(_ request: URLRequest) throws -> Data? {
+        if let body = request.httpBody { return body }
+        guard let stream = request.httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var result = Data()
+        var buffer = [UInt8](repeating: 0, count: 256)
+        while true {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            if count < 0 { throw DraftBoundPeerError.bodyReadFailed }
+            if count == 0 { break }
+            guard result.count + count <= 8192 else { throw DraftBoundPeerError.bodyTooLarge }
+            result.append(contentsOf: buffer.prefix(count))
+        }
+        return result
     }
 }
 

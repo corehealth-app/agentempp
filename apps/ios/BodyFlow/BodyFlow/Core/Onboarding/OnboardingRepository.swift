@@ -8,6 +8,7 @@ enum OnboardingRepositoryError: Error, Equatable, Sendable {
     case requirementsChanged
     case alreadyCompleted
     case bodyPhotoConfirmationChanged
+    case completionIntentChanged
     case storageUnavailable
     case serviceUnavailable
     /// The signed-in e-mail administers the team's panel, so it cannot also
@@ -28,6 +29,12 @@ protocol OnboardingRepository: Sendable {
         for userID: String,
         idempotencyKey: IdempotencyKey
     ) async throws -> OnboardingCompletionAcknowledgement
+    func beginCompletionIntent(for userID: String, preparationID: UUID) async throws -> OnboardingCompletionIntent
+    func resolveCompletionIntent(for userID: String, preparationID: UUID) async throws -> OnboardingCompletionIntent?
+    func completeOfficial(
+        _ draft: OnboardingDraft, for userID: String,
+        completionIntent: OnboardingCompletionIntent
+    ) async throws -> OnboardingCompletionAcknowledgement
     func checkEligibility(
         _ input: OnboardingEligibilityInput, for userID: String,
         idempotencyKey: IdempotencyKey
@@ -41,6 +48,21 @@ protocol OnboardingRepository: Sendable {
 }
 
 extension OnboardingRepository {
+    func beginCompletionIntent(for userID: String, preparationID: UUID) async throws -> OnboardingCompletionIntent {
+        throw OnboardingRepositoryError.serviceUnavailable
+    }
+
+    func resolveCompletionIntent(for userID: String, preparationID: UUID) async throws -> OnboardingCompletionIntent? {
+        throw OnboardingRepositoryError.serviceUnavailable
+    }
+
+    func completeOfficial(
+        _ draft: OnboardingDraft, for userID: String,
+        completionIntent: OnboardingCompletionIntent
+    ) async throws -> OnboardingCompletionAcknowledgement {
+        throw OnboardingRepositoryError.serviceUnavailable
+    }
+
     /// Technical authority is unavailable in local/demo repositories.
     func loadBodyPhotoCleanupScope(generation: String?) async throws -> OnboardingBodyPhotoCleanupScope? {
         throw OnboardingRepositoryError.serviceUnavailable

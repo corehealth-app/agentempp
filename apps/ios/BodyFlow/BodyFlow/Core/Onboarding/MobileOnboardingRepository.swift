@@ -163,7 +163,8 @@ struct MobileOnboardingRepository: OnboardingRepository {
             requirements: state.requirements,
             acceptedActions: state.acceptedActions,
             draft: kept,
-            bodyPhotoCleanup: state.bodyPhotoCleanup
+            bodyPhotoCleanup: state.bodyPhotoCleanup,
+            signupCompletion: state.signupCompletion
         )
     }
 
@@ -215,8 +216,85 @@ struct MobileOnboardingRepository: OnboardingRepository {
         for userID: String,
         idempotencyKey: IdempotencyKey
     ) async throws -> OnboardingCompletionAcknowledgement {
+        guard idempotencyKey.value.range(of: "^osc(?:[0-9]+(?::|$)|:|$)",
+            options: [.regularExpression, .caseInsensitive]) == nil else {
+            throw OnboardingRepositoryError.invalidDraft
+        }
+        return try await sendOfficial(draft, for: userID, idempotencyKey: idempotencyKey)
+    }
+
+    func beginCompletionIntent(for userID: String, preparationID: UUID) async throws -> OnboardingCompletionIntent {
+        try await inCurrentIntentScope(for: userID) {
+            let q = preparationID.uuidString.lowercased()
+            let response: OnboardingCompletionIntentResponse = try await transport.execute(MobileAPIRequest(
+                method: .post, path: "/api/mobile/v1/onboarding/completion-intent",
+                body: JSONEncoder().encode(["preparation_id": q]),
+                idempotencyKey: IdempotencyKey(validating: q)
+            ))
+            guard let intent = response.completionIntent, intent.matches(preparationID: preparationID) else {
+                throw OnboardingRepositoryError.serviceUnavailable
+            }
+            return intent
+        }
+    }
+
+    func resolveCompletionIntent(for userID: String, preparationID: UUID) async throws -> OnboardingCompletionIntent? {
+        try await inCurrentIntentScope(for: userID) {
+            let response: OnboardingCompletionIntentResponse = try await transport.execute(MobileAPIRequest(
+                method: .get, path: "/api/mobile/v1/onboarding/completion-intent",
+                queryItems: [URLQueryItem(name: "preparation_id", value: preparationID.uuidString.lowercased())]
+            ))
+            if let intent = response.completionIntent, !intent.matches(preparationID: preparationID) {
+                throw OnboardingRepositoryError.serviceUnavailable
+            }
+            return response.completionIntent
+        }
+    }
+
+    func completeOfficial(
+        _ draft: OnboardingDraft, for userID: String,
+        completionIntent: OnboardingCompletionIntent
+    ) async throws -> OnboardingCompletionAcknowledgement {
+        try await inCurrentIntentScope(for: userID) {
+            try await sendOfficial(draft, for: userID, idempotencyKey: completionIntent.requestKey,
+                completionIntent: completionIntent)
+        }
+    }
+
+    /// Both a late success and a late failure belong to this retained lease.
+    /// It is never reacquired from the current account during a retry.
+    private func inCurrentIntentScope<Value: Sendable>(
+        for userID: String, operation: @Sendable () async throws -> Value
+    ) async throws -> Value {
+        try Task.checkCancellation()
         try await validateScope(for: userID)
-        let submission = try OnboardingCompletionSubmission(draft: draft)
+        do {
+            let result = try await operation()
+            try Task.checkCancellation()
+            try await validateScope(for: userID)
+            try Task.checkCancellation()
+            return result
+        } catch {
+            try Task.checkCancellation()
+            try await validateScope(for: userID)
+            try Task.checkCancellation()
+            if error is CancellationError { throw CancellationError() }
+            if let error = error as? SessionLifecycleError { throw error }
+            if let error = error as? OnboardingRepositoryError { throw error }
+            if let error = error as? MobileAPITransportError {
+                if error == .sessionSuperseded { throw error }
+                throw map(error)
+            }
+            throw OnboardingRepositoryError.serviceUnavailable
+        }
+    }
+
+    private func sendOfficial(
+        _ draft: OnboardingDraft, for userID: String,
+        idempotencyKey: IdempotencyKey, completionIntent: OnboardingCompletionIntent? = nil
+    ) async throws -> OnboardingCompletionAcknowledgement {
+        try await validateScope(for: userID)
+        let submission = try OnboardingCompletionSubmission(draft: draft, completionIntent: completionIntent)
         let body: Data
         do {
             body = try JSONEncoder().encode(submission)
@@ -270,6 +348,9 @@ struct MobileOnboardingRepository: OnboardingRepository {
     private func map(_ error: MobileAPITransportError) -> OnboardingRepositoryError {
         switch error {
         case .conflict(let code, _)
+            where code == "mobile_signup_strength_stale_epoch" || code == "mobile_signup_completion_invalid_intent":
+            .completionIntentChanged
+        case .conflict(let code, _)
             where code == "onboarding_requirements_changed":
             .requirementsChanged
         case .conflict(let code, _)
@@ -312,8 +393,10 @@ private struct OnboardingCompletionSubmission: Encodable, Sendable {
     let persona: String
     let documentActions: [OnboardingDocumentAction]
     let bodyPhotoConfirmation: OnboardingBodyPhotoConfirmation.Intent?
+    let signupStrengthProtocol: String?
+    let completionIntentID: String?
 
-    init(draft: OnboardingDraft) throws {
+    init(draft: OnboardingDraft, completionIntent: OnboardingCompletionIntent? = nil) throws {
         guard let name = draft.displayName?.trimmingCharacters(in: .whitespacesAndNewlines),
               !name.isEmpty,
               let sex = draft.biologicalSex,
@@ -364,6 +447,8 @@ private struct OnboardingCompletionSubmission: Encodable, Sendable {
         case .zen: "zen"
         }
         self.documentActions = documentActions
+        signupStrengthProtocol = completionIntent?.protocolVersion.rawValue
+        completionIntentID = completionIntent?.intentID.uuidString.lowercased()
         if draft.bodyFatOrigin == .photos {
             guard let confirmation = draft.bodyPhotoConfirmation, confirmation.matches(draft) else {
                 throw OnboardingRepositoryError.invalidDraft
@@ -399,5 +484,7 @@ private struct OnboardingCompletionSubmission: Encodable, Sendable {
         case persona
         case documentActions = "document_actions"
         case bodyPhotoConfirmation = "body_photo_confirmation"
+        case signupStrengthProtocol = "signup_strength_protocol"
+        case completionIntentID = "completion_intent_id"
     }
 }

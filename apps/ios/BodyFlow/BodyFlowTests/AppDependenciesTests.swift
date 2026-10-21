@@ -1291,7 +1291,8 @@ private final class DependencyTransportURLProtocol: URLProtocol, @unchecked Send
     }
 
     override func startLoading() {
-        loadingTask = Task {
+        let request = self.request
+        loadingTask = Task { @Sendable [self, request] in
             guard let recorder = await Self.registry.current() else { return }
             await recorder.record(request)
             let response = HTTPURLResponse(

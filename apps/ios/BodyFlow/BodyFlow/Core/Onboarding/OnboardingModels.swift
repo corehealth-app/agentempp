@@ -228,6 +228,7 @@ struct OnboardingServerState: Codable, Equatable, Sendable {
     let acceptedActions: [OnboardingAcceptedAction]
     let draft: OnboardingDraft?
     let bodyPhotoCleanup: OnboardingBodyPhotoCleanupScope?
+    let signupCompletion: OnboardingCompletionCapability?
 
     init(
         locale: String = "pt-BR",
@@ -235,7 +236,8 @@ struct OnboardingServerState: Codable, Equatable, Sendable {
         requirements: OnboardingRequirements,
         acceptedActions: [OnboardingAcceptedAction],
         draft: OnboardingDraft? = nil,
-        bodyPhotoCleanup: OnboardingBodyPhotoCleanupScope? = nil
+        bodyPhotoCleanup: OnboardingBodyPhotoCleanupScope? = nil,
+        signupCompletion: OnboardingCompletionCapability? = nil
     ) {
         self.locale = locale
         self.completion = completion
@@ -243,6 +245,7 @@ struct OnboardingServerState: Codable, Equatable, Sendable {
         self.acceptedActions = acceptedActions
         self.draft = draft
         self.bodyPhotoCleanup = bodyPhotoCleanup
+        self.signupCompletion = signupCompletion
     }
 
     init(from decoder: any Decoder) throws {
@@ -261,6 +264,11 @@ struct OnboardingServerState: Codable, Equatable, Sendable {
         // Only this additive technical field is tolerant. Required patient
         // fields and the server draft retain their existing validation.
         bodyPhotoCleanup = try? values.decodeIfPresent(OnboardingBodyPhotoCleanupScope.self, forKey: .bodyPhotoCleanup)
+        // Absence is legacy. A present null/unknown/malformed capability must
+        // not silently downgrade a new completion to that legacy transport.
+        signupCompletion = values.contains(.signupCompletion)
+            ? try values.decode(OnboardingCompletionCapability.self, forKey: .signupCompletion)
+            : nil
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -273,6 +281,7 @@ struct OnboardingServerState: Codable, Equatable, Sendable {
             try values.encode(OnboardingServerDraft(draft), forKey: .draft)
         }
         try values.encodeIfPresent(bodyPhotoCleanup, forKey: .bodyPhotoCleanup)
+        try values.encodeIfPresent(signupCompletion, forKey: .signupCompletion)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -282,6 +291,7 @@ struct OnboardingServerState: Codable, Equatable, Sendable {
         case acceptedActions = "accepted_actions"
         case draft
         case bodyPhotoCleanup = "body_photo_cleanup"
+        case signupCompletion = "signup_completion"
     }
 }
 

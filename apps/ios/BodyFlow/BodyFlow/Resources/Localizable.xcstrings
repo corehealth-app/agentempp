@@ -1897,13 +1897,13 @@
       "pt-BR": {
         "stringUnit": {
           "state": "translated",
-          "value": "O cadastro precisa ser conferido com o servidor antes de continuar. Conferir novamente apenas consulta o resultado."
+          "value": "Precisamos conferir o resultado do seu cadastro antes de continuar. Ao conferir novamente, seus dados não são reenviados."
         }
       },
       "en": {
         "stringUnit": {
           "state": "translated",
-          "value": "Your sign-up needs to be checked with the server before continuing. Check again only reads the result."
+          "value": "We need to check your sign-up result before continuing. Checking again does not submit your details again."
         }
       }
     }
@@ -7923,8 +7923,8 @@
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Parar espera" } }
     } },
     "workout.strength.cancel-hint" : { "localizations" : {
-      "en" : { "stringUnit" : { "state" : "translated", "value" : "Stopping the wait does not cancel a submission the server has already received." } },
-      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Parar a espera não cancela um envio já recebido pelo servidor." } }
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Stopping the wait does not cancel a submission Performe AI has already received." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Parar a espera não cancela um envio que já foi recebido pelo Performe AI." } }
     } },
     "workout.strength.uncertain" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "We do not yet know whether your answer was saved. Check the result or retry the same answer." } },

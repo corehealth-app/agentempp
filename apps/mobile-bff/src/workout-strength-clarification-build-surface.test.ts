@@ -61,18 +61,28 @@ function routesReaching(marker: string) {
 }
 
 describe('current-authority clarification in the fresh mobile server build', () => {
-  it('adds exactly one mirrored route while preserving the prior 54-route export stream', () => {
+  it('adds exactly one mirrored route while preserving the prior 54-route export stream and the independent completion-intent addition', () => {
     const appRoot = resolve(root, '../..')
     const source = exportStream(resolve(appRoot, '../admin/src/app/api/mobile/v1'), false)
     const mirror = exportStream(resolve(appRoot, 'src/app/api/mobile/v1'), true)
     expect(source).toEqual(mirror)
     expect(source.some((record) => record.path === 'auth/password-recovery/route.ts')).toBe(false)
-    expect(source).toHaveLength(55)
+    expect(source).toHaveLength(56)
     expect(source.find((record) => record.path === addition)).toEqual({
       path: addition,
       exports: ['GET', 'POST', 'runtime'],
     })
-    const old = source.filter((record) => record.path !== addition)
+    const beforeIntents = source.filter(
+      (record) => record.path !== 'onboarding/completion-intent/route.ts',
+    )
+    expect(beforeIntents).toHaveLength(55)
+    const previousStream = beforeIntents
+      .map((record) => `${record.path}\0${record.exports.join(',')}\n`)
+      .join('')
+    expect(createHash('sha256').update(previousStream).digest('hex')).toBe(
+      '96da71b91e2f8f7a730c98b2388128fdd840846437a4bbcf238dd8dd2fb4a62d',
+    )
+    const old = beforeIntents.filter((record) => record.path !== addition)
     expect(old).toHaveLength(54)
     const stream = old.map((record) => `${record.path}\0${record.exports.join(',')}\n`).join('')
     expect(createHash('sha256').update(stream).digest('hex')).toBe(

@@ -33,9 +33,14 @@ import { signupBodyPhotosUnavailable } from '@/lib/mobile-api/signup-body-photo-
 import { loadSignupPhotoSnapshot } from '@/lib/mobile-api/signup-body-photo-snapshot'
 import { signupBodyPhotosEnabled } from '@/lib/mobile-api/signup-body-photo-switch'
 import {
-  type SignupStrengthAuthoritySource,
+  captureSignupCompletionSources,
+  defaultSignupCompletionComposition,
+  type SignupCompletionComposition,
+} from '@/lib/mobile-api/signup-completion-composition'
+import { snapshotSignupCompletionEpoch } from '@/lib/mobile-api/signup-completion-intent'
+import { classifySignupCompletionTransport } from '@/lib/mobile-api/signup-completion-transport'
+import {
   type SignupStrengthRequestIdentity,
-  snapshotSignupStrengthEpoch,
   snapshotSignupStrengthRequest,
 } from '@/lib/mobile-api/signup-strength-authority'
 import {
@@ -53,7 +58,8 @@ export interface OnboardingRouteDependencies {
     options?: SupabaseOnboardingOptions,
   ): OnboardingRepository
   executeIdempotent: typeof executeSupabaseIdempotent
-  signupStrengthAuthority?: SignupStrengthAuthoritySource
+  /** Missing in a legacy-only test repository means unavailable, never fallback. */
+  signupCompletion?: SignupCompletionComposition
   saveLegacyOnboarding: typeof saveOnboarding
   readSignupBodyPhotoCleanupScope?: typeof readSignupBodyPhotoCleanupScope
   finalizeSignupBodyPhotos(
@@ -69,6 +75,7 @@ const defaultDependencies: OnboardingRouteDependencies = {
   saveLegacyOnboarding: saveOnboarding,
   readSignupBodyPhotoCleanupScope,
   finalizeSignupBodyPhotos: finalizeSignupBodyPhotosAfterOnboarding,
+  signupCompletion: defaultSignupCompletionComposition,
 }
 
 function onboardingLocale(locale: string | null): 'pt-BR' | 'en-US' {
@@ -150,12 +157,15 @@ export async function handleOnboardingGet(
   )
   const generation = queries[0] ?? data.completion.completed_at
   const enriched = await withCleanupScope(context, dependencies, data, generation)
-  // Base DTO already passed its limit. If metadata alone exceeds it, omit metadata.
+  const advertised =
+    dependencies.signupCompletion?.enabled() === true
+      ? { ...enriched, signup_completion: { protocol: 'osc1' as const } }
+      : enriched
+  const fits = (value: unknown) =>
+    new TextEncoder().encode(JSON.stringify(value)).byteLength <= MAX_PUBLIC_ONBOARDING_STATE_BYTES
+  // Capability cannot erase an existing cleanup scope which still fits alone.
   return mobileSuccess(
-    new TextEncoder().encode(JSON.stringify(enriched)).byteLength >
-      MAX_PUBLIC_ONBOARDING_STATE_BYTES
-      ? data
-      : enriched,
+    fits(advertised) ? advertised : fits(enriched) ? enriched : data,
     context.requestId,
   )
 }
@@ -164,7 +174,11 @@ export async function handleOnboardingPost(
   context: MobileRouteContext,
   dependencies: OnboardingRouteDependencies = defaultDependencies,
 ): Promise<Response> {
-  const body = await readJsonBody(context.request)
+  const transport = classifySignupCompletionTransport(
+    await readJsonBody(context.request),
+    context.request.headers.get('idempotency-key'),
+  )
+  const body = transport.body
   const isCompletion = typeof body === 'object' && body !== null && 'document_actions' in body
 
   if (!isCompletion) {
@@ -200,19 +214,27 @@ export async function handleOnboardingPost(
   // and the published app keeps its key after a refusal. So the header is only
   // read here (without it the answer is still 400, before anything is read),
   // and a refusal leaves no record in the HTTP idempotency ledger. The optional
-  // authority observation may ensure an epoch fence, without binding the key/hash.
+  // positive intent is verified before preparation, without binding the key/hash.
   const requestKey = requireIdempotencyKey(context.request)
+  const sources =
+    transport.mode === 'versioned'
+      ? captureSignupCompletionSources(dependencies.signupCompletion, context.supabase)
+      : undefined
   if (input.body_photo_confirmation && !signupBodyPhotoFinalizationTargetAllowed()) {
     throw signupBodyPhotosUnavailable()
   }
-  const source = dependencies.signupStrengthAuthority
   let identity: SignupStrengthRequestIdentity | undefined
-  if (source) {
+  if (sources && transport.mode === 'versioned') {
     const userId = context.auth.userId
     const requestHash = hashMobileRequest(input)
-    const expectedEpoch = snapshotSignupStrengthEpoch(await source.observe({ userId }), userId)
+    const verification = Object.freeze({ userId, intentId: transport.intentId, requestKey })
+    const expectedEpoch = snapshotSignupCompletionEpoch(
+      await sources.intents.verify(verification),
+      verification,
+    )
     identity = Object.freeze({ userId, requestKey, requestHash, expectedEpoch })
   }
+  sources?.requireEnabled()
   const prepare = async () => {
     const prepared = await prepareSignupPhotoConfirmation(context, input, {
       targetAllowed: signupBodyPhotoFinalizationTargetAllowed(),
@@ -243,12 +265,17 @@ export async function handleOnboardingPost(
     return prepared
   }
   const prepared = await prepare()
+  sources?.requireEnabled()
   // A refusal above leaves the key unbound, so the corrected payload can reuse it.
   const authority =
-    source && identity
-      ? snapshotSignupStrengthRequest(await source.bind(identity), identity)
+    sources && identity
+      ? snapshotSignupStrengthRequest(await sources.admission.bind(identity), identity)
       : undefined
+  // Bind may have persisted an admission while ON. Never erase it after a flip,
+  // but do not begin another HTTP claim once the operation is unavailable.
+  sources?.requireEnabled()
   const createResponse = async (current: PreparedSignupPhotoConfirmation) => {
+    sources?.requireEnabled()
     const repository = dependencies.createOnboardingRepository(context.supabase, {
       signupPhotoConfirmation: current,
       ...(authority ? { signupStrengthRequest: authority } : {}),
@@ -258,7 +285,10 @@ export async function handleOnboardingPost(
     // does nothing. It is asked before the completion is recorded because
     // only a first completion is eligible. Neither call can throw.
     const grantEvaluationAccess = await prepareEvaluationAccess(context)
+    // No await between this guard and the concrete repository's keyed dispatch.
+    sources?.requireEnabled()
     const data = await completeOnboarding(repository, context.auth.userId, input)
+    // Success is official now: finish grant/finalization even if the switch flips.
     await grantEvaluationAccess()
     // Completion is already accepted. A photo failure cannot undo it or
     // release its idempotency claim. The default hook has its own budget.
@@ -281,9 +311,19 @@ export async function handleOnboardingPost(
       return createResponse(prepared)
     },
     {
-      ...(authority ? { beforeReplay: () => authority.verifyReplay() } : {}),
-      refreshReplay: async () =>
-        createResponse(prepared.mode === 'legacy' ? prepared : await prepare()),
+      ...(authority
+        ? {
+            beforeReplay: async () => {
+              sources?.requireEnabled()
+              await authority.verifyReplay()
+              sources?.requireEnabled()
+            },
+          }
+        : {}),
+      refreshReplay: async () => {
+        sources?.requireEnabled()
+        return createResponse(prepared.mode === 'legacy' ? prepared : await prepare())
+      },
       responseBodyForStorage: completionBodyForStorage,
     },
   )

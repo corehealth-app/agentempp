@@ -100,6 +100,8 @@ com a mesma chave executa de novo; outro corpo com a mesma chave continua sendo
 | `GET` | `/profile` | perfil corporal, rotina, objetivo e onboarding |
 | `GET` | `/onboarding` | retorna conclusão server-owned, documentos oficiais atuais e ações auditadas |
 | `POST` | `/onboarding` | conclui atomicamente o onboarding com payload completo e `Idempotency-Key`; usuário e horários são derivados pelo backend; na primeira conclusão recusa objetivo fora da regra do cadastro (`422 onboarding_objective_not_eligible`); devolve a mensagem de entrada do objetivo gravado |
+| `POST` | `/onboarding/completion-intent` | preparação versionada dormente: emite ou recupera o mesmo recibo por Q; exige `preparation_id` UUID e cabeçalho igual; sem ledger HTTP; OFF devolve 503 |
+| `GET` | `/onboarding/completion-intent` | resolve exatamente um `preparation_id` sem emitir substituto; ausência explícita `completion_intent: null`; OFF devolve 503 |
 | `POST` | `/onboarding/eligibility` | conferência de objetivo no cadastro: quais objetivos podem ser gravados para os dados corporais enviados, com o texto de cada um; não grava nada |
 | `GET` | `/onboarding/body-photos` | fotos do corpo no cadastro: estado — texto do consentimento em vigor, aceite, poses e envios restantes (desligado por padrão; ver "Fotos do corpo no cadastro") |
 | `POST` | `/onboarding/body-photos/consent` | fotos do corpo no cadastro: aceita exatamente a versão e a marca do consentimento próprio mostradas; recusa quem declara menos de 18 anos (`403 body_photo_age_not_allowed`); `404 body_photos_unavailable` com as fotos desligadas |
@@ -221,6 +223,51 @@ banco e usam `Cache-Control: no-store` e `Vary: Authorization`.
 No ambiente de avaliação, a primeira conclusão pode conceder um acesso de N
 dias sem mudar esta resposta: ver "Acesso de avaliação automático". Desligado
 por padrão.
+
+### Intenção versionada de conclusão — integração local, desligada por padrão
+
+A configuração `MOBILE_SIGNUP_COMPLETION_INTENTS_PROJECT_REF` habilita o
+transporte somente quando lista a ref HTTPS exata do Supabase configurado.
+Ausência, alvo desconhecido/loopback ou inclusão da produção antiga desabilitam
+esse caminho. Nenhuma configuração remota foi alterada nesta implementação.
+Com ele ligado, `GET /onboarding` pode acrescentar
+`signup_completion: { protocol: "osc1" }`, sem emitir recibo. O campo é omitido
+se ultrapassar o limite público de 60.000 bytes; metadados de cleanup que já
+cabiam continuam presentes. Clientes anteriores podem ignorá-lo.
+
+O cliente prepara Q antes de aguardar. `POST /onboarding/completion-intent`
+recebe somente `{ preparation_id: Q }` e `Idempotency-Key: Q`. O dono vem da
+sessão. A unicidade persistente por dono/Q substitui o ledger HTTP nesta rota;
+o servidor não repete a emissão automaticamente. O recibo público tem somente
+`{ protocol: "osc1", preparation_id: Q, intent_id: ID, request_key: K }`.
+Não revela dono, epoch ou relógio internos. Após resultado incerto,
+`GET /onboarding/completion-intent?preparation_id=Q` consulta a mesma identidade;
+nunca emite outra. Ausência retorna `completion_intent: null`.
+
+A conclusão usa K literal `osc1:<uuid minúsculo>` como `Idempotency-Key` e
+acrescenta `signup_strength_protocol: "osc1"` e `completion_intent_id: ID` ao
+payload completo com `document_actions`. Só esses dois campos são retirados
+antes de calcular H; documentos e confirmação de fotos continuam no conteúdo
+original. O servidor verifica o recibo antes de preparar fotos/elegibilidade e
+vincula K/H ao E0 original somente depois de essa preparação passar. Uma recusa
+422 anterior ao bind não cria admissão nem claim HTTP. Recibo anterior a reset
+é `409 mobile_signup_strength_stale_epoch`; não adquire a autoridade nova.
+
+Transporte reservado incompleto, desconhecido ou parcial é
+`400 invalid_signup_completion_transport`, inclusive com o recurso desligado.
+Transporte válido desligado é `503 signup_completion_unavailable`, sem fallback
+para o escritor legado. Chaves genéricas anteriores continuam no caminho
+legado, sem consultar esse interruptor ou observar a autoridade atual.
+
+O interruptor é conferido após esperas e antes dos efeitos de conclusão.
+Uma gravação oficial já despachada pode terminar depois de OFF; seu sucesso
+preserva a concessão de acesso aplicável, a finalização das fotos e o cache de
+resposta. Admissões ou claims já persistidos não são apagados para simular uma
+nova tentativa. Replays continuam conferindo autoridade e requisitos atuais.
+
+A integração do cliente iOS, o QA HTTP com Auth/banco reais e a ativação são
+etapas próprias ainda pendentes. Este contrato local não comprova entrega ao
+Roberto. Detalhes: `docs/method/mobile-signup-completion-intents.md`.
 
 ### Estado técnico da exclusão das fotos do cadastro
 

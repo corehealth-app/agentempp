@@ -133,16 +133,23 @@ function withSyntheticBuild<T>(
 }
 
 describe('authoritative Mobile API source surface', () => {
-  test('keeps the approved 55-route path and named-export manifest', () => {
+  test('keeps the approved 56-route path and named-export manifest', () => {
     const records = sourceRecords()
     const hash = hashRecords(records)
 
     console.info(`SOURCE_ROUTE_EXPORT_COUNT=${records.length}`)
     console.info(`SOURCE_ROUTE_EXPORT_STREAM_SHA256=${hash}`)
 
-    expect(records).toHaveLength(55)
-    expect(hash).toBe('96da71b91e2f8f7a730c98b2388128fdd840846437a4bbcf238dd8dd2fb4a62d')
-    const previous = records.filter(
+    expect(records).toHaveLength(56)
+    expect(hash).toBe('b88a27d2d694fb0ca539b9075c369978956d51aa25427b52da46983919b7d0e8')
+    const beforeIntents = records.filter(
+      (record) => record.path !== 'onboarding/completion-intent/route.ts',
+    )
+    expect(beforeIntents).toHaveLength(55)
+    expect(hashRecords(beforeIntents)).toBe(
+      '96da71b91e2f8f7a730c98b2388128fdd840846437a4bbcf238dd8dd2fb4a62d',
+    )
+    const previous = beforeIntents.filter(
       (record) => record.path !== 'workouts/[id]/strength-clarification/route.ts',
     )
     expect(previous).toHaveLength(54)
@@ -202,7 +209,7 @@ describe('authoritative Mobile API source surface', () => {
     expect(hasServerActionDirective(inlineServerAction)).toBe(true)
   })
 
-  test('keeps the structured Next build surface limited to the 55 Mobile API routes', () => {
+  test('keeps the structured Next build surface limited to the 56 Mobile API routes', () => {
     const surface = inspectBuildSurface(buildRoot)
 
     console.info(`BUILD_ROUTE_PATH_COUNT=${surface.routePaths.length}`)
@@ -217,11 +224,20 @@ describe('authoritative Mobile API source surface', () => {
     console.info(`BUILD_MIDDLEWARE_COUNT=${surface.middlewareEntries.length}`)
     console.info(`BUILD_SERVER_ACTION_REFERENCE_COUNT=${surface.serverActionReferences.length}`)
 
-    expect(surface.routePaths).toHaveLength(55)
+    expect(surface.routePaths).toHaveLength(56)
     expect(surface.routePathHash).toBe(
-      '5518c2a2938b4d95b86d7ac6c00d20b1dd2cdb4cfd716d141682708edbabd1b7',
+      '75c8979e64a793a209a621914eec758d1b061820b30c68488622900c2b3bf71a',
     )
-    const previous = surface.routePaths.filter(
+    const beforeIntents = surface.routePaths.filter(
+      (route) => route !== '/api/mobile/v1/onboarding/completion-intent',
+    )
+    expect(beforeIntents).toHaveLength(55)
+    expect(
+      createHash('sha256')
+        .update(beforeIntents.map((route) => `${route}\n`).join(''))
+        .digest('hex'),
+    ).toBe('5518c2a2938b4d95b86d7ac6c00d20b1dd2cdb4cfd716d141682708edbabd1b7')
+    const previous = beforeIntents.filter(
       (route) => route !== '/api/mobile/v1/workouts/[id]/strength-clarification',
     )
     expect(previous).toHaveLength(54)
@@ -274,14 +290,14 @@ describe('authoritative Mobile API source surface', () => {
       mutate: (appPaths: Record<string, string>) => ({ ...appPaths }),
       omittedTargets: ['app/api/mobile/v1/today/route.js'],
     },
-  ])('rejects $name while the same 55 URL keys remain', ({
+  ])('rejects $name while the same 56 URL keys remain', ({
     expectedError,
     mutate,
     omittedTargets,
   }) => {
     const appPaths = mutate(currentAppPathsManifest())
 
-    expect(Object.keys(appPaths)).toHaveLength(55)
+    expect(Object.keys(appPaths)).toHaveLength(56)
     expect(() => withSyntheticBuild(appPaths, inspectBuildSurface, omittedTargets)).toThrow(
       expectedError,
     )
@@ -365,12 +381,16 @@ describe('authoritative Mobile API source surface', () => {
     // Clarification adds105 references/its manifest; the pure fact parser adds
     // one reference to each of six old routes and one unique chunk.
     // Current55: 5755 + 105 + 6 = 5866 references/183 targets.
+    // Completion intent adds104 references and only its own manifest target.
+    // Every previous route keeps its exact reference count, and the original50
+    // semantic graph below remains5320 references/175 targets.
+    // Current56:5866+104=5970 references/184 targets.
     // Auth is excluded. Its observed vendor split is not this release surface.
     // The agent manifest already belongs to the original50: no new unique target.
     // Keep exact totals, original50 sans this chunk, nine Flow catalogs and guards.
-    expect(surface.nftReferenceCount).toBe(5866)
-    expect(surface.nftUniqueTargetCount).toBe(183)
-    expect(surface.nftRegularFileTargetCount).toBe(181)
+    expect(surface.nftReferenceCount).toBe(5970)
+    expect(surface.nftUniqueTargetCount).toBe(184)
+    expect(surface.nftRegularFileTargetCount).toBe(182)
     expect(surface.nftDirectoryTargetCount).toBe(2)
 
     const bodyPhotoRoutes = [
@@ -381,6 +401,7 @@ describe('authoritative Mobile API source surface', () => {
     const clarificationRoute = '/api/mobile/v1/workouts/[id]/strength-clarification/route'
     const addedRoutes: Record<string, number> = {
       [clarificationRoute]: 105,
+      '/api/mobile/v1/onboarding/completion-intent/route': 104,
       '/api/mobile/v1/meal-records/[id]/route': 107,
       ...Object.fromEntries(bodyPhotoRoutes.map((route) => [route, 109])),
     }
@@ -485,6 +506,10 @@ describe('authoritative Mobile API source surface', () => {
     }
     expect(beyondBaseline('/api/mobile/v1/meal-records/[id]/route')).toEqual([
       ownManifest('/api/mobile/v1/meal-records/[id]/route'),
+    ])
+
+    expect(beyondBaseline('/api/mobile/v1/onboarding/completion-intent/route')).toEqual([
+      ownManifest('/api/mobile/v1/onboarding/completion-intent/route'),
     ])
 
     expect(beyondBaseline(clarificationRoute).sort(byName)).toEqual(

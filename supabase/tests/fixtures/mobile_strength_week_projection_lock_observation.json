@@ -1,0 +1,394 @@
+{
+  "locks": [
+    {
+      "pid": 81115,
+      "xid": null,
+      "mode": "AccessShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "17854",
+      "objsubid": null
+    },
+    {
+      "pid": 81115,
+      "xid": null,
+      "mode": "AccessShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "17854",
+      "objsubid": null
+    },
+    {
+      "pid": 81115,
+      "xid": null,
+      "mode": "RowShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "17854",
+      "objsubid": null
+    },
+    {
+      "pid": 81115,
+      "xid": null,
+      "mode": "RowShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "17854",
+      "objsubid": null
+    },
+    {
+      "pid": 81115,
+      "xid": null,
+      "mode": "RowShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "17854",
+      "objsubid": null
+    },
+    {
+      "pid": 81115,
+      "xid": null,
+      "mode": "RowShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "17854",
+      "objsubid": null
+    },
+    {
+      "pid": 81115,
+      "xid": null,
+      "mode": "RowShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "17854",
+      "objsubid": null
+    },
+    {
+      "pid": 81115,
+      "xid": null,
+      "mode": "RowShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "17854",
+      "objsubid": null
+    },
+    {
+      "pid": 81115,
+      "xid": null,
+      "mode": "RowShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "17854",
+      "objsubid": null
+    },
+    {
+      "pid": 81115,
+      "xid": null,
+      "mode": "RowShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "17854",
+      "objsubid": null
+    },
+    {
+      "pid": 81115,
+      "xid": null,
+      "mode": "RowShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "17854",
+      "objsubid": null
+    },
+    {
+      "pid": 81115,
+      "xid": null,
+      "mode": "RowShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "17854",
+      "objsubid": null
+    },
+    {
+      "pid": 81115,
+      "xid": null,
+      "mode": "ExclusiveLock",
+      "type": "virtualxid",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": null,
+      "objsubid": null
+    },
+    {
+      "pid": 81122,
+      "xid": null,
+      "mode": "RowShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "17854",
+      "objsubid": null
+    },
+    {
+      "pid": 81122,
+      "xid": null,
+      "mode": "RowShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "17854",
+      "objsubid": null
+    },
+    {
+      "pid": 81122,
+      "xid": null,
+      "mode": "RowShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "17854",
+      "objsubid": null
+    },
+    {
+      "pid": 81122,
+      "xid": null,
+      "mode": "RowShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "17854",
+      "objsubid": null
+    },
+    {
+      "pid": 81122,
+      "xid": null,
+      "mode": "RowShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "17854",
+      "objsubid": null
+    },
+    {
+      "pid": 81122,
+      "xid": null,
+      "mode": "RowShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "17854",
+      "objsubid": null
+    },
+    {
+      "pid": 81122,
+      "xid": null,
+      "mode": "RowShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "17854",
+      "objsubid": null
+    },
+    {
+      "pid": 81122,
+      "xid": null,
+      "mode": "RowShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "17854",
+      "objsubid": null
+    },
+    {
+      "pid": 81122,
+      "xid": null,
+      "mode": "RowShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "17854",
+      "objsubid": null
+    },
+    {
+      "pid": 81122,
+      "xid": null,
+      "mode": "RowShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "17854",
+      "objsubid": null
+    },
+    {
+      "pid": 81122,
+      "xid": null,
+      "mode": "ExclusiveLock",
+      "type": "virtualxid",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": null,
+      "objsubid": null
+    },
+    {
+      "pid": 81115,
+      "xid": null,
+      "mode": "AccessShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "0",
+      "objsubid": null
+    },
+    {
+      "pid": 81115,
+      "xid": null,
+      "mode": "AccessShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "0",
+      "objsubid": null
+    },
+    {
+      "pid": 81122,
+      "xid": null,
+      "mode": "AccessExclusiveLock",
+      "type": "tuple",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "17854",
+      "objsubid": null
+    },
+    {
+      "pid": 81122,
+      "xid": "16592",
+      "mode": "ShareLock",
+      "type": "transactionid",
+      "objid": null,
+      "classid": null,
+      "granted": false,
+      "database": null,
+      "objsubid": null
+    },
+    {
+      "pid": 81115,
+      "xid": null,
+      "mode": "AccessShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "0",
+      "objsubid": null
+    },
+    {
+      "pid": 81115,
+      "xid": null,
+      "mode": "AccessShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "0",
+      "objsubid": null
+    },
+    {
+      "pid": 81115,
+      "xid": null,
+      "mode": "AccessShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "0",
+      "objsubid": null
+    },
+    {
+      "pid": 81122,
+      "xid": null,
+      "mode": "ExclusiveLock",
+      "type": "advisory",
+      "objid": "2716033052",
+      "classid": "3258298574",
+      "granted": true,
+      "database": "17854",
+      "objsubid": 1
+    },
+    {
+      "pid": 81115,
+      "xid": "16592",
+      "mode": "ExclusiveLock",
+      "type": "transactionid",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": null,
+      "objsubid": null
+    },
+    {
+      "pid": 81115,
+      "xid": null,
+      "mode": "AccessShareLock",
+      "type": "relation",
+      "objid": null,
+      "classid": null,
+      "granted": true,
+      "database": "0",
+      "objsubid": null
+    }
+  ],
+  "activity": {
+    "pid": 81122,
+    "state": "active",
+    "wait_type": "Lock",
+    "application": "c59s7-P7-CLOCK-B"
+  },
+  "blockers": [
+    81115
+  ],
+  "blocker_xid": "16592",
+  "expected_key": {
+    "objid": 2716033052,
+    "classid": 3258298574,
+    "database": "17854",
+    "objsubid": 1
+  }
+}

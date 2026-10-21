@@ -32,6 +32,36 @@ def finalize_race_result(result, reports):
     return final
 
 
+def advisory_lock_matches(row, pid, granted, expected):
+    import re
+
+    def oid(value):
+        # PostgreSQL JSON renders oid as text, while the computed bitmap is
+        # bigint. Both carry an exact uint32; reject coercible or lossy forms.
+        if type(value) is int:
+            number = value
+        elif isinstance(value, str) and re.fullmatch(r'0|[1-9][0-9]{0,9}', value):
+            number = int(value)
+        else:
+            return None
+        return str(number) if 0 <= number <= 4294967295 else None
+
+    if (not isinstance(row, dict) or not isinstance(expected, dict)
+            or set(expected) != {'database', 'classid', 'objid', 'objsubid'}
+            or type(pid) is not int or type(row.get('pid')) is not int
+            or type(granted) is not bool or row.get('pid') != pid
+            or row.get('type') != 'advisory' or row.get('mode') != 'ExclusiveLock'
+            or row.get('granted') is not granted
+            or type(row.get('objsubid')) is not int or row['objsubid'] != 1
+            or type(expected.get('objsubid')) is not int or expected['objsubid'] != 1):
+        return False
+    for field in ('database', 'classid', 'objid'):
+        actual, wanted = oid(row.get(field)), oid(expected.get(field))
+        if actual is None or wanted is None or actual != wanted:
+            return False
+    return True
+
+
 def run_projection_races(config, actor_api, prepare_commit, after_commit):
     import json
     import re
@@ -119,9 +149,7 @@ def run_projection_races(config, actor_api, prepare_commit, after_commit):
                 locks, expected = diagnostic['locks'], diagnostic['expected_key']
 
                 def key_lock(row, pid, granted):
-                    return (row['pid'] == pid and row['type'] == 'advisory'
-                            and row['mode'] == 'ExclusiveLock' and row['granted'] is granted
-                            and all(row[k] == expected[k] for k in expected))
+                    return advisory_lock_matches(row, pid, granted, expected)
 
                 if kind == 'advisory':
                     need(any(key_lock(row, aid, True) for row in locks)

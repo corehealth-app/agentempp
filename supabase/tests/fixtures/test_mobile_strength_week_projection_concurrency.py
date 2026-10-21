@@ -2,8 +2,9 @@
 import datetime
 import json
 import unittest
+from pathlib import Path
 
-from mobile_strength_week_projection_concurrency import finalize_race_result, parse_native_utc_timestamp
+from mobile_strength_week_projection_concurrency import advisory_lock_matches, finalize_race_result, parse_native_utc_timestamp
 
 
 class NativeTimestampRegression(unittest.TestCase):
@@ -59,6 +60,38 @@ class CleanupReceiptRegression(unittest.TestCase):
         result = finalize_race_result({'status': 'P7_RACES_FAILED_PRESERVED', 'failure': failure}, [])
         self.assertEqual(result['status'], 'P7_RACES_FAILED_PRESERVED')
         self.assertEqual(result['failure'], failure)
+
+
+class NativeAdvisoryKeyRegression(unittest.TestCase):
+    def setUp(self):
+        self.observation = json.loads(Path(__file__).with_name(
+            'mobile_strength_week_projection_lock_observation.json').read_text())
+        self.pid = self.observation['activity']['pid']
+        self.row = next(row for row in self.observation['locks']
+                        if row['type'] == 'advisory' and row['pid'] == self.pid)
+
+    def test_exact_native_postgres_oid_strings_match_computed_bigint_key(self):
+        self.assertTrue(advisory_lock_matches(
+            self.row, self.pid, True, self.observation['expected_key'],
+        ))
+
+    def test_different_or_invalid_oid_key_can_never_match(self):
+        for field in ('database', 'classid', 'objid'):
+            for bad in ('0' if field == 'database' else '1', True, -1, 4294967296,
+                        3258298574.0, '03258298574', '3258298574.0', None):
+                with self.subTest(field=field, bad=bad):
+                    changed = dict(self.row, **{field: bad})
+                    self.assertFalse(advisory_lock_matches(
+                        changed, self.pid, True, self.observation['expected_key'],
+                    ))
+
+    def test_pid_mode_grant_and_key_namespace_remain_strict(self):
+        for patch in ({'pid': self.pid + 1}, {'type': 'tuple'}, {'mode': 'ShareLock'},
+                      {'granted': False}, {'objsubid': 2}, {'objsubid': True}):
+            with self.subTest(patch=patch):
+                self.assertFalse(advisory_lock_matches(
+                    dict(self.row, **patch), self.pid, True, self.observation['expected_key'],
+                ))
 
 
 if __name__ == '__main__':

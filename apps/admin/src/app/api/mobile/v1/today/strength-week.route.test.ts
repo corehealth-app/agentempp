@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MobileAuthContext } from '@/lib/mobile-api/auth'
 import { MobileApiError } from '@/lib/mobile-api/http'
 import type { StrengthWeekTarget } from '@/lib/mobile-api/strength-training-week-service'
+import { createTodayGetRoute } from '@/lib/mobile-api/today-handler'
+import { loadTodayStrengthTrainingWeek } from '@/lib/mobile-api/today-strength-training-week'
 
 const dependencies = vi.hoisted(() => ({
   authenticate: vi.fn(),
@@ -165,6 +167,86 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllEnvs()
+})
+
+describe('explicit server weekly composition', () => {
+  it('keeps the real route wrapper and composes the official daily and weekly results explicitly', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'http://127.0.0.1:21994')
+    const { rpc } = client()
+    const response = await createTodayGetRoute(undefined, () => true)(request())
+    expect(response.status).toBe(200)
+    expect(response.headers.get('vary')).toBe('Authorization')
+    expect((await response.json()).data).toEqual({ ...DAILY, strength_training_week: EXPECTED })
+    expect(rpc).toHaveBeenCalledTimes(3)
+  })
+
+  it.each([
+    403, 402,
+  ])('cannot bypass a real wrapper denial %i with an enabled weekly callback', async (status) => {
+    const denied = new MobileApiError(status, 'test_access_denied', 'Access denied')
+    if (status === 403) dependencies.authenticate.mockRejectedValue(denied)
+    else dependencies.authorize.mockRejectedValue(denied)
+    const { rpc } = client([])
+    expect((await createTodayGetRoute(undefined, () => true)(request())).status).toBe(status)
+    expect(dependencies.loadToday).not.toHaveBeenCalled()
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it('stops before weekly composition if the daily read fails', async () => {
+    dependencies.loadToday.mockRejectedValue(
+      new MobileApiError(500, 'data_access_failed', 'Daily state lookup failed'),
+    )
+    const { rpc } = client([])
+    expect((await createTodayGetRoute(undefined, () => true)(request())).status).toBe(500)
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it('preserves a weekly operational failure in the explicitly composed route', async () => {
+    const { rpc } = client([
+      { data: null, error: { code: 'XX001', message: 'private provider detail' } },
+    ])
+    const response = await createTodayGetRoute(undefined, () => true)(request())
+    expect(response.status).toBe(500)
+    expect((await response.json()).error).toEqual({
+      code: 'strength_week_data_access_failed',
+      message: 'Strength week lookup failed',
+      request_id: 'weekly-request-1',
+    })
+    expect(rpc).toHaveBeenCalledTimes(1)
+  })
+
+  it('reads the official summary with a loopback configuration and an explicit enabled callback', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'http://127.0.0.1:21994')
+    const { db, rpc } = client()
+    expect(await loadTodayStrengthTrainingWeek(db, OWNER, 'recomposicao', () => true)).toEqual(
+      EXPECTED,
+    )
+    expect(rpc).toHaveBeenCalledTimes(3)
+    expect(rpc.mock.calls[0]?.[1]).toEqual({ p_user_id: OWNER })
+  })
+
+  it('explicit OFF preserves omission and no RPC even with a globally allowed project', async () => {
+    const { db, rpc } = client([])
+    expect(
+      await loadTodayStrengthTrainingWeek(db, OWNER, 'recomposicao', () => false),
+    ).toBeUndefined()
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it('consults the current callback and propagates real repository errors without retry', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'http://127.0.0.1:21994')
+    let enabled = false
+    const { db, rpc } = client([
+      { data: null, error: { code: 'XX001', message: 'private provider detail' } },
+    ])
+    const current = () => enabled
+    expect(await loadTodayStrengthTrainingWeek(db, OWNER, 'recomposicao', current)).toBeUndefined()
+    enabled = true
+    await expect(
+      loadTodayStrengthTrainingWeek(db, OWNER, 'recomposicao', current),
+    ).rejects.toMatchObject({ status: 500, code: 'strength_week_data_access_failed' })
+    expect(rpc).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('GET /today weekly strength public boundary', () => {

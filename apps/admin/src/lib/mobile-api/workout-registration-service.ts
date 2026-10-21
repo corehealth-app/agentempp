@@ -29,8 +29,8 @@ type Denial = {
   registration?: WorkoutRegistration
 }
 
-function requireEnabled(): void {
-  if (!workoutRegistrationEnabled())
+function requireEnabled(enabled: () => boolean): void {
+  if (!enabled())
     throw new MobileApiError(
       503,
       'workout_registration_unavailable',
@@ -40,10 +40,13 @@ function requireEnabled(): void {
 
 /** The existing authenticated /me read advertises availability for NEW intents.
  * A client must retain the protocol in an immutable attempt, including retry. */
-export function meWithWorkoutRegistrationCapability(auth: MobileAuthContext) {
+function meWithWorkoutRegistrationCapabilityWithEnabled(
+  enabled: () => boolean,
+  auth: MobileAuthContext,
+) {
   return {
     ...meDto(auth),
-    ...(workoutRegistrationEnabled() ? { workout_registration_protocol: 'ui-v1' as const } : {}),
+    ...(enabled() ? { workout_registration_protocol: 'ui-v1' as const } : {}),
   }
 }
 
@@ -93,13 +96,14 @@ function reject(result: Denial): never {
 
 /** Admission happens before the route's HTTP claim/cache. The returned closure
  * retains this exact input/owner/key; replay never promotes an old namespace. */
-export async function admitWorkoutProposal(
+async function admitWorkoutProposalWithEnabled(
+  enabled: () => boolean,
   supabase: ServiceClient,
   auth: MobileAuthContext,
   input: WorkoutInput,
   httpKey: string,
 ) {
-  requireEnabled()
+  requireEnabled(enabled)
   const key = `wui1:${requireWorkoutRequestKey(httpKey)}`
   const owner = auth.userId
   const originalInput = structuredClone(input)
@@ -110,7 +114,7 @@ export async function admitWorkoutProposal(
   const admissionID = admission.admission.admissionID
   return {
     async execute() {
-      requireEnabled()
+      requireEnabled(enabled)
       let result = await repo.materialize(owner, admissionID, originalInput, null, null)
       if (result.status === 'preparation_required') {
         const proposal = await buildWorkoutRegistrationCandidate(
@@ -132,7 +136,8 @@ export async function admitWorkoutProposal(
   }
 }
 
-export async function editVersionedWorkoutRegistration(
+async function editVersionedWorkoutRegistrationWithEnabled(
+  enabled: () => boolean,
   supabase: ServiceClient,
   auth: MobileAuthContext,
   id: string,
@@ -140,7 +145,7 @@ export async function editVersionedWorkoutRegistration(
   httpKey: string,
   expectedRevision: number,
 ) {
-  requireEnabled()
+  requireEnabled(enabled)
   const key = `wue1:${requireWorkoutRequestKey(httpKey)}`
   const owner = auth.userId
   const originalInput = structuredClone(input)
@@ -218,13 +223,14 @@ function needsStoredCatalogue(result: Confirmation): boolean {
   )
 }
 
-export async function confirmVersionedWorkoutRegistration(
+async function confirmVersionedWorkoutRegistrationWithEnabled(
+  enabled: () => boolean,
   supabase: ServiceClient,
   auth: MobileAuthContext,
   id: string,
   expectedRevision: number,
 ) {
-  requireEnabled()
+  requireEnabled(enabled)
   const owner = auth.userId
   const repo = repository(supabase)
   let result = await repo.confirm(owner, id, expectedRevision, null, null, null)
@@ -281,34 +287,37 @@ export async function confirmVersionedWorkoutRegistration(
   }
 }
 
-export async function cancelVersionedWorkoutRegistration(
+async function cancelVersionedWorkoutRegistrationWithEnabled(
+  enabled: () => boolean,
   supabase: ServiceClient,
   auth: MobileAuthContext,
   id: string,
   expectedRevision: number,
 ) {
-  requireEnabled()
+  requireEnabled(enabled)
   const result = await repository(supabase).cancel(auth.userId, id, expectedRevision)
   if (result.status === 'forbidden' || result.status === 'conflict') reject(result)
   return toWorkoutRegistrationDto(result.registration)
 }
 
-export async function loadVersionedWorkoutRegistration(
+async function loadVersionedWorkoutRegistrationWithEnabled(
+  enabled: () => boolean,
   supabase: ServiceClient,
   userID: string,
   id: string,
 ) {
-  requireEnabled()
+  requireEnabled(enabled)
   const result = await repository(supabase).get(userID, id)
   if (result.status !== 'available') reject(result)
   return toWorkoutRegistrationDto(result.registration)
 }
 
-export async function loadWorkoutAwarePendingRegistrations(
+async function loadWorkoutAwarePendingRegistrationsWithEnabled(
+  enabled: () => boolean,
   supabase: ServiceClient,
   userID: string,
 ) {
-  requireEnabled()
+  requireEnabled(enabled)
   const rows = await loadPendingRows(supabase, userID)
   let repo: Repository | undefined
   const projected = await Promise.all(
@@ -329,3 +338,58 @@ export async function loadWorkoutAwarePendingRegistrations(
   )
   return projected.filter((row) => row !== null)
 }
+
+/** Explicit server composition. Bind the callback, never its current result.
+ * Default exports below remain governed by the original project switch. */
+export function createWorkoutRegistrationService(
+  enabled: () => boolean = workoutRegistrationEnabled,
+) {
+  return {
+    meWithWorkoutRegistrationCapability: meWithWorkoutRegistrationCapabilityWithEnabled.bind(
+      undefined,
+      enabled,
+    ),
+    admitWorkoutProposal: admitWorkoutProposalWithEnabled.bind(undefined, enabled),
+    editVersionedWorkoutRegistration: editVersionedWorkoutRegistrationWithEnabled.bind(
+      undefined,
+      enabled,
+    ),
+    confirmVersionedWorkoutRegistration: confirmVersionedWorkoutRegistrationWithEnabled.bind(
+      undefined,
+      enabled,
+    ),
+    cancelVersionedWorkoutRegistration: cancelVersionedWorkoutRegistrationWithEnabled.bind(
+      undefined,
+      enabled,
+    ),
+    loadVersionedWorkoutRegistration: loadVersionedWorkoutRegistrationWithEnabled.bind(
+      undefined,
+      enabled,
+    ),
+    loadWorkoutAwarePendingRegistrations: loadWorkoutAwarePendingRegistrationsWithEnabled.bind(
+      undefined,
+      enabled,
+    ),
+  }
+}
+
+export const meWithWorkoutRegistrationCapability =
+  meWithWorkoutRegistrationCapabilityWithEnabled.bind(undefined, workoutRegistrationEnabled)
+export const admitWorkoutProposal = admitWorkoutProposalWithEnabled.bind(
+  undefined,
+  workoutRegistrationEnabled,
+)
+export const editVersionedWorkoutRegistration = editVersionedWorkoutRegistrationWithEnabled.bind(
+  undefined,
+  workoutRegistrationEnabled,
+)
+export const confirmVersionedWorkoutRegistration =
+  confirmVersionedWorkoutRegistrationWithEnabled.bind(undefined, workoutRegistrationEnabled)
+export const cancelVersionedWorkoutRegistration =
+  cancelVersionedWorkoutRegistrationWithEnabled.bind(undefined, workoutRegistrationEnabled)
+export const loadVersionedWorkoutRegistration = loadVersionedWorkoutRegistrationWithEnabled.bind(
+  undefined,
+  workoutRegistrationEnabled,
+)
+export const loadWorkoutAwarePendingRegistrations =
+  loadWorkoutAwarePendingRegistrationsWithEnabled.bind(undefined, workoutRegistrationEnabled)

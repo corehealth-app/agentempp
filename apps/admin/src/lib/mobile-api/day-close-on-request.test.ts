@@ -545,7 +545,7 @@ describe('where the hook is called from', () => {
     })
   }
 
-  it('only Today, Progress and the guarded whole-message Flow status adapter import it', () => {
+  it('only the Today handler, Progress and the guarded whole-message Flow status adapter import it', () => {
     const importers = sourceFiles(sourceRoot)
       .filter((path) => !/\.test\.tsx?$/.test(path))
       .filter((path) => readFileSync(path, 'utf8').includes('day-close-on-request'))
@@ -553,9 +553,18 @@ describe('where the hook is called from', () => {
       .sort()
     expect(importers).toEqual([
       'app/api/mobile/v1/progress/route.ts',
-      'app/api/mobile/v1/today/route.ts',
       'lib/mobile-api/flow-agent-factory.ts',
+      'lib/mobile-api/today-handler.ts',
     ])
+
+    // Extracting Today into a library must not give another route an indirect
+    // day-close caller that the direct-import list above would miss.
+    const todayImporters = sourceFiles(sourceRoot)
+      .filter((path) => !/\.test\.tsx?$/.test(path))
+      .filter((path) => readFileSync(path, 'utf8').includes('today-handler'))
+      .map((path) => relative(sourceRoot, path).split(sep).join('/'))
+      .sort()
+    expect(todayImporters).toEqual(['app/api/mobile/v1/today/route.ts'])
   })
 
   it('the route wrapper shared by the 50 routes does not know it', () => {

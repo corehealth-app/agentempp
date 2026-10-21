@@ -30,9 +30,10 @@ export async function loadTodayStrengthTrainingWeek(
   supabase: ServiceClient,
   userId: string,
   currentProtocol: string | null | undefined,
+  enabled: () => boolean = strengthTrainingWeekEnabled,
 ): Promise<TodayStrengthTrainingWeek | undefined> {
   if (
-    !strengthTrainingWeekEnabled() ||
+    !enabled() ||
     (currentProtocol !== 'recomposicao' &&
       currentProtocol !== 'ganho_massa' &&
       currentProtocol !== 'manutencao')

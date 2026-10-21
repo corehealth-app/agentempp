@@ -7,6 +7,7 @@ import {
   admitWorkoutProposal,
   cancelVersionedWorkoutRegistration,
   confirmVersionedWorkoutRegistration,
+  createWorkoutRegistrationService,
   editVersionedWorkoutRegistration,
   loadVersionedWorkoutRegistration,
 } from './workout-registration-service'
@@ -517,6 +518,107 @@ beforeEach(() => {
   mocks.observeCatalogue.mockResolvedValue(OBSERVED_CATALOGUE)
 })
 afterEach(() => vi.useRealTimers())
+
+describe('explicit server composition without changing the default switch', () => {
+  it('enables the real owned service independently of the default OFF switch', async () => {
+    mocks.enabled.mockReturnValue(false)
+    const service = createWorkoutRegistrationService(() => true)
+    const h = harness([
+      { name: 'admit_mobile_workout_registration', args: ADMIT_ARGS, data: admitted() },
+      {
+        name: 'materialize_mobile_workout_registration',
+        args: MATERIALIZE_ARGS,
+        data: {
+          status: 'materialized',
+          pendingID: ID,
+          pendingStatus: 'pending',
+          cancelledCount: 0,
+        },
+      },
+      {
+        name: 'get_mobile_workout_registration',
+        args: GET_ARGS,
+        data: { status: 'available', registration: registration() },
+      },
+    ])
+    expect(service.meWithWorkoutRegistrationCapability(AUTH)).toHaveProperty(
+      'workout_registration_protocol',
+      'ui-v1',
+    )
+    const intent = await service.admitWorkoutProposal(h.supabase, AUTH, INPUT, CREATE_HTTP_KEY)
+    expect(await intent.execute()).toStrictEqual(dto())
+    expect(mocks.buildCandidate).not.toHaveBeenCalled()
+    h.done()
+  })
+
+  it('consults the callback again before executing an already admitted intent', async () => {
+    let enabled = true
+    const service = createWorkoutRegistrationService(() => enabled)
+    const h = harness([
+      { name: 'admit_mobile_workout_registration', args: ADMIT_ARGS, data: admitted() },
+    ])
+    const intent = await service.admitWorkoutProposal(h.supabase, AUTH, INPUT, CREATE_HTTP_KEY)
+    enabled = false
+    await apiFailure(() => intent.execute(), 503, 'workout_registration_unavailable')
+    expect(service.meWithWorkoutRegistrationCapability(AUTH)).not.toHaveProperty(
+      'workout_registration_protocol',
+    )
+    expect(mocks.buildCandidate).not.toHaveBeenCalled()
+    expect(h.rpc).toHaveBeenCalledTimes(1)
+    h.done()
+  })
+
+  it('does not observe or freeze the switch while constructing the service', () => {
+    let reads = 0
+    let enabled = false
+    const service = createWorkoutRegistrationService(() => {
+      reads += 1
+      return enabled
+    })
+    expect(reads).toBe(0)
+    expect(service.meWithWorkoutRegistrationCapability(AUTH)).not.toHaveProperty(
+      'workout_registration_protocol',
+    )
+    enabled = true
+    expect(service.meWithWorkoutRegistrationCapability(AUTH)).toHaveProperty(
+      'workout_registration_protocol',
+      'ui-v1',
+    )
+    expect(reads).toBe(2)
+  })
+
+  it('keeps every explicit OFF operation closed before client access even when the default is ON', async () => {
+    const service = createWorkoutRegistrationService(() => false)
+    const accessed = vi.fn(() => {
+      throw new Error('disabled client must remain unread')
+    })
+    const db = Object.defineProperties(
+      {},
+      { rpc: { get: accessed }, from: { get: accessed } },
+    ) as ServiceClient
+    const actions = [
+      () => service.admitWorkoutProposal(db, AUTH, INPUT, CREATE_HTTP_KEY),
+      () => service.editVersionedWorkoutRegistration(db, AUTH, ID, EDIT_INPUT, EDIT_HTTP_KEY, 0),
+      () => service.confirmVersionedWorkoutRegistration(db, AUTH, ID, 0),
+      () => service.cancelVersionedWorkoutRegistration(db, AUTH, ID, 0),
+      () => service.loadVersionedWorkoutRegistration(db, OWNER, ID),
+      () => service.loadWorkoutAwarePendingRegistrations(db, OWNER),
+    ]
+    for (const action of actions) await apiFailure(action, 503, 'workout_registration_unavailable')
+    expect(accessed).not.toHaveBeenCalled()
+  })
+
+  it('does not hide a real repository failure behind the explicit enabled composition', async () => {
+    const service = createWorkoutRegistrationService(() => true)
+    const error = { code: 'XX001', message: 'private failure' }
+    const h = harness([{ name: 'get_mobile_workout_registration', args: GET_ARGS, error }])
+    await expect(service.loadVersionedWorkoutRegistration(h.supabase, OWNER, ID)).rejects.toBe(
+      error,
+    )
+    expect(h.rpc).toHaveBeenCalledTimes(1)
+    h.done()
+  })
+})
 
 describe('versioned workout service — dormant switch and owned reads', () => {
   it.each([

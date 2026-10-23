@@ -654,6 +654,11 @@ export function estimateMacros(foodName: string): {
     return { category: 'gordura_pura', kcal: 726, protein: 0.4, carbs: 0.1, fat: 82, fiber: 0 }
   }
   // Fallback genérico — prato preparado
+  return genericPreparedDishMacros()
+}
+
+/** The existing generic prepared-dish reference, per100g. No recipe is inferred. */
+export function genericPreparedDishMacros(): ReturnType<typeof estimateMacros> {
   return { category: 'prato_genérico', kcal: 150, protein: 7, carbs: 18, fat: 5, fiber: 1 }
 }
 

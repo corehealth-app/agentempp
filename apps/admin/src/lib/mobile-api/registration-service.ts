@@ -19,6 +19,7 @@ import type { MobileAuthContext } from './auth'
 import type { RegistrationProposalInput } from './contracts'
 import { MobileApiError } from './http'
 import { DEFAULT_MEAL_CONFIDENCE_THRESHOLD } from './meal-draft-service'
+import { applyMobilePreparedDishEstimate } from './prepared-dish-estimate'
 import { sanitizePendingProposal } from './read-model'
 import { createSupabaseMediaDependencies } from './supabase-media'
 
@@ -402,12 +403,15 @@ async function buildProposal(
     if (expanded.items.length > 30) {
       throw new MobileApiError(422, 'meal_item_limit_exceeded', 'Too many meal items to review')
     }
-    const calculation = await calcMealMacros(
+    const calculationInputs = await mealItemsForCalculation(supabase, auth.userId, expanded)
+    const calculation = applyMobilePreparedDishEstimate(await calcMealMacros(
       supabase,
-      await mealItemsForCalculation(supabase, auth.userId, expanded),
+      calculationInputs,
       auth.patient.country,
       auth.userId,
-    )
+    ), calculationInputs.map((item, index) => ({
+      ...item, use_nutrition_label: expanded.items[index]?.use_nutrition_label,
+    })), origin, auth.patient.locale)
     calculation.user_warnings.push(...portionWarnings)
     // The established calculator may estimate a mixed dish from its total
     // weight. Explain that approximation without adding another confirmation

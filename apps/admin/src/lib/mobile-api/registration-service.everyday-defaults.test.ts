@@ -923,17 +923,56 @@ describe('Roberto23/10 — recover unchanged AI compound with the established ed
   beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(at)) })
   afterEach(() => { vi.useRealTimers() })
 
+  it('offers the approved generic estimate on the unchanged initial POST and PATCH, then persists it once', async () => {
+    const db = stagingDay({ windows: catalog(), localDate: date })
+    const textRequest: MealInput = { ...request, source: { channel: 'text' } }
+    const initial = await proposeRegistration(db.client as never, AUTH as never, textRequest, KEY_PROPOSE)
+    const edited = await editRegistration(db.client as never, AUTH as never, initial.id, textRequest, KEY_EDIT)
+    for (const response of [initial, edited]) {
+      expect(response.proposal).toMatchObject({ items: [
+        { name: pasta, quantity_g: 200, kcal: 260, nutrition_source: 'canonical_exact', resolution: 'resolved' },
+        { name: compound, quantity_g: 180, kcal: 270, protein_g: 12.6, carbs_g: 32.4, fat_g: 9,
+          nutrition_source: 'llm_estimate', resolution: 'resolved', quantity_basis: 'visual_estimate', user_kcal: null },
+      ], totals: { kcal: 530, protein_g: 22.6, carbs_g: 82.4, fat_g: 12 } })
+      if (response.proposal.kind !== 'meal' || !response.proposal.warnings) throw new Error('Expected a meal proposal with explicit estimate warnings')
+      expect(response.proposal.warnings).toContainEqual(expect.stringContaining('referência genérica de prato preparado'))
+      expect(response.proposal.warnings.join(' ')).not.toContain('Peça pro paciente')
+    }
+    expect(db.meals).toEqual([])
+    await confirmRegistration(db.client as never, AUTH as never, initial.id)
+    await confirmRegistration(db.client as never, AUTH as never, initial.id)
+    expect(db.meals).toMatchObject([
+      { food_name: pasta, quantity_g: 200, kcal: 260 },
+      { food_name: compound, quantity_g: 180, kcal: 270, protein_g: 12.6, carbs_g: 32.4, fat_g: 9 },
+    ])
+    expect(db.meals).toHaveLength(2)
+    expect(db.snapshot.calories_consumed).toBe(530)
+  })
+
+  it('keeps a genuinely unknown composition blocked beside the recognized prepared dish', async () => {
+    const unknown = 'zzm3aqa8237 com zzm3aqa9274'
+    const windows = { ...catalog(), [unknown]: [], zzm3aqa8237: [], zzm3aqa9274: [] }
+    const db = stagingDay({ windows, localDate: date })
+    const initial = await proposeRegistration(db.client as never, AUTH as never, {
+      ...request, source: { channel: 'text' }, items: [...request.items, { food_name: unknown, quantity_g: 11 }],
+    }, KEY_PROPOSE)
+    expect(initial.proposal).toMatchObject({ items: [
+      { name: pasta, kcal: 260 }, { name: compound, kcal: 270, resolution: 'resolved' },
+      { name: unknown, kcal: 0, nutrition_source: 'composite_rejected', resolution: 'needs_clarification' },
+    ] })
+    await expect(confirmRegistration(db.client as never, AUTH as never, initial.id)).rejects.toMatchObject({ status: 422, code: 'registration_unresolved_items' })
+    expect(db.meals).toEqual([])
+  })
+
   it.each(['all', 'partial'] as const)('recovers the unchanged180g total through two PATCHes when %s parts now match', async matching => {
     const windows = catalog(); const db = stagingDay({ windows, localDate: date })
     const initial = await proposeRegistration(db.client as never, AUTH as never, request, KEY_PROPOSE)
     expect(initial.proposal).toMatchObject({ items: [
       { name: pasta, quantity_g: 200, kcal: 260, user_kcal: null, nutrition_source: 'canonical_exact' },
-      { name: compound, quantity_g: 180, resolution: 'needs_clarification', nutrition_source: 'composite_rejected' },
+      { name: compound, quantity_g: 180, kcal: 270, resolution: 'resolved', nutrition_source: 'llm_estimate' },
     ] })
-    // An unchanged proposal really lacking calculation remains blocked; the
-    // patient did not create that state by editing. A later valid calculation
-    // follows the existing estimate policy, not a new per-ingredient barrier.
-    await expect(confirmRegistration(db.client as never, AUTH as never, initial.id)).rejects.toMatchObject({ status: 422, code: 'registration_unresolved_items' })
+    // The approved generic reference covers the initial mobile proposal. A
+    // later valid catalog calculation still takes precedence unchanged.
     expect(db.meals).toEqual([])
     recognizeParts(windows)
     if (matching === 'partial') windows.milho = []

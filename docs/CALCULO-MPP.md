@@ -2836,8 +2836,9 @@ com `422 registration_unresolved_items`.
 
 O cenário de regressão usa os nomes visíveis de macarrão espaguete cozido
 200 g e carne desfiada com molho e milho180 g. Catálogo, conta e relógio são
-sintéticos declarados. Testa a recusa sem cálculo, uma nova correspondência
-completa/parcial, preservação da origem estimada, edições repetidas e confirmação
+sintéticos declarados. Testa a referência genérica aprovada em §9j, a recusa de
+um composto realmente desconhecido, uma nova correspondência completa/parcial,
+preservação da origem estimada, edições repetidas e confirmação
 sem duplicação. Não reconstrói a quantidade do parmesão parcialmente visível,
 não lê a conta real e não comprova a causa exata do Salvar no aparelho relatado.
 
@@ -2847,6 +2848,41 @@ Testes: `registration-service.everyday-defaults.test.ts`,
 resposta de demonstração local; a persistência e o recálculo do servidor são
 provas separadas. Fórmulas, catálogo, contrato, writers e entrada WhatsApp não
 mudam por este complemento.
+
+### 9j. App: prato preparado reconhecido sem receita correspondente (23/10/2026)
+
+Após a reprodução do bloqueio de "carne desfiada com molho e milho", Eduardo
+escolheu **estimativa aproximada e editável**. Somente propostas com origem
+`mobile_app` podem substituir uma saída `composite_rejected` pelo uso explícito
+da referência genérica de prato preparado já existente no motor: por100 g,
+150 kcal, P7 g, C18 g, G5 g e fibra1 g. Não é uma receita identificada, validação
+da precisão nutricional da foto, nem uma chamada de IA. A fonte técnica continua
+`llm_estimate`, nome histórico do fallback determinístico.
+
+A admissão consome o nome inteiro: "carne desfiada" ou "carne cozida", seguido
+de um ou dois complementos distintos (molho/molho de tomate; milho/milho cozido),
+ligados por `com`, `e` ou `+`. Caixa, acentos e espaços são normalizados.
+Negação, marca/SKU, ingrediente desconhecido, preparo diferente, complemento
+repetido ou texto sobrante não passam. Não é reconhecimento geral de receitas.
+Peso deve ser positivo, até9999 g, associado a uma única entrada válida pelo
+mapa `input_indexes`, sem calorias explícitas, rótulo ou nutrição aprovada e sem
+preparo pendente. Quantidade, nome, origem aproximada, candidato, ordem, refeição,
+horário e mídia permanecem; nenhum ingrediente ou proporção é inventado.
+
+O item inteiro de180 g recebe270 kcal, P12,6 g, C32,4 g, G9 g e fibra1,8 g.
+Somente sua contribuição é acrescentada aos cinco totais originais; vizinhos
+válidos não são recalculados pelas linhas arredondadas. Remove-se apenas uma
+ocorrência do aviso de rejeição desse item e acrescenta-se aviso PT/EN de
+referência genérica, valores aproximados e correção possível antes de confirmar.
+Matches integrais, composições completas/parciais, rótulos, valores explícitos e
+preparo ambíguo mantêm a precedência anterior. A entrada compartilhada e o legado
+WhatsApp não recebem esse opt-in. Sem migration ou modificação de registro antigo.
+
+Regressões: `prepared-dish-estimate.test.ts`, cenário literal em
+`registration-service.everyday-defaults.test.ts` (POST, PATCH, confirmação e
+repetição sem duplicação) e golden `audit-10-23-prepared-dish-boundary.test.ts`
+(motor compartilhado mantém a recusa sem opt-in). Esses testes são locais com
+dados sintéticos; deploy, aparelho e aceitação do Roberto exigem evidências próprias.
 
 ---
 

@@ -150,17 +150,8 @@ struct MealDraftReviewView: View {
                 )
                 .accessibilityIdentifier("registration.review.item.\(value.id).basis")
 
-                if value.requiresConfirmation {
-                    Toggle(isOn: item.isConfirmed) {
-                        Text(copy("registration.review.confirm-item"))
-                            .font(BodyFlowTypography.callout)
-                    }
-                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget + 4)
-                    .contentShape(Rectangle())
-                    .accessibilityLabel(
-                        copy("registration.review.confirm-item") + ": " + value.trimmedName
-                    )
-                    .accessibilityIdentifier("registration.review.item.\(value.id).confirm")
+                if value.hasReviewNotice && !value.hasApproximateQuantity && !value.hasDoubtfulName {
+                    BodyFlowStatusLine(copy("registration.review.reason.check"), kind: .info)
                 }
 
                 if review.offersNutritionLabel {
@@ -213,7 +204,7 @@ struct MealDraftReviewView: View {
                 return item.quantityValue.invalidKey
             }
             return MealCaptureCopy.blockerKey(blocker)
-        case .noItems, .invalidName, .unconfirmed:
+        case .noItems, .invalidName:
             return MealCaptureCopy.blockerKey(blocker)
         }
     }

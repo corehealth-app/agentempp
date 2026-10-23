@@ -31,19 +31,19 @@ struct MealHouseholdQuantityTests {
     func wheyMeasures() throws {
         var item = MealDraftReview.Item(candidate: try candidate(name: "whey", grams: "30", metadata: whey))
         #expect(item.quantityDisplay(language: pt) == "1")
-        #expect(item.requiresConfirmation)
+        #expect(item.hasApproximateQuantity)
         item.setQuantityText("2", language: en)
         #expect(item.quantity(language: en) == 60)
         #expect(item.basis == .portionReference)
     }
 
-    @Test("Only changing display mode preserves precise original grams and approximate confirmation")
+    @Test("Only changing display mode preserves precise original grams and approximate provenance")
     func untouchedModeRoundTrip() throws {
         var item = MealDraftReview.Item(candidate: try candidate(name: "whey", grams: "25.123456789", metadata: whey))
         for _ in 0..<8 { item.toggleQuantityUnit(language: pt) }
         #expect(item.quantity(language: pt) == Decimal(string: "25.123456789"))
         #expect(!item.hasTypedQuantity)
-        #expect(item.requiresConfirmation)
+        #expect(item.hasApproximateQuantity)
         #expect(item.basis == .portionReference)
     }
 

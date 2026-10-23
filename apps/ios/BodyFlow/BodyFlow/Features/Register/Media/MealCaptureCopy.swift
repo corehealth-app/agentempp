@@ -49,7 +49,6 @@ enum MealCaptureCopy {
         case .noItems: "registration.review.blocker.no-items"
         case .invalidName: "registration.review.blocker.name"
         case .missingQuantity, .invalidQuantity: "registration.review.blocker.quantity"
-        case .unconfirmed: "registration.review.blocker.unconfirmed"
         }
     }
 

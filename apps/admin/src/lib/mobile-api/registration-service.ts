@@ -409,6 +409,15 @@ async function buildProposal(
       auth.userId,
     )
     calculation.user_warnings.push(...portionWarnings)
+    // The established calculator may estimate a mixed dish from its total
+    // weight. Explain that approximation without adding another confirmation
+    // or changing a valid result; partial matches keep their existing warning.
+    for (const item of calculation.items) {
+      if (item.source !== 'canonical_composite') continue
+      calculation.user_warnings.push(auth.patient.locale?.startsWith('en')
+        ? `I calculated "${item.food_name}" as an estimated mixture from its total weight. The ingredient proportions are approximate and can be edited.`
+        : `Calculei "${item.food_name}" como uma composição estimada a partir do peso total. As proporções dos ingredientes são aproximadas e podem ser corrigidas.`)
+    }
     return buildMealPendingProposal(expanded, calculation, timing, origin) as unknown as Json
   }
 

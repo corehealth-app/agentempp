@@ -1,6 +1,11 @@
 {
   "sourceLanguage" : "pt-BR",
   "strings" : {
+    "registration.proposal.confirm.blocked.named": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Ainda não é possível registrar: falta calcular a nutrição de %@. Corrija o nome, o preparo ou a quantidade para recalcular. Os outros alimentos serão mantidos."}}, "en": {"stringUnit": {"state": "translated", "value": "This meal cannot be recorded yet: nutrition has not been calculated for %@. Correct the name, preparation or amount to recalculate. Your other foods will be kept."}}}},
+    "registration.review.reason.check" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Check this item before calculating the meal." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Confira este item antes de calcular a refei\u00e7\u00e3o." } }
+    } },
     "meal.quantity.units" : {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Quantidade (unidades)"}}, "en": {"stringUnit": {"state": "translated", "value": "Quantity (units)"}}}},
     "meal.quantity.scoops" : {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Quantidade (medidas)"}}, "en": {"stringUnit": {"state": "translated", "value": "Quantity (scoops)"}}}},
     "meal.quantity.reference.invalid" : {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Informe uma quantidade válida usando apenas o separador decimal."}}, "en": {"stringUnit": {"state": "translated", "value": "Enter a valid quantity using only the decimal separator."}}}},
@@ -6212,6 +6217,70 @@
     "registration.editor.kcal.reported" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Calories reported by you" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Calorias informadas por você" } }
+    } },
+    "registration.editor.list.title" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Foods in this meal" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Alimentos desta refeição" } }
+    } },
+    "registration.editor.list.add" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Add ingredient" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Adicionar ingrediente" } }
+    } },
+    "registration.editor.list.remove" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Remove %@" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Remover %@" } }
+    } },
+    "registration.editor.list.undo" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Restore %@" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Restaurar %@" } }
+    } },
+    "registration.editor.list.removed" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Removed foods — undo" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Alimentos removidos — desfazer" } }
+    } },
+    "registration.editor.list.new" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "New ingredient" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Novo ingrediente" } }
+    } },
+    "registration.editor.list.empty" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Add at least one food before saving." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Adicione pelo menos um alimento para salvar." } }
+    } },
+    "registration.editor.list.limit" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "This proposal accepts up to 30 foods. Remove foods to add or restore another." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "A proposta aceita até 30 alimentos. Remova itens para incluir ou restaurar outro." } }
+    } },
+    "registration.editor.list.correct-item" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Correct %@" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Corrigir %@" } }
+    } },
+    "registration.editor.list.name-hint" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Enter a food name with up to 160 characters." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Informe um nome de alimento com até 160 caracteres." } }
+    } },
+    "registration.editor.list.name-invalid" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Check the name of %@: it must contain 1 to 160 characters." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Confira o nome de %@: ele precisa ter de 1 a 160 caracteres." } }
+    } },
+    "registration.editor.list.quantity-invalid" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Check the amount of %@ before saving." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Confira a quantidade de %@ para salvar." } }
+    } },
+    "registration.editor.list.kcal-invalid" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Check the calories you entered for %@." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Confira as calorias que você informou para %@." } }
+    } },
+    "registration.editor.list.kcal-cleared" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Calories you reported for %@ were cleared. Enter a value or choose the Performe AI calculation." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "As calorias informadas para %@ foram apagadas. Informe o valor ou escolha o cálculo do Performe AI." } }
+    } },
+    "registration.editor.list.origin-unknown" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The origin of the calories for %@ is unavailable. Select that food and choose the Performe AI calculation to recalculate it." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "A origem das calorias de %@ está indisponível. Selecione esse alimento e escolha o cálculo do Performe AI para recalculá-lo." } }
+    } },
+    "registration.editor.list.recalculate-origin" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "The origin of this food's calories is unavailable. Choose the Performe AI calculation to recalculate this food; values you reported for other foods will be kept." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "A origem das calorias deste alimento está indisponível. Escolha o cálculo do Performe AI para recalcular este alimento; os valores informados nos outros serão mantidos." } }
     } },
     "registration.editor.meal" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Meal" } },

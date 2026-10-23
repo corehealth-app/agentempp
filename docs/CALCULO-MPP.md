@@ -5,7 +5,7 @@
 > (1) o código, (2) o teste que a trava, (3) este documento — na mesma PR.
 > Nunca mude uma fórmula "no susto" por um print de paciente sem checar aqui.
 
-Última revisão: 2026-10-11.
+Última revisão geral: 2026-10-11. Complemento de revisão de refeições no app: 2026-10-23 (§9i).
 
 ---
 
@@ -2806,6 +2806,47 @@ rótulo aprovado têm sua precedência mantida. O helper puro exportado pelo age
 é consumido pelo BFF; `naturalUnit`, ferramentas e entradas do motor legado não
 mudam. A receita genérica "leite com whey" fora da frase delimitada, variantes
 não descritas e o legado do WhatsApp não são declarados corrigidos por isso.
+
+---
+
+### 9i. App: revisão e recuperação de uma proposta (23/10/2026)
+
+Uma leitura válida da IA pode seguir para cálculo sem um reconhecimento
+obrigatório em cada alimento. Os avisos de aproximação, a origem da quantidade
+e a escolha explícita de rótulo nutricional permanecem. A confirmação final
+de consumo continua separada do cálculo e da edição da proposta.
+
+Se o motor não calculou um alimento, a proposta informa qual item precisa de
+correção e dá acesso ao editor. Esse editor trabalha na mesma proposta: permite
+editar vários alimentos, adicionar um ingrediente com campos vazios, remover
+explicitamente e desfazer a remoção. Conserva os demais itens, as quantidades
+originais, calorias informadas pela pessoa, mídia, refeição e horário. Os UUIDs
+locais selecionam os campos; não são identidade persistente de ingredientes no
+servidor nem uma garantia nova de concorrência entre dispositivos.
+
+**Compatibilidade com §9b:** uma rejeição anterior não torna inválido um novo
+cálculo completo ou parcial obtido pelo motor. A regra de estimativa existente
+permanece; não há nova exigência de pesar cada ingrediente para aceitar uma
+composição calculada. No BFF mobile, `canonical_composite` recebe um aviso de
+proporções aproximadas e editáveis, em português ou inglês. O resultado parcial
+conserva seu aviso sobre as partes não identificadas. Os valores, fontes e
+totais calculados não são zerados ou reclassificados por causa do histórico do
+pending. Sources realmente não resolvidos continuam recusados na confirmação
+com `422 registration_unresolved_items`.
+
+O cenário de regressão usa os nomes visíveis de macarrão espaguete cozido
+200 g e carne desfiada com molho e milho180 g. Catálogo, conta e relógio são
+sintéticos declarados. Testa a recusa sem cálculo, uma nova correspondência
+completa/parcial, preservação da origem estimada, edições repetidas e confirmação
+sem duplicação. Não reconstrói a quantidade do parmesão parcialmente visível,
+não lê a conta real e não comprova a causa exata do Salvar no aparelho relatado.
+
+Testes: `registration-service.everyday-defaults.test.ts`,
+`MealSimplifiedReviewTests`, `MealCompositeRecoveryCharacterizationTests`,
+`MealProposalListEditorTests` e `MealProposalListEditorUITests`. O UITest usa
+resposta de demonstração local; a persistência e o recálculo do servidor são
+provas separadas. Fórmulas, catálogo, contrato, writers e entrada WhatsApp não
+mudam por este complemento.
 
 ---
 

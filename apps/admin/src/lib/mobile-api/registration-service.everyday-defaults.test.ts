@@ -308,14 +308,15 @@ function emptyTable(): unknown {
 
 const toCents = (value: number) => Math.round(value * 100)
 
-function stagingDay(options: { withoutRows?: number[] } = {}) {
+function stagingDay(options: { withoutRows?: number[]; windows?: Record<string, FoodRow[]>; localDate?: string } = {}) {
+  const localDate = options.localDate ?? LOCAL_DATE
   const meals: MealRow[] = []
   const pendings: PendingRow[] = []
   const searches: Array<{ term: string; min_similarity: number }> = []
   const snapshot = {
     id: SNAPSHOT_ID,
     user_id: USER_ID,
-    date: LOCAL_DATE,
+    date: localDate,
     calories_consumed: 0,
     protein_g: 0,
     carbs_g: 0,
@@ -333,7 +334,7 @@ function stagingDay(options: { withoutRows?: number[] } = {}) {
     const term = String(params.search_term)
     const minSimilarity = Number(params.min_similarity)
     searches.push({ term, min_similarity: minSimilarity })
-    const window = WINDOWS[term]
+    const window = options.windows?.[term] ?? WINDOWS[term]
     if (!window) throw new Error(`in-memory db: no catalog window for "${term}"`)
     return {
       data: window
@@ -346,7 +347,7 @@ function stagingDay(options: { withoutRows?: number[] } = {}) {
 
   // public.register_meal_atomic (20260713145901), for the day of the fixture.
   const registerMealAtomic = (params: AtomicParams) => {
-    if (params.p_user_id !== USER_ID || params.p_date !== LOCAL_DATE) {
+    if (params.p_user_id !== USER_ID || params.p_date !== localDate) {
       return { data: null, error: { message: 'fixture holds only the day of the report' } }
     }
     const inserted: string[] = []
@@ -887,5 +888,145 @@ describe('rule M2 (iPhone 2026-10-04) — "leite" and "whey" through the app API
       { food_name: 'whey protein em pó', quantity_g: 30, kcal: 105.6 },
     ])
     expect(db.snapshot).toMatchObject({ calories_consumed: 350 })
+  })
+})
+
+
+// Roberto23/10: names,200g/180g and260kcal are visible in the report.
+// Catalog identities/macros (130kcal/100g for pasta), account, keys and clock
+// below are declared synthetic. This runs the real calculator and writers
+// against the in-memory RPC model above, not Roberto's account or a live DB.
+describe('Roberto23/10 — recover unchanged AI compound with the established editable estimates', () => {
+  const compound = 'carne desfiada com molho e milho'
+  const pasta = 'macarrão espaguete cozido'
+  const date = '2026-10-23'
+  const at = '2026-10-23T16:30:00.000Z'
+  const request: MealInput = {
+    kind: 'meal', meal_type: 'almoco',
+    items: [
+      { food_name: pasta, quantity_g: 200, quantity_basis: 'visual_estimate' },
+      { food_name: compound, quantity_g: 180, quantity_basis: 'visual_estimate' },
+    ],
+    source: { channel: 'gallery' },
+  }
+  function catalog() {
+    return {
+      [pasta]: [food(90001, pasta, 'Synthetic fixture', 1, 130, 5, 25, 1.5, 0)],
+      [compound]: [], 'carne desfiada': [], desfiada: [], carne: [], molho: [], milho: [],
+    } as Record<string, FoodRow[]>
+  }
+  function recognizeParts(windows: Record<string, FoodRow[]>) {
+    windows['carne desfiada'] = [food(90002, 'carne desfiada', 'Synthetic fixture', 1, 200, 25, 0, 10, 0)]
+    windows.molho = [food(90003, 'molho', 'Synthetic fixture', 1, 50, 1, 8, 1, 0)]
+    windows.milho = [food(90004, 'milho', 'Synthetic fixture', 1, 100, 3, 20, 2, 0)]
+  }
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(at)) })
+  afterEach(() => { vi.useRealTimers() })
+
+  it.each(['all', 'partial'] as const)('recovers the unchanged180g total through two PATCHes when %s parts now match', async matching => {
+    const windows = catalog(); const db = stagingDay({ windows, localDate: date })
+    const initial = await proposeRegistration(db.client as never, AUTH as never, request, KEY_PROPOSE)
+    expect(initial.proposal).toMatchObject({ items: [
+      { name: pasta, quantity_g: 200, kcal: 260, user_kcal: null, nutrition_source: 'canonical_exact' },
+      { name: compound, quantity_g: 180, resolution: 'needs_clarification', nutrition_source: 'composite_rejected' },
+    ] })
+    // An unchanged proposal really lacking calculation remains blocked; the
+    // patient did not create that state by editing. A later valid calculation
+    // follows the existing estimate policy, not a new per-ingredient barrier.
+    await expect(confirmRegistration(db.client as never, AUTH as never, initial.id)).rejects.toMatchObject({ status: 422, code: 'registration_unresolved_items' })
+    expect(db.meals).toEqual([])
+    recognizeParts(windows)
+    if (matching === 'partial') windows.milho = []
+    for (const key of [KEY_EDIT, '0b9f6f0e-58a1-4a10-9d55-2230100000b4']) {
+      const edited = await editRegistration(db.client as never, AUTH as never, initial.id, request, key)
+      expect(edited.proposal).toMatchObject({ items: [
+        { name: pasta, quantity_g: 200, kcal: 260, user_kcal: null, quantity_basis: 'visual_estimate' },
+        { name: compound, quantity_g: 180, kcal: matching === 'all' ? 210 : 225,
+          resolution: 'resolved', nutrition_source: matching === 'all' ? 'canonical_composite' : 'canonical_composite_partial',
+          quantity_basis: 'visual_estimate', user_kcal: null },
+      ], totals: { kcal: matching === 'all' ? 470 : 485 } })
+      if (matching === 'all') {
+        expect(edited.proposal.kind === 'meal' && edited.proposal.warnings).toContainEqual(expect.stringContaining('As proporções dos ingredientes são aproximadas'))
+      } else {
+        expect(edited.proposal.kind === 'meal' && edited.proposal.warnings).toContainEqual(expect.stringContaining(`Calculei "${compound}" usando só [`))
+      }
+      expect(db.meals).toEqual([])
+    }
+    await confirmRegistration(db.client as never, AUTH as never, initial.id)
+    await confirmRegistration(db.client as never, AUTH as never, initial.id)
+    expect(db.meals).toHaveLength(2)
+    expect(db.snapshot.calories_consumed).toBe(matching === 'all' ? 470 : 485)
+  })
+
+  it('keeps an already resolved compound intact when reordered beside the rejected compound', async () => {
+    const windows = catalog()
+    windows['abacate com tomate'] = []
+    windows.abacate = [food(90006, 'abacate', 'Synthetic fixture', 1, 150, 2, 5, 15, 0)]
+    windows.tomate = [food(90007, 'tomate', 'Synthetic fixture', 1, 20, 1, 4, 0, 0)]
+    const valid = { food_name: 'abacate com tomate', quantity_g: 150, quantity_basis: 'visual_estimate' as const }
+    const db = stagingDay({ windows, localDate: date })
+    const initial = await proposeRegistration(db.client as never, AUTH as never, { ...request, items: [...request.items, valid] }, KEY_PROPOSE)
+    const before = structuredClone((db.pendings[0]!.proposal as { items: Row[] }).items[2])
+    expect(before).toMatchObject({ nutrition_source: 'canonical_composite' })
+    recognizeParts(windows)
+    const edited = await editRegistration(db.client as never, AUTH as never, initial.id, { ...request, items: [valid, ...request.items] }, KEY_EDIT)
+    expect((db.pendings[0]!.proposal as { items: Row[] }).items[0]).toEqual(before)
+    expect(edited.proposal).toMatchObject({ items: [
+      { name: valid.food_name, nutrition_source: 'canonical_composite', resolution: 'resolved' },
+      { name: pasta, kcal: 260 }, { name: compound, nutrition_source: 'canonical_composite', resolution: 'resolved' },
+    ] })
+  })
+
+  it('explains a complete mixture estimate in English while retaining its calculated nutrition', async () => {
+    const windows = catalog(); recognizeParts(windows)
+    const db = stagingDay({ windows, localDate: date })
+    const response = await proposeRegistration(db.client as never, { ...AUTH, patient: { ...AUTH.patient, locale: 'en-US' } } as never, request, KEY_PROPOSE)
+    expect(response.proposal).toMatchObject({ items: [{ name: pasta }, { name: compound, kcal: 210, resolution: 'resolved' }] })
+    expect(response.proposal.kind === 'meal' && response.proposal.warnings).toContainEqual(expect.stringContaining('The ingredient proportions are approximate and can be edited.'))
+  })
+
+  it('accepts explicitly separated ingredients then records and deduplicates the reviewed meal', async () => {
+    const windows = catalog(); const db = stagingDay({ windows, localDate: date })
+    const initial = await proposeRegistration(db.client as never, AUTH as never, request, KEY_PROPOSE)
+    recognizeParts(windows)
+    const edited = await editRegistration(db.client as never, AUTH as never, initial.id, {
+      ...request, items: [request.items[0]!,
+        { food_name: 'carne desfiada', quantity_g: 130, quantity_basis: 'stated' },
+        { food_name: 'molho', quantity_g: 30, quantity_basis: 'stated' },
+        { food_name: 'milho', quantity_g: 20, quantity_basis: 'stated' },
+      ],
+    }, KEY_EDIT)
+    expect(edited.proposal).toMatchObject({ items: [
+      { name: pasta, quantity_g: 200, kcal: 260 },
+      { name: 'carne desfiada', quantity_g: 130, kcal: 260, resolution: 'resolved' },
+      { name: 'molho', quantity_g: 30, kcal: 15, resolution: 'resolved' },
+      { name: 'milho', quantity_g: 20, kcal: 20, resolution: 'resolved' },
+    ] })
+    await confirmRegistration(db.client as never, AUTH as never, initial.id)
+    await confirmRegistration(db.client as never, AUTH as never, initial.id)
+    expect(db.meals).toHaveLength(4)
+    expect(db.snapshot.calories_consumed).toBe(555)
+  })
+
+  it('allows an integral recipe match without inferring ingredient weights', async () => {
+    const windows = catalog(); const db = stagingDay({ windows, localDate: date })
+    const initial = await proposeRegistration(db.client as never, AUTH as never, request, KEY_PROPOSE)
+    windows[compound] = [food(90005, compound, 'Synthetic whole recipe', 1, 150, 15, 10, 5, 0)]
+    const edited = await editRegistration(db.client as never, AUTH as never, initial.id, request, KEY_EDIT)
+    expect(edited.proposal).toMatchObject({ items: [{ name: pasta, kcal: 260 }, { name: compound, quantity_g: 180, kcal: 270, nutrition_source: 'canonical_exact', resolution: 'resolved' }] })
+    await confirmRegistration(db.client as never, AUTH as never, initial.id)
+    expect(db.meals).toHaveLength(2)
+  })
+
+  it('preserves the established composite calculation for a normal new POST and PATCH', async () => {
+    const windows = catalog(); recognizeParts(windows)
+    const db = stagingDay({ windows, localDate: date })
+    const initial = await proposeRegistration(db.client as never, AUTH as never, request, KEY_PROPOSE)
+    const edited = await editRegistration(db.client as never, AUTH as never, initial.id, request, KEY_EDIT)
+    for (const response of [initial, edited]) {
+      expect(response.proposal).toMatchObject({ items: [{ name: pasta }, { name: compound, nutrition_source: 'canonical_composite', resolution: 'resolved' }] })
+    }
+    await confirmRegistration(db.client as never, AUTH as never, initial.id)
+    expect(db.meals).toHaveLength(2)
   })
 })

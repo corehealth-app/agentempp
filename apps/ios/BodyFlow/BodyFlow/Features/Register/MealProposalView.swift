@@ -117,7 +117,14 @@ struct MealProposalPresentation: Equatable, Sendable {
                     fatG: $0.fatG
                 )
             }
-            warnings = proposal.warnings
+            // Old pendings may contain the legacy operator instruction.
+            // The mobile surface supplies its own localized, actionable
+            // unresolved-item explanation below. Keep unrelated warnings.
+            let rejectedNames = proposal.items.filter { $0.nutritionSource == "composite_rejected" }.map(\.name)
+            warnings = proposal.warnings.filter { warning in
+                !(warning.contains("Peça pro paciente")
+                    && rejectedNames.contains { warning.contains($0) })
+            }
             kcalProvenance = MealProposalKcalProvenance(items: proposal.items)
         case .workout, .unknown:
             mealType = nil
@@ -173,7 +180,7 @@ struct MealProposalView: View {
                     Text(MealQuantityValue(grams: item.quantityG, metadata: item.quantityDisplay, name: item.name).label(language: language) ?? "")
                         .foregroundStyle(BodyFlowColor.secondaryText)
                     if item.needsClarification {
-                        unresolvedItemActions(index: index)
+                        unresolvedItemNotice(index: index)
                     } else {
                     nutrientText(
                         copy("registration.metric.energy"),
@@ -250,8 +257,19 @@ struct MealProposalView: View {
                 .foregroundStyle(BodyFlowColor.secondaryText)
 
             if proposal.status == "pending", proposal.hasUnresolvedItems {
-                BodyFlowStatusLine(copy("registration.proposal.confirm.blocked"), kind: .warning)
+                BodyFlowStatusLine(blockedExplanation, kind: .warning)
                     .accessibilityIdentifier("registration.proposal.confirm.blocked")
+                if proposal.allowsEdit,
+                   let index = proposal.items.firstIndex(where: \.needsClarification) {
+                    Button { editItem(index) } label: {
+                        Text(copy("registration.proposal.item.resolve"))
+                            .frame(minHeight: BodyFlowSpacing.minimumTapTarget + 1)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(BodyFlowButtonStyle(role: .primary))
+                    .disabled(isSubmitting)
+                    .accessibilityIdentifier("registration.proposal.item.\(index).resolve")
+                }
             }
             if proposal.allowsConfirm {
                 Button(action: confirm) {
@@ -263,7 +281,7 @@ struct MealProposalView: View {
                     .disabled(isSubmitting)
                     .accessibilityIdentifier("registration.proposal.confirm")
             }
-            if proposal.allowsEdit {
+            if proposal.allowsEdit && !proposal.hasUnresolvedItems {
                 Button(action: edit) {
                     Text(copy("registration.proposal.edit-first-item"))
                         .frame(minHeight: BodyFlowSpacing.minimumTapTarget + 1)
@@ -291,21 +309,15 @@ struct MealProposalView: View {
     /// An item without calculation shows why and how to fix it instead of
     /// zeros that would read as a result.
     @ViewBuilder
-    private func unresolvedItemActions(index: Int) -> some View {
+    private func unresolvedItemNotice(index: Int) -> some View {
         BodyFlowStatusLine(copy("registration.proposal.item.needs-clarification"), kind: .warning)
             .accessibilityIdentifier("registration.proposal.item.\(index).needs-clarification")
-        if proposal.allowsEdit {
-            Button {
-                editItem(index)
-            } label: {
-                Text(copy("registration.proposal.item.resolve"))
-                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget + 1)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(BodyFlowButtonStyle(role: .secondary))
-            .disabled(isSubmitting)
-            .accessibilityIdentifier("registration.proposal.item.\(index).resolve")
-        }
+    }
+
+    private var blockedExplanation: String {
+        let names = proposal.items.filter(\.needsClarification).map(\.name).joined(separator: ", ")
+        return String(format: copy("registration.proposal.confirm.blocked.named"),
+            locale: language.formattingLocale, names)
     }
 
     @ViewBuilder

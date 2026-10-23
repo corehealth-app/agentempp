@@ -25,10 +25,6 @@ struct MealDraftReview: Equatable, Sendable {
             get { quantityEntry.text }
             set { quantityEntry.setText(newValue, usesReference: quantityValue.usesReference) }
         }
-        /// The patient's explicit "this is right" for an approximate portion
-        /// or a name read with doubt.
-        var isConfirmed = false
-
         var id: String { candidate.candidateID }
 
         init(candidate: MealDraftCandidate) {
@@ -64,7 +60,7 @@ struct MealDraftReview: Equatable, Sendable {
 
         /// The server asked for a second look and the patient changed
         /// nothing yet.
-        private var isFlaggedAndUntouched: Bool {
+        var hasReviewNotice: Bool {
             candidate.needsReview && !hasTypedQuantity && trimmedName == candidate.name
                 && serverQuantity != nil
         }
@@ -74,10 +70,6 @@ struct MealDraftReview: Equatable, Sendable {
             guard trimmedName == candidate.name else { return false }
             return candidate.reviewReason == "ambiguous"
                 || candidate.reviewReason == "low_confidence"
-        }
-
-        var requiresConfirmation: Bool {
-            hasApproximateQuantity || hasDoubtfulName || isFlaggedAndUntouched
         }
 
         /// What the patient typed; typing the server's own figure back (or
@@ -117,7 +109,6 @@ struct MealDraftReview: Equatable, Sendable {
         case invalidName(id: String)
         case missingQuantity(id: String)
         case invalidQuantity(id: String)
-        case unconfirmed(id: String)
     }
 
     static let maximumQuantityG = Decimal(9_999)
@@ -182,9 +173,6 @@ struct MealDraftReview: Equatable, Sendable {
             if item.quantity(language: language) == nil {
                 return item.hasTypedQuantity
                     ? .invalidQuantity(id: item.id) : .missingQuantity(id: item.id)
-            }
-            if item.requiresConfirmation, !item.isConfirmed {
-                return .unconfirmed(id: item.id)
             }
         }
         return nil

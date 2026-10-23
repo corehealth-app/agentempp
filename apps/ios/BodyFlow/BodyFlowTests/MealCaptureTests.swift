@@ -663,17 +663,11 @@ struct MealDraftReviewTests {
         )
     }
 
-    @Test("Reference portions need the patient's confirmation before anything is sent")
-    func approximatePortionsNeedConfirmation() throws {
-        var review = try review()
-
-        #expect(review.blocker(language: .portugueseBrazil) == .unconfirmed(id: "c1-0a1b2c3d"))
-        #expect(review.request(language: .portugueseBrazil) == nil)
-
-        review.items[0].isConfirmed = true
-        #expect(review.blocker(language: .portugueseBrazil) == .unconfirmed(id: "c2-1b2c3d4e"))
-
-        review.items[1].isConfirmed = true
+    @Test("Reference portions remain estimates without repeated acknowledgments before calculation")
+    func approximatePortionsKeepTheirBasis() throws {
+        let review = try review()
+        #expect(review.items.allSatisfy { $0.hasApproximateQuantity })
+        #expect(review.blocker(language: .portugueseBrazil) == nil)
         let request = try #require(review.request(language: .portugueseBrazil))
         #expect(request.mealType == .breakfast)
         #expect(request.source == MealProposalSource(channel: .text, mediaAssetID: nil))
@@ -694,7 +688,6 @@ struct MealDraftReviewTests {
     func typedQuantityIsStated() throws {
         var review = try review()
         review.items[0].quantityText = "120,5"
-        review.items[1].isConfirmed = true
 
         let request = try #require(review.request(language: .portugueseBrazil))
 
@@ -708,7 +701,6 @@ struct MealDraftReviewTests {
         var review = try review(
             CaptureFixtures.photoWithLabel, channel: .gallery, assetID: CaptureFixtures.assetID
         )
-        review.items[0].isConfirmed = true
 
         #expect(review.blocker(language: .portugueseBrazil) == .missingQuantity(id: "c2-bbbbbbbb"))
 
@@ -728,7 +720,7 @@ struct MealDraftReviewTests {
         #expect(request.source?.mediaAssetID == CaptureFixtures.assetID)
     }
 
-    @Test("A name read with doubt is confirmed or corrected")
+    @Test("A name read with doubt keeps its warning and can be corrected without a repeated acknowledgment")
     func doubtfulName() throws {
         let draft = MealDraftSnapshot(
             source: "audio", mediaAssetID: CaptureFixtures.assetID,
@@ -740,7 +732,8 @@ struct MealDraftReviewTests {
         )
         var review = try review(draft, channel: .audioRecording, assetID: CaptureFixtures.assetID)
 
-        #expect(review.blocker(language: .portugueseBrazil) == .unconfirmed(id: "c1-cccccccc"))
+        #expect(review.items[0].hasDoubtfulName)
+        #expect(review.blocker(language: .portugueseBrazil) == nil)
         review.items[0].name = "  tapioca  "
         let request = try #require(review.request(language: .portugueseBrazil))
         #expect(request.items[0].foodName == "tapioca")
@@ -757,7 +750,6 @@ struct MealDraftReviewTests {
         var review = try review(
             CaptureFixtures.photoWithLabel, channel: .camera, assetID: CaptureFixtures.assetID
         )
-        review.items[0].isConfirmed = true
         review.items[1].quantityText = "30"
 
         #expect(review.offersNutritionLabel)
@@ -777,7 +769,7 @@ struct MealDraftReviewTests {
         #expect(!review.usesNutritionLabel("unknown"))
     }
 
-    @Test("A quantity on a basis the app does not know needs confirmation and travels without basis")
+    @Test("A quantity on an unknown basis stays approximate and travels without invented basis")
     func unknownBasisFailsClosed() throws {
         let draft = MealDraftSnapshot(
             source: "text", mediaAssetID: nil, transcript: nil, contextNote: nil,
@@ -786,10 +778,10 @@ struct MealDraftReviewTests {
             )],
             nutritionLabel: nil
         )
-        var review = try review(draft)
+        let review = try review(draft)
 
-        #expect(review.blocker(language: .portugueseBrazil) == .unconfirmed(id: "c1-dddddddd"))
-        review.items[0].isConfirmed = true
+        #expect(review.items[0].hasApproximateQuantity)
+        #expect(review.blocker(language: .portugueseBrazil) == nil)
         let request = try #require(review.request(language: .portugueseBrazil))
         #expect(request.items[0].quantityBasis == nil)
     }
@@ -804,9 +796,9 @@ struct MealDraftReviewTests {
         review.items[0].setQuantityText("100", language: language)
 
         #expect(!review.items[0].hasTypedQuantity)
-        #expect(review.items[0].requiresConfirmation)
+        #expect(review.items[0].hasApproximateQuantity)
         #expect(review.items[0].basis == .portionReference)
-        #expect(review.blocker(language: language) == .unconfirmed(id: "c1-0a1b2c3d"))
+        #expect(review.blocker(language: language) == nil)
 
         // Erased: the field is empty and the quantity is missing, not zero.
         review.items[0].setQuantityText("", language: language)
@@ -828,7 +820,7 @@ struct MealDraftReviewTests {
         }
     }
 
-    @Test("The server asking for a second look is honoured even on a stated quantity")
+    @Test("The server asking for a second look keeps a notice without blocking a valid stated quantity")
     func needsReviewIsHonoured() throws {
         let draft = MealDraftSnapshot(
             source: "text", mediaAssetID: nil, transcript: nil, contextNote: nil,
@@ -838,8 +830,10 @@ struct MealDraftReviewTests {
             nutritionLabel: nil
         )
         var review = try review(draft)
-        #expect(review.blocker(language: .portugueseBrazil) == .unconfirmed(id: "c1-ffffffff"))
+        #expect(review.items[0].hasReviewNotice)
+        #expect(review.blocker(language: .portugueseBrazil) == nil)
         review.items[0].setQuantityText("130", language: .portugueseBrazil)
+        #expect(!review.items[0].hasReviewNotice)
         #expect(review.blocker(language: .portugueseBrazil) == nil)
     }
 

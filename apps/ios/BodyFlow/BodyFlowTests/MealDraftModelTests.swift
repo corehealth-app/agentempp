@@ -87,7 +87,6 @@ struct MealDraftModelTests {
 
         #expect(harness.model.phase == .review)
         #expect(harness.model.review?.mealType == .breakfast)
-        harness.model.review?.items[0].isConfirmed = true
         let request = try #require(harness.model.reviewedRequest(language: .portugueseBrazil))
         #expect(request.mealType == .breakfast)
         let payload = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any])
@@ -104,7 +103,6 @@ struct MealDraftModelTests {
         await harness.model.retry()
         #expect(harness.model.review?.mealType == .breakfast)
         harness.model.review?.mealType = .dinner
-        harness.model.review?.items[0].isConfirmed = true
         #expect(harness.model.reviewedRequest(language: .portugueseBrazil)?.mealType == .dinner)
     }
 
@@ -431,8 +429,10 @@ struct MealDraftModelTests {
         defer { try? FileManager.default.removeItem(at: harness.base) }
         await harness.model.submitMedia(try harness.stagedPhoto())
 
-        #expect(harness.model.reviewedRequest(language: .portugueseBrazil) == nil)
-        harness.model.review?.items[0].isConfirmed = true
+        // A valid review no longer needs a per-food acknowledgment. The
+        // ownership guarantee below still depends on proposalCreated, not
+        // on merely obtaining this request.
+        #expect(harness.model.phase == .review)
         let request = try #require(harness.model.reviewedRequest(language: .portugueseBrazil))
         harness.model.proposalCreated()
         harness.model.discardSheet()
@@ -448,7 +448,6 @@ struct MealDraftModelTests {
         let harness = makeHarness()
         defer { try? FileManager.default.removeItem(at: harness.base) }
         await harness.model.submitMedia(try harness.stagedPhoto())
-        harness.model.review?.items[0].isConfirmed = true
         // The request was handed over, and the proposal failed.
         _ = try #require(harness.model.reviewedRequest(language: .portugueseBrazil))
 

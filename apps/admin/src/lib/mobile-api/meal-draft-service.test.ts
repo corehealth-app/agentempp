@@ -58,6 +58,61 @@ describe('meal draft contract', () => {
 })
 
 describe('meal draft from text', () => {
+  it.each([
+    'macarrao espaguete cozido 200 g; carne desfiada com molho e milho 180 g',
+    'macarrão espaguete cozido 200 g\ncarne desfiada com molho e milho 180 g',
+    'macarrao espaguete cozido 200 g, 180 g de carne desfiada com molho e milho',
+  ])('Roberto23Oct text entry preserves the whole180g prepared dish: %s', async text => {
+    const extract = vi.fn(async () => { throw new Error('unexpected extraction') })
+    const draft = await createMealDraft(deps({ extractor: { extract } }), 'patient-a', { source: 'text', text })
+    expect(extract).not.toHaveBeenCalled()
+    expect(draft.items.map(item => [item.name, item.quantity_g, item.quantity_basis])).toEqual([
+      [text.includes('macarrão') ? 'macarrão espaguete cozido' : 'macarrao espaguete cozido', 200, 'stated'],
+      ['carne desfiada com molho e milho', 180, 'stated'],
+    ])
+    expect(new Set(draft.items.map(item => item.candidate_id)).size).toBe(2)
+    expect(draft.extraction).toEqual({ method: 'deterministic', model: null })
+    expect(JSON.stringify(draft)).not.toMatch(/kcal|protein_g/)
+  })
+
+  it('preserves a stated compound from owned audio without allocating its grams to milho', async () => {
+    const extract = vi.fn(async () => { throw new Error('unexpected extraction') })
+    const recording = asset({ kind: 'audio_note', processing_result: { text: '180,5 g de carne desfiada com molho e milho' } })
+    const draft = await createMealDraft(deps({ assets: [recording], extractor: { extract } }), 'patient-a', { source: 'media', media_asset_id: assetId })
+    expect(draft.items).toMatchObject([{ name: 'carne desfiada com molho e milho', quantity_g: 180.5, quantity_basis: 'stated' }])
+    expect(draft.items).toHaveLength(1)
+    expect(extract).not.toHaveBeenCalled()
+  })
+
+  it('keeps compound, counted foods and milk/whey in their original order', async () => {
+    const draft = await createMealDraft(deps({}), 'patient-a', { source: 'text', text: '2 ovos e 1 pão francês; carne desfiada com molho e milho 180 g; 1 caneca de leite com uma medida de whey' })
+    expect(draft.items.map(item => [item.name, item.quantity_g])).toEqual([
+      ['ovos', 100], ['pão francês', 50], ['carne desfiada com molho e milho', 180], ['leite integral', 206], ['whey protein em pó', 30],
+    ])
+    expect(new Set(draft.items.map(item => item.candidate_id)).size).toBe(5)
+  })
+
+  it('does not extend the prepared-dish exception to an unknown ingredient or ambiguous additional weight', async () => {
+    for (const text of ['carne desfiada com molho e zzunknown 180 g', 'carne desfiada com molho e milho 180 g 50 g']) {
+      const seen: string[] = []
+      const draft = await createMealDraft(deps({ extractor: { async extract({ text }) { seen.push(text); return { items: [], model: 'synthetic' } } } }), 'patient-a', { source: 'text', text })
+      expect(draft.items).not.toContainEqual(expect.objectContaining({ name: 'carne desfiada com molho e milho', quantity_basis: 'stated' }))
+      expect(seen.length + draft.items.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('never reassigns an internal ingredient weight to the whole prepared dish', async () => {
+    const draft = await createMealDraft(deps({}), 'patient-a', { source: 'text', text: 'carne desfiada com molho 180 g e milho' })
+    expect(draft.items.map(item => [item.name, item.quantity_g])).toEqual([
+      ['carne desfiada com molho', 180], ['milho', null],
+    ])
+  })
+
+  it.each(['-180 g', '-0,18 kg', '180 g 50 g'])('does not admit a negative or fragmented whole-dish weight: %s', async weight => {
+    const draft = await createMealDraft(deps({}), 'patient-a', { source: 'text', text: `carne desfiada com molho e milho ${weight}` })
+    expect(draft.items).not.toContainEqual(expect.objectContaining({ name: 'carne desfiada com molho e milho', quantity_basis: 'stated' }))
+  })
+
   it('Roberto: a new household cup is200mL, not200g; whey remains30g powder', async () => {
     const draft = await createMealDraft(deps({}), 'patient-a', {source:'text',text:'1 caneca de leite com uma medida de whey'})
     expect(draft.items[0]).toMatchObject({quantity_g:206,quantity_display:{unit:'mL',grams_per_unit:1.03,reference_id:'fao-infoods-v2-whole-milk-tb',estimated:true}})

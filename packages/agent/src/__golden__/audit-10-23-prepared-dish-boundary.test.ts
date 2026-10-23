@@ -3,8 +3,16 @@
 import type { ServiceClient } from '@mpp/db'
 import { describe, expect, it } from 'vitest'
 import { calcMealMacros, estimateMacros, genericPreparedDishMacros } from '../meal-pipeline.js'
+import { draftFromStatedText } from '../meal-draft.js'
 
 describe('Roberto23Oct prepared dish: shared-engine boundary', () => {
+  it('keeps legacy text routing unchanged; the mobile draft service owns the whole-dish interception', () => {
+    const parsed = draftFromStatedText('macarrao espaguete cozido 200 g; carne desfiada com molho e milho 180 g')
+    expect(parsed).toEqual({ raw: [
+      { name: 'macarrao espaguete cozido', grams_stated: 200 },
+      { name: 'milho', grams_stated: 180 },
+    ], rest: ['carne desfiada com molho'] })
+  })
   it('preserves the rejected compound and260kcal pasta without mobile opt-in', async () => {
     const emptyCatalog = {
       rpc: async (fn: string) => {

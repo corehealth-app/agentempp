@@ -9,6 +9,7 @@ import {
   type MealDraftCandidate,
   type MealDraftRawItem,
   parseCountedSegment,
+  parseStatedGrams,
   mobileMilkWheyPortions,
   resolveDraftItem,
   splitMealText,
@@ -17,6 +18,7 @@ import {
 import type { MealDraftInput } from './contracts'
 import { MobileApiError } from './http'
 import type { MediaAssetRecord, MediaAssetRepository } from './media-service'
+import { isRecognizedPreparedDish } from './prepared-dish-estimate'
 
 // Candidates for review, never nutrition. Text the deterministic parser does
 // not read goes to an extractor WITHOUT tools; its output is treated as
@@ -130,14 +132,34 @@ function logExtractionFailure(error: unknown): void {
   })
 }
 
+// Protect only a recognized, explicitly weighed prepared dish before the
+// ordinary parser separates independent foods at "e". Never give its whole
+// weight to the last ingredient. The existing shared/legacy parser is intact.
+const preparedDishWeight = String.raw`\d+(?:[.,]\d+)?\s*(?:kg|quilos?|g|gr|grs|gramas?|grams?)`
+const preparedDishWithBoundaryWeight = new RegExp(
+  String.raw`^(?:${preparedDishWeight}(?![\p{L}\d])\s*(?:(?:de|do|da|dos|das|of)\s+)?(.+)|(.+?)\s*${preparedDishWeight})$`, 'iu',
+)
+
+function preparedDishTextItem(segment: string): MealDraftRawItem | null {
+  // parseStatedGrams caps names at160; reject long segments before that cap
+  // could conceal an unknown ingredient after an otherwise admitted prefix.
+  if (segment.trim().length > 160) return null
+  const boundary = preparedDishWithBoundaryWeight.exec(segment.trim())
+  if (!boundary || !isRecognizedPreparedDish(boundary[1] ?? boundary[2] ?? '')) return null
+  const stated = parseStatedGrams(segment)
+  return stated && isRecognizedPreparedDish(stated.name) ? stated : null
+}
+
 async function draftFromText(
   deps: MealDraftDependencies,
   userId: string,
   sourceText: string,
   source: DraftSource,
 ): Promise<Pick<MealDraft, 'items' | 'extraction'>> {
-  const segments = splitMealText(sourceText)
-  if (!segments.some(segment => mobileMilkWheyPortions(segment) || mobileHouseholdTextItem(segment))) {
+  const segments = sourceText.split(/\r?\n|;|(?<!\d),|,(?!\d)/u)
+    .map(segment => segment.trim()).filter(Boolean)
+    .flatMap(segment => preparedDishTextItem(segment) ? [segment] : splitMealText(segment))
+  if (!segments.some(segment => preparedDishTextItem(segment) || mobileMilkWheyPortions(segment) || mobileHouseholdTextItem(segment))) {
     return draftFromOrdinaryText(deps, userId, sourceText, source)
   }
   const items: MealDraftCandidate[] = []
@@ -163,10 +185,14 @@ async function draftFromText(
     unread = []
   }
   for (const segment of segments) {
+    const prepared = preparedDishTextItem(segment)
     const references = mobileMilkWheyPortions(segment)
     const household = mobileHouseholdTextItem(segment)
     const stated = draftFromStatedText(segment)
-    if (references) {
+    if (prepared) {
+      await flushUnread()
+      append(buildDraftCandidates([prepared]))
+    } else if (references) {
       await flushUnread()
       append(buildDraftCandidates(references.map(part => ({ name: part.food_name, grams_stated: part.quantity_g })))
         .map(candidate => ({ ...candidate, quantity_basis: 'portion_reference' as const, needs_review: true, review_reason: 'estimated_quantity' as const })))

@@ -8,7 +8,7 @@ function normalized(value: string): string {
 
 /** Positive whole-phrase grammar for the reported prepared dish. Unknown
  * ingredients, brands, negations and different preparations are not admitted. */
-function isRecognizedPreparedDish(value: string): boolean {
+export function isRecognizedPreparedDish(value: string): boolean {
   const parts = normalized(value).split(/ (?:com|e|\+) /)
   if (parts.length < 2 || !/^carne (?:desfiada|cozida)$/.test(parts[0] ?? '')) return false
   const complements = parts.slice(1)

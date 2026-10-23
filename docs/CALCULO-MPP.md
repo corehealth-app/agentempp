@@ -2884,6 +2884,19 @@ repetição sem duplicação) e golden `audit-10-23-prepared-dish-boundary.test.
 (motor compartilhado mantém a recusa sem opt-in). Esses testes são locais com
 dados sintéticos; deploy, aparelho e aceitação do Roberto exigem evidências próprias.
 
+Na entrada livre de texto e na transcrição de áudio do app, um segmento com
+peso explícito e nome inteiro aceito pela mesma gramática é preservado antes
+de separar alimentos pela conjunção `e`. Assim, `macarrao espaguete cozido 200 g;
+carne desfiada com molho e milho 180 g` gera dois candidatos: macarrão200 g e
+o prato completo180 g; não milho180 g mais carne sem quantidade. Aceitam-se
+peso antes/depois do nome, decimais e separadores de linha/ponto e vírgula/vírgula
+não decimal. Não há cálculo nutricional nem chamada de extrator nesse caminho
+determinístico. Fora dessa admissão completa, mantém-se o parser anterior,
+inclusive alimentos independentes como `2 ovos e 1 pão francês`. O parser
+compartilhado do legado não muda. A regressão de entrada fica também em
+`meal-draft-service.test.ts`; os testes com itens estruturados não substituem
+esta entrada por `/meal-drafts`.
+
 ---
 
 ## 10. Cadastro: quem escolhe o objetivo e quem entra direto na recomposição (regra E)

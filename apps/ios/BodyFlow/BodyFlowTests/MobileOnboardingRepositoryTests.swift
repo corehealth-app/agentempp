@@ -5,6 +5,33 @@ import Testing
 
 @Suite("Mobile onboarding repository")
 struct MobileOnboardingRepositoryTests {
+    @Test("Completion preserves unknown water and a stable retry key instead of guessing a habit")
+    func completesWithoutHabitualWater() async throws {
+        let transport = OnboardingTransportSpy(state: emptyState, completion: completionAcknowledgement)
+        let repository = MobileOnboardingRepository(transport: transport)
+        var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .completion)
+        draft.documentActions = [termsDocument.explicitAction]
+        draft.waterIntake = nil
+        let key = try IdempotencyKey(validating: "onboarding-water-unknown")
+        for _ in 0..<2 {
+            _ = try await repository.completeOfficial(draft, for: "fixture-user", idempotencyKey: key)
+        }
+        let requests = await transport.requests
+        #expect(requests.count == 2)
+        let firstBody = try #require(requests[0].body)
+        let secondBody = try #require(requests[1].body)
+        let first = try #require(JSONSerialization.jsonObject(with: firstBody) as? NSDictionary)
+        let second = try #require(JSONSerialization.jsonObject(with: secondBody) as? NSDictionary)
+        #expect(first == second)
+        for request in requests {
+            #expect(request.idempotency == .required(key))
+            let body = try #require(request.body)
+            let object = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            #expect(object["water_intake"] == nil || object["water_intake"] is NSNull)
+            #expect(object["hunger_level"] as? String == "moderada")
+        }
+    }
+
     @Test("Confirmed photo proof adds only the contracted intent to the official POST")
     func postsPhotoConfirmationWithoutLocalProvenance() async throws {
         let transport = OnboardingTransportSpy(state: emptyState, completion: completionAcknowledgement)
@@ -108,6 +135,7 @@ struct MobileOnboardingRepositoryTests {
         #expect(request.method == .get)
         #expect(request.path == "/api/mobile/v1/onboarding")
         #expect(request.body == nil)
+        #expect(request.queryItems == [URLQueryItem(name: "onboarding_profile_schema", value: "habitual_water_optional_v1")])
         #expect(request.idempotency == .notRequired)
     }
 
@@ -420,6 +448,7 @@ private struct OnboardingSessionTokenProvider: SessionTokenProviding {
 }
 
 private struct RecordedOnboardingRequest: Sendable {
+    let queryItems: [URLQueryItem]
     let method: HTTPMethod
     let path: String
     let body: Data?
@@ -449,6 +478,7 @@ private actor OnboardingTransportSpy: MobileAPIExecuting {
         _ request: MobileAPIRequest<Response>
     ) async throws -> Response {
         requests.append(RecordedOnboardingRequest(
+            queryItems: request.queryItems,
             method: request.method,
             path: request.path,
             body: request.body,

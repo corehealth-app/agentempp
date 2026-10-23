@@ -50,7 +50,7 @@ struct TodayMealSlotsSection: View {
     let descriptor: TodayMealSlotsDescriptor
     /// Opens the meal registration; nil where no registration exists
     /// (previews, unavailable capability) and the open slot is then inert.
-    var register: (() -> Void)?
+    var register: ((MealType) -> Void)?
     @Environment(\.locale) private var locale
 
     var body: some View {
@@ -132,6 +132,12 @@ struct TodayMealSlotsSection: View {
                     mealKcal(meal)
                 }
             }
+            let quantity = MealQuantityValue(grams: meal.quantityG, metadata: meal.quantityDisplay, name: meal.foodName)
+            if quantity.isVolume, let label = quantity.label(language: language) {
+                Text(label)
+                    .font(BodyFlowTypography.caption)
+                    .foregroundStyle(BodyFlowColor.secondaryText)
+            }
             BodyFlowStatusLine(meal.provenance, kind: .info, font: BodyFlowTypography.caption)
         }
         .accessibilityElement(children: .combine)
@@ -152,7 +158,7 @@ struct TodayMealSlotsSection: View {
 
     private func open(_ slot: TodayMealSlotsDescriptor.Slot) -> some View {
         Button {
-            register?()
+            register?(MealType(rawValue: slot.type) ?? .other)
         } label: {
             HStack(alignment: .center, spacing: BodyFlowSpacing.sm) {
                 slotGlyph(symbol: .add, filled: true)

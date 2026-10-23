@@ -35,7 +35,8 @@ struct RegistrationSheet: View {
             timeProvider: dependencies.timeProvider,
             keyProvider: dependencies.idempotencyKeyProvider,
             invalidationCenter: invalidationCenter,
-            demonstrationTextLimit: Self.demonstrationTextLimit
+            demonstrationTextLimit: Self.demonstrationTextLimit,
+            selectedMealType: sheet.selectedMealType
         ))
         let staging = dependencies.mealCapture?.staging ?? MediaStagingStore()
         _mealDraftModel = State(initialValue: MealDraftModel(
@@ -44,7 +45,8 @@ struct RegistrationSheet: View {
             uploader: dependencies.mealCapture?.uploader,
             staging: staging,
             timeProvider: dependencies.timeProvider,
-            keyProvider: dependencies.idempotencyKeyProvider
+            keyProvider: dependencies.idempotencyKeyProvider,
+            selectedMealType: sheet.selectedMealType
         ))
         _mealRecorder = State(initialValue: MealAudioRecorder(staging: staging))
         _workoutModel = State(initialValue: WorkoutRegistrationSheetModelFactory.make(
@@ -66,7 +68,7 @@ struct RegistrationSheet: View {
 
     private var kind: RegistrationKind {
         switch sheet {
-        case let .registration(kind, _):
+        case let .registration(kind, _, _):
             kind
         }
     }
@@ -74,7 +76,7 @@ struct RegistrationSheet: View {
     /// The way of telling the meal already chosen on the Register screen.
     private var mealEntry: MealCaptureEntry? {
         switch sheet {
-        case let .registration(kind, entry):
+        case let .registration(kind, entry, _):
             kind == .meal ? entry : nil
         }
     }

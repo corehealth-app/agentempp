@@ -8,6 +8,7 @@ import UniformTypeIdentifiers
 /// becomes synthetic candidates, with no server and no media.
 enum DemoMealCaptureScenario {
     static let argument = "--ui-testing-meal-capture"
+    static let emptyBreakfastArgument = "--ui-testing-meal-capture-empty-breakfast"
     /// Text that the synthetic reader does not recognize.
     static let unrecognizedText = "xyz"
 
@@ -46,6 +47,24 @@ enum DemoMealCaptureScenario {
             camera: offersMedia && arguments.contains(cameraArgument)
                 ? .synthetic : .unavailable
         )
+    }
+}
+
+/// Only the explicit capture UI-test launch uses this synthetic empty slot.
+/// Other meal slots, totals and global demonstration fixtures stay unchanged.
+struct DemoEmptyBreakfastCaptureToday: TodayProviding {
+    let base: any TodayProviding
+
+    func today() async throws -> TodayResponse {
+        let response = try await base.today()
+        guard var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(response)) as? [String: Any],
+              var data = object["data"] as? [String: Any],
+              let meals = data["meals"] as? [[String: Any]] else {
+            throw BodyFlowCapabilityError.operationUnavailable
+        }
+        data["meals"] = meals.filter { $0["meal_type"] as? String != "cafe" }
+        object["data"] = data
+        return try JSONDecoder().decode(TodayResponse.self, from: JSONSerialization.data(withJSONObject: object))
     }
 }
 

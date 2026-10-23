@@ -47,11 +47,14 @@ struct MealRecordItemSnapshot: Codable, Equatable, Identifiable, Sendable {
     let consumedAt: APITimestamp
     let mealType: String?
 
+    var quantityDisplay: MealQuantityDisplay? = nil
+
     private enum CodingKeys: String, CodingKey {
         case id, kcal, source
         case foodName = "food_name"
         case mealType = "meal_type"
         case quantityG = "quantity_g"
+        case quantityDisplay = "quantity_display"
         case proteinG = "protein_g"
         case carbsG = "carbs_g"
         case fatG = "fat_g"

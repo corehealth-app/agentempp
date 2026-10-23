@@ -174,12 +174,19 @@ enum RegistrationKind: String, CaseIterable, Identifiable, Hashable, Sendable {
 enum AppSheet: Identifiable, Hashable, Sendable {
     /// `mealEntry` is the way of telling the meal already chosen on the
     /// Register screen (photo, text or audio); it is only read for a meal.
-    case registration(RegistrationKind, mealEntry: MealCaptureEntry? = nil)
+    case registration(RegistrationKind, mealEntry: MealCaptureEntry? = nil, mealType: MealType? = nil)
+
+    /// An explicitly selected Today slot wins over text/clock suggestions.
+    var selectedMealType: MealType? {
+        switch self {
+        case let .registration(kind, _, type): kind == .meal ? type : nil
+        }
+    }
 
     /// The entry never changes which sheet this is.
     var id: String {
         switch self {
-        case let .registration(kind, _):
+        case let .registration(kind, _, _):
             "sheet.registrar.\(kind.id)"
         }
     }

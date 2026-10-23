@@ -172,10 +172,13 @@ struct MealDraftCandidate: Codable, Hashable, Sendable, Identifiable {
 
     var id: String { candidateID }
 
+    var quantityDisplay: MealQuantityDisplay? = nil
+
     private enum CodingKeys: String, CodingKey {
         case candidateID = "candidate_id"
         case name
         case quantityG = "quantity_g"
+        case quantityDisplay = "quantity_display"
         case quantityBasis = "quantity_basis"
         case count
         case unitLabel = "unit_label"

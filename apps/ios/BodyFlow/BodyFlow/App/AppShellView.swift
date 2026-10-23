@@ -170,7 +170,7 @@ struct AppShellView: View {
             contentCoverEnvironment
         )
         .sheet(item: presentedSheetBinding) { sheet in
-            if case .registration(.training, _) = sheet, dependencies.presentsRealAccountIdentity {
+            if case .registration(.training, _, _) = sheet, dependencies.presentsRealAccountIdentity {
                 WorkoutRegistrationSessionSheet(sheet: sheet, owner: sessionOwner,
                     dependencies: dependencies, invalidationCenter: invalidationCenter)
                     .environment(router)

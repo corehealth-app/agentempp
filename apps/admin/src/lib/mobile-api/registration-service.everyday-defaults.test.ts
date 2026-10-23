@@ -43,12 +43,9 @@
  *   O contrato não muda (o app imprime `name` como recebe), mas nada foi
  *   executado no aparelho depois desta mudança; nem a proposta com UMA linha
  *   somada no lugar das duas digitadas.
- * > RC M2 — cenário proposta do app com outro item depois dos dois itens somados (quantity_basis e candidate_id lidos por posição em registration-service.ts) NÃO coberto nesta PR (pendência da audit 2026-10-04).
- *   A proposta tem uma linha a menos que o pedido e buildMealPendingProposal
- *   lê `input.items[index]`: o item seguinte recebe o quantity_basis e o
- *   candidate_id do item que foi somado. Kcal, gramas e nomes ficam certos. O
- *   cálculo já devolve `input_indexes`; o serviço ainda não lê (arquivo de
- *   outra raia). Caracterizado no último teste.
+ * The old RC M2 metadata-by-position pendency was characterized here on
+ * 04/10. Closed locally22/10: the builder now reads input_indexes, preserves
+ * each following candidate, and keeps a merged approximate quantity approximate.
  */
 import type { Json } from '@mpp/db'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -483,6 +480,129 @@ const REPORTED_MEAL: MealInput = {
   source: { channel: 'text' },
 }
 
+// New report 22/10: only item 4 was visible. The first three are declared
+// synthetic sentinels, not a reconstruction of Roberto's other foods.
+const HOUSEHOLD_DRINK = '1 caneca de leite com uma medida de whey'
+for (const [index,name] of ['sentinela a','sentinela b','sentinela c'].entries()) {
+  WINDOWS[name]=[food(80001+index,name,'Synthetic fixture',1,100,10,10,2,0)]
+}
+WINDOWS[HOUSEHOLD_DRINK]=[]
+WINDOWS['1 caneca de leite']=[food(602,'Leite, de cabra',LEITE,0.8,66.42,3.07,5.25,3.75,null)]
+WINDOWS['uma medida de whey']=[]
+WINDOWS.medida=[]
+WINDOWS.uma=[]
+WINDOWS['leite integral']=[]
+WINDOWS['whey protein em pó']=[]
+
+describe('Roberto 22/10 — item 4 household milk plus whey, 200 g typed for milk', () => {
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(PROPOSE_AT)) })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('refuses a31-item expansion before calculation or replacing existing work', async () => {
+    const db=stagingDay()
+    await proposeRegistration(db.client as never,AUTH as never,REPORTED_MEAL,KEY_PROPOSE)
+    const before=structuredClone(db.pendings);const searches=db.searches.length
+    await expect(proposeRegistration(db.client as never,AUTH as never,{
+      kind:'meal',meal_type:'almoco',items:[...Array.from({length:29},()=>({food_name:'sentinela a',quantity_g:10})),{food_name:HOUSEHOLD_DRINK,quantity_g:200}],
+    },KEY_EDIT)).rejects.toMatchObject({status:422,code:'meal_item_limit_exceeded'})
+    expect(db.pendings).toEqual(before);expect(db.searches).toHaveLength(searches)
+  })
+
+  it('keeps patient-reported calories on the compound and does not silently add a dose', async () => {
+    const db=stagingDay()
+    const proposed=await proposeRegistration(db.client as never,AUTH as never,{
+      kind:'meal',meal_type:'almoco',items:[{food_name:HOUSEHOLD_DRINK,quantity_g:200,user_kcal:250}],
+    },KEY_PROPOSE)
+    expect(proposed.proposal.kind==='meal' && proposed.proposal.items).toMatchObject([
+      {name:HOUSEHOLD_DRINK,quantity_g:200,kcal:250,nutrition_source:'user_kcal'},
+    ])
+    expect(proposed.proposal.kind==='meal' && proposed.proposal.items).toHaveLength(1)
+  })
+
+  it('keeps a trusted label tied to the compound instead of overriding it with the generic recipe', async () => {
+    const db=stagingDay();const from=db.client.from.bind(db.client)
+    const mediaId='0b9f6f0e-0000-4000-8000-0000000000f1'
+    const media:Row={id:mediaId,user_id:USER_ID,kind:'meal_photo',bucket_id:'synthetic-private',object_path:'synthetic-label',mime_type:'image/jpeg',declared_size_bytes:100,actual_size_bytes:100,status:'processed',failure_stage:null,failure_code:null,context_text:null,retention_until:null,uploaded_at:PROPOSE_AT,processed_at:PROPOSE_AT,deleted_at:null,created_at:PROPOSE_AT,updated_at:PROPOSE_AT,processing_result:{nutrition_label:{product_name:HOUSEHOLD_DRINK,serving_size_g:200,per_serving:{kcal:300,protein_g:20,carbs_g:30,fat_g:10},per_100g:{kcal:150,protein_g:10,carbs_g:15,fat_g:5},confidence:1}}}
+    db.client.from=(table:string)=>table==='media_assets'?new Query(()=>[media]):from(table)
+    const proposed=await proposeRegistration(db.client as never,AUTH as never,{
+      kind:'meal',meal_type:'almoco',items:[{food_name:HOUSEHOLD_DRINK,quantity_g:200,use_nutrition_label:true}],source:{channel:'gallery',media_asset_id:mediaId},
+    },KEY_PROPOSE)
+    expect(proposed.proposal.kind==='meal' && proposed.proposal.items).toMatchObject([
+      {name:HOUSEHOLD_DRINK,quantity_g:200,kcal:300,protein_g:20,nutrition_source:'product_label'},
+    ])
+    expect(proposed.proposal.kind==='meal' && proposed.proposal.items).toHaveLength(1)
+  })
+
+  it('shows the assumed dose warning in English without treating it as measured', async () => {
+    const db=stagingDay()
+    const proposed=await proposeRegistration(db.client as never,{...AUTH,patient:{...AUTH.patient,locale:'en'}} as never,{
+      kind:'meal',meal_type:'almoco',items:[{food_name:HOUSEHOLD_DRINK,quantity_g:200}],
+    },KEY_PROPOSE)
+    expect(proposed.proposal.kind==='meal' && proposed.proposal.warnings).toEqual([
+      'I used 200 g of whole milk and a separate estimated 30 g serving of whey powder. Review both portions before confirming.',
+    ])
+  })
+
+  it('keeps the whey reference and the following sentinel identity when milk is merged with an existing line', async () => {
+    const db=stagingDay()
+    const proposed=await proposeRegistration(db.client as never,AUTH as never,{
+      kind:'meal',meal_type:'almoco',items:[
+        {food_name:'leite integral',quantity_g:100,quantity_basis:'stated',candidate_id:'c1-12345678'},
+        {food_name:HOUSEHOLD_DRINK,quantity_g:200,quantity_basis:'stated'},
+        {food_name:'sentinela a',quantity_g:10,quantity_basis:'visual_estimate',candidate_id:'c3-23456789'},
+      ],source:{channel:'text'},
+    },KEY_PROPOSE)
+    const shown=proposed.proposal.kind==='meal'?proposed.proposal.items:[]
+    expect(shown).toMatchObject([
+      {name:'leite integral',quantity_g:300,quantity_basis:'stated'},
+      {name:'whey protein em pó',quantity_g:30,quantity_basis:'portion_reference'},
+      {name:'sentinela a',quantity_g:10,quantity_basis:'visual_estimate'},
+    ])
+    const stored=(db.pendings[0]!.proposal as {items:Row[]}).items
+    expect(stored[0]?.candidate_id).toBeUndefined()
+    expect(stored[2]?.candidate_id).toBe('c3-23456789')
+  })
+
+  it('editing the exact old compound keeps the other three items, adds whey separately and confirms once', async () => {
+    const db=stagingDay()
+    const others: MealInput['items']=['sentinela a','sentinela b','sentinela c'].map((food_name,index) => ({
+      food_name,quantity_g:10+index,quantity_basis:'stated',candidate_id:`c${index+1}-12345678`,
+    }))
+    const proposed=await proposeRegistration(db.client as never,AUTH as never,{
+      kind:'meal',meal_type:'almoco',items:[...others,{food_name:'leite',quantity_g:200,quantity_basis:'stated'}],source:{channel:'text'},
+    },KEY_PROPOSE)
+    const old=db.pendings[0]!.proposal as { items: Row[]; totals: Row }
+    const firstThree=structuredClone(old.items.slice(0,3))
+    // The screenshot's stored item, not a claim that the actual lookup was read.
+    old.items=[...firstThree,{name:HOUSEHOLD_DRINK,quantity_g:200,kcal:132.8,protein_g:6.14,carbs_g:10.5,fat_g:7.5,user_kcal:null,nutrition_source:'canonical_composite_partial'}]
+    old.totals={kcal:165.8,protein_g:9.44,carbs_g:13.8,fat_g:8.16}
+    const edited=await editRegistration(db.client as never,AUTH as never,proposed.id,{
+      kind:'meal',meal_type:'almoco',items:[...others,{food_name:HOUSEHOLD_DRINK,quantity_g:200,quantity_basis:'stated'}],source:{channel:'text'},
+    },KEY_EDIT)
+    const shown=edited.proposal.kind==='meal' ? (edited.proposal.items ?? []) : []
+    expect(shown).toHaveLength(5)
+    expect((db.pendings[0]!.proposal as {items:Row[]}).items.slice(0,3)).toEqual(firstThree)
+    expect(shown.slice(3)).toMatchObject([
+      {name:'leite integral',quantity_g:200,kcal:122,protein_g:6.3,carbs_g:9.6,fat_g:6.5,quantity_basis:'stated',resolution:'resolved'},
+      {name:'whey protein em pó',quantity_g:30,kcal:105.6,protein_g:23.44,carbs_g:1.88,fat_g:0.47,quantity_basis:'portion_reference',resolution:'resolved'},
+    ])
+    expect(edited.proposal.kind==='meal' && edited.proposal.warnings?.some(warning => warning.includes('30 g'))).toBe(true)
+    // Sending the expanded names back must not invent another dose; 25 g is
+    // a deliberate patient change, not a new default or an implicit 50/50 split.
+    const input: MealInput={kind:'meal',meal_type:'almoco',source:{channel:'text'},items:shown.map((item,index) => ({
+      food_name:String(item.name),quantity_g:index===4?25:Number(item.quantity_g),quantity_basis:'stated',
+    }))}
+    const second=await editRegistration(db.client as never,AUTH as never,proposed.id,input,'0b9f6f0e-58a1-4a10-9d55-2230100000b3')
+    expect(second.proposal.kind==='meal' && second.proposal.items).toHaveLength(5)
+    expect(second.proposal.kind==='meal' && second.proposal.items?.[4]).toMatchObject({name:'whey protein em pó',quantity_g:25,kcal:88,protein_g:19.53})
+    vi.setSystemTime(new Date(CONFIRM_AT))
+    await confirmRegistration(db.client as never,AUTH as never,proposed.id)
+    await confirmRegistration(db.client as never,AUTH as never,proposed.id)
+    expect(db.meals).toHaveLength(5)
+    expect(db.meals.slice(3)).toMatchObject([{food_name:'leite integral',quantity_g:200,kcal:122},{food_name:'whey protein em pó',quantity_g:25,kcal:88}])
+  })
+})
+
 describe('rule M2 (iPhone 2026-10-04) — "leite" and "whey" through the app API', () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] })
@@ -504,6 +624,7 @@ describe('rule M2 (iPhone 2026-10-04) — "leite" and "whey" through the app API
         {
           name: 'leite integral',
           quantity_g: 200,
+          quantity_display: {unit:'mL',grams_per_unit:1.03,reference_id:'fao-infoods-v2-whole-milk-tb',estimated:true},
           kcal: 122,
           protein_g: 6.3,
           carbs_g: 9.6,
@@ -677,6 +798,7 @@ describe('rule M2 (iPhone 2026-10-04) — "leite" and "whey" through the app API
         {
           name: 'leite integral',
           quantity_g: 400,
+          quantity_display: {unit:'mL',grams_per_unit:1.03,reference_id:'fao-infoods-v2-whole-milk-tb',estimated:true},
           kcal: 244,
           protein_g: 12.6,
           carbs_g: 19.2,
@@ -718,11 +840,9 @@ describe('rule M2 (iPhone 2026-10-04) — "leite" and "whey" through the app API
     expect(db.snapshot).toMatchObject({ calories_consumed: 244, protein_g: 12.6, fat_g: 13 })
   })
 
-  // Declared pendency (RC M2, header): the proposal has one line fewer than
-  // the request and the service pairs lines with the request by position.
-  // Names, grams and kcal are right; the line after the added pair carries
-  // the quantity_basis and the candidate_id of the item that was added.
-  it('declared: the item after the two added ones takes the basis and the candidate of the added item', async () => {
+  // Earlier test characterized the wrong positional metadata. The22/10
+  // repair must preserve the whey candidate after the merged pair.
+  it('maps the item after two merged ones through input_indexes and keeps approximate milk approximate', async () => {
     const db = stagingDay()
     const proposed = await proposeRegistration(
       db.client as never,
@@ -747,17 +867,16 @@ describe('rule M2 (iPhone 2026-10-04) — "leite" and "whey" through the app API
 
     expect(proposed.proposal).toMatchObject({
       items: [
-        { name: 'leite integral', quantity_g: 400, kcal: 244, quantity_basis: 'stated' },
-        // Sent as "stated" (third item of the request).
-        { name: 'whey protein em pó', quantity_g: 30, kcal: 105.6, quantity_basis: 'visual_estimate' },
+        { name: 'leite integral', quantity_g: 400, kcal: 244, quantity_basis: 'visual_estimate' },
+        { name: 'whey protein em pó', quantity_g: 30, kcal: 105.6, quantity_basis: 'stated' },
       ],
       totals: { kcal: 349.6 },
     })
     expect((db.pendings[0]?.proposal as { items: Row[] }).items).toMatchObject([
-      { name: 'leite integral', candidate_id: 'c1-0a1b2c3d' },
-      // Sent as c3-2c3d4e5f.
-      { name: 'whey protein em pó', candidate_id: 'c2-1b2c3d4e' },
+      { name: 'leite integral' },
+      { name: 'whey protein em pó', candidate_id: 'c3-2c3d4e5f' },
     ])
+    expect((db.pendings[0]?.proposal as {items:Row[]}).items[0]?.candidate_id).toBeUndefined()
 
     vi.setSystemTime(new Date(CONFIRM_AT))
     await confirmRegistration(db.client as never, AUTH as never, proposed.id)

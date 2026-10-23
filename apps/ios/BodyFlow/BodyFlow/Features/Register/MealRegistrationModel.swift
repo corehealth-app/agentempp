@@ -37,6 +37,7 @@ final class MealRegistrationModel {
     private let invalidationCenter: FeatureInvalidationCenter
     private let attemptCoordinator: RegistrationAttemptCoordinator
     private let demonstrationTextLimit: ClosedRange<Int>?
+    private let selectedMealType: MealType?
 
     private var activeOwnership: FeatureLoadOwnership?
     private var activeDetectionSource: MealCaptureSource?
@@ -66,12 +67,14 @@ final class MealRegistrationModel {
         timeProvider: any TimeProviding,
         keyProvider: any IdempotencyKeyProviding,
         invalidationCenter: FeatureInvalidationCenter,
-        demonstrationTextLimit: ClosedRange<Int>? = nil
+        demonstrationTextLimit: ClosedRange<Int>? = nil,
+        selectedMealType: MealType? = nil
     ) {
         self.detector = detector
         self.registration = registration
         self.invalidationCenter = invalidationCenter
         self.demonstrationTextLimit = demonstrationTextLimit
+        self.selectedMealType = selectedMealType
         attemptCoordinator = RegistrationAttemptCoordinator(
             timeProvider: timeProvider,
             keyProvider: keyProvider
@@ -217,8 +220,17 @@ final class MealRegistrationModel {
         operation: ActiveMealOperation
     ) async {
         do {
-            let draft = try await detector.detect(source.detectionInput)
+            let detected = try await detector.detect(source.detectionInput)
             guard mayContinue(operation) else { return }
+            let draft: RegistrationProposalRequest
+            if let selectedMealType, case let .meal(meal) = detected {
+                draft = .meal(MealProposalRequest(
+                    mealType: selectedMealType, items: meal.items,
+                    consumedAt: meal.consumedAt, source: meal.source
+                ))
+            } else {
+                draft = detected
+            }
             detectedDraft = draft
 
             let attempt = try attemptCoordinator.propose(draft)

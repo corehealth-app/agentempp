@@ -6,6 +6,18 @@ import Testing
 @MainActor
 @Suite("Onboarding flow model")
 struct OnboardingFlowModelTests {
+    @Test("The initial routine can advance without reporting a habitual water intake")
+    func routineDoesNotRequireHabitualWaterIntake() async {
+        let repository = RecordingOnboardingRepository()
+        var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .routine)
+        draft.waterIntake = nil
+        let model = await makeModel(draft: draft, repository: repository)
+
+        await model.continueFromCurrentStep()
+
+        #expect(model.validationIssues.isEmpty)
+        #expect(model.step != .routine)
+    }
     @Test("welcome requires a name, ISO country and IANA timezone")
     func validatesWelcome() async {
         let repository = RecordingOnboardingRepository()
@@ -220,7 +232,6 @@ struct OnboardingFlowModelTests {
         #expect(model.validationIssues == [
             .activityLevelRequired,
             .trainingFrequencyOutOfRange,
-            .waterIntakeRequired,
             .hungerLevelRequired,
             .wakeTimeRequired,
             .bedtimeRequired,

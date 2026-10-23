@@ -7,7 +7,16 @@ import Foundation
 struct MealDraftReview: Equatable, Sendable {
     struct Item: Identifiable, Equatable, Sendable {
         let candidate: MealDraftCandidate
-        var name: String
+        var name: String {
+            didSet {
+                let reference = candidate.quantityDisplay?.validated(for: candidate.name)
+                if reference?.validated(for: oldValue) != reference?.validated(for: name),
+                   quantityText != nil { quantityText = "" }
+            }
+        }
+        var quantityValue: MealQuantityValue {
+            MealQuantityValue(grams: serverQuantity, metadata: candidate.quantityDisplay?.validated(for: candidate.name), name: name)
+        }
         /// nil until the patient edits the field: the server's quantity is
         /// sent exactly, never re-read from formatted text.
         var quantityText: String?
@@ -69,16 +78,13 @@ struct MealDraftReview: Equatable, Sendable {
         /// What the patient typed; typing the server's own figure back (or
         /// erasing what was typed) is not a statement of theirs.
         mutating func setQuantityText(_ text: String, language: SupportedAppLanguage) {
-            let server = serverQuantity.map {
-                MealProposalNumberParser.format($0, language: language)
-            } ?? ""
+            let server = quantityValue.displayText(language: language)
             quantityText = text == server ? nil : text
         }
 
         func quantity(language: SupportedAppLanguage) -> Decimal? {
             guard let quantityText else { return serverQuantity }
-            guard let value = MealProposalNumberParser.parse(quantityText, language: language),
-                  value > 0, value <= MealDraftReview.maximumQuantityG
+            guard let value = quantityValue.grams(from: quantityText, language: language)
             else {
                 return nil
             }
@@ -87,15 +93,13 @@ struct MealDraftReview: Equatable, Sendable {
 
         func quantityDisplay(language: SupportedAppLanguage) -> String {
             if let quantityText { return quantityText }
-            return serverQuantity.map {
-                MealProposalNumberParser.format($0, language: language)
-            } ?? ""
+            return quantityValue.displayText(language: language)
         }
 
         /// A typed quantity is the patient's statement; an untouched one
         /// keeps the basis the server gave it.
         var basis: MealQuantityBasis? {
-            hasTypedQuantity ? .stated : candidate.requestBasis
+            hasTypedQuantity ? (quantityValue.isVolume ? .portionReference : .stated) : candidate.requestBasis
         }
     }
 

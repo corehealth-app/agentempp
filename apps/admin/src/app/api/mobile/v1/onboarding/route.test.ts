@@ -1230,6 +1230,31 @@ describe('D2 confirmation target guard before the idempotency claim', () => {
 })
 
 describe('mobile onboarding route', () => {
+  it.each([
+    'onboarding_profile_schema=unknown',
+    'onboarding_profile_schema=habitual_water_optional_v1&onboarding_profile_schema=habitual_water_optional_v1',
+  ])('rejects ambiguous or unknown schema before reading onboarding (%s)', async (query) => {
+    const repo = repository()
+    const ctx = context()
+    ctx.request = new Request(`${ENDPOINT}?${query}`)
+    await expect(handleOnboardingGet(ctx, dependencies(repo))).rejects.toMatchObject({
+      status: 400,
+      code: 'invalid_onboarding_profile_schema',
+    })
+    expect(repo.load).not.toHaveBeenCalled()
+  })
+
+  it('accepts the water-optional schema alongside a historical photo cleanup read', async () => {
+    const repo = repository()
+    const ctx = context()
+    ctx.request = new Request(
+      `${ENDPOINT}?onboarding_profile_schema=habitual_water_optional_v1&body_photo_cleanup_generation=2026-10-22T12%3A00%3A00.000Z`,
+    )
+    const response = await handleOnboardingGet(ctx, dependencies(repo))
+    expect(response.status).toBe(200)
+    expect(repo.load).toHaveBeenCalledOnce()
+  })
+
   it('loads server-owned state for the authenticated user and locale', async () => {
     const repo = repository()
     const response = await handleOnboardingGet(context(), dependencies(repo))

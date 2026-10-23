@@ -4,7 +4,16 @@ import Foundation
 /// untouched. Numbers use its established strict PT/EN parser.
 struct MealRecordEditItem: Equatable, Identifiable, Sendable {
     let original: MealRecordItemSnapshot
-    var foodName: String
+    var foodName: String {
+        didSet {
+            let reference = original.quantityDisplay?.validated(for: original.foodName)
+            if reference?.validated(for: oldValue) != reference?.validated(for: foodName),
+               quantityText != nil { quantityText = "" }
+        }
+    }
+    var quantityPresentation: MealQuantityValue {
+        MealQuantityValue(grams: original.quantityG, metadata: original.quantityDisplay?.validated(for: original.foodName), name: foodName)
+    }
     var quantityText: String?
     var manualKcalText: String?
     var id: String { original.id }
@@ -15,9 +24,7 @@ struct MealRecordEditItem: Equatable, Identifiable, Sendable {
     }
 
     func quantityDisplay(language: SupportedAppLanguage) -> String {
-        quantityText ?? original.quantityG.map {
-            MealProposalNumberParser.format($0, language: language)
-        } ?? ""
+        quantityText ?? quantityPresentation.displayText(language: language)
     }
 
     func manualKcalDisplay(language: SupportedAppLanguage) -> String {
@@ -32,7 +39,7 @@ struct MealRecordEditItem: Equatable, Identifiable, Sendable {
         guard !name.isEmpty, name.utf16.count <= MealDraftReview.maximumNameLength else { return nil }
         let quantity: Decimal?
         if let quantityText {
-            quantity = MealProposalNumberParser.parse(quantityText, language: language)
+            quantity = quantityPresentation.grams(from: quantityText, language: language)
         } else {
             quantity = original.quantityG
         }

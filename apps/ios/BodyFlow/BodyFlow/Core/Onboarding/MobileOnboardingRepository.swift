@@ -88,7 +88,8 @@ struct MobileOnboardingRepository: OnboardingRepository {
         do {
             state = try await transport.execute(MobileAPIRequest(
                 method: .get, path: "/api/mobile/v1/onboarding",
-                queryItems: generation.map { [URLQueryItem(name: "body_photo_cleanup_generation", value: $0)] } ?? []
+                queryItems: [URLQueryItem(name: "onboarding_profile_schema", value: "habitual_water_optional_v1")]
+                    + (generation.map { [URLQueryItem(name: "body_photo_cleanup_generation", value: $0)] } ?? [])
             ))
         } catch {
             // A late failure belongs to the same retained session as a late
@@ -122,7 +123,8 @@ struct MobileOnboardingRepository: OnboardingRepository {
         do {
             state = try await transport.execute(MobileAPIRequest(
                 method: .get,
-                path: "/api/mobile/v1/onboarding"
+                path: "/api/mobile/v1/onboarding",
+                queryItems: [URLQueryItem(name: "onboarding_profile_schema", value: "habitual_water_optional_v1")]
             ))
         } catch is CancellationError {
             throw CancellationError()
@@ -385,7 +387,7 @@ private struct OnboardingCompletionSubmission: Encodable, Sendable {
     let objective: BodyFlowObjective
     let activityLevel: ActivityLevel
     let trainingFrequency: Int
-    let waterIntake: WaterIntake
+    let waterIntake: WaterIntake?
     let hungerLevel: HungerLevel
     let wakeTime: String
     let bedtime: String
@@ -406,7 +408,6 @@ private struct OnboardingCompletionSubmission: Encodable, Sendable {
               let objective = draft.objective,
               let activityLevel = draft.activityLevel,
               let trainingFrequency = draft.trainingFrequency,
-              let waterIntake = draft.waterIntake,
               let hungerLevel = draft.hungerLevel,
               let wakeTime = draft.wakeTime,
               let bedtime = draft.bedtime,
@@ -436,7 +437,7 @@ private struct OnboardingCompletionSubmission: Encodable, Sendable {
         self.objective = objective
         self.activityLevel = activityLevel
         self.trainingFrequency = trainingFrequency
-        self.waterIntake = waterIntake
+        self.waterIntake = draft.waterIntake
         self.hungerLevel = hungerLevel
         self.wakeTime = Self.timeString(wakeTime)
         self.bedtime = Self.timeString(bedtime)

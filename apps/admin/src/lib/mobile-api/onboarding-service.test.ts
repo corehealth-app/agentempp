@@ -64,6 +64,54 @@ function repository(overrides: Partial<OnboardingRepository> = {}): OnboardingRe
 }
 
 describe('server-owned onboarding service', () => {
+  it.each([
+    false,
+    true,
+  ])('returns unknown water only to a capable client (%s)', async (completed) => {
+    const value = input()
+    const repo = repository({
+      load: vi.fn(async () => ({
+        locale: 'pt-BR' as const,
+        completed,
+        completedAt: '2026-09-15T15:00:00.000Z',
+        documents: [],
+        acceptedActions: [],
+        draft: {
+          name: value.name,
+          locale: value.locale,
+          country: value.country,
+          timezone: value.timezone,
+          sex: value.sex,
+          birthDate: value.birth_date,
+          heightCm: value.height_cm,
+          weightKg: value.weight_kg,
+          bodyFatPercent: null,
+          objective: value.objective,
+          activityLevel: value.activity_level,
+          trainingFrequency: value.training_frequency,
+          waterIntake: null,
+          hungerLevel: value.hunger_level,
+          wakeTime: value.wake_time,
+          bedtime: value.bedtime,
+          foodOrganization: value.food_organization,
+          persona: value.persona,
+        },
+      })),
+    })
+    const capable = await getOnboardingState(repo, USER_ID, 'pt-BR', { acceptsUnknownWater: true })
+    expect(capable.draft?.water_intake).toBeNull()
+    if (completed) {
+      const legacy = await getOnboardingState(repo, USER_ID, 'pt-BR')
+      expect(legacy.completion.completed).toBe(true)
+      expect(legacy.draft).toBeNull()
+    } else {
+      await expect(getOnboardingState(repo, USER_ID, 'pt-BR')).rejects.toMatchObject({
+        status: 409,
+        code: 'onboarding_client_update_required',
+      })
+    }
+  })
+
   it('fails closed without published required documents while preserving official completion', async () => {
     const result = await getOnboardingState(repository(), USER_ID, 'pt-BR')
 

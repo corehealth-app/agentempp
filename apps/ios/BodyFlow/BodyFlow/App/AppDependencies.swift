@@ -568,6 +568,9 @@ struct AppDependencies: Sendable {
             mode: configuration.mode
         ) {
             mealCapture = synthetic
+            if ProcessInfo.processInfo.arguments.contains(DemoMealCaptureScenario.emptyBreakfastArgument) {
+                today = DemoEmptyBreakfastCaptureToday(base: today)
+            }
         }
         #endif
 

@@ -272,3 +272,12 @@ describe('trends read model', () => {
     expect(shaped.daily[6].date).toBe('2026-07-20')
   })
 })
+
+
+describe('Roberto liquid quantity presentation', () => {
+  it('projects reference volume without trusting legacy display or changing canonical grams/macros', () => {
+    const proposal=sanitizePendingProposal({kind:'meal',items:[{name:'leite integral',quantity_g:200,kcal:122,display_qty:200,display_unit:'ml'},{name:'whey protein em pó',quantity_g:30,kcal:105.6}]})
+    expect(proposal.items?.[0]).toMatchObject({quantity_g:200,kcal:122,quantity_display:{unit:'mL',grams_per_unit:1.03,reference_id:'fao-infoods-v2-whole-milk-tb',estimated:true}})
+    expect(proposal.items?.[1]).not.toHaveProperty('quantity_display')
+  })
+})

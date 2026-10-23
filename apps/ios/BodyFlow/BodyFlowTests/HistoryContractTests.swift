@@ -188,7 +188,7 @@ struct HistoryContractTests {
         }
     }
 
-    @Test("history surface contains only raw meals workouts and pagination")
+    @Test("history contains only owned fields and optional quantity presentation")
     func exposesOnlyMainHistoryFields() throws {
         let response = try BodyFlowTestFixtures.decodeHistoryWithMatchingRows()
         let meal = response.data.meals[0]
@@ -209,6 +209,7 @@ struct HistoryContractTests {
                 "mealType",
                 "proteinG",
                 "quantityG",
+                "quantityDisplay",
             ]
         )
         #expect(
@@ -235,6 +236,22 @@ struct HistoryContractTests {
 
         #expect(try await provider.history(.firstPage) == expected)
         #expect(await spy.recordedQueries() == [.firstPage])
+    }
+
+    @Test("new volume metadata adds only its public reference keys; legacy fields remain exact")
+    func quantityMetadataKeepsTheHistoryBoundary() throws {
+        let legacy = try BodyFlowTestFixtures.decodeHistoryWithMatchingRows().data.meals[0]
+        var object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(legacy)) as? [String:Any])
+        object["food_name"] = "leite integral"
+        object["quantity_display"] = ["unit":"mL","grams_per_unit":1.03,"reference_id":"fao-infoods-v2-whole-milk-tb","estimated":true]
+        let row = try JSONDecoder().decode(HistoryMealLogRow.self,from:JSONSerialization.data(withJSONObject:object))
+        let encoded = try #require(JSONSerialization.jsonObject(with:JSONEncoder().encode(row)) as? [String:Any])
+        #expect(Set(encoded.keys) == ["id","meal_type","food_name","quantity_g","kcal","protein_g","carbs_g","fat_g","consumed_at","quantity_display"])
+        let metadata = try #require(encoded["quantity_display"] as? [String:Any])
+        #expect(Set(metadata.keys) == ["unit","grams_per_unit","reference_id","estimated"])
+        #expect(metadata["unit"] as? String == "mL")
+        #expect(metadata["reference_id"] as? String == "fao-infoods-v2-whole-milk-tb")
+        #expect(legacy.quantityDisplay == nil)
     }
 
     private func timestamp(_ value: String) -> APITimestamp {

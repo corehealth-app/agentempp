@@ -1,3 +1,4 @@
+import { mobileQuantityFields } from './mobile-quantity-display'
 import {
   DailyStateLoadError,
   isUnresolvedNutritionSource,
@@ -42,7 +43,7 @@ export function meDto(auth: MobileAuthContext) {
   }
 }
 
-function safePendingItem(value: Json): Record<string, string | number | string[] | null> | null {
+function safePendingItem(value: Json) {
   const item = record(value)
   if (!item) return null
   const name = stringValue(item.name) ?? stringValue(item.food_name)
@@ -51,6 +52,7 @@ function safePendingItem(value: Json): Record<string, string | number | string[]
 
   return {
     name,
+    ...mobileQuantityFields(name),
     quantity_g: quantity,
     kcal: finiteNumber(item.kcal),
     protein_g: finiteNumber(item.protein_g),
@@ -172,7 +174,8 @@ export async function loadToday(
   now = new Date(),
 ) {
   try {
-    return await loadOfficialDailyState(supabase, userId, timezone, now)
+    const state = await loadOfficialDailyState(supabase, userId, timezone, now)
+    return { ...state, meals: state.meals.map(item => ({ ...item, ...mobileQuantityFields(item.food_name) })) }
   } catch (error) {
     if (error instanceof DailyStateLoadError) {
       throw new MobileApiError(500, 'data_access_failed', 'Daily state lookup failed')
@@ -436,7 +439,7 @@ export async function loadHistory(supabase: ServiceClient, userId: string, query
   throwQueryError(mealResult.error, 'Meal history lookup')
   throwQueryError(workoutResult.error, 'Workout history lookup')
   return {
-    meals: mealResult.data ?? [],
+    meals: (mealResult.data ?? []).map(item => ({ ...item, ...mobileQuantityFields(item.food_name) })),
     workouts: workoutResult.data ?? [],
     pagination: { limit: query.limit, before: query.before ?? null },
   }

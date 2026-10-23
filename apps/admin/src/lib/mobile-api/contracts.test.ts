@@ -243,6 +243,43 @@ describe('mobile API v1 contracts', () => {
     expect(onboardingCompletionInputSchema.parse(input)).toEqual(input)
   })
 
+  it.each([
+    undefined,
+    null,
+  ])('accepts unreported habitual water as unknown (%s), without guessing a habit', (water) => {
+    const input = {
+      name: 'Paciente Teste',
+      locale: 'pt-BR',
+      country: 'BR',
+      timezone: 'America/Sao_Paulo',
+      sex: 'feminino',
+      birth_date: '1990-06-15',
+      height_cm: 168,
+      weight_kg: 64,
+      objective: 'recomposicao',
+      activity_level: 'moderado',
+      training_frequency: 0,
+      hunger_level: 'moderada',
+      wake_time: '07:30',
+      bedtime: '23:00',
+      food_organization: 'sim',
+      persona: 'focus',
+      document_actions: [
+        {
+          document_key: 'terms_of_service',
+          version: '2026-09-15.1',
+          locale: 'pt-BR',
+          content_hash: 'a'.repeat(64),
+          action: 'acceptance',
+        },
+      ],
+      ...(water === undefined ? {} : { water_intake: water }),
+    }
+    const parsed = onboardingCompletionInputSchema.safeParse(input)
+    expect(parsed.success).toBe(true)
+    if (parsed.success) expect(parsed.data.water_intake).toBeNull()
+  })
+
   it('rejects partial onboarding, stale-shaped identity, and client-owned completion fields', () => {
     expect(() => onboardingCompletionInputSchema.parse({ height_cm: 180 })).toThrow()
     expect(() =>

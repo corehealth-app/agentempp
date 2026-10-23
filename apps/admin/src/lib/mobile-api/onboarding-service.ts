@@ -137,12 +137,28 @@ export async function getOnboardingState(
   repository: OnboardingRepository,
   userId: string,
   locale: string,
+  options: { acceptsUnknownWater?: boolean } = {},
 ) {
   let state: OnboardingLoadRecord
   try {
     state = await repository.load(userId, locale)
   } catch (error) {
     mapRepositoryError(error)
+  }
+
+  // A distributed old iOS binary cannot decode a NULL habit in its required
+  // reconsent draft. Never fabricate an enum to satisfy that decoder.
+  let draft = state.draft
+  if (draft && draft.waterIntake == null && options.acceptsUnknownWater !== true) {
+    if (!state.completed) {
+      throw new MobileApiError(
+        409,
+        'onboarding_client_update_required',
+        'Update the app to review this onboarding profile',
+      )
+    }
+    // The completed account needs no reconsent draft to enter the app.
+    draft = null
   }
 
   const documents = state.documents.map((document) => ({
@@ -172,26 +188,26 @@ export async function getOnboardingState(
       documents,
     },
     accepted_actions: state.acceptedActions.map(acceptedActionDto),
-    draft: state.draft
+    draft: draft
       ? {
-          name: state.draft.name,
-          locale: state.draft.locale,
-          country: state.draft.country,
-          timezone: state.draft.timezone,
-          sex: state.draft.sex,
-          birth_date: state.draft.birthDate,
-          height_cm: state.draft.heightCm,
-          weight_kg: state.draft.weightKg,
-          body_fat_percent: state.draft.bodyFatPercent,
-          objective: state.draft.objective,
-          activity_level: state.draft.activityLevel,
-          training_frequency: state.draft.trainingFrequency,
-          water_intake: state.draft.waterIntake,
-          hunger_level: state.draft.hungerLevel,
-          wake_time: state.draft.wakeTime,
-          bedtime: state.draft.bedtime,
-          food_organization: state.draft.foodOrganization,
-          persona: state.draft.persona,
+          name: draft.name,
+          locale: draft.locale,
+          country: draft.country,
+          timezone: draft.timezone,
+          sex: draft.sex,
+          birth_date: draft.birthDate,
+          height_cm: draft.heightCm,
+          weight_kg: draft.weightKg,
+          body_fat_percent: draft.bodyFatPercent,
+          objective: draft.objective,
+          activity_level: draft.activityLevel,
+          training_frequency: draft.trainingFrequency,
+          water_intake: draft.waterIntake,
+          hunger_level: draft.hungerLevel,
+          wake_time: draft.wakeTime,
+          bedtime: draft.bedtime,
+          food_organization: draft.foodOrganization,
+          persona: draft.persona,
           current_step: 'consent' as const,
         }
       : null,

@@ -101,7 +101,8 @@
  *   A proposta tem uma linha a menos que o pedido; o item seguinte recebe o
  *   quantity_basis e o candidate_id do item que foi somado. Kcal, gramas e
  *   nomes ficam certos. O cálculo devolve `input_indexes` para o serviço
- *   parear certo; o serviço ainda não lê. Caracterizado no teste do app.
+ *   parear certo. Estado de04/10; corrigido no serviço mobile em22/10,
+ *   com regressão em registration-service.everyday-defaults.test.ts.
  * > RC M2 — cenário WhatsApp ponta a ponta com "leite" e "leite integral" na mesma mensagem (pending, edição do pending e correção em 30 min da linha somada) NÃO coberto nesta PR (pendência da audit 2026-10-04).
  *   Coberto aqui só no cálculo e nos argumentos do confirm.
  * > RC M2 — cenário WhatsApp ponta a ponta (o modelo chama registra_refeicao com "leite" e "whey" como itens separados) NÃO coberto nesta PR (pendência da audit 2026-10-04).

@@ -78,7 +78,8 @@ struct TodayPresentation: Equatable, Sendable {
                 provenance: TodayNutritionProvenance.label(
                     for: meal.nutritionSource,
                     language: language
-                )
+                ),
+                quantityDisplay: meal.quantityDisplay
             )
         }
         mealSlots = TodayMealSlotsDescriptor(
@@ -497,7 +498,9 @@ struct TodayRootView: View {
                 // The day by meal, right after what needs attention.
                 TodayMealSlotsSection(
                     descriptor: presentation.mealSlots,
-                    register: router.map { router in { router.presentedSheet = .registration(.meal) } }
+                    register: router.map { router in
+                        { type in router.presentedSheet = .registration(.meal, mealType: type) }
+                    }
                 )
                 .bodyFlowArrival(index: 3)
 

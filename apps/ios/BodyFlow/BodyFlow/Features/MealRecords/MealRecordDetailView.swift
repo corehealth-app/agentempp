@@ -140,7 +140,7 @@ struct MealRecordDetailView: View {
                 Text(RegistrationCopy.mealTypeTitle(code: mealType, language: language))
                     .foregroundStyle(BodyFlowColor.secondaryText)
             }
-            if let quantity = values.quantity(row.quantityG) { Text(quantity) }
+            if let quantity = values.quantity(row.quantityG, metadata: row.quantityDisplay, name: row.foodName) { Text(quantity) }
             if let energy = values.energy(row.kcal) { Text(energy) }
         }
         .bodyFlowListRow()
@@ -211,8 +211,11 @@ struct MealRecordDetailView: View {
     @ViewBuilder
     private func savedValues(_ item: MealRecordItemSnapshot) -> some View {
         if let quantity = item.quantityG {
-            LabeledContent(copy("confirmed-meal.item.saved-quantity")) {
-                Text(MealProposalNumberParser.format(quantity, language: language))
+            let presentation = MealQuantityValue(grams: quantity, metadata: item.quantityDisplay, name: item.foodName)
+            LabeledContent(copy(presentation.isVolume ? "meal.quantity.volume-saved" : "confirmed-meal.item.saved-quantity")) {
+                Text(presentation.isVolume
+                    ? (presentation.label(language: language) ?? "")
+                    : MealProposalNumberParser.format(quantity, language: language))
             }
         }
         if let mealType = item.mealType {
@@ -230,12 +233,14 @@ struct MealRecordDetailView: View {
             .bodyFlowField()
             .accessibilityLabel(copy("confirmed-meal.field.name"))
             .accessibilityIdentifier("meal-record.field.name")
-        caption("confirmed-meal.field.quantity")
-        TextField(copy("confirmed-meal.field.quantity"), text: binding(index, field: .quantity))
+        let quantityItem = model.draft.flatMap { $0.items.indices.contains(index) ? $0.items[index] : nil }
+        let quantityKey = quantityItem?.quantityPresentation.isVolume == true ? "meal.quantity.volume" : "confirmed-meal.field.quantity"
+        caption(quantityKey)
+        TextField(copy(quantityKey), text: binding(index, field: .quantity))
             .keyboardType(.decimalPad)
             .focused($focusedField, equals: .quantity)
             .bodyFlowField()
-            .accessibilityLabel(copy("confirmed-meal.field.quantity"))
+            .accessibilityLabel(copy(quantityKey))
             .accessibilityIdentifier("meal-record.field.quantity")
         caption("confirmed-meal.field.kcal")
         TextField(copy("confirmed-meal.field.kcal"), text: binding(index, field: .kcal))

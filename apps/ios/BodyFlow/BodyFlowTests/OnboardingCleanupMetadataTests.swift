@@ -115,7 +115,7 @@ struct OnboardingCleanupMetadataTests {
         }
     }
 
-    @Test("M06 historical GET sends one encoded literal query and never mutates a draft")
+    @Test("M06 historical GET sends the schema and one encoded literal generation and never mutates a draft")
     func historicalGETPreservesPositiveOffsetOnTheWire() async throws {
         let h = try await MetadataHTTPHarness(payload: F.envelope(F.get(
             completedAt: F.g2, metadata: F.scope(F.g1, "pending"))))
@@ -135,14 +135,15 @@ struct OnboardingCleanupMetadataTests {
         #expect(raw.contains("%2B"))
         #expect(!raw.contains("%252B"))
         let query = try #require(request.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.percentEncodedQuery })
-        #expect(query.split(separator: "&").count == 1)
+        #expect(query.split(separator: "&").count == 2)
+        #expect(F.formValue(query, name: "onboarding_profile_schema") == "habitual_water_optional_v1")
         #expect(F.formValue(query, name: "body_photo_cleanup_generation") == F.g1)
         #expect(!query.contains("user_id"))
         #expect(!query.contains("locale"))
         #expect(try Data(contentsOf: h.draftStore.fileURL) == before)
     }
 
-    @Test("M07 current nil-query and historical echo do not confuse profile G2 with G1")
+    @Test("M07 current absent-generation query and historical echo do not confuse profile G2 with G1")
     func currentAndHistoricalReadsUseTheirOwnEcho() async throws {
         let cases: [(requested: String?, current: String?, echoed: String, expected: OnboardingBodyPhotoCleanupScope?)] = [
             (F.g1, F.g2, F.g1, .init(generation: F.g1, state: .pending)),
@@ -165,7 +166,13 @@ struct OnboardingCleanupMetadataTests {
             let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedQuery
             if let generation = item.requested {
                 #expect(F.formValue(query ?? "", name: "body_photo_cleanup_generation") == generation)
-            } else { #expect(query == nil) }
+            } else {
+                #expect(F.formValue(query ?? "", name: "body_photo_cleanup_generation") == nil)
+            }
+            let items = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+            #expect(items.filter { $0.name == "onboarding_profile_schema" }.count == 1)
+            #expect(F.formValue(query ?? "", name: "onboarding_profile_schema") == "habitual_water_optional_v1")
+            #expect(items.count == (item.requested == nil ? 1 : 2))
             #expect(request.httpBody == nil)
             #expect(try Data(contentsOf: h.draftStore.fileURL) == before)
         }

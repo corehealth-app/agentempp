@@ -126,7 +126,16 @@ struct MealProposalEditorDraft: Equatable, Sendable {
     let hasUnknownKcalOrigin: Bool
     let source: MealProposalSource?
     var mealType: MealType
-    var foodName: String
+    var foodName: String {
+        didSet {
+            let reference = editedItem?.quantityDisplay?.validated(for: editedItem?.name ?? "")
+            if reference?.validated(for: oldValue) != reference?.validated(for: foodName),
+               quantityText != nil { quantityText = "" }
+        }
+    }
+    var quantityPresentation: MealQuantityValue {
+        MealQuantityValue(grams: editedItem?.quantityG, metadata: editedItem?.quantityDisplay?.validated(for: editedItem?.name ?? ""), name: foodName)
+    }
     var consumedAt: Date
     /// nil until the patient edits the field: the server's quantity is sent
     /// exactly, never re-read from formatted text.
@@ -195,9 +204,7 @@ struct MealProposalEditorDraft: Equatable, Sendable {
 
     func quantityDisplay(language: SupportedAppLanguage) -> String {
         if let quantityText { return quantityText }
-        return editedItem.map {
-            MealProposalNumberParser.format($0.quantityG, language: language)
-        } ?? ""
+        return quantityPresentation.displayText(language: language)
     }
 
     func manualKcalDisplay(language: SupportedAppLanguage) -> String {
@@ -209,8 +216,7 @@ struct MealProposalEditorDraft: Equatable, Sendable {
 
     func quantityValue(language: SupportedAppLanguage) -> Decimal? {
         guard let quantityText else { return editedItem?.quantityG }
-        guard let value = MealProposalNumberParser.parse(quantityText, language: language),
-              value > 0, value <= Self.maximumQuantityG
+        guard let value = quantityPresentation.grams(from: quantityText, language: language)
         else {
             return nil
         }
@@ -272,7 +278,7 @@ struct MealProposalEditorDraft: Equatable, Sendable {
                     userKcal: firstItemKcal,
                     // A quantity the patient typed is theirs from then on.
                     quantityBasis: quantity == item.quantityG
-                        ? Self.keptBasis(of: item) : .stated,
+                        ? Self.keptBasis(of: item) : (quantityPresentation.isVolume ? .portionReference : .stated),
                     usesNutritionLabel: firstItemKcal == nil
                         && foodName == item.name
                         && keepsNutritionLabel(of: item)
@@ -387,11 +393,17 @@ struct MealProposalEditorView: View {
                             )
                     }
                 }
-                TextField(copy("registration.editor.quantity"), text: quantityBinding)
+                TextField(copy(draft.quantityPresentation.captionKey), text: quantityBinding)
+                    .accessibilityLabel(copy(draft.quantityPresentation.captionKey))
                     .keyboardType(.decimalPad)
                     .accessibilityIdentifier("registration.proposal.edit.quantity")
+                if draft.quantityPresentation.isVolume {
+                    Text(copy("meal.quantity.volume-reference"))
+                        .font(BodyFlowTypography.caption)
+                        .foregroundStyle(BodyFlowColor.secondaryText)
+                }
                 if draft.blocker(language: language) == .invalidQuantity {
-                    BodyFlowStatusLine(copy("registration.editor.quantity.invalid"), kind: .error)
+                    BodyFlowStatusLine(copy(draft.quantityPresentation.isVolume ? "meal.quantity.volume.invalid" : "registration.editor.quantity.invalid"), kind: .error)
                         .accessibilityIdentifier("registration.proposal.edit.quantity.invalid")
                 }
                 TextField(copy("registration.editor.user-kcal"), text: manualKcalBinding)

@@ -58,6 +58,48 @@ describe('meal draft contract', () => {
 })
 
 describe('meal draft from text', () => {
+  it('Roberto: a new household cup is200mL, not200g; whey remains30g powder', async () => {
+    const draft = await createMealDraft(deps({}), 'patient-a', {source:'text',text:'1 caneca de leite com uma medida de whey'})
+    expect(draft.items[0]).toMatchObject({quantity_g:206,quantity_display:{unit:'mL',grams_per_unit:1.03,reference_id:'fao-infoods-v2-whole-milk-tb',estimated:true}})
+    expect(draft.items[1]).not.toHaveProperty('quantity_display')
+    expect(draft.items[1]).toMatchObject({name:'whey protein em pó',quantity_g:30})
+  })
+  it('converts explicitly stated milk volume once, keeping a density reference basis', async () => {
+    const draft = await createMealDraft(deps({}), 'patient-a', {source:'text',text:'200 ml de leite'})
+    expect(draft.items).toMatchObject([{quantity_g:206,quantity_basis:'portion_reference',count:200,unit_label:'ml',quantity_display:{unit:'mL',grams_per_unit:1.03}}])
+  })
+  it('does not reinterpret an old explicit200g as200mL', async () => {
+    const draft = await createMealDraft(deps({}), 'patient-a', {source:'text',text:'leite200g'})
+    expect(draft.items).toMatchObject([{quantity_g:200,quantity_basis:'stated',quantity_display:{unit:'mL',grams_per_unit:1.03}}])
+  })
+  it('an unknown liquid volume never borrows whole milk density or becomes grams1:1', async () => {
+    const draft = await createMealDraft(deps({}), 'patient-a', {source:'text',text:'200ml de leite de coco'})
+    expect(draft.items[0]).toMatchObject({quantity_g:null,quantity_basis:'missing',needs_review:true,review_reason:'missing_quantity'})
+    expect(draft.items[0]).not.toHaveProperty('quantity_display')
+  })
+
+  it('Roberto 22/10: a caneca of milk with one whey measure yields two editable reference portions', async () => {
+    const draft = await createMealDraft(deps({}), 'patient-a', {
+      source: 'text', text: '1 caneca de leite com uma medida de whey',
+    })
+    expect(draft.items).toMatchObject([
+      { name: 'leite integral', quantity_g: 206, quantity_basis: 'portion_reference', needs_review: true, review_reason: 'estimated_quantity' },
+      { name: 'whey protein em pó', quantity_g: 30, quantity_basis: 'portion_reference', needs_review: true, review_reason: 'estimated_quantity' },
+    ])
+    expect(draft.items).toHaveLength(2)
+    expect(new Set(draft.items.map(item => item.candidate_id)).size).toBe(2)
+    expect(draft.extraction).toEqual({ method: 'deterministic', model: null })
+  })
+
+  it('the same literal household phrase from an owned audio transcript needs no invented extractor grams', async () => {
+    const recording = asset({ kind: 'audio_note', processing_result: { text: '1 caneca de leite com uma medida de whey' } })
+    const draft = await createMealDraft(deps({ assets: [recording] }), 'patient-a', { source: 'media', media_asset_id: assetId })
+    expect(draft.source).toBe('audio')
+    expect(draft.items.map(item => [item.name,item.quantity_g,item.quantity_basis,item.needs_review])).toEqual([
+      ['leite integral',206,'portion_reference',true],['whey protein em pó',30,'portion_reference',true],
+    ])
+  })
+
   it('reads "alimento + gramas" without any provider call', async () => {
     let called = false
     const draft = await createMealDraft(
@@ -79,6 +121,27 @@ describe('meal draft from text', () => {
       { name: 'Feijão carioca', quantity_g: 86.5, quantity_basis: 'stated' },
     ])
     expect(JSON.stringify(draft)).not.toMatch(/kcal/)
+  })
+
+  it('keeps the household drink before or after stated foods, with unique global candidate IDs', async () => {
+    for(const [sourceText,names] of [
+      ['1 caneca de leite com uma medida de whey; banana100g',['leite integral','whey protein em pó','banana']],
+      ['banana100g;1 caneca de leite com uma medida de whey;Arroz150g',['banana','leite integral','whey protein em pó','Arroz']],
+    ] as const) {
+      const draft=await createMealDraft(deps({}),'patient-a',{source:'text',text:sourceText})
+      expect(draft.items.map(item=>item.name)).toEqual(names)
+      expect(new Set(draft.items.map(item=>item.candidate_id)).size).toBe(draft.items.length)
+    }
+  })
+
+  it('keeps unread blocks around the drink in order without inventing a mapping for model output', async () => {
+    const draft=await createMealDraft(deps({extractor:{async extract({text}) {
+      if(text==='uma maçã') return {items:[{name:'maçã',count:1}],model:'synthetic-model'}
+      if(text==='uma banana') return {items:[{name:'banana',count:1}],model:'synthetic-model'}
+      return {items:[{name:'maçã',count:1},{name:'banana',count:1}],model:'synthetic-model'}
+    }}}),'patient-a',{source:'text',text:'uma maçã;1 caneca de leite com uma medida de whey;uma banana'})
+    expect(draft.items.map(item=>item.name)).toEqual(['maçã','leite integral','whey protein em pó','banana'])
+    expect(new Set(draft.items.map(item=>item.candidate_id)).size).toBe(4)
   })
 
   it('"2 ovos e 1 prato de feijoada": reference for the egg, no invented grams for the dish', async () => {

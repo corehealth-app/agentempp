@@ -108,7 +108,8 @@ export const onboardingCompletionInputSchema = z
     objective: z.enum(['recomposicao', 'ganho_massa', 'manutencao']),
     activity_level: z.enum(['sedentario', 'leve', 'moderado', 'alto', 'atleta']),
     training_frequency: signupTrainingFrequencySchema,
-    water_intake: z.enum(['pouco', 'moderado', 'bastante']),
+    // Unknown is real absence, never an invented hydration habit.
+    water_intake: z.enum(['pouco', 'moderado', 'bastante']).nullable().optional().default(null),
     hunger_level: z.enum(['pouca', 'moderada', 'muita']),
     wake_time: timeSchema,
     bedtime: timeSchema,

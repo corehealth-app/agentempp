@@ -17,6 +17,8 @@ final class OnboardingActivityLevelUITests: XCTestCase {
         journey.reachRoutine(app)
         journey.waitUntilArrived(app)
 
+        // Habitual water is no longer part of the initial questionnaire.
+        XCTAssertFalse(app.staticTexts["Consumo de água"].exists)
         // Nothing was touched on this step.
         let meanings = [
             "Não faz exercício",

@@ -4,6 +4,7 @@ import {
   createPendingRegistration,
   getLocalDateString,
   isUnresolvedNutritionSource,
+  mobileMilkWheyPortions,
   type MealCalcResult,
   type MealItemInput,
   registraRefeicao,
@@ -98,6 +99,22 @@ function normalizeFoodName(value: string): string {
     .trim()
 }
 
+function mealItemMetadata(input: MealProposalInput, calculation: MealCalcResult, index: number) {
+  const indexes = calculation.input_indexes === undefined ? [index] : (calculation.input_indexes[index] ?? [])
+  const sources = indexes.map(sourceIndex => input.items[sourceIndex])
+  if (!sources.length || sources.some(source => source === undefined)) return {}
+  const bases = sources.map(source => source?.quantity_basis)
+  const basis = bases.includes('visual_estimate') ? 'visual_estimate'
+    : bases.includes('portion_reference') ? 'portion_reference'
+    : bases.every(value => value === 'stated') ? 'stated' : undefined
+  // A merged line cannot claim one candidate's identity. The least precise
+  // known basis remains approximate rather than becoming a typed quantity.
+  return {
+    ...(basis ? { quantity_basis: basis } : {}),
+    ...(sources.length === 1 && sources[0]?.candidate_id ? { candidate_id: sources[0].candidate_id } : {}),
+  }
+}
+
 export function buildMealPendingProposal(
   input: MealProposalInput,
   calculation: MealCalcResult,
@@ -122,13 +139,7 @@ export function buildMealPendingProposal(
       display_unit: item.display_unit ?? null,
       user_kcal: overrides.get(normalizeFoodName(item.food_name)) ?? null,
       ...(item.preparation_options ? { preparation_options: item.preparation_options } : {}),
-      // Each input item yields exactly one calculated item, in order.
-      ...(input.items[index]?.quantity_basis
-        ? { quantity_basis: input.items[index]?.quantity_basis }
-        : {}),
-      ...(input.items[index]?.candidate_id
-        ? { candidate_id: input.items[index]?.candidate_id }
-        : {}),
+      ...mealItemMetadata(input, calculation, index),
       kcal: item.kcal,
       protein_g: item.protein_g,
       carbs_g: item.carbs_g,
@@ -375,13 +386,30 @@ async function buildProposal(
         'Confirm your country before calculating nutrition',
       )
     }
+    const portionWarnings: string[] = []
+    const expanded: MealProposalInput = { ...input, items: input.items.flatMap<MealProposalInput['items'][number]>(item => {
+      const parts = item.user_kcal === undefined && !item.use_nutrition_label
+        ? mobileMilkWheyPortions(item.food_name, { quantity_g: item.quantity_g, quantity_basis: item.quantity_basis })
+        : null
+      if (!parts) return [item]
+      portionWarnings.push(auth.patient.locale?.startsWith('en')
+        ? `I used ${item.quantity_g} g of whole milk and a separate estimated 30 g serving of whey powder. Review both portions before confirming.`
+        : `Considerei ${item.quantity_g} g de leite integral e uma porção estimada de 30 g de whey em pó, separadamente. Confira as duas porções antes de confirmar.`)
+      // Both the calculator and pending builder receive this same expanded
+      // order. The old compound's candidate/label cannot identify two foods.
+      return parts
+    }) }
+    if (expanded.items.length > 30) {
+      throw new MobileApiError(422, 'meal_item_limit_exceeded', 'Too many meal items to review')
+    }
     const calculation = await calcMealMacros(
       supabase,
-      await mealItemsForCalculation(supabase, auth.userId, input),
+      await mealItemsForCalculation(supabase, auth.userId, expanded),
       auth.patient.country,
       auth.userId,
     )
-    return buildMealPendingProposal(input, calculation, timing, origin) as unknown as Json
+    calculation.user_warnings.push(...portionWarnings)
+    return buildMealPendingProposal(expanded, calculation, timing, origin) as unknown as Json
   }
 
   const { data: profile, error: profileError } = await supabase

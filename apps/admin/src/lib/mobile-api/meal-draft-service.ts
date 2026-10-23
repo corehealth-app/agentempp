@@ -1,12 +1,17 @@
+import { mobileDraftQuantity, mobileQuantityFields, type MobileQuantityDisplay } from './mobile-quantity-display'
 import {
   buildDraftCandidates,
   draftFromStatedText,
   draftFromVisionItems,
   labelCandidateId,
   MEAL_DRAFT_MAX_TEXT_LENGTH,
+  MEAL_DRAFT_MAX_ITEMS,
   type MealDraftCandidate,
   type MealDraftRawItem,
   parseCountedSegment,
+  mobileMilkWheyPortions,
+  resolveDraftItem,
+  splitMealText,
   sanitizeExtractedItems,
 } from '@mpp/agent'
 import type { MealDraftInput } from './contracts'
@@ -54,7 +59,7 @@ export interface MealDraft {
   media_asset_id: string | null
   transcript: string | null
   context_note: string | null
-  items: MealDraftCandidate[]
+  items: Array<MealDraftCandidate & { quantity_display?: MobileQuantityDisplay }>
   nutrition_label: NutritionLabelDraft | null
   extraction: { method: 'deterministic' | 'vision' | 'llm_text'; model: string | null }
 }
@@ -131,6 +136,59 @@ async function draftFromText(
   sourceText: string,
   source: DraftSource,
 ): Promise<Pick<MealDraft, 'items' | 'extraction'>> {
+  const segments = splitMealText(sourceText)
+  if (!segments.some(segment => mobileMilkWheyPortions(segment))) {
+    return draftFromOrdinaryText(deps, userId, sourceText, source)
+  }
+  const items: MealDraftCandidate[] = []
+  const models = new Set<string>()
+  let usedExtractor = false
+  let unread: string[] = []
+  const append = (candidates: MealDraftCandidate[]) => {
+    if (items.length + candidates.length > MEAL_DRAFT_MAX_ITEMS) {
+      throw new MobileApiError(422, 'meal_item_limit_exceeded', 'Too many meal items to review')
+    }
+    for (const candidate of candidates) {
+      // IDs use the final global order, including foods around the drink.
+      const reindexed = resolveDraftItem({ name: candidate.name }, items.length)
+      if (reindexed) items.push({ ...candidate, candidate_id: reindexed.candidate_id })
+    }
+  }
+  const flushUnread = async () => {
+    if (!unread.length) return
+    const draft = await draftFromOrdinaryText(deps, userId, unread.join('\n'), source)
+    append(draft.items)
+    if (draft.extraction.method === 'llm_text') usedExtractor = true
+    if (draft.extraction.model) models.add(draft.extraction.model)
+    unread = []
+  }
+  for (const segment of segments) {
+    const references = mobileMilkWheyPortions(segment)
+    const stated = draftFromStatedText(segment)
+    if (references) {
+      await flushUnread()
+      append(buildDraftCandidates(references.map(part => ({ name: part.food_name, grams_stated: part.quantity_g })))
+        .map(candidate => ({ ...candidate, quantity_basis: 'portion_reference' as const, needs_review: true, review_reason: 'estimated_quantity' as const })))
+    } else if (stated.rest.length === 0) {
+      await flushUnread()
+      append(buildDraftCandidates(stated.raw))
+    } else {
+      unread.push(segment)
+    }
+  }
+  await flushUnread()
+  return { items, extraction: { method: usedExtractor ? 'llm_text' : 'deterministic', model: models.size === 1 ? [...models][0]! : null } }
+}
+
+// Preserve the previous parser/extractor path for meals without this new
+// household reference. Around a reference, only contiguous unread text is
+// batched together: the extractor's contract has no source-position field.
+async function draftFromOrdinaryText(
+  deps: MealDraftDependencies,
+  userId: string,
+  sourceText: string,
+  source: DraftSource,
+): Promise<Pick<MealDraft, 'items' | 'extraction'>> {
   const { raw, rest } = draftFromStatedText(sourceText)
   if (rest.length === 0) {
     return { items: buildDraftCandidates(raw), extraction: { method: 'deterministic', model: null } }
@@ -192,6 +250,7 @@ export async function createMealDraft(
       context_note: null,
       nutrition_label: null,
       ...draft,
+      items: draft.items.map(mobileDraftQuantity),
     }
   }
 
@@ -211,6 +270,7 @@ export async function createMealDraft(
       context_note: null,
       nutrition_label: null,
       ...draft,
+      items: draft.items.map(mobileDraftQuantity),
     }
   }
 
@@ -222,7 +282,7 @@ export async function createMealDraft(
     media_asset_id: asset.id,
     transcript: null,
     context_note: text(result?.meal_context, 500),
-    items,
+    items: items.map(item => ({ ...item, ...mobileQuantityFields(item.name) })),
     nutrition_label: label
       ? {
           product_name: productName,

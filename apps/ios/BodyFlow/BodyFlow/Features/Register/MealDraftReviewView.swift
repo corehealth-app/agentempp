@@ -61,7 +61,7 @@ struct MealDraftReviewView: View {
             }
 
             if let blocker = review.blocker(language: language) {
-                BodyFlowStatusLine(copy(MealCaptureCopy.blockerKey(blocker)), kind: .warning)
+                BodyFlowStatusLine(copy(isVolumeBlocker(blocker) ? "meal.quantity.volume.invalid" : MealCaptureCopy.blockerKey(blocker)), kind: .warning)
                     .accessibilityIdentifier("registration.review.blocker")
             }
 
@@ -122,9 +122,9 @@ struct MealDraftReviewView: View {
                     )
                 }
 
-                fieldCaption("registration.review.item.quantity")
+                fieldCaption(value.quantityValue.isVolume ? "meal.quantity.volume" : "registration.review.item.quantity")
                 TextField(
-                    copy("registration.review.item.quantity"),
+                    copy(value.quantityValue.isVolume ? "meal.quantity.volume" : "registration.review.item.quantity"),
                     text: Binding(
                         get: { value.quantityDisplay(language: language) },
                         set: { item.wrappedValue.setQuantityText($0, language: language) }
@@ -133,9 +133,14 @@ struct MealDraftReviewView: View {
                 .keyboardType(.decimalPad)
                 .focused($focusedField, equals: .quantity(value.id))
                 .bodyFlowField()
-                .accessibilityLabel(copy("registration.review.item.quantity"))
+                .accessibilityLabel(copy(value.quantityValue.isVolume ? "meal.quantity.volume" : "registration.review.item.quantity"))
                 .accessibilityIdentifier("registration.review.item.\(value.id).quantity")
 
+                if value.quantityValue.isVolume {
+                    Text(copy("meal.quantity.volume-reference"))
+                        .font(BodyFlowTypography.caption)
+                        .foregroundStyle(BodyFlowColor.secondaryText)
+                }
                 BodyFlowStatusLine(
                     [copy(MealCaptureCopy.basisKey(for: value)), portion(of: value)]
                         .compactMap { $0 }
@@ -198,6 +203,15 @@ struct MealDraftReviewView: View {
             .font(BodyFlowTypography.caption)
             .foregroundStyle(BodyFlowColor.secondaryText)
             .accessibilityHidden(true)
+    }
+
+    private func isVolumeBlocker(_ blocker: MealDraftReview.Blocker) -> Bool {
+        switch blocker {
+        case let .invalidQuantity(id), let .missingQuantity(id):
+            review.items.first { $0.id == id }?.quantityValue.isVolume == true
+        case .noItems, .invalidName, .unconfirmed:
+            false
+        }
     }
 
     /// "2 × unidade", as the server counted it; nil when it did not count.

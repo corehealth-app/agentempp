@@ -22,11 +22,11 @@ struct HistoryMealLogDetailView: View {
                                     .font(BodyFlowTypography.body)
                                     .foregroundStyle(BodyFlowColor.secondaryText)
                             }
-                            if values.quantity(row.quantityG) != nil
+                            if values.quantity(row.quantityG, metadata: row.quantityDisplay, name: row.foodName) != nil
                                 || values.energy(row.kcal) != nil {
                                 Divider()
                             }
-                            if let quantity = values.quantity(row.quantityG) {
+                            if let quantity = values.quantity(row.quantityG, metadata: row.quantityDisplay, name: row.foodName) {
                                 metric(quantity, identifier: "history.meal.quantity")
                             }
                             if let energy = values.energy(row.kcal) {

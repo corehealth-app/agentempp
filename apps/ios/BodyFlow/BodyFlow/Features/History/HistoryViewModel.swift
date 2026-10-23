@@ -30,8 +30,10 @@ struct HistoryPresentation: Equatable, Sendable {
 struct HistoryValuePresentation: Equatable, Sendable {
     let language: SupportedAppLanguage
 
-    func quantity(_ value: Decimal?) -> String? {
-        decimal(value, key: "history.meal.quantity-format")
+    func quantity(_ value: Decimal?, metadata: MealQuantityDisplay? = nil, name: String = "") -> String? {
+        let presentation = MealQuantityValue(grams: value, metadata: metadata, name: name)
+        if presentation.isVolume { return presentation.label(language: language) }
+        return decimal(value, key: "history.meal.quantity-format")
     }
 
     func energy(_ value: Decimal?) -> String? {

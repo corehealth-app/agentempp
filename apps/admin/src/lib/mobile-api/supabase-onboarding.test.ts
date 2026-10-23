@@ -491,7 +491,10 @@ describe('Supabase onboarding adapter', () => {
     ).rejects.toEqual(new OnboardingRepositoryError('documents_unavailable'))
   })
 
-  it('does not trust a historical completion flag without current exact legal actions', async () => {
+  it.each([
+    'moderado',
+    null,
+  ] as const)('loads reconsent without inventing habitual water (%s)', async (waterIntake) => {
     const profile = queryResult({
       onboarding_completed: true,
       onboarding_completed_at: '2026-09-15T15:00:00.000Z',
@@ -503,7 +506,7 @@ describe('Supabase onboarding adapter', () => {
       current_protocol: 'recomposicao',
       activity_level: 'moderado',
       training_frequency: 4,
-      water_intake: 'moderado',
+      water_intake: waterIntake,
       hunger_level: 'moderada',
       wake_time: '07:00:00',
       bedtime: '23:00:00',
@@ -551,6 +554,7 @@ describe('Supabase onboarding adapter', () => {
         name: 'Synthetic User',
         objective: 'recomposicao',
         persona: 'focus',
+        waterIntake,
       },
     })
   })

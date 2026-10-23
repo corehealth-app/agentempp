@@ -1,6 +1,22 @@
 {
   "sourceLanguage" : "pt-BR",
   "strings" : {
+    "meal.quantity.volume-saved" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Saved volume (mL)" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Volume salvo (mL)" } }
+    } },
+    "meal.quantity.volume" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Quantity (mL)" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Quantidade (mL)" } }
+    } },
+    "meal.quantity.volume-reference" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Approximate volume from a food reference. You can adjust the portion." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Volume aproximado por referência do alimento. Você pode ajustar a porção." } }
+    } },
+    "meal.quantity.volume.invalid" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Enter a valid volume using only the decimal separator." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Informe um volume válido usando apenas o separador decimal." } }
+    } },
   "today.strength-week.title": {
     "localizations": {
       "pt-BR": {

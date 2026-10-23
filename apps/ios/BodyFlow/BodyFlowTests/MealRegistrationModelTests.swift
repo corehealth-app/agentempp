@@ -6,6 +6,29 @@ import Testing
 @Suite("Meal Registration Model")
 @MainActor
 struct MealRegistrationModelTests {
+    @Test("The direct detection path carries the selected slot without changing the detected foods")
+    func directDetectionKeepsSelectedBreakfast() async throws {
+        let harness = try Self.makeHarness(selectedMealType: .breakfast)
+        await harness.model.submit(.text("Refeição"))
+        let attempt = try #require(await harness.service.proposeAttempts.first)
+        guard case let .meal(meal) = attempt.payload,
+              case let .meal(original) = Self.detectedMealRequest else {
+            Issue.record("Expected meal request"); return
+        }
+        #expect(meal.mealType == .breakfast)
+        #expect(meal.items == original.items)
+        #expect(meal.source == original.source)
+        #expect(meal.consumedAt == original.consumedAt)
+    }
+
+    @Test("An edit in the review remains authoritative even when the sheet started from breakfast")
+    func reviewedMealTypeIsNotOverriddenByTheInitialSlot() async throws {
+        let harness = try Self.makeHarness(selectedMealType: .breakfast)
+        let reviewed = MealProposalRequest(mealType: .dinner, items: Self.editedMealRequest.items,
+            consumedAt: Self.editedMealRequest.consumedAt, source: Self.editedMealRequest.source)
+        await harness.model.propose(reviewed: reviewed)
+        #expect(await harness.service.proposeAttempts.first?.payload == .meal(reviewed))
+    }
     @Test("Text always detects then creates a pending proposal without confirming")
     func textDetectionPrecedesProposal() async throws {
         let harness = try Self.makeHarness()
@@ -891,7 +914,8 @@ struct MealRegistrationModelTests {
         proposeOutcomes: [MealServiceOutcome<RegistrationProposalResponse>]? = nil,
         editOutcomes: [MealServiceOutcome<RegistrationProposalResponse>] = [],
         confirmOutcomes: [MealServiceOutcome<RegistrationConfirmationResponse>] = [],
-        cancelOutcomes: [MealServiceOutcome<RegistrationCancellationResponse>] = []
+        cancelOutcomes: [MealServiceOutcome<RegistrationCancellationResponse>] = [],
+        selectedMealType: MealType? = nil
     ) throws -> MealModelHarness {
         let service = MealRegistrationServiceSpy(
             detectedRequest: detectedMealRequest,
@@ -910,7 +934,8 @@ struct MealRegistrationModelTests {
                 prefix: "meal-model-key"
             ),
             invalidationCenter: center,
-            demonstrationTextLimit: 1...1_000
+            demonstrationTextLimit: 1...1_000,
+            selectedMealType: selectedMealType
         )
         return MealModelHarness(
             model: model,

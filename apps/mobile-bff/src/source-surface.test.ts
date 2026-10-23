@@ -384,13 +384,17 @@ describe('authoritative Mobile API source surface', () => {
     // Completion intent adds104 references and only its own manifest target.
     // Every previous route keeps its exact reference count, and the original50
     // semantic graph below remains5320 references/175 targets.
-    // Current56:5866+104=5970 references/184 targets.
+    // Current56 before quantity display:5866+104=5970 references/184 targets.
+    // Milk/whey quantity display moves the existing draft/media modules into
+    // one shared chunk, adding one reference to exactly six original routes.
+    // The frozen E2 comparison found no other target addition or removal.
+    // Current56:5970+6=5976 references/185 targets; reachability is locked below.
     // Auth is excluded. Its observed vendor split is not this release surface.
     // The agent manifest already belongs to the original50: no new unique target.
     // Keep exact totals, original50 sans this chunk, nine Flow catalogs and guards.
-    expect(surface.nftReferenceCount).toBe(5970)
-    expect(surface.nftUniqueTargetCount).toBe(184)
-    expect(surface.nftRegularFileTargetCount).toBe(182)
+    expect(surface.nftReferenceCount).toBe(5976)
+    expect(surface.nftUniqueTargetCount).toBe(185)
+    expect(surface.nftRegularFileTargetCount).toBe(183)
     expect(surface.nftDirectoryTargetCount).toBe(2)
 
     const bodyPhotoRoutes = [
@@ -419,6 +423,36 @@ describe('authoritative Mobile API source surface', () => {
           `server/app${route.slice(0, -'/route'.length)}/route_client-reference-manifest.js`,
         ),
       )
+
+    // Approve the moved modules by semantics and exact consumers, never by a
+    // generated chunk number or by accepting any six additional references.
+    const draftChunks = walkFiles(resolve(buildRoot, 'server/chunks')).filter((path) => {
+      if (!path.endsWith('.js')) return false
+      const source = readFileSync(path, 'utf8')
+      return ['[mobile-meal-drafts] extraction_failed', 'MealExtractionContentError'].every(
+        (marker) => source.includes(marker),
+      )
+    })
+    expect(draftChunks).toHaveLength(1)
+    const draftChunk = realpathSync(draftChunks[0])
+    const draftRoutes = [
+      '/api/mobile/v1/me/route',
+      '/api/mobile/v1/meal-drafts/route',
+      '/api/mobile/v1/pending/route',
+      '/api/mobile/v1/registrations/propose/route',
+      '/api/mobile/v1/registrations/[id]/route',
+      '/api/mobile/v1/registrations/[id]/confirm/route',
+    ].sort()
+    expect(
+      Object.keys(currentAppPathsManifest())
+        .filter((route) => physicalTargets(route).includes(draftChunk))
+        .sort(),
+    ).toEqual(draftRoutes)
+    for (const route of draftRoutes) {
+      expect(physicalTargets(route).filter((target) => target === draftChunk), route).toEqual([
+        draftChunk,
+      ])
+    }
 
     // Identify the pure fact parser by stable semantics and exact reachability.
     // Generated chunk numbers are never an allowlist.
@@ -496,8 +530,12 @@ describe('authoritative Mobile API source surface', () => {
       baselineReferences += targets.length
       for (const target of targets) baselineTargets.add(target)
     }
-    expect(baselineReferences).toBe(5320)
-    expect(baselineTargets.size).toBe(175)
+    expect(baselineReferences).toBe(5326)
+    expect(baselineTargets.size).toBe(176)
+    // Removing only the separately authorized six references reproduces E2's
+    // original50 graph. All other historical graph assertions stay intact.
+    expect(baselineReferences - draftRoutes.length).toBe(5320)
+    expect([...baselineTargets].filter((target) => target !== draftChunk)).toHaveLength(175)
 
     const beyondBaseline = (route: string): string[] =>
       [...new Set(physicalTargets(route))].filter((target) => !baselineTargets.has(target))

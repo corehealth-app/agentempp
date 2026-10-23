@@ -139,7 +139,15 @@ export async function handleOnboardingGet(
   context: MobileRouteContext,
   dependencies: OnboardingRouteDependencies = defaultDependencies,
 ): Promise<Response> {
-  const queries = new URL(context.request.url).searchParams.getAll('body_photo_cleanup_generation')
+  const search = new URL(context.request.url).searchParams
+  const schemas = search.getAll('onboarding_profile_schema')
+  if (schemas.length > 1 || (schemas.length === 1 && schemas[0] !== 'habitual_water_optional_v1'))
+    throw new MobileApiError(
+      400,
+      'invalid_onboarding_profile_schema',
+      'Invalid onboarding profile schema',
+    )
+  const queries = search.getAll('body_photo_cleanup_generation')
   if (
     queries.length > 1 ||
     (queries.length === 1 && !signupCleanupGenerationSchema.safeParse(queries[0]).success)
@@ -154,6 +162,7 @@ export async function handleOnboardingGet(
     repository,
     context.auth.userId,
     onboardingLocale(context.auth.patient.locale),
+    { acceptsUnknownWater: schemas[0] === 'habitual_water_optional_v1' },
   )
   const generation = queries[0] ?? data.completion.completed_at
   const enriched = await withCleanupScope(context, dependencies, data, generation)

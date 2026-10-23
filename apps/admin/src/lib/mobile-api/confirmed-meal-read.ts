@@ -1,3 +1,4 @@
+import { mobileQuantityFields, type MobileQuantityDisplay } from './mobile-quantity-display'
 import { getLocalDateString } from '@mpp/agent'
 import type { ServiceClient, Tables } from '@mpp/db'
 import type { MobileAuthContext } from './auth'
@@ -26,7 +27,7 @@ export interface ConfirmedMealRecord {
   scope: 'group' | 'item'
   expected_version: string
   item_ids: string[]
-  items: Pick<
+  items: Array<Pick<
     Tables<'meal_logs'>,
     | 'id'
     | 'food_name'
@@ -38,7 +39,7 @@ export interface ConfirmedMealRecord {
     | 'consumed_at'
     | 'meal_type'
     | 'source'
-  >[]
+  > & { quantity_display?: MobileQuantityDisplay }>
   local_date: string
   timezone: string
   day_closed: boolean
@@ -177,6 +178,7 @@ export async function loadConfirmedMealRecord(
     items: state.items.map((item) => ({
       id: item.id,
       food_name: item.food_name,
+      ...mobileQuantityFields(item.food_name),
       quantity_g: item.quantity_g,
       kcal: item.kcal,
       protein_g: item.protein_g,

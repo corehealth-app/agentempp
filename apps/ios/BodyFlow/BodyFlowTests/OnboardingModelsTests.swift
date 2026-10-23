@@ -5,6 +5,28 @@ import Testing
 
 @Suite("Onboarding models")
 struct OnboardingModelsTests {
+    @Test("Server drafts round-trip unknown water and preserve historical answers")
+    func roundTripsOptionalHabitualWater() throws {
+        for water: WaterIntake? in [nil, .moderate] {
+            var draft = BodyFlowTestFixtures.onboardingDraft(currentStep: .consent)
+            draft.waterIntake = water
+            let state = OnboardingServerState(
+                completion: .init(completed: false, completedAt: "2026-10-22T12:00:00.000Z"),
+                requirements: .unavailable, acceptedActions: [], draft: draft)
+            let data = try JSONEncoder().encode(state)
+            let decoded = try JSONDecoder().decode(OnboardingServerState.self, from: data)
+            #expect(decoded.draft?.waterIntake == water)
+            if water == nil {
+                var object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+                var serverDraft = try #require(object["draft"] as? [String: Any])
+                serverDraft["water_intake"] = NSNull()
+                object["draft"] = serverDraft
+                let explicitNull = try JSONSerialization.data(withJSONObject: object)
+                #expect(try JSONDecoder().decode(OnboardingServerState.self, from: explicitNull).draft?.waterIntake == nil)
+            }
+        }
+    }
+
     @Test("only public coach personas are selectable")
     func selectablePersonas() {
         #expect(CoachPersona.allCases == [.focus, .impulse, .zen])

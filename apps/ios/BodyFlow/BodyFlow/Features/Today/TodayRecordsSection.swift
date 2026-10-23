@@ -46,6 +46,7 @@ struct TodayMealDescriptor: Equatable, Sendable, Identifiable {
     let fatG: Decimal?
     let consumedAt: APITimestamp
     let provenance: String
+    var quantityDisplay: MealQuantityDisplay? = nil
 }
 
 struct TodayWorkoutDescriptor: Equatable, Sendable, Identifiable {

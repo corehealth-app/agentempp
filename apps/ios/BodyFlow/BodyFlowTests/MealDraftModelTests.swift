@@ -44,7 +44,10 @@ struct MealDraftModelTests {
 
     private func makeHarness(
         withMedia: Bool = true,
-        maximumPolls: Int = 5
+        maximumPolls: Int = 5,
+        now: Date = Self.now,
+        selectedMealType: MealType? = nil,
+        calendar: Calendar = Calendar(identifier: .gregorian)
     ) -> Harness {
         let base = FileManager.default.temporaryDirectory
             .appendingPathComponent("draft-model-\(UUID().uuidString)", isDirectory: true)
@@ -55,13 +58,70 @@ struct MealDraftModelTests {
             drafts: server,
             uploader: withMedia ? server : nil,
             staging: staging,
-            timeProvider: FixedTimeProvider(value: Self.now),
+            timeProvider: FixedTimeProvider(value: now),
             keyProvider: DeterministicIdempotencyKeyProvider(prefix: "capture-key"),
             pollInterval: .milliseconds(1),
             maximumPolls: maximumPolls,
-            calendar: Calendar(identifier: .gregorian)
+            calendar: calendar,
+            selectedMealType: selectedMealType
         )
         return Harness(model: model, server: server, staging: staging, base: base)
+    }
+
+    // Roberto selected the still-empty breakfast slot at lunch and at night.
+    // Hours and foods below are synthetic; the reported timing/selection is exact.
+    @Test("Breakfast selected in Today stays breakfast at lunch and at night, for every capture",
+          arguments: [13, 20], ["text", "photo", "audio"])
+    func selectedBreakfastSurvivesCapture(hour: Int, capture: String) async throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
+        let now = try #require(calendar.date(from: DateComponents(year: 2026, month: 10, day: 22, hour: hour)))
+        let harness = makeHarness(now: now, selectedMealType: .breakfast, calendar: calendar)
+        defer { try? FileManager.default.removeItem(at: harness.base) }
+
+        switch capture {
+        case "photo": await harness.model.submitMedia(try harness.stagedPhoto())
+        case "audio": await harness.model.submitMedia(try harness.stagedAudio())
+        default: await harness.model.submitText("2 ovos mexidos")
+        }
+
+        #expect(harness.model.phase == .review)
+        #expect(harness.model.review?.mealType == .breakfast)
+        harness.model.review?.items[0].isConfirmed = true
+        let request = try #require(harness.model.reviewedRequest(language: .portugueseBrazil))
+        #expect(request.mealType == .breakfast)
+        let payload = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any])
+        #expect(payload["meal_type"] as? String == "cafe")
+    }
+
+    @Test("An explicitly selected slot survives reading retry and remains editable")
+    func selectedSlotSurvivesRetryAndManualCorrection() async throws {
+        let harness = makeHarness(selectedMealType: .breakfast)
+        defer { try? FileManager.default.removeItem(at: harness.base) }
+        await harness.server.failNext(.draft(.text("2 ovos mexidos")), with: .unavailable)
+        await harness.model.submitText("2 ovos mexidos")
+        #expect(harness.model.canRetry)
+        await harness.model.retry()
+        #expect(harness.model.review?.mealType == .breakfast)
+        harness.model.review?.mealType = .dinner
+        harness.model.review?.items[0].isConfirmed = true
+        #expect(harness.model.reviewedRequest(language: .portugueseBrazil)?.mealType == .dinner)
+    }
+
+    @Test("Without a selected slot the named meal still wins over the clock")
+    func genericEntryKeepsNamedMeal() async throws {
+        let harness = makeHarness()
+        defer { try? FileManager.default.removeItem(at: harness.base) }
+        await harness.model.submitText("No café da manhã comi 2 ovos mexidos")
+        #expect(harness.model.review?.mealType == .breakfast)
+    }
+
+    @Test("An explicit Today selection wins over an automatic interpretation of the text")
+    func selectedSlotWinsOverDetectedMealName() async throws {
+        let harness = makeHarness(selectedMealType: .breakfast)
+        defer { try? FileManager.default.removeItem(at: harness.base) }
+        await harness.model.submitText("Os mesmos alimentos do almoço: 2 ovos mexidos")
+        #expect(harness.model.review?.mealType == .breakfast)
     }
 
     @Test("Free text becomes candidates for review, with no media call")

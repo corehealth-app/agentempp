@@ -11,6 +11,7 @@ struct MealProposalItemPresentation: Equatable, Sendable {
     /// The server has not calculated this item; it must be fixed before the
     /// meal can be confirmed.
     var needsClarification = false
+    var quantityDisplay: MealQuantityDisplay? = nil
 }
 
 struct MealProposalTotalsPresentation: Equatable, Sendable {
@@ -104,7 +105,8 @@ struct MealProposalPresentation: Equatable, Sendable {
                     proteinG: $0.proteinG,
                     carbsG: $0.carbsG,
                     fatG: $0.fatG,
-                    needsClarification: $0.needsClarification
+                    needsClarification: $0.needsClarification,
+                    quantityDisplay: $0.quantityDisplay
                 )
             }
             totals = proposal.totals.map {
@@ -168,7 +170,7 @@ struct MealProposalView: View {
                 VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
                     Text(item.name)
                         .font(BodyFlowTypography.headline)
-                    Text("\(decimalText(item.quantityG)) g")
+                    Text(MealQuantityValue(grams: item.quantityG, metadata: item.quantityDisplay, name: item.name).label(language: language) ?? "")
                         .foregroundStyle(BodyFlowColor.secondaryText)
                     if item.needsClarification {
                         unresolvedItemActions(index: index)

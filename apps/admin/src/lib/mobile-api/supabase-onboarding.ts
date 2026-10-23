@@ -542,7 +542,6 @@ export function createSupabaseOnboardingRepository(
           completeProfile.current_protocol == null ||
           completeProfile.activity_level == null ||
           completeProfile.training_frequency == null ||
-          completeProfile.water_intake == null ||
           completeProfile.hunger_level == null ||
           completeProfile.wake_time == null ||
           completeProfile.bedtime == null ||
@@ -563,7 +562,7 @@ export function createSupabaseOnboardingRepository(
           objective: completeProfile.current_protocol,
           activityLevel: completeProfile.activity_level,
           trainingFrequency: completeProfile.training_frequency,
-          waterIntake: completeProfile.water_intake,
+          waterIntake: completeProfile.water_intake ?? null,
           hungerLevel: completeProfile.hunger_level,
           wakeTime: completeProfile.wake_time.slice(0, 5),
           bedtime: completeProfile.bedtime.slice(0, 5),

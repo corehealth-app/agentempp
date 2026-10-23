@@ -308,7 +308,7 @@ private struct OnboardingServerDraft: Codable {
     let objective: BodyFlowObjective
     let activityLevel: ActivityLevel
     let trainingFrequency: Int
-    let waterIntake: WaterIntake
+    let waterIntake: WaterIntake?
     let hungerLevel: HungerLevel
     let wakeTime: String
     let bedtime: String
@@ -324,7 +324,6 @@ private struct OnboardingServerDraft: Codable {
               let objective = draft.objective,
               let activityLevel = draft.activityLevel,
               let trainingFrequency = draft.trainingFrequency,
-              let waterIntake = draft.waterIntake,
               let hungerLevel = draft.hungerLevel,
               let wakeTime = draft.wakeTime,
               let bedtime = draft.bedtime,
@@ -355,7 +354,7 @@ private struct OnboardingServerDraft: Codable {
         self.objective = objective
         self.activityLevel = activityLevel
         self.trainingFrequency = trainingFrequency
-        self.waterIntake = waterIntake
+        self.waterIntake = draft.waterIntake
         self.hungerLevel = hungerLevel
         self.wakeTime = Self.timeString(wakeTime)
         self.bedtime = Self.timeString(bedtime)

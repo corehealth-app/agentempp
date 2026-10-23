@@ -587,6 +587,7 @@ struct MealProposalItemSnapshot: Codable, Hashable, Sendable {
     /// `quantity_basis`: how the quantity was obtained, when the proposal
     /// recorded it.
     let quantityBasis: String?
+    let quantityDisplay: MealQuantityDisplay?
 
     private static let patientSource = "user_kcal"
     private static let needsClarificationValue = "needs_clarification"
@@ -605,7 +606,8 @@ struct MealProposalItemSnapshot: Codable, Hashable, Sendable {
         kcalOriginReported: Bool = true,
         resolution: String? = nil,
         preparationOptions: [String]? = nil,
-        quantityBasis: String? = nil
+        quantityBasis: String? = nil,
+        quantityDisplay: MealQuantityDisplay? = nil
     ) {
         self.name = name
         self.quantityG = quantityG
@@ -619,6 +621,7 @@ struct MealProposalItemSnapshot: Codable, Hashable, Sendable {
         self.resolution = resolution
         self.preparationOptions = preparationOptions
         self.quantityBasis = quantityBasis
+        self.quantityDisplay = quantityDisplay
     }
 
     var kcalOrigin: MealItemKcalOrigin {
@@ -641,6 +644,7 @@ struct MealProposalItemSnapshot: Codable, Hashable, Sendable {
         case resolution
         case preparationOptions = "preparation_options"
         case quantityBasis = "quantity_basis"
+        case quantityDisplay = "quantity_display"
     }
 
     init(from decoder: any Decoder) throws {
@@ -661,6 +665,7 @@ struct MealProposalItemSnapshot: Codable, Hashable, Sendable {
             forKey: .preparationOptions
         )
         quantityBasis = try container.decodeIfPresent(String.self, forKey: .quantityBasis)
+        quantityDisplay = try? container.decodeIfPresent(MealQuantityDisplay.self, forKey: .quantityDisplay)
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -678,6 +683,7 @@ struct MealProposalItemSnapshot: Codable, Hashable, Sendable {
         try container.encodeIfPresent(resolution, forKey: .resolution)
         try container.encodeIfPresent(preparationOptions, forKey: .preparationOptions)
         try container.encodeIfPresent(quantityBasis, forKey: .quantityBasis)
+        try container.encodeIfPresent(quantityDisplay, forKey: .quantityDisplay)
     }
 }
 

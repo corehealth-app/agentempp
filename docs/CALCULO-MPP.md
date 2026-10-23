@@ -2721,6 +2721,7 @@ kcal) na hora.
 > eram diferentes e os dois eram gravados.
 
 > RC M2 — cenário proposta do app com outro item depois dos dois itens somados (quantity_basis e candidate_id lidos por posição em registration-service.ts) NÃO coberto nesta PR (pendência da audit 2026-10-04).
+> **Atualização 22/10:** o serviço mobile passou a usar `calculation.input_indexes`; o cenário com a linha seguinte tem regressão no teste do serviço. A descrição abaixo registra o estado anterior de 04/10.
 > A proposta tem uma linha a menos que o pedido; o item seguinte recebe o
 > `quantity_basis` e o `candidate_id` do item que foi somado. Kcal, gramas, nomes
 > e o dia ficam certos. O cálculo devolve `input_indexes`; o serviço ainda não lê.
@@ -2756,13 +2757,55 @@ kcal) na hora.
 
 | Quando o paciente escreve só | O sistema assume e mostra | Valor por 100 g (kcal · P · C · G) | Exemplo | Aprovo? (sim / não / outro) |
 |---|---|---|---|---|
-| leite (ou leite integral) | leite integral | 61 · 3,15 · 4,8 · 3,25 (USDA FDC:171265) | 200 ml = 122 kcal, 6,3 g de proteína | |
+| leite (ou leite integral) | leite integral | 61 · 3,15 · 4,8 · 3,25 (USDA FDC:171265) | 200 g = 122 kcal, 6,3 g de proteína | |
 | whey (ou whey protein em pó) | whey protein em pó | 352 · 78,13 · 6,25 · 1,56 (USDA FDC:173180) | 30 g = 105,6 kcal, 23,4 g de proteína | |
 
 Candidatos NÃO ativos, para ele dizer se entram e com qual item: leite
 desnatado, leite semidesnatado, leite de vaca, whey protein, leite com whey
 (precisa de receita padrão), café com leite. Os valores de cada um têm de ser
 lidos da linha verificada do catálogo antes de ativar.
+
+---
+
+### 9h. App: caneca com whey e volume do leite (22/10/2026)
+
+Pedido do Eduardo após o relato literal **"1 caneca de leite com uma medida de whey"**:
+separar leite integral e whey em pó; uma medida de whey recebe **30 g como porção
+estimada e editável**, sem afirmar marca nem peso universal de dosador. Para essa
+frase genérica completa, a caneca nova recebe **200 mL como referência editável**.
+Negações, marcas, outro tipo de leite, duas medidas e pesos explícitos não são
+absorvidos pelo padrão dessa receita.
+
+O app apresenta volume por referência; o contrato, o cálculo nutricional e os
+writers continuam em `quantity_g`. Para leite integral, a referência é
+**1,030 g/mL**, linha "Milk, liquid, whole", fonte TB, na
+[FAO/INFOODS Density Database v2](https://www.fao.org/4/ap815e/ap815e.pdf), página
+13 do PDF. Logo, 200 mL novos correspondem a 206 g para aplicar os nutrientes
+por 100 g. A mesma tabela fornece as referências de café preparado/expresso e chá líquido
+(FNDDS4.1,1g/mL), água(CG,1g/mL) e suco de laranja(S&W,1,038g/mL).
+A aplicação usa apenas os nomes inteiros explicitamente listados; pó, marca e
+mistura não herdam esses fatores. Não há regra global de mL = g. Quando a densidade não é conhecida,
+o app não inventa uma conversão.
+
+**Preservação:** um registro/pedido anterior de 200 g continua com 200 g; seu
+volume derivado é aproximadamente 194,17 mL, não 200 mL. Sem editar o campo,
+o cliente reenvia a massa original exata; ao editar volume, converte uma vez
+e valida o limite na massa resultante. Trocar o alimento invalida uma entrada
+numérica pertencente a outra unidade. Whey em pó continua em gramas.
+
+`quantity_display` é metadata opcional de apresentação, com unidade, fator,
+referência e indicação de estimativa. O build anterior pode ignorá-la; respostas
+antigas ou metadata inválida continuam utilizáveis em gramas. O Histórico recebe
+uma referência atual, **não a unidade original recuperada**, pois `meal_logs`
+não a persiste. As calorias/macros já aprovadas não são recalculadas na leitura.
+`display_qty/display_unit` do legado não comprovam densidade e não são usados
+para essa conversão.
+
+A expansão mobile preserva os outros alimentos, origem e ordem; kcal manual e
+rótulo aprovado têm sua precedência mantida. O helper puro exportado pelo agente
+é consumido pelo BFF; `naturalUnit`, ferramentas e entradas do motor legado não
+mudam. A receita genérica "leite com whey" fora da frase delimitada, variantes
+não descritas e o legado do WhatsApp não são declarados corrigidos por isso.
 
 ---
 

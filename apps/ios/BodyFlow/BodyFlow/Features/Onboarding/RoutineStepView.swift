@@ -83,20 +83,6 @@ struct RoutineStepView: View {
             }
 
             pickerField(
-                copy("onboarding.routine.water-intake.title"),
-                selection: waterIntake,
-                issues: [.waterIntakeRequired]
-            ) {
-                Text(copy("onboarding.selection.placeholder"))
-                    .tag(nil as WaterIntake?)
-                ForEach(WaterIntake.allCases, id: \.self) {
-                    Text($0.onboardingLabel(for: language))
-                        .tag($0 as WaterIntake?)
-                }
-            }
-            OnboardingFieldIssue(model: model, candidates: [.waterIntakeRequired])
-
-            pickerField(
                 copy("onboarding.routine.hunger-level.title"),
                 selection: hungerLevel,
                 issues: [.hungerLevelRequired]
@@ -215,9 +201,6 @@ struct RoutineStepView: View {
         )
     }
 
-    private var waterIntake: Binding<WaterIntake?> {
-        Binding(get: { model.draft.waterIntake }, set: { model.updateWaterIntake($0) })
-    }
 
     private var hungerLevel: Binding<HungerLevel?> {
         Binding(get: { model.draft.hungerLevel }, set: { model.updateHungerLevel($0) })
@@ -311,7 +294,7 @@ struct RoutineStepView: View {
         step: .routine,
         validationIssues: [
             .activityLevelRequired, .trainingFrequencyOutOfRange,
-            .waterIntakeRequired, .hungerLevelRequired,
+            .hungerLevelRequired,
             .wakeTimeRequired, .bedtimeRequired, .foodOrganizationRequired,
         ]
     ))

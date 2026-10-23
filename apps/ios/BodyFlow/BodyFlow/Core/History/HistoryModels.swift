@@ -19,11 +19,14 @@ struct HistoryMealLogRow: Codable, Equatable, Sendable {
     let fatG: Decimal?
     let consumedAt: APITimestamp
 
+    var quantityDisplay: MealQuantityDisplay? = nil
+
     private enum CodingKeys: String, CodingKey {
         case id
         case mealType = "meal_type"
         case foodName = "food_name"
         case quantityG = "quantity_g"
+        case quantityDisplay = "quantity_display"
         case kcal
         case proteinG = "protein_g"
         case carbsG = "carbs_g"

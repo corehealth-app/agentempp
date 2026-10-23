@@ -8,6 +8,40 @@ final class MealCaptureUITests: XCTestCase {
     }
 
     @MainActor
+    func testTodayBreakfastSlotKeepsItsSelectionWhenTheFoodsAreRead() {
+        let app = support.launch(arguments: [
+            "--ui-testing", "--ui-testing-prompt13-loaded", "--ui-testing-meal-capture",
+            "--ui-testing-meal-capture-empty-breakfast",
+        ], language: "pt-BR", dark: false, category: "UICTContentSizeCategoryL")
+        let breakfast = app.buttons["today.meal-slot.cafe.register"]
+        XCTAssertTrue(breakfast.waitForExistence(timeout: 5))
+        // This is Today, before a sheet exists: the sheet-only reveal helper
+        // correctly requires its close button and cannot be used here.
+        for _ in 0..<8 {
+            if breakfast.isHittable { break }
+            app.scrollViews.firstMatch.swipeUp()
+        }
+        XCTAssertTrue(breakfast.isHittable)
+        breakfast.tap()
+        XCTAssertTrue(element("sheet.registrar.refeicao", app: app).waitForExistence(timeout: 5))
+        let write = app.buttons["registration.meal.source.text"]
+        XCTAssertTrue(write.waitForExistence(timeout: 5))
+        write.tap()
+        let field = app.textFields["registration.meal.text"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("2 ovos mexidos e granola")
+        XCTAssertEqual(field.value as? String, "2 ovos mexidos e granola")
+        tapDetectInVisibleSheet(app.buttons["registration.meal.detect"], app: app)
+        let mealType = element("registration.review.meal-type", app: app)
+        XCTAssertTrue(mealType.waitForExistence(timeout: 8))
+        XCTAssertTrue((mealType.label + " " + (mealType.value as? String ?? "")).contains("Café da manhã"),
+            "The Today selection must reach the review without selecting it again")
+        XCTAssertFalse(element("registration.proposal", app: app).exists)
+        support.capture("roberto-breakfast-slot-review", app: app)
+    }
+
+    @MainActor
     func testWrittenMealIsReviewedBeforeAnyProposal() {
         let app = launchCapture(language: "pt-BR")
 
@@ -749,6 +783,68 @@ final class MealCaptureUITests: XCTestCase {
         meal.tap()
         XCTAssertTrue(element("sheet.registrar.refeicao", app: app).waitForExistence(timeout: 5))
         return app
+    }
+
+    /// The Today selection scenario works with either keyboard mode. XCTest
+    /// can expose an offscreen keyboard even when no software keyboard is
+    /// shown. Still require a stable, unobscured target and exactly one tap.
+    @MainActor
+    private func tapDetectInVisibleSheet(
+        _ button: XCUIElement,
+        app: XCUIApplication,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        var lastGeometry: CaptureTapGeometry?
+        var unchangedSince: TimeInterval?
+        func readyGeometry() -> CaptureTapGeometry? {
+            let window = app.windows.firstMatch
+            guard button.exists, button.isEnabled, window.exists else { return nil }
+            let bars = app.navigationBars.containing(.button, identifier: "sheet.fechar")
+            guard bars.count == 1 else { return nil }
+            let keyboard = app.keyboards.firstMatch
+            let geometry = CaptureTapGeometry(
+                button: button.frame, keyboard: keyboard.exists ? keyboard.frame : .zero,
+                header: bars.firstMatch.frame, window: window.frame
+            )
+            guard geometry.header.width > 0, geometry.header.height > 0,
+                  geometry.window.contains(geometry.header),
+                  geometry.button.width >= 44, geometry.button.height >= 44,
+                  geometry.window.contains(geometry.button),
+                  geometry.button.minY >= geometry.header.maxY else { return nil }
+            if geometry.keyboard.height > 0, geometry.window.intersects(geometry.keyboard) {
+                guard geometry.keyboard.minY > geometry.header.maxY,
+                      geometry.button.maxY <= geometry.keyboard.minY else { return nil }
+            }
+            // Invalid/offscreen frames can make this XCTest query fail rather
+            // than return false. Validate the geometry before requesting it.
+            return button.isHittable ? geometry : nil
+        }
+        let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            guard let geometry = readyGeometry() else {
+                lastGeometry = nil
+                unchangedSince = nil
+                return false
+            }
+            let now = ProcessInfo.processInfo.systemUptime
+            guard geometry == lastGeometry, let since = unchangedSince else {
+                lastGeometry = geometry
+                unchangedSince = now
+                return false
+            }
+            return now - since >= 0.25
+        }, object: nil)
+        let result = XCTWaiter.wait(for: [settled], timeout: 8)
+        XCTAssertEqual(result, .completed, "Detect target must settle inside the visible sheet",
+                       file: file, line: line)
+        guard result == .completed, let geometry = readyGeometry() else { return }
+        XCTAssertEqual(geometry, lastGeometry, file: file, line: line)
+        guard geometry == lastGeometry else { return }
+        let attachment = XCTAttachment(string: String(describing: geometry))
+        attachment.name = "meal-detect-visible-sheet-geometry"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        button.tap()
     }
 
     /// iOS 27 can accept typeText before the medium sheet finishes moving

@@ -150,7 +150,6 @@ actor DemoOnboardingRepository: OnboardingRepository {
         let hasObjective = draft.objective != nil
         let hasRoutine = draft.activityLevel != nil
             && (0...7).contains(draft.trainingFrequency ?? -1)
-            && draft.waterIntake != nil
             && draft.hungerLevel != nil
             && valid(draft.wakeTime)
             && valid(draft.bedtime)

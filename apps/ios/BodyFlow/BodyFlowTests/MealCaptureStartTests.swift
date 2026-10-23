@@ -66,6 +66,18 @@ struct MealCaptureStartTests {
         ])
     }
 
+    @Test("Today meal context is scoped to its sheet and never changes the sheet identity")
+    func explicitMealContextIsScopedToMealSheets() {
+        for type in MealType.allCases {
+            let sheet = AppSheet.registration(.meal, mealType: type)
+            #expect(sheet.selectedMealType == type)
+            #expect(sheet.id == "sheet.registrar.refeicao")
+        }
+        #expect(AppSheet.registration(.meal).selectedMealType == nil)
+        #expect(AppSheet.registration(.training, mealType: .breakfast).selectedMealType == nil)
+        #expect(AppSheet.registration(.weight).selectedMealType == nil)
+    }
+
     @Test("the sheet says it has arrived once, and only after it appeared")
     func settledProbeCallsBackOnceAndOnlyAfterTheScreenAppeared() {
         let calls = SettledCalls()

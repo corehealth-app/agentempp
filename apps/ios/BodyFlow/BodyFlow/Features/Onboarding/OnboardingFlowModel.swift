@@ -154,9 +154,6 @@ enum OnboardingStepValidator {
         if !(0...7).contains(draft.trainingFrequency ?? -1) {
             issues.append(.trainingFrequencyOutOfRange)
         }
-        if draft.waterIntake == nil {
-            issues.append(.waterIntakeRequired)
-        }
         if draft.hungerLevel == nil {
             issues.append(.hungerLevelRequired)
         }

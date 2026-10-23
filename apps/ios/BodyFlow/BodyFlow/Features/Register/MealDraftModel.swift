@@ -52,6 +52,7 @@ final class MealDraftModel {
     private let pollInterval: Duration
     private let maximumPolls: Int
     private let calendar: Calendar
+    private let selectedMealType: MealType?
 
     private var pipeline: Pipeline?
     private var sequence = 0
@@ -77,7 +78,8 @@ final class MealDraftModel {
         clock: any Clock<Duration> = ContinuousClock(),
         pollInterval: Duration = .milliseconds(1_500),
         maximumPolls: Int = 80,
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        selectedMealType: MealType? = nil
     ) {
         self.media = media
         self.drafts = drafts
@@ -89,6 +91,7 @@ final class MealDraftModel {
         self.pollInterval = pollInterval
         self.maximumPolls = maximumPolls
         self.calendar = calendar
+        self.selectedMealType = selectedMealType
     }
 
     /// Free text can become candidates.
@@ -288,7 +291,8 @@ final class MealDraftModel {
             review = MealDraftReview(
                 draft: draft,
                 source: source,
-                mealType: TextMealDetector.statedMealType(in: statedText(for: request, draft: draft))
+                mealType: selectedMealType
+                    ?? TextMealDetector.statedMealType(in: statedText(for: request, draft: draft))
                     ?? TextMealDetector.suggestedMealType(at: timeProvider.now, calendar: calendar)
             )
             phase = .review

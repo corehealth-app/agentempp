@@ -11,10 +11,15 @@ struct MealRecordEditItem: Equatable, Identifiable, Sendable {
                quantityText != nil { quantityText = "" }
         }
     }
-    var quantityPresentation: MealQuantityValue {
+    var quantityReference: MealQuantityValue {
         MealQuantityValue(grams: original.quantityG, metadata: original.quantityDisplay?.validated(for: original.foodName), name: foodName)
     }
-    var quantityText: String?
+    var quantityPresentation: MealQuantityValue { quantityEntry.presentation(quantityReference) }
+    private var quantityEntry = MealQuantityEntry()
+    var quantityText: String? {
+        get { quantityEntry.text }
+        set { quantityEntry.setText(newValue, usesReference: quantityPresentation.usesReference) }
+    }
     var manualKcalText: String?
     var id: String { original.id }
 
@@ -24,7 +29,32 @@ struct MealRecordEditItem: Equatable, Identifiable, Sendable {
     }
 
     func quantityDisplay(language: SupportedAppLanguage) -> String {
-        quantityText ?? quantityPresentation.displayText(language: language)
+        quantityEntry.display(quantityReference, language: language)
+    }
+
+    mutating func setQuantityText(_ text: String, language: SupportedAppLanguage) {
+        guard text != quantityDisplay(language: language) else { return }
+        quantityText = text
+    }
+
+    mutating func toggleQuantityUnit(language: SupportedAppLanguage) {
+        quantityEntry.toggle(quantityReference, language: language)
+    }
+
+    func canToggleQuantityUnit(language: SupportedAppLanguage) -> Bool {
+        quantityEntry.canToggle(quantityReference, language: language)
+    }
+
+    /// Recover the patient's input, including its unit of authorship. The
+    /// official row/version remain those of the fresh read. A changed or
+    /// unavailable reference must never reinterpret an archived count as g.
+    mutating func restoreQuantityInput(from archived: MealRecordEditItem) {
+        guard original.id == archived.original.id else { return }
+        quantityEntry = archived.quantityEntry
+        if quantityEntry.text != nil, quantityEntry.typedUsingReference,
+           quantityReference.metadata == nil || quantityReference.metadata != archived.quantityReference.metadata {
+            quantityEntry.setText("", usesReference: quantityPresentation.usesReference)
+        }
     }
 
     func manualKcalDisplay(language: SupportedAppLanguage) -> String {
@@ -37,12 +67,7 @@ struct MealRecordEditItem: Equatable, Identifiable, Sendable {
         // The server trims the name and accepts 1 to 160 UTF-16 units.
         let name = foodName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, name.utf16.count <= MealDraftReview.maximumNameLength else { return nil }
-        let quantity: Decimal?
-        if let quantityText {
-            quantity = quantityPresentation.grams(from: quantityText, language: language)
-        } else {
-            quantity = original.quantityG
-        }
+        let quantity = quantityEntry.grams(quantityReference, language: language)
         guard let quantity, quantity > 0, quantity <= MealProposalEditorDraft.maximumQuantityG else { return nil }
         let kcal: Decimal?
         if let manualKcalText,

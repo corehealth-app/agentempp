@@ -30,9 +30,11 @@ enum MealCaptureCopy {
     }
 
     static func basisKey(for item: MealDraftReview.Item) -> String.LocalizationValue {
-        if item.hasTypedQuantity { return "registration.review.basis.stated" }
+        if item.hasTypedQuantity {
+            return item.basis == .portionReference ? "registration.review.basis.reference" : "registration.review.basis.stated"
+        }
         guard item.candidate.quantityG != nil else {
-            return "registration.review.basis.missing"
+            return item.quantityValue.usesReference ? "meal.quantity.reference.missing" : "registration.review.basis.missing"
         }
         switch item.candidate.requestBasis {
         case .stated: return "registration.review.basis.stated"

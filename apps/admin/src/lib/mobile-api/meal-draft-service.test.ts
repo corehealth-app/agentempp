@@ -61,7 +61,8 @@ describe('meal draft from text', () => {
   it('Roberto: a new household cup is200mL, not200g; whey remains30g powder', async () => {
     const draft = await createMealDraft(deps({}), 'patient-a', {source:'text',text:'1 caneca de leite com uma medida de whey'})
     expect(draft.items[0]).toMatchObject({quantity_g:206,quantity_display:{unit:'mL',grams_per_unit:1.03,reference_id:'fao-infoods-v2-whole-milk-tb',estimated:true}})
-    expect(draft.items[1]).not.toHaveProperty('quantity_display')
+    // New23/10 requirement: powder gets a scoop reference, never milk density.
+    expect(draft.items[1]).toHaveProperty('quantity_display', {unit:'scoop',grams_per_unit:30,reference_id:'app-household-whey-scoop-v1',estimated:true})
     expect(draft.items[1]).toMatchObject({name:'whey protein em pó',quantity_g:30})
   })
   it('converts explicitly stated milk volume once, keeping a density reference basis', async () => {

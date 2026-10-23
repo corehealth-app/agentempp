@@ -1,4 +1,4 @@
-import { mobileDraftQuantity, mobileQuantityFields, type MobileQuantityDisplay } from './mobile-quantity-display'
+import { mobileDraftQuantity, mobileHouseholdTextItem, type MobileQuantityDisplay } from './mobile-quantity-display'
 import {
   buildDraftCandidates,
   draftFromStatedText,
@@ -137,7 +137,7 @@ async function draftFromText(
   source: DraftSource,
 ): Promise<Pick<MealDraft, 'items' | 'extraction'>> {
   const segments = splitMealText(sourceText)
-  if (!segments.some(segment => mobileMilkWheyPortions(segment))) {
+  if (!segments.some(segment => mobileMilkWheyPortions(segment) || mobileHouseholdTextItem(segment))) {
     return draftFromOrdinaryText(deps, userId, sourceText, source)
   }
   const items: MealDraftCandidate[] = []
@@ -164,11 +164,16 @@ async function draftFromText(
   }
   for (const segment of segments) {
     const references = mobileMilkWheyPortions(segment)
+    const household = mobileHouseholdTextItem(segment)
     const stated = draftFromStatedText(segment)
     if (references) {
       await flushUnread()
       append(buildDraftCandidates(references.map(part => ({ name: part.food_name, grams_stated: part.quantity_g })))
         .map(candidate => ({ ...candidate, quantity_basis: 'portion_reference' as const, needs_review: true, review_reason: 'estimated_quantity' as const })))
+    } else if (household) {
+      await flushUnread()
+      append(buildDraftCandidates([household]).map(candidate => ({ ...candidate,
+        quantity_basis: 'portion_reference' as const, needs_review: true, review_reason: 'estimated_quantity' as const })))
     } else if (stated.rest.length === 0) {
       await flushUnread()
       append(buildDraftCandidates(stated.raw))
@@ -282,7 +287,7 @@ export async function createMealDraft(
     media_asset_id: asset.id,
     transcript: null,
     context_note: text(result?.meal_context, 500),
-    items: items.map(item => ({ ...item, ...mobileQuantityFields(item.name) })),
+    items: items.map(mobileDraftQuantity),
     nutrition_label: label
       ? {
           product_name: productName,

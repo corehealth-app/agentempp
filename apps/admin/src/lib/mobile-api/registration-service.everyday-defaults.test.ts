@@ -638,6 +638,7 @@ describe('rule M2 (iPhone 2026-10-04) — "leite" and "whey" through the app API
         {
           name: 'whey protein em pó',
           quantity_g: 30,
+          quantity_display: { unit: 'scoop', grams_per_unit: 30, reference_id: 'app-household-whey-scoop-v1', estimated: true },
           kcal: 105.6,
           protein_g: 23.44,
           carbs_g: 1.88,

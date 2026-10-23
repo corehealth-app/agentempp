@@ -1,6 +1,17 @@
 {
   "sourceLanguage" : "pt-BR",
   "strings" : {
+    "meal.quantity.units" : {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Quantidade (unidades)"}}, "en": {"stringUnit": {"state": "translated", "value": "Quantity (units)"}}}},
+    "meal.quantity.scoops" : {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Quantidade (medidas)"}}, "en": {"stringUnit": {"state": "translated", "value": "Quantity (scoops)"}}}},
+    "meal.quantity.reference.invalid" : {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Informe uma quantidade válida usando apenas o separador decimal."}}, "en": {"stringUnit": {"state": "translated", "value": "Enter a valid quantity using only the decimal separator."}}}},
+    "meal.quantity.reference.missing" : {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Informe a quantidade na unidade indicada."}}, "en": {"stringUnit": {"state": "translated", "value": "Enter the quantity in the unit shown."}}}},
+    "meal.quantity.portion-reference" : {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Porção estimada por referência. O tamanho real pode variar; ajuste a quantidade ou informe em gramas."}}, "en": {"stringUnit": {"state": "translated", "value": "Estimated reference serving. Actual size may vary; adjust the amount or enter grams."}}}},
+    "meal.quantity.equivalence" : {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Equivalência estimada"}}, "en": {"stringUnit": {"state": "translated", "value": "Estimated equivalent"}}}},
+    "meal.quantity.use-grams" : {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Informar em gramas"}}, "en": {"stringUnit": {"state": "translated", "value": "Enter grams"}}}},
+    "meal.quantity.use-volume" : {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Usar mL"}}, "en": {"stringUnit": {"state": "translated", "value": "Use mL"}}}},
+    "meal.quantity.use-units" : {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Usar unidades"}}, "en": {"stringUnit": {"state": "translated", "value": "Use units"}}}},
+    "meal.quantity.use-scoops" : {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Usar medidas"}}, "en": {"stringUnit": {"state": "translated", "value": "Use scoops"}}}},
+    "meal.quantity.reference-saved" : {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Quantidade salva (referência)"}}, "en": {"stringUnit": {"state": "translated", "value": "Saved quantity (reference)"}}}},
     "meal.quantity.volume-saved" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Saved volume (mL)" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Volume salvo (mL)" } }
@@ -934,13 +945,13 @@
       "pt-BR": {
         "stringUnit": {
           "state": "translated",
-          "value": "Informe a quantidade em gramas com até duas casas decimais."
+          "value": "Se estiver usando unidades ou mL, toque em “Informar em gramas”. Informe o peso com até duas casas decimais."
         }
       },
       "en": {
         "stringUnit": {
           "state": "translated",
-          "value": "Enter the quantity in grams with up to two decimal places."
+          "value": "If using units or mL, tap “Enter grams”. Enter the weight with up to two decimal places."
         }
       }
     }

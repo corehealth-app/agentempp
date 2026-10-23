@@ -133,7 +133,7 @@ struct TodayMealSlotsSection: View {
                 }
             }
             let quantity = MealQuantityValue(grams: meal.quantityG, metadata: meal.quantityDisplay, name: meal.foodName)
-            if quantity.isVolume, let label = quantity.label(language: language) {
+            if quantity.usesReference, let label = quantity.label(language: language) {
                 Text(label)
                     .font(BodyFlowTypography.caption)
                     .foregroundStyle(BodyFlowColor.secondaryText)

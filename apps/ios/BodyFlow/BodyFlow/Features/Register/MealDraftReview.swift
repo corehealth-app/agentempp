@@ -14,12 +14,17 @@ struct MealDraftReview: Equatable, Sendable {
                    quantityText != nil { quantityText = "" }
             }
         }
-        var quantityValue: MealQuantityValue {
+        var quantityReference: MealQuantityValue {
             MealQuantityValue(grams: serverQuantity, metadata: candidate.quantityDisplay?.validated(for: candidate.name), name: name)
         }
+        var quantityValue: MealQuantityValue { quantityEntry.presentation(quantityReference) }
         /// nil until the patient edits the field: the server's quantity is
         /// sent exactly, never re-read from formatted text.
-        var quantityText: String?
+        private var quantityEntry = MealQuantityEntry()
+        var quantityText: String? {
+            get { quantityEntry.text }
+            set { quantityEntry.setText(newValue, usesReference: quantityValue.usesReference) }
+        }
         /// The patient's explicit "this is right" for an approximate portion
         /// or a name read with doubt.
         var isConfirmed = false
@@ -78,28 +83,32 @@ struct MealDraftReview: Equatable, Sendable {
         /// What the patient typed; typing the server's own figure back (or
         /// erasing what was typed) is not a statement of theirs.
         mutating func setQuantityText(_ text: String, language: SupportedAppLanguage) {
-            let server = quantityValue.displayText(language: language)
-            quantityText = text == server ? nil : text
+            // A text value converted only for display remains untouched when
+            // SwiftUI echoes it; don't turn six formatted decimals into mass.
+            guard text != quantityDisplay(language: language) else { return }
+            quantityText = text == quantityValue.displayText(language: language) ? nil : text
+        }
+
+        mutating func toggleQuantityUnit(language: SupportedAppLanguage) {
+            quantityEntry.toggle(quantityReference, language: language)
+        }
+
+        func canToggleQuantityUnit(language: SupportedAppLanguage) -> Bool {
+            quantityEntry.canToggle(quantityReference, language: language)
         }
 
         func quantity(language: SupportedAppLanguage) -> Decimal? {
-            guard let quantityText else { return serverQuantity }
-            guard let value = quantityValue.grams(from: quantityText, language: language)
-            else {
-                return nil
-            }
-            return value
+            quantityEntry.grams(quantityReference, language: language)
         }
 
         func quantityDisplay(language: SupportedAppLanguage) -> String {
-            if let quantityText { return quantityText }
-            return quantityValue.displayText(language: language)
+            quantityEntry.display(quantityReference, language: language)
         }
 
         /// A typed quantity is the patient's statement; an untouched one
         /// keeps the basis the server gave it.
         var basis: MealQuantityBasis? {
-            hasTypedQuantity ? (quantityValue.isVolume ? .portionReference : .stated) : candidate.requestBasis
+            hasTypedQuantity ? (quantityEntry.typedUsingReference ? .portionReference : .stated) : candidate.requestBasis
         }
     }
 

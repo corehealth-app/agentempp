@@ -133,13 +133,18 @@ struct MealProposalEditorDraft: Equatable, Sendable {
                quantityText != nil { quantityText = "" }
         }
     }
-    var quantityPresentation: MealQuantityValue {
+    var quantityReference: MealQuantityValue {
         MealQuantityValue(grams: editedItem?.quantityG, metadata: editedItem?.quantityDisplay?.validated(for: editedItem?.name ?? ""), name: foodName)
     }
+    var quantityPresentation: MealQuantityValue { quantityEntry.presentation(quantityReference) }
     var consumedAt: Date
     /// nil until the patient edits the field: the server's quantity is sent
     /// exactly, never re-read from formatted text.
-    var quantityText: String?
+    private var quantityEntry = MealQuantityEntry()
+    var quantityText: String? {
+        get { quantityEntry.text }
+        set { quantityEntry.setText(newValue, usesReference: quantityPresentation.usesReference) }
+    }
     /// nil until the patient edits the field.
     var manualKcalText: String?
     private(set) var usesServerCalculation = false
@@ -203,8 +208,20 @@ struct MealProposalEditorDraft: Equatable, Sendable {
     }
 
     func quantityDisplay(language: SupportedAppLanguage) -> String {
-        if let quantityText { return quantityText }
-        return quantityPresentation.displayText(language: language)
+        quantityEntry.display(quantityReference, language: language)
+    }
+
+    mutating func setQuantityText(_ text: String, language: SupportedAppLanguage) {
+        guard text != quantityDisplay(language: language) else { return }
+        quantityText = text
+    }
+
+    mutating func toggleQuantityUnit(language: SupportedAppLanguage) {
+        quantityEntry.toggle(quantityReference, language: language)
+    }
+
+    func canToggleQuantityUnit(language: SupportedAppLanguage) -> Bool {
+        quantityEntry.canToggle(quantityReference, language: language)
     }
 
     func manualKcalDisplay(language: SupportedAppLanguage) -> String {
@@ -215,12 +232,7 @@ struct MealProposalEditorDraft: Equatable, Sendable {
     }
 
     func quantityValue(language: SupportedAppLanguage) -> Decimal? {
-        guard let quantityText else { return editedItem?.quantityG }
-        guard let value = quantityPresentation.grams(from: quantityText, language: language)
-        else {
-            return nil
-        }
-        return value
+        quantityEntry.grams(quantityReference, language: language)
     }
 
     func kcalInput(language: SupportedAppLanguage) -> MealProposalEditorKcalInput {
@@ -278,7 +290,7 @@ struct MealProposalEditorDraft: Equatable, Sendable {
                     userKcal: firstItemKcal,
                     // A quantity the patient typed is theirs from then on.
                     quantityBasis: quantity == item.quantityG
-                        ? Self.keptBasis(of: item) : (quantityPresentation.isVolume ? .portionReference : .stated),
+                        ? Self.keptBasis(of: item) : (quantityEntry.typedUsingReference ? .portionReference : .stated),
                     usesNutritionLabel: firstItemKcal == nil
                         && foodName == item.name
                         && keepsNutritionLabel(of: item)
@@ -397,13 +409,12 @@ struct MealProposalEditorView: View {
                     .accessibilityLabel(copy(draft.quantityPresentation.captionKey))
                     .keyboardType(.decimalPad)
                     .accessibilityIdentifier("registration.proposal.edit.quantity")
-                if draft.quantityPresentation.isVolume {
-                    Text(copy("meal.quantity.volume-reference"))
-                        .font(BodyFlowTypography.caption)
-                        .foregroundStyle(BodyFlowColor.secondaryText)
-                }
+                MealQuantityReferenceControls(reference: draft.quantityReference,
+                    currentGrams: draft.quantityValue(language: language), showingGrams: !draft.quantityPresentation.usesReference,
+                    canToggle: draft.canToggleQuantityUnit(language: language), language: language,
+                    identifier: "registration.proposal.edit") { draft.toggleQuantityUnit(language: language) }
                 if draft.blocker(language: language) == .invalidQuantity {
-                    BodyFlowStatusLine(copy(draft.quantityPresentation.isVolume ? "meal.quantity.volume.invalid" : "registration.editor.quantity.invalid"), kind: .error)
+                    BodyFlowStatusLine(copy(draft.quantityPresentation.invalidKey), kind: .error)
                         .accessibilityIdentifier("registration.proposal.edit.quantity.invalid")
                 }
                 TextField(copy("registration.editor.user-kcal"), text: manualKcalBinding)
@@ -505,7 +516,7 @@ struct MealProposalEditorView: View {
     private var quantityBinding: Binding<String> {
         Binding(
             get: { draft.quantityDisplay(language: language) },
-            set: { draft.quantityText = $0 }
+            set: { draft.setQuantityText($0, language: language) }
         )
     }
 

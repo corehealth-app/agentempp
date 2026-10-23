@@ -61,7 +61,7 @@ struct MealDraftReviewView: View {
             }
 
             if let blocker = review.blocker(language: language) {
-                BodyFlowStatusLine(copy(isVolumeBlocker(blocker) ? "meal.quantity.volume.invalid" : MealCaptureCopy.blockerKey(blocker)), kind: .warning)
+                BodyFlowStatusLine(copy(quantityBlockerKey(blocker)), kind: .warning)
                     .accessibilityIdentifier("registration.review.blocker")
             }
 
@@ -122,9 +122,9 @@ struct MealDraftReviewView: View {
                     )
                 }
 
-                fieldCaption(value.quantityValue.isVolume ? "meal.quantity.volume" : "registration.review.item.quantity")
+                fieldCaption(value.quantityValue.usesReference ? value.quantityValue.captionKey : "registration.review.item.quantity")
                 TextField(
-                    copy(value.quantityValue.isVolume ? "meal.quantity.volume" : "registration.review.item.quantity"),
+                    copy(value.quantityValue.usesReference ? value.quantityValue.captionKey : "registration.review.item.quantity"),
                     text: Binding(
                         get: { value.quantityDisplay(language: language) },
                         set: { item.wrappedValue.setQuantityText($0, language: language) }
@@ -133,14 +133,15 @@ struct MealDraftReviewView: View {
                 .keyboardType(.decimalPad)
                 .focused($focusedField, equals: .quantity(value.id))
                 .bodyFlowField()
-                .accessibilityLabel(copy(value.quantityValue.isVolume ? "meal.quantity.volume" : "registration.review.item.quantity"))
+                .accessibilityLabel(copy(value.quantityValue.usesReference ? value.quantityValue.captionKey : "registration.review.item.quantity"))
                 .accessibilityIdentifier("registration.review.item.\(value.id).quantity")
 
-                if value.quantityValue.isVolume {
-                    Text(copy("meal.quantity.volume-reference"))
-                        .font(BodyFlowTypography.caption)
-                        .foregroundStyle(BodyFlowColor.secondaryText)
-                }
+                MealQuantityReferenceControls(reference: value.quantityReference,
+                    currentGrams: value.quantity(language: language), showingGrams: !value.quantityValue.usesReference,
+                    canToggle: !isSubmitting && value.canToggleQuantityUnit(language: language), language: language,
+                    identifier: "registration.review.item.\(value.id)") {
+                        item.wrappedValue.toggleQuantityUnit(language: language)
+                    }
                 BodyFlowStatusLine(
                     [copy(MealCaptureCopy.basisKey(for: value)), portion(of: value)]
                         .compactMap { $0 }
@@ -205,18 +206,21 @@ struct MealDraftReviewView: View {
             .accessibilityHidden(true)
     }
 
-    private func isVolumeBlocker(_ blocker: MealDraftReview.Blocker) -> Bool {
+    private func quantityBlockerKey(_ blocker: MealDraftReview.Blocker) -> String.LocalizationValue {
         switch blocker {
         case let .invalidQuantity(id), let .missingQuantity(id):
-            review.items.first { $0.id == id }?.quantityValue.isVolume == true
+            if let item = review.items.first(where: { $0.id == id }), item.quantityValue.usesReference {
+                return item.quantityValue.invalidKey
+            }
+            return MealCaptureCopy.blockerKey(blocker)
         case .noItems, .invalidName, .unconfirmed:
-            false
+            return MealCaptureCopy.blockerKey(blocker)
         }
     }
 
     /// "2 × unidade", as the server counted it; nil when it did not count.
     private func portion(of item: MealDraftReview.Item) -> String? {
-        guard !item.hasTypedQuantity,
+        guard !item.hasTypedQuantity, !item.quantityReference.usesReference,
               let count = item.candidate.count,
               let unit = item.candidate.unitLabel
         else {

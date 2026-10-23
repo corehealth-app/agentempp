@@ -226,7 +226,7 @@ final class MealRecordModel {
               var current = draft, let index = current.items.firstIndex(where: { $0.id == recordID })
         else { return }
         current.items[index].foodName = old.foodName
-        current.items[index].quantityText = old.quantityText
+        current.items[index].restoreQuantityInput(from: old)
         current.items[index].manualKcalText = old.manualKcalText
         draft = current
     }

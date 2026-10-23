@@ -212,8 +212,8 @@ struct MealRecordDetailView: View {
     private func savedValues(_ item: MealRecordItemSnapshot) -> some View {
         if let quantity = item.quantityG {
             let presentation = MealQuantityValue(grams: quantity, metadata: item.quantityDisplay, name: item.foodName)
-            LabeledContent(copy(presentation.isVolume ? "meal.quantity.volume-saved" : "confirmed-meal.item.saved-quantity")) {
-                Text(presentation.isVolume
+            LabeledContent(copy(presentation.usesReference ? (presentation.isVolume ? "meal.quantity.volume-saved" : "meal.quantity.reference-saved") : "confirmed-meal.item.saved-quantity")) {
+                Text(presentation.usesReference
                     ? (presentation.label(language: language) ?? "")
                     : MealProposalNumberParser.format(quantity, language: language))
             }
@@ -234,7 +234,7 @@ struct MealRecordDetailView: View {
             .accessibilityLabel(copy("confirmed-meal.field.name"))
             .accessibilityIdentifier("meal-record.field.name")
         let quantityItem = model.draft.flatMap { $0.items.indices.contains(index) ? $0.items[index] : nil }
-        let quantityKey = quantityItem?.quantityPresentation.isVolume == true ? "meal.quantity.volume" : "confirmed-meal.field.quantity"
+        let quantityKey = quantityItem.map { $0.quantityPresentation.usesReference ? $0.quantityPresentation.captionID : "confirmed-meal.field.quantity" } ?? "confirmed-meal.field.quantity"
         caption(quantityKey)
         TextField(copy(quantityKey), text: binding(index, field: .quantity))
             .keyboardType(.decimalPad)
@@ -242,6 +242,17 @@ struct MealRecordDetailView: View {
             .bodyFlowField()
             .accessibilityLabel(copy(quantityKey))
             .accessibilityIdentifier("meal-record.field.quantity")
+        if let quantityItem {
+            MealQuantityReferenceControls(reference: quantityItem.quantityReference,
+                currentGrams: quantityItem.request(language: language)?.quantityG, showingGrams: !quantityItem.quantityPresentation.usesReference,
+                canToggle: model.canEditDraft && quantityItem.canToggleQuantityUnit(language: language), language: language,
+                identifier: "meal-record.field") {
+                    guard model.canEditDraft, var draft = model.draft, draft.items.indices.contains(index),
+                          draft.items[index].id == model.recordID else { return }
+                    draft.items[index].toggleQuantityUnit(language: language)
+                    model.draft = draft
+                }
+        }
         caption("confirmed-meal.field.kcal")
         TextField(copy("confirmed-meal.field.kcal"), text: binding(index, field: .kcal))
             .keyboardType(.decimalPad)
@@ -413,7 +424,7 @@ struct MealRecordDetailView: View {
                   value.items[index].id == model.recordID else { return }
             switch field {
             case .food: value.items[index].foodName = text
-            case .quantity: value.items[index].quantityText = text
+            case .quantity: value.items[index].setQuantityText(text, language: language)
             case .kcal: value.items[index].manualKcalText = text
             }
             model.draft = value

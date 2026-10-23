@@ -110,4 +110,43 @@ final class MealLiquidQuantityRenderingTests: XCTestCase {
 
         }
     }
+
+    func testExactHouseholdScreenshotsUseUnitsScoopsAndMLInRealControls() throws {
+        let data = Data(#"{"source":"photo","items":[{"candidate_id":"bread","name":"pão de queijo com requeijão","quantity_g":240,"quantity_basis":"portion_reference","count":8,"unit_label":"unidade","needs_review":true,"review_reason":"estimated_quantity","quantity_display":{"unit":"unit","grams_per_unit":30,"reference_id":"app-household-cheese-bread-unit-v1","estimated":true}},{"candidate_id":"whey","name":"whey","quantity_g":30,"quantity_basis":"portion_reference","count":1,"unit_label":"medida","needs_review":true,"review_reason":"estimated_quantity","quantity_display":{"unit":"scoop","grams_per_unit":30,"reference_id":"app-household-whey-scoop-v1","estimated":true}},{"candidate_id":"milk","name":"leite","quantity_g":206,"quantity_basis":"visual_estimate","count":null,"unit_label":null,"needs_review":true,"review_reason":"estimated_quantity","quantity_display":{"unit":"mL","grams_per_unit":1.03,"reference_id":"fao-infoods-v2-whole-milk-tb","estimated":true}}]}"#.utf8)
+        for language in SupportedAppLanguage.allCases {
+            let review = MealDraftReview(draft: try JSONDecoder().decode(MealDraftSnapshot.self, from: data), source: try XCTUnwrap(MealProposalSource(channel: .text, mediaAssetID: nil)), mealType: .breakfast)
+            let view = ScrollView {
+                MealDraftReviewView(review: .constant(review), isSubmitting: false, submit: {}, startOver: {})
+                    .padding(BodyFlowSpacing.lg)
+            }.environment(\.locale, language.formattingLocale)
+            for size: DynamicTypeSize in [.large, .accessibility5] {
+                let host = PremiumRenderingTestSupport.liveAccessibilityHost(view, width: 375, size: size)
+                defer { host.detach() }
+                let fields = host.nativeViews(UITextField.self)
+                let titles = language == .portugueseBrazil ? ["Quantidade (unidades)", "Quantidade (medidas)", "Quantidade (mL)"] : ["Quantity (units)", "Quantity (scoops)", "Quantity (mL)"]
+                for (title, expected) in zip(titles, ["8", "1", "200"]) {
+                    let field = try XCTUnwrap(fields.first { $0.placeholder == title })
+                    XCTAssertEqual(field.text, expected)
+                    XCTAssertGreaterThanOrEqual(field.bounds.height + 1, try XCTUnwrap(field.font).lineHeight)
+                }
+                let image = host.image()
+                XCTAssertTrue(containsVisibleContent(image))
+                let attachment = XCTAttachment(data: try XCTUnwrap(image.pngData()), uniformTypeIdentifier: "public.png")
+                attachment.name = "household-review-\(language.rawValue)-\(size == .large ? "regular" : "axxxl")"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+    }
+
+    func testWheyMissingAmountNamesMeasuresInsteadOfDemandingGrams() throws {
+        let data = Data(#"{"source":"photo","items":[{"candidate_id":"whey","name":"whey","quantity_g":null,"quantity_basis":"missing","count":null,"unit_label":null,"needs_review":true,"review_reason":"missing_quantity","quantity_display":{"unit":"scoop","grams_per_unit":30,"reference_id":"app-household-whey-scoop-v1","estimated":true}}]}"#.utf8)
+        for language in SupportedAppLanguage.allCases {
+            let review = MealDraftReview(draft: try JSONDecoder().decode(MealDraftSnapshot.self, from: data), source: try XCTUnwrap(MealProposalSource(channel: .text, mediaAssetID: nil)), mealType: .breakfast)
+            let probe = PremiumRenderingTestSupport.accessibilityProbe(MealDraftReviewView(review: .constant(review), isSubmitting: false, submit: {}, startOver: {}).environment(\.locale, language.formattingLocale), width: 375)
+            let labels = probe.map(\.label)
+            XCTAssertFalse(labels.contains { $0.contains("Informe a quantidade em gramas") || $0.contains("Enter the quantity in grams") })
+            XCTAssertTrue(labels.contains(language == .portugueseBrazil ? "Informe a quantidade na unidade indicada." : "Enter the quantity in the unit shown."))
+        }
+    }
 }

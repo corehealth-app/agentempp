@@ -897,6 +897,64 @@ struct MealRecordCandidateTests {
         #expect(keys.count == 0)
     }
 
+    @Test("Restoring archived grams after409 and official review never reinterprets them as scoops or mL", arguments: ["whey", "leite"])
+    func householdConflictRestoresOriginalInputUnit(_ name: String) async throws {
+        let initial = try householdDetail(name: name, version: "household-v1")
+        let service = MealRecordServiceStub(detail: initial)
+        let keys = C11FixtureKeys()
+        let model = makeModel(service, keys: keys)
+        await service.failNextPatch(.versionChanged)
+        await model.load()
+        model.draft?.items[0].toggleQuantityUnit(language: .englishUnitedStates)
+        model.draft?.items[0].setQuantityText("25", language: .englishUnitedStates)
+        await model.save(language: .englishUnitedStates)
+        await service.replaceDetail(try householdDetail(name: name, version: "household-v2"))
+        await model.load()
+        model.reviewLatest()
+        #expect(model.canRestoreArchivedFields)
+        model.restoreArchivedFields()
+        let body = try #require(model.draft?.patchBody(language: .englishUnitedStates))
+        #expect(body.expectedVersion == "household-v2")
+        #expect(body.itemIDs == [C11RecordFixtures.a])
+        #expect(body.items[0].quantityG == 25)
+        #expect(model.draft?.items[0].quantityPresentation.unit == "g")
+        await model.save(language: .englishUnitedStates)
+        let patches = await service.calls.compactMap { call -> MutationAttempt<MealRecordPatchCommand>? in
+            if case let .patch(attempt) = call { return attempt }; return nil
+        }
+        #expect(patches.count == 2)
+        #expect(patches.last?.payload.body.items[0].quantityG == 25)
+        #expect(keys.count == 2)
+    }
+
+    @Test("Restoring a typed reference after the official reference disappears blocks instead of reinterpreting grams")
+    func householdConflictDoesNotRestoreIncompatibleReference() async throws {
+        let service = MealRecordServiceStub(detail: try householdDetail(name: "whey", version: "household-v1"))
+        let model = makeModel(service)
+        await service.failNextPatch(.versionChanged)
+        await model.load()
+        model.draft?.items[0].setQuantityText("2", language: .englishUnitedStates)
+        await model.save(language: .englishUnitedStates)
+        await service.replaceDetail(try householdDetail(name: "whey", version: "household-v2", includeReference: false))
+        await model.load()
+        model.reviewLatest()
+        model.restoreArchivedFields()
+        #expect(model.draft?.expectedVersion == "household-v2")
+        #expect(model.draft?.patchBody(language: .englishUnitedStates) == nil)
+    }
+
+    private func householdDetail(name: String, version: String, includeReference: Bool = true) throws -> MealRecordResponse {
+        let reference = name == "whey"
+            ? #"{"unit":"scoop","grams_per_unit":30,"reference_id":"app-household-whey-scoop-v1","estimated":true}"#
+            : #"{"unit":"mL","grams_per_unit":1.03,"reference_id":"fao-infoods-v2-whole-milk-tb","estimated":true}"#
+        var item = MealRecordItemSnapshot(id: C11RecordFixtures.a, foodName: name, quantityG: 30, kcal: 100,
+            proteinG: 1, carbsG: 2, fatG: 3, source: "canonical_exact", consumedAt: APITimestamp(value: C11RecordFixtures.date), mealType: nil)
+        if includeReference { item.quantityDisplay = try JSONDecoder().decode(MealQuantityDisplay.self, from: Data(reference.utf8)) }
+        return MealRecordResponse(data: MealRecordSnapshot(recordID: C11RecordFixtures.a, scope: .group,
+            expectedVersion: version, itemIDs: [C11RecordFixtures.a], items: [item], editable: true, dayClosed: false,
+            localDate: "2026-10-09", timezone: "America/Sao_Paulo", editBlockReason: nil), meta: C11RecordFixtures.meta)
+    }
+
     private func makeModel(_ provider: any MealRecordProviding,
                            keys: C11FixtureKeys = C11FixtureKeys(),
                            center: FeatureInvalidationCenter = FeatureInvalidationCenter()) -> MealRecordModel {

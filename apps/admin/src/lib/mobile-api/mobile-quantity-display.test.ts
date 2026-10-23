@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
 import { resolveDraftItem } from '@mpp/agent'
+import { describe, expect, it } from 'vitest'
 import { mobileDraftQuantity, mobileQuantityFields } from './mobile-quantity-display'
 
 describe('app-only quantity references', () => {
@@ -40,12 +40,21 @@ describe('app-only quantity references', () => {
     'chá em folhas',
     'suco de laranja em pó',
     'água tônica',
-    'whey protein em pó',
     'leite de coco',
     'café com leite',
     'leite integral Marca X',
   ])('does not infer density for%s', (name) => {
     expect(mobileQuantityFields(name)).toEqual({})
+  })
+  it('whey powder has a30g editable scoop reference, never a liquid density', () => {
+    expect(mobileQuantityFields('whey protein em pó')).toEqual({
+      quantity_display: {
+        unit: 'scoop',
+        grams_per_unit: 30,
+        reference_id: 'app-household-whey-scoop-v1',
+        estimated: true,
+      },
+    })
   })
   it('canonical projections never reconvert old mass from names alone', () => {
     expect(mobileQuantityFields('leite integral')).toEqual({

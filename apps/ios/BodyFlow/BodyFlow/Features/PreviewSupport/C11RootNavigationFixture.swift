@@ -1450,6 +1450,14 @@ private actor C11RootNavigationServer {
     }
 
     /// Contains safe request metadata only. Authorization is NEVER placed here.
+    /// The native reader now opts into C13; keep every other URL/method
+    /// restriction, including mutation requests with no query, byte-exact.
+    private func matchesRecordRequestURL(_ request: URLRequest) -> Bool {
+        let base = "https://c11-ui.fixture.invalid/api/mobile/v1/meal-records/11111111-1111-4111-8111-111111111111"
+        let expected = request.httpMethod == "GET" ? base + "?include=registration_feedback" : base
+        return request.url?.absoluteString == expected
+    }
+
     private struct LogicalRequest: Equatable {
         let method: String?
         let url: URL?
@@ -1485,7 +1493,7 @@ private actor C11RootNavigationServer {
         if selection.observesDelivery { return try await respondToDeliveryControl(request) }
         if selection == .sameRecordForeground { return try await respondToForegroundRead(request) }
         if selection == .logoutMarkerFailure { return try await respondToRecoveryRead(request) }
-        guard request.url?.absoluteString == "https://c11-ui.fixture.invalid/api/mobile/v1/meal-records/11111111-1111-4111-8111-111111111111" else {
+        guard matchesRecordRequestURL(request) else {
             await probe.recordBlocked()
             throw MobileAPITransportError.invalidResponse
         }
@@ -1578,7 +1586,7 @@ private actor C11RootNavigationServer {
         }
         let usesOriginal = request.value(forHTTPHeaderField: "Authorization") == "Bearer " + C11RootI4Facts.old.accessToken
         guard logical.method == "GET", logical.isValidRead, usesOriginal,
-              request.url?.absoluteString == "https://c11-ui.fixture.invalid/api/mobile/v1/meal-records/11111111-1111-4111-8111-111111111111" else {
+              matchesRecordRequestURL(request) else {
             await probe.recordBlocked(); throw MobileAPITransportError.invalidResponse
         }
         if attemptedGETs == 1 {
@@ -1604,7 +1612,7 @@ private actor C11RootNavigationServer {
         let logical = LogicalRequest(request)
         let allowed = await probe.canServeNewCredentialRead(attempt: attemptedGETs)
         guard allowed, logical.method == "GET", logical.isValidRead,
-              request.url?.absoluteString == "https://c11-ui.fixture.invalid/api/mobile/v1/meal-records/11111111-1111-4111-8111-111111111111" else {
+              matchesRecordRequestURL(request) else {
             await probe.recordBlocked(); throw MobileAPITransportError.invalidResponse
         }
         await probe.recordForegroundReadMetadata(bodyAbsent: logical.bodyIsAbsent,
@@ -1642,7 +1650,7 @@ private actor C11RootNavigationServer {
         let authorization = request.value(forHTTPHeaderField: "Authorization")
         let allowed = await probe.canServeForegroundRead(attempt: attemptedGETs)
         guard allowed, logical.method == "GET", logical.isValidRead,
-              request.url?.absoluteString == "https://c11-ui.fixture.invalid/api/mobile/v1/meal-records/11111111-1111-4111-8111-111111111111",
+              matchesRecordRequestURL(request),
               authorization?.hasPrefix("Bearer ") == true, (authorization?.count ?? 0) > 7 else {
             await probe.recordBlocked(); throw MobileAPITransportError.invalidResponse
         }
@@ -1673,7 +1681,7 @@ private actor C11RootNavigationServer {
         let logical = LogicalRequest(request)
         let authorization = request.value(forHTTPHeaderField: "Authorization")
         guard logical.method == "GET", logical.isValidRead,
-              request.url?.absoluteString == "https://c11-ui.fixture.invalid/api/mobile/v1/meal-records/11111111-1111-4111-8111-111111111111",
+              matchesRecordRequestURL(request),
               authorization?.hasPrefix("Bearer ") == true, (authorization?.count ?? 0) > 7 else {
             await probe.recordBlocked()
             throw MobileAPITransportError.invalidResponse
@@ -1727,7 +1735,7 @@ private actor C11RootNavigationServer {
         let bearer = request.value(forHTTPHeaderField: "Authorization")
         let allowed = await probe.canServeForegroundRead(attempt: attemptedGETs)
         guard allowed, logical.method == "GET", logical.isValidRead,
-              request.url?.absoluteString == "https://c11-ui.fixture.invalid/api/mobile/v1/meal-records/11111111-1111-4111-8111-111111111111",
+              matchesRecordRequestURL(request),
               bearer?.hasPrefix("Bearer ") == true, (bearer?.count ?? 0) > 7 else {
             await probe.recordBlocked()
             throw MobileAPITransportError.invalidResponse
@@ -1752,7 +1760,7 @@ private actor C11RootNavigationServer {
         let bearer = request.value(forHTTPHeaderField: "Authorization")
         let allowed = await probe.canServeRecoveryRead
         guard allowed, attemptedGETs == 1, logical.method == "GET", logical.isValidRead,
-              request.url?.absoluteString == "https://c11-ui.fixture.invalid/api/mobile/v1/meal-records/11111111-1111-4111-8111-111111111111",
+              matchesRecordRequestURL(request),
               bearer?.hasPrefix("Bearer ") == true, (bearer?.count ?? 0) > 7 else {
             await probe.recordBlocked()
             throw MobileAPITransportError.invalidResponse

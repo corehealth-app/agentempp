@@ -23,3 +23,22 @@ struct RegistrationFeedbackView: View {
         .accessibilityIdentifier("registration.feedback")
     }
 }
+
+/// History displays a saved receipt, including after a later C11 edit.
+struct OriginalRegistrationFeedbackView: View {
+    let feedback: RegistrationFeedbackSnapshot
+    @Environment(\.locale) private var locale
+    var body: some View {
+        VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+            Text(RegistrationCopy.string("registration.feedback.original",
+                language: BodyFlowPresentationLanguage.resolve(locale)))
+                .font(BodyFlowTypography.cardTitle)
+                .foregroundStyle(BodyFlowColor.primaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+            RegistrationFeedbackView(feedback: feedback)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("registration.feedback.original")
+    }
+}

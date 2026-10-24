@@ -129,21 +129,28 @@ final class WorkoutStrengthQuestionHostState {
 @MainActor
 struct WorkoutStrengthQuestionHost: View {
     let configuration: WorkoutStrengthQuestionConfiguration
+    var showsRegistrationFeedback = false
     var body: some View {
-        WorkoutStrengthQuestionActiveHost(configuration: configuration).id(configuration.identity)
+        WorkoutStrengthQuestionActiveHost(configuration: configuration,
+            showsRegistrationFeedback: showsRegistrationFeedback).id(configuration.identity)
     }
 }
 
 @MainActor
 private struct WorkoutStrengthQuestionActiveHost: View {
     @State private var state: WorkoutStrengthQuestionHostState
+    let showsRegistrationFeedback: Bool
     @Environment(\.locale) private var locale
-    init(configuration: WorkoutStrengthQuestionConfiguration) {
+    init(configuration: WorkoutStrengthQuestionConfiguration, showsRegistrationFeedback: Bool) {
+        self.showsRegistrationFeedback = showsRegistrationFeedback
         _state = State(initialValue: WorkoutStrengthQuestionHostState(configuration: configuration))
     }
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: BodyFlowSpacing.md) {
             if let lease = state.presentation {
+                if showsRegistrationFeedback, let feedback = lease.historyFeedback {
+                    BodyFlowCard { OriginalRegistrationFeedbackView(feedback: feedback) }
+                }
                 WorkoutStrengthQuestionCard(presentation: lease) { _ = state.perform($0, lease: lease) }
             } else if state.capacityUnavailable {
                 BodyFlowCard {

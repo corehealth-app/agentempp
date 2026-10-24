@@ -23,15 +23,34 @@ struct MealRecordSnapshot: Codable, Equatable, Sendable {
     let localDate: String
     let timezone: String
     let editBlockReason: String?
+    var feedback: RegistrationFeedbackSnapshot? = nil
 
     private enum CodingKeys: String, CodingKey {
-        case scope, items, editable, timezone
+        case scope, items, editable, timezone, feedback
         case recordID = "record_id"
         case expectedVersion = "expected_version"
         case itemIDs = "item_ids"
         case dayClosed = "day_closed"
         case localDate = "local_date"
         case editBlockReason = "edit_block_reason"
+    }
+}
+
+extension MealRecordSnapshot {
+    init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        recordID = try values.decode(String.self, forKey: .recordID)
+        scope = try values.decode(MealRecordScope.self, forKey: .scope)
+        expectedVersion = try values.decode(String.self, forKey: .expectedVersion)
+        itemIDs = try values.decode([String].self, forKey: .itemIDs)
+        items = try values.decode([MealRecordItemSnapshot].self, forKey: .items)
+        editable = try values.decode(Bool.self, forKey: .editable)
+        dayClosed = try values.decode(Bool.self, forKey: .dayClosed)
+        localDate = try values.decode(String.self, forKey: .localDate)
+        timezone = try values.decode(String.self, forKey: .timezone)
+        editBlockReason = try values.decodeIfPresent(String.self, forKey: .editBlockReason)
+        let optional = try? values.decode(RegistrationFeedbackSnapshot.self, forKey: .feedback)
+        feedback = optional?.kind == .meal ? optional : nil
     }
 }
 

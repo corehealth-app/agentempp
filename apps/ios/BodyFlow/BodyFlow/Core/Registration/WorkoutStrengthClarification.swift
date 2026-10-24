@@ -181,6 +181,7 @@ struct WorkoutStrengthAnswerCommand: Encodable, Hashable, Sendable {
 
 protocol WorkoutStrengthClarificationProviding: Sendable {
     func load(workoutID: String) async throws -> WorkoutStrengthClarificationResponse
+    func loadWithFeedback(workoutID: String) async throws -> WorkoutStrengthHistoryResponse
     func answer(_ attempt: MutationAttempt<WorkoutStrengthAnswerCommand>) async throws -> WorkoutStrengthClarificationResponse
 }
 

@@ -3,13 +3,14 @@ import SwiftUI
 struct HistoryMealLogDetailView: View {
     @Environment(\.locale) private var locale
     let row: HistoryMealLogRow?
+    var feedbackConfiguration: MealHistoryFeedbackConfiguration? = nil
 
     var body: some View {
         ZStack {
             BodyFlowColor.background.ignoresSafeArea()
             if let row {
                 ScrollView {
-                    // One card: the record's name and type, then its figures.
+                    VStack(spacing: BodyFlowSpacing.md) {
                     BodyFlowCard {
                         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
                             Text(row.foodName)
@@ -34,6 +35,10 @@ struct HistoryMealLogDetailView: View {
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    if let feedbackConfiguration {
+                        ReadOnlyMealFeedbackHost(configuration: feedbackConfiguration)
+                    }
                     }
                     .padding(BodyFlowSpacing.md)
                 }

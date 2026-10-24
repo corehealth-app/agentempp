@@ -24,6 +24,10 @@ struct MealRecordDetailView: View {
             receipt
             previousConfirmations
             content(presentation.content)
+            if let feedback = model.historyFeedback {
+                Section { OriginalRegistrationFeedbackView(feedback: feedback) }
+                    .bodyFlowListRow()
+            }
             notices(presentation.content)
             progress
         }

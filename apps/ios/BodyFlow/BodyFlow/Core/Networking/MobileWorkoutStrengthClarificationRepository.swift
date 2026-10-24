@@ -7,8 +7,18 @@ struct MobileWorkoutStrengthClarificationRepository: WorkoutStrengthClarificatio
 
     func load(workoutID: String) async throws -> WorkoutStrengthClarificationResponse {
         guard let id = WorkoutStrengthWire.uuid(workoutID) else { throw BodyFlowCapabilityError.invalidInput }
-        let response = try await send(.get, workoutID: id, body: nil, key: nil)
+        let response: WorkoutStrengthClarificationResponse = try await send(.get, workoutID: id, body: nil, key: nil)
         guard response.data.workoutID == nil || response.data.workoutID == id else {
+            throw BodyFlowCapabilityError.serviceUnavailable
+        }
+        return response
+    }
+
+    func loadWithFeedback(workoutID: String) async throws -> WorkoutStrengthHistoryResponse {
+        guard let id = WorkoutStrengthWire.uuid(workoutID) else { throw BodyFlowCapabilityError.invalidInput }
+        let response: WorkoutStrengthHistoryResponse = try await send(.get, workoutID: id, body: nil, key: nil,
+            queryItems: [URLQueryItem(name: "include", value: "registration_feedback")])
+        guard response.data.clarification.workoutID == nil || response.data.clarification.workoutID == id else {
             throw BodyFlowCapabilityError.serviceUnavailable
         }
         return response
@@ -21,7 +31,7 @@ struct MobileWorkoutStrengthClarificationRepository: WorkoutStrengthClarificatio
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let body = try encoder.encode(command)
-        let response = try await send(.post, workoutID: command.question.scope.workoutID, body: body, key: attempt.key)
+        let response: WorkoutStrengthClarificationResponse = try await send(.post, workoutID: command.question.scope.workoutID, body: body, key: attempt.key)
         guard case let .answered(receipt) = response.data,
               receipt.scope == command.question.scope,
               receipt.questionKey == command.question.questionKey,
@@ -33,11 +43,12 @@ struct MobileWorkoutStrengthClarificationRepository: WorkoutStrengthClarificatio
         return response
     }
 
-    private func send(_ method: HTTPMethod, workoutID: String, body: Data?, key: IdempotencyKey?) async throws -> WorkoutStrengthClarificationResponse {
+    private func send<Payload: Codable & Sendable>(_ method: HTTPMethod, workoutID: String, body: Data?,
+        key: IdempotencyKey?, queryItems: [URLQueryItem] = []) async throws -> MobileResponse<Payload> {
         do {
-            return try await transport.executeEnvelope(MobileAPIRequest<WorkoutStrengthClarification>(
+            return try await transport.executeEnvelope(MobileAPIRequest<Payload>(
                 method: method, path: "/api/mobile/v1/workouts/\(workoutID)/strength-clarification",
-                body: body, idempotencyKey: key
+                queryItems: queryItems, body: body, idempotencyKey: key
             ))
         } catch is CancellationError {
             throw CancellationError()

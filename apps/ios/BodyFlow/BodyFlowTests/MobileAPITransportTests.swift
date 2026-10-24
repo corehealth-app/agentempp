@@ -1,6 +1,8 @@
 import Foundation
 import Observation
+import SwiftUI
 import Testing
+import UIKit
 
 @testable import BodyFlow
 
@@ -4819,6 +4821,20 @@ private func h2Me(owner: String, advertised: String) throws -> Data {
         "meta": ["api_version": "v1", "request_id": "s17h2-me-synthetic"]], options: [.sortedKeys])
 }
 
+private func h2HistoryMealDetail() throws -> Data {
+    var envelope = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(
+        C11RealLifecycleTransportHarness.detail())) as? [String: Any])
+    var data = try #require(envelope["data"] as? [String: Any])
+    data["feedback"] = ["schema": "registration.feedback.v1",
+        "registration_id": "a1700000-0000-4000-8000-000000000001", "kind": "meal", "locale": "pt-BR",
+        "meal_totals": ["kcal": 155, "protein_g": 23, "carbs_g": 4.5, "fat_g": 4.75],
+        "day": NSNull(), "lines": [["key": "meal_totals", "text": "155 kcal"],
+            ["key": "day_unavailable", "text": "Os dados deste dia estão indisponíveis."]],
+        "food_comment": NSNull(), "incentive": "Original saved meal text"]
+    envelope["data"] = data
+    return try JSONSerialization.data(withJSONObject: envelope)
+}
+
 // `/me.id` belongs to the patient row, while leases and authentication
 // activations belong to Supabase Auth. The server permits these UUIDs to differ.
 private let h2DistinctPatientID = "00000000-0000-4000-8000-000000000001"
@@ -4935,6 +4951,95 @@ private actor H2CompletedEditHold: RegistrationProviding, WorkoutRegistrationRea
 }
 
 extension MobileAPITransportTests {
+    @MainActor
+    @Test("C13 History first appearance has one original-session GET with C11 OFF and ON", arguments: [false, true])
+    func h2HistoryMealFirstAppearanceUsesOneGET(_ editingEnabled: Bool) async throws {
+        try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows).contains { $0.isKeyWindow }, "Native hosting window required")
+        try await h2WithWire { fixture in
+            let owner = Prompt14SessionOwner(userID: fixture.activation.userID,
+                dependencies: C11BindingTestDependencies.make(), enablesMealRecordBinding: editingEnabled)
+            await owner.awaitPatientTimeZoneResolution()
+            let lifetime = fixture.lifetime
+            let root = MealRecordRootBindingCoordinator(lifetime: lifetime,
+                source: MealRecordSessionBindingSource(transport: fixture.wire.transport, lifecycle: fixture.counted),
+                currentActivation: { lifetime.currentActivation })
+            let sessions = MealRecordShellSessionCoordinator(time: C11OwnerFixtureTime(),
+                keys: C11OwnerFixtureKeys(), invalidation: FeatureInvalidationCenter())
+            var host: SignUpRenderingProbe.Host?
+            do {
+                let me = try h2Me(owner: fixture.activation.userID, advertised: "ui-v1")
+                let detail = try h2HistoryMealDetail()
+                await fixture.wire.stub.respond { request, _ in
+                    switch request.url?.path {
+                    case "/api/mobile/v1/me": return StubResponse(status: 200, body: me)
+                    case "/api/mobile/v1/meal-records/\(h2RegistrationID)": return StubResponse(status: 200, body: detail)
+                    default: throw H2UnexpectedRequest()
+                    }
+                }
+                let reservation = owner.reserveWorkoutRegistrationBinding(activation: fixture.activation,
+                    lifetime: lifetime, currentActivation: { lifetime.currentActivation })
+                let binding = try #require(reservation)
+                let workout = try await fixture.source.bind(binding)
+                let feedback = try #require(MealHistoryFeedbackConfiguration(recordID: h2RegistrationID, context: workout))
+                let mealContext: MealRecordReadyContext?
+                if editingEnabled {
+                    let operation = try #require(root.beginBinding(activation: fixture.activation, owner: owner))
+                    let completed = try await root.completeBinding(operation)
+                    let admitted: MealRecordReadyContext = try #require(completed)
+                    mealContext = admitted
+                } else { mealContext = nil }
+                #expect(sessions.activation == nil) // first frame, before the destination's own task
+                let row = HistoryMealLogRow(id: h2RegistrationID, mealType: "almoco", foodName: "Current edited meal",
+                    quantityG: 50, kcal: 100, proteinG: 1, carbsG: 2, fatG: 3,
+                    consumedAt: APITimestamp(value: C11OwnerFixtureTime().now))
+                host = SignUpRenderingProbe.host(MealRecordHistoryDestination(recordID: h2RegistrationID,
+                    localRow: row, context: mealContext, owner: owner, sessions: sessions,
+                    feedbackConfiguration: feedback), width: 393)
+                let mounted = try #require(host)
+                let deadline = Date().addingTimeInterval(5)
+                var reads: [URLRequest] = []
+                repeat {
+                    await Task.yield()
+                    mounted.settle()
+                    reads = await fixture.wire.stub.requests().filter { $0.url?.path == "/api/mobile/v1/meal-records/\(h2RegistrationID)" }
+                    if !reads.isEmpty { break }
+                } while Date() < deadline
+                // Let both the initial fallback and prepared branch finish their effects.
+                for _ in 0..<5 { await Task.yield(); mounted.settle() }
+                let requests = await fixture.wire.stub.requests()
+                reads = requests.filter { $0.url?.path == "/api/mobile/v1/meal-records/\(h2RegistrationID)" }
+                #expect(reads.count == 1)
+                let read = try #require(reads.first)
+                #expect(read.httpMethod == "GET")
+                #expect(read.url?.query == "include=registration_feedback")
+                #expect(read.httpBody == nil)
+                #expect(read.value(forHTTPHeaderField: "Idempotency-Key") == nil)
+                #expect(requests.allSatisfy { $0.httpMethod == "GET" })
+                if let mealContext {
+                    #expect(sessions.isCurrent(context: mealContext, owner: owner))
+                    let model = try #require(sessions.prepareModel(recordID: h2RegistrationID, context: mealContext, owner: owner))
+                    #expect(model.detail?.data.items.first?.kcal == 100)
+                    #expect(model.historyFeedback?.mealTotals?.kcal == 155)
+                    #expect(model.historyFeedback?.registrationID != h2RegistrationID)
+                } else {
+                    #expect(sessions.activation == nil)
+                    #expect(owner.mealRecordBinding == nil)
+                }
+                host?.detach(); host = nil
+                sessions.endSession()
+                await root.endSession()
+                await owner.endSession()
+            } catch {
+                host?.detach()
+                sessions.endSession()
+                await root.endSession()
+                await owner.endSession()
+                throw error
+            }
+        }
+    }
+
     @MainActor
     @Test("H2: ending the workout leaf preserves meal editing; the shared auth boundary withdraws both")
     func h2WorkoutAndMealLeavesRemainIndependent() async throws {

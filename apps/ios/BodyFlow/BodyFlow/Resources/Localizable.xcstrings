@@ -6194,6 +6194,10 @@
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Workout confirmed" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Treino confirmado" } }
     } },
+    "registration.feedback.original" : { "localizations" : {
+      "en" : { "stringUnit" : { "state" : "translated", "value" : "Feedback from the original confirmation" } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Retorno da confirmação original" } }
+    } },
     "registration.demo.audio-title" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Local audio sample" } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Amostra de áudio local" } }

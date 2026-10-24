@@ -47,7 +47,9 @@ struct MobileMealRecordRepository: MealRecordProviding {
         do {
             let path = "/api/mobile/v1/meal-records/\(try MobileAPIPathSegment.identifier(id))"
             return try await transport.executeEnvelope(MobileAPIRequest(
-                method: method, path: path, body: body, idempotencyKey: key
+                method: method, path: path,
+                queryItems: method == .get ? [URLQueryItem(name: "include", value: "registration_feedback")] : [],
+                body: body, idempotencyKey: key
             ))
         } catch is CancellationError {
             throw CancellationError()

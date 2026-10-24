@@ -631,7 +631,10 @@ struct AppShellView: View {
                 owner: sessionOwner,
                 sessions: mealRecordSessions,
                 recoveryAvailability: mealRecordRecoveryAvailability,
-                recover: recoverMealRecord
+                recover: recoverMealRecord,
+                feedbackConfiguration: dependencies.presentsRealAccountIdentity
+                    ? MealHistoryFeedbackConfiguration(recordID: rowID, context: sessionOwner.workoutRegistrationContext)
+                    : nil
             )
         case .historyWorkout:
             let row = historyCoordinator.workoutLogRow(for: route)
@@ -773,6 +776,7 @@ struct MealRecordHistoryDestination: View {
     let sessions: MealRecordShellSessionCoordinator
     var recoveryAvailability: MealRecordRecoveryAvailability = .unavailable
     var recover: (@MainActor () async -> Void)? = nil
+    var feedbackConfiguration: MealHistoryFeedbackConfiguration? = nil
     @Environment(\.locale) private var recoveryLocale
     @State private var recoveryRequests = MealRecordRecoveryPresentationCoordinator()
     @State private var prepared: Prepared?
@@ -801,7 +805,11 @@ struct MealRecordHistoryDestination: View {
                sessions.isCurrent(context: prepared.context, owner: owner) {
                 MealRecordDetailView(model: prepared.model, localRow: localRow)
             } else {
-                HistoryMealLogDetailView(row: localRow)
+                // An active C11 context will prepare its own reader on the
+                // parent's task. Do not let this first fallback frame send a
+                // second GET while that preparation is still pending.
+                HistoryMealLogDetailView(row: localRow,
+                    feedbackConfiguration: context?.isActive == true ? nil : feedbackConfiguration)
                     .safeAreaInset(edge: .bottom, spacing: 0) { recoveryFooter }
             }
         }

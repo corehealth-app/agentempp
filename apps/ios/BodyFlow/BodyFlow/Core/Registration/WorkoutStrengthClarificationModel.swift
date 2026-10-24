@@ -15,6 +15,7 @@ enum WorkoutStrengthClarificationFailure: Equatable, Sendable {
 final class WorkoutStrengthClarificationModel {
     let workoutID: String
     private(set) var snapshot: WorkoutStrengthClarification?
+    private(set) var feedback: RegistrationFeedbackSnapshot?
     private(set) var failure: WorkoutStrengthClarificationFailure?
     private(set) var pendingAttempt: MutationAttempt<WorkoutStrengthAnswerCommand>?
     private(set) var isLoading = false
@@ -70,12 +71,13 @@ final class WorkoutStrengthClarificationModel {
         failure = nil
         await withTaskCancellationHandler {
             do {
-                let response = try await provider.load(workoutID: workoutID)
-                guard response.data.workoutID == nil || response.data.workoutID == workoutID else {
+                let response = try await provider.loadWithFeedback(workoutID: workoutID)
+                guard response.data.clarification.workoutID == nil || response.data.clarification.workoutID == workoutID else {
                     throw BodyFlowCapabilityError.serviceUnavailable
                 }
                 guard claimPublication(operation) else { return }
-                publishRead(response.data)
+                feedback = response.data.feedback
+                publishRead(response.data.clarification)
                 finish(operation)
             } catch { publishFailure(error, operation: operation) }
         } onCancel: { operation.ownership.invalidate() }

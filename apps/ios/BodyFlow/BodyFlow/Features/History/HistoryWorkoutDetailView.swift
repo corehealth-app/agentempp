@@ -31,7 +31,9 @@ struct HistoryWorkoutDetailView: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    if let strengthQuestion { WorkoutStrengthQuestionHost(configuration: strengthQuestion) }
+                    if let strengthQuestion {
+                        WorkoutStrengthQuestionHost(configuration: strengthQuestion, showsRegistrationFeedback: true)
+                    }
                     }
                     .padding(BodyFlowSpacing.md)
                 }

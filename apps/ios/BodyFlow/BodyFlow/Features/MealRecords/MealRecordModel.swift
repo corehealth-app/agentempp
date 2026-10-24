@@ -48,6 +48,12 @@ final class MealRecordModel {
     private(set) var completedMutations: [MealRecordCompletion] = []
     private(set) var archivedDrafts: [MealRecordEditDraft] = []
 
+    var historyFeedback: RegistrationFeedbackSnapshot? {
+        guard isSessionActive(), !presentationDismissed, !isLoading, readFailure == nil,
+              let value = detail?.data, value.recordID == recoveryID else { return nil }
+        return value.feedback
+    }
+
     init(recordID: String, provider: any MealRecordProviding,
          time: any TimeProviding, keys: any IdempotencyKeyProviding,
          invalidation: FeatureInvalidationCenter,

@@ -89,6 +89,10 @@ final class WorkoutStrengthQuestionPresentation {
         self.token = token
     }
     var isCurrent: Bool { session?.owns(self) == true }
+    var historyFeedback: RegistrationFeedbackSnapshot? {
+        guard isCurrent, isReady, !model.isBusy, model.failure == nil else { return nil }
+        return model.feedback
+    }
     var canAnswer: Bool { isCurrent && isReady && model.canAnswer }
     var canRetryAnswer: Bool { isCurrent && isReady && model.canRetryAnswer }
     func refresh() async {

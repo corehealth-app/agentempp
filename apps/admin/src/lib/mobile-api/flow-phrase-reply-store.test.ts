@@ -156,6 +156,17 @@ async function subject() {
   const path = './flow-phrase-reply-store'
   return import(path)
 }
+function sharedSnapshot(overrides: Record<string, unknown> = {}) {
+  return {
+    schema: 'flow.shared-phrase-snapshot.v1',
+    mode: 'legacy',
+    legacy_cursor_revision: '1',
+    anchor_assistant_id: assistantId,
+    cursor_revision: '1',
+    cursor,
+    ...overrides,
+  }
+}
 
 describe('Flow phrase reply store: private event identity and parsing', () => {
   it('reads a bare legacy OUT only as legacy and retains its exact text', async () => {
@@ -415,21 +426,26 @@ describe('Flow phrase reply store: RPC cursor and commit', () => {
     '9223372036854775807',
   ])('preserves canonical revision %s without Number conversion', async (revision) => {
     const { createSupabaseFlowPhraseReplyStore } = await subject()
-    const data = { anchor_assistant_id: assistantId, cursor_revision: revision, cursor }
+    const data = sharedSnapshot({ legacy_cursor_revision: revision, cursor_revision: revision })
     const { supabase, requests } = client(() => ({ data }))
     expect(await createSupabaseFlowPhraseReplyStore(supabase).loadCursor(owner)).toEqual({
       anchorAssistantId: assistantId,
       cursorRevision: revision,
       cursor,
     })
-    expect(requests[0].url.pathname).toBe('/rest/v1/rpc/read_flow_phrase_cursor')
+    expect(requests[0].url.pathname).toBe('/rest/v1/rpc/read_flow_shared_phrase_cursor')
     expect(requests[0].body).toEqual({ p_user_id: owner })
   })
 
   it('accepts initial absence only as revision zero with no anchor and no cursor', async () => {
     const { createSupabaseFlowPhraseReplyStore } = await subject()
     const { supabase } = client(() => ({
-      data: { anchor_assistant_id: null, cursor_revision: '0', cursor: null },
+      data: sharedSnapshot({
+        anchor_assistant_id: null,
+        legacy_cursor_revision: '0',
+        cursor_revision: '0',
+        cursor: null,
+      }),
     }))
     expect(await createSupabaseFlowPhraseReplyStore(supabase).loadCursor(owner)).toEqual({
       anchorAssistantId: null,
@@ -451,7 +467,68 @@ describe('Flow phrase reply store: RPC cursor and commit', () => {
   ])('rejects malformed revision %s', async (revision) => {
     const { createSupabaseFlowPhraseReplyStore } = await subject()
     const { supabase } = client(() => ({
-      data: { anchor_assistant_id: assistantId, cursor_revision: revision, cursor },
+      data: sharedSnapshot({ cursor_revision: revision }),
+    }))
+    await expect(createSupabaseFlowPhraseReplyStore(supabase).loadCursor(owner)).rejects.toThrow()
+  })
+
+  it.each([
+    {
+      mode: 'shared',
+      legacy_cursor_revision: '0',
+      anchor_assistant_id: null,
+      cursor_revision: '1',
+    },
+    { mode: 'shared', legacy_cursor_revision: '4', cursor_revision: '9' },
+    { mode: 'shared', legacy_cursor_revision: '1', cursor_revision: '9223372036854775807' },
+    {
+      mode: 'shared',
+      legacy_cursor_revision: '0',
+      anchor_assistant_id: null,
+      cursor_revision: '1',
+      cursor: { ...cursor, ordinal: 0, lastTextKey: null, usedTextKeys: [] },
+    },
+  ])('accepts shared state without conflating chat/common revisions or phrase ordinal: %j', async (shape) => {
+    const { createSupabaseFlowPhraseReplyStore } = await subject()
+    const { supabase } = client(() => ({ data: sharedSnapshot(shape) }))
+    expect(await createSupabaseFlowPhraseReplyStore(supabase).loadCursor(owner)).toEqual({
+      anchorAssistantId: shape.anchor_assistant_id === null ? null : assistantId,
+      cursorRevision: shape.cursor_revision,
+      cursor: shape.cursor ?? cursor,
+    })
+  })
+
+  it.each([
+    { schema: 'flow.phrase-store.v1' },
+    { mode: 'unknown' },
+    { extra: 'private sentinel' },
+    { legacy_cursor_revision: 1 },
+    { legacy_cursor_revision: '01' },
+    { legacy_cursor_revision: '9223372036854775808' },
+    { mode: 'legacy', cursor_revision: '2' },
+    { mode: 'legacy', legacy_cursor_revision: '0' },
+    {
+      mode: 'shared',
+      cursor_revision: '0',
+      legacy_cursor_revision: '0',
+      anchor_assistant_id: null,
+      cursor: null,
+    },
+    { mode: 'shared', cursor_revision: '1', legacy_cursor_revision: '2' },
+    { mode: 'shared', legacy_cursor_revision: '0' },
+    { mode: 'shared', anchor_assistant_id: null },
+    { mode: 'shared', cursor: null },
+  ])('rejects an incoherent common snapshot without fallback to a legacy writer: %j', async (shape) => {
+    const { createSupabaseFlowPhraseReplyStore } = await subject()
+    const { supabase, requests } = client(() => ({ data: sharedSnapshot(shape) }))
+    await expect(createSupabaseFlowPhraseReplyStore(supabase).loadCursor(owner)).rejects.toThrow()
+    expect(requests).toHaveLength(1)
+  })
+
+  it('rejects the old three-field RPC shape rather than silently forking common state', async () => {
+    const { createSupabaseFlowPhraseReplyStore } = await subject()
+    const { supabase } = client(() => ({
+      data: { anchor_assistant_id: assistantId, cursor_revision: '1', cursor },
     }))
     await expect(createSupabaseFlowPhraseReplyStore(supabase).loadCursor(owner)).rejects.toThrow()
   })
@@ -472,7 +549,7 @@ describe('Flow phrase reply store: RPC cursor and commit', () => {
     },
   ])('rejects cursor/anchor incoherence %j without initializing', async (data) => {
     const { createSupabaseFlowPhraseReplyStore } = await subject()
-    const { supabase } = client(() => ({ data }))
+    const { supabase } = client(() => ({ data: sharedSnapshot(data) }))
     await expect(createSupabaseFlowPhraseReplyStore(supabase).loadCursor(owner)).rejects.toThrow()
   })
 
@@ -487,7 +564,7 @@ describe('Flow phrase reply store: RPC cursor and commit', () => {
     })
     expect(requests).toHaveLength(1)
     expect(requests[0].method).toBe('POST')
-    expect(requests[0].url.pathname).toBe('/rest/v1/rpc/commit_flow_phrase_reply')
+    expect(requests[0].url.pathname).toBe('/rest/v1/rpc/commit_flow_shared_phrase_reply')
     expect(requests[0].body).toEqual({
       p_user_id: owner,
       p_event_key: eventKey,

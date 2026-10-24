@@ -103,6 +103,28 @@ O teste `supabase/tests/flow_phrase_reply_atomic.sql` cobre ACL, isolamento por
 usuário, commit, replay e reset numa transação sintética com rollback. Isso não
 substitui validação de JWT, modelo real, aplicativo ou staging.
 
+### C5c: baseline comum antes do retorno C13
+
+O adapter passa a usar `read_flow_shared_phrase_cursor` e
+`commit_flow_shared_phrase_reply`, adicionados por
+`20261024131247_flow_shared_phrase_registration_feedback.sql`. A migration deve
+estar aplicada antes desse BFF. O leitor exige o envelope fechado
+`flow.shared-phrase-snapshot.v1`; não faz fallback para o writer antigo se o
+estado comum estiver ausente ou incoerente.
+
+`mode=legacy` importa o cursor C5a validado, com revisão comum igual à revisão
+das mensagens. `mode=shared` usa revisão comum positiva e independente do ordinal
+de frases. A âncora Flow é nula somente se a revisão legada for zero, inclusive
+quando C13 foi o primeiro evento. As revisões continuam strings, sem conversão
+para `Number`. Namespace, replay do evento e os16argumentos de publicação C5a
+são preservados; o reset existente limpa o novo estado técnico.
+
+Esta baseline ainda não conecta educação às confirmações. A primeira resposta
+publicada pelo novo writer já adota o estado comum. Depois dessa adoção, o BFF
+antigo não é um rollback compatível: preservar uma versão comum qualificada
+antes de ligar C13. Contrato e evidências locais em
+[registration-feedback.md](registration-feedback.md).
+
 ### Demais consumidores
 
 As demais respostas C7, C13 retorno do registro e C15/C16 avisos/“Ontem” integrarão essa peça

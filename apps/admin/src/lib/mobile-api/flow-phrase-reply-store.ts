@@ -281,21 +281,35 @@ export function createSupabaseFlowPhraseReplyStore(supabase: ServiceClient): Flo
     },
     async loadCursor(userId) {
       uuid.parse(userId)
-      const { data, error } = await supabase.rpc('read_flow_phrase_cursor', { p_user_id: userId })
+      const { data, error } = await supabase.rpc('read_flow_shared_phrase_cursor', {
+        p_user_id: userId,
+      })
       if (error) throw new Error('Unable to read Flow phrase cursor')
       const snapshot = z
         .object({
+          schema: z.literal('flow.shared-phrase-snapshot.v1'),
+          mode: z.enum(['legacy', 'shared']),
+          legacy_cursor_revision: revision,
           anchor_assistant_id: uuid.nullable(),
           cursor_revision: revision,
           cursor: z.unknown(),
         })
         .strict()
         .parse(data)
-      if (snapshot.cursor_revision === '0') {
-        if (snapshot.anchor_assistant_id !== null || snapshot.cursor !== null) corrupt()
+      // Chat witness, common CAS revision and phrase ordinal have different meanings.
+      // A registration may be the first common event without inventing a Flow OUT.
+      if (
+        (snapshot.legacy_cursor_revision === '0') !== (snapshot.anchor_assistant_id === null) ||
+        (snapshot.mode === 'legacy'
+          ? snapshot.cursor_revision !== snapshot.legacy_cursor_revision
+          : snapshot.cursor_revision === '0' ||
+            BigInt(snapshot.cursor_revision) < BigInt(snapshot.legacy_cursor_revision))
+      )
+        corrupt()
+      if (snapshot.mode === 'legacy' && snapshot.cursor_revision === '0') {
+        if (snapshot.cursor !== null) corrupt()
         return { anchorAssistantId: null, cursorRevision: '0', cursor: null }
       }
-      if (snapshot.anchor_assistant_id === null) corrupt()
       return {
         anchorAssistantId: snapshot.anchor_assistant_id,
         cursorRevision: snapshot.cursor_revision,
@@ -306,7 +320,7 @@ export function createSupabaseFlowPhraseReplyStore(supabase: ServiceClient): Flo
       validateIdentity(input)
       const jsonCursor = (cursor: FlowStatusPhraseCursor | null) =>
         cursor === null ? null : { ...cursor, usedTextKeys: [...cursor.usedTextKeys] }
-      const { data, error } = await supabase.rpc('commit_flow_phrase_reply', {
+      const { data, error } = await supabase.rpc('commit_flow_shared_phrase_reply', {
         p_user_id: input.userId,
         p_event_key: input.eventKey,
         p_expected_inbound_id: input.inboundId,

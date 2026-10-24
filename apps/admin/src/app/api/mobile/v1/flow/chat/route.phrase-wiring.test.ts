@@ -35,7 +35,14 @@ import './route'
 
 function context(method: 'GET' | 'POST', userId: string, locale = 'pt-BR') {
   const rpc = vi.fn(async () => ({
-    data: { anchor_assistant_id: null, cursor_revision: '0', cursor: null },
+    data: {
+      schema: 'flow.shared-phrase-snapshot.v1',
+      mode: 'legacy',
+      legacy_cursor_revision: '0',
+      anchor_assistant_id: null,
+      cursor_revision: '0',
+      cursor: null,
+    },
     error: null,
   }))
   const value: MobileRouteContext = {
@@ -116,7 +123,7 @@ describe('C5a actual route composition', () => {
     const response = await mocks.callbacks[1](value)
     expect(response.status).toBe(201)
     expect(rpc).toHaveBeenCalledTimes(1)
-    expect(rpc).toHaveBeenCalledWith('read_flow_phrase_cursor', { p_user_id: owner })
+    expect(rpc).toHaveBeenCalledWith('read_flow_shared_phrase_cursor', { p_user_id: owner })
     expect(mocks.send).toHaveBeenCalledWith(
       expect.objectContaining({
         phraseReplies: expect.objectContaining({

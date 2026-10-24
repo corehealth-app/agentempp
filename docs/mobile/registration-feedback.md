@@ -2,7 +2,7 @@
 
 ## Estado
 
-Módulo puro e migration C5c qualificados localmente. Ainda não integrados às rotas ou ao iPhone; a migration não foi aplicada ao staging e não houve publicação deste pacote. O consumidor não deve ativar frases sem o BFF comum compatível e QA integrado.
+Módulo puro e migration C5c qualificados localmente. A migration foi aplicada ao staging e a baseline comum do Flow foi publicada e verificada nesse ambiente. C13 ainda não está conectado às confirmações/reaberturas nem à apresentação no iPhone. Esses comentários ainda não constituem uma entrega ao cliente.
 
 ## Contrato da preparação
 
@@ -22,9 +22,15 @@ Rótulos Q42 ficam centralizados em `REGISTRATION_FEEDBACK_CALORIE_LABELS`. Perc
 
 A qualificação local usou as206migrations reais anteriores em uma instância Supabase nativa descartável:41assertions SQL, regressão C5a, payload real do módulo com dia completo e decimais canônicos, e duas conexões PostgreSQL concorrentes. Foram observados bloqueios reais para repetição do mesmo registro e disputa Flow × registro; nenhuma duplicação ou perda de seleção. Esses testes não representam sessões GoTrue, staging ou QA no iPhone.
 
+### Aplicação e baseline de staging em24/10/2026
+
+No projeto `xitugspwfxkcluxvrdeg`, o arquivo local `20261024131247_flow_shared_phrase_registration_feedback.sql` foi aplicado como registro de histórico `20261024141757`, nome `c13_shared_phrase_registration_feedback_20261024`. As nove funções foram comparadas por hash do corpo, com ACL/RLS e trigger conferidos. Essa diferença de timestamp é do registro pelo conector; **não reaplicar a migration somente porque o número do arquivo difere do histórico**. Conferir esse vínculo e o estado aplicado antes de qualquer ferramenta de sincronização.
+
+O servidor canônico `performe-ai-staging-bff.vercel.app` usa a baseline comum `90e6ad92173ef8aed004e1f5cad422ea68ed7691`, deployment `dpl_AjveiZwKQ35VyNGdvAK9Q8Hufn1p` (Preview, `gru1`). Os testes de QA A/B usaram dois eventos reais de status determinístico, replay e reabertura do histórico. O banco confirmou um único avanço por evento e isolamento; o replay no endereço canônico preservou o cursor. Isso qualifica a baseline comum com C13 desligado, sem provar a integração de educação nas confirmações ou o iPhone.
+
 ## Ordem obrigatória de integração
 
-- Aplicar a migration aditiva e qualificar um BFF que use os dois novos RPCs do Flow, ainda sem conectar C13 às confirmações.
+- Migration aditiva e baseline comum já qualificadas no staging. Preservar essa baseline antes de conectar C13 às confirmações.
 - Preservar uma baseline de retorno comum compatível. A primeira publicação do novo Flow já adota estado comum; depois disso o BFF antigo não é um rollback completo, mesmo com C13 desligado.
 - Campo opcional nas confirmações de refeição/treino e reabertura, preservando sucesso quando feedback falha.
 - Decoder/tela PT/EN no iOS, ownership/session guards e QA real. Sem ativar a persona/rotas legadas do WhatsApp.

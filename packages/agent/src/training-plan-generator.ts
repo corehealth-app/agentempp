@@ -167,13 +167,22 @@ As regras acima são para VOCÊ montar o plano. Quem vai ler nunca treinou. Escr
 - Passos e erros comuns: frases curtas que digam o que fazer com o corpo.
 - Os números não mudam: séries, repetições, descanso, minutos e dias continuam os das regras acima.`
 
+// The app draft contract stores training sessions, not a seven-day calendar.
+// QA 2026-10-23: a four-day request returned at least six entries; entries
+// 4/5 failed duration/exercise validation. Keep rejecting invalid answers.
+const TRAINING_FLOW_SCHEDULE = `FORMATO DA SEMANA:
+- weekly_schedule contém somente dias de treino, com exatamente days_per_week entradas.
+- Se training_days foi informado, use esses mesmos dias e rótulos, uma vez cada.
+- Cada entrada tem duration_min inteiro de 10 a 180 e pelo menos um exercício completo.
+- Descanso semanal fica somente em notes; não crie entradas sem exercícios no weekly_schedule.`
+
 /** The training system prompt; 'legacy' (the default) is the current text, unchanged. */
 export function trainingSystemPrompt(identity: GeneratorIdentity = 'legacy'): string {
   if (identity === 'legacy') return TRAINING_SYSTEM_PROMPT
   const flow = TRAINING_SYSTEM_PROMPT.replace(TRAINING_LEGACY_IDENTITY, TRAINING_FLOW_IDENTITY)
     .replace('REGRAS MPP (seção', 'REGRAS DO MÉTODO (seção')
     .replace(TRAINING_LEGACY_PROGRESSION_EXAMPLE, TRAINING_FLOW_PROGRESSION_EXAMPLE)
-  return `${flow}\n\n${TRAINING_FLOW_HOW_TO_WRITE}`
+  return `${flow}\n\n${TRAINING_FLOW_HOW_TO_WRITE}\n\n${TRAINING_FLOW_SCHEDULE}`
 }
 
 // The generator's own answer (never a patient document) sometimes writes an

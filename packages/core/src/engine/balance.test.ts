@@ -56,6 +56,8 @@ describe('dayEnergyBalance — balanço do dia por protocolo (consumido − gast
   describe('recomposição: against BMR × 1,2 (= meta + déficit programado), WITH exercise', () => {
     it.each([
       // [day, consumed, target, exercise, programmed, legacy net, new balance]
+      // Retained staging day reconciled read-only on 2026-10-24: the reported 504/849 pair.
+      ['22/10 (1996 / 1841, treino 504)', 1996, 1841, 504, 500, -349, -849],
       ['19/05 (2076 / 1843, treino 565)', 2076, 1843, 565, 500, -332, -832],
       ['21/05 (1969 / 1843, treino 523)', 1969, 1843, 523, 500, -397, -897],
       ['22/05 dia aberto (568 / 1843, treino 648)', 568, 1843, 648, 500, -1923, -2423],

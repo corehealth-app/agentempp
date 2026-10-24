@@ -275,13 +275,20 @@ class SyntheticDB {
       expect(p.p_now).toBe(NOW.toISOString())
       return { data: { local_date: '2026-10-08', items: [] }, error: null }
     }
-    if (name === 'read_flow_phrase_cursor') {
+    if (name === 'read_flow_shared_phrase_cursor') {
       return {
-        data: { anchor_assistant_id: null, cursor_revision: '0', cursor: null },
+        data: {
+          schema: 'flow.shared-phrase-snapshot.v1',
+          mode: 'legacy',
+          legacy_cursor_revision: '0',
+          anchor_assistant_id: null,
+          cursor_revision: '0',
+          cursor: null,
+        },
         error: null,
       }
     }
-    if (name === 'commit_flow_phrase_reply') {
+    if (name === 'commit_flow_shared_phrase_reply') {
       const inbound = this.rows.messages.find((r) => r.id === p.p_expected_inbound_id)
       expect(inbound).toMatchObject({
         user_id: OWNER,
@@ -414,8 +421,8 @@ describe('C7 exact authenticated route status and stable incentive', () => {
     expect(original.content.endsWith(`\n\n${PHRASE}`)).toBe(true)
     expect(original.content.split(PHRASE)).toHaveLength(2)
     expect(db.cursor).toMatchObject({ userId: OWNER, ordinal: 1 })
-    expect(db.rpcs.filter((n) => n === 'read_flow_phrase_cursor')).toHaveLength(1)
-    expect(db.rpcs.filter((n) => n === 'commit_flow_phrase_reply')).toHaveLength(1)
+    expect(db.rpcs.filter((n) => n === 'read_flow_shared_phrase_cursor')).toHaveLength(1)
+    expect(db.rpcs.filter((n) => n === 'commit_flow_shared_phrase_reply')).toHaveLength(1)
     expect(db.rows.messages).toHaveLength(2)
     const officialReads = db.statusReads()
     expect(officialReads).toBeGreaterThan(0)
@@ -443,8 +450,10 @@ describe('C7 exact authenticated route status and stable incentive', () => {
     // after idempotency. This is presentation authority, not a status refresh.
     expect(db.projectionReads()).toBe(3)
     expect(db.rpcs.filter((n) => n === 'list_mobile_routine_items')).toHaveLength(routineReads)
-    expect(db.rpcs.filter((n) => n === 'read_flow_phrase_cursor')).toHaveLength(1)
-    expect(db.rpcs.filter((n) => n === 'commit_flow_phrase_reply')).toHaveLength(1)
+    expect(db.rpcs.filter((n) => n === 'read_flow_shared_phrase_cursor')).toHaveLength(1)
+    expect(db.rpcs.filter((n) => n === 'commit_flow_shared_phrase_reply')).toHaveLength(1)
+    expect(db.rpcs).not.toContain('read_flow_phrase_cursor')
+    expect(db.rpcs).not.toContain('commit_flow_phrase_reply')
     expect(db.cursor).toEqual(cursor)
     expect(db.rows.messages).toHaveLength(2)
     expect(boundary.providerConstructors).not.toHaveBeenCalled()

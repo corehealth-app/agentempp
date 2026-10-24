@@ -4,6 +4,12 @@
 
 Módulo puro e migration C5c qualificados localmente. A migration foi aplicada ao staging e a baseline comum do Flow foi publicada e verificada nesse ambiente. C13 ainda não está conectado às confirmações/reaberturas nem à apresentação no iPhone. Esses comentários ainda não constituem uma entrega ao cliente.
 
+O consumidor opcional do BFF está implementado e qualificado localmente, ainda sem chamadores nas rotas de negócio. `registration-feedback-store.ts` valida o DTO fechado e chama os RPCs C5c; `registration-feedback-service.ts` recupera o recibo antes de carregar fatos e preparar frases. Somente conflito explícito de cursor permite até três tentativas. Resultado incerto do commit é resolvido por uma leitura, sem repetir cegamente a escrita. A reabertura tem um caminho separado que apenas lê o recibo.
+
+Os dados diários exigem data/fuso de origem coerentes, snapshot oficial real e presença dos IDs dos logs próprios no dia. O treino versionado pode usar seu ID confirmado; o caminho legado consulta dono, chave de origem e tipo de treino. Sem essa prova, o dia fica indisponível, preservando os totais confirmados e as frases elegíveis. O loader usa as metas oficiais disponíveis no momento da consulta; isso não constitui uma reconstrução imutável do perfil histórico.
+
+A qualificação do consumidor contém39casos, incluindo o cliente Supabase real com transporte controlado, contrato literal de RPC, filtros de propriedade, decimais canônicos, replay, concorrência CAS, commit incerto e PT/EN. Typecheck e lint dos arquivos alterados passaram. A suíte admin completa passou com3785testes após atualizar um emulador antigo de status para o contrato comum já implantado; o primeiro resultado3784PASS/1FAIL foi preservado. Nenhuma nova publicação, migration, chamada a contas reais ou alteração no iPhone pertence a esse incremento.
+
 ## Contrato da preparação
 
 `@mpp/agent/registration-feedback` exporta `prepareRegistrationFeedback`. Recebe registro confirmado, identidade da conta/registro, idioma e fatos oficiais do mesmo dia. Não grava refeição, não recalcula meta nem amplia o orçamento de comida pelo exercício. A projeção pública usa whitelist; não transporta listas de outros registros, pendências, medicamentos ou suplementos do estado diário.

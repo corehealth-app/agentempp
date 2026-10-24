@@ -1,4 +1,8 @@
 import { MobileApiError, mobileSuccess, readJsonBody } from './http'
+import {
+  includesRegistrationFeedback,
+  readWorkoutHistoryFeedback,
+} from './registration-feedback-history'
 import { createMobileRouteWithContext, type MobileRouteRuntime } from './route'
 import { workoutRegistrationEnabled } from './workout-registration-switch'
 import {
@@ -29,13 +33,20 @@ export function createWorkoutStrengthClarificationRoutes(
   return {
     GET: createMobileRouteWithContext<WorkoutRouteContext>(async (context, route) => {
       const id = workoutStrengthUUIDSchema.parse((await route.params).id)
+      const clarification = await loadWorkoutStrengthClarification(
+        context.supabase,
+        context.auth.userId,
+        id,
+        enabled(),
+      )
+      if (!includesRegistrationFeedback(context.request))
+        return mobileSuccess(clarification, context.requestId)
+      const feedback =
+        'workout_id' in clarification && clarification.workout_id === id
+          ? await readWorkoutHistoryFeedback(context.supabase, context.auth.userId, id)
+          : null
       return mobileSuccess(
-        await loadWorkoutStrengthClarification(
-          context.supabase,
-          context.auth.userId,
-          id,
-          enabled(),
-        ),
+        { clarification, ...(feedback === null ? {} : { feedback }) },
         context.requestId,
       )
     }, runtime),

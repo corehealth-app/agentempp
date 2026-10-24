@@ -1,10 +1,12 @@
 import { mobileQuantityFields, type MobileQuantityDisplay } from './mobile-quantity-display'
 import { getLocalDateString } from '@mpp/agent'
+import type { RegistrationFeedback } from '@mpp/agent/registration-feedback'
 import type { ServiceClient, Tables } from '@mpp/db'
 import type { MobileAuthContext } from './auth'
 import { resourceIdSchema } from './contracts'
 import { MobileApiError } from './http'
 import { hashMobileRequest } from './idempotency'
+import { readMealHistoryFeedback } from './registration-feedback-history'
 
 export interface PrivateConfirmedMealState {
   context: Pick<
@@ -45,6 +47,7 @@ export interface ConfirmedMealRecord {
   day_closed: boolean
   editable: boolean
   edit_block_reason: 'MEAL_DAY_NOT_EDITABLE' | null
+  feedback?: RegistrationFeedback
 }
 
 function readUnavailable(): MobileApiError {
@@ -154,6 +157,7 @@ export async function loadConfirmedMealRecord(
   auth: MobileAuthContext,
   recordId: string,
   now = new Date(),
+  includeFeedback = false,
 ): Promise<ConfirmedMealRecord> {
   const state = await loadPrivateConfirmedMealState(supabase, auth, recordId)
   const timezone = state.context.timezone
@@ -170,6 +174,7 @@ export async function loadConfirmedMealRecord(
     throw contextChanged()
   }
   const editable = !state.snapshot.day_closed && datesMatch
+  const feedback = includeFeedback ? await readMealHistoryFeedback(supabase, auth, state) : null
   return {
     record_id: recordId.toLowerCase(),
     scope: state.items[0].raw_provider_message_id === null ? 'item' : 'group',
@@ -193,5 +198,6 @@ export async function loadConfirmedMealRecord(
     day_closed: state.snapshot.day_closed,
     editable,
     edit_block_reason: editable ? null : 'MEAL_DAY_NOT_EDITABLE',
+    ...(feedback === null ? {} : { feedback }),
   }
 }

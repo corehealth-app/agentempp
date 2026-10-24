@@ -6,6 +6,7 @@ import {
   resourceIdSchema,
 } from './contracts'
 import { mobileSuccess, readJsonBody } from './http'
+import { includesRegistrationFeedback } from './registration-feedback-history'
 import { createMobileRouteWithContext, type MobileRouteRuntime } from './route'
 
 interface MealRecordRouteContext {
@@ -26,6 +27,7 @@ export function createConfirmedMealRoutes(runtime?: MobileRouteRuntime, now = ()
             context.auth,
             await recordId(route),
             now(),
+            includesRegistrationFeedback(context.request),
           ),
           context.requestId,
         ),

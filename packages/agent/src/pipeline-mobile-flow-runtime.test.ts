@@ -329,7 +329,7 @@ describe('3.4 S3 — plan generator identity', () => {
     // The closing motto of the rules is still there too.
     expect(flow).toContain('Compostos constroem; isoladores lapidam. Treine até a falha muscular técnica.')
 
-    // (b) the prompt ends with the writing block, written here by hand.
+    // (b) exact app-only writing and week-shape blocks, written here by hand.
     const HOW_TO_WRITE = `COMO ESCREVER (obrigatório; vale para todo texto do JSON: notes, progression_rule, day, focus, name, muscle_group, notes do exercício, execution_steps e common_mistakes):
 As regras acima são para VOCÊ montar o plano. Quem vai ler nunca treinou. Escreva em português simples, do dia a dia, como quem explica a um amigo.
 - Sem gíria de academia, sem sigla e sem palavra em inglês quando existe palavra comum em português.
@@ -340,9 +340,16 @@ As regras acima são para VOCÊ montar o plano. Quem vai ler nunca treinou. Escr
 - Esforço: não escreva a sigla. No texto, escreva "esforço" e a nota, como "esforço 8-9". Em rpe_target, escreva só a nota.
 - Passos e erros comuns: frases curtas que digam o que fazer com o corpo.
 - Os números não mudam: séries, repetições, descanso, minutos e dias continuam os das regras acima.`
-    expect(flow.endsWith(`\n\n${HOW_TO_WRITE}`)).toBe(true)
-    // Everything before the block is the legacy prompt with the three known swaps.
-    expect(flow.slice(0, -`\n\n${HOW_TO_WRITE}`.length)).toBe(
+    // The approved 2026-10-23 week-shape guard follows the writing block.
+    const SCHEDULE = `FORMATO DA SEMANA:
+- weekly_schedule contém somente dias de treino, com exatamente days_per_week entradas.
+- Se training_days foi informado, use esses mesmos dias e rótulos, uma vez cada.
+- Cada entrada tem duration_min inteiro de 10 a 180 e pelo menos um exercício completo.
+- Descanso semanal fica somente em notes; não crie entradas sem exercícios no weekly_schedule.`
+    const closing = `\n\n${HOW_TO_WRITE}\n\n${SCHEDULE}`
+    expect(flow.endsWith(closing)).toBe(true)
+    // Everything before both exact app-only blocks preserves the three known swaps.
+    expect(flow.slice(0, -closing.length)).toBe(
       legacy
         .replace(
           'Você é Dr. Roberto Menescal, conduzindo o Método MPP via WhatsApp.',
@@ -375,7 +382,8 @@ As regras acima são para VOCÊ montar o plano. Quem vai ler nunca treinou. Escr
       'elevação pélvica',
     ]) {
       expect(HOW_TO_WRITE, undecided).not.toContain(undecided)
-      expect(flow, undecided).not.toContain(undecided)
+      // The exact schedule guard's "de 10 a 180" is minutes, not an effort scale.
+      expect(flow.slice(0, -`\n\n${SCHEDULE}`.length), undecided).not.toContain(undecided)
     }
     // The app never shows these names, and the block does not teach them.
     expect(HOW_TO_WRITE).not.toMatch(/Roberto|Menescal|WhatsApp|\bMPP\b|BodyFlow/)

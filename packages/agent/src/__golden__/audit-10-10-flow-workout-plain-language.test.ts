@@ -207,7 +207,7 @@ const OPENING = 'Sua sugestão está pronta:'
 const CLOSING =
   'É um rascunho: toque em "Revisar sugestão" para conferir, ajustar e confirmar. Ele só vale depois que você confirmar.'
 
-/** The block the Flow prompt ends with, written here by hand (not imported). */
+/** The writing block, before the approved week-shape guard; not imported. */
 const HOW_TO_WRITE = `COMO ESCREVER (obrigatório; vale para todo texto do JSON: notes, progression_rule, day, focus, name, muscle_group, notes do exercício, execution_steps e common_mistakes):
 As regras acima são para VOCÊ montar o plano. Quem vai ler nunca treinou. Escreva em português simples, do dia a dia, como quem explica a um amigo.
 - Sem gíria de academia, sem sigla e sem palavra em inglês quando existe palavra comum em português.
@@ -1068,7 +1068,12 @@ describe('audit 2026-10-10 Flow workout — the request of the reported turn', (
     expect(call.maxRetries).toBe(0)
 
     expect(call.systemPrompt).toBe(trainingSystemPrompt('flow'))
-    expect(call.systemPrompt.endsWith(`\n\n${HOW_TO_WRITE}`)).toBe(true)
+    const SCHEDULE = `FORMATO DA SEMANA:
+- weekly_schedule contém somente dias de treino, com exatamente days_per_week entradas.
+- Se training_days foi informado, use esses mesmos dias e rótulos, uma vez cada.
+- Cada entrada tem duration_min inteiro de 10 a 180 e pelo menos um exercício completo.
+- Descanso semanal fica somente em notes; não crie entradas sem exercícios no weekly_schedule.`
+    expect(call.systemPrompt.endsWith(`\n\n${HOW_TO_WRITE}\n\n${SCHEDULE}`)).toBe(true)
 
     expect(call.message).toContain('Nível musculação: intermediario')
     expect(call.message).toContain('Dias por semana: 5')

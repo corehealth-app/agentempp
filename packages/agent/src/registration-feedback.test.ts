@@ -18,6 +18,7 @@ function input(overrides: Partial<RegistrationFeedbackInput> = {}): Registration
       kind: 'meal',
       status: 'confirmed',
       mealKind: 'cafe',
+      totals: { kcal: 435, protein_g: 42, carbs_g: 49, fat_g: 5 },
       items: [{ food_name: 'iogurte natural', kcal: 435, protein_g: 42, carbs_g: 49, fat_g: 5 }],
     },
     day: {
@@ -60,6 +61,40 @@ describe('C13: confirmed registration feedback, approved facts and phrases', () 
     expect(result.feedback.day?.consumed).not.toHaveProperty('source')
     expect(result.feedback.day?.targets).not.toHaveProperty('source')
   })
+  it('provides both sequential snapshots so the database can prove an atomic two-selection transition', () => {
+    const result = prepareRegistrationFeedback(input(), null)
+    expect(result.steps.map((step) => step.receipt)).toStrictEqual(result.receipts)
+    expect(result.steps.map((step) => step.nextCursor.ordinal)).toStrictEqual([1, 2])
+    expect(result.steps[1]?.nextCursor).toStrictEqual(result.nextCursor)
+    expect(result.steps[0]?.nextCursor.usedTextKeys).toHaveLength(1)
+    expect(result.nextCursor.usedTextKeys).toHaveLength(2)
+  })
+  it('preserves the official confirmed decimal totals instead of resumming floats', () => {
+    const result = prepareRegistrationFeedback(
+      input({
+        registration: {
+          kind: 'meal',
+          status: 'confirmed',
+          mealKind: 'almoco',
+          totals: { kcal: 0.3, protein_g: 0.3, carbs_g: 0.3, fat_g: 0.3 },
+          items: [0.1, 0.2].map((value) => ({
+            food_name: 'synthetic decimal fixture',
+            kcal: value,
+            protein_g: value,
+            carbs_g: value,
+            fat_g: value,
+          })),
+        },
+      }),
+      null,
+    )
+    expect(result.feedback.meal_totals).toStrictEqual({
+      kcal: 0.3,
+      protein_g: 0.3,
+      carbs_g: 0.3,
+      fat_g: 0.3,
+    })
+  })
   it('renders the actual meal totals and one-decimal day goldens without adding exercise to food', () => {
     const result = prepareRegistrationFeedback(input(), null)
     expect(result.feedback.meal_totals).toStrictEqual({
@@ -99,6 +134,7 @@ describe('C13: confirmed registration feedback, approved facts and phrases', () 
           kind: 'meal',
           status: 'confirmed',
           mealKind: 'almoco',
+          totals: { kcal: 100, protein_g: 10, carbs_g: 5, fat_g: 3 },
           items: [
             {
               food_name: 'alimento sintético sem frase aprovada',

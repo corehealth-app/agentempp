@@ -31,6 +31,7 @@ export interface RegistrationFeedbackInput {
     | {
         kind: 'meal'
         mealKind: FlowPhraseMealKind
+        totals: Nutrients
         items: readonly (Nutrients & { food_name: string })[]
       }
     | { kind: 'workout' }
@@ -94,6 +95,12 @@ function validate(
     (!['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro'].includes(
       input.registration.mealKind,
     ) ||
+      ![
+        input.registration.totals.kcal,
+        input.registration.totals.protein_g,
+        input.registration.totals.carbs_g,
+        input.registration.totals.fat_g,
+      ].every(finiteNonnegative) ||
       input.registration.items.length < 1 ||
       input.registration.items.length > 30 ||
       input.registration.items.some(
@@ -150,6 +157,7 @@ export function prepareRegistrationFeedback(
   feedback: RegistrationFeedback
   nextCursor: FlowStatusPhraseCursor
   receipts: FlowStatusPhraseReceipt[]
+  steps: { receipt: FlowStatusPhraseReceipt; nextCursor: FlowStatusPhraseCursor }[]
 } {
   validate(input, cursor, catalog)
   const locale = input.locale?.toLowerCase().startsWith('en') ? 'en' : 'pt-BR'
@@ -191,17 +199,15 @@ export function prepareRegistrationFeedback(
     incentive: null,
   }
   if (input.registration.kind === 'meal') {
-    const totals = input.registration.items.reduce<Nutrients>(
-      (sum, row) => ({
-        kcal: sum.kcal + row.kcal,
-        protein_g: sum.protein_g + row.protein_g,
-        carbs_g: sum.carbs_g + row.carbs_g,
-        fat_g: sum.fat_g + row.fat_g,
-      }),
-      { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 },
-    )
-    if (!Object.values(totals).every(finiteNonnegative))
-      throw new Error('Invalid confirmed meal totals')
+    // Use the total already computed and confirmed by the existing meal writer.
+    // Re-summing binary floats here can disagree with its canonical decimal total.
+    const confirmed = input.registration.totals
+    const totals = {
+      kcal: confirmed.kcal,
+      protein_g: confirmed.protein_g,
+      carbs_g: confirmed.carbs_g,
+      fat_g: confirmed.fat_g,
+    }
     feedback.meal_totals = totals
     feedback.lines.push({
       key: 'meal_totals',
@@ -261,6 +267,7 @@ export function prepareRegistrationFeedback(
       })
   }
   const receipts: FlowStatusPhraseReceipt[] = []
+  const steps: { receipt: FlowStatusPhraseReceipt; nextCursor: FlowStatusPhraseCursor }[] = []
   let state =
     cursor === null
       ? createFlowPhraseRotationState(input.userId, catalog.version)
@@ -273,7 +280,10 @@ export function prepareRegistrationFeedback(
     if (result.phrase !== null && hash(result.phrase) !== result.nextState.lastTextKey)
       throw new Error('Invalid feedback phrase projection')
     state = result.nextState
-    receipts.push({ eventKey: request.eventKey, ...receipt })
+    const publicReceipt = { eventKey: request.eventKey, ...receipt }
+    receipts.push(publicReceipt)
+    const { replayByEventKey: _eventReceipts, ...stepCursor } = state
+    steps.push({ receipt: publicReceipt, nextCursor: stepCursor })
     return result.phrase
   }
   const common = { userId: input.userId, locale: input.locale, accountName: input.accountName }
@@ -294,5 +304,5 @@ export function prepareRegistrationFeedback(
     text: projectFlowPublicNames(row.text, { accountName: input.accountName }).text,
   }))
   const { replayByEventKey: _receipts, ...nextCursor } = state
-  return { feedback, nextCursor, receipts }
+  return { feedback, nextCursor, receipts, steps }
 }

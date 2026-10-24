@@ -28,6 +28,63 @@ const mobileRouteRoot = resolve(dedicatedAppRoot, 'api/mobile/v1')
 const publicRoot = resolve(appRoot, 'public')
 const buildRoot = resolve(appRoot, '.next')
 const appPathsManifestPath = resolve(buildRoot, 'server/app-paths-manifest.json')
+const reviewRoutes = [
+  'me',
+  'pending',
+  'registrations/[id]/confirm',
+  'registrations/[id]',
+  'registrations/propose',
+]
+  .map((name) => `/api/mobile/v1/${name}/route`)
+  .sort()
+const historyFeedbackRoutes = [
+  '/api/mobile/v1/meal-records/[id]/route',
+  '/api/mobile/v1/workouts/[id]/strength-clarification/route',
+]
+const catalogRoutes = ['/api/mobile/v1/flow/chat/route', ...reviewRoutes].sort()
+
+function tracedTargets(route: string): string[] {
+  const target = currentAppPathsManifest()[route]
+  expect(target, route).toBeTypeOf('string')
+  const tracePath = resolve(buildRoot, 'server', `${target}.nft.json`)
+  const trace: { files: string[] } = JSON.parse(readFileSync(tracePath, 'utf8'))
+  return trace.files.map((reference) => realpathSync(resolve(dirname(tracePath), reference)))
+}
+
+function semanticChunks(markers: string[]): string[] {
+  const chunksRoot = realpathSync(resolve(buildRoot, 'server/chunks'))
+  return walkFiles(resolve(buildRoot, 'server/chunks'))
+    .filter((path) => {
+      if (!path.endsWith('.js')) return false
+      const source = readFileSync(path, 'utf8')
+      return markers.every((marker) => source.includes(marker))
+    })
+    .map((path) => {
+      const physical = realpathSync(path)
+      expect(relative(chunksRoot, physical), path).toMatch(/^[\w.-]+\.js$/)
+      return physical
+    })
+}
+
+function chunkConsumers(chunk: string): string[] {
+  return Object.keys(currentAppPathsManifest())
+    .filter((route) => tracedTargets(route).includes(chunk))
+    .sort()
+}
+
+function runtimeMarkerRoutes(marker: string): string[] {
+  const sources = new Map<string, string>()
+  return Object.entries(currentAppPathsManifest())
+    .filter(([route, target]) =>
+      [resolve(buildRoot, 'server', target), ...tracedTargets(route)].some((path) => {
+        if (!path.endsWith('.js')) return false
+        if (!sources.has(path)) sources.set(path, readFileSync(path, 'utf8'))
+        return sources.get(path)?.includes(marker)
+      }),
+    )
+    .map(([route]) => route)
+    .sort()
+}
 
 const allowedRouteExports = new Set([
   'GET',
@@ -391,10 +448,16 @@ describe('authoritative Mobile API source surface', () => {
     // Current56:5970+6=5976 references/185 targets; reachability is locked below.
     // Auth is excluded. Its observed vendor split is not this release surface.
     // The agent manifest already belongs to the original50: no new unique target.
-    // Keep exact totals, original50 sans this chunk, nine Flow catalogs and guards.
-    expect(surface.nftReferenceCount).toBe(5976)
-    expect(surface.nftUniqueTargetCount).toBe(185)
-    expect(surface.nftRegularFileTargetCount).toBe(183)
+    // C13 adds57 references:45 catalog JSONs in five review routes, six
+    // selector references, two History receipt references and four existing
+    // read-model/state/legacy-selector references newly reached by History.
+    // The workout RW chunk replaces its predecessor with zero net references.
+    // Every contribution is identified by semantics and exact consumers below;
+    // normalization must reproduce the prior per-route counts and semantic
+    // boundaries below; it is not byte identity of compiled JavaScript.
+    expect(surface.nftReferenceCount).toBe(6033)
+    expect(surface.nftUniqueTargetCount).toBe(187)
+    expect(surface.nftRegularFileTargetCount).toBe(185)
     expect(surface.nftDirectoryTargetCount).toBe(2)
 
     const bodyPhotoRoutes = [
@@ -409,13 +472,128 @@ describe('authoritative Mobile API source surface', () => {
       '/api/mobile/v1/meal-records/[id]/route': 107,
       ...Object.fromEntries(bodyPhotoRoutes.map((route) => [route, 109])),
     }
-    const physicalTargets = (route: string): string[] => {
-      const target = currentAppPathsManifest()[route]
-      expect(target, route).toBeTypeOf('string')
-      const tracePath = resolve(buildRoot, 'server', `${target}.nft.json`)
-      const trace: { files: string[] } = JSON.parse(readFileSync(tracePath, 'utf8'))
-      return trace.files.map((reference) => realpathSync(resolve(dirname(tracePath), reference)))
+    const uniqueChunk = (markers: string[]): string => {
+      const chunks = semanticChunks(markers)
+      expect(chunks, markers.join(', ')).toHaveLength(1)
+      return chunks[0] ?? ''
     }
+    const catalogChunk = uniqueChunk([
+      'curated-phrases-food.json',
+      'read_flow_shared_phrase_cursor',
+    ])
+    expect(chunkConsumers(catalogChunk)).toEqual(catalogRoutes)
+    const receiptChunk = uniqueChunk([
+      'read_mobile_registration_feedback',
+      'proposal->>source_provider_message_id',
+    ])
+    expect(chunkConsumers(receiptChunk)).toEqual([...historyFeedbackRoutes].sort())
+    const readModelChunk = uniqueChunk(['Pending registration lookup', 'Trends snapshot lookup'])
+    expect(chunkConsumers(readModelChunk)).toEqual(
+      [
+        'flow/chat',
+        'history',
+        'me',
+        'meal-records/[id]',
+        'onboarding',
+        'pending',
+        'plan',
+        'profile',
+        'progress',
+        'protocol',
+        'registrations/[id]/confirm',
+        'registrations/[id]',
+        'registrations/propose',
+        'today',
+        'trends',
+        'workouts/[id]/strength-clarification',
+      ]
+        .map((name) => `/api/mobile/v1/${name}/route`)
+        .sort(),
+    )
+    const officialStateChunk = uniqueChunk([
+      'DailyStateReadChangedError',
+      'daily state consistency lookup',
+    ])
+    const databaseSelectorChunk = uniqueChunk([
+      'curated phrase embedding lookup failed',
+      '[curated-phrase] embedding cascade failed:',
+    ])
+    const officialConsumers = [
+      'flow/chat',
+      'history',
+      'me',
+      'meal-drafts',
+      'meal-records/[id]',
+      'onboarding/eligibility',
+      'onboarding',
+      'pending',
+      'plan-drafts/[id]/confirm',
+      'plan-drafts/[id]',
+      'plan-drafts',
+      'plan-imports',
+      'plan',
+      'profile',
+      'progress',
+      'protocol',
+      'registrations/[id]/confirm',
+      'registrations/[id]',
+      'registrations/propose',
+      'today',
+      'trends',
+      'workouts/[id]/strength-clarification',
+    ]
+      .map((name) => `/api/mobile/v1/${name}/route`)
+      .sort()
+    expect(chunkConsumers(officialStateChunk)).toEqual(officialConsumers)
+    expect(chunkConsumers(databaseSelectorChunk)).toEqual(officialConsumers)
+    expect(
+      new Set([
+        catalogChunk,
+        receiptChunk,
+        readModelChunk,
+        officialStateChunk,
+        databaseSelectorChunk,
+      ]).size,
+    ).toBe(5)
+
+    const catalogRoot = realpathSync(
+      resolve(appRoot, '../../packages/agent/src/data/flow-curated-phrases'),
+    )
+    const extrasByRoute = new Map<string, Set<string>>()
+    for (const route of Object.keys(currentAppPathsManifest())) {
+      const raw = tracedTargets(route)
+      const extras: string[] = []
+      if (catalogRoutes.includes(route)) extras.push(catalogChunk)
+      if (reviewRoutes.includes(route)) {
+        const catalogs = raw.filter((target) => dirname(target) === catalogRoot)
+        expect(catalogs, route).toHaveLength(9)
+        extras.push(...catalogs)
+      }
+      if (historyFeedbackRoutes.includes(route)) extras.push(receiptChunk, readModelChunk)
+      if (route === clarificationRoute) extras.push(officialStateChunk, databaseSelectorChunk)
+      expect(new Set(extras).size, route).toBe(extras.length)
+      for (const target of extras)
+        expect(
+          raw.filter((path) => path === target),
+          route,
+        ).toEqual([target])
+      extrasByRoute.set(route, new Set(extras))
+    }
+    expect([...extrasByRoute.values()].reduce((sum, extras) => sum + extras.size, 0)).toBe(57)
+    const physicalTargets = (route: string): string[] =>
+      tracedTargets(route).filter((target) => !extrasByRoute.get(route)?.has(target))
+    const normalized = Object.keys(currentAppPathsManifest())
+      .sort()
+      .map((route) => [route, physicalTargets(route)] as const)
+    expect(normalized.reduce((sum, [, targets]) => sum + targets.length, 0)).toBe(5976)
+    expect(new Set(normalized.flatMap(([, targets]) => targets)).size).toBe(185)
+    // Frozen count stream from the complete pre-C13 56-route build, not a
+    // number calculated from current observed-minus-expected differences.
+    expect(
+      createHash('sha256')
+        .update(normalized.map(([route, targets]) => `${route}\0${targets.length}\n`).join(''))
+        .digest('hex'),
+    ).toBe('a89cfdaa746fd822c59908f78e15920a97edcf500b09e60490693b32a287ac7c')
     const ownManifest = (route: string): string =>
       realpathSync(
         resolve(
@@ -449,9 +627,10 @@ describe('authoritative Mobile API source surface', () => {
         .sort(),
     ).toEqual(draftRoutes)
     for (const route of draftRoutes) {
-      expect(physicalTargets(route).filter((target) => target === draftChunk), route).toEqual([
-        draftChunk,
-      ])
+      expect(
+        physicalTargets(route).filter((target) => target === draftChunk),
+        route,
+      ).toEqual([draftChunk])
     }
 
     // Identify the pure fact parser by stable semantics and exact reachability.
@@ -583,41 +762,60 @@ describe('authoritative Mobile API source surface', () => {
     ).toEqual([...bodyPhotoRoutes].sort(byName))
   })
 
-  test('limits the versioned workout capability chunk to its five review routes', () => {
-    const chunks = walkFiles(resolve(buildRoot, 'server/chunks')).filter(
-      (path) =>
-        path.endsWith('.js') &&
-        readFileSync(path, 'utf8').includes('get_mobile_workout_registration'),
-    )
-    expect(chunks).toHaveLength(1)
-    const workoutChunk = realpathSync(chunks[0])
-    const source = readFileSync(workoutChunk, 'utf8')
-    for (const operation of ['admit', 'materialize', 'get', 'edit', 'cancel', 'confirm']) {
-      expect(source).toContain(`${operation}_mobile_workout_registration`)
+  test('limits feedback writes to five reviews and preserves protected workout capability consumers', () => {
+    const chunks = semanticChunks(['get_mobile_workout_registration'])
+    expect(chunks).toHaveLength(2)
+    for (const chunk of chunks) {
+      const source = readFileSync(chunk, 'utf8')
+      for (const operation of ['admit', 'materialize', 'get', 'edit', 'cancel', 'confirm']) {
+        expect(source).toContain(`${operation}_mobile_workout_registration`)
+      }
     }
-    expect(source).toContain('MOBILE_WORKOUT_REGISTRATION_PROJECT_REF')
-    expect(source).toContain('ui-v1')
-
-    const routes = Object.entries(currentAppPathsManifest())
-      .filter(([, target]) => {
-        const tracePath = resolve(buildRoot, 'server', `${target}.nft.json`)
-        const trace: { files: string[] } = JSON.parse(readFileSync(tracePath, 'utf8'))
-        return trace.files.some(
-          (reference) => realpathSync(resolve(dirname(tracePath), reference)) === workoutChunk,
-        )
-      })
-      .map(([route]) => route)
-      .sort()
-    expect(routes).toEqual([
-      '/api/mobile/v1/me/route',
-      '/api/mobile/v1/pending/route',
-      '/api/mobile/v1/registrations/[id]/confirm/route',
-      '/api/mobile/v1/registrations/[id]/route',
-      '/api/mobile/v1/registrations/propose/route',
-    ])
+    const repositoryRoutes = [...reviewRoutes, ...historyFeedbackRoutes].sort()
+    expect([...new Set(chunks.flatMap(chunkConsumers))].sort()).toEqual(repositoryRoutes)
+    for (const route of Object.keys(currentAppPathsManifest())) {
+      expect(
+        tracedTargets(route).filter((path) => chunks.includes(path)),
+        route,
+      ).toHaveLength(repositoryRoutes.includes(route) ? 1 : 0)
+    }
+    const switchChunks = semanticChunks(['MOBILE_WORKOUT_REGISTRATION_PROJECT_REF'])
+    const writerChunks = semanticChunks(['commit_mobile_registration_feedback'])
+    expect(switchChunks).toHaveLength(1)
+    expect(readFileSync(switchChunks[0] ?? '', 'utf8')).toContain('ui-v1')
+    expect(writerChunks).toEqual(switchChunks)
+    expect(chunkConsumers(switchChunks[0] ?? '')).toEqual(reviewRoutes)
+    // Include entries as well as NFTs. The clarification entry already used
+    // this flag before C13; its protected question is not a feedback writer.
+    expect(runtimeMarkerRoutes('MOBILE_WORKOUT_REGISTRATION_PROJECT_REF')).toEqual(
+      [...reviewRoutes, '/api/mobile/v1/workouts/[id]/strength-clarification/route'].sort(),
+    )
+    expect(runtimeMarkerRoutes('commit_mobile_registration_feedback')).toEqual(reviewRoutes)
   })
 
-  test('traces the nine byte-exact approved catalogs only from the Flow route', () => {
+  test('keeps both History feedback reads free of catalog, cursor and feedback writer dependencies', () => {
+    for (const route of historyFeedbackRoutes) {
+      const target = currentAppPathsManifest()[route]
+      const source = [resolve(buildRoot, 'server', target), ...tracedTargets(route)]
+        .filter((path) => path.endsWith('.js'))
+        .map((path) => readFileSync(path, 'utf8'))
+        .join('\n')
+      expect(source, route).toContain('read_mobile_registration_feedback')
+      for (const marker of [
+        'commit_mobile_registration_feedback',
+        'read_flow_shared_phrase_cursor',
+        'commit_flow_shared_phrase_reply',
+        'curated-phrases-food.json',
+      ])
+        expect(source, `${route}: ${marker}`).not.toContain(marker)
+      expect(
+        tracedTargets(route).filter((path) => path.includes('/data/flow-curated-phrases/')),
+        route,
+      ).toEqual([])
+    }
+  })
+
+  test('traces the nine byte-exact approved catalogs only from Flow and five review routes', () => {
     const repositoryRoot = resolve(appRoot, '../..')
     const catalogPrefix = 'packages/agent/src/data/flow-curated-phrases/'
     const actual: Record<string, Record<string, string>> = {}
@@ -634,28 +832,29 @@ describe('authoritative Mobile API source surface', () => {
         actual[route][name] = createHash('sha256').update(readFileSync(physical)).digest('hex')
       }
     }
-    expect(actual).toEqual({
-      '/api/mobile/v1/flow/chat/route': {
-        'curated-phrases-engagement.json':
-          'f8df3c9b1be8f40ead0bff1f97888cfe3d2534c05d928fd50892487f8f61f54c',
-        'curated-phrases-food-phase-b.json':
-          '90ed182a90681cdec3d8e6d83f3340645ee645570e3fd9d4530386551cacf222',
-        'curated-phrases-food-phase-c.json':
-          '56905ce0fd4438534587b025adb423ece63edb515f07d417af45966709036d70',
-        'curated-phrases-food-phase-c2.json':
-          '246c9650e28788ef6b9181986a04a04894dea5a8da8ee52fd9ed25b1e982a304',
-        'curated-phrases-food-phase-d.json':
-          '1f1ffc4c83bbda18db2b4966fb7a2275f2321ef5c4f09b8dfe53afa31ab73577',
-        'curated-phrases-food-phase-e.json':
-          '1048d3e3fba17d5f667270ae5d80973c2f2031c27fd78b2dee2418ca6847af33',
-        'curated-phrases-food-phase-f.json':
-          '991d1a9e3af61a5ef0b11914b1abdeebb6042df242d67681fc0cc85df4554af0',
-        'curated-phrases-food-phase-g.json':
-          'ce31c1e42ffdb715ed38b0961efb341ac730a2c4c809e13027576cb1fa172923',
-        'curated-phrases-food.json':
-          'd411b0afce13b8f3bc5fba7cb970e7edf49780cc79eca7b312071fc24b7612ca',
-      },
-    })
+    const approvedCatalogs = {
+      'curated-phrases-engagement.json':
+        'f8df3c9b1be8f40ead0bff1f97888cfe3d2534c05d928fd50892487f8f61f54c',
+      'curated-phrases-food-phase-b.json':
+        '90ed182a90681cdec3d8e6d83f3340645ee645570e3fd9d4530386551cacf222',
+      'curated-phrases-food-phase-c.json':
+        '56905ce0fd4438534587b025adb423ece63edb515f07d417af45966709036d70',
+      'curated-phrases-food-phase-c2.json':
+        '246c9650e28788ef6b9181986a04a04894dea5a8da8ee52fd9ed25b1e982a304',
+      'curated-phrases-food-phase-d.json':
+        '1f1ffc4c83bbda18db2b4966fb7a2275f2321ef5c4f09b8dfe53afa31ab73577',
+      'curated-phrases-food-phase-e.json':
+        '1048d3e3fba17d5f667270ae5d80973c2f2031c27fd78b2dee2418ca6847af33',
+      'curated-phrases-food-phase-f.json':
+        '991d1a9e3af61a5ef0b11914b1abdeebb6042df242d67681fc0cc85df4554af0',
+      'curated-phrases-food-phase-g.json':
+        'ce31c1e42ffdb715ed38b0961efb341ac730a2c4c809e13027576cb1fa172923',
+      'curated-phrases-food.json':
+        'd411b0afce13b8f3bc5fba7cb970e7edf49780cc79eca7b312071fc24b7612ca',
+    }
+    expect(actual).toEqual(
+      Object.fromEntries(catalogRoutes.map((route) => [route, approvedCatalogs])),
+    )
   })
 
   test('rejects an NFT target that is absent', () => {

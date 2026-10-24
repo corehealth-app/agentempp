@@ -21,6 +21,7 @@ import { MobileApiError } from './http'
 import { DEFAULT_MEAL_CONFIDENCE_THRESHOLD } from './meal-draft-service'
 import { applyMobilePreparedDishEstimate } from './prepared-dish-estimate'
 import { sanitizePendingProposal } from './read-model'
+import { ensureRegistrationFeedback } from './registration-feedback-service'
 import { createSupabaseMediaDependencies } from './supabase-media'
 
 interface ProposalTiming {
@@ -728,7 +729,14 @@ export async function confirmRegistration(
 ) {
   const row = await loadOwnedRegistration(supabase, auth.userId, registrationId)
   requireLegacyRegistration(row)
-  if (row.status === 'confirmed') return { ...pendingDto(row), already_confirmed: true }
+  if (row.status === 'confirmed') {
+    const feedback = await ensureRegistrationFeedback(supabase, auth, row)
+    return {
+      ...pendingDto(row),
+      already_confirmed: true,
+      ...(feedback === null ? {} : { feedback }),
+    }
+  }
   if (row.status !== 'pending') {
     throw new MobileApiError(409, 'registration_not_pending', 'Registration is not pending')
   }
@@ -873,7 +881,13 @@ export async function confirmRegistration(
 
   await transitionToConfirmed(supabase, auth.userId, registrationId)
   const confirmed = await loadOwnedRegistration(supabase, auth.userId, registrationId)
-  return { ...pendingDto(confirmed), already_confirmed: false, deduped }
+  const feedback = await ensureRegistrationFeedback(supabase, auth, confirmed)
+  return {
+    ...pendingDto(confirmed),
+    already_confirmed: false,
+    deduped,
+    ...(feedback === null ? {} : { feedback }),
+  }
 }
 
 export async function cancelRegistration(

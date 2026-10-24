@@ -1,3 +1,4 @@
+import type { RegistrationFeedback } from '@mpp/agent/registration-feedback'
 import type { Json, ServiceClient } from '@mpp/db'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MobileAuthContext } from './auth'
@@ -19,6 +20,15 @@ const mocks = vi.hoisted(() => ({
   buildCandidate: vi.fn(),
   prepareConfirmation: vi.fn(),
   observeCatalogue: vi.fn(),
+  ensureFeedback: vi.fn(),
+  readFeedback: vi.fn(),
+}))
+
+// The old authority suite treats optional enrichment as unavailable. Its RPC
+// script remains strict; assertions inside it cannot be swallowed by C13.
+vi.mock('./registration-feedback-service', () => ({
+  ensureRegistrationFeedback: mocks.ensureFeedback,
+  readRegistrationFeedback: mocks.readFeedback,
 }))
 
 vi.mock('./workout-registration-switch', () => ({
@@ -516,8 +526,90 @@ beforeEach(() => {
   mocks.buildCandidate.mockResolvedValue(RAW_PROPOSAL)
   mocks.prepareConfirmation.mockResolvedValue(LEGACY_13)
   mocks.observeCatalogue.mockResolvedValue(OBSERVED_CATALOGUE)
+  mocks.ensureFeedback.mockResolvedValue(null)
+  mocks.readFeedback.mockResolvedValue(null)
 })
 afterEach(() => vi.useRealTimers())
+
+describe('optional C13 feedback after workout authority', () => {
+  const feedback: RegistrationFeedback = {
+    schema: 'registration.feedback.v1',
+    registration_id: ID,
+    kind: 'workout',
+    locale: 'en',
+    meal_totals: null,
+    day: null,
+    lines: [{ key: 'day_unavailable', text: 'The data for this day is unavailable.' }],
+    food_comment: null,
+    incentive: null,
+  }
+  it.each([
+    false,
+    true,
+  ])('attaches the stored feedback after confirmed/reused success: %s', async (replay) => {
+    const h = harness([
+      {
+        name: 'confirm_mobile_workout_registration',
+        args: nullConfirmArgs(),
+        data: confirmedWithStrength(provenCapture(true, replay).strength, replay),
+      },
+    ])
+    mocks.ensureFeedback.mockResolvedValue(feedback)
+    const result = await confirmVersionedWorkoutRegistration(h.supabase, AUTH, ID, 0)
+    expect(result).toStrictEqual({
+      ...dto(0, 'confirmed'),
+      already_confirmed: replay,
+      deduped: false,
+      confirmed_workout_id: CONFIRMED_WORKOUT,
+      feedback,
+    })
+    expect(mocks.ensureFeedback).toHaveBeenCalledWith(h.supabase, AUTH, {
+      ...registration(0, 'confirmed'),
+      confirmedWorkoutId: CONFIRMED_WORKOUT,
+    })
+    expect(mocks.readFeedback).not.toHaveBeenCalled()
+    expect(mocks.prepareConfirmation).not.toHaveBeenCalled()
+    h.done()
+  })
+  it('GET only reads the existing receipt after owned repository authority', async () => {
+    const h = harness([
+      {
+        name: 'get_mobile_workout_registration',
+        args: GET_ARGS,
+        data: { status: 'available', registration: registration(2, 'confirmed', EDIT_PROPOSAL) },
+      },
+    ])
+    mocks.readFeedback.mockResolvedValue(feedback)
+    expect(await loadVersionedWorkoutRegistration(h.supabase, OWNER, ID)).toStrictEqual({
+      ...dto(2, 'confirmed', EDIT_PROPOSAL),
+      feedback,
+    })
+    expect(mocks.readFeedback).toHaveBeenCalledWith(
+      h.supabase,
+      OWNER,
+      registration(2, 'confirmed', EDIT_PROPOSAL),
+    )
+    expect(mocks.ensureFeedback).not.toHaveBeenCalled()
+    h.done()
+  })
+  it('does not invoke C13 when workout authority is refused', async () => {
+    const h = harness([
+      {
+        name: 'confirm_mobile_workout_registration',
+        args: nullConfirmArgs(),
+        data: { status: 'forbidden', reason: 'stale_epoch' },
+      },
+    ])
+    await apiFailure(
+      () => confirmVersionedWorkoutRegistration(h.supabase, AUTH, ID, 0),
+      409,
+      'registration_authority_stale',
+    )
+    expect(mocks.ensureFeedback).not.toHaveBeenCalled()
+    expect(mocks.readFeedback).not.toHaveBeenCalled()
+    h.done()
+  })
+})
 
 describe('explicit server composition without changing the default switch', () => {
   it('enables the real owned service independently of the default OFF switch', async () => {

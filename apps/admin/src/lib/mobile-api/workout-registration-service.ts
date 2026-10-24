@@ -9,6 +9,10 @@ import type { RegistrationProposalInput } from './contracts'
 import { MobileApiError } from './http'
 import { loadPendingRows, meDto, pendingRegistrationDto } from './read-model'
 import {
+  ensureRegistrationFeedback,
+  readRegistrationFeedback,
+} from './registration-feedback-service'
+import {
   buildWorkoutRegistrationCandidate,
   prepareWorkoutRegistrationConfirmation,
 } from './registration-service'
@@ -279,11 +283,16 @@ async function confirmVersionedWorkoutRegistrationWithEnabled(
   const rawType = result.registration.proposal.workoutType
   const confirmedWorkoutID =
     typeof rawType === 'string' ? confirmedWorkoutLogIDFromCapture(strength, owner, rawType) : null
+  const feedback = await ensureRegistrationFeedback(supabase, auth, {
+    ...result.registration,
+    ...(confirmedWorkoutID === null ? {} : { confirmedWorkoutId: confirmedWorkoutID }),
+  })
   return {
     ...toWorkoutRegistrationDto(result.registration),
     already_confirmed: result.status === 'reused',
     deduped,
     ...(confirmedWorkoutID === null ? {} : { confirmed_workout_id: confirmedWorkoutID }),
+    ...(feedback === null ? {} : { feedback }),
   }
 }
 
@@ -309,7 +318,14 @@ async function loadVersionedWorkoutRegistrationWithEnabled(
   requireEnabled(enabled)
   const result = await repository(supabase).get(userID, id)
   if (result.status !== 'available') reject(result)
-  return toWorkoutRegistrationDto(result.registration)
+  const feedback =
+    result.registration.status === 'confirmed'
+      ? await readRegistrationFeedback(supabase, userID, result.registration)
+      : null
+  return {
+    ...toWorkoutRegistrationDto(result.registration),
+    ...(feedback === null ? {} : { feedback }),
+  }
 }
 
 async function loadWorkoutAwarePendingRegistrationsWithEnabled(

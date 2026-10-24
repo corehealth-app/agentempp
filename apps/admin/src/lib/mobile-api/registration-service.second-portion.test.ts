@@ -463,6 +463,9 @@ function stagingDay() {
   const workouts: Row[] = []
   const events: ProductEvent[] = []
   const rpcCalls: Array<{ fn: string; params: Record<string, unknown> }> = []
+  // This writer regression does not generate optional C13. Keep its read-only
+  // receipt probe separate so the exact business-writer assertions stay strict.
+  const feedbackReads: Record<string, unknown>[] = []
   const failures: Failures = { confirmTransitions: 0, writtenLookup: false }
   let sequence = 0
   let pendingSequence = 0
@@ -634,6 +637,10 @@ function stagingDay() {
       return emptyTable()
     },
     rpc(fn: string, params: Record<string, unknown>) {
+      if (fn === 'read_mobile_registration_feedback') {
+        feedbackReads.push(structuredClone(params))
+        return Promise.resolve({ data: { action: 'event_conflict' }, error: null })
+      }
       rpcCalls.push({ fn, params })
       if (fn === 'register_meal_atomic') {
         return Promise.resolve(registerMealAtomic(params as AtomicParams))
@@ -658,6 +665,7 @@ function stagingDay() {
     workouts,
     events,
     rpcCalls,
+    feedbackReads,
     failures,
     pending: (id: string) => {
       const row = pendings.find((candidate) => candidate.id === id)
@@ -863,6 +871,11 @@ describe('Defect B (iPhone 2026-10-04) — confirmRegistration with the real reg
     const replay = await confirmAt(db, REGISTRATION_2, '2026-10-04T14:59:40.000Z')
     expect(replay).toMatchObject({ id: REGISTRATION_2, already_confirmed: true })
     expect(db.rpcCalls).toHaveLength(writes)
+    expect(db.feedbackReads).toStrictEqual([
+      { p_user_id: USER_ID, p_registration_id: REGISTRATION_1 },
+      { p_user_id: USER_ID, p_registration_id: REGISTRATION_2 },
+      { p_user_id: USER_ID, p_registration_id: REGISTRATION_2 },
+    ])
     expect(db.lunchRows()).toHaveLength(2)
     expect(db.snapshot.calories_consumed).toBe(780)
   })

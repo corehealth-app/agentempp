@@ -806,6 +806,9 @@ struct WorkoutRegistrationContent: View {
                 Text(copy("registration.confirmed.workout-title")).font(BodyFlowTypography.title).fontWeight(.semibold)
                 Text(copy(strengthQuestion == nil ? "registration.confirmed.read-only" : "registration.confirmed.workout-note"))
                     .foregroundStyle(BodyFlowColor.secondaryText)
+                if let feedback = model.confirmedRegistration?.feedback {
+                    RegistrationFeedbackView(feedback: feedback)
+                }
             }
             .accessibilityIdentifier("registration.proposal.confirmed")
             if let strengthQuestion { WorkoutStrengthQuestionHost(configuration: strengthQuestion) }
@@ -1011,6 +1014,9 @@ private struct MealRegistrationContent: View {
                     .fontWeight(.semibold)
                 Text(copy("registration.confirmed.read-only"))
                     .foregroundStyle(BodyFlowColor.secondaryText)
+                if let feedback = model.confirmedRegistration?.feedback {
+                    RegistrationFeedbackView(feedback: feedback)
+                }
             }
             .accessibilityIdentifier("registration.proposal.confirmed")
         } else {

@@ -3,7 +3,7 @@ import type { Json, ServiceClient } from '@mpp/db'
 import { z } from 'zod'
 import type { MobileAuthContext } from './auth'
 import type { PrivateConfirmedMealState } from './confirmed-meal-read'
-import { readRegistrationFeedback } from './registration-feedback-service'
+import { readRegistrationFeedback } from './registration-feedback-receipt'
 import {
   createWorkoutRegistrationRepository,
   type WorkoutRegistrationPort,

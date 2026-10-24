@@ -8,19 +8,18 @@ import type { Json, ServiceClient } from '@mpp/db'
 import { z } from 'zod'
 import type { MobileAuthContext } from './auth'
 import {
-  createSupabaseRegistrationFeedbackStore,
+  type ConfirmedRegistration,
+  identityFor,
   parseRegistrationFeedback,
   type RegistrationFeedbackIdentity,
+} from './registration-feedback-receipt'
+import {
+  createSupabaseRegistrationFeedbackStore,
   type RegistrationFeedbackStore,
 } from './registration-feedback-store'
 
-interface ConfirmedRegistration {
-  id: string
-  user_id?: string
-  status: string
-  proposal: Json
-  confirmedWorkoutId?: string
-}
+export { readRegistrationFeedback } from './registration-feedback-receipt'
+
 export type RegistrationFeedbackDaySnapshot = NonNullable<RegistrationFeedbackInput['day']> & {
   consumed: NonNullable<RegistrationFeedbackInput['day']>['consumed'] & { source: string }
   meals: readonly { id: string }[]
@@ -58,18 +57,6 @@ const timing = z.object({
   source_provider_message_id: z.string().min(1),
   workoutType: z.string().min(1).optional(),
 })
-
-function identityFor(
-  userId: string,
-  row: ConfirmedRegistration,
-): RegistrationFeedbackIdentity | null {
-  if (row.status !== 'confirmed' || (row.user_id !== undefined && row.user_id !== userId))
-    return null
-  const proposal = row.proposal
-  if (proposal === null || typeof proposal !== 'object' || Array.isArray(proposal)) return null
-  const kind = proposal.kind
-  return kind === 'meal' || kind === 'workout' ? { userId, registrationId: row.id, kind } : null
-}
 
 async function loadLogIds(
   db: ServiceClient,
@@ -137,23 +124,6 @@ async function provenDay(
       },
       targets: { calories_kcal: state.targets.calories_kcal, protein_g: state.targets.protein_g },
     }
-  } catch {
-    return null
-  }
-}
-
-/** Owned read path only. Reopening never selects a phrase, reads a day or writes a receipt. */
-export async function readRegistrationFeedback(
-  db: ServiceClient,
-  userId: string,
-  row: ConfirmedRegistration,
-  store: RegistrationFeedbackStore = createSupabaseRegistrationFeedbackStore(db),
-): Promise<RegistrationFeedback | null> {
-  try {
-    const identity = identityFor(userId, row)
-    if (!identity) return null
-    const saved = await store.readReceipt(identity)
-    return saved.action === 'available' ? parseRegistrationFeedback(saved.feedback, identity) : null
   } catch {
     return null
   }

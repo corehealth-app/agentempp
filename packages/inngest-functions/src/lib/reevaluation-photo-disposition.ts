@@ -150,7 +150,7 @@ function matchIdentity(
 export async function drainReevaluationPhotoDisposition(
   deps: ReevaluationPhotoDispositionDependencies,
   input: ReevaluationPhotoDispositionScope,
-  options: { timeoutMs?: number; maxPages?: number } = {},
+  options: { timeoutMs?: number; maxPages?: number; signal?: AbortSignal } = {},
 ): Promise<ReevaluationPhotoDispositionOutcome> {
   let newlyDeleted = 0
   const scope = scopeSchema.safeParse(input)
@@ -176,7 +176,7 @@ export async function drainReevaluationPhotoDisposition(
     return stopped
   }
   function guard() {
-    if (stopped || performance.now() >= deadline) {
+    if (stopped || options.signal?.aborted || performance.now() >= deadline) {
       stop('timeout')
       throw new Error('disposition_stopped')
     }
@@ -285,9 +285,16 @@ export async function drainReevaluationPhotoDisposition(
   const timeout = new Promise<ReevaluationPhotoDispositionOutcome>((resolve) => {
     timer = setTimeout(() => resolve(stop('timeout')), configuration.timeoutMs)
   })
+  let abort: (() => void) | undefined
+  const parent = new Promise<ReevaluationPhotoDispositionOutcome>((resolve) => {
+    abort = () => resolve(stop('timeout'))
+    if (options.signal?.aborted) abort()
+    else options.signal?.addEventListener('abort', abort, { once: true })
+  })
   try {
-    return await Promise.race([work(), timeout])
+    return await Promise.race([work(), timeout, parent])
   } finally {
     if (timer !== undefined) clearTimeout(timer)
+    if (abort !== undefined) options.signal?.removeEventListener('abort', abort)
   }
 }

@@ -53,9 +53,9 @@ def run_races(db,log):
                 sql="""DO $$ BEGIN
                   INSERT INTO public.legal_documents(id,document_key,version,locale,body,required_from)
                     VALUES(m3b_cycle_test.uid(502),'body_photo_reevaluation_consent','processing-race-1','pt-BR',
-                      'SYNTHETIC LOCAL ONE SECOND PROCESSING RACE',clock_timestamp()-interval '1second');
+                      'SYNTHETIC LOCAL FIVE SECOND PROCESSING RACE',clock_timestamp()-interval '1second');
                   INSERT INTO private.mobile_reevaluation_photo_policies(document_id,document_key,version,locale,body_hash,idle_timeout_seconds,enabled)
-                    SELECT id,document_key,version,locale,body_hash,1,true FROM public.legal_documents WHERE id=m3b_cycle_test.uid(502);
+                    SELECT id,document_key,version,locale,body_hash,5,true FROM public.legal_documents WHERE id=m3b_cycle_test.uid(502);
                 END $$;
                 SELECT m3b_cycle_test.seed(845,'2026-10-01T23:00:00Z');
                 SELECT public.start_mobile_reevaluation_cycle(m3b_cycle_test.uid(845),gen_random_uuid());
@@ -88,13 +88,17 @@ def run_races(db,log):
             waiter=spawn(header+'SELECT pg_backend_pid();\n'+waiting);wp=int(until(waiter,lambda line:line.isdigit())[-1])
             deadline=time.monotonic()+5
             while time.monotonic()<deadline:
-                state=json.loads(db.query("SELECT json_build_object('waiting',wait_event_type='Lock','blockers',pg_blocking_pids(pid)) FROM pg_stat_activity WHERE pid="+str(wp)))
+                observed=db.query("SELECT json_build_object('waiting',wait_event_type='Lock','blockers',pg_blocking_pids(pid)) FROM pg_stat_activity WHERE pid="+str(wp))
+                if not observed:
+                    rc,out,err=finish(waiter)
+                    raise RuntimeError('Processing waiter absent before blocker; case='+mode+' exit='+str(rc)+' diagnostic='+err[-1500:])
+                state=json.loads(observed)
                 if state['waiting'] and hp in state['blockers']:break
                 if waiter.poll() is not None:raise RuntimeError('Processing waiter terminated before observed blocker')
                 time.sleep(.03)
             else:raise TimeoutError('Processing blocker not observed')
             if mode=='media_expiry':
-                expiry=db.query(f"SELECT retention_until FROM public.media_assets WHERE id='{aid}'");deadline=time.monotonic()+2
+                expiry=db.query(f"SELECT retention_until FROM public.media_assets WHERE id='{aid}'");deadline=time.monotonic()+6
                 while db.query(f"SELECT clock_timestamp()>='{expiry}'::timestamptz")!='t':
                     if time.monotonic()>deadline:raise TimeoutError('Synthetic processing expiry missing')
                     time.sleep(.05)

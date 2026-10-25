@@ -1,6 +1,8 @@
 import type { ServiceClient } from '@mpp/db'
 import { inngest } from '../client.js'
 import { createWorkerSupabase } from '../lib/env.js'
+import { prepareReevaluationPhotoAccountPurge } from '../lib/reevaluation-photo-account-purge.js'
+import { createReevaluationPhotoAccountPurgeDependencies } from '../lib/supabase-reevaluation-photo-account-purge.js'
 
 const PURGE_GRACE_MS = 60 * 60 * 1000
 const PURGE_BATCH_SIZE = 100
@@ -14,6 +16,7 @@ interface UserMediaForPurge {
 export interface UserDeletionPurgeDependencies {
   repository: {
     listUsersReadyForPurge(cutoff: string, limit: number): Promise<Array<{ id: string }>>
+    prepareRecurringMediaPurge(userId: string, cutoff: string): Promise<boolean>
     listUserMedia(userId: string): Promise<UserMediaForPurge[]>
     deleteUserMediaCatalog(userId: string): Promise<void>
     deleteUser(userId: string, cutoff: string): Promise<boolean>
@@ -33,6 +36,7 @@ export async function purgeDeletedUsers(
   let mediaRemoved = 0
 
   for (const user of users) {
+    if (!(await deps.repository.prepareRecurringMediaPurge(user.id, cutoff))) continue
     const media = await deps.repository.listUserMedia(user.id)
     for (const asset of media) {
       await deps.storage.remove(asset.bucketId, asset.objectPath)
@@ -46,6 +50,7 @@ export async function purgeDeletedUsers(
 }
 
 function createPurgeDependencies(supabase: ServiceClient): UserDeletionPurgeDependencies {
+  const recurring = createReevaluationPhotoAccountPurgeDependencies(supabase)
   return {
     repository: {
       async listUsersReadyForPurge(cutoff, limit) {
@@ -57,6 +62,9 @@ function createPurgeDependencies(supabase: ServiceClient): UserDeletionPurgeDepe
           .limit(limit)
         if (error) throw new Error(error.message || 'deleted user lookup failed')
         return data ?? []
+      },
+      prepareRecurringMediaPurge(userId, cutoff) {
+        return prepareReevaluationPhotoAccountPurge(recurring, userId, cutoff)
       },
       async listUserMedia(userId) {
         const { data, error } = await supabase

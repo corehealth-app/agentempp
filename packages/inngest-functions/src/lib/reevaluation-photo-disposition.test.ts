@@ -48,6 +48,23 @@ afterEach(() => {
   vi.useRealTimers()
 })
 describe('recurring disposition uses SQL-produced authority', () => {
+  it('does not ACK a late remove after the parent account deadline aborts', async () => {
+    const { deps } = setup()
+    const parent = new AbortController()
+    let finish: (() => void) | undefined
+    deps.remove.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    const result = drainReevaluationPhotoDisposition(deps, fixture.scope, { signal: parent.signal })
+    await vi.waitFor(() => expect(deps.remove).toHaveBeenCalledOnce())
+    parent.abort()
+    finish?.()
+    expect(await result).toEqual({ state: 'incomplete', reason: 'timeout', newlyDeleted: 0 })
+    expect(deps.commit).not.toHaveBeenCalled()
+  })
   it('removes exact frozen paths before committing the matching complete page', async () => {
     const { deps, data } = setup()
     expect(await drainReevaluationPhotoDisposition(deps, fixture.scope)).toEqual({

@@ -1,0 +1,84 @@
+{
+  "ack": {
+    "state": "settled",
+    "assets": [
+      {
+        "asset_id": "674b3814-5ad6-4d0a-b595-6b4161b8be50",
+        "newly_deleted": true,
+        "catalogue_state": "deleted"
+      },
+      {
+        "asset_id": "defcc0c4-7cf6-418d-ac60-1fd16ebf8892",
+        "newly_deleted": true,
+        "catalogue_state": "deleted"
+      }
+    ],
+    "cursor": "defcc0c4-7cf6-418d-ac60-1fd16ebf8892",
+    "user_id": "b3b01000-0000-4000-8000-000000000940",
+    "version": 1,
+    "cycle_id": "72be85b5-9e5b-4cff-88f1-a32f73ac32ac",
+    "sweep_no": "1",
+    "acceptance_id": "54a7d553-09b5-478f-80be-4b7346652f67",
+    "disposition_id": "7c7310f7-9353-4dd9-8a7c-8f47f6ddc471",
+    "sweep_complete": true,
+    "previous_cursor": null,
+    "signup_generation": "76188d43-863a-4b37-b763-4973c24d33b9",
+    "capability_revision": "1"
+  },
+  "page": {
+    "items": [
+      {
+        "asset_id": "674b3814-5ad6-4d0a-b595-6b4161b8be50",
+        "bucket_id": "body-checkin-photos",
+        "object_path": "b3b01000-0000-4000-8000-000000000940/674b3814-5ad6-4d0a-b595-6b4161b8be50.jpg"
+      },
+      {
+        "asset_id": "defcc0c4-7cf6-418d-ac60-1fd16ebf8892",
+        "bucket_id": "body-checkin-photos",
+        "object_path": "b3b01000-0000-4000-8000-000000000940/defcc0c4-7cf6-418d-ac60-1fd16ebf8892.jpg"
+      }
+    ],
+    "cursor": null,
+    "user_id": "b3b01000-0000-4000-8000-000000000940",
+    "version": 1,
+    "cycle_id": "72be85b5-9e5b-4cff-88f1-a32f73ac32ac",
+    "has_more": false,
+    "sweep_no": "1",
+    "acceptance_id": "54a7d553-09b5-478f-80be-4b7346652f67",
+    "disposition_id": "7c7310f7-9353-4dd9-8a7c-8f47f6ddc471",
+    "signup_generation": "76188d43-863a-4b37-b763-4973c24d33b9",
+    "capability_revision": "1"
+  },
+  "scope": {
+    "userId": "b3b01000-0000-4000-8000-000000000940",
+    "cycleId": "72be85b5-9e5b-4cff-88f1-a32f73ac32ac",
+    "acceptanceId": "54a7d553-09b5-478f-80be-4b7346652f67"
+  },
+  "prepare": {
+    "kind": "ready",
+    "user_id": "b3b01000-0000-4000-8000-000000000940",
+    "version": 1,
+    "cycle_id": "72be85b5-9e5b-4cff-88f1-a32f73ac32ac",
+    "disposition": {
+      "id": "7c7310f7-9353-4dd9-8a7c-8f47f6ddc471",
+      "cursor": null,
+      "reason": "discarded",
+      "user_id": "b3b01000-0000-4000-8000-000000000940",
+      "cycle_id": "72be85b5-9e5b-4cff-88f1-a32f73ac32ac",
+      "sweep_no": "1",
+      "sealed_at": "2026-10-25T12:10:13.935624Z",
+      "last_ack_at": null,
+      "sweep_state": "pending",
+      "acceptance_id": "54a7d553-09b5-478f-80be-4b7346652f67",
+      "next_sweep_at": null,
+      "manifest_count": "2",
+      "request_revision": "2",
+      "sweep_started_at": "2026-10-25T12:10:13.937012Z",
+      "signup_generation": "76188d43-863a-4b37-b763-4973c24d33b9",
+      "capability_revision": "1",
+      "sweep_capability_revision": "1"
+    },
+    "acceptance_id": "54a7d553-09b5-478f-80be-4b7346652f67"
+  },
+  "provenance": "Owned local PostgreSQL actual RPC wires; synthetic assets and Storage attestation only; no real files deleted"
+}

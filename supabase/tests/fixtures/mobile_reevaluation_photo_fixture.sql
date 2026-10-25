@@ -63,6 +63,9 @@ BEGIN
   IF p_owners IS NULL OR cardinality(p_owners)=0 OR EXISTS(
     SELECT 1 FROM unnest(p_owners) x(id) WHERE id IS NULL OR id::text NOT LIKE 'b3b01000-0000-4000-8000-%') THEN
     RAISE EXCEPTION 'invalid_owned_photo_fixture_cleanup' USING ERRCODE='22023'; END IF;
+  IF to_regclass('private.mobile_reevaluation_photo_dispositions') IS NOT NULL THEN
+    DELETE FROM private.mobile_reevaluation_photo_disposition_assets WHERE user_id=ANY(p_owners);
+    DELETE FROM private.mobile_reevaluation_photo_dispositions WHERE user_id=ANY(p_owners); END IF;
   IF to_regclass('private.mobile_reevaluation_photo_processing_attempts') IS NOT NULL THEN
     DELETE FROM private.mobile_reevaluation_photo_processing_attempts WHERE user_id=ANY(p_owners); END IF;
   IF to_regclass('private.mobile_reevaluation_photo_sources') IS NOT NULL THEN

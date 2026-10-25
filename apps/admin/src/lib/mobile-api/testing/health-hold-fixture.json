@@ -1,0 +1,99 @@
+{
+  "source": "actual owned local PostgreSQL authority; synthetic person only",
+  "absent": {
+    "items": [],
+    "user_id": "b3b01000-0000-4000-8000-000000000756",
+    "version": 1,
+    "hold_active": false,
+    "hide_protein": false,
+    "safety_revision": "0",
+    "declared_no_plan": false,
+    "last_declared_at": null
+  },
+  "initial": {
+    "state": {
+      "items": [
+        {
+          "code": "professional_diet",
+          "declared_at": "2026-10-25T13:57:56.800638Z"
+        }
+      ],
+      "user_id": "b3b01000-0000-4000-8000-000000000756",
+      "version": 1,
+      "hold_active": true,
+      "hide_protein": true,
+      "safety_revision": "1",
+      "declared_no_plan": false,
+      "last_declared_at": "2026-10-25T13:57:56.800638Z"
+    },
+    "receipt": {
+      "id": "1dd5e82e-0a1c-4fd5-a966-eb76fa370e1c",
+      "items": ["professional_diet"],
+      "declared_at": "2026-10-25T13:57:56.800638Z",
+      "operation_key": "b3b01000-0000-4000-8000-000000000996",
+      "safety_revision": "1"
+    },
+    "user_id": "b3b01000-0000-4000-8000-000000000756",
+    "version": 1
+  },
+  "later": {
+    "state": {
+      "items": [
+        {
+          "code": "professional_diet",
+          "declared_at": "2026-10-25T13:57:56.800638Z"
+        },
+        {
+          "code": "pregnant_or_breastfeeding",
+          "declared_at": "2026-10-25T13:57:56.848647Z"
+        }
+      ],
+      "user_id": "b3b01000-0000-4000-8000-000000000756",
+      "version": 1,
+      "hold_active": true,
+      "hide_protein": true,
+      "safety_revision": "2",
+      "declared_no_plan": true,
+      "last_declared_at": "2026-10-25T13:57:56.848647Z"
+    },
+    "receipt": {
+      "id": "dc2f7dac-fc93-46d8-a359-242e80601683",
+      "items": ["pregnant_or_breastfeeding"],
+      "declared_at": "2026-10-25T13:57:56.848647Z",
+      "operation_key": "b3b01000-0000-4000-8000-000000000997",
+      "safety_revision": "2"
+    },
+    "user_id": "b3b01000-0000-4000-8000-000000000756",
+    "version": 1
+  },
+  "replay": {
+    "state": {
+      "items": [
+        {
+          "code": "professional_diet",
+          "declared_at": "2026-10-25T13:57:56.800638Z"
+        },
+        {
+          "code": "pregnant_or_breastfeeding",
+          "declared_at": "2026-10-25T13:57:56.848647Z"
+        }
+      ],
+      "user_id": "b3b01000-0000-4000-8000-000000000756",
+      "version": 1,
+      "hold_active": true,
+      "hide_protein": true,
+      "safety_revision": "2",
+      "declared_no_plan": true,
+      "last_declared_at": "2026-10-25T13:57:56.848647Z"
+    },
+    "receipt": {
+      "id": "1dd5e82e-0a1c-4fd5-a966-eb76fa370e1c",
+      "items": ["professional_diet"],
+      "declared_at": "2026-10-25T13:57:56.800638Z",
+      "operation_key": "b3b01000-0000-4000-8000-000000000996",
+      "safety_revision": "1"
+    },
+    "user_id": "b3b01000-0000-4000-8000-000000000756",
+    "version": 1
+  }
+}

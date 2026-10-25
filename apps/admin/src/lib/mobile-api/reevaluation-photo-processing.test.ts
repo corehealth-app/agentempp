@@ -85,6 +85,74 @@ describe('dedicated recurring photo processor', () => {
     expect(f.analyze).not.toHaveBeenCalled()
     expect(f.fail).not.toHaveBeenCalled()
   })
+  it('rejects authorization delivered at the scheduled consent boundary before the original lease', async () => {
+    const f = setup()
+    const auth = {
+      ...processingWire('authorized'),
+      attempt: {
+        ...processingWire('authorized').attempt,
+        provider_authorized_until: new Date(Date.parse(processingWire().attempt.claimed_at) + 20000)
+          .toISOString()
+          .replace('Z', '000Z'),
+      },
+    }
+    f.authorize.mockResolvedValue(auth)
+    f.now.mockReturnValue(new Date(auth.attempt.provider_authorized_until))
+    expect(await processReevaluationPhoto(f, scope)).toEqual({ status: 'skipped' })
+    expect(f.analyze).not.toHaveBeenCalled()
+    expect(f.complete).not.toHaveBeenCalled()
+    expect(f.fail).not.toHaveBeenCalled()
+  })
+  it('bounds provider timeout by the scheduled consent cutoff', async () => {
+    const f = setup()
+    const deadline = new Date(Date.parse(processingWire().attempt.claimed_at) + 20000)
+      .toISOString()
+      .replace('Z', '000Z')
+    const auth = {
+      ...processingWire('authorized'),
+      attempt: { ...processingWire('authorized').attempt, provider_authorized_until: deadline },
+    }
+    const done = {
+      ...processingWire('succeeded'),
+      attempt: { ...processingWire('succeeded').attempt, provider_authorized_until: deadline },
+    }
+    f.authorize.mockResolvedValue(auth)
+    f.complete.mockResolvedValue(done)
+    expect(await processReevaluationPhoto(f, scope)).toEqual({ status: 'processed' })
+    expect(f.analyze).toHaveBeenCalledWith(
+      jpegBytes(),
+      'image/jpeg',
+      expect.objectContaining({ timeoutMs: 18000, signal: expect.any(AbortSignal) }),
+    )
+  })
+  it.each([
+    'missing',
+    'before_start',
+    'after_lease',
+  ])('rejects invalid authorization deadline: %s', async (mode) => {
+    const f = setup()
+    const auth = processingWire('authorized')
+    auth.attempt.provider_authorized_until =
+      mode === 'missing'
+        ? null
+        : mode === 'before_start'
+          ? auth.attempt.claimed_at
+          : auth.asset.retention_until
+    f.authorize.mockResolvedValue(auth)
+    await expect(processReevaluationPhoto(f, scope)).rejects.toMatchObject({ status: 503 })
+    expect(f.analyze).not.toHaveBeenCalled()
+  })
+  it('rejects a receipt that extends the authorized provider deadline', async () => {
+    const f = setup()
+    const auth = processingWire('authorized')
+    auth.attempt.provider_authorized_until = new Date(Date.parse(auth.attempt.claimed_at) + 20000)
+      .toISOString()
+      .replace('Z', '000Z')
+    f.authorize.mockResolvedValue(auth)
+    await expect(processReevaluationPhoto(f, scope)).rejects.toMatchObject({ status: 503 })
+    expect(f.analyze).toHaveBeenCalledOnce()
+    expect(f.fail).not.toHaveBeenCalled()
+  })
   it('discards delayed provider result when SQL source changed', async () => {
     const f = setup()
     let done!: (value: unknown) => void

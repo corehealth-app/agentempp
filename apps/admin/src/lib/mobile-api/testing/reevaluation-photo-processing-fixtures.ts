@@ -48,6 +48,7 @@ export function processingWire(status = 'claimed') {
       claimed_at: at(0),
       lease_until: at(300),
       provider_started_at: status === 'claimed' ? null : at(1),
+      provider_authorized_until: status === 'claimed' ? null : at(300),
       status,
       finished_at: status === 'succeeded' || status === 'failed' ? at(2) : null,
       result:

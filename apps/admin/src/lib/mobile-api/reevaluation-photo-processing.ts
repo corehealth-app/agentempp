@@ -38,6 +38,7 @@ const attemptSchema = z
     claimed_at: timestamp,
     lease_until: timestamp,
     provider_started_at: timestamp.nullable(),
+    provider_authorized_until: timestamp.nullable(),
     status: z.enum(['claimed', 'authorized', 'succeeded', 'failed', 'expired']),
     finished_at: timestamp.nullable(),
     result: readingSchema.nullable(),
@@ -102,6 +103,10 @@ export function parsePhotoProcessingWire(value: unknown, scope: PhotoProcessingS
     micros(t.lease_until) - micros(t.claimed_at) > 300000000n ||
     (t.provider_started_at !== null &&
       (t.provider_started_at < t.claimed_at || t.provider_started_at >= t.lease_until)) ||
+    (t.provider_started_at === null) !== (t.provider_authorized_until === null) ||
+    (t.provider_authorized_until !== null &&
+      (t.provider_authorized_until <= (t.provider_started_at ?? '') ||
+        t.provider_authorized_until > t.lease_until)) ||
     (t.finished_at !== null && t.finished_at < (t.provider_started_at ?? t.claimed_at))
   )
     throw photoProcessingError()
@@ -114,7 +119,8 @@ export function parsePhotoProcessingWire(value: unknown, scope: PhotoProcessingS
       (a.status !== 'processed' ||
         t.provider_started_at === null ||
         t.finished_at === null ||
-        t.finished_at >= t.lease_until ||
+        t.provider_authorized_until === null ||
+        t.finished_at >= t.provider_authorized_until ||
         t.result === null ||
         t.result.view !== a.pose ||
         t.failure_code !== null)) ||
@@ -135,6 +141,7 @@ function attemptIdentity(t: PhotoProcessingWire['attempt']) {
   const {
     status: _status,
     provider_started_at: _start,
+    provider_authorized_until: _deadline,
     finished_at: _end,
     result: _result,
     failure_code: _failure,
@@ -163,6 +170,7 @@ export function parsePhotoProcessingContinuation(
       JSON.stringify(attemptIdentity(before.attempt)) ||
     (stage === 'succeeded' &&
       (after.attempt.provider_started_at !== before.attempt.provider_started_at ||
+        after.attempt.provider_authorized_until !== before.attempt.provider_authorized_until ||
         JSON.stringify(after.attempt.result) !== JSON.stringify(reading)))
   )
     throw photoProcessingError()
@@ -231,7 +239,9 @@ export async function processReevaluationPhoto(
     const now = deps.now().getTime()
     if (!Number.isFinite(now) || now < Date.parse(authorized.attempt.provider_started_at ?? ''))
       throw photoProcessingError()
-    const remaining = Math.floor(Date.parse(authorized.attempt.lease_until) - now)
+    const remaining = Math.floor(
+      Date.parse(authorized.attempt.provider_authorized_until ?? '') - now,
+    )
     if (remaining <= 0) return { status: 'skipped' }
     const timeoutMs = Math.min(60000, remaining)
     const budget = { timeoutMs, signal: AbortSignal.timeout(timeoutMs) }

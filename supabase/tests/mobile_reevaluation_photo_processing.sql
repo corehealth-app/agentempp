@@ -18,11 +18,13 @@ BEGIN
     AND w->>'source_revision'='2' AND w#>>'{asset,status}'='processing','claim_binds_latest_selected_source');
   PERFORM m3b_cycle_test.ok((w#>>'{attempt,lease_until}')::timestamptz<=retention
     AND (w#>>'{attempt,lease_until}')::timestamptz<=(w#>>'{attempt,claimed_at}')::timestamptz+interval '300seconds','lease_clamps_to_live_consent_and_storage');
+  PERFORM m3b_cycle_test.ok(w#>'{attempt,provider_authorized_until}'='null'::jsonb,'claim_never_grants_provider_deadline');
   PERFORM m3b_cycle_test.ok(public.claim_mobile_reevaluation_photo_processing(a,c,aid,rid) IS NULL,'same_claim_never_grants_second_download_or_provider');
   PERFORM m3b_cycle_test.ok(public.claim_mobile_reevaluation_photo_processing(a,c,aid,gen_random_uuid()) IS NULL,'competing_claim_is_busy');
   PERFORM m3b_cycle_test.throws(format('SELECT public.complete_mobile_reevaluation_photo_processing(%L,%L,%L,%L,%L)',a,c,aid,rid,reading),'40001','result_requires_provider_authorization');
   auth:=public.authorize_mobile_reevaluation_photo_provider(a,c,aid,rid);
   PERFORM m3b_cycle_test.ok(auth#>>'{attempt,status}'='authorized' AND auth#>>'{attempt,provider_started_at}' IS NOT NULL,'one_provider_authorization');
+  PERFORM m3b_cycle_test.ok(auth#>>'{attempt,provider_authorized_until}'=w#>>'{attempt,lease_until}','without_future_document_provider_deadline_equals_original_lease');
   PERFORM m3b_cycle_test.ok(public.authorize_mobile_reevaluation_photo_provider(a,c,aid,rid) IS NULL,'authorization_cannot_repeat_paid_call');
   done:=public.complete_mobile_reevaluation_photo_processing(a,c,aid,rid,reading);
   PERFORM m3b_cycle_test.ok(done#>>'{attempt,status}'='succeeded' AND done#>'{attempt,result}'=reading
@@ -134,5 +136,39 @@ BEGIN
   PERFORM m3b_cycle_test.ok(public.get_mobile_reevaluation_photo_snapshot(a,c)#>'{photos,0,photo,analysis}'='null'::jsonb
     AND public.get_mobile_reevaluation_photo_snapshot(a,c)#>>'{photos,0,photo,status}'='processing','generic_direct_result_not_accepted_as_recurring_reading');
 END $forged_generic_result$;
+
+DO $scheduled_consent_deadline$
+DECLARE ctx jsonb; other_ctx jsonb; a uuid; c uuid; aid uuid; b uuid; bc uuid; bid uuid;
+  first_id uuid:=gen_random_uuid(); second_id uuid:=gen_random_uuid(); base_time timestamptz; w jsonb; auth jsonb;
+BEGIN
+  ctx:=m3b_cycle_test.ready_photo(832);other_ctx:=m3b_cycle_test.ready_photo(833);
+  a:=(ctx->>'user')::uuid;c:=(ctx->>'cycle')::uuid;aid:=(ctx->>'asset')::uuid;
+  b:=(other_ctx->>'user')::uuid;bc:=(other_ctx->>'cycle')::uuid;bid:=(other_ctx->>'asset')::uuid;
+  base_time:=clock_timestamp();
+  INSERT INTO public.legal_documents(id,document_key,version,locale,body,required_from) VALUES
+    (m3b_cycle_test.uid(503),'body_photo_reevaluation_consent','processing-future-before','pt-BR','SYNTHETIC FUTURE BEFORE CLAIM',base_time+interval '40seconds'),
+    (m3b_cycle_test.uid(504),'body_photo_reevaluation_consent','processing-other-locale','en-US','SYNTHETIC OTHER LOCALE',base_time+interval '5seconds');
+  w:=private.claim_mobile_reevaluation_photo_processing_at(a,c,aid,first_id,base_time);
+  auth:=private.authorize_mobile_reevaluation_photo_provider_at(a,c,aid,first_id,base_time+interval '1second');
+  PERFORM m3b_cycle_test.ok((auth#>>'{attempt,provider_authorized_until}')::timestamptz=base_time+interval '40seconds',
+    'provider_deadline_respects_future_same_locale_document_without_policy');
+  PERFORM m3b_cycle_test.ok(auth#>>'{attempt,lease_until}'=w#>>'{attempt,lease_until}', 'authorization_never_rewrites_frozen_lease');
+  w:=private.claim_mobile_reevaluation_photo_processing_at(b,bc,bid,second_id,base_time);
+  INSERT INTO public.legal_documents(id,document_key,version,locale,body,required_from) VALUES
+    (m3b_cycle_test.uid(505),'body_photo_reevaluation_consent','processing-future-after','pt-BR','SYNTHETIC FUTURE AFTER CLAIM',base_time+interval '20seconds');
+  auth:=private.authorize_mobile_reevaluation_photo_provider_at(b,bc,bid,second_id,base_time+interval '2seconds');
+  PERFORM m3b_cycle_test.ok((auth#>>'{attempt,provider_authorized_until}')::timestamptz=base_time+interval '20seconds',
+    'provider_deadline_recomputed_for_document_published_after_claim');
+  PERFORM m3b_cycle_test.ok((auth#>>'{attempt,provider_authorized_until}')::timestamptz<(auth#>>'{attempt,lease_until}')::timestamptz,
+    'provider_deadline_is_shorter_than_original_lease');
+  PERFORM m3b_cycle_test.throws(format('UPDATE private.mobile_reevaluation_photo_processing_attempts SET status=''failed'',finished_at=%L,failure_code=''provider_unavailable'',provider_authorized_until=lease_until WHERE request_id=%L',base_time+interval '3seconds',second_id),
+    '55000','provider_deadline_cannot_be_extended_after_authorization');
+  PERFORM m3b_cycle_test.throws(format('SELECT private.complete_mobile_reevaluation_photo_processing_at(%L,%L,%L,%L,''{"type":"body","view":"front","bf_percent_estimate":20}'',%L)',b,bc,bid,second_id,base_time+interval '20seconds'),
+    '40001','completion_refused_at_scheduled_document_boundary');
+  PERFORM m3b_cycle_test.ok(private.authorize_mobile_reevaluation_photo_provider_at(b,bc,bid,second_id,base_time+interval '3seconds') IS NULL,
+    'bounded_authorization_still_cannot_repeat');
+  PERFORM m3b_cycle_test.ok(private.complete_mobile_reevaluation_photo_processing_at(b,bc,bid,second_id,'{"type":"body","view":"front","bf_percent_estimate":20}',base_time+interval '4seconds')#>>'{attempt,status}'='succeeded',
+    'bounded_authorization_can_complete_before_cutoff');
+END $scheduled_consent_deadline$;
 
 ROLLBACK;

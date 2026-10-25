@@ -11,6 +11,8 @@
     "./progress": "./src/progress-calc.ts",
     "./nutrition": "./src/nutrition.ts",
     "./types": "./src/types.ts",
+    "./health-check": "./src/health-check-contracts.ts",
+    "./reevaluation-form": "./src/reevaluation-form-contracts.ts",
     "./workout-strength-classification": "./src/workout-strength-classification.ts",
     "./strength-training-week": {
       "types": "./src/strength-training-week.ts",

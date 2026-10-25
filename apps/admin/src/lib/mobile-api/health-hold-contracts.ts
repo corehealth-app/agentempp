@@ -81,6 +81,10 @@ const snapshot = z
     )
       return false
     if (state.safety_revision === '0') return !state.hold_active && state.last_declared_at === null
+    // The first revision can only be a declaration. Any later FULL clearance
+    // must advance revision. SQL additionally verifies receipt membership;
+    // this wire projection cannot reconstruct omitted private receipts.
+    if (state.safety_revision === '1' && !state.hold_active) return false
     return (
       state.last_declared_at !== null &&
       state.items.every((entry) => entry.declared_at <= (state.last_declared_at ?? ''))

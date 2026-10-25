@@ -25,6 +25,18 @@ BEGIN
     'risk before signup cycle day14 and photos enables hold without changing targets');
   PERFORM m3b_cycle_test.ok(first_receipt->'items'='["unintended_weight_loss","professional_diet"]'::jsonb,
     'risk set canonical source order');
+  PERFORM m3b_cycle_test.throws(format('UPDATE private.mobile_health_hold_states SET items=''{}'',hold_active=false WHERE user_id=%L; SELECT public.get_mobile_health_hold_state(%L)',
+    owner_id,owner_id),'XX001','same revision cannot clear a durable risk declaration on read');
+  PERFORM m3b_cycle_test.throws(format('UPDATE private.mobile_health_hold_states SET items=ARRAY[''unintended_weight_loss'']::private.mobile_health_risk_code_v1[] WHERE user_id=%L; SELECT public.get_mobile_health_hold_state(%L)',
+    owner_id,owner_id),'XX001','same revision cannot silently drop one of the current declared risks');
+  PERFORM m3b_cycle_test.throws(format('UPDATE private.mobile_health_hold_states SET items=''{}'',hold_active=false WHERE user_id=%L; SELECT public.declare_mobile_health_risk(%L,%L,ARRAY[''professional_diet'',''unintended_weight_loss''])',
+    owner_id,owner_id,m3b_cycle_test.uid(710)),'XX001','replay also refuses malformed same revision clearance');
+  PERFORM m3b_cycle_test.throws(format('UPDATE private.mobile_health_hold_states SET items=ARRAY[''unintended_weight_loss'']::private.mobile_health_risk_code_v1[] WHERE user_id=%L; SELECT public.declare_mobile_health_risk(%L,%L,ARRAY[''professional_diet'',''unintended_weight_loss''])',
+    owner_id,owner_id,m3b_cycle_test.uid(710)),'XX001','replay also refuses partial current receipt loss');
+  PERFORM m3b_cycle_test.throws(format('UPDATE private.mobile_health_hold_states SET last_declared_at=last_declared_at+interval ''1 day'' WHERE user_id=%L; SELECT public.get_mobile_health_hold_state(%L)',
+    owner_id,owner_id),'XX001','current receipt and state declaration timestamp must agree');
+  PERFORM m3b_cycle_test.throws(format('UPDATE private.mobile_health_hold_states SET safety_revision=2 WHERE user_id=%L; SELECT public.get_mobile_health_hold_state(%L)',
+    owner_id,owner_id),'XX001','active hold requires a declaration receipt at its current revision');
   PERFORM m3b_cycle_test.ok(m3b_cycle_test.original_state(owner_id)-ARRAY['private.mobile_health_hold_states','private.mobile_health_risk_receipts']=original,
     'only private health rows changed');
   PERFORM m3b_cycle_test.ok(NOT EXISTS(SELECT 1 FROM private.mobile_reevaluation_cycles WHERE user_id=owner_id)

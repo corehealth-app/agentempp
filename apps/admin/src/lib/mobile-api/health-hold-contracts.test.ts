@@ -27,6 +27,7 @@ describe('private health wire authority from actual synthetic PostgreSQL output'
     { ...fixture.absent, safety_revision: '00' },
     { ...fixture.absent, safety_revision: '9223372036854775808' },
     { ...fixture.absent, hold_active: true },
+    { ...fixture.absent, safety_revision: '1', last_declared_at: input.receipt.declared_at },
     { ...fixture.absent, hide_protein: true },
     { ...fixture.absent, last_declared_at: input.receipt.declared_at },
     { ...input.state, hide_protein: false },

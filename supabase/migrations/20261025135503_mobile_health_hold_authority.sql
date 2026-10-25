@@ -93,6 +93,11 @@ BEGIN
      'declared_no_plan',false,'hide_protein',false,'last_declared_at',NULL,'items','[]'::jsonb);
  END IF;
  IF NOT EXISTS(SELECT 1 FROM private.mobile_health_risk_receipts WHERE user_id=p_user_id)
+   OR (state.hold_active AND NOT EXISTS(SELECT 1 FROM private.mobile_health_risk_receipts r
+     WHERE r.user_id=p_user_id AND r.safety_revision=state.safety_revision))
+   OR EXISTS(SELECT 1 FROM private.mobile_health_risk_receipts r WHERE r.user_id=p_user_id
+     AND r.safety_revision=state.safety_revision AND (NOT state.hold_active
+       OR r.declared_at<>state.last_declared_at OR NOT r.items<@state.items))
    OR EXISTS(SELECT 1 FROM unnest(state.items) x WHERE NOT EXISTS(
    SELECT 1 FROM private.mobile_health_risk_receipts r WHERE r.user_id=p_user_id AND x=ANY(r.items)
      AND r.safety_revision<=state.safety_revision AND r.declared_at<=state.last_declared_at))

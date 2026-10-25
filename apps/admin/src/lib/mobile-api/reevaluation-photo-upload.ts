@@ -2,6 +2,11 @@ import { z } from 'zod'
 import { MobileApiError } from './http'
 import { reevaluationCycleUuidSchema as uuid } from './reevaluation-cycle-contracts'
 
+// Supabase signed uploads last two hours. Permit bounded cross-server clock
+// skew, never extend the bound by time spent in registration/current RPCs.
+const PROVIDER_UPLOAD_LIFETIME_SECONDS = 7200
+const PROVIDER_CLOCK_SKEW_SECONDS = 120
+
 const timestamp = z.string().refine((value) => {
   if (!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z$/.test(value) || value.startsWith('0000'))
     return false
@@ -204,10 +209,19 @@ export async function issueReevaluationPhotoUpload(
     if (prepared.asset.status !== 'pending_upload' || prepared.ticket.provider_expires_at !== null)
       throw photoUploadError('changed')
     const signed = await deps.sign(prepared.asset)
+    const signingResponseAt = deps.now().getTime()
     const expiresAt = providerExpiry(signed.signedUrl, prepared.asset, deps.storageOrigin)
     // Persist first, including when authorization closed during the external
     // await. Throwing after this independent commit cannot erase its expiry.
     parseRegisteredPhotoUpload(await deps.register(prepared, expiresAt), prepared, expiresAt)
+    // Preserve the provider's actual expiry even for an anomalous capability,
+    // but withhold its URL. Never truncate the stored resweep boundary.
+    if (
+      !Number.isFinite(signingResponseAt) ||
+      Date.parse(expiresAt) >
+        signingResponseAt + (PROVIDER_UPLOAD_LIFETIME_SECONDS + PROVIDER_CLOCK_SKEW_SECONDS) * 1000
+    )
+      throw photoUploadError()
     const current = await deps.current(scope)
     if (current === null) throw photoUploadError('changed')
     const fresh = parseCurrentPhotoUpload(current, scope)

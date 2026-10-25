@@ -88,6 +88,48 @@ function setup() {
 }
 
 describe('recurring signed upload handoff', () => {
+  it.each([
+    '2026-10-25T03:02:01.000Z',
+    '2030-10-25T03:00:00.000Z',
+  ])('persists but never returns a provider capability beyond the 2h + 120s clock bound: %s', async (expiry) => {
+    const f = setup()
+    f.deps.sign.mockResolvedValue({
+      signedUrl: f.signed(f.token({ ...f.payload, exp: Date.parse(expiry) / 1000 })),
+    })
+    const error = await issueReevaluationPhotoUpload(f.deps, scope).catch((e: Error) => e)
+    expect(error).toMatchObject({ status: 503 })
+    expect(String(error)).not.toContain('token=')
+    expect(f.observed).toEqual([expiry])
+    expect(f.deps.sign).toHaveBeenCalledOnce()
+    expect(f.deps.current).not.toHaveBeenCalled()
+  })
+  it('permits exactly the bounded 120s skew without truncating the observed expiry', async () => {
+    const f = setup()
+    const expiry = '2026-10-25T03:02:00.000Z'
+    f.deps.sign.mockResolvedValue({
+      signedUrl: f.signed(f.token({ ...f.payload, exp: Date.parse(expiry) / 1000 })),
+    })
+    expect((await issueReevaluationPhotoUpload(f.deps, scope)).upload.expires_at).toBe(expiry)
+    expect(f.observed).toEqual([expiry])
+  })
+  it('slow registration cannot widen the bound captured at the signing response', async () => {
+    const f = setup()
+    const expiry = '2026-10-25T03:03:00.000Z'
+    let clock = now
+    f.deps.now = () => clock
+    f.deps.sign.mockResolvedValue({
+      signedUrl: f.signed(f.token({ ...f.payload, exp: Date.parse(expiry) / 1000 })),
+    })
+    const register = f.deps.register.getMockImplementation()
+    if (!register) throw new Error('Missing test register port')
+    f.deps.register.mockImplementation(async (value, expiresAt) => {
+      clock = new Date('2026-10-25T01:03:00Z')
+      return register(value, expiresAt)
+    })
+    await expect(issueReevaluationPhotoUpload(f.deps, scope)).rejects.toMatchObject({ status: 503 })
+    expect(f.observed).toEqual([expiry])
+    expect(f.deps.current).not.toHaveBeenCalled()
+  })
   it('records provider expiry before current authority and returning the URL; no guessed earlier TTL', async () => {
     const f = setup()
     const result = await issueReevaluationPhotoUpload(f.deps, scope)

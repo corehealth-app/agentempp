@@ -63,6 +63,7 @@ export interface MemoryMediaAsset {
   /** Default false/null is UNKNOWN; true is set only by the signup INSERT. */
   signup_origin: boolean | null
   signup_disposition_version: 1 | null
+  reevaluation_origin_version?: 1 | null
   processing_request_id: string | null
   processing_result: unknown
   source_request_hash: string
@@ -103,6 +104,7 @@ type Filter =
   | { kind: 'neq'; column: string; value: unknown }
   | { kind: 'in'; column: string; values: unknown[] }
   | { kind: 'gte'; column: string; value: unknown }
+  | { kind: 'is'; column: string; value: null | boolean }
 
 interface QuerySpec {
   table: string
@@ -193,6 +195,7 @@ function matches(row: Row, filters: Filter[]): boolean {
     if (filter.kind === 'eq') return value === filter.value
     if (filter.kind === 'neq') return value !== filter.value
     if (filter.kind === 'in') return filter.values.includes(value)
+    if (filter.kind === 'is') return value === filter.value
     // Timestamps are compared as instants, whatever their notation.
     const [left, right] = [Date.parse(String(value)), Date.parse(String(filter.value))]
     return Number.isNaN(left) || Number.isNaN(right)
@@ -268,6 +271,11 @@ class MemoryQuery implements PromiseLike<DbResult> {
     return this
   }
 
+  is(column: string, value: null | boolean): this {
+    this.spec.filters.push({ kind: 'is', column, value })
+    return this
+  }
+
   in(column: string, values: unknown[]): this {
     this.spec.filters.push({ kind: 'in', column, values })
     return this
@@ -315,6 +323,7 @@ class MemoryQuery implements PromiseLike<DbResult> {
 }
 
 export class SignupBodyPhotoMemoryDb {
+  reevaluationSchemaAvailable = true
   readonly querySignals: AbortSignal[] = []
   /** Every call that reached the database, the storage or the auth service, in order. */
   readonly operations: string[] = []
@@ -434,6 +443,7 @@ export class SignupBodyPhotoMemoryDb {
       failure_code: null,
       context_text: null,
       signup_origin: false,
+      reevaluation_origin_version: null,
       // Current fixture rows. Explicit NULL represents pre-Task4 history.
       signup_disposition_version: row.signup_origin === true ? 1 : null,
       processing_request_id: null,
@@ -567,6 +577,12 @@ export class SignupBodyPhotoMemoryDb {
   async execute(spec: QuerySpec): Promise<DbResult> {
     const failure = this.record(`${spec.operation}:${spec.table}`, spec)
     if (failure) return { data: null, error: failure }
+    if (
+      spec.table === 'media_assets' &&
+      !this.reevaluationSchemaAvailable &&
+      spec.filters.some((filter) => filter.column === 'reevaluation_origin_version')
+    )
+      return raise('42703', 'column reevaluation_origin_version does not exist')
     return this.table(spec)
   }
 
@@ -1113,6 +1129,7 @@ export class SignupBodyPhotoMemoryDb {
         failure_code: null,
         context_text: null,
         signup_origin: false,
+        reevaluation_origin_version: null,
         processing_request_id: null,
         processing_result: null,
         retention_until: null,

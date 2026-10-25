@@ -33,7 +33,7 @@ export const POST = createMobileRouteWithContext<MediaCompleteRouteContext>(
         try {
           return mobileSuccess(
             await completeMediaUpload(
-              createSupabaseMediaDependencies(context.supabase),
+              createSupabaseMediaDependencies(context.supabase, { reevaluationSchema: true }),
               context.auth.userId,
               id,
             ),

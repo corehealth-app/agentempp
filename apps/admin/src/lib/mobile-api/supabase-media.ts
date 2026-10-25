@@ -86,7 +86,11 @@ function storageErrorStatus(error: unknown): number | null {
   return Number.isInteger(parsed) ? parsed : null
 }
 
-function createRepository(supabase: ServiceClient, signupPhotos: boolean): MediaAssetRepository {
+function createRepository(
+  supabase: ServiceClient,
+  signupPhotos: boolean,
+  reevaluationSchema: boolean,
+): MediaAssetRepository {
   // Generic media retains its old projection, including on the old database.
   const selection = signupPhotos
     ? `${mediaSelection}, signup_origin, signup_disposition_version`
@@ -115,12 +119,15 @@ function createRepository(supabase: ServiceClient, signupPhotos: boolean): Media
     sourceRequestHash,
   ) => {
     if (signupPhotos) return lookupSignupAsset(userId, null, sourceRequestHash)
-    const { data, error } = await supabase
+    const query = supabase
       .from('media_assets')
       .select(selection)
       .eq('user_id', userId)
       .eq('source_request_hash', sourceRequestHash)
-      .maybeSingle()
+    const { data, error } = await (reevaluationSchema
+      ? query.is('reevaluation_origin_version', null)
+      : query
+    ).maybeSingle()
     if (error) databaseFailure('find_by_request_hash', error)
     return data ? parseMediaAsset(data) : null
   }
@@ -159,12 +166,15 @@ function createRepository(supabase: ServiceClient, signupPhotos: boolean): Media
     },
     async findOwned(userId, assetId) {
       if (signupPhotos) return lookupSignupAsset(userId, assetId, null)
-      const { data, error } = await supabase
+      const query = supabase
         .from('media_assets')
         .select(selection)
         .eq('id', assetId)
         .eq('user_id', userId)
-        .maybeSingle()
+      const { data, error } = await (reevaluationSchema
+        ? query.is('reevaluation_origin_version', null)
+        : query
+      ).maybeSingle()
       if (error) databaseFailure('find_owned', error)
       return data ? parseMediaAsset(data) : null
     },
@@ -188,7 +198,7 @@ function createRepository(supabase: ServiceClient, signupPhotos: boolean): Media
         if (error || data === null) databaseFailure('mark_signup_uploaded', error)
         return parseMediaAsset(data)
       }
-      const { data, error } = await supabase
+      const query = supabase
         .from('media_assets')
         .update({
           status: 'uploaded',
@@ -199,13 +209,17 @@ function createRepository(supabase: ServiceClient, signupPhotos: boolean): Media
         .eq('id', assetId)
         .eq('user_id', userId)
         .eq('status', 'pending_upload')
+      const { data, error } = await (reevaluationSchema
+        ? query.is('reevaluation_origin_version', null)
+        : query
+      )
         .select(selection)
         .maybeSingle()
       if (error || !data) databaseFailure('mark_uploaded', error)
       return parseMediaAsset(data)
     },
     async markUploadFailed(userId, assetId, failureCode) {
-      const { error } = await supabase
+      const query = supabase
         .from('media_assets')
         .update({
           status: 'failed',
@@ -215,10 +229,13 @@ function createRepository(supabase: ServiceClient, signupPhotos: boolean): Media
         .eq('id', assetId)
         .eq('user_id', userId)
         .eq('status', 'pending_upload')
+      const { error } = await (reevaluationSchema
+        ? query.is('reevaluation_origin_version', null)
+        : query)
       if (error) databaseFailure('mark_upload_failed', error)
     },
     async markDeleted(userId, assetId, deletedAt) {
-      const { data, error } = await supabase
+      const query = supabase
         .from('media_assets')
         .update({
           status: 'deleted',
@@ -230,6 +247,10 @@ function createRepository(supabase: ServiceClient, signupPhotos: boolean): Media
         .eq('id', assetId)
         .eq('user_id', userId)
         .neq('status', 'deleted')
+      const { data, error } = await (reevaluationSchema
+        ? query.is('reevaluation_origin_version', null)
+        : query
+      )
         .select(selection)
         .maybeSingle()
       if (error || !data) databaseFailure('mark_deleted', error)
@@ -283,10 +304,16 @@ function createStorage(supabase: ServiceClient): MediaStorageGateway {
 
 export function createSupabaseMediaDependencies(
   supabase: ServiceClient,
-  options: { signupPhotos?: boolean } = {},
+  options: { signupPhotos?: boolean; reevaluationSchema?: true } = {},
 ): MediaServiceDependencies {
   return {
-    repository: createRepository(supabase, options.signupPhotos === true),
+    // Static schema capability, not a client-controlled creation flag. Deploy
+    // the origin migration first; a missing column must fail without fallback.
+    repository: createRepository(
+      supabase,
+      options.signupPhotos === true,
+      options.reevaluationSchema === true && options.signupPhotos !== true,
+    ),
     storage: createStorage(supabase),
     planDrafts: {
       async hasOpenDraftOfMedia(userId, assetId) {

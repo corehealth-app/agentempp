@@ -38,7 +38,7 @@ export async function cleanupExpiredMedia(
   return { deleted }
 }
 
-function createRetentionDependencies(supabase: ServiceClient): MediaRetentionDependencies {
+export function createRetentionDependencies(supabase: ServiceClient): MediaRetentionDependencies {
   return {
     repository: {
       async listExpired(now, limit) {
@@ -46,6 +46,7 @@ function createRetentionDependencies(supabase: ServiceClient): MediaRetentionDep
           .from('media_assets')
           .select('id, user_id, bucket_id, object_path')
           .lte('retention_until', now)
+          .is('reevaluation_origin_version', null)
           .neq('status', 'deleted')
           .order('retention_until', { ascending: true })
           .limit(limit)
@@ -69,6 +70,7 @@ function createRetentionDependencies(supabase: ServiceClient): MediaRetentionDep
           })
           .eq('id', assetId)
           .eq('user_id', userId)
+          .is('reevaluation_origin_version', null)
           .neq('status', 'deleted')
         if (error) throw new Error(error.message || 'expired media state update failed')
       },

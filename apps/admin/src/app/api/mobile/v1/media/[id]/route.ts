@@ -19,7 +19,7 @@ async function mediaId(routeContext: MediaRouteContext): Promise<string> {
 export const GET = createMobileRouteWithContext<MediaRouteContext>(async (context, routeContext) =>
   mobileSuccess(
     await getMediaAsset(
-      createSupabaseMediaDependencies(context.supabase),
+      createSupabaseMediaDependencies(context.supabase, { reevaluationSchema: true }),
       context.auth.userId,
       await mediaId(routeContext),
     ),
@@ -33,7 +33,7 @@ export const DELETE = createMobileRouteWithContext<MediaRouteContext>(
     return executeSupabaseIdempotent(context, { media_asset_id: id }, async () =>
       mobileSuccess(
         await deleteMediaAsset(
-          createSupabaseMediaDependencies(context.supabase),
+          createSupabaseMediaDependencies(context.supabase, { reevaluationSchema: true }),
           context.auth.userId,
           id,
         ),

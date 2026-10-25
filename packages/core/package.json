@@ -13,6 +13,9 @@
     "./types": "./src/types.ts",
     "./health-check": "./src/health-check-contracts.ts",
     "./reevaluation-form": "./src/reevaluation-form-contracts.ts",
+    "./reevaluation-clinical-safety": "./src/reevaluation-clinical-safety.ts",
+    "./reevaluation-weight-trend": "./src/reevaluation-weight-trend.ts",
+    "./reevaluation-calorie-rules": "./src/reevaluation-calorie-rules.ts",
     "./workout-strength-classification": "./src/workout-strength-classification.ts",
     "./strength-training-week": {
       "types": "./src/strength-training-week.ts",

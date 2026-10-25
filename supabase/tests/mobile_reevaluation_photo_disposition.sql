@@ -124,9 +124,19 @@ BEGIN
  ctx:=m3b_cycle_test.photo_context(886);a:=(ctx->>'user')::uuid;c:=(ctx->>'cycle')::uuid;acc:=(ctx->>'acceptance')::uuid;
  generic_id:=m3b_cycle_test.ordinary_asset(a,'meal_photo');SELECT to_jsonb(x) INTO ordinary_before FROM public.media_assets x WHERE id=generic_id;
  otherctx:=m3b_cycle_test.ready_photo(887);SELECT to_jsonb(x) INTO other_before FROM public.media_assets x WHERE id=(otherctx->>'asset')::uuid;
+ -- Historical pre-quota catalogue: preserve the 201-item pagination regression.
+ -- Narrow transactional seed only; all identity/source/consent triggers stay on.
+ SET CONSTRAINTS private.mobile_reevaluation_photo_ass_asset_id_user_id_origin_vers_fkey IMMEDIATE;
+ ALTER TABLE private.mobile_reevaluation_photo_assets DISABLE TRIGGER enforce_mobile_reevaluation_photo_quota;
+ SET CONSTRAINTS private.mobile_reevaluation_photo_ass_asset_id_user_id_origin_vers_fkey DEFERRED;
  FOR i IN 1..201 LOOP
   r:=m3b_cycle_test.allocate(ctx,gen_random_uuid());ctx:=ctx||jsonb_build_object('revision',r->'cycle_revision');
  END LOOP;
+ SET CONSTRAINTS private.mobile_reevaluation_photo_ass_asset_id_user_id_origin_vers_fkey IMMEDIATE;
+ ALTER TABLE private.mobile_reevaluation_photo_assets ENABLE TRIGGER enforce_mobile_reevaluation_photo_quota;
+ SET CONSTRAINTS private.mobile_reevaluation_photo_ass_asset_id_user_id_origin_vers_fkey DEFERRED;
+ PERFORM m3b_cycle_test.ok((SELECT tgenabled='O' FROM pg_trigger WHERE tgrelid='private.mobile_reevaluation_photo_assets'::regclass
+  AND tgname='enforce_mobile_reevaluation_photo_quota'),'quota_enabled_after_legacy_201_seed');
  h:=public.discard_mobile_reevaluation_photos(a,c,acc,(ctx->>'revision')::bigint);
  PERFORM m3b_cycle_test.ok(h->>'manifest_count'='201','manifest_uses_all_ledger_members_not_only_latest_source');
  r:=m3b_cycle_test.cleanup_once(a,c,acc);

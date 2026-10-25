@@ -1,0 +1,32 @@
+{
+  "owner": "b3b01000-0000-4000-8000-000000001213",
+  "request": {
+    "cycleId": "5e787fbc-afc0-45aa-891c-f046acd7b2cd",
+    "expectedRevision": "2",
+    "acceptanceId": "b48a278e-102a-4f6a-aae4-4e63db9c2e73",
+    "pose": "front",
+    "mimeType": "image/jpeg",
+    "sizeBytes": 1200,
+    "requestKey": "b3b01000-0000-4000-8000-000000001303"
+  },
+  "response": {
+    "asset": {
+      "id": "8d3f96e2-83c9-44dc-8583-25fe71063fbf",
+      "pose": "front",
+      "origin": "reevaluation_cycle_v1",
+      "status": "pending_upload",
+      "user_id": "b3b01000-0000-4000-8000-000000001213",
+      "cycle_id": "5e787fbc-afc0-45aa-891c-f046acd7b2cd",
+      "bucket_id": "body-checkin-photos",
+      "mime_type": "image/jpeg",
+      "created_at": "2026-10-25T14:50:41.693846Z",
+      "size_bytes": 1200,
+      "object_path": "b3b01000-0000-4000-8000-000000001213/8d3f96e2-83c9-44dc-8583-25fe71063fbf.jpg",
+      "retention_until": "2026-10-25T14:51:41.693846Z",
+      "signup_generation": "7a2c5ddf-80ef-4a94-91c6-02bebcd48993",
+      "consent_acceptance_id": "b48a278e-102a-4f6a-aae4-4e63db9c2e73"
+    },
+    "version": 1,
+    "cycle_revision": "2"
+  }
+}

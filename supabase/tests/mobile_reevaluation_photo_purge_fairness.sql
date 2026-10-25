@@ -28,6 +28,10 @@ DECLARE ctx jsonb;a uuid;c uuid;acc uuid;aid uuid;tid uuid;r jsonb;h jsonb;doc p
 BEGIN
  ctx:=m3b_cycle_test.photo_context(1110);a:=(ctx->>'user')::uuid;c:=(ctx->>'cycle')::uuid;
  SELECT * INTO STRICT doc FROM public.legal_documents WHERE id=m3b_cycle_test.uid(501);
+ -- Pre-quota historical scopes; retain the full 21-scope starvation regression.
+ SET CONSTRAINTS private.mobile_reevaluation_photo_ass_asset_id_user_id_origin_vers_fkey IMMEDIATE;
+ ALTER TABLE private.mobile_reevaluation_photo_assets DISABLE TRIGGER enforce_mobile_reevaluation_photo_quota;
+ SET CONSTRAINTS private.mobile_reevaluation_photo_ass_asset_id_user_id_origin_vers_fkey DEFERRED;
  FOR i IN 1..21 LOOP
   acc:=(ctx->>'acceptance')::uuid;
   r:=m3b_cycle_test.allocate(ctx,gen_random_uuid());aid:=(r#>>'{asset,id}')::uuid;
@@ -41,6 +45,11 @@ BEGIN
    ctx:=ctx||jsonb_build_object('acceptance',r#>'{acceptance,acceptance_id}','revision',r->'cycle_revision');
   END IF;
  END LOOP;
+ SET CONSTRAINTS private.mobile_reevaluation_photo_ass_asset_id_user_id_origin_vers_fkey IMMEDIATE;
+ ALTER TABLE private.mobile_reevaluation_photo_assets ENABLE TRIGGER enforce_mobile_reevaluation_photo_quota;
+ SET CONSTRAINTS private.mobile_reevaluation_photo_ass_asset_id_user_id_origin_vers_fkey DEFERRED;
+ PERFORM m3b_cycle_test.ok((SELECT tgenabled='O' FROM pg_trigger WHERE tgrelid='private.mobile_reevaluation_photo_assets'::regclass
+  AND tgname='enforce_mobile_reevaluation_photo_quota'),'quota_enabled_after_legacy_21_scopes_seed');
  UPDATE public.users SET status='deleted' WHERE id=a;cutoff:=clock_timestamp();
  -- Make every unknown scope due again before EACH invocation, reproducing a late cron.
  UPDATE private.mobile_reevaluation_photo_dispositions SET next_sweep_at=clock_timestamp()-interval '1second' WHERE user_id=a;

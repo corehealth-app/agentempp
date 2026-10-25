@@ -144,6 +144,9 @@ def run_races(database, log):
         # The asset->ledger FK is immediate; the reverse is deferred. Remove
         # only membership-proven synthetic media, then its ledger, in one txn.
         database.query('BEGIN;'
+                       "DO $cleanup$ BEGIN IF to_regclass('private.mobile_reevaluation_photo_sources') IS NOT NULL THEN "
+                       f'DELETE FROM private.mobile_reevaluation_photo_sources WHERE user_id IN({ids});'
+                       'END IF; END $cleanup$;'
                        'DELETE FROM public.media_assets m USING private.mobile_reevaluation_photo_assets l '
                        f'WHERE m.id=l.asset_id AND m.user_id=l.user_id AND l.user_id IN({ids});'
                        f'DELETE FROM private.mobile_reevaluation_photo_assets WHERE user_id IN({ids});COMMIT;')

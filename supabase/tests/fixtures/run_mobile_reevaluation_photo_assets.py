@@ -143,13 +143,7 @@ def run_races(database, log):
         ids = ','.join("'" + owner + "'::uuid" for owner in owners)
         # The asset->ledger FK is immediate; the reverse is deferred. Remove
         # only membership-proven synthetic media, then its ledger, in one txn.
-        database.query('BEGIN;'
-                       "DO $cleanup$ BEGIN IF to_regclass('private.mobile_reevaluation_photo_sources') IS NOT NULL THEN "
-                       f'DELETE FROM private.mobile_reevaluation_photo_sources WHERE user_id IN({ids});'
-                       'END IF; END $cleanup$;'
-                       'DELETE FROM public.media_assets m USING private.mobile_reevaluation_photo_assets l '
-                       f'WHERE m.id=l.asset_id AND m.user_id=l.user_id AND l.user_id IN({ids});'
-                       f'DELETE FROM private.mobile_reevaluation_photo_assets WHERE user_id IN({ids});COMMIT;')
+        database.query('BEGIN;'+f'SELECT m3b_cycle_test.remove_photos(ARRAY[{ids}]);COMMIT;')
         cleanup_fixture(database, owners, ['b3b01000-0000-4000-8000-000000000501'])
     Path(log).write_text(json.dumps({'status': 'PASS', 'cases': results, 'owned_clients_reaped': True}, indent=2) + '\n')
 

@@ -45,4 +45,32 @@ BEGIN
       clock_timestamp(),false);
   RETURN asset_id;
 END $$;
+CREATE FUNCTION m3b_cycle_test.ready_photo(n integer,pose text DEFAULT 'front') RETURNS jsonb
+LANGUAGE plpgsql SET search_path=pg_catalog AS $$
+DECLARE ctx jsonb; aid uuid; t uuid:=gen_random_uuid(); done jsonb;
+BEGIN
+  ctx:=m3b_cycle_test.photo_context(n);
+  aid:=(m3b_cycle_test.allocate(ctx,gen_random_uuid(),pose)#>>'{asset,id}')::uuid;
+  PERFORM public.prepare_mobile_reevaluation_photo_upload((ctx->>'user')::uuid,(ctx->>'cycle')::uuid,aid,t);
+  PERFORM public.register_mobile_reevaluation_photo_upload_ticket((ctx->>'user')::uuid,(ctx->>'cycle')::uuid,aid,t,clock_timestamp()+interval '2hours');
+  done:=public.complete_mobile_reevaluation_photo_upload((ctx->>'user')::uuid,(ctx->>'cycle')::uuid,aid,1,1200,'image/jpeg',NULL);
+  RETURN ctx||jsonb_build_object('asset',aid,'revision',done->'cycle_revision','source_revision',done->'source_revision');
+END $$;
+
+CREATE FUNCTION m3b_cycle_test.remove_photos(p_owners uuid[]) RETURNS void
+LANGUAGE plpgsql SET search_path=pg_catalog AS $$
+BEGIN
+  IF p_owners IS NULL OR cardinality(p_owners)=0 OR EXISTS(
+    SELECT 1 FROM unnest(p_owners) x(id) WHERE id IS NULL OR id::text NOT LIKE 'b3b01000-0000-4000-8000-%') THEN
+    RAISE EXCEPTION 'invalid_owned_photo_fixture_cleanup' USING ERRCODE='22023'; END IF;
+  IF to_regclass('private.mobile_reevaluation_photo_processing_attempts') IS NOT NULL THEN
+    DELETE FROM private.mobile_reevaluation_photo_processing_attempts WHERE user_id=ANY(p_owners); END IF;
+  IF to_regclass('private.mobile_reevaluation_photo_sources') IS NOT NULL THEN
+    DELETE FROM private.mobile_reevaluation_photo_sources WHERE user_id=ANY(p_owners); END IF;
+  IF to_regclass('private.mobile_reevaluation_photo_upload_tickets') IS NOT NULL THEN
+    DELETE FROM private.mobile_reevaluation_photo_upload_tickets WHERE user_id=ANY(p_owners); END IF;
+  DELETE FROM public.media_assets m USING private.mobile_reevaluation_photo_assets l
+    WHERE m.id=l.asset_id AND m.user_id=l.user_id AND l.user_id=ANY(p_owners);
+  DELETE FROM private.mobile_reevaluation_photo_assets WHERE user_id=ANY(p_owners);
+END $$;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA m3b_cycle_test FROM PUBLIC,anon,authenticated,service_role;

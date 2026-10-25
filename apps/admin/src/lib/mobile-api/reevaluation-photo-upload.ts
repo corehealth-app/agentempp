@@ -47,6 +47,14 @@ const assetSchema = z
 const assetWire = z
   .object({ version: z.literal(1), cycle_revision: revision, asset: assetSchema })
   .strict()
+
+// Shared SQL identity contract; dedicated completion still adds its own
+// authority/revision checks instead of using generic media completion.
+export {
+  assetWire as reevaluationPhotoAssetWireSchema,
+  revision as reevaluationPhotoRevisionSchema,
+}
+
 const ticketSchema = z
   .object({
     id: uuid,

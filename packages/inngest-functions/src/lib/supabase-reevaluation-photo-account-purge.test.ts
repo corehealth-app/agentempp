@@ -9,13 +9,13 @@ describe('injected recurring account purge adapter', () => {
   it('binds owner, cutoff, keyset and deadline, then delegates the existing private drain', async () => {
     let purges = 0
     const values: Record<string, unknown> = {
-      list_mobile_reevaluation_photo_purge_scopes: {
+      begin_mobile_deleted_user_photo_purge: true,
+      claim_mobile_reevaluation_photo_purge_scopes: {
         version: 1,
         user_id: fixture.scope.userId,
         eligible: true,
         items: [{ cycle_id: fixture.scope.cycleId, acceptance_id: fixture.scope.acceptanceId }],
         has_more: false,
-        cursor: fixture.scope.acceptanceId,
       },
       prepare_mobile_reevaluation_photo_disposition: fixture.prepare,
       get_mobile_reevaluation_photo_disposition_page: fixture.page,
@@ -45,19 +45,19 @@ describe('injected recurring account purge adapter', () => {
       ),
     ).toBe(true)
     expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      'begin_mobile_deleted_user_photo_purge',
       'purge_mobile_reevaluation_photo_catalog_for_deleted_user',
-      'list_mobile_reevaluation_photo_purge_scopes',
+      'claim_mobile_reevaluation_photo_purge_scopes',
       'prepare_mobile_reevaluation_photo_disposition',
       'get_mobile_reevaluation_photo_disposition_page',
       'commit_mobile_reevaluation_photo_disposition_page',
       'purge_mobile_reevaluation_photo_catalog_for_deleted_user',
     ])
     expect(rpc.mock.calls[0]?.[1]).toEqual({ p_user_id: fixture.scope.userId, p_cutoff: cutoff })
-    expect(rpc.mock.calls[1]?.[1]).toEqual({
+    expect(rpc.mock.calls[2]?.[1]).toEqual({
       p_user_id: fixture.scope.userId,
       p_cutoff: cutoff,
-      p_after_acceptance: null,
-      p_limit: 20,
+      p_limit: 1,
     })
     expect(from).toHaveBeenCalledWith('body-checkin-photos')
     expect(remove).toHaveBeenCalledWith(fixture.page.items.map((x) => x.object_path))

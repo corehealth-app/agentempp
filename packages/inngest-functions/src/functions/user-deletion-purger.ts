@@ -2,7 +2,10 @@ import type { ServiceClient } from '@mpp/db'
 import { inngest } from '../client.js'
 import { createWorkerSupabase } from '../lib/env.js'
 import { prepareReevaluationPhotoAccountPurge } from '../lib/reevaluation-photo-account-purge.js'
-import { createReevaluationPhotoAccountPurgeDependencies } from '../lib/supabase-reevaluation-photo-account-purge.js'
+import {
+  claimDeletedUsersForPhotoPurge,
+  createReevaluationPhotoAccountPurgeDependencies,
+} from '../lib/supabase-reevaluation-photo-account-purge.js'
 
 const PURGE_GRACE_MS = 60 * 60 * 1000
 const PURGE_BATCH_SIZE = 100
@@ -49,19 +52,12 @@ export async function purgeDeletedUsers(
   return { purged, mediaRemoved }
 }
 
-function createPurgeDependencies(supabase: ServiceClient): UserDeletionPurgeDependencies {
+export function createPurgeDependencies(supabase: ServiceClient): UserDeletionPurgeDependencies {
   const recurring = createReevaluationPhotoAccountPurgeDependencies(supabase)
   return {
     repository: {
       async listUsersReadyForPurge(cutoff, limit) {
-        const { data, error } = await supabase
-          .from('users')
-          .select('id')
-          .eq('status', 'deleted')
-          .lte('updated_at', cutoff)
-          .limit(limit)
-        if (error) throw new Error(error.message || 'deleted user lookup failed')
-        return data ?? []
+        return claimDeletedUsersForPhotoPurge(supabase, cutoff, limit)
       },
       prepareRecurringMediaPurge(userId, cutoff) {
         return prepareReevaluationPhotoAccountPurge(recurring, userId, cutoff)

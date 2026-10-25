@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import { purgeDeletedUsers, type UserDeletionPurgeDependencies } from './user-deletion-purger.js'
+import {
+  createPurgeDependencies,
+  purgeDeletedUsers,
+  type UserDeletionPurgeDependencies,
+} from './user-deletion-purger.js'
 
 function makeDeps(): UserDeletionPurgeDependencies {
   return {
@@ -18,6 +22,27 @@ function makeDeps(): UserDeletionPurgeDependencies {
 }
 
 describe('purgeDeletedUsers', () => {
+  it('uses durable owner selection instead of the old fixed first100 query', async () => {
+    const id = 'b3b01000-0000-4000-8000-000000000101'
+    const rpc = vi.fn(() => ({
+      abortSignal: async () => ({ data: { version: 1, users: [{ id }] }, error: null }),
+    }))
+    const from = vi.fn(() => {
+      throw new Error('legacy fixed first100 selector must not run')
+    })
+    const client = { rpc, from } as unknown as ServiceClient
+    expect(
+      await createPurgeDependencies(client).repository.listUsersReadyForPurge(
+        '2026-10-25T11:00:00.000Z',
+        100,
+      ),
+    ).toEqual([{ id }])
+    expect(rpc).toHaveBeenCalledWith('list_mobile_deleted_users_for_photo_purge', {
+      p_cutoff: '2026-10-25T11:00:00.000Z',
+      p_limit: 100,
+    })
+    expect(from).not.toHaveBeenCalled()
+  })
   it('defers only the pending recurring owner and continues the batch', async () => {
     const deps = makeDeps()
     const prepare = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true)
@@ -94,3 +119,5 @@ describe('purgeDeletedUsers', () => {
     await expect(purgeDeletedUsers(deps)).resolves.toEqual({ purged: 0, mediaRemoved: 0 })
   })
 })
+
+import type { ServiceClient } from '@mpp/db'

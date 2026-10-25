@@ -23,20 +23,14 @@ const pageSchema = z
     version: z.literal(1),
     user_id: uuid,
     eligible: z.boolean(),
-    items: z.array(z.object({ cycle_id: uuid, acceptance_id: uuid }).strict()).max(20),
+    items: z.array(z.object({ cycle_id: uuid, acceptance_id: uuid }).strict()).max(100),
     has_more: z.boolean(),
-    cursor: uuid.nullable(),
   })
   .strict()
 export interface ReevaluationPhotoAccountPurgeDependencies {
+  begin(userId: string, cutoff: string, signal: AbortSignal): Promise<unknown>
   purge(userId: string, cutoff: string, signal: AbortSignal): Promise<unknown>
-  listScopes(
-    userId: string,
-    cutoff: string,
-    after: string | null,
-    limit: number,
-    signal: AbortSignal,
-  ): Promise<unknown>
+  claimScopes(userId: string, cutoff: string, limit: number, signal: AbortSignal): Promise<unknown>
   drain(
     scope: ReevaluationPhotoDispositionScope,
     options: { timeoutMs: number; signal: AbortSignal },
@@ -77,29 +71,30 @@ export async function prepareReevaluationPhotoAccountPurge(
   }
   async function work() {
     try {
+      guard()
+      const begun = await deps.begin(current.userId, current.cutoff, controller.signal)
+      guard()
+      if (begun !== true) return false
       if (await purge()) return true
-      let cursor: string | null = null
-      let visited = 0
-      while (visited < configuration.maxScopes) {
+      const attempted = new Set<string>()
+      while (attempted.size < configuration.maxScopes) {
         guard()
-        const limit = Math.min(20, configuration.maxScopes - visited)
+        const limit = 1
         const page = pageSchema.parse(
-          await deps.listScopes(current.userId, current.cutoff, cursor, limit, controller.signal),
+          await deps.claimScopes(current.userId, current.cutoff, limit, controller.signal),
         )
         guard()
         if (
           !page.eligible ||
           page.user_id !== current.userId ||
           page.items.length > limit ||
-          page.cursor !== (page.items.at(-1)?.acceptance_id ?? null) ||
           (page.has_more && page.items.length !== limit) ||
-          !page.items.every(
-            (item, i) =>
-              item.acceptance_id > (i ? (page.items[i - 1]?.acceptance_id ?? '') : (cursor ?? '')),
-          )
+          new Set(page.items.map((item) => item.acceptance_id)).size !== page.items.length
         )
           return false
         for (const item of page.items) {
+          if (attempted.has(item.acceptance_id)) return false
+          attempted.add(item.acceptance_id)
           guard()
           const outcome = await deps.drain(
             { userId: current.userId, cycleId: item.cycle_id, acceptanceId: item.acceptance_id },
@@ -110,10 +105,8 @@ export async function prepareReevaluationPhotoAccountPurge(
           )
           guard()
           if (outcome.state !== 'settled' && outcome.state !== 'waiting') return false
-          visited += 1
         }
         if (!page.has_more) return await purge()
-        cursor = page.cursor
       }
       return false
     } catch {

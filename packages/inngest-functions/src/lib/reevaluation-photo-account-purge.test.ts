@@ -16,27 +16,59 @@ function setup() {
     eligible: true,
     items: [{ cycle_id: cycle, acceptance_id: acceptance }],
     has_more: false,
-    cursor: acceptance,
   }
   const deps: ReevaluationPhotoAccountPurgeDependencies = {
+    begin: vi.fn().mockResolvedValue(true),
     purge: vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true),
-    listScopes: vi.fn().mockResolvedValue(receipt),
+    claimScopes: vi.fn().mockResolvedValue(receipt),
     drain: vi.fn().mockResolvedValue({ state: 'settled', newlyDeleted: 1 }),
   }
   return { deps, receipt }
 }
 describe('bounded recurring account purge coordination', () => {
+  it('defers a lost owner precondition before purge or scope claims', async () => {
+    const { deps } = setup()
+    vi.mocked(deps.begin).mockResolvedValue(false)
+    expect(await prepareReevaluationPhotoAccountPurge(deps, user, cutoff)).toBe(false)
+    expect(deps.purge).not.toHaveBeenCalled()
+    expect(deps.claimScopes).not.toHaveBeenCalled()
+  })
+  it('advances actual attempts across calls even when every removal is incomplete', async () => {
+    const { deps, receipt } = setup()
+    const ids = Array.from(
+      { length: 21 },
+      (_, i) => `b3b01000-0000-4000-8000-${String(i + 10).padStart(12, '0')}`,
+    )
+    let position = 0
+    vi.mocked(deps.purge).mockReset().mockResolvedValue(false)
+    vi.mocked(deps.claimScopes).mockImplementation(async () => ({
+      ...receipt,
+      items: [{ cycle_id: cycle, acceptance_id: ids[position++ % ids.length] }],
+      has_more: true,
+    }))
+    vi.mocked(deps.drain).mockResolvedValue({
+      state: 'incomplete',
+      reason: 'unavailable',
+      newlyDeleted: 0,
+    })
+    for (let i = 0; i < 21; i++)
+      expect(await prepareReevaluationPhotoAccountPurge(deps, user, cutoff)).toBe(false)
+    expect(
+      new Set(vi.mocked(deps.drain).mock.calls.map(([scope]) => scope.acceptanceId)).size,
+    ).toBe(21)
+    expect(deps.purge).toHaveBeenCalledTimes(21)
+  })
   it('uses the transactional fast path for an already settled or empty owner', async () => {
     const { deps } = setup()
     vi.mocked(deps.purge).mockReset().mockResolvedValue(true)
     expect(await prepareReevaluationPhotoAccountPurge(deps, user, cutoff)).toBe(true)
-    expect(deps.listScopes).not.toHaveBeenCalled()
+    expect(deps.claimScopes).not.toHaveBeenCalled()
     expect(deps.drain).not.toHaveBeenCalled()
   })
   it('drains only bound scopes then asks SQL to prove and purge the complete owner', async () => {
     const { deps } = setup()
     expect(await prepareReevaluationPhotoAccountPurge(deps, user, cutoff)).toBe(true)
-    expect(deps.listScopes).toHaveBeenCalledWith(user, cutoff, null, 20, expect.any(AbortSignal))
+    expect(deps.claimScopes).toHaveBeenCalledWith(user, cutoff, 1, expect.any(AbortSignal))
     expect(deps.drain).toHaveBeenCalledWith(
       { userId: user, cycleId: cycle, acceptanceId: acceptance },
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
@@ -50,7 +82,9 @@ describe('bounded recurring account purge coordination', () => {
     const { deps, receipt } = setup()
     receipt.items.push({ cycle_id: cycle, acceptance_id: other })
     receipt.items.sort((a, b) => a.acceptance_id.localeCompare(b.acceptance_id))
-    receipt.cursor = acceptance
+    vi.mocked(deps.claimScopes)
+      .mockResolvedValueOnce({ ...receipt, items: [receipt.items[0]], has_more: true })
+      .mockResolvedValueOnce({ ...receipt, items: [receipt.items[1]], has_more: false })
     vi.mocked(deps.drain).mockResolvedValueOnce({ state: 'waiting', newlyDeleted: 1 })
     vi.mocked(deps.purge).mockReset().mockResolvedValue(false)
     expect(await prepareReevaluationPhotoAccountPurge(deps, user, cutoff)).toBe(false)
@@ -59,7 +93,7 @@ describe('bounded recurring account purge coordination', () => {
   it.each([
     { change: { user_id: other } },
     { change: { eligible: false } },
-    { change: { cursor: other } },
+    { change: { items: [], has_more: true } },
     { change: { extra: 'private' } },
     {
       change: {
@@ -69,12 +103,12 @@ describe('bounded recurring account purge coordination', () => {
         ],
       },
     },
-    { change: { items: [] } },
+    { change: { eligible: false, items: [] } },
   ])('defers malformed, foreign, duplicate or inconsistent lookup receipts: $change', async ({
     change,
   }) => {
     const { deps, receipt } = setup()
-    vi.mocked(deps.listScopes).mockResolvedValue({ ...receipt, ...change })
+    vi.mocked(deps.claimScopes).mockResolvedValue({ ...receipt, ...change })
     expect(await prepareReevaluationPhotoAccountPurge(deps, user, cutoff)).toBe(false)
     expect(deps.drain).not.toHaveBeenCalled()
     expect(deps.purge).toHaveBeenCalledOnce()
@@ -83,50 +117,40 @@ describe('bounded recurring account purge coordination', () => {
     const { deps } = setup()
     vi.mocked(deps.purge).mockReset().mockResolvedValue({ ok: true })
     expect(await prepareReevaluationPhotoAccountPurge(deps, user, cutoff)).toBe(false)
-    expect(deps.listScopes).not.toHaveBeenCalled()
+    expect(deps.claimScopes).not.toHaveBeenCalled()
   })
   it('preserves durable progress when the scope budget runs out', async () => {
     const { deps, receipt } = setup()
-    vi.mocked(deps.listScopes).mockResolvedValue({ ...receipt, has_more: true })
+    vi.mocked(deps.claimScopes).mockResolvedValue({ ...receipt, has_more: true })
     expect(await prepareReevaluationPhotoAccountPurge(deps, user, cutoff, { maxScopes: 1 })).toBe(
       false,
     )
-    expect(deps.listScopes).toHaveBeenCalledWith(user, cutoff, null, 1, expect.any(AbortSignal))
+    expect(deps.claimScopes).toHaveBeenCalledWith(user, cutoff, 1, expect.any(AbortSignal))
     expect(deps.drain).toHaveBeenCalledOnce()
     expect(deps.purge).toHaveBeenCalledOnce()
   })
-  it('continues a full keyset page without scanning settled history again', async () => {
+  it('claims one scope per actual attempt so a timeout cannot mark unattempted scopes visited', async () => {
     const { deps, receipt } = setup()
-    const ids = Array.from(
-      { length: 21 },
-      (_, i) => `b3b01000-0000-4000-8000-${String(i + 10).padStart(12, '0')}`,
-    )
-    const rows = ids.map((id) => ({ cycle_id: cycle, acceptance_id: id }))
-    vi.mocked(deps.listScopes)
-      .mockResolvedValueOnce({
-        ...receipt,
-        items: rows.slice(0, 20),
-        cursor: ids[19],
-        has_more: true,
-      })
-      .mockResolvedValueOnce({ ...receipt, items: rows.slice(20), cursor: ids[20] })
+    const rows = Array.from({ length: 21 }, (_, i) => ({
+      cycle_id: cycle,
+      acceptance_id: `b3b01000-0000-4000-8000-${String(i + 10).padStart(12, '0')}`,
+    }))
+    vi.mocked(deps.claimScopes).mockImplementation(async () => ({
+      ...receipt,
+      items: [rows.shift()],
+      has_more: rows.length > 0,
+    }))
     expect(await prepareReevaluationPhotoAccountPurge(deps, user, cutoff, { maxScopes: 25 })).toBe(
       true,
     )
+    expect(deps.claimScopes).toHaveBeenCalledTimes(21)
+    expect(deps.claimScopes).toHaveBeenCalledWith(user, cutoff, 1, expect.any(AbortSignal))
     expect(deps.drain).toHaveBeenCalledTimes(21)
-    expect(deps.listScopes).toHaveBeenNthCalledWith(
-      2,
-      user,
-      cutoff,
-      ids[19],
-      5,
-      expect.any(AbortSignal),
-    )
   })
   it('does not start a drain after a timed-out lookup completes late', async () => {
     const { deps, receipt } = setup()
     let finish: ((value: unknown) => void) | undefined
-    vi.mocked(deps.listScopes).mockImplementation(
+    vi.mocked(deps.claimScopes).mockImplementation(
       () =>
         new Promise((resolve) => {
           finish = resolve
@@ -171,7 +195,7 @@ describe('bounded recurring account purge coordination', () => {
   })
   it('sanitizes dependency failures and rejects invalid inputs before calling them', async () => {
     const { deps } = setup()
-    vi.mocked(deps.listScopes).mockRejectedValue(new Error('private provider token'))
+    vi.mocked(deps.claimScopes).mockRejectedValue(new Error('private provider token'))
     expect(await prepareReevaluationPhotoAccountPurge(deps, user, cutoff)).toBe(false)
     expect(await prepareReevaluationPhotoAccountPurge(deps, '../bad', cutoff)).toBe(false)
     expect(await prepareReevaluationPhotoAccountPurge(deps, user, 'bad')).toBe(false)

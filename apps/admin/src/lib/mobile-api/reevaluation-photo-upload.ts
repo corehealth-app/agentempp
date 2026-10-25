@@ -53,6 +53,7 @@ const assetWire = z
 export {
   assetWire as reevaluationPhotoAssetWireSchema,
   revision as reevaluationPhotoRevisionSchema,
+  timestamp as reevaluationPhotoTimestampSchema,
 }
 
 const ticketSchema = z

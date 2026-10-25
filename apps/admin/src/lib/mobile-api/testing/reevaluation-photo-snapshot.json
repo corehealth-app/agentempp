@@ -1,0 +1,97 @@
+{
+  "provenance": "Owned local PostgreSQL; synthetic provider readings22/24/26; no actual photos/AI",
+  "context": {
+    "userId": "b3b01000-0000-4000-8000-000000000850",
+    "signupGeneration": "5fd3b49d-3dfc-424c-aa55-bebbfedc8075",
+    "cycleId": "9305470b-84bb-4716-afb6-45fe50832611",
+    "cycleRevision": "5",
+    "currentConsent": {
+      "documentId": "b3b01000-0000-4000-8000-000000000501",
+      "documentKey": "body_photo_reevaluation_consent",
+      "version": "asset-local-1",
+      "locale": "pt-BR",
+      "bodyHash": "469955644e463dbcca7d30c02c3367e3264a969b47ba9817c434f94c069b6469"
+    }
+  },
+  "snapshot": {
+    "photos": [
+      {
+        "pose": "front",
+        "photo": {
+          "origin": "reevaluation_cycle_v1",
+          "status": "processed",
+          "user_id": "b3b01000-0000-4000-8000-000000000850",
+          "analysis": {
+            "type": "body",
+            "view": "front",
+            "bf_percent_estimate": 22
+          },
+          "asset_id": "202d08e8-ec37-4615-be62-e7ffc203ac5b",
+          "cycle_id": "9305470b-84bb-4716-afb6-45fe50832611",
+          "created_at": "2026-10-25T01:21:54.423597Z",
+          "uploaded_at": "2026-10-25T01:21:54.519653Z",
+          "processed_at": "2026-10-25T01:21:54.912059Z",
+          "signup_generation": "5fd3b49d-3dfc-424c-aa55-bebbfedc8075",
+          "consent_acceptance_id": "8729bd98-8250-4caf-8481-486f22feae4e"
+        }
+      },
+      {
+        "pose": "side",
+        "photo": {
+          "origin": "reevaluation_cycle_v1",
+          "status": "processed",
+          "user_id": "b3b01000-0000-4000-8000-000000000850",
+          "analysis": {
+            "type": "body",
+            "view": "side",
+            "bf_percent_estimate": 24
+          },
+          "asset_id": "7e115794-2c29-4e0b-b2a9-6daa100c7829",
+          "cycle_id": "9305470b-84bb-4716-afb6-45fe50832611",
+          "created_at": "2026-10-25T01:21:54.980757Z",
+          "uploaded_at": "2026-10-25T01:21:55.164390Z",
+          "processed_at": "2026-10-25T01:21:55.556958Z",
+          "signup_generation": "5fd3b49d-3dfc-424c-aa55-bebbfedc8075",
+          "consent_acceptance_id": "8729bd98-8250-4caf-8481-486f22feae4e"
+        }
+      },
+      {
+        "pose": "back",
+        "photo": {
+          "origin": "reevaluation_cycle_v1",
+          "status": "processed",
+          "user_id": "b3b01000-0000-4000-8000-000000000850",
+          "analysis": {
+            "type": "body",
+            "view": "back",
+            "bf_percent_estimate": 26
+          },
+          "asset_id": "12f4be2a-adda-4fe0-9bea-e541c0cf522a",
+          "cycle_id": "9305470b-84bb-4716-afb6-45fe50832611",
+          "created_at": "2026-10-25T01:21:55.626465Z",
+          "uploaded_at": "2026-10-25T01:21:55.809714Z",
+          "processed_at": "2026-10-25T01:21:56.195673Z",
+          "signup_generation": "5fd3b49d-3dfc-424c-aa55-bebbfedc8075",
+          "consent_acceptance_id": "8729bd98-8250-4caf-8481-486f22feae4e"
+        }
+      }
+    ],
+    "consent": {
+      "locale": "pt-BR",
+      "version": "asset-local-1",
+      "body_hash": "469955644e463dbcca7d30c02c3367e3264a969b47ba9817c434f94c069b6469",
+      "accepted_at": "2026-10-25T01:21:54.399256Z",
+      "document_id": "b3b01000-0000-4000-8000-000000000501",
+      "document_key": "body_photo_reevaluation_consent",
+      "acceptance_id": "8729bd98-8250-4caf-8481-486f22feae4e"
+    },
+    "user_id": "b3b01000-0000-4000-8000-000000000850",
+    "version": 1,
+    "cycle_id": "9305470b-84bb-4716-afb6-45fe50832611",
+    "opened_at": "2026-10-25T01:21:54.370604Z",
+    "observed_at": "2026-10-25T01:21:56.287878Z",
+    "cycle_revision": "5",
+    "signup_generation": "5fd3b49d-3dfc-424c-aa55-bebbfedc8075"
+  },
+  "expected_mean": 24
+}

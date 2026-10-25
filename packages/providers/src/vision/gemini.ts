@@ -13,6 +13,7 @@
  * onboarding pedindo foto corporal), passar `hint` evita a classificação.
  */
 import OpenAI from 'openai'
+import type { RequestOptions } from 'openai/core'
 
 export interface VisionConfig {
   apiKey: string
@@ -563,7 +564,11 @@ export class GeminiVision {
   async analyzeImage(
     imageUrl: string,
     options: { hint?: VisionImageType; userMessage?: string } = {},
+    bodyRequestOptions?: Pick<RequestOptions, 'signal' | 'timeout' | 'maxRetries'>,
   ): Promise<VisionAnalysis> {
+    if (bodyRequestOptions !== undefined && options.hint !== 'body') {
+      throw new Error('Body request options require an explicit body hint')
+    }
     const type = options.hint ?? (await this.classify(imageUrl))
 
     if (type === 'meal') {
@@ -583,7 +588,7 @@ export class GeminiVision {
         }
       }
     }
-    if (type === 'body') return this.analyzeBody(imageUrl, options.userMessage)
+    if (type === 'body') return this.analyzeBody(imageUrl, options.userMessage, bodyRequestOptions)
     if (type === 'scale') return this.analyzeScale(imageUrl)
     if (type === 'nutrition_label') {
       try {
@@ -749,29 +754,36 @@ export class GeminiVision {
     }
   }
 
-  async analyzeBody(imageUrl: string, userMessage?: string): Promise<VisionBodyAnalysis> {
+  async analyzeBody(
+    imageUrl: string,
+    userMessage?: string,
+    requestOptions?: Pick<RequestOptions, 'signal' | 'timeout' | 'maxRetries'>,
+  ): Promise<VisionBodyAnalysis> {
     const start = Date.now()
-    const completion = await this.client.chat.completions.create({
-      model: this.model,
-      temperature: 0.2,
-      max_tokens: 1024,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: this.prompts.body },
-        {
-          role: 'user',
-          content: [
-            { type: 'image_url', image_url: { url: imageUrl } },
-            {
-              type: 'text',
-              text: userMessage
-                ? `Contexto do usuário: "${userMessage}"`
-                : 'Avalie a composição corporal.',
-            },
-          ],
-        },
-      ],
-    })
+    const completion = await this.client.chat.completions.create(
+      {
+        model: this.model,
+        temperature: 0.2,
+        max_tokens: 1024,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: this.prompts.body },
+          {
+            role: 'user',
+            content: [
+              { type: 'image_url', image_url: { url: imageUrl } },
+              {
+                type: 'text',
+                text: userMessage
+                  ? `Contexto do usuário: "${userMessage}"`
+                  : 'Avalie a composição corporal.',
+              },
+            ],
+          },
+        ],
+      },
+      requestOptions,
+    )
     const raw = completion.choices[0]?.message?.content ?? ''
     const parsed = parseJsonLoose(raw)
     if (Object.keys(parsed).length === 0) {

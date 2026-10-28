@@ -205,6 +205,33 @@ export interface ClosePastOpenDaysInput {
   block7700Policy?: FlowBloco7700Policy['version']
   finalizationFence?: 'mobile-current-v1'
   advanceReevaluation?: boolean
+  /** Complete opt-in authority. Both writes (close/reset) must use the same
+   * clinical implementation. Absence preserves the original writer path. */
+  clinicalAuthority?: DayCloseClinicalAuthority
+}
+
+export interface DayCloseClinicalAuthority {
+  closeDate(
+    scope: Readonly<{ userId: string; timezone: string; from: string; date: string }>,
+  ): Promise<DayCloseResult>
+  /** latestClosableDate is discovery metadata, not an authoritative SQL clock. */
+  resetInactive(
+    scope: Readonly<{ userId: string; timezone: string; from: string; latestClosableDate: string }>,
+  ): Promise<DayCloseStreakReset | null>
+}
+
+function bindClinicalAuthority(value: DayCloseClinicalAuthority | undefined) {
+  if (value === undefined) return null
+  if (value === null || typeof value !== 'object')
+    throw new Error('Complete clinical close authority required')
+  const closeDate = value.closeDate,
+    resetInactive = value.resetInactive
+  if (typeof closeDate !== 'function' || typeof resetInactive !== 'function')
+    throw new Error('Complete clinical close authority required')
+  return Object.freeze({
+    closeDate: closeDate.bind(value),
+    resetInactive: resetInactive.bind(value),
+  })
 }
 
 export interface DayCloseStreakReset {
@@ -890,7 +917,17 @@ export async function closePastOpenDays(
   input: ClosePastOpenDaysInput,
 ): Promise<ClosePastOpenDaysResult> {
   const { userId, timezone, from } = input
-  const now = input.now ?? new Date()
+  const clinicalAuthority = bindClinicalAuthority(input.clinicalAuthority)
+  if (clinicalAuthority && (input.dryRun === true || input.advanceReevaluation === true))
+    throw new Error('Unsupported clinical close mode')
+  const suppliedNow = input.now ?? new Date()
+  const now = clinicalAuthority ? new Date(suppliedNow.getTime()) : suppliedNow
+  const clinicalLimits = clinicalAuthority
+    ? {
+        maxDays: input.limits?.maxDays ?? Number.POSITIVE_INFINITY,
+        maxMs: input.limits?.maxMs ?? Number.POSITIVE_INFINITY,
+      }
+    : null
   const dryRun = input.dryRun === true
   const clock = input.clock ?? Date.now
   const startedAt = clock()
@@ -1030,8 +1067,8 @@ export async function closePastOpenDays(
   )
   result.inactiveOpenDates = pastFrontier.filter((date) => !candidates.includes(date))
 
-  const maxDays = input.limits?.maxDays ?? Number.POSITIVE_INFINITY
-  const maxMs = input.limits?.maxMs ?? Number.POSITIVE_INFINITY
+  const maxDays = clinicalLimits?.maxDays ?? input.limits?.maxDays ?? Number.POSITIVE_INFINITY
+  const maxMs = clinicalLimits?.maxMs ?? input.limits?.maxMs ?? Number.POSITIVE_INFINITY
   let closedCount = 0
   let unresolved = truncated
   let simulated: DayCloseProgress | null = null
@@ -1092,22 +1129,47 @@ export async function closePastOpenDays(
       result.pendingDates = candidates.slice(index)
       break
     }
-    const day = await closeDay(
-      supabase,
-      {
-        userId,
-        timezone,
-        date,
-        now,
-        dryRun,
-        block7700Policy: input.block7700Policy,
-        finalizationFence: input.finalizationFence,
-        simulatedProgress: simulated,
-        advanceReevaluation: input.advanceReevaluation,
-      },
-      // On a full page "not returned" does not mean "appeared later".
-      truncated ? null : earlierDateChangedBefore(date),
+    const day: DayCloseResult = clinicalAuthority
+      ? structuredClone(
+          await clinicalAuthority.closeDate(Object.freeze({ userId, timezone, from, date })),
+        )
+      : await closeDay(
+          supabase,
+          {
+            userId,
+            timezone,
+            date,
+            now,
+            dryRun,
+            block7700Policy: input.block7700Policy,
+            finalizationFence: input.finalizationFence,
+            simulatedProgress: simulated,
+            advanceReevaluation: input.advanceReevaluation,
+          },
+          // On a full page "not returned" does not mean "appeared later".
+          truncated ? null : earlierDateChangedBefore(date),
+        )
+    if (
+      clinicalAuthority &&
+      (!day ||
+        typeof day !== 'object' ||
+        day.date !== date ||
+        day.dryRun !== false ||
+        typeof day.closed !== 'boolean' ||
+        typeof day.late !== 'boolean' ||
+        (day.closed && day.detail?.progress?.lastActiveDate !== date) ||
+        (!day.closed &&
+          ![
+            'already_closed',
+            'closed_concurrently',
+            'not_closable_yet',
+            'behind_frontier',
+            'earlier_date_changed',
+            'changed_concurrently',
+            'inactive',
+          ].includes(day.reason ?? '')))
     )
+      throw new Error('Invalid clinical close result')
     result.days.push(day)
     if (day.closed) {
       closedCount += 1
@@ -1116,7 +1178,11 @@ export async function closePastOpenDays(
     } else if (day.reason === 'already_closed' || day.reason === 'closed_concurrently') {
       // Closed by another request: resolved, and nothing up to it is open.
       closedUpTo = date
-    } else if (day.reason === 'changed_concurrently' || day.reason === 'earlier_date_changed') {
+    } else if (
+      day.reason === 'changed_concurrently' ||
+      day.reason === 'earlier_date_changed' ||
+      (clinicalAuthority && (day.reason === 'not_closable_yet' || day.reason === 'behind_frontier'))
+    ) {
       // Still open, with data, and NOT closed by this call. The sweep stops
       // here: closing a later date now would move the frontier past the date
       // that changed (this one, or an earlier one) and it would never close
@@ -1132,6 +1198,30 @@ export async function closePastOpenDays(
   // date with data is still waiting, zeroing the streak here would make that
   // date restart at 1 instead of continuing it.
   if (!result.complete) return result
+
+  // SQL rechecks pending activity, frontier, health, config and its fresh civil
+  // clock even when discovery was empty. Never enter the old reset/event path.
+  if (clinicalAuthority) {
+    const reset = structuredClone(
+      await clinicalAuthority.resetInactive(
+        Object.freeze({ userId, timezone, from, latestClosableDate }),
+      ),
+    )
+    if (reset !== null) {
+      if (
+        !reset ||
+        reset.applied !== true ||
+        !Number.isInteger(reset.previousStreak) ||
+        reset.previousStreak <= 0 ||
+        !Number.isInteger(reset.gapDays) ||
+        reset.gapDays < 2
+      )
+        throw new Error('Invalid clinical inactivity result')
+      assertIsoDate(reset.lastActiveDate, 'clinical reset date')
+    }
+    result.streakReset = reset
+    return result
+  }
 
   let current: { currentStreak: number; lastActiveDate: string | null }
   let expectedResetProgress: unknown = progressRow

@@ -33,12 +33,17 @@ struct ObjectiveStepView: View {
                             .frame(minHeight: BodyFlowSpacing.minimumTapTarget, alignment: .leading)
                             .accessibilityIdentifier("onboarding.objective.about-gain")
                     }
+                } else if decision.decision == .noPlan {
+                    Text(copy("onboarding.clinical.no-plan.title",fallback:"Seu acompanhamento"))
+                        .font(BodyFlowTypography.screenTitle).accessibilityAddTraits(.isHeader)
+                    paragraphs(decision.notice ?? []).accessibilityIdentifier("onboarding.objective.no-plan")
                 } else {
                     OnboardingStepHeader(
                         titleKey: "onboarding.objective.title", titleFallback: "Seu objetivo",
                         messageKey: "onboarding.objective.message",
                         messageFallback: "Escolha uma opção para orientar a organização da experiência."
                     )
+                    paragraphs(decision.notice ?? [])
                     ForEach(decision.options, id: \.objective) { option in
                         if option.status == .available {
                             Button { model.updateObjective(option.objective) } label: {

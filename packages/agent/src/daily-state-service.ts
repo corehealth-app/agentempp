@@ -23,6 +23,9 @@ type MealPatternResult = Awaited<ReturnType<typeof getMealPattern>>
 type SkippedMealsResult = Awaited<ReturnType<typeof getSkippedMealsForDate>>
 
 export interface DailyStateServiceDependencies {
+  /** Explicit clinical reader: progress must survive the same final latch as
+   * snapshot/routines, including row creation/deletion and full timestamp text. */
+  requireFreshProgress?: true
   loadConfig: typeof loadCalcConfig
   loadMealPattern: (
     supabase: ServiceClient,
@@ -35,6 +38,16 @@ export interface DailyStateServiceDependencies {
     timezone: string,
     localDate: string,
   ) => Promise<SkippedMealsResult>
+  /** Clinical composition only: an explicit read result must never fall back
+   * to the legacy clock/config calculator when its targets are null. */
+  resolveTargetRead?: (
+    profile: ProfileRow | null,
+    config: Parameters<typeof computeDailyTargets>[1],
+    localDate: string,
+  ) => {
+    calculatedTargets: ReturnType<typeof computeDailyTargets>
+    targetByProtocol: ReturnType<typeof dailyTargetByProtocol> | null
+  }
 }
 
 const DEFAULT_DEPENDENCIES: DailyStateServiceDependencies = {
@@ -226,6 +239,20 @@ function assertRoutinePageLocalDates(
 
 function sourceFingerprint(value: unknown): string {
   return JSON.stringify(value ?? null)
+}
+
+function progressFingerprint(
+  value: { deficit_block: unknown; blocks_completed: unknown; updated_at: unknown } | null,
+) {
+  return sourceFingerprint(
+    value
+      ? {
+          deficit_block: value.deficit_block,
+          blocks_completed: value.blocks_completed,
+          updated_at: value.updated_at,
+        }
+      : null,
+  )
 }
 
 function snapshotFingerprint(
@@ -439,6 +466,7 @@ async function loadOfficialDailyStateAttempt(
     currentHydrationTargetResult,
     currentSupplementRoutineResult,
     currentMedicationRoutineResult,
+    currentProgressResult,
   ] = await Promise.all([
     supabase
       .from('daily_snapshots')
@@ -463,10 +491,22 @@ async function loadOfficialDailyStateAttempt(
       p_include_archived: false,
       p_now: nowIso,
     }),
+    dependencies.requireFreshProgress === true
+      ? supabase
+          .from('user_progress')
+          .select('deficit_block, blocks_completed, updated_at')
+          .eq('user_id', userId)
+          .maybeSingle()
+      : Promise.resolve(null),
   ]).catch(() => {
     throw new DailyStateLoadError('daily state consistency lookup')
   })
   assertQuerySucceeded(currentSnapshotResult.error, 'daily state consistency lookup')
+  if (dependencies.requireFreshProgress === true) {
+    if (!currentProgressResult)
+      throw new DailyStateLoadError('daily state progress consistency lookup')
+    assertQuerySucceeded(currentProgressResult.error, 'daily state progress consistency lookup')
+  }
   assertQuerySucceeded(
     currentHydrationTargetResult.error,
     'daily state hydration consistency lookup',
@@ -492,6 +532,8 @@ async function loadOfficialDailyStateAttempt(
   assertRoutinePageLocalDates(localDate, currentSupplementRoutinePage, currentMedicationRoutinePage)
   if (
     snapshotFingerprint(snapshot) !== snapshotFingerprint(currentSnapshotResult.data) ||
+    (dependencies.requireFreshProgress === true &&
+      progressFingerprint(progress) !== progressFingerprint(currentProgressResult?.data ?? null)) ||
     sourceFingerprint(hydrationTargetResult.data) !==
       sourceFingerprint(currentHydrationTargetResult.data) ||
     sourceFingerprint(supplementRoutinePage) !== sourceFingerprint(currentSupplementRoutinePage) ||
@@ -506,20 +548,25 @@ async function loadOfficialDailyStateAttempt(
   // the profile's), the daily closer's programmed deficit for THAT protocol
   // (daily-closer.ts `designDeficit`), the multiplier as a number, and
   // whether the day's stored target still belongs to that protocol's rule.
+  const targetRead = dependencies.resolveTargetRead?.(profile, config, localDate)
   const dayBalanceInputs = resolveDayBalanceInputs({
     profileProtocol: profile?.current_protocol ?? null,
     deficitLevel: profile?.deficit_level ?? null,
     gainSurplusMultiplier: config.ganho_massa_surplus_multiplier,
     dayRowProtocol: snapshot?.current_protocol ?? null,
     storedTargetKcal: snapshot?.calories_target ?? null,
-    targetByProtocol: dailyTargetByProtocol(profile, config),
+    targetByProtocol: targetRead
+      ? targetRead.targetByProtocol
+      : dailyTargetByProtocol(profile, config),
   })
 
   return buildDailyState({
     localDate,
     generatedAt: nowIso,
     protocol: profile?.current_protocol ?? null,
-    calculatedTargets: computeDailyTargets(profile, config),
+    calculatedTargets: targetRead
+      ? targetRead.calculatedTargets
+      : computeDailyTargets(profile, config),
     gainSurplusMultiplier: dayBalanceInputs.gainSurplusMultiplier,
     programmedDeficitKcal: dayBalanceInputs.programmedDeficitKcal,
     dayTargetMatchesProtocol: dayBalanceInputs.targetMatchesProtocol,
@@ -574,9 +621,13 @@ export async function loadOfficialDailyState(
   now = new Date(),
   dependencies: DailyStateServiceDependencies = DEFAULT_DEPENDENCIES,
 ) {
+  const fixedDependencies =
+    dependencies.requireFreshProgress === true
+      ? Object.freeze({ ...dependencies, requireFreshProgress: true as const })
+      : dependencies
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      return await loadOfficialDailyStateAttempt(supabase, userId, timezone, now, dependencies)
+      return await loadOfficialDailyStateAttempt(supabase, userId, timezone, now, fixedDependencies)
     } catch (error) {
       if (!(error instanceof DailyStateReadChangedError)) throw error
     }

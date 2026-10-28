@@ -1,6 +1,6 @@
-import { mobileQuantityFields } from './mobile-quantity-display'
 import {
   DailyStateLoadError,
+  type DailyStateServiceDependencies,
   isUnresolvedNutritionSource,
   loadOfficialDailyState,
 } from '@mpp/agent'
@@ -9,6 +9,7 @@ import type { Json, ServiceClient } from '@mpp/db'
 import type { MobileAuthContext } from './auth'
 import type { HistoryQuery, TrendsQuery } from './contracts'
 import { MobileApiError } from './http'
+import { mobileQuantityFields } from './mobile-quantity-display'
 import { loadProgressBodyFatOrigin } from './progress-body-fat-origin'
 
 type JsonRecord = Record<string, Json | undefined>
@@ -172,10 +173,16 @@ export async function loadToday(
   userId: string,
   timezone: string,
   now = new Date(),
+  dependencies?: DailyStateServiceDependencies,
 ) {
   try {
-    const state = await loadOfficialDailyState(supabase, userId, timezone, now)
-    return { ...state, meals: state.meals.map(item => ({ ...item, ...mobileQuantityFields(item.food_name) })) }
+    const state = dependencies
+      ? await loadOfficialDailyState(supabase, userId, timezone, now, dependencies)
+      : await loadOfficialDailyState(supabase, userId, timezone, now)
+    return {
+      ...state,
+      meals: state.meals.map((item) => ({ ...item, ...mobileQuantityFields(item.food_name) })),
+    }
   } catch (error) {
     if (error instanceof DailyStateLoadError) {
       throw new MobileApiError(500, 'data_access_failed', 'Daily state lookup failed')
@@ -439,7 +446,10 @@ export async function loadHistory(supabase: ServiceClient, userId: string, query
   throwQueryError(mealResult.error, 'Meal history lookup')
   throwQueryError(workoutResult.error, 'Workout history lookup')
   return {
-    meals: (mealResult.data ?? []).map(item => ({ ...item, ...mobileQuantityFields(item.food_name) })),
+    meals: (mealResult.data ?? []).map((item) => ({
+      ...item,
+      ...mobileQuantityFields(item.food_name),
+    })),
     workouts: workoutResult.data ?? [],
     pagination: { limit: query.limit, before: query.before ?? null },
   }

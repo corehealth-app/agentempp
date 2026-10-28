@@ -2,10 +2,15 @@ import { createHash } from 'node:crypto'
 import type { ServiceClient } from '@mpp/db'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { OnboardingCompletionInput } from './contracts'
+import { readCurrentClinicalState } from './current-clinical-state'
 import { hashMobileRequest } from './idempotency'
 import { OnboardingRepositoryError } from './onboarding-service'
 import type { PreparedSignupPhotoConfirmation } from './signup-body-photo-confirmation'
-import { createSupabaseOnboardingRepository } from './supabase-onboarding'
+import {
+  createSupabaseOnboardingRepository,
+  type SupabaseOnboardingOptions,
+} from './supabase-onboarding'
+import { currentOnboardingWire } from './testing/current-onboarding-fixture'
 
 const USER_ID = '00000000-0000-4000-8000-000000000951'
 
@@ -90,6 +95,213 @@ function requirementSet(documentKeys: string[]) {
 afterEach(() => vi.unstubAllEnvs())
 
 describe('Supabase onboarding adapter', () => {
+  it.each(
+    [null, '2026-10-22T15:00:00.000001Z'].flatMap((marker) =>
+      (['current', 'missing', 'outdated'] as const).map((actions) => ({ marker, actions })),
+    ),
+  )('projects admitted legacy completion without a questionnaire ($marker/$actions)', async ({
+    marker,
+    actions,
+  }) => {
+    const raw = currentOnboardingWire('healthy')
+    raw.user_id = USER_ID
+    raw.health_state.user_id = USER_ID
+    Object.assign(raw.generation_token, { onboarding_completed_at: marker })
+    Object.assign(raw, {
+      generation_authority: {
+        kind: 'legacy_transition',
+        user_id: USER_ID,
+        generation: raw.signup_generation,
+        epoch: raw.epoch,
+        admitted_at: raw.observed_at,
+        admitted_date: raw.date,
+        timezone_at_admission: raw.timezone,
+        profile_completed_marker: marker,
+      },
+    })
+    raw.first_completion = false
+    const doc = { ...embeddedDocument(310), document_key: 'terms_of_service' }
+    const from = vi.fn((table: string) => {
+      if (table === 'user_profiles')
+        return queryResult({
+          onboarding_completed: true,
+          onboarding_completed_at: marker?.replace('Z', '+00:00') ?? null,
+        })
+      if (table === 'onboarding_legal_requirement_sets')
+        return queryResult(requirementSet([doc.document_key]))
+      if (table === 'onboarding_legal_documents') return queryResult([doc])
+      if (table === 'user_onboarding_legal_actions')
+        return queryResult(
+          actions === 'missing'
+            ? []
+            : [
+                {
+                  document_key: doc.document_key,
+                  version: actions === 'outdated' ? 'old' : doc.version,
+                  locale: doc.locale,
+                  content_hash: doc.content_hash,
+                  purpose: doc.purpose,
+                  action_type: doc.action_type,
+                  acted_at: '2026-10-22T15:00:00.000001Z',
+                },
+              ],
+        )
+      throw Error(`Unexpected questionnaire read: ${table}`)
+    })
+    const rpc = vi.fn()
+    const options = {
+      legacyClinicalState: readCurrentClinicalState(raw, USER_ID),
+    } as SupabaseOnboardingOptions
+    const repository = createSupabaseOnboardingRepository(
+      { from, rpc } as unknown as ServiceClient,
+      options,
+    )
+    const result = await repository.load(USER_ID, 'pt-BR')
+    expect(result).toMatchObject({
+      completed: actions === 'current',
+      completedAt: marker?.replace('Z', '+00:00') ?? null,
+      draft: null,
+      legacyReconsent: { protocol: 'documents_only_v1' },
+    })
+    expect(result.acceptedActions).toHaveLength(actions === 'current' ? 1 : 0)
+    expect(from.mock.calls.map(([table]) => table)).toEqual([
+      'user_profiles',
+      'onboarding_legal_requirement_sets',
+      'onboarding_legal_documents',
+      'user_onboarding_legal_actions',
+    ])
+    expect(rpc).not.toHaveBeenCalled()
+    await expect(repository.complete(USER_ID, completionInput())).rejects.toEqual(
+      new OnboardingRepositoryError('already_completed'),
+    )
+    expect(rpc).not.toHaveBeenCalled()
+  })
+  it.each([
+    'owner',
+    'locale',
+    'reset',
+    'microsecond',
+  ] as const)('rejects a mismatched legacy GET source (%s) without signup effects', async (change) => {
+    const raw = currentOnboardingWire('healthy')
+    raw.user_id = USER_ID
+    raw.health_state.user_id = USER_ID
+    Object.assign(raw, {
+      generation_authority: {
+        kind: 'legacy_transition',
+        user_id: USER_ID,
+        generation: raw.signup_generation,
+        epoch: raw.epoch,
+        admitted_at: raw.observed_at,
+        admitted_date: raw.date,
+        timezone_at_admission: raw.timezone,
+        profile_completed_marker: raw.generation_token.onboarding_completed_at,
+      },
+    })
+    const doc = embeddedDocument(311)
+    const from = vi.fn((table: string) => {
+      if (table === 'user_profiles')
+        return queryResult({
+          onboarding_completed: change !== 'reset',
+          onboarding_completed_at:
+            change === 'microsecond'
+              ? raw.generation_token.onboarding_completed_at.replace('000001', '000002')
+              : raw.generation_token.onboarding_completed_at,
+        })
+      if (table === 'onboarding_legal_requirement_sets')
+        return queryResult(requirementSet([doc.document_key]))
+      if (table === 'onboarding_legal_documents') return queryResult([doc])
+      throw Error(`Unexpected read: ${table}`)
+    })
+    const rpc = vi.fn()
+    const repository = createSupabaseOnboardingRepository(
+      { from, rpc } as unknown as ServiceClient,
+      { legacyClinicalState: readCurrentClinicalState(raw, USER_ID) },
+    )
+    await expect(
+      repository.load(
+        change === 'owner' ? '00000000-0000-4000-8000-000000000952' : USER_ID,
+        change === 'locale' ? 'en-US' : 'pt-BR',
+      ),
+    ).rejects.toMatchObject({ code: 'mobile_current_clinical_changed', status: 409 })
+    if (change === 'owner' || change === 'locale') expect(from).not.toHaveBeenCalled()
+    expect(rpc).not.toHaveBeenCalled()
+  })
+  it.each([
+    undefined,
+    {
+      version: 2,
+      no_plan: true,
+      hold_active: false,
+      loss_guard: false,
+      hide_protein: true,
+      recording_allowed: true,
+      date: '2026-10-25',
+      timezone: 'America/Sao_Paulo',
+      observed_at: '2026-10-25T23:00:00.000000Z',
+    },
+    {
+      version: 1,
+      no_plan: true,
+      hold_active: false,
+      loss_guard: false,
+      hide_protein: false,
+      recording_allowed: true,
+      date: '2026-10-25',
+      timezone: 'America/Sao_Paulo',
+      observed_at: '2026-10-25T23:00:00.000000Z',
+    },
+  ])('does not accept a null completion without a coherent server observation %#', async (clinicalSafety) => {
+    const rpc = vi.fn().mockResolvedValue({
+      error: null,
+      data: {
+        user_id: USER_ID,
+        onboarding_completed: true,
+        completed_at: '2026-10-25T23:00:00Z',
+        objective: null,
+        persona: 'focus',
+        document_actions: [],
+        ...(clinicalSafety === undefined ? {} : { clinical_safety: clinicalSafety }),
+      },
+    })
+    await expect(
+      createSupabaseOnboardingRepository({ rpc } as unknown as ServiceClient).complete(USER_ID, {
+        ...completionInput(),
+        objective: null,
+      }),
+    ).rejects.toEqual(new OnboardingRepositoryError('internal'))
+  })
+
+  it('parses a server no-plan completion without inventing a protocol', async () => {
+    const clinicalSafety = {
+      version: 1,
+      no_plan: true,
+      hold_active: false,
+      loss_guard: false,
+      hide_protein: true,
+      recording_allowed: true,
+      date: '2026-10-25',
+      timezone: 'America/Sao_Paulo',
+      observed_at: '2026-10-25T23:00:00.000000Z',
+    }
+    const rpc = vi.fn().mockResolvedValue({
+      error: null,
+      data: {
+        user_id: USER_ID,
+        onboarding_completed: true,
+        completed_at: '2026-10-25T23:00:00Z',
+        objective: null,
+        persona: 'focus',
+        document_actions: [],
+        clinical_safety: clinicalSafety,
+      },
+    })
+    const repo = createSupabaseOnboardingRepository({ rpc } as unknown as ServiceClient)
+    expect(await repo.complete(USER_ID, { ...completionInput(), objective: null })).toMatchObject({
+      objective: null,
+      clinicalSafety,
+    })
+  })
+
   it.each([
     ['40001', 'onboarding_generation_changed', 409],
     ['22023', 'body_photo_confirmation_stale', 409],
@@ -492,9 +704,11 @@ describe('Supabase onboarding adapter', () => {
   })
 
   it.each([
-    'moderado',
-    null,
-  ] as const)('loads reconsent without inventing habitual water (%s)', async (waterIntake) => {
+    ['moderado', 'recomposicao'],
+    [null, 'recomposicao'],
+    ['moderado', null],
+    [null, null],
+  ] as const)('loads reconsent without inventing water or phase (%s/%s)', async (waterIntake, objective) => {
     const profile = queryResult({
       onboarding_completed: true,
       onboarding_completed_at: '2026-09-15T15:00:00.000Z',
@@ -503,7 +717,7 @@ describe('Supabase onboarding adapter', () => {
       height_cm: 180,
       weight_kg: 80,
       body_fat_percent: null,
-      current_protocol: 'recomposicao',
+      current_protocol: objective,
       activity_level: 'moderado',
       training_frequency: 4,
       water_intake: waterIntake,
@@ -552,7 +766,7 @@ describe('Supabase onboarding adapter', () => {
       acceptedActions: [],
       draft: {
         name: 'Synthetic User',
-        objective: 'recomposicao',
+        objective,
         persona: 'focus',
         waterIntake,
       },
@@ -601,6 +815,17 @@ describe('Supabase onboarding adapter', () => {
 
     await expect(repository.complete(USER_ID, completionInput())).rejects.toEqual(
       new OnboardingRepositoryError('already_completed'),
+    )
+  })
+
+  it('maps a final SQL gain refusal without leaking clinical or database details', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: { code: '23514', message: 'onboarding_objective_not_eligible private detail' },
+    })
+    const repository = createSupabaseOnboardingRepository({ rpc } as unknown as ServiceClient)
+    await expect(repository.complete(USER_ID, completionInput())).rejects.toEqual(
+      new OnboardingRepositoryError('objective_not_eligible'),
     )
   })
 })

@@ -1,3 +1,4 @@
+import type { AgentStage, UserProfile } from '@mpp/core'
 /**
  * Pipeline central de processamento de mensagens.
  *
@@ -11,6 +12,7 @@
  */
 import {
   computeMetrics,
+  DEFAULT_CALC_CONFIG,
   dailyTargetByProtocol,
   dayEnergyBalance,
   eatingBalance,
@@ -18,28 +20,33 @@ import {
   type ProfileRow,
   resolveProtocol,
 } from '@mpp/core'
-import { loadCalcConfig } from './calc-config-loader.js'
-import { loadDailyTargets } from './calc-targets.js'
-import { throwIfQueryFailed } from './db-query-error.js'
-import { flowCapabilitiesQuestionLocale, renderFlowCapabilities } from './flow-capabilities.js'
-import { type FlowCoachStyle, flowCoachStyleLine, loadFlowCoachStyle } from './flow-coach-style.js'
-import { loadFlowConfirmedSignupPhotoBodyFat } from './flow-confirmed-photo-origin.js'
-import { flowLanguageCards, loadFlowLanguageRules } from './flow-language-policy.js'
-import {
-  auditNumericClaims,
-  detectDeficitRealMismatch,
-  detectPrematureBlockCompletion,
-  detectSentimentMismatch,
-  reconcileBalanceProse,
-} from './numeric-validator.js'
+import type { Json, ServiceClient } from '@mpp/db'
+import type {
+  LLMCallParams,
+  LLMResult,
+  OpenRouterEmbeddings,
+  OpenRouterLLM,
+  SystemPromptBlock,
+} from '@mpp/providers'
+import type {
+  ChatCompletionMessageParam,
+  ChatCompletionTool,
+} from 'openai/resources/chat/completions'
 import {
   hasBalanceCard,
   injectCanonicalCard,
   renderBalanceCard,
   replaceLooseBlockMentions,
 } from './balance-card.js'
-import { getLocalDateMinusDays, getLocalDateString, getLocalHour } from './timezone-utils.js'
-import { buildPendingTiming, burstCrossesLocalDate } from './registration-time.js'
+import { loadCalcConfig } from './calc-config-loader.js'
+import { loadDailyTargets } from './calc-targets.js'
+import { detectCorrectionIntent } from './correction-detector.js'
+import { throwIfQueryFailed } from './db-query-error.js'
+import {
+  adaptToolItemsToEduInput,
+  type EduCommentInput,
+  generateEducationalComment,
+} from './educational-comment.js'
 import {
   answersFlowQuestion,
   asksExerciseFoodQuestion,
@@ -48,11 +55,89 @@ import {
   statedWorkoutCalories,
 } from './exercise-food-guard.js'
 import {
+  type ExpressInput,
+  isMealExpressEligible,
+  isWorkoutExpressEligible,
+} from './express-mode-detector.js'
+import { detectFakeWrite } from './fake-write-detector.js'
+import { detectFalseDuplicationClaim } from './false-duplication-detector.js'
+import { flowCapabilitiesQuestionLocale, renderFlowCapabilities } from './flow-capabilities.js'
+import { type FlowCoachStyle, flowCoachStyleLine, loadFlowCoachStyle } from './flow-coach-style.js'
+import { loadFlowConfirmedSignupPhotoBodyFat } from './flow-confirmed-photo-origin.js'
+import {
+  bindMobileFlowClinicalPort,
+  type FlowClinicalRead,
+  flowClinicalContextText,
+  type MobileFlowClinicalPort,
+} from './flow-current-clinical.js'
+import {
+  type LoadFlowDayStatusContext,
+  loadFlowDayStatusContext,
+} from './flow-day-status-context.js'
+import { classifyFlowDayStatusIntent } from './flow-day-status-intent.js'
+import { renderFlowDayStatus } from './flow-day-status-message.js'
+import {
   type FlowDayRow,
   flowDayBalanceInputs,
   flowEnergyContextLines,
 } from './flow-energy-context.js'
+import { flowLanguageCards, loadFlowLanguageRules } from './flow-language-policy.js'
+import {
+  asksPrivateMetricQuestion,
+  type FlowPresentationObjective,
+  flowMetricLocale,
+  projectFlowMetricAnswer,
+  projectFlowMetricContext,
+  renderOfficialTargets,
+} from './flow-public-metrics.js'
+import { LEGACY_PERSONA_NAME_PATTERN, projectFlowPublicNames } from './flow-public-names.js'
+import {
+  composeFlowStatusMessage,
+  flowStatusExplanation,
+  renderFlowStatusCard,
+} from './flow-status-presentation.js'
+import { flowPlainStatusText } from './flow-status-text.js'
 import { isMultiTimezoneCountry } from './location-timezone.js'
+import { dedupeMealItems } from './meal-item-dedup.js'
+import {
+  calcMealMacros,
+  parseUserKcalOverridesFromMessages,
+  requiresVisualPreparationConfirmation,
+} from './meal-pipeline.js'
+import {
+  foodNamesReferToSameItem,
+  hasExplicitWholeMealReplacementIntent,
+} from './meal-replacement-target.js'
+import { routeModel } from './model-router.js'
+import {
+  auditNumericClaims,
+  detectDeficitRealMismatch,
+  detectPrematureBlockCompletion,
+  detectSentimentMismatch,
+  reconcileBalanceProse,
+} from './numeric-validator.js'
+import {
+  flattenLegacyTagsForApp,
+  makeOnboardingButtonId,
+  parseOnboardingButtonTag,
+  parseOnboardingListTag,
+} from './onboarding-button.js'
+import { reconcilePendingMealEdit, reconcileScopedMealCorrection } from './pending-meal-edit.js'
+import {
+  cancelOpenPendingRegistrations,
+  createPendingRegistration,
+  loadRecentConfirmedMealPending,
+  loadRecentEditedMealPending,
+  loadRecentPendingMeal,
+  loadRecentRegisteredMeal,
+} from './pending-registration-store.js'
+import { loadDeterministicDailyState, loadReevaluationGate } from './pipeline-state-store.js'
+import {
+  ensureSuggestionShown,
+  isPurePlanSuggestionTurn,
+  isSingleRequestMessage,
+  turnSuggestions,
+} from './plan-suggestion-text.js'
 import {
   buildPendingNutritionConfirmationNotes,
   buildPendingPreparationQuestions,
@@ -64,108 +149,33 @@ import {
   isPureRegistrationTurn,
   isPureStatusQueryTurn,
   isReevalToolTurn,
-  normalizePendingFoodCorrections,
   type MealItem,
+  normalizePendingFoodCorrections,
   type RegistrationEntry,
 } from './post-registration-message.js'
-import { reconcilePendingMealEdit, reconcileScopedMealCorrection } from './pending-meal-edit.js'
-import {
-  cancelOpenPendingRegistrations,
-  createPendingRegistration,
-  loadRecentConfirmedMealPending,
-  loadRecentEditedMealPending,
-  loadRecentPendingMeal,
-  loadRecentRegisteredMeal,
-} from './pending-registration-store.js'
-import {
-  loadDeterministicDailyState,
-  loadReevaluationGate,
-} from './pipeline-state-store.js'
-import {
-  makeOnboardingButtonId,
-  flattenLegacyTagsForApp,
-  parseOnboardingButtonTag,
-  parseOnboardingListTag,
-} from './onboarding-button.js'
-import {
-  generateEducationalComment,
-  adaptToolItemsToEduInput,
-  type EduCommentInput,
-} from './educational-comment.js'
 import { loadFilteredSystemPrompt } from './prompt-rules.js'
-import { routeModel } from './model-router.js'
-import { loadRouterFlag } from './router-flag.js'
 import {
-  isMealExpressEligible,
-  isWorkoutExpressEligible,
-  type ExpressInput,
-} from './express-mode-detector.js'
-import {
-  calcMealMacros,
-  parseUserKcalOverridesFromMessages,
-  requiresVisualPreparationConfirmation,
-} from './meal-pipeline.js'
-import { detectFakeWrite } from './fake-write-detector.js'
-import { runToolGuard } from './tools/tool-guards.js'
-import { detectFalseDuplicationClaim } from './false-duplication-detector.js'
-import { detectCorrectionIntent } from './correction-detector.js'
-import { reportVisionCoverageIfLow } from './vision-coverage-checker.js'
-import { loadVisionPending } from './vision-pending-loader.js'
-import { attachTrustedVisionNutrition } from './trusted-vision-nutrition.js'
-import { shouldBlockUntrustedNutritionLabelRegistration } from './vision-nutrition-guard.js'
-import { dedupeMealItems } from './meal-item-dedup.js'
-import {
-  foodNamesReferToSameItem,
-  hasExplicitWholeMealReplacementIntent,
-} from './meal-replacement-target.js'
-import {
+  type BodyPhotoSignal,
+  type BodyPhotoState,
   bodyPhotoSignalFromEventProperties,
   composeReevalBodyPhotoWaitMessage,
   deriveBodyPhotoState,
   formatBodyPhotoContext,
   shouldWaitForBodyPhotosBeforeReeval,
-  type BodyPhotoSignal,
-  type BodyPhotoState,
 } from './reevaluation-body-photos.js'
-import type { AgentStage, UserProfile } from '@mpp/core'
-import type { Json, ServiceClient } from '@mpp/db'
-import type {
-  LLMCallParams,
-  LLMResult,
-  OpenRouterEmbeddings,
-  OpenRouterLLM,
-  SystemPromptBlock,
-} from '@mpp/providers'
-import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions'
-import { LEGACY_PERSONA_NAME_PATTERN, projectFlowPublicNames } from './flow-public-names.js'
-import {
-  asksPrivateMetricQuestion,
-  flowMetricLocale,
-  type FlowPresentationObjective,
-  projectFlowMetricAnswer,
-  projectFlowMetricContext,
-  renderOfficialTargets,
-} from './flow-public-metrics.js'
-import { flowPlainStatusText } from './flow-status-text.js'
-import { type LoadFlowDayStatusContext, loadFlowDayStatusContext } from './flow-day-status-context.js'
-import { classifyFlowDayStatusIntent } from './flow-day-status-intent.js'
-import { renderFlowDayStatus } from './flow-day-status-message.js'
-import {
-  composeFlowStatusMessage,
-  flowStatusExplanation,
-  renderFlowStatusCard,
-} from './flow-status-presentation.js'
-import {
-  ensureSuggestionShown,
-  isPurePlanSuggestionTurn,
-  isSingleRequestMessage,
-  turnSuggestions,
-} from './plan-suggestion-text.js'
-import { ALL_TOOLS, getToolByName } from './tools.js'
-import type { ToolContext, ToolDefinition } from './tools.js'
+import { buildPendingTiming, burstCrossesLocalDate } from './registration-time.js'
+import { loadRouterFlag } from './router-flag.js'
+import { getLocalDateMinusDays, getLocalDateString, getLocalHour } from './timezone-utils.js'
 import { zodToJsonSchema } from './tool-schema.js'
+import { runToolGuard } from './tools/tool-guards.js'
 import { normalizeToolArguments } from './tools/types.js'
+import type { ToolContext, ToolDefinition } from './tools.js'
+import { ALL_TOOLS, getToolByName } from './tools.js'
+import { attachTrustedVisionNutrition } from './trusted-vision-nutrition.js'
 import type { AgentInput, AgentOutput, AuthenticatedAgentInput } from './types.js'
+import { reportVisionCoverageIfLow } from './vision-coverage-checker.js'
+import { shouldBlockUntrustedNutritionLabelRegistration } from './vision-nutrition-guard.js'
+import { loadVisionPending } from './vision-pending-loader.js'
 
 export interface PipelineDeps {
   supabase: ServiceClient
@@ -179,6 +189,7 @@ export interface PipelineDeps {
 /** An App adapter can reuse Today's existing request hooks; legacy deps stay intact. */
 export interface AuthenticatedPipelineDeps extends PipelineDeps {
   loadFlowDayStatus?: LoadFlowDayStatusContext
+  flowClinical?: MobileFlowClinicalPort
 }
 
 /**
@@ -625,10 +636,13 @@ Não apresente orçamento de 14 dias nem DAM. Use o Bloco 7.700 somente quando o
 function mobileFlowPromptContext(context: string, objective: FlowPresentationObjective): string {
   // Only prompt copies: preserve adjacent health restrictions and never
   // mutate shared rules, the patient history or the legacy channel.
-  return projectFlowMetricContext(context
-    .replace(LEGACY_PERSONA_INTRODUCTION_PATTERN, 'Você é Flow, assistente de IA do Performe AI.')
-    .replace(LEGACY_PERSONA_MARKDOWN_SECTION_PATTERN, '')
-    .replace(LEGACY_PERSONA_NAME_PATTERN, 'Flow'), objective)
+  return projectFlowMetricContext(
+    context
+      .replace(LEGACY_PERSONA_INTRODUCTION_PATTERN, 'Você é Flow, assistente de IA do Performe AI.')
+      .replace(LEGACY_PERSONA_MARKDOWN_SECTION_PATTERN, '')
+      .replace(LEGACY_PERSONA_NAME_PATTERN, 'Flow'),
+    objective,
+  )
 }
 
 export function selectPipelineTools(
@@ -733,6 +747,7 @@ export function fakeWriteRetryAllowed(
 }
 
 interface ResolvedPipelineOptions {
+  flowClinical?: MobileFlowClinicalPort
   historyProvider?: string
   toolNames?: readonly string[]
   systemPolicy?: string
@@ -757,6 +772,7 @@ interface ResolvedPipelineOptions {
     locale: string | null
     dailyTargets: UserContext['dailyTargets'] | null
     currentProtocol: FlowPresentationObjective['currentProtocol']
+    clinicalPolicy?: FlowClinicalRead['policy']
   }
 }
 
@@ -775,7 +791,7 @@ async function retrieveMethodContext(
   try {
     const emb = await deps.embeddings.embed(text)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
+    // biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
     const { data } = await (deps.supabase as any).rpc('match_method_chunks', {
       query_embedding: emb,
       match_count: 5,
@@ -791,6 +807,7 @@ async function retrieveMethodContext(
 }
 
 interface UserContext {
+  flowClinical?: Readonly<FlowClinicalRead>
   userId: string
   userName: string | null
   profile: UserProfile
@@ -843,8 +860,8 @@ interface UserContext {
     carbs_g: number
     fat_g: number
     exercise_calories: number
-    daily_balance: number
-    deficit_accumulated: number
+    daily_balance: number | null
+    deficit_accumulated: number | null
     day_status: string | null
     gap_reminder_sent_at: string | null
   } | null
@@ -888,10 +905,7 @@ interface UserContext {
   reevaluationDueRecent: boolean
 }
 
-export async function processMessage(
-  deps: PipelineDeps,
-  input: AgentInput,
-): Promise<AgentOutput> {
+export async function processMessage(deps: PipelineDeps, input: AgentInput): Promise<AgentOutput> {
   const userId = await ensureUser(deps.supabase, input.from)
   return processResolvedMessage(deps, input, userId)
 }
@@ -900,6 +914,8 @@ export async function processAuthenticatedMessage(
   deps: AuthenticatedPipelineDeps,
   input: AuthenticatedAgentInput,
 ): Promise<AgentOutput> {
+  input = Object.freeze({ ...input, timestamp: new Date(input.timestamp.getTime()) })
+  const clinical = deps.flowClinical ? bindMobileFlowClinicalPort(deps.flowClinical) : undefined
   const flowFailure: NonNullable<ResolvedPipelineOptions['flowFailure']> = { record: null }
   const flowAccount: NonNullable<ResolvedPipelineOptions['flowAccount']> = {
     name: null,
@@ -925,9 +941,29 @@ export async function processAuthenticatedMessage(
           subscription.reason ?? 'sem assinatura ativa',
         )
       } else {
-        const context = deps.loadFlowDayStatus
-          ? await deps.loadFlowDayStatus(input.userId, input.text, input.timestamp)
-          : await loadFlowDayStatusContext(deps.supabase, input.userId, input.text, input.timestamp)
+        const current = clinical ? await clinical.read() : undefined
+        const context = current
+          ? {
+              today: current.today,
+              accountName: current.profile.name,
+              locale: flowMetricLocale(input.text, current.locale),
+              progress: current.progress
+                ? {
+                    currentStreak: current.progress.current_streak,
+                    level: current.progress.level,
+                    xpTotal: current.progress.xp_total,
+                  }
+                : null,
+              clinicalPolicy: current.policy,
+            }
+          : deps.loadFlowDayStatus
+            ? await deps.loadFlowDayStatus(input.userId, input.text, input.timestamp)
+            : await loadFlowDayStatusContext(
+                deps.supabase,
+                input.userId,
+                input.text,
+                input.timestamp,
+              )
         flowAccount.name = context.accountName
         flowAccount.locale = context.locale
         flowAccount.dailyTargets = {
@@ -935,27 +971,39 @@ export async function processAuthenticatedMessage(
           protein_target: context.today.targets.protein_g,
         }
         flowAccount.currentProtocol = context.today.current_protocol
+        if (current) flowAccount.clinicalPolicy = current.policy
         output = {
-          text: renderFlowDayStatus(context.today, context.locale, context.progress),
+          text: renderFlowDayStatus(
+            context.today,
+            context.locale,
+            context.progress,
+            current?.policy,
+          ),
           preferAudio: false,
           singleMessage: true,
           toolCalls: [],
-          stage: context.today.current_protocol ?? 'coleta_dados',
+          stage: context.today.current_protocol ?? (clinical ? 'analista_diario' : 'coleta_dados'),
           modelUsed: 'none',
           promptTokens: 0,
           completionTokens: 0,
           costUsd: 0,
           latencyMs: Date.now() - start,
-          flowStatusPhrase: {
-            kind: 'incentive',
-            slot: 'any',
-            locale: context.locale,
-            accountName: context.accountName,
-            authority: {
-              currentProtocol: context.today.current_protocol,
-              dailyTargets: { ...flowAccount.dailyTargets },
-            },
-          },
+          ...(current?.policy.pause_weight_loss_guidance ||
+          current?.policy.hide.objective ||
+          current?.policy.hide.block
+            ? {}
+            : {
+                flowStatusPhrase: {
+                  kind: 'incentive',
+                  slot: 'any',
+                  locale: context.locale,
+                  accountName: context.accountName,
+                  authority: {
+                    currentProtocol: context.today.current_protocol,
+                    dailyTargets: { ...flowAccount.dailyTargets },
+                  },
+                },
+              }),
         }
       }
     } else {
@@ -978,9 +1026,11 @@ export async function processAuthenticatedMessage(
           includeSensitiveTelemetry: MOBILE_FLOW_TELEMETRY_INCLUDES_CONTENT,
           flowFailure,
           flowAccount,
+          flowClinical: clinical,
         },
       )
     }
+    if (clinical) await clinical.revalidate()
     const publicOutput = await withFlowPublicNames(
       deps.supabase,
       input.userId,
@@ -993,8 +1043,12 @@ export async function processAuthenticatedMessage(
       flowAccount.locale,
       draftCreatedThisTurn(publicOutput.toolCalls),
       undefined,
-      { currentProtocol: flowAccount.currentProtocol },
+      {
+        currentProtocol: flowAccount.currentProtocol,
+        ...(flowAccount.clinicalPolicy ? { clinicalPolicy: flowAccount.clinicalPolicy } : {}),
+      },
     )
+    if (clinical) await clinical.revalidate()
     return text === publicOutput.text ? publicOutput : { ...publicOutput, text }
   } catch (error) {
     // The turn failed (deadline, provider, anything after the first call):
@@ -1068,6 +1122,7 @@ async function processResolvedMessage(
     input.text,
     input.timestamp,
     options.historyProvider,
+    options.flowClinical,
   )
   // Flow only (processMessage passes no holder): the name the context already
   // carries, for the public-names guard of the entry point.
@@ -1076,16 +1131,27 @@ async function processResolvedMessage(
     options.flowAccount.locale = flowMetricLocale(semanticPatientText, ctx.locale)
     options.flowAccount.dailyTargets = ctx.dailyTargets
     options.flowAccount.currentProtocol = normalizeProtocol(ctx.profile.currentProtocol)
+    if (ctx.flowClinical) options.flowAccount.clinicalPolicy = ctx.flowClinical.policy
   }
-  const flowObjective: FlowPresentationObjective = { currentProtocol: normalizeProtocol(ctx.profile.currentProtocol) }
-  const assistantCopy = (text: string) => options.historyProvider === 'mobile_flow'
-    ? projectFlowMetricContext(text, flowObjective) : text
+  const flowObjective: FlowPresentationObjective = {
+    currentProtocol: normalizeProtocol(ctx.profile.currentProtocol),
+    ...(ctx.flowClinical ? { clinicalPolicy: ctx.flowClinical.policy } : {}),
+  }
+  const assistantCopy = (text: string) =>
+    options.historyProvider === 'mobile_flow' ? projectFlowMetricContext(text, flowObjective) : text
 
   // 4. resolve stage
-  const stage = resolveStage(ctx.profile)
+  const stage: AgentStage = ctx.flowClinical
+    ? (ctx.flowClinical.today.current_protocol ?? 'analista_diario')
+    : resolveStage(ctx.profile)
 
   // 4. load active prompt + config (filtra regras pelo idioma do paciente — #1)
-  const promptRow = await loadActivePrompt(deps.supabase, stage, ctx.locale, options.historyProvider)
+  const promptRow = await loadActivePrompt(
+    deps.supabase,
+    stage,
+    ctx.locale,
+    options.historyProvider,
+  )
   if (!promptRow) {
     throw new Error(`No active prompt found for stage ${stage}`)
   }
@@ -1109,10 +1175,9 @@ async function processResolvedMessage(
         ),
       },
     })
-    const text =
-      ctx.locale?.startsWith('en')
-        ? 'I received these messages across your local midnight. Which items were from yesterday and which were from today?'
-        : 'Recebi essas mensagens atravessando a meia-noite no seu horário local. Quais itens foram de ontem e quais foram de hoje?'
+    const text = ctx.locale?.startsWith('en')
+      ? 'I received these messages across your local midnight. Which items were from yesterday and which were from today?'
+      : 'Recebi essas mensagens atravessando a meia-noite no seu horário local. Quais itens foram de ontem e quais foram de hoje?'
     return {
       text,
       preferAudio: false,
@@ -1153,7 +1218,10 @@ async function processResolvedMessage(
   // or sensitive mutation. Mixed questions keep their other intentions.
   if (options.historyProvider === 'mobile_flow' && asksPrivateMetricQuestion(semanticPatientText)) {
     return {
-      text: renderOfficialTargets(ctx.dailyTargets, flowMetricLocale(semanticPatientText, ctx.locale)),
+      text: renderOfficialTargets(
+        ctx.dailyTargets,
+        flowMetricLocale(semanticPatientText, ctx.locale),
+      ),
       preferAudio: false,
       singleMessage: true,
       toolCalls: [],
@@ -1252,11 +1320,17 @@ async function processResolvedMessage(
     options.historyProvider === 'mobile_flow' && tool.name === 'consulta_metricas'
       ? {
           ...tool,
-          description: 'Consulta idade, IMC, gordura corporal e metas oficiais de calorias e proteína. Use somente se o dado público necessário não estiver no contexto. Não estime nem recalcule metas.',
+          description:
+            'Consulta idade, IMC, gordura corporal e metas oficiais de calorias e proteína. Use somente se o dado público necessário não estiver no contexto. Não estime nem recalcule metas.',
         }
-      : options.historyProvider === 'mobile_flow' && tool.name === 'consulta_progresso'
-        && flowObjective.currentProtocol !== 'recomposicao'
-        ? { ...tool, description: 'Retorna o painel de progresso do usuário (XP, nível, sequência de dias, conquistas e registro de hoje). Use quando ele perguntar como está indo.' }
+      : options.historyProvider === 'mobile_flow' &&
+          tool.name === 'consulta_progresso' &&
+          flowObjective.currentProtocol !== 'recomposicao'
+        ? {
+            ...tool,
+            description:
+              'Retorna o painel de progresso do usuário (XP, nível, sequência de dias, conquistas e registro de hoje). Use quando ele perguntar como está indo.',
+          }
         : tool,
   )
   const tools = buildToolSchemas(filteredTools)
@@ -1273,10 +1347,11 @@ async function processResolvedMessage(
       ? flowLanguageCards(flowObjective.currentProtocol, lastTwoOuts.length > 0)
       : null
 
-  const repetitionGuard =
-    languageCards
-      ? (languageCards.situation ? `\n\n${languageCards.situation}` : '')
-      : lastTwoOuts.length >= 1
+  const repetitionGuard = languageCards
+    ? languageCards.situation
+      ? `\n\n${languageCards.situation}`
+      : ''
+    : lastTwoOuts.length >= 1
       ? `\n\n## Anti-repetição (CRÍTICO)\n` +
         // Flow: the two quoted answers are the last lines of the history the
         // model already receives; quoting them again was paid at full price
@@ -1284,7 +1359,9 @@ async function processResolvedMessage(
         (MOBILE_FLOW_LEAN_CONTEXT && options.historyProvider === 'mobile_flow'
           ? ''
           : `Suas últimas respostas foram:\n` +
-            lastTwoOuts.map((t, i) => `[${i + 1}] "${t.slice(0, 200).replace(/\n/g, ' ')}"`).join('\n') +
+            lastTwoOuts
+              .map((t, i) => `[${i + 1}] "${t.slice(0, 200).replace(/\n/g, ' ')}"`)
+              .join('\n') +
             `\n\n`) +
         // Flow: with the quote gone, "acima" pointed at the numeric block and
         // the rules, not at the answers; the instruction names where they are.
@@ -1307,17 +1384,23 @@ async function processResolvedMessage(
   // Anthropic Opus 4.7 estava custando $0.77/turno (153k tokens médio).
   // Com cache (90% redução nas leituras), cai pra ~$0.10/turno em conversas seguidas.
   // Modelos não-Anthropic recebem string concatenada normal (caching ignorado).
-  const channelSystemPrompt =
-    options.historyProvider === 'mobile_flow'
+  const channelSystemPrompt = ctx.flowClinical
+    ? 'Você é Flow. Responda com clareza no idioma da pessoa. Use exclusivamente a observação clínica atual para metas e orientações; não infira fórmulas ou outra fase. Preserve dúvidas e preferências da pessoa.'
+    : options.historyProvider === 'mobile_flow'
       ? mobileFlowPromptContext(promptRow.system_prompt, flowObjective)
       : promptRow.system_prompt
   const stableSystem =
-    channelSystemPrompt + (options.systemPolicy ?? '') +
+    channelSystemPrompt +
+    (options.systemPolicy ?? '') +
     (languageCards ? `\n\n${languageCards.stable}` : '')
   // RAG (D): método relevante recuperado por turno — bloco VARIÁVEL (não cacheado).
-  const methodContext = await retrieveMethodContext(deps, input.text, ctx.profile.currentProtocol)
+  const methodContext = ctx.flowClinical
+    ? ''
+    : await retrieveMethodContext(deps, input.text, ctx.profile.currentProtocol)
   const channelMethodContext =
-    options.historyProvider === 'mobile_flow' ? mobileFlowPromptContext(methodContext, flowObjective) : methodContext
+    options.historyProvider === 'mobile_flow'
+      ? mobileFlowPromptContext(methodContext, flowObjective)
+      : methodContext
   const styleLine =
     options.historyProvider === 'mobile_flow' ? flowCoachStyleLine(ctx.flowCoachStyle) : ''
   const variableSystem = `${channelMethodContext}\n\n## Contexto do usuário\n${formatUserContext(ctx, calcConfig, input.timestamp, options.historyProvider)}${repetitionGuard}${styleLine ? `\n${styleLine}` : ''}`
@@ -1327,10 +1410,7 @@ async function processResolvedMessage(
   // outra → cache 5min expira). Com 1h, write custa 2x normal mas hit rate
   // sobe pra 80%+ esperado. Net economia maior.
   const systemPrompt: SystemPromptBlock = isAnthropic
-    ? [
-        { text: stableSystem, cache: 'ephemeral_1h' },
-        { text: variableSystem },
-      ]
+    ? [{ text: stableSystem, cache: 'ephemeral_1h' }, { text: variableSystem }]
     : stableSystem + variableSystem
 
   // Flow sends the current session's lines and only the newest of what came
@@ -1342,15 +1422,15 @@ async function processResolvedMessage(
       : ctx.recentMessages
   const messages: ChatCompletionMessageParam[] = promptHistory.map((m) => ({
     role: m.role,
-    content: options.historyProvider === 'mobile_flow' && m.role === 'assistant'
-      ? assistantCopy(m.content)
-      : m.content,
+    content:
+      options.historyProvider === 'mobile_flow' && m.role === 'assistant'
+        ? assistantCopy(m.content)
+        : m.content,
   }))
   messages.push({ role: 'user', content: input.text ?? '(mídia recebida)' })
 
   // Flow only: numbers of each model call, written once at the end of the turn.
-  const flowCalls: FlowCallUsage[] | null =
-    options.historyProvider === 'mobile_flow' ? [] : null
+  const flowCalls: FlowCallUsage[] | null = options.historyProvider === 'mobile_flow' ? [] : null
   // Flow only: the model calls made inside tools (plan generators), the
   // deadline of the turn's model work, and how the turn was answered.
   const flowToolLlmCalls: FlowToolLlmCall[] = []
@@ -1413,11 +1493,7 @@ async function processResolvedMessage(
   // max_tool_iterations 2, a tool call plus a guard retry left no iteration
   // and the mobile Flow turn ended with no text (502 empty_reply).
   let guardRetries = 0
-  for (
-    let iter = 0;
-    iter < max + guardRetries + (flowClosingIteration === null ? 0 : 1);
-    iter++
-  ) {
+  for (let iter = 0; iter < max + guardRetries + (flowClosingIteration === null ? 0 : 1); iter++) {
     // Flow only: a suggestion is already stored and the deadline leaves no
     // room for a call that would answer (see the constant). The loop ends
     // here and the stored suggestion is the answer, instead of a failed turn
@@ -1452,6 +1528,7 @@ async function processResolvedMessage(
         : Math.min(MOBILE_FLOW_CHAT_CALL_TIMEOUT_MS, flowTimeLeft(flowDeadlineAt))
     let result: LLMResult
     try {
+      if (options.flowClinical) await options.flowClinical.revalidate()
       result = await deps.llm.complete({
         model: promptRow.model,
         systemPrompt,
@@ -1564,8 +1641,7 @@ async function processResolvedMessage(
       // canônico (FIX C reescreve do banco); a falha é a tool não rodar. Aqui
       // forçamos 1 retry. Detector puro travado em fake-write-detector.test.ts.
       const registrationToolCalled = toolCallsSummary.some(
-        (tc) =>
-          (tc.name === 'registra_refeicao' || tc.name === 'registra_treino') && !tc.error,
+        (tc) => (tc.name === 'registra_refeicao' || tc.name === 'registra_treino') && !tc.error,
       )
       const prescriptionToolCalled = toolCallsSummary.some(
         (tc) => PRESCRIPTION_TOOLS.has(tc.name) && !tc.error,
@@ -1616,10 +1692,10 @@ async function processResolvedMessage(
               : draftRetryMessage(fake.kind, filteredTools)
                 ? (draftRetryMessage(fake.kind, filteredTools) as string)
                 : fake.kind === 'diet_fake'
-                ? 'SISTEMA (não é o paciente): você apresentou um CARDÁPIO INVENTADO (com refeições + lista de compras) sem chamar `gera_dieta`. Nada foi salvo, os macros NÃO foram validados, e o paciente vai seguir uma dieta fantasma. Se o paciente PEDIU explicitamente um cardápio, chame `gera_dieta` AGORA. Se o paciente só estava perguntando teoria, responda SEM o cardápio — pergunte se quer que você gere de verdade.'
-                : fake.kind === 'training_fake'
-                  ? 'SISTEMA (não é o paciente): você apresentou um PLANO DE TREINO INVENTADO (com dias + exercícios + séries) sem chamar `gera_treino`. Nada foi salvo, cron diário não vai entregar nada, e paciente vai treinar com plano fantasma. Se o paciente JÁ confirmou equipamentos + dias/semana + nível, chame `gera_treino` AGORA. Se faltar algum dos 3, PERGUNTE e NÃO mostre o plano.'
-                  : 'SISTEMA (não é o paciente): você afirmou ter registrado a refeição/treino MAS não chamou a tool `registra_refeicao` (ou `registra_treino`). Os dados NÃO foram salvos no banco — sua resposta foi inválida. Chame a tool AGORA com os itens corretos que o paciente informou. NÃO responda ao paciente de novo sem antes chamar a tool.'
+                  ? 'SISTEMA (não é o paciente): você apresentou um CARDÁPIO INVENTADO (com refeições + lista de compras) sem chamar `gera_dieta`. Nada foi salvo, os macros NÃO foram validados, e o paciente vai seguir uma dieta fantasma. Se o paciente PEDIU explicitamente um cardápio, chame `gera_dieta` AGORA. Se o paciente só estava perguntando teoria, responda SEM o cardápio — pergunte se quer que você gere de verdade.'
+                  : fake.kind === 'training_fake'
+                    ? 'SISTEMA (não é o paciente): você apresentou um PLANO DE TREINO INVENTADO (com dias + exercícios + séries) sem chamar `gera_treino`. Nada foi salvo, cron diário não vai entregar nada, e paciente vai treinar com plano fantasma. Se o paciente JÁ confirmou equipamentos + dias/semana + nível, chame `gera_treino` AGORA. Se faltar algum dos 3, PERGUNTE e NÃO mostre o plano.'
+                    : 'SISTEMA (não é o paciente): você afirmou ter registrado a refeição/treino MAS não chamou a tool `registra_refeicao` (ou `registra_treino`). Os dados NÃO foram salvos no banco — sua resposta foi inválida. Chame a tool AGORA com os itens corretos que o paciente informou. NÃO responda ao paciente de novo sem antes chamar a tool.'
         messages.push({
           role: 'user',
           content: retryMsg,
@@ -1648,7 +1724,8 @@ async function processResolvedMessage(
         messages.push({
           role: 'user',
           content:
-            options.historyProvider === 'mobile_flow' && flowObjective.currentProtocol !== 'recomposicao'
+            options.historyProvider === 'mobile_flow' &&
+            flowObjective.currentProtocol !== 'recomposicao'
               ? 'SISTEMA (não é o paciente): não apresente saldo, percentual, contagem ou conclusão do Bloco 7.700. Responda à pergunta com os dados públicos fornecidos e preserve as restrições alimentares. Não invente um objetivo nem uma confirmação.'
               : 'SISTEMA (não é o paciente): você afirmou que o bloco 7700 fechou/completou. ERRADO — o bloco só credita no FECHAMENTO do dia (à noite); durante o dia ele NÃO fecha (o déficit do meio do dia ainda vai mudar conforme o paciente come). Reescreva SEM dizer que o bloco fechou/completou hoje/agora. Reporte o bloco exatamente como está no card (ex: "X / 7.700, Y%") e, se faltar pouco, diga "faltam Z kcal pra fechar".',
         })
@@ -1659,10 +1736,7 @@ async function processResolvedMessage(
       // LLM acusa "veio duplicada" pra msg que tem múltiplos itens distintos
       // (ex: "45 min musculação e 19 min bicicleta"). Agent_rule sozinha não
       // segurou — defesa em código. Retry forçado pedindo processar como veio.
-      if (
-        !falseDuplicationRetried &&
-        detectFalseDuplicationClaim(content, input.text)
-      ) {
+      if (!falseDuplicationRetried && detectFalseDuplicationClaim(content, input.text)) {
         falseDuplicationRetried = true
         guardRetries += 1
         await deps.supabase.from('product_events').insert({
@@ -1788,11 +1862,16 @@ async function processResolvedMessage(
             llm: flowToolLlm(deps.llm, flowDeadlineAt, flowToolLlmCalls),
             assistantIdentity: 'flow' as const,
             flowDailyTargets: ctx.dailyTargets,
+            ...(options.flowClinical ? { flowClinical: options.flowClinical } : {}),
             flowPresentationObjective: flowObjective,
-            flowBlockBadgeKeys: calcConfig.badges.filter((badge) => badge.type === 'blocks').map((badge) => badge.key),
+            flowBlockBadgeKeys: calcConfig.badges
+              .filter((badge) => badge.type === 'blocks')
+              .map((badge) => badge.key),
             // Same inputs as the context, so consulta_progresso and the
             // per-turn context give the model the same day's balance.
-            flowDayBalance: flowDayBalanceInputs(ctx.profile, calcConfig, ctx.flowDayRow),
+            ...(!ctx.flowClinical
+              ? { flowDayBalance: flowDayBalanceInputs(ctx.profile, calcConfig, ctx.flowDayRow) }
+              : {}),
           }
         : {}),
     }
@@ -1893,8 +1972,8 @@ async function processResolvedMessage(
                   : 'text',
             patientText: semanticPatientText,
             items:
-              (validated as { items?: Array<{ food_name: string; quantity_g?: number }> })
-                .items ?? [],
+              (validated as { items?: Array<{ food_name: string; quantity_g?: number }> }).items ??
+              [],
           }
           const exprResult = isMealExpressEligible(exprInput)
           // Opt-in por paciente: users.metadata.buttons_enabled === true.
@@ -1925,7 +2004,11 @@ async function processResolvedMessage(
             const isExplicitReplace = (validated as { replace?: boolean }).replace === true
 
             const normalizeFoodName = (s: string) =>
-              s.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim()
+              s
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/\p{Diacritic}/gu, '')
+                .trim()
             const newItemsByName = new Map<string, { quantity_g?: number }>(
               exprInput.items.map((i) => [
                 normalizeFoodName(i.food_name),
@@ -1966,9 +2049,7 @@ async function processResolvedMessage(
                     { quantity_g: it.quantity_g },
                   ]),
                 )
-                const allInPending = Array.from(newItemNames).every((n) =>
-                  pendByName.has(n),
-                )
+                const allInPending = Array.from(newItemNames).every((n) => pendByName.has(n))
                 // Review H2 HIGH: se ALGUM item novo tem quantity_g divergente
                 // do mesmo item no pending (>20% diff em valor absoluto), tratar
                 // como CORREÇÃO de gramatura — não suprimir. Caso real previsto:
@@ -1979,11 +2060,7 @@ async function processResolvedMessage(
                     const pendInfo = pendByName.get(name)
                     const newQ = newInfo.quantity_g
                     const pendQ = pendInfo?.quantity_g
-                    if (
-                      typeof newQ === 'number' &&
-                      typeof pendQ === 'number' &&
-                      pendQ > 0
-                    ) {
+                    if (typeof newQ === 'number' && typeof pendQ === 'number' && pendQ > 0) {
                       const ratio = Math.abs(newQ - pendQ) / pendQ
                       if (ratio > 0.2) {
                         hasQuantityDivergence = true
@@ -2035,23 +2112,18 @@ async function processResolvedMessage(
                   // mesmo botão (mesma pendingId) com o card inteiro. Tap
                   // posterior ainda funciona porque o pending continua status
                   // 'pending'.
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  const fullProposal = pend.proposal as any
+                  const fullProposal = pend.proposal as
+                    | Parameters<typeof composePendingProposal>[1]
+                    | null
                   if (fullProposal && Array.isArray(fullProposal.items)) {
                     try {
-                      const { body, buttons } = composePendingProposal(
-                        pend.id,
-                        fullProposal,
-                      )
+                      const { body, buttons } = composePendingProposal(pend.id, fullProposal)
                       interactivePayload = { body, buttons, pendingId: pend.id }
                     } catch (e) {
                       // composePendingProposal pode falhar se proposal shape
                       // mudar. Não-fatal: cai no comportamento antigo (silente).
                       // eslint-disable-next-line no-console
-                      console.warn(
-                        '[pipeline] re-compose suppressed pending falhou (silente):',
-                        e,
-                      )
+                      console.warn('[pipeline] re-compose suppressed pending falhou (silente):', e)
                     }
                   }
                   deterministicRegistration = true
@@ -2163,9 +2235,7 @@ async function processResolvedMessage(
             // mensagem imediatamente anterior quando a atual é confirmação
             // curta. Isso evita herdar kcal de uma refeição antiga.
             const kcalOverrideTexts = [
-              ...ctx.recentMessages
-                .filter((m) => m.role === 'user')
-                .map((m) => m.content),
+              ...ctx.recentMessages.filter((m) => m.role === 'user').map((m) => m.content),
               semanticPatientText,
             ]
             const kcalOverrides = parseUserKcalOverridesFromMessages(kcalOverrideTexts, args.items)
@@ -2287,10 +2357,12 @@ async function processResolvedMessage(
             const nutritionConfirmationNotes = buildPendingNutritionConfirmationNotes(proposalItems)
             const preparationConfirmationNotes =
               ctx.lastInboundContentType === 'image'
-                ? ambiguousPreparationNames.slice(0, 2).map(
-                    (name) =>
-                      `Confirme o preparo de ${name}: a foto pode confundir frito, grelhado e assado, alterando o cálculo.`,
-                  )
+                ? ambiguousPreparationNames
+                    .slice(0, 2)
+                    .map(
+                      (name) =>
+                        `Confirme o preparo de ${name}: a foto pode confundir frito, grelhado e assado, alterando o cálculo.`,
+                    )
                 : []
             const confirmationNotes = [
               ...buildPendingPreparationQuestions(proposalItems),
@@ -2526,7 +2598,9 @@ async function processResolvedMessage(
           // explicitamente o meal_type no texto.
           const clearlyDifferentMeal =
             (visionMealType != null && attemptedMeal != null && visionMealType !== attemptedMeal) ||
-            (ageMinutes > 240 && attemptedMeal != null && new RegExp(`\\b${attemptedMeal}\\b`, 'i').test(input.text ?? ''))
+            (ageMinutes > 240 &&
+              attemptedMeal != null &&
+              new RegExp(`\\b${attemptedMeal}\\b`, 'i').test(input.text ?? ''))
           if (clearlyDifferentMeal) {
             // Permite skip; só loga warning pra auditoria.
             await deps.supabase.from('product_events').insert({
@@ -2700,8 +2774,11 @@ async function processResolvedMessage(
     }
     if (isPureRegistrationTurn(iterEntries, input.text)) {
       const todayStr = getLocalDateString(ctx.timezone)
-      const { snapshot: snapDet, progress: progDet } =
-        await loadDeterministicDailyState(deps.supabase, userId, todayStr)
+      const { snapshot: snapDet, progress: progDet } = await loadDeterministicDailyState(
+        deps.supabase,
+        userId,
+        todayStr,
+      )
       if (snapDet) {
         const s = snapDet
         const registrations: RegistrationEntry[] = iterEntries.map((e) => {
@@ -2759,9 +2836,10 @@ async function processResolvedMessage(
         const eduComment = await generateEducationalComment(
           deps.llm,
           {
-            kind: registrations[0]?.tool === 'registra_treino'
-              ? 'treino'
-              : (registrations[0]?.mealType as EduCommentInput['kind']) ?? 'outro',
+            kind:
+              registrations[0]?.tool === 'registra_treino'
+                ? 'treino'
+                : ((registrations[0]?.mealType as EduCommentInput['kind']) ?? 'outro'),
             // Adapter (P0 audit 2026-06-13): a tool registra_refeicao retorna
             // items com chave `name` (tools.ts:1359), EduCommentInput espera
             // `food_name`. adaptToolItemsToEduInput é função pura testável —
@@ -2808,6 +2886,7 @@ async function processResolvedMessage(
         break
       }
     } else if (
+      !ctx.flowClinical &&
       isPureStatusQueryTurn(iterEntries, input.text) &&
       (options.historyProvider !== 'mobile_flow' ||
         classifyFlowDayStatusIntent(semanticPatientText) !== null)
@@ -2818,8 +2897,11 @@ async function processResolvedMessage(
       // Gatilho conservador (só consulta_progresso + intenção de status pura);
       // qualquer coaching junto cai no fluxo normal (LLM responde).
       const todayStr = getLocalDateString(ctx.timezone)
-      const { snapshot: snapDet, progress: progDet } =
-        await loadDeterministicDailyState(deps.supabase, userId, todayStr)
+      const { snapshot: snapDet, progress: progDet } = await loadDeterministicDailyState(
+        deps.supabase,
+        userId,
+        todayStr,
+      )
       if (snapDet) {
         const s = snapDet
         const p = progDet
@@ -2896,10 +2978,7 @@ async function processResolvedMessage(
         finalText = composeReevalResultMessage({
           caloriesTarget: cr.calories_target_today ?? null,
           proteinTarget: cr.protein_target_today_g ?? null,
-          protocol:
-            reevaluationGate.currentProtocol ??
-            ctx.profile.currentProtocol ??
-            null,
+          protocol: reevaluationGate.currentProtocol ?? ctx.profile.currentProtocol ?? null,
         })
         messages.push({ role: 'assistant', content: assistantCopy(finalText) })
         deterministicRegistration = true // reusa o flag de single-message
@@ -2960,10 +3039,19 @@ async function processResolvedMessage(
   // 2026-05-22: detector acusava "excedente vs déficit" quando o paciente tinha
   // registrado a refeição no próprio turno — a prosa batia com o card, o stale não).
   let freshConsumed: number | null = ctx.todaySnapshot?.calories_consumed ?? null
-  if (finalText && hasBalanceCard(finalText)) {
+  if (ctx.flowClinical && finalText && hasBalanceCard(finalText)) {
+    finalText = injectCanonicalCard(
+      finalText,
+      renderFlowDayStatus(ctx.flowClinical.today, ctx.locale, null, ctx.flowClinical.policy),
+    )
+  }
+  if (!ctx.flowClinical && finalText && hasBalanceCard(finalText)) {
     const todayStr = getLocalDateString(ctx.timezone, input.timestamp)
-    const { snapshot: snapFresh, progress: progFresh } =
-      await loadDeterministicDailyState(deps.supabase, userId, todayStr)
+    const { snapshot: snapFresh, progress: progFresh } = await loadDeterministicDailyState(
+      deps.supabase,
+      userId,
+      todayStr,
+    )
     if (snapFresh) {
       const snapTyped = snapFresh
       freshConsumed = snapTyped.calories_consumed
@@ -2976,11 +3064,8 @@ async function processResolvedMessage(
         exerciseCalories: snapTyped.exercise_calories,
         deficitBlock: progFresh.deficit_block,
         protocol:
-          (ctx.profile.currentProtocol as
-            | 'recomposicao'
-            | 'ganho_massa'
-            | 'manutencao'
-            | null) ?? null,
+          (ctx.profile.currentProtocol as 'recomposicao' | 'ganho_massa' | 'manutencao' | null) ??
+          null,
         last14d: ctx.last14d,
       })
       const before = finalText
@@ -3068,7 +3153,7 @@ async function processResolvedMessage(
   // (ex: LLM escreve "você está em 3.000 do bloco" no comentário motivacional)
   // não eram cobertas pelo injectCanonicalCard. Esta varredura adicional
   // substitui ocorrências soltas pelo valor real do user_progress.deficit_block.
-  if (finalText && ctx.userProgress?.deficit_block != null) {
+  if (!ctx.flowClinical && finalText && ctx.userProgress?.deficit_block != null) {
     const looseReplace = replaceLooseBlockMentions(finalText, ctx.userProgress.deficit_block)
     if (looseReplace.replacements > 0) {
       finalText = looseReplace.text
@@ -3091,11 +3176,7 @@ async function processResolvedMessage(
       // a direct turn, on a turn the deadline ended and on one whose closing
       // call failed, the model was not asked to (or was cut while it did, or
       // never answered): llm.flow_calls says so.
-      if (
-        !planSuggestionDirect &&
-        !flowSuggestionAtDeadline &&
-        !flowSuggestionAfterFailedClosing
-      ) {
+      if (!planSuggestionDirect && !flowSuggestionAtDeadline && !flowSuggestionAfterFailedClosing) {
         await deps.supabase.from('product_events').insert({
           user_id: userId,
           event: 'llm.plan_suggestion_rewritten',
@@ -3171,8 +3252,8 @@ async function processResolvedMessage(
 
   // Audit anti-alucinação: parseia números na resposta e compara com contexto.
   // Não bloqueia — só loga em product_events pra investigação posterior.
-  const m = computeMetrics(ctx.profile, input.timestamp, calcConfig)
-  if (options.includeSensitiveTelemetry !== false) {
+  if (options.includeSensitiveTelemetry !== false && !ctx.flowClinical) {
+    const m = computeMetrics(ctx.profile, input.timestamp, calcConfig)
     await auditNumericClaims(
       deps.supabase,
       userId,
@@ -3419,7 +3500,11 @@ function previousLocalDay(
 
 // A history row from another local day carries its date, so "hoje" and the
 // hour said on that day are not read as today's (audit 2026-09-28, Flow).
-function datedHistoryContent(content: string, createdAt: string | null | undefined, day: PromptHistoryDay): string {
+function datedHistoryContent(
+  content: string,
+  createdAt: string | null | undefined,
+  day: PromptHistoryDay,
+): string {
   const rowDay = previousLocalDay(createdAt, day)
   if (rowDay === null) return content
   const [year, month, dayOfMonth] = rowDay.split('-')
@@ -3453,9 +3538,7 @@ function promptHistoryRows(
     .reverse()
     .filter((m) => m.content)
     .filter((m) => !isRawInteractiveTap(m))
-    .filter(
-      (m) => !m.provider_message_id || !currentIds.has(m.provider_message_id),
-    )
+    .filter((m) => !m.provider_message_id || !currentIds.has(m.provider_message_id))
 }
 
 export function buildPromptRecentMessages(
@@ -3501,18 +3584,27 @@ export async function loadContext(
   currentText?: string | null,
   referenceTimestamp: Date = new Date(),
   historyProvider?: string,
+  clinicalPort?: MobileFlowClinicalPort,
 ): Promise<UserContext> {
+  if (clinicalPort && historyProvider !== 'mobile_flow')
+    throw new Error('Clinical port is mobile-only')
+  const current = clinicalPort ? await clinicalPort.read() : undefined
   // Cast pra unknown porque tipos auto-gen ainda não conhecem as colunas
   // novas (summary, last_active_at) — adicionadas na migration 0016.
-  const { data: user, error: userError } = await (supabase as unknown as {
-    from: (t: string) => {
-      select: (s: string) => {
-        eq: (col: string, val: string) => {
-          single: () => Promise<{ data: unknown; error: unknown }>
+  const { data: user, error: userError } = await (
+    supabase as unknown as {
+      from: (t: string) => {
+        select: (s: string) => {
+          eq: (
+            col: string,
+            val: string,
+          ) => {
+            single: () => Promise<{ data: unknown; error: unknown }>
+          }
         }
       }
     }
-  })
+  )
     .from('users')
     .select(
       'id, name, summary, last_active_at, country, country_confirmed, country_detected_from_wpp, locale, metadata, timezone',
@@ -3537,7 +3629,7 @@ export async function loadContext(
       ? await Promise.all([readProfile(), loadFlowCoachStyle(supabase, userId)])
       : [await readProfile(), undefined]
   const flowConfirmedSignupPhotoBodyFat =
-    historyProvider === 'mobile_flow' && profile.body_fat_percent != null
+    !current && historyProvider === 'mobile_flow' && profile.body_fat_percent != null
       ? await loadFlowConfirmedSignupPhotoBodyFat(supabase, userId, profile)
       : false
 
@@ -3550,9 +3642,7 @@ export async function loadContext(
         .eq('provider', historyProvider)
         .order('created_at', { ascending: false })
         .limit(RECENT_MESSAGES_LIMIT)
-    : await messagesQuery
-        .order('created_at', { ascending: false })
-        .limit(RECENT_MESSAGES_LIMIT)
+    : await messagesQuery.order('created_at', { ascending: false }).limit(RECENT_MESSAGES_LIMIT)
   throwIfQueryFailed(messagesError, 'recent messages lookup failed')
 
   // .slice() ANTES do .reverse() — reverse() muta in-place. Sem o slice, a
@@ -3564,7 +3654,10 @@ export async function loadContext(
   const historyTimeZone = (user as { timezone?: string | null }).timezone ?? 'America/Sao_Paulo'
   const flowHistoryDay: PromptHistoryDay | undefined =
     historyProvider === 'mobile_flow'
-      ? { timeZone: historyTimeZone, today: getLocalDateString(historyTimeZone, referenceTimestamp) }
+      ? {
+          timeZone: historyTimeZone,
+          today: getLocalDateString(historyTimeZone, referenceTimestamp),
+        }
       : undefined
   const recentMessages = buildPromptRecentMessages(
     (msgs ?? []) as RecentMessageRow[],
@@ -3582,20 +3675,18 @@ export async function loadContext(
       )
     : undefined
 
-  const userTyped = user as
-    | {
-        id: string
-        name: string | null
-        summary: string | null
-        last_active_at: string | null
-        country: string | null
-        country_confirmed: boolean | null
-        country_detected_from_wpp: string | null
-        locale: string | null
-        metadata: Record<string, unknown> | null
-        timezone: string | null
-      }
-    | null
+  const userTyped = user as {
+    id: string
+    name: string | null
+    summary: string | null
+    last_active_at: string | null
+    country: string | null
+    country_confirmed: boolean | null
+    country_detected_from_wpp: string | null
+    locale: string | null
+    metadata: Record<string, unknown> | null
+    timezone: string | null
+  } | null
   // Calcula gap de tempo desde última msg IN (penúltima, pq a atual já entrou)
   let hoursSinceLastIn: number | null = null
   if (userTyped?.last_active_at) {
@@ -3612,27 +3703,45 @@ export async function loadContext(
   }
   const isReentry = hoursSinceLastIn != null && hoursSinceLastIn > REENTRY_THRESHOLD_HOURS
 
-  const profileTyped: UserProfile = {
-    sex: profile?.sex ?? null,
-    birthDate: profile?.birth_date ? new Date(profile.birth_date) : null,
-    heightCm: profile?.height_cm != null ? Number(profile.height_cm) : null,
-    weightKg: profile?.weight_kg != null ? Number(profile.weight_kg) : null,
-    bodyFatPercent: profile?.body_fat_percent != null ? Number(profile.body_fat_percent) : null,
-    activityLevel: profile?.activity_level ?? null,
-    trainingFrequency: profile?.training_frequency ?? null,
-    waterIntake: profile?.water_intake ?? null,
-    hungerLevel: profile?.hunger_level ?? null,
-    currentProtocol: profile?.current_protocol ?? null,
-    goalType: profile?.goal_type ?? null,
-    goalValue: profile?.goal_value != null ? Number(profile.goal_value) : null,
-    deficitLevel: (profile?.deficit_level as 400 | 500 | 600 | null) ?? null,
-    // Campos novos pra critérios de Ganho de Massa (sono ≥6h30 + alimentação).
-    bedTime: (profile as { bedtime?: string | null } | null)?.bedtime ?? null,
-    wakeTime: profile?.wake_time ?? null,
-    foodOrganization:
-      ((profile as { food_organization?: 'sim' | 'nao' | null } | null)?.food_organization ??
-        null) as 'sim' | 'nao' | null,
-  }
+  const profileTyped: UserProfile = current
+    ? {
+        sex: current.profile.sex,
+        birthDate: null,
+        heightCm: current.profile.height_cm,
+        weightKg: current.profile.weight_kg,
+        bodyFatPercent: current.profile.bf_percent,
+        activityLevel: null,
+        trainingFrequency: null,
+        waterIntake: null,
+        hungerLevel: null,
+        currentProtocol: current.profile.protocol,
+        goalType: null,
+        goalValue: null,
+        deficitLevel: null,
+        bedTime: null,
+        wakeTime: null,
+        foodOrganization: null,
+      }
+    : {
+        sex: profile?.sex ?? null,
+        birthDate: profile?.birth_date ? new Date(profile.birth_date) : null,
+        heightCm: profile?.height_cm != null ? Number(profile.height_cm) : null,
+        weightKg: profile?.weight_kg != null ? Number(profile.weight_kg) : null,
+        bodyFatPercent: profile?.body_fat_percent != null ? Number(profile.body_fat_percent) : null,
+        activityLevel: profile?.activity_level ?? null,
+        trainingFrequency: profile?.training_frequency ?? null,
+        waterIntake: profile?.water_intake ?? null,
+        hungerLevel: profile?.hunger_level ?? null,
+        currentProtocol: profile?.current_protocol ?? null,
+        goalType: profile?.goal_type ?? null,
+        goalValue: profile?.goal_value != null ? Number(profile.goal_value) : null,
+        deficitLevel: (profile?.deficit_level as 400 | 500 | 600 | null) ?? null,
+        // Campos novos pra critérios de Ganho de Massa (sono ≥6h30 + alimentação).
+        bedTime: (profile as { bedtime?: string | null } | null)?.bedtime ?? null,
+        wakeTime: profile?.wake_time ?? null,
+        foodOrganization: ((profile as { food_organization?: 'sim' | 'nao' | null } | null)
+          ?.food_organization ?? null) as 'sim' | 'nao' | null,
+      }
 
   const unitSystemRaw = userTyped?.metadata?.unit_system
   const unitSystem: 'metric' | 'imperial' | null =
@@ -3640,45 +3749,56 @@ export async function loadContext(
 
   // ANTI-ALUCINAÇÃO: carrega metas determinísticas + snapshot do dia + progress.
   // Sem isso o LLM inventa kcal/proteína/streak/balance.
-  const calcCfg = await loadCalcConfig(supabase)
-  const dailyTargets = await loadDailyTargets(supabase, userId, calcCfg)
+  const calcCfg = current ? DEFAULT_CALC_CONFIG : await loadCalcConfig(supabase)
+  const dailyTargets = current
+    ? {
+        calories_target: current.today.targets.calories_kcal,
+        protein_target: current.today.targets.protein_g,
+      }
+    : await loadDailyTargets(supabase, userId, calcCfg)
   // Data LOCAL do paciente (não UTC). Sem isso, paciente em America/New_York
   // entre 20h-24h local pegava o snapshot do dia seguinte (UTC já rolou).
   const userTz = userTyped?.timezone ?? 'America/Sao_Paulo'
   const today = getLocalDateString(userTz, referenceTimestamp)
   const snapshotColumns =
     'calories_consumed, protein_g, carbs_g, fat_g, exercise_calories, daily_balance, deficit_accumulated, day_status, gap_reminder_sent_at'
-  const { data: snapToday, error: snapshotError } = await supabase
-    .from('daily_snapshots')
-    .select(
-      historyProvider === 'mobile_flow'
-        ? `${snapshotColumns}, calories_target, protein_target, current_protocol`
-        : snapshotColumns,
-    )
-    .eq('user_id', userId)
-    .eq('date', today)
-    .maybeSingle()
+  const { data: snapToday, error: snapshotError } = current
+    ? { data: null, error: null }
+    : await supabase
+        .from('daily_snapshots')
+        .select(
+          historyProvider === 'mobile_flow'
+            ? `${snapshotColumns}, calories_target, protein_target, current_protocol`
+            : snapshotColumns,
+        )
+        .eq('user_id', userId)
+        .eq('date', today)
+        .maybeSingle()
   throwIfQueryFailed(snapshotError, 'daily snapshot lookup failed')
 
-  const { data: progress, error: progressError } = await supabase
-    .from('user_progress')
-    .select(
-      'current_streak, longest_streak, xp_total, level, blocks_completed, deficit_block, last_active_date',
-    )
-    .eq('user_id', userId)
-    .maybeSingle()
+  const { data: progress, error: progressError } = current
+    ? { data: null, error: null }
+    : await supabase
+        .from('user_progress')
+        .select(
+          'current_streak, longest_streak, xp_total, level, blocks_completed, deficit_block, last_active_date',
+        )
+        .eq('user_id', userId)
+        .maybeSingle()
   throwIfQueryFailed(progressError, 'user progress lookup failed')
-  if (!progress) throw new Error('user progress missing')
+  if (!current && !progress) throw new Error('user progress missing')
 
   // Janela 14 dias — orçamento calórico + DAM (manutenção/ganho_massa).
   // Computa em-memória sobre daily_snapshots fechados.
   const date14dAgo = getLocalDateMinusDays(userTz, 14, referenceTimestamp)
-  const { data: last14dRows, error: last14dError } = await supabase
-    .from('daily_snapshots')
-    .select('calories_consumed, calories_target, day_closed')
-    .eq('user_id', userId)
-    .gte('date', date14dAgo)
-    .eq('day_closed', true)
+  const { data: last14dRows, error: last14dError } = current
+    ? { data: [], error: null }
+    : await supabase
+        .from('daily_snapshots')
+        .select('calories_consumed, calories_target, day_closed')
+        .eq('user_id', userId)
+        .gte('date', date14dAgo)
+        .eq('day_closed', true)
   throwIfQueryFailed(last14dError, 'daily history lookup failed')
   const last14dTyped = (last14dRows ?? []) as Array<{
     calories_consumed: number | null
@@ -3689,9 +3809,7 @@ export async function loadContext(
     consumed_total: last14dTyped.reduce((s, r) => s + (r.calories_consumed ?? 0), 0),
     target_total: last14dTyped.reduce((s, r) => s + (r.calories_target ?? 0), 0),
     days_with_data: last14dTyped.length,
-    dam: last14dTyped.filter(
-      (r) => (r.calories_consumed ?? 0) > (r.calories_target ?? 0),
-    ).length,
+    dam: last14dTyped.filter((r) => (r.calories_consumed ?? 0) > (r.calories_target ?? 0)).length,
   }
   const snapTyped = snapToday as {
     calories_target?: number | null
@@ -3740,17 +3858,16 @@ export async function loadContext(
   ])
   throwIfQueryFailed(bodyVisionError, 'body vision history lookup failed')
   throwIfQueryFailed(reevaluationDueError, 'reevaluation status lookup failed')
-  const bodySignals = ((bodyVisionRows ?? []) as Array<{
-    properties: unknown
-    occurred_at: string | null
-  }>)
+  const bodySignals = (
+    (bodyVisionRows ?? []) as Array<{
+      properties: unknown
+      occurred_at: string | null
+    }>
+  )
     .map((row) => bodyPhotoSignalFromEventProperties(row.properties, row.occurred_at))
     .filter((signal): signal is BodyPhotoSignal => signal != null)
-  const reevaluationDueRecent =
-    Array.isArray(reevaluationDueRows) && reevaluationDueRows.length > 0
-  const bodyPhotoTexts = recentMessages
-    .filter((m) => m.role === 'user')
-    .map((m) => m.content)
+  const reevaluationDueRecent = Array.isArray(reevaluationDueRows) && reevaluationDueRows.length > 0
+  const bodyPhotoTexts = recentMessages.filter((m) => m.role === 'user').map((m) => m.content)
   if (currentText) bodyPhotoTexts.push(currentText)
   const bodyPhotoState =
     reevaluationDueRecent || bodySignals.length > 0
@@ -3763,8 +3880,9 @@ export async function loadContext(
     const target = value == null ? null : Number(value)
     return target != null && Number.isFinite(target) && target > 0 ? target : null
   }
-  const contextTargets =
-    historyProvider === 'mobile_flow'
+  const contextTargets = current
+    ? dailyTargets
+    : historyProvider === 'mobile_flow'
       ? {
           calories_target:
             positiveSnapshotTarget(snapTyped?.calories_target) ?? dailyTargets.calories_target,
@@ -3792,7 +3910,7 @@ export async function loadContext(
     deficit_level: profileTyped.deficitLevel,
   }
   const flowDayRow: FlowDayRow | null =
-    historyProvider === 'mobile_flow'
+    !current && historyProvider === 'mobile_flow'
       ? {
           protocol: snapTyped?.current_protocol ?? null,
           storedTargetKcal: positiveSnapshotTarget(snapTyped?.calories_target),
@@ -3800,12 +3918,22 @@ export async function loadContext(
         }
       : null
 
+  if (clinicalPort) await clinicalPort.revalidate()
   return {
+    ...(current ? { flowClinical: current } : {}),
     userId,
-    userName: userTyped?.name ?? null,
+    userName: current ? current.profile.name : (userTyped?.name ?? null),
     profile: profileTyped,
-    recentMessages,
-    ...(flowOutsideSessionLines ? { flowOutsideSessionLines } : {}),
+    recentMessages: current
+      ? recentMessages.filter((message) => message.role === 'user')
+      : recentMessages,
+    ...(flowOutsideSessionLines
+      ? {
+          flowOutsideSessionLines: current
+            ? flowOutsideSessionLines.filter((_, index) => recentMessages[index]?.role === 'user')
+            : flowOutsideSessionLines,
+        }
+      : {}),
     ...(flowCoachStyle ? { flowCoachStyle } : {}),
     ...(flowConfirmedSignupPhotoBodyFat ? { flowConfirmedSignupPhotoBodyFat: true as const } : {}),
     summary: userTyped?.summary ?? null,
@@ -3814,37 +3942,49 @@ export async function loadContext(
     country: userTyped?.country ?? null,
     countryConfirmed: !!userTyped?.country_confirmed,
     countryDetectedFromWpp: userTyped?.country_detected_from_wpp ?? null,
-    locale: userTyped?.locale ?? null,
+    locale: current ? current.locale : (userTyped?.locale ?? null),
     userMetadata: (userTyped?.metadata as Record<string, unknown> | null) ?? null,
     lastInboundContentType: (() => {
       // Última msg inbound: pra Fase B detector express decidir se é foto/áudio.
-      const lastIn = (msgs ?? []).find(
-        (m) => (m as { direction?: string }).direction === 'in',
-      ) as { content_type?: string | null } | undefined
+      const lastIn = (msgs ?? []).find((m) => (m as { direction?: string }).direction === 'in') as
+        | { content_type?: string | null }
+        | undefined
       const ct = lastIn?.content_type ?? null
       if (ct === 'image' || ct === 'audio' || ct === 'text') return ct
       return null
     })(),
     unitSystem,
-    timezone: userTyped?.timezone ?? 'America/Sao_Paulo',
+    timezone: current ? current.timezone : (userTyped?.timezone ?? 'America/Sao_Paulo'),
     referenceTimestamp,
-    bodyPhotoState,
-    reevaluationDueRecent,
+    bodyPhotoState: current ? null : bodyPhotoState,
+    reevaluationDueRecent: current ? false : reevaluationDueRecent,
     dailyTargets: contextTargets,
     flowDayRow,
-    todaySnapshot: snapTyped
+    todaySnapshot: current
       ? {
-          calories_consumed: snapTyped.calories_consumed ?? 0,
-          protein_g: Number(snapTyped.protein_g ?? 0),
-          carbs_g: Number(snapTyped.carbs_g ?? 0),
-          fat_g: Number(snapTyped.fat_g ?? 0),
-          exercise_calories: snapTyped.exercise_calories ?? 0,
-          daily_balance: snapTyped.daily_balance ?? 0,
-          deficit_accumulated: snapTyped.deficit_accumulated ?? 0,
-          day_status: snapTyped.day_status ?? null,
-          gap_reminder_sent_at: snapTyped.gap_reminder_sent_at ?? null,
+          calories_consumed: current.today.consumed.calories_kcal,
+          protein_g: current.today.consumed.protein_g,
+          carbs_g: current.today.consumed.carbs_g,
+          fat_g: current.today.consumed.fat_g,
+          exercise_calories: current.today.exercise_kcal,
+          daily_balance: current.today.daily_balance_kcal,
+          deficit_accumulated: null,
+          day_status: null,
+          gap_reminder_sent_at: null,
         }
-      : null,
+      : snapTyped
+        ? {
+            calories_consumed: snapTyped.calories_consumed ?? 0,
+            protein_g: Number(snapTyped.protein_g ?? 0),
+            carbs_g: Number(snapTyped.carbs_g ?? 0),
+            fat_g: Number(snapTyped.fat_g ?? 0),
+            exercise_calories: snapTyped.exercise_calories ?? 0,
+            daily_balance: snapTyped.daily_balance ?? 0,
+            deficit_accumulated: snapTyped.deficit_accumulated ?? 0,
+            day_status: snapTyped.day_status ?? null,
+            gap_reminder_sent_at: snapTyped.gap_reminder_sent_at ?? null,
+          }
+        : null,
     userProgress: progressTyped
       ? {
           current_streak: progressTyped.current_streak ?? 0,
@@ -3857,7 +3997,7 @@ export async function loadContext(
         }
       : null,
     last14d: last14d.days_with_data > 0 ? last14d : null,
-    visionPending: await loadVisionPending(supabase, userId),
+    visionPending: current ? null : await loadVisionPending(supabase, userId),
   }
 }
 
@@ -3934,9 +4074,7 @@ async function loadActivePrompt(
   // paciente (helper compartilhado com o engajamento). Fallback pro prompt cheio
   // da view se a query falhar / não retornar regras.
   const flowRules =
-    historyProvider === 'mobile_flow'
-      ? await loadFlowLanguageRules(supabase, stage, locale)
-      : null
+    historyProvider === 'mobile_flow' ? await loadFlowLanguageRules(supabase, stage, locale) : null
   const filtered = flowRules
     ? flowRules.systemPrompt
     : await loadFilteredSystemPrompt(supabase, stage, locale)
@@ -3967,12 +4105,9 @@ function buildToolSchemas(tools: ToolDefinition[]): ChatCompletionTool[] {
   }))
 }
 
-export async function hasOpenPending(
-  supabase: ServiceClient,
-  userId: string,
-): Promise<boolean> {
+export async function hasOpenPending(supabase: ServiceClient, userId: string): Promise<boolean> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
+  // biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
   const { data, error } = await (supabase as any)
     .from('pending_registrations')
     .select('id')
@@ -3989,7 +4124,7 @@ async function logModelRouted(
   payload: { from: string; to: string; reason: string; stage: string; text_preview?: string },
 ): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-// biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
+  // biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
   await (supabase as any).from('product_events').insert({
     user_id: userId,
     event: 'pipeline.model_routed',
@@ -4003,6 +4138,8 @@ function formatUserContext(
   referenceTimestamp: Date = ctx.referenceTimestamp,
   historyProvider?: string,
 ): string {
+  if (ctx.flowClinical)
+    return flowClinicalContextText(ctx.flowClinical, ctx.userName, ctx.locale, ctx.summary)
   const m = computeMetrics(ctx.profile, referenceTimestamp, calcConfig)
   const sections: string[] = []
   // Flow only (2026-10-04, cost): this block is never cached, so every
@@ -4013,7 +4150,9 @@ function formatUserContext(
   // (locked by __golden__/audit-10-04-whatsapp-request-lock.test.ts).
   const flowLean = MOBILE_FLOW_LEAN_CONTEXT && historyProvider === 'mobile_flow'
   const flowPublicMetrics = historyProvider === 'mobile_flow'
-  const flowObjective: FlowPresentationObjective = { currentProtocol: normalizeProtocol(ctx.profile.currentProtocol) }
+  const flowObjective: FlowPresentationObjective = {
+    currentProtocol: normalizeProtocol(ctx.profile.currentProtocol),
+  }
   const includeBlock = !flowPublicMetrics || flowObjective.currentProtocol === 'recomposicao'
 
   // FIX 4 (Roberto 2026-06-15): foto noturna perdida — LLM chamou
@@ -4040,7 +4179,10 @@ function formatUserContext(
     )
   }
 
-  if (ctx.bodyPhotoState && (ctx.reevaluationDueRecent || ctx.bodyPhotoState.recentSignals.length > 0)) {
+  if (
+    ctx.bodyPhotoState &&
+    (ctx.reevaluationDueRecent || ctx.bodyPhotoState.recentSignals.length > 0)
+  ) {
     sections.push(formatBodyPhotoContext(ctx.bodyPhotoState))
   }
 
@@ -4058,7 +4200,9 @@ function formatUserContext(
 
   // Resumo persistente do paciente (gerado por cron LLM)
   if (ctx.summary && ctx.summary.trim().length > 0) {
-    sections.push(`### Resumo do paciente\n${flowPublicMetrics ? projectFlowMetricContext(ctx.summary, flowObjective) : ctx.summary}`)
+    sections.push(
+      `### Resumo do paciente\n${flowPublicMetrics ? projectFlowMetricContext(ctx.summary, flowObjective) : ctx.summary}`,
+    )
   }
 
   // País — instrução explícita pro LLM saber se já tem confirmação
@@ -4094,10 +4238,8 @@ function formatUserContext(
   // Usa locale escolhido pelo paciente se disponível; senão deriva do país
   const language = ctx.locale ?? countryToLanguage[country] ?? 'pt-BR'
   // unit_system: explícito do paciente OU 'imperial' default pra US/GB OU 'metric' default
-  const unitSystem =
-    ctx.unitSystem ?? (['US', 'GB'].includes(country) ? 'imperial' : 'metric')
-  const unitsLabel =
-    unitSystem === 'imperial' ? 'lb / inch (imperial)' : 'kg / cm (métrico)'
+  const unitSystem = ctx.unitSystem ?? (['US', 'GB'].includes(country) ? 'imperial' : 'metric')
+  const unitsLabel = unitSystem === 'imperial' ? 'lb / inch (imperial)' : 'kg / cm (métrico)'
 
   if (ctx.countryConfirmed) {
     const timezoneConfirmed = ctx.userMetadata?.timezone_confirmed === true
@@ -4302,7 +4444,7 @@ function formatUserContext(
         `- Balanço calórico de hoje: ${s.daily_balance} kcal (negativo=déficit, positivo=superávit)`,
       )
     }
-    if (includeBlock && s.deficit_accumulated > 0) {
+    if (includeBlock && s.deficit_accumulated != null && s.deficit_accumulated > 0) {
       numericLines.push(
         `- Déficit acumulado (bloco 7700): ${s.deficit_accumulated} kcal de 7700 — falta ${7700 - s.deficit_accumulated} pra fechar bloco`,
       )
@@ -4349,9 +4491,10 @@ function formatUserContext(
     // viu "Bloco 7700: 57/7700" enquanto real era 0; Paulo viu "0/7700" enquanto
     // real era 874). Validator pega, mas paciente já viu o número errado.
     const pct = Math.round((p.deficit_block / 7700) * 100)
-    if (includeBlock) numericLines.push(
-      `- Bloco 7700 em andamento: **${p.deficit_block} kcal de 7700** (${pct}%)${p.deficit_block > 0 ? ` — falta ${7700 - p.deficit_block} kcal pra fechar` : ''}`,
-    )
+    if (includeBlock)
+      numericLines.push(
+        `- Bloco 7700 em andamento: **${p.deficit_block} kcal de 7700** (${pct}%)${p.deficit_block > 0 ? ` — falta ${7700 - p.deficit_block} kcal pra fechar` : ''}`,
+      )
   }
   // Janela 14d — pra manutenção e ganho_massa (Notion: métrica principal).
   if (!flowPublicMetrics && ctx.last14d && ctx.last14d.target_total > 0) {

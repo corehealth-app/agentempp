@@ -16,9 +16,12 @@ extension MobileAPITransport: MobileAPIEnvelopeExecuting {}
 struct MobileBodyFlowRepository: TodayProviding, HistoryProviding,
     PlanProviding, ProgressProviding, MeProviding {
     let transport: any MobileAPIEnvelopeExecuting
+    var clinicalRepresentation: CurrentClinicalRepresentation = .legacy
 
     func today() async throws -> TodayResponse {
-        try await read("/api/mobile/v1/today")
+        let response: TodayResponse = try await read("/api/mobile/v1/today", queryItems: clinicalRepresentation.queryItems)
+        try clinicalRepresentation.requirePolicy(response.data.clinicalPolicy)
+        return response
     }
 
     func me() async throws -> MeResponse {
@@ -26,11 +29,17 @@ struct MobileBodyFlowRepository: TodayProviding, HistoryProviding,
     }
 
     func plan() async throws -> PlanResponse {
-        try await read("/api/mobile/v1/plan")
+        let response: PlanResponse = try await read("/api/mobile/v1/plan", queryItems: clinicalRepresentation.queryItems)
+        try clinicalRepresentation.requirePolicy(response.data.clinicalPolicy)
+        return response
     }
 
     func progress() async throws -> ProgressResponse {
-        try await read("/api/mobile/v1/progress")
+        let response: ProgressResponse = try await read("/api/mobile/v1/progress", queryItems: clinicalRepresentation.queryItems)
+        // The official absence of a progress record contains no numerical
+        // state to revive; do not fabricate an XP or target object for it.
+        if let snapshot = response.data { try clinicalRepresentation.requirePolicy(snapshot.clinicalPolicy) }
+        return response
     }
 
     func profileWeight() async throws -> ProfileWeightResponse? {
@@ -38,10 +47,12 @@ struct MobileBodyFlowRepository: TodayProviding, HistoryProviding,
     }
 
     func trends(days: Int) async throws -> TrendsResponse {
-        try await read(
+        let response: TrendsResponse = try await read(
             "/api/mobile/v1/trends",
-            queryItems: [URLQueryItem(name: "days", value: String(days))]
+            queryItems: [URLQueryItem(name: "days", value: String(days))] + clinicalRepresentation.queryItems
         )
+        try clinicalRepresentation.requirePolicy(response.data.clinicalPolicy)
+        return response
     }
 
     func history(_ query: HistoryQuery) async throws -> HistoryResponse {
@@ -62,17 +73,21 @@ struct MobileBodyFlowRepository: TodayProviding, HistoryProviding,
         _ path: String,
         queryItems: [URLQueryItem] = []
     ) async throws -> MobileResponse<Payload> {
+        try await clinicalRepresentation.authorizeSession(transport)
         do {
-            return try await transport.executeEnvelope(MobileAPIRequest(
+            let response = try await transport.executeEnvelope(MobileAPIRequest<Payload>(
                 method: .get,
                 path: path,
                 queryItems: queryItems
             ))
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch let error as MobileAPITransportError {
-            throw Self.capabilityError(for: error)
+            try await clinicalRepresentation.authorizeSession(transport)
+            return response
         } catch {
+            // A late failure belongs to the original owner too. It must not
+            // become a recoverable error for a replacement session.
+            try await clinicalRepresentation.authorizeSession(transport)
+            if error is CancellationError { throw CancellationError() }
+            if let error = error as? MobileAPITransportError { throw Self.capabilityError(for: error) }
             throw BodyFlowCapabilityError.serviceUnavailable
         }
     }

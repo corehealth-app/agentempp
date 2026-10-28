@@ -39,6 +39,27 @@ describe('reevaluation cycle wire version1', () => {
     expect(parseReevaluationCycleRpcState(maximum).cycle?.revision).toBe('9223372036854775807')
   })
 
+  it.each([
+    'open',
+    'collecting',
+    'review_ready',
+  ])('reads the exact authoritative EARLY_FULL %s wire', (status) => {
+    const input = state()
+    input.cycle.kind = 'EARLY_FULL'
+    input.cycle.status = status
+    expect(parseReevaluationCycleRpcState(input)).toEqual(input)
+    expect(() =>
+      parseReevaluationCycleRpcState({
+        ...input,
+        availability: 'unavailable',
+        unavailable_reason: 'not_due',
+      }),
+    ).toThrow()
+    expect(() =>
+      parseReevaluationCycleRpcState({ ...input, cycle: { ...input.cycle, noPlan: true } }),
+    ).toThrow()
+  })
+
   it('accepts due but not started without inventing a cycle', () => {
     expect(parseReevaluationCycleRpcState({ ...state(), cycle: null }).cycle).toBeNull()
   })
@@ -131,7 +152,7 @@ describe('reevaluation cycle wire version1', () => {
     { revision: null },
     { status: 'completed' },
     { status: 'invalidated' },
-    { kind: 'EARLY_FULL' },
+    { kind: 'SAFETY' },
     { base_date: '2026-10-02' },
     { due_date: '2026-10-16' },
     { timezone_at_open: 'UTC' },

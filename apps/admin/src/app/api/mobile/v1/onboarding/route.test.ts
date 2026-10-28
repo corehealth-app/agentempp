@@ -3,6 +3,9 @@ import { clearCalcConfigCache } from '@mpp/agent'
 import { protocolWelcomeMessage } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { OnboardingCompletionInput } from '@/lib/mobile-api/contracts'
+import type { CurrentClinicalStateSource } from '@/lib/mobile-api/current-clinical-state'
+import { createCurrentOnboardingRoutes } from '@/lib/mobile-api/current-onboarding-http'
 import { authorizeMobileEntitlement } from '@/lib/mobile-api/entitlement-service'
 import { EVALUATION_ACCESS_DAYS_ENV } from '@/lib/mobile-api/evaluation-access'
 import { MobileApiError } from '@/lib/mobile-api/http'
@@ -20,6 +23,7 @@ import {
 import { createSupabaseOnboardingRepository } from '@/lib/mobile-api/supabase-onboarding'
 import { createSupabaseSignupCompletionIntentSource } from '@/lib/mobile-api/supabase-signup-completion-intent'
 import { createSupabaseSignupStrengthAuthoritySource } from '@/lib/mobile-api/supabase-signup-strength-authority'
+import { currentOnboardingWire } from '@/lib/mobile-api/testing/current-onboarding-fixture'
 import { handleOnboardingEligibilityPost } from './eligibility/handler'
 import {
   handleOnboardingGet,
@@ -1407,20 +1411,56 @@ describe('mobile onboarding route', () => {
     expect(repo.complete).toHaveBeenCalledTimes(1)
   })
 
-  it('the legacy partial update carries no entry message and its record is stored whole', async () => {
+  it('requires a positive completion intent for a new null-objective transport', async () => {
+    const repo = repository()
+    const deps = dependencies(repo)
+    await expect(
+      handleOnboardingPost(
+        completionContext(
+          { ...validBody(), objective: null, birth_date: '2010-01-01' },
+          'new-no-plan-needs-intent',
+        ),
+        deps,
+      ),
+    ).rejects.toMatchObject({ status: 409, code: 'onboarding_client_update_required' })
+    expect(deps.executeIdempotent).not.toHaveBeenCalled()
+    expect(deps.createOnboardingRepository).not.toHaveBeenCalled()
+    expect(repo.complete).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { height_cm: 180 },
+    { weight_kg: 81 },
+    { body_fat_percent: 8 },
+    { birth_date: '2010-01-01' },
+    { training_frequency: 5 },
+    { hunger_level: 'muita' },
+    { activity_level: 'alto' },
+  ])('retires partial app writes before a ledger claim or legacy calculation %#', async (patch) => {
+    const repo = repository()
+    const deps = dependencies(repo)
+    await expect(
+      handleOnboardingPost(completionContext(patch, 'clinical-partial-fence'), deps),
+    ).rejects.toMatchObject({ status: 409, code: 'onboarding_client_update_required' })
+    expect(deps.executeIdempotent).not.toHaveBeenCalled()
+    expect(deps.saveLegacyOnboarding).not.toHaveBeenCalled()
+    expect(deps.createOnboardingRepository).not.toHaveBeenCalled()
+  })
+
+  it('the retired partial writer stores no response or idempotency row', async () => {
     const repo = repository()
     const deps = dependencies(repo)
     const { execute, stored } = ledger()
     deps.executeIdempotent = execute
 
-    const response = await handleOnboardingPost(
-      completionContext({ height_cm: 180 }, 'onboarding-legacy-partial'),
-      deps,
-    )
-    const body = await response.json()
-
-    expect(body.data).toEqual({ profile: null, targets: { calories: null, protein_g: null } })
-    expect(stored).toEqual([{ status: 200, body }])
+    await expect(
+      handleOnboardingPost(
+        completionContext({ height_cm: 180 }, 'onboarding-legacy-partial'),
+        deps,
+      ),
+    ).rejects.toMatchObject({ status: 409, code: 'onboarding_client_update_required' })
+    expect(stored).toEqual([])
+    expect(deps.saveLegacyOnboarding).not.toHaveBeenCalled()
   })
 
   it('rejects caller-owned state before idempotency or persistence', async () => {
@@ -1437,27 +1477,15 @@ describe('mobile onboarding route', () => {
     expect(repo.complete).not.toHaveBeenCalled()
   })
 
-  it('preserves the legacy partial update response while forbidding client completion', async () => {
+  it('rejects a retired partial draft and still forbids caller completion', async () => {
     const repo = repository()
     const deps = dependencies(repo)
-    const response = await handleOnboardingPost(
-      context({ height_cm: 180, onboarding_completed: false }),
-      deps,
-    )
-
-    expect(deps.saveLegacyOnboarding).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ userId: USER_ID, authUserId: AUTH_USER_ID }),
-      { height_cm: 180 },
-      'normalized-key',
-    )
+    await expect(
+      handleOnboardingPost(context({ height_cm: 180, onboarding_completed: false }), deps),
+    ).rejects.toMatchObject({ status: 409, code: 'onboarding_client_update_required' })
+    expect(deps.saveLegacyOnboarding).not.toHaveBeenCalled()
+    expect(deps.executeIdempotent).not.toHaveBeenCalled()
     expect(repo.complete).not.toHaveBeenCalled()
-    await expect(response.json()).resolves.toMatchObject({
-      data: {
-        profile: null,
-        targets: { calories: null, protein_g: null },
-      },
-    })
 
     await expect(
       handleOnboardingPost(context({ onboarding_completed: true }), deps),
@@ -1557,6 +1585,14 @@ describe('POST /onboarding — a first completion records only an objective the 
   })
 
   const REFUSED_CASES: Array<[string, Record<string, unknown>]> = [
+    [
+      'n39: man with BF15 and BMI26 cannot gain even with sufficient sessions',
+      man({ body_fat_percent: 15, weight_kg: 84.24, objective: 'ganho_massa' }),
+    ],
+    [
+      'n39: exact BMI25 with BF15 cannot gain',
+      man({ body_fat_percent: 15, height_cm: 160, weight_kg: 64, objective: 'ganho_massa' }),
+    ],
     [
       'man with 20.0% of body fat asking ganho de massa',
       man({ body_fat_percent: 20, objective: 'ganho_massa' }),
@@ -1956,14 +1992,14 @@ describe('POST /onboarding — a first completion records only an objective the 
     expect(db.profile?.current_protocol).toBe('ganho_massa')
   })
 
-  it('the legacy partial update is not a completion: nothing is read for the check', async () => {
+  it('the retired partial update reads no profile or configuration', async () => {
     const db = new SignupMemoryDb().addAccount()
     const requestContext = context({ height_cm: 180 })
     requestContext.supabase = db.client
 
-    const response = await handleOnboardingPost(requestContext, dependencies(repository()))
-
-    expect(response.status).toBe(200)
+    await expect(
+      handleOnboardingPost(requestContext, dependencies(repository())),
+    ).rejects.toMatchObject({ status: 409, code: 'onboarding_client_update_required' })
     expect(db.operations).toEqual([])
   })
 })
@@ -3391,22 +3427,20 @@ describe('C59a signup request authority boundary', () => {
     expect(h.repo.complete).toHaveBeenCalledTimes(1)
   })
 
-  it('C59a H12 partial update bypasses the completion authority', async () => {
+  it('C59a H12 partial update reaches neither authority nor retired writer', async () => {
     const db = new SignupMemoryDb().addAccount()
     const h = c59aHarness(db, 'c59a-case-11')
     const key = 'c59a-partial-update-1'
     const ctx = completionContext({ height_cm: 180 }, key)
     ctx.supabase = db.client
-    expect((await handleOnboardingPost(ctx, h.deps)).status).toBe(200)
+    await expect(handleOnboardingPost(ctx, h.deps)).rejects.toMatchObject({
+      status: 409,
+      code: 'onboarding_client_update_required',
+    })
     expect(h.intents.verify).not.toHaveBeenCalled()
     expect(h.composition.createSources).not.toHaveBeenCalled()
     expect(h.source.bind).not.toHaveBeenCalled()
-    expect(h.deps.saveLegacyOnboarding).toHaveBeenCalledWith(
-      db.client,
-      ctx.auth,
-      { height_cm: 180 },
-      key,
-    )
+    expect(h.deps.saveLegacyOnboarding).not.toHaveBeenCalled()
     expect(h.deps.createOnboardingRepository).not.toHaveBeenCalled()
     expect(db.signupSnapshotReads).toHaveLength(0)
   })
@@ -3432,6 +3466,258 @@ describe('C59a signup request authority boundary', () => {
 
 // Real handler, HTTP idempotency, concrete authority and repository; only SQL IO
 // is controlled. These tests do not simulate native SQL receipt/Y atomicity.
+function currentClinicalWire(
+  input: Parameters<CurrentClinicalStateSource['capture']>[0],
+  state: 'healthy' | 'hold' | 'no_plan',
+) {
+  if (input.mode !== 'signup') throw new Error('Expected signup clinical capture')
+  const at = '2026-10-26T03:00:00.000001Z'
+  const held = state !== 'healthy',
+    noPlan = state === 'no_plan'
+  return {
+    version: 1,
+    user_id: input.userId,
+    mode: 'signup',
+    profile_present: true,
+    epoch: input.expectedEpoch ?? C59A_E0,
+    signup_generation: null,
+    generation_token: input.expectedGeneration ?? {
+      onboarding_completed: false,
+      onboarding_completed_at: null,
+      receipt_count: 0,
+    },
+    first_completion: true,
+    observed_at: at,
+    date: '2026-10-26',
+    timezone: input.body.timezone,
+    body: { ...input.body, body_fat_percent: input.body.body_fat_percent ?? null },
+    assessment: 'complete',
+    missing: [],
+    health_state: {
+      version: 1,
+      user_id: input.userId,
+      safety_revision: held ? '1' : '0',
+      hold_active: held,
+      declared_no_plan: noPlan,
+      hide_protein: false,
+      last_declared_at: held ? at : null,
+      items: held
+        ? [{ code: noPlan ? 'pregnant_or_breastfeeding' : 'reduced_intake', declared_at: at }]
+        : [],
+    },
+    safety: {
+      version: 1,
+      no_plan: noPlan,
+      hold_active: held,
+      loss_guard: false,
+      hide_protein: noPlan,
+      recording_allowed: true,
+      observed_at: at,
+      date: '2026-10-26',
+      timezone: input.body.timezone,
+    },
+    phase_origin: { kind: 'not_completed' },
+    calculation_config: [],
+    profile_hash: 'a'.repeat(64),
+    context_hash: 'b'.repeat(64),
+  }
+}
+describe('dormant current clinical preclaim integration', () => {
+  it('refuses adult NULL before bind/claim and accepts a corrected payload with the same key', async () => {
+    const db = new SignupMemoryDb().addAccount(),
+      h = c59aHarness(db, 'clinical-null-preclaim')
+    const source: CurrentClinicalStateSource = {
+      capture: async (input) => currentClinicalWire(input, 'healthy'),
+    }
+    const deps = { ...h.deps, currentClinical: source }
+    const send = (body: Record<string, unknown>) =>
+      createMobileRoute(
+        (ctx) => handleOnboardingPost(ctx, deps),
+        runtime(db),
+      )(
+        new Request(ENDPOINT, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': h.key },
+          body: JSON.stringify(c59Transport(body, h.intent)),
+        }),
+      )
+    expect((await send(man({ objective: null }))).status).toBe(422)
+    expect(h.source.bind).not.toHaveBeenCalled()
+    expect(h.deps.executeIdempotent).not.toHaveBeenCalled()
+    expect(h.state.rows.rows).toEqual([])
+    expect((await send(man())).status).toBe(200)
+    expect(h.source.bind).toHaveBeenCalledTimes(1)
+    expect(h.state.rows.rows).toHaveLength(1)
+  })
+  it('allows explicitly chosen maintenance under current HOLD above the old assignment cut', async () => {
+    const db = new SignupMemoryDb().addAccount(),
+      h = c59aHarness(db, 'clinical-held-maintenance')
+    const source: CurrentClinicalStateSource = {
+      capture: async (input) => {
+        db.operations.push('current-clinical:capture')
+        return currentClinicalWire(input, 'hold')
+      },
+    }
+    const response = await handleOnboardingPost(
+      h.contextFor(man({ body_fat_percent: 24, objective: 'manutencao' })),
+      { ...h.deps, currentClinical: source },
+    )
+    expect(response.status).toBe(200)
+    expect(db.operations.indexOf('current-clinical:capture')).toBeLessThan(
+      db.operations.indexOf('authority:bind'),
+    )
+    expect(db.operations.indexOf('authority:bind')).toBeLessThan(
+      db.operations.indexOf('http:claim'),
+    )
+  })
+  it('requires NULL under current no-plan, rather than accepting a concrete maintenance fallback', async () => {
+    const db = new SignupMemoryDb().addAccount(),
+      h = c59aHarness(db, 'clinical-noplan')
+    const source: CurrentClinicalStateSource = {
+      capture: async (input) => currentClinicalWire(input, 'no_plan'),
+    }
+    const deps = { ...h.deps, currentClinical: source }
+    await expect(
+      handleOnboardingPost(h.contextFor(man({ objective: 'manutencao' })), deps),
+    ).rejects.toMatchObject({ status: 422 })
+    expect(h.source.bind).not.toHaveBeenCalled()
+    expect(h.state.rows.rows).toEqual([])
+    const response = await handleOnboardingPost(h.contextFor(man({ objective: null })), deps)
+    expect(response.status).toBe(200)
+    expect((await response.json()).data.protocol_welcome).toBeNull()
+  })
+  it('keeps the captured owner despite mutation of the original auth during an awaited producer', async () => {
+    const db = new SignupMemoryDb().addAccount(),
+      h = c59aHarness(db, 'clinical-owner')
+    const ctx = h.contextFor(man())
+    const source: CurrentClinicalStateSource = {
+      capture: async (input) => {
+        ctx.auth.userId = AUTH_USER_ID
+        ctx.auth.patient.id = AUTH_USER_ID
+        return currentClinicalWire(input, 'healthy')
+      },
+    }
+    expect((await handleOnboardingPost(ctx, { ...h.deps, currentClinical: source })).status).toBe(
+      200,
+    )
+    expect(h.repo.complete).toHaveBeenCalledWith(USER_ID, expect.any(Object))
+    expect(h.source.bind).toHaveBeenCalledWith(expect.objectContaining({ userId: USER_ID }))
+  })
+})
+
+describe('current signup presentation outside the positive memory HTTP claim', () => {
+  function currentHarness(label: string) {
+    const db = new SignupMemoryDb().addAccount(),
+      h = c59aHarness(db, label)
+    let held = false,
+      failFresh = false
+    const source: CurrentClinicalStateSource = {
+      capture: async (request) => {
+        const done = db.profile?.onboarding_completed === true
+        if (request.mode === 'signup') {
+          const wire = currentClinicalWire(request, held ? 'hold' : 'healthy')
+          if (done) {
+            wire.first_completion = false
+            return {
+              ...wire,
+              signup_generation: 'b3b01000-0000-4000-8000-000000006002',
+              phase_origin: { kind: 'assigned', phase: 'recomposicao' },
+            }
+          }
+          return wire
+        }
+        if (failFresh && done) throw new Error('Synthetic current-read failure')
+        const wire = currentOnboardingWire(held ? 'hold' : 'healthy')
+        return {
+          ...wire,
+          user_id: request.userId,
+          epoch: C59A_E0,
+          signup_generation: done ? wire.signup_generation : null,
+          first_completion: !done,
+          generation_token: {
+            onboarding_completed: done,
+            onboarding_completed_at: done ? db.profile?.onboarding_completed_at : null,
+            receipt_count: 0,
+          },
+          phase_origin: done
+            ? { kind: 'assigned', phase: 'recomposicao' }
+            : { kind: 'not_completed' },
+          health_state: { ...wire.health_state, user_id: request.userId },
+        }
+      },
+    }
+    const deps = {
+      ...h.deps,
+      currentClinical: source,
+      finalizeSignupBodyPhotos: vi.fn(
+        async (
+          _context: MobileRouteContext,
+          input: OnboardingCompletionInput,
+          generation: string,
+        ) => {
+          db.addCompletedAccount(input, generation)
+        },
+      ),
+    }
+    const routes = createCurrentOnboardingRoutes(
+      { enabled: true, createDependencies: () => deps },
+      runtime(db),
+    )
+    const send = () =>
+      routes.POST(
+        new Request(`${ENDPOINT}?clinical_policy=current_clinical_v1`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': h.key },
+          body: JSON.stringify(c59Transport(man(), h.intent)),
+        }),
+      )
+    return {
+      db,
+      h,
+      deps,
+      send,
+      setHeld: (value: boolean) => {
+        held = value
+      },
+      setFailure: (value: boolean) => {
+        failFresh = value
+      },
+    }
+  }
+  it('keeps original receipt fields and a single completed claim while refreshing current health on replay', async () => {
+    const x = currentHarness('current-presentation-replay')
+    x.deps.finalizeSignupBodyPhotos.mockImplementation(async (_ctx, input, generation) => {
+      x.db.addCompletedAccount(input, generation)
+      x.setHeld(true)
+    })
+    const first = await x.send()
+    expect(first.status).toBe(200)
+    const data = (await first.json()).data
+    expect(data.protocol_welcome).toBeNull()
+    expect(data.clinical_policy.pause_weight_loss_guidance).toBe(true)
+    const replay = await x.send()
+    expect(replay.status).toBe(200)
+    const repeated = (await replay.json()).data
+    expect(repeated.completed_at).toBe(data.completed_at)
+    expect(repeated.objective).toBe(data.objective)
+    expect(repeated.protocol_welcome).toBeNull()
+    expect(x.h.state.rows.rows).toHaveLength(1)
+    expect(x.h.state.rows.rows[0].state).toBe('completed')
+    expect(JSON.stringify(x.h.state.stored)).not.toContain('clinical_policy')
+  })
+  it('a post-commit fresh-read error cannot release the accepted HTTP claim', async () => {
+    const x = currentHarness('current-presentation-postcommit-failure')
+    x.setFailure(true)
+    expect((await x.send()).status).toBeGreaterThanOrEqual(500)
+    expect(x.h.state.rows.rows).toHaveLength(1)
+    expect(x.h.state.rows.rows[0].state).toBe('completed')
+    x.setFailure(false)
+    expect((await x.send()).status).toBe(200)
+    expect(x.h.state.rows.rows).toHaveLength(1)
+    expect(x.h.state.rows.rows[0].state).toBe('completed')
+  })
+})
+
 describe('C59c concrete signup request integration', () => {
   function harness(
     options: {

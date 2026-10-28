@@ -33,23 +33,31 @@ import { DayCloseMemoryDb, type MemoryOperation } from '@mpp/agent/testing/day-c
 import { buildDailyState } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { invokeContextRoute } from '@/lib/mobile-api/testing/mobile-route-context-fixture'
 import { createFlowAgent } from './flow-agent-factory'
 import type { MobileRouteContext } from './route'
 
 const readModel = vi.hoisted(() => ({ loadToday: vi.fn() }))
 
-vi.mock('@/lib/mobile-api/route', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('./route')>()),
-  createMobileRoute: (handler: unknown) => handler,
-}))
+vi.mock('@/lib/mobile-api/route', async (importOriginal) => {
+  const { wrapContextRouteHandler } = await import(
+    '@/lib/mobile-api/testing/mobile-route-context-fixture'
+  )
+  return {
+    ...(await importOriginal<typeof import('@/lib/mobile-api/route')>()),
+    createMobileRoute: wrapContextRouteHandler,
+  }
+})
 vi.mock('@/lib/mobile-api/read-model', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./read-model')>()),
   loadToday: readModel.loadToday,
 }))
 
 type Handler = (context: MobileRouteContext) => Promise<Response>
-const today = (await import('@/app/api/mobile/v1/today/route')).GET as unknown as Handler
-const progress = (await import('@/app/api/mobile/v1/progress/route')).GET as unknown as Handler
+const todayRoute = (await import('@/app/api/mobile/v1/today/route')).GET
+const today: Handler = (context) => invokeContextRoute(todayRoute, context)
+const progressRoute = (await import('@/app/api/mobile/v1/progress/route')).GET
+const progress: Handler = (context) => invokeContextRoute(progressRoute, context)
 
 const USER = '0b9f6f0e-0000-4000-8000-00000000d0c8'
 const STAGING_REF = 'xitugspwfxkcluxvrdeg'

@@ -135,17 +135,21 @@ function sameId(left: string, right: string): boolean {
 function unavailable(reason: UnavailableReason): ReevaluationPhotoCandidateResult {
   return { status: 'unavailable', reason }
 }
+export function parseReevaluationPhotoSnapshot(input: unknown) {
+  return parse(snapshotSchema, input)
+}
 
 /** Pure server-only projection. SQL must establish the asset/cycle/consent
  * authority first and revalidate it again in the future atomic conclusion.
- * This function is not wired into routes, upload issuance or profile writers.
+ * Lifecycle reads may project the validated readings for display. This resolver
+ * does not issue uploads or write profiles; conclusion revalidates the evidence.
  */
 export function resolveReevaluationPhotoCandidate(
   expected: ReevaluationPhotoContext,
   snapshot: unknown,
 ): ReevaluationPhotoCandidateResult {
   const context = parse(contextSchema, expected)
-  const state = parse(snapshotSchema, snapshot)
+  const state = parseReevaluationPhotoSnapshot(snapshot)
   if (
     state.opened_at > state.observed_at ||
     new Set(state.photos.map((slot) => slot.pose)).size !== 3

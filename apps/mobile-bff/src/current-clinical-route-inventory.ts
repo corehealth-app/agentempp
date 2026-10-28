@@ -1,0 +1,21 @@
+/** Exact additions to the previously qualified56-route stream. */
+export const currentClinicalRouteAdditions = [
+  'onboarding/health/route.ts',
+  'onboarding/reconsent/route.ts',
+  'protocol/first-phase/confirm/route.ts',
+  'protocol/first-phase/preview/route.ts',
+  'protocol/first-phase/route.ts',
+  'reevaluation/[cycleId]/photos/[assetId]/complete/route.ts',
+  'reevaluation/[cycleId]/photos/[assetId]/process/route.ts',
+  'reevaluation/[cycleId]/photos/[assetId]/upload/route.ts',
+  'reevaluation/[cycleId]/photos/consent/route.ts',
+  'reevaluation/[cycleId]/photos/discard/route.ts',
+  'reevaluation/[cycleId]/photos/route.ts',
+  'reevaluation/assess/route.ts',
+  'reevaluation/confirm/route.ts',
+  'reevaluation/form/route.ts',
+  'reevaluation/health/route.ts',
+  'reevaluation/preview/route.ts',
+  'reevaluation/route.ts',
+  'reevaluation/start/route.ts',
+] as const

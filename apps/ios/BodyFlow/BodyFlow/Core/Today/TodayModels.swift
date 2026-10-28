@@ -7,6 +7,7 @@ struct TodaySnapshot: Codable, Equatable, Sendable {
     let protocolName: String?
     /// Official current objective, independent of the historical day's protocol.
     var currentProtocol: String? = nil
+    var clinicalPolicy: CurrentClinicalPolicy? = nil
     /// Optional on older/OFF servers; its official calendar is independent of the day.
     var strengthTrainingWeek: TodayStrengthTrainingWeek? = nil
     let targets: TodayTargets
@@ -43,6 +44,7 @@ struct TodaySnapshot: Codable, Equatable, Sendable {
         case localDate = "local_date"
         case protocolName = "protocol"
         case currentProtocol = "current_protocol"
+        case clinicalPolicy = "clinical_policy"
         case strengthTrainingWeek = "strength_training_week"
         case targets
         case consumed
@@ -226,7 +228,8 @@ enum TodayStrengthTrainingWeek: Codable, Equatable, Sendable {
 
 extension TodaySnapshot {
     var blockPresentationPolicy: Block7700PresentationPolicy {
-        Block7700PresentationPolicy(currentProtocol: currentProtocol, enabled: block7700?.enabled)
+        if clinicalPolicy?.hide.block == true { return .unknown }
+        return Block7700PresentationPolicy(currentProtocol: currentProtocol, enabled: block7700?.enabled)
     }
 
     /// A response without `daily_balance_includes_exercise` comes from a

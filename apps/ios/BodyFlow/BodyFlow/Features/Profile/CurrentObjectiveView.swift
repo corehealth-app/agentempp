@@ -2,13 +2,14 @@ import SwiftUI
 
 @MainActor
 struct CurrentObjectiveView: View {
-    private struct MessagePresentation: Identifiable {
-        let id = UUID()
-        let welcome: ProtocolWelcome
+    private enum Presentation: Identifiable {
+        case message(ProtocolWelcome)
+        case firstPhase(ClinicalFirstPhaseModel)
+        var id: String { switch self { case .message: "message"; case .firstPhase: "first-phase" } }
     }
     let model: CurrentObjectiveModel
     @Environment(\.locale) private var locale
-    @State private var message: MessagePresentation?
+    @State private var presentation: Presentation?
 
     var body: some View {
         ZStack {
@@ -16,6 +17,14 @@ struct CurrentObjectiveView: View {
             FeatureReadStateView(state: model.state, retryAction: { Task { await model.load() } }) { snapshot in
                 ScrollView {
                     VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
+                        if snapshot.clinicalPolicy?.professionalAssessmentRecommended == true {
+                            Text(copy("first-phase.professional"))
+                        }
+                        if snapshot.clinicalPolicy?.phaseSelectionPending == true, let firstPhase = model.firstPhase {
+                            Button(copy("first-phase.choose")) { presentation = .firstPhase(firstPhase) }
+                                .buttonStyle(BodyFlowButtonStyle(role: .primary))
+                                .accessibilityIdentifier("current-objective.choose-first-phase")
+                        }
                         BodyFlowCard {
                             Text(snapshot.currentProtocol?.onboardingLabel(for: language) ?? unavailable)
                                 .font(BodyFlowTypography.screenTitle)
@@ -33,7 +42,7 @@ struct CurrentObjectiveView: View {
                         }
                         if let welcome = snapshot.welcome {
                             Button {
-                                message = MessagePresentation(welcome: welcome)
+                                presentation = .message(welcome)
                             } label: {
                                 Text(copy("current-objective.message"))
                             }
@@ -64,17 +73,22 @@ struct CurrentObjectiveView: View {
         .refreshable { await model.load() }
         .task { await model.load() }
         .onDisappear { model.cancelRead() }
-        .sheet(item: $message) { presentation in
+        .sheet(item: $presentation, onDismiss: { Task { await model.load() } }) { selected in
             NavigationStack {
-                ScrollView {
-                    ProtocolMessageView(welcome: presentation.welcome, context: .currentObjective) {
-                        message = nil
+                switch selected {
+                case let .firstPhase(firstPhase):
+                    ClinicalFirstPhaseView(model: firstPhase)
+                case let .message(welcome):
+                    ScrollView {
+                        ProtocolMessageView(welcome: welcome, context: .currentObjective) {
+                            presentation = nil
+                        }
+                        .padding(BodyFlowSpacing.md)
                     }
-                    .padding(BodyFlowSpacing.md)
+                    .accessibilityIdentifier("current-objective.welcome.scroll")
+                    .background(BodyFlowColor.background)
+                    .navigationBarTitleDisplayMode(.inline)
                 }
-                .accessibilityIdentifier("current-objective.welcome.scroll")
-                .background(BodyFlowColor.background)
-                .navigationBarTitleDisplayMode(.inline)
             }
         }
     }

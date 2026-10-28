@@ -64,16 +64,16 @@ BEGIN
   b:=public.declare_mobile_health_risk(owner_id,m3b_cycle_test.uid(710),ARRAY['unintended_weight_loss','professional_diet']);
   PERFORM m3b_cycle_test.ok(b->'receipt'=first_receipt AND b->'state'=current_state,'replay after reset does not rearm or rewrite');
 
-  -- Privileged synthetic already-cleared state only. This is NOT a FULL clinical completion test.
-  UPDATE private.mobile_health_hold_states SET hold_active=false,items='{}',safety_revision=3 WHERE user_id=owner_id;
+  -- The formerly accepted synthetic clear is no longer authority. The actual
+  -- cleared-state replay/presentation cases now run through the real FULL
+  -- writer in mobile_clinical_full_conclusion.sql, with an immutable receipt.
+  PERFORM m3b_cycle_test.throws(format('UPDATE private.mobile_health_hold_states SET hold_active=false,items=''{}'',safety_revision=3 WHERE user_id=%L; SELECT public.get_mobile_health_hold_state(%L)',
+    owner_id,owner_id),'XX001','inactive higher revision without concluded FULL clear proof is refused');
   current_state:=public.get_mobile_health_hold_state(owner_id);
   b:=public.declare_mobile_health_risk(owner_id,m3b_cycle_test.uid(710),ARRAY['professional_diet','unintended_weight_loss']);
   PERFORM m3b_cycle_test.ok(b->'receipt'=first_receipt AND b->'state'=current_state
-    AND b#>>'{state,safety_revision}'='3' AND NOT (b#>>'{state,hold_active}')::boolean,
-    'old durable key cannot rearm a synthetically cleared newer state');
-  PERFORM m3b_cycle_test.ok(NOT (current_state->>'declared_no_plan')::boolean
-    AND NOT (current_state->>'hide_protein')::boolean AND current_state->'items'='[]'::jsonb,
-    'no active flags means no declared presentation effects');
+    AND b#>>'{state,safety_revision}'='2' AND (b#>>'{state,hold_active}')::boolean,
+    'old durable key preserves real current authority after refused synthetic clear');
   PERFORM m3b_cycle_test.throws(format('SELECT private.declare_mobile_health_risk_at(%L,%L,ARRAY[%L],%L)',
     owner_id,m3b_cycle_test.uid(720),'reduced_intake','2026-10-04T10:00:00Z'),
     '40001','regressed new declaration clock refuses without losing current authority');

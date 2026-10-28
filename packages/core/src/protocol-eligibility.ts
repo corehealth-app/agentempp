@@ -1,102 +1,34 @@
 /**
- * Sign-up eligibility: who is placed in recomposição without being asked and
- * who may choose among the three objectives (docs/CALCULO-MPP.md §10).
+ * App signup composition eligibility, approved final.answers n9/n39.
+ * BF decides the recomposition cut (>=20/28); without BF, BMI >=25 does.
+ * At/above that cut signup assigns recomposition; below it the person chooses.
+ * Gain independently requires BMI BELOW the configured cut, BF <=19/27 when
+ * present, and >=3 strength sessions. BF below its recomp cut plus BMI above
+ * its cut keeps recomp/maintenance as choices and never assigns a phase.
+ * Accepted photo provenance cannot override that gain criterion.
  *
- * Pure, no I/O, no text. Called by the sign-up eligibility check of the app
- * (apps/admin/src/lib/mobile-api/protocol-eligibility-service.ts), which
- * rounds the body values to what the profile stores before calling and writes
- * nothing. The completion of the sign-up goes through the same rounded
- * decision and, on a first completion only, refuses an objective it does not
- * mark available (apps/admin/src/lib/mobile-api/onboarding-eligibility-guard.ts,
- * doc §10o). `resolveProtocol` (protocol-router.ts) is the legacy
- * path, still feeds the "Decisão automática" context line, and is not
- * touched: the two share no code on purpose.
+ * Limits come from the existing calc config, with its number-only fallback.
+ * The caller canonicalizes body values to the profile's decimal storage.
+ * The old 1e-9 BMI correction remains only for n9's no-BF assignment predicate;
+ * n39 gain entry compares the original decimal weight/height exactly.
  *
- * THE RULE, as the client (Dr. Roberto) wrote it — it is NOT a new decision.
- * Thresholds are read from `CalcConfig` (`bf_limits`, `imc_limit_recomp`,
- * `training_min`); the numbers below are the code defaults.
- *
- *  C0  Body fat informed → body fat decides. Not informed → BMI decides.
- *      "IMC ≥ 25 (quando BF não disponível)" (rule "Regra de Decisão
- *      Automática de Protocolo — Quando NÃO perguntar ao usuário"); manual
- *      9.4.1: body fat is the "padrão-ouro", BMI a "ferramenta substituta
- *      temporária".
- *  C1  Man, body fat ≥ 20%   → recomposição, not asked.
- *  C2  Woman, body fat ≥ 28% → recomposição, not asked.
- *  C3  No body fat, BMI ≥ 25 → recomposição, not asked. 25.0 itself is in:
- *      01/02/2026 (typed) "o IMC de 25 entra mesmo na recomposiçõa corporal";
- *      25/03/2026 (typed) "Isso, menor q 25" / "Sem o igual".
- *      C1–C3: same rule, "conduzir automaticamente para o protocolo de
- *      Recomposição Corporal, sem oferecer opção de escolha"; also 3.1 and 8.2.
- *      For these people manutenção is 'not_offered' and ganho de massa is
- *      'blocked' with 'composition' always among the reasons ("se o usuário
- *      solicitar ganho de massa, aplicar a frase de bloqueio educada").
- *  C4  Otherwise (man < 20%, woman < 28%, or no body fat and BMI < 25) → the
- *      person chooses; "apresentar as 3 opções" (same rule, "Quando
- *      perguntar"; rule "Pergunta de qual objetivo, se usuário dentro da
- *      faixa saudável"; audio of 24/01/2026).
- *  C5  In C4, recomposição: available.
- *  C6  In C4, manutenção: available — also when ganho de massa is blocked.
- *  C7  In C4, ganho de massa: available only with (a) composition — body fat
- *      ≤ 19% (man) / ≤ 27% (woman) when informed; nothing further when it is
- *      not, because BMI < 25 was already required by C4 — and (b) strength
- *      training ≥ 3 times a week. Rule "Ganho de massa muscular - Critérios de
- *      entrada" (the same text in the table of 02/02/2026 and in the list of
- *      01/06/2026); audio of 28/12/2025 ("pelo [menos] 3 vezes por semana de
- *      musculação").
- *  C8, C9  Which text each result shows is not decided here: the caller
- *      picks it (protocol-messages.ts) from `outcome`, `basis`, the `reasons`
- *      of ganho de massa and `limits`.
- *  C10 Sleep (≥ 6h30) and organised eating are not read: they neither open
- *      nor block anything here.
- *  C11 Very low weight and C12 body fat of 10% or less: no rule, nothing
- *      special happens (see the pendencies in the doc).
- *
- * CONTRADICTION (written text × later audio), about C7 without body fat: the
- * entry criterion still reads "IMC ≤ 24 com aparência funcional adequada" (the
- * list of 01/06/2026 included); "≤ 24" exists only there and in 3.2. On
- * 25/03/2026 19:43, about the "menor ou igual do 24" of a print of the rules,
- * the client said in audio "No que tá aí menor = 24 aí você tira o igual …
- * menor que 25 na verdade … incluiria o 24 e não o 25 … o 25 estaria fora da
- * faixa da normalidade". Implemented: the later statement — one BMI cut (25),
- * no "≤ 24" constant. Implemented on 2026-10-07 at Eduardo's request; the
- * client's confirmation is pending.
- * What that evening was about (same day, 19:16 audio and 19:42:59 typed) was
- * the range of who CHOOSES: whether 25 is inside "a faixa da normalidade pra
- * poder escolher o protocolo", and "a opção de manutenção pro 25". Applying the
- * "menor que 25" to the ENTRY criterion of ganho de massa is OUR READING — it
- * rests only on the "≤ 24" existing in no rule other than that criterion and
- * 3.2 — and is what the client is asked to confirm (doc §10c, §10k-1).
- *
- * NATURAL READINGS — each implemented on 2026-10-07 at Eduardo's request; the
- * client's confirmation is pending:
- *  - C0: body fat typed by the person counts as "BF disponível";
- *  - C6: manutenção stays available when ganho de massa is blocked (rule 8.2
- *    and the blocking phrase 3.4.1 would lead to recomposição);
- *  - C7: with body fat informed the BMI is not checked for ganho de massa
- *    ("pelo menos um" of the entry criterion × "cumprir todos" of 3.2);
- *  - C7: man above 19% and below 20%, woman above 27% and below 28%: they
- *    choose between recomposição and manutenção and ganho de massa is blocked
- *    by composition — although "pelo menos um" would open it through the BMI
- *    (the active rule "Ganho de massa muscular - Critérios de bloqueio do
- *    protocolo" blocks the phase on "BF acima dos limites de entrada");
- *  - C7: without body fat only the BMI counts ("aparência funcional adequada"
- *    is not assessed: there are no photos at sign-up);
- *  - C10: sleep and organised eating do not gate (the manual of 27/12/2025
- *    required both; the current entry criterion lists only composition and
- *    strength training; the data-collection rule of the 01/06/2026 list still
- *    calls structured eating a criterion; on 15/05/2026 the client typed that
- *    the question about it "atrapalhou a confirmação do protocolo"; the active
- *    rule "Ganho de massa muscular - Critérios de bloqueio do protocolo" still
- *    says to "bloquear ou pausar a fase de ganho" on "alimentação
- *    inconsistente" and "histórico recente de perda de controle alimentar" —
- *    it speaks of a phase in progress and gives no measure for the sign-up.
- *    Blocking or pausing an ongoing phase is NOT this function: declared in
- *    the doc, §10j).
+ * This module does NOT evaluate n10 birth-date/declared health/HOLD/no-plan.
+ * That full signup integration remains required before clinical activation.
+ * The legacy WhatsApp resolveProtocol entry is separate and unchanged.
  */
-import { type CalcConfig, DEFAULT_CALC_CONFIG } from './calc-config.js'
+import { DEFAULT_CALC_CONFIG } from './calc-config.js'
+import { clinicalBmiBelow } from './clinical-bmi-comparison.js'
 import { calcIMC } from './nutrition.js'
 import type { Protocol, Sex } from './types.js'
+
+/** Only the three raw configuration rows consumed by this rule. This allows
+ * a coherent private snapshot without the legacy loader's process-wide cache.
+ * Number-only fallbacks remain in readLimits, unchanged. */
+export interface SignupEligibilityConfig {
+  bf_limits?: unknown
+  imc_limit_recomp?: unknown
+  training_min?: unknown
+}
 
 /**
  * Slack of the BMI comparison. A rounding fix, NOT a clinical number and not
@@ -216,13 +148,58 @@ function configLimit(raw: unknown, codeDefault: number): number {
 
 type BodyFatLimitsRow = Partial<Record<Sex, { recomp?: unknown; gain?: unknown } | null>> | null
 
-function readLimits(sex: Sex, config: CalcConfig): SignupEligibilityLimits {
+function readLimits(sex: Sex, config: SignupEligibilityConfig): SignupEligibilityLimits {
   const row = (config.bf_limits as BodyFatLimitsRow | undefined)?.[sex]
   return {
     bodyFatRecomp: configLimit(row?.recomp, DEFAULT_CALC_CONFIG.bf_limits[sex].recomp),
     bodyFatGain: configLimit(row?.gain, DEFAULT_CALC_CONFIG.bf_limits[sex].gain),
     imcRecomp: configLimit(config.imc_limit_recomp, DEFAULT_CALC_CONFIG.imc_limit_recomp),
     trainingMin: configLimit(config.training_min, DEFAULT_CALC_CONFIG.training_min),
+  }
+}
+
+/** n39's two independent composition criteria, shared with the app's text
+ * projection. Inputs are already canonical/stored body values. This neither
+ * decides n10 nor changes the above-recomposition-cut assignment (n9). */
+export function signupGainCompositionUnmet(
+  input: { heightCm: number; weightKg: number; bodyFatPercent: number | null },
+  limits: Pick<SignupEligibilityLimits, 'imcRecomp' | 'bodyFatGain'>,
+): Array<'bmi' | 'body_fat'> {
+  const unmet: Array<'bmi' | 'body_fat'> = []
+  if (!(limits.imcRecomp > 0 && clinicalBmiBelow(input.weightKg, input.heightCm, limits.imcRecomp)))
+    unmet.push('bmi')
+  if (input.bodyFatPercent !== null && input.bodyFatPercent > limits.bodyFatGain)
+    unmet.push('body_fat')
+  return unmet
+}
+
+/** Shared composition predicate after canonical input validation. Provenance
+ * policy belongs to the calling flow: confirmed photos retain the existing
+ * BF-first route; a manual report may add n9's gain-only BMI veto. Neither
+ * caller may turn that veto into an above-recomposition-cut assignment. */
+export function compareProtocolComposition(
+  input: { sex: Sex; imc: number; bodyFatPercent: number | null },
+  config: SignupEligibilityConfig = DEFAULT_CALC_CONFIG,
+) {
+  if (
+    !isSex(input.sex) ||
+    !isPositiveNumber(input.imc) ||
+    (input.bodyFatPercent !== null &&
+      (!isPositiveNumber(input.bodyFatPercent) || input.bodyFatPercent >= 100))
+  )
+    throw new RangeError('Invalid canonical composition input')
+  const limits = readLimits(input.sex, config ?? DEFAULT_CALC_CONFIG)
+  const basis: SignupEligibilityBasis = input.bodyFatPercent !== null ? 'BF' : 'IMC'
+  const aboveRange =
+    input.bodyFatPercent !== null
+      ? input.bodyFatPercent >= limits.bodyFatRecomp
+      : input.imc >= limits.imcRecomp - SIGNUP_IMC_ROUNDING_TOLERANCE
+  return {
+    basis,
+    limits,
+    aboveRange,
+    gainCompositionMet:
+      !aboveRange && (input.bodyFatPercent === null || input.bodyFatPercent <= limits.bodyFatGain),
   }
 }
 
@@ -248,13 +225,13 @@ function readLimits(sex: Sex, config: CalcConfig): SignupEligibilityLimits {
  */
 export function decideSignupEligibility(
   input: SignupEligibilityInput,
-  config: CalcConfig = DEFAULT_CALC_CONFIG,
+  config: SignupEligibilityConfig = DEFAULT_CALC_CONFIG,
 ): SignupEligibility {
   if (typeof input !== 'object' || input === null) {
     return { outcome: 'invalid_input', invalidFields: [...SIGNUP_ELIGIBILITY_FIELDS] }
   }
   // The default parameter covers only `undefined`.
-  const cuts: CalcConfig = config ?? DEFAULT_CALC_CONFIG
+  const cuts: SignupEligibilityConfig = config ?? DEFAULT_CALC_CONFIG
 
   const { sex, heightCm, weightKg, trainingFrequency } = input
   const bodyFat: unknown = input.bodyFatPercent ?? null
@@ -282,21 +259,20 @@ export function decideSignupEligibility(
     return { outcome: 'invalid_input', invalidFields: ['heightCm', 'weightKg'] }
   }
 
-  const limits = readLimits(sex, cuts)
   const informedBodyFat = isFiniteNumber(bodyFat) ? bodyFat : null
-  const basis: SignupEligibilityBasis = informedBodyFat !== null ? 'BF' : 'IMC'
-
-  // C1–C3: above the range → recomposição, not asked.
-  const aboveRange =
-    informedBodyFat !== null
-      ? informedBodyFat >= limits.bodyFatRecomp
-      : imc >= limits.imcRecomp - SIGNUP_IMC_ROUNDING_TOLERANCE
+  const { limits, basis, aboveRange, gainCompositionMet } = compareProtocolComposition(
+    { sex, imc, bodyFatPercent: informedBodyFat },
+    cuts,
+  )
 
   // C7: every entry criterion of ganho de massa that is not met.
   const reasons: SignupBlockReason[] = []
-  const compositionMet =
-    !aboveRange && (informedBodyFat === null || informedBodyFat <= limits.bodyFatGain)
-  if (!compositionMet) reasons.push('composition')
+  if (
+    !gainCompositionMet ||
+    signupGainCompositionUnmet({ heightCm, weightKg, bodyFatPercent: informedBodyFat }, limits)
+      .length > 0
+  )
+    reasons.push('composition')
   if (trainingFrequency < limits.trainingMin) reasons.push('training')
   const ganhoMassa: SignupObjectiveEligibility =
     reasons.length === 0 ? { status: 'available', reasons: [] } : { status: 'blocked', reasons }

@@ -1,4 +1,11 @@
 /**
+ * Operative update 2026-10-25: approved final.answers n9/n39 supersedes the
+ * historical BF-only gain exception. The exact BF15 / BMI26 fixture below
+ * now closes gain and retains recomp/maintenance choice. This is the APP
+ * signup helper, not a change to the legacy WhatsApp resolveProtocol.
+ * Remaining n10/no-plan declarations below are historical open integration
+ * gaps, not a claim that this composition-only golden implements n10.
+ *
  * Audit 2026-10-07 — rule E: who is placed in recomposição at sign-up without
  * being asked, and who chooses among the three objectives. Rule, table and
  * pendencies: docs/CALCULO-MPP.md §10. Code: `decideSignupEligibility`,
@@ -413,12 +420,12 @@ const CASES: Case[] = [
     input: woman({ bodyFatPercent: 27, trainingFrequency: 2 }),
     expected: gainBlocked('BF', 'training'),
   },
-  // C0 — com gordura informada decide a gordura; o IMC só decide sem ela.
+  // n9/n39 — BF decides the recomp cut; gain independently requires BMI<25.
   {
-    rule: 'C0, manual 9.4.1: gordura é o "padrão-ouro", o IMC "ferramenta substituta temporária" (a gordura libera com IMC acima do corte)',
+    rule: 'final.answers n9/n39: BF baixo não libera ganho com IMC26; recomp/manutenção por escolha',
     who: 'homem com 15% de gordura, 84,24 kg / 180 cm (IMC 26,0), 3 treinos',
     input: man({ bodyFatPercent: 15, weightKg: 84.24 }),
-    expected: three('BF'),
+    expected: gainBlocked('BF', 'composition'),
   },
   {
     rule: 'C0 e C1: a gordura coloca em recomposição com IMC abaixo do corte',

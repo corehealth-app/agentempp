@@ -71,10 +71,23 @@ struct FlowMessage: Codable, Hashable, Sendable, Identifiable {
 struct FlowHistoryResponse: Codable, Equatable, Sendable {
     let conversationID: String
     let messages: [FlowMessage]
+    let clinicalPolicy: CurrentClinicalPolicy?
 
+    init(conversationID: String, messages: [FlowMessage], clinicalPolicy: CurrentClinicalPolicy? = nil) {
+        self.conversationID = conversationID
+        self.messages = messages
+        self.clinicalPolicy = clinicalPolicy
+    }
     private enum CodingKeys: String, CodingKey {
         case conversationID = "conversation_id"
         case messages
+        case clinicalPolicy = "clinical_policy"
+    }
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        conversationID = try c.decode(String.self, forKey: .conversationID)
+        messages = try c.decode([FlowMessage].self, forKey: .messages)
+        clinicalPolicy = c.contains(.clinicalPolicy) ? try c.decode(CurrentClinicalPolicy.self, forKey: .clinicalPolicy) : nil
     }
 }
 
@@ -90,23 +103,27 @@ struct FlowSendResponse: Codable, Equatable, Sendable {
     let message: FlowMessage
     /// Absent from a server that does not propose plans.
     let draft: FlowTurnDraft?
+    let clinicalPolicy: CurrentClinicalPolicy?
 
-    init(conversationID: String, message: FlowMessage, draft: FlowTurnDraft? = nil) {
+    init(conversationID: String, message: FlowMessage, draft: FlowTurnDraft? = nil, clinicalPolicy: CurrentClinicalPolicy? = nil) {
         self.conversationID = conversationID
         self.message = message
         self.draft = draft
+        self.clinicalPolicy = clinicalPolicy
     }
 
     private enum CodingKeys: String, CodingKey {
         case conversationID = "conversation_id"
         case message
         case draft
+        case clinicalPolicy = "clinical_policy"
     }
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         conversationID = try container.decode(String.self, forKey: .conversationID)
         message = try container.decode(FlowMessage.self, forKey: .message)
+        clinicalPolicy = container.contains(.clinicalPolicy) ? try container.decode(CurrentClinicalPolicy.self, forKey: .clinicalPolicy) : nil
         // A draft the app cannot read (unknown domain) is only a missing
         // shortcut, never a failed reply.
         draft = (try? container.decodeIfPresent(FlowTurnDraft.self, forKey: .draft)) ?? nil

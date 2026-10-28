@@ -105,7 +105,9 @@ export const onboardingCompletionInputSchema = z
     weight_kg: signupWeightKgSchema,
     body_fat_percent: signupBodyFatPercentSchema.optional(),
     body_photo_confirmation: signupBodyPhotoConfirmationInputSchema.optional(),
-    objective: z.enum(['recomposicao', 'ganho_massa', 'manutencao']),
+    // Required explicit JSON null is a server-checked no-plan request, never
+    // permission supplied by the client. Missing key remains invalid.
+    objective: z.enum(['recomposicao', 'ganho_massa', 'manutencao']).nullable(),
     activity_level: z.enum(['sedentario', 'leve', 'moderado', 'alto', 'atleta']),
     training_frequency: signupTrainingFrequencySchema,
     // Unknown is real absence, never an invented hydration habit.
@@ -144,6 +146,17 @@ export const onboardingEligibilityInputSchema = z
     weight_kg: signupWeightKgSchema,
     body_fat_percent: signupBodyFatPercentSchema.optional(),
     training_frequency: signupTrainingFrequencySchema,
+  })
+  .strict()
+
+/** Current clinical representation. Health is admitted separately; no client
+ * safety flags, civil clock or clinical authority are accepted here. */
+export const onboardingCurrentEligibilityInputSchema = onboardingEligibilityInputSchema
+  .extend({
+    version: z.literal(2),
+    timezone: timezoneSchema,
+    birth_date: z.string().date(),
+    body_fat_percent: signupBodyFatPercentSchema.nullable().optional(),
   })
   .strict()
 

@@ -38,6 +38,17 @@ struct AppDependencies: Sendable {
     var planDrafts: PlanDraftCapability? = nil
     /// Current objective, official daily targets and entry message; read only.
     var currentObjective: (any CurrentObjectiveProviding)? = nil
+    /// Installed by the complete current-clinical composition only. A failed
+    /// bind cannot fall back to the process-wide legacy read providers.
+    var currentClinicalReadSessions: CurrentClinicalReaderSessionFactory? = nil
+    /// Installed only with the complete current-clinical release. Its repository
+    /// scopes once to the shell's original Auth session before any operation.
+    var clinicalFirstPhase: (any ClinicalFirstPhaseProviding)? = nil
+    /// Composed together with recurring photos and the complete clinical runtime.
+    /// The default remains absent until that release is qualified.
+    var clinicalFull: (any ClinicalFullProviding)? = nil
+    /// Enabled only together with the complete recurring clinical runtime.
+    var reevaluationPhotoCapture:ReevaluationPhotoCaptureCapability? = nil
     /// Technical owner/G cleanup; only a real authenticated lifecycle can bind it.
     var signupBodyPhotoCleanup: SignupBodyPhotoCleanupCapability? = nil
     /// Optional authenticated capture; absence keeps manual/skip available.
@@ -100,7 +111,9 @@ struct AppDependencies: Sendable {
         sessionRefreshPolicy: SessionRefreshPolicy = .production,
         onboardingDeviceDraft: OnboardingDeviceDraftStore = .device,
         signupBodyPhotoCleanupStore: SignupBodyPhotoCleanupStore = .device,
-        enablesConfirmedMealEditing: Bool = false
+        enablesConfirmedMealEditing: Bool = false,
+        currentClinicalRuntimeMode: CurrentClinicalRuntimeMode = .legacy,
+        currentClinicalQABinding: CurrentClinicalQABinding = .absent
     ) -> AppDependencies {
         let secureStore: any SecureStoring = switch configuration.demoStorageBoundary {
         case .memory:
@@ -485,13 +498,13 @@ struct AppDependencies: Sendable {
                 flowChat = DemoFlowChatRepository()
             }
         } else if let transport = apiClient as? MobileAPITransport {
-            flowChat = MobileFlowChatRepository(transport: transport)
+            flowChat = MobileFlowChatRepository(transport: transport, sessionLifecycle: releaseLifecycle)
         } else {
             flowChat = UnavailableFlowChatRepository()
         }
         #else
         if let transport = apiClient as? MobileAPITransport {
-            flowChat = MobileFlowChatRepository(transport: transport)
+            flowChat = MobileFlowChatRepository(transport: transport, sessionLifecycle: releaseLifecycle)
         } else {
             flowChat = UnavailableFlowChatRepository()
         }
@@ -721,36 +734,48 @@ struct AppDependencies: Sendable {
         }
         #endif
 
+        let requestsCurrentClinicalRuntime = configuration.mode != .demo && currentClinicalRuntimeMode != .legacy
+        let currentClinicalRuntime: CurrentClinicalRuntimeComposition? =
+            if currentClinicalRuntimeMode == .currentV1, configuration.mode != .demo {
+                CurrentClinicalRuntimeComposition.make(transport: apiClient as? MobileAPITransport,
+                    lifecycle: releaseLifecycle, storageOrigin: supabaseAuthConfiguration?.origin,
+                    deviceDraft: onboardingDeviceDraft, qaBinding: currentClinicalQABinding)
+            } else { nil }
+
         return AppDependencies(
             apiClient: apiClient,
             authentication: authentication,
-            onboarding: onboarding,
+            onboarding: requestsCurrentClinicalRuntime ? (currentClinicalRuntime?.onboarding as (any OnboardingRepository)? ?? UnavailableOnboardingRepository()) : onboarding,
             coachPersona: coachPersona,
             secureStore: secureStore,
             telemetry: InMemoryTelemetryClient(),
-            today: today,
-            history: history,
-            plan: plan,
-            progress: progress,
+            today: requestsCurrentClinicalRuntime ? unavailable : today,
+            history: requestsCurrentClinicalRuntime ? unavailable : history,
+            plan: requestsCurrentClinicalRuntime ? unavailable : plan,
+            progress: requestsCurrentClinicalRuntime ? unavailable : progress,
             mealDetection: mealDetection,
             registration: registration,
             hydration: hydration,
             weight: weight,
             routine: routine,
-            me: me,
+            me: requestsCurrentClinicalRuntime ? unavailable : me,
             publishedContentSessions: publishedContentSessions,
             coachExperienceSessions: coachExperienceSessions,
             contentCoverSessions: contentCoverSessions,
             timeProvider: timeProvider,
             idempotencyKeyProvider: idempotencyKeyProvider,
             patientTimeZoneStore: patientTimeZoneStore,
-            flowChat: flowChat,
+            flowChat: requestsCurrentClinicalRuntime ? (currentClinicalRuntime?.flowChat as (any FlowChatProviding)? ?? UnavailableFlowChatRepository()) : flowChat,
             localReminders: localReminders,
             mealCapture: mealCapture,
             planDrafts: planDrafts,
-            currentObjective: currentObjective,
-            signupBodyPhotoCleanup: signupBodyPhotoCleanup,
-            signupBodyPhotoCapture: signupBodyPhotoCapture,
+            currentObjective: requestsCurrentClinicalRuntime ? nil : currentObjective,
+            currentClinicalReadSessions: requestsCurrentClinicalRuntime ? (currentClinicalRuntime?.readers ?? .unavailable) : nil,
+            clinicalFirstPhase: currentClinicalRuntime?.firstPhase,
+            clinicalFull: currentClinicalRuntime?.full,
+            reevaluationPhotoCapture: currentClinicalRuntime?.photos,
+            signupBodyPhotoCleanup: requestsCurrentClinicalRuntime && currentClinicalRuntime == nil ? nil : signupBodyPhotoCleanup,
+            signupBodyPhotoCapture: requestsCurrentClinicalRuntime && currentClinicalRuntime == nil ? nil : signupBodyPhotoCapture,
             guidedTutorial: guidedTutorial,
             mealRecordBindingSource: mealRecordBindingSource,
             workoutRegistrationSessionSource: workoutRegistrationSessionSource

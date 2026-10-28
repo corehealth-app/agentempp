@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { currentClinicalRouteAdditions } from './current-clinical-route-inventory'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../.next/server')
 const paths: Record<string, string> = JSON.parse(
@@ -67,12 +68,20 @@ describe('current-authority clarification in the fresh mobile server build', () 
     const mirror = exportStream(resolve(appRoot, 'src/app/api/mobile/v1'), true)
     expect(source).toEqual(mirror)
     expect(source.some((record) => record.path === 'auth/password-recovery/route.ts')).toBe(false)
-    expect(source).toHaveLength(56)
+    expect(source).toHaveLength(74)
     expect(source.find((record) => record.path === addition)).toEqual({
       path: addition,
       exports: ['GET', 'POST', 'runtime'],
     })
-    const beforeIntents = source.filter(
+    const additions = new Set<string>(currentClinicalRouteAdditions)
+    const prior56 = source.filter((record) => !additions.has(record.path))
+    expect(prior56).toHaveLength(56)
+    expect(
+      createHash('sha256')
+        .update(prior56.map((record) => `${record.path}\0${record.exports.join(',')}\n`).join(''))
+        .digest('hex'),
+    ).toBe('b88a27d2d694fb0ca539b9075c369978956d51aa25427b52da46983919b7d0e8')
+    const beforeIntents = prior56.filter(
       (record) => record.path !== 'onboarding/completion-intent/route.ts',
     )
     expect(beforeIntents).toHaveLength(55)

@@ -1,6 +1,129 @@
 {
   "sourceLanguage" : "pt-BR",
   "strings" : {
+    "onboarding.legacy.message": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Revise os documentos atualizados para continuar. Seu cadastro e histórico serão preservados."}}, "en": {"stringUnit": {"state": "translated", "value": "Review the updated documents to continue. Your profile and history will be preserved."}}}},
+    "onboarding.legacy.error": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Não foi possível confirmar agora. Tente novamente."}}, "en": {"stringUnit": {"state": "translated", "value": "Could not confirm now. Please try again."}}}},
+    "onboarding.legacy.checking": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Conferindo seu acesso…"}}, "en": {"stringUnit": {"state": "translated", "value": "Checking your access…"}}}},
+    "onboarding.legacy.continue": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Continuar"}}, "en": {"stringUnit": {"state": "translated", "value": "Continue"}}}},
+    "onboarding.legacy.retry": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Tentar novamente"}}, "en": {"stringUnit": {"state": "translated", "value": "Try again"}}}},
+    "onboarding.legacy.sign-out": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Sair da conta"}}, "en": {"stringUnit": {"state": "translated", "value": "Sign out"}}}},
+    "onboarding.legacy.recorded": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Já registrado"}}, "en": {"stringUnit": {"state": "translated", "value": "Already recorded"}}}},
+    "flow.clinical.previous-response": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Esta resposta anterior foi ocultada para respeitar as orientações atuais. Seus registros foram preservados."}}, "en": {"stringUnit": {"state": "translated", "value": "This earlier reply was hidden to respect your current guidance. Your records are preserved."}}}},
+    "onboarding.clinical.no-plan.title": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Seu acompanhamento"}}, "en": {"stringUnit": {"state": "translated", "value": "Your tracking"}}}},
+    "onboarding.clinical.no-plan.value": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Sem plano definido"}}, "en": {"stringUnit": {"state": "translated", "value": "No plan assigned"}}}},
+    "onboarding.health.title": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Informações de saúde"}}, "en": {"stringUnit": {"state": "translated", "value": "Health information"}}}},
+    "onboarding.health.instructions": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Se alguma situação se aplica a você, marque abaixo. Ao tocar em Continuar, você declara as situações selecionadas com os documentos acima. Você também pode continuar sem marcar opções."}}, "en": {"stringUnit": {"state": "translated", "value": "Select any situations that apply to you. By tapping Continue, you declare the selected situations with the documents above. You can also continue without selecting any options."}}}},
+    "onboarding.health.preserved": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Desmarcar uma opção não apaga uma declaração já registrada."}}, "en": {"stringUnit": {"state": "translated", "value": "Deselecting an option does not erase an existing declaration."}}}},
+    "onboarding.health.review": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Rever documentos e cadastro"}}, "en": {"stringUnit": {"state": "translated", "value": "Review documents and signup"}}}},
+    "onboarding.health.unintended_weight_loss": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Perda de peso sem intenção"}}, "en": {"stringUnit": {"state": "translated", "value": "Unintended weight loss"}}}},
+    "onboarding.health.reduced_intake": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Redução importante da ingestão de alimentos"}}, "en": {"stringUnit": {"state": "translated", "value": "Significantly reduced food intake"}}}},
+    "onboarding.health.persistent_fatigue_weakness_dizziness": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Cansaço, fraqueza ou tontura persistentes"}}, "en": {"stringUnit": {"state": "translated", "value": "Persistent fatigue, weakness or dizziness"}}}},
+    "onboarding.health.menstrual_change": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Mudança no ciclo menstrual"}}, "en": {"stringUnit": {"state": "translated", "value": "Change in menstrual cycle"}}}},
+    "onboarding.health.loss_of_control_eating": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Perda de controle ao comer"}}, "en": {"stringUnit": {"state": "translated", "value": "Loss of control when eating"}}}},
+    "onboarding.health.appetite_weight_treatment": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Tratamento que afeta o apetite ou o peso"}}, "en": {"stringUnit": {"state": "translated", "value": "Treatment affecting appetite or weight"}}}},
+    "onboarding.health.professional_diet": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Acompanhamento profissional da alimentação ou proteína por uma condição de saúde"}}, "en": {"stringUnit": {"state": "translated", "value": "Professional management of food or protein intake for a health condition"}}}},
+    "onboarding.health.pregnant_or_breastfeeding": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Gestação ou amamentação"}}, "en": {"stringUnit": {"state": "translated", "value": "Pregnancy or breastfeeding"}}}},
+    "reeval.photos.title": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Fotos da reavaliação"}}, "en": {"stringUnit": {"state": "translated", "value": "Reassessment photos"}}}},
+    "reeval.photos.instructions": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Envie três novas fotos nesta reavaliação: frente, lado e costas. Depois, volte ao formulário para conferir o resultado."}}, "en": {"stringUnit": {"state": "translated", "value": "Send three new photos for this reassessment: front, side and back. Then return to the form to review the result."}}}},
+    "reeval.photos.consent.title": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Antes de enviar"}}, "en": {"stringUnit": {"state": "translated", "value": "Before uploading"}}}},
+    "reeval.photos.consent.check": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Autorizo o envio e o processamento destas fotos para estimar meu percentual de gordura nesta reavaliação, conforme explicado acima."}}, "en": {"stringUnit": {"state": "translated", "value": "I authorize these photos to be uploaded and processed to estimate my body fat percentage for this reassessment, as explained above."}}}},
+    "reeval.photos.consent.accept": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Autorizar e continuar"}}, "en": {"stringUnit": {"state": "translated", "value": "Authorize and continue"}}}},
+    "reeval.photos.consent.decline": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Agora não"}}, "en": {"stringUnit": {"state": "translated", "value": "Not now"}}}},
+    "reeval.photos.progress": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "%d de 3 fotos analisadas"}}, "en": {"stringUnit": {"state": "translated", "value": "%d of 3 photos analyzed"}}}},
+    "reeval.photos.reading": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Estimativa desta foto: %@%%"}}, "en": {"stringUnit": {"state": "translated", "value": "Estimate from this photo: %@%%"}}}},
+    "reeval.photos.quota": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Até 6 novas fotos em 24 horas, incluindo substituições."}}, "en": {"stringUnit": {"state": "translated", "value": "Up to 6 new photos in 24 hours, including replacements."}}}},
+    "reeval.photos.policy-unavailable": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "O envio de fotos não está disponível agora. Tente atualizar."}}, "en": {"stringUnit": {"state": "translated", "value": "Photo upload is unavailable now. Try refreshing."}}}},
+    "reeval.photos.discard.settled": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "As fotos deste envio foram descartadas."}}, "en": {"stringUnit": {"state": "translated", "value": "The photos from this submission were discarded."}}}},
+    "reeval.photos.discard.pending": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Descarte solicitado. A limpeza pode continuar enquanto um envio anterior termina."}}, "en": {"stringUnit": {"state": "translated", "value": "Discard requested. Cleanup may continue while an earlier upload finishes."}}}},
+    "reeval.photos.working": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Conferindo o envio…"}}, "en": {"stringUnit": {"state": "translated", "value": "Checking the submission…"}}}},
+    "reeval.photos.retry": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Tentar novamente"}}, "en": {"stringUnit": {"state": "translated", "value": "Try again"}}}},
+    "reeval.photos.refresh": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Atualizar"}}, "en": {"stringUnit": {"state": "translated", "value": "Refresh"}}}},
+    "reeval.photos.discard": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Descartar estas fotos"}}, "en": {"stringUnit": {"state": "translated", "value": "Discard these photos"}}}},
+    "reeval.photos.discard.question": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Descartar as fotos desta reavaliação?"}}, "en": {"stringUnit": {"state": "translated", "value": "Discard the photos from this reassessment?"}}}},
+    "reeval.photos.cancel": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Cancelar"}}, "en": {"stringUnit": {"state": "translated", "value": "Cancel"}}}},
+    "reeval.photos.back": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Voltar à reavaliação"}}, "en": {"stringUnit": {"state": "translated", "value": "Return to reassessment"}}}},
+    "reeval.photos.camera": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Tirar foto"}}, "en": {"stringUnit": {"state": "translated", "value": "Take photo"}}}},
+    "reeval.photos.library": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Escolher foto"}}, "en": {"stringUnit": {"state": "translated", "value": "Choose photo"}}}},
+    "reeval.photos.pose.front": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Frente"}}, "en": {"stringUnit": {"state": "translated", "value": "Front"}}}},
+    "reeval.photos.pose.side": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Lado"}}, "en": {"stringUnit": {"state": "translated", "value": "Side"}}}},
+    "reeval.photos.pose.back": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Costas"}}, "en": {"stringUnit": {"state": "translated", "value": "Back"}}}},
+    "reeval.photos.status.missing": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Foto ainda não enviada"}}, "en": {"stringUnit": {"state": "translated", "value": "Photo not submitted yet"}}}},
+    "reeval.photos.status.pending_upload": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Envio pendente"}}, "en": {"stringUnit": {"state": "translated", "value": "Upload pending"}}}},
+    "reeval.photos.status.uploaded": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Enviada, aguardando análise"}}, "en": {"stringUnit": {"state": "translated", "value": "Uploaded, awaiting analysis"}}}},
+    "reeval.photos.status.processing": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Em análise"}}, "en": {"stringUnit": {"state": "translated", "value": "Being analyzed"}}}},
+    "reeval.photos.status.processed": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Foto analisada"}}, "en": {"stringUnit": {"state": "translated", "value": "Photo analyzed"}}}},
+    "reeval.photos.status.failed": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Não foi possível analisar esta foto"}}, "en": {"stringUnit": {"state": "translated", "value": "This photo could not be analyzed"}}}},
+    "reeval.photos.status.deleted": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Foto descartada"}}, "en": {"stringUnit": {"state": "translated", "value": "Photo discarded"}}}},
+    "reeval.photos.analysis-failed": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Não foi possível analisar esta foto. Envie outra foto desta posição."}}, "en": {"stringUnit": {"state": "translated", "value": "This photo could not be analyzed. Send another photo of this position."}}}},
+    "reeval.photos.limit": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Você atingiu o limite de 6 novas fotos em 24 horas. Aguarde para enviar outra."}}, "en": {"stringUnit": {"state": "translated", "value": "You have reached the limit of 6 new photos in 24 hours. Wait before submitting another."}}}},
+    "reeval.photos.offline": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Não foi possível concluir a conexão. Tente novamente para retomar o mesmo envio."}}, "en": {"stringUnit": {"state": "translated", "value": "The connection could not be completed. Try again to resume the same submission."}}}},
+    "reeval.photos.processing": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "A análise ainda está em andamento. Use Tentar novamente para conferir."}}, "en": {"stringUnit": {"state": "translated", "value": "Analysis is still in progress. Use Try again to check."}}}},
+    "reeval.photos.changed": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Esta reavaliação ou o consentimento mudou. Atualize para conferir."}}, "en": {"stringUnit": {"state": "translated", "value": "This reassessment or consent changed. Refresh to check."}}}},
+    "reeval.photos.unavailable": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Não foi possível concluir agora. Tente novamente ou descarte este envio."}}, "en": {"stringUnit": {"state": "translated", "value": "This could not be completed now. Try again or discard this submission."}}}},
+    "full.title": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Reavaliação"}}, "en": {"stringUnit": {"state": "translated", "value": "Reassessment"}}}},
+    "full.due": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Próxima reavaliação: %@"}}, "en": {"stringUnit": {"state": "translated", "value": "Next reassessment: %@"}}}},
+    "full.open": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Abrir reavaliação"}}, "en": {"stringUnit": {"state": "translated", "value": "Open reassessment"}}}},
+    "full.early": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Não estou bem com o plano"}}, "en": {"stringUnit": {"state": "translated", "value": "I am not feeling well with my plan"}}}},
+    "full.entry.not_due": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Sua reavaliação ainda não chegou. Você pode antecipá-la se não estiver bem com o plano."}}, "en": {"stringUnit": {"state": "translated", "value": "Your reassessment is not due yet. You may request an early review if you are not feeling well with your plan."}}}},
+    "full.entry.onboarding_incomplete": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Conclua seu cadastro para abrir a reavaliação."}}, "en": {"stringUnit": {"state": "translated", "value": "Complete your registration to open a reassessment."}}}},
+    "full.entry.anchor_unproven": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Não foi possível confirmar a data da sua última avaliação."}}, "en": {"stringUnit": {"state": "translated", "value": "We could not confirm the date of your last assessment."}}}},
+    "full.entry.unavailable": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Reavaliação indisponível no momento."}}, "en": {"stringUnit": {"state": "translated", "value": "Reassessment is currently unavailable."}}}},
+    "full.loading": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Carregando reavaliação…"}}, "en": {"stringUnit": {"state": "translated", "value": "Loading reassessment…"}}}},
+    "full.unavailable": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Não foi possível carregar a reavaliação agora."}}, "en": {"stringUnit": {"state": "translated", "value": "We could not load the reassessment right now."}}}},
+    "full.refresh": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Atualizar"}}, "en": {"stringUnit": {"state": "translated", "value": "Refresh"}}}},
+    "full.retry": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Tentar novamente"}}, "en": {"stringUnit": {"state": "translated", "value": "Try again"}}}},
+    "full.completed": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Reavaliação concluída"}}, "en": {"stringUnit": {"state": "translated", "value": "Reassessment completed"}}}},
+    "full.done": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Concluir"}}, "en": {"stringUnit": {"state": "translated", "value": "Done"}}}},
+    "full.purpose": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Como deseja revisar seu plano?"}}, "en": {"stringUnit": {"state": "translated", "value": "How would you like to review your plan?"}}}},
+    "full.purpose.normal": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Revisão habitual"}}, "en": {"stringUnit": {"state": "translated", "value": "Regular review"}}}},
+    "full.purpose.consider_maintenance": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Considerar manutenção"}}, "en": {"stringUnit": {"state": "translated", "value": "Consider maintenance"}}}},
+    "full.purpose.end_deficit": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Revisar o encerramento do déficit"}}, "en": {"stringUnit": {"state": "translated", "value": "Review ending the deficit"}}}},
+    "full.measure-confirmed": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Confirmo que conferi o peso informado"}}, "en": {"stringUnit": {"state": "translated", "value": "I confirm that I checked the weight entered"}}}},
+    "full.activity-confirmed": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Confirmo meu nível de atividade atual"}}, "en": {"stringUnit": {"state": "translated", "value": "I confirm my current activity level"}}}},
+    "full.assess": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Revisar opções"}}, "en": {"stringUnit": {"state": "translated", "value": "Review options"}}}},
+    "full.photos.title": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Fotos desta reavaliação"}}, "en": {"stringUnit": {"state": "translated", "value": "Photos for this reassessment"}}}},
+    "full.photos.required": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Esta reavaliação precisa de três fotos novas: frente, lado e costas. Confira o resultado antes de continuar."}}, "en": {"stringUnit": {"state": "translated", "value": "This reassessment requires three new photos: front, side and back. Check the result before continuing."}}}},
+    "full.body-fat.accept": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Conferi e aceito esta estimativa de gordura corporal"}}, "en": {"stringUnit": {"state": "translated", "value": "I checked and accept this body fat estimate"}}}},
+    "full.photos.open": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Enviar três fotos"}}, "en": {"stringUnit": {"state": "translated", "value": "Send three photos"}}}},
+    "full.photos.replace": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Substituir fotos"}}, "en": {"stringUnit": {"state": "translated", "value": "Replace photos"}}}},
+    "full.photos.unavailable": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Não foi possível abrir o envio de fotos agora. Atualize para tentar novamente."}}, "en": {"stringUnit": {"state": "translated", "value": "We could not open photo submission right now. Refresh to try again."}}}},
+    "full.unit.kg": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Peso em kg"}}, "en": {"stringUnit": {"state": "translated", "value": "Weight in kg"}}}},
+    "full.unit.per_week": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Vezes por semana"}}, "en": {"stringUnit": {"state": "translated", "value": "Times per week"}}}},
+    "full.unit.minutes": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Minutos"}}, "en": {"stringUnit": {"state": "translated", "value": "Minutes"}}}},
+    "full.unit.percent": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Percentual de gordura"}}, "en": {"stringUnit": {"state": "translated", "value": "Body fat percentage"}}}},
+    "full.invalid": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Confira o valor informado e use apenas o separador decimal quando necessário."}}, "en": {"stringUnit": {"state": "translated", "value": "Check the value entered and use only the decimal separator when needed."}}}},
+    "full.preference.unchanged": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Sem nova preferência"}}, "en": {"stringUnit": {"state": "translated", "value": "No new preference"}}}},
+    "full.preference.keep": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Manter minha preferência"}}, "en": {"stringUnit": {"state": "translated", "value": "Keep my preference"}}}},
+    "full.preference.remove": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Remover minha preferência"}}, "en": {"stringUnit": {"state": "translated", "value": "Remove my preference"}}}},
+    "full.preference.invalid": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Complete a preferência selecionada ou escolha outra opção."}}, "en": {"stringUnit": {"state": "translated", "value": "Complete the selected preference or choose another option."}}}},
+    "full.preference.feedback.body_fat_floor": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Essa preferência de gordura corporal está abaixo do limite permitido. Escolha outra preferência ou continue sem alterá-la."}}, "en": {"stringUnit": {"state": "translated", "value": "This body fat preference is below the permitted limit. Choose another preference or continue without changing it."}}}},
+    "full.preference.feedback.weight_bmi_floor": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Essa preferência de peso está abaixo do limite permitido para sua altura. Escolha outra preferência ou continue sem alterá-la."}}, "en": {"stringUnit": {"state": "translated", "value": "This weight preference is below the permitted limit for your height. Choose another preference or continue without changing it."}}}},
+    "full.preference.feedback.dependent_context": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Ainda não há dados suficientes para avaliar essa preferência."}}, "en": {"stringUnit": {"state": "translated", "value": "There is not enough information to assess this preference yet."}}}},
+    "full.preference.feedback.missing": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Faltam dados para avaliar essa preferência."}}, "en": {"stringUnit": {"state": "translated", "value": "Information is missing to assess this preference."}}}},
+    "full.select": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Selecione"}}, "en": {"stringUnit": {"state": "translated", "value": "Select"}}}},
+    "full.assessment.no_change_available": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Nenhuma alteração está disponível com essas respostas."}}, "en": {"stringUnit": {"state": "translated", "value": "No change is available with these answers."}}}},
+    "full.assessment.health_declaration_required": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Confirme o registro das informações de saúde selecionadas para continuar a revisão."}}, "en": {"stringUnit": {"state": "translated", "value": "Confirm that you want to record the selected health information to continue the review."}}}},
+    "full.assessment.photos_required": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Envie as três fotos novas desta reavaliação antes de continuar."}}, "en": {"stringUnit": {"state": "translated", "value": "Send three new photos for this reassessment before continuing."}}}},
+    "full.assessment.body_fat_confirmation_required": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Confira e aceite a estimativa das fotos antes de continuar."}}, "en": {"stringUnit": {"state": "translated", "value": "Check and accept the photo estimate before continuing."}}}},
+    "full.health.declare": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Registrar essas informações de saúde"}}, "en": {"stringUnit": {"state": "translated", "value": "Record this health information"}}}},
+    "full.historical-unavailable": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Esta proposta antiga não possui os dados necessários para exibir a revisão. Volte e gere uma nova proposta."}}, "en": {"stringUnit": {"state": "translated", "value": "This older proposal does not contain the information needed to display the review. Go back and generate a new proposal."}}}},
+    "full.calories": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Meta de energia"}}, "en": {"stringUnit": {"state": "translated", "value": "Energy target"}}}},
+    "full.protein": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Meta de proteína"}}, "en": {"stringUnit": {"state": "translated", "value": "Protein target"}}}},
+    "full.professional": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Procure um profissional de saúde para avaliar sua situação."}}, "en": {"stringUnit": {"state": "translated", "value": "Consult a healthcare professional to assess your situation."}}}},
+    "full.pause-guidance": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "As orientações de emagrecimento estão pausadas. Não será atribuída uma nova redução automaticamente."}}, "en": {"stringUnit": {"state": "translated", "value": "Weight loss guidance is paused. A new reduction will not be assigned automatically."}}}},
+    "full.confirm": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Confirmar reavaliação"}}, "en": {"stringUnit": {"state": "translated", "value": "Confirm reassessment"}}}},
+    "full.retry-confirm": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Conferir confirmação anterior"}}, "en": {"stringUnit": {"state": "translated", "value": "Check previous confirmation"}}}},
+    "full.back": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Voltar às respostas"}}, "en": {"stringUnit": {"state": "translated", "value": "Back to answers"}}}},
+    "full.choice.keep": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Manter o plano"}}, "en": {"stringUnit": {"state": "translated", "value": "Keep the plan"}}}},
+    "full.choice.activity": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Atualizar a rotina de atividade"}}, "en": {"stringUnit": {"state": "translated", "value": "Update activity routine"}}}},
+    "full.choice.phase_calorie_step": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Revisar ajuste de energia"}}, "en": {"stringUnit": {"state": "translated", "value": "Review energy adjustment"}}}},
+    "full.choice.reconfirm": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Reconfirmar a programação"}}, "en": {"stringUnit": {"state": "translated", "value": "Reconfirm the schedule"}}}},
+    "full.choice.pause": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Pausar a programação"}}, "en": {"stringUnit": {"state": "translated", "value": "Pause the schedule"}}}},
+    "full.choice.neutral_exit": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Encerrar o déficit"}}, "en": {"stringUnit": {"state": "translated", "value": "End the deficit"}}}},
+    "full.uncertain": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "A resposta anterior não foi confirmada. Suas respostas estão preservadas; tente novamente para conferir o mesmo pedido."}}, "en": {"stringUnit": {"state": "translated", "value": "The previous response was not confirmed. Your answers are preserved; try again to check the same request."}}}},
+    "full.offline": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Não foi possível conectar agora. Suas respostas foram preservadas."}}, "en": {"stringUnit": {"state": "translated", "value": "We could not connect right now. Your answers were preserved."}}}},
+    "full.changed": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "O estado da avaliação mudou. Atualize antes de continuar."}}, "en": {"stringUnit": {"state": "translated", "value": "The assessment state changed. Refresh before continuing."}}}},
+    "full.busy": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Sua avaliação está sendo atualizada. Tente novamente."}}, "en": {"stringUnit": {"state": "translated", "value": "Your assessment is being updated. Try again."}}}},
     "registration.proposal.confirm.blocked.named": {"localizations": {"pt-BR": {"stringUnit": {"state": "translated", "value": "Ainda não é possível registrar: falta calcular a nutrição de %@. Corrija o nome, o preparo ou a quantidade para recalcular. Os outros alimentos serão mantidos."}}, "en": {"stringUnit": {"state": "translated", "value": "This meal cannot be recorded yet: nutrition has not been calculated for %@. Correct the name, preparation or amount to recalculate. Your other foods will be kept."}}}},
     "registration.review.reason.check" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "Check this item before calculating the meal." } },
@@ -8057,7 +8180,359 @@
     "workout.strength.error" : { "localizations" : {
       "en" : { "stringUnit" : { "state" : "translated", "value" : "We could not complete this check or submission. Your workout remains saved." } },
       "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não foi possível concluir esta consulta ou envio. O treino continua salvo." } }
-    } }
+    } },
+    "first-phase.title": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolha seu objetivo"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose your objective"
+          }
+        }
+      }
+    },
+    "first-phase.choose": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolher objetivo"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose objective"
+          }
+        }
+      }
+    },
+    "first-phase.intro": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confira as opções disponíveis para você. As metas só mudam depois da sua confirmação."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Review the options available to you. Targets change only after you confirm."
+          }
+        }
+      }
+    },
+    "first-phase.loading": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Carregando…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading…"
+          }
+        }
+      }
+    },
+    "first-phase.unavailable": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível carregar as opções. Tente novamente."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to load the options. Try again."
+          }
+        }
+      }
+    },
+    "first-phase.complete-profile": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Complete os dados do perfil para escolher seu objetivo."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Complete your profile information to choose your objective."
+          }
+        }
+      }
+    },
+    "first-phase.professional": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Converse com um profissional antes de alterar seu protocolo."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speak with a professional before changing your protocol."
+          }
+        }
+      }
+    },
+    "first-phase.restricted": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta opção não está disponível para seus dados atuais."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This option is unavailable for your current information."
+          }
+        }
+      }
+    },
+    "first-phase.preview": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confira suas metas"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Review your targets"
+          }
+        }
+      }
+    },
+    "first-phase.effective": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A partir de %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Effective %@"
+          }
+        }
+      }
+    },
+    "first-phase.calories": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meta diária de calorias"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Daily calorie target"
+          }
+        }
+      }
+    },
+    "first-phase.protein": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meta diária de proteína"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Daily protein target"
+          }
+        }
+      }
+    },
+    "first-phase.confirm": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirmar objetivo"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirm objective"
+          }
+        }
+      }
+    },
+    "first-phase.back": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolher outra opção"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose another option"
+          }
+        }
+      }
+    },
+    "first-phase.retry": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tentar novamente"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try again"
+          }
+        }
+      }
+    },
+    "first-phase.refresh": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Atualizar opções"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refresh options"
+          }
+        }
+      }
+    },
+    "first-phase.uncertain": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não recebemos a confirmação. Tente novamente para verificar se seu objetivo foi registrado."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "We did not receive confirmation. Try again to check whether your objective was recorded."
+          }
+        }
+      }
+    },
+    "first-phase.changed": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seus dados mudaram. Atualize as opções antes de confirmar."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your information changed. Refresh the options before confirming."
+          }
+        }
+      }
+    },
+    "first-phase.offline": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível conectar. Tente novamente."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to connect. Try again."
+          }
+        }
+      }
+    },
+    "first-phase.busy": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sua avaliação está sendo atualizada. Tente novamente."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your assessment is being updated. Try again."
+          }
+        }
+      }
+    },
+    "first-phase.confirmed": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirmação recebida. Você verá a situação atual do seu objetivo ao voltar."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirmation received. You will see the current status of your objective when you return."
+          }
+        }
+      }
+    },
+    "first-phase.done": {
+      "localizations": {
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Concluir"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Done"
+          }
+        }
+      }
+    }
   },
   "version" : "1.0"
 }

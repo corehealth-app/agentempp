@@ -28,7 +28,8 @@
  * Flow, profile protocol's deficit in the app, no check of the stored target).
  */
 import { type CalcConfig, DEFAULT_CALC_CONFIG } from '../calc-config.js'
-import { computeDailyTargets, type ProfileRow } from './targets.js'
+import { clinicalCivilDateSchema } from '../reevaluation-clinical-safety.js'
+import { computeDailyTargets, computeDailyTargetsOnCivilDate, type ProfileRow } from './targets.js'
 
 export const DAY_BALANCE_DAY_ROW_GUARD: Readonly<{ enabled: boolean }> = { enabled: true }
 
@@ -47,10 +48,19 @@ export type DailyTargetByProtocol = Record<KnownProtocol, number | null>
 export function dailyTargetByProtocol(
   profile: ProfileRow | null,
   config: CalcConfig,
+  civilDate?: string,
 ): DailyTargetByProtocol {
+  if (civilDate !== undefined) clinicalCivilDateSchema.parse(civilDate)
   const under = (protocol: KnownProtocol): number | null =>
     profile
-      ? computeDailyTargets({ ...profile, current_protocol: protocol }, config).calories_target
+      ? (civilDate === undefined
+          ? computeDailyTargets({ ...profile, current_protocol: protocol }, config)
+          : computeDailyTargetsOnCivilDate(
+              { ...profile, current_protocol: protocol },
+              config,
+              civilDate,
+            )
+        ).calories_target
       : null
   return {
     recomposicao: under('recomposicao'),

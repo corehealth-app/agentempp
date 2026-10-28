@@ -37,8 +37,8 @@ struct OnboardingCompletionView: View {
                 )
                 reviewRow(
                     copy("onboarding.completion.objective", fallback: "Objetivo"),
-                    value: model.draft.objective?.onboardingLabel(for: language)
-                        ?? copy("onboarding.completion.not-selected", fallback: "Não selecionado")
+                    value: model.hidesHistoricalObjective ? copy("onboarding.objective.unavailable",fallback:"Indisponível") : model.draft.objective?.onboardingLabel(for: language)
+                        ?? (model.allowsNoPlanConclusion ? copy("onboarding.clinical.no-plan.value",fallback:"Sem plano definido") : copy("onboarding.completion.not-selected", fallback: "Não selecionado"))
                 )
                 reviewRow(
                     copy("onboarding.completion.training", fallback: "Musculação"),

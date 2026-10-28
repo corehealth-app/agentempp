@@ -1389,7 +1389,7 @@ private actor CompletionCleanupObservedRepository: OnboardingRepository {
         if case .invalidACK = mode { completed = false } else { completed = accepted.onboardingCompleted }
         return OnboardingCompletionAcknowledgement(onboardingCompleted: completed, completedAt: Self.g1,
             objective: accepted.objective, persona: accepted.persona, documentActions: accepted.documentActions,
-            protocolWelcome: welcome ? ProtocolWelcome(protocol: accepted.objective, paragraphs: ["Synthetic original welcome"]) : nil,
+            protocolWelcome: welcome ? ProtocolWelcome(protocol: try #require(accepted.objective), paragraphs: ["Synthetic original welcome"]) : nil,
             bodyPhotoCleanup: rawScope())
     }
     func checkEligibility(_ input: OnboardingEligibilityInput, for userID: String,

@@ -9,18 +9,38 @@ export * from './diet-generator.js'
 export * from './educational-comment.js'
 export * from './express-mode-detector.js'
 export * from './false-duplication-detector.js'
+export type {
+  FlowClinicalCreatedDraft,
+  FlowClinicalDraftCreate,
+  FlowClinicalDraftKey,
+  FlowClinicalDraftPort,
+  FlowClinicalPeriod,
+  FlowClinicalPolicy,
+  FlowClinicalRead,
+  FlowClinicalStoredDraft,
+  FlowClinicalToday,
+  MobileFlowClinicalPort,
+} from './flow-current-clinical.js'
+export {
+  bindMobileFlowClinicalPort,
+  flowClinicalFacts,
+  flowClinicalGuidanceAllowed,
+  flowClinicalPolicyNotice,
+  flowClinicalProposalAllowed,
+  readFlowClinicalPolicy,
+} from './flow-current-clinical.js'
 export { loadFlowDayStatusContext } from './flow-day-status-context.js'
 export * from './llm-judge.js'
 export * from './location-timezone.js'
 export * from './meal-addition-context.js'
 export * from './meal-draft.js'
-export * from './mobile-household-drink.js'
 export * from './meal-patterns.js'
 export * from './meal-pipeline.js'
 export * from './meal-registration-group.js'
 export * from './meal-replacement-target.js'
 export * from './meal-state/index.js'
 export * from './meal-type-decision.js'
+export * from './mobile-household-drink.js'
 export * from './numeric-validator.js'
 export * from './nutrition-context.js'
 export * from './nutrition-invariants.js'

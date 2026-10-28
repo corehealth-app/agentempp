@@ -162,16 +162,23 @@ struct MobileAPITransportTests {
 
     @Test("explicit timeout maps to a typed error without retry")
     func mapsTimeout() async throws {
+        // A 30 ms wall-clock timer can validly beat URLSession startup. Fire
+        // this deadline only after the stub records the first request, retaining
+        // the exact one-dispatch/no-retry assertion without a scheduler race.
+        let clock = ControlledTransportTimeoutClock()
         let harness = try await TransportHarness(
-            tokens: ["session-alpha"],
-            timeout: .milliseconds(30)
+            tokens: ["session-alpha"], timeout: .seconds(30), clock: clock
         )
-        await harness.stub.respond(with: .success(delay: .seconds(1)))
-
+        await harness.stub.respond { _, _ in
+            await clock.state.fire()
+            try await Task.sleep(for: .seconds(60))
+            return .success()
+        }
         await #expect(throws: MobileAPITransportError.timeout) {
             let _: TransportPayload = try await harness.transport.execute(.getToday())
         }
         #expect(await harness.stub.requests().count == 1)
+        #expect(await clock.state.sleepCalls == 1)
     }
 
     // Staging device gate 2026-09-28: a Flow turn that builds a plan took 77 s
@@ -3007,7 +3014,8 @@ private struct TransportHarness: Sendable {
         tokens: [String],
         timeout: Duration = .seconds(2),
         bodyLimit: Int = 64 * 1_024,
-        maximumRetryCount: Int = 1
+        maximumRetryCount: Int = 1,
+        clock: any Clock<Duration> = ContinuousClock()
     ) async throws {
         let stub = TransportStubStore()
         let protocolClass = StubURLProtocol.self
@@ -3026,7 +3034,7 @@ private struct TransportHarness: Sendable {
             ),
             sessionTokenProvider: tokenProvider,
             session: session,
-            clock: ContinuousClock(),
+            clock: clock,
             timeout: timeout,
             responseBodyLimit: bodyLimit,
             maximumRetryCount: maximumRetryCount
@@ -3453,6 +3461,28 @@ private actor C11OwnerRemote: SupabaseAuthRemoteOperating {
         return C11RealLifecycleTransportHarness.record(userID: record.userID, ordinal: 10)
     }
     func revokeCurrentSession(accessToken: String) -> RemoteRevocationOutcome { .confirmed }
+}
+
+extension MobileAPITransportTests {
+    @Test("Clinical scope needs a real retained Auth generation and cannot be rebound", arguments: [false, true])
+    func currentClinicalSessionValidationRetainsOriginalRealLease(_ returnToA: Bool) async throws {
+        let h = try await C11RealLifecycleTransportHarness()
+        await #expect(throws: SessionLifecycleError.sessionSuperseded) {
+            try await h.transport.validateCurrentClinicalSession()
+        }
+        let original = try await h.coordinator.leaseForRequest()
+        let bound = h.transport.scoped(to: original)
+            .withResponseBodyLimit(MobileAPITransport.planResponseBodyLimit)
+        try await bound.validateCurrentClinicalSession()
+        try await h.replaceSession(returnToA: returnToA)
+        let replacement = try await h.coordinator.leaseForRequest()
+        #expect(replacement.generation != original.generation)
+        await #expect(throws: SessionLifecycleError.sessionSuperseded) {
+            try await bound.scoped(to: replacement).validateCurrentClinicalSession()
+        }
+        #expect(await h.stub.requests().isEmpty)
+        #expect(await h.remote.refreshCount == 0)
+    }
 }
 
 private struct C11RealLifecycleTransportHarness: Sendable {
@@ -5619,5 +5649,92 @@ extension MobileAPITransportTests {
             #expect(await fixture.counted.workoutWorkIDs.count == 1)
             #expect(center.revision(for: .history) == 1) // confirmation only; ordinary question GET does not loop
         }
+    }
+}
+
+
+extension MobileAPITransportTests {
+    @Test("Clinical reader factory binds every reader to the original real Auth activation", arguments: [false, true])
+    func clinicalReaderFactoryRetainsRealOriginalActivation(_ returnToA: Bool) async throws {
+        let harness = try await C11RealLifecycleTransportHarness()
+        let factory = CurrentClinicalReaderSessionFactory.live(transport: harness.transport, lifecycle: harness.lifecycle)
+        await #expect(throws: SessionLifecycleError.sessionSuperseded) { _ = try await factory.bind("wrong-owner") }
+        let bundle = try await factory.bind("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+        #expect(bundle.userID == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+        try await harness.replaceSession(returnToA: returnToA)
+        await #expect(throws: SessionLifecycleError.sessionSuperseded) { _ = try await bundle.today.today() }
+        await #expect(throws: SessionLifecycleError.sessionSuperseded) { _ = try await bundle.plan.plan() }
+        await #expect(throws: SessionLifecycleError.sessionSuperseded) { _ = try await bundle.progress.progress() }
+        await #expect(throws: SessionLifecycleError.sessionSuperseded) { _ = try await bundle.progress.profileWeight() }
+        await #expect(throws: SessionLifecycleError.sessionSuperseded) { _ = try await bundle.progress.trends(days: 7) }
+        await #expect(throws: SessionLifecycleError.sessionSuperseded) { _ = try await bundle.history.history(.firstPage) }
+        await #expect(throws: SessionLifecycleError.sessionSuperseded) { _ = try await bundle.me.me() }
+        await #expect(throws: SessionLifecycleError.sessionSuperseded) { _ = try await bundle.currentObjective.currentObjective() }
+        #expect(await harness.stub.requests().isEmpty)
+    }
+}
+
+
+extension MobileAPITransportTests {
+    @Test("A bound clinical reader sends the current negotiation and never accepts a legacy reply")
+    func clinicalReaderFactoryUsesCurrentWireRepresentation() async throws {
+        let harness = try await C11RealLifecycleTransportHarness()
+        let bundle = try await CurrentClinicalReaderSessionFactory.live(transport: harness.transport,
+            lifecycle: harness.lifecycle).bind("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+        let legacy = try JSONEncoder().encode(BodyFlowTestFixtures.decodeInconsistentToday())
+        var envelope = try #require(JSONSerialization.jsonObject(with: legacy) as? [String: Any])
+        var data = try #require(envelope["data"] as? [String: Any])
+        data["clinical_policy"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(OnboardingCurrentPresentationTests.policy()))
+        envelope["data"] = data
+        await harness.stub.respond(with: StubResponse(status: 200, body: try JSONSerialization.data(withJSONObject: envelope)))
+        let result = try await bundle.today.today()
+        #expect(result.data.clinicalPolicy != nil)
+        let first = try #require(await harness.stub.requests().first)
+        let url = try #require(first.url)
+        #expect(url.path == "/api/mobile/v1/today")
+        #expect(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains(
+            URLQueryItem(name: "clinical_policy", value: "current_clinical_v1")) == true)
+        await harness.stub.respond(with: StubResponse(status: 200, body: legacy))
+        await #expect(throws: BodyFlowCapabilityError.serviceUnavailable) { _ = try await bundle.today.today() }
+        #expect(await harness.stub.requests().count == 2)
+    }
+}
+
+
+private struct ControlledTransportTimeoutClock: Clock {
+    typealias Instant = ContinuousClock.Instant
+    typealias Duration = Swift.Duration
+    let state = ControlledTransportTimeoutState()
+    var now: Instant { ContinuousClock().now }
+    var minimumResolution: Duration { .nanoseconds(1) }
+    func sleep(until deadline: Instant, tolerance: Duration?) async throws {
+        let id = UUID()
+        try Task.checkCancellation()
+        try await withTaskCancellationHandler {
+            try await state.sleep(id)
+            try Task.checkCancellation()
+        } onCancel: { Task { await state.cancel(id) } }
+    }
+}
+private actor ControlledTransportTimeoutState {
+    private var fired = false
+    private var cancelled: Set<UUID> = []
+    private var waiters: [UUID: CheckedContinuation<Void, any Error>] = [:]
+    private(set) var sleepCalls = 0
+    func sleep(_ id: UUID) async throws {
+        sleepCalls += 1
+        if cancelled.remove(id) != nil { throw CancellationError() }
+        if fired { return }
+        try await withCheckedThrowingContinuation { waiters[id] = $0 }
+    }
+    func fire() {
+        fired = true
+        let pending = waiters.values
+        waiters.removeAll()
+        for waiter in pending { waiter.resume() }
+    }
+    func cancel(_ id: UUID) {
+        if let waiter = waiters.removeValue(forKey: id) { waiter.resume(throwing: CancellationError()) }
+        else { cancelled.insert(id) }
     }
 }

@@ -7,9 +7,10 @@ import {
   REEVALUATION_OPT_OUT_LABEL,
   unknownDraftAnswer,
 } from './health-check-contracts.js'
+import { clinicalTimestampSchema } from './reevaluation-clinical-safety.js'
 
 const phaseSchema = z.enum(['recomposicao', 'ganho_massa', 'manutencao'])
-const kindSchema = z.enum(['REGULAR', 'EARLY_FULL', 'ROUTINE_REVIEW', 'SAFETY'])
+const kindSchema = z.enum(['REGULAR', 'EARLY_FULL', 'TRANSITION_FULL', 'ROUTINE_REVIEW', 'SAFETY'])
 const purposeSchema = z.enum(['normal', 'consider_maintenance', 'end_deficit'])
 const levelSchema = z.enum(['sedentario', 'leve', 'moderado', 'alto', 'atleta'])
 const nullable = <S extends z.ZodTypeAny>(schema: S) =>
@@ -52,6 +53,7 @@ const preferenceSchema = nullable(
     z.object({ action: z.literal('change'), value: preferenceValueSchema }).strict(),
   ]),
 )
+export const reevaluationGoalPreferenceSchema = preferenceSchema
 
 const answerSchema = z
   .object({
@@ -71,18 +73,25 @@ const answerSchema = z
   })
   .strict()
 
-function fullKind(kind: z.infer<typeof kindSchema>): boolean {
-  return kind === 'REGULAR' || kind === 'EARLY_FULL'
+/** Shared input grammar. Presence/meaning remains owned by the descriptor and
+ * clinical evaluator; exporting this does not authorize an omitted answer. */
+export const reevaluationAnswersSchema = answerSchema
+
+export function isFullReevaluationKind(kind: string): boolean {
+  return kind === 'REGULAR' || kind === 'EARLY_FULL' || kind === 'TRANSITION_FULL'
+}
+export function requiresReevaluationPhotos(kind: string): boolean {
+  return kind === 'REGULAR' || kind === 'TRANSITION_FULL'
 }
 function activityApplies(
   phase: z.infer<typeof phaseSchema>,
   kind: z.infer<typeof kindSchema>,
   purpose: z.infer<typeof purposeSchema>,
 ): boolean {
-  return !fullKind(kind) || phase !== 'recomposicao' || purpose !== 'normal'
+  return !isFullReevaluationKind(kind) || phase !== 'recomposicao' || purpose !== 'normal'
 }
 
-export const reevaluationFormDraftSchema = z
+export const plannedReevaluationFormDraftSchema = z
   .object({
     version: z.literal(1),
     phase: phaseSchema,
@@ -94,7 +103,8 @@ export const reevaluationFormDraftSchema = z
   .strict()
   .superRefine((draft, ctx) => {
     const allowed = new Set<keyof typeof draft.answers>(['strengthSessions', 'activity'])
-    if (fullKind(draft.kind)) {
+    if (draft.kind === 'ROUTINE_REVIEW' && draft.phase !== 'recomposicao') allowed.add('hunger')
+    if (isFullReevaluationKind(draft.kind)) {
       for (const key of [
         'weightKg',
         'adherence',
@@ -128,6 +138,79 @@ export const reevaluationFormDraftSchema = z
       }
     }
   })
+export type PlannedReevaluationFormDraft = z.infer<typeof plannedReevaluationFormDraftSchema>
+
+/** Internal capture metadata, not a client declaration or proof by itself.
+ * The SQL writer checks the genuine keyed signup receipt in the captured epoch. */
+const noPlanOriginSchema = z
+  .object({
+    kind: z.literal('confirmed_no_plan'),
+    signupGeneration: z.string().uuid(),
+    signupEpoch: z.string().uuid(),
+    completedAt: z
+      .string()
+      .datetime({ precision: 6 })
+      .refine((value) => !value.startsWith('0000-')),
+  })
+  .strict()
+
+export const healthOnlyReevaluationFormDraftSchema = z
+  .object({
+    version: z.literal(1),
+    phase: z.null(),
+    noPlanOrigin: noPlanOriginSchema,
+    kind: z.enum(['REGULAR', 'EARLY_FULL']),
+    activityPurpose: z.literal('normal'),
+    answers: answerSchema
+      .pick({ weightKg: true, healthCheck: true, professionalConversationConfirmed: true })
+      .extend({
+        strengthSessions: z.null().default(null),
+        adherence: z.null().default(null),
+        hunger: z.null().default(null),
+        energy: z.null().default(null),
+        strengthProgression: z.null().default(null),
+        fatPerception: z.null().default(null),
+        difficultToMaintain: z.null().default(null),
+        activity: z.null().default(null),
+      })
+      .strict(),
+    preference: z.null().default(null),
+  })
+  .strict()
+
+/** A current legacy admission proves neither a historical signup nor a prior
+ * clinical phase. Its identity is captured by the backend, never by the app. */
+export const legacyReevaluationOriginSchema = z
+  .object({
+    kind: z.literal('legacy_transition_unassigned'),
+    generation: z.string().uuid(),
+    epoch: z.string().uuid(),
+    admittedAt: clinicalTimestampSchema,
+  })
+  .strict()
+export const legacyUnassignedReevaluationFormDraftSchema = z
+  .object({
+    version: z.literal(1),
+    phase: z.null(),
+    legacyOrigin: legacyReevaluationOriginSchema,
+    kind: z.enum(['REGULAR', 'EARLY_FULL', 'TRANSITION_FULL']),
+    activityPurpose: z.literal('normal'),
+    answers: healthOnlyReevaluationFormDraftSchema.shape.answers
+      .extend({
+        strengthSessions: answerSchema.shape.strengthSessions,
+        hunger: answerSchema.shape.hunger,
+        activity: answerSchema.shape.activity,
+      })
+      .strict(),
+    preference: z.null().default(null),
+  })
+  .strict()
+
+export const reevaluationFormDraftSchema = z.union([
+  plannedReevaluationFormDraftSchema,
+  healthOnlyReevaluationFormDraftSchema,
+  legacyUnassignedReevaluationFormDraftSchema,
+])
 export type ReevaluationFormDraft = z.infer<typeof reevaluationFormDraftSchema>
 export type ReevaluationAnswers = ReevaluationFormDraft['answers']
 export type ReevaluationAnswerKey = keyof ReevaluationAnswers
@@ -166,6 +249,10 @@ export interface ReevaluationQuestion {
 const options = (values: readonly (readonly [string, string])[]) =>
   values.map(([value, label]) => ({ value, label }))
 const choiceOptions = {
+  professionalConversationConfirmed: [
+    { value: true, label: 'Sim' },
+    { value: false, label: 'Não' },
+  ],
   adherence: options([
     ['bem_consistente', 'Bem consistente'],
     ['mais_ou_menos', 'Mais ou menos'],
@@ -197,7 +284,7 @@ const choiceOptions = {
     ['sim', 'Sim'],
   ]),
 }
-const descriptorContextSchema = z
+const plannedDescriptorContextSchema = z
   .object({
     phase: phaseSchema,
     kind: kindSchema,
@@ -208,6 +295,25 @@ const descriptorContextSchema = z
     confirmedMealDays: z.number().int().min(0).max(14).nullable(),
   })
   .strict()
+const descriptorContextSchema = z.union([
+  plannedDescriptorContextSchema,
+  plannedDescriptorContextSchema
+    .extend({
+      phase: z.null(),
+      noPlanOrigin: noPlanOriginSchema,
+      kind: z.enum(['REGULAR', 'EARLY_FULL']),
+      activityPurpose: z.literal('normal'),
+    })
+    .strict(),
+  plannedDescriptorContextSchema
+    .extend({
+      phase: z.null(),
+      legacyOrigin: legacyReevaluationOriginSchema,
+      kind: z.enum(['REGULAR', 'EARLY_FULL', 'TRANSITION_FULL']),
+      activityPurpose: z.literal('normal'),
+    })
+    .strict(),
+])
 export type ReevaluationFormContext = z.infer<typeof descriptorContextSchema>
 
 /** A description of fields, not authority to open unsupported kinds in the calendar. */
@@ -217,7 +323,16 @@ export function getReevaluationFormDescriptor(input: ReevaluationFormContext) {
   function add(key: Exclude<ReevaluationAnswerKey, 'activity'>) {
     questions.push({
       key,
-      label: labels[key],
+      label:
+        context.kind === 'TRANSITION_FULL'
+          ? ((
+              {
+                strengthSessions: 'Quantos treinos de musculação por semana você faz atualmente?',
+                adherence: 'Como está sua alimentação em relação ao plano atual?',
+                strengthProgression: 'Atualmente, como está a evolução do seu treino de força?',
+              } as Partial<Record<ReevaluationAnswerKey, string>>
+            )[key] ?? labels[key])
+          : labels[key],
       optOutLabel: REEVALUATION_OPT_OUT_LABEL,
       ...(key in choiceOptions
         ? { options: structuredClone(choiceOptions[key as keyof typeof choiceOptions]) }
@@ -226,7 +341,13 @@ export function getReevaluationFormDescriptor(input: ReevaluationFormContext) {
       ...(key === 'strengthSessions' ? { min: 0, max: 7 } : {}),
     })
   }
-  if (fullKind(context.kind)) {
+  if (context.phase === null) {
+    add('weightKg')
+    if ('legacyOrigin' in context) {
+      add('strengthSessions')
+      add('hunger')
+    }
+  } else if (isFullReevaluationKind(context.kind)) {
     for (const key of ['weightKg', 'strengthSessions', 'adherence', 'hunger', 'energy'] as const)
       add(key)
     if (context.phase === 'ganho_massa') {
@@ -234,8 +355,15 @@ export function getReevaluationFormDescriptor(input: ReevaluationFormContext) {
       add('fatPerception')
     }
     if (context.phase === 'manutencao') add('difficultToMaintain')
-  } else add('strengthSessions')
-  if (activityApplies(context.phase, context.kind, context.activityPurpose)) {
+  } else {
+    add('strengthSessions')
+    if (context.kind === 'ROUTINE_REVIEW' && context.phase !== 'recomposicao') add('hunger')
+  }
+  if (
+    context.phase === null
+      ? 'legacyOrigin' in context
+      : activityApplies(context.phase, context.kind, context.activityPurpose)
+  ) {
     const activityQuestions: Omit<ReevaluationQuestion, 'optOutLabel'>[] = [
       { key: 'activity.otherExerciseType', label: 'Que outro exercício você faz?' },
       { key: 'activity.otherExerciseDays', label: 'Em quantos dias por semana?', min: 0, max: 7 },
@@ -278,7 +406,7 @@ export function getReevaluationFormDescriptor(input: ReevaluationFormContext) {
       ),
     )
   }
-  if (fullKind(context.kind)) {
+  if (isFullReevaluationKind(context.kind)) {
     add('healthCheck')
     const health = questions[questions.length - 1]
     if (health)
@@ -292,42 +420,44 @@ export function getReevaluationFormDescriptor(input: ReevaluationFormContext) {
   }
   return {
     questions,
-    preferenceQuestion: fullKind(context.kind)
-      ? {
-          label: 'Você tem uma meta em mente? (opcional)',
-          optional: true as const,
-          options: options([
-            ['weight', 'Um peso (kg)'],
-            ['body_fat', 'Um percentual de gordura (%)'],
-            ['routine', 'Uma meta de rotina'],
-            ['follow_app', 'Prefiro seguir as metas do app'],
-            ['professional', 'Prefiro definir com um profissional'],
-            ['skip', 'Pular'],
-          ]),
-          routineOptions: options([
-            ['regular_training', 'Treinar com regularidade'],
-            ['more_energy', 'Ter mais disposição no dia a dia'],
-            ['organized_food', 'Organizar melhor minha alimentação'],
-            ['maintain_weight', 'Manter meu peso atual'],
-          ]),
-          existingActions: ['keep', 'change', 'remove'] as const,
-        }
-      : null,
+    preferenceQuestion:
+      context.phase !== null && isFullReevaluationKind(context.kind)
+        ? {
+            label: 'Você tem uma meta em mente? (opcional)',
+            optional: true as const,
+            options: options([
+              ['weight', 'Um peso (kg)'],
+              ['body_fat', 'Um percentual de gordura (%)'],
+              ['routine', 'Uma meta de rotina'],
+              ['follow_app', 'Prefiro seguir as metas do app'],
+              ['professional', 'Prefiro definir com um profissional'],
+              ['skip', 'Pular'],
+            ]),
+            routineOptions: options([
+              ['regular_training', 'Treinar com regularidade'],
+              ['more_energy', 'Ter mais disposição no dia a dia'],
+              ['organized_food', 'Organizar melhor minha alimentação'],
+              ['maintain_weight', 'Manter meu peso atual'],
+            ]),
+            existingActions: ['keep', 'change', 'remove'] as const,
+          }
+        : null,
     supportText:
-      fullKind(context.kind) && context.confirmedMealDays !== null
+      context.phase !== null &&
+      context.kind !== 'TRANSITION_FULL' &&
+      isFullReevaluationKind(context.kind) &&
+      context.confirmedMealDays !== null
         ? `Você registrou refeições em ${context.confirmedMealDays} dos últimos 14 dias.`
         : null,
     photoRequirement: {
-      required: context.kind === 'REGULAR',
+      required: requiresReevaluationPhotos(context.kind),
       newOnly: true as const,
       poses: ['front', 'side', 'back'] as const,
     },
-    decisionPriority: [
-      'safety_exit',
-      'phase_or_schedule',
-      'activity_level',
-      'phase_calories',
-    ] as const,
+    decisionPriority:
+      context.phase === null
+        ? []
+        : (['safety_exit', 'phase_or_schedule', 'activity_level', 'phase_calories'] as const),
   }
 }
 
@@ -343,6 +473,22 @@ export function getKnownReevaluationAnswers<K extends ReevaluationAnswerKey>(
   const missing: { key: K; label: string; message: string }[] = []
   for (const key of keys) {
     if (!Object.hasOwn(labels, key)) throw new Error('Unknown reevaluation answer key')
+    if (
+      draft.phase === null &&
+      !(
+        'legacyOrigin' in draft
+          ? [
+              'weightKg',
+              'strengthSessions',
+              'hunger',
+              'activity',
+              'healthCheck',
+              'professionalConversationConfirmed',
+            ]
+          : ['weightKg', 'healthCheck', 'professionalConversationConfirmed']
+      ).includes(key)
+    )
+      throw new Error('Answer is outside this health-only review')
     const value = draft.answers[key]
     if (
       value === null ||

@@ -1,6 +1,6 @@
 import { protocolWelcomeMessage } from '@mpp/core'
 import { describe, expect, it, vi } from 'vitest'
-import type { OnboardingCompletionInput } from './contracts'
+import { type OnboardingCompletionInput, onboardingCompletionInputSchema } from './contracts'
 import {
   completeOnboarding,
   getOnboardingState,
@@ -65,9 +65,87 @@ function repository(overrides: Partial<OnboardingRepository> = {}): OnboardingRe
 
 describe('server-owned onboarding service', () => {
   it.each([
-    false,
     true,
-  ])('returns unknown water only to a capable client (%s)', async (completed) => {
+    false,
+  ])('transports only a known documents-only capability (%s)', async (completed) => {
+    const repo = repository({
+      load: vi.fn(async () => ({
+        locale: 'pt-BR' as const,
+        completed,
+        completedAt: null,
+        documents: [],
+        acceptedActions: [],
+        draft: null,
+        legacyReconsent: { protocol: 'documents_only_v1' as const },
+      })),
+    })
+    const result = await getOnboardingState(repo, USER_ID, 'pt-BR', {
+      acceptsLegacyReconsent: true,
+    })
+    expect(result).toMatchObject({
+      completion: { completed, completed_at: null },
+      draft: null,
+      legacy_reconsent: { protocol: 'documents_only_v1' },
+    })
+    if (completed) {
+      const old = await getOnboardingState(repo, USER_ID, 'pt-BR')
+      expect(old.completion.completed).toBe(true)
+      expect(old).not.toHaveProperty('legacy_reconsent')
+    } else
+      await expect(getOnboardingState(repo, USER_ID, 'pt-BR')).rejects.toMatchObject({
+        status: 409,
+        code: 'onboarding_client_update_required',
+      })
+    expect(repo.complete).not.toHaveBeenCalled()
+  })
+  it('transports an explicit null objective, distinct from a missing key or a client no-plan flag', () => {
+    expect(onboardingCompletionInputSchema.safeParse({ ...input(), objective: null }).success).toBe(
+      true,
+    )
+    const { objective: _objective, ...missing } = input()
+    expect(onboardingCompletionInputSchema.safeParse(missing).success).toBe(false)
+    expect(
+      onboardingCompletionInputSchema.safeParse({ ...input(), objective: null, no_plan: true })
+        .success,
+    ).toBe(false)
+  })
+
+  it('returns no protocol welcome for a recorded null objective and preserves server safety observation', async () => {
+    const clinicalSafety = {
+      version: 1 as const,
+      no_plan: true,
+      hold_active: false,
+      loss_guard: false,
+      hide_protein: true,
+      recording_allowed: true as const,
+      date: '2026-10-25',
+      timezone: 'America/Sao_Paulo',
+      observed_at: '2026-10-25T23:00:00.000000Z',
+    }
+    const repo = repository({
+      complete: vi.fn(async () => ({
+        userId: USER_ID,
+        completed: true as const,
+        completedAt: '2026-10-25T23:00:00Z',
+        objective: null,
+        persona: 'focus' as const,
+        documentActions: [],
+        clinicalSafety,
+      })),
+    })
+    const result = await completeOnboarding(repo, USER_ID, { ...input(), objective: null })
+    expect(result.objective).toBeNull()
+    expect(result.protocol_welcome).toBeNull()
+    expect(result.clinical_safety).toEqual(clinicalSafety)
+    expect(result).not.toHaveProperty('calories_target')
+  })
+
+  it.each([
+    [false, 'recomposicao'],
+    [true, 'recomposicao'],
+    [false, null],
+    [true, null],
+  ] as const)('returns unknown water/null objective only to a capable client (%s/%s)', async (completed, objective) => {
     const value = input()
     const repo = repository({
       load: vi.fn(async () => ({
@@ -86,7 +164,7 @@ describe('server-owned onboarding service', () => {
           heightCm: value.height_cm,
           weightKg: value.weight_kg,
           bodyFatPercent: null,
-          objective: value.objective,
+          objective,
           activityLevel: value.activity_level,
           trainingFrequency: value.training_frequency,
           waterIntake: null,
@@ -98,8 +176,12 @@ describe('server-owned onboarding service', () => {
         },
       })),
     })
-    const capable = await getOnboardingState(repo, USER_ID, 'pt-BR', { acceptsUnknownWater: true })
+    const capable = await getOnboardingState(repo, USER_ID, 'pt-BR', {
+      acceptsUnknownWater: true,
+      acceptsNullObjective: true,
+    })
     expect(capable.draft?.water_intake).toBeNull()
+    expect(capable.draft?.objective).toBe(objective)
     if (completed) {
       const legacy = await getOnboardingState(repo, USER_ID, 'pt-BR')
       expect(legacy.completion.completed).toBe(true)
@@ -251,10 +333,10 @@ describe('server-owned onboarding service', () => {
         paragraphs: protocolWelcomeMessage(objective, 'Synthetic User', 'pt-BR'),
       },
     })
-    expect(result.protocol_welcome.paragraphs[0]).toMatch(
+    expect(result.protocol_welcome?.paragraphs[0]).toMatch(
       /^Synthetic User, (?:a partir de )?agora você entra /,
     )
-    expect(result.protocol_welcome.paragraphs).toHaveLength(objective === 'ganho_massa' ? 7 : 4)
+    expect(result.protocol_welcome?.paragraphs).toHaveLength(objective === 'ganho_massa' ? 7 : 4)
   })
 
   it('writes the entry message in the language of the request', async () => {
@@ -264,7 +346,7 @@ describe('server-owned onboarding service', () => {
       protocol: 'recomposicao',
       paragraphs: protocolWelcomeMessage('recomposicao', 'Synthetic User', 'en-US'),
     })
-    expect(result.protocol_welcome.paragraphs[0]).toMatch(
+    expect(result.protocol_welcome?.paragraphs[0]).toMatch(
       /^Synthetic User, as of now you are officially entering the body recomposition phase\./,
     )
   })
@@ -276,8 +358,8 @@ describe('server-owned onboarding service', () => {
     const result = await completeOnboarding(repo, USER_ID, { ...input(), objective: 'ganho_massa' })
 
     expect(result.objective).toBe('recomposicao')
-    expect(result.protocol_welcome.protocol).toBe('recomposicao')
-    expect(result.protocol_welcome.paragraphs).toEqual(
+    expect(result.protocol_welcome?.protocol).toBe('recomposicao')
+    expect(result.protocol_welcome?.paragraphs).toEqual(
       protocolWelcomeMessage('recomposicao', 'Synthetic User', 'pt-BR'),
     )
   })
@@ -302,6 +384,18 @@ describe('server-owned onboarding service', () => {
     await expect(completeOnboarding(repo, USER_ID, input())).rejects.toMatchObject({
       status: 409,
       code: 'onboarding_already_completed',
+    })
+  })
+
+  it('returns the same public eligibility refusal when SQL closes a changed gain criterion', async () => {
+    const repo = repository({
+      complete: vi.fn(async () => {
+        throw new OnboardingRepositoryError('objective_not_eligible')
+      }),
+    })
+    await expect(completeOnboarding(repo, USER_ID, input())).rejects.toMatchObject({
+      status: 422,
+      code: 'onboarding_objective_not_eligible',
     })
   })
 

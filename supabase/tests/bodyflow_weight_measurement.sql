@@ -171,7 +171,10 @@ BEGIN
     RAISE EXCEPTION 'legacy write moved the instant backwards';
   END IF;
   v_result := public.record_weight_atomic(v_legacy, 84, 'kg', v_at, 'weight-key-0009');
-  IF (v_result->>'applied')::boolean
+  -- The durable acknowledgement replays the ORIGINAL applied result, without
+  -- writing that weight over the newer legacy 85. Other keys above retain
+  -- their same_measurement/older_than_current behavior.
+  IF NOT (v_result->>'applied')::boolean OR (v_result->>'weight_kg')::numeric <> 84
     OR (SELECT weight_kg FROM public.user_profiles WHERE user_id = v_legacy) <> 85 THEN
     RAISE EXCEPTION 'replay was applied over a newer legacy write: %', v_result;
   END IF;

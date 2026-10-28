@@ -5,6 +5,13 @@
  * Todas as funções aceitam um CalcConfig opcional; sem ele usa
  * DEFAULT_CALC_CONFIG (constantes científicas padrão).
  */
+
+import {
+  type CalcConfig,
+  DEFAULT_CALC_CONFIG,
+  RECOMP_PROTEIN_G_PER_KG,
+  RECOMP_PROTEIN_G_PER_KG_SANITY_MAX,
+} from './calc-config.js'
 import type {
   ActivityLevel,
   HungerLevel,
@@ -13,12 +20,6 @@ import type {
   UserMetrics,
   UserProfile,
 } from './types.js'
-import {
-  DEFAULT_CALC_CONFIG,
-  RECOMP_PROTEIN_G_PER_KG,
-  RECOMP_PROTEIN_G_PER_KG_SANITY_MAX,
-  type CalcConfig,
-} from './calc-config.js'
 
 export function calcAge(birthDate: Date, today: Date = new Date()): number {
   let age = today.getFullYear() - birthDate.getFullYear()
@@ -98,26 +99,52 @@ export function calcProteinTargetG(
  * Bug histórico: antes era simples lookup `protein_factors[hunger]` com
  * mapping invertido (pouca→1.6, muita→2.0) — exatamente o oposto da doc MPP.
  */
+export type ProteinBranch =
+  | 'muita'
+  | 'training_low'
+  | 'optimal_high_training'
+  | 'optimal_mid_training'
+  | 'moderada'
+
+/** The named branch of the existing cascade; weight never selects a branch. */
+export function resolveProteinBranch(
+  hunger: HungerLevel,
+  trainingFrequency: number | null | undefined,
+): ProteinBranch {
+  // Priority 1: perfil comportamental difícil
+  if (hunger === 'muita') return 'muita'
+  // Priority 2: training baixo
+  if (trainingFrequency != null && trainingFrequency < 3) return 'training_low'
+  // Priority 3: perfil ótimo + training alto
+  if (hunger === 'pouca' && trainingFrequency != null && trainingFrequency >= 5) {
+    return 'optimal_high_training'
+  }
+  // Priority 4: perfil ótimo + training moderado-alto
+  if (hunger === 'pouca' && trainingFrequency != null && trainingFrequency >= 4) {
+    return 'optimal_mid_training'
+  }
+  // Default: moderada ou sem dado
+  return 'moderada'
+}
+
 export function resolveProteinFactor(
   hunger: HungerLevel,
   trainingFrequency: number | null | undefined,
   config: CalcConfig = DEFAULT_CALC_CONFIG,
 ): number {
   const factors = config.protein_factors
-  // Priority 1: perfil comportamental difícil
-  if (hunger === 'muita') return factors.muita
-  // Priority 2: training baixo
-  if (trainingFrequency != null && trainingFrequency < 3) return factors.training_low ?? 1.7
-  // Priority 3: perfil ótimo + training alto
-  if (hunger === 'pouca' && trainingFrequency != null && trainingFrequency >= 5) {
-    return factors.optimal_high_training ?? 2.0
+  switch (resolveProteinBranch(hunger, trainingFrequency)) {
+    case 'muita':
+      return factors.muita
+    case 'training_low':
+      return factors.training_low ?? 1.7
+    case 'optimal_high_training':
+      return factors.optimal_high_training ?? 2.0
+    case 'optimal_mid_training':
+      return factors.optimal_mid_training ?? 1.9
+    case 'moderada':
+      return factors.moderada
   }
-  // Priority 4: perfil ótimo + training moderado-alto
-  if (hunger === 'pouca' && trainingFrequency != null && trainingFrequency >= 4) {
-    return factors.optimal_mid_training ?? 1.9
-  }
-  // Default: moderada ou sem dado
-  return factors.moderada
 }
 
 /**
@@ -193,8 +220,7 @@ export function computeMetrics(
     ? config.activity_factors[profile.activityLevel]
     : null
 
-  const lbm =
-    profile.weightKg != null ? calcLBM(profile.weightKg, profile.bodyFatPercent) : null
+  const lbm = profile.weightKg != null ? calcLBM(profile.weightKg, profile.bodyFatPercent) : null
 
   const imc =
     profile.weightKg && profile.heightCm ? calcIMC(profile.weightKg, profile.heightCm) : null

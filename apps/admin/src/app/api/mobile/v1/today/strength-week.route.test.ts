@@ -20,7 +20,10 @@ vi.mock('@/lib/mobile-api/entitlement-service', () => ({
   authorizeMobileEntitlement: dependencies.authorize,
 }))
 vi.mock('@/lib/supabase/server', () => ({ createServiceClient: dependencies.createServiceClient }))
-vi.mock('@/lib/mobile-api/read-model', () => ({ loadToday: dependencies.loadToday }))
+vi.mock('@/lib/mobile-api/read-model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/mobile-api/read-model')>()),
+  loadToday: dependencies.loadToday,
+}))
 
 const { GET } = await import('./route')
 const id = (n: number) => `a6000000-0000-4000-8000-${String(n).padStart(12, '0')}`

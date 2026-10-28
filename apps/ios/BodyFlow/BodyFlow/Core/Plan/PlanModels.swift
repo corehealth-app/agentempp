@@ -5,6 +5,12 @@ typealias PlanResponse = MobileResponse<PlanSnapshot>
 struct PlanSnapshot: Codable, Equatable, Sendable {
     let training: TrainingPlanSnapshot?
     let nutrition: [NutritionPrescriptionSnapshot]
+    var clinicalPolicy: CurrentClinicalPolicy? = nil
+
+    private enum CodingKeys: String, CodingKey {
+        case training, nutrition
+        case clinicalPolicy = "clinical_policy"
+    }
 }
 
 struct TrainingPlanSnapshot: Codable, Equatable, Sendable {

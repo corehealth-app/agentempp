@@ -1,8 +1,13 @@
 import Foundation
 
 protocol FlowChatProviding: Sendable {
+    func scoped(for userID: String) async throws -> any FlowChatProviding
     func history(limit: Int) async throws -> FlowHistoryResponse
     func send(text: String, idempotencyKey: IdempotencyKey) async throws -> FlowSendResponse
+}
+
+extension FlowChatProviding {
+    func scoped(for userID: String) async throws -> any FlowChatProviding { self }
 }
 
 struct UnavailableFlowChatRepository: FlowChatProviding {

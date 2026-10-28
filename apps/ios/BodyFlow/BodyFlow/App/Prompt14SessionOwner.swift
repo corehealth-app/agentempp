@@ -10,6 +10,10 @@ final class Prompt14SessionOwner {
     let contentState: any PublishedContentStateRecording
     let coachExperience: any CoachExperienceProviding
     let progress: any ProgressProviding
+    let today: any TodayProviding
+    let history: any HistoryProviding
+    let plan: any PlanProviding
+    let currentObjective: (any CurrentObjectiveProviding)?
     let coverLoader: any ContentCoverLoading
 
     private(set) var mealRecordBinding: MealRecordSessionBinding?
@@ -27,6 +31,10 @@ final class Prompt14SessionOwner {
     private let detailReference: Prompt14CapabilityReference<any PublishedContentDetailProviding>
     private let stateReference: Prompt14CapabilityReference<any PublishedContentStateRecording>
     private let coachReference: Prompt14CapabilityReference<any CoachExperienceProviding>
+    private let todayReference: Prompt14CapabilityReference<any TodayProviding>
+    private let historyReference: Prompt14CapabilityReference<any HistoryProviding>
+    private let planReference: Prompt14CapabilityReference<any PlanProviding>
+    private let objectiveReference: Prompt14CapabilityReference<any CurrentObjectiveProviding>?
     private let progressReference: Prompt14CapabilityReference<any ProgressProviding>
     private let meReference: Prompt14CapabilityReference<any MeProviding>
     private let lifetimeEndpoint: Prompt14JoinableEndpoint<any PublishedContentSessionLifetime>
@@ -38,7 +46,8 @@ final class Prompt14SessionOwner {
     private var mealRecordRetirementTask: Task<Void, Never>?
     private var ended = false
 
-    init(userID: String, dependencies: AppDependencies, enablesMealRecordBinding: Bool = false) {
+    init(userID: String, dependencies: AppDependencies, enablesMealRecordBinding: Bool = false,
+         readerSession: CurrentClinicalReaderSession? = nil) {
         self.userID = userID
         permitsMealRecordBinding = enablesMealRecordBinding
         workoutRegistrationSource = dependencies.workoutRegistrationSessionSource
@@ -55,8 +64,13 @@ final class Prompt14SessionOwner {
         let detailReference = Prompt14CapabilityReference(contentSession.detail)
         let stateReference = Prompt14CapabilityReference(contentSession.state)
         let coachReference = Prompt14CapabilityReference(coach)
-        let progressReference = Prompt14CapabilityReference(dependencies.progress)
-        let meReference = Prompt14CapabilityReference(dependencies.me)
+        let todayReference = Prompt14CapabilityReference(readerSession?.today ?? dependencies.today)
+        let historyReference = Prompt14CapabilityReference(readerSession?.history ?? dependencies.history)
+        let planReference = Prompt14CapabilityReference(readerSession?.plan ?? dependencies.plan)
+        let objectiveReference = (readerSession?.currentObjective ?? dependencies.currentObjective)
+            .map { Prompt14CapabilityReference($0) }
+        let progressReference = Prompt14CapabilityReference(readerSession?.progress ?? dependencies.progress)
+        let meReference = Prompt14CapabilityReference(readerSession?.me ?? dependencies.me)
         let lifetimeEndpoint = Prompt14JoinableEndpoint(contentSession.lifetime)
         let coverEndpoint = Prompt14JoinableEndpoint(cover)
         let patientTimeZoneStore = dependencies.patientTimeZoneStore
@@ -66,6 +80,10 @@ final class Prompt14SessionOwner {
         self.detailReference = detailReference
         self.stateReference = stateReference
         self.coachReference = coachReference
+        self.todayReference = todayReference
+        self.historyReference = historyReference
+        self.planReference = planReference
+        self.objectiveReference = objectiveReference
         self.progressReference = progressReference
         self.meReference = meReference
         self.lifetimeEndpoint = lifetimeEndpoint
@@ -102,6 +120,10 @@ final class Prompt14SessionOwner {
             gate: gate,
             reference: coachReference
         )
+        today = Prompt14TodayCapability(gate: gate, reference: todayReference)
+        history = Prompt14HistoryCapability(gate: gate, reference: historyReference)
+        plan = Prompt14PlanCapability(gate: gate, reference: planReference)
+        currentObjective = objectiveReference.map { Prompt14ObjectiveCapability(gate: gate, reference: $0) }
         progress = Prompt14ProgressCapability(
             gate: gate,
             reference: progressReference
@@ -217,6 +239,10 @@ final class Prompt14SessionOwner {
             || detailReference.hasValue
             || stateReference.hasValue
             || coachReference.hasValue
+            || todayReference.hasValue
+            || historyReference.hasValue
+            || planReference.hasValue
+            || objectiveReference?.hasValue == true
             || progressReference.hasValue
             || meReference.hasValue
             || lifetimeEndpoint.hasValue
@@ -308,6 +334,10 @@ final class Prompt14SessionOwner {
                 detailReference.release()
                 stateReference.release()
                 coachReference.release()
+                todayReference.release()
+                historyReference.release()
+                planReference.release()
+                objectiveReference?.release()
                 progressReference.release()
                 meReference.release()
                 lifetimeEndpoint.release()
@@ -334,6 +364,12 @@ final class Prompt14AuthenticatedShellCoordinator {
     private(set) var requestedAuthenticatedUserID: String?
     private(set) var renderableOwner: Prompt14SessionOwner?
     private(set) var tearingDownOwner: Prompt14SessionOwner?
+    private(set) var readerBindingFailed = false
+
+    func hasReaderBindingFailure(for userID: String?) -> Bool {
+        userID != nil && requestedAuthenticatedUserID == userID && tearingDownOwner == nil
+            && renderableOwner == nil && readerBindingFailed
+    }
 
     init(dependencies: AppDependencies, enablesMealRecordBinding: Bool = false) {
         self.dependencies = dependencies
@@ -367,6 +403,7 @@ final class Prompt14AuthenticatedShellCoordinator {
         transitionGeneration &+= 1
         let generation = transitionGeneration
         requestedAuthenticatedUserID = requestedUserID
+        readerBindingFailed = false
 
         if let owner = renderableOwner,
            owner.userID != requestedUserID || owner.isInvalidated {
@@ -405,10 +442,28 @@ final class Prompt14AuthenticatedShellCoordinator {
         }
         guard renderableOwner?.userID != requestedUserID else { return }
 
+        let readerSession: CurrentClinicalReaderSession?
+        do {
+            readerSession = try await dependencies.currentClinicalReadSessions?.bind(requestedUserID)
+            try Task.checkCancellation()
+            guard generation == transitionGeneration,
+                  requestedAuthenticatedUserID == requestedUserID else { return }
+            if let readerSession, readerSession.userID != requestedUserID {
+                throw SessionLifecycleError.sessionSuperseded
+            }
+        } catch {
+            // An old resolver cannot publish either a shell or an error into
+            // the replacement activation. Retry always creates a fresh bundle.
+            guard !Task.isCancelled, generation == transitionGeneration,
+                  requestedAuthenticatedUserID == requestedUserID else { return }
+            readerBindingFailed = true
+            return
+        }
         renderableOwner = Prompt14SessionOwner(
             userID: requestedUserID,
             dependencies: dependencies,
-            enablesMealRecordBinding: enablesMealRecordBinding
+            enablesMealRecordBinding: enablesMealRecordBinding,
+            readerSession: readerSession
         )
     }
 }
@@ -792,5 +847,53 @@ private struct Prompt14CoverCapability: ContentCoverLoading {
 
     func endSession() async {
         // The session owner is the sole authority for both lifetimes.
+    }
+}
+
+private struct Prompt14TodayCapability: TodayProviding {
+    let gate: Prompt14SessionOperationGate
+    let reference: Prompt14CapabilityReference<any TodayProviding>
+
+    func today() async throws -> TodayResponse {
+        try await gate.perform {
+            guard let capability = reference.current() else { throw CancellationError() }
+            return try await capability.today()
+        }
+    }
+}
+
+private struct Prompt14HistoryCapability: HistoryProviding {
+    let gate: Prompt14SessionOperationGate
+    let reference: Prompt14CapabilityReference<any HistoryProviding>
+
+    func history(_ query: HistoryQuery) async throws -> HistoryResponse {
+        try await gate.perform {
+            guard let capability = reference.current() else { throw CancellationError() }
+            return try await capability.history(query)
+        }
+    }
+}
+
+private struct Prompt14PlanCapability: PlanProviding {
+    let gate: Prompt14SessionOperationGate
+    let reference: Prompt14CapabilityReference<any PlanProviding>
+
+    func plan() async throws -> PlanResponse {
+        try await gate.perform {
+            guard let capability = reference.current() else { throw CancellationError() }
+            return try await capability.plan()
+        }
+    }
+}
+
+private struct Prompt14ObjectiveCapability: CurrentObjectiveProviding {
+    let gate: Prompt14SessionOperationGate
+    let reference: Prompt14CapabilityReference<any CurrentObjectiveProviding>
+
+    func currentObjective() async throws -> CurrentObjectiveSnapshot {
+        try await gate.perform {
+            guard let capability = reference.current() else { throw CancellationError() }
+            return try await capability.currentObjective()
+        }
     }
 }

@@ -1,0 +1,1311 @@
+{
+  "after": {
+    "facts": {
+      "day": {
+        "id": "6cd2513a-888c-4dd1-87df-a21c8f5bdf6f",
+        "date": "2026-10-26",
+        "fat_g": 0.0,
+        "steps": null,
+        "carbs_g": 0.0,
+        "user_id": "b3b01000-0000-4000-8000-000000004150",
+        "closed_at": null,
+        "protein_g": 0.0,
+        "xp_earned": 0,
+        "created_at": "2026-10-26T16:00:59.572690Z",
+        "day_closed": false,
+        "day_status": "complete",
+        "updated_at": "2026-10-26T16:01:01.398344Z",
+        "sleep_hours": null,
+        "daily_balance": -1599,
+        "training_done": false,
+        "protein_target": 126.0,
+        "calories_target": 1599,
+        "current_protocol": "recomposicao",
+        "calories_consumed": 0,
+        "exercise_calories": 0,
+        "water_consumed_ml": 0,
+        "deficit_accumulated": 0,
+        "gap_reminder_sent_at": null
+      },
+      "cycle": null,
+      "owner": {
+        "id": "b3b01000-0000-4000-8000-000000004150",
+        "locale": "pt-BR",
+        "status": "active",
+        "timezone": "America/Sao_Paulo",
+        "updated_at": "2026-10-26T16:00:59.572690Z"
+      },
+      "anchor": {
+        "clock": {
+          "due_date": "2026-11-09",
+          "timezone": "America/Sao_Paulo",
+          "base_date": "2026-10-26"
+        },
+        "reason": "not_due",
+        "last_full_id": "9e5e0ba5-a31d-4fb1-be3b-5c01ed99f9aa",
+        "signup_epoch": "fc85837c-522b-4670-b6d3-fa3283be2375",
+        "signup_generation": "4d2657eb-0521-4963-8c2b-7933da0b25ed",
+        "authority": {
+          "kind": "signup_receipt",
+          "generation": "4d2657eb-0521-4963-8c2b-7933da0b25ed",
+          "epoch": "fc85837c-522b-4670-b6d3-fa3283be2375",
+          "completed_at": "2026-10-01T23:00:00.000000Z",
+          "timezone_at_signup": "America/Sao_Paulo"
+        }
+      },
+      "safety": {
+        "items": [],
+        "user_id": "b3b01000-0000-4000-8000-000000004150",
+        "version": 1,
+        "hold_active": false,
+        "hide_protein": false,
+        "safety_revision": "0",
+        "declared_no_plan": false,
+        "last_declared_at": null
+      },
+      "profile": {
+        "sex": "masculino",
+        "bedtime": null,
+        "user_id": "b3b01000-0000-4000-8000-000000004150",
+        "bf_source": null,
+        "goal_type": null,
+        "height_cm": 180.0,
+        "wake_time": null,
+        "weight_kg": 84.0,
+        "birth_date": "1990-01-01",
+        "created_at": "2026-10-26T16:00:59.572690Z",
+        "goal_value": null,
+        "updated_at": "2026-10-26T16:01:01.398344Z",
+        "hunger_level": "moderada",
+        "water_intake": null,
+        "deficit_level": 500,
+        "activity_level": "moderado",
+        "cycle_start_at": null,
+        "bf_estimated_at": null,
+        "onboarding_step": 0,
+        "body_fat_percent": 24.0,
+        "current_protocol": "recomposicao",
+        "food_organization": null,
+        "training_frequency": 4,
+        "weight_measured_at": "2026-10-26T16:01:01.398344Z",
+        "bf_percent_estimated": null,
+        "body_fat_measured_at": "2026-10-26T16:01:01.398344Z",
+        "onboarding_completed": true,
+        "cycle_start_weight_kg": null,
+        "weight_instant_source": "recorded",
+        "cycle_start_bf_percent": null,
+        "onboarding_completed_at": "2026-10-01T23:00:00.000000Z",
+        "cycle_start_training_freq": null
+      },
+      "progress": null,
+      "weight_history": [
+        {
+          "id": "27c9640e-18d7-45e3-9135-4790042064eb",
+          "user_id": "b3b01000-0000-4000-8000-000000004150",
+          "weight_kg": 84.0,
+          "local_date": "2026-10-26",
+          "measured_at": "2026-10-26T16:01:01.398344Z",
+          "received_at": "2026-10-26T16:01:01.398344Z",
+          "instant_source": "recorded",
+          "authority_epoch": "fc85837c-522b-4670-b6d3-fa3283be2375",
+          "observed_timezone": "America/Sao_Paulo"
+        }
+      ],
+      "photo_authority": {
+        "media": [],
+        "sources": [],
+        "tickets": [],
+        "attempts": [],
+        "consents": [],
+        "policies": [
+          {
+            "locale": "pt-BR",
+            "enabled": true,
+            "version": "asset-local-1",
+            "body_hash": "469955644e463dbcca7d30c02c3367e3264a969b47ba9817c434f94c069b6469",
+            "document_id": "b3b01000-0000-4000-8000-000000000501",
+            "document_key": "body_photo_reevaluation_consent",
+            "idle_timeout_seconds": 60
+          }
+        ],
+        "documents": [
+          {
+            "id": "b3b01000-0000-4000-8000-000000000501",
+            "locale": "pt-BR",
+            "version": "asset-local-1",
+            "body_hash": "469955644e463dbcca7d30c02c3367e3264a969b47ba9817c434f94c069b6469",
+            "created_at": "2026-10-26T16:00:59.710406Z",
+            "document_key": "body_photo_reevaluation_consent",
+            "required_from": "2026-10-20T00:00:00.000000Z"
+          }
+        ],
+        "allocations": [],
+        "consent_state": null
+      },
+      "calculation_date": "2026-10-26",
+      "calculation_config": [
+        {
+          "key": "calc.activity_factors",
+          "value": {
+            "alto": 1.725,
+            "leve": 1.375,
+            "atleta": 1.9,
+            "moderado": 1.55,
+            "sedentario": 1.2
+          },
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.badges",
+          "value": [
+            {
+              "key": "Primeira Semana",
+              "type": "streak",
+              "threshold": 7
+            },
+            {
+              "key": "Mês de Ferro",
+              "type": "streak",
+              "threshold": 30
+            },
+            {
+              "key": "Atleta Real",
+              "type": "streak",
+              "threshold": 90
+            },
+            {
+              "key": "Primeiro Bloco",
+              "type": "blocks",
+              "threshold": 1
+            },
+            {
+              "key": "XP Master",
+              "type": "xp",
+              "threshold": 1000
+            },
+            {
+              "key": "Elite",
+              "type": "xp",
+              "threshold": 3500
+            }
+          ],
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.bf_goal_rules",
+          "value": [
+            {
+              "above": 30,
+              "subtract": 10
+            },
+            {
+              "above": 20,
+              "target": 20
+            },
+            {
+              "above": 18,
+              "target": 18
+            },
+            {
+              "above": 15,
+              "target": 15
+            },
+            {
+              "above": 0,
+              "target": 10
+            }
+          ],
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.bf_limits",
+          "value": {
+            "feminino": {
+              "gain": 27,
+              "recomp": 28
+            },
+            "masculino": {
+              "gain": 19,
+              "recomp": 20
+            }
+          },
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.bmr_katch",
+          "value": {
+            "base": 370,
+            "lbm_coef": 21.6
+          },
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.bmr_mifflin",
+          "value": {
+            "age_coef": 5,
+            "height_coef": 6.25,
+            "male_offset": 5,
+            "weight_coef": 10,
+            "female_offset": -161
+          },
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.imc_goal_steps",
+          "value": [30, 25, 23, 22, 21],
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.imc_limit_recomp",
+          "value": 25,
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.kcal_block",
+          "value": 7700,
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.levels",
+          "value": [
+            {
+              "max": 99,
+              "min": 0,
+              "name": "Início",
+              "level": 1
+            },
+            {
+              "max": 299,
+              "min": 100,
+              "name": "Constância",
+              "level": 2
+            },
+            {
+              "max": 599,
+              "min": 300,
+              "name": "Foco",
+              "level": 3
+            },
+            {
+              "max": 999,
+              "min": 600,
+              "name": "Disciplina",
+              "level": 4
+            },
+            {
+              "max": 1499,
+              "min": 1000,
+              "name": "Performance",
+              "level": 5
+            },
+            {
+              "max": 2199,
+              "min": 1500,
+              "name": "Domínio",
+              "level": 6
+            },
+            {
+              "max": 2999,
+              "min": 2200,
+              "name": "Elite MPP",
+              "level": 7
+            },
+            {
+              "max": null,
+              "min": 3000,
+              "name": "Lenda MPP",
+              "level": 8
+            }
+          ],
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.protein_factors",
+          "value": {
+            "muita": 1.6,
+            "pouca": 1.8,
+            "moderada": 1.8,
+            "training_low": 1.7,
+            "optimal_mid_training": 1.9,
+            "optimal_high_training": 2.0
+          },
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.sleep_min_hours",
+          "value": 6.5,
+          "updated_at": "2026-10-24T13:14:45.998887Z"
+        },
+        {
+          "key": "calc.training_min",
+          "value": 3,
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.xp_rules",
+          "value": {
+            "base": 10,
+            "protein_bonus": 5,
+            "training_bonus": 5,
+            "protein_threshold_g": 100
+          },
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        }
+      ],
+      "protocol_authority": {
+        "episode": {
+          "phase": "recomposicao",
+          "user_id": "b3b01000-0000-4000-8000-000000004150",
+          "event_id": "e89c052a-11b8-44ac-acab-40eae14e9702",
+          "event_no": "1",
+          "schedule": null,
+          "review_id": "9e5e0ba5-a31d-4fb1-be3b-5c01ed99f9aa",
+          "applied_at": "2026-10-26T16:01:01.398344Z",
+          "entry_date": null,
+          "episode_id": "6aea6b1a-088a-443c-a1da-77017a7df9c5",
+          "entry_origin": "legacy_unknown",
+          "ledger_steps": null,
+          "rule_version": "clinical-v1",
+          "signup_epoch": "fc85837c-522b-4670-b6d3-fa3283be2375",
+          "deficit_level": 500,
+          "start_height_cm": null,
+          "start_weight_kg": null,
+          "difficulty_count": "0",
+          "maintenance_since": null,
+          "previous_event_id": null,
+          "signup_generation": "4d2657eb-0521-4963-8c2b-7933da0b25ed",
+          "start_body_fat_percent": null,
+          "start_training_frequency": null
+        },
+        "day_events": [
+          {
+            "date": "2026-10-26",
+            "phase": "recomposicao",
+            "user_id": "b3b01000-0000-4000-8000-000000004150",
+            "schedule": null,
+            "review_id": "9e5e0ba5-a31d-4fb1-be3b-5c01ed99f9aa",
+            "applied_at": "2026-10-26T16:01:01.398344Z",
+            "rule_version": "clinical-v1",
+            "deficit_level": 500,
+            "formula_target": 1599,
+            "protein_target": 126.0,
+            "calories_target": 1599,
+            "effective_adjustment": 0
+          }
+        ],
+        "preference": null,
+        "phase_origin": {
+          "kind": "assigned"
+        },
+        "signup_origin": null,
+        "body_fat_origin": {
+          "sources": [
+            {
+              "pose": "front",
+              "asset_id": "89ebf6b7-fd66-4d68-bc71-c71f81c985a6",
+              "attempt_id": "62475b00-cc90-489e-b81e-27fa6ba9b5dd",
+              "bf_percent": 18,
+              "processed_at": "2026-10-26T16:01:00.231027Z",
+              "source_revision": "2",
+              "processing_request_id": "6750f4c88c2c2ce132e13c7a6bf7b558376f26ced2a589723cec1bb0659f9b21"
+            },
+            {
+              "pose": "side",
+              "asset_id": "5d31cc64-7dda-4cd7-ad67-f0b2c994b652",
+              "attempt_id": "018ada83-94f5-4cb6-b81a-646f0224b27f",
+              "bf_percent": 24,
+              "processed_at": "2026-10-26T16:01:00.630593Z",
+              "source_revision": "2",
+              "processing_request_id": "868a05f82207a47735467a56388ed32541a255d88c5880c4dc3b6f02d2bb920a"
+            },
+            {
+              "pose": "back",
+              "asset_id": "9188910a-4f35-470e-8c2e-36fffb546260",
+              "attempt_id": "e70c28f7-5b1b-4959-befc-77dbf3c3ed54",
+              "bf_percent": 30,
+              "processed_at": "2026-10-26T16:01:01.022524Z",
+              "source_revision": "2",
+              "processing_request_id": "0ac1fe7d0969226f167adb3f566a36f07ce2150de06d6b25bc794b479423f126"
+            }
+          ],
+          "user_id": "b3b01000-0000-4000-8000-000000004150",
+          "cycle_id": "6757f12f-1d9f-4dde-8d73-e4351a6c7e28",
+          "review_id": "9e5e0ba5-a31d-4fb1-be3b-5c01ed99f9aa",
+          "source_hash": "53d2a2eea14c1fdcda2057846bf4498d7bd06f7055dd08018f6424b811aa179d",
+          "confirmed_at": "2026-10-26T16:01:01.398344Z",
+          "mean_percent": 24.0,
+          "signup_epoch": "fc85837c-522b-4670-b6d3-fa3283be2375",
+          "acceptance_id": "cc11ba4c-b1e2-4483-a692-44d101fdbd59",
+          "signup_generation": "4d2657eb-0521-4963-8c2b-7933da0b25ed"
+        },
+        "daily_application": null,
+        "body_fat_candidate": null,
+        "prior_regular_reviews": [
+          {
+            "date": "2026-10-26",
+            "form": {
+              "kind": "REGULAR",
+              "phase": "recomposicao",
+              "answers": {
+                "energy": "boa",
+                "hunger": "moderada",
+                "activity": null,
+                "weightKg": 84,
+                "adherence": "bem_consistente",
+                "healthCheck": {
+                  "kind": "none"
+                },
+                "fatPerception": null,
+                "strengthSessions": 4,
+                "difficultToMaintain": null,
+                "strengthProgression": null,
+                "professionalConversationConfirmed": null
+              },
+              "version": 1,
+              "preference": null,
+              "activityPurpose": "normal"
+            },
+            "kind": "REGULAR",
+            "principal": "keep",
+            "review_id": "9e5e0ba5-a31d-4fb1-be3b-5c01ed99f9aa",
+            "review_no": "1",
+            "activity_level_changed": false
+          }
+        ],
+        "signup_body_fat_origin": null,
+        "routine_reviews_since_regular": []
+      }
+    },
+    "user_id": "b3b01000-0000-4000-8000-000000004150",
+    "version": 1,
+    "cycle_id": null,
+    "observed_at": "2026-10-26T16:01:01.621565Z",
+    "review_kind": "ROUTINE_REVIEW",
+    "valid_until": "2026-10-27T03:00:00.000000Z",
+    "context_hash": "621315a766d64edb86cd1dca459ee87bac43b59bba79c0ee4d4504b996aab591"
+  },
+  "context": {
+    "facts": {
+      "day": {
+        "id": "6cd2513a-888c-4dd1-87df-a21c8f5bdf6f",
+        "date": "2026-10-26",
+        "fat_g": 0.0,
+        "steps": null,
+        "carbs_g": 0.0,
+        "user_id": "b3b01000-0000-4000-8000-000000004150",
+        "closed_at": null,
+        "protein_g": 0.0,
+        "xp_earned": 0,
+        "created_at": "2026-10-26T16:00:59.572690Z",
+        "day_closed": false,
+        "day_status": "complete",
+        "updated_at": "2026-10-26T16:00:59.572690Z",
+        "sleep_hours": null,
+        "daily_balance": -1700,
+        "training_done": false,
+        "protein_target": 120.0,
+        "calories_target": 1700,
+        "current_protocol": "recomposicao",
+        "calories_consumed": 0,
+        "exercise_calories": 0,
+        "water_consumed_ml": 0,
+        "deficit_accumulated": 0,
+        "gap_reminder_sent_at": null
+      },
+      "cycle": {
+        "kind": "REGULAR",
+        "status": "collecting",
+        "user_id": "b3b01000-0000-4000-8000-000000004150",
+        "cycle_id": "6757f12f-1d9f-4dde-8d73-e4351a6c7e28",
+        "due_date": "2026-10-15",
+        "revision": "5",
+        "base_date": "2026-10-01",
+        "opened_at": "2026-10-26T16:00:59.631423Z",
+        "completed_at": null,
+        "signup_epoch": "fc85837c-522b-4670-b6d3-fa3283be2375",
+        "invalidated_at": null,
+        "timezone_at_open": "America/Sao_Paulo",
+        "signup_generation": "4d2657eb-0521-4963-8c2b-7933da0b25ed"
+      },
+      "owner": {
+        "id": "b3b01000-0000-4000-8000-000000004150",
+        "locale": "pt-BR",
+        "status": "active",
+        "timezone": "America/Sao_Paulo",
+        "updated_at": "2026-10-26T16:00:59.572690Z"
+      },
+      "anchor": {
+        "clock": {
+          "due_date": "2026-10-15",
+          "timezone": "America/Sao_Paulo",
+          "base_date": "2026-10-01"
+        },
+        "reason": null,
+        "last_full_id": null,
+        "signup_epoch": "fc85837c-522b-4670-b6d3-fa3283be2375",
+        "signup_generation": "4d2657eb-0521-4963-8c2b-7933da0b25ed",
+        "authority": {
+          "kind": "signup_receipt",
+          "generation": "4d2657eb-0521-4963-8c2b-7933da0b25ed",
+          "epoch": "fc85837c-522b-4670-b6d3-fa3283be2375",
+          "completed_at": "2026-10-01T23:00:00.000000Z",
+          "timezone_at_signup": "America/Sao_Paulo"
+        }
+      },
+      "safety": {
+        "items": [],
+        "user_id": "b3b01000-0000-4000-8000-000000004150",
+        "version": 1,
+        "hold_active": false,
+        "hide_protein": false,
+        "safety_revision": "0",
+        "declared_no_plan": false,
+        "last_declared_at": null
+      },
+      "profile": {
+        "sex": "masculino",
+        "bedtime": null,
+        "user_id": "b3b01000-0000-4000-8000-000000004150",
+        "bf_source": null,
+        "goal_type": null,
+        "height_cm": 180.0,
+        "wake_time": null,
+        "weight_kg": 80.0,
+        "birth_date": "1990-01-01",
+        "created_at": "2026-10-26T16:00:59.572690Z",
+        "goal_value": null,
+        "updated_at": "2026-10-26T16:00:59.797267Z",
+        "hunger_level": "moderada",
+        "water_intake": null,
+        "deficit_level": 500,
+        "activity_level": "moderado",
+        "cycle_start_at": null,
+        "bf_estimated_at": null,
+        "onboarding_step": 0,
+        "body_fat_percent": 24.0,
+        "current_protocol": "recomposicao",
+        "food_organization": null,
+        "training_frequency": 4,
+        "weight_measured_at": "2026-10-26T16:00:59.798103Z",
+        "bf_percent_estimated": null,
+        "body_fat_measured_at": null,
+        "onboarding_completed": true,
+        "cycle_start_weight_kg": null,
+        "weight_instant_source": "recorded",
+        "cycle_start_bf_percent": null,
+        "onboarding_completed_at": "2026-10-01T23:00:00.000000Z",
+        "cycle_start_training_freq": null
+      },
+      "progress": null,
+      "weight_history": [],
+      "photo_authority": {
+        "media": [
+          {
+            "id": "5d31cc64-7dda-4cd7-ad67-f0b2c994b652",
+            "etag": null,
+            "kind": "body_checkin_photo",
+            "status": "processed",
+            "user_id": "b3b01000-0000-4000-8000-000000004150",
+            "mime_type": "image/jpeg",
+            "created_at": "2026-10-26T16:01:00.253609Z",
+            "deleted_at": null,
+            "uploaded_at": "2026-10-26T16:01:00.341369Z",
+            "failure_code": null,
+            "processed_at": "2026-10-26T16:01:00.630593Z",
+            "failure_stage": null,
+            "retention_until": "2026-10-26T16:02:00.740957Z",
+            "actual_size_bytes": "1200",
+            "declared_size_bytes": "1200",
+            "processing_request_id": "868a05f82207a47735467a56388ed32541a255d88c5880c4dc3b6f02d2bb920a",
+            "reevaluation_origin_version": 1
+          },
+          {
+            "id": "89ebf6b7-fd66-4d68-bc71-c71f81c985a6",
+            "etag": null,
+            "kind": "body_checkin_photo",
+            "status": "processed",
+            "user_id": "b3b01000-0000-4000-8000-000000004150",
+            "mime_type": "image/jpeg",
+            "created_at": "2026-10-26T16:00:59.810444Z",
+            "deleted_at": null,
+            "uploaded_at": "2026-10-26T16:00:59.918091Z",
+            "failure_code": null,
+            "processed_at": "2026-10-26T16:01:00.231027Z",
+            "failure_stage": null,
+            "retention_until": "2026-10-26T16:02:00.740957Z",
+            "actual_size_bytes": "1200",
+            "declared_size_bytes": "1200",
+            "processing_request_id": "6750f4c88c2c2ce132e13c7a6bf7b558376f26ced2a589723cec1bb0659f9b21",
+            "reevaluation_origin_version": 1
+          },
+          {
+            "id": "9188910a-4f35-470e-8c2e-36fffb546260",
+            "etag": null,
+            "kind": "body_checkin_photo",
+            "status": "processed",
+            "user_id": "b3b01000-0000-4000-8000-000000004150",
+            "mime_type": "image/jpeg",
+            "created_at": "2026-10-26T16:01:00.652789Z",
+            "deleted_at": null,
+            "uploaded_at": "2026-10-26T16:01:00.740957Z",
+            "failure_code": null,
+            "processed_at": "2026-10-26T16:01:01.022524Z",
+            "failure_stage": null,
+            "retention_until": "2026-10-26T16:02:00.740957Z",
+            "actual_size_bytes": "1200",
+            "declared_size_bytes": "1200",
+            "processing_request_id": "0ac1fe7d0969226f167adb3f566a36f07ce2150de06d6b25bc794b479423f126",
+            "reevaluation_origin_version": 1
+          }
+        ],
+        "sources": [
+          {
+            "pose": "front",
+            "user_id": "b3b01000-0000-4000-8000-000000004150",
+            "cycle_id": "6757f12f-1d9f-4dde-8d73-e4351a6c7e28",
+            "selected_at": "2026-10-26T16:00:59.918091Z",
+            "source_revision": "2",
+            "selected_asset_id": "89ebf6b7-fd66-4d68-bc71-c71f81c985a6",
+            "signup_generation": "4d2657eb-0521-4963-8c2b-7933da0b25ed",
+            "requested_asset_id": "89ebf6b7-fd66-4d68-bc71-c71f81c985a6",
+            "consent_acceptance_id": "cc11ba4c-b1e2-4483-a692-44d101fdbd59"
+          },
+          {
+            "pose": "side",
+            "user_id": "b3b01000-0000-4000-8000-000000004150",
+            "cycle_id": "6757f12f-1d9f-4dde-8d73-e4351a6c7e28",
+            "selected_at": "2026-10-26T16:01:00.341369Z",
+            "source_revision": "2",
+            "selected_asset_id": "5d31cc64-7dda-4cd7-ad67-f0b2c994b652",
+            "signup_generation": "4d2657eb-0521-4963-8c2b-7933da0b25ed",
+            "requested_asset_id": "5d31cc64-7dda-4cd7-ad67-f0b2c994b652",
+            "consent_acceptance_id": "cc11ba4c-b1e2-4483-a692-44d101fdbd59"
+          },
+          {
+            "pose": "back",
+            "user_id": "b3b01000-0000-4000-8000-000000004150",
+            "cycle_id": "6757f12f-1d9f-4dde-8d73-e4351a6c7e28",
+            "selected_at": "2026-10-26T16:01:00.740957Z",
+            "source_revision": "2",
+            "selected_asset_id": "9188910a-4f35-470e-8c2e-36fffb546260",
+            "signup_generation": "4d2657eb-0521-4963-8c2b-7933da0b25ed",
+            "requested_asset_id": "9188910a-4f35-470e-8c2e-36fffb546260",
+            "consent_acceptance_id": "cc11ba4c-b1e2-4483-a692-44d101fdbd59"
+          }
+        ],
+        "tickets": [
+          {
+            "user_id": "b3b01000-0000-4000-8000-000000004150",
+            "asset_id": "5d31cc64-7dda-4cd7-ad67-f0b2c994b652",
+            "cycle_id": "6757f12f-1d9f-4dde-8d73-e4351a6c7e28",
+            "ticket_id": "9e8e6d32-7ca3-4851-8ede-d2f7d5e71e45",
+            "prepared_at": "2026-10-26T16:01:00.276071Z",
+            "registered_at": "2026-10-26T16:01:00.287040Z",
+            "signup_generation": "4d2657eb-0521-4963-8c2b-7933da0b25ed",
+            "provider_expires_at": "2026-10-26T18:01:00.286992Z",
+            "consent_acceptance_id": "cc11ba4c-b1e2-4483-a692-44d101fdbd59"
+          },
+          {
+            "user_id": "b3b01000-0000-4000-8000-000000004150",
+            "asset_id": "89ebf6b7-fd66-4d68-bc71-c71f81c985a6",
+            "cycle_id": "6757f12f-1d9f-4dde-8d73-e4351a6c7e28",
+            "ticket_id": "8d46bf00-e4bf-4304-9d0a-a97bd30483db",
+            "prepared_at": "2026-10-26T16:00:59.840378Z",
+            "registered_at": "2026-10-26T16:00:59.853067Z",
+            "signup_generation": "4d2657eb-0521-4963-8c2b-7933da0b25ed",
+            "provider_expires_at": "2026-10-26T18:00:59.852956Z",
+            "consent_acceptance_id": "cc11ba4c-b1e2-4483-a692-44d101fdbd59"
+          },
+          {
+            "user_id": "b3b01000-0000-4000-8000-000000004150",
+            "asset_id": "9188910a-4f35-470e-8c2e-36fffb546260",
+            "cycle_id": "6757f12f-1d9f-4dde-8d73-e4351a6c7e28",
+            "ticket_id": "7e6478f7-8d43-442c-afa8-36523b4ef651",
+            "prepared_at": "2026-10-26T16:01:00.675525Z",
+            "registered_at": "2026-10-26T16:01:00.686543Z",
+            "signup_generation": "4d2657eb-0521-4963-8c2b-7933da0b25ed",
+            "provider_expires_at": "2026-10-26T18:01:00.686487Z",
+            "consent_acceptance_id": "cc11ba4c-b1e2-4483-a692-44d101fdbd59"
+          }
+        ],
+        "attempts": [
+          {
+            "pose": "side",
+            "result": {
+              "type": "body",
+              "view": "side",
+              "bf_percent_estimate": 24
+            },
+            "status": "succeeded",
+            "user_id": "b3b01000-0000-4000-8000-000000004150",
+            "asset_id": "5d31cc64-7dda-4cd7-ad67-f0b2c994b652",
+            "cycle_id": "6757f12f-1d9f-4dde-8d73-e4351a6c7e28",
+            "claimed_at": "2026-10-26T16:01:00.455940Z",
+            "request_id": "018ada83-94f5-4cb6-b81a-646f0224b27f",
+            "finished_at": "2026-10-26T16:01:00.630593Z",
+            "lease_until": "2026-10-26T16:02:00.341369Z",
+            "failure_code": null,
+            "source_revision": "2",
+            "signup_generation": "4d2657eb-0521-4963-8c2b-7933da0b25ed",
+            "provider_started_at": "2026-10-26T16:01:00.544021Z",
+            "consent_acceptance_id": "cc11ba4c-b1e2-4483-a692-44d101fdbd59",
+            "processing_request_id": "868a05f82207a47735467a56388ed32541a255d88c5880c4dc3b6f02d2bb920a",
+            "provider_authorized_until": "2026-10-26T16:02:00.341369Z"
+          },
+          {
+            "pose": "front",
+            "result": {
+              "type": "body",
+              "view": "front",
+              "bf_percent_estimate": 18
+            },
+            "status": "succeeded",
+            "user_id": "b3b01000-0000-4000-8000-000000004150",
+            "asset_id": "89ebf6b7-fd66-4d68-bc71-c71f81c985a6",
+            "cycle_id": "6757f12f-1d9f-4dde-8d73-e4351a6c7e28",
+            "claimed_at": "2026-10-26T16:01:00.032485Z",
+            "request_id": "62475b00-cc90-489e-b81e-27fa6ba9b5dd",
+            "finished_at": "2026-10-26T16:01:00.231027Z",
+            "lease_until": "2026-10-26T16:01:59.918091Z",
+            "failure_code": null,
+            "source_revision": "2",
+            "signup_generation": "4d2657eb-0521-4963-8c2b-7933da0b25ed",
+            "provider_started_at": "2026-10-26T16:01:00.144227Z",
+            "consent_acceptance_id": "cc11ba4c-b1e2-4483-a692-44d101fdbd59",
+            "processing_request_id": "6750f4c88c2c2ce132e13c7a6bf7b558376f26ced2a589723cec1bb0659f9b21",
+            "provider_authorized_until": "2026-10-26T16:01:59.918091Z"
+          },
+          {
+            "pose": "back",
+            "result": {
+              "type": "body",
+              "view": "back",
+              "bf_percent_estimate": 30
+            },
+            "status": "succeeded",
+            "user_id": "b3b01000-0000-4000-8000-000000004150",
+            "asset_id": "9188910a-4f35-470e-8c2e-36fffb546260",
+            "cycle_id": "6757f12f-1d9f-4dde-8d73-e4351a6c7e28",
+            "claimed_at": "2026-10-26T16:01:00.848941Z",
+            "request_id": "e70c28f7-5b1b-4959-befc-77dbf3c3ed54",
+            "finished_at": "2026-10-26T16:01:01.022524Z",
+            "lease_until": "2026-10-26T16:02:00.740957Z",
+            "failure_code": null,
+            "source_revision": "2",
+            "signup_generation": "4d2657eb-0521-4963-8c2b-7933da0b25ed",
+            "provider_started_at": "2026-10-26T16:01:00.935373Z",
+            "consent_acceptance_id": "cc11ba4c-b1e2-4483-a692-44d101fdbd59",
+            "processing_request_id": "0ac1fe7d0969226f167adb3f566a36f07ce2150de06d6b25bc794b479423f126",
+            "provider_authorized_until": "2026-10-26T16:02:00.740957Z"
+          }
+        ],
+        "consents": [
+          {
+            "locale": "pt-BR",
+            "user_id": "b3b01000-0000-4000-8000-000000004150",
+            "version": "asset-local-1",
+            "cycle_id": "6757f12f-1d9f-4dde-8d73-e4351a6c7e28",
+            "body_hash": "469955644e463dbcca7d30c02c3367e3264a969b47ba9817c434f94c069b6469",
+            "revoked_at": null,
+            "accepted_at": "2026-10-26T16:00:59.780034Z",
+            "document_id": "b3b01000-0000-4000-8000-000000000501",
+            "document_key": "body_photo_reevaluation_consent",
+            "acceptance_id": "cc11ba4c-b1e2-4483-a692-44d101fdbd59",
+            "revoked_reason": null,
+            "last_activity_at": "2026-10-26T16:01:00.740957Z",
+            "signup_generation": "4d2657eb-0521-4963-8c2b-7933da0b25ed",
+            "idle_timeout_seconds": 60
+          }
+        ],
+        "policies": [
+          {
+            "locale": "pt-BR",
+            "enabled": true,
+            "version": "asset-local-1",
+            "body_hash": "469955644e463dbcca7d30c02c3367e3264a969b47ba9817c434f94c069b6469",
+            "document_id": "b3b01000-0000-4000-8000-000000000501",
+            "document_key": "body_photo_reevaluation_consent",
+            "idle_timeout_seconds": 60
+          }
+        ],
+        "documents": [
+          {
+            "id": "b3b01000-0000-4000-8000-000000000501",
+            "locale": "pt-BR",
+            "version": "asset-local-1",
+            "body_hash": "469955644e463dbcca7d30c02c3367e3264a969b47ba9817c434f94c069b6469",
+            "created_at": "2026-10-26T16:00:59.710406Z",
+            "document_key": "body_photo_reevaluation_consent",
+            "required_from": "2026-10-20T00:00:00.000000Z"
+          }
+        ],
+        "allocations": [
+          {
+            "pose": "side",
+            "user_id": "b3b01000-0000-4000-8000-000000004150",
+            "asset_id": "5d31cc64-7dda-4cd7-ad67-f0b2c994b652",
+            "cycle_id": "6757f12f-1d9f-4dde-8d73-e4351a6c7e28",
+            "created_at": "2026-10-26T16:01:00.253609Z",
+            "request_key": "14b91721-a29b-49cd-b7df-231e550918b1",
+            "invalidated_at": null,
+            "origin_version": 1,
+            "request_revision": "3",
+            "signup_generation": "4d2657eb-0521-4963-8c2b-7933da0b25ed",
+            "invalidated_reason": null,
+            "consent_acceptance_id": "cc11ba4c-b1e2-4483-a692-44d101fdbd59"
+          },
+          {
+            "pose": "front",
+            "user_id": "b3b01000-0000-4000-8000-000000004150",
+            "asset_id": "89ebf6b7-fd66-4d68-bc71-c71f81c985a6",
+            "cycle_id": "6757f12f-1d9f-4dde-8d73-e4351a6c7e28",
+            "created_at": "2026-10-26T16:00:59.810444Z",
+            "request_key": "d788ddab-bb34-46b6-8e24-89b567e45f4f",
+            "invalidated_at": null,
+            "origin_version": 1,
+            "request_revision": "2",
+            "signup_generation": "4d2657eb-0521-4963-8c2b-7933da0b25ed",
+            "invalidated_reason": null,
+            "consent_acceptance_id": "cc11ba4c-b1e2-4483-a692-44d101fdbd59"
+          },
+          {
+            "pose": "back",
+            "user_id": "b3b01000-0000-4000-8000-000000004150",
+            "asset_id": "9188910a-4f35-470e-8c2e-36fffb546260",
+            "cycle_id": "6757f12f-1d9f-4dde-8d73-e4351a6c7e28",
+            "created_at": "2026-10-26T16:01:00.652789Z",
+            "request_key": "33f1d806-f999-45a6-861e-b6e01c838dfb",
+            "invalidated_at": null,
+            "origin_version": 1,
+            "request_revision": "4",
+            "signup_generation": "4d2657eb-0521-4963-8c2b-7933da0b25ed",
+            "invalidated_reason": null,
+            "consent_acceptance_id": "cc11ba4c-b1e2-4483-a692-44d101fdbd59"
+          }
+        ],
+        "consent_state": {
+          "version": 1,
+          "acceptance": {
+            "locale": "pt-BR",
+            "version": "asset-local-1",
+            "body_hash": "469955644e463dbcca7d30c02c3367e3264a969b47ba9817c434f94c069b6469",
+            "accepted_at": "2026-10-26T16:00:59.780034Z",
+            "document_id": "b3b01000-0000-4000-8000-000000000501",
+            "document_key": "body_photo_reevaluation_consent",
+            "acceptance_id": "cc11ba4c-b1e2-4483-a692-44d101fdbd59",
+            "idle_expires_at": "2026-10-26T16:02:00.740957Z"
+          },
+          "availability": "available",
+          "cycle_revision": "5",
+          "unavailable_reason": null
+        }
+      },
+      "calculation_date": "2026-10-26",
+      "calculation_config": [
+        {
+          "key": "calc.activity_factors",
+          "value": {
+            "alto": 1.725,
+            "leve": 1.375,
+            "atleta": 1.9,
+            "moderado": 1.55,
+            "sedentario": 1.2
+          },
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.badges",
+          "value": [
+            {
+              "key": "Primeira Semana",
+              "type": "streak",
+              "threshold": 7
+            },
+            {
+              "key": "Mês de Ferro",
+              "type": "streak",
+              "threshold": 30
+            },
+            {
+              "key": "Atleta Real",
+              "type": "streak",
+              "threshold": 90
+            },
+            {
+              "key": "Primeiro Bloco",
+              "type": "blocks",
+              "threshold": 1
+            },
+            {
+              "key": "XP Master",
+              "type": "xp",
+              "threshold": 1000
+            },
+            {
+              "key": "Elite",
+              "type": "xp",
+              "threshold": 3500
+            }
+          ],
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.bf_goal_rules",
+          "value": [
+            {
+              "above": 30,
+              "subtract": 10
+            },
+            {
+              "above": 20,
+              "target": 20
+            },
+            {
+              "above": 18,
+              "target": 18
+            },
+            {
+              "above": 15,
+              "target": 15
+            },
+            {
+              "above": 0,
+              "target": 10
+            }
+          ],
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.bf_limits",
+          "value": {
+            "feminino": {
+              "gain": 27,
+              "recomp": 28
+            },
+            "masculino": {
+              "gain": 19,
+              "recomp": 20
+            }
+          },
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.bmr_katch",
+          "value": {
+            "base": 370,
+            "lbm_coef": 21.6
+          },
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.bmr_mifflin",
+          "value": {
+            "age_coef": 5,
+            "height_coef": 6.25,
+            "male_offset": 5,
+            "weight_coef": 10,
+            "female_offset": -161
+          },
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.imc_goal_steps",
+          "value": [30, 25, 23, 22, 21],
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.imc_limit_recomp",
+          "value": 25,
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.kcal_block",
+          "value": 7700,
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.levels",
+          "value": [
+            {
+              "max": 99,
+              "min": 0,
+              "name": "Início",
+              "level": 1
+            },
+            {
+              "max": 299,
+              "min": 100,
+              "name": "Constância",
+              "level": 2
+            },
+            {
+              "max": 599,
+              "min": 300,
+              "name": "Foco",
+              "level": 3
+            },
+            {
+              "max": 999,
+              "min": 600,
+              "name": "Disciplina",
+              "level": 4
+            },
+            {
+              "max": 1499,
+              "min": 1000,
+              "name": "Performance",
+              "level": 5
+            },
+            {
+              "max": 2199,
+              "min": 1500,
+              "name": "Domínio",
+              "level": 6
+            },
+            {
+              "max": 2999,
+              "min": 2200,
+              "name": "Elite MPP",
+              "level": 7
+            },
+            {
+              "max": null,
+              "min": 3000,
+              "name": "Lenda MPP",
+              "level": 8
+            }
+          ],
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.protein_factors",
+          "value": {
+            "muita": 1.6,
+            "pouca": 1.8,
+            "moderada": 1.8,
+            "training_low": 1.7,
+            "optimal_mid_training": 1.9,
+            "optimal_high_training": 2.0
+          },
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.sleep_min_hours",
+          "value": 6.5,
+          "updated_at": "2026-10-24T13:14:45.998887Z"
+        },
+        {
+          "key": "calc.training_min",
+          "value": 3,
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.xp_rules",
+          "value": {
+            "base": 10,
+            "protein_bonus": 5,
+            "training_bonus": 5,
+            "protein_threshold_g": 100
+          },
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        }
+      ],
+      "protocol_authority": {
+        "episode": null,
+        "day_events": [],
+        "preference": null,
+        "phase_origin": {
+          "kind": "assigned"
+        },
+        "signup_origin": null,
+        "body_fat_origin": null,
+        "daily_application": null,
+        "body_fat_candidate": {
+          "sources": [
+            {
+              "pose": "front",
+              "asset_id": "89ebf6b7-fd66-4d68-bc71-c71f81c985a6",
+              "attempt_id": "62475b00-cc90-489e-b81e-27fa6ba9b5dd",
+              "bf_percent": 18,
+              "processed_at": "2026-10-26T16:01:00.231027Z",
+              "source_revision": "2",
+              "processing_request_id": "6750f4c88c2c2ce132e13c7a6bf7b558376f26ced2a589723cec1bb0659f9b21"
+            },
+            {
+              "pose": "side",
+              "asset_id": "5d31cc64-7dda-4cd7-ad67-f0b2c994b652",
+              "attempt_id": "018ada83-94f5-4cb6-b81a-646f0224b27f",
+              "bf_percent": 24,
+              "processed_at": "2026-10-26T16:01:00.630593Z",
+              "source_revision": "2",
+              "processing_request_id": "868a05f82207a47735467a56388ed32541a255d88c5880c4dc3b6f02d2bb920a"
+            },
+            {
+              "pose": "back",
+              "asset_id": "9188910a-4f35-470e-8c2e-36fffb546260",
+              "attempt_id": "e70c28f7-5b1b-4959-befc-77dbf3c3ed54",
+              "bf_percent": 30,
+              "processed_at": "2026-10-26T16:01:01.022524Z",
+              "source_revision": "2",
+              "processing_request_id": "0ac1fe7d0969226f167adb3f566a36f07ce2150de06d6b25bc794b479423f126"
+            }
+          ],
+          "user_id": "b3b01000-0000-4000-8000-000000004150",
+          "version": 1,
+          "cycle_id": "6757f12f-1d9f-4dde-8d73-e4351a6c7e28",
+          "source_hash": "53d2a2eea14c1fdcda2057846bf4498d7bd06f7055dd08018f6424b811aa179d",
+          "availability": "available",
+          "mean_percent": 24.0,
+          "signup_epoch": "fc85837c-522b-4670-b6d3-fa3283be2375",
+          "acceptance_id": "cc11ba4c-b1e2-4483-a692-44d101fdbd59",
+          "cycle_revision": "5",
+          "mean_hundredths": 2400,
+          "signup_generation": "4d2657eb-0521-4963-8c2b-7933da0b25ed",
+          "unavailable_reason": null
+        },
+        "prior_regular_reviews": [],
+        "signup_body_fat_origin": null,
+        "routine_reviews_since_regular": []
+      }
+    },
+    "user_id": "b3b01000-0000-4000-8000-000000004150",
+    "version": 1,
+    "cycle_id": "6757f12f-1d9f-4dde-8d73-e4351a6c7e28",
+    "observed_at": "2026-10-26T16:01:01.060000Z",
+    "review_kind": "REGULAR",
+    "valid_until": "2026-10-26T16:02:00.740957Z",
+    "context_hash": "ae8e265e7eed68a4ad5ca867046452c6a06c5128c80938bc1a76fbf3d3ec32a6"
+  },
+  "receipt": {
+    "form": {
+      "kind": "REGULAR",
+      "phase": "recomposicao",
+      "answers": {
+        "energy": "boa",
+        "hunger": "moderada",
+        "activity": null,
+        "weightKg": 84,
+        "adherence": "bem_consistente",
+        "healthCheck": {
+          "kind": "none"
+        },
+        "fatPerception": null,
+        "strengthSessions": 4,
+        "difficultToMaintain": null,
+        "strengthProgression": null,
+        "professionalConversationConfirmed": null
+      },
+      "version": 1,
+      "preference": null,
+      "activityPurpose": "normal"
+    },
+    "intent": {
+      "bodyFat": {
+        "confirmed": true,
+        "sourceHash": "53d2a2eea14c1fdcda2057846bf4498d7bd06f7055dd08018f6424b811aa179d",
+        "meanHundredths": 2400
+      },
+      "principalConfirmed": false
+    },
+    "result": {
+      "kind": "REGULAR",
+      "status": "confirmed",
+      "targets": {
+        "afterKcal": 1599,
+        "beforeKcal": 1700,
+        "afterProtein": 126,
+        "beforeProtein": 120,
+        "formulaAfterKcal": 1599
+      },
+      "user_id": "b3b01000-0000-4000-8000-000000004150",
+      "version": 1,
+      "cycle_id": "6757f12f-1d9f-4dde-8d73-e4351a6c7e28",
+      "principal": "keep",
+      "review_id": "9e5e0ba5-a31d-4fb1-be3b-5c01ed99f9aa",
+      "preference": {
+        "value": null,
+        "status": "unchanged"
+      },
+      "completed_at": "2026-10-26T16:01:01.398344Z",
+      "next_due_date": "2026-11-09",
+      "cycle_revision": "7",
+      "safety_revision": "0",
+      "body_fat_percent": 24.0
+    },
+    "user_id": "b3b01000-0000-4000-8000-000000004150",
+    "proposal": {
+      "episode": {
+        "schedule": null,
+        "ledgerSteps": null,
+        "difficultyCount": 0,
+        "maintenanceSince": null
+      },
+      "profile": {
+        "hunger_level": "moderada",
+        "deficit_level": 500,
+        "activity_level": "moderado",
+        "current_protocol": "recomposicao",
+        "training_frequency": 4
+      },
+      "targets": {
+        "afterKcal": 1599,
+        "beforeKcal": 1700,
+        "afterProtein": 126,
+        "beforeProtein": 120,
+        "formulaAfterKcal": 1599
+      },
+      "version": 1,
+      "clearHold": false,
+      "principal": "keep"
+    },
+    "review_no": "1",
+    "preview_id": "9e5e0ba5-a31d-4fb1-be3b-5c01ed99f9aa",
+    "operation_key": "4e22cd8e-6d24-4a30-8fdf-26b48b7c8975",
+    "operation_matched": true
+  },
+  "prepared": {
+    "preview": {
+      "user_id": "b3b01000-0000-4000-8000-000000004150",
+      "version": 1,
+      "cycle_id": "6757f12f-1d9f-4dde-8d73-e4351a6c7e28",
+      "created_at": "2026-10-26T16:01:01.236855Z",
+      "preview_id": "9e5e0ba5-a31d-4fb1-be3b-5c01ed99f9aa",
+      "review_kind": "REGULAR",
+      "valid_until": "2026-10-26T16:02:00.740957Z",
+      "context_hash": "ae8e265e7eed68a4ad5ca867046452c6a06c5128c80938bc1a76fbf3d3ec32a6",
+      "rule_version": "clinical-v1"
+    },
+    "user_id": "b3b01000-0000-4000-8000-000000004150",
+    "operation_key": "7d9adf12-861c-4bf6-8ce5-642bfcf32545"
+  },
+  "confirmed": {
+    "result": {
+      "kind": "REGULAR",
+      "status": "confirmed",
+      "targets": {
+        "afterKcal": 1599,
+        "beforeKcal": 1700,
+        "afterProtein": 126,
+        "beforeProtein": 120,
+        "formulaAfterKcal": 1599
+      },
+      "user_id": "b3b01000-0000-4000-8000-000000004150",
+      "version": 1,
+      "cycle_id": "6757f12f-1d9f-4dde-8d73-e4351a6c7e28",
+      "principal": "keep",
+      "review_id": "9e5e0ba5-a31d-4fb1-be3b-5c01ed99f9aa",
+      "preference": {
+        "value": null,
+        "status": "unchanged"
+      },
+      "completed_at": "2026-10-26T16:01:01.398344Z",
+      "next_due_date": "2026-11-09",
+      "cycle_revision": "7",
+      "safety_revision": "0",
+      "body_fat_percent": 24.0
+    },
+    "user_id": "b3b01000-0000-4000-8000-000000004150",
+    "preview_id": "9e5e0ba5-a31d-4fb1-be3b-5c01ed99f9aa",
+    "operation_key": "4e22cd8e-6d24-4a30-8fdf-26b48b7c8975"
+  }
+}

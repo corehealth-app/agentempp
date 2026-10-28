@@ -1,15 +1,20 @@
 /** C3/C4 presentation copies. Never derives an objective from historical energy. */
+
 import { normalizeProtocol, type Protocol } from '@mpp/core'
+import { type FlowClinicalPolicy, readFlowClinicalPolicy } from './flow-current-clinical.js'
 import { flowStatusExplanation } from './flow-status-presentation.js'
 
 export interface FlowPresentationObjective {
   currentProtocol: Protocol | null
+  clinicalPolicy?: FlowClinicalPolicy
 }
 
 export function flowBlockExplanation(
   objective: FlowPresentationObjective,
   locale: string | null,
 ): string {
+  if (objective.clinicalPolicy && readFlowClinicalPolicy(objective.clinicalPolicy).hide.block)
+    return ''
   if (!flowStatusExplanation(objective.currentProtocol)) return ''
   return locale?.startsWith('en')
     ? 'The 7,700 Block is displayed only for body recomposition.'
@@ -17,6 +22,35 @@ export function flowBlockExplanation(
 }
 
 const normalize = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+/** Prescriptions need neither a "target" label nor an imperative reduction.
+ * Match advice/purpose separately from factual food energy, past intake and
+ * preserved target/balance labels. This guard also projects stored replies. */
+function suspendedLossPrescription(statement: string): boolean {
+  const value = normalize(statement.replace(/[_*~`]/gu, ''))
+  const directive =
+    /\b(?:reduza|reduzir|diminua|diminuir|corte|cortar|faca|fazer|adote|adotar|estabeleca|busque|procure|tente|mire|almeje|acelere|consuma|consumir|coma|comer|ingira|ingerir|limite|limitar|deve|deveria|recomendo|aconselho|mantenha|manter|reduce|cut|lower|maintain|keep|create|achieve|establish|adopt|aim|try|consume|eat|limit|should|must|recommend|recommended)\b/u.test(
+      value,
+    )
+  const intakeOrDeficit =
+    /\b(?:kcal|calorias?|calories?|ingestao|intake|comida|food|porcoes|portions|deficit|shortfall)\b|\b(?:balanco (?:energetico )?negativo|negative energy balance)\b/u.test(
+      value,
+    )
+  const lossGoal =
+    /\b(?:emagrec\p{L}*|perd(?:a|er) (?:de )?(?:peso|gordura)|secar|lose weight|weight loss|slim down|get leaner|reduce body fat|burn fat)\b/u.test(
+      value,
+    )
+  const purpose =
+    /\b(?:para|to)\s+(?:emagrec\p{L}*|perder (?:peso|gordura)|secar|lose weight|slim down|get leaner|reduce body fat|burn fat)\b/u.test(
+      value,
+    )
+  const promisedLoss = lossGoal && /\b(?:vai|ira|ajuda|ajudara|will|can|help|helps)\b/u.test(value)
+  return (
+    (directive && (intakeOrDeficit || lossGoal)) ||
+    purpose ||
+    promisedLoss ||
+    /\b(?:coma menos|eat less|emagreca|lose weight)\b/u.test(value)
+  )
+}
 const blockLabel = /\b(?:bloco(?:\(s\)|s)?(?:\s+de)?\s*7[.,]?700|7[.,]?700[ -]*blocks?)\b/u
 const budgetLabel =
   /\b(?:(?:orcamento|budget)(?:\s+(?:de|para|of|for))?\s+(?:14\s*(?:dias?|days?|d)|quatorze dias)|14[ -]*(?:dias?|days?|d)[ -]*(?:budget|orcamento))\b/u
@@ -62,6 +96,10 @@ export function projectFlowObjectiveText(
   replacement: string,
 ): Projection {
   const protocol = normalizeProtocol(objective.currentProtocol)
+  const clinical =
+    objective.clinicalPolicy === undefined
+      ? undefined
+      : readFlowClinicalPolicy(objective.clinicalPolicy)
   let changed = false
   let removedBlock = false
   const protectedSpans: string[] = []
@@ -69,9 +107,31 @@ export function projectFlowObjectiveText(
   while (text.includes(marker)) marker += '\uE000'
   const restricted = (statement: string): boolean => {
     const value = normalize(statement)
-    const block = protocol !== 'recomposicao' && blockLabel.test(value) && !isBlockPolicy(statement)
+    const block =
+      (clinical?.hide.block || protocol !== 'recomposicao') &&
+      blockLabel.test(value) &&
+      !isBlockPolicy(statement)
     const budget = hasBudget(statement)
-    return block || budget
+    const calories =
+      clinical?.hide.calories &&
+      /\b(?:meta(?:s)?\s+(?:caloric[ao]s?|de\s+calorias|(?:de\s+)?hoje)|(?:sua|minha|tua)\s+meta|(?:your|my)\s+(?:calorie\s+)?target|calorie\s+target|daily\s+(?:calorie\s+)?target)\b|\b(?:meta|target)\b[^.;!?]*\bkcal\b|\b(?:restam|restante|remaining|left)\b[^.;!?]*(?:comida|comer|food|eat|kcal)/u.test(
+        value,
+      )
+    const protein =
+      clinical?.hide.protein &&
+      /\b(?:meta|alvo|target)\b[^.;!?]*(?:proteina|protein)|\bprotein\s+target\b/u.test(value)
+    const balance =
+      clinical?.hide.balance &&
+      /\b(?:balanco|saldo)(?:\s+(?:calorico|energetico|do dia|de hoje|diario))?\b|\b(?:day|daily|calorie|energy)\s+balance\b/u.test(
+        value,
+      )
+    const phase =
+      clinical?.hide.objective &&
+      /\b(?:protocolo atual|fase atual|seu objetivo|sua fase|current protocol|current phase|your objective|your phase)\b/u.test(
+        value,
+      )
+    const loss = clinical?.pause_weight_loss_guidance && suspendedLossPrescription(statement)
+    return block || budget || !!calories || !!protein || !!balance || !!phase || !!loss
   }
   const remove = (statement: string): string => {
     changed = true
@@ -118,6 +178,8 @@ export function projectFlowObjectiveText(
         /^(?:[+−-]?\d|(?:estimad[oa]|estimated|approximately|cerca de|about)\b)/iu.test(
           right.replace(/^[\s*_~`(]+/u, ''),
         )
+      // A clinical label also owns nonnumeric values such as 'déficit de…' or a phase name.
+      if (clinical && match[0].startsWith(':') && restricted(left)) continue
       // Labels and their values must disappear together, including the DAM sublabel.
       if (
         (match[0].startsWith(':') || /[|·—–-]/u.test(match[0])) &&

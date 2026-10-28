@@ -2353,7 +2353,7 @@ describe('where the grant is called from', () => {
     })
   }
 
-  it('the legacy partial onboarding POST does not complete onboarding and asks nothing', async () => {
+  it('the retired partial onboarding POST grants nothing and claims no ledger row', async () => {
     const log = logs()
     switchOn()
     const db = new EvaluationMemoryDb().addAccount()
@@ -2369,14 +2369,13 @@ describe('where the grant is called from', () => {
     }
     const dependencies: OnboardingRouteDependencies = values
 
-    const response = await handleOnboardingPost(context(db, { height_cm: 180 }), dependencies)
+    await expect(
+      handleOnboardingPost(context(db, { height_cm: 180 }), dependencies),
+    ).rejects.toMatchObject({ status: 409, code: 'onboarding_client_update_required' })
 
     expect(values.finalizeSignupBodyPhotos).not.toHaveBeenCalled()
-    expect(response.status).toBe(200)
-    expect(db.operations).toEqual([
-      'rpc:claim_mobile_api_request',
-      'rpc:complete_mobile_api_request',
-    ])
+    expect(values.saveLegacyOnboarding).not.toHaveBeenCalled()
+    expect(db.operations).toEqual([])
     expect(db.events).toEqual([])
     expect(log.info).not.toHaveBeenCalled()
   })

@@ -7,6 +7,7 @@ import { processMessage } from '@mpp/agent'
 import type { ServiceClient } from '@mpp/db'
 import { createServiceClient } from '@mpp/db'
 import { OpenRouterEmbeddings, OpenRouterLLM } from '@mpp/providers'
+import { assertClinicalStagingWorkerTarget } from './clinical-staging-worker-target.js'
 
 export interface WorkerDeps {
   supabase: ServiceClient
@@ -15,6 +16,8 @@ export interface WorkerDeps {
 }
 
 export function createWorkerSupabase(): ServiceClient {
+  if (process.env.INNGEST_FUNCTION_SET === 'media-clinical-staging')
+    assertClinicalStagingWorkerTarget()
   const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 

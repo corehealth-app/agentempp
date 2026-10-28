@@ -51,8 +51,14 @@ final class FlowChatModel {
     private(set) var errorMessage: String?
     /// Opening review never confirms the patient's plan.
     private(set) var turnDraft: FlowTurnDraft?
+    private(set) var clinicalPolicy: CurrentClinicalPolicy?
 
     private let provider: any FlowChatProviding
+    private var scopedProvider: (any FlowChatProviding)?
+    private var providerScopeTask: Task<any FlowChatProviding, any Error>?
+    private var isInvalidated = false
+    private var presentationByID: [String: CurrentClinicalPolicy] = [:]
+    private var requiresPresentationRefresh = false
     private let keyProvider: any IdempotencyKeyProviding
     private var generation = 0
     private var conversationID: String?
@@ -88,13 +94,13 @@ final class FlowChatModel {
     }
 
     func load() async {
-        guard !isSending else { return }
+        guard !isInvalidated, !isSending else { return }
         await readHistory(acknowledgedSend: false)
     }
 
     func send() async {
         let text = composer.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !Task.isCancelled, !text.isEmpty, text.count <= 4_000, !isSending else { return }
+        guard !isInvalidated, !Task.isCancelled, !text.isEmpty, text.count <= 4_000, !isSending else { return }
         do {
             let id = UUID()
             keys[id] = try keyProvider.nextKey()
@@ -109,7 +115,7 @@ final class FlowChatModel {
     }
 
     func retry() async {
-        guard !isSending else { return }
+        guard !isInvalidated, !isSending else { return }
         if let retryOutboxID {
             await retry(outboxID: retryOutboxID)
         } else {
@@ -118,7 +124,7 @@ final class FlowChatModel {
     }
 
     func retry(outboxID: UUID) async {
-        guard !isSending,
+        guard !isInvalidated, !isSending,
               outbox.contains(where: { $0.id == outboxID && $0.state == .unconfirmed }) else { return }
         await startSend(outboxID: outboxID)
     }
@@ -142,6 +148,13 @@ final class FlowChatModel {
     }
 
     func invalidate() {
+        isInvalidated = true
+        providerScopeTask?.cancel()
+        providerScopeTask = nil
+        scopedProvider = nil
+        clinicalPolicy = nil
+        presentationByID.removeAll()
+        requiresPresentationRefresh = false
         generation += 1
         cancel()
         messages.removeAll(keepingCapacity: false)
@@ -158,7 +171,7 @@ final class FlowChatModel {
     func consumeTurnDraft() { turnDraft = nil }
 
     private func startSend(outboxID: UUID) async {
-        guard !isSending, !Task.isCancelled,
+        guard !isInvalidated, !isSending, !Task.isCancelled,
               let pending = outbox.first(where: { $0.id == outboxID }),
               let key = keys[outboxID] else { return }
         let sendID = UUID()
@@ -195,7 +208,8 @@ final class FlowChatModel {
             }
         }
         do {
-            let response = try await provider.send(text: pending.text, idempotencyKey: key)
+            let source = try await requestProvider()
+            let response = try await source.send(text: pending.text, idempotencyKey: key)
             try Task.checkCancellation()
             guard activeSendID == sendID, generation == expectedGeneration else { return }
             publish(response, outboxID: pending.id)
@@ -215,47 +229,53 @@ final class FlowChatModel {
         // acknowledged content into a different conversation if that changes.
         if let conversationID, conversationID != response.conversationID {
             acknowledgedTurns.removeAll()
+            presentationByID.removeAll()
             messages.removeAll()
             outbox.removeAll { $0.id != outboxID }
             keys = keys.filter { $0.key == outboxID }
             retryOutboxID = nil
         }
         conversationID = response.conversationID
+        let trusted = acceptPolicy(response.clinicalPolicy, fromHistory: false)
+        let message = officialPresentation(response.message, trusted: trusted)
         if let index = outbox.firstIndex(where: { $0.id == outboxID }) {
             for earlier in outbox[..<index].indices
                 where outbox[earlier].serverReply == nil && outbox[earlier].followingReply == nil {
-                outbox[earlier].followingReply = response.message
+                outbox[earlier].followingReply = message
             }
             outbox[index].state = .accepted
-            outbox[index].serverReply = response.message
+            outbox[index].serverReply = message
         }
         keys.removeValue(forKey: outboxID) // An acknowledged send is never POSTed again.
         // A same-key replay can return the current representation of an ID
         // already read from history. Publish the complete official DTO now,
         // preserving its position among groups with equal timestamps.
-        if let index = messages.firstIndex(where: { $0.id == response.message.id }) {
-            messages[index] = response.message
+        if let index = messages.firstIndex(where: { $0.id == message.id }) {
+            messages[index] = message
         } else {
-            messages.append(response.message)
+            messages.append(message)
         }
         messages = Self.orderedWindow(messages)
-        if let index = acknowledgedTurns.firstIndex(where: { $0.reply.id == response.message.id }) {
-            acknowledgedTurns[index].reply = response.message
+        if let index = acknowledgedTurns.firstIndex(where: { $0.reply.id == message.id }) {
+            acknowledgedTurns[index].reply = message
             if let user = acknowledgedTurns[index].user,
-               user.conversationID != response.message.conversationID
-                || user.requestID != response.message.requestID {
+               user.conversationID != message.conversationID
+                || user.requestID != message.requestID {
                 acknowledgedTurns[index].user = nil
             }
         } else {
-            acknowledgedTurns.append(FlowAcknowledgedTurn(reply: response.message, user: nil))
+            acknowledgedTurns.append(FlowAcknowledgedTurn(reply: message, user: nil))
         }
         pruneAcknowledgedTurns()
         pruneWindowEvictedAcknowledgements()
-        turnDraft = response.draft
+        turnDraft = trusted && !requiresPresentationRefresh
+            ? response.draft.flatMap { draft in
+                clinicalPolicy?.permitsFlowDraft(draft.domain) == false ? nil : draft
+            } : nil
     }
 
     private func readHistory(acknowledgedSend: Bool) async {
-        guard !Task.isCancelled else { return }
+        guard !isInvalidated, !Task.isCancelled else { return }
         readSequence += 1
         let sequence = readSequence
         let expectedGeneration = generation
@@ -265,7 +285,8 @@ final class FlowChatModel {
             if sequence == readSequence { isLoading = false }
         }
         do {
-            let response = try await provider.history(limit: 50)
+            let source = try await requestProvider()
+            let response = try await source.history(limit: 50)
             try Task.checkCancellation()
             guard sequence == readSequence, generation == expectedGeneration else { return }
             reconcile(response)
@@ -274,27 +295,38 @@ final class FlowChatModel {
         } catch {
             guard !Task.isCancelled, sequence == readSequence,
                   generation == expectedGeneration else { return }
+            if clinicalPolicy != nil { suspendClinicalPresentationUntilRefresh() }
             errorMessage = acknowledgedSend
                 ? String(localized: "flow.error.history") : Self.message(for: error)
         }
     }
 
     private func reconcile(_ response: FlowHistoryResponse) {
+        if let current = clinicalPolicy {
+            guard let supplied = response.clinicalPolicy,
+                  supplied.observedAt.value >= current.observedAt.value else {
+                suspendClinicalPresentationUntilRefresh()
+                return
+            }
+        }
         if let conversationID, conversationID != response.conversationID {
             acknowledgedTurns.removeAll()
+            presentationByID.removeAll()
             outbox.removeAll()
             keys.removeAll()
             retryOutboxID = nil
             turnDraft = nil
         }
         conversationID = response.conversationID
-        let ids = Set(response.messages.map(\.id))
+        let trusted = acceptPolicy(response.clinicalPolicy, fromHistory: true)
+        let officialMessages = response.messages.map { officialPresentation($0, trusted: trusted) }
+        let ids = Set(officialMessages.map(\.id))
         for index in acknowledgedTurns.indices {
             let reply = acknowledgedTurns[index].reply
             guard reply.conversationID == response.conversationID,
-                  let officialReply = response.messages.first(where: { $0.id == reply.id }) else { continue }
+                  let officialReply = officialMessages.first(where: { $0.id == reply.id }) else { continue }
             acknowledgedTurns[index].reply = officialReply
-            let users = response.messages.filter {
+            let users = officialMessages.filter {
                 $0.role == .user && $0.conversationID == officialReply.conversationID
                     && $0.requestID == officialReply.requestID
             }
@@ -305,8 +337,8 @@ final class FlowChatModel {
         }
         // A full newer server window has moved an older acknowledged turn
         // beyond the API's 50-message horizon. A short/older GET has not.
-        if response.messages.count >= 50,
-           let oldestInWindow = response.messages.first?.createdAt {
+        if officialMessages.count >= 50,
+           let oldestInWindow = officialMessages.first?.createdAt {
             acknowledgedTurns.removeAll {
                 !ids.contains($0.reply.id) && $0.reply.createdAt < oldestInWindow
             }
@@ -316,7 +348,7 @@ final class FlowChatModel {
             [turn.user, turn.reply].compactMap { $0 }
         }
         var seen: Set<String> = []
-        let candidates = (response.messages + acknowledged)
+        let candidates = (officialMessages + acknowledged)
             .filter { $0.conversationID == response.conversationID && seen.insert($0.id).inserted }
         messages = Self.orderedWindow(candidates)
         outbox.removeAll { pending in
@@ -326,12 +358,95 @@ final class FlowChatModel {
                   !reply.requestID.isEmpty, reply.requestID != "request-unavailable" else { return false }
             // Binding is learned from this POST's reply, not inferred from
             // equal text, idempotency keys, timestamps, or list position.
-            return response.messages.filter {
+            return officialMessages.filter {
                 $0.role == .user && $0.conversationID == reply.conversationID
                     && $0.requestID == reply.requestID
             }.count == 1
         }
         pruneWindowEvictedAcknowledgements()
+    }
+
+    /// A known clinical mutation makes older copies unverified immediately.
+    /// It neither cancels an accepted command nor restores its POST key.
+    func suspendClinicalPresentationUntilRefresh() {
+        guard !isInvalidated else { return }
+        requiresPresentationRefresh = true
+        readSequence += 1
+        isLoading = false
+        presentationByID.removeAll()
+        reprojectRetainedContent(force: true)
+        turnDraft = nil
+    }
+
+    private func requestProvider() async throws -> any FlowChatProviding {
+        guard !isInvalidated else { throw CancellationError() }
+        if let scopedProvider { return scopedProvider }
+        let expectedGeneration = generation
+        let task: Task<any FlowChatProviding, any Error>
+        if let existing = providerScopeTask { task = existing }
+        else {
+            let source = provider, owner = userID
+            task = Task { try await source.scoped(for: owner) }
+            providerScopeTask = task
+        }
+        let scoped = try await task.value
+        try Task.checkCancellation()
+        guard !isInvalidated, generation == expectedGeneration else { throw CancellationError() }
+        scopedProvider = scoped
+        return scoped
+    }
+
+    private func acceptPolicy(_ supplied: CurrentClinicalPolicy?, fromHistory: Bool) -> Bool {
+        var trusted = clinicalPolicy == nil && supplied == nil
+        if let supplied {
+            if clinicalPolicy.map({ supplied.observedAt.value >= $0.observedAt.value }) ?? true {
+                clinicalPolicy = supplied
+                trusted = true
+                if fromHistory { requiresPresentationRefresh = false }
+            }
+        }
+        // Acceptance of a command is independent from current presentation.
+        // An old/missing policy keeps the ACK but cannot certify its guidance.
+        if !trusted, clinicalPolicy != nil { requiresPresentationRefresh = true }
+        reprojectRetainedContent(force: requiresPresentationRefresh)
+        if let draft = turnDraft, clinicalPolicy?.permitsFlowDraft(draft.domain) == false {
+            turnDraft = nil
+        }
+        return trusted
+    }
+
+    private func reprojectRetainedContent(force: Bool) {
+        let old = presentationByID
+        let policy = clinicalPolicy
+        var next = old
+        func projected(_ message: FlowMessage) -> FlowMessage {
+            guard message.role == .assistant else { return message }
+            let needsProtection = force || (policy.map { current in
+                current.restrictsFlowGuidance && old[message.id].map { $0.hasSameFlowPresentation(as: current) } != true
+            } ?? false)
+            guard needsProtection else { return message }
+            if let clinicalPolicy { next[message.id] = clinicalPolicy }
+            return message.withholdingClinicalContent()
+        }
+        messages = messages.map(projected)
+        for index in acknowledgedTurns.indices {
+            acknowledgedTurns[index].reply = projected(acknowledgedTurns[index].reply)
+        }
+        for index in outbox.indices {
+            outbox[index].serverReply = outbox[index].serverReply.map(projected)
+            outbox[index].followingReply = outbox[index].followingReply.map(projected)
+        }
+        presentationByID = next
+    }
+
+    private func officialPresentation(_ message: FlowMessage, trusted: Bool) -> FlowMessage {
+        guard message.role == .assistant else { return message }
+        if requiresPresentationRefresh || (!trusted && clinicalPolicy?.restrictsFlowGuidance == true) {
+            if let clinicalPolicy { presentationByID[message.id] = clinicalPolicy }
+            return message.withholdingClinicalContent()
+        }
+        if let clinicalPolicy, trusted { presentationByID[message.id] = clinicalPolicy }
+        return message
     }
 
     private static func orderedWindow(_ candidates: [FlowMessage]) -> [FlowMessage] {
@@ -374,6 +489,11 @@ final class FlowChatModel {
             }
             return !visibleIDs.contains(reply.id)
         }
+        let retainedIDs = visibleIDs
+            .union(acknowledgedTurns.map { $0.reply.id })
+            .union(outbox.compactMap { $0.serverReply?.id })
+            .union(outbox.compactMap { $0.followingReply?.id })
+        presentationByID = presentationByID.filter { retainedIDs.contains($0.key) }
     }
 
     private static func sortGroupKey(for message: FlowMessage) -> String {

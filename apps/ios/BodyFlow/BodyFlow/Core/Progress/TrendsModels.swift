@@ -11,7 +11,7 @@ struct TrendsDay: Codable, Equatable, Sendable, Identifiable {
     let proteinG: Decimal
     let proteinTarget: Decimal?
     let waterConsumedML: Int
-    let deficitAccumulated: Int
+    let deficitAccumulated: Int?
     let xpEarned: Int
     let dayClosed: Bool
 
@@ -47,6 +47,12 @@ struct TrendsSnapshot: Codable, Equatable, Sendable {
     let days: Int
     let daily: [TrendsDay]
     let weights: [TrendsWeight]
+    var clinicalPolicy: CurrentClinicalPolicy? = nil
+
+    private enum CodingKeys: String, CodingKey {
+        case days, daily, weights
+        case clinicalPolicy = "clinical_policy"
+    }
 
     static func empty(days: Int) -> TrendsSnapshot {
         TrendsSnapshot(days: days, daily: [], weights: [])

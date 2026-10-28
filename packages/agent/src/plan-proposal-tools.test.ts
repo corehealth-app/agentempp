@@ -9,8 +9,8 @@ import {
   mobileFlowSystemPolicy,
   selectPipelineTools,
 } from './pipeline.js'
-import { ALL_TOOLS, propoePlanoDieta, propoePlanoTreino } from './tools.js'
 import type { ToolContext } from './tools.js'
+import { ALL_TOOLS, propoePlanoDieta, propoePlanoTreino } from './tools.js'
 
 const generateTrainingPlan = vi.hoisted(() => vi.fn())
 const saveTrainingPlan = vi.hoisted(() => vi.fn())
@@ -92,26 +92,34 @@ interface Recorded {
   selects: Array<{ table: string; columns: string }>
 }
 
-function makeContext(options: {
-  existingDraft?: { id: string; status: string; payload?: unknown } | null
-  recentEvents?: number
-  /** Events counted per name; overrides `recentEvents` for the names given. */
-  eventsByName?: Record<string, number>
-  openDrafts?: number
-  insertError?: boolean
-  providerMessageId?: string | undefined
-  llm?: unknown
-  rpcError?: boolean
-  /** Columns added to the user_profiles row (what the sign-up stored). */
-  profile?: Record<string, unknown>
-} = {}): { ctx: ToolContext; recorded: Recorded } {
+function makeContext(
+  options: {
+    existingDraft?: { id: string; status: string; payload?: unknown } | null
+    recentEvents?: number
+    /** Events counted per name; overrides `recentEvents` for the names given. */
+    eventsByName?: Record<string, number>
+    openDrafts?: number
+    insertError?: boolean
+    providerMessageId?: string | undefined
+    llm?: unknown
+    rpcError?: boolean
+    /** Columns added to the user_profiles row (what the sign-up stored). */
+    profile?: Record<string, unknown>
+  } = {},
+): { ctx: ToolContext; recorded: Recorded } {
   const recorded: Recorded = { inserts: [], rpcs: [], reads: [], selects: [] }
   const rows: Record<string, unknown> = {
     plan_drafts: options.existingDraft ?? null,
     messages: { id: MESSAGE },
     product_events: Array.from({ length: options.recentEvents ?? 0 }, (_, id) => ({ id })),
     users: { name: 'Pessoa sintética' },
-    user_profiles: { sex: null, birth_date: null, weight_kg: 80, height_cm: 175, ...options.profile },
+    user_profiles: {
+      sex: null,
+      birth_date: null,
+      weight_kg: 80,
+      height_cm: 175,
+      ...options.profile,
+    },
     user_progress: { current_bf_percent: null },
     meal_logs: [{ food_name: 'Arroz' }, { food_name: 'arroz ' }],
   }
@@ -126,10 +134,7 @@ function makeContext(options: {
     }
     query.in = (column: string, values: string[]) => {
       if (table === 'product_events' && column === 'event' && options.eventsByName) {
-        const count = values.reduce(
-          (total, name) => total + (options.eventsByName?.[name] ?? 0),
-          0,
-        )
+        const count = values.reduce((total, name) => total + (options.eventsByName?.[name] ?? 0), 0)
         result.data = Array.from({ length: count }, (_, id) => ({ id }))
       }
       return query
@@ -226,7 +231,9 @@ describe('canal do app: o que o Flow pode chamar', () => {
     expect(confirming).toEqual([])
     // As propostas dizem, na própria descrição, que não são o plano.
     for (const tool of [propoePlanoTreino, propoePlanoDieta]) {
-      expect(tool.description).toMatch(/rascunho: só vira plano quando o paciente\s+confirma no app/)
+      expect(tool.description).toMatch(
+        /rascunho: só vira plano quando o paciente\s+confirma no app/,
+      )
     }
     for (const name of [
       'confirma_plano',
@@ -281,7 +288,9 @@ describe('canal do app: o que o Flow pode chamar', () => {
   it('a política do canal diz que proposta não é plano e que confirmar não é revisão', () => {
     expect(mobileFlowSystemPolicy).toContain('SUGESTÕES')
     expect(mobileFlowSystemPolicy).toMatch(/chame-as sempre de "sugestão",\s+nunca de "proposta"/)
-    expect(mobileFlowSystemPolicy).toMatch(/só\s+passa a valer depois que ele revisa e confirma no app/)
+    expect(mobileFlowSystemPolicy).toMatch(
+      /só\s+passa a valer depois que ele revisa e confirma no app/,
+    )
     expect(mobileFlowSystemPolicy).toMatch(/não é\s+revisão de um profissional/)
     expect(mobileFlowSystemPolicy).toMatch(/medicamentos, suplementos ou doses/)
   })
@@ -320,7 +329,15 @@ describe('propoe_plano_treino', () => {
     expect(String(result.message)).toContain('Revisar sugestão')
     expect(String(result.message)).toContain('EXATAMENTE')
     expect(result.sugestao).toBe(
-      ['seg — inferiores (60 min)', '• Agachamento — 4×8-12, descanso 90 s', '', 'qua — superiores (50 min)', '• Agachamento — 4×8-12, descanso 90 s', '', 'Progressão: subir carga a cada 2 semanas'].join('\n'),
+      [
+        'seg — inferiores (60 min)',
+        '• Agachamento — 4×8-12, descanso 90 s',
+        '',
+        'qua — superiores (50 min)',
+        '• Agachamento — 4×8-12, descanso 90 s',
+        '',
+        'Progressão: subir carga a cada 2 semanas',
+      ].join('\n'),
     )
     expect(recorded.inserts.map((entry) => entry.row.event)).toEqual(['training.plan_proposed'])
   })
@@ -533,7 +550,9 @@ describe('propoe_plano_dieta', () => {
     await propoePlanoTreino.execute(trainingArguments, ctx)
 
     const payload = recorded.rpcs[0]?.params.p_payload as { notes?: string }
-    expect(payload.notes).toBe('Dia de treino de abdômen: coma 30 min antes das 12 repetições pesadas.')
+    expect(payload.notes).toBe(
+      'Dia de treino de abdômen: coma 30 min antes das 12 repetições pesadas.',
+    )
   })
 
   it('respeita o limite de 2 em 2h somando gerações e propostas', async () => {
@@ -660,5 +679,150 @@ describe('audit 2026-10-14: propostas Flow recebem a gordura do cadastro (RC BF-
           'sex, birth_date, weight_kg, height_cm, activity_level, current_protocol, body_fat_percent',
       },
     ])
+  })
+})
+
+describe('current clinical proposal inputs', () => {
+  async function clinical(ctx: ToolContext, revalidate = vi.fn(async () => {})) {
+    const { buildDailyState } = await import('@mpp/core')
+    const today = buildDailyState({
+      localDate: '2026-10-27',
+      generatedAt: '2026-10-27T12:00:00Z',
+      protocol: 'manutencao',
+      calculatedTargets: { calories_target: 2100, protein_target: 120 },
+      snapshot: null,
+      meals: [],
+      workouts: [],
+      pendingRegistrations: [],
+      hydrationTarget: null,
+      routineItems: [],
+      progress: null,
+      mealGap: {
+        expected: [],
+        registered: [],
+        skipped: [],
+        open: [],
+        reliable: false,
+        activeDays: 0,
+      },
+    })
+    const value = {
+      version: 1 as const,
+      locale: 'pt-BR',
+      timezone: 'America/Sao_Paulo',
+      policy: {
+        version: 1 as const,
+        observed_at: '2026-10-27T12:00:00Z',
+        assessment: 'complete' as const,
+        recording_allowed: true,
+        pause_weight_loss_guidance: false,
+        professional_assessment_recommended: false,
+        phase_selection_pending: false,
+        target_source: 'assigned_phase',
+        hide: { objective: false, calories: false, protein: false, balance: false, block: false },
+      },
+      today,
+      profile: {
+        name: 'CURRENT',
+        sex: 'masculino' as const,
+        age: 36,
+        weight_kg: 81,
+        height_cm: 181,
+        protocol: 'manutencao' as const,
+        bf_percent: 21,
+      },
+      progress: null,
+    }
+    ctx.assistantIdentity = 'flow'
+    ctx.flowClinical = {
+      read: async () => value,
+      period: async () => {
+        throw new Error('unused')
+      },
+      revalidate,
+      drafts: {
+        lookup: vi.fn(async () => null),
+        create: vi.fn(async (input: { status: string; payload: Record<string, unknown> }) => ({
+          id: DRAFT,
+          status: input.status,
+          payload: input.payload,
+          inserted: true,
+        })),
+      },
+    }
+    return value
+  }
+  it('uses the current closed profile and official targets, without legacy profile/progress reads', async () => {
+    const { ctx, recorded } = makeContext()
+    await clinical(ctx)
+    generateDietPlan.mockResolvedValueOnce({ ...dietPlan, meta_kcal: 2100, meta_protein_g: 120 })
+    await propoePlanoDieta.execute({ horizon: 'daily' }, ctx)
+    expect(generateDietPlan).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({
+        profile: expect.objectContaining({
+          name: 'CURRENT',
+          protocol: 'manutencao',
+          meta_kcal: 2100,
+          meta_protein_g: 120,
+          bf_percent: 21,
+          age: 36,
+        }),
+      }),
+    )
+    expect(
+      recorded.reads.filter((t) => ['users', 'user_profiles', 'user_progress'].includes(t)),
+    ).toEqual([])
+  })
+  it('does not persist a proposal when authority changes during generation', async () => {
+    const { ctx, recorded } = makeContext()
+    let changed = false
+    await clinical(
+      ctx,
+      vi.fn(async () => {
+        if (changed) throw new Error('clinical changed')
+      }),
+    )
+    generateTrainingPlan.mockImplementationOnce(async () => {
+      changed = true
+      return trainingPlan
+    })
+    await expect(propoePlanoTreino.execute(trainingArguments, ctx)).rejects.toThrow(
+      'clinical changed',
+    )
+    expect(recorded.inserts.filter((i) => i.table === 'plan_drafts')).toEqual([])
+    expect(recorded.rpcs).toEqual([])
+  })
+  it('requires guarded callbacks before reading, looking up or generating a current proposal', async () => {
+    const { ctx, recorded } = makeContext()
+    await clinical(ctx)
+    ctx.flowClinical!.drafts = undefined
+    const read = vi.fn(ctx.flowClinical!.read)
+    ctx.flowClinical!.read = read
+    generateDietPlan.mockResolvedValueOnce(dietPlan)
+    const result = await propoePlanoDieta.execute({ horizon: 'daily' }, ctx)
+    expect(result).toMatchObject({ success: false, retry_tool: false })
+    expect(read).not.toHaveBeenCalled()
+    expect(generateDietPlan).not.toHaveBeenCalled()
+    expect(recorded.reads).toEqual([])
+    expect(recorded.rpcs).toEqual([])
+  })
+  it('uses guarded replay and never reads legacy draft payload or calls a generator', async () => {
+    const { ctx, recorded } = makeContext()
+    await clinical(ctx)
+    const lookup = vi.fn(async () => ({ id: DRAFT, status: 'ready_for_review', payload: dietPlan }))
+    const create = vi.fn()
+    Object.assign(ctx.flowClinical!, { drafts: { lookup, create } })
+    const result = await propoePlanoDieta.execute({ horizon: 'daily' }, ctx)
+    expect(lookup).toHaveBeenCalledWith({
+      domain: 'nutrition',
+      requestKey: `${TURN}:propoe_plano_dieta`,
+    })
+    expect(result).toMatchObject({ success: true, draft_id: DRAFT, replayed: true })
+    expect(create).not.toHaveBeenCalled()
+    expect(generateDietPlan).not.toHaveBeenCalled()
+    expect(recorded.reads).toEqual([])
+    expect(recorded.rpcs).toEqual([])
   })
 })

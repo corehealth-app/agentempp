@@ -545,7 +545,7 @@ describe('where the hook is called from', () => {
     })
   }
 
-  it('only the Today handler, Progress and the guarded whole-message Flow status adapter import it', () => {
+  it('only Today, Progress, guarded Flow status and the dormant clinical effect import it', () => {
     const importers = sourceFiles(sourceRoot)
       .filter((path) => !/\.test\.tsx?$/.test(path))
       .filter((path) => readFileSync(path, 'utf8').includes('day-close-on-request'))
@@ -553,6 +553,7 @@ describe('where the hook is called from', () => {
       .sort()
     expect(importers).toEqual([
       'app/api/mobile/v1/progress/route.ts',
+      'lib/mobile-api/clinical-close-days-effect.ts',
       'lib/mobile-api/flow-agent-factory.ts',
       'lib/mobile-api/today-handler.ts',
     ])

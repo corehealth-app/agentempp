@@ -110,6 +110,34 @@ describe('asStoredBodyValue: the value as numeric(5,2) / numeric(4,2) keeps it',
 })
 
 describe('resolveOnboardingEligibility: the decision, with the text of each result', () => {
+  it.each([
+    'pt-BR',
+    'en-US',
+  ] as const)('n39: names the BMI veto with low reported fat (%s)', (locale) => {
+    const result = resolve(man({ locale, height_cm: 160, weight_kg: 64, body_fat_percent: 15 }))
+    expect(result.decision).toBe('choice')
+    expect(result.objective).toBeNull()
+    expect(result.options[1]?.status).toBe('blocked')
+    expect(result.options[1]?.reasons).toEqual(['gain_composition'])
+    expect(result.options[1]?.message.join(' ')).toContain(
+      locale === 'pt-BR' ? 'IMC abaixo de 25' : 'BMI below 25',
+    )
+    expect(result.options[1]?.message.join(' ')).not.toContain(
+      locale === 'pt-BR' ? 'de até 19%' : '19% or less',
+    )
+    expect(result.options[2]?.status).toBe('available')
+  })
+
+  it('n39: both unmet composition criteria are named, followed by training', () => {
+    const gain = resolve(
+      man({ height_cm: 160, weight_kg: 64, body_fat_percent: 19.5, training_frequency: 2 }),
+    ).options[1]
+    expect(gain?.message).toHaveLength(3)
+    expect(gain?.message[0]).toContain('IMC abaixo de 25')
+    expect(gain?.message[1]).toContain('de até 19%')
+    expect(gain?.message[2]).toContain('pelo menos 3 vezes')
+  })
+
   it('man with 20.0% of body fat: placed in recomposição, the notice and the blocking phrase by body fat', () => {
     expect(resolve(man({ body_fat_percent: 20 }))).toEqual({
       decision: 'assigned',

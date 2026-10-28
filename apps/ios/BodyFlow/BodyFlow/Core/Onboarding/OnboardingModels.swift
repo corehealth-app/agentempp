@@ -229,6 +229,9 @@ struct OnboardingServerState: Codable, Equatable, Sendable {
     let draft: OnboardingDraft?
     let bodyPhotoCleanup: OnboardingBodyPhotoCleanupScope?
     let signupCompletion: OnboardingCompletionCapability?
+    let clinicalSignup: OnboardingClinicalSignupCapability?
+    let clinicalPolicy: CurrentClinicalPolicy?
+    let legacyReconsent: OnboardingLegacyReconsentCapability?
 
     init(
         locale: String = "pt-BR",
@@ -237,7 +240,10 @@ struct OnboardingServerState: Codable, Equatable, Sendable {
         acceptedActions: [OnboardingAcceptedAction],
         draft: OnboardingDraft? = nil,
         bodyPhotoCleanup: OnboardingBodyPhotoCleanupScope? = nil,
-        signupCompletion: OnboardingCompletionCapability? = nil
+        signupCompletion: OnboardingCompletionCapability? = nil,
+        clinicalSignup: OnboardingClinicalSignupCapability? = nil,
+        clinicalPolicy: CurrentClinicalPolicy? = nil,
+        legacyReconsent: OnboardingLegacyReconsentCapability? = nil
     ) {
         self.locale = locale
         self.completion = completion
@@ -246,6 +252,9 @@ struct OnboardingServerState: Codable, Equatable, Sendable {
         self.draft = draft
         self.bodyPhotoCleanup = bodyPhotoCleanup
         self.signupCompletion = signupCompletion
+        self.clinicalSignup = clinicalSignup
+        self.clinicalPolicy = clinicalPolicy
+        self.legacyReconsent = legacyReconsent
     }
 
     init(from decoder: any Decoder) throws {
@@ -257,10 +266,16 @@ struct OnboardingServerState: Codable, Equatable, Sendable {
             [OnboardingAcceptedAction].self,
             forKey: .acceptedActions
         )
-        draft = try values.decodeIfPresent(
-            OnboardingServerDraft.self,
-            forKey: .draft
-        )?.onboardingDraft()
+        clinicalSignup = values.contains(.clinicalSignup)
+            ? try values.decode(OnboardingClinicalSignupCapability.self, forKey: .clinicalSignup) : nil
+        clinicalPolicy = values.contains(.clinicalPolicy) ? try values.decode(CurrentClinicalPolicy.self, forKey:.clinicalPolicy) : nil
+        legacyReconsent = values.contains(.legacyReconsent)
+            ? try values.decode(OnboardingLegacyReconsentCapability.self, forKey:.legacyReconsent) : nil
+        let officialDraft = try values.decodeIfPresent(OnboardingServerDraft.self, forKey: .draft)
+        guard legacyReconsent == nil || officialDraft == nil else { throw OnboardingRepositoryError.serviceUnavailable }
+        if let officialDraft, officialDraft.objective.value == nil,
+           clinicalSignup == nil || completion.completedAt == nil { throw OnboardingRepositoryError.serviceUnavailable }
+        draft = try officialDraft?.onboardingDraft()
         // Only this additive technical field is tolerant. Required patient
         // fields and the server draft retain their existing validation.
         bodyPhotoCleanup = try? values.decodeIfPresent(OnboardingBodyPhotoCleanupScope.self, forKey: .bodyPhotoCleanup)
@@ -269,19 +284,24 @@ struct OnboardingServerState: Codable, Equatable, Sendable {
         signupCompletion = values.contains(.signupCompletion)
             ? try values.decode(OnboardingCompletionCapability.self, forKey: .signupCompletion)
             : nil
+        guard clinicalSignup == nil || signupCompletion != nil else { throw OnboardingRepositoryError.serviceUnavailable }
     }
 
     func encode(to encoder: any Encoder) throws {
+        guard legacyReconsent == nil || draft == nil else { throw OnboardingRepositoryError.serviceUnavailable }
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encode(locale, forKey: .locale)
         try values.encode(completion, forKey: .completion)
         try values.encode(requirements, forKey: .requirements)
         try values.encode(acceptedActions, forKey: .acceptedActions)
         if let draft {
-            try values.encode(OnboardingServerDraft(draft), forKey: .draft)
+            try values.encode(OnboardingServerDraft(draft, allowsNoPlan: clinicalSignup != nil && completion.completedAt != nil), forKey: .draft)
         }
         try values.encodeIfPresent(bodyPhotoCleanup, forKey: .bodyPhotoCleanup)
         try values.encodeIfPresent(signupCompletion, forKey: .signupCompletion)
+        try values.encodeIfPresent(clinicalSignup, forKey: .clinicalSignup)
+        try values.encodeIfPresent(clinicalPolicy,forKey:.clinicalPolicy)
+        try values.encodeIfPresent(legacyReconsent,forKey:.legacyReconsent)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -292,6 +312,9 @@ struct OnboardingServerState: Codable, Equatable, Sendable {
         case draft
         case bodyPhotoCleanup = "body_photo_cleanup"
         case signupCompletion = "signup_completion"
+        case clinicalSignup = "clinical_signup"
+        case clinicalPolicy = "clinical_policy"
+        case legacyReconsent = "legacy_reconsent"
     }
 }
 
@@ -305,7 +328,7 @@ private struct OnboardingServerDraft: Codable {
     let heightCM: Double
     let weightKG: Double
     let bodyFatPercent: Double?
-    let objective: BodyFlowObjective
+    let objective: OnboardingObjectiveValue
     let activityLevel: ActivityLevel
     let trainingFrequency: Int
     let waterIntake: WaterIntake?
@@ -316,12 +339,12 @@ private struct OnboardingServerDraft: Codable {
     let persona: String
     let currentStep: String
 
-    init(_ draft: OnboardingDraft) throws {
+    init(_ draft: OnboardingDraft, allowsNoPlan: Bool = false) throws {
         guard let sex = draft.biologicalSex,
               let birthDate = draft.birthDate,
               let heightCM = draft.heightCM,
               let weightKG = draft.weightKG,
-              let objective = draft.objective,
+              draft.objective != nil || allowsNoPlan,
               let activityLevel = draft.activityLevel,
               let trainingFrequency = draft.trainingFrequency,
               let hungerLevel = draft.hungerLevel,
@@ -351,7 +374,7 @@ private struct OnboardingServerDraft: Codable {
         self.heightCM = heightCM
         self.weightKG = weightKG
         bodyFatPercent = draft.bodyFatPercent
-        self.objective = objective
+        self.objective = OnboardingObjectiveValue(draft.objective)
         self.activityLevel = activityLevel
         self.trainingFrequency = trainingFrequency
         self.waterIntake = draft.waterIntake
@@ -394,7 +417,7 @@ private struct OnboardingServerDraft: Codable {
             heightCM: heightCM,
             weightKG: weightKG,
             bodyFatPercent: bodyFatPercent,
-            objective: objective,
+            objective: objective.value,
             activityLevel: activityLevel,
             trainingFrequency: trainingFrequency,
             waterIntake: waterIntake,
@@ -460,11 +483,13 @@ private struct OnboardingServerDraft: Codable {
 struct OnboardingCompletionAcknowledgement: Codable, Equatable, Sendable {
     let onboardingCompleted: Bool
     let completedAt: String
-    let objective: BodyFlowObjective
+    let objective: BodyFlowObjective?
     let persona: CoachPersona
     let documentActions: [OnboardingAcceptedAction]
     let protocolWelcome: ProtocolWelcome?
     let bodyPhotoCleanup: OnboardingBodyPhotoCleanupScope?
+    let clinicalSafety: OnboardingClinicalSafety?
+    let clinicalPolicy: CurrentClinicalPolicy?
 
     private enum CodingKeys: String, CodingKey {
         case onboardingCompleted = "onboarding_completed"
@@ -474,20 +499,26 @@ struct OnboardingCompletionAcknowledgement: Codable, Equatable, Sendable {
         case documentActions = "document_actions"
         case protocolWelcome = "protocol_welcome"
         case bodyPhotoCleanup = "body_photo_cleanup"
+        case clinicalSafety = "clinical_safety"
+        case clinicalPolicy = "clinical_policy"
     }
 
     init(
         onboardingCompleted: Bool,
         completedAt: String,
-        objective: BodyFlowObjective,
+        objective: BodyFlowObjective?,
         persona: CoachPersona,
         documentActions: [OnboardingAcceptedAction],
         protocolWelcome: ProtocolWelcome? = nil,
-        bodyPhotoCleanup: OnboardingBodyPhotoCleanupScope? = nil
+        bodyPhotoCleanup: OnboardingBodyPhotoCleanupScope? = nil,
+        clinicalSafety: OnboardingClinicalSafety? = nil,
+        clinicalPolicy: CurrentClinicalPolicy? = nil
     ) {
         self.onboardingCompleted = onboardingCompleted
         self.completedAt = completedAt
         self.objective = objective
+        self.clinicalSafety = clinicalSafety
+        self.clinicalPolicy = clinicalPolicy
         self.persona = persona
         self.documentActions = documentActions
         self.protocolWelcome = protocolWelcome
@@ -498,7 +529,9 @@ struct OnboardingCompletionAcknowledgement: Codable, Equatable, Sendable {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         onboardingCompleted = try values.decode(Bool.self, forKey: .onboardingCompleted)
         completedAt = try values.decode(String.self, forKey: .completedAt)
-        objective = try values.decode(BodyFlowObjective.self, forKey: .objective)
+        objective = try values.decode(BodyFlowObjective?.self, forKey: .objective)
+        clinicalSafety = values.contains(.clinicalSafety) ? try values.decode(OnboardingClinicalSafety.self, forKey: .clinicalSafety) : nil
+        clinicalPolicy = values.contains(.clinicalPolicy) ? try values.decode(CurrentClinicalPolicy.self,forKey:.clinicalPolicy) : nil
         let personaCode = try values.decode(String.self, forKey: .persona)
         guard let decodedPersona = Self.persona(for: personaCode) else {
             throw DecodingError.dataCorruptedError(
@@ -509,6 +542,7 @@ struct OnboardingCompletionAcknowledgement: Codable, Equatable, Sendable {
         }
         persona = decodedPersona
         protocolWelcome = try values.decodeIfPresent(ProtocolWelcome.self, forKey: .protocolWelcome)
+        guard objective != nil || (clinicalSafety != nil && protocolWelcome == nil) else { throw OnboardingRepositoryError.serviceUnavailable }
         documentActions = try values.decode(
             [OnboardingAcceptedAction].self,
             forKey: .documentActions
@@ -522,6 +556,8 @@ struct OnboardingCompletionAcknowledgement: Codable, Equatable, Sendable {
         try values.encode(onboardingCompleted, forKey: .onboardingCompleted)
         try values.encode(completedAt, forKey: .completedAt)
         try values.encode(objective, forKey: .objective)
+        try values.encodeIfPresent(clinicalSafety, forKey: .clinicalSafety)
+        try values.encodeIfPresent(clinicalPolicy,forKey:.clinicalPolicy)
         try values.encode(Self.code(for: persona), forKey: .persona)
         try values.encodeIfPresent(protocolWelcome, forKey: .protocolWelcome)
         try values.encode(documentActions, forKey: .documentActions)
@@ -549,6 +585,7 @@ struct OnboardingCompletionAcknowledgement: Codable, Equatable, Sendable {
         guard onboardingCompleted,
               Self.isServerTimestamp(completedAt),
               objective == draft.objective,
+              objective != nil || (clinicalSafety != nil && protocolWelcome == nil),
               protocolWelcome == nil || protocolWelcome?.protocol == objective,
               persona == draft.persona,
               let submittedActions = draft.documentActions,

@@ -12,6 +12,11 @@ struct MobileAPITransport: Sendable {
     /// Read by routine actions, which the server accepts on its own clock.
     let serverClock: ServerClockEstimate
 
+    /// Public origin metadata only, used to refuse a mismatched clinical
+    /// composition before any request or session work begins.
+    var configuredOrigin: URL? { configuration?.origin }
+    var supportsCurrentClinicalSessionBinding: Bool { !(sessionLifecycle is LegacySessionLifecycleAdapter) }
+
     init(
         configuration: MobileAPIConfiguration?,
         sessionTokenProvider: any SessionTokenProviding,
@@ -636,5 +641,16 @@ extension MobileAPITransport {
 
     var contentCoverTrustedOrigin: ContentCoverTrustedOrigin? {
         configuration.flatMap { try? ContentCoverTrustedOrigin(validating: $0.origin) }
+    }
+}
+
+extension MobileAPITransport: CurrentClinicalSessionAuthorizing {
+    func validateCurrentClinicalSession() async throws {
+        guard boundSession != nil, !(sessionLifecycle is LegacySessionLifecycleAdapter) else {
+            throw SessionLifecycleError.sessionSuperseded
+        }
+        try Task.checkCancellation()
+        _ = try await leaseForBoundRequest()
+        try Task.checkCancellation()
     }
 }

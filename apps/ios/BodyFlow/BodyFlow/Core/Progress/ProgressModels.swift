@@ -23,8 +23,8 @@ struct ProgressSnapshot: Codable, Equatable, Sendable {
     let level: Int
     let currentStreak: Int
     let longestStreak: Int
-    let blocksCompleted: Int
-    let deficitBlock: Int
+    let blocksCompleted: Int?
+    let deficitBlock: Int?
     let currentWeight: Decimal?
     let currentBodyFatPercent: Decimal?
     let badgesEarned: [String]
@@ -34,9 +34,11 @@ struct ProgressSnapshot: Codable, Equatable, Sendable {
     var currentProtocol: String? = nil
     var block7700Enabled: Bool? = nil
     var currentBodyFatOrigin: String? = nil
+    var clinicalPolicy: CurrentClinicalPolicy? = nil
 
     var blockPresentationPolicy: Block7700PresentationPolicy {
-        Block7700PresentationPolicy(currentProtocol: currentProtocol, enabled: block7700Enabled)
+        if clinicalPolicy?.hide.block == true { return .unknown }
+        return Block7700PresentationPolicy(currentProtocol: currentProtocol, enabled: block7700Enabled)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -55,5 +57,6 @@ struct ProgressSnapshot: Codable, Equatable, Sendable {
         case updatedAt = "updated_at"
         case currentProtocol = "current_protocol"
         case block7700Enabled = "block_7700_enabled"
+        case clinicalPolicy = "clinical_policy"
     }
 }

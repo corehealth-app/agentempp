@@ -16,6 +16,7 @@ import { basename, dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, test } from 'vitest'
 import { inspectBuildSurface } from '../scripts/verify-build-surface.mjs'
+import { currentClinicalRouteAdditions } from './current-clinical-route-inventory'
 
 const sourceRoot = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -190,16 +191,22 @@ function withSyntheticBuild<T>(
 }
 
 describe('authoritative Mobile API source surface', () => {
-  test('keeps the approved 56-route path and named-export manifest', () => {
+  test('keeps the approved 74-route path and named-export manifest', () => {
     const records = sourceRecords()
     const hash = hashRecords(records)
 
     console.info(`SOURCE_ROUTE_EXPORT_COUNT=${records.length}`)
     console.info(`SOURCE_ROUTE_EXPORT_STREAM_SHA256=${hash}`)
 
-    expect(records).toHaveLength(56)
-    expect(hash).toBe('b88a27d2d694fb0ca539b9075c369978956d51aa25427b52da46983919b7d0e8')
-    const beforeIntents = records.filter(
+    expect(records).toHaveLength(74)
+    expect(hash).toBe('9c7daf99f0c9baab62f037d3d9301417c4a025283e863f44cd4dfab77588e485')
+    const additions = new Set<string>(currentClinicalRouteAdditions)
+    const prior56 = records.filter((record) => !additions.has(record.path))
+    expect(prior56).toHaveLength(56)
+    expect(hashRecords(prior56)).toBe(
+      'b88a27d2d694fb0ca539b9075c369978956d51aa25427b52da46983919b7d0e8',
+    )
+    const beforeIntents = prior56.filter(
       (record) => record.path !== 'onboarding/completion-intent/route.ts',
     )
     expect(beforeIntents).toHaveLength(55)
@@ -266,7 +273,7 @@ describe('authoritative Mobile API source surface', () => {
     expect(hasServerActionDirective(inlineServerAction)).toBe(true)
   })
 
-  test('keeps the structured Next build surface limited to the 56 Mobile API routes', () => {
+  test('keeps the structured Next build surface limited to the 74 Mobile API routes', () => {
     const surface = inspectBuildSurface(buildRoot)
 
     console.info(`BUILD_ROUTE_PATH_COUNT=${surface.routePaths.length}`)
@@ -281,11 +288,23 @@ describe('authoritative Mobile API source surface', () => {
     console.info(`BUILD_MIDDLEWARE_COUNT=${surface.middlewareEntries.length}`)
     console.info(`BUILD_SERVER_ACTION_REFERENCE_COUNT=${surface.serverActionReferences.length}`)
 
-    expect(surface.routePaths).toHaveLength(56)
+    expect(surface.routePaths).toHaveLength(74)
     expect(surface.routePathHash).toBe(
-      '75c8979e64a793a209a621914eec758d1b061820b30c68488622900c2b3bf71a',
+      '266398770b61425d8172e2912eade6187a597060c710c51dcfbaff6fc7c8a272',
     )
-    const beforeIntents = surface.routePaths.filter(
+    const additions = new Set(
+      currentClinicalRouteAdditions.map(
+        (path) => `/api/mobile/v1/${path.replace(/\/route.ts$/, '')}`,
+      ),
+    )
+    const prior56 = surface.routePaths.filter((route) => !additions.has(route))
+    expect(prior56).toHaveLength(56)
+    expect(
+      createHash('sha256')
+        .update(prior56.map((route) => `${route}\n`).join(''))
+        .digest('hex'),
+    ).toBe('75c8979e64a793a209a621914eec758d1b061820b30c68488622900c2b3bf71a')
+    const beforeIntents = prior56.filter(
       (route) => route !== '/api/mobile/v1/onboarding/completion-intent',
     )
     expect(beforeIntents).toHaveLength(55)
@@ -347,14 +366,14 @@ describe('authoritative Mobile API source surface', () => {
       mutate: (appPaths: Record<string, string>) => ({ ...appPaths }),
       omittedTargets: ['app/api/mobile/v1/today/route.js'],
     },
-  ])('rejects $name while the same 56 URL keys remain', ({
+  ])('rejects $name while the same 74 URL keys remain', ({
     expectedError,
     mutate,
     omittedTargets,
   }) => {
     const appPaths = mutate(currentAppPathsManifest())
 
-    expect(Object.keys(appPaths)).toHaveLength(56)
+    expect(Object.keys(appPaths)).toHaveLength(74)
     expect(() => withSyntheticBuild(appPaths, inspectBuildSurface, omittedTargets)).toThrow(
       expectedError,
     )
@@ -455,9 +474,12 @@ describe('authoritative Mobile API source surface', () => {
     // Every contribution is identified by semantics and exact consumers below;
     // normalization must reproduce the prior per-route counts and semantic
     // boundaries below; it is not byte identity of compiled JavaScript.
-    expect(surface.nftReferenceCount).toBe(6033)
-    expect(surface.nftUniqueTargetCount).toBe(187)
-    expect(surface.nftRegularFileTargetCount).toBe(185)
+    // R301 adds one 104-reference documents-only entry. Current admission and
+    // calculation/runtime splits add 20 historical and 17 clinical references;
+    // each new edge is tied to named semantics and exact consumers below.
+    expect(surface.nftReferenceCount).toBe(8028)
+    expect(surface.nftUniqueTargetCount).toBe(214)
+    expect(surface.nftRegularFileTargetCount).toBe(212)
     expect(surface.nftDirectoryTargetCount).toBe(2)
 
     const bodyPhotoRoutes = [
@@ -477,18 +499,255 @@ describe('authoritative Mobile API source surface', () => {
       expect(chunks, markers.join(', ')).toHaveLength(1)
       return chunks[0] ?? ''
     }
+    // M3B adds18 known routes. Explicit admission splits calculation/runtime
+    // and moves five feedback handlers out of the now shared workout reader.
+    // Removing precisely the 56 certified historical edges restores the same
+    // per-route count stream; workout reader duplication is consolidated once.
+    const allRoutes = Object.keys(currentAppPathsManifest())
+    const additions = new Set(
+      currentClinicalRouteAdditions.map((path) => `/api/mobile/v1/${path.replace(/\.ts$/, '')}`),
+    )
+    expect(additions.size).toBe(18)
+    expect(allRoutes.filter((route) => additions.has(route))).toHaveLength(18)
+    const historicalRoutes = allRoutes.filter((route) => !additions.has(route))
+    expect(historicalRoutes).toHaveLength(56)
+    expect(historicalRoutes.reduce((sum, route) => sum + tracedTargets(route).length, 0)).toBe(6089)
+    expect(new Set(historicalRoutes.flatMap(tracedTargets)).size).toBe(193)
+    const routeNames = (names: string[]) =>
+      names.map((name) => `/api/mobile/v1/${name}/route`).sort()
+    const clinicalEdges = [
+      {
+        markers: ['capture_mobile_clinical_day_close', 'apply_mobile_clinical_day_close'],
+        old: routeNames(['flow/chat', 'plan', 'progress', 'protocol', 'today', 'trends']),
+        added: [] as string[],
+      },
+      {
+        markers: ['get_mobile_current_clinical_state', 'mobile_current_clinical_'],
+        old: routeNames([
+          'flow/chat',
+          'onboarding',
+          'onboarding/eligibility',
+          'plan',
+          'progress',
+          'protocol',
+          'today',
+          'trends',
+        ]),
+        added: routeNames([
+          'reevaluation',
+          'reevaluation/start',
+          'reevaluation/form',
+          'reevaluation/assess',
+          'reevaluation/preview',
+          'reevaluation/confirm',
+          'reevaluation/health',
+        ]),
+      },
+      {
+        markers: [
+          'MOBILE_CURRENT_CLINICAL_PROJECT_REF',
+          'current_clinical_runtime_unavailable',
+          'invalid_clinical_policy_representation',
+        ],
+        otherAdded: routeNames([
+          'reevaluation/[cycleId]/photos',
+          'reevaluation/[cycleId]/photos/consent',
+          'reevaluation/[cycleId]/photos/discard',
+          'reevaluation/[cycleId]/photos/[assetId]/upload',
+          'reevaluation/[cycleId]/photos/[assetId]/complete',
+          'reevaluation/[cycleId]/photos/[assetId]/process',
+        ]),
+        old: routeNames([
+          'flow/chat',
+          'onboarding',
+          'onboarding/eligibility',
+          'plan',
+          'progress',
+          'protocol',
+          'today',
+          'trends',
+        ]),
+        added: routeNames([
+          'protocol/first-phase',
+          'protocol/first-phase/preview',
+          'protocol/first-phase/confirm',
+          'reevaluation',
+          'reevaluation/start',
+          'reevaluation/form',
+          'reevaluation/assess',
+          'reevaluation/preview',
+          'reevaluation/confirm',
+          'reevaluation/health',
+        ]),
+      },
+      {
+        markers: ['Invalid clinical calculation context'],
+        old: routeNames([
+          'flow/chat',
+          'onboarding',
+          'plan',
+          'progress',
+          'protocol',
+          'today',
+          'trends',
+        ]),
+        added: routeNames([
+          'protocol/first-phase',
+          'protocol/first-phase/preview',
+          'protocol/first-phase/confirm',
+          'reevaluation',
+          'reevaluation/start',
+          'reevaluation/form',
+          'reevaluation/assess',
+          'reevaluation/preview',
+          'reevaluation/confirm',
+          'reevaluation/health',
+        ]),
+      },
+      {
+        // Read-only BF provenance now shares the daily repository with legacy
+        // admission. Certify all three ports in that one existing seven-route
+        // chunk, while the whole closer retains its original six consumers.
+        markers: [
+          'admit_mobile_clinical_legacy_generation',
+          'clinical_client_update_required',
+          'get_mobile_clinical_daily_context',
+          'get_mobile_clinical_daily_receipt',
+          'apply_mobile_clinical_daily',
+        ],
+        old: routeNames([
+          'flow/chat',
+          'onboarding',
+          'plan',
+          'progress',
+          'protocol',
+          'today',
+          'trends',
+        ]),
+        added: [] as string[],
+      },
+      {
+        markers: [
+          'Feedback requires an owned confirmed registration',
+          'Invalid official day facts',
+        ],
+        old: reviewRoutes,
+        added: [] as string[],
+      },
+    ]
+    const exemptions = new Map<string, Set<string>>()
+    const removeHistoricalEdge = (route: string, target: string) => {
+      expect(
+        tracedTargets(route).filter((file) => file === target),
+        route,
+      ).toEqual([target])
+      const set = exemptions.get(route) ?? new Set<string>()
+      expect(set.has(target)).toBe(false)
+      set.add(target)
+      exemptions.set(route, set)
+    }
+    for (const edge of clinicalEdges) {
+      let chunk: string
+      if ('otherAdded' in edge) {
+        // The same closed selector is compiled once for current clinical
+        // routes and once for photos; neither copy may acquire other callers.
+        const copies = semanticChunks(edge.markers)
+        expect(copies).toHaveLength(2)
+        const historicalCopy = copies.filter((file) =>
+          chunkConsumers(file).includes(edge.old[0] ?? ''),
+        )
+        expect(historicalCopy).toHaveLength(1)
+        chunk = historicalCopy[0] ?? ''
+        const photoCopy = copies.filter((file) => file !== chunk)
+        expect(photoCopy).toHaveLength(1)
+        expect(chunkConsumers(photoCopy[0] ?? '')).toEqual(edge.otherAdded)
+      } else chunk = uniqueChunk(edge.markers)
+      expect(chunkConsumers(chunk)).toEqual([...edge.old, ...edge.added].sort())
+      for (const route of edge.old) removeHistoricalEdge(route, chunk)
+    }
+    const contractsChunk = uniqueChunk([
+      'Photo source IDs must be distinct',
+      'Development documents are not accepted',
+    ])
+    const contractsAdded = routeNames([
+      'content/[id]',
+      'history',
+      'plan-drafts',
+      'plan',
+      'progress',
+      'protocol',
+      'today',
+      'trends',
+      'workouts/[id]/strength-clarification',
+    ])
+    expect(chunkConsumers(contractsChunk).filter((route) => additions.has(route))).toEqual(
+      [...additions].sort(),
+    )
+    expect(
+      chunkConsumers(contractsChunk).filter((route) => historicalRoutes.includes(route)),
+    ).toHaveLength(50)
+    for (const route of contractsAdded) removeHistoricalEdge(route, contractsChunk)
+    const routineSplit = uniqueChunk([
+      '[mobile-routine] database_failure',
+      'Routine schedules must be updated through the item contract',
+      'Unable to release mobile request claim',
+    ])
+    const routineConsumers = routeNames([
+      'devices',
+      'devices/[id]',
+      'notification-preferences',
+      'reminders',
+      'reminders/[id]',
+      'routine/hydration',
+    ])
+    expect(chunkConsumers(routineSplit)).toEqual(routineConsumers)
+    for (const route of routineConsumers) removeHistoricalEdge(route, routineSplit)
+    const historicalTargets = (route: string): string[] =>
+      tracedTargets(route).filter((target) => !exemptions.get(route)?.has(target))
+    const historicalConsumers = (chunk: string): string[] =>
+      historicalRoutes.filter((route) => historicalTargets(route).includes(chunk)).sort()
+    expect([...exemptions.values()].reduce((sum, edges) => sum + edges.size, 0)).toBe(56)
+    expect(historicalRoutes.reduce((sum, route) => sum + historicalTargets(route).length, 0)).toBe(
+      6033,
+    )
+    expect(new Set(historicalRoutes.flatMap(historicalTargets)).size).toBe(186)
+    expect(
+      createHash('sha256')
+        .update(
+          historicalRoutes
+            .slice()
+            .sort()
+            .map((route) => `${route}\0${historicalTargets(route).length}\n`)
+            .join(''),
+        )
+        .digest('hex'),
+    ).toBe('4f8ba431b512f3a6660c4e57f32c1a42bedadbefc5deaf0c2b19945ff6e0876c')
+    expect(
+      createHash('sha256')
+        .update(
+          historicalConsumers(contractsChunk)
+            .map((route) => `${route}\n`)
+            .join(''),
+        )
+        .digest('hex'),
+    ).toBe('990dab7866e742a93fa70f3c9a407b4215b8c0059a1299d253842eb99f174a92')
+
     const catalogChunk = uniqueChunk([
       'curated-phrases-food.json',
       'read_flow_shared_phrase_cursor',
     ])
-    expect(chunkConsumers(catalogChunk)).toEqual(catalogRoutes)
-    const receiptChunk = uniqueChunk([
-      'read_mobile_registration_feedback',
-      'proposal->>source_provider_message_id',
-    ])
-    expect(chunkConsumers(receiptChunk)).toEqual([...historyFeedbackRoutes].sort())
+    expect(historicalConsumers(catalogChunk)).toEqual(catalogRoutes)
+    // The historical read now shares the same repository as the five reviews;
+    // its query selector stays inline in precisely the two History entries.
+    const receiptChunk = uniqueChunk(['read_mobile_registration_feedback'])
+    expect(historicalConsumers(receiptChunk)).toEqual(
+      [...historyFeedbackRoutes, ...reviewRoutes].sort(),
+    )
+    expect(runtimeMarkerRoutes('proposal->>source_provider_message_id')).toEqual(
+      [...historyFeedbackRoutes].sort(),
+    )
     const readModelChunk = uniqueChunk(['Pending registration lookup', 'Trends snapshot lookup'])
-    expect(chunkConsumers(readModelChunk)).toEqual(
+    expect(historicalConsumers(readModelChunk)).toEqual(
       [
         'flow/chat',
         'history',
@@ -544,8 +803,8 @@ describe('authoritative Mobile API source surface', () => {
     ]
       .map((name) => `/api/mobile/v1/${name}/route`)
       .sort()
-    expect(chunkConsumers(officialStateChunk)).toEqual(officialConsumers)
-    expect(chunkConsumers(databaseSelectorChunk)).toEqual(officialConsumers)
+    expect(historicalConsumers(officialStateChunk)).toEqual(officialConsumers)
+    expect(historicalConsumers(databaseSelectorChunk)).toEqual(officialConsumers)
     expect(
       new Set([
         catalogChunk,
@@ -560,8 +819,8 @@ describe('authoritative Mobile API source surface', () => {
       resolve(appRoot, '../../packages/agent/src/data/flow-curated-phrases'),
     )
     const extrasByRoute = new Map<string, Set<string>>()
-    for (const route of Object.keys(currentAppPathsManifest())) {
-      const raw = tracedTargets(route)
+    for (const route of historicalRoutes) {
+      const raw = historicalTargets(route)
       const extras: string[] = []
       if (catalogRoutes.includes(route)) extras.push(catalogChunk)
       if (reviewRoutes.includes(route)) {
@@ -581,8 +840,8 @@ describe('authoritative Mobile API source surface', () => {
     }
     expect([...extrasByRoute.values()].reduce((sum, extras) => sum + extras.size, 0)).toBe(57)
     const physicalTargets = (route: string): string[] =>
-      tracedTargets(route).filter((target) => !extrasByRoute.get(route)?.has(target))
-    const normalized = Object.keys(currentAppPathsManifest())
+      historicalTargets(route).filter((target) => !extrasByRoute.get(route)?.has(target))
+    const normalized = historicalRoutes
       .sort()
       .map((route) => [route, physicalTargets(route)] as const)
     expect(normalized.reduce((sum, [, targets]) => sum + targets.length, 0)).toBe(5976)
@@ -622,9 +881,7 @@ describe('authoritative Mobile API source surface', () => {
       '/api/mobile/v1/registrations/[id]/confirm/route',
     ].sort()
     expect(
-      Object.keys(currentAppPathsManifest())
-        .filter((route) => physicalTargets(route).includes(draftChunk))
-        .sort(),
+      historicalRoutes.filter((route) => physicalTargets(route).includes(draftChunk)).sort(),
     ).toEqual(draftRoutes)
     for (const route of draftRoutes) {
       expect(
@@ -654,9 +911,7 @@ describe('authoritative Mobile API source surface', () => {
       clarificationRoute,
     ].sort()
     expect(
-      Object.keys(currentAppPathsManifest())
-        .filter((route) => physicalTargets(route).includes(factChunk))
-        .sort(),
+      historicalRoutes.filter((route) => physicalTargets(route).includes(factChunk)).sort(),
     ).toEqual(factRoutes)
     for (const route of factRoutes) {
       expect(
@@ -670,7 +925,7 @@ describe('authoritative Mobile API source surface', () => {
     // is still its separate existing unique file.
     const onboardingRoute = '/api/mobile/v1/onboarding/route'
     const otherOriginalTargets = new Set(
-      Object.keys(currentAppPathsManifest())
+      historicalRoutes
         .filter((route) => !Object.hasOwn(addedRoutes, route) && route !== onboardingRoute)
         .flatMap(physicalTargets),
     )
@@ -694,14 +949,14 @@ describe('authoritative Mobile API source surface', () => {
     expect(finalizationSource).toContain('body_photo_cleanup_pending')
     const byName = (left: string, right: string) => left.localeCompare(right, 'en')
     expect(
-      Object.keys(currentAppPathsManifest())
+      historicalRoutes
         .filter((route) => physicalTargets(route).includes(finalizationChunk))
         .sort(byName),
     ).toEqual([onboardingRoute, ...bodyPhotoRoutes].sort(byName))
 
     const baselineTargets = new Set<string>()
     let baselineReferences = 0
-    for (const route of Object.keys(currentAppPathsManifest())) {
+    for (const route of historicalRoutes) {
       if (Object.hasOwn(addedRoutes, route)) continue
       const targets = physicalTargets(route).filter(
         (target) => target !== finalizationChunk && target !== factChunk,
@@ -756,15 +1011,15 @@ describe('authoritative Mobile API source surface', () => {
     const [sharedChunk = ''] = [...sharedChunks]
     expect(relative(resolve(buildRoot, 'server/chunks'), sharedChunk)).toMatch(/^[\w.-]+\.js$/)
     expect(
-      Object.keys(currentAppPathsManifest())
-        .filter((route) => physicalTargets(route).includes(sharedChunk))
-        .sort(byName),
+      historicalRoutes.filter((route) => physicalTargets(route).includes(sharedChunk)).sort(byName),
     ).toEqual([...bodyPhotoRoutes].sort(byName))
   })
 
   test('limits feedback writes to five reviews and preserves protected workout capability consumers', () => {
     const chunks = semanticChunks(['get_mobile_workout_registration'])
-    expect(chunks).toHaveLength(2)
+    // One shared repository now replaces its two compiled copies. Exact seven
+    // consumers and every protected operation below remain unchanged.
+    expect(chunks).toHaveLength(1)
     for (const chunk of chunks) {
       const source = readFileSync(chunk, 'utf8')
       for (const operation of ['admit', 'materialize', 'get', 'edit', 'cancel', 'confirm']) {

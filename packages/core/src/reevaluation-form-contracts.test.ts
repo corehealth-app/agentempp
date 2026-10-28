@@ -23,7 +23,146 @@ const base = {
 }
 const common = ['weightKg', 'strengthSessions', 'adherence', 'hunger', 'energy']
 
+const noPlanOrigin = {
+  kind: 'confirmed_no_plan' as const,
+  signupGeneration: 'b3b01000-0000-4000-8000-000000002800',
+  signupEpoch: 'b3b01000-0000-4000-8000-000000002801',
+  completedAt: '2026-10-25T12:00:00.000001Z',
+}
+const healthOnly = { ...base, phase: null, noPlanOrigin }
+
+describe('n10 health-only FULL contract', () => {
+  it.each([
+    'REGULAR',
+    'EARLY_FULL',
+  ] as const)('offers explicit true and false professional answers for every protected %s', (kind) => {
+    for (const phase of ['recomposicao', 'ganho_massa', 'manutencao', null] as const) {
+      const descriptor = getReevaluationFormDescriptor(
+        phase === null
+          ? { ...context, phase, kind, holdActive: true, noPlanOrigin }
+          : { ...context, phase, kind, holdActive: true },
+      )
+      expect(
+        descriptor.questions.find((q) => q.key === 'professionalConversationConfirmed'),
+      ).toMatchObject({
+        optOutLabel: 'Prefiro não responder',
+        options: [
+          { value: true, label: 'Sim' },
+          { value: false, label: 'Não' },
+        ],
+      })
+    }
+  })
+  it.each(['REGULAR', 'EARLY_FULL'] as const)('accepts only weight and health in %s', (kind) => {
+    const draft = parseReevaluationFormDraft({
+      ...healthOnly,
+      kind,
+      answers: {
+        weightKg: 80,
+        healthCheck: { kind: 'none' },
+        professionalConversationConfirmed: true,
+      },
+    })
+    expect(draft.phase).toBeNull()
+    expect(draft.answers.weightKg).toBe(80)
+    expect(draft.answers.professionalConversationConfirmed).toBe(true)
+    expect(draft.preference).toBeNull()
+    for (const key of [
+      'strengthSessions',
+      'adherence',
+      'hunger',
+      'energy',
+      'strengthProgression',
+      'fatPerception',
+      'difficultToMaintain',
+      'activity',
+    ] as const)
+      expect(draft.answers[key]).toBeNull()
+  })
+  it.each([
+    { noPlanOrigin: undefined },
+    { noPlanOrigin: { ...noPlanOrigin, signupEpoch: 'invalid' } },
+    { noPlanOrigin: { ...noPlanOrigin, completedAt: '2026-02-30T12:00:00.000001Z' } },
+    { noPlanOrigin: { ...noPlanOrigin, kind: 'legacy_unassigned' } },
+    { kind: 'ROUTINE_REVIEW' },
+    { kind: 'SAFETY' },
+    { activityPurpose: 'end_deficit' },
+    { preference: { action: 'keep' } },
+  ])('rejects an unproven or non-health context %j', (patch) => {
+    expect(() => parseReevaluationFormDraft({ ...healthOnly, ...patch })).toThrow()
+  })
+  it.each([
+    ['strengthSessions', 4],
+    ['adherence', 'bem_consistente'],
+    ['hunger', 'moderada'],
+    ['energy', 'boa'],
+    ['strengthProgression', 'melhorou'],
+    ['fatPerception', 'um_pouco'],
+    ['difficultToMaintain', 'nao'],
+    ['activity', {}],
+  ])('refuses planned answer %s rather than ignoring it', (key, value) => {
+    expect(() => parseReevaluationFormDraft({ ...healthOnly, answers: { [key]: value } })).toThrow()
+  })
+  it.each([30, 300])('allows optional recorded weight %s', (weightKg) => {
+    expect(
+      parseReevaluationFormDraft({ ...healthOnly, answers: { weightKg } }).answers.weightKg,
+    ).toBe(weightKg)
+    expect(parseReevaluationFormDraft(healthOnly).answers.weightKg).toBeNull()
+  })
+  it.each(['80', 29.9, 300.1])('refuses invalid weight %s', (weightKg) => {
+    expect(() => parseReevaluationFormDraft({ ...healthOnly, answers: { weightKg } })).toThrow()
+  })
+  it.each([false, true])('describes only health fields, HOLD=%s', (holdActive) => {
+    const descriptor = getReevaluationFormDescriptor({
+      ...context,
+      phase: null,
+      noPlanOrigin,
+      holdActive,
+    })
+    expect(descriptor.questions.map((q) => q.key)).toEqual(
+      holdActive
+        ? ['weightKg', 'healthCheck', 'professionalConversationConfirmed']
+        : ['weightKg', 'healthCheck'],
+    )
+    expect(descriptor.preferenceQuestion).toBeNull()
+    expect(descriptor.supportText).toBeNull()
+    expect(descriptor.decisionPriority).toEqual([])
+    expect(descriptor.photoRequirement).toEqual({
+      required: true,
+      newOnly: true,
+      poses: ['front', 'side', 'back'],
+    })
+    expect(
+      getReevaluationFormDescriptor({ ...context, phase: null, noPlanOrigin, kind: 'EARLY_FULL' })
+        .photoRequirement.required,
+    ).toBe(false)
+  })
+  it('does not report hidden planned questions as unanswered', () => {
+    expect(() => getKnownReevaluationAnswers(healthOnly, ['hunger'])).toThrow()
+    expect(
+      getKnownReevaluationAnswers({ ...healthOnly, answers: { healthCheck: { kind: 'none' } } }, [
+        'healthCheck',
+      ]).status,
+    ).toBe('known')
+  })
+})
+
 describe('n1/n3 adaptive pure descriptor', () => {
+  it.each([
+    'manutencao',
+    'ganho_massa',
+  ] as const)('n11 permits structured hunger in %s routine review', (phase) => {
+    const descriptor = getReevaluationFormDescriptor({ ...context, phase, kind: 'ROUTINE_REVIEW' })
+    expect(descriptor.questions.map((q) => q.key)).toContain('hunger')
+    const draft = parseReevaluationFormDraft({
+      ...base,
+      phase,
+      kind: 'ROUTINE_REVIEW',
+      answers: { hunger: 'muita' },
+    })
+    expect(draft.answers.hunger).toBe('muita')
+    expect(descriptor.questions.map((q) => q.key)).not.toContain('healthCheck')
+  })
   it('recomposition is exactly five common questions then health, with preference separate', () => {
     const form = getReevaluationFormDescriptor(context)
     expect(form.questions.map((question) => question.key)).toEqual([...common, 'healthCheck'])

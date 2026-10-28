@@ -49,7 +49,7 @@ const clock = z
     next.setUTCDate(next.getUTCDate() + 14)
     return next.toISOString().slice(0, 10) === value.due_date
   })
-const cycle = z
+const regularCycle = z
   .object({
     id: reevaluationCycleUuidSchema,
     signup_generation: reevaluationCycleUuidSchema,
@@ -62,8 +62,44 @@ const cycle = z
     opened_at: z.string().refine(utc6),
   })
   .strict()
+// This only reads SQL's captured kind. Opening or promoting an occurrence is
+// still a server authority; a client cannot select EARLY to bypass regular photos.
+const cycle = z.discriminatedUnion('kind', [
+  regularCycle,
+  regularCycle.extend({ kind: z.literal('EARLY_FULL') }).strict(),
+])
+const transitionState = z
+  .object({
+    version: z.literal(1),
+    availability: z.literal('available'),
+    unavailable_reason: z.null(),
+    clock: z
+      .object({ base_date: date, due_date: date, timezone })
+      .strict()
+      .refine((value) => value.base_date <= '9999-12-17' && value.base_date === value.due_date),
+    transition: z
+      .object({
+        kind: z.literal('legacy_transition'),
+        generation: reevaluationCycleUuidSchema,
+        epoch: reevaluationCycleUuidSchema,
+        admitted_at: z.string().refine(utc6),
+      })
+      .strict(),
+    cycle: regularCycle
+      .extend({ kind: z.literal('TRANSITION_FULL') })
+      .strict()
+      .nullable(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      !value.cycle ||
+      (value.cycle.signup_generation.toLowerCase() === value.transition.generation.toLowerCase() &&
+        value.cycle.opened_at >= value.transition.admitted_at),
+  )
 const state = z
   .union([
+    transitionState,
     z
       .object({
         version: z.literal(1),
@@ -97,7 +133,8 @@ const state = z
       !value.cycle ||
       (value.cycle.base_date === value.clock?.base_date &&
         value.cycle.due_date === value.clock?.due_date &&
-        value.cycle.timezone_at_open === value.clock?.timezone),
+        value.cycle.timezone_at_open === value.clock?.timezone &&
+        (value.cycle.kind !== 'EARLY_FULL' || value.availability === 'available')),
   )
 
 export type ReevaluationCycleState = z.infer<typeof state>

@@ -2899,6 +2899,15 @@ esta entrada por `/meal-drafts`.
 
 ---
 
+> Atualização operativa n9/n39 (implementação local de25/10): para ENTRAR em ganho,
+> IMC abaixo do corte é obrigatório também com BF informado ou fotos aceitas.
+> O BF favorável não substitui o IMC. BF abaixo do corte de recomposição com
+> IMC no/acima do corte conserva escolha entre recomposição e manutenção;
+> não atribui fase. A versão histórica BF-only abaixo foi superada para ganho.
+> O helper do app, o texto do critério e a defesa no writer SQL agora seguem
+> essa regra. N10 completo/no-plan/cadastro de saúde ainda não está integrado;
+> estas fontes continuam sem ativação clínica e não comprovam entrega.
+
 ## 10. Cadastro: quem escolhe o objetivo e quem entra direto na recomposição (regra E)
 
 > **Situação da regra:** escrita pelo cliente (Dr. Roberto) nas regras do método
@@ -4310,3 +4319,457 @@ Autoridade:44 respostas operativas de10/10, `final.answers[n-1]`, com D1/D2 e a 
 As funções devolvem proposta/razão, respostas ausentes e fatos; não gravam perfil, calorias, ledger, contadores ou calendário, não iniciam fase, não limpam HOLD nem confirmam consumo. O cálculo das metas e do piso deve vir das fórmulas oficiais com configuração, peso e data vinculados ao mesmo snapshot.
 
 **Ainda obrigatório antes de ativar:** autoridade real de medições e episódios; snapshot imutável completo com perfil/config/dia/fotos/segurança; confirmação atômica e recibo FULL; clear autorizado; schedules/entradas de fase e consumidores Today/Flow/Progresso; iOS e QA integrado/Storage. O conjunto de testes locais destes módulos não comprova entrega ao cliente.
+
+### 11a. Integração clínica em andamento — história real, data e propostas
+
+Status: implementação local em andamento, sem publicação/ativação. A migration
+`20261025155609_mobile_weight_history_receipts.sql` acrescenta duas autoridades
+privadas. `mobile_weight_measurements` guarda medições efetivamente recebidas;
+não há backfill de perfil, snapshot ou reavaliação antiga. O peso oficial mais
+recente continua em `user_profiles`: um peso antigo válido entra no histórico
+sem substituir o mais recente. Mesma pessoa/instante/peso canônico é uma só
+amostra; outro peso no mesmo instante conflita. Conversão de libras e
+arredondamento decimal seguem a função já existente.
+
+`mobile_weight_request_receipts` conserva valor/unidade/instante originais e o
+resultado da primeira execução por pessoa/chave. Replay devolve esse resultado,
+inclusive após reset ou expiração da janela, sem reaplicar o peso ao perfil.
+Outra quantidade original, unidade ou instante com a mesma chave conflita.
+Requisições novas continuam limitadas a sete dias passados/cinco minutos futuros;
+o banco confere o relógio depois dos locks e depois de procurar um recibo.
+Essa validação temporal saiu da antecipação no BFF para que ele alcance o
+recibo durável. A pessoa precisa continuar ativa também no replay.
+
+A nova ordem é pessoa → tentativa de advisory de peso → perfil NOWAIT.
+Contenção não espera segurando a pessoa; recebe erro tipado, sem retry interno.
+São registrados fuso do servidor e epoch observado (nulo quando inexistente);
+epoch observado não comprova conclusão de cadastro. O histórico imutável
+atravessa reset sem ser reetiquetado; exclusão definitiva da pessoa apaga as
+duas autoridades por cascata. Escritores legados de perfil não criam história
+de medições. Esta migration sozinha não altera metas, progresso ou calendário.
+
+`computeDailyTargetsOnCivilDate` usa a idade na data civil fornecida pelo
+servidor e compartilha as mesmas fórmulas de calorias/proteína com o entrypoint
+anterior. A função antiga conserva seu relógio e comportamento. Não há nova
+fórmula de BMR ou fator inferido da frequência de treino.
+
+As propostas puras `reevaluation-phase-schedule.ts` implementam n3/n5/n18:
+calorias só pelo nível confirmado e pelo net do ledger, com pisos; frequência
+abaixo do maior baseline ou desconhecida impede aumento em ganho. Frequência
+não desconta calorias. Calendários de 100 kcal a cada sete dias têm datas e
+valores congelados na proposta: n5 começa na confirmação e entra em manutenção
+em transição; n18 usa G/M/E congelados e conserva ganho até M. n5 aplica
+`min(valor confirmado, alvo recalculado hoje)`; alvo maior não prolonga sozinho
+o plano. Guard/HOLD congela o valor atual e suspende; não há retomada automática.
+Uma data final planejada não prova R passado: o candidato a R só nasce na data
+em que a autoridade aplicar o alvo, preservando R já comprovado separadamente.
+
+`reevaluation-phase-eligibility.ts` reutiliza o predicado de composição do
+cadastro, sem mudar seu resultado. Mantém corte de recomposição separado de
+elegibilidade de ganho. BF manual baixo com IMC no corte fecha somente ganho;
+não vira atribuição/sugestão de recomposição. O rótulo de foto confirmada precisa
+ser comprovado pelo snapshot autenticado; igualdade numérica não é origem.
+n6/n19 exigem R+28, duas REGULAR com quatorzenas inteiras após R, respostas
+conhecidas e estabilidade real de quatro semanas; EARLY não conta nem rompe o
+par. Fome Muita/Moderada/Pouca propõe déficit 400/500/600; ausência não propõe.
+n38-B1 é separado: só REGULAR, R+14, acima do corte, medida confirmada e fome
+conhecida, exigindo segunda confirmação para a sugestão de recomposição.
+Recomposição abaixo do corte pode oferecer transição à manutenção; não existe
+caminho direto para ganho ou de ganho para recomposição.
+
+Propostas, calendários e candidaturas a R ainda não são gravações clínicas.
+Permanecem obrigatórios snapshot/episódio/recibo FULL/clear CAS transacionais,
+validação de todas as fontes e consumidores, QA integrado e Storage antes da
+ativação. A revisão única do plano completo ainda está pendente; estes testes
+locais não comprovam entrega ao Roberto.
+
+### 11b. Snapshot e origem inicial — integração local em andamento
+
+`20261025170355_mobile_clinical_snapshot_authority.sql` acrescenta captura
+privada do contexto e um diário imutável de hashes de prévias. Não grava
+respostas comuns, propostas clínicas ou metas nesse diário, nem conclui uma
+reavaliação. Chave repetida retorna apenas o reconhecimento original; não
+concede permissão para concluir com estado antigo. A confirmação completa
+ainda precisa reconstruir e conferir a autoridade atual.
+
+O hash inclui pessoa/admission/epoch/ciclo, perfil, medições reais na janela,
+configurações `calc.*`, dia e segurança, documentos/policies e todas as fontes,
+alocações (inclusive pendentes), tickets, media e tentativas das fotos do ciclo.
+Não inclui imagem, path, URL ou corpo legal. Revisões são texto exato e instantes
+UTC com microssegundos. O relógio de observação fica fora do hash; expiração,
+data civil e vigência são conferidas novamente após os locks. A validade termina
+no máximo na próxima meia-noite local, próxima publicação legal ou expiração do
+aceite. Contenção de escritores legados falha com erro tipado, sem espera
+segurando a pessoa. O calendário conserva o fuso da origem; as regras clínicas
+de quatorzena também exigem que a data civil atual tenha alcançado o vencimento.
+
+`20261025171910_mobile_clinical_signup_origin.sql` captura a entrada de novos
+cadastros na própria transação do recibo `first_fresh`, conferindo a conclusão,
+admission/epoch, fase e perfil daquele instante. Conserva peso/altura/BF/treinos
+iniciais, déficit inicial e R apenas para a entrada real em manutenção. Replay
+não duplica; reset preserva a origem anterior e novo cadastro produz outra.
+Recibos históricos sem objetivo e colunas mutáveis `cycle_start_*` não viram
+prova inicial. O snapshot vincula somente a origem da geração/epoch atual.
+
+As duas migrations foram exercitadas apenas no PostgreSQL local sintético,
+sem RPC público, rota ativa ou publicação. A continuidade privada de FULL,
+clear CAS e episódios está em 11c; consumidores/iOS e QA real das fotos seguem
+pendentes. A
+imutabilidade legal preexistente impede DELETE bruto de uma conta com aceites;
+essa recusa foi preservada, e não comprova exclusão completa da conta. A nova
+evidência só é apagada por cascata após a exclusão real da pessoa, com FKs de
+recibo deferíveis para permitir a ordem coordenada de remoção.
+
+### 11c. Conclusão clínica — caminhos privados transacionais locais
+
+`20261025173810_mobile_clinical_full_conclusion.sql` permanece privada e sem
+rota ativa. O primeiro caminho REGULAR foi executado no PostgreSQL sintético:
+confere hashes/validade/revisões, exige aceitar a média das três fotos atuais,
+registra o peso como informado hoje (`recorded`), atualiza perfil e somente a
+meta existente do dia aberto, guarda respostas/episódio/recibo, sela todos os
+aceites do ciclo e avança a base uma vez. Consumo/exercício e dias fechados são
+preservados. O manifesto sela o descarte; não comprova remoção real de Storage.
+Replay devolve o resultado original, inclusive após reset, sem regravar medidas.
+
+O calendário valida uma cadeia de recibos concluídos, revisões finais depois do
+selo, ordem temporal e geração/epoch. Uma coluna legada ou status `completed`
+sozinho não prova FULL. Origem inicial/R/ledger de uma conta legada permanecem
+desconhecidos quando não há prova. O snapshot inclui episódio atual, últimas
+REGULAR, origem BF atual, eventos do dia e revisões de rotina desde a última
+REGULAR. Uma EARLY_FULL não apaga a mudança de nível confirmada na rotina.
+O recibo deriva e conserva `activity_level_changed`; a descrição do principal
+sozinha não prova uma mudança de nível. Esse fato bloqueia passos de n4/n16
+no ciclo, sem proibir novas correções explícitas da rotina.
+
+Clear exige uma REGULAR/EARLY_FULL concluída, “Nenhuma destas”, declaração de
+conversa profissional e nova revisão de segurança com recibo próprio. Um
+estado privilegiado sintético `hold_active=false` sem esse recibo passa a ser
+recusado. O replay do risco anterior conserva o clear confirmado; nova declaração
+produz revisão posterior e HOLD ativo. Uma falha injetada depois das escritas
+de perfil/dia/fotos desfez o conjunto no teste local.
+
+Para contas com autoridade clínica, fase/déficit/atividade/frequência e baselines
+não podem mudar pelo caminho antigo de perfil concluído. A operação privada de
+confirmação usa uma capacidade efêmera da transação, sem GUC fornecido pelo
+cliente. As triggers usam proprietário com `search_path=pg_catalog` para conferir
+autoridades privadas sem conceder leitura dessas tabelas ao service role. Edição
+manual de BF, mesmo com o mesmo número, invalida somente o ponteiro da origem
+recorrente; o recibo numérico imutável continua preservado.
+
+Antecipadas, rotina e SAFETY também foram exercitadas no SQL local: antecipada
+abandonada vira REGULAR ao completar a quinzena e passa a exigir fotos; rotina
+não move a base; SAFETY só conclui a saída elegível, preserva HOLD e sela o
+escopo de fotos deslocado. A proteção A1/A2 continua sem nova meta automática.
+
+Schedules usam o objeto canônico fechado de sete campos, datas/valores
+congelados e versão conhecida. Início e nova confirmação exigem atividade
+explicitamente confirmada, mesmo sem trocar o nível. Manter não troca valores
+nem retoma uma pausa. N5/n18 conferem o primeiro passo de 100 kcal e os passos
+datados; em n5, o alvo recalculado menor pode encerrar a transição antes da data
+planejada. R é a data de aplicação real, nunca a data final planejada ou ontem.
+Um dia já fechado não estabelece R para a nova meta que nele não foi aplicada.
+A saída n10 elegível pode encerrar a transição n5 que já está na fase manutenção,
+sem apagar HOLD. N18 não ganha uma ação comum de cancelamento no app.
+
+Mesmo sem snapshot diário existente, a confirmação grava o evento tipado da
+meta em vigor, sem fabricar um snapshot. O primeiro registro posterior de comida
+ou treino ainda precisa consumir essa autoridade na gravação final. Os oito
+testes de concorrência locais exercitaram confirmação/repetição, prévias
+concorrentes, rollback, risco/clear, reset, peso e substituição pendente de foto.
+
+**Plano ainda aberto:** integração do aplicador privado de 11d com os
+consumidores finais de metas, decisões completas de fase,
+construtores BFF de propostas, leitores e telas iOS, concorrência restante,
+revisão única do plano e QA real continuam pendentes. Os números de metas usados
+nos testes SQL são efeitos sintéticos do servidor; esses testes não substituem
+validar o cálculo real pelo BFF, publicação ou entrega ao Roberto.
+
+### 11d. Aplicações diárias privadas, sem revisões fictícias
+
+A migration 20261025191735_mobile_clinical_daily_applications.sql introduz
+diário imutável, ponteiro de aplicação e recibos de operação separados dos
+recibos FULL. Não cria cron, RPC público, rota ou ativação. Os seis campos de
+cálculo são saídas privadas do servidor vinculadas ao contexto. O construtor
+diário injetado descrito em 11e reutiliza as fórmulas reais; os construtores de
+decisão e confirmação FULL e os consumidores finais continuam pendentes.
+
+A captura interna APPLICATION usa os mesmos locks e fontes atuais, inclusive
+durante uma quinzena vencida. Esse tipo não pode criar uma prévia de reavaliação.
+O snapshot e a conclusão FULL leem o episódio efetivo, sobrepondo somente a
+aplicação da mesma geração/epoch e do último evento FULL. Um novo ponteiro de
+aplicação invalida uma prévia anterior mesmo sem alterar perfil ou snapshot.
+
+O diário registra apenas o dia real observado: não fabrica etapas intermediárias
+ou snapshots ausentes, não muda a base FULL e não cria medições de peso. Atualiza
+alvos já existentes do dia aberto e conserva consumo, exercício e dias fechados.
+Em n18, a fórmula de referência do orçamento é M congelado; o ajuste efetivo é
+o alvo da etapa menos esse M, desde a própria confirmação inicial.
+
+Uma aplicação atrasada pode encerrar o plano; R é a primeira aplicação real
+que alcança M, preservado nas seguintes. A conclusão aposenta o plano ativo e
+mantém a aprovação congelada no diário. M maior em n5 não acrescenta valores ao
+plano e exige nova confirmação ao esgotar os valores confirmados. M menor em n5
+pode ser alcançado antes. N18 conserva M congelado durante a rampa.
+
+Novo guard/HOLD suspende a etapa no alvo vigente. Clear concluído não retoma a
+subida/descida sem um novo plano confirmado. Uma meta apenas aprovada em dia
+fechado não vira alvo já aplicado: revisão de segurança posterior preserva o
+alvo anterior; a saída neutra explicitamente aprovada na mesma autoridade de
+segurança pode ser aplicada depois, com R naquele dia. Essas conferências não
+removem HOLD.
+
+Replay devolve o recibo original, inclusive após reset, sem restaurar efeitos.
+Novo cadastro real não herda ponteiro, plano ou R da geração anterior. Repetição
+com contexto fresco reconhece o alvo já aplicado; mudanças apenas em consumo
+ou exercício não geram outra etapa. Alterações de perfil/configuração/segurança,
+data ou fuso continuam vinculadas à captura atual; C/E e as datas confirmadas
+não são reinterpretados.
+
+Essa autoridade foi exercitada em SQL local e no caminho diário BFF injetado
+→ core real → PostgreSQL privado. A preparação FULL dos fixtures ainda usa
+efeitos sintéticos; não prova a composição completa das decisões clínicas.
+Faltam os contratos/construtores FULL, gravações finais de comida/treino,
+Hoje/Flow/fechamento, QA restante e revisão única do plano antes de ativar.
+
+### 11e. Cálculo diário BFF a partir da captura privada
+
+`clinical-snapshot-calculation.ts` seleciona somente os campos consumidos da
+captura SQL: dono, geração/epoch, data civil, perfil, configuração e provas
+numéricas de gordura. Não usa relógio do host, cache de configuração ou
+recálculo JS do hash PostgreSQL. Linhas completas de configuração substituem
+o campo, sem coerção de texto nem merge parcial. A cascata n11 requer a linha
+`calc.protein_factors` aprovada; o padrão 1,5 do código não prova essa linha.
+Os switches já existentes de proteína fixa continuam com a semântica do core.
+
+O percentual de um relato fica disponível aos guards, mas não entra no BMR.
+O recibo fechado do cadastro só prova fotos se corresponder à mesma conclusão
+`first_fresh`, geração, epoch, instante e valor atuais. A projeção não contém
+identificadores de imagens ou caminhos; continua válida depois do descarte
+das imagens. Redigitar o mesmo número invalida a origem de foto. A origem
+recorrente exige também o instante oficial atual. Uma média nova pode compor
+uma proposta REGULAR vinculada ao hash, mas continua exigindo confirmação.
+
+O orquestrador diário recebe somente uma chave de operação e calcula os cinco
+valores pelo core. Reconhece recibos duráveis antes de recapturar, inclusive
+após reset. Novo risco entre leitura e gravação torna o contexto obsoleto;
+não há repetição automática. Sob guard/HOLD, o comando privado não oferece
+novos alvos e deixa o SQL preservar o alvo vigente e suspender o plano.
+
+O tratamento persistido n41 de origens antigas ainda precisa ser concluído:
+na ausência dessa prova, um relato não autoriza recalcular automaticamente
+uma meta existente ou a de um novo dia. Por decisão humana de 26/10/2026,
+origem desconhecida preserva a meta até uma nova avaliação confirmada; nem
+uma diferença para cima prova uso de gordura digitada ou cria uma oferta de
+correção. A regra de correção maior para uma origem manual comprovada continua
+dependendo de prova imutável e confirmação explícita, inclusive sob HOLD.
+
+Novos alvos FULL efetivamente gravados têm um journal privado imutável,
+vinculado a usuário, geração, epoch, linha/data, valores, recibo e hash de
+contexto. A origem é especificamente das **calorias**: proteína observada no
+recibo não prova a origem da meta proteica atual. Mudança só de proteína não
+apaga o vínculo calórico. Prévia, recibo sem gravação efetiva, dia fechado e
+mera preservação não criam essa origem. Fórmula disponível não basta: em
+manutenção/ganho com ledger desconhecido, as calorias podem ter sido preservadas
+enquanto a proteína foi recalculada. Mesmo valor pode ganhar fonte nova numa avaliação calculada e
+confirmada; alteração posterior dos alvos invalida o ponteiro, sem apagar o
+journal ou ressuscitá-lo ao restaurar números iguais. Consumo, treino e XP
+preservam o vínculo. Esse comprovante não torna um relato de gordura uma
+medição nem entrada de fórmula. Propagação pelos writers diário/fechamento,
+correção manual comprovada e consumidores finais ainda estão em integração.
+
+FULL e aplicação diária agora materializam o dia ausente ou preenchem a meta
+NULL quando há um alvo válido autorizado, tocando somente metas/fase e timestamp
+em linhas existentes. Consumo, exercício, XP e dias fechados são preservados;
+não se preenchem dias intermediários perdidos. O valor anterior deve coincidir
+com o snapshot capturado, inclusive ausência/NULL; schedule novo não pode usar
+um valor de partida informado sem prova. Evento/R não substituem a gravação.
+Déficit NULL legado continua desconhecido em `legacy_unknown`, sem fabricar500,
+sem nova fórmula nem passos calóricos automáticos. Keep protegido, rotina e
+aplicação diária preservam esse estado; fase nova exige escolha explícita e
+cálculo/eligibilidade independentes válidos. O default do motor legado não mudou.
+
+Tudo permanece sem composição no runtime. Não há RPC público, transporte
+service_role, rota, cron, flag, envio de mídia ou ativação por estes módulos.
+
+### 11f. Preferência pessoal e comparações clínicas dos limites
+
+A regra n21 é uma preferência separada, não `goal_type`/`goal_value` e nunca
+entrada de cálculo. O helper `evaluateReevaluationGoalPreference` usa o peso
+pretendido para recusar IMC abaixo de 18,5, recusa gordura abaixo de 10% para
+todos e abaixo de 12% para mulheres. Ausência de altura ou sexo fecha somente
+o critério dependente. Rotina usa lista fechada. Valores clínicos recusados ou
+sem evidência retornam `normalizedPreference: null`: o futuro prepare deve
+usar esse formulário normalizado antes de gravar qualquer hash/recibo.
+
+A conclusão SQL verifica novamente a preferência antes de qualquer escrita.
+Recibo imutável e ponteiro privados são gravados na mesma transação da FULL;
+preparar uma prévia não grava a preferência. Manter/pular conserva o ponteiro,
+remover conserva o histórico e zera só a preferência. O contexto inclui o
+ponteiro vigente da geração/epoch atuais; reset não o relabela e replay não
+restaura efeitos. Uma falha tardia da preferência desfaz também perfil, peso e
+FULL. Nenhum alvo, déficit ou fase é derivado desses registros.
+
+Os comparadores dos novos módulos clínicos usam razões decimais exatas nos
+limites 18,5 e 25, sem arredondar o IMC nem usar epsilon. Assim, 47,36 kg a
+160 cm é exatamente 18,5; 64 kg a 160 cm é exatamente 25. A primeira igualdade
+não aciona A1; a segunda não libera ganho. N39 mantém a exceção por foto
+desligada: fotos confirmadas não liberam ganho com IMC igual/acima do corte.
+Os testes antigos que afirmavam o contrário foram corrigidos após reproduzir
+a divergência com `final.answers` n10/n39.
+
+**Integração ainda pendente:** os novos módulos estão dormentes. O BFF FULL
+deve conectar a normalização/decisões/confirmar e o cadastro deve aplicar
+n10/n39 em todos os caminhos de admissão. O helper legado de elegibilidade do
+cadastro e seus testes permanecem preservados neste incremento; isso não
+qualifica o cadastro vigente como conforme à n39 nova. A etapa opcional de
+preferência no cadastro também não foi ativada.
+
+### 11e. Defesa de entrada do ganho no cadastro — local e ainda sem ativação
+
+`signupGainCompositionUnmet` centraliza os dois critérios independentes n39
+para a decisão e os textos do BFF. A interface conserva `gain_composition`,
+compatível com o DTO nativo; a mensagem nomeia IMC, gordura ou ambos, na ordem,
+sem dizer que gordura está acima do limite quando o único veto é IMC.
+
+`20261025215000_mobile_signup_gain_authority.sql` acrescenta uma função privada
+sem permissão direta e uma chamada no writer `complete_mobile_onboarding_atomic`,
+somente depois do retorno de reaceite e antes da primeira mutação. Abrange
+conclusão direta, wrapper de fotos, limpeza e keyed; preserva a resposta original
+do keyed replay antes de novas regras/configurações. `completed=true` sem
+instante ainda é uma primeira escrita e não dispensa o guard. Os valores
+corporais são arredondados como as colunas e o IMC usa produtos `numeric`
+exatos. A configuração consumida fica sob lock SHARE, incluindo inserções.
+Só ganho é defendido por essa função: ela não substitui n10/no-plan, nem
+altera `resolveProtocol` do legado, fórmula, histórico ou valores já gravados.
+A recusa SQL vira o mesmo422 sanitizado da antecipação do BFF.
+
+### 11f. N11 — respostas auditadas e inputs de proteína aprovados
+
+Estado local/dormente de25/10: `resolveProteinBranch` nomeia a cascata que já
+existia em `resolveProteinFactor`. Os fatores e os fallbacks não mudaram;
+ambos usam o mesmo ramo. O peso não seleciona ramo, embora altere os gramas.
+`evaluateReevaluationProteinInputs` separa valores candidatos dos valores
+que podem acompanhar a conclusão: mesmo ramo pode salvar respostas sem uma
+confirmação adicional; outro ramo exige pacote de rotina/fase aceito e tabela
+oficial completa. Guard/HOLD/no-plan conserva os inputs antigos. Fome nula
+continua nula; Moderada é somente fallback do cálculo. O estado de saúde usado
+pelo futuro BFF deve ser o efetivo daquele FULL, incluindo clear válido ali.
+
+A projeção do BFF usa inputs do perfil por padrão. `proteinInputSource=answers`
+é uma escolha explícita de projeção candidata, nunca uma autorização de escrita.
+O formulário curto de rotina oferece fome estruturada em ganho/manutenção,
+como exige n11; isso não permite ao chat alterar o perfil.
+
+A proposta privada FULL agora inclui `profile.hunger_level` de forma explícita,
+junto de nível/frequência. O writer grava esses efeitos; não copia mais fome
+bruta do formulário. Resposta ausente não apaga nem inventa valor. Um ramo novo
+precisa de principal apropriado aceito; escolha de nível no rascunho também não
+é confirmação dos efeitos. As cercas de guard incluem fome/frequência, e n10
+vence antes da decisão de proteína/tabela. A cerca do perfil inclui fome para
+contas já protegidas pela autoridade clínica. O recibo continua guardando o
+formulário original, mesmo quando a proposta foi recusada. Replay reconhece o
+original antes da recaptura e não restaura efeitos após reset.
+
+Estas verificações são locais no core/SQL e na projeção injetada. O factory BFF
+FULL ainda precisa ligar decisão, valores before/after, principal confirmado,
+hashes e transporte autenticado; não existe rota clínica ativa por este avanço.
+Os fixtures SQL usam efeitos de metas sintéticos: não comprovam esse factory
+nem a integração iOS/Storage. A extração do ramo toca uma função comum do motor,
+mas preserva a fórmula e não evolui a entrada legada do WhatsApp.
+
+### 11g. N10 — aceites e riscos no cadastro, sem antecipar respostas ordinárias
+
+`private.admit_mobile_signup_health` é uma entrada privada/dormente. Recebe
+operação estável, intenção real do cadastro, referências exatas dos documentos
+e somente riscos marcados do catálogo único. O owner vem da autenticação;
+epoch e relógio vêm do servidor. Nenhuma/opt-out não usam essa operação e não
+limpam um HOLD existente. Peso, nascimento, rotina, fome, objetivo e conclusão
+não cabem nesse comando e não são gravados por ele.
+
+Uma operação nova confere owner ativo, intenção/chave/epoch atuais e cadastro
+ainda aberto. O perfil fica travado com NOWAIT para não esperar um writer
+legado em ordem inversa. Depois trava os catálogos legais na ordem documentos
+→ conjuntos, em EXCLUSIVE, e só então obtém o relógio e as versões vigentes.
+SHARE sozinho não cerca o FOR UPDATE de um publisher. A transação é curta e
+não pode conter chamadas a provedores. Todos os documentos obrigatórios devem
+coincidir em key/versão/locale/hash/ação; o conjunto deve incluir o purpose
+`closed_evaluation_sensitive_health_data_processing` com ação `consent`.
+Qualquer outro consentimento, inclusive QA publicado, não substitui esse aceite.
+Isso vincula a política existente; não aprova ou publica novos textos legais.
+
+Os aceites explícitos e a declaração de riscos são gravados atomicamente com
+um recibo imutável que guarda intenção, epoch e evidência legal. Aceites antigos
+conservam seus instantes. A operação de risco recebe UUID interno independente,
+para não adotar uma declaração anterior de outra rota. Falha tardia desfaz
+ambos os efeitos. Replay é reconhecido antes de validar a geração ou política
+atuais e somente lê o estado de saúde atual: não regrava aceite, não declara
+riscos novamente e não rearma um alerta encerrado por FULL.
+
+O serviço injetado captura identidade/comando antes do primeiro await, valida
+o recibo, esconde epoch/chave interna e não repete chamadas incertas. Há prova
+local do serviço real com SQL privado, inclusive repetição após reset, e de
+clear por uma FULL real. Os efeitos de metas dessa FULL são fixtures sintéticos;
+não comprovam o avaliador BFF FULL completo. Ainda faltam transporte confiável,
+UI, cadastro `objective:null`, consumidores n10 e a cerca da rota parcial.
+Não há rota/grant novo, ativação remota ou entrega TestFlight por esta etapa.
+
+### 11h. N10 — conclusão sem plano e retirada da escrita parcial do app
+
+Estado R240 local/em implementação. A conclusão aceita `objective:null`
+explicitamente somente quando a idade civil atual é menor de18 ou a saúde
+validada atual indica gestação/amamentação. Uma fase concreta nesses casos é
+recusada; um adulto sem A3/A4 não pode enviar nulo. HOLD permite manutenção
+somente por escolha explícita; A1/A2 recusam perda sem atribuir substituto.
+A defesa de ganho n39 permanece independente. A idade usa mês/dia e a mesma
+zona validada que a transação vai salvar, com relógio obtido depois das esperas
+por perfil, publicação e configuração. As três delegações do cadastro usam a
+mesma defesa final. Não há cálculo, snapshot, episódio ou R inventado no atomic.
+
+A resposta tem `clinical_safety`, observação datada do servidor, e o BFF não
+cria welcome para objetivo nulo ou observação sem plano. O reaceite usa igualdade
+null-safe e conserva a fase nula, inclusive depois de uma correção da idade.
+Seus campos históricos ficam iguais; essa nova observação pode ser renovada.
+O keyed replay preserva o resultado original dentro da autoridade válida. Reset
+continua proibindo o keyed antigo por epoch antes do replay, conforme o contrato
+existente; isso difere do recibo independente de saúde da11g.
+
+O DTO não troca nulo por manutenção. Um resultado nulo precisa da observação
+coerente; rascunho de reaceite admite nulo sem fabricar enum. Clientes incapazes
+recebem pedido de atualização quando precisariam decodificar esse rascunho.
+O novo transporte HTTP de objetivo nulo exige intenção positiva osc1, para
+preservar a origem keyed da futura reavaliação. A rota parcial antiga do app
+retorna409 antes do ledger, do writer e do cálculo legado. O tool compartilhado
+não mudou; o rascunho nativo atual já é mantido no aparelho.
+
+O fence do perfil reconhece também o recibo keyed first_fresh com objetivo
+JSON null e marcador no-plan explícito. Assim um writer ordinário não inventa
+fase nem troca inputs de rotina numa conta desse tipo. NULL legado sem esse
+marcador não é reclassificado. A prova de origem não perpetua a restrição atual:
+idade, saúde e visibilidade precisam ser lidas novamente no servidor.
+
+**Integração pendente:** `clinical_safety` de um replay é histórica, não uma
+permissão clínica atual. Faltam projeção atual comum, precheck n10 antes do
+claim (o seletor antigo ainda não representa HOLD/manutenção), eligibility,
+GETs/capacidade, telas Swift, Hoje, Flow e closer. Uma conta sem fase também
+precisa de FULL de saúde sem produzir episódio/proteína/metas para poder limpar
+HOLD legitimamente. O fluxo normal FULL ainda recusa fase nula; não basta tirar
+essa recusa, pois a cascata trataria NULL como manutenção. REGULAR continua
+exigindo suas três NOVAS fotos; EARLY não pode contornar uma REGULAR vencida.
+Sem instalação integral nova/T5/revisão e QA real, nada disso está ativado.
+
+
+### Integração clínica corrente de leitura — R244 (local, dormente)
+
+`current-clinical-read-model.ts` compõe Hoje/Progresso/Plano/Tendências/Objetivo com duas observações clínicas SQL do mesmo dono e contexto estável; uma mudança de perfil/saúde/geração/configuração/data/fuso recusa a leitura. Não é conclusão clínica nem escritor do fechamento. O transporte/capacidade não estão ativados no app.
+
+A representação `clinical_policy=current_clinical_v1` permite campos clínicos indisponíveis sem confundirNULLcomzero. Sem essa capacidade, contas cuja política exige ocultação/pausa recebem pedido de atualização antes do leitor numérico. A query não define a regra: servidor deriva a saúde atual. Não expor respostas/códigos de risco ao modelo.
+
+Na composição clínica readonly, metas vêm individualmente de `daily_snapshot`; `profile_calculation` e igualdade com fórmula não constituem recibo/proveniência. Um dia sem meta aplicada deve esperar o writer clínico integrado, não o fallback de TDEE quando faseNULL. Latches e fontes anteriores continuam; registros, consumo, exercício, hidratação e histórico persistido não são alterados. Datas/fatores usados para conferir o latch são da capturaSQL, sem cache de configuração; `dailyTargetByProtocol` aceita data civil opcional, preservando exatamente o comportamento antigo quando ausente. Não mudou fórmula alguma. O novo `resolveTargetRead` é injetável: um alvo nulo explícito nunca dispara o calculador legado como fallback.
+
+A3/A4 não exibem objetivo/metas/balanço/bloco/orçamento; confirmed_no_plan continua sem primeira fase após18/clear até comando confirmado. HOLD preserva fase e metas armazenadas, pausa orientação automática; professional_diet oculta a meta de proteína. JSON opaco de prescrição nutricional não é encaminhado nessa situação. Reaceite/ACK histórico não são regra atual. ConsumidoresSwift/Flowlivre, closercomrevisãosaúde, factoryFULL e ativação conjunta ainda pendentes; não inferir integração/entrega desses módulos locais.
+
+### Pontuação e conferência clínica — decisão de Eduardo em26/10
+
+Eduardo escolheu **manter o bônus de proteína pela regra atual**, inclusive quando uma proteção clínica suspende/oculta a meta. A regra existente de `calcDailyXP` continua: tabela legada usa seu threshold; tabela MPP usa a meta disponível e, na ausência, o threshold configurado. Pontos por registro e histórico permanecem. Não criar uma meta apenas para calcular XP, nem transformar ausência em zero/Infinity. Esta decisão de pontuação não libera novas metas nem orientações suspensas por n10. Os seis casos de caracterização em `protein-xp-absence-policy.test.ts` preservam os limites e a diferença entre meta existente e ausente; não representam ativação do closer clínico.
+
+No transporte local R247, a conferência do perfil inclui explicitamente `activity_level` e `hunger_level`, além do timestamp: duas mudanças legítimas na mesma transação podem compartilhar `updated_at`. A composição HTTP clínica permanece opt-in no servidor, sem flag/default ativo; preflight de representação/locale antes de efeitos e leitores novos após efeitos. Esses ports ainda exigem o closer clínico atômico completo e as verificações T4/T5 antes de ativação.

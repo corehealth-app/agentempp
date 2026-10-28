@@ -1,0 +1,436 @@
+{
+  "facts": {
+    "owner": {
+      "id": "b3b01000-0000-4000-8000-000000003400",
+      "wpp": null,
+      "locale": "pt-BR",
+      "status": "active",
+      "timezone": "America/Sao_Paulo"
+    },
+    "current": {
+      "body": {
+        "sex": "masculino",
+        "locale": "pt-BR",
+        "timezone": "America/Sao_Paulo",
+        "height_cm": 180.0,
+        "weight_kg": 80.0,
+        "birth_date": "1990-01-01",
+        "body_fat_percent": null,
+        "training_frequency": 4
+      },
+      "date": "2026-10-26",
+      "mode": "profile",
+      "epoch": "c281b67f-624a-436a-b2a3-4b12bef2812d",
+      "safety": {
+        "date": "2026-10-26",
+        "no_plan": false,
+        "version": 1,
+        "timezone": "America/Sao_Paulo",
+        "loss_guard": false,
+        "hold_active": false,
+        "observed_at": "2026-10-26T21:25:21.123840Z",
+        "hide_protein": false,
+        "recording_allowed": true
+      },
+      "missing": [],
+      "user_id": "b3b01000-0000-4000-8000-000000003400",
+      "version": 1,
+      "timezone": "America/Sao_Paulo",
+      "assessment": "complete",
+      "observed_at": "2026-10-26T21:25:21.123840Z",
+      "context_hash": "4cbdb723a13f4f09d7492751209233915ce36ead50cc068c63cf76db205dd612",
+      "health_state": {
+        "items": [],
+        "user_id": "b3b01000-0000-4000-8000-000000003400",
+        "version": 1,
+        "hold_active": false,
+        "hide_protein": false,
+        "safety_revision": "0",
+        "declared_no_plan": false,
+        "last_declared_at": null
+      },
+      "phase_origin": {
+        "kind": "assigned",
+        "phase": "recomposicao"
+      },
+      "profile_hash": "365cc2fcc5e257f3f1b3ff74a6ba78869233b0c1e603bc6e3e04209a44be3183",
+      "profile_present": true,
+      "first_completion": false,
+      "generation_token": {
+        "receipt_count": 0,
+        "onboarding_completed": true,
+        "onboarding_completed_at": "2026-10-19T15:00:00.000000Z"
+      },
+      "signup_generation": "c82cb0cf-7189-4cf5-a8f6-c756faddbabb",
+      "calculation_config": [
+        {
+          "key": "calc.activity_factors",
+          "value": {
+            "alto": 1.725,
+            "leve": 1.375,
+            "atleta": 1.9,
+            "moderado": 1.55,
+            "sedentario": 1.2
+          },
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.badges",
+          "value": [
+            {
+              "key": "Primeira Semana",
+              "type": "streak",
+              "threshold": 7
+            },
+            {
+              "key": "M\u00eas de Ferro",
+              "type": "streak",
+              "threshold": 30
+            },
+            {
+              "key": "Atleta Real",
+              "type": "streak",
+              "threshold": 90
+            },
+            {
+              "key": "Primeiro Bloco",
+              "type": "blocks",
+              "threshold": 1
+            },
+            {
+              "key": "XP Master",
+              "type": "xp",
+              "threshold": 1000
+            },
+            {
+              "key": "Elite",
+              "type": "xp",
+              "threshold": 3500
+            }
+          ],
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.bf_goal_rules",
+          "value": [
+            {
+              "above": 30,
+              "subtract": 10
+            },
+            {
+              "above": 20,
+              "target": 20
+            },
+            {
+              "above": 18,
+              "target": 18
+            },
+            {
+              "above": 15,
+              "target": 15
+            },
+            {
+              "above": 0,
+              "target": 10
+            }
+          ],
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.bf_limits",
+          "value": {
+            "feminino": {
+              "gain": 27,
+              "recomp": 28
+            },
+            "masculino": {
+              "gain": 19,
+              "recomp": 20
+            }
+          },
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.bmr_katch",
+          "value": {
+            "base": 370,
+            "lbm_coef": 21.6
+          },
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.bmr_mifflin",
+          "value": {
+            "age_coef": 5,
+            "height_coef": 6.25,
+            "male_offset": 5,
+            "weight_coef": 10,
+            "female_offset": -161
+          },
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.imc_goal_steps",
+          "value": [
+            30,
+            25,
+            23,
+            22,
+            21
+          ],
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.imc_limit_recomp",
+          "value": 25,
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.kcal_block",
+          "value": 7700,
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.levels",
+          "value": [
+            {
+              "max": 99,
+              "min": 0,
+              "name": "In\u00edcio",
+              "level": 1
+            },
+            {
+              "max": 299,
+              "min": 100,
+              "name": "Const\u00e2ncia",
+              "level": 2
+            },
+            {
+              "max": 599,
+              "min": 300,
+              "name": "Foco",
+              "level": 3
+            },
+            {
+              "max": 999,
+              "min": 600,
+              "name": "Disciplina",
+              "level": 4
+            },
+            {
+              "max": 1499,
+              "min": 1000,
+              "name": "Performance",
+              "level": 5
+            },
+            {
+              "max": 2199,
+              "min": 1500,
+              "name": "Dom\u00ednio",
+              "level": 6
+            },
+            {
+              "max": 2999,
+              "min": 2200,
+              "name": "Elite MPP",
+              "level": 7
+            },
+            {
+              "max": null,
+              "min": 3000,
+              "name": "Lenda MPP",
+              "level": 8
+            }
+          ],
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.protein_factors",
+          "value": {
+            "muita": 1.6,
+            "pouca": 1.8,
+            "moderada": 1.8,
+            "training_low": 1.7,
+            "optimal_mid_training": 1.9,
+            "optimal_high_training": 2.0
+          },
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.sleep_min_hours",
+          "value": 6.5,
+          "updated_at": "2026-10-24T13:14:45.998887Z"
+        },
+        {
+          "key": "calc.training_min",
+          "value": 3,
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        },
+        {
+          "key": "calc.xp_rules",
+          "value": {
+            "base": 10,
+            "protein_bonus": 5,
+            "training_bonus": 5,
+            "protein_threshold_g": 100
+          },
+          "updated_at": "2026-10-24T13:14:44.455749Z"
+        }
+      ]
+    },
+    "profile": {
+      "sex": "masculino",
+      "bedtime": null,
+      "user_id": "b3b01000-0000-4000-8000-000000003400",
+      "bf_source": null,
+      "goal_type": null,
+      "height_cm": 180.0,
+      "wake_time": null,
+      "weight_kg": 80.0,
+      "birth_date": "1990-01-01",
+      "created_at": "2026-10-26T21:25:20.748832Z",
+      "goal_value": null,
+      "updated_at": "2026-10-25T15:00:00.000000Z",
+      "hunger_level": "moderada",
+      "water_intake": null,
+      "deficit_level": 500,
+      "activity_level": "moderado",
+      "cycle_start_at": null,
+      "bf_estimated_at": null,
+      "onboarding_step": 0,
+      "body_fat_percent": null,
+      "current_protocol": "recomposicao",
+      "food_organization": null,
+      "training_frequency": 4,
+      "weight_measured_at": "2026-10-26T21:25:20.834157Z",
+      "bf_percent_estimated": null,
+      "body_fat_measured_at": null,
+      "onboarding_completed": true,
+      "cycle_start_weight_kg": null,
+      "weight_instant_source": "recorded",
+      "cycle_start_bf_percent": null,
+      "onboarding_completed_at": "2026-10-19T15:00:00.000000Z",
+      "cycle_start_training_freq": null
+    },
+    "calendar": {
+      "date": "2026-10-25",
+      "late": true,
+      "today": "2026-10-26",
+      "day_end": "2026-10-26T03:00:00+00:00",
+      "day_start": "2026-10-25T03:00:00+00:00",
+      "pattern_to": "2026-10-25",
+      "pattern_from": "2026-10-12",
+      "current_day_end": "2026-10-27T03:00:00.000000Z",
+      "latest_closable_date": "2026-10-25"
+    },
+    "frontier": null,
+    "progress": null,
+    "snapshot": {
+      "id": "b0b8348e-7e6f-4037-b0fd-3f3903297a21",
+      "date": "2026-10-25",
+      "fat_g": 0.0,
+      "steps": null,
+      "carbs_g": 0.0,
+      "user_id": "b3b01000-0000-4000-8000-000000003400",
+      "closed_at": null,
+      "protein_g": 0.0,
+      "xp_earned": 0,
+      "created_at": "2026-10-26T21:25:20.748832+00:00",
+      "day_closed": false,
+      "day_status": "complete",
+      "updated_at": "2026-10-25T15:00:00+00:00",
+      "sleep_hours": null,
+      "daily_balance": -2000,
+      "training_done": false,
+      "protein_target": 130.0,
+      "calories_target": 2000,
+      "current_protocol": "recomposicao",
+      "calories_consumed": 0,
+      "exercise_calories": 0,
+      "water_consumed_ml": 777,
+      "deficit_accumulated": 0,
+      "gap_reminder_sent_at": null
+    },
+    "day_meals": [
+      {
+        "id": "37a27491-5d16-4f41-ab0d-1d0d2dd56a66",
+        "kcal": 1600.0,
+        "fat_g": 20.0,
+        "carbs_g": 90.0,
+        "user_id": "b3b01000-0000-4000-8000-000000003400",
+        "meal_type": "almoco",
+        "protein_g": 100.0,
+        "consumed_at": "2026-10-25T15:00:00+00:00",
+        "snapshot_id": "b0b8348e-7e6f-4037-b0fd-3f3903297a21"
+      }
+    ],
+    "disposition": "ready",
+    "skip_events": [],
+    "day_workouts": [],
+    "later_closed": [],
+    "pattern_meals": [
+      {
+        "id": "37a27491-5d16-4f41-ab0d-1d0d2dd56a66",
+        "meal_type": "almoco",
+        "snapshot_id": "b0b8348e-7e6f-4037-b0fd-3f3903297a21"
+      }
+    ],
+    "earlier_activity": [],
+    "inbound_messages": [],
+    "registered_meals": [
+      {
+        "id": "37a27491-5d16-4f41-ab0d-1d0d2dd56a66",
+        "meal_type": "almoco"
+      }
+    ],
+    "target_authority": {
+      "phase_origin": {
+        "kind": "assigned",
+        "phase": "recomposicao"
+      },
+      "applied_target": {
+        "date": "2026-10-25",
+        "phase": "recomposicao",
+        "source": "clinical_full_v1",
+        "user_id": "b3b01000-0000-4000-8000-000000003400",
+        "version": 1,
+        "origin_id": "1a93cbe2-b156-456b-9873-63124342daef",
+        "review_id": "d8fddf21-6c98-4546-94c2-e964bb30e2b2",
+        "origin_kind": "calculated",
+        "recorded_at": "2026-10-25T15:00:00.000000Z",
+        "snapshot_id": "b0b8348e-7e6f-4037-b0fd-3f3903297a21",
+        "context_hash": "c6453e5f2df02c9406e11b982fceb4f5b3976a39001fa00fe8cbe0625d26413a",
+        "signup_epoch": "c281b67f-624a-436a-b2a3-4b12bef2812d",
+        "deficit_level": 500,
+        "application_id": null,
+        "formula_target": 2000,
+        "protein_target": 130.0,
+        "calories_target": 2000,
+        "parent_origin_id": null,
+        "target_component": "calories",
+        "signup_generation": "c82cb0cf-7189-4cf5-a8f6-c756faddbabb",
+        "decision_review_id": null,
+        "signup_application_id": null
+      },
+      "body_fat_origin": null,
+      "body_fat_candidate": null,
+      "signup_body_fat_origin": null
+    },
+    "pattern_snapshots": [
+      {
+        "id": "b0b8348e-7e6f-4037-b0fd-3f3903297a21",
+        "date": "2026-10-25"
+      }
+    ]
+  },
+  "request": {
+    "date": "2026-10-25",
+    "from": "2026-10-15",
+    "kind": "close",
+    "timezone": "America/Sao_Paulo"
+  },
+  "user_id": "b3b01000-0000-4000-8000-000000003400",
+  "version": 1,
+  "observed_at": "2026-10-26T21:25:21.123840Z",
+  "context_hash": "1299081045df9329eb0bc037e88c330040dfa3fb8dd2aa6040a3e168068ce2c0"
+}

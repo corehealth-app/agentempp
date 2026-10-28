@@ -13,17 +13,26 @@ import { clearCalcConfigCache } from '@mpp/agent'
 import { DayCloseMemoryDb } from '@mpp/agent/testing/day-close-memory-db'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MobileRouteContext } from '@/lib/mobile-api/route'
+import { invokeContextRoute } from '@/lib/mobile-api/testing/mobile-route-context-fixture'
 
 const readModel = vi.hoisted(() => ({ loadToday: vi.fn() }))
 
-vi.mock('@/lib/mobile-api/route', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/mobile-api/route')>()),
-  createMobileRoute: (handler: unknown) => handler,
+vi.mock('@/lib/mobile-api/route', async (importOriginal) => {
+  const { wrapContextRouteHandler } = await import(
+    '@/lib/mobile-api/testing/mobile-route-context-fixture'
+  )
+  return {
+    ...(await importOriginal<typeof import('@/lib/mobile-api/route')>()),
+    createMobileRoute: wrapContextRouteHandler,
+  }
+})
+vi.mock('@/lib/mobile-api/read-model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/mobile-api/read-model')>()),
+  ...readModel,
 }))
-vi.mock('@/lib/mobile-api/read-model', () => readModel)
 
 const { GET } = await import('./route')
-const handler = GET as unknown as (context: MobileRouteContext) => Promise<Response>
+const handler = (context: MobileRouteContext) => invokeContextRoute(GET, context)
 
 const USER = '0b9f6f0e-0000-4000-8000-00000000d0c7'
 const STAGING_REF = 'xitugspwfxkcluxvrdeg'

@@ -31,6 +31,7 @@ export async function loadTodayStrengthTrainingWeek(
   userId: string,
   currentProtocol: string | null | undefined,
   enabled: () => boolean = strengthTrainingWeekEnabled,
+  clinicalFullAuthority = false,
 ): Promise<TodayStrengthTrainingWeek | undefined> {
   if (
     !enabled() ||
@@ -41,7 +42,7 @@ export async function loadTodayStrengthTrainingWeek(
     return undefined
 
   const result = await readStrengthTrainingWeek(
-    createStrengthWeekRepository(supabase, { enabled: true }),
+    createStrengthWeekRepository(supabase, { enabled: true, clinicalFullAuthority }),
     userId,
   )
   if (result.status === 'unavailable') return { status: 'unavailable', reason: result.reason }

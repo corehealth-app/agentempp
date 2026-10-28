@@ -20,6 +20,44 @@ const base: SignupEligibilityInput = {
 }
 const woman: SignupEligibilityInput = { ...base, sex: 'feminino', heightCm: 165, weightKg: 62 }
 
+describe('approved n9/n39 — a fat report never bypasses the gain BMI criterion', () => {
+  it.each([
+    [180, 84.24, 15, 'masculino'],
+    [160, 64, 15, 'masculino'],
+    [160, 64, 27, 'feminino'],
+  ] as const)('keeps the choice but closes gain at %s cm / %s kg / %s%% (%s)', (heightCm, weightKg, bodyFatPercent, sex) => {
+    const result = decide({ ...base, sex, heightCm, weightKg, bodyFatPercent })
+    expect(result.outcome).toBe('choice')
+    expect(result.objectives.ganho_massa).toEqual(blocked('composition'))
+    expect(result.objectives.recomposicao).toEqual(AVAILABLE)
+    expect(result.objectives.manutencao).toEqual(AVAILABLE)
+  })
+
+  it('requires both gain criteria and applies the configured BMI cut', () => {
+    expect(brief({ ...base, weightKg: 84.24, bodyFatPercent: 15 })).toBe(
+      'choice blocked composition',
+    )
+    expect(
+      brief(
+        { ...base, weightKg: 84.24, bodyFatPercent: 15 },
+        { ...DEFAULT_CALC_CONFIG, imc_limit_recomp: 27 },
+      ),
+    ).toBe('choice available')
+    expect(
+      brief(
+        { ...base, weightKg: 84.24, bodyFatPercent: 15 },
+        { ...DEFAULT_CALC_CONFIG, imc_limit_recomp: 26 },
+      ),
+    ).toBe('choice blocked composition')
+    expect(
+      brief(
+        { ...base, weightKg: 84.23, bodyFatPercent: 15 },
+        { ...DEFAULT_CALC_CONFIG, imc_limit_recomp: 26 },
+      ),
+    ).toBe('choice available')
+  })
+})
+
 const MAN_LIMITS = { bodyFatRecomp: 20, bodyFatGain: 19, imcRecomp: 25, trainingMin: 3 }
 const WOMAN_LIMITS = { bodyFatRecomp: 28, bodyFatGain: 27, imcRecomp: 25, trainingMin: 3 }
 
@@ -460,11 +498,11 @@ describe('decideSignupEligibility — gordura em cada corte, por sexo (musculaç
   })
 })
 
-describe('decideSignupEligibility — gordura informada decide; o IMC só decide sem ela', () => {
-  it('homem 15% com IMC 26: escolhe, três disponíveis', () => {
+describe('decideSignupEligibility — gordura decide o corte; ganho também exige IMC abaixo', () => {
+  it('homem 15% com IMC 26: escolhe, ganho fechado pela regra aprovada n9/n39', () => {
     const result = decide({ ...base, bodyFatPercent: 15, weightKg: 84.24 })
     expect([result.outcome, result.basis]).toEqual(['choice', 'BF'])
-    expect(result.objectives.ganho_massa).toEqual(AVAILABLE)
+    expect(result.objectives.ganho_massa).toEqual(blocked('composition'))
   })
 
   it('homem 22% com IMC 23: recomposição sem perguntar', () => {

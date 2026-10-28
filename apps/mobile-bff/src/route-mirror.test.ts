@@ -139,14 +139,14 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
     {
       name: 'Auth replacing clarification at the same count',
       replace: true,
-      count: 56,
-      hash: '44bf6943744d6aa311687a4a11426a42e15d0b09c1bcd69122268c5049a58e1f',
+      count: 74,
+      hash: '2cf11178593151261eb9b4e2ebdc1a0689d87b5fd53ac458f7104de807e44106',
     },
     {
       name: 'Auth added alongside clarification',
       replace: false,
-      count: 57,
-      hash: 'f56ca450cf29bfd02ba9e06c06876e0e0c475444e461aacc3b218fc31c6d587d',
+      count: 75,
+      hash: '109cdb03a29399358c586046a6f98aace5eb6628fed4f290e1ca05193cc1a0a1',
     },
   ])('rejects $name through the closed inventory', ({ replace, count, hash }) => {
     withAuthComposition(replace, (script) => {
@@ -163,7 +163,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
     })
   })
 
-  test('accepts the approved 56-route mirror with the owned clarification in the CLI gate', () => {
+  test('accepts the approved 74-route mirror with the owned clarification in the CLI gate', () => {
     const registration = sourceRecords().find(
       (record) => record.path === 'registrations/[id]/route.ts',
     )
@@ -177,11 +177,11 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
 
     expect(result.error).toBeUndefined()
     expect(result.status, result.stderr).toBe(0)
-    expect(result.stdout).toContain('SOURCE_ROUTE_EXPORT_COUNT=56')
-    expect(result.stdout).toContain('WRAPPER_ROUTE_EXPORT_COUNT=56')
+    expect(result.stdout).toContain('SOURCE_ROUTE_EXPORT_COUNT=74')
+    expect(result.stdout).toContain('WRAPPER_ROUTE_EXPORT_COUNT=74')
     for (const surface of ['SOURCE', 'WRAPPER']) {
       expect(result.stdout).toContain(
-        `${surface}_ROUTE_EXPORT_STREAM_SHA256=b88a27d2d694fb0ca539b9075c369978956d51aa25427b52da46983919b7d0e8`,
+        `${surface}_ROUTE_EXPORT_STREAM_SHA256=9c7daf99f0c9baab62f037d3d9301417c4a025283e863f44cd4dfab77588e485`,
       )
     }
     expect(result.stdout).toContain('ROUTE_MIRROR_STATUS=VERIFIED')
@@ -192,7 +192,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
     const wrappers = wrapperRecords()
 
     console.info(`WRAPPER_ROUTE_EXPORT_COUNT=${wrappers.length}`)
-    expect(wrappers, `expected 56 wrappers but observed ${wrappers.length}`).toHaveLength(56)
+    expect(wrappers, `expected 74 wrappers but observed ${wrappers.length}`).toHaveLength(74)
 
     expect(wrappers.map(({ path, exports }) => ({ path, exports }))).toEqual(sources)
 
@@ -203,7 +203,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
 
     const hash = hashRecords(wrappers)
     console.info(`WRAPPER_ROUTE_EXPORT_STREAM_SHA256=${hash}`)
-    expect(hash).toBe('b88a27d2d694fb0ca539b9075c369978956d51aa25427b52da46983919b7d0e8')
+    expect(hash).toBe('9c7daf99f0c9baab62f037d3d9301417c4a025283e863f44cd4dfab77588e485')
   })
 
   test('declares Flow route runtime limits locally for Next static analysis', () => {

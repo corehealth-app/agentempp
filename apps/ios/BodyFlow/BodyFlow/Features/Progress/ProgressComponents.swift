@@ -113,8 +113,12 @@ struct ProgressPresentation: Equatable, Sendable {
         levelText = "\(Self.copy("progress.level", language)) \(Self.integer(snapshot.level, language: language))"
         currentStreakText = Self.days(snapshot.currentStreak, language: language)
         longestStreakText = Self.days(snapshot.longestStreak, language: language)
-        completedBlocksText = Self.integer(snapshot.blocksCompleted, language: language)
-        deficitBlockText = "\(Self.integer(snapshot.deficitBlock, language: language)) kcal"
+        let blocks = snapshot.clinicalPolicy?.hide.block == true ? nil : snapshot.blocksCompleted
+        let deficit = snapshot.clinicalPolicy?.hide.block == true ? nil : snapshot.deficitBlock
+        completedBlocksText = blocks.map { Self.integer($0, language: language) }
+            ?? Self.copy("progress.not-available", language)
+        deficitBlockText = deficit.map { "\(Self.integer($0, language: language)) kcal" }
+            ?? Self.copy("progress.not-available", language)
         weightText = snapshot.currentWeight.map {
             "\(Self.decimal($0, language: language)) kg"
         } ?? Self.copy("progress.not-available", language)

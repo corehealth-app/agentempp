@@ -5,6 +5,13 @@ import Testing
 
 @Suite("Current objective — read only")
 struct CurrentObjectiveTests {
+    @Test("A pending first-phase choice is visible even without targets")
+    func pendingPhaseIsNotAnEmptyScreen() throws {
+        let policy = try JSONDecoder().decode(CurrentClinicalPolicy.self,
+            from: Data(CurrentClinicalPolicyTests.policy.utf8))
+        let snapshot = CurrentObjectiveSnapshot(currentProtocol: nil, targets: nil, welcome: nil, clinicalPolicy: policy)
+        #expect(!snapshot.isEmpty)
+    }
     @Test(arguments: SupportedAppLanguage.allCases)
     func frameIsLocalizedAndClosingIsDifferentFromOnboarding(_ language: SupportedAppLanguage) throws {
         #expect(try AppLocalization.string("current-objective.title", for: language) ==

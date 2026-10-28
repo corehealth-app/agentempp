@@ -3,8 +3,8 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const expectedCount = 56
-const expectedHash = 'b88a27d2d694fb0ca539b9075c369978956d51aa25427b52da46983919b7d0e8'
+const expectedCount = 74
+const expectedHash = '9c7daf99f0c9baab62f037d3d9301417c4a025283e863f44cd4dfab77588e485'
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const appRoot = resolve(scriptDirectory, '..')
 const sourceRoot = resolve(appRoot, '../admin/src/app/api/mobile/v1')

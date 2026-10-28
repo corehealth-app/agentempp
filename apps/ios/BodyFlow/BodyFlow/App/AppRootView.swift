@@ -14,6 +14,7 @@ struct AppRootView: View {
     @State private var mealRecordDriver: MealRecordRootWiringDriver
     private let workoutAuthenticationLifetime: MealRecordAuthenticationLifetime?
     @State private var onboardingRetryTask: Task<Void, Never>?
+    @State private var readerRetryTask: Task<Void, Never>?
     @State private var appearance: BodyFlowAppearanceStore
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.locale) private var locale
@@ -167,6 +168,8 @@ struct AppRootView: View {
     private var rootContent: some View {
         if let label = splashLandscapeAccessibilityTestLabel {
             SplashView(loadingLabel: label)
+        } else if authenticatedShellCoordinator.hasReaderBindingFailure(for: requestedAuthenticatedUserID) {
+            authenticatedSessionError
         } else if authenticatedShellCoordinator.requiresNeutralRoot(
             for: requestedAuthenticatedUserID
         ) {
@@ -188,7 +191,12 @@ struct AppRootView: View {
                     model: model
                 )
             case .onboarding(let userID, _):
-                if let onboardingFlowModel = onboardingCoordinator.flowModel,
+                if let documents = onboardingCoordinator.legacyDocumentsModel,
+                   documents.ownerToken.userID == userID,
+                   onboardingCoordinator.canRender(ownerToken: model.onboardingOwnerToken) {
+                    LegacyReconsentView(model: documents, signOut: { await model.signOut() })
+                        .id(onboardingTaskID)
+                } else if let onboardingFlowModel = onboardingCoordinator.flowModel,
                    onboardingCoordinator.canRender(ownerToken: model.onboardingOwnerToken),
                    OnboardingRootLoadState.canRender(
                        modelUserID: onboardingFlowModel.userID,
@@ -241,6 +249,25 @@ struct AppRootView: View {
         rootLoading("app.session.loading", fallback: "Carregando sessão")
     }
 
+    private var authenticatedSessionError: some View {
+        let userID = requestedAuthenticatedUserID
+        return VStack {
+            ScreenStateView(state: .recoverableError, retryAction: {
+                guard requestedAuthenticatedUserID == userID else { return }
+                readerRetryTask?.cancel()
+                readerRetryTask = Task { await authenticatedShellCoordinator.transition(to: userID) }
+            }, accessibilityIdentifier: "screen.session.load-error")
+            if let accountSignOut {
+                Button(rootCopy("app.sign-out", fallback: "Sair da conta")) {
+                    readerRetryTask?.cancel()
+                    Task { await accountSignOut() }
+                }
+                .buttonStyle(BodyFlowButtonStyle(role: .secondary))
+                .padding()
+            }
+        }
+    }
+
     /// Only a real account can leave from Profile; the demo keeps its
     /// fixture identity without an account action.
     private var accountSignOut: (@MainActor () async -> Void)? {
@@ -259,10 +286,13 @@ struct AppRootView: View {
         case signIn, signUp, passwordRecovery
         case awaitingEmailConfirmation
         case onboardingLoading, onboardingReady, onboardingError
-        case authenticatedLoading, authenticatedReady
+        case authenticatedLoading, authenticatedReady, authenticatedError
     }
 
     private var rootPresentationKey: RootPresentationKey {
+        if authenticatedShellCoordinator.hasReaderBindingFailure(for: requestedAuthenticatedUserID) {
+            return .authenticatedError
+        }
         if authenticatedShellCoordinator.requiresNeutralRoot(
             for: requestedAuthenticatedUserID
         ) {
@@ -275,7 +305,11 @@ struct AppRootView: View {
         case .signedOut(.passwordRecovery): return .passwordRecovery
         case .awaitingEmailConfirmation: return .awaitingEmailConfirmation
         case .onboarding(let userID, _):
-            if let onboardingFlowModel = onboardingCoordinator.flowModel,
+            if let documents = onboardingCoordinator.legacyDocumentsModel,
+               documents.ownerToken.userID == userID,
+               onboardingCoordinator.canRender(ownerToken: model.onboardingOwnerToken) {
+                return .onboardingReady
+            } else if let onboardingFlowModel = onboardingCoordinator.flowModel,
                onboardingCoordinator.canRender(ownerToken: model.onboardingOwnerToken),
                OnboardingRootLoadState.canRender(
                    modelUserID: onboardingFlowModel.userID,
@@ -370,9 +404,12 @@ struct AppRootView: View {
         onboardingCoordinator.synchronize(
             activeUserID: activeUserID,
             restoredDraft: model.restoredOnboardingDraft,
+            legacyDocuments: model.restoredLegacyDocuments,
             restoreGeneration: model.onboardingRestoreGeneration,
             historicalCompletedAt: model.restoredHistoricalCompletedAt,
             signupCompletion: model.restoredSignupCompletion,
+            clinicalSignup: model.restoredClinicalSignup,
+            clinicalPolicy: model.restoredClinicalPolicy,
             requirements: model.restoredOnboardingRequirements,
             onboarding: model.onboardingRepositoryForCurrentOwner,
             persona: dependencies.coachPersona,
@@ -396,7 +433,16 @@ struct AppRootView: View {
             },
             signupBodyPhotoCapture: dependencies.signupBodyPhotoCapture,
             timeProvider: dependencies.timeProvider,
-            isCurrentPhotoOwner: { token in model.onboardingOwnerToken == token }
+            isCurrentPhotoOwner: { token in model.onboardingOwnerToken == token },
+            onLegacyReconcile: {
+                guard let ownerToken, model.onboardingOwnerToken == ownerToken else { return }
+                onboardingRetryTask?.cancel()
+                // Root retains the GET after this documents view is retired.
+                onboardingRetryTask = Task {
+                    guard !Task.isCancelled, model.onboardingOwnerToken == ownerToken else { return }
+                    await model.reconcileLegacyDocuments(ownerToken: ownerToken)
+                }
+            }
         )
         guard let ownerToken, model.onboardingOwnerToken == ownerToken,
               !Task.isCancelled,
@@ -449,13 +495,15 @@ private struct OnboardingRootTaskID: Equatable, Hashable {
 @MainActor
 struct OnboardingRootCoordinator {
     private(set) var flowModel: OnboardingFlowModel?
+    private(set) var legacyDocumentsModel: LegacyReconsentModel?
     private(set) var loadFailed = false
     private(set) var ownerToken: OnboardingOwnerToken?
     private(set) var photosModel: SignupBodyPhotoPresentationModel?
     private var initialPhotoLoadClaim: ObjectIdentifier?
 
     func canRender(ownerToken: OnboardingOwnerToken?) -> Bool {
-        ownerToken != nil && self.ownerToken == ownerToken && flowModel?.isActive == true
+        ownerToken != nil && self.ownerToken == ownerToken
+            && (flowModel?.isActive == true || legacyDocumentsModel?.isActive == true)
     }
 
     /// One synchronous claim for the current retained parent, before awaiting
@@ -475,9 +523,12 @@ struct OnboardingRootCoordinator {
     mutating func synchronize(
         activeUserID: String?,
         restoredDraft: OnboardingDraft?,
+        legacyDocuments: OnboardingLegacyDocumentsPresentation? = nil,
         restoreGeneration: Int = 0,
         historicalCompletedAt: String? = nil,
         signupCompletion: OnboardingCompletionCapability? = nil,
+        clinicalSignup: OnboardingClinicalSignupCapability? = nil,
+        clinicalPolicy: CurrentClinicalPolicy? = nil,
         requirements: OnboardingRequirements = .unavailable,
         onboarding: any OnboardingRepository,
         persona: any CoachPersonaRepository,
@@ -490,9 +541,12 @@ struct OnboardingRootCoordinator {
         onOfficialCleanupObserved: @escaping @MainActor (OnboardingBodyPhotoCleanupScope?) async -> Void = { _ in },
         signupBodyPhotoCapture: SignupBodyPhotoCaptureCapability? = nil,
         timeProvider: any TimeProviding = SystemTimeProvider(),
-        isCurrentPhotoOwner: @escaping @MainActor @Sendable (OnboardingOwnerToken) -> Bool = { _ in false }
+        isCurrentPhotoOwner: @escaping @MainActor @Sendable (OnboardingOwnerToken) -> Bool = { _ in false },
+        onLegacyReconcile: @escaping @MainActor () -> Void = {}
     ) {
         guard let activeUserID else {
+            legacyDocumentsModel?.invalidate()
+            legacyDocumentsModel = nil
             photosModel?.invalidate()
             photosModel = nil
             initialPhotoLoadClaim = nil
@@ -503,8 +557,11 @@ struct OnboardingRootCoordinator {
             return
         }
         let requestedOwner = OnboardingOwnerToken(userID: activeUserID, restoreGeneration: restoreGeneration)
-        guard ownerToken != requestedOwner || flowModel?.isActive != true else { return }
+        guard ownerToken != requestedOwner
+                || (flowModel?.isActive != true && legacyDocumentsModel?.isActive != true) else { return }
 
+        legacyDocumentsModel?.invalidate()
+        legacyDocumentsModel = nil
         photosModel?.invalidate()
         photosModel = nil
         initialPhotoLoadClaim = nil
@@ -512,6 +569,12 @@ struct OnboardingRootCoordinator {
         flowModel = nil
         ownerToken = requestedOwner
         loadFailed = false
+        if let legacyDocuments {
+            legacyDocumentsModel = LegacyReconsentModel(ownerToken: requestedOwner,
+                presentation: legacyDocuments, repository: onboarding, keys: idempotencyKeyProvider,
+                isCurrentOwner: isCurrentPhotoOwner, onReconcile: onLegacyReconcile)
+            return
+        }
         guard let restoredDraft else {
             loadFailed = true
             return
@@ -526,6 +589,8 @@ struct OnboardingRootCoordinator {
             requirements: requirements,
             historicalCompletedAt: historicalCompletedAt,
             signupCompletion: signupCompletion,
+            clinicalSignup: clinicalSignup,
+            clinicalPolicy: clinicalPolicy,
             preparationIDProvider: preparationIDProvider,
             idempotencyKeyProvider: idempotencyKeyProvider,
             telemetry: telemetry,

@@ -49,6 +49,7 @@ const PRODUCTION_PROJECT_REF = 'xuxehkhdvjivitduarvb'
 const REQUEST_LIMITS = { maxDays: 3, maxMs: 4000 } as const
 
 type Environment = Record<string, string | undefined>
+type ClinicalAuthority = NonNullable<Parameters<typeof closePastOpenDays>[1]['clinicalAuthority']>
 
 /** The project ref of a hosted database URL (`https://<ref>.supabase.co`), or null. */
 export function projectRefFromUrl(url: string | undefined): string | null {
@@ -102,9 +103,24 @@ function runtimeEnvironment(): Environment {
 }
 
 export async function closeOpenDaysOnRequest(
-  context: Pick<MobileRouteContext, 'auth' | 'requestId' | 'supabase'>,
-  options: { env?: Environment; now?: Date } = {},
+  context: Pick<MobileRouteContext, 'auth' | 'supabase'> &
+    Partial<Pick<MobileRouteContext, 'requestId'>>,
+  options: { env?: Environment; now?: Date; clinicalAuthority?: ClinicalAuthority } = {},
 ): Promise<void> {
+  const suppliedAuthority = options.clinicalAuthority
+  let clinicalAuthority: ClinicalAuthority | undefined
+  if (suppliedAuthority !== undefined) {
+    if (!suppliedAuthority || typeof suppliedAuthority !== 'object')
+      throw new Error('Complete clinical authority required')
+    const closeDate = suppliedAuthority.closeDate,
+      resetInactive = suppliedAuthority.resetInactive
+    if (typeof closeDate !== 'function' || typeof resetInactive !== 'function')
+      throw new Error('Complete clinical authority required')
+    clinicalAuthority = Object.freeze({
+      closeDate: closeDate.bind(suppliedAuthority),
+      resetInactive: resetInactive.bind(suppliedAuthority),
+    })
+  }
   const from = resolveDayCloseStart(options.env ?? runtimeEnvironment())
   if (from === null) return
 
@@ -118,7 +134,10 @@ export async function closeOpenDaysOnRequest(
     if (error) throw new Error('account lookup failed')
     // Lock 3. A WhatsApp account is closed by the production closer, and an
     // account without a time zone has no "local date" to close.
-    if (!account || account.wpp !== null || !account.timezone) return
+    if (!account || account.wpp !== null || !account.timezone) {
+      if (clinicalAuthority) throw new Error('clinical account context changed')
+      return
+    }
 
     const result = await closePastOpenDays(context.supabase, {
       userId,
@@ -128,6 +147,7 @@ export async function closeOpenDaysOnRequest(
       limits: REQUEST_LIMITS,
       block7700Policy: 'flow-recomposition-v1',
       finalizationFence: 'mobile-current-v1',
+      ...(clinicalAuthority ? { clinicalAuthority } : {}),
     })
     const closed = result.days.filter((day) => day.closed).length
     if (closed > 0 || result.pendingDates.length > 0 || result.streakReset?.applied) {
@@ -146,5 +166,8 @@ export async function closeOpenDaysOnRequest(
       scope: 'mobile_api_v1',
       error_name: safeUnexpectedErrorName(error),
     })
+    // Clinical callers must stop before numeric readers after a refusal. The
+    // original callers keep their established log-and-continue behavior.
+    if (clinicalAuthority) throw error
   }
 }

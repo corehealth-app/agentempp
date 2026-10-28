@@ -325,6 +325,19 @@ export function gainUnavailableBodyFatReason(
   ]
 }
 
+/** n39: a BF report never opens gain when the independent BMI criterion fails. */
+export function gainUnavailableBmiReason(
+  bmiLimit: number,
+  locale: ProtocolMessageLocale,
+): string[] {
+  const cut = readableNumber(bmiLimit, locale)
+  return [
+    locale === 'en-US'
+      ? `The muscle gain protocol requires a BMI below ${cut}, calculated from your weight and height. The reported body fat percentage does not replace this criterion. You may choose body recomposition or maintenance.`
+      : `O protocolo de ganho de massa muscular exige IMC abaixo de ${cut}, calculado a partir do seu peso e da sua altura. O percentual de gordura informado não substitui esse critério. Você pode escolher recomposição corporal ou manutenção.`,
+  ]
+}
+
 /**
  * Reason shown to a person WITHIN the range whose ganho de massa is
  * unavailable because the strength training is below the minimum

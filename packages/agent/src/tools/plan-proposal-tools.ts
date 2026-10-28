@@ -15,6 +15,11 @@
 import type { z } from 'zod'
 import { loadCalcConfig } from '../calc-config-loader.js'
 import { loadDailyTargets } from '../calc-targets.js'
+import {
+  bindMobileFlowClinicalPort,
+  flowClinicalProposalAllowed,
+  type MobileFlowClinicalPort,
+} from '../flow-current-clinical.js'
 import { projectFlowPlainTrainingDraft } from '../flow-plain-training-language.js'
 import { assessPlanDraftPayload, type PlanDraftDomain } from '../plan-draft.js'
 import { nutritionSuggestionText, trainingSuggestionText } from '../plan-suggestion-text.js'
@@ -52,7 +57,13 @@ function requestKey(ctx: ToolContext, tool: string): string | null {
 async function existingDraft(
   ctx: ToolContext,
   key: string,
+  domain: PlanDraftDomain,
+  clinical?: MobileFlowClinicalPort,
 ): Promise<StoredDraft | null> {
+  if (clinical) {
+    if (!clinical.drafts) throw new Error('Current Flow draft writer unavailable')
+    return clinical.drafts.lookup({ domain, requestKey: key })
+  }
   const { data, error } = await (ctx.supabase as Untyped)
     .from('plan_drafts')
     .select('id, status, payload')
@@ -143,8 +154,20 @@ async function createDraft(
   candidate: Record<string, unknown>,
   key: string,
   detail: Record<string, unknown>,
+  clinical?: MobileFlowClinicalPort,
 ): Promise<DraftOutcome | null> {
   const assessment = assessPlanDraftPayload(domain, candidate, 'flow')
+  if (clinical) {
+    if (!clinical.drafts) throw new Error('Current Flow draft writer unavailable')
+    return clinical.drafts.create({
+      domain,
+      requestKey: key,
+      status: assessment.complete ? 'ready_for_review' : 'needs_completion',
+      payload: assessment.payload,
+      uncertainFields: assessment.uncertain_fields,
+      originDetail: detail,
+    })
+  }
   const { data, error } = await (ctx.supabase as Untyped).rpc('create_plan_draft_atomic', {
     p_user_id: ctx.userId,
     p_domain: domain,
@@ -164,7 +187,8 @@ async function createDraft(
   // Outra chamada do mesmo turno pode ter gravado primeiro: vale o que está gravado.
   const payload = inserted
     ? assessment.payload
-    : (((await existingDraft(ctx, key))?.payload as Record<string, unknown> | undefined) ?? null)
+    : (((await existingDraft(ctx, key, domain))?.payload as Record<string, unknown> | undefined) ??
+      null)
   return { id: data.id, status: String(data.status), inserted, payload }
 }
 
@@ -249,13 +273,24 @@ export function createPlanProposalTools<
     // Audit 2026-09-28: the model writes null for "none"; optional only.
     nullMeansAbsent: ['training_days', 'goes_to_failure', 'limitations', 'priority_muscles'],
     execute: async (args, ctx) => {
+      const clinical =
+        ctx.assistantIdentity === 'flow' && ctx.flowClinical
+          ? bindMobileFlowClinicalPort(ctx.flowClinical)
+          : undefined
+      if (clinical && !clinical.drafts) return UNAVAILABLE
+      const current = clinical ? await clinical.read() : undefined
+      if (current && !flowClinicalProposalAllowed(current, 'training'))
+        return { success: false, retry_tool: false, error: 'clinical_guidance_unavailable' }
       const key = requestKey(ctx, PROPOSE_TRAINING_PLAN_TOOL)
       if (!key || !ctx.llm) return UNAVAILABLE
-      const existing = await existingDraft(ctx, key)
+      const existing = await existingDraft(ctx, key, 'training', clinical)
+      if (clinical) await clinical.revalidate()
       if (existing) return closedDraft(existing) ?? replayed(existing, 'training')
 
       // O mesmo limite de gera_treino, somando gerações e propostas.
-      if ((await recentEvents(ctx, ['training.plan_generated', 'training.plan_proposed'], 24)) >= 1) {
+      if (
+        (await recentEvents(ctx, ['training.plan_generated', 'training.plan_proposed'], 24)) >= 1
+      ) {
         return {
           success: false,
           retry_tool: false,
@@ -266,15 +301,34 @@ export function createPlanProposalTools<
       if (await generationBlocked(ctx, 'training.proposal_failed')) return BLOCKED
 
       const sp = ctx.supabase as Untyped
-      const [user, profile, progress] = await Promise.all([
-        sp.from('users').select('name').eq('id', ctx.userId).maybeSingle(),
-        sp
-          .from('user_profiles')
-          .select('sex, birth_date, weight_kg, height_cm, current_protocol, body_fat_percent')
-          .eq('user_id', ctx.userId)
-          .maybeSingle(),
-        sp.from('user_progress').select('current_bf_percent').eq('user_id', ctx.userId).maybeSingle(),
-      ])
+      const [user, profile, progress] = current
+        ? [
+            { data: { name: current.profile.name }, error: null },
+            {
+              data: {
+                ...current.profile,
+                birth_date: null,
+                current_protocol: current.profile.protocol,
+                body_fat_percent: current.profile.bf_percent,
+                activity_level: null,
+              },
+              error: null,
+            },
+            { data: { current_bf_percent: current.profile.bf_percent }, error: null },
+          ]
+        : await Promise.all([
+            sp.from('users').select('name').eq('id', ctx.userId).maybeSingle(),
+            sp
+              .from('user_profiles')
+              .select('sex, birth_date, weight_kg, height_cm, current_protocol, body_fat_percent')
+              .eq('user_id', ctx.userId)
+              .maybeSingle(),
+            sp
+              .from('user_progress')
+              .select('current_bf_percent')
+              .eq('user_id', ctx.userId)
+              .maybeSingle(),
+          ])
       if (user.error ?? profile.error ?? progress.error) {
         throw new Error('training proposal profile lookup failed')
       }
@@ -290,13 +344,16 @@ export function createPlanProposalTools<
         priority_muscles?: string[]
       }
       const { generateTrainingPlan } = await import('../training-plan-generator.js')
+      if (clinical) await clinical.revalidate()
       const plan = await generateTrainingPlan(ctx.llm, ctx.supabase, {
         userId: ctx.userId,
         identity: 'flow',
         profile: {
           name: user.data?.name ?? null,
           sex: profile.data?.sex ?? null,
-          age: ageAt(ctx.referenceTimestamp ?? new Date(), profile.data?.birth_date),
+          age: current
+            ? current.profile.age
+            : ageAt(ctx.referenceTimestamp ?? new Date(), profile.data?.birth_date),
           weight_kg: profile.data?.weight_kg ?? null,
           height_cm: profile.data?.height_cm ?? null,
           protocol: profile.data?.current_protocol ?? null,
@@ -311,6 +368,7 @@ export function createPlanProposalTools<
         location: input.location,
         goes_to_failure: input.goes_to_failure,
       })
+      if (clinical) await clinical.revalidate()
       if (!plan) return UNAVAILABLE
 
       // Audit 2026-10-10: the texts of the suggestion are stored in plain
@@ -332,7 +390,9 @@ export function createPlanProposalTools<
         plainWords.payload as Record<string, unknown>,
         key,
         { method: 'training_plan_generator', identity: 'flow' },
+        clinical,
       )
+      if (clinical) await clinical.revalidate()
       if (!draft) {
         await record(ctx, 'training.proposal_failed', { days_per_week: plan.days_per_week })
         return UNAVAILABLE
@@ -378,9 +438,18 @@ export function createPlanProposalTools<
     // Audit 2026-09-28: "sem restrições" arrived as null and refused the call.
     nullMeansAbsent: ['horizon', 'meals_per_day', 'restrictions', 'preferences'],
     execute: async (args, ctx) => {
+      const clinical =
+        ctx.assistantIdentity === 'flow' && ctx.flowClinical
+          ? bindMobileFlowClinicalPort(ctx.flowClinical)
+          : undefined
+      if (clinical && !clinical.drafts) return UNAVAILABLE
+      const current = clinical ? await clinical.read() : undefined
+      if (current && !flowClinicalProposalAllowed(current, 'nutrition'))
+        return { success: false, retry_tool: false, error: 'clinical_guidance_unavailable' }
       const key = requestKey(ctx, PROPOSE_DIET_PLAN_TOOL)
       if (!key || !ctx.llm) return UNAVAILABLE
-      const existing = await existingDraft(ctx, key)
+      const existing = await existingDraft(ctx, key, 'nutrition', clinical)
+      if (clinical) await clinical.revalidate()
       if (existing) return closedDraft(existing) ?? replayed(existing, 'nutrition')
 
       // O mesmo limite de gera_dieta, somando gerações e propostas.
@@ -395,26 +464,46 @@ export function createPlanProposalTools<
       if (await generationBlocked(ctx, 'diet.proposal_failed')) return BLOCKED
 
       const sp = ctx.supabase as Untyped
-      const [user, profile, progress] = await Promise.all([
-        sp.from('users').select('name').eq('id', ctx.userId).maybeSingle(),
-        sp
-          .from('user_profiles')
-          .select(
-            'sex, birth_date, weight_kg, height_cm, activity_level, current_protocol, body_fat_percent',
-          )
-          .eq('user_id', ctx.userId)
-          .maybeSingle(),
-        sp.from('user_progress').select('current_bf_percent').eq('user_id', ctx.userId).maybeSingle(),
-      ])
+      const [user, profile, progress] = current
+        ? [
+            { data: { name: current.profile.name }, error: null },
+            {
+              data: {
+                ...current.profile,
+                birth_date: null,
+                current_protocol: current.profile.protocol,
+                body_fat_percent: current.profile.bf_percent,
+                activity_level: null,
+              },
+              error: null,
+            },
+            { data: { current_bf_percent: current.profile.bf_percent }, error: null },
+          ]
+        : await Promise.all([
+            sp.from('users').select('name').eq('id', ctx.userId).maybeSingle(),
+            sp
+              .from('user_profiles')
+              .select(
+                'sex, birth_date, weight_kg, height_cm, activity_level, current_protocol, body_fat_percent',
+              )
+              .eq('user_id', ctx.userId)
+              .maybeSingle(),
+            sp
+              .from('user_progress')
+              .select('current_bf_percent')
+              .eq('user_id', ctx.userId)
+              .maybeSingle(),
+          ])
       if (user.error ?? profile.error ?? progress.error) {
         throw new Error('diet proposal profile lookup failed')
       }
       // Metas oficiais, como em gera_dieta; nada é recalculado aqui.
-      const targets = await loadDailyTargets(
-        ctx.supabase,
-        ctx.userId,
-        await loadCalcConfig(ctx.supabase),
-      )
+      const targets = current
+        ? {
+            calories_target: current.today.targets.calories_kcal,
+            protein_target: current.today.targets.protein_g,
+          }
+        : await loadDailyTargets(ctx.supabase, ctx.userId, await loadCalcConfig(ctx.supabase))
 
       const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
       const history = await sp
@@ -436,13 +525,16 @@ export function createPlanProposalTools<
         preferences?: string[]
       }
       const { generateDietPlan } = await import('../diet-generator.js')
+      if (clinical) await clinical.revalidate()
       const plan = await generateDietPlan(ctx.llm, ctx.supabase, {
         userId: ctx.userId,
         identity: 'flow',
         profile: {
           name: user.data?.name ?? null,
           sex: profile.data?.sex ?? null,
-          age: ageAt(ctx.referenceTimestamp ?? new Date(), profile.data?.birth_date),
+          age: current
+            ? current.profile.age
+            : ageAt(ctx.referenceTimestamp ?? new Date(), profile.data?.birth_date),
           weight_kg: profile.data?.weight_kg ?? null,
           height_cm: profile.data?.height_cm ?? null,
           activity_level: profile.data?.activity_level ?? null,
@@ -461,6 +553,7 @@ export function createPlanProposalTools<
         mode: 'referencia',
         horizon: input.horizon ?? 'daily',
       })
+      if (clinical) await clinical.revalidate()
       if (!plan) return UNAVAILABLE
 
       const draft = await createDraft(
@@ -477,7 +570,9 @@ export function createPlanProposalTools<
         },
         key,
         { method: 'diet_generator', identity: 'flow' },
+        clinical,
       )
+      if (clinical) await clinical.revalidate()
       if (!draft) {
         await record(ctx, 'diet.proposal_failed', { horizon: plan.horizon })
         return UNAVAILABLE

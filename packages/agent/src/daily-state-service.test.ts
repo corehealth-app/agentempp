@@ -177,6 +177,109 @@ function routineSchedule(input: {
 }
 
 describe('loadOfficialDailyState', () => {
+  const oldProgress = {
+    deficit_block: 100,
+    blocks_completed: 1,
+    updated_at: '2026-07-20T14:00:00.000001Z',
+  }
+  function progressClient(sequence: Array<typeof oldProgress | null>) {
+    return fakeSupabase({
+      user_profiles: { single: null },
+      daily_snapshots: { single: null },
+      user_progress: { singleSequence: sequence },
+      pending_registrations: { rows: [] },
+    })
+  }
+  it.each([
+    { ...oldProgress, deficit_block: 200 },
+    { ...oldProgress, blocks_completed: 2 },
+    { ...oldProgress, updated_at: '2026-07-20T14:00:00.000002Z' },
+  ])('clinical progress latch retries an isolated progress change including microseconds', async (fresh) => {
+    const db = progressClient([oldProgress, fresh, fresh, fresh])
+    const result = await loadOfficialDailyState(
+      db.client as never,
+      'user-1',
+      'UTC',
+      new Date('2026-07-20T15:00:00Z'),
+      { ...dependencies, requireFreshProgress: true },
+    )
+    expect(result.block_7700).toMatchObject({
+      current_kcal: fresh.deficit_block,
+      completed_blocks: fresh.blocks_completed,
+    })
+    expect(result.updated_at).toBe(fresh.updated_at)
+    expect(db.queries.filter((table) => table === 'user_progress')).toHaveLength(4)
+  })
+  it.each([
+    [null, oldProgress],
+    [oldProgress, null],
+  ])('clinical progress latch detects presence changes', async (a, b) => {
+    const db = progressClient([a, b, b, b])
+    const result = await loadOfficialDailyState(
+      db.client as never,
+      'user-1',
+      'UTC',
+      new Date('2026-07-20T15:00:00Z'),
+      { ...dependencies, requireFreshProgress: true },
+    )
+    expect(result.block_7700).toMatchObject({
+      current_kcal: b?.deficit_block ?? null,
+      completed_blocks: b?.blocks_completed ?? null,
+    })
+    expect(result.updated_at).toBe(b?.updated_at ?? null)
+    expect(db.queries.filter((table) => table === 'user_progress')).toHaveLength(4)
+  })
+  it('clinical progress latch refuses after both permitted attempts change', async () => {
+    const db = progressClient(
+      [1, 2, 3, 4].map((deficit_block) => ({ ...oldProgress, deficit_block })),
+    )
+    await expect(
+      loadOfficialDailyState(
+        db.client as never,
+        'user-1',
+        'UTC',
+        new Date('2026-07-20T15:00:00Z'),
+        { ...dependencies, requireFreshProgress: true },
+      ),
+    ).rejects.toEqual(new DailyStateLoadError('daily state consistency'))
+    expect(db.queries.filter((table) => table === 'user_progress')).toHaveLength(4)
+  })
+  it('clinical final-progress lookup failure cannot fall back to the old row', async () => {
+    const db = progressClient([oldProgress]),
+      from = db.client.from.bind(db.client)
+    let progressReads = 0
+    db.client.from = (table) => {
+      const query = from(table),
+        read = query.maybeSingle.bind(query)
+      if (table === 'user_progress')
+        query.maybeSingle = async () =>
+          ++progressReads === 2
+            ? { data: null, error: { message: 'synthetic private failure' } }
+            : read()
+      return query
+    }
+    await expect(
+      loadOfficialDailyState(
+        db.client as never,
+        'user-1',
+        'UTC',
+        new Date('2026-07-20T15:00:00Z'),
+        { ...dependencies, requireFreshProgress: true },
+      ),
+    ).rejects.toEqual(new DailyStateLoadError('daily state progress consistency lookup'))
+  })
+  it('keeps the original one-progress-read behavior without the clinical opt-in', async () => {
+    const db = progressClient([oldProgress, { ...oldProgress, deficit_block: 200 }])
+    const result = await loadOfficialDailyState(
+      db.client as never,
+      'user-1',
+      'UTC',
+      new Date('2026-07-20T15:00:00Z'),
+      dependencies,
+    )
+    expect(result.block_7700.current_kcal).toBe(100)
+    expect(db.queries.filter((table) => table === 'user_progress')).toHaveLength(1)
+  })
   it('loads exact occurrences for both literal types from the canonical stored-timezone read model', async () => {
     const supplementPage = {
       local_date: '2026-07-20',

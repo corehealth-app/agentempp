@@ -3,10 +3,10 @@ import { z } from 'zod'
 import type { WeightInput } from './contracts'
 import { MobileApiError } from './http'
 
-// The official weight lives in user_profiles.weight_kg (no second ledger).
-// Conversion, rounding, ordering and ties are decided by the database
-// (record_weight_atomic); this service only validates the request window and
-// maps the outcome.
+// user_profiles remains the official latest weight. The database owns genuine
+// measurement history, durable request receipts, conversion and ordering.
+// Temporal validation must follow its receipt lookup, so an old replay can
+// acknowledge the original result without reapplying it to a reset/newer profile.
 
 const POUND_IN_KG = 0.45359237
 const MINIMUM_KG = 30
@@ -51,19 +51,7 @@ export async function recordWeight(
   userId: string,
   input: WeightInput,
   idempotencyKey: string,
-  now = new Date(),
 ) {
-  const measuredAt = new Date(input.measured_at).getTime()
-  if (
-    measuredAt > now.getTime() + 5 * 60 * 1000 ||
-    measuredAt < now.getTime() - 7 * 24 * 60 * 60 * 1000
-  ) {
-    throw new MobileApiError(
-      422,
-      'measured_at_out_of_range',
-      'measured_at must be within the supported offline window',
-    )
-  }
   // Early, typed refusal of values that cannot be in range; the database
   // repeats the check on the converted and rounded value.
   const kilograms = input.unit === 'lb' ? input.value * POUND_IN_KG : input.value
@@ -97,11 +85,32 @@ export function createSupabaseWeightDependencies(
           p_measured_at: input.measuredAt,
           p_idempotency_key: input.idempotencyKey,
         })
+        if (error?.code === '40001' && error.message === 'mobile_weight_request_conflict') {
+          throw new MobileApiError(
+            409,
+            'idempotency_key_conflict',
+            'This request key was used for another weight',
+          )
+        }
+        if (error?.code === '55P03' && error.message === 'mobile_weight_busy') {
+          throw new MobileApiError(
+            409,
+            'weight_operation_busy',
+            'Another operation is changing this weight',
+          )
+        }
         if (error?.code === '23505') {
           throw new MobileApiError(
             409,
             'weight_measurement_conflict',
             'Another weight is already recorded for this instant',
+          )
+        }
+        if (error?.code === '22023' && error.message === 'mobile_weight_measured_at_out_of_range') {
+          throw new MobileApiError(
+            422,
+            'measured_at_out_of_range',
+            'measured_at must be within the supported offline window',
           )
         }
         if (error?.code === '22023') throw outOfRange()

@@ -11,8 +11,10 @@
  * Função pura: recebe a linha do perfil + config, devolve targets. Sem I/O
  * (o carregamento do banco fica em @mpp/agent/calc-targets.loadDailyTargets).
  */
-import { calcTDEE, computeMetrics, resolveProteinFactorForProtocol } from '../nutrition.js'
+
 import type { CalcConfig } from '../calc-config.js'
+import { calcBMR, calcTDEE, computeMetrics, resolveProteinFactorForProtocol } from '../nutrition.js'
+import { ageOnClinicalDate, clinicalCivilDateSchema } from '../reevaluation-clinical-safety.js'
 import type { UserProfile } from '../types.js'
 
 export interface DailyTargets {
@@ -62,18 +64,51 @@ export function computeDailyTargets(
 
   const profile = rowToProfile(profileRow)
   const metrics = computeMetrics(profile, new Date(), config)
+  return targetsWithBmr(profile, metrics.bmr, config)
+}
 
-  if (metrics.bmr == null || profile.activityLevel == null) {
+/** Clinical previews use the server's civil date. The legacy entrypoint keeps
+ * its clock behavior; both paths share every calorie/protein formula below. */
+export function computeDailyTargetsOnCivilDate(
+  profileRow: ProfileRow | null,
+  config: CalcConfig,
+  date: string,
+): DailyTargets {
+  clinicalCivilDateSchema.parse(date)
+  if (!profileRow) return { calories_target: null, protein_target: null }
+  const age = profileRow.birth_date ? ageOnClinicalDate(profileRow.birth_date, date) : null
+  const bmr =
+    profileRow.sex && profileRow.weight_kg && profileRow.height_cm && age !== null
+      ? calcBMR(
+          {
+            sex: profileRow.sex,
+            weightKg: profileRow.weight_kg,
+            heightCm: profileRow.height_cm,
+            age,
+            bodyFatPercent: profileRow.body_fat_percent,
+          },
+          config,
+        )
+      : null
+  return targetsWithBmr(rowToProfile(profileRow), bmr, config)
+}
+
+function targetsWithBmr(
+  profile: UserProfile,
+  bmr: number | null,
+  config: CalcConfig,
+): DailyTargets {
+  if (bmr == null || profile.activityLevel == null) {
     return { calories_target: null, protein_target: null }
   }
 
-  const tdee = calcTDEE(metrics.bmr, profile.activityLevel, config)
+  const tdee = calcTDEE(bmr, profile.activityLevel, config)
 
   let caloriesTarget: number
   switch (profile.currentProtocol) {
     case 'recomposicao': {
       const recompMultiplier = config.recomp_bmr_multiplier ?? 1.2
-      const bmrBase = metrics.bmr * recompMultiplier
+      const bmrBase = bmr * recompMultiplier
       caloriesTarget = bmrBase - (profile.deficitLevel ?? 500)
       break
     }
@@ -82,7 +117,6 @@ export function computeDailyTargets(
       caloriesTarget = tdee * surplusMultiplier
       break
     }
-    case 'manutencao':
     default:
       caloriesTarget = tdee
       break

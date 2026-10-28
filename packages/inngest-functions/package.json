@@ -7,7 +7,9 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./client": "./src/client.ts"
+    "./client": "./src/client.ts",
+    "./reevaluation-photo-disposition": "./src/lib/reevaluation-photo-disposition.ts",
+    "./supabase-reevaluation-photo-disposition": "./src/lib/supabase-reevaluation-photo-disposition.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

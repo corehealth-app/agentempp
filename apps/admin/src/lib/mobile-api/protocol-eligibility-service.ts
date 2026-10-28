@@ -14,18 +14,20 @@
  * (onboarding-eligibility-guard.ts; doc §10o).
  */
 import {
-  type CalcConfig,
   decideSignupEligibility,
   gainBlockedAboveRangeMessage,
+  gainUnavailableBmiReason,
   gainUnavailableBodyFatReason,
   gainUnavailableTrainingReason,
   type Protocol,
   type ProtocolMessageLocale,
   type SignupBlockReason,
   type SignupEligibility,
+  type SignupEligibilityConfig,
   type SignupEligibilityField,
   type SignupObjectiveStatus,
   signupAssignedNotice,
+  signupGainCompositionUnmet,
 } from '@mpp/core'
 import type { OnboardingEligibilityInput } from './contracts'
 import { MobileApiError } from './http'
@@ -109,11 +111,25 @@ function blockedMessage(
   reasons: readonly SignupBlockReason[],
   informedSessions: number,
   locale: ProtocolMessageLocale,
+  values: SignupBodyValues,
 ): string[] {
   if (decided.outcome === 'assigned') return gainBlockedAboveRangeMessage(decided.basis, locale)
+  const unmet = signupGainCompositionUnmet(
+    {
+      heightCm: asStoredBodyValue(values.height_cm),
+      weightKg: asStoredBodyValue(values.weight_kg),
+      bodyFatPercent:
+        values.body_fat_percent === undefined ? null : asStoredBodyValue(values.body_fat_percent),
+    },
+    decided.limits,
+  )
   return reasons.flatMap((reason) =>
     reason === 'composition'
-      ? gainUnavailableBodyFatReason(decided.limits.bodyFatGain, locale)
+      ? unmet.flatMap((criterion) =>
+          criterion === 'bmi'
+            ? gainUnavailableBmiReason(decided.limits.imcRecomp, locale)
+            : gainUnavailableBodyFatReason(decided.limits.bodyFatGain, locale),
+        )
       : gainUnavailableTrainingReason(decided.limits.trainingMin, informedSessions, locale),
   )
 }
@@ -132,7 +148,10 @@ export type SignupBodyValues = Pick<
  * (onboarding-eligibility-guard.ts) — so that what the first marks available
  * is exactly what the second lets be recorded.
  */
-export function decideOnboardingEligibility(input: SignupBodyValues, config: CalcConfig): Decided {
+export function decideOnboardingEligibility(
+  input: SignupBodyValues,
+  config: SignupEligibilityConfig,
+): Decided {
   // Decided on what the profile will hold, so that the answer given here and
   // the stored profile can never disagree (a man with 19.995% is stored, and
   // decided, as 20.00%).
@@ -165,7 +184,7 @@ export function decideOnboardingEligibility(input: SignupBodyValues, config: Cal
 
 export function resolveOnboardingEligibility(
   input: OnboardingEligibilityInput,
-  config: CalcConfig,
+  config: SignupEligibilityConfig,
 ): OnboardingEligibilityResult {
   const decided = decideOnboardingEligibility(input, config)
 
@@ -183,7 +202,7 @@ export function resolveOnboardingEligibility(
         reasons: reasons.map((reason) => PUBLIC_REASON[reason]),
         message:
           status === 'blocked'
-            ? blockedMessage(decided, reasons, input.training_frequency, input.locale)
+            ? blockedMessage(decided, reasons, input.training_frequency, input.locale, input)
             : [],
       }
     }),

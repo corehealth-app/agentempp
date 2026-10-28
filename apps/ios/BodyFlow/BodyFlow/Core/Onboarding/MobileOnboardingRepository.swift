@@ -6,33 +6,39 @@ struct MobileOnboardingRepository: OnboardingRepository {
     let deviceDraft: OnboardingDeviceDraftStore?
     let sessionLifecycle: (any SessionLifecycleProviding)?
     private let sessionLease: SessionLease?
+    let clinicalRepresentation: CurrentClinicalRepresentation
 
     init(
         transport: any MobileAPIExecuting,
         deviceDraft: OnboardingDeviceDraftStore? = nil,
-        sessionLifecycle: (any SessionLifecycleProviding)? = nil
+        sessionLifecycle: (any SessionLifecycleProviding)? = nil,
+        clinicalRepresentation: CurrentClinicalRepresentation = .legacy
     ) {
         self.transport = transport
         self.deviceDraft = deviceDraft
         self.sessionLifecycle = sessionLifecycle
         sessionLease = nil
+        self.clinicalRepresentation = clinicalRepresentation
     }
 
     init(
         transport: any MobileAPIExecuting,
         deviceDraft: OnboardingDeviceDraftStore?,
         sessionLifecycle: any SessionLifecycleProviding,
-        sessionLease: SessionLease
+        sessionLease: SessionLease,
+        clinicalRepresentation: CurrentClinicalRepresentation = .legacy
     ) {
         self.transport = transport
         self.deviceDraft = deviceDraft
         self.sessionLifecycle = sessionLifecycle
         self.sessionLease = sessionLease
+        self.clinicalRepresentation = clinicalRepresentation
     }
 
     /// Bound once by the root before its first read and retained by its model.
     /// Re-scoping an old instance never grants it a newer generation.
     func scoped(for userID: String) async throws -> any OnboardingRepository {
+        try Task.checkCancellation()
         if let sessionLease {
             guard sessionLease.userID == userID, let sessionLifecycle else {
                 throw SessionLifecycleError.sessionSuperseded
@@ -41,8 +47,9 @@ struct MobileOnboardingRepository: OnboardingRepository {
             return self
         }
         guard let sessionLifecycle else {
+            if case .currentV1 = clinicalRepresentation { throw SessionLifecycleError.sessionSuperseded }
             // A token-only provider or test transport owns no device state.
-            return MobileOnboardingRepository(transport: transport)
+            return MobileOnboardingRepository(transport: transport,clinicalRepresentation:clinicalRepresentation)
         }
         let lease = try await sessionLifecycle.leaseForRequest()
         guard lease.userID == userID else { throw SessionLifecycleError.sessionSuperseded }
@@ -52,16 +59,27 @@ struct MobileOnboardingRepository: OnboardingRepository {
             else { transport }
         return MobileOnboardingRepository(
             transport: scopedTransport, deviceDraft: deviceDraft,
-            sessionLifecycle: sessionLifecycle, sessionLease: lease
+            sessionLifecycle: sessionLifecycle, sessionLease: lease,clinicalRepresentation:clinicalRepresentation
         )
     }
 
-    private func validateScope(for userID: String) async throws {
-        guard let sessionLease else { return }
+    private func validateScope(for userID: String, requiresClinicalSession: Bool = false) async throws {
+        try Task.checkCancellation()
+        guard let sessionLease else {
+            if requiresClinicalSession { throw SessionLifecycleError.sessionSuperseded }
+            if case .currentV1 = clinicalRepresentation { throw SessionLifecycleError.sessionSuperseded }
+            return
+        }
         guard let sessionLifecycle, sessionLease.userID == userID else {
             throw SessionLifecycleError.sessionSuperseded
         }
         try await sessionLifecycle.validate(sessionLease)
+    }
+
+    private func validateRepresentation(_ state:OnboardingServerState) throws {
+        if case .currentV1 = clinicalRepresentation {
+            guard state.clinicalSignup == .current,state.signupCompletion != nil,state.clinicalPolicy != nil else {throw OnboardingRepositoryError.serviceUnavailable}
+        }
     }
 
     private func clearDeviceDraft(for userID: String) async throws {
@@ -88,7 +106,7 @@ struct MobileOnboardingRepository: OnboardingRepository {
         do {
             state = try await transport.execute(MobileAPIRequest(
                 method: .get, path: "/api/mobile/v1/onboarding",
-                queryItems: [URLQueryItem(name: "onboarding_profile_schema", value: "habitual_water_optional_v1")]
+                queryItems: clinicalRepresentation.queryItems + [URLQueryItem(name: "onboarding_profile_schema", value: "habitual_water_optional_v1")]
                     + (generation.map { [URLQueryItem(name: "body_photo_cleanup_generation", value: $0)] } ?? [])
             ))
         } catch {
@@ -108,6 +126,7 @@ struct MobileOnboardingRepository: OnboardingRepository {
         try Task.checkCancellation()
         try await sessionLifecycle.validate(sessionLease)
         try Task.checkCancellation()
+        try validateRepresentation(state)
         let expected = generation ?? state.completion.completedAt
         guard let cleanup = state.bodyPhotoCleanup, cleanup.generation == expected else { return nil }
         return cleanup
@@ -124,16 +143,17 @@ struct MobileOnboardingRepository: OnboardingRepository {
             state = try await transport.execute(MobileAPIRequest(
                 method: .get,
                 path: "/api/mobile/v1/onboarding",
-                queryItems: [URLQueryItem(name: "onboarding_profile_schema", value: "habitual_water_optional_v1")]
+                queryItems: clinicalRepresentation.queryItems + [URLQueryItem(name: "onboarding_profile_schema", value: "habitual_water_optional_v1")]
             ))
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch let error as MobileAPITransportError {
-            throw mapLoad(error)
         } catch {
+            try await validateScope(for: userID)
+            if error is CancellationError { throw CancellationError() }
+            if let failure = error as? SessionLifecycleError { throw failure }
+            if let failure = error as? MobileAPITransportError { throw mapLoad(failure) }
             throw OnboardingRepositoryError.serviceUnavailable
         }
         try await validateScope(for: userID)
+        try validateRepresentation(state)
         guard let deviceDraft, let sessionLifecycle, let sessionLease else { return state }
         return try await sessionLifecycle.performPatientStateOperation(lease: sessionLease) {
             resuming(state, for: userID, deviceDraft: deviceDraft)
@@ -153,6 +173,7 @@ struct MobileOnboardingRepository: OnboardingRepository {
         // or any draft the server sends: the server's word, and nothing kept
         // here applies any more.
         guard !state.completion.completed,
+              state.legacyReconsent == nil,
               state.completion.completedAt == nil,
               state.draft == nil else {
             deviceDraft.clear(for: userID)
@@ -166,7 +187,10 @@ struct MobileOnboardingRepository: OnboardingRepository {
             acceptedActions: state.acceptedActions,
             draft: kept,
             bodyPhotoCleanup: state.bodyPhotoCleanup,
-            signupCompletion: state.signupCompletion
+            signupCompletion: state.signupCompletion,
+            clinicalSignup: state.clinicalSignup,
+            clinicalPolicy: state.clinicalPolicy,
+            legacyReconsent: state.legacyReconsent
         )
     }
 
@@ -181,7 +205,9 @@ struct MobileOnboardingRepository: OnboardingRepository {
                 body: try JSONEncoder().encode(input), idempotencyKey: idempotencyKey
             ))
             try await validateScope(for: userID)
-            return try result.validated()
+            let validated = try result.validated()
+            guard input.version == 2 ? validated.version == 2 : validated.version != 2 else {throw OnboardingRepositoryError.serviceUnavailable}
+            return validated
         } catch is CancellationError {
             throw CancellationError()
         } catch let error as OnboardingRepositoryError {
@@ -263,22 +289,61 @@ struct MobileOnboardingRepository: OnboardingRepository {
         }
     }
 
+    func admitSignupHealth(_ declaration:OnboardingSignupHealthDeclaration,for userID:String,
+                           key:IdempotencyKey) async throws -> OnboardingSignupHealthAcknowledgement {
+        guard UUID(uuidString:key.value) != nil else {throw OnboardingRepositoryError.invalidDraft}
+        let encoder=JSONEncoder();encoder.outputFormatting = [.sortedKeys]
+        let bytes=try encoder.encode(declaration)
+        return try await inCurrentIntentScope(for:userID,requiresClinicalSession:true) {
+            let value:OnboardingSignupHealthAcknowledgement = try await transport.execute(MobileAPIRequest(
+                method:.post,path:"/api/mobile/v1/onboarding/health",body:bytes,idempotencyKey:key))
+            guard value.matches(declaration,key:key) else {throw OnboardingRepositoryError.serviceUnavailable}
+            return value
+        }
+    }
+
+    func completeOfficial(_ draft:OnboardingDraft,for userID:String,completionIntent:OnboardingCompletionIntent,
+                          clinicalSignup:OnboardingClinicalSignupCapability) async throws -> OnboardingCompletionAcknowledgement {
+        try await inCurrentIntentScope(for:userID,requiresClinicalSession:true) {
+            try await sendOfficial(draft,for:userID,idempotencyKey:completionIntent.requestKey,
+                                   completionIntent:completionIntent,allowsNoPlan:true)
+        }
+    }
+
+    func acceptLegacyDocuments(_ input:OnboardingLegacyDocumentInput,for userID:String,
+                               key:IdempotencyKey) async throws -> OnboardingLegacyDocumentAcknowledgement {
+        guard UUID(uuidString:key.value) != nil else { throw OnboardingRepositoryError.invalidDraft }
+        let bytes=try JSONEncoder().encode(input)
+        return try await inCurrentIntentScope(for:userID,requiresClinicalSession:true) {
+            do {
+                let value:OnboardingLegacyDocumentAcknowledgement = try await transport.execute(MobileAPIRequest(
+                    method:.post,path:"/api/mobile/v1/onboarding/reconsent",body:bytes,idempotencyKey:key))
+                guard value.matches(input,key:key) else { throw OnboardingRepositoryError.serviceUnavailable }
+                return value
+            } catch MobileAPITransportError.conflict(let code, _)
+                where code == "mobile_legacy_documents_changed" || code == "mobile_legacy_documents_documents_changed" {
+                throw OnboardingRepositoryError.requirementsChanged
+            }
+        }
+    }
+
     /// Both a late success and a late failure belong to this retained lease.
     /// It is never reacquired from the current account during a retry.
     private func inCurrentIntentScope<Value: Sendable>(
-        for userID: String, operation: @Sendable () async throws -> Value
+        for userID: String, requiresClinicalSession: Bool = false,
+        operation: @Sendable () async throws -> Value
     ) async throws -> Value {
         try Task.checkCancellation()
-        try await validateScope(for: userID)
+        try await validateScope(for: userID, requiresClinicalSession: requiresClinicalSession)
         do {
             let result = try await operation()
             try Task.checkCancellation()
-            try await validateScope(for: userID)
+            try await validateScope(for: userID, requiresClinicalSession: requiresClinicalSession)
             try Task.checkCancellation()
             return result
         } catch {
             try Task.checkCancellation()
-            try await validateScope(for: userID)
+            try await validateScope(for: userID, requiresClinicalSession: requiresClinicalSession)
             try Task.checkCancellation()
             if error is CancellationError { throw CancellationError() }
             if let error = error as? SessionLifecycleError { throw error }
@@ -293,10 +358,10 @@ struct MobileOnboardingRepository: OnboardingRepository {
 
     private func sendOfficial(
         _ draft: OnboardingDraft, for userID: String,
-        idempotencyKey: IdempotencyKey, completionIntent: OnboardingCompletionIntent? = nil
+        idempotencyKey: IdempotencyKey, completionIntent: OnboardingCompletionIntent? = nil, allowsNoPlan:Bool = false
     ) async throws -> OnboardingCompletionAcknowledgement {
         try await validateScope(for: userID)
-        let submission = try OnboardingCompletionSubmission(draft: draft, completionIntent: completionIntent)
+        let submission = try OnboardingCompletionSubmission(draft: draft, completionIntent: completionIntent,allowsNoPlan:allowsNoPlan)
         let body: Data
         do {
             body = try JSONEncoder().encode(submission)
@@ -309,10 +374,12 @@ struct MobileOnboardingRepository: OnboardingRepository {
                 MobileAPIRequest(
                     method: .post,
                     path: "/api/mobile/v1/onboarding",
+                    queryItems: allowsNoPlan ? CurrentClinicalRepresentation.currentV1.queryItems : clinicalRepresentation.queryItems,
                     body: body,
                     idempotencyKey: idempotencyKey
                 )
             )
+            guard !allowsNoPlan || acknowledgement.clinicalPolicy != nil else {throw OnboardingRepositoryError.serviceUnavailable}
             guard acknowledgement.matches(draft) else {
                 throw OnboardingRepositoryError.serviceUnavailable
             }
@@ -350,10 +417,10 @@ struct MobileOnboardingRepository: OnboardingRepository {
     private func map(_ error: MobileAPITransportError) -> OnboardingRepositoryError {
         switch error {
         case .conflict(let code, _)
-            where code == "mobile_signup_strength_stale_epoch" || code == "mobile_signup_completion_invalid_intent":
+            where code == "mobile_signup_strength_stale_epoch" || code == "mobile_signup_completion_invalid_intent" || code == "mobile_signup_health_changed" || code == "mobile_current_clinical_changed":
             .completionIntentChanged
         case .conflict(let code, _)
-            where code == "onboarding_requirements_changed":
+            where code == "onboarding_requirements_changed" || code == "mobile_signup_health_documents_changed":
             .requirementsChanged
         case .conflict(let code, _)
             where code == "onboarding_already_completed":
@@ -384,7 +451,7 @@ private struct OnboardingCompletionSubmission: Encodable, Sendable {
     let heightCM: Double
     let weightKG: Double
     let bodyFatPercent: Double?
-    let objective: BodyFlowObjective
+    let objective: OnboardingObjectiveValue
     let activityLevel: ActivityLevel
     let trainingFrequency: Int
     let waterIntake: WaterIntake?
@@ -398,14 +465,14 @@ private struct OnboardingCompletionSubmission: Encodable, Sendable {
     let signupStrengthProtocol: String?
     let completionIntentID: String?
 
-    init(draft: OnboardingDraft, completionIntent: OnboardingCompletionIntent? = nil) throws {
+    init(draft: OnboardingDraft, completionIntent: OnboardingCompletionIntent? = nil,allowsNoPlan:Bool = false) throws {
         guard let name = draft.displayName?.trimmingCharacters(in: .whitespacesAndNewlines),
               !name.isEmpty,
               let sex = draft.biologicalSex,
               let birthDate = draft.birthDate,
               let heightCM = draft.heightCM,
               let weightKG = draft.weightKG,
-              let objective = draft.objective,
+              draft.objective != nil || (allowsNoPlan && completionIntent != nil),
               let activityLevel = draft.activityLevel,
               let trainingFrequency = draft.trainingFrequency,
               let hungerLevel = draft.hungerLevel,
@@ -434,7 +501,7 @@ private struct OnboardingCompletionSubmission: Encodable, Sendable {
         self.heightCM = heightCM
         self.weightKG = weightKG
         bodyFatPercent = draft.bodyFatPercent
-        self.objective = objective
+        self.objective = OnboardingObjectiveValue(draft.objective)
         self.activityLevel = activityLevel
         self.trainingFrequency = trainingFrequency
         self.waterIntake = draft.waterIntake

@@ -11,6 +11,7 @@ final class CurrentObjectiveModel {
         let previousState: FeatureReadState<CurrentObjectiveSnapshot>
     }
     let userID: String
+    let firstPhase: ClinicalFirstPhaseModel?
     private let provider: any CurrentObjectiveProviding
     private var sequence = 0
     private var activeRead: Read?
@@ -18,9 +19,10 @@ final class CurrentObjectiveModel {
     private(set) var state: FeatureReadState<CurrentObjectiveSnapshot> = .idle
     var isLoading: Bool { activeRead != nil }
 
-    init(userID: String, provider: any CurrentObjectiveProviding) {
+    init(userID: String, provider: any CurrentObjectiveProviding, firstPhase: ClinicalFirstPhaseModel? = nil) {
         self.userID = userID
         self.provider = provider
+        self.firstPhase = firstPhase
     }
 
     func load() async {
@@ -73,6 +75,7 @@ final class CurrentObjectiveModel {
 
     func invalidate() {
         ended = true
+        firstPhase?.invalidate()
         cancelRead()
         state = .idle
     }

@@ -92,6 +92,9 @@ final class AppFlowModel {
     private(set) var onboardingRestoreGeneration = 0
     private(set) var restoredHistoricalCompletedAt: String?
     private(set) var restoredSignupCompletion: OnboardingCompletionCapability?
+    private(set) var restoredClinicalSignup: OnboardingClinicalSignupCapability?
+    private(set) var restoredClinicalPolicy: CurrentClinicalPolicy?
+    private(set) var restoredLegacyDocuments: OnboardingLegacyDocumentsPresentation?
     /// Set while the root shows the sign-up load error; `nil` everywhere else.
     private(set) var onboardingLoadFailure: OnboardingLoadFailure?
 
@@ -265,6 +268,14 @@ final class AppFlowModel {
         }
     }
 
+    /// A document ACK alone never enters the app. This continuation belongs
+    /// to the exact visible account/restore that submitted it.
+    func reconcileLegacyDocuments(ownerToken: OnboardingOwnerToken) async {
+        guard !Task.isCancelled, onboardingOwnerToken == ownerToken,
+              restoredLegacyDocuments != nil else { return }
+        await retryOnboardingRestore()
+    }
+
     func retryOnboardingRestore() async {
         guard let session = currentSession,
               session.isEmailConfirmed,
@@ -338,6 +349,9 @@ final class AppFlowModel {
         restoredOnboardingRequirements = .unavailable
         restoredHistoricalCompletedAt = nil
         restoredSignupCompletion = nil
+        restoredClinicalSignup = nil
+        restoredClinicalPolicy = nil
+        restoredLegacyDocuments = nil
         onboardingLoadFailure = nil
         state = .authenticated(userID: userID)
         publishMealRecordAuthentication(userID: userID, ticket: c11Ticket)
@@ -481,6 +495,9 @@ final class AppFlowModel {
             restoredOnboardingRequirements = .unavailable
             restoredHistoricalCompletedAt = nil
             restoredSignupCompletion = nil
+            restoredClinicalSignup = nil
+            restoredClinicalPolicy = nil
+            restoredLegacyDocuments = nil
             onboardingLoadFailure = nil
             currentSession = session
             guard !isCancellationRequested else {
@@ -540,6 +557,19 @@ final class AppFlowModel {
                 return
             }
 
+            if serverState.legacyReconsent != nil {
+                let documents = try OnboardingLegacyDocumentsPresentation(state: serverState)
+                retainCleanupEvent(cleanupCoordinator.finishRestore(owner: activation,
+                    freshObservation: freshObservation))
+                restoredOnboardingRepository = scopedOnboarding
+                publishOnboardingRestore(session: session, draft: nil, c11Ticket: c11Ticket,
+                    requirements: serverState.requirements,
+                    historicalCompletedAt: serverState.completion.completedAt,
+                    clinicalPolicy: serverState.clinicalPolicy, legacyDocuments: documents)
+                finishOnboardingRestoreIfCurrent(restoreID)
+                return
+            }
+
             var draft: OnboardingDraft
             if serverState.completion.completedAt != nil {
                 guard let authoritativeDraft = serverState.draft else {
@@ -564,7 +594,9 @@ final class AppFlowModel {
                 c11Ticket: c11Ticket,
                 requirements: serverState.requirements,
                 historicalCompletedAt: serverState.completion.completedAt,
-                signupCompletion: serverState.signupCompletion
+                signupCompletion: serverState.signupCompletion,
+                clinicalSignup: serverState.clinicalSignup,
+                clinicalPolicy: serverState.clinicalPolicy
             )
             finishOnboardingRestoreIfCurrent(restoreID)
             let step = draft.currentStep
@@ -593,6 +625,9 @@ final class AppFlowModel {
     private func beginOnboardingRestore() -> UUID {
         restoredOnboardingRepository = nil
         restoredSignupCompletion = nil
+        restoredClinicalSignup = nil
+        restoredClinicalPolicy = nil
+        restoredLegacyDocuments = nil
         let restoreID = UUID()
         activeOnboardingRestoreID = restoreID
         return restoreID
@@ -612,6 +647,9 @@ final class AppFlowModel {
         activeOnboardingRestoreID = nil
         restoredOnboardingRepository = nil
         restoredSignupCompletion = nil
+        restoredClinicalSignup = nil
+        restoredClinicalPolicy = nil
+        restoredLegacyDocuments = nil
     }
 
     private func publishOnboardingRestore(
@@ -621,6 +659,9 @@ final class AppFlowModel {
         requirements: OnboardingRequirements = .unavailable,
         historicalCompletedAt: String? = nil,
         signupCompletion: OnboardingCompletionCapability? = nil,
+        clinicalSignup: OnboardingClinicalSignupCapability? = nil,
+        clinicalPolicy: CurrentClinicalPolicy? = nil,
+        legacyDocuments: OnboardingLegacyDocumentsPresentation? = nil,
         error: AppPresentationError? = nil,
         loadFailure: OnboardingLoadFailure? = nil
     ) {
@@ -639,6 +680,9 @@ final class AppFlowModel {
         restoredOnboardingRequirements = requirements
         restoredHistoricalCompletedAt = historicalCompletedAt
         restoredSignupCompletion = signupCompletion
+        restoredClinicalSignup = clinicalSignup
+        restoredClinicalPolicy = clinicalPolicy
+        restoredLegacyDocuments = legacyDocuments
         presentationError = error
         onboardingLoadFailure = loadFailure
         onboardingRestoreGeneration += 1
@@ -647,7 +691,7 @@ final class AppFlowModel {
         publishedOnboardingActivationID = cleanupOwnerToken?.activationID
         state = .onboarding(
             userID: session.userID,
-            step: draft?.currentStep ?? .welcome
+            step: legacyDocuments != nil ? .consent : (draft?.currentStep ?? .welcome)
         )
         if let c11Ticket, mealRecordAuthenticationLifetime?.isCurrent(c11Ticket) == true {
             mealRecordAuthenticationLifetime?.withdrawVisibleActivation(ticket: c11Ticket)
@@ -671,6 +715,9 @@ final class AppFlowModel {
         restoredOnboardingRequirements = .unavailable
         restoredHistoricalCompletedAt = nil
         restoredSignupCompletion = nil
+        restoredClinicalSignup = nil
+        restoredClinicalPolicy = nil
+        restoredLegacyDocuments = nil
         presentationError = nil
         onboardingLoadFailure = nil
         state = .authenticated(userID: session.userID)
@@ -687,6 +734,9 @@ final class AppFlowModel {
         restoredOnboardingRequirements = .unavailable
         restoredHistoricalCompletedAt = nil
         restoredSignupCompletion = nil
+        restoredClinicalSignup = nil
+        restoredClinicalPolicy = nil
+        restoredLegacyDocuments = nil
         onboardingLoadFailure = nil
         currentSession = nil
         state = .signedOut(.signIn)
@@ -713,6 +763,9 @@ final class AppFlowModel {
         restoredOnboardingRequirements = .unavailable
         restoredHistoricalCompletedAt = nil
         restoredSignupCompletion = nil
+        restoredClinicalSignup = nil
+        restoredClinicalPolicy = nil
+        restoredLegacyDocuments = nil
         onboardingLoadFailure = nil
         currentSession = nil
         state = .signedOut(destination)

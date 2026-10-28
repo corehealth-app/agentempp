@@ -16,6 +16,7 @@ import { openrouterBalanceCheckFn } from './functions/openrouter-balance-check.j
 import { pendingCleanupFn } from './functions/pending-cleanup.js'
 import { pipelineHealthFn } from './functions/pipeline-health.js'
 import { processMessageFn } from './functions/process-message.js'
+import { reevaluationPhotoDispositionCleanupFn } from './functions/reevaluation-photo-disposition-cleanup.js'
 import { regressionBeaconFn } from './functions/regression-beacon.js'
 import { reminderClaimFn, reminderSchedulerFn } from './functions/reminder-scheduler.js'
 import {
@@ -26,6 +27,7 @@ import { sampleJudgeFn } from './functions/sample-judge.js'
 import { trainingDailyDeliveryFn } from './functions/training-daily-delivery.js'
 import { userDeletionPurgerFn } from './functions/user-deletion-purger.js'
 import { waQualityCheckFn } from './functions/wa-quality-check.js'
+import { assertClinicalStagingWorkerTarget } from './lib/clinical-staging-worker-target.js'
 
 export const allFunctions = [
   processMessageFn,
@@ -59,16 +61,20 @@ export const allFunctions = [
  * function (production). `media-staging` is the staging worker for the
  * mobile app: only media processing (photos, audio, plan documents), with no
  * cron, no WhatsApp and no reminder function. An unknown name is refused so a
- * typo never widens the set.
+ * typo never widens the set. `media-clinical-staging` additionally opts into
+ * recurring-photo disposition cleanup; it does not start legacy cron jobs.
  */
 const FUNCTION_SETS = {
   'media-staging': [mediaAssetProcessingFn],
+  'media-clinical-staging': [mediaAssetProcessingFn, reevaluationPhotoDispositionCleanupFn],
 } as const
 
-export function functionsForSet(name: string | undefined): readonly (typeof allFunctions)[number][] {
+type ServedFunction = (typeof allFunctions)[number] | typeof reevaluationPhotoDispositionCleanupFn
+export function functionsForSet(name: string | undefined): readonly ServedFunction[] {
   if (name === undefined || name === '') return allFunctions
-  const selected = (FUNCTION_SETS as Record<string, readonly (typeof allFunctions)[number][]>)[name]
+  const selected = (FUNCTION_SETS as Record<string, readonly ServedFunction[]>)[name]
   if (!selected) throw new Error(`unknown Inngest function set: ${name}`)
+  if (name === 'media-clinical-staging') assertClinicalStagingWorkerTarget()
   return selected
 }
 
@@ -88,6 +94,7 @@ export {
   pendingCleanupFn,
   pipelineHealthFn,
   processMessageFn,
+  reevaluationPhotoDispositionCleanupFn,
   reminderClaimFn,
   reminderSchedulerFn,
   routineOccurrenceSchedulerFn,

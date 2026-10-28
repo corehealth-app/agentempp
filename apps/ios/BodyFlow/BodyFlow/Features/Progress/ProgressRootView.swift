@@ -4,6 +4,7 @@ import SwiftUI
 struct ProgressRootView: View {
     let model: ProgressViewModel
     @Binding var selectedTab: AppTab
+    var clinicalFull: ClinicalFullModel? = nil
     @Environment(\.locale) private var locale
 
     var body: some View {
@@ -17,6 +18,7 @@ struct ProgressRootView: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
+                        if let clinicalFull { ClinicalFullEntryCard(model:clinicalFull) }
                         if model.state.presentation.value == nil, let weightState = model.profileWeight.state {
                             ProfileWeightCard(state: weightState, language: language, retryAction: retry)
                         }
@@ -61,7 +63,7 @@ struct ProgressRootView: View {
                     // Vertical scrolling only, whatever the charts measure.
                     .containerRelativeFrame(.horizontal)
                 }
-                .refreshable { await model.retry() }
+                .refreshable { await model.retry(); await clinicalFull?.loadEntry() }
             }
         }
         .navigationTitle(copy("progress.navigation.title"))
@@ -75,6 +77,7 @@ struct ProgressRootView: View {
     /// Independently available profile data or recovery must be usable even
     /// while the progress endpoint is still pending.
     private var awaitsBothInitialReads: Bool {
+        if clinicalFull != nil { return false }
         guard model.state.presentation.fullScreenState == .loading else { return false }
         switch model.profileWeight.state {
         case nil, .idle?, .loading?: return true

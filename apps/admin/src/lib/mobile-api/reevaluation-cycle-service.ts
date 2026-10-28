@@ -17,7 +17,7 @@ export interface ReevaluationCycleDependencies {
   readonly repository: ReevaluationCycleRepository
 }
 
-function authenticatedOwner(auth: MobileAuthContext): string {
+export function authenticatedReevaluationOwner(auth: MobileAuthContext): string {
   const ids = [
     auth?.userId,
     auth?.authUserId,
@@ -45,7 +45,7 @@ export async function getReevaluationCycle(
   auth: MobileAuthContext,
   dependencies: ReevaluationCycleDependencies,
 ): Promise<ReevaluationCycleState> {
-  const userId = authenticatedOwner(auth)
+  const userId = authenticatedReevaluationOwner(auth)
   if (dependencies.enabled !== true) return disabledReevaluationCycleState
   return parseReevaluationCycleRpcState(await dependencies.repository.get(userId))
 }
@@ -55,7 +55,7 @@ export async function startReevaluationCycle(
   idempotencyKey: string,
   dependencies: ReevaluationCycleDependencies,
 ): Promise<ReevaluationCycleState> {
-  const userId = authenticatedOwner(auth)
+  const userId = authenticatedReevaluationOwner(auth)
   if (!reevaluationCycleUuidSchema.safeParse(idempotencyKey).success)
     throw new MobileApiError(
       422,

@@ -351,3 +351,116 @@ describe('Flow-only factory, real authenticated entry and lazy provider', () => 
     expect(controlled.today).not.toHaveBeenCalled()
   })
 })
+
+describe('current clinical port reaches BOTH authenticated Flow paths', () => {
+  async function clinical() {
+    const { bindMobileFlowClinicalPort } = await import('@mpp/agent')
+    const today = officialToday()
+    today.current_protocol = null
+    today.protocol = null
+    today.targets.calories_kcal = null
+    today.targets.protein_g = null
+    today.remaining_food_kcal = null
+    today.daily_balance_kcal = null
+    today.block_7700.enabled = false
+    const revalidate = vi.fn(async () => {}),
+      read = vi.fn(async () => ({
+        version: 1 as const,
+        locale: 'pt-BR',
+        timezone: 'America/Sao_Paulo',
+        policy: {
+          version: 1 as const,
+          observed_at: NOW.toISOString(),
+          assessment: 'complete' as const,
+          recording_allowed: true,
+          pause_weight_loss_guidance: true,
+          professional_assessment_recommended: true,
+          phase_selection_pending: true,
+          target_source: 'unavailable',
+          hide: { objective: true, calories: true, protein: true, balance: true, block: true },
+        },
+        today,
+        profile: {
+          name: 'CURRENT',
+          sex: 'masculino' as const,
+          age: 36,
+          weight_kg: 80,
+          height_cm: 180,
+          protocol: null,
+          bf_percent: null,
+        },
+        progress: {
+          xp_total: 150,
+          level: 2,
+          current_streak: 3,
+          longest_streak: 4,
+          blocks_completed: null,
+          deficit_block: null,
+          badges_earned: [],
+        },
+      }))
+    return {
+      read,
+      revalidate,
+      port: bindMobileFlowClinicalPort({
+        read,
+        period: async () => {
+          throw new Error('unused')
+        },
+        revalidate,
+      }),
+    }
+  }
+  it('status uses current numbers, no legacy closer/provider, no loss motivation', async () => {
+    const c = await clinical()
+    const reply = await createFlowAgent(context(), c.port).reply(input('Como está meu dia?'))
+    expect(reply.text).toContain('Meta indisponível')
+    expect(reply.text).toContain('orientações de emagrecimento estão pausadas')
+    expect(reply.metadata.stage).toBe('analista_diario')
+    expect(reply).not.toHaveProperty('flowStatusPhrase')
+    expect(controlled.close).not.toHaveBeenCalled()
+    expect(controlled.today).not.toHaveBeenCalled()
+    expect(controlled.constructors).not.toHaveBeenCalled()
+    expect(c.revalidate).toHaveBeenCalled()
+  })
+  it('free conversation gives the provider the current projection without old targets/phase/formula', async () => {
+    vi.stubEnv('OPENROUTER_API_KEY', 'synthetic-key')
+    const c = await clinical()
+    await createFlowAgent(context(), c.port).reply(input('Quero conversar sobre minha rotina.'))
+    const first = controlled.complete.mock.calls[0]
+    if (!first) throw new Error('provider not called')
+    const params = first[0] as { systemPrompt: unknown }
+    const prompt = JSON.stringify(params.systemPrompt)
+    expect(prompt).toContain('emagrecimento pausadas')
+    expect(prompt).toContain('"meta_kcal":null'.replaceAll('"', '\\"'))
+    expect(prompt).not.toContain('Decisão automática')
+    expect(prompt).not.toContain('NÃO DEFINIDO (usuário em onboarding)')
+    expect(controlled.close).not.toHaveBeenCalled()
+    expect(controlled.today).not.toHaveBeenCalled()
+  })
+  it('rejects a response if health changes while the provider is answering', async () => {
+    vi.stubEnv('OPENROUTER_API_KEY', 'synthetic-key')
+    const c = await clinical()
+    let changed = false
+    c.revalidate.mockImplementation(async () => {
+      if (changed) throw new Error('clinical changed')
+    })
+    controlled.complete.mockImplementationOnce(async () => {
+      changed = true
+      return {
+        content: 'Old advice',
+        toolCalls: [],
+        model: 'synthetic',
+        promptTokens: 1,
+        completionTokens: 1,
+        totalTokens: 2,
+        costUsd: 0,
+        finishReason: 'stop',
+        latencyMs: 1,
+      }
+    })
+    await expect(
+      createFlowAgent(context(), c.port).reply(input('Quero conversar sobre minha rotina.')),
+    ).rejects.toThrow('clinical changed')
+  })
+})

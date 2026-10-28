@@ -8,7 +8,6 @@ import {
   type WeightRecordResult,
 } from './weight-service'
 
-const now = new Date('2026-09-28T12:00:00.000Z')
 const measuredAt = '2026-09-28T08:30:00-03:00'
 
 function repository(result?: Partial<WeightRecordResult>) {
@@ -37,8 +36,12 @@ function answer(): WeightRecordResult {
 
 describe('mobile weight', () => {
   it('accepts kg and lb with an instant and nothing else', () => {
-    expect(weightInputSchema.safeParse({ value: 78.4, unit: 'kg', measured_at: measuredAt }).success).toBe(true)
-    expect(weightInputSchema.safeParse({ value: 170, unit: 'lb', measured_at: measuredAt }).success).toBe(true)
+    expect(
+      weightInputSchema.safeParse({ value: 78.4, unit: 'kg', measured_at: measuredAt }).success,
+    ).toBe(true)
+    expect(
+      weightInputSchema.safeParse({ value: 170, unit: 'lb', measured_at: measuredAt }).success,
+    ).toBe(true)
     for (const invalid of [
       { value: 78.4, unit: 'st', measured_at: measuredAt },
       { value: '78,4', unit: 'kg', measured_at: measuredAt },
@@ -60,7 +63,6 @@ describe('mobile weight', () => {
       'patient-1',
       { value: 170, unit: 'lb', measured_at: measuredAt },
       'key-12345678',
-      now,
     )
     expect(calls).toEqual([
       {
@@ -77,7 +79,12 @@ describe('mobile weight', () => {
   it('reports a measurement that was not applied without turning it into an error', async () => {
     const { deps } = repository({ applied: false, reason: 'older_than_current', weight_kg: 77.9 })
     await expect(
-      recordWeight(deps, 'patient-1', { value: 90, unit: 'kg', measured_at: measuredAt }, 'key-12345678', now),
+      recordWeight(
+        deps,
+        'patient-1',
+        { value: 90, unit: 'kg', measured_at: measuredAt },
+        'key-12345678',
+      ),
     ).resolves.toMatchObject({ applied: false, reason: 'older_than_current', weight_kg: 77.9 })
   })
 
@@ -89,21 +96,34 @@ describe('mobile weight', () => {
   ])('refuses %j before reaching the database', async (value, code) => {
     const { deps, calls } = repository()
     await expect(
-      recordWeight(deps, 'patient-1', { ...value, measured_at: measuredAt }, 'key-12345678', now),
+      recordWeight(deps, 'patient-1', { ...value, measured_at: measuredAt }, 'key-12345678'),
     ).rejects.toMatchObject({ status: 422, code })
     expect(calls).toEqual([])
   })
 
-  it.each(['2026-09-28T12:06:00.000Z', '2026-09-21T11:59:00.000Z'])(
-    'refuses an instant outside the offline window (%s)',
-    async (instant) => {
-      const { deps, calls } = repository()
-      await expect(
-        recordWeight(deps, 'patient-1', { value: 78, unit: 'kg', measured_at: instant }, 'key-12345678', now),
-      ).rejects.toMatchObject({ status: 422, code: 'measured_at_out_of_range' })
-      expect(calls).toEqual([])
-    },
-  )
+  it.each([
+    '2026-09-28T12:06:00.000Z',
+    '2026-09-21T11:59:00.000Z',
+  ])('lets the authoritative database distinguish an aged replay from a new invalid instant (%s)', async (instant) => {
+    const { deps, calls } = repository()
+    await expect(
+      recordWeight(
+        deps,
+        'patient-1',
+        { value: 78, unit: 'kg', measured_at: instant },
+        'key-12345678',
+      ),
+    ).resolves.toEqual(answer())
+    expect(calls).toEqual([
+      {
+        userId: 'patient-1',
+        value: 78,
+        unit: 'kg',
+        measuredAt: instant,
+        idempotencyKey: 'key-12345678',
+      },
+    ])
+  })
 
   it('maps database outcomes to typed errors and binds the call to the authenticated patient', async () => {
     const calls: Array<{ fn: string; params: Record<string, unknown> }> = []
@@ -117,16 +137,40 @@ describe('mobile weight', () => {
     const input = { value: 78, unit: 'kg' as const, measured_at: measuredAt }
 
     await expect(
-      recordWeight(createSupabaseWeightDependencies(client({ code: '23505', message: 'x' }, null)), 'patient-1', input, 'key-12345678', now),
+      recordWeight(
+        createSupabaseWeightDependencies(client({ code: '23505', message: 'x' }, null)),
+        'patient-1',
+        input,
+        'key-12345678',
+      ),
     ).rejects.toMatchObject({ status: 409, code: 'weight_measurement_conflict' })
     await expect(
-      recordWeight(createSupabaseWeightDependencies(client({ code: '22023', message: 'x' }, null)), 'patient-1', input, 'key-12345678', now),
+      recordWeight(
+        createSupabaseWeightDependencies(client({ code: '22023', message: 'x' }, null)),
+        'patient-1',
+        input,
+        'key-12345678',
+      ),
     ).rejects.toMatchObject({ status: 422, code: 'weight_out_of_range' })
     await expect(
-      recordWeight(createSupabaseWeightDependencies(client({ code: 'XX000', message: 'secret detail' }, null)), 'patient-1', input, 'key-12345678', now),
-    ).rejects.toMatchObject({ status: 500, code: 'weight_storage_failed', message: 'Weight operation failed' })
+      recordWeight(
+        createSupabaseWeightDependencies(client({ code: 'XX000', message: 'secret detail' }, null)),
+        'patient-1',
+        input,
+        'key-12345678',
+      ),
+    ).rejects.toMatchObject({
+      status: 500,
+      code: 'weight_storage_failed',
+      message: 'Weight operation failed',
+    })
     await expect(
-      recordWeight(createSupabaseWeightDependencies(client(null, { applied: true })), 'patient-1', input, 'key-12345678', now),
+      recordWeight(
+        createSupabaseWeightDependencies(client(null, { applied: true })),
+        'patient-1',
+        input,
+        'key-12345678',
+      ),
     ).rejects.toMatchObject({ status: 500, code: 'weight_storage_failed' })
 
     expect(calls[0]).toEqual({
@@ -139,6 +183,31 @@ describe('mobile weight', () => {
         p_idempotency_key: 'key-12345678',
       },
     })
+  })
+
+  it.each([
+    ['40001', 'mobile_weight_request_conflict', 409, 'idempotency_key_conflict'],
+    ['22023', 'mobile_weight_measured_at_out_of_range', 422, 'measured_at_out_of_range'],
+    ['55P03', 'mobile_weight_busy', 409, 'weight_operation_busy'],
+    ['40001', 'unrelated serialization failure', 500, 'weight_storage_failed'],
+    ['55P03', 'unrelated busy detail', 500, 'weight_storage_failed'],
+  ])('maps only named authoritative refusals (%s, %s)', async (code, message, status, publicCode) => {
+    let calls = 0
+    const deps = createSupabaseWeightDependencies({
+      rpc: async () => {
+        calls += 1
+        return { data: null, error: { code, message } }
+      },
+    } as never)
+    await expect(
+      recordWeight(
+        deps,
+        'patient-1',
+        { value: 78, unit: 'kg', measured_at: measuredAt },
+        'key-12345678',
+      ),
+    ).rejects.toMatchObject({ status, code: publicCode })
+    expect(calls).toBe(1)
   })
 })
 
@@ -155,7 +224,10 @@ describe('profile read with the weight instant', () => {
               eq: () => ({
                 async maybeSingle() {
                   if (columns.includes('weight_measured_at') && !hasColumn) {
-                    return { data: null, error: { code: '42703', message: 'column does not exist' } }
+                    return {
+                      data: null,
+                      error: { code: '42703', message: 'column does not exist' },
+                    }
                   }
                   return {
                     data: {

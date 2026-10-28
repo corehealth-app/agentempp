@@ -69,7 +69,9 @@ struct ProgressTrendsPresentation: Equatable, Sendable {
                 target: day.caloriesTarget
             )
         }
-        block = days.map { date, day in BlockPoint(date: date, accumulated: day.deficitAccumulated) }
+        block = snapshot.clinicalPolicy?.hide.block == true ? [] : days.compactMap { date, day in
+            day.deficitAccumulated.map { BlockPoint(date: date, accumulated: $0) }
+        }
         weights = snapshot.weights.compactMap { weight in
             Self.date(from: weight.date).map {
                 WeightPoint(

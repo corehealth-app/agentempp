@@ -16,7 +16,9 @@
     "./workout-strength-projection": "./src/workout-strength-projection.ts",
     "./workout-strength-identity": "./src/workout-strength-identity.ts",
     "./workout-strength-clarification": "./src/workout-strength-clarification.ts",
-    "./registration-feedback": "./src/registration-feedback.ts"
+    "./registration-feedback": "./src/registration-feedback.ts",
+    "./reevaluation-photo-disposition": "./src/reevaluation-photo-disposition.ts",
+    "./supabase-reevaluation-photo-disposition": "./src/supabase-reevaluation-photo-disposition.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

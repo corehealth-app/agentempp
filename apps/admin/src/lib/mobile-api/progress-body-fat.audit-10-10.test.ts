@@ -54,14 +54,20 @@ import { clearCalcConfigCache } from '@mpp/agent'
 import { DayCloseMemoryDb } from '@mpp/agent/testing/day-close-memory-db'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MobileRouteContext } from '@/lib/mobile-api/route'
+import { invokeContextRoute } from '@/lib/mobile-api/testing/mobile-route-context-fixture'
 
-vi.mock('@/lib/mobile-api/route', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/mobile-api/route')>()),
-  createMobileRoute: (handler: unknown) => handler,
-}))
+vi.mock('@/lib/mobile-api/route', async (importOriginal) => {
+  const { wrapContextRouteHandler } = await import(
+    '@/lib/mobile-api/testing/mobile-route-context-fixture'
+  )
+  return {
+    ...(await importOriginal<typeof import('@/lib/mobile-api/route')>()),
+    createMobileRoute: wrapContextRouteHandler,
+  }
+})
 
 const { GET } = await import('@/app/api/mobile/v1/progress/route')
-const handler = GET as unknown as (context: MobileRouteContext) => Promise<Response>
+const handler = (context: MobileRouteContext) => invokeContextRoute(GET, context)
 
 const USER = '0b9f6f0e-0000-4000-8000-0000000b0f15'
 const OTHER = '0b9f6f0e-0000-4000-8000-0000000b0f30'
@@ -167,11 +173,15 @@ const PROGRESS_KEYS = [
   'xp_total',
 ]
 
-const DECISION = 'decisão do orquestrador, anunciada ao dono em 2026-10-10, que pode riscar qualquer uma'
+const DECISION =
+  'decisão do orquestrador, anunciada ao dono em 2026-10-10, que pode riscar qualquer uma'
 
 async function answer(db: DayCloseMemoryDb) {
   const response = await handler(context(db))
-  return { status: response.status, body: (await response.json()) as { data: Record<string, unknown> | null } }
+  return {
+    status: response.status,
+    body: (await response.json()) as { data: Record<string, unknown> | null },
+  }
 }
 
 beforeEach(() => {
@@ -206,12 +216,13 @@ describe('audit 2026-10-10 — GET /api/mobile/v1/progress and the body fat of t
     expect(body.data).toMatchObject({ current_protocol: 'ganho_massa', block_7700_enabled: false })
     // Two scoped table reads plus the closed origin RPC; no write.
     expect(db.writes).toEqual([])
-    expect(db.operations.map((operation) => `${operation.kind}:${operation.target}`).sort()).toEqual([
-      'select:user_profiles',
-      'select:user_progress',
-    ])
+    expect(
+      db.operations.map((operation) => `${operation.kind}:${operation.target}`).sort(),
+    ).toEqual(['select:user_profiles', 'select:user_progress'])
     for (const operation of db.operations) {
-      expect(operation.filters, operation.target).toEqual([{ op: 'eq', column: 'user_id', value: USER }])
+      expect(operation.filters, operation.target).toEqual([
+        { op: 'eq', column: 'user_id', value: USER },
+      ])
     }
     // The stored progress row is not touched: the field is answered, not written.
     expect(db.progress(USER)?.current_bf_percent).toBeNull()
@@ -284,7 +295,10 @@ describe('audit 2026-10-10 — GET /api/mobile/v1/progress and the body fat of t
 
   it("G6 another account's profile does not leak into this one", async () => {
     const db = database(null)
-    db.addAccount({ userId: OTHER, profile: { body_fat_percent: 30, current_protocol: 'recomposicao' } })
+    db.addAccount({
+      userId: OTHER,
+      profile: { body_fat_percent: 30, current_protocol: 'recomposicao' },
+    })
 
     const { body } = await answer(db)
 
@@ -296,9 +310,18 @@ describe('audit 2026-10-10 — GET /api/mobile/v1/progress and the body fat of t
 describe('audit 2026-10-10 — body fat audit record and remaining pendencies in Progress', () => {
   it('G7 every "RC BF" line of this header is in docs/mobile/api-v1.md, identical; and the docs say whose decision it is', () => {
     const header = readFileSync(new URL(import.meta.url), 'utf8')
-    const doc = readFileSync(new URL('../../../../../docs/mobile/api-v1.md', import.meta.url), 'utf8')
-    const calculation = readFileSync(new URL('../../../../../docs/CALCULO-MPP.md', import.meta.url), 'utf8')
-    const fromHeader = Array.from(header.matchAll(/^ \* (> RC BF-\d+ — .*)$/gm), (match) => match[1] ?? '')
+    const doc = readFileSync(
+      new URL('../../../../../docs/mobile/api-v1.md', import.meta.url),
+      'utf8',
+    )
+    const calculation = readFileSync(
+      new URL('../../../../../docs/CALCULO-MPP.md', import.meta.url),
+      'utf8',
+    )
+    const fromHeader = Array.from(
+      header.matchAll(/^ \* (> RC BF-\d+ — .*)$/gm),
+      (match) => match[1] ?? '',
+    )
     const fromDoc = Array.from(doc.matchAll(/^(> RC BF-\d+ — .*)$/gm), (match) => match[1] ?? '')
 
     expect(fromHeader).toHaveLength(4)
@@ -337,7 +360,11 @@ describe('audit 2026-10-10 — body fat audit record and remaining pendencies in
       expect(end, to).toBeGreaterThan(start)
       return flat(text.slice(start, end))
     }
-    const apiItem = item(doc, '- `GET /progress`, quando `data` existe,', '\n- Ausência de progresso mantém')
+    const apiItem = item(
+      doc,
+      '- `GET /progress`, quando `data` existe,',
+      '\n- Ausência de progresso mantém',
+    )
     const calculationItem = item(
       calculation,
       '- `GET /progress` acrescenta `current_protocol`',
@@ -346,7 +373,9 @@ describe('audit 2026-10-10 — body fat audit record and remaining pendencies in
     for (const text of [apiItem, calculationItem]) {
       expect(text).toContain(DECISION)
       expect(text).toContain('`user_profiles.body_fat_percent`')
-      expect(text).not.toMatch(/aprovad[oa]s? pel[oa] (?:dono|médico)|o dono aprovou|o médico aprovou/i)
+      expect(text).not.toMatch(
+        /aprovad[oa]s? pel[oa] (?:dono|médico)|o dono aprovou|o médico aprovou/i,
+      )
     }
     expect(apiItem).toContain('conserva 11 campos persistidos')
     expect(calculationItem).toContain('nenhuma fórmula, meta, balanço ou bloco muda')

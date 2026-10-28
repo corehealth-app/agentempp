@@ -220,11 +220,14 @@ final class OnboardingFlowModel {
     private let now: @MainActor () -> Date
     private let cancellationCheck: @MainActor () -> Bool
     private var signupCompletion: OnboardingCompletionCapability?
+    private var clinicalSignup: OnboardingClinicalSignupCapability?
+    private(set) var clinicalPolicy:CurrentClinicalPolicy?
     private let preparationIDProvider: @MainActor () -> UUID
     private var activeSubmissionID: UUID?
     private struct CompletionPreparation {
         let preparationID: UUID
         let submittedDraft: OnboardingDraft
+        var clinicalSignup: OnboardingClinicalSignupCapability? = nil
     }
     private enum CompletionTransport {
         case legacy(IdempotencyKey)
@@ -233,6 +236,7 @@ final class OnboardingFlowModel {
     private struct CompletionSubmission {
         let submittedDraft: OnboardingDraft
         let transport: CompletionTransport
+        var clinicalSignup: OnboardingClinicalSignupCapability? = nil
     }
     private enum CompletionAttempt {
         case preparation(CompletionPreparation)
@@ -256,7 +260,20 @@ final class OnboardingFlowModel {
         let input: OnboardingEligibilityInput
         let actions: Set<OnboardingDocumentAction>
         let developmentConsent: DevelopmentConsentAcceptance?
+        let healthRisks: Set<ClinicalFullHealthRisk>
     }
+    private struct HealthTuple: Equatable {
+        let locale:String; let actions:[OnboardingDocumentAction]; let risks:Set<ClinicalFullHealthRisk>
+    }
+    private struct HealthPreparation {
+        let preparationID:UUID;let key:IdempotencyKey;let tuple:HealthTuple
+        var intent:OnboardingCompletionIntent?;var began:Bool
+    }
+    private var pendingHealth:HealthPreparation?
+    private var retainedSignupIntent:OnboardingCompletionIntent?
+    private var admittedHealth:HealthTuple?
+    private var healthNeedsReconciliation=false
+    private(set) var healthRisks:Set<ClinicalFullHealthRisk>=[]
     private var pendingCompletion: PendingCompletion?
     private var bodyPhotoDeletionIntent: OnboardingBodyPhotoDeletionIntent?
     private var verifiedPhotoConfirmation: OnboardingBodyPhotoConfirmation?
@@ -284,6 +301,8 @@ final class OnboardingFlowModel {
         requirements: OnboardingRequirements = .unavailable,
         historicalCompletedAt: String? = nil,
         signupCompletion: OnboardingCompletionCapability? = nil,
+        clinicalSignup: OnboardingClinicalSignupCapability? = nil,
+        clinicalPolicy: CurrentClinicalPolicy? = nil,
         preparationIDProvider: @escaping @MainActor () -> UUID = UUID.init,
         idempotencyKeyProvider: any IdempotencyKeyProviding = RandomIdempotencyKeyProvider(),
         telemetry: any TelemetryClient = DisabledTelemetryClient(),
@@ -302,6 +321,8 @@ final class OnboardingFlowModel {
         self.requirements = requirements
         self.historicalCompletedAt = historicalCompletedAt
         self.signupCompletion = signupCompletion
+        self.clinicalSignup = clinicalSignup
+        self.clinicalPolicy = clinicalPolicy
         self.preparationIDProvider = preparationIDProvider
         self.idempotencyKeyProvider = idempotencyKeyProvider
         self.telemetry = telemetry
@@ -347,7 +368,15 @@ final class OnboardingFlowModel {
     var isReacceptance: Bool { historicalCompletedAt != nil }
     var visibleSteps: [OnboardingStep] { isReacceptance ? [.consent, .completion] : OnboardingStep.allCases }
     var unresolvedCompletion: Bool { pendingCompletion != nil }
-    var allowsDraftEditing: Bool { isActive && !didComplete && pendingCompletion == nil }
+    var allowsDraftEditing: Bool { isActive && !didComplete && pendingCompletion == nil && pendingHealth == nil }
+    var canRetryHealthAdmission:Bool {isActive && !didComplete && pendingHealth != nil && !healthNeedsReconciliation}
+    var canReviewClinicalHealth:Bool {isActive && !didComplete && pendingHealth != nil && healthNeedsReconciliation}
+    var hidesHistoricalObjective:Bool {isReacceptance && clinicalPolicy?.hide.objective == true}
+    var usesClinicalSignup:Bool {clinicalSignup != nil && !isReacceptance}
+    var allowsNoPlanConclusion:Bool {
+        clinicalSignup != nil && ((isReacceptance && draft.objective == nil) ||
+            (hasCurrentEligibilityDecision && eligibilityDecision?.version == 2 && eligibilityDecision?.decision == .noPlan))
+    }
     var completionStatus: OnboardingCompletionStatus? {
         switch pendingCompletion {
         case .preparing, .preparationUncertain: .preparation
@@ -385,6 +414,8 @@ final class OnboardingFlowModel {
             requirements = state.requirements
             historicalCompletedAt = state.completion.completedAt
             signupCompletion = state.signupCompletion
+            clinicalSignup = state.clinicalSignup
+            clinicalPolicy = state.clinicalPolicy
             if let authoritativeDraft = state.draft { draft = authoritativeDraft }
             draft.localeIdentifier = state.locale
             draft.documentActions = nil
@@ -510,7 +541,7 @@ final class OnboardingFlowModel {
     }
 
     func continueFromCurrentStep() async {
-        guard allowsDraftEditing, operationState != .saving, !isCancellationRequested,
+        guard (allowsDraftEditing || canRetryHealthAdmission), operationState != .saving, !isCancellationRequested,
               !requiresBodyPhotoRevalidation, !hasPendingBodyPhotoDeletion else { return }
         let issues = issues(for: step)
         validationIssues = issues
@@ -537,6 +568,8 @@ final class OnboardingFlowModel {
             var freshDecision: OnboardingEligibilityDecision?
             var snapshot: EligibilitySnapshot?
             if completedStep == .consent, !isReacceptance {
+                try await admitMarkedSignupHealthIfNeeded(id:id)
+                guard canPublish(id) else {finishCancelledSubmission(id);return}
                 guard let captured = currentEligibilitySnapshot() else {
                     throw OnboardingRepositoryError.invalidDraft
                 }
@@ -546,8 +579,8 @@ final class OnboardingFlowModel {
                 guard canPublish(id), currentEligibilitySnapshot() == captured else {
                     finishCancelledSubmission(id); return
                 }
-                freshDecision = try answer.validated()
-                apply(answer, to: &advancedDraft)
+                freshDecision = try compatibleEligibility(answer)
+                apply(try compatibleEligibility(answer), to: &advancedDraft)
             }
             try await repository.saveDraft(advancedDraft, for: userID)
             guard canPublish(id), snapshot == nil || snapshot == currentEligibilitySnapshot() else {
@@ -569,6 +602,67 @@ final class OnboardingFlowModel {
         }
     }
 
+    func updateHealthRisk(_ risk:ClinicalFullHealthRisk,selected:Bool) {
+        guard usesClinicalSignup,allowsDraftEditing else {return}
+        if selected {healthRisks.insert(risk)} else {healthRisks.remove(risk)}
+        clearEligibility()
+    }
+    private func compatibleEligibility(_ value:OnboardingEligibilityDecision)throws->OnboardingEligibilityDecision {
+        let validated=try value.validated()
+        guard clinicalSignup != nil ? validated.version == 2 : validated.version != 2 else {throw OnboardingRepositoryError.serviceUnavailable}
+        return validated
+    }
+    private func admitMarkedSignupHealthIfNeeded(id:UUID) async throws {
+        guard clinicalSignup != nil,!isReacceptance,!healthRisks.isEmpty else {return}
+        let tuple=HealthTuple(locale:draft.localeIdentifier,actions:(draft.documentActions ?? []).sorted{$0.documentKey < $1.documentKey},risks:healthRisks)
+        if pendingHealth == nil && admittedHealth == tuple {return}
+        if pendingHealth == nil {
+            guard signupCompletion != nil else {throw OnboardingRepositoryError.serviceUnavailable}
+            pendingHealth=HealthPreparation(preparationID:retainedSignupIntent?.preparationID ?? preparationIDProvider(),key:try idempotencyKeyProvider.nextKey(),tuple:tuple,intent:retainedSignupIntent,began:false)
+        }
+        guard var pending=pendingHealth,pending.tuple == tuple else {throw OnboardingRepositoryError.invalidDraft}
+        if pending.intent == nil {
+            let intent:OnboardingCompletionIntent?
+            if pending.began {intent=try await repository.resolveCompletionIntent(for:userID,preparationID:pending.preparationID)}
+            else {
+                pending.began=true;pendingHealth=pending
+                intent=try await repository.beginCompletionIntent(for:userID,preparationID:pending.preparationID)
+            }
+            guard canPublish(id) else {throw CancellationError()}
+            guard let intent,intent.matches(preparationID:pending.preparationID) else {throw OnboardingRepositoryError.serviceUnavailable}
+            pending.intent=intent;pendingHealth=pending;retainedSignupIntent=intent
+        }
+        guard let intent=pending.intent else {throw OnboardingRepositoryError.serviceUnavailable}
+        let command=try OnboardingSignupHealthDeclaration(intent:intent,locale:pending.tuple.locale,actions:pending.tuple.actions,risks:pending.tuple.risks)
+        let result=try await repository.admitSignupHealth(command,for:userID,key:pending.key)
+        guard canPublish(id) else {throw CancellationError()}
+        guard result.matches(command,key:pending.key) else {throw OnboardingRepositoryError.serviceUnavailable}
+        admittedHealth=pending.tuple;pendingHealth=nil;healthNeedsReconciliation=false
+    }
+    /// Only a definitive conflict permits a fresh official read. An uncertain
+    /// health POST must first resolve through its original command/key.
+    func reviewClinicalHealthDeclaration() async {
+        guard canReviewClinicalHealth,operationState != .saving,!isCancellationRequested else {return}
+        let id=UUID();activeSubmissionID=id;operationState = .saving
+        do {
+            let state=try await repository.loadState(for:userID)
+            guard canPublish(id) else {finishCancelledSubmission(id);return}
+            guard state.completion.completedAt == nil || state.draft != nil || state.completion.completed else {throw OnboardingRepositoryError.serviceUnavailable}
+            pendingHealth=nil;retainedSignupIntent=nil;admittedHealth=nil;healthNeedsReconciliation=false
+            requirements=state.requirements;signupCompletion=state.signupCompletion;clinicalSignup=state.clinicalSignup;clinicalPolicy=state.clinicalPolicy
+            historicalCompletedAt=state.completion.completedAt
+            if let official=state.draft {draft=official}
+            draft.documentActions=nil
+            activeSubmissionID=nil;operationState = .idle;clearEligibility()
+            if state.completion.completed {
+                didComplete=true
+                await onOfficialCleanupObserved(state.bodyPhotoCleanup)
+                notifyRootOnce();return
+            }
+            step = .consent;draft.currentStep = .consent;onStepChanged(.consent)
+        } catch {publishFailure(error,for:id)}
+    }
+
     /// Called on objective appearance after a resumed draft or a definitive refusal.
     func prepareObjectiveIfNeeded() async {
         guard step == .objective, !isReacceptance, allowsDraftEditing,
@@ -584,12 +678,13 @@ final class OnboardingFlowModel {
         operationState = .saving
         do {
             let answer = try await repository.checkEligibility(captured.input, for: userID,
-                idempotencyKey: idempotencyKeyProvider.nextKey()).validated()
+                idempotencyKey: idempotencyKeyProvider.nextKey())
+            let validated = try compatibleEligibility(answer)
             guard canPublish(id), currentEligibilitySnapshot() == captured else {
                 finishCancelledSubmission(id); return
             }
-            apply(answer, to: &draft)
-            eligibilityDecision = answer
+            apply(validated, to: &draft)
+            eligibilityDecision = validated
             eligibilitySnapshot = captured
             validationIssues = []
             activeSubmissionID = nil
@@ -608,16 +703,18 @@ final class OnboardingFlowModel {
         if pendingCompletion == nil {
             guard !requiresBodyPhotoRevalidation else { return }
             validationIssues = OnboardingStepValidator.completionIssues(draft: draft,
-                developmentConsentAvailability: developmentConsentAvailability, requirements: requirements, now: now())
+                developmentConsentAvailability: developmentConsentAvailability, requirements: requirements, now: now()).filter {$0 != .objectiveRequired || !allowsNoPlanConclusion}
             guard validationIssues.isEmpty else { operationState = .idle; return }
             if !isReacceptance, !hasCurrentEligibilityDecision || eligibilityDecision?.permits(draft.objective) != true {
                 moveToObjective()
                 await prepareObjectiveIfNeeded()
                 return
             }
-            if signupCompletion != nil {
+            if let clinicalSignup, let retainedSignupIntent {
+                pendingCompletion = .submission(CompletionSubmission(submittedDraft:draft,transport:.versioned(retainedSignupIntent),clinicalSignup:clinicalSignup))
+            } else if signupCompletion != nil {
                 pendingCompletion = .preparing(CompletionPreparation(
-                    preparationID: preparationIDProvider(), submittedDraft: draft))
+                    preparationID: preparationIDProvider(), submittedDraft: draft,clinicalSignup:clinicalSignup))
             } else {
                 do {
                     pendingCompletion = .submission(CompletionSubmission(submittedDraft: draft,
@@ -652,7 +749,7 @@ final class OnboardingFlowModel {
                     throw OnboardingRepositoryError.serviceUnavailable
                 }
                 submission = CompletionSubmission(submittedDraft: preparation.submittedDraft,
-                    transport: .versioned(receipt))
+                    transport: .versioned(receipt),clinicalSignup:preparation.clinicalSignup)
                 // Freeze the positive tuple before dispatch, including an uncertain wait.
                 pendingCompletion = .submission(submission)
             case .submission(let value): submission = value
@@ -663,7 +760,9 @@ final class OnboardingFlowModel {
             case .legacy(let key):
                 acknowledgement = try await repository.completeOfficial(submittedDraft, for: userID, idempotencyKey: key)
             case .versioned(let receipt):
-                acknowledgement = try await repository.completeOfficial(submittedDraft, for: userID, completionIntent: receipt)
+                if let clinical = submission.clinicalSignup {
+                    acknowledgement = try await repository.completeOfficial(submittedDraft,for:userID,completionIntent:receipt,clinicalSignup:clinical)
+                } else { acknowledgement = try await repository.completeOfficial(submittedDraft, for: userID, completionIntent: receipt) }
             }
             guard acknowledgement.matches(submittedDraft) else { throw OnboardingRepositoryError.serviceUnavailable }
         } catch is CancellationError {
@@ -718,6 +817,8 @@ final class OnboardingFlowModel {
                     requirements = state.requirements
                     historicalCompletedAt = state.completion.completedAt
                     signupCompletion = state.signupCompletion
+            clinicalSignup = state.clinicalSignup
+            clinicalPolicy = state.clinicalPolicy
                     if error as? OnboardingRepositoryError == .bodyPhotoConfirmationChanged, !isReacceptance {
                         activeSubmissionID = nil
                         operationState = .idle
@@ -749,13 +850,15 @@ final class OnboardingFlowModel {
         guard canPublish(id) else { finishCancelledSubmission(id); return }
         // Acceptance survives a cancelled wait or a failed local cleanup write.
         // Neither may rearm the already acknowledged completion POST.
+        if let currentPolicy=acknowledgement.clinicalPolicy {clinicalPolicy=currentPolicy}
         didComplete = true
         pendingCompletion = nil
         await onOfficialCleanupObserved(acknowledgement.bodyPhotoCleanup)
         if canPublish(id) {
             activeSubmissionID = nil
             operationState = .idle
-            if !isReacceptance, let welcome = acknowledgement.protocolWelcome {
+            if !isReacceptance, clinicalPolicy?.pauseWeightLossGuidance != true,
+               clinicalPolicy?.hide.objective != true, let welcome = acknowledgement.protocolWelcome {
                 pendingProtocolWelcome = welcome
             } else {
                 notifyRootOnce()
@@ -869,14 +972,14 @@ final class OnboardingFlowModel {
 
     private func issues(for step: OnboardingStep) -> [OnboardingValidationIssue] {
         OnboardingStepValidator.issues(for: step, draft: draft,
-            developmentConsentAvailability: developmentConsentAvailability, requirements: requirements, now: now())
+            developmentConsentAvailability: developmentConsentAvailability, requirements: requirements, now: now()).filter {$0 != .objectiveRequired || !allowsNoPlanConclusion}
     }
     private func prerequisiteIssues() -> [OnboardingValidationIssue] {
         OnboardingStep.allCases.prefix(while: { $0 != .objective }).flatMap { issues(for: $0) }
     }
     private func currentEligibilitySnapshot() -> EligibilitySnapshot? {
-        guard prerequisiteIssues().isEmpty, let input = try? OnboardingEligibilityInput(draft: draft) else { return nil }
-        return EligibilitySnapshot(input: input, actions: Set(draft.documentActions ?? []), developmentConsent: draft.consent)
+        guard prerequisiteIssues().isEmpty, let input = try? OnboardingEligibilityInput(draft: draft, clinicalSignup: clinicalSignup) else { return nil }
+        return EligibilitySnapshot(input: input, actions: Set(draft.documentActions ?? []), developmentConsent: draft.consent, healthRisks:healthRisks)
     }
     private func apply(_ answer: OnboardingEligibilityDecision, to draft: inout OnboardingDraft) {
         if answer.decision == .assigned { draft.objective = answer.objective }
@@ -914,6 +1017,7 @@ final class OnboardingFlowModel {
     }
     private func publishFailure(_ error: Error, for id: UUID) {
         guard canPublish(id) else { finishCancelledSubmission(id); return }
+        if pendingHealth != nil, error as? OnboardingRepositoryError == .completionIntentChanged || error as? OnboardingRepositoryError == .requirementsChanged {healthNeedsReconciliation=true}
         activeSubmissionID = nil
         operationState = .failed(presentationError(for: error))
     }

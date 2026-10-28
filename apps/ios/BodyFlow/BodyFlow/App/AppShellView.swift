@@ -20,6 +20,7 @@ struct AppShellView: View {
     @State private var localReminders: LocalReminderModel?
     @State private var planDraftsModel: PlanDraftsModel?
     @State private var currentObjectiveModel: CurrentObjectiveModel?
+    @State private var clinicalFullModel: ClinicalFullModel?
     @State private var tutorialPresentation: GuidedTutorialPresentation?
     @State private var tour: GuidedTourModel?
     @State private var tipsShownThisSession = 0
@@ -79,10 +80,10 @@ struct AppShellView: View {
             invalidation: invalidationCenter
         ))
         _todayViewModel = State(
-            initialValue: TodayViewModel(provider: dependencies.today)
+            initialValue: TodayViewModel(provider: sessionOwner.today)
         )
         _planViewModel = State(
-            initialValue: PlanViewModel(provider: dependencies.plan)
+            initialValue: PlanViewModel(provider: sessionOwner.plan)
         )
         _progressViewModel = State(
             initialValue: ProgressViewModel(provider: sessionOwner.progress)
@@ -90,7 +91,7 @@ struct AppShellView: View {
         _todayWeekViewModel = State(
             initialValue: TodayWeekViewModel(provider: sessionOwner.progress)
         )
-        let historyModel = HistoryViewModel(provider: dependencies.history)
+        let historyModel = HistoryViewModel(provider: sessionOwner.history)
         _historyViewModel = State(initialValue: historyModel)
         _historyCoordinator = State(
             initialValue: HistoryFeatureCoordinator(model: historyModel)
@@ -127,14 +128,20 @@ struct AppShellView: View {
         _planDraftsModel = State(initialValue: dependencies.planDrafts.map {
             PlanDraftsModel(provider: $0.drafts)
         })
-        _currentObjectiveModel = State(initialValue: dependencies.currentObjective.map {
-            CurrentObjectiveModel(userID: userID, provider: $0)
+        _currentObjectiveModel = State(initialValue: sessionOwner.currentObjective.map {
+            CurrentObjectiveModel(userID: userID, provider: $0, firstPhase: dependencies.clinicalFirstPhase.map {
+                ClinicalFirstPhaseModel(userID: userID, provider: $0, keyProvider: dependencies.idempotencyKeyProvider)
+            })
+        })
+        _clinicalFullModel = State(initialValue: dependencies.clinicalFull.map {
+            ClinicalFullModel(userID:userID,provider:$0,keyProvider:dependencies.idempotencyKeyProvider,photoCapability:dependencies.reevaluationPhotoCapture)
         })
         let timeZoneStore = dependencies.patientTimeZoneStore
         _localReminders = State(initialValue: dependencies.localReminders.map { capability in
             LocalReminderModel(
                 userID: userID,
-                sources: capability.sources,
+                sources: LocalReminderSources(reminders: capability.sources.reminders,
+                    routine: capability.sources.routine, progress: sessionOwner.progress),
                 scheduler: capability.scheduler,
                 optIn: capability.optIn,
                 timeZone: { timeZoneStore.current },
@@ -216,6 +223,18 @@ struct AppShellView: View {
         .onChange(of: LocalReminderRouteInbox.shared.pending) {
             routePendingReminderTap()
         }
+        .onChange(of: currentObjectiveModel?.firstPhase?.confirmation?.confirmationID) { _, receipt in
+            guard receipt != nil, !sessionOwner.isInvalidated else { return }
+            refreshClinicalReaders()
+        }
+        .onChange(of: clinicalFullModel?.confirmation?.reviewID) { _, receipt in
+            guard receipt != nil, !sessionOwner.isInvalidated else { return }
+            refreshClinicalReaders()
+        }
+        .onChange(of: clinicalFullModel?.healthReceipt?.receiptID) { _, receipt in
+            guard receipt != nil, !sessionOwner.isInvalidated else { return }
+            refreshClinicalReaders()
+        }
         .onChange(of: tutorialFacts) {
             guard !sessionOwner.isInvalidated else { return }
             tour?.updateFacts(tutorialFacts, ownerKey: tutorialOwnerKey)
@@ -225,8 +244,21 @@ struct AppShellView: View {
             flowChatModel.invalidate()
             planDraftsModel?.invalidate()
             currentObjectiveModel?.invalidate()
+            clinicalFullModel?.invalidate()
             sessionOwner.invalidateSynchronously()
             localReminders?.endSession()
+        }
+    }
+
+    private func refreshClinicalReaders() {
+        flowChatModel.suspendClinicalPresentationUntilRefresh()
+        Task {
+            guard !sessionOwner.isInvalidated else { return }
+            async let today: Void = todayViewModel.retry()
+            async let plan: Void = planViewModel.load()
+            async let progress: Void = progressViewModel.load()
+            async let objective: Void = currentObjectiveModel?.load() ?? ()
+            _ = await (today, plan, progress, objective)
         }
     }
 
@@ -597,7 +629,8 @@ struct AppShellView: View {
         case .progress:
             ProgressRootView(
                 model: progressViewModel,
-                selectedTab: $selectedTab
+                selectedTab: $selectedTab,
+                clinicalFull: clinicalFullModel
             )
         case .profile:
             ProfileRootView(
@@ -666,9 +699,9 @@ struct AppShellView: View {
                 )
             }
         case .plan:
-            PlanDetailView(provider: dependencies.plan)
+            PlanDetailView(provider: sessionOwner.plan)
         case .progress:
-            Block7700DetailView(today: dependencies.today)
+            Block7700DetailView(today: sessionOwner.today)
         case let .content(contentRoute):
             switch contentRoute {
             case let .library(initialSelection):

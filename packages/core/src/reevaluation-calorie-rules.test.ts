@@ -4,6 +4,7 @@ import {
   evaluateGainReviewLimits,
   evaluatePhaseCalorieRule,
 } from './reevaluation-calorie-rules.js'
+import { parseReevaluationFormDraft } from './reevaluation-form-contracts.js'
 
 const safety = {
   date: '2026-10-28',
@@ -66,6 +67,31 @@ const context = (phase = 'manutencao', patch: Record<string, unknown> = {}) => (
   gainStartFrequency: 4,
   profileStrengthFrequency: 4,
   ...patch,
+})
+it('never interprets a health-only FULL as the default gain or deficit phase', () => {
+  const healthForm = parseReevaluationFormDraft({
+    version: 1,
+    phase: null,
+    kind: 'REGULAR',
+    activityPurpose: 'normal',
+    answers: {},
+    noPlanOrigin: {
+      kind: 'confirmed_no_plan',
+      signupGeneration: 'b3b01000-0000-4000-8000-000000002800',
+      signupEpoch: 'b3b01000-0000-4000-8000-000000002801',
+      completedAt: '2026-10-25T12:00:00.000001Z',
+    },
+  })
+  expect(() => evaluatePhaseCalorieRule({ ...context(), form: healthForm })).toThrow()
+  expect(() =>
+    evaluateDeficitDifficulty({
+      form: healthForm,
+      safety,
+      count: 0,
+      deficitLevel: 500,
+      higherPriorityDecisionConfirmed: false,
+    }),
+  ).toThrow()
 })
 describe('n2 consecutive difficulty and proposal only', () => {
   const input = (count = 0, deficitLevel = 600, answers: Record<string, unknown> = {}) => ({

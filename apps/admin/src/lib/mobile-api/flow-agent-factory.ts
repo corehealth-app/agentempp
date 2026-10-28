@@ -1,4 +1,8 @@
-import { loadFlowDayStatusContext, processAuthenticatedMessage } from '@mpp/agent'
+import {
+  loadFlowDayStatusContext,
+  type MobileFlowClinicalPort,
+  processAuthenticatedMessage,
+} from '@mpp/agent'
 import { OpenRouterLLM } from '@mpp/providers'
 import { closeOpenDaysOnRequest } from './day-close-on-request'
 import { type FlowAgent, summarizeFlowToolCalls } from './flow-chat-service'
@@ -6,7 +10,10 @@ import { loadToday } from './read-model'
 import type { MobileRouteContext } from './route'
 
 /** Each reply owns its provider; a deterministic status never materializes it. */
-export function createFlowAgent(context: MobileRouteContext): FlowAgent {
+export function createFlowAgent(
+  context: MobileRouteContext,
+  clinical?: MobileFlowClinicalPort,
+): FlowAgent {
   return {
     async reply(input) {
       if (input.userId !== context.auth.userId) throw new Error('Flow authenticated owner mismatch')
@@ -14,6 +21,7 @@ export function createFlowAgent(context: MobileRouteContext): FlowAgent {
       const output = await processAuthenticatedMessage(
         {
           supabase: context.supabase,
+          ...(clinical ? { flowClinical: clinical } : {}),
           get llm() {
             if (!llm) {
               const apiKey = process.env.OPENROUTER_API_KEY

@@ -7,6 +7,7 @@
 import type { DailyTargets } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import type { z } from 'zod'
+import type { MobileFlowClinicalPort } from '../flow-current-clinical.js'
 import type { FlowDayBalanceInputs } from '../flow-energy-context.js'
 import type { FlowPresentationObjective } from '../flow-objective-presentation.js'
 
@@ -80,6 +81,7 @@ export interface ToolContext {
   assistantIdentity?: GeneratorIdentity
   /** Intraday targets from the authenticated Flow context. Server-owned;
    * never supplied by tool arguments or used by the legacy channel. */
+  flowClinical?: MobileFlowClinicalPort
   flowDailyTargets?: DailyTargets
   /** Effective protocol, gain multiplier, programmed deficit and the verdict
    * about the day's stored target (false on the day the protocol changed) of
@@ -104,8 +106,12 @@ export interface ToolDefinition<T extends z.ZodTypeAny = z.ZodTypeAny> {
 }
 
 /** Arguments as the tool validates them (see `nullMeansAbsent`). */
-export function normalizeToolArguments(tool: Pick<ToolDefinition, 'nullMeansAbsent'>, raw: unknown): unknown {
-  if (!tool.nullMeansAbsent?.length || !raw || typeof raw !== 'object' || Array.isArray(raw)) return raw
+export function normalizeToolArguments(
+  tool: Pick<ToolDefinition, 'nullMeansAbsent'>,
+  raw: unknown,
+): unknown {
+  if (!tool.nullMeansAbsent?.length || !raw || typeof raw !== 'object' || Array.isArray(raw))
+    return raw
   const args = { ...(raw as Record<string, unknown>) }
   for (const key of tool.nullMeansAbsent) if (args[key] === null) delete args[key]
   return args

@@ -1,10 +1,20 @@
 import type { ServiceClient } from '@mpp/db'
+import { readClinicalRepresentation } from '@/lib/mobile-api/clinical-representation'
 import { saveOnboarding } from '@/lib/mobile-api/commands'
 import {
   type OnboardingCompletionInput,
   onboardingCompletionInputSchema,
   onboardingInputSchema,
 } from '@/lib/mobile-api/contracts'
+import {
+  type CurrentClinicalAdmission,
+  createCurrentClinicalAdmission,
+  createSupabaseLegacyClinicalAdmissionSource,
+} from '@/lib/mobile-api/current-clinical-admission'
+import {
+  type CurrentClinicalStateSource,
+  captureCurrentClinicalState,
+} from '@/lib/mobile-api/current-clinical-state'
 import { prepareEvaluationAccess } from '@/lib/mobile-api/evaluation-access'
 import { MobileApiError, mobileSuccess, readJsonBody } from '@/lib/mobile-api/http'
 import {
@@ -43,6 +53,7 @@ import {
   type SignupStrengthRequestIdentity,
   snapshotSignupStrengthRequest,
 } from '@/lib/mobile-api/signup-strength-authority'
+import { createSupabaseCurrentClinicalStateSource } from '@/lib/mobile-api/supabase-current-clinical-state'
 import {
   createSupabaseOnboardingRepository,
   type SupabaseOnboardingOptions,
@@ -60,6 +71,9 @@ export interface OnboardingRouteDependencies {
   executeIdempotent: typeof executeSupabaseIdempotent
   /** Missing in a legacy-only test repository means unavailable, never fallback. */
   signupCompletion?: SignupCompletionComposition
+  /** Dormant until the current-clinical SQL transport and all consumers are integrated. */
+  currentClinical?: CurrentClinicalStateSource
+  clinicalAdmission?: CurrentClinicalAdmission
   saveLegacyOnboarding: typeof saveOnboarding
   readSignupBodyPhotoCleanupScope?: typeof readSignupBodyPhotoCleanupScope
   finalizeSignupBodyPhotos(
@@ -76,6 +90,22 @@ const defaultDependencies: OnboardingRouteDependencies = {
   readSignupBodyPhotoCleanupScope,
   finalizeSignupBodyPhotos: finalizeSignupBodyPhotosAfterOnboarding,
   signupCompletion: defaultSignupCompletionComposition,
+}
+
+/** Request-scoped building block for the complete current signup factory.
+ * Defaults above remain unchanged until the atomic runtime selects it. */
+export function createSupabaseCurrentOnboardingDependencies(
+  client: ServiceClient,
+  signupCompletion: SignupCompletionComposition = defaultSignupCompletionComposition,
+) {
+  return Object.freeze({
+    ...defaultDependencies,
+    signupCompletion,
+    currentClinical: createSupabaseCurrentClinicalStateSource(client),
+    clinicalAdmission: createCurrentClinicalAdmission(
+      createSupabaseLegacyClinicalAdmissionSource(client),
+    ),
+  })
 }
 
 function onboardingLocale(locale: string | null): 'pt-BR' | 'en-US' {
@@ -135,11 +165,9 @@ async function withCleanupScope<T extends object>(
   return { ...data, body_photo_cleanup: scope }
 }
 
-export async function handleOnboardingGet(
-  context: MobileRouteContext,
-  dependencies: OnboardingRouteDependencies = defaultDependencies,
-): Promise<Response> {
-  const search = new URL(context.request.url).searchParams
+/** The same pure query checks precede any current-source admission. */
+export function readOnboardingGetQuery(url: string) {
+  const search = new URL(url).searchParams
   const schemas = search.getAll('onboarding_profile_schema')
   if (schemas.length > 1 || (schemas.length === 1 && schemas[0] !== 'habitual_water_optional_v1'))
     throw new MobileApiError(
@@ -157,14 +185,34 @@ export async function handleOnboardingGet(
       'invalid_body_photo_cleanup_generation',
       'Invalid cleanup generation',
     )
+  return {
+    acceptsUnknownWater: schemas[0] === 'habitual_water_optional_v1',
+    cleanupGeneration: queries[0],
+  }
+}
+export async function handleOnboardingGet(
+  context: MobileRouteContext,
+  dependencies: OnboardingRouteDependencies = defaultDependencies,
+): Promise<Response> {
+  const query = readOnboardingGetQuery(context.request.url)
   const repository = dependencies.createOnboardingRepository(context.supabase)
   const data = await getOnboardingState(
     repository,
     context.auth.userId,
     onboardingLocale(context.auth.patient.locale),
-    { acceptsUnknownWater: schemas[0] === 'habitual_water_optional_v1' },
+    {
+      acceptsUnknownWater: query.acceptsUnknownWater,
+      acceptsNullObjective:
+        dependencies.currentClinical !== undefined &&
+        readClinicalRepresentation(context.request.url).compatible &&
+        dependencies.signupCompletion?.enabled() === true,
+      acceptsLegacyReconsent:
+        dependencies.currentClinical !== undefined &&
+        readClinicalRepresentation(context.request.url).compatible &&
+        dependencies.signupCompletion?.enabled() === true,
+    },
   )
-  const generation = queries[0] ?? data.completion.completed_at
+  const generation = query.cleanupGeneration ?? data.completion.completed_at
   const enriched = await withCleanupScope(context, dependencies, data, generation)
   const advertised =
     dependencies.signupCompletion?.enabled() === true
@@ -180,9 +228,10 @@ export async function handleOnboardingGet(
 }
 
 export async function handleOnboardingPost(
-  context: MobileRouteContext,
+  rawContext: MobileRouteContext,
   dependencies: OnboardingRouteDependencies = defaultDependencies,
 ): Promise<Response> {
+  const context: MobileRouteContext = { ...rawContext, auth: structuredClone(rawContext.auth) }
   const transport = classifySignupCompletionTransport(
     await readJsonBody(context.request),
     context.request.headers.get('idempotency-key'),
@@ -191,23 +240,29 @@ export async function handleOnboardingPost(
   const isCompletion = typeof body === 'object' && body !== null && 'document_actions' in body
 
   if (!isCompletion) {
-    const input = onboardingInputSchema.parse(body)
-    const safeInput = { ...input }
-    delete safeInput.onboarding_completed
-    return dependencies.executeIdempotent(context, safeInput, async (requestKey) =>
-      mobileSuccess(
-        await dependencies.saveLegacyOnboarding(
-          context.supabase,
-          context.auth,
-          safeInput,
-          requestKey,
-        ),
-        context.requestId,
-      ),
+    // Current native drafts stay on device. This old app path wrote ordinary
+    // answers and called the shared profile calculator before consent/n10 and
+    // outside structured routine confirmation. Retire only this HTTP entry;
+    // the shared legacy tool is not changed or invoked.
+    onboardingInputSchema.parse(body)
+    throw new MobileApiError(
+      409,
+      'onboarding_client_update_required',
+      'Update the app to complete signup or review your routine',
     )
   }
 
   const input = onboardingCompletionInputSchema.parse(body)
+  // This new representation needs a genuine positive intent/keyed receipt,
+  // including the source used by a later no-phase health FULL. An unmarked
+  // legacy request must not create a new no-plan account without that anchor.
+  if (input.objective === null && transport.mode !== 'versioned') {
+    throw new MobileApiError(
+      409,
+      'onboarding_client_update_required',
+      'Update the app to complete signup without an objective',
+    )
+  }
   // A first completion asking for an objective the rule does not allow is
   // refused here (422, or 500 when the profile or the calc config cannot be
   // read), before anything is read for the grant or recorded. An account that
@@ -266,10 +321,20 @@ export async function handleOnboardingPost(
         }
       },
     })
+    const clinical = dependencies.currentClinical
+      ? await captureCurrentClinicalState(dependencies.currentClinical, {
+          userId: context.auth.userId,
+          mode: 'signup',
+          body: prepared.effectiveSubmission,
+          ...(prepared.snapshot ? { expectedGeneration: prepared.snapshot.generation_token } : {}),
+          ...(identity ? { expectedEpoch: identity.expectedEpoch } : {}),
+        })
+      : undefined
     await assertOnboardingObjectiveEligible(
       context,
       prepared.effectiveSubmission,
       prepared.snapshot?.generation_token,
+      clinical,
     )
     return prepared
   }

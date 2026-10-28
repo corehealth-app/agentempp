@@ -42,7 +42,9 @@ struct BodyFlowApp: App {
                         configuration: $0.mobileAPI
                     )
                 },
-                supabaseAuthConfiguration: runtime?.supabase
+                supabaseAuthConfiguration: runtime?.supabase,
+                currentClinicalRuntimeMode: runtime?.currentClinicalRuntimeMode ?? .legacy,
+                currentClinicalQABinding: runtime?.currentClinicalQABinding ?? .absent
             )
         }
         #else
@@ -57,7 +59,9 @@ struct BodyFlowApp: App {
                     configuration: $0.mobileAPI
                 )
             },
-            supabaseAuthConfiguration: runtime?.supabase
+            supabaseAuthConfiguration: runtime?.supabase,
+            currentClinicalRuntimeMode: runtime?.currentClinicalRuntimeMode ?? .legacy,
+            currentClinicalQABinding: runtime?.currentClinicalQABinding ?? .absent
         )
         #endif
         let mealRecordLifetime: MealRecordAuthenticationLifetime? =

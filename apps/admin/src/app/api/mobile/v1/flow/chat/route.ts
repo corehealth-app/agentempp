@@ -1,3 +1,5 @@
+import { selectCurrentClinicalRoute } from '@/lib/mobile-api/current-clinical-runtime-route'
+import { createCurrentFlowRuntimeRoutes } from '@/lib/mobile-api/current-flow-runtime'
 import { createFlowAgent } from '@/lib/mobile-api/flow-agent-factory'
 import {
   createSupabaseFlowChatStore,
@@ -30,5 +32,12 @@ const dependencies: FlowChatRouteDependencies = {
   now: () => new Date(),
 }
 
-export const GET = createMobileRoute((context) => handleFlowChatGet(context, dependencies))
-export const POST = createMobileRoute((context) => handleFlowChatPost(context, dependencies))
+const legacyGET = createMobileRoute((context) => handleFlowChatGet(context, dependencies))
+const legacyPOST = createMobileRoute((context) => handleFlowChatPost(context, dependencies))
+
+export const GET = selectCurrentClinicalRoute(() => createCurrentFlowRuntimeRoutes().GET, legacyGET)
+
+export const POST = selectCurrentClinicalRoute(
+  () => createCurrentFlowRuntimeRoutes().POST,
+  legacyPOST,
+)

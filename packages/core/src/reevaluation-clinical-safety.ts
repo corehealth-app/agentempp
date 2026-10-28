@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { clinicalBmiBelow } from './clinical-bmi-comparison.js'
 import { HEALTH_RISK_CODES } from './health-check-contracts.js'
 import { calcIMC } from './nutrition.js'
 
@@ -62,7 +63,10 @@ export function evaluateReevaluationSafety(input: unknown) {
       ? calcIMC(value.weightKg, value.heightCm)
       : null
   if (bmi !== null && !Number.isFinite(bmi)) throw new RangeError('Invalid BMI context')
-  const lowWeight = age === null || bmi === null ? null : age >= 18 && bmi < 18.5
+  const lowWeight =
+    age === null || value.weightKg === null || value.heightCm === null
+      ? null
+      : age >= 18 && clinicalBmiBelow(value.weightKg, value.heightCm, 18.5)
   const lowBodyFat = value.bodyFatPercent === null ? null : value.bodyFatPercent <= 10
   const under18 = age === null ? null : age < 18
   const pregnant = value.hold.items.includes('pregnant_or_breastfeeding')

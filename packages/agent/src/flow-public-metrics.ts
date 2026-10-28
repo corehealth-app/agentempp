@@ -1,3 +1,4 @@
+import { flowClinicalPolicyNotice } from './flow-current-clinical.js'
 /** C1: presentation boundary only. No calculation, persisted data or legacy changes. */
 import {
   type FlowPresentationObjective,
@@ -187,7 +188,17 @@ export function projectFlowMetricAnswer(
   const privateMetric = hasPrivateMetric(publicText)
   if (!privateMetric && !projection?.changed) return publicText
   const kept = privateMetric ? projectStatements(publicText, '').trim() : publicText
-  let result = kept.trim() ? kept : fallback || renderOfficialTargets(targets, locale)
+  const clinicalNotice =
+    projection?.changed &&
+    objective?.clinicalPolicy &&
+    (objective.clinicalPolicy.pause_weight_loss_guidance ||
+      Object.values(objective.clinicalPolicy.hide).some(Boolean))
+      ? flowClinicalPolicyNotice(objective.clinicalPolicy, locale)
+      : null
+  let result = kept.trim()
+    ? kept
+    : clinicalNotice || fallback || renderOfficialTargets(targets, locale)
+  if (clinicalNotice && !result.includes(clinicalNotice)) result += `\n\n${clinicalNotice}`
   const explanation =
     objective && projection?.removedBlock ? flowBlockExplanation(objective, locale) : ''
   if (explanation && !result.includes(explanation)) result += `\n\n${explanation}`

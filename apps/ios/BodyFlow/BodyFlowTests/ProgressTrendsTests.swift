@@ -5,6 +5,19 @@ import Testing
 
 @Suite("Progress trends")
 struct ProgressTrendsTests {
+    @Test("clinical null accumulated block is a gap, preserving consumption and XP")
+    func clinicalNullIsNotAZeroPoint() throws {
+        let raw = #"{"date":"2026-10-26","calories_consumed":650,"calories_target":null,"exercise_calories":100,"protein_g":25,"protein_target":null,"water_consumed_ml":500,"deficit_accumulated":null,"xp_earned":15,"day_closed":true}"#
+        let day = try JSONDecoder().decode(TrendsDay.self, from: Data(raw.utf8))
+        #expect(day.deficitAccumulated == nil)
+        #expect(day.xpEarned == 15)
+        let presentation = ProgressTrendsPresentation(
+            snapshot: TrendsSnapshot(days: 7, daily: [day], weights: []), language: .portugueseBrazil
+        )
+        #expect(presentation.block.isEmpty)
+        #expect(presentation.calories.first?.consumed == 650)
+        #expect(presentation.recordedDays.last == true)
+    }
     @Test("Bars, weights and recorded days come only from the stored series")
     func presentationIsHonest() {
         let presentation = ProgressTrendsPresentation(

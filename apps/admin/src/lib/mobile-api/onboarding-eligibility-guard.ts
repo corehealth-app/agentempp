@@ -61,6 +61,10 @@ import { loadCalcConfig } from '@mpp/agent'
 import type { CalcConfig } from '@mpp/core'
 import { z } from 'zod'
 import type { OnboardingCompletionInput } from './contracts'
+import {
+  assertCurrentSignupObjectiveEligible,
+  type CurrentClinicalSnapshot,
+} from './current-clinical-state'
 import { MobileApiError } from './http'
 import { decideOnboardingEligibility } from './protocol-eligibility-service'
 import type { MobileRouteContext } from './route'
@@ -133,7 +137,18 @@ export async function assertOnboardingObjectiveEligible(
   context: GuardContext,
   input: OnboardingCompletionInput,
   observedGeneration?: { onboarding_completed_at: string | null },
+  currentClinical?: CurrentClinicalSnapshot,
 ): Promise<void> {
+  if (currentClinical) {
+    assertCurrentSignupObjectiveEligible(currentClinical, context.auth.userId, input)
+    return
+  }
+  // This legacy precheck selects among concrete objectives. Explicit null
+  // selects none: only the atomic n10 writer may authorize that request from
+  // fresh civil age/current health. Never coerce it to a maintenance choice.
+  // The full n10 preclaim projection still has to replace this legacy check
+  // for HOLD/visibility and UI before clinical activation.
+  if (input.objective === null) return
   const first = observedGeneration
     ? observedGeneration.onboarding_completed_at === null
     : await isFirstCompletion(context)

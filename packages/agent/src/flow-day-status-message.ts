@@ -1,4 +1,4 @@
-import type { DailyState } from '@mpp/core'
+import type { FlowClinicalPolicy, FlowClinicalToday } from './flow-current-clinical.js'
 import type { FlowDayStatusProgress } from './flow-day-status-context.js'
 
 const CLOSING = {
@@ -18,9 +18,10 @@ const CLOSING = {
 
 /** Flow-only presentation. Amounts and availability come from official Today. */
 export function renderFlowDayStatus(
-  today: DailyState,
+  today: FlowClinicalToday,
   locale: string | null,
   progress: FlowDayStatusProgress | null = null,
+  policy?: FlowClinicalPolicy,
 ): string {
   const en = locale?.startsWith('en') ?? false
   const format = new Intl.NumberFormat(en ? 'en-US' : 'pt-BR', { maximumFractionDigits: 2 })
@@ -129,6 +130,7 @@ export function renderFlowDayStatus(
   if (protocol === 'recomposicao' && block.enabled) {
     if (
       block.availability === 'available' &&
+      block.target_kcal !== null &&
       block.current_kcal !== null &&
       block.percentage !== null
     ) {
@@ -164,6 +166,15 @@ export function renderFlowDayStatus(
         : `Sequência: ${n(progress.currentStreak)} ${unit} · Nível: ${n(progress.level)} · XP: ${n(progress.xpTotal)}.`,
     )
   }
-  const closing = protocol ? CLOSING[en ? 'en' : 'pt-BR'][protocol] : null
+  const closing =
+    policy?.pause_weight_loss_guidance || policy?.hide.objective || policy?.hide.block
+      ? policy?.professional_assessment_recommended
+        ? en
+          ? 'Weight-loss guidance is paused. Seek a professional assessment; your records and history remain available.'
+          : 'As orientações de emagrecimento estão pausadas. Procure avaliação profissional; seus registros e histórico continuam disponíveis.'
+        : null
+      : protocol
+        ? CLOSING[en ? 'en' : 'pt-BR'][protocol]
+        : null
   return [opening, lines.join('\n'), closing].filter(Boolean).join('\n\n')
 }

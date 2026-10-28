@@ -223,7 +223,7 @@ struct OnboardingContainerView: View {
                         isLoading: model.operationState == .saving
                     ))
                     .disabled(
-                        !model.allowsDraftEditing || model.operationState == .saving
+                        (!model.allowsDraftEditing && !model.canRetryHealthAdmission) || model.operationState == .saving
                             || (model.step == .consent && !model.hasRequiredDevelopmentConsent)
                     )
                     .accessibilityIdentifier("onboarding.continue")

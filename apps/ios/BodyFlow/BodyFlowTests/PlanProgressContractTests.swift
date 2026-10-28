@@ -5,6 +5,20 @@ import Testing
 
 @Suite("Plan and Progress Contracts")
 struct PlanProgressContractTests {
+    @Test("clinical hidden block stays absent and does not become a zero ledger")
+    func preservesClinicalNullBlock() throws {
+        let json = Self.progressJSON
+            .replacingOccurrences(of: "\"blocks_completed\": 7", with: "\"blocks_completed\": null")
+            .replacingOccurrences(of: "\"deficit_block\": 611", with: "\"deficit_block\": null")
+        let response = try JSONDecoder().decode(ProgressResponse.self, from: Data(json.utf8))
+        let snapshot = try #require(response.data)
+        #expect(snapshot.blocksCompleted == nil)
+        #expect(snapshot.deficitBlock == nil)
+        #expect(snapshot.xpTotal == 12_345)
+        let presentation = ProgressPresentation(snapshot: snapshot, language: .portugueseBrazil)
+        #expect(presentation.completedBlocksText == "Não disponível")
+        #expect(presentation.deficitBlockText == "Não disponível")
+    }
     @Test("plan decodes only stable metadata and preserves nullable values")
     func decodesStablePlanMetadata() throws {
         let response = try decodePlan()
@@ -244,7 +258,7 @@ struct PlanProgressContractTests {
         #expect(progress.blocksCompleted != todayBlock.completedBlocks)
 
         let labels = Set(Mirror(reflecting: progress).children.compactMap(\.label))
-        #expect(labels.count == 15)
+        #expect(labels.count == 16)
         #expect(
             labels == [
                 "xpTotal",
@@ -262,6 +276,7 @@ struct PlanProgressContractTests {
                 "currentProtocol",
                 "block7700Enabled",
                 "currentBodyFatOrigin",
+                "clinicalPolicy",
             ]
         )
         #expect(!labels.contains("percentage"))

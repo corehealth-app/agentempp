@@ -181,6 +181,8 @@ export type StrengthWeekFreezePreparation =
 
 export interface StrengthWeekRepositoryOptions {
   readonly enabled?: boolean
+  /** Only the current clinical consumer opts into the separate FULL proof. */
+  readonly clinicalFullAuthority?: boolean
 }
 
 export interface StrengthWeekRepository {
@@ -188,18 +190,26 @@ export interface StrengthWeekRepository {
   compareAndFreeze(input: StrengthWeekFreezeInput): Promise<StrengthWeekFreezeResult>
 }
 
-export interface StrengthWeekLifecycleProof {
+interface StrengthWeekLifecycleProofBase {
   readonly ownerID: string
   readonly generation: string
   readonly epoch: string
   readonly lifecycleKey: string
-  readonly signupAdmissionID: string
-  /** Original signup frequency, which can differ from a later weekly source. */
+  /** Original binding frequency, which can differ from a later weekly source. */
   readonly frequencySourceVersionID: string
   readonly workoutAdmissionID: string
   readonly workoutContentRevision: number
   readonly boundAt: StrengthWeekTimestamp
 }
+export type StrengthWeekLifecycleProof = StrengthWeekLifecycleProofBase &
+  (
+    | { readonly kind?: 'signup_receipt'; readonly signupAdmissionID: string }
+    | {
+        readonly kind: 'clinical_full'
+        readonly clinicalGeneration: string
+        readonly reviewID: string
+      }
+  )
 
 export type StrengthWeekProjectionResult =
   | { readonly status: 'disabled' }
@@ -277,7 +287,7 @@ export interface StrengthWeekRpc {
     parameters: StrengthWeekFreezeRpcParameters,
   ): PromiseLike<StrengthWeekRpcResponse>
   (
-    name: 'get_mobile_strength_week_projection',
+    name: 'get_mobile_strength_week_projection' | 'get_mobile_strength_week_projection_v2',
     parameters: StrengthWeekProjectionRpcParameters,
   ): PromiseLike<StrengthWeekRpcResponse>
 }
@@ -542,6 +552,14 @@ const lifecycleProofSchema = z
     boundAt: timestampSchema,
   })
   .strict()
+const clinicalLifecycleProofSchema = z.discriminatedUnion('kind', [
+  lifecycleProofSchema.extend({ kind: z.literal('signup_receipt') }),
+  lifecycleProofSchema.omit({ signupAdmissionID: true }).extend({
+    kind: z.literal('clinical_full'),
+    clinicalGeneration: uuidSchema,
+    reviewID: uuidSchema,
+  }),
+])
 const projectionResultSchema = z.discriminatedUnion('status', [
   z
     .object({
@@ -572,6 +590,11 @@ const projectionResultSchema = z.discriminatedUnion('status', [
       observed_at: timestampSchema,
     })
     .strict(),
+])
+const clinicalProjectionResultSchema = z.discriminatedUnion('status', [
+  projectionResultSchema.options[0],
+  projectionResultSchema.options[1],
+  projectionResultSchema.options[2].extend({ binding: clinicalLifecycleProofSchema }),
 ])
 
 function invalidInput(): MobileApiError {
@@ -891,14 +914,22 @@ export function createStrengthWeekRepository(
       const raw = await callRpc(
         client,
         (rpc) =>
-          rpc('get_mobile_strength_week_projection', {
-            p_user_id: owner,
-            p_expected_generation: expected.generation,
-            p_target_id: expected.target_id,
-          }),
+          rpc(
+            options?.clinicalFullAuthority === true
+              ? 'get_mobile_strength_week_projection_v2'
+              : 'get_mobile_strength_week_projection',
+            {
+              p_user_id: owner,
+              p_expected_generation: expected.generation,
+              p_target_id: expected.target_id,
+            },
+          ),
         true,
       )
-      const result = parse(projectionResultSchema, raw, invalidResponse)
+      const result =
+        options?.clinicalFullAuthority === true
+          ? parse(clinicalProjectionResultSchema, raw, invalidResponse)
+          : parse(projectionResultSchema, raw, invalidResponse)
       if (result.status !== 'available') return result
       // Both targets passed the same strict schema, which fixes key order.
       // Preserve every original clock/proof field; equality is never by ID only.

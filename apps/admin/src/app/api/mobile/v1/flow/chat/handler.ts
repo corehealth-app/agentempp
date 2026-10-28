@@ -58,7 +58,7 @@ function validateMessage(value: unknown): asserts value is Record<string, unknow
     throw invalidResponse()
 }
 
-function publicMessage(
+export function publicMessage(
   value: unknown,
   locale: string | null,
   objective: FlowPresentationObjective,

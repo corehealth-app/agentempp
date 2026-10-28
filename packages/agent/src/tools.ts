@@ -1,3 +1,58 @@
+import {
+  computeMaintenanceAdjustment,
+  computeMetrics,
+  computePeriodSummary,
+  DEFAULT_CALC_CONFIG,
+  evaluateGainSafety,
+  evaluateGainVelocity,
+  fixedRecompProteinFactor,
+  type SnapshotForAgg,
+} from '@mpp/core'
+import type { Json, TablesUpdate } from '@mpp/db'
+import { z } from 'zod'
+import { loadActiveGapReminderMealTypes } from './active-gap-reminder.js'
+import { detectAdditionInRecentMessages } from './addition-intent-detector.js'
+import {
+  BF_METHOD_FLOOR,
+  classifyBfGoal,
+  lowestBfGoalWithoutWarning,
+} from './bf-goal-classifier.js'
+import { loadCalcConfig } from './calc-config-loader.js'
+import { loadDailyTargets, loadDailyTargetsWithProtocol } from './calc-targets.js'
+import { detectConsumedDate } from './consumed-date-detector.js'
+import { flowClinicalFacts } from './flow-current-clinical.js'
+import { flowEnergyNumbers } from './flow-energy-context.js'
+import { projectFlowObjectiveText } from './flow-objective-presentation.js'
+import { applyKnownProductServingQuantities } from './known-product-servings.js'
+import {
+  isIanaTimezone,
+  isMultiTimezoneCountry,
+  resolveResidenceTimezone,
+} from './location-timezone.js'
+import { resolveLinkedAdditionMealType } from './meal-addition-context.js'
+import { dedupeMealItems } from './meal-item-dedup.js'
+import {
+  calcMealMacros,
+  isUnresolvedNutritionSource,
+  type MealItemInput,
+  type MealNutritionSource,
+  mentionsFoodItem,
+  parseUserKcalOverridesFromMessages,
+} from './meal-pipeline.js'
+import { selectMealRegistrationGroup } from './meal-registration-group.js'
+import {
+  foodNamesReferToSameItem,
+  hasExplicitWholeMealReplacementIntent,
+  type MealReplacementTarget,
+  type ReplacementMealLog,
+  selectMealReplacementTarget,
+} from './meal-replacement-target.js'
+import { decideMealType } from './meal-type-decision.js'
+import { getPersonalMealWindows, resolveMealTypeByHour } from './personal-meal-windows.js'
+import { detectPhantomItems } from './phantom-item-detector.js'
+import { resolveRegistrationTime } from './registration-time.js'
+import { decideReplaceRequest } from './replace-decision.js'
+import { getLocalDateString, getTzOffset } from './timezone-utils.js'
 /**
  * Tools que o LLM pode chamar. Cada tool tem:
  *  - schema (JSON Schema para o LLM)
@@ -6,64 +61,14 @@
  * Formato compatível com OpenAI tool calling.
  */
 import { createPlanProposalTools } from './tools/plan-proposal-tools.js'
-import {
-  computeMaintenanceAdjustment,
-  DEFAULT_CALC_CONFIG,
-  computeMetrics,
-  computePeriodSummary,
-  evaluateGainSafety,
-  evaluateGainVelocity,
-  fixedRecompProteinFactor,
-  type SnapshotForAgg,
-} from '@mpp/core'
-import type { Json, TablesUpdate } from '@mpp/db'
-import { z } from 'zod'
-import {
-  calcMealMacros,
-  isUnresolvedNutritionSource,
-  mentionsFoodItem,
-  parseUserKcalOverridesFromMessages,
-  type MealItemInput,
-  type MealNutritionSource,
-} from './meal-pipeline.js'
-import { applyKnownProductServingQuantities } from './known-product-servings.js'
-import { detectAdditionInRecentMessages } from './addition-intent-detector.js'
-import { detectPhantomItems } from './phantom-item-detector.js'
-import { loadCalcConfig } from './calc-config-loader.js'
-import { loadDailyTargets, loadDailyTargetsWithProtocol } from './calc-targets.js'
-import { getLocalDateString, getTzOffset } from './timezone-utils.js'
-import { prepareWorkoutRegistration } from './workout-registration-preparation.js'
-import { classifyWeightGoal, IMC_GOAL_FLOOR } from './weight-goal-classifier.js'
-import { BF_METHOD_FLOOR, classifyBfGoal, lowestBfGoalWithoutWarning } from './bf-goal-classifier.js'
-import { detectConsumedDate } from './consumed-date-detector.js'
-import { getPersonalMealWindows, resolveMealTypeByHour } from './personal-meal-windows.js'
-import { decideReplaceRequest } from './replace-decision.js'
-import { resolveRegistrationTime } from './registration-time.js'
-import { decideMealType } from './meal-type-decision.js'
-import { loadActiveGapReminderMealTypes } from './active-gap-reminder.js'
-import { selectMealRegistrationGroup } from './meal-registration-group.js'
-import { resolveLinkedAdditionMealType } from './meal-addition-context.js'
-import {
-  foodNamesReferToSameItem,
-  hasExplicitWholeMealReplacementIntent,
-  selectMealReplacementTarget,
-  type MealReplacementTarget,
-  type ReplacementMealLog,
-} from './meal-replacement-target.js'
-import {
-  isIanaTimezone,
-  isMultiTimezoneCountry,
-  resolveResidenceTimezone,
-} from './location-timezone.js'
-import { dedupeMealItems } from './meal-item-dedup.js'
-import { flowEnergyNumbers } from './flow-energy-context.js'
-import { projectFlowObjectiveText } from './flow-objective-presentation.js'
-
 // Audit 06-26 Layer 2.1: ToolContext e ToolDefinition movidos pra
 // packages/agent/src/tools/types.ts pra permitir split incremental de tools
 // (registraRefeicao → arquivo dedicado na próxima sprint). Re-exportados aqui
 // pra preservar API pública dos 6 importadores externos.
 import type { ToolDefinition } from './tools/types.js'
+import { classifyWeightGoal, IMC_GOAL_FLOOR } from './weight-goal-classifier.js'
+import { prepareWorkoutRegistration } from './workout-registration-preparation.js'
+
 export type { GeneratorIdentity, ToolContext, ToolDefinition } from './tools/types.js'
 
 // ----------------------------------------------------------------------------
@@ -440,9 +445,7 @@ function goalBelowFloorReason(
  * de 10%" here and "a partir de 12%" there). It runs after the protocol is
  * written, so a failed or empty read never costs the protocol: it falls back
  * to the method floor. */
-async function bfGoalOfferFrom(
-  ctx: Parameters<ToolDefinition['execute']>[1],
-): Promise<number> {
+async function bfGoalOfferFrom(ctx: Parameters<ToolDefinition['execute']>[1]): Promise<number> {
   try {
     const { data, error } = await ctx.supabase
       .from('user_profiles')
@@ -562,10 +565,7 @@ export const defineMetaPeso: ToolDefinition = {
     // que mudava por qualquer UPDATE no profile e mascarava BF antigo).
     const { data: prof, error: profileError } = await ctx.supabase
       .from('user_profiles')
-      // biome-ignore lint/suspicious/noExplicitAny: select string — tipos gerados (gitignored) podem estar dessincronizados em prod até próximo gen
-      .select(
-        'weight_kg, height_cm, sex, body_fat_percent, body_fat_measured_at, updated_at' as any,
-      )
+      .select('weight_kg, height_cm, sex, body_fat_percent, body_fat_measured_at, updated_at')
       .eq('user_id', ctx.userId)
       .maybeSingle()
     if (profileError) throw new Error(profileError.message ?? 'goal profile lookup failed')
@@ -1306,7 +1306,7 @@ export const registraRefeicao: ToolDefinition = {
     // pending confirmado > texto atual > lembrete ativo > rotina pessoal/global.
     // Um gap aberto sem lembrete nao e evidencia suficiente para preservar o
     // chute da LLM. Isso corrige inclusive janelas adjacentes (lanche→jantar).
-    let mealTypeOriginal = args.meal_type
+    const mealTypeOriginal = args.meal_type
     if (args.meal_type) {
       const tz = ctx.userTimezone ?? 'America/Sao_Paulo'
       const localHour = Number.parseInt(
@@ -1464,8 +1464,7 @@ export const registraRefeicao: ToolDefinition = {
         // café às 14h, 14:25 LLM bug emite replace=true em jantar → antes
         // ratificava e DELETAVA jantares legítimos.
         const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString()
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: editedPendings, error: editedPendingsError } = await (ctx.supabase as any)
+        const { data: editedPendings, error: editedPendingsError } = await ctx.supabase
           .from('pending_registrations')
           .select('id, resolved_at')
           .eq('user_id', ctx.userId)
@@ -2306,6 +2305,11 @@ export const consultaProgresso: ToolDefinition = {
     'Retorna o painel de progresso do usuário (XP, nível, sequência de dias, blocos completos, conquistas, registro de hoje). Use quando ele perguntar como está indo.',
   parameters: z.object({}),
   execute: async (_args, ctx) => {
+    if (ctx.assistantIdentity === 'flow' && ctx.flowClinical) {
+      const value = await ctx.flowClinical.read()
+      await ctx.flowClinical.revalidate()
+      return flowClinicalFacts(value)
+    }
     const referenceTimestamp = ctx.referenceTimestamp ?? new Date()
     const today = getLocalDateString(ctx.userTimezone ?? 'America/Sao_Paulo', referenceTimestamp)
     const [progressResult, snapshotResult] = await Promise.all([
@@ -2359,9 +2363,17 @@ export const consultaProgresso: ToolDefinition = {
     if (ctx.assistantIdentity === 'flow') {
       const objective = ctx.flowPresentationObjective ?? { currentProtocol: null }
       const includeBlock = objective.currentProtocol === 'recomposicao'
-      const blockBadgeKeys = new Set(ctx.flowBlockBadgeKeys
-        ?? DEFAULT_CALC_CONFIG.badges.filter((badge) => badge.type === 'blocks').map((badge) => badge.key))
-      const { blocos_7700_completos: _blocks, deficit_no_bloco_atual: _deficit, ...publicProgress } = progressoPt ?? {}
+      const blockBadgeKeys = new Set(
+        ctx.flowBlockBadgeKeys ??
+          DEFAULT_CALC_CONFIG.badges
+            .filter((badge) => badge.type === 'blocks')
+            .map((badge) => badge.key),
+      )
+      const {
+        blocos_7700_completos: _blocks,
+        deficit_no_bloco_atual: _deficit,
+        ...publicProgress
+      } = progressoPt ?? {}
       const day = (snap ?? null) as {
         calories_consumed?: number | null
         calories_target?: number | null
@@ -2398,13 +2410,24 @@ export const consultaProgresso: ToolDefinition = {
                 rule: `${foodRule} O gasto do treino fica à parte; balanco_do_dia_sem_exercicio_kcal é consumido − gasto_de_referencia_kcal (negativo = déficit, positivo = superávit): o exercício já está considerado neste valor e não é somado. Não é o que resta para comer.`,
               }
       const showsDayBalance = Boolean(snap) && energy.net != null
-      const { daily_balance: _net, deficit_accumulated: _accumulated, ...todayWithoutBlock } = (snap ?? {}) as Record<string, unknown>
-      const todayWithoutNet = includeBlock ? { ...todayWithoutBlock, deficit_accumulated: _accumulated } : todayWithoutBlock
+      const {
+        daily_balance: _net,
+        deficit_accumulated: _accumulated,
+        ...todayWithoutBlock
+      } = (snap ?? {}) as Record<string, unknown>
+      const todayWithoutNet = includeBlock
+        ? { ...todayWithoutBlock, deficit_accumulated: _accumulated }
+        : todayWithoutBlock
       return {
-        progresso: progressoPt == null ? null : includeBlock ? progressoPt : {
-          ...publicProgress,
-          conquistas: progressoPt.conquistas.filter((badge) => !blockBadgeKeys.has(badge)),
-        },
+        progresso:
+          progressoPt == null
+            ? null
+            : includeBlock
+              ? progressoPt
+              : {
+                  ...publicProgress,
+                  conquistas: progressoPt.conquistas.filter((badge) => !blockBadgeKeys.has(badge)),
+                },
         hoje: snap ? todayWithoutNet : null,
         energia_hoje: {
           meta_kcal: energy.target,
@@ -2422,7 +2445,8 @@ export const consultaProgresso: ToolDefinition = {
             showsDayBalance || energy.netBasis === 'target'
               ? dayBalance.rule
               : `${foodRule} O gasto do treino fica à parte.`,
-            objective, '',
+            objective,
+            '',
           ).text,
         },
       }
@@ -2444,6 +2468,11 @@ export const consultaMetricas: ToolDefinition = {
     'Esta tool é o ESCAPE HATCH pra evitar alucinação quando o LLM ficaria tentado a calcular na cabeça.',
   parameters: z.object({}),
   execute: async (_args, ctx) => {
+    if (ctx.assistantIdentity === 'flow' && ctx.flowClinical) {
+      const value = await ctx.flowClinical.read()
+      await ctx.flowClinical.revalidate()
+      return flowClinicalFacts(value)
+    }
     const { data: profile, error: profileError } = await ctx.supabase
       .from('user_profiles')
       .select('*')
@@ -3475,6 +3504,11 @@ export const consultaResumoPeriodo: ToolDefinition = {
     periodo: z.enum(['semana', 'mes']).describe('semana = últimos 7 dias; mes = últimos 30 dias'),
   }),
   execute: async (args, ctx) => {
+    if (ctx.assistantIdentity === 'flow' && ctx.flowClinical) {
+      const value = await ctx.flowClinical.period(args.periodo)
+      await ctx.flowClinical.revalidate()
+      return { ...value }
+    }
     const tz = ctx.userTimezone ?? 'America/Sao_Paulo'
     const today = getLocalDateString(tz, ctx.referenceTimestamp ?? new Date())
     const n = args.periodo === 'semana' ? 7 : 30

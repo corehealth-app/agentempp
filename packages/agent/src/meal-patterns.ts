@@ -13,6 +13,13 @@
  *   - Fallback (<5 dias ativos = paciente novo): assume café+almoço+jantar.
  */
 
+import {
+  deriveMealGap,
+  deriveMealPatternFromRows,
+  deriveSkippedMealsFromCandidates,
+  type MealPattern,
+  type MealType,
+} from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import {
   getLocalDateMinusDays,
@@ -20,25 +27,7 @@ import {
   getLocalDayUtcBounds,
 } from './timezone-utils.js'
 
-export type MealType = 'cafe' | 'almoco' | 'lanche' | 'jantar' | 'ceia'
-
-export interface MealPattern {
-  /** Set de meal_types esperados pra esse paciente, com frequência ≥ threshold. */
-  expected: Set<MealType>
-  /** Quantos dias ativos foram analisados (0-14). */
-  activeDays: number
-  /** Estatística por meal_type: # de dias que apareceu. */
-  countByType: Record<MealType, number>
-  /** Threshold usado (0-1). */
-  threshold: number
-  /** Se true, o expected vem do fallback (paciente novo). */
-  fallbackUsed: boolean
-}
-
-const DEFAULT_THRESHOLD = 0.5
-const MIN_ACTIVE_DAYS_FOR_PATTERN = 5
-const FALLBACK_EXPECTED: Set<MealType> = new Set(['cafe', 'almoco', 'jantar'])
-const MEAL_TYPES = new Set<MealType>(['cafe', 'almoco', 'lanche', 'jantar', 'ceia'])
+export type { MealPattern, MealType } from '@mpp/core'
 
 export async function getMealPattern(
   supabase: ServiceClient,
@@ -46,7 +35,6 @@ export async function getMealPattern(
   userTimezone: string,
   options: { thresholdPct?: number; windowDays?: number } = {},
 ): Promise<MealPattern> {
-  const threshold = options.thresholdPct ?? DEFAULT_THRESHOLD
   const windowDays = options.windowDays ?? 14
 
   const startDate = getLocalDateMinusDays(userTimezone, windowDays)
@@ -62,15 +50,7 @@ export async function getMealPattern(
   if (snapshotsError) throw new Error(snapshotsError.message ?? 'meal pattern snapshots failed')
 
   const snapIds = (snapshots ?? []).map((s) => (s as { id: string }).id)
-  if (snapIds.length === 0) {
-    return {
-      expected: FALLBACK_EXPECTED,
-      activeDays: 0,
-      countByType: { cafe: 0, almoco: 0, lanche: 0, jantar: 0, ceia: 0 },
-      threshold,
-      fallbackUsed: true,
-    }
-  }
+  if (snapIds.length === 0) return deriveMealPatternFromRows([], [], options)
 
   const { data: logs, error: logsError } = await supabase
     .from('meal_logs')
@@ -79,50 +59,11 @@ export async function getMealPattern(
     .not('meal_type', 'is', null)
   if (logsError) throw new Error(logsError.message ?? 'meal pattern logs failed')
 
-  // Conta dias ativos (snapshots que TÊM ≥1 meal_log) e dias-com-meal-type
-  const daysByMealType: Record<MealType, Set<string>> = {
-    cafe: new Set(),
-    almoco: new Set(),
-    lanche: new Set(),
-    jantar: new Set(),
-    ceia: new Set(),
-  }
-  const activeDaysSet = new Set<string>()
-  for (const log of (logs ?? []) as Array<{ snapshot_id: string; meal_type: string }>) {
-    activeDaysSet.add(log.snapshot_id)
-    const mt = log.meal_type as MealType
-    if (mt in daysByMealType) {
-      daysByMealType[mt].add(log.snapshot_id)
-    }
-  }
-
-  const activeDays = activeDaysSet.size
-  const countByType: Record<MealType, number> = {
-    cafe: daysByMealType.cafe.size,
-    almoco: daysByMealType.almoco.size,
-    lanche: daysByMealType.lanche.size,
-    jantar: daysByMealType.jantar.size,
-    ceia: daysByMealType.ceia.size,
-  }
-
-  if (activeDays < MIN_ACTIVE_DAYS_FOR_PATTERN) {
-    return {
-      expected: FALLBACK_EXPECTED,
-      activeDays,
-      countByType,
-      threshold,
-      fallbackUsed: true,
-    }
-  }
-
-  const expected = new Set<MealType>()
-  for (const mt of Object.keys(countByType) as MealType[]) {
-    if (countByType[mt] / activeDays >= threshold) {
-      expected.add(mt)
-    }
-  }
-
-  return { expected, activeDays, countByType, threshold, fallbackUsed: false }
+  return deriveMealPatternFromRows(
+    (snapshots ?? []) as Array<{ id: string }>,
+    (logs ?? []) as Array<{ snapshot_id: string; meal_type: string }>,
+    options,
+  )
 }
 
 /** Carrega confirmações explícitas de refeições puladas em uma data local. */
@@ -157,17 +98,10 @@ export async function getSkippedMealsForDate(
     )
   }
 
-  const skipped = new Set<MealType>()
-  const skipEvents = [...(datedSkipResult.data ?? []), ...(legacySkipResult.data ?? [])]
-  for (const event of skipEvents as Array<{ properties: Record<string, unknown> }>) {
-    const eventLocalDate = event.properties?.local_date
-    if (typeof eventLocalDate === 'string' && eventLocalDate !== dateStr) continue
-    const mealType = event.properties?.meal_type
-    if (typeof mealType === 'string' && MEAL_TYPES.has(mealType as MealType)) {
-      skipped.add(mealType as MealType)
-    }
-  }
-  return skipped
+  return deriveSkippedMealsFromCandidates(dateStr, [
+    ...(datedSkipResult.data ?? []),
+    ...(legacySkipResult.data ?? []),
+  ] as Array<{ properties: Record<string, unknown> }>)
 }
 
 /**
@@ -207,7 +141,7 @@ export async function getGapForDate(
   if (snapError) throw new Error(snapError.message ?? 'gap snapshot lookup failed')
 
   const snapId = (snap as { id: string } | null)?.id ?? null
-  const registered = new Set<MealType>()
+  let registeredMeals: Array<{ meal_type: string }> = []
   if (snapId) {
     const { data: logs, error: logsError } = await supabase
       .from('meal_logs')
@@ -215,21 +149,12 @@ export async function getGapForDate(
       .eq('snapshot_id', snapId)
       .not('meal_type', 'is', null)
     if (logsError) throw new Error(logsError.message ?? 'gap meal logs lookup failed')
-    for (const l of (logs ?? []) as Array<{ meal_type: string }>) {
-      registered.add(l.meal_type as MealType)
-    }
+    registeredMeals = (logs ?? []) as Array<{ meal_type: string }>
   }
 
   const skipped = await getSkippedMealsForDate(supabase, userId, userTimezone, dateStr)
 
-  const gap = new Set<MealType>()
-  for (const mt of pattern.expected) {
-    if (!registered.has(mt) && !skipped.has(mt)) {
-      gap.add(mt)
-    }
-  }
-
-  return { pattern, registered, skipped, gap }
+  return deriveMealGap(pattern, registeredMeals, skipped)
 }
 
 /**

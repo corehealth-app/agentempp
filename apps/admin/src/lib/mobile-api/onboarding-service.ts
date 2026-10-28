@@ -1,6 +1,7 @@
 import { protocolWelcomeMessage } from '@mpp/core'
 import type { OnboardingCompletionInput } from './contracts'
 import { MobileApiError } from './http'
+import type { OnboardingClinicalSafetyRecord } from './onboarding-clinical-safety'
 
 export type OnboardingActionType = 'acceptance' | 'acknowledgement' | 'consent'
 
@@ -57,6 +58,7 @@ export interface OnboardingLoadRecord {
   documents: OnboardingDocumentRecord[]
   acceptedActions: OnboardingAcceptedActionRecord[]
   draft: OnboardingDraftRecord | null
+  legacyReconsent?: { protocol: 'documents_only_v1' }
 }
 
 export interface OnboardingCompletionRecord {
@@ -66,12 +68,14 @@ export interface OnboardingCompletionRecord {
   objective: OnboardingCompletionInput['objective']
   persona: OnboardingCompletionInput['persona']
   documentActions: OnboardingAcceptedActionRecord[]
+  clinicalSafety?: OnboardingClinicalSafetyRecord
 }
 
 export type OnboardingRepositoryErrorCode =
   | 'documents_unavailable'
   | 'requirements_changed'
   | 'already_completed'
+  | 'objective_not_eligible'
   | 'invalid_submission'
   | 'user_not_found'
   | 'internal'
@@ -124,6 +128,13 @@ function mapRepositoryError(error: unknown): never {
       'Onboarding was already completed with different data',
     )
   }
+  if (error.code === 'objective_not_eligible') {
+    throw new MobileApiError(
+      422,
+      'onboarding_objective_not_eligible',
+      'The objective is not available for the data sent',
+    )
+  }
   if (error.code === 'invalid_submission') {
     throw new MobileApiError(422, 'onboarding_rejected', 'Onboarding data was rejected')
   }
@@ -137,7 +148,11 @@ export async function getOnboardingState(
   repository: OnboardingRepository,
   userId: string,
   locale: string,
-  options: { acceptsUnknownWater?: boolean } = {},
+  options: {
+    acceptsUnknownWater?: boolean
+    acceptsNullObjective?: boolean
+    acceptsLegacyReconsent?: boolean
+  } = {},
 ) {
   let state: OnboardingLoadRecord
   try {
@@ -145,11 +160,21 @@ export async function getOnboardingState(
   } catch (error) {
     mapRepositoryError(error)
   }
+  if (state.legacyReconsent && !state.completed && options.acceptsLegacyReconsent !== true)
+    throw new MobileApiError(
+      409,
+      'onboarding_client_update_required',
+      'Update the app to review the required notices',
+    )
 
-  // A distributed old iOS binary cannot decode a NULL habit in its required
-  // reconsent draft. Never fabricate an enum to satisfy that decoder.
+  // Distributed old binaries cannot decode NULL habit/objective in their
+  // required reconsent draft. Never fabricate an enum for those decoders.
   let draft = state.draft
-  if (draft && draft.waterIntake == null && options.acceptsUnknownWater !== true) {
+  if (
+    draft &&
+    ((draft.waterIntake == null && options.acceptsUnknownWater !== true) ||
+      (draft.objective === null && options.acceptsNullObjective !== true))
+  ) {
     if (!state.completed) {
       throw new MobileApiError(
         409,
@@ -177,6 +202,9 @@ export async function getOnboardingState(
     documents.length > 0 && documents.every((document) => document.required)
 
   const result = {
+    ...(state.legacyReconsent && options.acceptsLegacyReconsent === true
+      ? { legacy_reconsent: { protocol: 'documents_only_v1' as const } }
+      : {}),
     locale: state.locale,
     completion: {
       completed: state.completed,
@@ -242,14 +270,20 @@ export async function completeOnboarding(
     objective: completion.objective,
     persona: completion.persona,
     document_actions: completion.documentActions.map(acceptedActionDto),
+    ...(completion.clinicalSafety ? { clinical_safety: completion.clinicalSafety } : {}),
     // The entry message of the objective that was RECORDED, in the language of
     // the request and with the name it carried. Built here, after the
     // repository answered: the SQL function and the strict reader of its
     // result know nothing about it. It depends only on the request and on the
-    // recorded objective, so a replay of the same request returns the same.
-    protocol_welcome: {
-      protocol: completion.objective,
-      paragraphs: protocolWelcomeMessage(completion.objective, input.name, input.locale),
-    },
+    // recorded objective and its server observation. That observation can be
+    // historical on replay: current n10 visibility must still be refreshed by
+    // the full reader/UI integration before showing guidance.
+    protocol_welcome:
+      completion.objective === null || completion.clinicalSafety?.no_plan === true
+        ? null
+        : {
+            protocol: completion.objective,
+            paragraphs: protocolWelcomeMessage(completion.objective, input.name, input.locale),
+          },
   }
 }

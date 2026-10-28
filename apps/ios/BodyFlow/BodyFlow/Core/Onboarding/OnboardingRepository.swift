@@ -17,6 +17,8 @@ enum OnboardingRepositoryError: Error, Equatable, Sendable {
 }
 
 protocol OnboardingRepository: Sendable {
+    func acceptLegacyDocuments(_ input:OnboardingLegacyDocumentInput,for userID:String,
+                               key:IdempotencyKey) async throws -> OnboardingLegacyDocumentAcknowledgement
     func loadBodyPhotoCleanupScope(generation: String?) async throws -> OnboardingBodyPhotoCleanupScope?
     /// Creates the repository the root keeps for this session owner.
     func scoped(for userID: String) async throws -> any OnboardingRepository
@@ -39,6 +41,10 @@ protocol OnboardingRepository: Sendable {
         _ input: OnboardingEligibilityInput, for userID: String,
         idempotencyKey: IdempotencyKey
     ) async throws -> OnboardingEligibilityDecision
+    func admitSignupHealth(_ declaration: OnboardingSignupHealthDeclaration, for userID:String,
+                           key:IdempotencyKey) async throws -> OnboardingSignupHealthAcknowledgement
+    func completeOfficial(_ draft:OnboardingDraft,for userID:String,completionIntent:OnboardingCompletionIntent,
+                          clinicalSignup:OnboardingClinicalSignupCapability) async throws -> OnboardingCompletionAcknowledgement
     func clear(for userID: String) async throws
     /// Keeps an unfinished sign-up on this iPhone, where the repository has
     /// a place for it (a real account does; the local demonstration keeps
@@ -48,6 +54,14 @@ protocol OnboardingRepository: Sendable {
 }
 
 extension OnboardingRepository {
+    func acceptLegacyDocuments(_ input:OnboardingLegacyDocumentInput,for userID:String,
+                               key:IdempotencyKey) async throws -> OnboardingLegacyDocumentAcknowledgement {
+        throw OnboardingRepositoryError.serviceUnavailable
+    }
+    func admitSignupHealth(_ declaration:OnboardingSignupHealthDeclaration,for userID:String,
+                           key:IdempotencyKey) async throws -> OnboardingSignupHealthAcknowledgement {throw OnboardingRepositoryError.serviceUnavailable}
+    func completeOfficial(_ draft:OnboardingDraft,for userID:String,completionIntent:OnboardingCompletionIntent,
+                          clinicalSignup:OnboardingClinicalSignupCapability) async throws -> OnboardingCompletionAcknowledgement {throw OnboardingRepositoryError.serviceUnavailable}
     func beginCompletionIntent(for userID: String, preparationID: UUID) async throws -> OnboardingCompletionIntent {
         throw OnboardingRepositoryError.serviceUnavailable
     }

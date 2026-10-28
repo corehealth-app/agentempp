@@ -2,7 +2,14 @@ import { createHash } from 'node:crypto'
 import type { ServiceClient } from '@mpp/db'
 import { z } from 'zod'
 import type { OnboardingCompletionInput } from './contracts'
+import {
+  type CurrentClinicalSnapshot,
+  currentClinicalError,
+  readCurrentClinicalState,
+  sameCurrentClinicalInstant,
+} from './current-clinical-state'
 import { MobileApiError } from './http'
+import { onboardingClinicalSafetySchema } from './onboarding-clinical-safety'
 import {
   type OnboardingAcceptedActionRecord,
   type OnboardingDocumentRecord,
@@ -71,7 +78,8 @@ const completionSchema = z
     user_id: z.string().uuid(),
     onboarding_completed: z.literal(true),
     completed_at: z.string().datetime({ offset: true }),
-    objective: z.enum(['recomposicao', 'ganho_massa', 'manutencao']),
+    objective: z.enum(['recomposicao', 'ganho_massa', 'manutencao']).nullable(),
+    clinical_safety: onboardingClinicalSafetySchema.optional(),
     persona: z.enum(['focus', 'impulse', 'zen']),
     document_actions: z.array(
       z
@@ -88,6 +96,7 @@ const completionSchema = z
     ),
   })
   .strict()
+  .refine((value) => value.objective !== null || value.clinical_safety !== undefined)
 
 const profileSchema = z
   .object({
@@ -155,6 +164,8 @@ interface UntypedClient {
 }
 
 export interface SupabaseOnboardingOptions {
+  /** Verified request-owned current source, never a client legacy flag. GET only. */
+  legacyClinicalState?: CurrentClinicalSnapshot
   signupStrengthRequest?: CapturedSignupStrengthRequest
   signupPhotoConfirmation?: PreparedSignupPhotoConfirmation
   allowedLegalOrigins?: string[]
@@ -325,6 +336,9 @@ async function readLimitedBody(response: Response, signal: AbortSignal): Promise
 
 function completionError(error: QueryResult['error']): never {
   const message = error?.message ?? ''
+  if (message.includes('onboarding_objective_not_eligible')) {
+    throw new OnboardingRepositoryError('objective_not_eligible')
+  }
   if (
     message.includes('onboarding_document_version_mismatch') ||
     message.includes('onboarding_required_action_missing')
@@ -360,6 +374,7 @@ function parseCompletion(data: unknown, expectedUserId: string) {
     completed: parsed.data.onboarding_completed,
     completedAt: parsed.data.completed_at,
     objective: parsed.data.objective,
+    ...(parsed.data.clinical_safety ? { clinicalSafety: parsed.data.clinical_safety } : {}),
     persona: parsed.data.persona,
     documentActions: parsed.data.document_actions.map((action) => ({
       documentKey: action.document_key,
@@ -378,6 +393,18 @@ export function createSupabaseOnboardingRepository(
   options: SupabaseOnboardingOptions = {},
 ): OnboardingRepository {
   const client = supabase as unknown as UntypedClient
+  const legacy = options.legacyClinicalState
+    ? readCurrentClinicalState(options.legacyClinicalState, options.legacyClinicalState.user_id)
+    : undefined
+  if (
+    legacy &&
+    (legacy.mode !== 'profile' ||
+      legacy.generation_authority?.kind !== 'legacy_transition' ||
+      legacy.generation_token?.onboarding_completed !== true ||
+      options.signupStrengthRequest !== undefined ||
+      options.signupPhotoConfirmation !== undefined)
+  )
+    throw currentClinicalError('invalid_response')
   const handle = options.signupStrengthRequest
   const keyedRequest =
     handle === undefined
@@ -412,6 +439,8 @@ export function createSupabaseOnboardingRepository(
 
   return {
     async load(userId, locale) {
+      if (legacy && (legacy.user_id !== userId || legacy.body.locale !== locale))
+        throw currentClinicalError('changed')
       const nowIso = now().toISOString()
       const [profileResult, requirementResult, documentResult] = await Promise.all([
         client
@@ -458,6 +487,15 @@ export function createSupabaseOnboardingRepository(
         }
         throw new OnboardingRepositoryError('internal')
       }
+      if (
+        legacy &&
+        (profile.data.onboarding_completed !== true ||
+          !sameCurrentClinicalInstant(
+            profile.data.onboarding_completed_at,
+            legacy.generation_token?.onboarding_completed_at ?? null,
+          ))
+      )
+        throw currentClinicalError('changed')
 
       const requiredKeys = new Set(requirementSet.data.document_keys)
       const currentDocuments = parsedDocuments.data.filter(
@@ -514,7 +552,7 @@ export function createSupabaseOnboardingRepository(
       )
 
       let draft: OnboardingDraftRecord | null = null
-      if (profile.data.onboarding_completed_at !== null) {
+      if (!legacy && profile.data.onboarding_completed_at !== null) {
         const [userResult, preferenceResult] = await Promise.all([
           client
             .from('users')
@@ -539,7 +577,7 @@ export function createSupabaseOnboardingRepository(
           completeProfile.birth_date == null ||
           completeProfile.height_cm == null ||
           completeProfile.weight_kg == null ||
-          completeProfile.current_protocol == null ||
+          completeProfile.current_protocol === undefined ||
           completeProfile.activity_level == null ||
           completeProfile.training_frequency == null ||
           completeProfile.hunger_level == null ||
@@ -575,16 +613,20 @@ export function createSupabaseOnboardingRepository(
         locale: locale as OnboardingCompletionInput['locale'],
         completed:
           profile.data.onboarding_completed &&
-          profile.data.onboarding_completed_at !== null &&
+          (legacy !== undefined || profile.data.onboarding_completed_at !== null) &&
           hasCurrentRequiredActions,
         completedAt: profile.data.onboarding_completed_at,
         documents: verifiedDocuments,
         acceptedActions,
         draft,
+        ...(legacy ? { legacyReconsent: { protocol: 'documents_only_v1' as const } } : {}),
       }
     },
 
     async complete(userId: string, input: OnboardingCompletionInput) {
+      // This GET-only projection must never turn an unknown historical marker
+      // into a new signup, even if an internal caller accidentally reuses it.
+      if (legacy) throw new OnboardingRepositoryError('already_completed')
       if (keyedRequest && keyedRequest.userId !== userId)
         throw new OnboardingRepositoryError('internal')
       const prepared = options.signupPhotoConfirmation

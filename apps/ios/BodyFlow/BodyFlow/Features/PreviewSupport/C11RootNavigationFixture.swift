@@ -2278,7 +2278,10 @@ enum C11RootNavigationReentryControl {
         let selection: C11RootNavigationSelection = mode == .success401 ? .observeCompleted401 : .observeDeliveryFailure
         let server = C11RootNavigationServer(probe: probe, selection: selection,
             patchState: nil, deleteState: nil, deliveryObservation: observation)
-        var request = URLRequest(url: URL(string: "https://c11-ui.fixture.invalid/api/mobile/v1/meal-records/11111111-1111-4111-8111-111111111111")!)
+        // Match the actual C13 read contract, just as the real repository does.
+        // Without its projection query the strict server correctly refuses the
+        // request before this control can observe a completed 401 response.
+        var request = URLRequest(url: URL(string: "https://c11-ui.fixture.invalid/api/mobile/v1/meal-records/11111111-1111-4111-8111-111111111111?include=registration_feedback")!)
         request.httpMethod = "GET"
         request.setValue("Bearer synthetic-reentry-control", forHTTPHeaderField: "Authorization")
         request.setValue("synthetic-reentry-control", forHTTPHeaderField: "X-Request-Id")

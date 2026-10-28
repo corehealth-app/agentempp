@@ -10,10 +10,18 @@ const base = {
   hold: { active: false, items: [] },
 }
 describe('n10 clinical safeguards, explicit authoritative date and no writes', () => {
+  it('does not classify exact decimal BMI18.5 as low because of floating-point division', () => {
+    expect(
+      evaluateReevaluationSafety({ ...base, heightCm: 160, weightKg: 47.36 }).guards.lowWeight,
+    ).toBe(false)
+    expect(
+      evaluateReevaluationSafety({ ...base, heightCm: 160, weightKg: 47.35 }).guards.lowWeight,
+    ).toBe(true)
+  })
   it.each([
     [53.4, 170, true],
     [53.5, 170, false],
-    [47.36, 160, true],
+    [47.36, 160, false],
     [74, 200, false],
     [73.99, 200, true],
   ])('raw BMI safety boundary %s/%s -> %s', (weightKg, heightCm, expected) => {

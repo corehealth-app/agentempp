@@ -13,15 +13,18 @@ struct CurrentObjectiveSnapshot: Codable, Equatable, Sendable {
     let currentProtocol: BodyFlowObjective?
     let targets: Targets?
     let welcome: ProtocolWelcome?
+    var clinicalPolicy: CurrentClinicalPolicy? = nil
 
     private enum CodingKeys: String, CodingKey {
         case currentProtocol = "current_protocol"
         case targets, welcome
+        case clinicalPolicy = "clinical_policy"
     }
 
     var isEmpty: Bool {
         currentProtocol == nil && targets?.calories == nil
             && targets?.proteinG == nil && welcome == nil
+            && clinicalPolicy?.phaseSelectionPending != true
     }
 
     func validated() throws -> Self {
@@ -40,20 +43,23 @@ protocol CurrentObjectiveProviding: Sendable {
 
 struct MobileCurrentObjectiveRepository: CurrentObjectiveProviding {
     let transport: any MobileAPIExecuting
+    var clinicalRepresentation: CurrentClinicalRepresentation = .legacy
 
     func currentObjective() async throws -> CurrentObjectiveSnapshot {
+        try await clinicalRepresentation.authorizeSession(transport)
         do {
             let result: CurrentObjectiveSnapshot = try await transport.execute(
-                MobileAPIRequest(method: .get, path: "/api/mobile/v1/protocol")
+                MobileAPIRequest(method: .get, path: "/api/mobile/v1/protocol",
+                    queryItems: clinicalRepresentation.queryItems)
             )
+            try await clinicalRepresentation.authorizeSession(transport)
+            try clinicalRepresentation.requirePolicy(result.clinicalPolicy)
             return try result.validated()
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch let error as BodyFlowCapabilityError {
-            throw error
-        } catch let error as MobileAPITransportError {
-            throw error.capabilityError
         } catch {
+            try await clinicalRepresentation.authorizeSession(transport)
+            if error is CancellationError { throw CancellationError() }
+            if let error = error as? BodyFlowCapabilityError { throw error }
+            if let error = error as? MobileAPITransportError { throw error.capabilityError }
             throw BodyFlowCapabilityError.serviceUnavailable
         }
     }

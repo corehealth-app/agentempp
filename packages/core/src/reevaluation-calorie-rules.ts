@@ -6,16 +6,16 @@ import {
 } from './reevaluation-clinical-safety.js'
 import {
   getKnownReevaluationAnswers,
+  type PlannedReevaluationFormDraft,
+  plannedReevaluationFormDraftSchema,
   type ReevaluationAnswerKey,
-  type ReevaluationFormDraft,
-  reevaluationFormDraftSchema,
 } from './reevaluation-form-contracts.js'
 import {
   evaluateReevaluationWeightHistory,
   reevaluationWeightHistorySchema,
 } from './reevaluation-weight-trend.js'
 
-function boundSafety(form: ReevaluationFormDraft, input: unknown) {
+function boundSafety(form: PlannedReevaluationFormDraft, input: unknown) {
   const safety = evaluateReevaluationSafety(input)
   const raw = input as { weightKg: unknown }
   if (form.answers.weightKg !== null && form.answers.weightKg !== raw.weightKg)
@@ -26,7 +26,7 @@ function boundSafety(form: ReevaluationFormDraft, input: unknown) {
   }
 }
 function missingAnswers(
-  form: ReevaluationFormDraft,
+  form: PlannedReevaluationFormDraft,
   keys: readonly ReevaluationAnswerKey[],
 ): string[] {
   const result = getKnownReevaluationAnswers(form, keys)
@@ -34,7 +34,7 @@ function missingAnswers(
 }
 const deficitSchema = z
   .object({
-    form: reevaluationFormDraftSchema,
+    form: plannedReevaluationFormDraftSchema,
     safety: z.unknown(),
     count: z.number().int().safe().min(0),
     deficitLevel: z.union([z.literal(400), z.literal(500), z.literal(600)]),
@@ -134,7 +134,7 @@ export function evaluateGainReviewLimits(input: unknown): {
 const frequency = z.number().int().min(0).max(7).nullable()
 const phaseSchema = z
   .object({
-    form: reevaluationFormDraftSchema,
+    form: plannedReevaluationFormDraftSchema,
     safety: z.unknown(),
     history: reevaluationWeightHistorySchema,
     // Already recomputed for candidate weight/current episode, before this step.

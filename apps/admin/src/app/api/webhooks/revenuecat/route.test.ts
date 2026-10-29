@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto'
 import type { ServiceClient } from '@mpp/db'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createRevenueCatWebhookHandler } from './handler'
 
 const NOW = new Date('2026-07-24T10:00:00.000Z')
@@ -63,6 +63,37 @@ function runtime(overrides: Record<string, unknown> = {}) {
 }
 
 describe('RevenueCat webhook route', () => {
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('reads default provider configuration per request and fails before client work', async () => {
+    vi.stubEnv('REVENUECAT_WEBHOOK_SIGNING_SECRET', SECRET)
+    vi.stubEnv('REVENUECAT_WEBHOOK_ENVIRONMENT', 'sandbox')
+    vi.stubEnv('REVENUECAT_PRODUCT_PLAN_MAP', '{"bodyflow_monthly":"mensal"}')
+    const handler = createRevenueCatWebhookHandler()
+    const request = signedRequest()
+    request.headers.set('x-revenuecat-webhook-signature', `t=1,v1=${'0'.repeat(64)}`)
+    expect((await handler(request)).status).toBe(401)
+    vi.stubEnv('REVENUECAT_WEBHOOK_SIGNING_SECRET', undefined)
+    const unavailable = await handler(signedRequest())
+    expect(unavailable.status).toBe(503)
+    expect(await unavailable.json()).toEqual({ ok: false, error: 'provider_not_configured' })
+  })
+
+  it.each([
+    'duplicate',
+    'stale',
+  ])('acknowledges the persisted %s result without inventing a grant', async (result) => {
+    const testRuntime = runtime({
+      createServiceClient: () =>
+        ({
+          rpc: vi.fn().mockResolvedValue({ data: { result }, error: null }),
+        }) as unknown as ServiceClient,
+    })
+    const response = await createRevenueCatWebhookHandler(testRuntime.value)(signedRequest())
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ ok: true, result })
+  })
+
   it('verifies, normalizes and applies one central entitlement event', async () => {
     const testRuntime = runtime()
     const handler = createRevenueCatWebhookHandler(testRuntime.value)

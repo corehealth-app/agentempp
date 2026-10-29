@@ -1,9 +1,10 @@
-import type { EntitlementPlan } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import {
+  loadRevenueCatWebhookConfiguration,
+  type RevenueCatWebhookConfiguration,
+} from '@/lib/billing/revenuecat-configuration'
+import {
   normalizeRevenueCatEvent,
-  parseRevenueCatProductPlanMap,
-  type RevenueCatNormalizationConfiguration,
   RevenueCatWebhookError,
   verifyRevenueCatSignature,
 } from '@/lib/billing/revenuecat-webhook'
@@ -11,42 +12,17 @@ import { createServiceClient } from '@/lib/supabase/server'
 
 const MAX_WEBHOOK_BYTES = 256 * 1024
 
-type RevenueCatWebhookConfiguration = RevenueCatNormalizationConfiguration & {
-  signingSecret: string
-  productPlanMap: Record<string, EntitlementPlan>
-}
-
 export type RevenueCatWebhookRuntime = {
   now(): Date
   createServiceClient(): ServiceClient
   configuration: RevenueCatWebhookConfiguration | null
 }
 
-function loadConfiguration(): RevenueCatWebhookConfiguration | null {
-  const signingSecret = process.env.REVENUECAT_WEBHOOK_SIGNING_SECRET
-  const environment = process.env.REVENUECAT_WEBHOOK_ENVIRONMENT
-  const productPlanMap = process.env.REVENUECAT_PRODUCT_PLAN_MAP
-  if (!signingSecret || !environment || !productPlanMap) return null
-  if (signingSecret.length < 32) return null
-  if (environment !== 'sandbox' && environment !== 'production') return null
-
-  try {
-    return {
-      signingSecret,
-      expectedEnvironment: environment,
-      entitlementKey: 'bodyflow_full',
-      productPlanMap: parseRevenueCatProductPlanMap(productPlanMap),
-    }
-  } catch {
-    return null
-  }
-}
-
 const defaultRuntime: RevenueCatWebhookRuntime = {
   now: () => new Date(),
   createServiceClient,
   get configuration() {
-    return loadConfiguration()
+    return loadRevenueCatWebhookConfiguration()
   },
 }
 

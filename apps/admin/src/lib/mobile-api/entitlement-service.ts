@@ -1,5 +1,6 @@
 import { entitlementDecisionSchema } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
+import { mobileBillingCapability } from '@/lib/billing/revenuecat-configuration'
 import { MobileApiError } from './http'
 
 const BODYFLOW_ENTITLEMENT_KEY = 'bodyflow_full'
@@ -47,11 +48,7 @@ export async function loadMobileEntitlement(
 
   return {
     ...decision.data,
-    mobile_billing: {
-      provider: 'revenuecat' as const,
-      available: false,
-      reason: 'provider_not_configured' as const,
-    },
+    mobile_billing: mobileBillingCapability(),
   }
 }
 

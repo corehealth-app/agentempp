@@ -4845,11 +4845,16 @@ oferece compra e restauração quando a configuração permite. Uma confirmaçã
 pendente consulta somente o BFF, sem repetir a operação da loja. Essa integração
 tem testes locais com fronteiras HTTP/SDK sintéticas; não foi distribuída nem
 qualificada com o catálogo real. A chave pública opcional
-`PERFORME_REVENUECAT_PUBLIC_KEY` está ausente na configuração consultada e
-`mobile_billing.available` continua desligado no staging. Construir o coordenador
-não configura o SDK. Nenhuma conta, chave, produto, cobrança ou concessão foi
-criada por esta implementação. Ver [assinaturas no iOS](native-subscriptions.md)
-para a composição e os gates de ativação.
+`PERFORME_REVENUECAT_PUBLIC_KEY` tem um port opcional no plist, sem valor real
+fornecido. O seletor `MOBILE_REVENUECAT_BILLING_PROJECT_REF` mantém a compra OFF
+por padrão: exige um único projeto não legado, origem canônica correspondente e
+configuração válida de assinatura/ambiente/produtos. A resposta pública contém
+somente provider/available/reason; o booleano de acesso não é alterado.
+Configuração e chave não foram ativadas no staging por esta implementação.
+Construir o coordenador não configura o SDK. Nenhuma conta, produto, cobrança ou
+concessão foi criada por este código. Ver [assinaturas no iOS](native-subscriptions.md)
+para a composição e os gates de ativação, incluindo o endpoint real do webhook,
+que não faz parte do espelho atual de rotas móveis.
 
 Compra, restauração, renovação, reembolso, troca de conta e sincronização real
 com a loja continuam gates da integração comercial. Os testes com a fronteira

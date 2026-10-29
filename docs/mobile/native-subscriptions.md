@@ -51,6 +51,27 @@ mantém o checkout indisponível e preserva a consulta oficial de acesso. Nenhum
 chave, preço, produto, trial ou benefício comercial deve ser inventado para
 preencher essa configuração.
 
+O `Info.plist` contém somente o port de build
+`$(PERFORME_REVENUECAT_PUBLIC_KEY)`, sem valor padrão válido. Arquivar o app com
+uma chave real exige fornecê-la explicitamente ao build depois da qualificação.
+
+No servidor, a disponibilidade da compra usa
+`MOBILE_REVENUECAT_BILLING_PROJECT_REF`, ausente por padrão. O valor deve ser um
+único ref de projeto e corresponder exatamente à origem HTTPS canônica em
+`NEXT_PUBLIC_SUPABASE_URL`; a produção legada é sempre recusada. A configuração
+também exige ambiente, segredo de assinatura e mapa de produtos válidos do
+webhook. O parser é compartilhado com o handler e lido a cada solicitação,
+preservando os bytes do segredo. Somente `provider`, `available` e `reason` são
+acrescentados à resposta pública. Essa disponibilidade não altera
+`has_active_access` nem dispensa os guards HTTP 402.
+
+O seletor do projeto é uma ativação operacional: deve continuar ausente até
+concluir a qualificação abaixo. Configuração sintaticamente válida não prova
+que a loja ou a entrega dos eventos funciona. O handler RevenueCat existe no
+admin, mas o BFF móvel espelha somente as rotas móveis; o endpoint real do
+webhook ainda precisa ser publicado e verificado no destino correto. Não
+configure no provedor um endereço presumido do BFF.
+
 A presença do código não comprova ativação comercial. Antes de ativar ou
 distribuir uma versão com compras, qualificar projeto/chave/catálogo reais,
 política de transferência de contas, webhook autenticado, capability IAP,

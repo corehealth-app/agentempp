@@ -1,5 +1,5 @@
 import type { ServiceClient } from '@mpp/db'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   authorizeMobileEntitlement,
   loadMobileEntitlement,
@@ -28,6 +28,46 @@ const activeDecision = {
 }
 
 describe('mobile entitlement service', () => {
+  beforeEach(() => {
+    for (const key of [
+      'MOBILE_REVENUECAT_BILLING_PROJECT_REF',
+      'NEXT_PUBLIC_SUPABASE_URL',
+      'REVENUECAT_WEBHOOK_SIGNING_SECRET',
+      'REVENUECAT_WEBHOOK_ENVIRONMENT',
+      'REVENUECAT_PRODUCT_PLAN_MAP',
+    ])
+      vi.stubEnv(key, undefined)
+  })
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('advertises explicitly configured checkout without changing a denied central decision', async () => {
+    vi.stubEnv('MOBILE_REVENUECAT_BILLING_PROJECT_REF', 'xitugspwfxkcluxvrdeg')
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://xitugspwfxkcluxvrdeg.supabase.co')
+    vi.stubEnv('REVENUECAT_WEBHOOK_SIGNING_SECRET', 'synthetic-only-signing-secret-at-least32')
+    vi.stubEnv('REVENUECAT_WEBHOOK_ENVIRONMENT', 'sandbox')
+    vi.stubEnv('REVENUECAT_PRODUCT_PLAN_MAP', '{"synthetic_monthly":"mensal"}')
+    const denied = { ...activeDecision, has_active_access: false }
+    const supabase = serviceClient({ data: denied, error: null })
+
+    const result = await loadMobileEntitlement(supabase, USER_ID)
+
+    expect(result).toEqual({
+      ...denied,
+      mobile_billing: { provider: 'revenuecat', available: true, reason: 'provider_configured' },
+    })
+    await expect(
+      authorizeMobileEntitlement(supabase, USER_ID, '/api/mobile/v1/today'),
+    ).rejects.toMatchObject({ status: 402, code: 'subscription_required' })
+    const output = JSON.stringify(result)
+    expect(output).not.toContain('synthetic-only-signing-secret')
+    expect(output).not.toContain('synthetic_monthly')
+    expect(output).not.toContain('xitugspwfxkcluxvrdeg')
+    vi.stubEnv('MOBILE_REVENUECAT_BILLING_PROJECT_REF', undefined)
+    const afterDisable = await loadMobileEntitlement(supabase, USER_ID)
+    expect(afterDisable.has_active_access).toBe(false)
+    expect(afterDisable.mobile_billing.available).toBe(false)
+  })
+
   it('loads the central decision and returns a stable disabled billing capability', async () => {
     const supabase = serviceClient({ data: activeDecision, error: null })
 

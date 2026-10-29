@@ -30,6 +30,8 @@
 	<string>O Performe AI usa o microfone para gravar a descrição da refeição que você quer registrar.</string>
 	<key>PERFORME_MOBILE_API_ORIGIN</key>
 	<string>$(PERFORME_MOBILE_API_ORIGIN)</string>
+	<key>PERFORME_REVENUECAT_PUBLIC_KEY</key>
+	<string>$(PERFORME_REVENUECAT_PUBLIC_KEY)</string>
 	<key>PERFORME_SUPABASE_PUBLISHABLE_KEY</key>
 	<string>$(PERFORME_SUPABASE_PUBLISHABLE_KEY)</string>
 	<key>PERFORME_SUPABASE_URL</key>

@@ -22,6 +22,7 @@ struct ProfileRootView: View {
     /// Opens the guided tour again; nil where the shell offers no tour.
     private let showTutorial: (@MainActor () -> Void)?
     private let showsCurrentObjective: Bool
+    private let showsBilling: Bool
 
     @State private var selectedPersona: CoachPersona?
     @State private var personaEditor: CoachPersonaEditorModel?
@@ -42,6 +43,7 @@ struct ProfileRootView: View {
         localReminders: LocalReminderModel? = nil,
         showTutorial: (@MainActor () -> Void)? = nil,
         showsCurrentObjective: Bool = false,
+        showsBilling: Bool = false,
         signOut: (@MainActor () async -> Void)? = nil
     ) {
         self.userID = userID
@@ -55,6 +57,7 @@ struct ProfileRootView: View {
         self.localReminders = localReminders
         self.showTutorial = showTutorial
         self.showsCurrentObjective = showsCurrentObjective
+        self.showsBilling = showsBilling
         _selectedPersona = State(initialValue: nil)
         _personaEditor = State(initialValue: nil)
     }
@@ -190,6 +193,19 @@ struct ProfileRootView: View {
                     .buttonStyle(.bodyFlowRow)
                     .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
                     .accessibilityIdentifier("profile.tutorial")
+                }
+                .bodyFlowListRow()
+            }
+
+            if showsBilling {
+                Section {
+                    NavigationLink(value: AppRoute.billingPlans) {
+                        FeatureActionLabel(title: copy("billing.title"), detail: copy("billing.profile-detail"),
+                            systemImage: "creditcard", showsDisclosureIndicator: false)
+                    }
+                    .buttonStyle(.bodyFlowRow)
+                    .frame(minHeight: BodyFlowSpacing.minimumTapTarget)
+                    .accessibilityIdentifier("profile.billing")
                 }
                 .bodyFlowListRow()
             }

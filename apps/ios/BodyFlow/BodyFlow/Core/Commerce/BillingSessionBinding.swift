@@ -20,6 +20,7 @@ struct BillingSessionSource: Sendable {
 
 @MainActor
 protocol BillingProviding: EntitlementProviding {
+    var isCheckoutConfigured: Bool { get }
     func offers() async throws -> BillingCatalog
     func purchase(productID: String, catalogRevision: UUID) async throws -> BillingStoreOutcome
     func restore() async throws -> BillingStoreOutcome
@@ -92,6 +93,7 @@ final class BillingSessionBinding {
         isOpen && !resolving && readyContext == nil && patientWork != nil
             && reader != nil && capturedLease != nil
     }
+    fileprivate var isCheckoutConfigured: Bool { isOpen && coordinator?.isCheckoutConfigured == true }
     var hasRetainedCapability: Bool {
         reader != nil || repository != nil || lifecycle != nil || coordinator != nil
             || sdkGrant != nil || patientWork != nil || capturedLease != nil
@@ -239,6 +241,7 @@ final class BillingSessionBinding {
     func invalidateSynchronously() {
         fence.close()
         leafGate.close()
+        readyContext?.invalidatePlans()
         readyContext = nil
         reader = nil
         repository = nil
@@ -277,18 +280,27 @@ final class BillingReadyContext {
     let activation: MealRecordAuthenticatedActivation
     let provider: any BillingProviding
     private weak var binding: BillingSessionBinding?
+    private var plansStorage: BillingPlansModel?
     fileprivate init(binding: BillingSessionBinding) {
         self.binding = binding
         activation = binding.activation
         provider = BillingBoundProvider(binding: binding)
     }
     var isActive: Bool { binding?.isOpen == true }
+    func plansModel() -> BillingPlansModel {
+        if let plansStorage { return plansStorage }
+        let model = BillingPlansModel(provider: provider, isActive: { [weak self] in self?.isActive == true })
+        plansStorage = model
+        return model
+    }
+    fileprivate func invalidatePlans() { plansStorage?.invalidate(); plansStorage = nil }
 }
 
 @MainActor
 private final class BillingBoundProvider: BillingProviding {
     private weak var binding: BillingSessionBinding?
     init(binding: BillingSessionBinding) { self.binding = binding }
+    var isCheckoutConfigured: Bool { binding?.isCheckoutConfigured == true }
     func entitlement() async throws -> EntitlementResponse {
         guard let binding else { throw CancellationError() }
         return try await binding.entitlement()

@@ -641,6 +641,7 @@ struct AppShellView: View {
                 localReminders: localReminders,
                 showTutorial: { presentTutorialFromProfile() },
                 showsCurrentObjective: currentObjectiveModel != nil,
+                showsBilling: dependencies.billingSessionSource != nil,
                 signOut: signOut
             )
         }
@@ -775,6 +776,8 @@ struct AppShellView: View {
             } else {
                 ScreenStateView(state: .unavailable, retryAction: {})
             }
+        case .billingPlans:
+            BillingPlansDestination(owner: sessionOwner)
         case .currentObjective:
             if let currentObjectiveModel {
                 CurrentObjectiveView(model: currentObjectiveModel)

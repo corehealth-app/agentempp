@@ -4834,11 +4834,22 @@ uma única tentativa de compra. Produtos e preços vêm do pacote real da loja;
 `CustomerInfo` nunca concede acesso. Sucessos e erros tardios são recusados
 quando seu grant já terminou.
 
-Essa parte ainda não compõe o binding de autenticação ou a tela de compra e
-restauração. A chave pública opcional `PERFORME_REVENUECAT_PUBLIC_KEY` está ausente
-na configuração consultada e `mobile_billing.available` continua desligado no
-staging. Construir o coordenador não configura o SDK. Nenhuma conta, chave,
-produto, cobrança ou concessão foi criada por esta implementação.
+O binding de autenticação captura o lease original, o ticket da ativação e o
+UUID de domínio retornado por `/me`, sem depender da disponibilidade do registro
+de treino. O contexto conserva o modelo de **Perfil → Assinatura** ao voltar e
+reabrir a tela. A invalidação retira sua apresentação imediatamente e aguarda o
+callback real antes de liberar o grant original do SDK.
+
+A tela consulta o acesso oficial, apresenta o catálogo fornecido pelo SDK e
+oferece compra e restauração quando a configuração permite. Uma confirmação
+pendente consulta somente o BFF, sem repetir a operação da loja. Essa integração
+tem testes locais com fronteiras HTTP/SDK sintéticas; não foi distribuída nem
+qualificada com o catálogo real. A chave pública opcional
+`PERFORME_REVENUECAT_PUBLIC_KEY` está ausente na configuração consultada e
+`mobile_billing.available` continua desligado no staging. Construir o coordenador
+não configura o SDK. Nenhuma conta, chave, produto, cobrança ou concessão foi
+criada por esta implementação. Ver [assinaturas no iOS](native-subscriptions.md)
+para a composição e os gates de ativação.
 
 Compra, restauração, renovação, reembolso, troca de conta e sincronização real
 com a loja continuam gates da integração comercial. Os testes com a fronteira

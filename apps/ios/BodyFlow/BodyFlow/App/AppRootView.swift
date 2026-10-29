@@ -39,7 +39,16 @@ struct AppRootView: View {
             model: model, ownerCoordinator: shellCoordinator,
             lifetime: mealRecordLifetime, source: dependencies.mealRecordBindingSource
         ))
-        _appearance = State(initialValue: BodyFlowAppearanceStore.make(isDemo: configuration.mode == .demo))
+        #if DEBUG
+        // Real-Auth UI fixtures also use a temporary appearance boundary;
+        // the simulator controls the requested theme without changing a
+        // person's stored day/night preference.
+        let usesUITestAppearance = ProcessInfo.processInfo.arguments.contains("--ui-testing")
+        #else
+        let usesUITestAppearance = false
+        #endif
+        _appearance = State(initialValue: BodyFlowAppearanceStore.make(
+            isDemo: configuration.mode == .demo || usesUITestAppearance))
     }
 
     var body: some View {

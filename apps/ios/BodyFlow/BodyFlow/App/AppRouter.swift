@@ -14,6 +14,7 @@ enum AppRoute: Hashable, Sendable {
     case flowChat
     case localReminders
     case currentObjective
+    case billingPlans
     case planDraft(PlanDraftRoute)
     case planImport
 
@@ -31,7 +32,7 @@ enum AppRoute: Hashable, Sendable {
             .progress
         case .content, .mascot, .flowChat:
             .today
-        case .localReminders, .currentObjective:
+        case .localReminders, .currentObjective, .billingPlans:
             .profile
         case let .planDraft(route):
             route.origin == .flow ? .today : .plan
@@ -48,6 +49,7 @@ enum AppRoute: Hashable, Sendable {
             return "screen.local-reminders"
         }
         if case .currentObjective = self { return "screen.current-objective" }
+        if case .billingPlans = self { return "screen.billing-plans" }
         if case .planDraft = self {
             return "screen.plan.draft"
         }

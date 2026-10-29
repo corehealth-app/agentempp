@@ -64,6 +64,7 @@ final class BillingSessionGrant: @unchecked Sendable {
 /// across suspension points. Never release it from a cancellation handler: the
 /// pinned SDK's continuation still awaits the actual store callback.
 actor BillingSDKCoordinator {
+    nonisolated let isCheckoutConfigured: Bool
     private let configuration: BillingConfiguration?
     private let driver: any BillingSDKDriving
     private var initialized = false
@@ -77,6 +78,7 @@ actor BillingSDKCoordinator {
     init(configuration: BillingConfiguration?, driver: any BillingSDKDriving) {
         self.configuration = configuration
         self.driver = driver
+        isCheckoutConfigured = configuration != nil
     }
 
     func offers(for grant: BillingSessionGrant) async throws -> BillingCatalog {

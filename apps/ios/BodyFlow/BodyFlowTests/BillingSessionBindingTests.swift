@@ -281,6 +281,27 @@ struct BillingSessionBindingTests {
         #expect(deps.mealRecordBindingSource == nil)
         #expect(AppDependencies.scaffold().billingSessionSource == nil)
     }
+
+    @Test("the original context keeps pending model state across navigation and clears it on retirement")
+    func plansModelBelongsToContext() async throws {
+        try await withBillingWire { h in
+            let binding = try h.reserve()
+            let context = try await h.source.bind(binding)
+            let first = context.plansModel()
+            await first.load()
+            await first.purchase(productID: "synthetic-product")
+            #expect(first.operationState == .syncPending)
+            #expect(context.plansModel() === first)
+            #expect(context.plansModel().operationState == .syncPending)
+            await binding.endSession()
+            #expect(first.access == nil)
+            #expect(!first.hasActiveAccess)
+            let calls = await h.http.paths.count
+            await first.load()
+            await first.restore()
+            #expect(await h.http.paths.count == calls)
+        }
+    }
 }
 
 @MainActor
@@ -535,7 +556,10 @@ private final class BillingBindingURLProtocol: URLProtocol {
         controlLock.withLock { delivery = context }
         context.start()
     }
-    override func stopLoading() { controlLock.withLock { delivery?.stop() } }
+    override func stopLoading() {
+        let original = controlLock.withLock { delivery }
+        original?.stop()
+    }
 }
 
 /// Only the external URLSession boundary is replaced; the concrete transport,

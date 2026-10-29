@@ -15,6 +15,7 @@ struct BodyFlowApp: App {
     private let mealRecordLifetime: MealRecordAuthenticationLifetime?
     #if DEBUG
     private let c11NavigationFixture: C11RootNavigationFixture?
+    private let billingUIFixture: BillingUIFixture?
     #endif
     @State private var model: AppFlowModel
 
@@ -28,9 +29,17 @@ struct BodyFlowApp: App {
             catch { preconditionFailure("Synthetic C11 navigation fixture setup failed") }
         } else { navigationFixture = nil }
         self.c11NavigationFixture = navigationFixture
-        let configuration = navigationFixture?.configuration ?? AppLaunchConfiguration.current()
+        let billingFixture: BillingUIFixture?
+        if let selection = BillingUISelection.resolve(arguments: ProcessInfo.processInfo.arguments) {
+            do { billingFixture = try BillingUIFixture.make(selection: selection) }
+            catch { preconditionFailure("Synthetic billing UI fixture setup failed") }
+        } else { billingFixture = nil }
+        precondition(navigationFixture == nil || billingFixture == nil, "Select only one synthetic fixture")
+        billingUIFixture = billingFixture
+        let configuration = navigationFixture?.configuration ?? billingFixture?.configuration ?? AppLaunchConfiguration.current()
         let dependencies: AppDependencies
         if let navigationFixture { dependencies = navigationFixture.dependencies }
+        else if let billingFixture { dependencies = billingFixture.dependencies }
         else {
             let runtime = PerformeRuntimeConfiguration.load(
                 from: Bundle.main.infoDictionary
@@ -96,6 +105,7 @@ struct BodyFlowApp: App {
                 if let fixture = c11NavigationFixture {
                     C11RootNavigationDiagnosticView(selection: fixture.selection, probe: fixture.probe)
                 }
+                if let billingUIFixture { BillingUIDiagnosticView(probe: billingUIFixture.probe) }
             }
             #endif
         }

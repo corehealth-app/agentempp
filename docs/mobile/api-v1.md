@@ -4807,3 +4807,26 @@ Validação desta etapa é local no simulador e com respostas sintéticas DEBUG,
 A entrada “Seu objetivo” consome somente `GET /api/mobile/v1/protocol`, sem envio de dados corporais, escolha ou chave de mutação. Mostra o objetivo armazenado e os números oficiais recebidos; não recalcula, não inventa zero e aceita metas ausentes. A mensagem de entrada abre para leitura integral, com parágrafos e repetições preservados; “Fechar” retorna à consulta, sem concluir cadastro, oferecer tutorial ou trocar o objetivo.
 
 Cada sessão possui seu modelo. Logout invalida leituras pendentes; respostas antigas/canceladas não substituem o estado atual. Atualização conserva o conteúdo e erros oferecem leitura novamente. Sem capacidade, a entrada fica oculta. As variantes sintéticas `--ui-testing-current-objective`, `--ui-testing-current-objective-empty`, `--ui-testing-current-objective-offline` e `--ui-testing-current-objective-long` são restritas a DEBUG; Release usa transporte real ou fica indisponível. Validação ao vivo e publicação permanecem gates próprios.
+
+### Contrato nativo de acesso — fundação de assinatura (2026-10-29)
+
+`MobileEntitlementRepository.entitlement()` lê somente
+`GET /api/mobile/v1/entitlements`, preservando o envelope e seu `request_id`.
+O transporte deve pertencer à sessão autenticada original; o repositório não
+recebe identidade por corpo, query ou path. Uma resposta para uma chave diferente
+de `bodyflow_full` é recusada. O estado oficial é `has_active_access`: status,
+expiração, disponibilidade do checkout e dados futuros do SDK não o substituem.
+
+`EntitlementSnapshot` espelha o vocabulário de `packages/core/src/entitlements.ts`
+e usa `APITimestamp` para os instantes. `source`, `plan`, `access_expires_at` e
+`grace_expires_at` são chaves obrigatórias com valor possivelmente nulo; ausência
+não equivale a `null`. O contrato serializado também preserva esses nulos.
+JSON inválido, indisponibilidade, HTTP 402 e cancelamento não produzem um grant
+de fallback. A disponibilidade de compra permanece independente do acesso já
+concedido pelo servidor.
+
+Esta fundação não integra ainda o SDK, binding de sessão, tela de compra ou
+restauração. `mobile_billing.available` continua desligado no staging consultado.
+Compra, restauração, renovação, reembolso, troca de conta e sincronização real
+com a loja continuam gates da integração comercial; os testes deste leitor
+não comprovam esses fluxos nem alteram acesso ou cobrança.

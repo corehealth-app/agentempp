@@ -67,14 +67,23 @@ describe('current-authority clarification in the fresh mobile server build', () 
     const source = exportStream(resolve(appRoot, '../admin/src/app/api/mobile/v1'), false)
     const mirror = exportStream(resolve(appRoot, 'src/app/api/mobile/v1'), true)
     expect(source).toEqual(mirror)
-    expect(source.some((record) => record.path === 'auth/password-recovery/route.ts')).toBe(false)
-    expect(source).toHaveLength(74)
+    expect(
+      source.find((record) => record.path === 'auth/password-recovery/route.ts')?.exports,
+    ).toEqual(['GET', 'HEAD', 'POST', 'dynamic', 'maxDuration', 'runtime'])
+    expect(source).toHaveLength(75)
+    const prior74 = source.filter((record) => record.path !== 'auth/password-recovery/route.ts')
+    expect(prior74).toHaveLength(74)
+    expect(
+      createHash('sha256')
+        .update(prior74.map((record) => `${record.path}\0${record.exports.join(',')}\n`).join(''))
+        .digest('hex'),
+    ).toBe('9c7daf99f0c9baab62f037d3d9301417c4a025283e863f44cd4dfab77588e485')
     expect(source.find((record) => record.path === addition)).toEqual({
       path: addition,
       exports: ['GET', 'POST', 'runtime'],
     })
     const additions = new Set<string>(currentClinicalRouteAdditions)
-    const prior56 = source.filter((record) => !additions.has(record.path))
+    const prior56 = prior74.filter((record) => !additions.has(record.path))
     expect(prior56).toHaveLength(56)
     expect(
       createHash('sha256')

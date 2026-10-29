@@ -191,17 +191,22 @@ function withSyntheticBuild<T>(
 }
 
 describe('authoritative Mobile API source surface', () => {
-  test('keeps the approved 74-route path and named-export manifest', () => {
+  test('keeps the approved 75-route path and named-export manifest', () => {
     const records = sourceRecords()
     const hash = hashRecords(records)
 
     console.info(`SOURCE_ROUTE_EXPORT_COUNT=${records.length}`)
     console.info(`SOURCE_ROUTE_EXPORT_STREAM_SHA256=${hash}`)
 
-    expect(records).toHaveLength(74)
-    expect(hash).toBe('9c7daf99f0c9baab62f037d3d9301417c4a025283e863f44cd4dfab77588e485')
+    expect(records).toHaveLength(75)
+    expect(hash).toBe('109cdb03a29399358c586046a6f98aace5eb6628fed4f290e1ca05193cc1a0a1')
+    const prior74 = records.filter((record) => record.path !== 'auth/password-recovery/route.ts')
+    expect(prior74).toHaveLength(74)
+    expect(hashRecords(prior74)).toBe(
+      '9c7daf99f0c9baab62f037d3d9301417c4a025283e863f44cd4dfab77588e485',
+    )
     const additions = new Set<string>(currentClinicalRouteAdditions)
-    const prior56 = records.filter((record) => !additions.has(record.path))
+    const prior56 = prior74.filter((record) => !additions.has(record.path))
     expect(prior56).toHaveLength(56)
     expect(hashRecords(prior56)).toBe(
       'b88a27d2d694fb0ca539b9075c369978956d51aa25427b52da46983919b7d0e8',
@@ -220,7 +225,9 @@ describe('authoritative Mobile API source surface', () => {
     expect(hashRecords(previous)).toBe(
       '0f076fc83228e8742e107ba4bb9631019b6d1e6edc74fbd36039c574b228c1a3',
     )
-    expect(records.some((record) => record.path === 'auth/password-recovery/route.ts')).toBe(false)
+    expect(
+      records.find((record) => record.path === 'auth/password-recovery/route.ts')?.exports,
+    ).toEqual(['GET', 'HEAD', 'POST', 'dynamic', 'maxDuration', 'runtime'])
   })
 
   test('contains no export outside the Next Route Handler allowlist', () => {
@@ -273,7 +280,7 @@ describe('authoritative Mobile API source surface', () => {
     expect(hasServerActionDirective(inlineServerAction)).toBe(true)
   })
 
-  test('keeps the structured Next build surface limited to the 74 Mobile API routes', () => {
+  test('keeps the structured Next build surface limited to the 75 Mobile API routes', () => {
     const surface = inspectBuildSurface(buildRoot)
 
     console.info(`BUILD_ROUTE_PATH_COUNT=${surface.routePaths.length}`)
@@ -288,16 +295,25 @@ describe('authoritative Mobile API source surface', () => {
     console.info(`BUILD_MIDDLEWARE_COUNT=${surface.middlewareEntries.length}`)
     console.info(`BUILD_SERVER_ACTION_REFERENCE_COUNT=${surface.serverActionReferences.length}`)
 
-    expect(surface.routePaths).toHaveLength(74)
+    expect(surface.routePaths).toHaveLength(75)
     expect(surface.routePathHash).toBe(
-      '266398770b61425d8172e2912eade6187a597060c710c51dcfbaff6fc7c8a272',
+      'e5358ef9f8da93c82528ef41732e8fa7bc8bb4c20fc425264585777542fad1f2',
     )
+    const prior74Paths = surface.routePaths.filter(
+      (route) => route !== '/api/mobile/v1/auth/password-recovery',
+    )
+    expect(prior74Paths).toHaveLength(74)
+    expect(
+      createHash('sha256')
+        .update(prior74Paths.map((route) => `${route}\n`).join(''))
+        .digest('hex'),
+    ).toBe('266398770b61425d8172e2912eade6187a597060c710c51dcfbaff6fc7c8a272')
     const additions = new Set(
       currentClinicalRouteAdditions.map(
         (path) => `/api/mobile/v1/${path.replace(/\/route.ts$/, '')}`,
       ),
     )
-    const prior56 = surface.routePaths.filter((route) => !additions.has(route))
+    const prior56 = prior74Paths.filter((route) => !additions.has(route))
     expect(prior56).toHaveLength(56)
     expect(
       createHash('sha256')
@@ -366,14 +382,14 @@ describe('authoritative Mobile API source surface', () => {
       mutate: (appPaths: Record<string, string>) => ({ ...appPaths }),
       omittedTargets: ['app/api/mobile/v1/today/route.js'],
     },
-  ])('rejects $name while the same 74 URL keys remain', ({
+  ])('rejects $name while the same 75 URL keys remain', ({
     expectedError,
     mutate,
     omittedTargets,
   }) => {
     const appPaths = mutate(currentAppPathsManifest())
 
-    expect(Object.keys(appPaths)).toHaveLength(74)
+    expect(Object.keys(appPaths)).toHaveLength(75)
     expect(() => withSyntheticBuild(appPaths, inspectBuildSurface, omittedTargets)).toThrow(
       expectedError,
     )
@@ -465,7 +481,8 @@ describe('authoritative Mobile API source surface', () => {
     // one shared chunk, adding one reference to exactly six original routes.
     // The frozen E2 comparison found no other target addition or removal.
     // Current56:5970+6=5976 references/185 targets; reachability is locked below.
-    // Auth is excluded. Its observed vendor split is not this release surface.
+    // Recovery is now an explicit independent addition. The historical graph below
+    // still excludes exactly that route; all routes retain the global security scans.
     // The agent manifest already belongs to the original50: no new unique target.
     // C13 adds57 references:45 catalog JSONs in five review routes, six
     // selector references, two History receipt references and four existing
@@ -477,11 +494,6 @@ describe('authoritative Mobile API source surface', () => {
     // R301 adds one 104-reference documents-only entry. Current admission and
     // calculation/runtime splits add 20 historical and 17 clinical references;
     // each new edge is tied to named semantics and exact consumers below.
-    expect(surface.nftReferenceCount).toBe(8028)
-    expect(surface.nftUniqueTargetCount).toBe(214)
-    expect(surface.nftRegularFileTargetCount).toBe(212)
-    expect(surface.nftDirectoryTargetCount).toBe(2)
-
     const bodyPhotoRoutes = [
       '/api/mobile/v1/onboarding/body-photos/route',
       '/api/mobile/v1/onboarding/body-photos/consent/route',
@@ -504,15 +516,67 @@ describe('authoritative Mobile API source surface', () => {
     // Removing precisely the 56 certified historical edges restores the same
     // per-route count stream; workout reader duplication is consolidated once.
     const allRoutes = Object.keys(currentAppPathsManifest())
+    const recoveryRoute = '/api/mobile/v1/auth/password-recovery/route'
+    const priorRoutes = allRoutes.filter((route) => route !== recoveryRoute)
+    expect(priorRoutes).toHaveLength(74)
+    // Recovery makes Next split its existing HTTP/runtime vendor modules into
+    // one shared chunk. Certify this exact extra edge in every route, without
+    // exempting it from any of the global security scans above/below.
+    const nextHttpSplit = uniqueChunk([
+      'middleware-request-page',
+      'Headers cannot be modified',
+      'NodeNextRequest.stream() can only be called once',
+    ])
+    expect(chunkConsumers(nextHttpSplit)).toEqual(allRoutes.slice().sort())
+    for (const route of allRoutes) {
+      expect(
+        tracedTargets(route).filter((target) => target === nextHttpSplit),
+        route,
+      ).toEqual([nextHttpSplit])
+    }
+    const vendorSource = readFileSync(nextHttpSplit, 'utf8')
+    for (const marker of [
+      'MOBILE_PASSWORD_RECOVERY_PROJECT_REF',
+      'invalid_auth_response',
+      'current_clinical_runtime_unavailable',
+    ])
+      expect(vendorSource).not.toContain(marker)
+    const priorTargets = (route: string): string[] =>
+      tracedTargets(route).filter((target) => target !== nextHttpSplit)
+    const priorTargetSet = new Set(priorRoutes.flatMap(priorTargets))
+    expect(priorRoutes.reduce((sum, route) => sum + priorTargets(route).length, 0)).toBe(8028)
+    expect(priorTargetSet.size).toBe(214)
+    expect(tracedTargets(recoveryRoute)).toHaveLength(100)
+    expect(
+      [...new Set(allRoutes.flatMap(tracedTargets))]
+        .filter((target) => !priorTargetSet.has(target))
+        .sort(),
+    ).toEqual(
+      [
+        realpathSync(
+          resolve(
+            buildRoot,
+            'server/app/api/mobile/v1/auth/password-recovery/route_client-reference-manifest.js',
+          ),
+        ),
+        nextHttpSplit,
+      ].sort(),
+    )
+    expect(surface.nftReferenceCount).toBe(8028 + priorRoutes.length + 100)
+    expect(surface.nftUniqueTargetCount).toBe(214 + 2)
+    expect(surface.nftRegularFileTargetCount).toBe(212 + 2)
+    expect(surface.nftDirectoryTargetCount).toBe(2)
     const additions = new Set(
       currentClinicalRouteAdditions.map((path) => `/api/mobile/v1/${path.replace(/\.ts$/, '')}`),
     )
     expect(additions.size).toBe(18)
     expect(allRoutes.filter((route) => additions.has(route))).toHaveLength(18)
-    const historicalRoutes = allRoutes.filter((route) => !additions.has(route))
+    const historicalRoutes = allRoutes.filter(
+      (route) => !additions.has(route) && route !== '/api/mobile/v1/auth/password-recovery/route',
+    )
     expect(historicalRoutes).toHaveLength(56)
-    expect(historicalRoutes.reduce((sum, route) => sum + tracedTargets(route).length, 0)).toBe(6089)
-    expect(new Set(historicalRoutes.flatMap(tracedTargets)).size).toBe(193)
+    expect(historicalRoutes.reduce((sum, route) => sum + priorTargets(route).length, 0)).toBe(6089)
+    expect(new Set(historicalRoutes.flatMap(priorTargets)).size).toBe(193)
     const routeNames = (names: string[]) =>
       names.map((name) => `/api/mobile/v1/${name}/route`).sort()
     const clinicalEdges = [
@@ -703,7 +767,7 @@ describe('authoritative Mobile API source surface', () => {
     expect(chunkConsumers(routineSplit)).toEqual(routineConsumers)
     for (const route of routineConsumers) removeHistoricalEdge(route, routineSplit)
     const historicalTargets = (route: string): string[] =>
-      tracedTargets(route).filter((target) => !exemptions.get(route)?.has(target))
+      priorTargets(route).filter((target) => !exemptions.get(route)?.has(target))
     const historicalConsumers = (chunk: string): string[] =>
       historicalRoutes.filter((route) => historicalTargets(route).includes(chunk)).sort()
     expect([...exemptions.values()].reduce((sum, edges) => sum + edges.size, 0)).toBe(56)

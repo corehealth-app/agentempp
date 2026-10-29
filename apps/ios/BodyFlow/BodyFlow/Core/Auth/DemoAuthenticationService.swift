@@ -122,6 +122,11 @@ actor DemoAuthenticationService: AuthenticationService {
             throw AuthenticationError.invalidInput
         }
 
+        #if DEBUG
+        if configuration.rejectsOnlyDemoSignUpForExistingEmail {
+            throw AuthenticationError.emailAlreadyRegistered
+        }
+        #endif
         try await apply(configuration.authBehavior)
         try Task.checkCancellation()
         let presentedEmail = presentationEmail(email)

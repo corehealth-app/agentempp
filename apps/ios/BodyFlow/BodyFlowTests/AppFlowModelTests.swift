@@ -890,6 +890,41 @@ struct AppFlowModelTests {
         #expect(await sessions.state == .notHydrated)
     }
 
+    @Test("golden 2026-10-20: existing email can navigate to recovery and request it once")
+    func existingEmailSignUpCanNavigateToRecoveryAndSendOnce() async throws {
+        let transport = ExistingEmailRecoveryTransport()
+        let remote = SupabaseAuthRemoteClient(
+            configuration: try goldenAuthConfiguration(),
+            fetch: { request in try await transport.fetch(request) }
+        )
+        let model = AppFlowModel(
+            authentication: SupabaseAuthenticationService(
+                remote: remote,
+                sessionStore: AuthenticationSessionStore(secureStore: InMemorySecureStore())
+            ),
+            onboarding: OnboardingRepositorySpy(),
+            persona: CoachPersonaRepositorySpy(),
+            telemetry: InMemoryTelemetryClient(),
+            initialState: .signedOut(.signUp)
+        )
+        let email = "existing-patient@fixture.invalid"
+        await model.signUp(email: email, password: "synthetic-password")
+        #expect(model.state == .signedOut(.signUp))
+        #expect(model.authOperationState == .failed(.emailAlreadyRegistered))
+        await model.showSignIn()
+        #expect(model.state == .signedOut(.signIn))
+        #expect(model.authOperationState == .idle)
+        #expect(model.presentationError == nil)
+        await model.showPasswordRecovery()
+        #expect(model.state == .signedOut(.passwordRecovery))
+        #expect(model.authOperationState == .idle)
+        await model.requestPasswordRecovery(email: email)
+        #expect(model.authOperationState == .recoveryConfirmation)
+        #expect(model.presentationError == nil)
+        #expect(model.currentSession == nil)
+        #expect(await transport.paths == ["/auth/v1/signup", "/auth/v1/recover"])
+    }
+
     @Test("a refused sign-up stays on the form with its own message", arguments: SignUpRefusalRow.all)
     func signUpRefusalsStayOnTheFormWithTheirOwnMessage(_ row: SignUpRefusalRow) async {
         let telemetry = InMemoryTelemetryClient()
@@ -1114,6 +1149,34 @@ private actor SignUpRefusalTransport {
             headerFields: ["Content-Type": "application/json"]
         ) else {
             throw URLError(.badURL)
+        }
+        return (Data(body.utf8), response)
+    }
+}
+
+private actor ExistingEmailRecoveryTransport {
+    private(set) var paths: [String] = []
+
+    func fetch(_ request: URLRequest) throws -> (Data, URLResponse) {
+        guard request.httpMethod == "POST", let url = request.url else {
+            throw URLError(.unsupportedURL)
+        }
+        let status: Int
+        let body: String
+        switch url.path {
+        case "/auth/v1/signup":
+            status = 422
+            body = #"{"code":422,"error_code":"user_already_exists","msg":"User already registered"}"#
+        case "/auth/v1/recover":
+            status = 200
+            body = "{}"
+        default:
+            throw URLError(.unsupportedURL)
+        }
+        paths.append(url.path)
+        guard let response = HTTPURLResponse(url: url, statusCode: status,
+            httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"]) else {
+            throw URLError(.badServerResponse)
         }
         return (Data(body.utf8), response)
     }

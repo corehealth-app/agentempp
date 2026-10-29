@@ -213,6 +213,58 @@ final class PremiumAuthOnboardingUITests: XCTestCase {
         assertSignUpFormIsKept(in: weak, submitLabel: "Create account")
     }
 
+    @MainActor
+    func testExistingEmailCanRequestRecoveryWithButton() {
+        assertExistingEmailCanRequestRecovery(usingKeyboard: false)
+    }
+
+    @MainActor
+    func testExistingEmailCanRequestRecoveryFromKeyboard() {
+        assertExistingEmailCanRequestRecovery(usingKeyboard: true)
+    }
+
+    @MainActor
+    private func assertExistingEmailCanRequestRecovery(usingKeyboard: Bool) {
+        let app = support.launch(
+            arguments: ["--ui-testing-sign-up-email-taken-recovery"],
+            language: "pt-BR", dark: false
+        )
+        fillSignUp(in: app)
+        submitSignUp(in: app)
+        XCTAssertTrue(app.staticTexts[
+            "Este e-mail já tem uma conta. Use outro e-mail ou toque em “Já tenho uma conta”."
+        ].waitForExistence(timeout: 5))
+        let existing = app.buttons["Já tenho uma conta"]
+        reach(existing, in: app)
+        existing.tap()
+        declineSystemPasswordSave(app)
+        XCTAssertTrue(support.element("screen.auth.sign-in", app: app).waitForExistence(timeout: 5))
+        XCTAssertFalse(support.element("auth.error", app: app).exists)
+        let recovery = app.buttons["auth.open-recovery"]
+        reach(recovery, in: app)
+        recovery.tap()
+        let email = app.textFields["auth.email"]
+        XCTAssertTrue(email.waitForExistence(timeout: 5))
+        email.tap()
+        email.typeText("person@example.invalid")
+        XCTAssertTrue(app.keyboards.firstMatch.exists)
+        if usingKeyboard {
+            email.typeText("\n")
+        } else {
+            let send = app.buttons["auth.recovery.submit"]
+            reach(send, in: app)
+            support.assertTarget(send)
+            send.tap()
+        }
+        XCTAssertTrue(support.element("auth.recovery.confirmation", app: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts[
+            "Se houver uma conta para este e-mail, enviaremos as instruções de recuperação."
+        ].exists)
+        XCTAssertFalse(app.keyboards.firstMatch.exists)
+        XCTAssertFalse(support.element("auth.error", app: app).exists)
+        XCTAssertTrue(support.element("screen.auth.password-recovery", app: app).exists)
+    }
+
     // MARK: Second update (2026-10-10) — the "eye" of the password fields
     //
     // The physician, on build 1.0 (3): "Deveria ter aquele olho pra mostrar

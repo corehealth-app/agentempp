@@ -1,8 +1,12 @@
 import { createServerClient } from '@supabase/ssr'
 import { type NextRequest, NextResponse } from 'next/server'
+import { PASSWORD_RECOVERY_PATH } from '@/lib/mobile-api/password-recovery-path'
 import { isSelfAuthenticatedApiPath } from '@/lib/public-api-path'
 
 export async function middleware(request: NextRequest) {
+  // The recovery proof is its only identity. Do not restore or refresh the
+  // administrative cookie on this public, session-independent endpoint.
+  if (request.nextUrl.pathname === PASSWORD_RECOVERY_PATH) return NextResponse.next({ request })
   let response = NextResponse.next({ request })
 
   const supabase = createServerClient(

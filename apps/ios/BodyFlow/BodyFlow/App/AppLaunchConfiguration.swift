@@ -323,6 +323,7 @@ struct AppLaunchConfiguration: Sendable {
     let demoStorageBoundary: DemoStorageBoundary
     let demoKeychainService: String
     #if DEBUG
+    let rejectsOnlyDemoSignUpForExistingEmail: Bool
     let onboardingEligibilityScenario: OnboardingEligibilityPreviewScenario?
     let signupBodyPhotoScenario: SignupBodyPhotoPreviewScenario?
     /// UI-test fixture: the sign-up runs on the repository of a real account
@@ -344,6 +345,7 @@ struct AppLaunchConfiguration: Sendable {
         authBehavior: DemoOperationBehavior<AuthenticationError>,
         demoStorageBoundary: DemoStorageBoundary = .memory,
         demoKeychainService: String = DemoStorageService.development,
+        rejectsOnlyDemoSignUpForExistingEmail: Bool = false,
         onboardingEligibilityScenario: OnboardingEligibilityPreviewScenario? = nil,
         signupBodyPhotoScenario: SignupBodyPhotoPreviewScenario? = nil,
         usesOnboardingDeviceDraftFixture: Bool = false,
@@ -360,6 +362,7 @@ struct AppLaunchConfiguration: Sendable {
         self.authBehavior = authBehavior
         self.demoStorageBoundary = demoStorageBoundary
         self.demoKeychainService = demoKeychainService
+        self.rejectsOnlyDemoSignUpForExistingEmail = mode == .demo && rejectsOnlyDemoSignUpForExistingEmail
         self.onboardingEligibilityScenario = mode == .demo ? onboardingEligibilityScenario : nil
         self.signupBodyPhotoScenario = mode == .demo ? signupBodyPhotoScenario : nil
         self.usesOnboardingDeviceDraftFixture = mode == .demo && usesOnboardingDeviceDraftFixture
@@ -582,6 +585,14 @@ struct AppLaunchConfiguration: Sendable {
 
         // Second update (2026-10-10): a sign-up the auth server refuses,
         // as a UI test sees it. Debug demonstration only.
+        if arguments.contains("--ui-testing-sign-up-email-taken-recovery") {
+            return uiTestingConfiguration(
+                startsWithCompletedFixture: false,
+                authBehavior: .succeed(after: nil),
+                rejectsOnlyDemoSignUpForExistingEmail: true
+            )
+        }
+
         if arguments.contains("--ui-testing-sign-up-email-taken") {
             return uiTestingConfiguration(
                 startsWithCompletedFixture: false,
@@ -624,6 +635,7 @@ struct AppLaunchConfiguration: Sendable {
     private static func uiTestingConfiguration(
         startsWithCompletedFixture: Bool,
         authBehavior: DemoOperationBehavior<AuthenticationError>,
+        rejectsOnlyDemoSignUpForExistingEmail: Bool = false,
         prompt13Scenario: DemoBodyFlowScenario? = nil,
         prompt14Scenario: DemoPrompt14Scenario? = nil,
         prompt14ScenarioSelection: DemoPrompt14ScenarioSelection? = nil,
@@ -637,6 +649,7 @@ struct AppLaunchConfiguration: Sendable {
             authBehavior: authBehavior,
             demoStorageBoundary: .keychain,
             demoKeychainService: DemoStorageService.uiTesting,
+            rejectsOnlyDemoSignUpForExistingEmail: rejectsOnlyDemoSignUpForExistingEmail,
             prompt13Scenario: prompt13Scenario,
             prompt14Scenario: prompt14Scenario,
             prompt14ScenarioSelection: prompt14ScenarioSelection,

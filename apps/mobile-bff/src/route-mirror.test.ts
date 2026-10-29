@@ -64,7 +64,12 @@ function wrapperRecords(): RouteRecord[] {
       const residue = wrapper
         .replace(statement[0], '')
         .replace(/^export\s+const\s+runtime\s*=\s*['"]nodejs['"]\s*;?\s*$/gm, '')
-        .replace(/^export\s+const\s+maxDuration\s*=\s*300\s*;?\s*$/gm, '')
+        .replace(
+          path.endsWith(`${sep}auth${sep}password-recovery${sep}route.ts`)
+            ? /^export\s+const\s+maxDuration\s*=\s*45\s*;?\s*$/gm
+            : /^export\s+const\s+maxDuration\s*=\s*300\s*;?\s*$/gm,
+          '',
+        )
         .replace(/^\s*\/\/[^\n]*$/gm, '')
         .trim()
       expect(residue, `only static route config may accompany ${path}`).toBe('')
@@ -91,7 +96,10 @@ function hashRecords(records: RouteRecord[]) {
   return createHash('sha256').update(canonicalStream).digest('hex')
 }
 
-function withAuthComposition<T>(replaceClarification: boolean, inspect: (script: string) => T): T {
+function withUnexpectedAuthComposition<T>(
+  replaceClarification: boolean,
+  inspect: (script: string) => T,
+): T {
   const root = mkdtempSync(resolve(testDirectory, '../.mobile-bff-mirror-scope-'))
   try {
     const script = resolve(root, 'apps/mobile-bff/scripts/verify-route-mirror.mjs')
@@ -112,7 +120,7 @@ function withAuthComposition<T>(replaceClarification: boolean, inspect: (script:
       if (replaceClarification) {
         rmSync(resolve(to, 'workouts/[id]/strength-clarification/route.ts'))
       }
-      const auth = resolve(to, 'auth/password-recovery/route.ts')
+      const auth = resolve(to, 'auth/unapproved-recovery/route.ts')
       mkdirSync(dirname(auth), { recursive: true })
       writeFileSync(
         auth,
@@ -125,7 +133,7 @@ function withAuthComposition<T>(replaceClarification: boolean, inspect: (script:
               'export function HEAD() {}',
               'export function POST() {}',
             ].join('\n')
-          : "export { GET, HEAD, POST, dynamic, maxDuration, runtime } from '@/app/api/mobile/v1/auth/password-recovery/route'\n",
+          : "export { GET, HEAD, POST, dynamic, maxDuration, runtime } from '@/app/api/mobile/v1/auth/unapproved-recovery/route'\n",
       )
     }
     return inspect(script)
@@ -135,21 +143,34 @@ function withAuthComposition<T>(replaceClarification: boolean, inspect: (script:
 }
 
 describe('dedicated Mobile BFF wrapper mirror', () => {
+  test('adds only password recovery while preserving every approved 74-route export', () => {
+    const records = sourceRecords()
+    expect(records.find((record) => record.path === 'auth/password-recovery/route.ts')).toEqual({
+      path: 'auth/password-recovery/route.ts',
+      exports: ['GET', 'HEAD', 'POST', 'dynamic', 'maxDuration', 'runtime'],
+    })
+    const previous = records.filter((record) => record.path !== 'auth/password-recovery/route.ts')
+    expect(previous).toHaveLength(74)
+    expect(hashRecords(previous)).toBe(
+      '9c7daf99f0c9baab62f037d3d9301417c4a025283e863f44cd4dfab77588e485',
+    )
+  })
+
   test.each([
     {
-      name: 'Auth replacing clarification at the same count',
+      name: 'Unapproved Auth replacing clarification at the same count',
       replace: true,
-      count: 74,
-      hash: '2cf11178593151261eb9b4e2ebdc1a0689d87b5fd53ac458f7104de807e44106',
+      count: 75,
+      hash: '0e33a428b584c28a5d1a022bac61f48d9a5bbc8ac03afec5638e36b826272e66',
     },
     {
-      name: 'Auth added alongside clarification',
+      name: 'Unapproved Auth added alongside clarification',
       replace: false,
-      count: 75,
-      hash: '109cdb03a29399358c586046a6f98aace5eb6628fed4f290e1ca05193cc1a0a1',
+      count: 76,
+      hash: 'fe306e89022eda30b34a8c257530481460499320cf8b6fca16d211f64d372001',
     },
   ])('rejects $name through the closed inventory', ({ replace, count, hash }) => {
-    withAuthComposition(replace, (script) => {
+    withUnexpectedAuthComposition(replace, (script) => {
       const result = spawnSync(process.execPath, [script], { encoding: 'utf8', timeout: 30_000 })
       expect(result.error).toBeUndefined()
       expect(result.status).toBe(1)
@@ -163,7 +184,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
     })
   })
 
-  test('accepts the approved 74-route mirror with the owned clarification in the CLI gate', () => {
+  test('accepts the approved 75-route mirror with recovery and the owned clarification in the CLI gate', () => {
     const registration = sourceRecords().find(
       (record) => record.path === 'registrations/[id]/route.ts',
     )
@@ -177,11 +198,11 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
 
     expect(result.error).toBeUndefined()
     expect(result.status, result.stderr).toBe(0)
-    expect(result.stdout).toContain('SOURCE_ROUTE_EXPORT_COUNT=74')
-    expect(result.stdout).toContain('WRAPPER_ROUTE_EXPORT_COUNT=74')
+    expect(result.stdout).toContain('SOURCE_ROUTE_EXPORT_COUNT=75')
+    expect(result.stdout).toContain('WRAPPER_ROUTE_EXPORT_COUNT=75')
     for (const surface of ['SOURCE', 'WRAPPER']) {
       expect(result.stdout).toContain(
-        `${surface}_ROUTE_EXPORT_STREAM_SHA256=9c7daf99f0c9baab62f037d3d9301417c4a025283e863f44cd4dfab77588e485`,
+        `${surface}_ROUTE_EXPORT_STREAM_SHA256=109cdb03a29399358c586046a6f98aace5eb6628fed4f290e1ca05193cc1a0a1`,
       )
     }
     expect(result.stdout).toContain('ROUTE_MIRROR_STATUS=VERIFIED')
@@ -192,7 +213,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
     const wrappers = wrapperRecords()
 
     console.info(`WRAPPER_ROUTE_EXPORT_COUNT=${wrappers.length}`)
-    expect(wrappers, `expected 74 wrappers but observed ${wrappers.length}`).toHaveLength(74)
+    expect(wrappers, `expected 75 wrappers but observed ${wrappers.length}`).toHaveLength(75)
 
     expect(wrappers.map(({ path, exports }) => ({ path, exports }))).toEqual(sources)
 
@@ -203,7 +224,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
 
     const hash = hashRecords(wrappers)
     console.info(`WRAPPER_ROUTE_EXPORT_STREAM_SHA256=${hash}`)
-    expect(hash).toBe('9c7daf99f0c9baab62f037d3d9301417c4a025283e863f44cd4dfab77588e485')
+    expect(hash).toBe('109cdb03a29399358c586046a6f98aace5eb6628fed4f290e1ca05193cc1a0a1')
   })
 
   test('declares Flow route runtime limits locally for Next static analysis', () => {
@@ -212,5 +233,16 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
     expect(flowWrapper).toContain("export const runtime = 'nodejs'")
     expect(flowWrapper).toContain('export const maxDuration = 300')
     expect(flowWrapper).toContain("export { GET, POST } from '@/app/api/mobile/v1/flow/chat/route'")
+  })
+
+  test('publishes the recovery timeout as 45 seconds in the actual Next build', () => {
+    const config = JSON.parse(
+      readFileSync(
+        resolve(testDirectory, '../.next/server/functions-config-manifest.json'),
+        'utf8',
+      ),
+    ) as { functions: Record<string, { maxDuration?: number }> }
+    expect(config.functions['/api/mobile/v1/auth/password-recovery']?.maxDuration).toBe(45)
+    expect(config.functions['/api/mobile/v1/flow/chat']?.maxDuration).toBe(300)
   })
 })

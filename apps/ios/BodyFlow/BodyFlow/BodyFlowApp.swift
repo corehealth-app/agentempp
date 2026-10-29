@@ -66,6 +66,7 @@ struct BodyFlowApp: App {
         #endif
         let mealRecordLifetime: MealRecordAuthenticationLifetime? =
             dependencies.mealRecordBindingSource != nil || dependencies.workoutRegistrationSessionSource != nil
+                || dependencies.billingSessionSource != nil
                 ? MealRecordAuthenticationLifetime() : nil
         self.mealRecordLifetime = mealRecordLifetime
         self.configuration = configuration

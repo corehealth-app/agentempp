@@ -24,6 +24,13 @@ final class Prompt14SessionOwner {
     private var workoutResolutionTask: Task<Void, Never>?
     private var workoutResolutionSequence: UInt64 = 0
     private var retiredWorkouts: Task<Void, Never>?
+    private(set) var billingBinding: BillingSessionBinding?
+    private(set) var isResolvingBilling = false
+    private(set) var billingError: BodyFlowCapabilityError?
+    private var billingSource: BillingSessionSource?
+    private var billingResolutionTask: Task<Void, Never>?
+    private var billingResolutionSequence: UInt64 = 0
+    private var retiredBilling: Task<Void, Never>?
 
     private let permitsMealRecordBinding: Bool
     private let gate: Prompt14SessionOperationGate
@@ -51,6 +58,7 @@ final class Prompt14SessionOwner {
         self.userID = userID
         permitsMealRecordBinding = enablesMealRecordBinding
         workoutRegistrationSource = dependencies.workoutRegistrationSessionSource
+        billingSource = dependencies.billingSessionSource
 
         let contentSession = dependencies.publishedContentSessions.makeSession(
             userID: userID
@@ -230,6 +238,77 @@ final class Prompt14SessionOwner {
         isResolvingWorkoutRegistration = false
     }
 
+    /// Uses the existing authentication ticket; a same-user new ticket cannot
+    /// revive the previous leaf while its lease resolver is still returning.
+    func reserveBillingBinding(
+        activation: MealRecordAuthenticatedActivation,
+        lifetime: MealRecordAuthenticationLifetime,
+        currentActivation: @escaping @MainActor @Sendable () -> MealRecordAuthenticatedActivation?
+    ) -> BillingSessionBinding? {
+        guard !ended, endTask == nil, !gate.isClosed,
+              activation.userID == userID, currentActivation() == activation,
+              lifetime.currentActivation == activation, lifetime.isCurrent(activation.ticket) else { return nil }
+        if let binding = billingBinding, binding.isOpen {
+            return binding.activation == activation ? binding : nil
+        }
+        let old = billingBinding
+        let oldResolution = billingResolutionTask
+        old?.invalidateSynchronously()
+        oldResolution?.cancel()
+        billingResolutionTask = nil
+        billingResolutionSequence &+= 1
+        isResolvingBilling = false
+        billingError = nil
+        let binding = BillingSessionBinding(owner: self, parentGate: gate,
+            activation: activation, lifetime: lifetime, currentActivation: currentActivation)
+        billingBinding = binding
+        if let old {
+            let predecessor = retiredBilling
+            retiredBilling = Task {
+                await predecessor?.value
+                await oldResolution?.value
+                await old.endSession()
+            }
+        }
+        guard lifetime.registerBilling(binding: binding, owner: self, activation: activation) else {
+            billingBinding = nil
+            return nil
+        }
+        return binding
+    }
+
+    var billingContext: BillingReadyContext? {
+        guard let context = billingBinding?.readyContext, context.isActive else { return nil }
+        return context
+    }
+
+    func resolveBilling(_ binding: BillingSessionBinding, retrying: Bool = false) async {
+        guard billingBinding === binding, binding.isOpen,
+              let source = billingSource, billingContext == nil else { return }
+        if let task = billingResolutionTask { await task.value; return }
+        guard retrying ? binding.canRetryMe : !binding.canRetryMe else { return }
+        billingResolutionSequence &+= 1
+        let sequence = billingResolutionSequence
+        isResolvingBilling = true
+        billingError = nil
+        let task = Task {
+            do {
+                if retrying { _ = try await source.retryMe(binding) }
+                else { _ = try await source.bind(binding) }
+            } catch is CancellationError {
+                // The old session can only withdraw its own presentation.
+            } catch {
+                guard self.billingBinding === binding, binding.isOpen else { return }
+                self.billingError = error as? BodyFlowCapabilityError ?? .serviceUnavailable
+            }
+        }
+        billingResolutionTask = task
+        await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
+        guard billingResolutionSequence == sequence else { return }
+        billingResolutionTask = nil
+        isResolvingBilling = false
+    }
+
     var isInvalidated: Bool {
         gate.isClosed
     }
@@ -249,6 +328,7 @@ final class Prompt14SessionOwner {
             || coverEndpoint.hasValue
             || mealRecordBinding?.hasRetainedCapability == true
             || workoutRegistrationBinding?.hasRetainedCapability == true
+            || billingBinding?.hasRetainedCapability == true
     }
 
     /// Lets a caller wait for the `/me` resolution to settle (tests and
@@ -292,6 +372,8 @@ final class Prompt14SessionOwner {
         mealRecordBinding?.invalidateSynchronously()
         workoutRegistrationBinding?.invalidateSynchronously()
         workoutResolutionTask?.cancel()
+        billingBinding?.invalidateSynchronously()
+        billingResolutionTask?.cancel()
         gate.close()
     }
 
@@ -314,6 +396,16 @@ final class Prompt14SessionOwner {
                 workoutRegistrationBinding = nil
                 await retiredWorkouts?.value
                 retiredWorkouts = nil
+                billingResolutionTask?.cancel()
+                await billingResolutionTask?.value
+                billingResolutionTask = nil
+                isResolvingBilling = false
+                billingError = nil
+                await billingBinding?.endSession()
+                billingBinding = nil
+                await retiredBilling?.value
+                retiredBilling = nil
+                billingSource = nil
                 // Invalidation above denies further reservations synchronously.
                 let retiredMealRecords = mealRecordRetirementTask
                 await mealRecordBinding?.endSession()

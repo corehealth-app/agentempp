@@ -12,7 +12,7 @@ struct AppRootView: View {
     @State private var onboardingCoordinator = OnboardingRootCoordinator()
     @State private var authenticatedShellCoordinator: Prompt14AuthenticatedShellCoordinator
     @State private var mealRecordDriver: MealRecordRootWiringDriver
-    private let workoutAuthenticationLifetime: MealRecordAuthenticationLifetime?
+    private let authenticationLifetime: MealRecordAuthenticationLifetime?
     @State private var onboardingRetryTask: Task<Void, Never>?
     @State private var readerRetryTask: Task<Void, Never>?
     @State private var appearance: BodyFlowAppearanceStore
@@ -28,7 +28,7 @@ struct AppRootView: View {
         self.model = model
         self.dependencies = dependencies
         self.configuration = configuration
-        workoutAuthenticationLifetime = mealRecordLifetime
+        authenticationLifetime = mealRecordLifetime
         let shellCoordinator = Prompt14AuthenticatedShellCoordinator(
             dependencies: dependencies,
             enablesMealRecordBinding: mealRecordLifetime != nil
@@ -45,6 +45,7 @@ struct AppRootView: View {
     var body: some View {
         let originalMealRecordTaskID = mealRecordDriver.taskID
         let originalWorkoutTaskID = workoutTaskID
+        let originalBillingTaskID = billingTaskID
         return Group {
             rootContent
                 .transition(
@@ -109,6 +110,9 @@ struct AppRootView: View {
         .task(id: originalWorkoutTaskID) {
             await synchronizeWorkout(expected: originalWorkoutTaskID)
         }
+        .task(id: originalBillingTaskID) {
+            await synchronizeBilling(expected: originalBillingTaskID)
+        }
         .task(id: isSignedOut) {
             // No local reminder survives without a signed-in account: this
             // also finishes a clean-up that a sign-out could not complete
@@ -121,6 +125,15 @@ struct AppRootView: View {
             onboardingRetryTask?.cancel()
             onboardingRetryTask = nil
             mealRecordDriver.invalidateSynchronously()
+            // Retire only this presentation's original leaf. An old scene's
+            // callback cannot withdraw a newer owner or authentication ticket.
+            if let originalBillingTaskID,
+               let owner = authenticatedShellCoordinator.renderableOwner(for: originalBillingTaskID.activation.userID),
+               ObjectIdentifier(owner) == originalBillingTaskID.owner,
+               let binding = owner.billingBinding, binding.activation == originalBillingTaskID.activation {
+                binding.invalidateSynchronously()
+                Task { await binding.endSession() }
+            }
         }
     }
 
@@ -139,7 +152,7 @@ struct AppRootView: View {
 
     private func synchronizeWorkout(expected: MealRecordRootTaskID?) async {
         guard !Task.isCancelled, let expected, workoutTaskID == expected,
-              let lifetime = workoutAuthenticationLifetime,
+              let lifetime = authenticationLifetime,
               let activation = model.mealRecordActivation, activation == expected.activation,
               let owner = authenticatedShellCoordinator.renderableOwner(for: activation.userID),
               ObjectIdentifier(owner) == expected.owner,
@@ -147,6 +160,25 @@ struct AppRootView: View {
                 lifetime: lifetime, currentActivation: { [weak model] in model?.mealRecordActivation }) else { return }
         // Only these original values cross the await; no callback looks up A2.
         await owner.resolveWorkoutRegistration(binding)
+    }
+
+    private var billingTaskID: MealRecordRootTaskID? {
+        guard dependencies.billingSessionSource != nil,
+              let activation = model.mealRecordActivation,
+              let owner = authenticatedShellCoordinator.renderableOwner(for: activation.userID) else { return nil }
+        return MealRecordRootTaskID(activation: activation, owner: ObjectIdentifier(owner))
+    }
+
+    private func synchronizeBilling(expected: MealRecordRootTaskID?) async {
+        guard !Task.isCancelled, let expected, billingTaskID == expected,
+              let lifetime = authenticationLifetime,
+              let activation = model.mealRecordActivation, activation == expected.activation,
+              let owner = authenticatedShellCoordinator.renderableOwner(for: activation.userID),
+              ObjectIdentifier(owner) == expected.owner,
+              let binding = owner.reserveBillingBinding(activation: activation,
+                lifetime: lifetime, currentActivation: { [weak model] in model?.mealRecordActivation }) else { return }
+        // Only these original values cross the await; no callback looks up A2.
+        await owner.resolveBilling(binding)
     }
 
     /// This closure belongs to the exact presented offer and original owner.

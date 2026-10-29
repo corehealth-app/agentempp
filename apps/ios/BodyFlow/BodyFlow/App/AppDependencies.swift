@@ -64,6 +64,8 @@ struct AppDependencies: Sendable {
     var mealRecordBindingSource: MealRecordSessionBindingSource? = nil
     /// Real lifecycle only; the server's scoped `/me` response selects the protocol.
     var workoutRegistrationSessionSource: WorkoutRegistrationSessionBindingSource? = nil
+    /// Store identity and access reads use their own original Auth scope.
+    var billingSessionSource: BillingSessionSource? = nil
 
     var patientTimeZone: PatientTimeZoneContext {
         patientTimeZoneStore.current
@@ -263,6 +265,11 @@ struct AppDependencies: Sendable {
             workoutRegistrationSessionSource = WorkoutRegistrationSessionBindingSource(
                 transport: transport, lifecycle: releaseLifecycle)
         } else { workoutRegistrationSessionSource = nil }
+        let billingSessionSource: BillingSessionSource?
+        if configuration.mode != .demo, let transport = apiClient as? MobileAPITransport,
+           let releaseLifecycle {
+            billingSessionSource = BillingSessionSource(transport: transport, lifecycle: releaseLifecycle)
+        } else { billingSessionSource = nil }
 
         #if DEBUG
         let timeProvider: any TimeProviding
@@ -778,7 +785,8 @@ struct AppDependencies: Sendable {
             signupBodyPhotoCapture: requestsCurrentClinicalRuntime && currentClinicalRuntime == nil ? nil : signupBodyPhotoCapture,
             guidedTutorial: guidedTutorial,
             mealRecordBindingSource: mealRecordBindingSource,
-            workoutRegistrationSessionSource: workoutRegistrationSessionSource
+            workoutRegistrationSessionSource: workoutRegistrationSessionSource,
+            billingSessionSource: billingSessionSource
         )
     }
 

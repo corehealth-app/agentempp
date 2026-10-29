@@ -20,6 +20,7 @@ final class MealRecordAuthenticationLifetime {
     @ObservationIgnored private var currentTicket: MealRecordAuthenticationTicket?
     @ObservationIgnored private var registeredBinding: MealRecordSessionBinding?
     @ObservationIgnored private var registeredWorkoutBinding: WorkoutRegistrationSessionBinding?
+    @ObservationIgnored private var registeredBillingBinding: BillingSessionBinding?
     @ObservationIgnored private var retirementTail: Task<Void, Never>?
     @ObservationIgnored private var retirementSequence: UInt64 = 0
     private(set) var currentActivation: MealRecordAuthenticatedActivation?
@@ -94,6 +95,29 @@ final class MealRecordAuthenticationLifetime {
         return true
     }
 
+    /// A distinct billing leaf borrows the same ticket without enabling C11.
+    @discardableResult
+    func registerBilling(binding: BillingSessionBinding, owner: Prompt14SessionOwner,
+                         activation: MealRecordAuthenticatedActivation) -> Bool {
+        guard currentActivation == activation, isCurrent(activation.ticket),
+              owner.userID == activation.userID, owner.billingBinding === binding,
+              binding.isOpen else {
+            if registeredBillingBinding !== binding { scheduleBillingEnd(binding) }
+            return false
+        }
+        if let predecessor = registeredBillingBinding, predecessor !== binding {
+            guard !predecessor.isOpen else {
+                scheduleBillingEnd(binding)
+                return false
+            }
+            // A scene may have released its weak owner without joining end.
+            // Preserve this last cleanup handle before replacing the slot.
+            scheduleBillingEnd(predecessor)
+        }
+        registeredBillingBinding = binding
+        return true
+    }
+
     /// Synchronous accepted UI navigation may withdraw the current presentation.
     func withdrawVisibleActivation() {
         retireRegisteredBinding()
@@ -124,6 +148,10 @@ final class MealRecordAuthenticationLifetime {
             registeredWorkoutBinding = nil
             scheduleWorkoutEnd(binding)
         }
+        if let binding = registeredBillingBinding {
+            registeredBillingBinding = nil
+            scheduleBillingEnd(binding)
+        }
     }
 
     private func retireUnregisteredBinding(_ binding: MealRecordSessionBinding) {
@@ -143,6 +171,16 @@ final class MealRecordAuthenticationLifetime {
     }
 
     private func scheduleWorkoutEnd(_ binding: WorkoutRegistrationSessionBinding) {
+        binding.invalidateSynchronously()
+        let predecessor = retirementTail
+        retirementSequence &+= 1
+        retirementTail = Task {
+            await predecessor?.value
+            await binding.endSession()
+        }
+    }
+
+    private func scheduleBillingEnd(_ binding: BillingSessionBinding) {
         binding.invalidateSynchronously()
         let predecessor = retirementTail
         retirementSequence &+= 1

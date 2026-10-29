@@ -4825,8 +4825,23 @@ JSON inválido, indisponibilidade, HTTP 402 e cancelamento não produzem um gran
 de fallback. A disponibilidade de compra permanece independente do acesso já
 concedido pelo servidor.
 
-Esta fundação não integra ainda o SDK, binding de sessão, tela de compra ou
-restauração. `mobile_billing.available` continua desligado no staging consultado.
+O adaptador nativo vincula o SDK oficial RevenueCat, versão exata `5.99.2`, por
+SPM source. Seu singleton possui exclusão explícita através das suspensões:
+cancelar a tarefa retira o resultado, mas não libera o SDK antes do callback
+real da loja. Cada sessão tem um token de ownership; um teardown antigo não
+executa logout da próxima conta. Catálogos têm revisão e uma seleção admite
+uma única tentativa de compra. Produtos e preços vêm do pacote real da loja;
+`CustomerInfo` nunca concede acesso. Sucessos e erros tardios são recusados
+quando seu grant já terminou.
+
+Essa parte ainda não compõe o binding de autenticação ou a tela de compra e
+restauração. A chave pública opcional `PERFORME_REVENUECAT_PUBLIC_KEY` está ausente
+na configuração consultada e `mobile_billing.available` continua desligado no
+staging. Construir o coordenador não configura o SDK. Nenhuma conta, chave,
+produto, cobrança ou concessão foi criada por esta implementação.
+
 Compra, restauração, renovação, reembolso, troca de conta e sincronização real
-com a loja continuam gates da integração comercial; os testes deste leitor
-não comprovam esses fluxos nem alteram acesso ou cobrança.
+com a loja continuam gates da integração comercial. Os testes com a fronteira
+SDK controlada não comprovam StoreKit sandbox ou uma compra real. Erro de logout
+SDK também não prova purge completo de seus caches; o logout do Auth permanece
+efetivo e cada novo dono precisa de login próprio e validação de lease/ticket.

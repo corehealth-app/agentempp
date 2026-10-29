@@ -137,15 +137,28 @@ struct MealProposalEditorDraft: Equatable, Sendable {
     let hasUnknownKcalOrigin: Bool
     let source: MealProposalSource?
     var mealType: MealType
+    private var isNewIngredient = false
     var foodName: String {
         didSet {
+            if isNewIngredient {
+                let oldReference = NamedWheyPortion.parse(oldValue)?.metadata
+                let newReference = NamedWheyPortion.parse(foodName)?.metadata
+                if oldReference != newReference, quantityEntry.typedUsingReference,
+                   quantityText != nil { quantityText = "" }
+                return
+            }
             let reference = editedItem?.quantityDisplay?.validated(for: editedItem?.name ?? "")
             if reference?.validated(for: oldValue) != reference?.validated(for: foodName),
                quantityText != nil { quantityText = "" }
         }
     }
     var quantityReference: MealQuantityValue {
-        MealQuantityValue(grams: editedItem?.quantityG, metadata: editedItem?.quantityDisplay?.validated(for: editedItem?.name ?? ""), name: foodName)
+        if isNewIngredient {
+            let portion = NamedWheyPortion.parse(foodName)
+            return MealQuantityValue(grams: portion?.grams, metadata: portion?.metadata,
+                name: portion?.canonicalName ?? foodName)
+        }
+        return MealQuantityValue(grams: editedItem?.quantityG, metadata: editedItem?.quantityDisplay?.validated(for: editedItem?.name ?? ""), name: foodName)
     }
     var quantityPresentation: MealQuantityValue { quantityEntry.presentation(quantityReference) }
     var consumedAt: Date
@@ -172,6 +185,13 @@ struct MealProposalEditorDraft: Equatable, Sendable {
         mealType = seed.mealType
         foodName = seed.foodName
         consumedAt = seed.consumedAt
+    }
+
+    /// Only addIngredient calls this. nil text distinguishes an untouched new
+    /// field from a deliberately cleared/invalid quantity, which stays blocked.
+    mutating func prepareNewIngredient() {
+        isNewIngredient = true
+        quantityEntry = MealQuantityEntry()
     }
 
     private var editedItem: MealProposalItemSnapshot? {
@@ -298,15 +318,17 @@ struct MealProposalEditorDraft: Equatable, Sendable {
         } else {
             nil
         }
+        let namedPortion = isNewIngredient ? NamedWheyPortion.parse(foodName) : nil
         let requestItems = items.enumerated().map { index, item in
             index == editedIndex
                 ? MealProposalItemRequest(
-                    foodName: foodName,
+                    foodName: namedPortion?.canonicalName ?? foodName,
                     quantityG: quantity,
                     userKcal: firstItemKcal,
                     // A quantity the patient typed is theirs from then on.
-                    quantityBasis: quantity == item.quantityG
-                        ? Self.keptBasis(of: item) : (quantityEntry.typedUsingReference ? .portionReference : .stated),
+                    quantityBasis: namedPortion != nil && quantityText == nil ? .portionReference
+                        : quantity == item.quantityG ? Self.keptBasis(of: item)
+                        : (quantityEntry.typedUsingReference ? .portionReference : .stated),
                     usesNutritionLabel: firstItemKcal == nil
                         && foodName == item.name
                         && keepsNutritionLabel(of: item)

@@ -15,6 +15,13 @@ struct MealQuantityDisplay: Codable, Hashable, Sendable {
         case referenceID = "reference_id"
     }
 
+    init(unit: String, gramsPerUnit: Decimal, referenceID: String, estimated: Bool) {
+        self.unit = unit
+        self.gramsPerUnit = gramsPerUnit
+        self.referenceID = referenceID
+        self.estimated = estimated
+    }
+
     init(from decoder: any Decoder) throws {
         let container = try? decoder.container(keyedBy: CodingKeys.self)
         unit = (try? container?.decode(String.self, forKey: .unit)) ?? ""

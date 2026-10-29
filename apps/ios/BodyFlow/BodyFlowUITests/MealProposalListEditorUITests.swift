@@ -7,6 +7,49 @@ final class MealProposalListEditorUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
     @MainActor
+    func testNamedWheyMeasureCanBeEditedAndSavedWithoutKnowingGrams() {
+        let app = BodyFlowUITestSupport(testCase: self).launch(scenario: .loaded)
+        let register = app.performeTabBar.buttons["tab.registrar"]
+        XCTAssertTrue(register.waitForExistence(timeout: 5)); register.tap()
+        let meal = app.buttons["register.refeicao"]
+        XCTAssertTrue(meal.waitForExistence(timeout: 5)); meal.tap()
+        let text = app.buttons["registration.meal.source.text"]
+        XCTAssertTrue(text.waitForExistence(timeout: 5)); text.tap()
+        let detect = app.buttons["registration.meal.detect"]
+        XCTAssertTrue(detect.waitForExistence(timeout: 5)); detect.tap()
+        let edit = app.buttons["registration.proposal.edit"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 5)); edit.tap()
+        let addButton = app.buttons["registration.proposal.edit.add-ingredient"]
+        reveal(addButton, in: app); addButton.tap()
+        let name = app.textFields["registration.proposal.edit.food-name"]
+        let quantity = app.textFields["registration.proposal.edit.quantity"]
+        let save = app.buttons["registration.proposal.edit.save"]
+        XCTAssertFalse(save.isEnabled)
+        replace(name, with: "1 medida de whey")
+        XCTAssertEqual(quantity.value as? String, "1")
+        dismissKeyboard(app)
+        let equivalence = app.staticTexts["registration.proposal.edit.equivalence"]
+        XCTAssertTrue(equivalence.waitForExistence(timeout: 3))
+        XCTAssertTrue(equivalence.label.contains("30 g"))
+        XCTAssertTrue(save.isEnabled)
+        replace(quantity, with: "")
+        XCTAssertFalse(save.isEnabled) // no silent refill of an erased quantity
+        replace(quantity, with: "0,5")
+        dismissKeyboard(app)
+        XCTAssertTrue(save.isEnabled)
+        XCTAssertTrue(equivalence.label.contains("15 g"))
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "new-whey-half-measure-editable-reference"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        save.tap()
+        XCTAssertTrue(app.staticTexts["Substituição completa predefinida"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["registration.proposal.confirmed"].exists)
+        // Demo proves gestures/navigation only. BFF tests use the real
+        // calculator and writer; connected QA is a separate delivery gate.
+    }
+
+    @MainActor
     func testTwoEditsRemoveUndoAndOneSaveStayInTheSameProposal() {
         let app = BodyFlowUITestSupport(testCase: self).launch(scenario: .loaded)
         let register = app.performeTabBar.buttons["tab.registrar"]

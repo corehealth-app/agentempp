@@ -12,6 +12,39 @@ export interface HouseholdDrinkPart {
   quantity_basis: HouseholdQuantityBasis
 }
 
+function normalizeDrinkName(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[.!]$/, '')
+}
+
+/**29Oct compact proposal: its quantity is the beverage TOTAL, not milk alone.
+ * Split only this exact generic recipe on explicit app calculation/edit. Both
+ * parts are derived assumptions. No extra mass, brand, or historical rewrite.
+ * The original caneca contract below deliberately has a different meaning.
+ */
+export function mobileMilkWheyTotalPortions(
+  name: string,
+  total: { quantity_g: number; quantity_basis?: HouseholdQuantityBasis },
+): [HouseholdDrinkPart, HouseholdDrinkPart] | null {
+  if (!/^leite(?: integral)? com (?:1|uma) (?:medida|dose) de whey$/.test(normalizeDrinkName(name)))
+    return null
+  if (!Number.isFinite(total.quantity_g) || total.quantity_g <= 30 || total.quantity_g > 9999)
+    return null
+  return [
+    {
+      food_name: 'leite integral',
+      quantity_g: total.quantity_g - 30,
+      quantity_basis: 'portion_reference',
+    },
+    { food_name: 'whey protein em pó', quantity_g: 30, quantity_basis: 'portion_reference' },
+  ]
+}
+
 /**
  * Exact generic recipe only: no brand, other milk, negation or explicit
  * ingredient weights may be swallowed by the default. The caller supplies
@@ -22,13 +55,7 @@ export function mobileMilkWheyPortions(
   name: string,
   milk?: { quantity_g: number; quantity_basis?: HouseholdQuantityBasis },
 ): HouseholdDrinkPart[] | null {
-  const normalized = name
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/[.!]$/, '')
+  const normalized = normalizeDrinkName(name)
   if (
     !/^(?:(?:eu )?(?:tomei|bebi|consumi|ingeri) )?(?:1|uma) caneca de leite com (?:1|uma) (?:medida|dose) de whey$/.test(
       normalized,

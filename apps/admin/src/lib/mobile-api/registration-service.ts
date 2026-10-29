@@ -5,6 +5,7 @@ import {
   getLocalDateString,
   isUnresolvedNutritionSource,
   mobileMilkWheyPortions,
+  mobileMilkWheyTotalPortions,
   type MealCalcResult,
   type MealItemInput,
   registraRefeicao,
@@ -390,13 +391,23 @@ async function buildProposal(
     }
     const portionWarnings: string[] = []
     const expanded: MealProposalInput = { ...input, items: input.items.flatMap<MealProposalInput['items'][number]>(item => {
-      const parts = item.user_kcal === undefined && !item.use_nutrition_label
-        ? mobileMilkWheyPortions(item.food_name, { quantity_g: item.quantity_g, quantity_basis: item.quantity_basis })
-        : null
+      if (item.user_kcal !== undefined || item.use_nutrition_label) return [item]
+      const quantity = { quantity_g: item.quantity_g, quantity_basis: item.quantity_basis }
+      const totalParts = origin === MOBILE_APP_REGISTRATION_ORIGIN
+        ? mobileMilkWheyTotalPortions(item.food_name, quantity) : null
+      const parts = totalParts ?? mobileMilkWheyPortions(item.food_name, quantity)
       if (!parts) return [item]
-      portionWarnings.push(auth.patient.locale?.startsWith('en')
-        ? `I used ${item.quantity_g} g of whole milk and a separate estimated 30 g serving of whey powder. Review both portions before confirming.`
-        : `Considerei ${item.quantity_g} g de leite integral e uma porção estimada de 30 g de whey em pó, separadamente. Confira as duas porções antes de confirmar.`)
+      if (totalParts) {
+        const basisPT = item.quantity_basis === 'visual_estimate' ? 'estimado pela foto' : item.quantity_basis === 'stated' ? 'informado' : 'aproximado'
+        const basisEN = item.quantity_basis === 'visual_estimate' ? 'estimated from the photo' : item.quantity_basis === 'stated' ? 'entered' : 'approximate'
+        portionWarnings.push(auth.patient.locale?.startsWith('en')
+          ? `From the ${basisEN} total of ${item.quantity_g} g for the drink, I estimated ${totalParts[0].quantity_g} g of whole milk and 30 g of whey powder. This serving is an editable reference, not the measured weight of your scoop. Review both portions before confirming.`
+          : `A partir do peso total ${basisPT} de ${item.quantity_g} g da bebida, estimei ${totalParts[0].quantity_g} g de leite integral e 30 g de whey em pó. Essa dose é uma referência editável, não o peso medido do seu dosador. Confira as duas porções antes de confirmar.`)
+      } else {
+        portionWarnings.push(auth.patient.locale?.startsWith('en')
+          ? `I used ${item.quantity_g} g of whole milk and a separate estimated 30 g serving of whey powder. Review both portions before confirming.`
+          : `Considerei ${item.quantity_g} g de leite integral e uma porção estimada de 30 g de whey em pó, separadamente. Confira as duas porções antes de confirmar.`)
+      }
       // Both the calculator and pending builder receive this same expanded
       // order. The old compound's candidate/label cannot identify two foods.
       return parts

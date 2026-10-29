@@ -59,6 +59,89 @@ struct MealProposalListEditorTests {
         #expect(list.request(language: language) == nil)
     }
 
+    @Test("29Oct: a newly named measure of whey is editable without knowing its grams",
+          arguments: SupportedAppLanguage.allCases)
+    func newNamedWheyMeasure(language: SupportedAppLanguage) throws {
+        var list = MealProposalListEditorDraft(registration: try registration(), consumedAt: time)
+        let before = try #require(list.request(language: language))
+        let added = list.addIngredient()
+        let id = try #require(added)
+        list.updateEntry(id) { $0.foodName = "1 medida de whey" }
+        let draft = try #require(list.entry(id: id)?.draft)
+        #expect(draft.foodName == "1 medida de whey") // no keystroke-time rename
+        #expect(draft.quantityDisplay(language: language) == "1")
+        #expect(draft.quantityPresentation.unit == "scoop")
+        let request = try #require(list.request(language: language))
+        #expect(Array(request.items.prefix(2)) == before.items)
+        #expect(request.source == before.source)
+        #expect(request.items.last?.foodName == "whey protein em pó")
+        #expect(request.items.last?.quantityG == 30)
+        #expect(request.items.last?.quantityBasis == .portionReference)
+        #expect(request.items.last?.userKcal == nil)
+        list.updateEntry(id) { $0.setQuantityText(language == .portugueseBrazil ? "0,5" : "0.5", language: language) }
+        #expect(list.request(language: language)?.items.last?.quantityG == 15)
+        #expect(list.request(language: language)?.items.last?.quantityBasis == .portionReference)
+    }
+
+    @Test("Explicit grams win over a new scoop default; clearing is not refilled",
+          arguments: SupportedAppLanguage.allCases)
+    func newWheyQuantityAuthorship(language: SupportedAppLanguage) throws {
+        var list = MealProposalListEditorDraft(registration: try registration(), consumedAt: time)
+        let added = list.addIngredient()
+        let id = try #require(added)
+        list.updateEntry(id) { $0.setQuantityText("25", language: language); $0.foodName = "1 medida de whey" }
+        #expect(list.request(language: language)?.items.last?.quantityG == 25)
+        #expect(list.request(language: language)?.items.last?.quantityBasis == .stated)
+        list.updateEntry(id) { $0.setQuantityText("", language: language) }
+        #expect(list.request(language: language) == nil)
+        list.updateEntry(id) { $0.setQuantityText("0", language: language) }
+        #expect(list.request(language: language) == nil)
+        list.updateEntry(id) { $0.toggleQuantityUnit(language: language) }
+        #expect(list.request(language: language) == nil)
+
+        var gramsList = MealProposalListEditorDraft(registration: try registration(), consumedAt: time)
+        let gramEntry = gramsList.addIngredient()
+        let gramID = try #require(gramEntry)
+        gramsList.updateEntry(gramID) {
+            $0.foodName = "1 medida de whey"
+            $0.toggleQuantityUnit(language: language)
+            $0.setQuantityText("25", language: language)
+        }
+        #expect(gramsList.request(language: language)?.items.last?.quantityG == 25)
+        #expect(gramsList.request(language: language)?.items.last?.quantityBasis == .stated)
+        gramsList.updateEntry(gramID) { $0.toggleQuantityUnit(language: language) }
+        #expect(gramsList.request(language: language)?.items.last?.quantityG == 25)
+        #expect(gramsList.request(language: language)?.items.last?.quantityBasis == .stated)
+    }
+
+    @Test("A new default is strict and never changes untouched historical quantities")
+    func newWheyDoesNotInventBrandOrRewriteHistory() throws {
+        for name in ["1 medida de whey Marca X", "1 medida de whey isolado", "não tomei 1 medida de whey", "leite com 1 medida de whey"] {
+            var list = MealProposalListEditorDraft(registration: try registration(), consumedAt: time)
+            let added = list.addIngredient()
+            let id = try #require(added)
+            list.updateEntry(id) { $0.foodName = name }
+            #expect(list.entry(id: id)?.draft.quantityValue(language: .portugueseBrazil) == nil)
+            #expect(list.request(language: .portugueseBrazil) == nil)
+        }
+        let item = MealProposalItemSnapshot(name: "1 medida de whey", quantityG: 12,
+            kcal: nil, proteinG: nil, carbsG: nil, fatG: nil)
+        let historical = MealProposalEditorDraft(seed: .init(item: item, mealType: .breakfast, consumedAt: time, source: nil))
+        #expect(historical.request(language: .portugueseBrazil)?.items.first?.foodName == item.name)
+        #expect(historical.request(language: .portugueseBrazil)?.items.first?.quantityG == 12)
+    }
+
+    @Test("Renaming a new scoop cannot reinterpret typed measures as grams")
+    func newWheyRenameInvalidatesMeasure() throws {
+        var list = MealProposalListEditorDraft(registration: try registration(), consumedAt: time)
+        let added = list.addIngredient()
+        let id = try #require(added)
+        list.updateEntry(id) { $0.foodName = "1 medida de whey"; $0.setQuantityText("2", language: .portugueseBrazil) }
+        #expect(list.request(language: .portugueseBrazil)?.items.last?.quantityG == 60)
+        list.updateEntry(id) { $0.foodName = "1 medida de whey Marca X" }
+        #expect(list.request(language: .portugueseBrazil) == nil)
+    }
+
     @Test("explicit ingredient weights recover the list without changing the macaroni",
           arguments: SupportedAppLanguage.allCases)
     func explicitIngredients(language: SupportedAppLanguage) throws {

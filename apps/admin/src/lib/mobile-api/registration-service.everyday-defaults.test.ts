@@ -495,6 +495,139 @@ WINDOWS.uma=[]
 WINDOWS['leite integral']=[]
 WINDOWS['whey protein em pó']=[]
 
+const COMPACT_DRINK = 'Leite com 1 medida de whey'
+WINDOWS[COMPACT_DRINK] = []
+WINDOWS['leite com 1 medida de whey'] = []
+WINDOWS['1 medida de whey'] = []
+
+describe('Roberto29Oct — compact200g beverage and pending recovery', () => {
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(PROPOSE_AT)) })
+  afterEach(() => { vi.useRealTimers() })
+
+  it.each(['stated', 'visual_estimate'] as const)(
+    'recalculates the exact blocked item, keeps total200g and the neighboring foods (%s)', async (basis) => {
+      const db = stagingDay()
+      // The reported compound is exact; other food nutrition/weights were not
+      // fully captured, so these three stable neighbors are synthetic.
+      const others: MealInput['items'] = ['sentinela a', 'sentinela b', 'sentinela c'].map((food_name, index) => ({
+        food_name, quantity_g: 10 + index, quantity_basis: 'stated',
+      }))
+      const proposed = await proposeRegistration(db.client as never, AUTH as never, {
+        kind: 'meal', meal_type: 'cafe', items: [...others, { food_name: 'leite', quantity_g: 200 }],
+      }, KEY_PROPOSE)
+      const old = db.pendings[0]!.proposal as { items: Row[] }
+      const neighbors = structuredClone(old.items.slice(0, 3))
+      old.items = [...neighbors, { name: COMPACT_DRINK, quantity_g: 200, quantity_basis: basis,
+        kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, user_kcal: null, nutrition_source: 'composite_rejected' }]
+      const edited = await editRegistration(db.client as never, AUTH as never, proposed.id, {
+        kind: 'meal', meal_type: 'cafe', items: [...others, { food_name: COMPACT_DRINK, quantity_g: 200, quantity_basis: basis }],
+      }, KEY_EDIT)
+      const shown = edited.proposal.kind === 'meal' ? edited.proposal.items ?? [] : []
+      expect(shown).toHaveLength(5)
+      expect((db.pendings[0]!.proposal as { items: Row[] }).items.slice(0, 3)).toEqual(neighbors)
+      expect(shown.slice(3)).toMatchObject([
+        { name: 'leite integral', quantity_g: 170, protein_g: 5.35, quantity_basis: 'portion_reference', resolution: 'resolved' },
+        { name: 'whey protein em pó', quantity_g: 30, protein_g: 23.44, quantity_basis: 'portion_reference', resolution: 'resolved' },
+      ])
+      expect(shown.slice(3).reduce((sum, item) => sum + item.quantity_g, 0)).toBe(200)
+      expect(edited.proposal.kind === 'meal' && edited.proposal.meal_type).toBe('cafe')
+      const warnings = edited.proposal.kind === 'meal' ? edited.proposal.warnings ?? [] : []
+      expect(warnings.join(' ')).toContain('200 g')
+      expect(warnings.join(' ')).toContain('170 g')
+      expect(warnings.join(' ')).toContain(basis === 'visual_estimate' ? 'estimado' : 'informado')
+
+      // An explicit follow-up edit of the separated portions is not a new dose.
+      const input: MealInput = { kind: 'meal', meal_type: 'cafe', items: shown.map((item, index) => {
+        const quantity_basis = index === 4 ? 'stated' : item.quantity_basis
+        if (quantity_basis !== 'stated' && quantity_basis !== 'portion_reference' && quantity_basis !== 'visual_estimate') {
+          throw new Error('Expected the resolved proposal to retain quantity provenance')
+        }
+        return { food_name: item.name, quantity_g: index === 4 ? 25 : item.quantity_g, quantity_basis }
+      }) }
+      const again = await editRegistration(db.client as never, AUTH as never, proposed.id, input,
+        '0b9f6f0e-58a1-4a10-9d55-2230100000b3')
+      expect(again.proposal.kind === 'meal' && again.proposal.items).toHaveLength(5)
+      vi.setSystemTime(new Date(CONFIRM_AT))
+      await confirmRegistration(db.client as never, AUTH as never, proposed.id)
+      await confirmRegistration(db.client as never, AUTH as never, proposed.id)
+      expect(db.meals).toHaveLength(5)
+      expect(db.meals.slice(3)).toMatchObject([
+        { food_name: 'leite integral', quantity_g: 170 }, { food_name: 'whey protein em pó', quantity_g: 25 },
+      ])
+    },
+  )
+
+  it('explains the total-based estimate in English and preserves merged input identity', async () => {
+    const db = stagingDay()
+    const proposed = await proposeRegistration(db.client as never, { ...AUTH, patient: { ...AUTH.patient, locale: 'en' } } as never, {
+      kind: 'meal', meal_type: 'almoco', items: [
+        { food_name: 'leite integral', quantity_g: 100, quantity_basis: 'stated', candidate_id: 'c1-12345678' },
+        { food_name: COMPACT_DRINK, quantity_g: 200, quantity_basis: 'visual_estimate' },
+        { food_name: 'sentinela a', quantity_g: 10, quantity_basis: 'stated', candidate_id: 'c3-23456789' },
+      ],
+    }, KEY_PROPOSE)
+    expect(proposed.proposal.kind === 'meal' && proposed.proposal.items).toMatchObject([
+      { name: 'leite integral', quantity_g: 270, quantity_basis: 'portion_reference' },
+      { name: 'whey protein em pó', quantity_g: 30, quantity_basis: 'portion_reference' },
+      { name: 'sentinela a', quantity_g: 10, quantity_basis: 'stated' },
+    ])
+    const stored = (db.pendings[0]!.proposal as { items: Row[] }).items
+    expect(stored[0]?.candidate_id).toBeUndefined()
+    expect(stored[2]?.candidate_id).toBe('c3-23456789')
+    expect(proposed.proposal.kind === 'meal' && proposed.proposal.warnings?.join(' ')).toContain('total of 200 g')
+  })
+
+  it('preserves an explicit zero-calorie override instead of adding powder', async () => {
+    const db = stagingDay()
+    const proposed = await proposeRegistration(db.client as never, AUTH as never, {
+      kind: 'meal', meal_type: 'almoco', items: [{ food_name: COMPACT_DRINK, quantity_g: 200, user_kcal: 0 }],
+    }, KEY_PROPOSE)
+    expect(proposed.proposal.kind === 'meal' && proposed.proposal.items).toMatchObject([
+      { name: COMPACT_DRINK, quantity_g: 200, kcal: 0, nutrition_source: 'user_kcal' },
+    ])
+    expect(proposed.proposal.kind === 'meal' && proposed.proposal.items).toHaveLength(1)
+  })
+
+  it('refuses31 expanded items before replacing the existing pending', async () => {
+    const db = stagingDay()
+    await proposeRegistration(db.client as never, AUTH as never, REPORTED_MEAL, KEY_PROPOSE)
+    const before = structuredClone(db.pendings)
+    const searches = db.searches.length
+    await expect(proposeRegistration(db.client as never, AUTH as never, {
+      kind: 'meal', meal_type: 'almoco', items: [
+        ...Array.from({ length: 29 }, () => ({ food_name: 'sentinela a', quantity_g: 10 })),
+        { food_name: COMPACT_DRINK, quantity_g: 200 },
+      ],
+    }, KEY_EDIT)).rejects.toMatchObject({ status: 422, code: 'meal_item_limit_exceeded' })
+    expect(db.pendings).toEqual(before)
+    expect(db.searches).toHaveLength(searches)
+  })
+
+  it('does not apply this new recipe to a pending whose origin is unknown', async () => {
+    const db = stagingDay()
+    const proposed = await proposeRegistration(db.client as never, AUTH as never, REPORTED_MEAL, KEY_PROPOSE)
+    const stored = db.pendings[0]!.proposal as Row
+    delete stored.registration_origin
+    const edited = await editRegistration(db.client as never, AUTH as never, proposed.id, {
+      kind: 'meal', meal_type: 'almoco', items: [{ food_name: COMPACT_DRINK, quantity_g: 200 }],
+    }, KEY_EDIT)
+    expect(edited.proposal.kind === 'meal' && edited.proposal.items).toHaveLength(1)
+    expect((db.pendings[0]!.proposal as Row).registration_origin).toBeUndefined()
+    expect(edited.proposal.kind === 'meal' && edited.proposal.warnings?.join(' ')).not.toContain('peso total')
+  })
+
+  it.each([20, 30])('does not add a30g dose to an insufficient total of %sg', async (quantity_g) => {
+    const db = stagingDay()
+    const proposed = await proposeRegistration(db.client as never, AUTH as never, {
+      kind: 'meal', meal_type: 'cafe', items: [{ food_name: COMPACT_DRINK, quantity_g }],
+    }, KEY_PROPOSE)
+    const items = proposed.proposal.kind === 'meal' ? proposed.proposal.items ?? [] : []
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({ name: COMPACT_DRINK, quantity_g, resolution: 'needs_clarification' })
+    expect(db.meals).toHaveLength(0)
+  })
+})
+
 describe('Roberto 22/10 — item 4 household milk plus whey, 200 g typed for milk', () => {
   beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(PROPOSE_AT)) })
   afterEach(() => { vi.useRealTimers() })
@@ -520,16 +653,16 @@ describe('Roberto 22/10 — item 4 household milk plus whey, 200 g typed for mil
     expect(proposed.proposal.kind==='meal' && proposed.proposal.items).toHaveLength(1)
   })
 
-  it('keeps a trusted label tied to the compound instead of overriding it with the generic recipe', async () => {
+  it.each([HOUSEHOLD_DRINK, COMPACT_DRINK])('keeps a trusted label tied to %s instead of overriding it with the generic recipe', async (drink) => {
     const db=stagingDay();const from=db.client.from.bind(db.client)
     const mediaId='0b9f6f0e-0000-4000-8000-0000000000f1'
-    const media:Row={id:mediaId,user_id:USER_ID,kind:'meal_photo',bucket_id:'synthetic-private',object_path:'synthetic-label',mime_type:'image/jpeg',declared_size_bytes:100,actual_size_bytes:100,status:'processed',failure_stage:null,failure_code:null,context_text:null,retention_until:null,uploaded_at:PROPOSE_AT,processed_at:PROPOSE_AT,deleted_at:null,created_at:PROPOSE_AT,updated_at:PROPOSE_AT,processing_result:{nutrition_label:{product_name:HOUSEHOLD_DRINK,serving_size_g:200,per_serving:{kcal:300,protein_g:20,carbs_g:30,fat_g:10},per_100g:{kcal:150,protein_g:10,carbs_g:15,fat_g:5},confidence:1}}}
+    const media:Row={id:mediaId,user_id:USER_ID,kind:'meal_photo',bucket_id:'synthetic-private',object_path:'synthetic-label',mime_type:'image/jpeg',declared_size_bytes:100,actual_size_bytes:100,status:'processed',failure_stage:null,failure_code:null,context_text:null,retention_until:null,uploaded_at:PROPOSE_AT,processed_at:PROPOSE_AT,deleted_at:null,created_at:PROPOSE_AT,updated_at:PROPOSE_AT,processing_result:{nutrition_label:{product_name:drink,serving_size_g:200,per_serving:{kcal:300,protein_g:20,carbs_g:30,fat_g:10},per_100g:{kcal:150,protein_g:10,carbs_g:15,fat_g:5},confidence:1}}}
     db.client.from=(table:string)=>table==='media_assets'?new Query(()=>[media]):from(table)
     const proposed=await proposeRegistration(db.client as never,AUTH as never,{
-      kind:'meal',meal_type:'almoco',items:[{food_name:HOUSEHOLD_DRINK,quantity_g:200,use_nutrition_label:true}],source:{channel:'gallery',media_asset_id:mediaId},
+      kind:'meal',meal_type:'almoco',items:[{food_name:drink,quantity_g:200,use_nutrition_label:true}],source:{channel:'gallery',media_asset_id:mediaId},
     },KEY_PROPOSE)
     expect(proposed.proposal.kind==='meal' && proposed.proposal.items).toMatchObject([
-      {name:HOUSEHOLD_DRINK,quantity_g:200,kcal:300,protein_g:20,nutrition_source:'product_label'},
+      {name:drink,quantity_g:200,kcal:300,protein_g:20,nutrition_source:'product_label'},
     ])
     expect(proposed.proposal.kind==='meal' && proposed.proposal.items).toHaveLength(1)
   })

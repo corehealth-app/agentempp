@@ -2791,7 +2791,8 @@ o app não inventa uma conversão.
 volume derivado é aproximadamente 194,17 mL, não 200 mL. Sem editar o campo,
 o cliente reenvia a massa original exata; ao editar volume, converte uma vez
 e valida o limite na massa resultante. Trocar o alimento invalida uma entrada
-numérica pertencente a outra unidade. Whey em pó continua em gramas.
+numérica pertencente a outra unidade. No contrato e no cálculo, whey em pó
+continua em gramas; a interface pode apresentar a referência em medidas.
 
 `quantity_display` é metadata opcional de apresentação, com unidade, fator,
 referência e indicação de estimativa. O build anterior pode ignorá-la; respostas
@@ -2806,6 +2807,22 @@ rótulo aprovado têm sua precedência mantida. O helper puro exportado pelo age
 é consumido pelo BFF; `naturalUnit`, ferramentas e entradas do motor legado não
 mudam. A receita genérica "leite com whey" fora da frase delimitada, variantes
 não descritas e o legado do WhatsApp não são declarados corrigidos por isso.
+
+**Relato de 29/10 — variante compacta:** `Leite com 1 medida de whey`, com
+200 g na proposta, não informa 200 g de leite sozinho. No cálculo ou edição
+explícita do app, a referência de 30 g de whey é separada do total: 170 g de
+leite e 30 g de whey, ambos `portion_reference`, com aviso da hipótese editável.
+O aviso distingue total informado de estimado por foto. Total de até 30 g,
+marca, leite diferente, negação, doses diferentes e quantidades explícitas dos
+ingredientes não recebem essa divisão. Kcal manual e rótulo continuam tendo
+precedência. O total não aumenta e as outras linhas mantêm suas identidades.
+Não há alteração na leitura, no histórico ou em pending de origem desconhecida.
+
+No editor, um **ingrediente novo** com o nome `1 medida de whey` oferece a
+referência editável de 1 medida ≈ 30 g, sem exigir que a pessoa saiba o peso do
+dosador. Gramas digitadas prevalecem; quantidade apagada ou inválida não é
+reposta automaticamente. O nome é normalizado só na requisição ao salvar,
+sem alterar silenciosamente uma linha histórica ou interpretar uma marca.
 
 ---
 

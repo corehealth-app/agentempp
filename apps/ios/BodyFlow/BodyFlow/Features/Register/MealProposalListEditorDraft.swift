@@ -51,12 +51,13 @@ struct MealProposalListEditorDraft: Equatable, Sendable {
     mutating func addIngredient() -> UUID? {
         guard canAdd else { return nil }
         // This is a blank local field, not a calculated zero or a share of
-        // the rejected dish. No request is possible until it has a name/weight.
+        // the rejected dish. A name/weight or explicit supported household
+        // measure is needed; the latter remains approximate and editable.
         let item = MealProposalItemSnapshot(name: "", quantityG: 0,
             kcal: nil, proteinG: nil, carbsG: nil, fatG: nil)
         var draft = MealProposalEditorDraft(seed: .init(item: item,
             mealType: mealType, consumedAt: consumedAt, source: source))
-        draft.quantityText = ""
+        draft.prepareNewIngredient()
         let entry = Entry(id: UUID(), order: nextOrder, original: nil, draft: draft)
         nextOrder += 1
         entries.append(entry)

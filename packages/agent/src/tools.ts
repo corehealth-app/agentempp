@@ -3718,6 +3718,43 @@ export const geraDieta: ToolDefinition = {
 // ----------------------------------------------------------------------------
 // gera_treino — Sprint 4.2 (Roberto 2026-06-11)
 // ----------------------------------------------------------------------------
+const trainingParameters = z.object({
+  available_equipment: z
+    .array(z.string())
+    .min(1)
+    .describe(
+      'Lista de equipamentos identificados (ex: ["halteres 5-30kg", "barra fixa", "elástico"])',
+    ),
+  location: z
+    .enum(['academia_completa', 'academia_limitada', 'casa'])
+    .describe('Local onde o paciente vai treinar'),
+  days_per_week: z
+    .number()
+    .int()
+    .min(1)
+    .max(7)
+    .describe('Dias por semana que o paciente topa treinar'),
+  training_days: z
+    .array(z.string())
+    .optional()
+    .describe('Dias específicos da semana (ex: ["seg","qua","sex"])'),
+  training_level: z
+    .enum(['iniciante', 'intermediario', 'avancado'])
+    .describe('Nível atual de musculação do paciente'),
+  goes_to_failure: z
+    .boolean()
+    .optional()
+    .describe('Topa treinar até falha muscular? (false = abordagem mais guiada/segura)'),
+  limitations: z
+    .array(z.string())
+    .optional()
+    .describe('Lesões/dores/limitações (ex: ["dor no joelho", "lombar sensível"])'),
+  priority_muscles: z
+    .array(z.string())
+    .optional()
+    .describe('Grupos musculares de prioridade (ex: ["glúteos", "MMII"])'),
+})
+
 export const geraTreino: ToolDefinition = {
   name: 'gera_treino',
   description:
@@ -3731,42 +3768,7 @@ export const geraTreino: ToolDefinition = {
     '(cron determinístico, sem regerar com LLM). Paciente pode pedir regenerar se equipamentos/rotina mudarem. ' +
     'NÃO use pra "vou fazer um treino agora" (isso é registra_treino). ' +
     'Se receber {success:false}, NÃO finja que gerou — explique que houve problema técnico e peça pra tentar daqui a alguns minutos.',
-  parameters: z.object({
-    available_equipment: z
-      .array(z.string())
-      .min(1)
-      .describe(
-        'Lista de equipamentos identificados (ex: ["halteres 5-30kg", "barra fixa", "elástico"])',
-      ),
-    location: z
-      .enum(['academia_completa', 'academia_limitada', 'casa'])
-      .describe('Local onde o paciente vai treinar'),
-    days_per_week: z
-      .number()
-      .int()
-      .min(1)
-      .max(7)
-      .describe('Dias por semana que o paciente topa treinar'),
-    training_days: z
-      .array(z.string())
-      .optional()
-      .describe('Dias específicos da semana (ex: ["seg","qua","sex"])'),
-    training_level: z
-      .enum(['iniciante', 'intermediario', 'avancado'])
-      .describe('Nível atual de musculação do paciente'),
-    goes_to_failure: z
-      .boolean()
-      .optional()
-      .describe('Topa treinar até falha muscular? (false = abordagem mais guiada/segura)'),
-    limitations: z
-      .array(z.string())
-      .optional()
-      .describe('Lesões/dores/limitações (ex: ["dor no joelho", "lombar sensível"])'),
-    priority_muscles: z
-      .array(z.string())
-      .optional()
-      .describe('Grupos musculares de prioridade (ex: ["glúteos", "MMII"])'),
-  }),
+  parameters: trainingParameters,
   execute: async (args, ctx) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     // biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
@@ -3884,9 +3886,23 @@ export const geraTreino: ToolDefinition = {
   },
 }
 
-// Propostas do Flow: mesmos parâmetros dos geradores, gravação só em rascunho.
-export const [propoePlanoTreino, propoePlanoDieta] = createPlanProposalTools({
-  training: geraTreino.parameters,
+// Flow: base dos geradores e disponibilidade de tempo; gravação só em rascunho.
+export const [propoePlanoTreino, propoePlanoDieta] = createPlanProposalTools<
+  z.ZodTypeAny,
+  z.ZodTypeAny
+>({
+  // App-only time availability; the legacy tool keeps its original schema.
+  training: trainingParameters.extend({
+    duration_min: z
+      .number()
+      .int()
+      .min(10)
+      .max(180)
+      .describe(
+        'Tempo disponível por sessão, em minutos. Use o valor informado pela pessoa como limite máximo; não invente quando não foi informado.',
+      )
+      .optional(),
+  }),
   diet: geraDieta.parameters,
 })
 

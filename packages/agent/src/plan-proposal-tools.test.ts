@@ -297,6 +297,33 @@ describe('canal do app: o que o Flow pode chamar', () => {
 })
 
 describe('propoe_plano_treino', () => {
+  it('preserva os 45 minutos do parâmetro público até o gerador e o rascunho', async () => {
+    const requestedPlan = {
+      ...trainingPlan,
+      weekly_schedule: trainingPlan.weekly_schedule.map((day) => ({ ...day, duration_min: 45 })),
+    }
+    generateTrainingPlan.mockResolvedValue(requestedPlan)
+    const { ctx, recorded } = makeContext()
+    const args = propoePlanoTreino.parameters.parse({ ...trainingArguments, duration_min: 45 })
+
+    const result = await propoePlanoTreino.execute(args, ctx)
+
+    expect(generateTrainingPlan).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ identity: 'flow', duration_min: 45 }),
+    )
+    expect(recorded.rpcs[0]?.params.p_payload).toMatchObject({
+      weekly_schedule: [{ duration_min: 45 }, { duration_min: 45 }],
+    })
+    expect(result.sugestao).toContain('(45 min)')
+    expectNoPlanWrite(recorded)
+  })
+
+  it.each([0, 9, 181, 45.5])('recusa duração de geração inválida no contrato público: %s', (duration_min) => {
+    expect(propoePlanoTreino.parameters.safeParse({ ...trainingArguments, duration_min }).success).toBe(false)
+  })
+
   it('cria só o rascunho, com a origem e a chave do turno', async () => {
     generateTrainingPlan.mockResolvedValue(trainingPlan)
     const { ctx, recorded } = makeContext()

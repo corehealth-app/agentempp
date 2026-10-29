@@ -6,6 +6,7 @@
  * gravam SOMENTE um rascunho (`create_plan_draft_atomic`). Nada aqui grava em
  * `training_plans` ou `prescriptions`, e não existe ferramenta que confirme:
  * o rascunho só vira plano quando o paciente confirma no app.
+ * O Flow também aceita o tempo disponível por sessão, sem alterar o legado.
  *
  * Audit 2026-10-10: os textos da sugestão de TREINO passam, uma vez e antes de
  * gravar, pelo vocabulário fechado de linguagem simples do Flow
@@ -268,10 +269,12 @@ export function createPlanProposalTools<
       'Use APENAS depois de perguntar e confirmar com o paciente: (1) equipamentos disponíveis, ' +
       '(2) quantos dias por semana, (3) nível atual (iniciante, intermediário ou avançado). ' +
       'Nunca chute o nível — pergunte. A sugestão é um rascunho: só vira plano quando o paciente ' +
-      'confirma no app. Se receber {success:false}, NÃO apresente plano nenhum.',
+      'confirma no app. Se a pessoa informou tempo disponível por sessão, envie-o em duration_min ' +
+      'e respeite esse limite; quando não informou, não invente. ' +
+      'Se receber {success:false}, NÃO apresente plano nenhum.',
     parameters: parameters.training,
     // Audit 2026-09-28: the model writes null for "none"; optional only.
-    nullMeansAbsent: ['training_days', 'goes_to_failure', 'limitations', 'priority_muscles'],
+    nullMeansAbsent: ['training_days', 'goes_to_failure', 'limitations', 'priority_muscles', 'duration_min'],
     execute: async (args, ctx) => {
       const clinical =
         ctx.assistantIdentity === 'flow' && ctx.flowClinical
@@ -338,6 +341,7 @@ export function createPlanProposalTools<
         location: 'academia_completa' | 'academia_limitada' | 'casa'
         days_per_week: number
         training_days?: string[]
+        duration_min?: number
         training_level: 'iniciante' | 'intermediario' | 'avancado'
         goes_to_failure?: boolean
         limitations?: string[]
@@ -364,6 +368,7 @@ export function createPlanProposalTools<
         },
         days_per_week: input.days_per_week,
         training_days: input.training_days,
+        duration_min: input.duration_min,
         available_equipment: input.available_equipment,
         location: input.location,
         goes_to_failure: input.goes_to_failure,

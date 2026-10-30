@@ -1,5 +1,39 @@
 # Superfície do BFF na entrega de protocolos
 
+## Incremento de assinaturas — 29/10/2026
+
+O build atual preserva **75 rotas móveis** e acrescenta somente
+`POST /api/webhooks/revenuecat`, com runtime Node. O handler compartilhado é
+idêntico ao handler anterior do admin; o caminho antigo permanece compatível.
+Não há mudança nas regras de entitlement, no HMAC, no limite de 256 KiB ou no
+writer central. Sem configuração válida, o endpoint responde 503 sem acessar o
+banco. Assinatura inválida responde 401.
+
+O stream móvel path/exports continua
+`109cdb03a29399358c586046a6f98aace5eb6628fed4f290e1ca05193cc1a0a1`; o stream das
+75 URLs móveis continua `e5358ef9f8da93c82528ef41732e8fa7bc8bb4c20fc425264585777542fad1f2`.
+As 76 URLs totais têm hash
+`81f9ae7836b615cfaad7fc4e5c5c399e7f264411df5e4f6473334b6be9f1e79b`.
+
+O grafo móvel mantém 8202 referências NFT e 216 targets. O webhook acrescenta
+104 referências e somente seu manifesto de cliente: total 8306 referências,
+217 targets, 215 arquivos e dois diretórios estruturais aprovados. O ledger
+histórico abaixo continua conferido sobre o subconjunto móvel; os controles de
+segurança percorrem todas as 76 rotas. O writer continua no onboarding para a
+avaliação inicial e acrescenta o webhook; o transporte HMAC pertence só ao webhook.
+
+A allowlist admite exclusivamente o par URL/target desse webhook. O scanner
+de imports visita todas as entradas e continua negando outros webhooks, admin,
+worker, páginas e Server Actions. No bundle, somente a entrada aprovada e seu
+manifesto próprio podem conter suas identidades literais exatas do Next; outros
+webhooks e dependências transitivas continuam verificados.
+
+Isso é qualificação local de fonte/build, sem ativação comercial ou prova de
+publicação. Conta, catálogo, configuração real, política de transferência e QA
+Sandbox permanecem gates separados. Não cadastrar uma URL presumida no RevenueCat.
+
+## Ledger histórico da entrega de protocolos
+
 O inventário contém **56 rotas**: as 55 da entrega de protocolos e `onboarding/completion-intent/route.ts`. A confirmação e o Histórico usam o UUID oficial do treino. Os leitores C13 recuperam o comentário salvo na confirmação original. Qualificação de fonte e build é separada de ativação, QA autenticado e distribuição.
 
 ## Identidade de fonte

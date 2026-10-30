@@ -67,10 +67,13 @@ acrescentados à resposta pública. Essa disponibilidade não altera
 
 O seletor do projeto é uma ativação operacional: deve continuar ausente até
 concluir a qualificação abaixo. Configuração sintaticamente válida não prova
-que a loja ou a entrega dos eventos funciona. O handler RevenueCat existe no
-admin, mas o BFF móvel espelha somente as rotas móveis; o endpoint real do
-webhook ainda precisa ser publicado e verificado no destino correto. Não
-configure no provedor um endereço presumido do BFF.
+que a loja ou a entrega dos eventos funciona. O handler compartilhado em
+`lib/billing/revenuecat-webhook-handler.ts` atende o admin e a entrada exata
+`POST /api/webhooks/revenuecat` do BFF. O build contém as mesmas 75 rotas móveis
+e esse único webhook, sem outros endpoints administrativos. Fonte e build
+locais não provam publicação: conferir o endpoint no destino antes de cadastrá-lo
+no provedor. O webhook exige assinatura HMAC ativada na integração RevenueCat;
+sem configuração responde 503 antes de criar cliente do banco.
 
 A presença do código não comprova ativação comercial. Antes de ativar ou
 distribuir uma versão com compras, qualificar projeto/chave/catálogo reais,

@@ -3,8 +3,13 @@ import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'nod
 import { dirname, extname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const expectedRouteCount = 75
-const expectedRouteHash = 'e5358ef9f8da93c82528ef41732e8fa7bc8bb4c20fc425264585777542fad1f2'
+const expectedMobileRouteCount = 75
+const expectedMobileRouteHash = 'e5358ef9f8da93c82528ef41732e8fa7bc8bb4c20fc425264585777542fad1f2'
+const expectedRouteCount = 76
+const expectedRouteHash = '81f9ae7836b615cfaad7fc4e5c5c399e7f264411df5e4f6473334b6be9f1e79b'
+const revenueCatRoute = '/api/webhooks/revenuecat'
+const revenueCatAppPath = `${revenueCatRoute}/route`
+const revenueCatBundleTarget = 'app/api/webhooks/revenuecat/route.js'
 const internalNotFoundAppPath = '/_not-found/page'
 const internalNotFoundRoute = '/_not-found'
 const workerBundleMarkers = [
@@ -96,13 +101,15 @@ function validateApplicationRouteBundles(buildRoot, entries) {
   const targets = new Map()
 
   for (const entry of entries) {
-    if (!isMobileRouteBundleTarget(entry.target)) {
-      throw new Error(`APP_PATH_BUNDLE_TARGET_OUTSIDE_MOBILE_ROUTE:${entry.appPath}`)
-    }
     if (targets.has(entry.target)) {
       throw new Error(`APP_PATH_BUNDLE_TARGET_DUPLICATE:${entry.target}`)
     }
     targets.set(entry.target, entry.appPath)
+    const approvedWebhook =
+      entry.appPath === revenueCatAppPath && entry.target === revenueCatBundleTarget
+    if (!isMobileRouteBundleTarget(entry.target) && !approvedWebhook) {
+      throw new Error(`APP_PATH_BUNDLE_TARGET_OUTSIDE_MOBILE_ROUTE:${entry.appPath}`)
+    }
 
     const expectedTarget = `app${entry.appPath}.js`
     if (entry.target !== expectedTarget) {
@@ -204,6 +211,22 @@ function inspectApplicationRouteTransitives(buildRoot, entries) {
   const serverRoot = resolve(buildRoot, 'server')
   const repositoryRoot = resolve(buildRoot, '../../..')
   const repositoryRealRoot = realpathSync(repositoryRoot)
+  const revenueCatClientManifest = resolve(
+    serverRoot,
+    'app/api/webhooks/revenuecat/route_client-reference-manifest.js',
+  )
+  const revenueCatIdentities = [
+    revenueCatRoute,
+    revenueCatAppPath,
+    'app/api/webhooks/revenuecat',
+    'app/api/webhooks/revenuecat/route',
+    resolve(repositoryRoot, 'apps/mobile-bff/src/app/api/webhooks/revenuecat/route')
+      .split(sep)
+      .join('/'),
+    resolve(repositoryRoot, 'apps/mobile-bff/src/app/api/webhooks/revenuecat/route.ts')
+      .split(sep)
+      .join('/'),
+  ]
   const forbiddenWorkerBundleReferences = new Set()
   const forbiddenAdministrativeBundleReferences = new Set()
   const forbiddenWorkerTraceReferences = new Set()
@@ -310,7 +333,19 @@ function inspectApplicationRouteTransitives(buildRoot, entries) {
         }
       }
       for (const marker of administrativeBundleMarkers) {
-        if (source.includes(marker)) {
+        // Only this entry and its own generated client manifest may name the exact
+        // Next route identity. Foreign identities and all other transitives stay scanned.
+        let scannedSource = source
+        if (
+          marker === '/webhooks/' &&
+          entry.target === revenueCatBundleTarget &&
+          (reference === entry.target || path === revenueCatClientManifest)
+        ) {
+          for (const identity of revenueCatIdentities) {
+            scannedSource = scannedSource.replaceAll(JSON.stringify(identity), '""')
+          }
+        }
+        if (scannedSource.includes(marker)) {
           const suffix = reference === entry.target ? marker : `${reference}:${marker}`
           forbiddenAdministrativeBundleReferences.add(`${entry.target}:${suffix}`)
         }
@@ -372,6 +407,7 @@ export function inspectBuildSurface(buildRoot) {
   validateApplicationRouteBundles(buildRoot, applicationRouteBundles)
   const transitiveSurface = inspectApplicationRouteTransitives(buildRoot, applicationRouteBundles)
   const routePaths = sortedUnique(applicationRouteBundles.map((entry) => entry.path))
+  const mobileRoutePaths = routePaths.filter((path) => path.startsWith('/api/mobile/v1/'))
   const appPageRoutes = normalizedAppEntries
     .filter((entry) => entry.kind === 'page')
     .map((entry) => entry.path)
@@ -425,6 +461,8 @@ export function inspectBuildSurface(buildRoot) {
 
   return {
     routePaths,
+    mobileRoutePaths,
+    mobileRoutePathHash: sha256(mobileRoutePaths.map((path) => `${path}\n`).join('')),
     applicationRouteBundles,
     routePathHash: sha256(routePathStream),
     routesOutsideMobilePrefix,
@@ -463,6 +501,8 @@ function verifyBuildSurface() {
   }
 
   console.info(`BUILD_ROUTE_PATH_COUNT=${surface.routePaths.length}`)
+  console.info(`BUILD_MOBILE_ROUTE_PATH_COUNT=${surface.mobileRoutePaths.length}`)
+  console.info(`BUILD_MOBILE_ROUTE_PATH_STREAM_SHA256=${surface.mobileRoutePathHash}`)
   console.info(`BUILD_ROUTE_PATH_STREAM_SHA256=${surface.routePathHash}`)
   console.info(`BUILD_BUNDLE_SURFACE_STREAM_SHA256=${surface.bundleSurfaceHash}`)
   console.info(`BUILD_APP_PATHS_MANIFEST_SHA256=${surface.manifestHashes.appPaths}`)
@@ -503,7 +543,11 @@ function verifyBuildSurface() {
     fail(`ROUTE_COUNT:${surface.routePaths.length}`)
   }
   if (surface.routePathHash !== expectedRouteHash) fail(`ROUTE_HASH:${surface.routePathHash}`)
-  if (surface.routesOutsideMobilePrefix.length !== 0) {
+  if (surface.mobileRoutePaths.length !== expectedMobileRouteCount)
+    fail(`MOBILE_ROUTE_COUNT:${surface.mobileRoutePaths.length}`)
+  if (surface.mobileRoutePathHash !== expectedMobileRouteHash)
+    fail(`MOBILE_ROUTE_HASH:${surface.mobileRoutePathHash}`)
+  if (JSON.stringify(surface.routesOutsideMobilePrefix) !== JSON.stringify([revenueCatRoute])) {
     fail(`OUT_OF_PREFIX_ROUTES:${surface.routesOutsideMobilePrefix.length}`)
   }
   if (surface.forbiddenAdminRoutes.length !== 0) {

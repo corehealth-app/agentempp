@@ -46,7 +46,7 @@ describe('weekly strength in the real mobile server build', () => {
 
   it('keeps worker, administrative routes and server actions out of the build', () => {
     const surface = inspectBuildSurface(buildRoot)
-    expect(surface.routesOutsideMobilePrefix).toEqual([])
+    expect(surface.routesOutsideMobilePrefix).toEqual(['/api/webhooks/revenuecat'])
     expect(surface.forbiddenAdminRoutes).toEqual([])
     expect(surface.forbiddenInngestRoutes).toEqual([])
     expect(surface.forbiddenStripeRoutes).toEqual([])

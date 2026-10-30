@@ -9,6 +9,8 @@ const repositoryRoot = resolve(appRoot, '../..')
 const adminSourceRoot = resolve(repositoryRoot, 'apps/admin/src')
 const mobileSourceRoot = resolve(adminSourceRoot, 'app/api/mobile/v1')
 const wrapperRoot = resolve(appRoot, 'src/app/api/mobile/v1')
+const appRouteRoot = resolve(appRoot, 'src/app')
+const revenueCatWrapper = resolve(appRouteRoot, 'api/webhooks/revenuecat/route.ts')
 const inngestPackageRoot = resolve(repositoryRoot, 'packages/inngest-functions/src')
 const inngestClientSource = resolve(inngestPackageRoot, 'client.ts')
 const resolvableExtensions = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.json']
@@ -84,7 +86,8 @@ function deniedClassification(path, source) {
   if (/^(?:page|layout)\.[cm]?[jt]sx?$/.test(fileName)) return 'denied-page-layout'
   if (fileName === 'public-api-path.ts') return 'denied-public-api-path'
   if (panelCallbacks.has(pathFromRepository)) return 'denied-panel-callback'
-  if (pathFromRepository.includes('/webhooks/')) return 'denied-webhook'
+  if (pathFromRepository.includes('/webhooks/') && path !== revenueCatWrapper)
+    return 'denied-webhook'
   if (hasServerActionDirective(source) && !isInside(mobileSourceRoot, path)) {
     return 'denied-server-action'
   }
@@ -102,6 +105,7 @@ function deniedClassification(path, source) {
 }
 
 function allowedClassification(path) {
+  if (path === revenueCatWrapper) return 'revenuecat-webhook-wrapper'
   if (path === inngestClientSource) return 'published-inngest-client'
   if (isInside(wrapperRoot, path)) return 'mobile-wrapper'
   if (isInside(mobileSourceRoot, path)) {
@@ -138,7 +142,7 @@ function localImport(importer, specifier) {
 
 function verifyImportClosure() {
   const records = new Set()
-  const queued = walkFiles(wrapperRoot)
+  const queued = walkFiles(appRouteRoot)
     .filter((path) => path.endsWith(`${sep}route.ts`))
     .sort((left, right) => repositoryPath(left).localeCompare(repositoryPath(right), 'en'))
   const visited = new Set()

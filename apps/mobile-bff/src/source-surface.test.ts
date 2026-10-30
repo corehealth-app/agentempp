@@ -271,7 +271,9 @@ describe('authoritative Mobile API source surface', () => {
     expect(middleware).toEqual([])
     expect(serverActions).toEqual([])
     expect(publicFiles).toEqual([])
-    expect(routesOutsideMobilePrefix).toEqual([])
+    expect(routesOutsideMobilePrefix).toEqual([
+      resolve(dedicatedAppRoot, 'api/webhooks/revenuecat/route.ts'),
+    ])
   })
 
   test('detects a horizontally indented inline Server Action directive', () => {
@@ -280,7 +282,7 @@ describe('authoritative Mobile API source surface', () => {
     expect(hasServerActionDirective(inlineServerAction)).toBe(true)
   })
 
-  test('keeps the structured Next build surface limited to the 75 Mobile API routes', () => {
+  test('preserves 75 Mobile routes and adds only the RevenueCat webhook in the Next build', () => {
     const surface = inspectBuildSurface(buildRoot)
 
     console.info(`BUILD_ROUTE_PATH_COUNT=${surface.routePaths.length}`)
@@ -295,11 +297,15 @@ describe('authoritative Mobile API source surface', () => {
     console.info(`BUILD_MIDDLEWARE_COUNT=${surface.middlewareEntries.length}`)
     console.info(`BUILD_SERVER_ACTION_REFERENCE_COUNT=${surface.serverActionReferences.length}`)
 
-    expect(surface.routePaths).toHaveLength(75)
+    expect(surface.routePaths).toHaveLength(76)
     expect(surface.routePathHash).toBe(
+      '81f9ae7836b615cfaad7fc4e5c5c399e7f264411df5e4f6473334b6be9f1e79b',
+    )
+    expect(surface.mobileRoutePaths).toHaveLength(75)
+    expect(surface.mobileRoutePathHash).toBe(
       'e5358ef9f8da93c82528ef41732e8fa7bc8bb4c20fc425264585777542fad1f2',
     )
-    const prior74Paths = surface.routePaths.filter(
+    const prior74Paths = surface.mobileRoutePaths.filter(
       (route) => route !== '/api/mobile/v1/auth/password-recovery',
     )
     expect(prior74Paths).toHaveLength(74)
@@ -338,7 +344,7 @@ describe('authoritative Mobile API source surface', () => {
         .update(previous.map((route) => `${route}\n`).join(''))
         .digest('hex'),
     ).toBe('575bdb7757a730761d443ee35ee9749c90df5e85263e482e5bd70446bfef3d2b')
-    expect(surface.routesOutsideMobilePrefix).toEqual([])
+    expect(surface.routesOutsideMobilePrefix).toEqual(['/api/webhooks/revenuecat'])
     expect(surface.forbiddenAdminRoutes).toEqual([])
     expect(surface.forbiddenInngestRoutes).toEqual([])
     expect(surface.forbiddenStripeRoutes).toEqual([])
@@ -382,14 +388,14 @@ describe('authoritative Mobile API source surface', () => {
       mutate: (appPaths: Record<string, string>) => ({ ...appPaths }),
       omittedTargets: ['app/api/mobile/v1/today/route.js'],
     },
-  ])('rejects $name while the same 75 URL keys remain', ({
+  ])('rejects $name while the same 76 URL keys remain', ({
     expectedError,
     mutate,
     omittedTargets,
   }) => {
     const appPaths = mutate(currentAppPathsManifest())
 
-    expect(Object.keys(appPaths)).toHaveLength(75)
+    expect(Object.keys(appPaths)).toHaveLength(76)
     expect(() => withSyntheticBuild(appPaths, inspectBuildSurface, omittedTargets)).toThrow(
       expectedError,
     )
@@ -515,7 +521,9 @@ describe('authoritative Mobile API source surface', () => {
     // and moves five feedback handlers out of the now shared workout reader.
     // Removing precisely the 56 certified historical edges restores the same
     // per-route count stream; workout reader duplication is consolidated once.
-    const allRoutes = Object.keys(currentAppPathsManifest())
+    const allBuildRoutes = Object.keys(currentAppPathsManifest())
+    const allRoutes = allBuildRoutes.filter((route) => route.startsWith('/api/mobile/v1/'))
+    expect(allRoutes).toHaveLength(75)
     const recoveryRoute = '/api/mobile/v1/auth/password-recovery/route'
     const priorRoutes = allRoutes.filter((route) => route !== recoveryRoute)
     expect(priorRoutes).toHaveLength(74)
@@ -527,7 +535,7 @@ describe('authoritative Mobile API source surface', () => {
       'Headers cannot be modified',
       'NodeNextRequest.stream() can only be called once',
     ])
-    expect(chunkConsumers(nextHttpSplit)).toEqual(allRoutes.slice().sort())
+    expect(chunkConsumers(nextHttpSplit)).toEqual(allBuildRoutes.slice().sort())
     for (const route of allRoutes) {
       expect(
         tracedTargets(route).filter((target) => target === nextHttpSplit),
@@ -562,9 +570,28 @@ describe('authoritative Mobile API source surface', () => {
         nextHttpSplit,
       ].sort(),
     )
-    expect(surface.nftReferenceCount).toBe(8028 + priorRoutes.length + 100)
-    expect(surface.nftUniqueTargetCount).toBe(214 + 2)
-    expect(surface.nftRegularFileTargetCount).toBe(212 + 2)
+    // RevenueCat adds one independent104-reference entry. All75Mobile routes
+    // retain their8202references/216targets; only the own client manifest is new.
+    const webhookRoute = '/api/webhooks/revenuecat/route'
+    const mobileTargets = new Set(allRoutes.flatMap(tracedTargets))
+    expect(allRoutes.reduce((sum, route) => sum + tracedTargets(route).length, 0)).toBe(8202)
+    expect(mobileTargets.size).toBe(216)
+    expect(tracedTargets(webhookRoute)).toHaveLength(104)
+    expect(tracedTargets(webhookRoute).filter((target) => !mobileTargets.has(target))).toEqual([
+      realpathSync(
+        resolve(buildRoot, 'server/app/api/webhooks/revenuecat/route_client-reference-manifest.js'),
+      ),
+    ])
+    // Existing onboarding trial grant keeps its original writer; the signed
+    // provider transport must be reachable only from the new webhook.
+    expect(runtimeMarkerRoutes('apply_entitlement_event')).toEqual([
+      '/api/mobile/v1/onboarding/route',
+      webhookRoute,
+    ])
+    expect(runtimeMarkerRoutes('x-revenuecat-webhook-signature')).toEqual([webhookRoute])
+    expect(surface.nftReferenceCount).toBe(8028 + priorRoutes.length + 100 + 104)
+    expect(surface.nftUniqueTargetCount).toBe(214 + 2 + 1)
+    expect(surface.nftRegularFileTargetCount).toBe(212 + 2 + 1)
     expect(surface.nftDirectoryTargetCount).toBe(2)
     const additions = new Set(
       currentClinicalRouteAdditions.map((path) => `/api/mobile/v1/${path.replace(/\.ts$/, '')}`),

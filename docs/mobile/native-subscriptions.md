@@ -75,6 +75,15 @@ locais não provam publicação: conferir o endpoint no destino antes de cadastr
 no provedor. O webhook exige assinatura HMAC ativada na integração RevenueCat;
 sem configuração responde 503 antes de criar cliente do banco.
 
+O webhook distingue metadados de controle dos dados de uma compra. `TEST`
+autenticado, com ambiente explícito correto, responde `ignored` sem consultar
+paciente/produto ou gravar entitlement. `TRANSFER` e tipos desconhecidos
+continuam exigindo reconciliação, sem alterar usuários. Eventos de assinatura
+que podem alterar acesso conservam UUID de domínio, ambiente, entitlement,
+produto e datas obrigatórios. As fixtures locais de TEST derivam do contrato
+de campos; não são um evento observado do dashboard. A fixture TRANSFER
+preserva o [exemplo oficial](https://www.revenuecat.com/docs/integrations/webhooks/sample-events).
+
 A presença do código não comprova ativação comercial. Antes de ativar ou
 distribuir uma versão com compras, qualificar projeto/chave/catálogo reais,
 política de transferência de contas, webhook autenticado, capability IAP,

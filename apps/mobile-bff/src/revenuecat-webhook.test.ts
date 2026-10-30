@@ -1,5 +1,9 @@
 import { createHmac } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  contractRevenueCatTest,
+  officialRevenueCatTransfer,
+} from '@/lib/billing/__fixtures__/revenuecat-control-events'
 
 const database = vi.hoisted(() => ({ rpc: vi.fn(), create: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createServiceClient: database.create }))
@@ -76,6 +80,101 @@ describe('RevenueCat BFF HTTP entry', () => {
     const response = await POST(signedRequest('x'.repeat(256 * 1024 + 1)))
     expect(response.status).toBe(413)
     expect(await response.json()).toEqual({ ok: false, error: 'request_too_large' })
+    expect(database.create).not.toHaveBeenCalled()
+  })
+
+  it('acknowledges a signed TEST without looking up or creating a patient entitlement', async () => {
+    providerConfiguration()
+    const { POST } = await import('./app/api/webhooks/revenuecat/route')
+    const payload = {
+      ...contractRevenueCatTest,
+      event: {
+        ...contractRevenueCatTest.event,
+        subscriber_attributes: { diagnostic: { value: 'ação sintética — não ecoar' } },
+      },
+    }
+    const raw = JSON.stringify(payload, null, 2)
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const response = await POST(signedRequest(raw))
+      expect(response.status).toBe(200)
+      expect(await response.json()).toEqual({ ok: true, result: 'ignored' })
+    }
+    expect(database.create).not.toHaveBeenCalled()
+    expect(database.rpc).not.toHaveBeenCalled()
+  })
+
+  it('requires reconciliation for the exact signed official TRANSFER and leaves both users untouched', async () => {
+    providerConfiguration()
+    vi.stubEnv('REVENUECAT_WEBHOOK_ENVIRONMENT', 'production')
+    const { POST } = await import('./app/api/webhooks/revenuecat/route')
+    const response = await POST(signedRequest(JSON.stringify(officialRevenueCatTransfer)))
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({ ok: false, error: 'reconciliation_required' })
+    expect(database.create).not.toHaveBeenCalled()
+  })
+
+  it('rejects a tampered TEST before its state-neutral acknowledgement', async () => {
+    providerConfiguration()
+    const { POST } = await import('./app/api/webhooks/revenuecat/route')
+    const request = signedRequest(JSON.stringify(contractRevenueCatTest))
+    request.headers.set('x-revenuecat-webhook-signature', `t=1,v1=${'0'.repeat(64)}`)
+    const response = await POST(request)
+    expect(response.status).toBe(401)
+    expect(await response.json()).toEqual({ ok: false, error: 'invalid_signature' })
+    expect(database.create).not.toHaveBeenCalled()
+  })
+
+  it('keeps an unknown signed event retryable without treating it as a purchase', async () => {
+    providerConfiguration()
+    const { POST } = await import('./app/api/webhooks/revenuecat/route')
+    const response = await POST(
+      signedRequest(
+        JSON.stringify({
+          api_version: '1.0',
+          event: {
+            id: 'synthetic-unknown-001',
+            type: 'FUTURE_PROVIDER_EVENT',
+            event_timestamp_ms: Date.now(),
+          },
+        }),
+      ),
+    )
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({ ok: false, error: 'reconciliation_required' })
+    expect(database.create).not.toHaveBeenCalled()
+  })
+
+  it('rejects a TEST from the wrong configured environment before acknowledging it', async () => {
+    providerConfiguration()
+    vi.stubEnv('REVENUECAT_WEBHOOK_ENVIRONMENT', 'production')
+    const { POST } = await import('./app/api/webhooks/revenuecat/route')
+    const response = await POST(signedRequest(JSON.stringify(contractRevenueCatTest)))
+    expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({ ok: false, error: 'environment_mismatch' })
+    expect(database.create).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['string identity', { app_user_id: 'synthetic-test-user' }, 400, 'invalid_payload'],
+    ['unmapped entitlement', { entitlement_ids: null }, 422, 'unknown_entitlement'],
+    ['missing expiry', { expiration_at_ms: null }, 400, 'invalid_payload'],
+  ])('does not extend TEST acknowledgement to a purchase with %s', async (_, overrides, status, code) => {
+    providerConfiguration()
+    const { POST } = await import('./app/api/webhooks/revenuecat/route')
+    const payload = {
+      ...contractRevenueCatTest,
+      event: {
+        ...contractRevenueCatTest.event,
+        type: 'INITIAL_PURCHASE',
+        app_user_id: '00000000-0000-4000-8000-000000000001',
+        entitlement_ids: ['bodyflow_full'],
+        product_id: 'synthetic_monthly',
+        ...overrides,
+      },
+    }
+    const response = await POST(signedRequest(JSON.stringify(payload)))
+    expect(response.status).toBe(status)
+    expect(await response.json()).toEqual({ ok: false, error: code })
     expect(database.create).not.toHaveBeenCalled()
   })
 

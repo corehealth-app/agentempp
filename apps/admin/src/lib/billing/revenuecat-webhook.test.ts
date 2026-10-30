@@ -1,6 +1,10 @@
 import { createHmac } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import {
+  contractRevenueCatTest,
+  officialRevenueCatTransfer,
+} from './__fixtures__/revenuecat-control-events'
+import {
   normalizeRevenueCatEvent,
   parseRevenueCatProductPlanMap,
   RevenueCatWebhookError,
@@ -81,6 +85,99 @@ describe('RevenueCat signature verification', () => {
 })
 
 describe('RevenueCat event normalization', () => {
+  it('acknowledges a documented TEST shape without requiring a real patient or product mapping', () => {
+    expect(normalizeRevenueCatEvent(contractRevenueCatTest, configuration)).toEqual({
+      kind: 'ignored',
+      reason: 'state_neutral_event',
+    })
+  })
+
+  it('keeps the exact official TRANSFER payload retryable without inventing purchase fields', () => {
+    expect(() =>
+      normalizeRevenueCatEvent(officialRevenueCatTransfer, {
+        ...configuration,
+        expectedEnvironment: 'production',
+      }),
+    ).toThrow(expect.objectContaining({ status: 503, code: 'reconciliation_required' }))
+  })
+
+  it.each([
+    undefined,
+    null,
+  ])('keeps a transfer with optional environment %s retryable', (environment) => {
+    const payload = {
+      ...officialRevenueCatTransfer,
+      event: { ...officialRevenueCatTransfer.event, environment },
+    }
+    expect(() => normalizeRevenueCatEvent(payload, configuration)).toThrow(
+      expect.objectContaining({ status: 503, code: 'reconciliation_required' }),
+    )
+  })
+
+  it('leaves a new control event retryable without requiring subscription fields', () => {
+    expect(() =>
+      normalizeRevenueCatEvent(
+        {
+          api_version: '1.0',
+          event: {
+            id: 'synthetic-new-event',
+            type: 'FUTURE_PROVIDER_EVENT',
+            event_timestamp_ms: NOW.getTime(),
+          },
+        },
+        configuration,
+      ),
+    ).toThrow(expect.objectContaining({ status: 503, code: 'reconciliation_required' }))
+  })
+
+  it.each([
+    contractRevenueCatTest,
+    officialRevenueCatTransfer,
+  ])('checks a provided environment before classifying a control event', (payload) => {
+    expect(() =>
+      normalizeRevenueCatEvent(
+        { ...payload, event: { ...payload.event, environment: 'PRODUCTION' } },
+        configuration,
+      ),
+    ).toThrow(expect.objectContaining({ status: 403, code: 'environment_mismatch' }))
+  })
+
+  it('requires an explicit matching environment to acknowledge TEST', () => {
+    expect(() =>
+      normalizeRevenueCatEvent(
+        {
+          ...contractRevenueCatTest,
+          event: {
+            ...contractRevenueCatTest.event,
+            environment: undefined,
+          },
+        },
+        configuration,
+      ),
+    ).toThrow(expect.objectContaining({ status: 400, code: 'invalid_payload' }))
+  })
+
+  it.each([
+    { id: '' },
+    { type: '' },
+    { event_timestamp_ms: 0 },
+    { event_timestamp_ms: '1784887200000' },
+    { environment: 'unknown' },
+  ])('does not acknowledge malformed TEST metadata $id $type $event_timestamp_ms $environment', (overrides) => {
+    expect(() =>
+      normalizeRevenueCatEvent(
+        {
+          ...contractRevenueCatTest,
+          event: {
+            ...contractRevenueCatTest.event,
+            ...overrides,
+          },
+        },
+        configuration,
+      ),
+    ).toThrow(expect.objectContaining({ status: 400, code: 'invalid_payload' }))
+  })
+
   it('normalizes an App Store purchase into a central entitlement event', () => {
     expect(normalizeRevenueCatEvent(event(), configuration)).toEqual({
       kind: 'apply',

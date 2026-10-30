@@ -109,15 +109,36 @@ export function parseRevenueCatProductPlanMap(value: string): Record<string, Ent
   return Object.fromEntries(Object.entries(result.data))
 }
 
+const eventMetadataSchema = z.object({
+  id: z.string().min(1).max(200),
+  type: z.string().min(1).max(100),
+  event_timestamp_ms: z.number().int().positive(),
+  // TRANSFER and other non-purchase events can omit this field. Its absence
+  // can only reach non-mutating reconciliation, never a subscription write.
+  environment: z.enum(['SANDBOX', 'PRODUCTION']).nullable().optional(),
+})
+const revenueCatMetadataSchema = z.object({
+  api_version: z.literal('1.0'),
+  event: eventMetadataSchema,
+})
+const subscriptionEventTypes = new Set([
+  'INITIAL_PURCHASE',
+  'RENEWAL',
+  'UNCANCELLATION',
+  'SUBSCRIPTION_EXTENDED',
+  'REFUND_REVERSED',
+  'CANCELLATION',
+  'EXPIRATION',
+  'BILLING_ISSUE',
+  'PRODUCT_CHANGE',
+  'SUBSCRIPTION_PAUSED',
+])
 const revenueCatEnvelopeSchema = z.object({
   api_version: z.literal('1.0'),
-  event: z.object({
-    id: z.string().min(1).max(200),
-    type: z.string().min(1).max(100),
+  event: eventMetadataSchema.extend({
     app_user_id: z.string().uuid(),
     entitlement_ids: z.array(z.string().min(1).max(200)).max(32).nullable(),
     environment: z.enum(['SANDBOX', 'PRODUCTION']),
-    event_timestamp_ms: z.number().int().positive(),
     expiration_at_ms: z.number().int().positive().nullable(),
     purchased_at_ms: z.number().int().positive(),
     grace_period_expiration_at_ms: z.number().int().positive().nullable().optional(),
@@ -154,6 +175,38 @@ export function normalizeRevenueCatEvent(
   payload: unknown,
   configuration: RevenueCatNormalizationConfiguration,
 ): RevenueCatNormalizationResult {
+  const metadata = revenueCatMetadataSchema.safeParse(payload)
+  if (!metadata.success) {
+    throw new RevenueCatWebhookError(400, 'invalid_payload', 'Invalid RevenueCat payload')
+  }
+  const header = metadata.data.event
+  if (header.environment != null) {
+    const environment = header.environment === 'SANDBOX' ? 'sandbox' : 'production'
+    if (environment !== configuration.expectedEnvironment) {
+      throw new RevenueCatWebhookError(
+        403,
+        'environment_mismatch',
+        'RevenueCat environment mismatch',
+      )
+    }
+  }
+  if (header.type === 'TEST') {
+    if (header.environment == null) {
+      throw new RevenueCatWebhookError(400, 'invalid_payload', 'Test environment is required')
+    }
+    // A dashboard test is not a patient purchase. No identity, product lookup
+    // or entitlement mutation may follow this acknowledgement.
+    return { kind: 'ignored', reason: 'state_neutral_event' }
+  }
+  if (!subscriptionEventTypes.has(header.type)) {
+    throw new RevenueCatWebhookError(
+      503,
+      'reconciliation_required',
+      'RevenueCat event requires reconciliation',
+    )
+  }
+
+  // Only known subscription events reach the original strict write boundary.
   const parsed = revenueCatEnvelopeSchema.safeParse(payload)
   if (!parsed.success) {
     throw new RevenueCatWebhookError(400, 'invalid_payload', 'Invalid RevenueCat payload')
@@ -164,13 +217,6 @@ export function normalizeRevenueCatEvent(
   if (actualEnvironment !== configuration.expectedEnvironment) {
     throw new RevenueCatWebhookError(403, 'environment_mismatch', 'RevenueCat environment mismatch')
   }
-  if (event.type === 'TRANSFER') {
-    throw new RevenueCatWebhookError(
-      503,
-      'reconciliation_required',
-      'RevenueCat transfer requires reconciliation',
-    )
-  }
   if (event.store !== 'APP_STORE' && event.store !== 'TEST_STORE') {
     throw new RevenueCatWebhookError(422, 'unsupported_store', 'Unsupported RevenueCat store')
   }
@@ -178,11 +224,7 @@ export function normalizeRevenueCatEvent(
     throw new RevenueCatWebhookError(422, 'unknown_entitlement', 'Unknown RevenueCat entitlement')
   }
 
-  if (
-    event.type === 'PRODUCT_CHANGE' ||
-    event.type === 'SUBSCRIPTION_PAUSED' ||
-    event.type === 'TEST'
-  ) {
+  if (event.type === 'PRODUCT_CHANGE' || event.type === 'SUBSCRIPTION_PAUSED') {
     return { kind: 'ignored', reason: 'state_neutral_event' }
   }
 

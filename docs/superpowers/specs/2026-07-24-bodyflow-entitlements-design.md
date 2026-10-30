@@ -142,7 +142,8 @@ The webhook route is disabled when its signing secret is absent. It must:
 - verify RevenueCat HMAC with a constant-time comparison and a bounded replay
   window;
 - accept only the configured environment;
-- require a UUID App User ID and the configured entitlement key;
+- require a UUID App User ID and the configured entitlement key before
+  normalizing a subscription entitlement mutation;
 - normalize only known event types;
 - use provider event ID and timestamp for idempotency/order;
 - never log request bodies, product receipts, aliases or customer attributes.
@@ -164,6 +165,27 @@ instead of guessing whether access should continue.
 Events that cannot be safely reduced from their own payload, including transfer
 reconciliation, must fail closed for backend mutation and remain retryable.
 They must not guess ownership or revoke another patient's access.
+
+### Control-envelope compatibility (2026-10-29)
+
+Validate `api_version`, event ID/type/timestamp before dispatching an event.
+Any provided store environment must match the configured environment. A `TEST`
+also requires an explicit matching environment, but is acknowledged as ignored
+without validating a patient UUID, looking up a product or creating a database
+client. Its purchase-like sample metadata does not establish a real purchase.
+No test event grants access or persists customer attributes.
+
+The published `TRANSFER` example contains transfer arrays rather than purchase
+fields. It and unknown event types remain retryable with
+`reconciliation_required`, including when their optional environment is absent.
+That absence never authorizes a write. Malformed common metadata is rejected;
+known subscription events still pass the original strict purchase validator.
+Do not infer a patient from aliases or broaden the supported stores/catalog.
+
+This parsing boundary does not implement transfer reconciliation. Actual
+provider delivery, transfer policy, refund/current-state reconciliation and
+Sandbox qualification remain required before commercial activation. The local
+customer-support refund policy above is preserved by this increment.
 
 ## Stripe Compatibility
 

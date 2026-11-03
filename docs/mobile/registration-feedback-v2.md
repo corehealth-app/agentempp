@@ -4,7 +4,7 @@ Implementação do contrato e da apresentação em `packages/agent/src/registrat
 
 ## Estado de integração
 
-A fonte local inclui apresentação, captura, armazenamento privado com CAS e o adaptador BFF de enriquecimento. Essas partes não estão ativadas no staging, nos endpoints ou no iOS. Ainda faltam a seleção explícita de versão no servidor e o consumidor nativo compatível. A qualificação conectada local do adaptador não equivale a registro pelo chat, QA do app ou entrega no TestFlight.
+A fonte local inclui apresentação, captura, armazenamento privado com CAS, adaptador BFF e consumidor iOS opcional para a confirmação. O leitor nativo preserva v1 e renderiza os seis blocos de v2; sua qualificação está em [registration-feedback-v2-ios.md](registration-feedback-v2-ios.md). O histórico legado continua admitindo somente v1 até receber uma apresentação clínica atual autenticada. Ainda não há seleção de v2 nos endpoints nem ativação no staging ou na versão distribuída. A qualificação local do adaptador e do leitor não equivale ao registro completo pelo chat ou à entrega no TestFlight.
 
 O serviço `registration-feedback-v2-service.ts` lê o recibo antes de qualquer preparação. Sem recibo, valida a captura privada, confere a proposta confirmada e obtém o dia pelo construtor direto do leitor clínico, sem admissão ou efeitos diários. Cada observação desse leitor deve corresponder ao binding clínico original; o commit SQL recaptura todos os fatos. Uma resposta perdida após o commit provoca uma única leitura de reconciliação, sem repetir commit ou registro. Conflito de fonte não autoriza reutilizar metas ou inventar outro dia.
 

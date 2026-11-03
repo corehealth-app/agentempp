@@ -17,6 +17,7 @@
     "./workout-strength-identity": "./src/workout-strength-identity.ts",
     "./workout-strength-clarification": "./src/workout-strength-clarification.ts",
     "./registration-feedback": "./src/registration-feedback.ts",
+    "./registration-feedback-v2": "./src/registration-feedback-v2.ts",
     "./reevaluation-photo-disposition": "./src/reevaluation-photo-disposition.ts",
     "./supabase-reevaluation-photo-disposition": "./src/supabase-reevaluation-photo-disposition.ts"
   },

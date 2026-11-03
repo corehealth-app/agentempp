@@ -4,7 +4,7 @@ Implementação do contrato e da apresentação em `packages/agent/src/registrat
 
 ## Estado de integração
 
-Esta primeira parte é local e não está ativada nos endpoints ou no iOS. Ainda faltam o armazenamento v2 com CAS da observação clínica, o leitor autenticado, a seleção explícita de versão no servidor e o consumidor nativo compatível. Não confundir os testes destas funções com registro pelo chat, QA conectado ou entrega no TestFlight.
+A fonte local inclui apresentação, captura e armazenamento privado com CAS. Essas partes não estão ativadas no staging, nos endpoints ou no iOS. Ainda faltam o adaptador BFF com leitura clínica atual, a seleção explícita de versão no servidor e o consumidor nativo compatível. Não confundir a qualificação SQL local com registro pelo chat, QA conectado ou entrega no TestFlight.
 
 ## Fatos e apresentação
 
@@ -20,13 +20,13 @@ Para a admissão protegida `ui-v1`, o projetor exige também o testemunho privad
 
 A captura SQL separa os testemunhos `ui-v1` e `direct-key`. O futuro adaptador deve validar essa distinção antes da projeção: `workoutProof` recebe somente o testemunho protegido `ui-v1`; o legado `direct-key` deve corresponder à chave original e ao log único, sem ser passado como prova protegida. Nunca remover o marcador `ui-v1` para contornar uma prova inválida.
 
-A migração `20261103142948_mobile_registration_feedback_v2_capture.sql` prepara a captura e a tabela privada imutável, com RLS e sem acesso direto, inclusive pelo papel de serviço. Não contém produtor de recibos: commit com CAS, validador fechado, leitura e consumidores continuam pendentes. Sua aplicação não está ativada no staging.
+A migração `20261103142948_mobile_registration_feedback_v2_capture.sql` prepara a captura e a tabela privada imutável, com RLS e sem acesso direto, inclusive pelo papel de serviço. A migração seguinte, `20261103152313_mobile_registration_feedback_v2_receipts.sql`, oferece commit e leitura somente ao backend confiável. As duas permanecem sem aplicação no staging.
 
 Os valores individuais vêm das colunas efetivamente persistidas dos logs, com duas casas decimais; o total canônico da proposta é preservado separadamente. O resumo oficial do dia tem sua própria representação. Não forçar igualdade entre um novo somatório de floats, o total original e o arredondamento inteiro de calorias do snapshot.
 
 ## Dia e proteção clínica
 
-O chamador deve fornecer uma leitura atual, comprovadamente da pessoa e da mesma data do registro, pelo construtor direto de `createCurrentClinicalReadModel`, sem admissão com efeitos, aplicação diária ou fechamento. A próxima integração deve comparar no commit a observação clínica estável e os registros usados; os tipos desta biblioteca não substituem esse CAS.
+O chamador deve fornecer uma leitura atual, comprovadamente da pessoa e da mesma data do registro, pelo construtor direto de `createCurrentClinicalReadModel`, sem admissão com efeitos, aplicação diária ou fechamento. O commit SQL recaptura e compara a observação clínica estável e os registros usados; os tipos desta biblioteca não substituem esse CAS. Também confere a visibilidade a partir dos fatos clínicos capturados, incluindo proteções conhecidas em cadastros incompletos. Não aceita uma autorização clínica enviada pelo cliente.
 
 Consumo exige `daily_snapshot`; cada meta exige sua própria proveniência `daily_snapshot`. As metas de calorias e proteína são independentes. Ausência ou proteção produz null, sem percentual, objetivo presumido ou fallback para fórmula. O saldo alimentar é o oficial; exercício não aumenta a comida disponível. Carboidratos, gordura e exercício não recebem percentuais sem uma meta oficial.
 
@@ -40,10 +40,12 @@ A base da redação sobre movimento é a [ficha da OMS sobre atividade física](
 
 Proveniência contém apenas tipo, versão, template e indicador de preferências conhecidas. Não contém prompt, estado de saúde, autoridade, dono ou cursor. A revisão técnica destes templates não representa aceite editorial ou clínico em nome do Roberto. Esse aceite e a conferência do comportamento completo continuam na qualificação da entrega.
 
-Não há chamada de IA, novo custo de inferência, cron, serviço ou infraestrutura neste incremento. Não se ativa o gerador legado que usa identidade profissional. Uma revisão futura do texto exige nova versão do catálogo e preservação do renderizador antigo para os recibos existentes. Indisponibilidade da educação não invalida o registro nem deve repetir o writer.
+Não há chamada de IA, novo custo de inferência, cron ou serviço de nuvem neste incremento. A qualificação usa PostgreSQL local com dados sintéticos. Não se ativa o gerador legado que usa identidade profissional. Uma revisão futura do texto exige nova versão do catálogo e preservação do renderizador antigo para os recibos existentes. Indisponibilidade da educação não invalida o registro nem deve repetir o writer.
 
 ## Compatibilidade e próximo passo
 
-O armazenamento será separado e privado, com vínculo à proposta original, dados oficiais e observação clínica estável. Repetição deve ler o recibo antes de preparar outro; recibos v1 existentes não serão regenerados. Correção terá seu próprio evento e preservará o recibo histórico original. Reabertura será leitura, sem gravação, seleção de frase ou recompensa.
+O armazenamento é separado e privado, com vínculo à proposta original, dados oficiais e observação clínica estável. Commit retorna o recibo existente antes de exigir outra preparação; o futuro adaptador também deve lê-lo antes de preparar outro. Recibos v1 existentes são devolvidos sem regeneração. Uma trava recíproca no writer v1 impede uma nova seleção de frases depois que v2 vence: a primeira versão armazenada pertence ao evento. Correção terá seu próprio evento e preservará o recibo histórico original. Reabertura será leitura, sem gravação, seleção de frase ou recompensa.
+
+O banco valida objetos fechados, números provenientes dos logs/snapshot/progresso, conversões de unidades e o texto educativo inteiro. Não persiste o contexto clínico privado: guarda seu hash estável e o DTO público. Percentuais seguem a mesma aritmética IEEE754 da apresentação JavaScript, inclusive nos limites de arredondamento. A migração verifica o hash da implementação v1 esperada antes de adicionar sua trava; divergência interrompe a aplicação.
 
 A integração só poderá retornar v2 a um cliente que declare suporte. Nenhuma flag, migração ou rota foi ativada por este primeiro incremento.

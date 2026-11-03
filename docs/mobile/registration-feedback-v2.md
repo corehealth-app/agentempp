@@ -4,7 +4,11 @@ Implementação do contrato e da apresentação em `packages/agent/src/registrat
 
 ## Estado de integração
 
-A fonte local inclui apresentação, captura e armazenamento privado com CAS. Essas partes não estão ativadas no staging, nos endpoints ou no iOS. Ainda faltam o adaptador BFF com leitura clínica atual, a seleção explícita de versão no servidor e o consumidor nativo compatível. Não confundir a qualificação SQL local com registro pelo chat, QA conectado ou entrega no TestFlight.
+A fonte local inclui apresentação, captura, armazenamento privado com CAS e o adaptador BFF de enriquecimento. Essas partes não estão ativadas no staging, nos endpoints ou no iOS. Ainda faltam a seleção explícita de versão no servidor e o consumidor nativo compatível. A qualificação conectada local do adaptador não equivale a registro pelo chat, QA do app ou entrega no TestFlight.
+
+O serviço `registration-feedback-v2-service.ts` lê o recibo antes de qualquer preparação. Sem recibo, valida a captura privada, confere a proposta confirmada e obtém o dia pelo construtor direto do leitor clínico, sem admissão ou efeitos diários. Cada observação desse leitor deve corresponder ao binding clínico original; o commit SQL recaptura todos os fatos. Uma resposta perdida após o commit provoca uma única leitura de reconciliação, sem repetir commit ou registro. Conflito de fonte não autoriza reutilizar metas ou inventar outro dia.
+
+O transporte separa os testemunhos de atividade protegida e legada, valida dono, evento, snapshot, logs e contexto clínico, e descarta aliases mutáveis antes dos awaits. Informações privadas e erros de provedor não entram no DTO ou nos logs. A leitura histórica interna devolve o recibo original: a futura timeline ainda deve aplicar sua superfície de apresentação clínica atual antes da ativação pública, sem reescrever esse histórico.
 
 ## Fatos e apresentação
 

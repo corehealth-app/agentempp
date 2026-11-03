@@ -1583,6 +1583,7 @@ describe('Defect B closure — the two pendings of the report created THROUGH pr
       [{ food_name: 'frango grelhado no almoço', quantity_g: 150 }],
       'BR',
       USER_ID,
+      { consumptionPolicy: 'consumed-meal-v1' },
     ])
     // The seam: what proposeRegistration hands to the RPC, and what is stored.
     const firstCall = db.rpcCalls.find((call) => call.fn === 'replace_pending_registration_atomic')

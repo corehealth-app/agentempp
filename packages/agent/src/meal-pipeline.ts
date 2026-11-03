@@ -7,6 +7,11 @@
  * ADR-006: cálculos saem da TACO, não do LLM.
  */
 import type { ServiceClient } from '@mpp/db'
+import {
+  ConsumedFoodReferenceUnavailableError,
+  consumedFoodDefault,
+  normalizeConsumedFoodQuantity,
+} from './consumed-food-defaults.js'
 import { type EverydayFoodDefault, everydayFoodDefault } from './everyday-food-defaults.js'
 import { classifyNutritionContext, isAggregateNutritionText } from './nutrition-context.js'
 import { hasImpossibleKcalDensity } from './nutrition-invariants.js'
@@ -1815,6 +1820,7 @@ export async function calcMealMacros(
   country: string = 'BR',
   /** ID do paciente — habilita reuso de alimentos do histórico do user. */
   userIdHint?: string,
+  options?: { consumptionPolicy?: 'consumed-meal-v1' },
 ): Promise<MealCalcResult> {
   const matched: MealItemMatched[] = []
   const userWarnings: string[] = []
@@ -2116,7 +2122,16 @@ export async function calcMealMacros(
     // again from the same catalog row for the summed quantity. Only lines
     // produced by this branch are added; every other pair of equal names is
     // left exactly as it was.
-    const everyday = everydayFoodDefault(it.food_name)
+    // Explicit/approved nutrition and original-name personal corrections above
+    // own their precedence. Only then normalize a duplicated mass for defaults.
+    if (options?.consumptionPolicy === 'consumed-meal-v1') {
+      it = { ...it, food_name: normalizeConsumedFoodQuantity(it.food_name, it.quantity_g, country) }
+    }
+    const consumed =
+      options?.consumptionPolicy === 'consumed-meal-v1'
+        ? consumedFoodDefault(it.food_name, country)
+        : null
+    const everyday = consumed ?? everydayFoodDefault(it.food_name)
     if (everyday) {
       let row = everydayRows.get(everyday)
       if (row === undefined) {
@@ -2153,8 +2168,13 @@ export async function calcMealMacros(
           display_qty: nat.display_qty,
           display_unit: nat.display_unit,
         }
+        if (consumed) {
+          userWarnings.push(
+            `Considerei "${consumed.shown_as}" como referência para "${it.food_name}". O preparo e a variedade assumidos podem ser corrigidos.`,
+          )
+        }
         auditWarnings.push(
-          `"${it.food_name}" assumido como "${everyday.shown_as}" (${row.name_pt}; ${everyday.source_ref}) — padrão do dia a dia, confirmação do cliente pendente.`,
+          `"${it.food_name}" assumido como "${everyday.shown_as}" (${row.name_pt}; ${everyday.source_ref}) — ${consumed ? 'consumed-meal-v1, referência aprovada03/11/2026' : 'padrão do dia a dia, confirmação do cliente pendente'}.`,
         )
         if (earlier && previous) {
           // The line of the first item is replaced, so its share leaves the
@@ -2180,6 +2200,7 @@ export async function calcMealMacros(
         totals.fiber_g += fiber
         continue
       }
+      if (consumed) throw new ConsumedFoodReferenceUnavailableError()
       // Nothing is invented: without the row of the list the item is
       // calculated exactly as it was before the list existed.
       auditWarnings.push(

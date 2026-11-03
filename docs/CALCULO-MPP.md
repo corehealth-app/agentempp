@@ -2588,6 +2588,44 @@ duas em `0`, as descrições voltam ao texto anterior a esta regra.
 
 ### 9a. A lista (`packages/agent/src/everyday-food-defaults.ts`)
 
+#### Adendo03/11/2026 — consumo no app, sem alterar a política legada
+
+Eduardo aprovou no plano conversacional assumir arroz/feijão cozidos quando o
+preparo não foi informado, com suposição visível e editável. A opção explícita
+`calcMealMacros(..., { consumptionPolicy: 'consumed-meal-v1' })` no quinto
+argumento aplica referências brasileiras de `consumed-food-defaults.ts`.
+Proposta/edição de origem `mobile_app` e recálculo da edição de alimento
+confirmado usam essa opção; uma edição de pending legado preserva seu caminho.
+Sem a opção, os goldens da decisão de28/09 permanecem válidos.
+
+| Nome inteiro | Referência mostrada | Catálogo | kcal / P / C / G por100g |
+|---|---|---|---|
+| arroz, arroz branco, arroz cozido | arroz branco cozido | TACO4:3 |128,26 /2,52 /28,06 /0,23|
+| arroz integral | arroz integral cozido | TACO4:1 |123,53 /2,59 /25,81 /1|
+| feijão, feijão cozido, feijão carioca | feijão carioca cozido | TACO4:561 |76,42 /4,78 /13,59 /0,54|
+| feijão preto | feijão preto cozido | TACO4:567 |77,03 /4,48 /14,01 /0,54|
+
+A escolha carioca para o nome genérico é uma referência técnica declarada no
+nome e aviso, não prova de variedade observada. Os valores identificam linhas
+da migration `20260718213529`; são utilizados somente após consulta ao catálogo
+verificado e comparação de nome/quatro valores. Não existe novo número de
+estimativa nem valor hardcoded usado no lugar do catálogo. Referência ausente
+ou divergente recusa o cálculo com `nutrition_reference_unavailable`503, sem
+pending/meal criado, sem estimar feijão como prato genérico e sem publicar zero.
+
+Preparo/variedade explícitos, rótulo aprovado, kcal informada e correção pessoal
+ativa preservam precedência. O matching é por nome inteiro; não absorve marcas,
+pratos compostos ou produtos como Rap10. Um sufixo em gramas num nome conhecido
+(`arroz200g`) é removido apenas se o campo de quantidade coincide; conflito
+responde `meal_quantity_conflict`422. Não se trata de parser geral de SKU.
+
+Itens que resolvem à mesma referência são somados pela lógica já existente,
+com `input_indexes` preservando identidade/bases dos candidatos posteriores.
+Edição somente de quantidade mantém os macros aprovados existentes, sem lookup.
+Não há backfill, mudança de fórmula, meta, balanço, bloco ou pontuação.
+
+Esta é fonte local; publicação e QA conectado são gates separados do teste.
+
 | Quando o item inteiro é | O sistema assume e mostra | Linha do catálogo (verificada) | Fonte | kcal · P · C · G por 100 g |
 |---|---|---|---|---|
 | "leite" ou "leite integral" | leite integral | "Milk, whole, 3.25% milkfat, with added vitamin D" (id 4492 no staging) | USDA FDC:171265 | 61 · 3,15 · 4,8 · 3,25 |

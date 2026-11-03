@@ -308,7 +308,7 @@ function emptyTable(): unknown {
 
 const toCents = (value: number) => Math.round(value * 100)
 
-function stagingDay(options: { withoutRows?: number[]; windows?: Record<string, FoodRow[]>; localDate?: string } = {}) {
+function stagingDay(options: { withoutRows?: number[]; windows?: Record<string, FoodRow[]>; localDate?: string; mediaKind?: 'meal_photo'|'audio_note' } = {}) {
   const localDate = options.localDate ?? LOCAL_DATE
   const meals: MealRow[] = []
   const pendings: PendingRow[] = []
@@ -440,6 +440,15 @@ function stagingDay(options: { withoutRows?: number[]; windows?: Record<string, 
 
   const client = {
     from(table: string): unknown {
+      if(table==='media_assets' && options.mediaKind) return new Query(()=>[{
+        id:'11111111-1111-4111-8111-111111111111',user_id:USER_ID,kind:options.mediaKind,
+        bucket_id:'synthetic-private-media',object_path:`${USER_ID}/synthetic-input`,
+        mime_type:options.mediaKind==='meal_photo'?'image/jpeg':'audio/mp4',
+        declared_size_bytes:100,actual_size_bytes:100,status:'processed',
+        failure_stage:null,failure_code:null,context_text:null,retention_until:null,
+        uploaded_at:PROPOSE_AT,processed_at:PROPOSE_AT,deleted_at:null,processing_result:{},
+        created_at:PROPOSE_AT,updated_at:PROPOSE_AT,
+      }])
       if (table === 'pending_registrations') return new Query(() => pendings)
       if (table === 'meal_logs') return new Query(() => meals)
       if (table === 'daily_snapshots') return new Query(() => [snapshot])
@@ -480,6 +489,170 @@ const REPORTED_MEAL: MealInput = {
   ],
   source: { channel: 'text' },
 }
+
+describe('Roberto31Oct / approved03Nov — cooked mobile consumption policy', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(PROPOSE_AT))
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+  const rice = food(
+    160,
+    'Arroz, tipo 1, cozido',
+    'Cereais e derivados',
+    1,
+    128.26,
+    2.52,
+    28.06,
+    0.23,
+    1.56,
+  )
+  const beans = food(
+    703,
+    'Feijão, carioca, cozido',
+    'Leguminosas e derivados',
+    1,
+    76.42,
+    4.78,
+    13.59,
+    0.54,
+    8.51,
+  )
+  function catalog() {
+    return {
+      ...WINDOWS,
+      arroz: [
+        food(161, 'Arroz, tipo 1, cru', 'Cereais e derivados', 1, 357.79, 7.16, 78.76, 0.34, 1.64),
+        rice,
+      ],
+      feijão: [
+        food(
+          704,
+          'Feijão, carioca, cru',
+          'Leguminosas e derivados',
+          1,
+          329.03,
+          19.98,
+          61.22,
+          1.26,
+          18.42,
+        ),
+        beans,
+      ],
+      [rice.name_pt.toLowerCase()]: [rice],
+      [beans.name_pt.toLowerCase()]: [beans],
+    }
+  }
+  const items: MealInput['items'] = [
+    { food_name: 'arroz', quantity_g: 200, quantity_basis: 'stated' },
+    { food_name: 'feijão', quantity_g: 200, quantity_basis: 'visual_estimate' },
+  ]
+
+  // These are normalized text/media candidates, not a model/upload E2E proof.
+  it.each([
+    'text',
+    'camera',
+    'gallery',
+    'audio_recording',
+    'audio_import',
+  ] as const)('resolves the exact foods consistently after %s extraction, preserving quantity provenance', async (channel) => {
+    const db = stagingDay({
+      windows: catalog(),
+      mediaKind:
+        channel === 'text'
+          ? undefined
+          : channel === 'camera' || channel === 'gallery'
+            ? 'meal_photo'
+            : 'audio_note',
+    })
+    const proposed = await proposeRegistration(
+      db.client as never,
+      AUTH as never,
+      {
+        kind: 'meal',
+        meal_type: 'almoco',
+        items,
+        source: {
+          channel,
+          ...(channel === 'text' ? {} : { media_asset_id: '11111111-1111-4111-8111-111111111111' }),
+        },
+      },
+      KEY_PROPOSE,
+    )
+    expect(proposed.proposal).toMatchObject({
+      kind: 'meal',
+      items: [
+        {
+          name: 'arroz branco cozido',
+          quantity_g: 200,
+          kcal: 256.5,
+          resolution: 'resolved',
+          quantity_basis: 'stated',
+        },
+        {
+          name: 'feijão carioca cozido',
+          quantity_g: 200,
+          kcal: 152.8,
+          resolution: 'resolved',
+          quantity_basis: 'visual_estimate',
+        },
+      ],
+      totals: { kcal: 409.3 },
+    })
+    expect(db.meals).toEqual([])
+  })
+
+  it('edits the same pending and confirms/replays only its final calculated values', async () => {
+    const db = stagingDay({ windows: catalog() })
+    const input: MealInput = { kind: 'meal', meal_type: 'almoco', items }
+    const proposed = await proposeRegistration(
+      db.client as never,
+      AUTH as never,
+      input,
+      KEY_PROPOSE,
+    )
+    const edited = await editRegistration(
+      db.client as never,
+      AUTH as never,
+      proposed.id,
+      {
+        ...input,
+        items: [{ ...items[0]!, quantity_g: 150 }, items[1]!],
+      },
+      KEY_EDIT,
+    )
+    expect(edited.proposal).toMatchObject({
+      items: [
+        { name: 'arroz branco cozido', quantity_g: 150, kcal: 192.4 },
+        { name: 'feijão carioca cozido', quantity_g: 200, kcal: 152.8 },
+      ],
+      totals: { kcal: 345.2 },
+    })
+    await confirmRegistration(db.client as never, AUTH as never, proposed.id)
+    await confirmRegistration(db.client as never, AUTH as never, proposed.id)
+    expect(db.meals).toHaveLength(2)
+    expect(db.meals.map((row) => row.kcal)).toEqual([192.4, 152.8])
+    expect(db.snapshot.calories_consumed).toBe(345)
+  })
+
+  it('reports temporary reference unavailability without creating a pending or meal', async () => {
+    const windows = catalog()
+    windows[beans.name_pt.toLowerCase()] = []
+    const db = stagingDay({ windows })
+    await expect(
+      proposeRegistration(
+        db.client as never,
+        AUTH as never,
+        { kind: 'meal', meal_type: 'almoco', items },
+        KEY_PROPOSE,
+      ),
+    ).rejects.toMatchObject({ status: 503, code: 'nutrition_reference_unavailable' })
+    expect(db.pendings).toEqual([])
+    expect(db.meals).toEqual([])
+  })
+})
 
 // New report 22/10: only item 4 was visible. The first three are declared
 // synthetic sentinels, not a reconstruction of Roberto's other foods.

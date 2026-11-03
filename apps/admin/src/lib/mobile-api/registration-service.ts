@@ -1,6 +1,5 @@
 import {
   buildConfirmedMealArgs,
-  calcMealMacros,
   createPendingRegistration,
   getLocalDateString,
   isUnresolvedNutritionSource,
@@ -18,6 +17,7 @@ import type { Json, ServiceClient } from '@mpp/db'
 import { z } from 'zod'
 import type { MobileAuthContext } from './auth'
 import type { RegistrationProposalInput } from './contracts'
+import { calculateMobileConsumedMeal } from './consumed-meal-calculation'
 import { MobileApiError } from './http'
 import { DEFAULT_MEAL_CONFIDENCE_THRESHOLD } from './meal-draft-service'
 import { applyMobilePreparedDishEstimate } from './prepared-dish-estimate'
@@ -416,11 +416,12 @@ async function buildProposal(
       throw new MobileApiError(422, 'meal_item_limit_exceeded', 'Too many meal items to review')
     }
     const calculationInputs = await mealItemsForCalculation(supabase, auth.userId, expanded)
-    const calculation = applyMobilePreparedDishEstimate(await calcMealMacros(
+    const calculation = applyMobilePreparedDishEstimate(await calculateMobileConsumedMeal(
       supabase,
       calculationInputs,
       auth.patient.country,
       auth.userId,
+      origin === MOBILE_APP_REGISTRATION_ORIGIN,
     ), calculationInputs.map((item, index) => ({
       ...item, use_nutrition_label: expanded.items[index]?.use_nutrition_label,
     })), origin, auth.patient.locale)

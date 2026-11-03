@@ -1,5 +1,4 @@
 import {
-  calcMealMacros,
   getLocalDateString,
   isUnresolvedNutritionSource,
   type MealItemInput,
@@ -10,6 +9,7 @@ import type { Json, ServiceClient, Tables } from '@mpp/db'
 import type { MobileAuthContext } from './auth'
 import { type PrivateConfirmedMealState, privateConfirmedMealVersion } from './confirmed-meal-read'
 import type { RegistrationProposalInput } from './contracts'
+import { calculateMobileConsumedMeal } from './consumed-meal-calculation'
 import { MobileApiError } from './http'
 import { hashMobileRequest } from './idempotency'
 
@@ -302,7 +302,7 @@ export async function prepareConfirmedMealMutation(
   }))
   // Existing resolver is not pure: it may append existing product_events while preparing.
   // The RPC compares country/context again under locks before any meal/snapshot mutation.
-  const calculated = await calcMealMacros(supabase, input, context.country, auth.userId)
+  const calculated = await calculateMobileConsumedMeal(supabase, input, context.country, auth.userId)
   if (
     calculated.items.length < 1 ||
     calculated.items.length > 30 ||

@@ -3,6 +3,7 @@ import {
   type FeedbackV2Registration,
   prepareRegistrationFeedbackV2,
 } from '@mpp/agent/registration-feedback-v2'
+import { confirmedWorkoutLogIDFromCapture } from '@mpp/agent/workout-strength-identity'
 import { z } from 'zod'
 import { mobileQuantityDisplay } from './mobile-quantity-display'
 
@@ -11,6 +12,8 @@ export interface FeedbackV2FactRequest {
   registrationId: string
   confirmed: unknown
   logs: unknown
+  /** Private SQL capture only; never parsed from a mobile command body. */
+  workoutProof?: unknown
 }
 export interface FeedbackV2RecordFacts {
   registration: FeedbackV2Registration
@@ -51,7 +54,20 @@ const confirmedSchema = z.object({
   status: z.literal('confirmed'),
   proposal: proposalSchema,
   confirmedWorkoutId: z.string().uuid().optional(),
+  workout_protocol: z.literal('ui-v1').optional(),
 })
+const protectedProof = z
+  .object({
+    kind: z.literal('ui-v1'),
+    epoch: z.string().uuid(),
+    admission_id: z.string().uuid(),
+    content_revision: z.number().int().min(0).max(2147483647),
+    lifecycle_key: z.string().uuid(),
+    operation_key: z.string(),
+    workout_id: z.string().uuid(),
+    resolver: z.unknown(),
+  })
+  .strict()
 const logIdentity = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
@@ -115,31 +131,31 @@ export function projectRegistrationFeedbackV2Facts(
         )
         const row = index < 0 ? undefined : unused.splice(index, 1)[0]
         if (!row) throw new Error('Confirmed meal facts changed')
-        const display = mobileQuantityDisplay(item.name)
+        const display = mobileQuantityDisplay(row.food_name)
         return {
           log_id: row.id,
-          food_name: item.name,
-          quantity_g: item.quantity_g,
+          food_name: row.food_name,
+          quantity_g: row.quantity_g,
           quantity: display
             ? {
-                value: Math.round((item.quantity_g / display.grams_per_unit) * 1e6) / 1e6,
+                value: Math.round((row.quantity_g / display.grams_per_unit) * 1e6) / 1e6,
                 unit: display.unit,
                 estimated: true,
                 reference_id: display.reference_id,
               }
             : {
-                value: item.quantity_g,
+                value: row.quantity_g,
                 unit: 'g' as const,
                 estimated:
                   item.quantity_basis === 'portion_reference' ||
                   item.quantity_basis === 'visual_estimate',
                 reference_id: null,
               },
-          nutrition_source: item.nutrition_source,
-          kcal: item.kcal,
-          protein_g: item.protein_g,
-          carbs_g: item.carbs_g,
-          fat_g: item.fat_g,
+          nutrition_source: row.source,
+          kcal: row.kcal,
+          protein_g: row.protein_g,
+          carbs_g: row.carbs_g,
+          fat_g: row.fat_g,
         }
       })
       registration = {
@@ -159,6 +175,42 @@ export function projectRegistrationFeedbackV2Facts(
         (confirmed.confirmedWorkoutId !== undefined && row.id !== confirmed.confirmedWorkoutId)
       )
         return null
+      if (confirmed.workout_protocol === 'ui-v1' || request.workoutProof !== undefined) {
+        const proof = protectedProof.parse(request.workoutProof)
+        if (
+          proof.workout_id !== row.id ||
+          proof.operation_key !== `ui:${proof.admission_id}:r:${proof.content_revision}`
+        )
+          return null
+        const id = confirmedWorkoutLogIDFromCapture(
+          proof.resolver,
+          request.userId,
+          proposal.workoutType,
+        )
+        if (id === null) {
+          const gap = z
+            .object({
+              status: z.literal('unavailable'),
+              reason: z.literal('legacy_provenance_gap'),
+              confirmedWorkoutLogID: z.string().uuid(),
+            })
+            .strict()
+            .parse(proof.resolver)
+          if (gap.confirmedWorkoutLogID !== row.id) return null
+        } else {
+          const resolved = z
+            .object({
+              binding: z.object({ operationKey: z.string(), lifecycleKey: z.string().uuid() }),
+            })
+            .parse(proof.resolver)
+          if (
+            id !== row.id ||
+            resolved.binding.operationKey !== proof.operation_key ||
+            resolved.binding.lifecycleKey !== proof.lifecycle_key
+          )
+            return null
+        }
+      }
       registration = {
         kind: 'workout',
         log_id: row.id,

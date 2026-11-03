@@ -1,0 +1,100 @@
+{
+  "userId": "b2b10000-0000-4000-8000-000000000001",
+  "registrationId": "84dea0b6-4680-485d-a36d-84f460a800d7",
+  "confirmed": {
+    "id": "84dea0b6-4680-485d-a36d-84f460a800d7",
+    "status": "confirmed",
+    "user_id": "b2b10000-0000-4000-8000-000000000001",
+    "proposal": {
+      "kind": "workout",
+      "kcalEst": 999,
+      "raw_args": {
+        "intensity": "moderada",
+        "duration_min": 30,
+        "workout_type": "qa-feedback-v2-activity"
+      },
+      "intensity": "moderada",
+      "durationMin": 30,
+      "workoutType": "qa-feedback-v2-activity",
+      "source_timezone": "UTC",
+      "express_eligible": false,
+      "source_timestamp": "2026-11-03T14:20:18Z",
+      "sourceContentType": "mobile",
+      "source_local_date": "2026-11-03",
+      "source_provider_message_id": "wui1:b2b10000-0000-4000-8000-000000000002"
+    },
+    "workout_protocol": "ui-v1",
+    "confirmedWorkoutId": "3cba70c1-0189-43d9-a002-19d5fdddb351"
+  },
+  "logs": [
+    {
+      "id": "3cba70c1-0189-43d9-a002-19d5fdddb351",
+      "notes": "synthetic feedback v2 QA",
+      "user_id": "b2b10000-0000-4000-8000-000000000001",
+      "intensity": "moderada",
+      "created_at": "2026-11-03T14:20:18.344638+00:00",
+      "snapshot_id": "bad78ec7-91fb-451a-86cd-65dfdeaf415c",
+      "duration_min": 30,
+      "performed_at": "2026-11-03T14:20:18+00:00",
+      "workout_type": "qa-feedback-v2-activity",
+      "estimated_kcal": 123,
+      "raw_message_id": null,
+      "raw_provider_message_id": "wui1:b2b10000-0000-4000-8000-000000000002"
+    }
+  ],
+  "workoutProof": {
+    "kind": "ui-v1",
+    "epoch": "d949f53b-b4d4-44b7-9baa-850957858738",
+    "resolver": {
+      "fact": {
+        "anchor": {
+          "ownerID": "b2b10000-0000-4000-8000-000000000001",
+          "snapshotID": "bad78ec7-91fb-451a-86cd-65dfdeaf415c",
+          "performedAt": "2026-11-03T14:20:18.000000Z",
+          "lifecycleKey": "fa4d8c01-13c3-4a68-80df-665415755d6c",
+          "snapshotDate": "2026-11-03",
+          "workoutLogID": "3cba70c1-0189-43d9-a002-19d5fdddb351",
+          "storedWorkoutType": "qa-feedback-v2-activity"
+        },
+        "calendar": {
+          "status": "proven",
+          "timeZone": "UTC",
+          "localDate": "2026-11-03",
+          "snapshotID": "bad78ec7-91fb-451a-86cd-65dfdeaf415c",
+          "zoneSource": "official_owner_zone_at_recording",
+          "performedAt": "2026-11-03T14:20:18.000000Z",
+          "snapshotDate": "2026-11-03",
+          "zoneObservedAt": "2026-11-03T14:20:18.383964Z"
+        },
+        "revision": 0,
+        "clarification": {
+          "status": "unanswered",
+          "questionKey": "e09ab180-fcd4-4d33-be23-a92d3cdfeb02"
+        },
+        "classification": {
+          "reason": "no_active_match",
+          "status": "unrecognized",
+          "observation": {
+            "observedAt": "2026-11-03T14:20:18.365322Z",
+            "matcherVersion": "active_slug_then_unique_canonical_display_v1",
+            "observationKey": "d85895a6-b50c-45df-9ab0-a24612907508"
+          }
+        }
+      },
+      "status": "reuse_existing",
+      "binding": {
+        "ownerID": "b2b10000-0000-4000-8000-000000000001",
+        "resolution": "sql_insert",
+        "lifecycleKey": "fa4d8c01-13c3-4a68-80df-665415755d6c",
+        "operationKey": "ui:18f6728f-ea1e-4778-809e-19111e052994:r:0",
+        "workoutLogID": "3cba70c1-0189-43d9-a002-19d5fdddb351",
+        "originalOperationType": "qa-feedback-v2-activity"
+      }
+    },
+    "workout_id": "3cba70c1-0189-43d9-a002-19d5fdddb351",
+    "admission_id": "18f6728f-ea1e-4778-809e-19111e052994",
+    "lifecycle_key": "fa4d8c01-13c3-4a68-80df-665415755d6c",
+    "operation_key": "ui:18f6728f-ea1e-4778-809e-19111e052994:r:0",
+    "content_revision": 0
+  }
+}

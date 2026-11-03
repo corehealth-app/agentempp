@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import protectedWorkout from './__fixtures__/feedback-v2-protected-qa.json'
 import { projectRegistrationFeedbackV2Facts } from './registration-feedback-v2-facts'
 
 const OWNER = '10000000-0000-4000-8000-000000000001'
@@ -92,6 +93,55 @@ function workout() {
 }
 
 describe('feedback v2 persisted facts', () => {
+  it('uses the saved item value separately from the original canonical summary', () => {
+    const result = projectRegistrationFeedbackV2Facts(meal())
+    expect(result?.registration.kind === 'meal' && result.registration.items[0]?.kcal).toBe(126.12)
+    expect(result?.registration.kind === 'meal' && result.registration.totals.kcal).toBe(126.123)
+  })
+  it('accepts the real protected SQL capture without treating its operation key as a legacy key', () => {
+    expect(projectRegistrationFeedbackV2Facts(protectedWorkout)?.registration).toMatchObject({
+      kind: 'workout',
+      workout_type: 'qa-feedback-v2-activity',
+      estimated_kcal: 123,
+    })
+  })
+  it('never downgrades a protected workout whose witness was lost', () => {
+    expect(
+      projectRegistrationFeedbackV2Facts({ ...protectedWorkout, workoutProof: undefined }),
+    ).toBeNull()
+  })
+  it('rejects a protected capture tied to another operation or another owner', () => {
+    const wrongOperation = structuredClone(protectedWorkout)
+    wrongOperation.workoutProof.operation_key += '-different'
+    expect(projectRegistrationFeedbackV2Facts(wrongOperation)).toBeNull()
+    const wrongOwner = structuredClone(protectedWorkout)
+    wrongOwner.workoutProof.resolver.binding.ownerID = OTHER
+    expect(projectRegistrationFeedbackV2Facts(wrongOwner)).toBeNull()
+  })
+  it('retains saved activity facts for the exact legacy provenance gap without inventing classification', () => {
+    const log = protectedWorkout.logs[0]
+    if (!log) throw new Error('Fixture')
+    const request = {
+      ...protectedWorkout,
+      workoutProof: {
+        ...protectedWorkout.workoutProof,
+        resolver: {
+          status: 'unavailable',
+          reason: 'legacy_provenance_gap',
+          confirmedWorkoutLogID: log.id,
+        },
+      },
+    }
+    const projected = projectRegistrationFeedbackV2Facts(request)
+    expect(projected?.registration).toMatchObject({
+      kind: 'workout',
+      log_id: log.id,
+      estimated_kcal: 123,
+    })
+    expect(projected?.registration).not.toHaveProperty('classification')
+    request.workoutProof.resolver.confirmedWorkoutLogID = OTHER
+    expect(projectRegistrationFeedbackV2Facts(request)).toBeNull()
+  })
   it('binds a confirmed proposal to its owned rows and preserves its canonical decimal total', () => {
     const result = projectRegistrationFeedbackV2Facts(meal())
     expect(result?.logIds).toEqual([LOG])
@@ -104,7 +154,7 @@ describe('feedback v2 persisted facts', () => {
           log_id: LOG,
           food_name: 'leite integral',
           quantity_g: 206,
-          kcal: 126.123,
+          kcal: 126.12,
           quantity: {
             value: 200,
             unit: 'mL',

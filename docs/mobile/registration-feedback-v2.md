@@ -16,7 +16,13 @@ Cada alimento mantém o ID do log, nome, massa canônica, quantidade de apresent
 
 `registration-feedback-v2-facts.ts` projeta uma proposta confirmada sobre o conjunto completo dos logs fornecidos pelo backend: dono, chave do evento, instante, tipo de refeição e fatos devem corresponder. Tolera somente a quantização de duas casas dos campos físicos. Mantém o total decimal da proposta. Registro pendente, modificado, grupo incompleto, IDs duplicados ou linhas adicionais não geram enriquecimento. Para atividade, usa a energia persistida do único log comprovado, nunca `kcalEst` ou o gasto agregado do dia.
 
-Esse projetor ainda exige a chave direta do evento. A admissão protegida `ui-v1` usa outra chave de operação: seu testemunho de captura e epoch precisam ser integrados no próximo passo. Não adaptar a chave da proposta por suposição nem tomar a forma do JSON como prova de autoridade.
+Para a admissão protegida `ui-v1`, o projetor exige também o testemunho privado de captura, epoch, admissão, lifecycle, operação e log. A chave da operação é diferente da chave original do evento, mas o log pode manter essa chave original: sua igualdade isolada não autoriza tratar o registro como legado. O marcador protegido sem testemunho, ou uma operação/dono incompatível, é recusado. O decoder existente confere a resposta completa do resolver; a procedência é comprovada pela captura SQL, não pela forma do JSON. A lacuna legada de proveniência permite exibir os valores salvos somente para o ID exato comprovado, sem criar classificação.
+
+A captura SQL separa os testemunhos `ui-v1` e `direct-key`. O futuro adaptador deve validar essa distinção antes da projeção: `workoutProof` recebe somente o testemunho protegido `ui-v1`; o legado `direct-key` deve corresponder à chave original e ao log único, sem ser passado como prova protegida. Nunca remover o marcador `ui-v1` para contornar uma prova inválida.
+
+A migração `20261103142948_mobile_registration_feedback_v2_capture.sql` prepara a captura e a tabela privada imutável, com RLS e sem acesso direto, inclusive pelo papel de serviço. Não contém produtor de recibos: commit com CAS, validador fechado, leitura e consumidores continuam pendentes. Sua aplicação não está ativada no staging.
+
+Os valores individuais vêm das colunas efetivamente persistidas dos logs, com duas casas decimais; o total canônico da proposta é preservado separadamente. O resumo oficial do dia tem sua própria representação. Não forçar igualdade entre um novo somatório de floats, o total original e o arredondamento inteiro de calorias do snapshot.
 
 ## Dia e proteção clínica
 

@@ -34,6 +34,7 @@ struct AppShellView: View {
     @Environment(\.locale) private var locale
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.bodyFlowReduceMotion) private var reduceMotion
+    let navigationLayout: AppNavigationLayout
     let userID: String
     let dependencies: AppDependencies
     let sessionOwner: Prompt14SessionOwner
@@ -63,11 +64,15 @@ struct AppShellView: View {
         self.mealRecordContext = mealRecordContext
         self.mealRecordRecoveryAvailability = mealRecordRecoveryAvailability
         self.recoverMealRecord = recoverMealRecord
-        #if DEBUG
         let launch = AppLaunchConfiguration.current()
+        let layout = AppNavigationLayout.current(runtimeMode: launch.mode,
+            presentsRealAccountIdentity: dependencies.presentsRealAccountIdentity)
+        self.navigationLayout = layout
+        _router = State(initialValue: AppRouter(layout: layout))
+        #if DEBUG
         if launch.mode == .demo, launch.block7700Scenario != nil,
            ProcessInfo.processInfo.arguments.contains("--ui-testing-block-direct-detail") {
-            let fixtureRouter = AppRouter()
+            let fixtureRouter = AppRouter(layout: layout)
             fixtureRouter.navigate(to: .progress(.block7700), in: .progress)
             _router = State(initialValue: fixtureRouter)
             _selectedTab = State(initialValue: .progress)
@@ -114,7 +119,8 @@ struct AppShellView: View {
         _flowChatModel = State(
             initialValue: FlowChatModel(
                 userID: userID,
-                provider: dependencies.flowChat,
+                provider: layout == .conversationalPreview
+                    ? ReadOnlyFlowChatRepository(source: dependencies.flowChat) : dependencies.flowChat,
                 keyProvider: dependencies.idempotencyKeyProvider
             )
         )
@@ -241,6 +247,7 @@ struct AppShellView: View {
         }
         .onDisappear {
             mealRecordSessions.endSession()
+            router.reset()
             flowChatModel.invalidate()
             planDraftsModel?.invalidate()
             currentObjectiveModel?.invalidate()
@@ -283,11 +290,11 @@ struct AppShellView: View {
     }
 
     private var tabs: some View {
-        TabView(selection: $selectedTab) {
-            ForEach(AppTab.displayOrder) { tab in
+        TabView(selection: tabSelection) {
+            ForEach(navigationLayout.visibleTabs) { tab in
                 Tab(
-                    tab.title(for: presentationLanguage),
-                    systemImage: tab.systemImage,
+                    navigationLayout.title(for: tab, language: presentationLanguage),
+                    systemImage: navigationLayout.systemImage(for: tab),
                     value: tab
                 ) {
                     navigationStack(for: tab)
@@ -400,7 +407,7 @@ struct AppShellView: View {
     /// The first eligible entry offers the tour once; it never covers a
     /// sheet or a reminder being opened, and never moves the user's tab.
     private func offerTutorialIfEligible(afterRoutingReminder routedReminder: Bool) {
-        guard !sessionOwner.isInvalidated, tutorialPresentation == nil else { return }
+        guard navigationLayout == .legacy, !sessionOwner.isInvalidated, tutorialPresentation == nil else { return }
         let capability = dependencies.guidedTutorial
         guard GuidedTutorialOffer.shouldOffer(
             status: capability.store.status(ownerKey: tutorialOwnerKey),
@@ -465,7 +472,7 @@ struct AppShellView: View {
     /// session, and never over a running tour or a sheet.
     private func offerContextualTip(_ target: GuidedTourTarget) {
         let capability = dependencies.guidedTutorial
-        guard capability.offersOnFirstEntry, !prefersTextTour,
+        guard navigationLayout == .legacy, capability.offersOnFirstEntry, !prefersTextTour,
               tour == nil, tutorialPresentation == nil, router.presentedSheet == nil,
               tipsShownThisSession < GuidedTourContent.tipsPerSession,
               !capability.store.hasShownTip(target, ownerKey: tutorialOwnerKey),
@@ -550,7 +557,7 @@ struct AppShellView: View {
         // the bar (300 ms spring; instant under Reduce Motion). Stacks, state
         // and the tab bar's native control are untouched.
         .opacity(selectedTab == tab ? 1 : 0)
-        .offset(x: reduceMotion ? 0 : Self.tabSlideOffset(for: tab, selected: selectedTab))
+        .offset(x: reduceMotion ? 0 : Self.tabSlideOffset(for: tab, selected: selectedTab, layout: navigationLayout))
         .animation(BodyFlowMotion.animation(.navigation, reduceMotion: reduceMotion), value: selectedTab)
         .accessibilityHidden(selectedTab != tab)
     }
@@ -576,10 +583,10 @@ struct AppShellView: View {
 
     /// A hidden tab waits on the side it occupies in the bar relative to the
     /// selected one, so a change always slides in the direction of travel.
-    nonisolated static func tabSlideOffset(for tab: AppTab, selected: AppTab) -> CGFloat {
+    nonisolated static func tabSlideOffset(for tab: AppTab, selected: AppTab, layout: AppNavigationLayout = .legacy) -> CGFloat {
         guard tab != selected,
-              let position = AppTab.displayOrder.firstIndex(of: tab),
-              let current = AppTab.displayOrder.firstIndex(of: selected) else { return 0 }
+              let position = layout.visibleTabs.firstIndex(of: tab),
+              let current = layout.visibleTabs.firstIndex(of: selected) else { return 0 }
         return position < current ? -tabSlide : tabSlide
     }
 
@@ -588,9 +595,10 @@ struct AppShellView: View {
     @ViewBuilder private func navigationBar(for tab: AppTab, atRoot: Bool) -> some View {
         if !keyboardVisible {
             PerformeTabBar(
-                selection: $selectedTab,
+                selection: tabSelection,
                 language: presentationLanguage,
-                attachesTourTargets: atRoot && selectedTab == tab && router.path(for: tab).isEmpty,
+                layout: navigationLayout,
+                attachesTourTargets: navigationLayout == .legacy && atRoot && selectedTab == tab && router.path(for: tab).isEmpty,
                 onUserSelect: { tabTaps += 1 }
             )
         }
@@ -600,8 +608,84 @@ struct AppShellView: View {
         BodyFlowPresentationLanguage.resolve(locale)
     }
 
+    /// The native bar selects visible roots; an old Profile selection opens its
+    /// retained destination instead of selecting a hidden fifth TabView tag.
+    private var tabSelection: Binding<AppTab> {
+        Binding(get: { selectedTab }, set: { requested in
+            if navigationLayout == .conversationalPreview && requested == .profile {
+                selectedTab = router.openLegacyTab(.profile)
+            } else { selectedTab = requested }
+        })
+    }
+
     @ViewBuilder
     private func rootView(for tab: AppTab) -> some View {
+        if navigationLayout == .conversationalPreview {
+            candidateRootView(for: tab)
+                .toolbar { candidateSecondaryNavigation }
+        } else { legacyRootView(for: tab) }
+    }
+
+    @ViewBuilder
+    private func candidateRootView(for tab: AppTab) -> some View {
+        switch tab {
+        case .today:
+            FlowChatView(model: flowChatModel, allowsSending: false)
+        case .plan:
+            ConversationalPlanRootView(model: planViewModel, tab: .plan, scope: .nutrition, selectedTab: tabSelection)
+        case .register:
+            ConversationalPlanRootView(model: planViewModel, tab: .register, scope: .training, selectedTab: tabSelection)
+        case .progress:
+            ProgressRootView(model: progressViewModel, selectedTab: tabSelection, clinicalFull: clinicalFullModel,
+                navigationTitle: navigationLayout.title(for: .progress, language: presentationLanguage))
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("screen.jornada")
+        case .profile: legacyRootView(for: .profile)
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var candidateSecondaryNavigation: some ToolbarContent {
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            NavigationLink(value: AppRoute.legacyRoot(.profile)) {
+                Label(presentationLanguage == .englishUnitedStates ? "Profile" : "Perfil", systemImage: "person.crop.circle")
+            }
+            .accessibilityIdentifier("navigation.profile")
+            Menu {
+                NavigationLink(value: AppRoute.legacyRoot(.today)) {
+                    Label(presentationLanguage == .englishUnitedStates ? "Day overview" : "Resumo do dia", systemImage: "house")
+                }.accessibilityIdentifier("navigation.overview")
+                NavigationLink(value: AppRoute.legacyRoot(.register)) {
+                    Label(presentationLanguage == .englishUnitedStates ? "Record" : "Registrar", systemImage: "plus.circle")
+                }.accessibilityIdentifier("navigation.registrations")
+                NavigationLink(value: AppRoute.legacyRoot(.plan)) {
+                    Label(presentationLanguage == .englishUnitedStates ? "All plans" : "Todos os planos", systemImage: "list.clipboard")
+                }.accessibilityIdentifier("navigation.plans")
+                NavigationLink(value: AppRoute.content(.library(initialSelection: .all))) {
+                    Label(presentationLanguage == .englishUnitedStates ? "Library" : "Biblioteca", systemImage: "books.vertical")
+                }.accessibilityIdentifier("navigation.library")
+                NavigationLink(value: AppRoute.mainHistory) {
+                    Label(presentationLanguage == .englishUnitedStates ? "History" : "Histórico", systemImage: "clock.arrow.circlepath")
+                }.accessibilityIdentifier("navigation.history")
+            } label: {
+                Label(presentationLanguage == .englishUnitedStates ? "More" : "Mais", systemImage: "ellipsis.circle")
+            }
+            .accessibilityIdentifier("navigation.secondary-menu")
+        }
+    }
+
+    private var legacyProfileTutorialAction: (@MainActor () -> Void)? {
+        guard navigationLayout == .legacy else { return nil }
+        return { presentTutorialFromProfile() }
+    }
+
+    @ViewBuilder
+    private func legacyRootView(for tab: AppTab, isSecondary: Bool = false) -> some View {
+        // Secondary roots retain their logical read lifecycle even when hosted
+        // on another visible tab. User-driven selections still reach the shell.
+        let logicalSelection = isSecondary && navigationLayout == .conversationalPreview
+            ? Binding(get: { tab }, set: { tabSelection.wrappedValue = $0 }) : tabSelection
+
         switch tab {
         case .today:
             TodayRootView(
@@ -622,14 +706,14 @@ struct AppShellView: View {
         case .plan:
             PlanRootView(
                 model: planViewModel,
-                selectedTab: $selectedTab,
+                selectedTab: logicalSelection,
                 drafts: planDraftsModel,
                 supportsImport: dependencies.planDrafts?.supportsImport == true
             )
         case .progress:
             ProgressRootView(
                 model: progressViewModel,
-                selectedTab: $selectedTab,
+                selectedTab: logicalSelection,
                 clinicalFull: clinicalFullModel
             )
         case .profile:
@@ -639,7 +723,7 @@ struct AppShellView: View {
                 coachExperienceProvider: sessionOwner.coachExperience,
                 invalidationCenter: invalidationCenter,
                 localReminders: localReminders,
-                showTutorial: { presentTutorialFromProfile() },
+                showTutorial: legacyProfileTutorialAction,
                 showsCurrentObjective: currentObjectiveModel != nil,
                 showsBilling: dependencies.billingSessionSource != nil,
                 signOut: signOut
@@ -650,6 +734,8 @@ struct AppShellView: View {
     @ViewBuilder
     private func destination(for route: AppRoute) -> some View {
         switch route {
+        case let .legacyRoot(tab):
+            legacyRootView(for: tab, isSecondary: true)
         case .detail:
             FeatureDetailView(route: route)
         case .mainHistory:
@@ -730,7 +816,7 @@ struct AppShellView: View {
                 invalidationCenter: invalidationCenter
             )
         case .flowChat:
-            FlowChatView(model: flowChatModel)
+            FlowChatView(model: flowChatModel, allowsSending: navigationLayout == .legacy)
         case let .planDraft(route):
             if let capability = dependencies.planDrafts {
                 PlanDraftReviewView(model: PlanDraftReviewModel(

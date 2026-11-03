@@ -5,6 +5,7 @@ struct ProgressRootView: View {
     let model: ProgressViewModel
     @Binding var selectedTab: AppTab
     var clinicalFull: ClinicalFullModel? = nil
+    var navigationTitle: String? = nil
     @Environment(\.locale) private var locale
 
     var body: some View {
@@ -66,7 +67,7 @@ struct ProgressRootView: View {
                 .refreshable { await model.retry(); await clinicalFull?.loadEntry() }
             }
         }
-        .navigationTitle(copy("progress.navigation.title"))
+        .navigationTitle(navigationTitle ?? copy("progress.navigation.title"))
         .navigationBarTitleDisplayMode(.inline)
         .task(id: selectedTab) {
             guard selectedTab == .progress else { return }

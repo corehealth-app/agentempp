@@ -43,6 +43,7 @@ struct PlanRootView: View {
 @MainActor
 struct PlanReadContent: View {
     let model: PlanViewModel
+    var scope: PlanContentScope = .all
     var showsDetailLink = false
     var drafts: PlanDraftsModel? = nil
     var supportsImport = false
@@ -65,7 +66,7 @@ struct PlanReadContent: View {
     }
 
     private var showsDrafts: Bool {
-        drafts.map { !$0.drafts.isEmpty || supportsImport } ?? false
+        scope == .all && (drafts.map { !$0.drafts.isEmpty || supportsImport } ?? false)
     }
 
     @ViewBuilder
@@ -82,10 +83,13 @@ struct PlanReadContent: View {
                     FeatureStaleRecovery(retry: retry)
                 }
 
-                PlanContentView(presentation: PlanPresentation(
-                    snapshot: snapshot,
-                    language: language
-                ))
+                let plan = PlanPresentation(snapshot: snapshot, language: language)
+                if plan.isEmpty(in: scope) {
+                    ScreenStateView(state: .empty, retryAction: retry, isEmbedded: true)
+                        .frame(minHeight: availableHeight)
+                } else {
+                    PlanContentView(presentation: plan, scope: scope)
+                }
 
                 if showsDetailLink {
                     NavigationLink(value: AppRoute.plan(.detail)) {

@@ -181,14 +181,27 @@ struct PlanPresentation: Equatable, Sendable {
     }
 }
 
+enum PlanContentScope: Equatable, Sendable { case all, nutrition, training }
+
+extension PlanPresentation {
+    func isEmpty(in scope: PlanContentScope) -> Bool {
+        switch scope {
+        case .all: isEmpty
+        case .nutrition: nutritionSections.isEmpty
+        case .training: trainingFields.isEmpty && trainingDays.isEmpty
+        }
+    }
+}
+
 @MainActor
 struct PlanContentView: View {
     let presentation: PlanPresentation
+    var scope: PlanContentScope = .all
     @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.lg) {
-            if !presentation.trainingFields.isEmpty {
+            if scope != .nutrition && !presentation.trainingFields.isEmpty {
                 PlanMetadataCard(
                     title: PlanCopy.string("plan.training.title", language: language),
                     fields: presentation.trainingFields,
@@ -196,7 +209,7 @@ struct PlanContentView: View {
                 )
             }
 
-            ForEach(presentation.trainingDays) { day in
+            ForEach(scope == .nutrition ? [] : presentation.trainingDays) { day in
                 BodyFlowCard(surface: .card) {
                     VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
                         Text(verbatim: day.title)
@@ -214,7 +227,7 @@ struct PlanContentView: View {
                 .accessibilityIdentifier(day.id)
             }
 
-            ForEach(presentation.nutritionSections) { section in
+            ForEach(scope == .training ? [] : presentation.nutritionSections) { section in
                 PlanMetadataCard(
                     title: section.title,
                     fields: section.fields,

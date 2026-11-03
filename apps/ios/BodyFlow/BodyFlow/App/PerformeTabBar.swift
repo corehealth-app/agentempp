@@ -3,6 +3,7 @@ import SwiftUI
 struct PerformeTabBar: View {
     @Binding var selection: AppTab
     let language: SupportedAppLanguage
+    var layout: AppNavigationLayout = .legacy
     /// Only the visible bar of the selected root publishes tour targets.
     var attachesTourTargets = false
     /// Called for a tap on an item (not for a programmatic selection).
@@ -41,11 +42,11 @@ struct PerformeTabBar: View {
 
     private var visualLabels: some View {
         HStack(alignment: .center, spacing: BodyFlowSpacing.xxs) {
-            ForEach(AppTab.displayOrder) { tab in
-                if tab == .register {
+            ForEach(layout.visibleTabs) { tab in
+                if layout == .legacy && tab == .register {
                     PerformeBrandAction(
                         state: highlightedTab == tab ? .press : (selection == tab ? .active : .idle),
-                        label: tab.title(for: language),
+                        label: layout.title(for: tab, language: language),
                         selected: selection == tab,
                         isNavigationAction: true,
                         connectsLaunch: true
@@ -77,12 +78,12 @@ struct PerformeTabBar: View {
     }
 
     private var nativeItems: [PerformeNavigationBarItem] {
-        AppTab.displayOrder.map { tab in
+        layout.visibleTabs.map { tab in
             PerformeNavigationBarItem(
-                title: tab.title(for: language),
-                image: tab == .register
+                title: layout.title(for: tab, language: language),
+                image: layout == .legacy && tab == .register
                     ? UIImage(named: PerformeAIBrandAsset.symbolNegative.resourceName)?.withRenderingMode(.alwaysTemplate)
-                    : UIImage(systemName: tab.systemImage),
+                    : UIImage(systemName: layout.systemImage(for: tab)),
                 selected: selection == tab,
                 identifier: tab.accessibilityIdentifier,
                 action: {
@@ -100,7 +101,7 @@ struct PerformeTabBar: View {
     // The native overlay owns interaction; this label retains the appearance.
     private func tabLabel(_ tab: AppTab) -> some View {
         VStack(spacing: BodyFlowSpacing.xxs) {
-            Image(systemName: tab.systemImage)
+            Image(systemName: layout.systemImage(for: tab))
                 .resizable()
                 .scaledToFit()
                 .fontWeight(selection == tab ? .semibold : .regular)
@@ -129,7 +130,7 @@ struct PerformeTabBar: View {
     }
 
     private func tabCaption(_ tab: AppTab) -> some View {
-        Text(tab.title(for: language))
+        Text(layout.title(for: tab, language: language))
             .font(.caption2.weight(selection == tab ? .semibold : .regular))
             .foregroundStyle(BodyFlowColor.color(selection == tab ? .brandPrimary : .textSecondary))
             .lineLimit(1)

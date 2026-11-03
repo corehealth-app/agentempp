@@ -4,6 +4,7 @@ import UIKit
 @MainActor
 struct FlowChatView: View {
     let model: FlowChatModel
+    var allowsSending = true
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Environment(\.bodyFlowReduceMotion) private var appReduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicType
@@ -30,21 +31,31 @@ struct FlowChatView: View {
                 .accessibilityHidden(true)
                 VStack(spacing: 0) {
                     conversation(gutter: BodyFlowSpacing.screenGutter(usableWidth: geometry.size.width))
-                    FlowComposerViewport(viewportHeight: geometry.size.height,
-                                         keyboardClearance: keyboardClearance) {
-                        VStack(spacing: 0) {
-                            if let draft = model.turnDraft {
-                                proposalCard(
-                                    draft,
-                                    gutter: BodyFlowSpacing.screenGutter(usableWidth: geometry.size.width)
-                                )
+                    if allowsSending {
+                        FlowComposerViewport(viewportHeight: geometry.size.height,
+                                             keyboardClearance: keyboardClearance) {
+                            VStack(spacing: 0) {
+                                if let draft = model.turnDraft {
+                                    proposalCard(
+                                        draft,
+                                        gutter: BodyFlowSpacing.screenGutter(usableWidth: geometry.size.width)
+                                    )
+                                }
+                                Divider().overlay(BodyFlowColor.color(.borderSubtle))
+                                composer(text: $model.composer,
+                                         gutter: BodyFlowSpacing.screenGutter(usableWidth: geometry.size.width))
                             }
-                            Divider().overlay(BodyFlowColor.color(.borderSubtle))
-                            composer(text: $model.composer,
-                                     gutter: BodyFlowSpacing.screenGutter(usableWidth: geometry.size.width))
                         }
+                        .layoutPriority(1)
+                    } else {
+                        Text(BodyFlowPresentationLanguage.resolve(locale) == .englishUnitedStates
+                            ? "Sending is unavailable right now." : "O envio está indisponível no momento.")
+                            .font(BodyFlowTypography.caption)
+                            .foregroundStyle(BodyFlowColor.secondaryText)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(BodyFlowSpacing.md)
+                            .accessibilityIdentifier("flow.read-only")
                     }
-                    .layoutPriority(1)
                 }
                 .padding(.bottom, keyboardClearance)
             }
@@ -265,14 +276,25 @@ struct FlowChatView: View {
 
     /// The conversation's own empty state: the Flow glyph in the brand color,
     /// the invitation as a screen title and the received guidance.
+    private var emptyTitle: Text {
+        if allowsSending { Text("flow.empty.title") }
+        else { Text(verbatim: BodyFlowPresentationLanguage.resolve(locale) == .englishUnitedStates
+            ? "Your conversation history" : "Seu histórico de conversa") }
+    }
+    private var emptyDetail: Text {
+        if allowsSending { Text("flow.empty.detail") }
+        else { Text(verbatim: BodyFlowPresentationLanguage.resolve(locale) == .englishUnitedStates
+            ? "You can review this conversation here." : "Você pode consultar esta conversa por aqui.") }
+    }
+
     private var emptyConversation: some View {
         VStack(spacing: BodyFlowSpacing.lg) {
             VStack(spacing: BodyFlowSpacing.sm) {
                 FlowAvatar(diameter: 64)
-                Text("flow.empty.title")
+                emptyTitle
                     .font(BodyFlowTypography.screenTitle)
                     .foregroundStyle(BodyFlowColor.color(.textPrimary))
-                Text("flow.empty.detail")
+                emptyDetail
                     .font(BodyFlowTypography.body)
                     .foregroundStyle(BodyFlowColor.color(.textSecondary))
             }
@@ -281,7 +303,7 @@ struct FlowChatView: View {
             // typed draft, a load error or accessibility text sizes (there
             // the three questions make the empty state several screens tall
             // and one swipe scrolls past the invitation).
-            if FlowChatPresentation.showsSuggestions(
+            if allowsSending && FlowChatPresentation.showsSuggestions(
                 composer: model.composer,
                 suggestions: suggestionTexts,
                 isAccessibilitySize: dynamicType.isAccessibilitySize,
@@ -431,7 +453,7 @@ struct FlowChatView: View {
     }
 
     private func send() {
-        guard FlowChatPresentation.canSubmit(model.composer, isSending: model.isSending) else { return }
+        guard allowsSending, FlowChatPresentation.canSubmit(model.composer, isSending: model.isSending) else { return }
         composerFocused = false
         initiatedSend = true
         Task { await model.send() }

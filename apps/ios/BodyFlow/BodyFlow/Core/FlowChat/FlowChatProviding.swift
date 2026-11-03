@@ -20,6 +20,19 @@ struct UnavailableFlowChatRepository: FlowChatProviding {
     }
 }
 
+/// Navigation preview can read its account-scoped history, never dispatch a
+/// command or retry to the legacy agent writer while the durable journal is absent.
+struct ReadOnlyFlowChatRepository: FlowChatProviding {
+    let source: any FlowChatProviding
+    func scoped(for userID: String) async throws -> any FlowChatProviding {
+        ReadOnlyFlowChatRepository(source: try await source.scoped(for: userID))
+    }
+    func history(limit: Int) async throws -> FlowHistoryResponse { try await source.history(limit: limit) }
+    func send(text: String, idempotencyKey: IdempotencyKey) async throws -> FlowSendResponse {
+        throw BodyFlowCapabilityError.operationUnavailable
+    }
+}
+
 #if DEBUG
 actor DemoFlowChatRepository: FlowChatProviding {
     private var messages: [FlowMessage] = []

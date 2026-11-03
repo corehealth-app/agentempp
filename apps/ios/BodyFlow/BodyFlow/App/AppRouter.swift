@@ -3,6 +3,8 @@ import SwiftUI
 
 enum AppRoute: Hashable, Sendable {
     case detail(tab: AppTab, id: String)
+    /// Actual original roots retained as secondary destinations in the candidate.
+    case legacyRoot(AppTab)
     case mainHistory
     case historyMealLog(rowID: String)
     case historyWorkout(logID: String)
@@ -21,6 +23,8 @@ enum AppRoute: Hashable, Sendable {
     var tab: AppTab {
         switch self {
         case let .detail(tab, _):
+            tab
+        case let .legacyRoot(tab):
             tab
         case .mainHistory, .historyMealLog, .historyWorkout:
             .today
@@ -42,6 +46,7 @@ enum AppRoute: Hashable, Sendable {
     }
 
     var accessibilityIdentifier: String {
+        if case let .legacyRoot(tab) = self { return tab.rootAccessibilityIdentifier }
         if case .flowChat = self {
             return "screen.flow-chat"
         }
@@ -197,28 +202,48 @@ enum AppSheet: Identifiable, Hashable, Sendable {
 @MainActor
 @Observable
 final class AppRouter {
+    let layout: AppNavigationLayout
+    init(layout: AppNavigationLayout = .legacy) { self.layout = layout }
+
     private var paths = Dictionary(
         uniqueKeysWithValues: AppTab.allCases.map { ($0, [AppRoute]()) }
     )
     var presentedSheet: AppSheet?
 
     func path(for tab: AppTab) -> [AppRoute] {
-        paths[tab, default: []]
+        paths[layout.visibleTab(for: tab), default: []]
     }
 
     func binding(for tab: AppTab) -> Binding<[AppRoute]> {
         Binding(
             get: { self.path(for: tab) },
-            set: { self.paths[tab] = $0 }
+            // Native NavigationLink pushes retain the active presentation origin.
+            set: { self.paths[self.layout.visibleTab(for: tab)] = $0 }
         )
     }
 
     func navigate(to route: AppRoute, in tab: AppTab) {
         guard route.tab == tab else { return }
-        paths[tab, default: []].append(route)
+        paths[layout.visibleTab(for: tab), default: []].append(route)
     }
 
     func popToRoot(in tab: AppTab) {
-        paths[tab] = []
+        paths[layout.visibleTab(for: tab)] = []
+    }
+
+    /// Candidate presentation routing never rewrites the stable route payload.
+    @discardableResult
+    func open(_ route: AppRoute, from origin: AppTab? = nil) -> AppTab {
+        let host = layout.presentationHost(for: route, from: origin)
+        paths[host, default: []].append(route)
+        return host
+    }
+
+    @discardableResult
+    func openLegacyTab(_ tab: AppTab) -> AppTab { open(.legacyRoot(tab)) }
+
+    func reset() {
+        paths = Dictionary(uniqueKeysWithValues: AppTab.allCases.map { ($0, []) })
+        presentedSheet = nil
     }
 }

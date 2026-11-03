@@ -6,15 +6,23 @@ struct RegistrationFeedbackView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-            ForEach(feedback.lines, id: \.key) { line in
-                Text(verbatim: line.text)
-                    .accessibilityIdentifier("registration.feedback.line.\(line.key.rawValue)")
-            }
-            if let comment = feedback.foodComment {
-                Text(verbatim: comment).accessibilityIdentifier("registration.feedback.food-comment")
-            }
-            if let incentive = feedback.incentive {
-                Text(verbatim: incentive).accessibilityIdentifier("registration.feedback.incentive")
+            switch feedback {
+            case let .v1(value):
+                ForEach(value.lines, id: \.key) { line in
+                    Text(verbatim: line.text)
+                        .accessibilityIdentifier("registration.feedback.line.\(line.key.rawValue)")
+                }
+                if let comment = value.foodComment {
+                    Text(verbatim: comment).accessibilityIdentifier("registration.feedback.food-comment")
+                }
+                if let incentive = value.incentive {
+                    Text(verbatim: incentive).accessibilityIdentifier("registration.feedback.incentive")
+                }
+            case let .v2(value):
+                ForEach(value.sections, id: \.key) { section in
+                    Text(verbatim: section.text)
+                        .accessibilityIdentifier("registration.feedback.section.\(section.key.rawValue)")
+                }
             }
         }
         .font(BodyFlowTypography.body)

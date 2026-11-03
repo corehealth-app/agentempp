@@ -50,7 +50,7 @@ extension MealRecordSnapshot {
         timezone = try values.decode(String.self, forKey: .timezone)
         editBlockReason = try values.decodeIfPresent(String.self, forKey: .editBlockReason)
         let optional = try? values.decode(RegistrationFeedbackSnapshot.self, forKey: .feedback)
-        feedback = optional?.kind == .meal ? optional : nil
+        feedback = optional?.admittedToLegacyHistory(kind: .meal)
     }
 }
 

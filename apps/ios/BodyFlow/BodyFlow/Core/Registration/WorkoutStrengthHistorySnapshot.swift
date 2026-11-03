@@ -10,7 +10,7 @@ struct WorkoutStrengthHistorySnapshot: Codable, Equatable, Sendable {
 
     init(clarification: WorkoutStrengthClarification, feedback: RegistrationFeedbackSnapshot? = nil) {
         self.clarification = clarification
-        self.feedback = clarification.workoutID != nil && feedback?.kind == .workout ? feedback : nil
+        self.feedback = clarification.workoutID != nil ? feedback?.admittedToLegacyHistory(kind: .workout) : nil
     }
 
     private enum CodingKeys: String, CodingKey { case clarification, feedback }

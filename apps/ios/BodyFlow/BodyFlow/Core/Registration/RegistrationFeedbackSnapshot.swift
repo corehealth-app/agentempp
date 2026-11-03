@@ -1,7 +1,76 @@
 import Foundation
 
+/// Version dispatch is read-only. Unknown or malformed optional receipts are discarded by the parent DTO.
+enum RegistrationFeedbackSnapshot: Codable, Hashable, Sendable {
+    case v1(RegistrationFeedbackV1Snapshot)
+    case v2(RegistrationFeedbackV2Snapshot)
+
+    typealias Kind = RegistrationFeedbackV1Snapshot.Kind
+    typealias Locale = RegistrationFeedbackV1Snapshot.Locale
+    typealias Nutrients = RegistrationFeedbackV1Snapshot.Nutrients
+    typealias Day = RegistrationFeedbackV1Snapshot.Day
+    typealias Line = RegistrationFeedbackV1Snapshot.Line
+
+    private enum CodingKeys: String, CodingKey { case schema }
+    init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        switch try values.decode(String.self, forKey: .schema) {
+        case "registration.feedback.v1": self = .v1(try RegistrationFeedbackV1Snapshot(from: decoder))
+        case "registration.feedback.v2": self = .v2(try RegistrationFeedbackV2Snapshot(from: decoder))
+        default:
+            throw DecodingError.dataCorruptedError(forKey: .schema, in: values,
+                debugDescription: "Unsupported registration feedback version")
+        }
+    }
+    func encode(to encoder: any Encoder) throws {
+        switch self {
+        case let .v1(value): try value.encode(to: encoder)
+        case let .v2(value): try value.encode(to: encoder)
+        }
+    }
+    var schema: String {
+        switch self { case let .v1(v): v.schema; case .v2: "registration.feedback.v2" }
+    }
+    var registrationID: String {
+        switch self { case let .v1(v): v.registrationID; case let .v2(v): v.registrationID }
+    }
+    var kind: Kind {
+        switch self { case let .v1(v): v.kind; case let .v2(v): v.kind }
+    }
+    var locale: Locale {
+        switch self { case let .v1(v): v.locale; case let .v2(v): v.locale }
+    }
+    // Preserve the existing historical v1 API. V2 renders its own typed facts.
+    var mealTotals: Nutrients? { if case let .v1(v) = self { v.mealTotals } else { nil } }
+    var day: Day? { if case let .v1(v) = self { v.day } else { nil } }
+    var lines: [Line] { if case let .v1(v) = self { v.lines } else { [] } }
+    var foodComment: String? { if case let .v1(v) = self { v.foodComment } else { nil } }
+    var incentive: String? { if case let .v1(v) = self { v.incentive } else { nil } }
+    var isValid: Bool {
+        switch self { case let .v1(v): v.isValid; case .v2: true }
+    }
+    /// Existing history has no current clinical projection. Its historical v1 behavior
+    /// remains available; v2 needs a separately authenticated presentation surface.
+    func admittedToLegacyHistory(kind expected: Kind) -> Self? {
+        guard case .v1 = self, kind == expected else { return nil }
+        return self
+    }
+    func bound(to id: String, status: String, proposal: RegistrationProposalSnapshot) -> Self? {
+        guard status == "confirmed", registrationID == id else { return nil }
+        switch self {
+        case let .v1(value): return value.bound(to: id, status: status, proposal: proposal).map(Self.v1)
+        case .v2:
+            switch proposal {
+            case .meal: return kind == .meal ? self : nil
+            case .workout: return kind == .workout ? self : nil
+            case .unknown: return nil
+            }
+        }
+    }
+}
+
 /// A persisted presentation, never a client-side calculation or phrase selection.
-struct RegistrationFeedbackSnapshot: Codable, Hashable, Sendable {
+struct RegistrationFeedbackV1Snapshot: Codable, Hashable, Sendable {
     enum Kind: String, Codable, Sendable { case meal, workout }
     enum Locale: String, Codable, Sendable { case portuguese = "pt-BR", english = "en" }
 

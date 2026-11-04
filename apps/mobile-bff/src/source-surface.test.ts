@@ -131,7 +131,11 @@ function certifiedWorkoutRepositoryCopies(): string[] {
 }
 
 function certifyInlineConversationEditModule(sharedChunk: string, journalRoute: string): void {
-  const markers = ['conversation.meal-edit-effect-public.v1', 'conversation.meal-group.v1']
+  const markers = [
+    'conversation.meal-edit-effect-public.v1',
+    'conversation.meal-group.v1',
+    'conversation.meal-group.v2',
+  ]
   const journalEntry = currentAppPathsManifest()[journalRoute]
   expect(journalEntry).toBeTypeOf('string')
   const copies = [sharedChunk, resolve(buildRoot, 'server', journalEntry ?? '')]
@@ -335,6 +339,96 @@ describe('authoritative Mobile API source surface', () => {
     expect(
       records.find((record) => record.path === 'auth/password-recovery/route.ts')?.exports,
     ).toEqual(['GET', 'HEAD', 'POST', 'dynamic', 'maxDuration', 'runtime'])
+  })
+
+  test('keeps the v1 journal source unchanged and read-only Auth factory inert with no journal calls', () => {
+    const library = resolve(appRoot, '../admin/src/lib/mobile-api')
+    // Exact prior5e8-parent source, independently checked before the new build.
+    expect(
+      createHash('sha256')
+        .update(readFileSync(resolve(library, 'conversation-meal-journal-store.ts')))
+        .digest('hex'),
+    ).toBe('d006ed0689e1d4043b4fb31bd3c1026313eca2e7ff9c810fe6f3513bffb881b4')
+    const parse = (name: string) =>
+      ts.createSourceFile(
+        name,
+        readFileSync(resolve(library, name), 'utf8'),
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TS,
+      )
+    const runtime = parse('conversation-meal-readonly-runtime.ts')
+    expect(
+      runtime.statements
+        .filter(ts.isImportDeclaration)
+        .map((node) => (node.moduleSpecifier as ts.StringLiteral).text)
+        .sort(),
+    ).toEqual(
+      [
+        '../supabase/server',
+        './conversation-meal-reply-scope',
+        './entitlement-service',
+        './route',
+        '@mpp/db',
+      ].sort(),
+    )
+    const factory = runtime.statements.find(
+      (node): node is ts.FunctionDeclaration =>
+        ts.isFunctionDeclaration(node) &&
+        node.name?.text === 'createConversationMealReadonlyRuntime',
+    )
+    expect(factory).toBeDefined()
+    if (!factory?.body) throw new Error('Missing actual readonly runtime factory')
+    const constructorCalls: string[] = [],
+      allCalls: string[] = [],
+      constructions: string[] = []
+    const visitConstructor = (node: ts.Node) => {
+      if (ts.isFunctionLike(node)) return
+      if (ts.isCallExpression(node)) constructorCalls.push(node.expression.getText(runtime))
+      ts.forEachChild(node, visitConstructor)
+    }
+    visitConstructor(factory.body)
+    expect(constructorCalls).toEqual(['Object.freeze'])
+    const visit = (node: ts.Node) => {
+      if (ts.isCallExpression(node)) {
+        const callee = node.expression
+        allCalls.push(
+          ts.isPropertyAccessExpression(callee) &&
+            callee.expression.kind === ts.SyntaxKind.RegularExpressionLiteral
+            ? 'RegExp.test'
+            : callee.getText(runtime),
+        )
+      }
+      if (ts.isNewExpression(node)) constructions.push(node.expression.getText(runtime))
+      ts.forEachChild(node, visit)
+    }
+    visit(factory.body)
+    expect(allCalls.sort()).toEqual(
+      [
+        'Object.freeze',
+        'authenticateConversationReplyPatient',
+        'createConversationMealReplyReadonlyAuth',
+        'authorizeMobileEntitlement',
+        'request.headers.get',
+        'RegExp.test',
+        'crypto.randomUUID',
+      ].sort(),
+    )
+    expect(constructions).toEqual(['URL'])
+    const scope = parse('conversation-meal-reply-scope.ts'),
+      journal = scope.statements.find(
+        (node): node is ts.ImportDeclaration =>
+          ts.isImportDeclaration(node) &&
+          ts.isStringLiteral(node.moduleSpecifier) &&
+          node.moduleSpecifier.text === './conversation-meal-journal-store',
+      ),
+      bindings = journal?.importClause?.namedBindings
+    if (!bindings || !ts.isNamedImports(bindings))
+      throw new Error('Missing qualified journal helper import')
+    expect(bindings.elements.map((node) => (node.propertyName ?? node.name).text).sort()).toEqual([
+      'conversationJournalInstant',
+      'conversationJournalUUID',
+    ])
   })
 
   test('contains no export outside the Next Route Handler allowlist', () => {
@@ -794,9 +888,36 @@ describe('authoritative Mobile API source surface', () => {
       .filter((p) => !p.startsWith('conversation/journal/'))
       .map((p) => `/api/mobile/v1/${p.replace(/\.ts$/, '')}`)
       .sort()
+    const replyRoutes = conversationReplyAdditions
+      .map((path) => `/api/mobile/v1/${path.replace(/\.ts$/, '')}`)
+      .sort()
+    const readonlyRoutes = [...replyRoutes, journalRoute, ...editRoutes].sort()
+    const readonlyScopeChunk = uniqueChunk([
+      'conversation_scope_unavailable',
+      'patient_admin_account_conflict',
+      'read_conversation_meal_journal_page',
+    ])
+    const replyChunk = uniqueChunk([
+      'conversation.meal-reply-result.v1',
+      'admit_conversation_meal_reply',
+      'commit_conversation_meal_continuation',
+    ])
+    expect(chunkConsumers(readonlyScopeChunk)).toEqual(readonlyRoutes)
+    expect(chunkConsumers(replyChunk)).toEqual(replyRoutes)
+    for (const route of Object.keys(currentAppPathsManifest())) {
+      expect(
+        tracedTargets(route).filter((target) => target === readonlyScopeChunk),
+        route,
+      ).toHaveLength(readonlyRoutes.includes(route) ? 1 : 0)
+      expect(
+        tracedTargets(route).filter((target) => target === replyChunk),
+        route,
+      ).toHaveLength(replyRoutes.includes(route) ? 1 : 0)
+    }
     const publicEditChunk = uniqueChunk([
       'conversation.meal-edit-effect-public.v1',
       'conversation.meal-group.v1',
+      'conversation.meal-group.v2',
     ])
     const editWriterChunk = uniqueChunk([
       'commit_conversation_meal_item_edit',
@@ -813,7 +934,11 @@ describe('authoritative Mobile API source surface', () => {
     certifyInlineConversationEditModule(publicEditChunk, journalRoute)
     expect(chunkConsumers(publicEditChunk)).toEqual(editRoutes)
     expect(chunkConsumers(editWriterChunk)).toEqual(editRoutes)
-    for (const marker of ['conversation.meal-edit-effect-public.v1', 'conversation.meal-group.v1'])
+    for (const marker of [
+      'conversation.meal-edit-effect-public.v1',
+      'conversation.meal-group.v1',
+      'conversation.meal-group.v2',
+    ])
       expect(runtimeMarkerRoutes(marker)).toEqual([...editRoutes, journalRoute].sort())
     for (const marker of [
       'commit_conversation_meal_item_edit',
@@ -822,11 +947,29 @@ describe('authoritative Mobile API source surface', () => {
       'read_conversation_meal_edit_operation',
     ])
       expect(runtimeMarkerRoutes(marker)).toEqual(editRoutes)
-    expect(runtimeMarkerRoutes('read_conversation_meal_journal_page')).toEqual([journalRoute])
-    for (const route of commandRoutes)
-      expect(tracedTargets(route), route).toHaveLength(
-        route === journalRoute ? 121 - 1 : editRoutes.includes(route) ? 122 - 1 : 119,
-      )
+    // This physical read marker travels with the shared readonly Auth module.
+    // The source-level constructor/import guard above prohibits a journal call.
+    expect(runtimeMarkerRoutes('read_conversation_meal_journal_page')).toEqual(readonlyRoutes)
+    expect(runtimeMarkerRoutes('read_conversation_meal_journal_page_v2')).toEqual([journalRoute])
+    for (const marker of [
+      'conversation.meal-reply-result.v1',
+      'admit_conversation_meal_reply',
+      'prepare_conversation_meal_continuation',
+      'commit_conversation_meal_continuation',
+    ])
+      expect(runtimeMarkerRoutes(marker)).toEqual(replyRoutes)
+    const expectedCommandCounts = new Map([
+      ['/api/mobile/v1/conversation/meal-commands/[commandId]/route', 119],
+      ['/api/mobile/v1/conversation/meal-commands/route', 119],
+      ['/api/mobile/v1/conversation/session/route', 119],
+      [journalRoute, 121],
+      ...editRoutes.map((route) => [route, 122] as const),
+      ...replyRoutes.map((route) => [route, 121] as const),
+    ])
+    expect([...expectedCommandCounts.keys()].sort()).toEqual(commandRoutes)
+    for (const [route, count] of expectedCommandCounts)
+      expect(tracedTargets(route), route).toHaveLength(count)
+    expect(new Set([commandChunk, publicEditChunk, readonlyScopeChunk, replyChunk]).size).toBe(4)
     const legacyTargets = new Set([...allRoutes, webhookRoute].flatMap(tracedTargets))
     const commandOnlyTargets = [...new Set(commandRoutes.flatMap(tracedTargets))]
       .filter((target) => !legacyTargets.has(target))
@@ -837,6 +980,8 @@ describe('authoritative Mobile API source surface', () => {
           commandChunk,
           publicEditChunk,
           editWriterChunk,
+          readonlyScopeChunk,
+          replyChunk,
           ...commandRoutes.map((route) =>
             realpathSync(
               resolve(buildRoot, 'server/app', `${route.slice(1)}_client-reference-manifest.js`),
@@ -845,11 +990,11 @@ describe('authoritative Mobile API source surface', () => {
         ]),
       ].sort(),
     )
-    expect(surface.nftReferenceCount + editRoutes.length + 1).toBe(
-      8028 + priorRoutes.length + 100 + 104 + 3 * 119 + 3 * 122 + 121,
-    )
-    expect(surface.nftUniqueTargetCount + 1).toBe(215 + 2 + 1 + 10)
-    expect(surface.nftRegularFileTargetCount + 1).toBe(213 + 2 + 1 + 10)
+    // Raw totals, without folding any new chunk/edge into historical scopes.
+    // Exactly six readonly edges and two reply-writer edges were proved above.
+    expect(surface.nftReferenceCount).toBe(8202 + 104 + 3 * 119 + 3 * 122 + 121 + 2 * 121)
+    expect(surface.nftUniqueTargetCount).toBe(217 + 1 + 9 + 4)
+    expect(surface.nftRegularFileTargetCount).toBe(215 + 1 + 9 + 4)
     expect(surface.nftDirectoryTargetCount).toBe(2)
     const additions = new Set(
       currentClinicalRouteAdditions.map((path) => `/api/mobile/v1/${path.replace(/\.ts$/, '')}`),

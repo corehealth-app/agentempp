@@ -67,7 +67,9 @@ function wrapperRecords(): RouteRecord[] {
         .replace(
           path.endsWith(`${sep}auth${sep}password-recovery${sep}route.ts`)
             ? /^export\s+const\s+maxDuration\s*=\s*45\s*;?\s*$/gm
-            : /^export\s+const\s+maxDuration\s*=\s*300\s*;?\s*$/gm,
+            : path.endsWith(`${sep}conversation${sep}meal-commands${sep}route.ts`)
+              ? /^export\s+const\s+maxDuration\s*=\s*120\s*;?\s*$/gm
+              : /^export\s+const\s+maxDuration\s*=\s*300\s*;?\s*$/gm,
           '',
         )
         .replace(/^\s*\/\/[^\n]*$/gm, '')
@@ -149,7 +151,12 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
       path: 'auth/password-recovery/route.ts',
       exports: ['GET', 'HEAD', 'POST', 'dynamic', 'maxDuration', 'runtime'],
     })
-    const previous = records.filter((record) => record.path !== 'auth/password-recovery/route.ts')
+    const legacy = records.filter((record) => !record.path.startsWith('conversation/'))
+    expect(legacy).toHaveLength(75)
+    expect(hashRecords(legacy)).toBe(
+      '109cdb03a29399358c586046a6f98aace5eb6628fed4f290e1ca05193cc1a0a1',
+    )
+    const previous = legacy.filter((record) => record.path !== 'auth/password-recovery/route.ts')
     expect(previous).toHaveLength(74)
     expect(hashRecords(previous)).toBe(
       '9c7daf99f0c9baab62f037d3d9301417c4a025283e863f44cd4dfab77588e485',
@@ -160,14 +167,14 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
     {
       name: 'Unapproved Auth replacing clarification at the same count',
       replace: true,
-      count: 75,
-      hash: '0e33a428b584c28a5d1a022bac61f48d9a5bbc8ac03afec5638e36b826272e66',
+      count: 78,
+      hash: 'a55f0c64f4d5a08de34355f6b8d4e3f9647b792f4f4e972fb67717ba14457db5',
     },
     {
       name: 'Unapproved Auth added alongside clarification',
       replace: false,
-      count: 76,
-      hash: 'fe306e89022eda30b34a8c257530481460499320cf8b6fca16d211f64d372001',
+      count: 79,
+      hash: 'b972f1bcfde1196fcd18be1a8553c147a06a128fd882b217e030cf855c695685',
     },
   ])('rejects $name through the closed inventory', ({ replace, count, hash }) => {
     withUnexpectedAuthComposition(replace, (script) => {
@@ -184,7 +191,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
     })
   })
 
-  test('accepts the approved 75-route mirror with recovery and the owned clarification in the CLI gate', () => {
+  test('accepts the approved 78-route mirror with recovery and the owned clarification in the CLI gate', () => {
     const registration = sourceRecords().find(
       (record) => record.path === 'registrations/[id]/route.ts',
     )
@@ -198,11 +205,11 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
 
     expect(result.error).toBeUndefined()
     expect(result.status, result.stderr).toBe(0)
-    expect(result.stdout).toContain('SOURCE_ROUTE_EXPORT_COUNT=75')
-    expect(result.stdout).toContain('WRAPPER_ROUTE_EXPORT_COUNT=75')
+    expect(result.stdout).toContain('SOURCE_ROUTE_EXPORT_COUNT=78')
+    expect(result.stdout).toContain('WRAPPER_ROUTE_EXPORT_COUNT=78')
     for (const surface of ['SOURCE', 'WRAPPER']) {
       expect(result.stdout).toContain(
-        `${surface}_ROUTE_EXPORT_STREAM_SHA256=109cdb03a29399358c586046a6f98aace5eb6628fed4f290e1ca05193cc1a0a1`,
+        `${surface}_ROUTE_EXPORT_STREAM_SHA256=3ab0b1fdb146ab6a06846b5702cfa70a1a7b997d73b3235655ec248c32f68874`,
       )
     }
     expect(result.stdout).toContain('ROUTE_MIRROR_STATUS=VERIFIED')
@@ -213,7 +220,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
     const wrappers = wrapperRecords()
 
     console.info(`WRAPPER_ROUTE_EXPORT_COUNT=${wrappers.length}`)
-    expect(wrappers, `expected 75 wrappers but observed ${wrappers.length}`).toHaveLength(75)
+    expect(wrappers, `expected 78 wrappers but observed ${wrappers.length}`).toHaveLength(78)
 
     expect(wrappers.map(({ path, exports }) => ({ path, exports }))).toEqual(sources)
 
@@ -224,9 +231,24 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
 
     const hash = hashRecords(wrappers)
     console.info(`WRAPPER_ROUTE_EXPORT_STREAM_SHA256=${hash}`)
-    expect(hash).toBe('109cdb03a29399358c586046a6f98aace5eb6628fed4f290e1ca05193cc1a0a1')
+    expect(hash).toBe('3ab0b1fdb146ab6a06846b5702cfa70a1a7b997d73b3235655ec248c32f68874')
   })
 
+  test('declares the command POST timeout locally for Next static analysis', () => {
+    const wrapper = readFileSync(
+      resolve(wrapperRoot, 'conversation/meal-commands/route.ts'),
+      'utf8',
+    )
+    expect(wrapper).toContain("export const runtime = 'nodejs'")
+    expect(wrapper).toContain('export const maxDuration = 120')
+    const config = JSON.parse(
+      readFileSync(
+        resolve(testDirectory, '../.next/server/functions-config-manifest.json'),
+        'utf8',
+      ),
+    )
+    expect(config.functions['/api/mobile/v1/conversation/meal-commands'].maxDuration).toBe(120)
+  })
   test('declares Flow route runtime limits locally for Next static analysis', () => {
     const flowWrapper = readFileSync(resolve(wrapperRoot, 'flow/chat/route.ts'), 'utf8')
 

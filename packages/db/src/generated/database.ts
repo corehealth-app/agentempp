@@ -4217,6 +4217,10 @@ export type Database = {
         }
         Returns: Json
       }
+      admit_conversation_meal_command_fenced: {
+        Args: { p_user_id: string; p_input: Json; p_expected_epoch: string }
+        Returns: Json
+      }
       admit_conversation_meal_command: {
         Args: { p_user_id: string; p_input: Json }
         Returns: Json

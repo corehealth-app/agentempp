@@ -11,6 +11,7 @@ import {
 import { bindConversationCommand } from './conversation-command-contracts'
 import type { ConversationMealInterpretation } from './conversation-meal-interpretation-contracts'
 import { interpretPersistedConversationMeal } from './conversation-meal-interpretation-service'
+import { MobileApiError } from './http'
 
 const attemptId = '10000000-0000-4000-8000-000000000010'
 const sourceHash = 'a'.repeat(64)
@@ -123,6 +124,21 @@ function run(d: ReturnType<typeof dependencies>, raw: unknown = candidateCommand
 }
 
 describe('actual durable meal interpretation composition', () => {
+  it('does not reconcile or process after a known admission quota refusal', async () => {
+    const d = dependencies()
+    d.journal.admit.mockRejectedValue(
+      new MobileApiError(429, 'conversation_admission_rate_limited', 'Wait'),
+    )
+    await expect(run(d)).rejects.toMatchObject({
+      status: 429,
+      code: 'conversation_admission_rate_limited',
+    })
+    expect(d.journal.admit).toHaveBeenCalledTimes(1)
+    expect(d.journal.read).toHaveBeenCalledTimes(1)
+    for (const call of [d.sources.capture, d.store.start, d.interpreter.interpret, d.store.commit])
+      expect(call).not.toHaveBeenCalled()
+  })
+
   it('reads before any admission/capture and replays without a provider call', async () => {
     const d = dependencies()
     d.store.read.mockResolvedValue(record('available'))

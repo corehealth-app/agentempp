@@ -191,16 +191,21 @@ function withSyntheticBuild<T>(
 }
 
 describe('authoritative Mobile API source surface', () => {
-  test('keeps the approved 75-route path and named-export manifest', () => {
+  test('keeps the approved 78-route path and named-export manifest', () => {
     const records = sourceRecords()
     const hash = hashRecords(records)
 
     console.info(`SOURCE_ROUTE_EXPORT_COUNT=${records.length}`)
     console.info(`SOURCE_ROUTE_EXPORT_STREAM_SHA256=${hash}`)
 
-    expect(records).toHaveLength(75)
-    expect(hash).toBe('109cdb03a29399358c586046a6f98aace5eb6628fed4f290e1ca05193cc1a0a1')
-    const prior74 = records.filter((record) => record.path !== 'auth/password-recovery/route.ts')
+    expect(records).toHaveLength(78)
+    expect(hash).toBe('3ab0b1fdb146ab6a06846b5702cfa70a1a7b997d73b3235655ec248c32f68874')
+    const prior75 = records.filter((record) => !record.path.startsWith('conversation/'))
+    expect(prior75).toHaveLength(75)
+    expect(hashRecords(prior75)).toBe(
+      '109cdb03a29399358c586046a6f98aace5eb6628fed4f290e1ca05193cc1a0a1',
+    )
+    const prior74 = prior75.filter((record) => record.path !== 'auth/password-recovery/route.ts')
     expect(prior74).toHaveLength(74)
     expect(hashRecords(prior74)).toBe(
       '9c7daf99f0c9baab62f037d3d9301417c4a025283e863f44cd4dfab77588e485',
@@ -282,7 +287,7 @@ describe('authoritative Mobile API source surface', () => {
     expect(hasServerActionDirective(inlineServerAction)).toBe(true)
   })
 
-  test('preserves 75 Mobile routes and adds only the RevenueCat webhook in the Next build', () => {
+  test('preserves 75 legacy Mobile routes plus three command routes and the RevenueCat webhook in the Next build', () => {
     const surface = inspectBuildSurface(buildRoot)
 
     console.info(`BUILD_ROUTE_PATH_COUNT=${surface.routePaths.length}`)
@@ -297,16 +302,18 @@ describe('authoritative Mobile API source surface', () => {
     console.info(`BUILD_MIDDLEWARE_COUNT=${surface.middlewareEntries.length}`)
     console.info(`BUILD_SERVER_ACTION_REFERENCE_COUNT=${surface.serverActionReferences.length}`)
 
-    expect(surface.routePaths).toHaveLength(76)
+    expect(surface.routePaths).toHaveLength(79)
     expect(surface.routePathHash).toBe(
-      '81f9ae7836b615cfaad7fc4e5c5c399e7f264411df5e4f6473334b6be9f1e79b',
+      '132ed9ce40561f48626a98b93905039b7f49e9ffbb3d890c83399b1e7927b6fc',
     )
-    expect(surface.mobileRoutePaths).toHaveLength(75)
+    expect(surface.mobileRoutePaths).toHaveLength(78)
     expect(surface.mobileRoutePathHash).toBe(
-      'e5358ef9f8da93c82528ef41732e8fa7bc8bb4c20fc425264585777542fad1f2',
+      'feb10dcfc43742d384f5852b573634fc4a5226e52c15856eb24a1f2c5ee9aa54',
     )
     const prior74Paths = surface.mobileRoutePaths.filter(
-      (route) => route !== '/api/mobile/v1/auth/password-recovery',
+      (route) =>
+        !route.startsWith('/api/mobile/v1/conversation/') &&
+        route !== '/api/mobile/v1/auth/password-recovery',
     )
     expect(prior74Paths).toHaveLength(74)
     expect(
@@ -388,14 +395,14 @@ describe('authoritative Mobile API source surface', () => {
       mutate: (appPaths: Record<string, string>) => ({ ...appPaths }),
       omittedTargets: ['app/api/mobile/v1/today/route.js'],
     },
-  ])('rejects $name while the same 76 URL keys remain', ({
+  ])('rejects $name while the same 79 URL keys remain', ({
     expectedError,
     mutate,
     omittedTargets,
   }) => {
     const appPaths = mutate(currentAppPathsManifest())
 
-    expect(Object.keys(appPaths)).toHaveLength(76)
+    expect(Object.keys(appPaths)).toHaveLength(79)
     expect(() => withSyntheticBuild(appPaths, inspectBuildSurface, omittedTargets)).toThrow(
       expectedError,
     )
@@ -522,7 +529,24 @@ describe('authoritative Mobile API source surface', () => {
     // Removing precisely the 56 certified historical edges restores the same
     // per-route count stream; workout reader duplication is consolidated once.
     const allBuildRoutes = Object.keys(currentAppPathsManifest())
-    const allRoutes = allBuildRoutes.filter((route) => route.startsWith('/api/mobile/v1/'))
+    const currentMobileRoutes = allBuildRoutes.filter((route) =>
+      route.startsWith('/api/mobile/v1/'),
+    )
+    expect(currentMobileRoutes).toHaveLength(78)
+    expect(
+      currentMobileRoutes
+        .filter((route) => route.startsWith('/api/mobile/v1/conversation/'))
+        .sort(),
+    ).toEqual([
+      '/api/mobile/v1/conversation/meal-commands/[commandId]/route',
+      '/api/mobile/v1/conversation/meal-commands/route',
+      '/api/mobile/v1/conversation/session/route',
+    ])
+    // Keep the full historical 75-route dependency graph pinned below. The
+    // three explicit additive commands remain in every global forbidden scan.
+    const allRoutes = currentMobileRoutes.filter(
+      (route) => !route.startsWith('/api/mobile/v1/conversation/'),
+    )
     expect(allRoutes).toHaveLength(75)
     const recoveryRoute = '/api/mobile/v1/auth/password-recovery/route'
     const priorRoutes = allRoutes.filter((route) => route !== recoveryRoute)
@@ -589,9 +613,34 @@ describe('authoritative Mobile API source surface', () => {
       webhookRoute,
     ])
     expect(runtimeMarkerRoutes('x-revenuecat-webhook-signature')).toEqual([webhookRoute])
-    expect(surface.nftReferenceCount).toBe(8028 + priorRoutes.length + 100 + 104)
-    expect(surface.nftUniqueTargetCount).toBe(214 + 2 + 1)
-    expect(surface.nftRegularFileTargetCount).toBe(212 + 2 + 1)
+    const commandRoutes = currentMobileRoutes
+      .filter((route) => route.startsWith('/api/mobile/v1/conversation/'))
+      .sort()
+    const commandChunk = uniqueChunk([
+      'conversation.meal-command-result.v1',
+      'MOBILE_CONVERSATION_COMMANDS_ENABLED',
+      'conversation_admission_rate_limited',
+    ])
+    expect(chunkConsumers(commandChunk)).toEqual(commandRoutes)
+    expect(runtimeMarkerRoutes('conversation_commands_unavailable')).toEqual(commandRoutes)
+    for (const route of commandRoutes) expect(tracedTargets(route)).toHaveLength(119)
+    const legacyTargets = new Set([...allRoutes, webhookRoute].flatMap(tracedTargets))
+    const commandOnlyTargets = [...new Set(commandRoutes.flatMap(tracedTargets))]
+      .filter((target) => !legacyTargets.has(target))
+      .sort()
+    expect(commandOnlyTargets).toEqual(
+      [
+        commandChunk,
+        ...commandRoutes.map((route) =>
+          realpathSync(
+            resolve(buildRoot, 'server/app', `${route.slice(1)}_client-reference-manifest.js`),
+          ),
+        ),
+      ].sort(),
+    )
+    expect(surface.nftReferenceCount).toBe(8028 + priorRoutes.length + 100 + 104 + 3 * 119)
+    expect(surface.nftUniqueTargetCount).toBe(214 + 2 + 1 + 4)
+    expect(surface.nftRegularFileTargetCount).toBe(212 + 2 + 1 + 4)
     expect(surface.nftDirectoryTargetCount).toBe(2)
     const additions = new Set(
       currentClinicalRouteAdditions.map((path) => `/api/mobile/v1/${path.replace(/\.ts$/, '')}`),
@@ -614,6 +663,7 @@ describe('authoritative Mobile API source surface', () => {
       },
       {
         markers: ['get_mobile_current_clinical_state', 'mobile_current_clinical_'],
+        commands: true,
         old: routeNames([
           'flow/chat',
           'onboarding',
@@ -635,11 +685,8 @@ describe('authoritative Mobile API source surface', () => {
         ]),
       },
       {
-        markers: [
-          'MOBILE_CURRENT_CLINICAL_PROJECT_REF',
-          'current_clinical_runtime_unavailable',
-          'invalid_clinical_policy_representation',
-        ],
+        markers: ['MOBILE_CURRENT_CLINICAL_PROJECT_REF', 'invalid_clinical_policy_representation'],
+        commands: true,
         otherAdded: routeNames([
           'reevaluation/[cycleId]/photos',
           'reevaluation/[cycleId]/photos/consent',
@@ -673,6 +720,7 @@ describe('authoritative Mobile API source surface', () => {
       },
       {
         markers: ['Invalid clinical calculation context'],
+        commands: true,
         old: routeNames([
           'flow/chat',
           'onboarding',
@@ -696,6 +744,7 @@ describe('authoritative Mobile API source surface', () => {
         ]),
       },
       {
+        commands: true,
         // Read-only BF provenance now shares the daily repository with legacy
         // admission. Certify all three ports in that one existing seven-route
         // chunk, while the whole closer retains its original six consumers.
@@ -753,7 +802,20 @@ describe('authoritative Mobile API source surface', () => {
         expect(photoCopy).toHaveLength(1)
         expect(chunkConsumers(photoCopy[0] ?? '')).toEqual(edge.otherAdded)
       } else chunk = uniqueChunk(edge.markers)
-      expect(chunkConsumers(chunk)).toEqual([...edge.old, ...edge.added].sort())
+      expect(chunkConsumers(chunk)).toEqual(
+        [
+          ...edge.old,
+          ...edge.added,
+          ...('commands' in edge && edge.commands ? commandRoutes : []),
+        ].sort(),
+      )
+      if ('otherAdded' in edge) {
+        // Webpack extracted the error code separately from the now shared
+        // pure selector. Require the original guard in every legacy closure.
+        const guarded = runtimeMarkerRoutes('current_clinical_runtime_unavailable')
+        for (const route of [...edge.old, ...edge.added, ...(edge.otherAdded ?? [])])
+          expect(guarded).toContain(route)
+      }
       for (const route of edge.old) removeHistoricalEdge(route, chunk)
     }
     const contractsChunk = uniqueChunk([
@@ -830,7 +892,12 @@ describe('authoritative Mobile API source surface', () => {
     expect(historicalConsumers(catalogChunk)).toEqual(catalogRoutes)
     // The historical read now shares the same repository as the five reviews;
     // its query selector stays inline in precisely the two History entries.
-    const receiptChunk = uniqueChunk(['read_mobile_registration_feedback'])
+    const receiptCopies = semanticChunks(['read_mobile_registration_feedback'])
+    expect(receiptCopies).toHaveLength(2)
+    expect(receiptCopies).toContain(commandChunk)
+    const legacyReceiptCopies = receiptCopies.filter((chunk) => chunk !== commandChunk)
+    expect(legacyReceiptCopies).toHaveLength(1)
+    const receiptChunk = legacyReceiptCopies[0] ?? ''
     expect(historicalConsumers(receiptChunk)).toEqual(
       [...historyFeedbackRoutes, ...reviewRoutes].sort(),
     )

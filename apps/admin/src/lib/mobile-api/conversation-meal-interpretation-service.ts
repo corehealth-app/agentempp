@@ -160,7 +160,7 @@ export async function interpretPersistedConversationMeal(
         )
           return conflict()
       } catch (error) {
-        if (error instanceof MobileApiError && error.status === 409) throw error
+        if (error instanceof MobileApiError && [409, 429].includes(error.status)) throw error
         admitted = await journal.read({ ownerId: owner, commandId: command.commandId })
         if (admitted.action === 'stale_epoch') return conflict()
         if (admitted.action !== 'available' || !isDeepStrictEqual(admitted.source, command))
@@ -228,7 +228,7 @@ export async function interpretPersistedConversationMeal(
       return (await read()) ?? reconciliation()
     }
   } catch (error) {
-    if (error instanceof MobileApiError && [409, 422].includes(error.status)) throw error
+    if (error instanceof MobileApiError && [409, 422, 429].includes(error.status)) throw error
     return unavailable()
   }
 }

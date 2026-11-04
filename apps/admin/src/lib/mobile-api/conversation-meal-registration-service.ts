@@ -437,7 +437,7 @@ export async function registerPersistedConversationMeal(
       try {
         admission = await journal.admit(command)
       } catch (error) {
-        if (error instanceof MobileApiError && error.status === 409) throw error
+        if (error instanceof MobileApiError && [409, 429].includes(error.status)) throw error
         const read = await journal.read({ ownerId: owner, commandId: command.commandId })
         if (read.action !== 'available' || !isDeepStrictEqual(read.source, command))
           return reconciliation()

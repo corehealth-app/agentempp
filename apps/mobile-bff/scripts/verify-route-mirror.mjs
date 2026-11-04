@@ -3,8 +3,8 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const expectedCount = 75
-const expectedHash = '109cdb03a29399358c586046a6f98aace5eb6628fed4f290e1ca05193cc1a0a1'
+const expectedCount = 78
+const expectedHash = '3ab0b1fdb146ab6a06846b5702cfa70a1a7b997d73b3235655ec248c32f68874'
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const appRoot = resolve(scriptDirectory, '..')
 const sourceRoot = resolve(appRoot, '../admin/src/app/api/mobile/v1')
@@ -83,7 +83,9 @@ function wrapperRecords() {
         .replace(
           path.endsWith(`${sep}auth${sep}password-recovery${sep}route.ts`)
             ? /^export\s+const\s+maxDuration\s*=\s*45\s*;?\s*$/gm
-            : /^export\s+const\s+maxDuration\s*=\s*300\s*;?\s*$/gm,
+            : path.endsWith(`${sep}conversation${sep}meal-commands${sep}route.ts`)
+              ? /^export\s+const\s+maxDuration\s*=\s*120\s*;?\s*$/gm
+              : /^export\s+const\s+maxDuration\s*=\s*300\s*;?\s*$/gm,
           '',
         )
         .replace(/^\s*\/\/[^\n]*$/gm, '')

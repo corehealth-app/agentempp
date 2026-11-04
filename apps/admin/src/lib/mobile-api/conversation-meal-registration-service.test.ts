@@ -10,6 +10,7 @@ import {
 } from './__fixtures__/conversation-meal-writer'
 import { bindConversationCommand } from './conversation-command-contracts'
 import { registerPersistedConversationMeal } from './conversation-meal-registration-service'
+import { MobileApiError } from './http'
 
 const id = '10000000-0000-4000-8000-000000000010'
 function interpretation() {
@@ -191,6 +192,27 @@ function stored(receipt: unknown = null, resolved: unknown = null) {
 }
 
 describe('actual source-to-factual meal registration composition', () => {
+  it('does not reconcile or process after a known admission quota refusal', async () => {
+    const d = dependencies()
+    d.journal.admit.mockRejectedValue(
+      new MobileApiError(429, 'conversation_admission_rate_limited', 'Wait'),
+    )
+    await expect(run(d)).rejects.toMatchObject({
+      status: 429,
+      code: 'conversation_admission_rate_limited',
+    })
+    expect(d.journal.admit).toHaveBeenCalledTimes(1)
+    for (const call of [
+      d.journal.read,
+      d.initializeDay,
+      d.sources.capture,
+      d.interpret,
+      d.writer.prepare,
+      d.writer.commit,
+    ])
+      expect(call).not.toHaveBeenCalled()
+  })
+
   it('positively preserves explicitly selected breakfast despite a noon server source', async () => {
     const d = dependencies(),
       raw = { ...writerCommand().command, meal_type: 'cafe' as const }

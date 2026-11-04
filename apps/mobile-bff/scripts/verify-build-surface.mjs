@@ -3,10 +3,10 @@ import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'nod
 import { dirname, extname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const expectedMobileRouteCount = 75
-const expectedMobileRouteHash = 'e5358ef9f8da93c82528ef41732e8fa7bc8bb4c20fc425264585777542fad1f2'
-const expectedRouteCount = 76
-const expectedRouteHash = '81f9ae7836b615cfaad7fc4e5c5c399e7f264411df5e4f6473334b6be9f1e79b'
+const expectedMobileRouteCount = 78
+const expectedMobileRouteHash = 'feb10dcfc43742d384f5852b573634fc4a5226e52c15856eb24a1f2c5ee9aa54'
+const expectedRouteCount = 79
+const expectedRouteHash = '132ed9ce40561f48626a98b93905039b7f49e9ffbb3d890c83399b1e7927b6fc'
 const revenueCatRoute = '/api/webhooks/revenuecat'
 const revenueCatAppPath = `${revenueCatRoute}/route`
 const revenueCatBundleTarget = 'app/api/webhooks/revenuecat/route.js'

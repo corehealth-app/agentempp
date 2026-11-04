@@ -70,8 +70,15 @@ describe('current-authority clarification in the fresh mobile server build', () 
     expect(
       source.find((record) => record.path === 'auth/password-recovery/route.ts')?.exports,
     ).toEqual(['GET', 'HEAD', 'POST', 'dynamic', 'maxDuration', 'runtime'])
-    expect(source).toHaveLength(75)
-    const prior74 = source.filter((record) => record.path !== 'auth/password-recovery/route.ts')
+    expect(source).toHaveLength(78)
+    const prior75 = source.filter((record) => !record.path.startsWith('conversation/'))
+    expect(prior75).toHaveLength(75)
+    expect(
+      createHash('sha256')
+        .update(prior75.map((record) => `${record.path}\0${record.exports.join(',')}\n`).join(''))
+        .digest('hex'),
+    ).toBe('109cdb03a29399358c586046a6f98aace5eb6628fed4f290e1ca05193cc1a0a1')
+    const prior74 = prior75.filter((record) => record.path !== 'auth/password-recovery/route.ts')
     expect(prior74).toHaveLength(74)
     expect(
       createHash('sha256')

@@ -72,6 +72,27 @@ async function runMobileRoute<RouteContext>(
     const supabase = runtime.createServiceClient()
     const auth = await runtime.authenticate(request, supabase)
     await runtime.authorizeEntitlement(auth, request, supabase)
+    // New conversational media clients bind every asset operation to the
+    // patient observed before capture/upload. The header is a precondition,
+    // never ownership authority. Existing clients without it are unchanged.
+    const expectedPatient = request.headers.get('X-Conversation-Owner')
+    if (
+      expectedPatient !== null &&
+      /^\/api\/mobile\/v1\/media(?:\/|$)/u.test(new URL(request.url).pathname)
+    ) {
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(expectedPatient))
+        throw new MobileApiError(
+          422,
+          'conversation_owner_invalid',
+          'A valid original patient is required',
+        )
+      if (expectedPatient !== auth.userId)
+        throw new MobileApiError(
+          409,
+          'conversation_patient_changed',
+          'The authenticated patient has changed',
+        )
+    }
     return await handler({ auth, request, requestId, supabase }, routeContext)
   } catch (error) {
     if (error instanceof MobileApiError) return mobileErrorResponse(error, requestId)

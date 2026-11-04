@@ -433,6 +433,28 @@ function receipt(raw: unknown, b: ConversationMealEditBinding): ConversationMeal
   }
   return v
 }
+/** A qualified immutable journal row has no operation input body. Preserve
+ * receipt invariants and actual original binding without inventing that body. */
+export function parseConversationMealEditHistoricalReceipt(
+  raw: unknown,
+  binding: unknown,
+): ConversationMealEditReceipt {
+  try {
+    const actual = exact(conversationJournalBindingSchema, binding)
+    clock.parse(actual.admitted_at)
+    const value = receipt(raw, {
+      ownerId: actual.owner_id,
+      commandId: actual.command_id,
+      inputHash: actual.input_hash,
+      epoch: actual.epoch,
+    })
+    if (instant(value.applied_at) < instant(actual.admitted_at))
+      return conversationMealEditUnavailable()
+    return value
+  } catch {
+    return conversationMealEditUnavailable()
+  }
+}
 export function parseConversationMealEditReceipt(
   raw: unknown,
   operation: BoundConversationMealEdit,

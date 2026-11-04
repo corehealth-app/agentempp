@@ -171,8 +171,9 @@ export function parseConversationMealEditInput(raw: unknown): ConversationMealEd
 }
 /** SQL canonical(jsonb) uses decimal scalar text. Expand the exact digits
  * JSON sends, without rounding the number or changing the submitted intent.
- * This closed DTO has ASCII keys, matching the SQL C-collation ordering. */
-function editCanonical(value: unknown): string {
+ * For already qualified closed JSON only; this is not an input parser.
+ * Operation DTO keys are ASCII, matching the SQL C-collation ordering. */
+export function conversationOperationCanonicalJson(value: unknown): string {
   if (typeof value === 'number') {
     const serialized = JSON.stringify(value)
     const exponent = /^(-?)([0-9]+)(?:\.([0-9]+))?e([+-]?[0-9]+)$/u.exec(serialized)
@@ -185,11 +186,12 @@ function editCanonical(value: unknown): string {
     return `${sign}${digits.slice(0, position)}.${digits.slice(position)}`
   }
   if (value === null || typeof value !== 'object') return JSON.stringify(value)
-  if (Array.isArray(value)) return `[${value.map(editCanonical).join(',')}]`
+  if (Array.isArray(value)) return `[${value.map(conversationOperationCanonicalJson).join(',')}]`
   return `{${Object.keys(value)
     .sort()
     .map(
-      (key) => `${JSON.stringify(key)}:${editCanonical((value as Record<string, unknown>)[key])}`,
+      (key) =>
+        `${JSON.stringify(key)}:${conversationOperationCanonicalJson((value as Record<string, unknown>)[key])}`,
     )
     .join(',')}}`
 }
@@ -205,7 +207,7 @@ export function bindConversationMealEdit(raw: {
     binding,
     operationId,
     input,
-    inputHash: createHash('sha256').update(editCanonical(input)).digest('hex'),
+    inputHash: createHash('sha256').update(conversationOperationCanonicalJson(input)).digest('hex'),
   })
 }
 export function parseConversationMealEditServerBinding(

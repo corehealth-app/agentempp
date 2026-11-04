@@ -4217,6 +4217,23 @@ export type Database = {
         }
         Returns: Json
       }
+      admit_conversation_meal_command: {
+        Args: { p_user_id: string; p_input: Json }
+        Returns: Json
+      }
+      attach_conversation_meal_candidate: {
+        Args: {
+          p_user_id: string
+          p_command_id: string
+          p_input_hash: string
+          p_candidate: Json
+        }
+        Returns: Json
+      }
+      read_conversation_meal_command: {
+        Args: { p_user_id: string; p_command_id: string }
+        Returns: Json
+      }
       capture_mobile_registration_feedback_v2: {
         Args: { p_user_id: string; p_registration_id: string }
         Returns: Json

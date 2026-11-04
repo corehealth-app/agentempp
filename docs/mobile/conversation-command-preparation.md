@@ -16,9 +16,10 @@ O hash usa o DTO validado completo, em JSON de chaves ordenadas, preservando o t
 original. Não depende de relógio, extração ou banco. A unicidade permanente é
 `(dono, command_id)`: repetir esse par com fonte diferente deve conflitar;
 dois IDs novos para refeições iguais devem continuar sendo dois consumos legítimos.
-O módulo atual só produz a identidade. A fundação SQL inativa descrita em
-`conversation-command-journal.md` já oferece persistência, mas ainda não está ligada
-a este preparador nem a uma rota.
+O contrato produz a identidade. A fundação SQL inativa descrita em
+`conversation-command-journal.md` já oferece persistência. O adaptador em
+`conversation-candidate-orchestration.md` liga esse preparador ao journal por
+injeção, ainda sem rota pública ou gravação de consumo.
 
 ## Interpretação e extração
 
@@ -53,8 +54,10 @@ A ausência integral de candidatos vira esclarecimento sem uma segunda extraçã
 
 ## Gates ainda obrigatórios
 
-Antes de ativar registro ao enviar: integração do journal e recuperação de resposta,
+Antes de ativar registro ao enviar: composição pública do journal e recuperação de resposta,
 autoridade semântica completa do relato, fonte/epoch atuais, resolução nutricional e
 anotações estruturadas de preparo, dia aberto após locks, writer atômico com recibo
 original congelado, correção/undo por versão e timeline paginada. A fundação SQL de
-journal foi adicionada separadamente, ainda sem rollout cloud ou caller. Nenhuma flag, rota, recompensa, upload ou versão do TestFlight foi ativada.
+journal e o adaptador de preparação foram adicionados separadamente, ainda sem
+rollout cloud ou caller público. Nenhuma flag, rota, recompensa, upload ou versão
+do TestFlight foi ativada.

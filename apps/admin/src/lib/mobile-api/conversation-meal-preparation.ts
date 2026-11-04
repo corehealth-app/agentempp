@@ -25,6 +25,17 @@ interface MediaBinding {
   updated_at: string
   processing_hash: string
 }
+interface OversizedSourceText {
+  sha256: string
+  utf16_length: number
+}
+export interface ConversationMealSourceEvidence {
+  caption: string | null
+  transcript: string | null
+  /** Invalid, oversized sources are never truncated into usable food reports.
+   * Keep only their digest/length so a bounded clarification can be replayed. */
+  oversized?: { caption?: OversizedSourceText; transcript?: OversizedSourceText }
+}
 export type ConversationMealPreparation =
   | {
       status: 'prepared'
@@ -32,7 +43,7 @@ export type ConversationMealPreparation =
       intent: ConversationMealIntent
       draft: MealDraft
       mediaBinding: Readonly<MediaBinding> | null
-      sourceEvidence: Readonly<{ caption: string | null; transcript: string | null }>
+      sourceEvidence: Readonly<ConversationMealSourceEvidence>
     }
   | {
       status: 'conversational' | 'clarification_required'
@@ -46,7 +57,7 @@ export type ConversationMealPreparation =
         | 'missing_quantity_or_identity'
       unresolvedText?: string[]
       mediaBinding?: Readonly<MediaBinding> | null
-      sourceEvidence?: Readonly<{ caption: string | null; transcript: string | null }>
+      sourceEvidence?: Readonly<ConversationMealSourceEvidence>
     }
 
 function jsonCanonical(value: unknown): string {
@@ -63,6 +74,28 @@ function jsonCanonical(value: unknown): string {
     409,
     'conversation_media_invalid',
     'Media processing result is unavailable',
+  )
+}
+
+function boundedSourceEvidence(
+  caption: string | null,
+  transcript: string | null,
+): Readonly<ConversationMealSourceEvidence> {
+  const oversized: NonNullable<ConversationMealSourceEvidence['oversized']> = {}
+  const bounded = (value: string | null, key: 'caption' | 'transcript', limit: number) => {
+    if (value === null || value.length <= limit) return value
+    oversized[key] = Object.freeze({
+      sha256: createHash('sha256').update(value).digest('hex'),
+      utf16_length: value.length,
+    })
+    return null
+  }
+  const result = {
+    caption: bounded(caption, 'caption', 1000),
+    transcript: bounded(transcript, 'transcript', 2000),
+  }
+  return Object.freeze(
+    Object.keys(oversized).length ? { ...result, oversized: Object.freeze(oversized) } : result,
   )
 }
 function stop(
@@ -212,10 +245,10 @@ export async function prepareConversationMealDraft(
       ? result.text
       : null
   const caption = source.caption ?? asset.context_text ?? undefined
-  const sourceEvidence = Object.freeze({
-    caption: caption ?? null,
-    transcript: asset.kind === 'audio_note' ? transcript : null,
-  })
+  const sourceEvidence = boundedSourceEvidence(
+    caption ?? null,
+    asset.kind === 'audio_note' ? transcript : null,
+  )
   const intent = classifyConversationMealIntent(
     asset.kind === 'audio_note'
       ? {

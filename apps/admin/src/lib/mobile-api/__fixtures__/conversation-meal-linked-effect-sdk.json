@@ -1,0 +1,39 @@
+{
+  "parentBinding": {
+    "owner_id": "c3c70000-0000-4000-8000-000000000001",
+    "command_id": "c3c70000-0000-4000-8000-000000000003",
+    "input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+    "command_protocol": "conversation.command.v1",
+    "kind": "meal.report",
+    "epoch": "2d67c9bf-58ce-43b3-9fd5-2284e5b703a2",
+    "admitted_at": "2026-11-04T18:15:26.250194Z"
+  },
+  "childBinding": {
+    "owner_id": "c3c70000-0000-4000-8000-000000000001",
+    "command_id": "c3c70000-0000-4000-8000-000000000005",
+    "input_hash": "9b8c2629a7d48b8fe8317e9f024aac6ee45b1f64aedcb58fe8fb854a9436902a",
+    "command_protocol": "conversation.clarification.v1",
+    "kind": "meal.clarify",
+    "epoch": "2d67c9bf-58ce-43b3-9fd5-2284e5b703a2",
+    "admitted_at": "2026-11-04T18:15:27.997473Z"
+  },
+  "parentDecisionHash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+  "receipt": {
+    "schema": "conversation.meal-continuation-effect.v1",
+    "owner_id": "c3c70000-0000-4000-8000-000000000001",
+    "command_id": "c3c70000-0000-4000-8000-000000000005",
+    "input_hash": "9b8c2629a7d48b8fe8317e9f024aac6ee45b1f64aedcb58fe8fb854a9436902a",
+    "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+    "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+    "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+    "epoch": "2d67c9bf-58ce-43b3-9fd5-2284e5b703a2",
+    "registration_id": "11c34c7b-6487-4437-b8dd-3b738445cba5",
+    "provider_key": "conversation.clarification/c3c70000-0000-4000-8000-000000000001/c3c70000-0000-4000-8000-000000000003",
+    "meal_type": "almoco",
+    "local_date": "2026-11-04",
+    "timezone": "UTC",
+    "consumed_at": "2026-11-04T18:15:29.256011Z",
+    "log_ids": ["85f03b88-7ece-4006-9c8e-82d0f3726585"],
+    "effect_version": "cmeal1:0f73142c3a8ab4d948bc97abcc1ebc6cf56a5e767d0e4f63c4aee79ca1b1e552"
+  }
+}

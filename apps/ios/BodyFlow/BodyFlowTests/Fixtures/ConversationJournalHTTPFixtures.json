@@ -1,0 +1,1242 @@
+{
+  "schema": "synthetic.conversation-journal-pages.v1",
+  "auth_user_id": "d4f509d3-4927-4e91-9cbe-2c28ef88e95a",
+  "session": {
+    "data": {
+      "schema": "conversation.session.v1",
+      "auth_user_id": "d4f509d3-4927-4e91-9cbe-2c28ef88e95a",
+      "owner_id": "b3b01000-0000-4000-8000-000000006380",
+      "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+      "observed_at": "2026-11-04T09:04:10.487280Z",
+      "meal_command_protocol": "conversation.command.v1"
+    },
+    "meta": {
+      "api_version": "v1",
+      "request_id": "t4-http-4"
+    }
+  },
+  "pages": [
+    {
+      "data": {
+        "schema": "conversation.journal-page.v1",
+        "auth_user_id": "d4f509d3-4927-4e91-9cbe-2c28ef88e95a",
+        "owner_id": "b3b01000-0000-4000-8000-000000006380",
+        "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+        "observed_at": "2026-11-04T09:04:18.985787Z",
+        "items": [
+          {
+            "event_id": "command/b3b01000-0000-4000-8000-000000006710",
+            "at": "2026-11-04T09:04:18.369488Z",
+            "kind": "command",
+            "original_command": {
+              "command_protocol": "conversation.command.v1",
+              "command_id": "b3b01000-0000-4000-8000-000000006710",
+              "kind": "meal.report",
+              "meal_type": "cafe",
+              "source": {
+                "channel": "text",
+                "text": "Vou comer arroz amanhã"
+              }
+            },
+            "result": {
+              "schema": "conversation.meal-command-state.v1",
+              "status": "not_recorded",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006710",
+              "input_hash": "50bd2f5efe3ff2012fbbd12e30f1b4577445800a12e81d976543cccc36fcbcac",
+              "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+              "reason": "future",
+              "food_indexes": []
+            },
+            "terminal_receipt": {
+              "schema": "conversation.meal-decision-public.v1",
+              "status": "not_recorded",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006710",
+              "input_hash": "50bd2f5efe3ff2012fbbd12e30f1b4577445800a12e81d976543cccc36fcbcac",
+              "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+              "reason": "future",
+              "food_indexes": [],
+              "decision_hash": "b8dab6a24aedb77517386575b26436032ff37d0372a85317a8cfbcd70c23c6be",
+              "sealed_at": "2026-11-04T09:04:18.702664Z"
+            }
+          },
+          {
+            "event_id": "command/b3b01000-0000-4000-8000-000000006709",
+            "at": "2026-11-04T09:04:17.950329Z",
+            "kind": "command",
+            "original_command": {
+              "command_protocol": "conversation.command.v1",
+              "command_id": "b3b01000-0000-4000-8000-000000006709",
+              "kind": "meal.report",
+              "meal_type": "cafe",
+              "source": {
+                "channel": "text",
+                "text": "Vou comer arroz amanhã"
+              }
+            },
+            "result": {
+              "schema": "conversation.meal-command-state.v1",
+              "status": "not_recorded",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006709",
+              "input_hash": "3169a17cf7ea9f66cb644f211566de082cf2a6d3cf7c5b56d1c83dea8f8732df",
+              "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+              "reason": "future",
+              "food_indexes": []
+            },
+            "terminal_receipt": {
+              "schema": "conversation.meal-decision-public.v1",
+              "status": "not_recorded",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006709",
+              "input_hash": "3169a17cf7ea9f66cb644f211566de082cf2a6d3cf7c5b56d1c83dea8f8732df",
+              "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+              "reason": "future",
+              "food_indexes": [],
+              "decision_hash": "b8dab6a24aedb77517386575b26436032ff37d0372a85317a8cfbcd70c23c6be",
+              "sealed_at": "2026-11-04T09:04:18.275156Z"
+            }
+          },
+          {
+            "event_id": "command/b3b01000-0000-4000-8000-000000006708",
+            "at": "2026-11-04T09:04:17.530866Z",
+            "kind": "command",
+            "original_command": {
+              "command_protocol": "conversation.command.v1",
+              "command_id": "b3b01000-0000-4000-8000-000000006708",
+              "kind": "meal.report",
+              "meal_type": "cafe",
+              "source": {
+                "channel": "text",
+                "text": "Vou comer arroz amanhã"
+              }
+            },
+            "result": {
+              "schema": "conversation.meal-command-state.v1",
+              "status": "not_recorded",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006708",
+              "input_hash": "b2daa68e69965b9020f34fef564f45454bdf5703ffb38603434e689e87226f6c",
+              "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+              "reason": "future",
+              "food_indexes": []
+            },
+            "terminal_receipt": {
+              "schema": "conversation.meal-decision-public.v1",
+              "status": "not_recorded",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006708",
+              "input_hash": "b2daa68e69965b9020f34fef564f45454bdf5703ffb38603434e689e87226f6c",
+              "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+              "reason": "future",
+              "food_indexes": [],
+              "decision_hash": "b8dab6a24aedb77517386575b26436032ff37d0372a85317a8cfbcd70c23c6be",
+              "sealed_at": "2026-11-04T09:04:17.859328Z"
+            }
+          }
+        ],
+        "has_more": true,
+        "next_cursor": "eyJ2IjoxLCJvd25lcl9pZCI6ImIzYjAxMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwNjM4MCIsImVwb2NoIjoiNmEwMTI2YjYtYjNmNC00MDU3LWE2ZmItYzZmYmRhM2ZlMDVlIiwiYXQiOiIyMDI2LTExLTA0VDA5OjA0OjE3LjUzMDg2NloiLCJpZCI6ImNvbW1hbmQvYjNiMDEwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDA2NzA4In0"
+      },
+      "meta": {
+        "api_version": "v1",
+        "request_id": "t8-journal-http-31"
+      }
+    },
+    {
+      "data": {
+        "schema": "conversation.journal-page.v1",
+        "auth_user_id": "d4f509d3-4927-4e91-9cbe-2c28ef88e95a",
+        "owner_id": "b3b01000-0000-4000-8000-000000006380",
+        "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+        "observed_at": "2026-11-04T09:04:19.119882Z",
+        "items": [
+          {
+            "event_id": "command/b3b01000-0000-4000-8000-000000006707",
+            "at": "2026-11-04T09:04:17.104039Z",
+            "kind": "command",
+            "original_command": {
+              "command_protocol": "conversation.command.v1",
+              "command_id": "b3b01000-0000-4000-8000-000000006707",
+              "kind": "meal.report",
+              "meal_type": "cafe",
+              "source": {
+                "channel": "text",
+                "text": "Vou comer arroz amanhã"
+              }
+            },
+            "result": {
+              "schema": "conversation.meal-command-state.v1",
+              "status": "not_recorded",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006707",
+              "input_hash": "0d30f7c73e2eec125bb9577fbf6e022fcab7a906acf0610b8be20cddc87f7f1c",
+              "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+              "reason": "future",
+              "food_indexes": []
+            },
+            "terminal_receipt": {
+              "schema": "conversation.meal-decision-public.v1",
+              "status": "not_recorded",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006707",
+              "input_hash": "0d30f7c73e2eec125bb9577fbf6e022fcab7a906acf0610b8be20cddc87f7f1c",
+              "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+              "reason": "future",
+              "food_indexes": [],
+              "decision_hash": "b8dab6a24aedb77517386575b26436032ff37d0372a85317a8cfbcd70c23c6be",
+              "sealed_at": "2026-11-04T09:04:17.435755Z"
+            }
+          },
+          {
+            "event_id": "command/b3b01000-0000-4000-8000-000000006706",
+            "at": "2026-11-04T09:04:16.677605Z",
+            "kind": "command",
+            "original_command": {
+              "command_protocol": "conversation.command.v1",
+              "command_id": "b3b01000-0000-4000-8000-000000006706",
+              "kind": "meal.report",
+              "meal_type": "cafe",
+              "source": {
+                "channel": "text",
+                "text": "Vou comer arroz amanhã"
+              }
+            },
+            "result": {
+              "schema": "conversation.meal-command-state.v1",
+              "status": "not_recorded",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006706",
+              "input_hash": "a1900869876bff290f0bf620fa5a7803749e128cd367dcf3313cfc1504f882a4",
+              "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+              "reason": "future",
+              "food_indexes": []
+            },
+            "terminal_receipt": {
+              "schema": "conversation.meal-decision-public.v1",
+              "status": "not_recorded",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006706",
+              "input_hash": "a1900869876bff290f0bf620fa5a7803749e128cd367dcf3313cfc1504f882a4",
+              "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+              "reason": "future",
+              "food_indexes": [],
+              "decision_hash": "b8dab6a24aedb77517386575b26436032ff37d0372a85317a8cfbcd70c23c6be",
+              "sealed_at": "2026-11-04T09:04:17.009847Z"
+            }
+          },
+          {
+            "event_id": "command/b3b01000-0000-4000-8000-000000006705",
+            "at": "2026-11-04T09:04:16.251736Z",
+            "kind": "command",
+            "original_command": {
+              "command_protocol": "conversation.command.v1",
+              "command_id": "b3b01000-0000-4000-8000-000000006705",
+              "kind": "meal.report",
+              "meal_type": "cafe",
+              "source": {
+                "channel": "text",
+                "text": "Vou comer arroz amanhã"
+              }
+            },
+            "result": {
+              "schema": "conversation.meal-command-state.v1",
+              "status": "not_recorded",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006705",
+              "input_hash": "a836bc0c4f6617428493868fbb2b466e54531cbbffc947e0577c0d51b95626f4",
+              "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+              "reason": "future",
+              "food_indexes": []
+            },
+            "terminal_receipt": {
+              "schema": "conversation.meal-decision-public.v1",
+              "status": "not_recorded",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006705",
+              "input_hash": "a836bc0c4f6617428493868fbb2b466e54531cbbffc947e0577c0d51b95626f4",
+              "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+              "reason": "future",
+              "food_indexes": [],
+              "decision_hash": "b8dab6a24aedb77517386575b26436032ff37d0372a85317a8cfbcd70c23c6be",
+              "sealed_at": "2026-11-04T09:04:16.582276Z"
+            }
+          }
+        ],
+        "has_more": true,
+        "next_cursor": "eyJ2IjoxLCJvd25lcl9pZCI6ImIzYjAxMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwNjM4MCIsImVwb2NoIjoiNmEwMTI2YjYtYjNmNC00MDU3LWE2ZmItYzZmYmRhM2ZlMDVlIiwiYXQiOiIyMDI2LTExLTA0VDA5OjA0OjE2LjI1MTczNloiLCJpZCI6ImNvbW1hbmQvYjNiMDEwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDA2NzA1In0"
+      },
+      "meta": {
+        "api_version": "v1",
+        "request_id": "t8-journal-http-32"
+      }
+    },
+    {
+      "data": {
+        "schema": "conversation.journal-page.v1",
+        "auth_user_id": "d4f509d3-4927-4e91-9cbe-2c28ef88e95a",
+        "owner_id": "b3b01000-0000-4000-8000-000000006380",
+        "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+        "observed_at": "2026-11-04T09:04:19.343452Z",
+        "items": [
+          {
+            "event_id": "edit/b3b01000-0000-4000-8000-000000006704/de950b3e-3981-4498-a26d-5fe2e65035d7",
+            "at": "2026-11-04T09:04:15.974445Z",
+            "kind": "edit",
+            "result": {
+              "schema": "conversation.meal-edit-result.v1",
+              "status": "saved",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006704",
+              "input_hash": "c92eddc8de8781c27ef04cbc644764c798c905377523cede66789454b53fcc75",
+              "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+              "receipt": {
+                "schema": "conversation.meal-edit-effect-public.v1",
+                "owner_id": "b3b01000-0000-4000-8000-000000006380",
+                "command_id": "b3b01000-0000-4000-8000-000000006704",
+                "operation_id": "de950b3e-3981-4498-a26d-5fe2e65035d7",
+                "input_hash": "8eef68ac13d00cd1d73c4c4e9ed45adfccec1180ec236882d6e6e5d0d1bbd39b",
+                "kind": "registration_undone",
+                "revision": 1,
+                "applied_at": "2026-11-04T09:04:15.974445+00:00",
+                "undo_expires_at": null,
+                "target_operation_id": null,
+                "removed_item_ids": [
+                  "a3105613-703f-441b-98dc-0b5b37bab1f0",
+                  "be2a9b7a-53ae-47a2-8198-04f79d4322ac"
+                ],
+                "new_item_ids": [],
+                "next_record_id": null
+              }
+            }
+          },
+          {
+            "event_id": "command/b3b01000-0000-4000-8000-000000006704",
+            "at": "2026-11-04T09:04:15.064836Z",
+            "kind": "command",
+            "original_command": {
+              "command_protocol": "conversation.command.v1",
+              "command_id": "b3b01000-0000-4000-8000-000000006704",
+              "kind": "meal.report",
+              "meal_type": "cafe",
+              "source": {
+                "channel": "text",
+                "text": "Comi arroz 200 g e feijão 100 g"
+              }
+            },
+            "result": {
+              "schema": "conversation.meal-command-result.v1",
+              "status": "saved",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006704",
+              "input_hash": "c92eddc8de8781c27ef04cbc644764c798c905377523cede66789454b53fcc75",
+              "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+              "admitted_at": "2026-11-04T09:04:15.064836Z",
+              "receipt": {
+                "schema": "conversation.meal-effect.v1",
+                "owner_id": "b3b01000-0000-4000-8000-000000006380",
+                "command_id": "b3b01000-0000-4000-8000-000000006704",
+                "input_hash": "c92eddc8de8781c27ef04cbc644764c798c905377523cede66789454b53fcc75",
+                "registration_id": "8c5f1586-bbb7-4d88-82f2-202f09f4ad1a",
+                "provider_key": "conversation.meal/b3b01000-0000-4000-8000-000000006380/b3b01000-0000-4000-8000-000000006704",
+                "meal_type": "cafe",
+                "local_date": "2026-11-04",
+                "timezone": "UTC",
+                "consumed_at": "2026-11-04T09:04:15.570174Z",
+                "log_ids": [
+                  "a3105613-703f-441b-98dc-0b5b37bab1f0",
+                  "be2a9b7a-53ae-47a2-8198-04f79d4322ac"
+                ],
+                "effect_version": "cmeal1:b50900888405e0d0195c1bc9c7bfef241da94d276b9c8edf80530979af69df80"
+              },
+              "feedback": {
+                "schema": "conversation.feedback-presentation.v1",
+                "mode": "historical",
+                "assistant": "Flow AI",
+                "original": {
+                  "schema": "registration.feedback.v2",
+                  "registration_id": "8c5f1586-bbb7-4d88-82f2-202f09f4ad1a",
+                  "kind": "meal",
+                  "local_date": "2026-11-04"
+                },
+                "current_policy": {
+                  "version": 1,
+                  "observed_at": "2026-11-04T09:04:19.301333Z",
+                  "assessment": "complete",
+                  "recording_allowed": true,
+                  "pause_weight_loss_guidance": false,
+                  "professional_assessment_recommended": false,
+                  "phase_selection_pending": false,
+                  "target_source": "assigned_phase",
+                  "hide": {
+                    "objective": false,
+                    "calories": false,
+                    "protein": false,
+                    "balance": false,
+                    "block": false,
+                    "budget": false
+                  }
+                },
+                "provenance": {
+                  "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+                  "command_id": "b3b01000-0000-4000-8000-000000006704",
+                  "observed_at": "2026-11-04T09:04:19.301333Z"
+                },
+                "status": "available",
+                "format": "sections",
+                "recorded": {
+                  "kind": "meal",
+                  "meal_kind": "cafe",
+                  "items": [
+                    {
+                      "kcal": 256.5,
+                      "protein_g": 5.04,
+                      "carbs_g": 56.12,
+                      "fat_g": 0.46,
+                      "log_id": "be2a9b7a-53ae-47a2-8198-04f79d4322ac",
+                      "food_name": "arroz branco cozido",
+                      "quantity_g": 200,
+                      "quantity": {
+                        "value": 200,
+                        "unit": "g",
+                        "estimated": false,
+                        "reference_id": null
+                      },
+                      "nutrition_source": "canonical_fuzzy"
+                    },
+                    {
+                      "kcal": 76.4,
+                      "protein_g": 4.78,
+                      "carbs_g": 13.59,
+                      "fat_g": 0.54,
+                      "log_id": "a3105613-703f-441b-98dc-0b5b37bab1f0",
+                      "food_name": "feijão carioca cozido",
+                      "quantity_g": 100,
+                      "quantity": {
+                        "value": 100,
+                        "unit": "g",
+                        "estimated": false,
+                        "reference_id": null
+                      },
+                      "nutrition_source": "canonical_fuzzy"
+                    }
+                  ],
+                  "totals": {
+                    "kcal": 332.9,
+                    "protein_g": 9.8,
+                    "carbs_g": 69.7,
+                    "fat_g": 1
+                  }
+                },
+                "sections": [
+                  {
+                    "key": "saved",
+                    "text": "Café da manhã registrado."
+                  },
+                  {
+                    "key": "items",
+                    "text": "arroz branco cozido · 200 g\n256,5 kcal | Proteína: 5,04 g | Carboidratos: 56,12 g | Gorduras: 0,46 g\n\nfeijão carioca cozido · 100 g\n76,4 kcal | Proteína: 4,78 g | Carboidratos: 13,59 g | Gorduras: 0,54 g"
+                  },
+                  {
+                    "key": "summary",
+                    "text": "Total aproximado da refeição: 332,9 kcal | Proteína: 9,8 g | Carboidratos: 69,7 g | Gorduras: 1 g"
+                  },
+                  {
+                    "key": "day",
+                    "text": "No momento deste registro (2026-11-04):\nDia: 2026-11-04\nConsumido: 1.230 / 1.600 kcal (76,9%).\nProteína: 59,39 / 120 g (49,5%).\nRestam para comida: 370 kcal.\nExercício registrado: 0 kcal. Esse gasto não aumenta a comida disponível."
+                  },
+                  {
+                    "key": "block",
+                    "text": "Progresso consolidado no momento do registro:\nBloco 7.700: 500 / 7.700 kcal (6%).\nSaldo total já consolidado: 15.900 kcal · Blocos concluídos: 2.\nReferência teórica; este registro não cria crédito imediato nem garante uma mudança física de peso."
+                  },
+                  {
+                    "key": "education",
+                    "text": "Comentário educativo no momento do registro:\nEntre os itens registrados, arroz branco cozido tem a maior contribuição de energia e arroz branco cozido a maior contribuição de proteína. Mudar uma porção afeta a energia e os nutrientes; compare os itens antes de decidir o que ajustar. Seu bloco de longo prazo usa dias consolidados, sem crédito imediato por este registro. Quer me contar o que você prefere para conversarmos sobre um ajuste adequado?"
+                  }
+                ]
+              }
+            },
+            "terminal_receipt": null
+          },
+          {
+            "event_id": "edit/b3b01000-0000-4000-8000-000000006703/5925a936-5bcc-47b7-b2ad-79618b33b91c",
+            "at": "2026-11-04T09:04:14.932236Z",
+            "kind": "edit",
+            "result": {
+              "schema": "conversation.meal-edit-result.v1",
+              "status": "saved",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006703",
+              "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+              "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+              "receipt": {
+                "schema": "conversation.meal-edit-effect-public.v1",
+                "owner_id": "b3b01000-0000-4000-8000-000000006380",
+                "command_id": "b3b01000-0000-4000-8000-000000006703",
+                "operation_id": "5925a936-5bcc-47b7-b2ad-79618b33b91c",
+                "input_hash": "18bb026a7cfe300e2fdc2a2c48754235710964aa953c53937606d268a819baef",
+                "kind": "save_undone",
+                "revision": 8,
+                "applied_at": "2026-11-04T09:04:14.932236+00:00",
+                "undo_expires_at": null,
+                "target_operation_id": "68101122-0f70-4867-9912-26acbacdce90",
+                "removed_item_ids": [
+                  "47284673-705a-484e-8fa6-815c4408f46d"
+                ],
+                "new_item_ids": [
+                  "7a9f09a5-6beb-4db1-97bc-4f71225d9254"
+                ],
+                "next_record_id": "7a9f09a5-6beb-4db1-97bc-4f71225d9254"
+              }
+            }
+          }
+        ],
+        "has_more": true,
+        "next_cursor": "eyJ2IjoxLCJvd25lcl9pZCI6ImIzYjAxMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwNjM4MCIsImVwb2NoIjoiNmEwMTI2YjYtYjNmNC00MDU3LWE2ZmItYzZmYmRhM2ZlMDVlIiwiYXQiOiIyMDI2LTExLTA0VDA5OjA0OjE0LjkzMjIzNloiLCJpZCI6ImVkaXQvYjNiMDEwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDA2NzAzLzU5MjVhOTM2LTViY2MtNDdiNy1iMmFkLTc5NjE4YjMzYjkxYyJ9"
+      },
+      "meta": {
+        "api_version": "v1",
+        "request_id": "t8-journal-http-33"
+      }
+    },
+    {
+      "data": {
+        "schema": "conversation.journal-page.v1",
+        "auth_user_id": "d4f509d3-4927-4e91-9cbe-2c28ef88e95a",
+        "owner_id": "b3b01000-0000-4000-8000-000000006380",
+        "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+        "observed_at": "2026-11-04T09:04:19.479209Z",
+        "items": [
+          {
+            "event_id": "edit/b3b01000-0000-4000-8000-000000006703/68101122-0f70-4867-9912-26acbacdce90",
+            "at": "2026-11-04T09:04:14.739147Z",
+            "kind": "edit",
+            "result": {
+              "schema": "conversation.meal-edit-result.v1",
+              "status": "saved",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006703",
+              "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+              "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+              "receipt": {
+                "schema": "conversation.meal-edit-effect-public.v1",
+                "owner_id": "b3b01000-0000-4000-8000-000000006380",
+                "command_id": "b3b01000-0000-4000-8000-000000006703",
+                "operation_id": "68101122-0f70-4867-9912-26acbacdce90",
+                "input_hash": "2575d86558cbf250bb72506b8c595f453c7b023db9bab659ab4d73fcaa955055",
+                "kind": "saved",
+                "revision": 7,
+                "applied_at": "2026-11-04T09:04:14.739147+00:00",
+                "undo_expires_at": "2026-11-04T09:09:14.739147+00:00",
+                "target_operation_id": null,
+                "removed_item_ids": [
+                  "92af0917-3314-4136-a70d-37756ca04f1c"
+                ],
+                "new_item_ids": [
+                  "47284673-705a-484e-8fa6-815c4408f46d"
+                ],
+                "next_record_id": "47284673-705a-484e-8fa6-815c4408f46d"
+              }
+            }
+          },
+          {
+            "event_id": "edit/b3b01000-0000-4000-8000-000000006703/345d65a6-fba7-4b78-b494-541b5f21a2a1",
+            "at": "2026-11-04T09:04:14.573292Z",
+            "kind": "edit",
+            "result": {
+              "schema": "conversation.meal-edit-result.v1",
+              "status": "saved",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006703",
+              "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+              "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+              "receipt": {
+                "schema": "conversation.meal-edit-effect-public.v1",
+                "owner_id": "b3b01000-0000-4000-8000-000000006380",
+                "command_id": "b3b01000-0000-4000-8000-000000006703",
+                "operation_id": "345d65a6-fba7-4b78-b494-541b5f21a2a1",
+                "input_hash": "19fbda1d5b9df279b6bc1d78d8213e6b7bef6929c1d5841080b5606223cef860",
+                "kind": "save_undone",
+                "revision": 6,
+                "applied_at": "2026-11-04T09:04:14.573292+00:00",
+                "undo_expires_at": null,
+                "target_operation_id": "13602901-5c6b-4b50-a462-af61e92bc668",
+                "removed_item_ids": [
+                  "92d28837-30e3-4634-918d-51bccd31fc3e"
+                ],
+                "new_item_ids": [
+                  "92af0917-3314-4136-a70d-37756ca04f1c"
+                ],
+                "next_record_id": "92af0917-3314-4136-a70d-37756ca04f1c"
+              }
+            }
+          },
+          {
+            "event_id": "edit/b3b01000-0000-4000-8000-000000006703/13602901-5c6b-4b50-a462-af61e92bc668",
+            "at": "2026-11-04T09:04:14.540386Z",
+            "kind": "edit",
+            "result": {
+              "schema": "conversation.meal-edit-result.v1",
+              "status": "saved",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006703",
+              "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+              "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+              "receipt": {
+                "schema": "conversation.meal-edit-effect-public.v1",
+                "owner_id": "b3b01000-0000-4000-8000-000000006380",
+                "command_id": "b3b01000-0000-4000-8000-000000006703",
+                "operation_id": "13602901-5c6b-4b50-a462-af61e92bc668",
+                "input_hash": "99319a52a954038fad91e3e43cebdc2a4a0b9992f31cab9cc869d99a0499534f",
+                "kind": "saved",
+                "revision": 5,
+                "applied_at": "2026-11-04T09:04:14.540386+00:00",
+                "undo_expires_at": "2026-11-04T09:09:14.540386+00:00",
+                "target_operation_id": null,
+                "removed_item_ids": [
+                  "b8dbf2c1-c7c0-4365-aac0-2cba04a30381"
+                ],
+                "new_item_ids": [
+                  "92d28837-30e3-4634-918d-51bccd31fc3e"
+                ],
+                "next_record_id": "92d28837-30e3-4634-918d-51bccd31fc3e"
+              }
+            }
+          }
+        ],
+        "has_more": true,
+        "next_cursor": "eyJ2IjoxLCJvd25lcl9pZCI6ImIzYjAxMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwNjM4MCIsImVwb2NoIjoiNmEwMTI2YjYtYjNmNC00MDU3LWE2ZmItYzZmYmRhM2ZlMDVlIiwiYXQiOiIyMDI2LTExLTA0VDA5OjA0OjE0LjU0MDM4NloiLCJpZCI6ImVkaXQvYjNiMDEwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDA2NzAzLzEzNjAyOTAxLTVjNmItNGI1MC1hNDYyLWFmNjFlOTJiYzY2OCJ9"
+      },
+      "meta": {
+        "api_version": "v1",
+        "request_id": "t8-journal-http-34"
+      }
+    },
+    {
+      "data": {
+        "schema": "conversation.journal-page.v1",
+        "auth_user_id": "d4f509d3-4927-4e91-9cbe-2c28ef88e95a",
+        "owner_id": "b3b01000-0000-4000-8000-000000006380",
+        "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+        "observed_at": "2026-11-04T09:04:19.616543Z",
+        "items": [
+          {
+            "event_id": "edit/b3b01000-0000-4000-8000-000000006703/b83630f9-b30d-45ec-b1f1-e76ce9457ffa",
+            "at": "2026-11-04T09:04:14.354964Z",
+            "kind": "edit",
+            "result": {
+              "schema": "conversation.meal-edit-result.v1",
+              "status": "saved",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006703",
+              "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+              "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+              "receipt": {
+                "schema": "conversation.meal-edit-effect-public.v1",
+                "owner_id": "b3b01000-0000-4000-8000-000000006380",
+                "command_id": "b3b01000-0000-4000-8000-000000006703",
+                "operation_id": "b83630f9-b30d-45ec-b1f1-e76ce9457ffa",
+                "input_hash": "d839aec3c87ab47346e28940d9400d628c14e42cf8f56cb574aca6f4d40aeb8f",
+                "kind": "save_undone",
+                "revision": 4,
+                "applied_at": "2026-11-04T09:04:14.354964+00:00",
+                "undo_expires_at": null,
+                "target_operation_id": "f9806ea3-85a3-46d3-a508-b2393d4d6ec6",
+                "removed_item_ids": [
+                  "753d0504-57b0-40c5-889d-4421f3d6b645",
+                  "95e8a015-9b90-46d1-88a2-8cb4889fe37c"
+                ],
+                "new_item_ids": [
+                  "b8dbf2c1-c7c0-4365-aac0-2cba04a30381"
+                ],
+                "next_record_id": "b8dbf2c1-c7c0-4365-aac0-2cba04a30381"
+              }
+            }
+          },
+          {
+            "event_id": "edit/b3b01000-0000-4000-8000-000000006703/f9806ea3-85a3-46d3-a508-b2393d4d6ec6",
+            "at": "2026-11-04T09:04:14.323857Z",
+            "kind": "edit",
+            "result": {
+              "schema": "conversation.meal-edit-result.v1",
+              "status": "saved",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006703",
+              "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+              "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+              "receipt": {
+                "schema": "conversation.meal-edit-effect-public.v1",
+                "owner_id": "b3b01000-0000-4000-8000-000000006380",
+                "command_id": "b3b01000-0000-4000-8000-000000006703",
+                "operation_id": "f9806ea3-85a3-46d3-a508-b2393d4d6ec6",
+                "input_hash": "f3b6c2fa2e926772f0ef91a3b462ed3bdc059ab0ac870bdb9ae5de98ff2438c9",
+                "kind": "saved",
+                "revision": 3,
+                "applied_at": "2026-11-04T09:04:14.323857+00:00",
+                "undo_expires_at": "2026-11-04T09:09:14.323857+00:00",
+                "target_operation_id": null,
+                "removed_item_ids": [
+                  "e6c056a7-0719-4149-b333-5d120b54b1de"
+                ],
+                "new_item_ids": [
+                  "753d0504-57b0-40c5-889d-4421f3d6b645",
+                  "95e8a015-9b90-46d1-88a2-8cb4889fe37c"
+                ],
+                "next_record_id": "753d0504-57b0-40c5-889d-4421f3d6b645"
+              }
+            }
+          },
+          {
+            "event_id": "edit/b3b01000-0000-4000-8000-000000006703/252b34c2-a20f-4b4d-bb3c-e0aba46e55b7",
+            "at": "2026-11-04T09:04:14.248891Z",
+            "kind": "edit",
+            "result": {
+              "schema": "conversation.meal-edit-result.v1",
+              "status": "saved",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006703",
+              "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+              "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+              "receipt": {
+                "schema": "conversation.meal-edit-effect-public.v1",
+                "owner_id": "b3b01000-0000-4000-8000-000000006380",
+                "command_id": "b3b01000-0000-4000-8000-000000006703",
+                "operation_id": "252b34c2-a20f-4b4d-bb3c-e0aba46e55b7",
+                "input_hash": "6381cb3b2f7c564a9706f33b46068006de6f42f79ac26e4ec2718eb761e71495",
+                "kind": "save_undone",
+                "revision": 2,
+                "applied_at": "2026-11-04T09:04:14.248891+00:00",
+                "undo_expires_at": null,
+                "target_operation_id": "575a4e93-9a11-4180-b2f3-89b42e855f58",
+                "removed_item_ids": [
+                  "7e08d6f9-2249-41d1-be1c-d551c422d186"
+                ],
+                "new_item_ids": [
+                  "e6c056a7-0719-4149-b333-5d120b54b1de"
+                ],
+                "next_record_id": "e6c056a7-0719-4149-b333-5d120b54b1de"
+              }
+            }
+          }
+        ],
+        "has_more": true,
+        "next_cursor": "eyJ2IjoxLCJvd25lcl9pZCI6ImIzYjAxMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwNjM4MCIsImVwb2NoIjoiNmEwMTI2YjYtYjNmNC00MDU3LWE2ZmItYzZmYmRhM2ZlMDVlIiwiYXQiOiIyMDI2LTExLTA0VDA5OjA0OjE0LjI0ODg5MVoiLCJpZCI6ImVkaXQvYjNiMDEwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDA2NzAzLzI1MmIzNGMyLWEyMGYtNGI0ZC1iYjNjLWUwYWJhNDZlNTViNyJ9"
+      },
+      "meta": {
+        "api_version": "v1",
+        "request_id": "t8-journal-http-35"
+      }
+    },
+    {
+      "data": {
+        "schema": "conversation.journal-page.v1",
+        "auth_user_id": "d4f509d3-4927-4e91-9cbe-2c28ef88e95a",
+        "owner_id": "b3b01000-0000-4000-8000-000000006380",
+        "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+        "observed_at": "2026-11-04T09:04:19.928090Z",
+        "items": [
+          {
+            "event_id": "edit/b3b01000-0000-4000-8000-000000006703/575a4e93-9a11-4180-b2f3-89b42e855f58",
+            "at": "2026-11-04T09:04:14.208887Z",
+            "kind": "edit",
+            "result": {
+              "schema": "conversation.meal-edit-result.v1",
+              "status": "saved",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006703",
+              "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+              "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+              "receipt": {
+                "schema": "conversation.meal-edit-effect-public.v1",
+                "owner_id": "b3b01000-0000-4000-8000-000000006380",
+                "command_id": "b3b01000-0000-4000-8000-000000006703",
+                "operation_id": "575a4e93-9a11-4180-b2f3-89b42e855f58",
+                "input_hash": "df321dba5f5982d94ad691540dbaea7854bf7c6a84c42f6e371eb0453ee92010",
+                "kind": "saved",
+                "revision": 1,
+                "applied_at": "2026-11-04T09:04:14.208887+00:00",
+                "undo_expires_at": "2026-11-04T09:09:14.208887+00:00",
+                "target_operation_id": null,
+                "removed_item_ids": [
+                  "4bfb6f39-4b43-4cc2-9ee0-398508afcd1c"
+                ],
+                "new_item_ids": [
+                  "7e08d6f9-2249-41d1-be1c-d551c422d186"
+                ],
+                "next_record_id": "7e08d6f9-2249-41d1-be1c-d551c422d186"
+              }
+            }
+          },
+          {
+            "event_id": "command/b3b01000-0000-4000-8000-000000006703",
+            "at": "2026-11-04T09:04:13.267703Z",
+            "kind": "command",
+            "original_command": {
+              "command_protocol": "conversation.command.v1",
+              "command_id": "b3b01000-0000-4000-8000-000000006703",
+              "kind": "meal.report",
+              "meal_type": "cafe",
+              "source": {
+                "channel": "text",
+                "text": "Comi 1 caneca de leite com uma medida de whey"
+              }
+            },
+            "result": {
+              "schema": "conversation.meal-command-result.v1",
+              "status": "saved",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006703",
+              "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+              "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+              "admitted_at": "2026-11-04T09:04:13.267703Z",
+              "receipt": {
+                "schema": "conversation.meal-effect.v1",
+                "owner_id": "b3b01000-0000-4000-8000-000000006380",
+                "command_id": "b3b01000-0000-4000-8000-000000006703",
+                "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+                "registration_id": "55a8e158-9ed9-42a8-8256-c137fb1673c1",
+                "provider_key": "conversation.meal/b3b01000-0000-4000-8000-000000006380/b3b01000-0000-4000-8000-000000006703",
+                "meal_type": "cafe",
+                "local_date": "2026-11-04",
+                "timezone": "UTC",
+                "consumed_at": "2026-11-04T09:04:13.787708Z",
+                "log_ids": [
+                  "4bfb6f39-4b43-4cc2-9ee0-398508afcd1c",
+                  "5b146f76-44a3-4139-b5b4-efa5a08cb71f"
+                ],
+                "effect_version": "cmeal1:8b1967346504eb0c53d7772fecc17ff6be969ee0797e41d2b376ba7d1ca12489"
+              },
+              "feedback": {
+                "schema": "conversation.feedback-presentation.v1",
+                "mode": "historical",
+                "assistant": "Flow AI",
+                "original": {
+                  "schema": "registration.feedback.v2",
+                  "registration_id": "55a8e158-9ed9-42a8-8256-c137fb1673c1",
+                  "kind": "meal",
+                  "local_date": "2026-11-04"
+                },
+                "current_policy": {
+                  "version": 1,
+                  "observed_at": "2026-11-04T09:04:19.795634Z",
+                  "assessment": "complete",
+                  "recording_allowed": true,
+                  "pause_weight_loss_guidance": false,
+                  "professional_assessment_recommended": false,
+                  "phase_selection_pending": false,
+                  "target_source": "assigned_phase",
+                  "hide": {
+                    "objective": false,
+                    "calories": false,
+                    "protein": false,
+                    "balance": false,
+                    "block": false,
+                    "budget": false
+                  }
+                },
+                "provenance": {
+                  "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+                  "command_id": "b3b01000-0000-4000-8000-000000006703",
+                  "observed_at": "2026-11-04T09:04:19.795634Z"
+                },
+                "status": "available",
+                "format": "sections",
+                "recorded": {
+                  "kind": "meal",
+                  "meal_kind": "cafe",
+                  "items": [
+                    {
+                      "kcal": 125.7,
+                      "protein_g": 6.49,
+                      "carbs_g": 9.89,
+                      "fat_g": 6.7,
+                      "log_id": "5b146f76-44a3-4139-b5b4-efa5a08cb71f",
+                      "food_name": "leite integral",
+                      "quantity_g": 206,
+                      "quantity": {
+                        "value": 200,
+                        "unit": "mL",
+                        "estimated": true,
+                        "reference_id": "fao-infoods-v2-whole-milk-tb"
+                      },
+                      "nutrition_source": "canonical_fuzzy"
+                    },
+                    {
+                      "kcal": 105.6,
+                      "protein_g": 23.44,
+                      "carbs_g": 1.88,
+                      "fat_g": 0.47,
+                      "log_id": "4bfb6f39-4b43-4cc2-9ee0-398508afcd1c",
+                      "food_name": "whey protein em pó",
+                      "quantity_g": 30,
+                      "quantity": {
+                        "value": 1,
+                        "unit": "scoop",
+                        "estimated": true,
+                        "reference_id": "app-household-whey-scoop-v1"
+                      },
+                      "nutrition_source": "canonical_fuzzy"
+                    }
+                  ],
+                  "totals": {
+                    "kcal": 231.3,
+                    "protein_g": 29.9,
+                    "carbs_g": 11.8,
+                    "fat_g": 7.2
+                  }
+                },
+                "sections": [
+                  {
+                    "key": "saved",
+                    "text": "Café da manhã registrado."
+                  },
+                  {
+                    "key": "items",
+                    "text": "leite integral · 200 mL (estimado, editável)\n125,7 kcal | Proteína: 6,49 g | Carboidratos: 9,89 g | Gorduras: 6,7 g\n\nwhey protein em pó · 1 medida (estimado, editável)\n105,6 kcal | Proteína: 23,44 g | Carboidratos: 1,88 g | Gorduras: 0,47 g"
+                  },
+                  {
+                    "key": "summary",
+                    "text": "Total aproximado da refeição: 231,3 kcal | Proteína: 29,9 g | Carboidratos: 11,8 g | Gorduras: 7,2 g"
+                  },
+                  {
+                    "key": "day",
+                    "text": "No momento deste registro (2026-11-04):\nDia: 2026-11-04\nConsumido: 897 / 1.600 kcal (56,1%).\nProteína: 49,57 / 120 g (41,3%).\nRestam para comida: 703 kcal.\nExercício registrado: 0 kcal. Esse gasto não aumenta a comida disponível."
+                  },
+                  {
+                    "key": "block",
+                    "text": "Progresso consolidado no momento do registro:\nBloco 7.700: 500 / 7.700 kcal (6%).\nSaldo total já consolidado: 15.900 kcal · Blocos concluídos: 2.\nReferência teórica; este registro não cria crédito imediato nem garante uma mudança física de peso."
+                  },
+                  {
+                    "key": "education",
+                    "text": "Comentário educativo no momento do registro:\nLeite e whey contribuem juntos para a proteína mostrada nesta bebida. A medida é uma referência editável; conferir o rótulo ajuda a considerar diferenças entre produtos. Seu bloco de longo prazo usa dias consolidados, sem crédito imediato por este registro. Quer me contar o que você prefere para conversarmos sobre um ajuste adequado?"
+                  }
+                ]
+              }
+            },
+            "terminal_receipt": null
+          },
+          {
+            "event_id": "command/b3b01000-0000-4000-8000-000000006702",
+            "at": "2026-11-04T09:04:12.276264Z",
+            "kind": "command",
+            "original_command": {
+              "command_protocol": "conversation.command.v1",
+              "command_id": "b3b01000-0000-4000-8000-000000006702",
+              "kind": "meal.report",
+              "meal_type": "cafe",
+              "source": {
+                "channel": "text",
+                "text": "Comi arroz 200 g e feijão 100 g"
+              }
+            },
+            "result": {
+              "schema": "conversation.meal-command-result.v1",
+              "status": "saved",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006702",
+              "input_hash": "48784d6754fd6a12dfb7288de41d87a0d3b1b343995fc48dff946777ce1948dc",
+              "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+              "admitted_at": "2026-11-04T09:04:12.276264Z",
+              "receipt": {
+                "schema": "conversation.meal-effect.v1",
+                "owner_id": "b3b01000-0000-4000-8000-000000006380",
+                "command_id": "b3b01000-0000-4000-8000-000000006702",
+                "input_hash": "48784d6754fd6a12dfb7288de41d87a0d3b1b343995fc48dff946777ce1948dc",
+                "registration_id": "f84f5af4-d4e5-49d5-ba55-e8ac3688e44b",
+                "provider_key": "conversation.meal/b3b01000-0000-4000-8000-000000006380/b3b01000-0000-4000-8000-000000006702",
+                "meal_type": "cafe",
+                "local_date": "2026-11-04",
+                "timezone": "UTC",
+                "consumed_at": "2026-11-04T09:04:12.800470Z",
+                "log_ids": [
+                  "56854815-a288-4ce7-875c-c4d58a681945",
+                  "8ad83779-55ff-45b9-97d6-296ad9326d6a"
+                ],
+                "effect_version": "cmeal1:773b506041122e26d4114529c6ce2c3adc3a6d76f0074eeacd2e8274e3d7729e"
+              },
+              "feedback": {
+                "schema": "conversation.feedback-presentation.v1",
+                "mode": "historical",
+                "assistant": "Flow AI",
+                "original": {
+                  "schema": "registration.feedback.v2",
+                  "registration_id": "f84f5af4-d4e5-49d5-ba55-e8ac3688e44b",
+                  "kind": "meal",
+                  "local_date": "2026-11-04"
+                },
+                "current_policy": {
+                  "version": 1,
+                  "observed_at": "2026-11-04T09:04:19.885862Z",
+                  "assessment": "complete",
+                  "recording_allowed": true,
+                  "pause_weight_loss_guidance": false,
+                  "professional_assessment_recommended": false,
+                  "phase_selection_pending": false,
+                  "target_source": "assigned_phase",
+                  "hide": {
+                    "objective": false,
+                    "calories": false,
+                    "protein": false,
+                    "balance": false,
+                    "block": false,
+                    "budget": false
+                  }
+                },
+                "provenance": {
+                  "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+                  "command_id": "b3b01000-0000-4000-8000-000000006702",
+                  "observed_at": "2026-11-04T09:04:19.885862Z"
+                },
+                "status": "available",
+                "format": "sections",
+                "recorded": {
+                  "kind": "meal",
+                  "meal_kind": "cafe",
+                  "items": [
+                    {
+                      "kcal": 256.5,
+                      "protein_g": 5.04,
+                      "carbs_g": 56.12,
+                      "fat_g": 0.46,
+                      "log_id": "8ad83779-55ff-45b9-97d6-296ad9326d6a",
+                      "food_name": "arroz branco cozido",
+                      "quantity_g": 200,
+                      "quantity": {
+                        "value": 200,
+                        "unit": "g",
+                        "estimated": false,
+                        "reference_id": null
+                      },
+                      "nutrition_source": "canonical_fuzzy"
+                    },
+                    {
+                      "kcal": 76.4,
+                      "protein_g": 4.78,
+                      "carbs_g": 13.59,
+                      "fat_g": 0.54,
+                      "log_id": "56854815-a288-4ce7-875c-c4d58a681945",
+                      "food_name": "feijão carioca cozido",
+                      "quantity_g": 100,
+                      "quantity": {
+                        "value": 100,
+                        "unit": "g",
+                        "estimated": false,
+                        "reference_id": null
+                      },
+                      "nutrition_source": "canonical_fuzzy"
+                    }
+                  ],
+                  "totals": {
+                    "kcal": 332.9,
+                    "protein_g": 9.8,
+                    "carbs_g": 69.7,
+                    "fat_g": 1
+                  }
+                },
+                "sections": [
+                  {
+                    "key": "saved",
+                    "text": "Café da manhã registrado."
+                  },
+                  {
+                    "key": "items",
+                    "text": "arroz branco cozido · 200 g\n256,5 kcal | Proteína: 5,04 g | Carboidratos: 56,12 g | Gorduras: 0,46 g\n\nfeijão carioca cozido · 100 g\n76,4 kcal | Proteína: 4,78 g | Carboidratos: 13,59 g | Gorduras: 0,54 g"
+                  },
+                  {
+                    "key": "summary",
+                    "text": "Total aproximado da refeição: 332,9 kcal | Proteína: 9,8 g | Carboidratos: 69,7 g | Gorduras: 1 g"
+                  },
+                  {
+                    "key": "day",
+                    "text": "No momento deste registro (2026-11-04):\nDia: 2026-11-04\nConsumido: 666 / 1.600 kcal (41,6%).\nProteína: 19,64 / 120 g (16,4%).\nRestam para comida: 934 kcal.\nExercício registrado: 0 kcal. Esse gasto não aumenta a comida disponível."
+                  },
+                  {
+                    "key": "block",
+                    "text": "Progresso consolidado no momento do registro:\nBloco 7.700: 500 / 7.700 kcal (6%).\nSaldo total já consolidado: 15.900 kcal · Blocos concluídos: 2.\nReferência teórica; este registro não cria crédito imediato nem garante uma mudança física de peso."
+                  },
+                  {
+                    "key": "education",
+                    "text": "Comentário educativo no momento do registro:\nEntre os itens registrados, arroz branco cozido tem a maior contribuição de energia e arroz branco cozido a maior contribuição de proteína. Mudar uma porção afeta a energia e os nutrientes; compare os itens antes de decidir o que ajustar. Seu bloco de longo prazo usa dias consolidados, sem crédito imediato por este registro. Quer me contar o que você prefere para conversarmos sobre um ajuste adequado?"
+                  }
+                ]
+              }
+            },
+            "terminal_receipt": null
+          }
+        ],
+        "has_more": true,
+        "next_cursor": "eyJ2IjoxLCJvd25lcl9pZCI6ImIzYjAxMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwNjM4MCIsImVwb2NoIjoiNmEwMTI2YjYtYjNmNC00MDU3LWE2ZmItYzZmYmRhM2ZlMDVlIiwiYXQiOiIyMDI2LTExLTA0VDA5OjA0OjEyLjI3NjI2NFoiLCJpZCI6ImNvbW1hbmQvYjNiMDEwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDA2NzAyIn0"
+      },
+      "meta": {
+        "api_version": "v1",
+        "request_id": "t8-journal-http-36"
+      }
+    },
+    {
+      "data": {
+        "schema": "conversation.journal-page.v1",
+        "auth_user_id": "d4f509d3-4927-4e91-9cbe-2c28ef88e95a",
+        "owner_id": "b3b01000-0000-4000-8000-000000006380",
+        "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+        "observed_at": "2026-11-04T09:04:20.140164Z",
+        "items": [
+          {
+            "event_id": "command/b3b01000-0000-4000-8000-000000006701",
+            "at": "2026-11-04T09:04:10.660028Z",
+            "kind": "command",
+            "original_command": {
+              "command_protocol": "conversation.command.v1",
+              "command_id": "b3b01000-0000-4000-8000-000000006701",
+              "kind": "meal.report",
+              "meal_type": "cafe",
+              "source": {
+                "channel": "text",
+                "text": "Comi arroz 200 g e feijão 100 g"
+              }
+            },
+            "result": {
+              "schema": "conversation.meal-command-result.v1",
+              "status": "saved",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006701",
+              "input_hash": "59f98c69d2c6c5d277b0d3b0b8c164b4b82e6ee920db92a571d02744f57d8401",
+              "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+              "admitted_at": "2026-11-04T09:04:10.660028Z",
+              "receipt": {
+                "schema": "conversation.meal-effect.v1",
+                "owner_id": "b3b01000-0000-4000-8000-000000006380",
+                "command_id": "b3b01000-0000-4000-8000-000000006701",
+                "input_hash": "59f98c69d2c6c5d277b0d3b0b8c164b4b82e6ee920db92a571d02744f57d8401",
+                "registration_id": "018bf893-a1d4-4042-b40d-c4efa9ad51e8",
+                "provider_key": "conversation.meal/b3b01000-0000-4000-8000-000000006380/b3b01000-0000-4000-8000-000000006701",
+                "meal_type": "cafe",
+                "local_date": "2026-11-04",
+                "timezone": "UTC",
+                "consumed_at": "2026-11-04T09:04:11.495965Z",
+                "log_ids": [
+                  "9f163545-8cc3-43b0-8371-f7099980a528",
+                  "a3561cf5-4230-444c-b435-ca0889c772a5"
+                ],
+                "effect_version": "cmeal1:771941d3d8d1a79fe60864a49b484f2104b5416ef34ef4993c0e27964778d8b9"
+              },
+              "feedback": {
+                "schema": "conversation.feedback-presentation.v1",
+                "mode": "historical",
+                "assistant": "Flow AI",
+                "original": {
+                  "schema": "registration.feedback.v2",
+                  "registration_id": "018bf893-a1d4-4042-b40d-c4efa9ad51e8",
+                  "kind": "meal",
+                  "local_date": "2026-11-04"
+                },
+                "current_policy": {
+                  "version": 1,
+                  "observed_at": "2026-11-04T09:04:20.098819Z",
+                  "assessment": "complete",
+                  "recording_allowed": true,
+                  "pause_weight_loss_guidance": false,
+                  "professional_assessment_recommended": false,
+                  "phase_selection_pending": false,
+                  "target_source": "assigned_phase",
+                  "hide": {
+                    "objective": false,
+                    "calories": false,
+                    "protein": false,
+                    "balance": false,
+                    "block": false,
+                    "budget": false
+                  }
+                },
+                "provenance": {
+                  "epoch": "6a0126b6-b3f4-4057-a6fb-c6fbda3fe05e",
+                  "command_id": "b3b01000-0000-4000-8000-000000006701",
+                  "observed_at": "2026-11-04T09:04:20.098819Z"
+                },
+                "status": "available",
+                "format": "sections",
+                "recorded": {
+                  "kind": "meal",
+                  "meal_kind": "cafe",
+                  "items": [
+                    {
+                      "kcal": 256.5,
+                      "protein_g": 5.04,
+                      "carbs_g": 56.12,
+                      "fat_g": 0.46,
+                      "log_id": "9f163545-8cc3-43b0-8371-f7099980a528",
+                      "food_name": "arroz branco cozido",
+                      "quantity_g": 200,
+                      "quantity": {
+                        "value": 200,
+                        "unit": "g",
+                        "estimated": false,
+                        "reference_id": null
+                      },
+                      "nutrition_source": "canonical_fuzzy"
+                    },
+                    {
+                      "kcal": 76.4,
+                      "protein_g": 4.78,
+                      "carbs_g": 13.59,
+                      "fat_g": 0.54,
+                      "log_id": "a3561cf5-4230-444c-b435-ca0889c772a5",
+                      "food_name": "feijão carioca cozido",
+                      "quantity_g": 100,
+                      "quantity": {
+                        "value": 100,
+                        "unit": "g",
+                        "estimated": false,
+                        "reference_id": null
+                      },
+                      "nutrition_source": "canonical_fuzzy"
+                    }
+                  ],
+                  "totals": {
+                    "kcal": 332.9,
+                    "protein_g": 9.8,
+                    "carbs_g": 69.7,
+                    "fat_g": 1
+                  }
+                },
+                "sections": [
+                  {
+                    "key": "saved",
+                    "text": "Café da manhã registrado."
+                  },
+                  {
+                    "key": "items",
+                    "text": "arroz branco cozido · 200 g\n256,5 kcal | Proteína: 5,04 g | Carboidratos: 56,12 g | Gorduras: 0,46 g\n\nfeijão carioca cozido · 100 g\n76,4 kcal | Proteína: 4,78 g | Carboidratos: 13,59 g | Gorduras: 0,54 g"
+                  },
+                  {
+                    "key": "summary",
+                    "text": "Total aproximado da refeição: 332,9 kcal | Proteína: 9,8 g | Carboidratos: 69,7 g | Gorduras: 1 g"
+                  },
+                  {
+                    "key": "day",
+                    "text": "No momento deste registro (2026-11-04):\nDia: 2026-11-04\nConsumido: 333 / 1.600 kcal (20,8%).\nProteína: 9,82 / 120 g (8,2%).\nRestam para comida: 1.267 kcal.\nExercício registrado: 0 kcal. Esse gasto não aumenta a comida disponível."
+                  },
+                  {
+                    "key": "block",
+                    "text": "Progresso consolidado no momento do registro:\nBloco 7.700: 500 / 7.700 kcal (6%).\nSaldo total já consolidado: 15.900 kcal · Blocos concluídos: 2.\nReferência teórica; este registro não cria crédito imediato nem garante uma mudança física de peso."
+                  },
+                  {
+                    "key": "education",
+                    "text": "Comentário educativo no momento do registro:\nEntre os itens registrados, arroz branco cozido tem a maior contribuição de energia e arroz branco cozido a maior contribuição de proteína. Mudar uma porção afeta a energia e os nutrientes; compare os itens antes de decidir o que ajustar. Seu bloco de longo prazo usa dias consolidados, sem crédito imediato por este registro. Quer me contar o que você prefere para conversarmos sobre um ajuste adequado?"
+                  }
+                ]
+              }
+            },
+            "terminal_receipt": null
+          }
+        ],
+        "has_more": false,
+        "next_cursor": null
+      },
+      "meta": {
+        "api_version": "v1",
+        "request_id": "t8-journal-http-37"
+      }
+    }
+  ]
+}

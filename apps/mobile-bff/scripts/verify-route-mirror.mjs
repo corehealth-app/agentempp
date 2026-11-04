@@ -3,8 +3,21 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const expectedCount = 78
-const expectedHash = '3ab0b1fdb146ab6a06846b5702cfa70a1a7b997d73b3235655ec248c32f68874'
+const expectedCount = 82
+const expectedHash = '1edcfecc752f7657306d9a4f852c9ff3b37f2770270441a3bb37972366957c98'
+const previousCount = 78
+const previousHash = '3ab0b1fdb146ab6a06846b5702cfa70a1a7b997d73b3235655ec248c32f68874'
+const addedReadEditRoutes = new Set([
+  'conversation/journal/route.ts',
+  'conversation/meal-commands/[commandId]/meal/route.ts',
+  'conversation/meal-commands/[commandId]/edits/[operationId]/route.ts',
+  'conversation/meal-commands/[commandId]/edits/[operationId]/reconcile/route.ts',
+])
+const boundedConversationRoutes = new Set([
+  'conversation/meal-commands/route.ts',
+  ...addedReadEditRoutes,
+])
+
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const appRoot = resolve(scriptDirectory, '..')
 const sourceRoot = resolve(appRoot, '../admin/src/app/api/mobile/v1')
@@ -81,9 +94,9 @@ function wrapperRecords() {
         .replace(statement[0], '')
         .replace(/^export\s+const\s+runtime\s*=\s*['"]nodejs['"]\s*;?\s*$/gm, '')
         .replace(
-          path.endsWith(`${sep}auth${sep}password-recovery${sep}route.ts`)
+          relativePath === 'auth/password-recovery/route.ts'
             ? /^export\s+const\s+maxDuration\s*=\s*45\s*;?\s*$/gm
-            : path.endsWith(`${sep}conversation${sep}meal-commands${sep}route.ts`)
+            : boundedConversationRoutes.has(relativePath)
               ? /^export\s+const\s+maxDuration\s*=\s*120\s*;?\s*$/gm
               : /^export\s+const\s+maxDuration\s*=\s*300\s*;?\s*$/gm,
           '',
@@ -157,5 +170,17 @@ if (extras.length !== 0) fail(`EXTRA_WRAPPERS:${extras.length}`)
 if (omissions.length !== 0) fail(`OMITTED_WRAPPERS:${omissions.length}`)
 if (exportMismatches.length !== 0) fail(`EXPORT_MISMATCHES:${exportMismatches.length}`)
 if (sourcePathMismatches.length !== 0) fail(`SOURCE_PATH_MISMATCHES:${sourcePathMismatches.length}`)
+
+for (const [surface, records] of [
+  ['SOURCE', sources],
+  ['WRAPPER', wrappers],
+]) {
+  const previous = records.filter((record) => !addedReadEditRoutes.has(record.path))
+  const hash = hashRecords(previous)
+  console.info(`${surface}_PRIOR_ROUTE_EXPORT_COUNT=${previous.length}`)
+  console.info(`${surface}_PRIOR_ROUTE_EXPORT_STREAM_SHA256=${hash}`)
+  if (previous.length !== previousCount) fail(`${surface}_PRIOR_COUNT:${previous.length}`)
+  if (hash !== previousHash) fail(`${surface}_PRIOR_HASH:${hash}`)
+}
 
 if (!process.exitCode) console.info('ROUTE_MIRROR_STATUS=VERIFIED')

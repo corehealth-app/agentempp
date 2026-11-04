@@ -3,10 +3,16 @@ import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'nod
 import { dirname, extname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const expectedMobileRouteCount = 78
-const expectedMobileRouteHash = 'feb10dcfc43742d384f5852b573634fc4a5226e52c15856eb24a1f2c5ee9aa54'
-const expectedRouteCount = 79
-const expectedRouteHash = '132ed9ce40561f48626a98b93905039b7f49e9ffbb3d890c83399b1e7927b6fc'
+const expectedMobileRouteCount = 82
+const expectedMobileRouteHash = '81cebb1636073fffe9bb8316c11dd5e2aef6603ead95b7007458719d0bcaa53e'
+const expectedRouteCount = 83
+const expectedRouteHash = '7da84c6d7303c8dc1bccaea6c75f05546d399ebdf794375ead21e186e14bacf9'
+const addedReadEditRoutes = new Set([
+  '/api/mobile/v1/conversation/journal',
+  '/api/mobile/v1/conversation/meal-commands/[commandId]/meal',
+  '/api/mobile/v1/conversation/meal-commands/[commandId]/edits/[operationId]',
+  '/api/mobile/v1/conversation/meal-commands/[commandId]/edits/[operationId]/reconcile',
+])
 const revenueCatRoute = '/api/webhooks/revenuecat'
 const revenueCatAppPath = `${revenueCatRoute}/route`
 const revenueCatBundleTarget = 'app/api/webhooks/revenuecat/route.js'
@@ -539,6 +545,27 @@ function verifyBuildSurface() {
     `BUILD_NFT_ALLOWLISTED_DIRECTORY_TARGET_COUNT=${surface.nftAllowlistedDirectoryTargetCount}`,
   )
 
+  for (const [label, paths, count, hash] of [
+    [
+      'PRIOR_MOBILE',
+      surface.mobileRoutePaths,
+      78,
+      'feb10dcfc43742d384f5852b573634fc4a5226e52c15856eb24a1f2c5ee9aa54',
+    ],
+    [
+      'PRIOR_ALL',
+      surface.routePaths,
+      79,
+      '132ed9ce40561f48626a98b93905039b7f49e9ffbb3d890c83399b1e7927b6fc',
+    ],
+  ]) {
+    const prior = paths.filter((path) => !addedReadEditRoutes.has(path))
+    const priorHash = sha256(prior.map((path) => `${path}\n`).join(''))
+    console.info(`BUILD_${label}_ROUTE_PATH_COUNT=${prior.length}`)
+    console.info(`BUILD_${label}_ROUTE_PATH_STREAM_SHA256=${priorHash}`)
+    if (prior.length !== count) fail(`${label}_ROUTE_COUNT:${prior.length}`)
+    if (priorHash !== hash) fail(`${label}_ROUTE_HASH:${priorHash}`)
+  }
   if (surface.routePaths.length !== expectedRouteCount) {
     fail(`ROUTE_COUNT:${surface.routePaths.length}`)
   }

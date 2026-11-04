@@ -4238,6 +4238,26 @@ export type Database = {
         Args: { p_user_id: string; p_command_id: string }
         Returns: Json
       }
+      read_conversation_meal_semantic_attempt: {
+        Args: { p_user_id: string; p_command_id: string; p_interpreter_version: string }
+        Returns: Json
+      }
+      start_conversation_meal_semantic_attempt: {
+        Args: { p_user_id: string; p_command_id: string; p_interpreter_version: string; p_expected_source_hash: string }
+        Returns: Json
+      }
+      commit_conversation_meal_semantic_result: {
+        Args: { p_user_id: string; p_command_id: string; p_interpreter_version: string; p_attempt_id: string; p_result: Json }
+        Returns: Json
+      }
+      mark_conversation_meal_semantic_unknown: {
+        Args: { p_user_id: string; p_command_id: string; p_interpreter_version: string; p_attempt_id: string; p_error_code: string }
+        Returns: Json
+      }
+      read_conversation_meal_prepared: {
+        Args: { p_user_id: string; p_command_id: string }
+        Returns: Json
+      }
       read_conversation_meal_nutrition_source: {
         Args: {
           p_user_id: string

@@ -33,11 +33,13 @@ export interface MealCalculationAuditEvent {
 export type MealCalculationAuditSink = (event: MealCalculationAuditEvent) => void | Promise<void>
 export interface MealCalculationOptions {
   readonly consumptionPolicy?: 'consumed-meal-v1'
+  readonly preparationAnnotations?: 'consumed.preparation.v1'
   readonly sourceReader?: MealNutritionSourceReader
   readonly auditSink?: MealCalculationAuditSink
 }
 export interface CapturedMealCalculationOptions {
   readonly consumptionPolicy?: 'consumed-meal-v1'
+  readonly preparationAnnotations?: 'consumed.preparation.v1'
   readonly sourceReader?: MealNutritionSourceReader
   readonly auditSink?: MealCalculationAuditSink
 }
@@ -64,6 +66,7 @@ export function captureMealCalculationOptions(
   owner: string | undefined,
 ): CapturedMealCalculationOptions {
   const consumptionPolicy = options?.consumptionPolicy,
+    preparationAnnotations = options?.preparationAnnotations,
     reader = options?.sourceReader,
     sink = options?.auditSink
   let sourceReader: MealNutritionSourceReader | undefined
@@ -82,7 +85,12 @@ export function captureMealCalculationOptions(
     mealSourceClock(asOf)
     sourceReader = Object.freeze({ ownerId, asOf, read: read.bind(reader) })
   }
-  return Object.freeze({ consumptionPolicy, sourceReader, auditSink: sink?.bind(options) })
+  return Object.freeze({
+    consumptionPolicy,
+    preparationAnnotations,
+    sourceReader,
+    auditSink: sink?.bind(options),
+  })
 }
 export async function readBoundMealHistory(
   reader: MealNutritionSourceReader,

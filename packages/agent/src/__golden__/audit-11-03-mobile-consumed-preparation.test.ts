@@ -99,6 +99,8 @@ type Options = {
   failure?: boolean
   correction?: boolean
   correctionName?: string
+  correctionTo?: string
+  remapOnly?: boolean
 }
 function database(options: Options = {}) {
   const calls: string[] = []
@@ -145,13 +147,13 @@ function database(options: Options = {}) {
           ? [
               {
                 said_name: options.correctionName ?? 'arroz',
-                corrected_to: 'arroz personalizado',
+                corrected_to: options.correctionTo ?? 'arroz personalizado',
                 status: 'active',
                 confirmed_count: 4,
-                custom_kcal_per_100g: 100,
-                custom_protein_g: 3,
-                custom_carbs_g: 20,
-                custom_fat_g: 1,
+                custom_kcal_per_100g: options.remapOnly ? null : 100,
+                custom_protein_g: options.remapOnly ? null : 3,
+                custom_carbs_g: options.remapOnly ? null : 20,
+                custom_fat_g: options.remapOnly ? null : 1,
               },
             ]
           : [],
@@ -370,5 +372,200 @@ describe('mobile consumed meal — approved cooked defaults', () => {
         POLICY,
       ),
     ).rejects.toThrow('catalog unavailable')
+  })
+})
+
+describe('structured evidence of an actually applied cooked default', () => {
+  const annotations = {
+    ...POLICY,
+    preparationAnnotations: 'consumed.preparation.v1' as const,
+  }
+
+  it('binds the real verified rice and bean references to their original input positions', async () => {
+    const result = await calcMealMacros(
+      database().client,
+      [
+        { food_name: 'arroz200g', quantity_g: 200 },
+        { food_name: 'feijão', quantity_g: 200 },
+      ],
+      'BR',
+      undefined,
+      annotations,
+    )
+    expect(result.preparation_annotations).toEqual([
+      {
+        schema: 'consumed.preparation.v1',
+        kind: 'default_cooked',
+        input_indexes: [0],
+        food_name: 'arroz branco cozido',
+        policy: 'consumed-meal-v1',
+        reference_id: 'food_db:160',
+      },
+      {
+        schema: 'consumed.preparation.v1',
+        kind: 'default_cooked',
+        input_indexes: [1],
+        food_name: 'feijão carioca cozido',
+        policy: 'consumed-meal-v1',
+        reference_id: 'food_db:703',
+      },
+    ])
+    expect(result.totals.kcal).toBe(409.3)
+  })
+
+  it('coalesces only actual default inputs and orders annotations by the final result lines', async () => {
+    const result = await calcMealMacros(
+      database().client,
+      [
+        { food_name: 'arroz cozido', quantity_g: 100 },
+        { food_name: 'feijão', quantity_g: 100 },
+        { food_name: 'arroz', quantity_g: 50 },
+        { food_name: 'arroz branco', quantity_g: 50 },
+        { food_name: 'feijão preto', quantity_g: 100 },
+      ],
+      'BR',
+      undefined,
+      annotations,
+    )
+    expect(result.input_indexes).toEqual([[0, 2, 3], [1], [4]])
+    expect(result.items.map((item) => [item.food_name, item.quantity_g])).toEqual([
+      ['arroz branco cozido', 200],
+      ['feijão carioca cozido', 100],
+      ['feijão preto cozido', 100],
+    ])
+    expect(result.preparation_annotations).toEqual([
+      {
+        schema: 'consumed.preparation.v1',
+        kind: 'default_cooked',
+        input_indexes: [2, 3],
+        food_name: 'arroz branco cozido',
+        policy: 'consumed-meal-v1',
+        reference_id: 'food_db:160',
+      },
+      {
+        schema: 'consumed.preparation.v1',
+        kind: 'default_cooked',
+        input_indexes: [1],
+        food_name: 'feijão carioca cozido',
+        policy: 'consumed-meal-v1',
+        reference_id: 'food_db:703',
+      },
+      {
+        schema: 'consumed.preparation.v1',
+        kind: 'default_cooked',
+        input_indexes: [4],
+        food_name: 'feijão preto cozido',
+        policy: 'consumed-meal-v1',
+        reference_id: 'food_db:709',
+      },
+    ])
+    result.input_indexes?.[0]?.push(99)
+    expect(result.preparation_annotations?.[0]?.input_indexes).toEqual([2, 3])
+  })
+
+  it.each([
+    'arroz integral cru',
+    'arroz cozido100g',
+    'feijão preto cozido',
+    'arroz Tio João',
+    'arroz com frango',
+  ])('does not turn explicit preparation or another catalog branch into an assumption: %s', async (food_name) => {
+    const result = await calcMealMacros(
+      database().client,
+      [{ food_name, quantity_g: 100 }],
+      'BR',
+      undefined,
+      annotations,
+    )
+    expect(result.preparation_annotations).toEqual([])
+  })
+
+  it.each([
+    {
+      food_name: 'arroz',
+      quantity_g: 100,
+      approved_nutrition: {
+        source: 'product_label' as const,
+        kcal: 140,
+        protein_g: 4,
+        carbs_g: 28,
+        fat_g: 1,
+      },
+    },
+    { food_name: 'arroz', quantity_g: 100, user_kcal: 140 },
+  ])('preserves explicit nutrition precedence without cooked annotations', async (input) => {
+    const result = await calcMealMacros(database().client, [input], 'BR', undefined, annotations)
+    expect(result.preparation_annotations).toEqual([])
+    expect(result.totals.kcal).toBe(140)
+  })
+
+  it.each([
+    false,
+    true,
+  ])('keeps active correction authoritative, including remap-only=%s', async (remapOnly) => {
+    const result = await calcMealMacros(
+      database({
+        correction: true,
+        correctionTo: remapOnly ? 'arroz branco' : undefined,
+        remapOnly,
+      }).client,
+      [{ food_name: 'arroz', quantity_g: 100 }],
+      'BR',
+      OWNER,
+      annotations,
+    )
+    expect(result.preparation_annotations).toEqual([])
+    expect(result.totals.kcal).toBe(remapOnly ? 128.3 : 100)
+  })
+
+  it('leaves the result property absent without opt-in and requires the consumed policy', async () => {
+    const input = [{ food_name: 'arroz', quantity_g: 100 }]
+    const ordinary = await calcMealMacros(database().client, input, 'BR', undefined, POLICY)
+    const annotated = await calcMealMacros(database().client, input, 'BR', undefined, annotations)
+    const { preparation_annotations: evidence, ...rest } = annotated
+    expect(Object.hasOwn(ordinary, 'preparation_annotations')).toBe(false)
+    expect(JSON.stringify(rest)).toBe(JSON.stringify(ordinary))
+    expect(evidence).toHaveLength(1)
+    const noPolicy = await calcMealMacros(database().client, input, 'BR', undefined, {
+      preparationAnnotations: 'consumed.preparation.v1',
+    })
+    expect(noPolicy.preparation_annotations).toEqual([])
+    expect(noPolicy.items[0]?.source).toBe('no_match')
+  })
+
+  it('does not reinterpret a rejected product label as evidence of omitted preparation', async () => {
+    const result = await calcMealMacros(
+      database().client,
+      [
+        {
+          food_name: 'arroz',
+          quantity_g: 100,
+          approved_nutrition: {
+            source: 'product_label',
+            kcal: 100000,
+            protein_g: 0,
+            carbs_g: 0,
+            fat_g: 0,
+          },
+        },
+      ],
+      'BR',
+      undefined,
+      annotations,
+    )
+    expect(result.totals.kcal).toBe(128.3)
+    expect(result.preparation_annotations).toEqual([])
+  })
+
+  it('never returns annotations or a result when the verified source is unavailable', async () => {
+    await expect(
+      calcMealMacros(
+        database({ missing: 703 }).client,
+        [{ food_name: 'feijão', quantity_g: 100 }],
+        'BR',
+        undefined,
+        annotations,
+      ),
+    ).rejects.toThrow('consumed_food_reference_unavailable')
   })
 })

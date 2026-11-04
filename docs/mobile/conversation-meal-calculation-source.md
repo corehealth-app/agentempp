@@ -43,8 +43,8 @@ isolada e não provoca fallback de escrita nem repetição do domínio.
 
 Sem sink, o comportamento legado continua inserindo os eventos como antes.
 O processamento persistente e idempotente dessas intenções após o commit será
-uma integração posterior. Anotações estruturadas de cozido padrão também ficam
-para um incremento próprio; não são inferidas de mensagens de warning.
+uma integração posterior. As [anotações estruturadas de cozido padrão](conversation-consumed-preparation-annotations.md)
+têm opt-in próprio e saem somente do branch real de referência verificada.
 
 ## Verificação deste incremento
 

@@ -1,5 +1,15 @@
 import { type EverydayFoodDefault, normalizeEverydayFoodName } from './everyday-food-defaults.js'
 
+/** Evidence emitted only by the verified cooked-default calculation branch. */
+export interface ConsumedPreparationAnnotation {
+  schema: 'consumed.preparation.v1'
+  kind: 'default_cooked'
+  input_indexes: number[]
+  food_name: string
+  policy: 'consumed-meal-v1'
+  reference_id: `food_db:${number}`
+}
+
 /** Explicit mobile consumption policy approved03/11/2026. Not a global
  * replacement for the legacy preparation question. Values identify existing
  * verified TACO rows; they are never used as a substitute for the catalog.

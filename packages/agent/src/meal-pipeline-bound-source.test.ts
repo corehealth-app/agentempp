@@ -183,11 +183,16 @@ describe('meal calculation with a bound real-source port', () => {
     const source = reader([]),
       input = { food_name: 'arroz', quantity_g: 100 },
       items = [input]
-    const options = { consumptionPolicy: 'consumed-meal-v1' as const, sourceReader: source }
+    const options = {
+      consumptionPolicy: 'consumed-meal-v1' as const,
+      sourceReader: source,
+      preparationAnnotations: 'consumed.preparation.v1' as const,
+    }
     const pending = calcMealMacros(state.db, items, 'BR', OWNER, options)
     await started
     Object.assign(options, {
       consumptionPolicy: undefined,
+      preparationAnnotations: undefined,
       sourceReader: {
         ownerId: 'foreign',
         asOf: 'bad',
@@ -218,6 +223,16 @@ describe('meal calculation with a bound real-source port', () => {
       },
     ])
     expect(state.lookbacks).toEqual(['2026-10-04T12:00:00.123Z'])
+    expect(result.preparation_annotations).toEqual([
+      {
+        schema: 'consumed.preparation.v1',
+        kind: 'default_cooked',
+        input_indexes: [0],
+        food_name: 'arroz branco cozido',
+        policy: 'consumed-meal-v1',
+        reference_id: 'food_db:160',
+      },
+    ])
   })
 
   it('rejects a foreign owner or invalid source clock before any database I/O', async () => {

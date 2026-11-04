@@ -9,6 +9,7 @@
 import type { ServiceClient } from '@mpp/db'
 import {
   ConsumedFoodReferenceUnavailableError,
+  type ConsumedPreparationAnnotation,
   consumedFoodDefault,
   normalizeConsumedFoodQuantity,
 } from './consumed-food-defaults.js'
@@ -1216,6 +1217,8 @@ export interface MealCalcResult {
    * read this, or the lines after the added one are paired with the wrong
    * input. */
   input_indexes?: number[][]
+  /** Opt-in evidence from the actual verified consumed-default branch. */
+  preparation_annotations?: ConsumedPreparationAnnotation[]
 }
 
 /**
@@ -1842,7 +1845,9 @@ export async function calcMealMacros(
   options?: MealCalculationOptions,
 ): Promise<MealCalcResult> {
   const captured = captureMealCalculationOptions(options, userIdHint)
-  const inputs = captured.sourceReader ? structuredClone(items) : items
+  const includePreparationAnnotations = captured.preparationAnnotations === 'consumed.preparation.v1'
+  const inputs =
+    captured.sourceReader || includePreparationAnnotations ? structuredClone(items) : items
   const matched: MealItemMatched[] = []
   const userWarnings: string[] = []
   const auditWarnings: string[] = []
@@ -1852,9 +1857,14 @@ export async function calcMealMacros(
   // catalog row read for it (null = not usable) and the line it produced.
   const everydayRows = new Map<EverydayFoodDefault, EverydayCatalogRow | null>()
   const everydayLines = new Map<EverydayFoodDefault, { line: number; inputs: number[] }>()
+  const preparationAnnotations = new Map<
+    EverydayFoodDefault,
+    { line: number; value: ConsumedPreparationAnnotation }
+  >()
 
   for (const [inputIndex, inputItem] of inputs.entries()) {
     let it = inputItem
+    let appliedPersonalCorrection = false
     // ── PRIORIDADE -4: PROPOSTA JÁ APROVADA PELO PACIENTE ──────────────────
     // O pending é a fronteira de aprovação. Reconsultar TACO/histórico no tap
     // pode gravar números diferentes dos que acabaram de ser mostrados.
@@ -2067,6 +2077,7 @@ export async function calcMealMacros(
         )
       }
       if (corr && !corr.needs_confirmation) {
+        appliedPersonalCorrection = true
         if (corr.custom_macros) {
           const f = it.quantity_g / 100
           const kcal = +(corr.custom_macros.kcal_per_100g * f).toFixed(1)
@@ -2224,6 +2235,31 @@ export async function calcMealMacros(
         totals.carbs_g += carbs
         totals.fat_g += fat
         totals.fiber_g += fiber
+        if (
+          includePreparationAnnotations &&
+          consumed &&
+          !appliedPersonalCorrection &&
+          !inputItem.approved_nutrition &&
+          inputItem.user_kcal === undefined &&
+          inferPreparationState(it.food_name) === 'unspecified'
+        ) {
+          const annotation = preparationAnnotations.get(consumed)
+          if (annotation) {
+            annotation.value.input_indexes.push(inputIndex)
+          } else {
+            preparationAnnotations.set(consumed, {
+              line: earlier?.line ?? matched.length - 1,
+              value: {
+                schema: 'consumed.preparation.v1',
+                kind: 'default_cooked',
+                input_indexes: [inputIndex],
+                food_name: line.food_name,
+                policy: 'consumed-meal-v1',
+                reference_id: `food_db:${row.id}`,
+              },
+            })
+          }
+        }
         continue
       }
       if (consumed) throw new ConsumedFoodReferenceUnavailableError()
@@ -3028,6 +3064,13 @@ export async function calcMealMacros(
     user_warnings: userWarnings,
     audit_warnings: auditWarnings,
     ...(inputIndexes ? { input_indexes: inputIndexes } : {}),
+    ...(includePreparationAnnotations
+      ? {
+          preparation_annotations: [...preparationAnnotations.values()]
+            .sort((a, b) => a.line - b.line)
+            .map((entry) => entry.value),
+        }
+      : {}),
   }
 }
 

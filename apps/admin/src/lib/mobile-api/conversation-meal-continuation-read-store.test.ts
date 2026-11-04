@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { isDeepStrictEqual } from 'node:util'
 import { resolveDraftItem } from '@mpp/agent'
-import type { ServiceClient } from '@mpp/db'
+import { createServiceClient, type ServiceClient } from '@mpp/db'
 import { describe, expect, it, vi } from 'vitest'
 import actualSQL from './__fixtures__/conversation-meal-continuation-read-sql.json'
 import { bindConversationCommand } from './conversation-command-contracts'
@@ -1192,5 +1192,123 @@ describe('actual original-name reference witness binding', () => {
       accepted = true
     } catch {}
     expect(accepted).toBe(false)
+  })
+})
+
+describe('actual cached PostgREST SDK response metadata', () => {
+  it.each([
+    'legacy',
+    'modern',
+  ] as const)('decodes the same complete SQL state with %s SDK metadata using real client parsing', async (version) => {
+    const f = fixture(),
+      originalFetch = globalThis.fetch
+    let controlled = 0,
+      observedKeys: string[] = []
+    globalThis.fetch = async (input) => {
+      const target = new URL(
+        typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+      )
+      expect(target.origin).toBe('http://127.0.0.1:22980')
+      expect(target.pathname).toBe('/rest/v1/rpc/read_conversation_meal_continuation')
+      controlled++
+      return new Response(JSON.stringify(f.value), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+    try {
+      const actual = createServiceClient({
+        url: 'http://127.0.0.1:22980',
+        serviceRoleKey: 'synthetic-offline-not-a-real-credential',
+      })
+      const method = actual.rpc.bind(actual) as (
+        name: string,
+        args: Record<string, string | null>,
+      ) => PromiseLike<unknown>
+      const rpc = async (name: string, args: Record<string, string | null>) => {
+        const result = (await method(name, args)) as Record<string, unknown>
+        observedKeys = Object.keys(result)
+        expect(result.success).toBe(true)
+        if (version === 'modern') return result
+        // Compatibility representation only: actual SDK has already parsed data.
+        const { success: _metadataOnly, ...legacy } = result
+        return legacy
+      }
+      const result = await createSupabaseConversationMealContinuationReadStore({
+        rpc,
+      } as unknown as ServiceClient).read(f.identity)
+      expect(isDeepStrictEqual(result, f.value)).toBe(true)
+      expect(observedKeys.sort()).toEqual([
+        'count',
+        'data',
+        'error',
+        'status',
+        'statusText',
+        'success',
+      ])
+      expect(controlled).toBe(1)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it.each([
+    false,
+    'true',
+    1,
+    null,
+    undefined,
+  ])('rejects a contradictory/nonboolean SDK success value %s', async (success) => {
+    const f = fixture(),
+      rpc = vi.fn().mockResolvedValue({ data: f.value, error: null, success })
+    await expect(
+      createSupabaseConversationMealContinuationReadStore({ rpc } as unknown as ServiceClient).read(
+        f.identity,
+      ),
+    ).rejects.toMatchObject({ code: 'conversation_continuation_read_unavailable' })
+    expect(rpc).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    'accessor',
+    'nonenumerable',
+    'symbol',
+    'unknown-field',
+  ] as const)('refuses protected/foreign SDK metadata %s without executing a getter', async (attack) => {
+    const f = fixture()
+    let effects = 0
+    const response = { data: f.value, error: null }
+    if (attack === 'accessor')
+      Object.defineProperty(response, 'success', {
+        enumerable: true,
+        get() {
+          effects++
+          return true
+        },
+      })
+    if (attack === 'nonenumerable')
+      Object.defineProperty(response, 'success', { enumerable: false, value: true })
+    if (attack === 'symbol')
+      Object.defineProperty(response, Symbol('success'), { enumerable: true, value: true })
+    if (attack === 'unknown-field') Object.assign(response, { success: true, extra: true })
+    const rpc = vi.fn().mockResolvedValue(response)
+    await expect(
+      createSupabaseConversationMealContinuationReadStore({ rpc } as unknown as ServiceClient).read(
+        f.identity,
+      ),
+    ).rejects.toMatchObject({ code: 'conversation_continuation_read_unavailable' })
+    expect(effects).toBe(0)
+    expect(rpc).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not accept success as a new private SQL data field', async () => {
+    const f = fixture()
+    Object.assign(f.value, { success: true })
+    const rpc = vi.fn().mockResolvedValue({ data: f.value, error: null, success: true })
+    await expect(
+      createSupabaseConversationMealContinuationReadStore({ rpc } as unknown as ServiceClient).read(
+        f.identity,
+      ),
+    ).rejects.toMatchObject({ code: 'conversation_continuation_read_unavailable' })
   })
 })

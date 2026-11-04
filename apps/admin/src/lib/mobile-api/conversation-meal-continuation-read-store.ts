@@ -37,14 +37,19 @@ export function createSupabaseConversationMealContinuationReadStore(
         if (!response || typeof response !== 'object' || Array.isArray(response))
           conversationContinuationReadUnavailable()
         const fields = Object.getOwnPropertyDescriptors(response)
-        const allowed = new Set(['data', 'error', 'count', 'status', 'statusText'])
+        const allowed = new Set(['data', 'error', 'count', 'status', 'statusText', 'success'])
         for (const key of Reflect.ownKeys(fields)) {
           if (typeof key !== 'string' || !allowed.has(key))
             conversationContinuationReadUnavailable()
           const field = fields[key]
           if (!field?.enumerable || !('value' in field)) conversationContinuationReadUnavailable()
         }
-        if (!fields.data || !fields.error || fields.error.value !== null)
+        if (
+          !fields.data ||
+          !fields.error ||
+          fields.error.value !== null ||
+          (fields.success && fields.success.value !== true)
+        )
           conversationContinuationReadUnavailable()
         // SDK envelope metadata is distinct from the exact private SQL JSON.
         return parseConversationMealContinuationRead(fields.data.value, identity)

@@ -124,6 +124,10 @@ function effect(
     return invalid()
   return freeze(value)
 }
+
+/** Shared private factual receipt decoder; it never recaptures live context. */
+export { effect as parseConversationMealEffectReceipt }
+
 function bind(raw: ConversationMealFeedbackBinding) {
   const command = commandBinding(raw.command),
     receipt = effect(raw.receipt, command)

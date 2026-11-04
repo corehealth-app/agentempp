@@ -34,6 +34,13 @@ export { loadFlowDayStatusContext } from './flow-day-status-context.js'
 export * from './llm-judge.js'
 export * from './location-timezone.js'
 export * from './meal-addition-context.js'
+export type {
+  MealCalculationAuditEvent,
+  MealCalculationAuditSink,
+  MealCalculationOptions,
+  MealHistoryRow,
+  MealNutritionSourceReader,
+} from './meal-calculation-source.js'
 export * from './meal-draft.js'
 export * from './meal-patterns.js'
 export * from './meal-pipeline.js'

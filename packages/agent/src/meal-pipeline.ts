@@ -13,6 +13,14 @@ import {
   normalizeConsumedFoodQuantity,
 } from './consumed-food-defaults.js'
 import { type EverydayFoodDefault, everydayFoodDefault } from './everyday-food-defaults.js'
+import {
+  captureMealCalculationOptions,
+  emitMealCalculationAudit,
+  type MealCalculationOptions,
+  type MealNutritionSourceReader,
+  mealSourceClock,
+  readBoundMealHistory,
+} from './meal-calculation-source.js'
 import { classifyNutritionContext, isAggregateNutritionText } from './nutrition-context.js'
 import { hasImpossibleKcalDensity } from './nutrition-invariants.js'
 
@@ -1572,6 +1580,7 @@ export async function lookupFoodCorrection(
   supabase: ServiceClient,
   userId: string,
   foodName: string,
+  asOf?: string,
 ): Promise<{
   corrected_to: string
   custom_macros: {
@@ -1588,7 +1597,9 @@ export async function lookupFoodCorrection(
   const normalize = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
   const target = normalize(foodName)
   if (!target) return null
-  const lookback = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
+  const lookback = new Date(
+    (asOf === undefined ? Date.now() : mealSourceClock(asOf)) - 30 * 24 * 3600 * 1000,
+  ).toISOString()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   // biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
   const supaTyped = supabase as any
@@ -1664,6 +1675,7 @@ export async function lookupUserHistory(
   supabase: ServiceClient,
   userId: string,
   foodName: string,
+  sourceReader?: MealNutritionSourceReader,
 ): Promise<{
   food_db_id: number
   kcal_per_100g: number
@@ -1676,21 +1688,28 @@ export async function lookupUserHistory(
 } | null> {
   const normalize = normalizeFoodText
   const target = normalize(foodName)
-  const lookback = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
+  const capturedSource = sourceReader
+    ? captureMealCalculationOptions({ sourceReader }, userId).sourceReader
+    : undefined
+  const lookback = new Date(
+    (capturedSource ? mealSourceClock(capturedSource.asOf) : Date.now()) - 30 * 24 * 3600 * 1000,
+  ).toISOString()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   // biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
   const supaTyped = supabase as any
-  const { data, error } = await supaTyped
-    .from('meal_logs')
-    .select(
-      'id, food_name, food_db_id, quantity_g, kcal, protein_g, carbs_g, fat_g, source, food_db:food_db_id(is_verified)',
-    )
-    .eq('user_id', userId)
-    .in('source', [...TRUSTED_HISTORY_SOURCES])
-    .gt('kcal', 0)
-    .gte('created_at', lookback)
-    .order('created_at', { ascending: false })
-    .limit(50)
+  const { data, error } = capturedSource
+    ? { data: await readBoundMealHistory(capturedSource, 'trusted_recent', null), error: null }
+    : await supaTyped
+        .from('meal_logs')
+        .select(
+          'id, food_name, food_db_id, quantity_g, kcal, protein_g, carbs_g, fat_g, source, food_db:food_db_id(is_verified)',
+        )
+        .eq('user_id', userId)
+        .in('source', [...TRUSTED_HISTORY_SOURCES])
+        .gt('kcal', 0)
+        .gte('created_at', lookback)
+        .order('created_at', { ascending: false })
+        .limit(50)
   if (error) throw nutritionSourceError(error, 'personal food history lookup failed')
   const rows = (data ?? []) as Array<{
     id: string
@@ -1820,8 +1839,10 @@ export async function calcMealMacros(
   country: string = 'BR',
   /** ID do paciente — habilita reuso de alimentos do histórico do user. */
   userIdHint?: string,
-  options?: { consumptionPolicy?: 'consumed-meal-v1' },
+  options?: MealCalculationOptions,
 ): Promise<MealCalcResult> {
+  const captured = captureMealCalculationOptions(options, userIdHint)
+  const inputs = captured.sourceReader ? structuredClone(items) : items
   const matched: MealItemMatched[] = []
   const userWarnings: string[] = []
   const auditWarnings: string[] = []
@@ -1832,7 +1853,7 @@ export async function calcMealMacros(
   const everydayRows = new Map<EverydayFoodDefault, EverydayCatalogRow | null>()
   const everydayLines = new Map<EverydayFoodDefault, { line: number; inputs: number[] }>()
 
-  for (const [inputIndex, inputItem] of items.entries()) {
+  for (const [inputIndex, inputItem] of inputs.entries()) {
     let it = inputItem
     // ── PRIORIDADE -4: PROPOSTA JÁ APROVADA PELO PACIENTE ──────────────────
     // O pending é a fronteira de aprovação. Reconsultar TACO/histórico no tap
@@ -1857,7 +1878,7 @@ export async function calcMealMacros(
         `Os valores aprovados para "${it.food_name}" parecem incompatíveis com a quantidade, então recalculei pela referência nutricional do alimento.`,
       )
       if (userIdHint) {
-        await supabase.from('product_events').insert({
+        await emitMealCalculationAudit(supabase, captured, {
           user_id: userIdHint,
           event: 'meal_calc.approved_nutrition_rejected',
           properties: {
@@ -1920,7 +1941,7 @@ export async function calcMealMacros(
           `O valor de ${it.user_kcal} kcal para ${it.quantity_g}g de "${it.food_name}" parece incompatível com a quantidade, então usei a referência nutricional do alimento.`,
         )
         if (userIdHint) {
-          await supabase.from('product_events').insert({
+          await emitMealCalculationAudit(supabase, captured, {
             user_id: userIdHint,
             event: 'meal_calc.user_kcal_rejected',
             properties: {
@@ -2028,7 +2049,12 @@ export async function calcMealMacros(
     //   - needs_confirmation (status=learning, 1ª correção) → aplica MAS adiciona
     //     user_warning pro agente confirmar com o paciente.
     if (userIdHint) {
-      const corr = await lookupFoodCorrection(supabase, userIdHint, it.food_name)
+      const corr = await lookupFoodCorrection(
+        supabase,
+        userIdHint,
+        it.food_name,
+        captured.sourceReader?.asOf,
+      )
       // 2026-06-09: status='learning' (confirmed_count=1) NÃO APLICA mais
       // silencioso. Bug observado Amanda+Paulo: 1 correção pontual virou regra
       // eterna ("ovo cozido"→"ovo frito" forçou ovo frito mesmo Amanda dizendo
@@ -2124,11 +2150,11 @@ export async function calcMealMacros(
     // left exactly as it was.
     // Explicit/approved nutrition and original-name personal corrections above
     // own their precedence. Only then normalize a duplicated mass for defaults.
-    if (options?.consumptionPolicy === 'consumed-meal-v1') {
+    if (captured.consumptionPolicy === 'consumed-meal-v1') {
       it = { ...it, food_name: normalizeConsumedFoodQuantity(it.food_name, it.quantity_g, country) }
     }
     const consumed =
-      options?.consumptionPolicy === 'consumed-meal-v1'
+      captured.consumptionPolicy === 'consumed-meal-v1'
         ? consumedFoodDefault(it.food_name, country)
         : null
     const everyday = consumed ?? everydayFoodDefault(it.food_name)
@@ -2254,7 +2280,7 @@ export async function calcMealMacros(
     // Se sim, usa esses macros — evita "leite com whey" virar achocolatado
     // toda vez. Após correção via replace=true, o log atualizado vira a memória.
     if (userIdHint && !hasExactCanonicalMatch) {
-      const hist = await lookupUserHistory(supabase, userIdHint, it.food_name)
+      const hist = await lookupUserHistory(supabase, userIdHint, it.food_name, captured.sourceReader)
       if (hist) {
         const f = it.quantity_g / 100
         const kcal = +(hist.kcal_per_100g * f).toFixed(1)
@@ -2781,21 +2807,29 @@ export async function calcMealMacros(
       // food_name nos últimos 30d. Mediana é resistente a outliers + estável
       // entre chamadas (mesmos logs entram → mesmo resultado sai).
       // ────────────────────────────────────────────────────────────────────
-      const lookback = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
+      const lookback = new Date(
+        (captured.sourceReader ? mealSourceClock(captured.sourceReader.asOf) : Date.now()) -
+          30 * 24 * 3600 * 1000,
+      ).toISOString()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       // biome-ignore lint/suspicious/noExplicitAny: legacy — see ACT-1 prevention plan 2026-06-16
       const supaTyped = supabase as any
-      const { data: prior, error: priorError } = await supaTyped
-        .from('meal_logs')
-        .select(
-          'food_name, food_db_id, quantity_g, kcal, protein_g, carbs_g, fat_g, source, user_id, food_db:food_db_id(is_verified)',
-        )
-        .eq('user_id', userIdHint ?? '_no_user_')
-        .ilike('food_name', it.food_name)
-        .gte('created_at', lookback)
-        .in('source', [...TRUSTED_HISTORY_SOURCES])
-        .order('created_at', { ascending: false })
-        .limit(20)
+      const { data: prior, error: priorError } = captured.sourceReader
+        ? {
+            data: await readBoundMealHistory(captured.sourceReader, 'exact_median', it.food_name),
+            error: null,
+          }
+        : await supaTyped
+            .from('meal_logs')
+            .select(
+              'food_name, food_db_id, quantity_g, kcal, protein_g, carbs_g, fat_g, source, user_id, food_db:food_db_id(is_verified)',
+            )
+            .eq('user_id', userIdHint ?? '_no_user_')
+            .ilike('food_name', it.food_name)
+            .gte('created_at', lookback)
+            .in('source', [...TRUSTED_HISTORY_SOURCES])
+            .order('created_at', { ascending: false })
+            .limit(20)
       if (priorError) {
         throw nutritionSourceError(priorError, 'median food history lookup failed')
       }
@@ -2874,7 +2908,7 @@ export async function calcMealMacros(
             )
             // Loga pra auditoria (Roberto 2026-06-03): rastreabilidade de
             // quando reuso de histórico foi usado em vez de TACO.
-            await supaTyped.from('product_events').insert({
+            await emitMealCalculationAudit(supabase, captured, {
               user_id: userIdHint ?? null,
               event: 'meal_calc.history_reused',
               properties: {
@@ -2979,7 +3013,7 @@ export async function calcMealMacros(
   // rather than a wrong pairing.
   const addedLines = [...everydayLines.values()].filter((entry) => entry.inputs.length > 1)
   const absorbed = new Set(addedLines.flatMap((entry) => entry.inputs.slice(1)))
-  const firstInputs = items.map((_, index) => index).filter((index) => !absorbed.has(index))
+  const firstInputs = inputs.map((_, index) => index).filter((index) => !absorbed.has(index))
   const inputIndexes =
     absorbed.size > 0 && firstInputs.length === matched.length
       ? firstInputs.map(

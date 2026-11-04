@@ -31,7 +31,7 @@ struct ConversationThreadPageSnapshot: Decodable, Sendable {
       admittedAt = try threadClock(o.required("admitted_at"))
     }
   }
-  struct Question: Sendable {
+  struct Question: Decodable, Sendable {
     let questionKey: String
     let revision: Int
     let kind: String
@@ -40,6 +40,10 @@ struct ConversationThreadPageSnapshot: Decodable, Sendable {
     let allowedUnits: [String]
     let quantityReference: MealQuantityDisplay?
     fileprivate let originalJSON: Data
+    var encodedData: Data { originalJSON }
+    init(from decoder: any Decoder) throws {
+      try self.init(ConversationMealEditJSON(from: decoder))
+    }
     func hasSameContent(as other: Self) -> Bool { originalJSON == other.originalJSON }
     fileprivate init(_ raw: ConversationMealEditJSON) throws {
       let o = try raw.object([

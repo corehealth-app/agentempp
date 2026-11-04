@@ -163,6 +163,12 @@ struct ConversationMealEditOperation: Sendable, CustomStringConvertible, CustomR
   }
   /// PostgreSQL JSONB scalar spelling differs from the old meal command hash:
   /// exponent numbers are expanded, negative zero is zero, and ASCII keys sort.
+  static func canonicalJSON(_ value: ConversationMealEditJSON) throws -> String {
+    try canonical(value)
+  }
+  static func validatedNumber(_ value: Decimal) throws -> Double {
+    try Item.number(value)
+  }
   private static func canonical(_ value: ConversationMealEditJSON) throws -> String {
     switch value {
     case .object(let v):

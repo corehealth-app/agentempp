@@ -49,9 +49,18 @@ struct FlowConversationView: View {
         FlowConversationCaptureView(capability: capture, presentation: presentation, model: model)
       }
     }
+    .sheet(
+      item: Binding(
+        get: { model.mealEditor?.presentation },
+        set: { if $0 == nil { model.mealEditor?.dismiss() } }
+      )
+    ) { presentation in FlowConversationMealEditorView(model: presentation.model) }
     .task { await model.refreshConversation() }
     .onDisappear { model.cancelTransientWork() }
     .onChange(of: model.isWorking) { _, busy in if !busy { Task { await model.loadHistory() } } }
+    .onChange(of: model.mealEditor?.isWorking) { _, busy in
+      if busy == false { Task { await model.loadHistory() } }
+    }
     .onChange(of: scenePhase) { _, phase in
       if phase == .active { Task { await model.refreshConversation() } }
     }
@@ -104,6 +113,37 @@ struct FlowConversationView: View {
         if model.isRefreshing {
           ProgressView(english ? "Updating…" : "Atualizando…").accessibilityIdentifier(
             "conversation.refreshing")
+        }
+        if let editor = model.mealEditor {
+          if editor.hasPreparedIntent {
+            Button(
+              english ? "Review the original pending edit" : "Revisar edição original pendente"
+            ) {
+              editor.presentOriginalIntent()
+            }.accessibilityIdentifier("conversation.edit.resume")
+          }
+          ForEach(
+            editor.pendingEntries.filter {
+              $0.id != editor.pendingOperation.map { .init(operation: $0) }
+            }, id: \.id
+          ) { entry in
+            Button(english ? "Review pending meal edit" : "Revisar edição de refeição pendente") {
+              try? editor.presentPending(id: entry.id)
+            }.disabled(editor.isWorking || editor.hasPreparedIntent).accessibilityIdentifier(
+              "conversation.edit.restore")
+          }
+          if editor.heldCount > 0 {
+            Text(
+              english
+                ? "A protected edit is preserved for its original account and meal context."
+                : "Uma edição protegida está preservada para a conta e o contexto originais."
+            )
+            .foregroundStyle(BodyFlowColor.secondaryText)
+          }
+          if let result = editor.lastSaved {
+            Label(editNotice(result.receipt.kind), systemImage: "checkmark.circle.fill")
+              .accessibilityIdentifier("conversation.edit.saved")
+          }
         }
         if let question = model.terminalQuestion {
           VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
@@ -219,7 +259,8 @@ struct FlowConversationView: View {
       if let scope = model.feedbackPresentationScope {
         source(row.command.source)
         FlowConversationSavedMealResponseView(
-          row: row, group: model.currentGroup(commandID: row.id), scope: scope
+          row: row, group: model.currentGroup(commandID: row.id), scope: scope,
+          editing: model.mealEditActions(commandID: row.id)
         ) {
           Task { await model.loadCurrentGroup(commandID: row.id) }
         }

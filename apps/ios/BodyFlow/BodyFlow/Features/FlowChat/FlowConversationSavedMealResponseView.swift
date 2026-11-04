@@ -6,6 +6,7 @@ struct FlowConversationSavedMealResponseView: View {
   let row: FlowConversationSavedRow
   let group: ConversationMealGroupSnapshot?
   let scope: ConversationFeedbackPresentationSnapshot.Scope
+  var editing: FlowConversationMealEditActions? = nil
   let refresh: @MainActor () -> Void
   @Environment(\.locale) private var locale
   private var english: Bool { BodyFlowPresentationLanguage.resolve(locale) == .englishUnitedStates }
@@ -19,9 +20,12 @@ struct FlowConversationSavedMealResponseView: View {
         ConversationFeedbackPresentationView(feedback: feedback)
           .accessibilityElement(children: .contain)
           .accessibilityIdentifier("conversation.meal.primary")
+        if let group, editing != nil {
+          FlowConversationMealGroupView(group: group, editing: editing, showsFacts: false)
+        }
       } else {
         if let group {
-          FlowConversationMealGroupView(group: group)
+          FlowConversationMealGroupView(group: group, editing: editing)
         } else {
           Text(
             english

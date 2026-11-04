@@ -10,7 +10,8 @@ struct FlowConversationThreadEventPresentation {
   let linkedActionGate: String?
   init(
     entry: ConversationThreadPageSnapshot.Entry, parent: ConversationThreadPageSnapshot.Thread,
-    observedQuestion: ConversationThreadPageSnapshot.Question?, english: Bool
+    observedQuestion: ConversationThreadPageSnapshot.Question?, english: Bool,
+    linkedRepliesAvailable: Bool = false
   ) {
     switch entry.detail {
     case .report(let report):
@@ -117,8 +118,7 @@ struct FlowConversationThreadEventPresentation {
         [
           english ? "Question observed in history" : "Pergunta observada no histórico",
           Self.question($0, english: english),
-          unavailableReply,
-        ]
+        ] + (linkedRepliesAvailable ? [] : [unavailableReply])
       } ?? []
   }
   static func question(_ question: ConversationThreadPageSnapshot.Question, english: Bool) -> String
@@ -140,9 +140,11 @@ struct FlowConversationThreadEventPresentation {
     let observedQuestion: ConversationThreadPageSnapshot.Question?
     let feedback: ConversationFeedbackPresentationSnapshot.Bound?
     let english: Bool
+    var linkedRepliesAvailable = false
     var body: some View {
       let value = FlowConversationThreadEventPresentation(
-        entry: entry, parent: parent, observedQuestion: observedQuestion, english: english)
+        entry: entry, parent: parent, observedQuestion: observedQuestion, english: english,
+        linkedRepliesAvailable: linkedRepliesAvailable)
       VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
         Text(verbatim: value.title).font(BodyFlowTypography.headline).accessibilityAddTraits(
           .isHeader)

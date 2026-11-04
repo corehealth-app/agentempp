@@ -4,6 +4,11 @@ import Testing
 
 @testable import BodyFlow
 
+#if canImport(UIKit)
+  import SwiftUI
+  import UIKit
+#endif
+
 @Suite("Actual Flow opts into linked history without writer authority")
 @MainActor
 struct FlowConversationThreadHistoryTests {
@@ -255,6 +260,65 @@ struct FlowConversationThreadHistoryTests {
     #expect(prepared.preparedHash == String(repeating: "a", count: 64))
     #expect(amount == 200 && edit.receipt.revision == 1)
     #expect(await f.http.stub.requests.allSatisfy { $0.httpMethod == "GET" })
+    await model.close()
+  }
+
+  @Test @MainActor
+  func actualTypedRuntimeUsesOwnedQuestionAndFulfilledHistoryNeverAcknowledgesUnknownAnswer()
+    async throws
+  {
+    let f = try await Harness.make(unfulfilled: true)
+    defer { f.disk.remove() }
+    let model = try await FlowConversationModel.open(
+      transport: f.http.transport, lifecycle: f.http.lifecycle, store: f.disk.store,
+      keyVault: f.vault, linkedReplies: true, historyVersion: .v2)
+    await model.loadHistory()
+    let replies = try #require(model.mealReplies)
+    let parent = try #require(f.page.threads.first)
+    #expect(model.canAnswerLinkedQuestion(parentID: parent.threadID))
+    model.beginLinkedReply(parentID: parent.threadID)
+    #expect(replies.question?.foodName == "leite")
+    #expect(replies.question?.allowedUnits == ["g", "kg", "mL", "L", "caneca"])
+    #if canImport(UIKit)
+      let live = PremiumRenderingTestSupport.liveAccessibilityHost(
+        FlowConversationMealReplyContent(model: replies).environment(
+          \.locale, Locale(identifier: "pt_BR")), width: 390)
+      let fields = live.nativeViews(UITextField.self)
+      #expect(fields.count == 1)
+      let field = try #require(fields.first)
+      #expect(field.keyboardType == .decimalPad && field.isEnabled)
+      field.text = "200"
+      field.sendActions(for: .editingChanged)
+      live.settle()
+      #expect(replies.amountText == "200")
+      live.detach()
+    #endif
+    replies.amountText = "200"
+    replies.quantityUnit = "mL"
+    await replies.submit()
+    let intent = try #require(replies.pendingIntent)
+    #expect(intent.parentBinding == parent.parentBinding)
+    #expect(replies.canCheckStatus && !replies.canDiscardUnsent)
+    let posts = await f.http.stub.requests.filter { $0.httpMethod == "POST" }
+    #expect(posts.count == 1 && posts[0].httpBody == intent.wireBody)
+    #expect(
+      posts[0].url?.path == "/api/mobile/v1/conversation/commands/"
+        + parent.threadID.uuidString.lowercased() + "/replies")
+    let key = try await f.vault.key(owner: f.owner, mayCreate: false)
+    #expect(try f.disk.store.load(owner: f.owner, key: key).isEmpty)
+    #expect(try f.disk.store.loadReplies(owner: f.owner, key: key).count == 1)
+    let fulfilled = try await Harness.make()
+    defer { fulfilled.disk.remove() }
+    let body = try #require(fulfilled.bodies.first)
+    await f.http.stub.respond { _, _ in .init(status: 200, body: body) }
+    await model.loadHistory()
+    #expect(
+      model.terminalQuestion == nil && !model.canAnswerLinkedQuestion(parentID: parent.threadID))
+    #expect(
+      try f.disk.store.loadReplies(owner: f.owner, key: key).first?.intent.wireBody
+        == intent.wireBody)
+    #expect(replies.pendingIntent?.replyID == intent.replyID)
+    #expect(await f.http.stub.requests.filter { $0.httpMethod == "POST" }.count == 1)
     await model.close()
   }
 

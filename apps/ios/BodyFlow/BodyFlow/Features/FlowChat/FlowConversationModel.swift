@@ -72,6 +72,8 @@ final class FlowConversationModel {
   private var knownGroupEdits: [UUID: ConversationMealEditEffectSnapshot] = [:]
   private var acknowledgedEdits: Set<ConversationMealEditOutboxID> = []
   private(set) var mealEditor: FlowConversationMealEditModel?
+  private(set) var mealReplies: FlowConversationMealReplyModel?
+  private var deliveredLinkedEffects: Set<UUID> = []
   private var groupRequests: [UUID: UUID] = [:]
   private var groupFailures: Set<UUID> = []
   private let lifetime = FlowConversationLifetime()
@@ -147,7 +149,7 @@ final class FlowConversationModel {
       commandID: id,
       reason: latestDecision?.commandID == id
         ? latestDecision?.reason : threadDescriptors[id]?.terminalReceipt?.reason,
-      observedQuestion: threadDescriptors[id]?.continuation?.question)
+      observedQuestion: currentLinkedQuestion(parentID: id))
   }
   func beginIndependentReport() {
     guard hasCurrentScope, !isWorking, !isComposerLocked, blockedDecisionID != nil else { return }
@@ -208,7 +210,39 @@ final class FlowConversationModel {
       let event = threadEntries.first(where: { $0.eventID == eventID }),
       threadEntries.first(where: { $0.threadID == event.threadID })?.eventID == eventID
     else { return nil }
-    return threadDescriptors[event.threadID]?.continuation?.question
+    return currentLinkedQuestion(parentID: event.threadID)
+  }
+  private func currentLinkedQuestion(parentID: UUID) -> ConversationThreadPageSnapshot.Question? {
+    let fallback = threadDescriptors[parentID]?.continuation?.question
+    return mealReplies.map { $0.currentQuestion(parentID: parentID, fallback: fallback) }
+      ?? fallback
+  }
+  func canAnswerLinkedQuestion(parentID: UUID) -> Bool {
+    guard hasCurrentScope, historyIdentity == lastIdentity, mealReplies?.canBegin == true,
+      let descriptor = threadDescriptors[parentID], descriptor.terminalReceipt != nil,
+      descriptor.continuation?.fulfilledBy == nil, currentLinkedQuestion(parentID: parentID) != nil
+    else { return false }
+    return true
+  }
+  func beginLinkedReply(parentID: UUID) {
+    guard canAnswerLinkedQuestion(parentID: parentID), let descriptor = threadDescriptors[parentID],
+      let decision = descriptor.terminalReceipt,
+      let question = currentLinkedQuestion(parentID: parentID)
+    else { return }
+    do {
+      try mealReplies?.begin(
+        parentBinding: descriptor.parentBinding, parentDecisionHash: decision.decisionHash,
+        question: question)
+    } catch { failure = .changed }
+  }
+  var hasUnpublishedLinkedDelivery: Bool {
+    guard hasCurrentScope, let result = mealReplies?.lastDelivered, let child = result.childBinding,
+      result.receipt != nil
+    else { return false }
+    return !threadEntries.contains { entry in
+      guard case .fulfillment(let value) = entry.detail else { return false }
+      return value.binding == child
+    }
   }
   func threadFeedback(eventID: String) -> ConversationFeedbackPresentationSnapshot.Bound? {
     guard let scope = feedbackPresentationScope, historyIdentity == lastIdentity,
@@ -302,11 +336,14 @@ final class FlowConversationModel {
     transport: MobileAPITransport, lifecycle: any SessionLifecycleProviding,
     store: EncryptedConversationOutboxStore = .device,
     keyVault: ConversationOutboxKeyVault = .init(), media: FlowConversationMediaDependencies? = nil,
-    editing: FlowConversationMealEditingDependencies? = nil,
+    editing: FlowConversationMealEditingDependencies? = nil, linkedReplies: Bool = false,
     historyPageSize: Int = 10, historyVersion: FlowConversationHistoryVersion = .v1,
     expectedLease: SessionLease? = nil
   ) async throws -> FlowConversationModel {
     guard (1...25).contains(historyPageSize) else { throw ConversationOutboxError.invalidCommand }
+    if linkedReplies {
+      guard case .v2 = historyVersion else { throw ConversationOutboxError.invalidCommand }
+    }
     let lease = try await lifecycle.leaseForRequest()
     if let expectedLease {
       guard lease.userID == expectedLease.userID, lease.generation == expectedLease.generation
@@ -365,6 +402,28 @@ final class FlowConversationModel {
           }
         } catch {
           await editController.close()
+          throw error
+        }
+      }
+      if linkedReplies {
+        let replyController = try await ConversationMealReplyController.open(
+          transport: transport, lifecycle: lifecycle, store: store, keyVault: keyVault,
+          expectedLease: lease)
+        do {
+          let replies = try await FlowConversationMealReplyModel.open(
+            controller: replyController, lifecycle: lifecycle, lease: lease
+          ) { [weak model] result, context in model?.receiveMealReply(result, context: context) }
+          model.mealReplies = replies
+          if let context = model.context { replies.accept(context) }
+          await replies.restore()
+          try await lifecycle.validate(lease)
+          try model.lifetime.check()
+          try Task.checkCancellation()
+          guard model.hasCurrentScope else {
+            throw ConversationMealCommandControllerError.unavailable
+          }
+        } catch {
+          await replyController.close()
           throw error
         }
       }
@@ -500,6 +559,7 @@ final class FlowConversationModel {
           self.historyHasMore = read.page.hasMore
           for descriptor in read.page.threads {
             self.commands[descriptor.threadID] = descriptor.originalCommand
+            self.mealReplies?.observeThread(descriptor)
           }
           if let blocked = self.blockedDecisionID,
             self.threadDescriptors[blocked]?.continuation?.fulfilledBy != nil
@@ -515,9 +575,8 @@ final class FlowConversationModel {
                 || self.pending.contains(where: { $0.id == descriptor.threadID }),
               !self.dismissedQuestions.contains(descriptor.threadID)
             else { continue }
-            // Observed linked questions have no reply dispatcher yet. Preserve
-            // the original and require an explicit empty independent composer;
-            // an answer can never silently become a fresh unlinked report.
+            // Keep the original immutable. Typed answers require the separate
+            // actual question/controller; they never become fresh reports.
             self.blockedDecisionID = descriptor.threadID
             self.latestDecision = nil
           }
@@ -750,6 +809,28 @@ final class FlowConversationModel {
         Task { await editor.undoRegistration(group: group) }
       }, isWorking: !editor.canBeginEditing)
   }
+  private func receiveMealReply(
+    _ result: ConversationMealReplyResultSnapshot, context: ConversationCommandContext
+  ) {
+    guard hasCurrentScope, self.context?.observation.isSameGrant(as: context.observation) == true,
+      result.authUserID == context.authUserID, result.parentBinding.ownerID == context.ownerID,
+      result.parentBinding.epoch == context.epoch
+    else { return }
+    if result.receipt != nil {
+      dismissedQuestions.insert(result.parentBinding.commandID)
+      if blockedDecisionID == result.parentBinding.commandID {
+        blockedDecisionID = nil
+        latestDecision = nil
+      }
+      if deliveredLinkedEffects.insert(result.replyID).inserted { savedEffectRevision &+= 1 }
+    } else if result.question != nil {
+      blockedDecisionID = result.parentBinding.commandID
+      dismissedQuestions.remove(result.parentBinding.commandID)
+    }
+    // This is an actual reply delivery, not a fabricated v1 saved row/group.
+    // Official readers refresh independently; a read outage cannot undo ACK.
+    Task { [weak self] in await self?.loadHistory() }
+  }
   private func receiveMealEdit(
     _ result: ConversationMealEditResultSnapshot, context value: ConversationCommandContext
   ) {
@@ -836,6 +917,7 @@ final class FlowConversationModel {
     await refresh()
     if hasCurrentScope {
       await mealEditor?.restore()
+      await mealReplies?.restore()
       await loadHistory()
     }
   }
@@ -1017,6 +1099,7 @@ final class FlowConversationModel {
     lease = nil
     operation?.cancel()
     mealEditor?.invalidateSynchronously()
+    mealReplies?.invalidateSynchronously()
   }
   func close() async {
     invalidateSynchronously()
@@ -1060,6 +1143,9 @@ final class FlowConversationModel {
     mediaService = nil
     await mealEditor?.close()
     mealEditor = nil
+    await mealReplies?.close()
+    mealReplies = nil
+    deliveredLinkedEffects.removeAll()
     await controller.close()
     if let id = workID {
       workID = nil
@@ -1078,6 +1164,7 @@ final class FlowConversationModel {
     switch event {
     case .scopeSuspended:
       mealEditor?.suspend()
+      mealReplies?.suspend()
       resetHistory()
       currentGroups.removeAll()
       groupRequests.removeAll()
@@ -1108,6 +1195,7 @@ final class FlowConversationModel {
         dismissedQuestions.removeAll()
         knownGroupEdits.removeAll()
         acknowledgedEdits.removeAll()
+        deliveredLinkedEffects.removeAll()
         currentGroups.removeAll()
         groupRequests.removeAll()
         groupFailures.removeAll()
@@ -1122,6 +1210,7 @@ final class FlowConversationModel {
       context = value
       lastIdentity = value.identity
       mealEditor?.accept(value)
+      mealReplies?.accept(value)
       failure = nil
     case .snapshot(let value):
       guard let context, hasCurrentScope else { return }

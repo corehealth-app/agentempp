@@ -6,6 +6,8 @@ enum MobileAPIUnauthorizedReplay: Sendable, Equatable { case standard, never }
 /// preconditions, not part of the immutable command body or source authority.
 enum MobileConversationRequestHeaders: Sendable {
   case session
+  case mealReplySubmit(ConversationMealReplyIntent)
+  case mealReplyReconciliation(ConversationMealReplyIntent)
   case submit(epoch: UUID, ownerID: UUID)
   case reconciliation(epoch: UUID, ownerID: UUID, inputHash: String)
   case mealGroup(epoch: UUID, ownerID: UUID, inputHash: String)
@@ -21,10 +23,30 @@ enum MobileConversationRequestHeaders: Sendable {
     let base = "/api/mobile/v1/conversation/meal-commands"
     if case .journal = self {
     } else if case .threadJournal = self {
+    } else if case .mealReplyReconciliation = self {
     } else {
       guard query.isEmpty else { throw MobileAPIRequestError.invalidConversationHeaders }
     }
     switch self {
+    case .mealReplySubmit(let intent), .mealReplyReconciliation(let intent):
+      let prefix =
+        "/api/mobile/v1/conversation/commands/"
+        + intent.parentBinding.commandID.uuidString.lowercased() + "/replies"
+      switch self {
+      case .mealReplySubmit:
+        guard method == .post, path == prefix, replay == .never,
+          body == intent.wireBody, key?.value == intent.idempotencyKey
+        else { throw MobileAPIRequestError.invalidConversationHeaders }
+      case .mealReplyReconciliation:
+        guard method == .get, path == prefix + "/" + intent.replyID.uuidString.lowercased(),
+          body == nil, key == nil, query.count == 2,
+          Set(query.map(\.name)) == ["parent_input_hash", "reply_input_hash"],
+          query.first(where: { $0.name == "parent_input_hash" })?.value
+            == intent.parentBinding.inputHash,
+          query.first(where: { $0.name == "reply_input_hash" })?.value == intent.replyInputHash
+        else { throw MobileAPIRequestError.invalidConversationHeaders }
+      default: throw MobileAPIRequestError.invalidConversationHeaders
+      }
     case .mealEdit(let epoch, let owner, let hash),
       .mealEditReconciliation(let epoch, let owner, let hash):
       let reconciliation: Bool
@@ -96,6 +118,13 @@ enum MobileConversationRequestHeaders: Sendable {
     request.setValue("meal-command-v1", forHTTPHeaderField: "X-Conversation-Protocol")
     switch self {
     case .session: break
+    case .mealReplySubmit(let intent), .mealReplyReconciliation(let intent):
+      request.setValue(
+        intent.parentBinding.epoch.uuidString.lowercased(),
+        forHTTPHeaderField: "X-Conversation-Epoch")
+      request.setValue(
+        intent.parentBinding.ownerID.uuidString.lowercased(),
+        forHTTPHeaderField: "X-Conversation-Owner")
     case .submit(let epoch, let owner), .journal(let epoch, let owner),
       .threadJournal(let epoch, let owner):
       request.setValue(epoch.uuidString.lowercased(), forHTTPHeaderField: "X-Conversation-Epoch")

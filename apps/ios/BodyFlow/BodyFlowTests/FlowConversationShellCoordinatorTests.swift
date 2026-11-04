@@ -48,7 +48,8 @@ struct FlowConversationShellCoordinatorTests {
       userID: f.edit.disk.lease.userID, source: f.source)
     await coordinator.load()
     let owned = await f.edit.http.lifecycle.workIDs
-    #expect(owned.count == 6)
+    // Report, edit and linked reply each own outbox/controller/UI-model work.
+    #expect(owned.count == 9)
     let events = await f.edit.http.lifecycle.finishedWorkEvents
     let completed = Task { () -> Bool in
       var iterator = events.makeAsyncIterator()

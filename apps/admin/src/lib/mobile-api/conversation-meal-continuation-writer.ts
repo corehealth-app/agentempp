@@ -33,6 +33,7 @@ const refusals = new Set([
   'question_conflict',
   'source_conflict',
   'day_closed',
+  'rate_limited',
   'prepared_required',
   'prepared_conflict',
 ])

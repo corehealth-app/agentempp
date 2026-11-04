@@ -3,9 +3,11 @@ import { z } from 'zod'
 import { conversationMealCommandsEnabled } from './conversation-meal-command-routes'
 import { createConversationMealJournalService } from './conversation-meal-journal-service'
 import { conversationJournalUUID } from './conversation-meal-journal-store'
+import { createConversationMealReadonlyRuntime } from './conversation-meal-readonly-runtime'
 import { createConversationMealThreadPageService } from './conversation-meal-thread-page-service'
 import { MobileApiError, mobileSuccess } from './http'
-import { createMobileRoute, type MobileRouteRuntime } from './route'
+import { authenticatedReevaluationOwner } from './reevaluation-cycle-service'
+import { createMobileRoute, type MobileRouteContext, type MobileRouteRuntime } from './route'
 
 export interface ConversationMealJournalRoutePorts {
   readonly version2Service?: (
@@ -46,35 +48,71 @@ export function createConversationMealJournalRoutes(
 ) {
   const enabled = ports.enabled?.bind(ports) ?? conversationMealCommandsEnabled,
     service = ports.service?.bind(ports) ?? createConversationMealJournalService,
-    version2Service = ports.version2Service?.bind(ports) ?? createConversationMealThreadPageService
-  return Object.freeze({
-    GET: createMobileRoute(async (context) => {
-      if (!enabled())
-        throw new MobileApiError(
-          503,
-          'conversation_commands_unavailable',
-          'Conversation command capability is unavailable',
-        )
-      const owner = conversationJournalUUID.parse(
-        context.request.headers.get('X-Conversation-Owner'),
+    version2Service = ports.version2Service?.bind(ports) ?? createConversationMealThreadPageService,
+    readonlyRuntime = runtime ?? createConversationMealReadonlyRuntime(),
+    reauthenticate = readonlyRuntime.authenticate.bind(readonlyRuntime)
+  const handler = async (context: MobileRouteContext) => {
+    if (!enabled())
+      throw new MobileApiError(
+        503,
+        'conversation_commands_unavailable',
+        'Conversation command capability is unavailable',
       )
-      if (owner !== context.auth.userId)
+    const owner = conversationJournalUUID.parse(context.request.headers.get('X-Conversation-Owner'))
+    if (owner !== context.auth.userId)
+      throw new MobileApiError(
+        409,
+        'conversation_patient_changed',
+        'The authenticated patient has changed',
+      )
+    const epoch = conversationJournalUUID.parse(
+        context.request.headers.get('X-Conversation-Epoch'),
+      ),
+      { version, ...input } = query(context.request)
+    // Freeze original identity and request headers before any service await.
+    // A late callback cannot replace the original bearer for the final check.
+    const original =
+      version === '2'
+        ? Object.freeze({
+            subject: context.auth.authUserId,
+            patient: authenticatedReevaluationOwner(context.auth),
+            token: context.auth.accessToken,
+            request: new Request(context.request, {
+              headers: new Headers(context.request.headers),
+            }),
+          })
+        : null
+    const value = await (version === '2' ? version2Service : service)(context.supabase).read(
+      context.auth,
+      { epoch, ...input },
+    )
+    if (original) {
+      const current = await reauthenticate(original.request, context.supabase)
+      if (
+        current.accessToken !== original.token ||
+        current.authUserId !== original.subject ||
+        current.identity.id !== original.subject ||
+        current.patient.authUserId !== original.subject ||
+        authenticatedReevaluationOwner(current) !== original.patient
+      )
         throw new MobileApiError(
           409,
           'conversation_patient_changed',
-          'The authenticated patient has changed',
+          'The original authenticated patient has changed',
         )
-      const epoch = conversationJournalUUID.parse(
-          context.request.headers.get('X-Conversation-Epoch'),
-        ),
-        { version, ...input } = query(context.request)
-      return mobileSuccess(
-        await (version === '2' ? version2Service : service)(context.supabase).read(context.auth, {
-          epoch,
-          ...input,
-        }),
-        context.requestId,
-      )
-    }, runtime),
+    }
+    return mobileSuccess(value, context.requestId)
+  }
+  const legacy = createMobileRoute(handler, runtime),
+    readOnly = createMobileRoute(handler, readonlyRuntime)
+  return Object.freeze({
+    GET(request: Request) {
+      const versions = new URL(request.url).searchParams.getAll('version')
+      // Only the exact legacy selectors retain its established bootstrap path.
+      // Invalid selectors use read-only Auth before the closed query rejects them.
+      return (
+        versions.length === 0 || (versions.length === 1 && versions[0] === '1') ? legacy : readOnly
+      )(request)
+    },
   })
 }

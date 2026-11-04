@@ -7,6 +7,7 @@ import {
   journalClinical,
   journalCommand,
 } from './__fixtures__/conversation-journal'
+import { replyPresentation } from './__fixtures__/conversation-meal-reply'
 import {
   threadGoldenPage,
   threadPage,
@@ -42,6 +43,87 @@ function setup(raw: unknown = threadPage()) {
   }
 }
 describe('real public v2 read projection', () => {
+  it('reads actual linked historical feedback with real parent/child binding and never enriches on GET', async () => {
+    const raw = threadPage(),
+      fx = raw.items[0] as ReturnType<
+        typeof import('./__fixtures__/conversation-thread-page').threadFulfillment
+      >
+    Object.assign(fx, {
+      feedback_ref: {
+        schema: 'registration.feedback.v2',
+        registration_id: fx.receipt.registration_id,
+      },
+    })
+    const read = vi.fn().mockResolvedValue(raw),
+      capture = vi
+        .fn()
+        .mockResolvedValueOnce(journalClinical('2026-11-04T12:02:00.000001Z'))
+        .mockResolvedValueOnce(journalClinical()),
+      readHistorical = vi.fn().mockResolvedValue(null),
+      ensureOriginal = vi.fn()
+    const linkedPresentation = { readHistorical, ensureOriginal }
+    const service = createConversationMealThreadPageService({} as ServiceClient, {
+      store: { read },
+      clinical: { capture },
+      presentation: { readHistorical: vi.fn() },
+      linkedPresentation,
+    })
+    const result = await service.read(journalAuth(), { epoch: raw.epoch, limit: 10, cursor: null })
+    expect(result.items[0]).toMatchObject({ kind: 'fulfillment', feedback: null })
+    expect(readHistorical).toHaveBeenCalledWith({
+      auth: journalAuth(),
+      binding: {
+        parentBinding: raw.threads[0].parent_binding,
+        childBinding: fx.child_binding,
+        parentDecisionHash: raw.threads[0].terminal_receipt.decision_hash,
+        receipt: fx.receipt,
+      },
+    })
+    expect(ensureOriginal).not.toHaveBeenCalled()
+  })
+
+  it('publishes qualified child historical sections using only actual common receipt facts', async () => {
+    const raw = threadPage(),
+      fx = raw.items[0] as ReturnType<
+        typeof import('./__fixtures__/conversation-thread-page').threadFulfillment
+      >,
+      presentation = replyPresentation()
+    Object.assign(fx, {
+      feedback_ref: {
+        schema: 'registration.feedback.v2',
+        registration_id: fx.receipt.registration_id,
+      },
+    })
+    const current = readCurrentClinicalState(journalClinical(), raw.owner_id)
+    presentation.original.registration_id = fx.receipt.registration_id
+    presentation.original.local_date = fx.receipt.local_date
+    presentation.provenance.command_id = fx.child_binding.command_id
+    presentation.provenance.epoch = raw.epoch
+    presentation.provenance.observed_at = current.observed_at
+    presentation.current_policy = structuredClone(projectCurrentClinicalPublicPolicy(current))
+    presentation.recorded.meal_kind = fx.receipt.meal_type
+    presentation.recorded.items = fx.receipt.log_ids.map((id, index) => ({
+      ...presentation.recorded.items[index % presentation.recorded.items.length],
+      log_id: id,
+    }))
+    const f = setup(raw),
+      readHistorical = vi.fn().mockResolvedValue(presentation),
+      capture = vi
+        .fn()
+        .mockResolvedValueOnce(journalClinical('2026-11-04T12:02:00.000001Z'))
+        .mockResolvedValueOnce(journalClinical())
+    const service = createConversationMealThreadPageService({} as ServiceClient, {
+      store: { read: f.read },
+      clinical: { capture },
+      presentation: { readHistorical: f.readHistorical },
+      linkedPresentation: { readHistorical },
+    })
+    const result = await service.read(journalAuth(), f.request)
+    expect(result.items[0]).toMatchObject({ kind: 'fulfillment', feedback: presentation })
+    expect(f.readHistorical).not.toHaveBeenCalled()
+    expect(readHistorical).toHaveBeenCalledTimes(1)
+  })
+
   it('matches the five-variant literal public golden for native consumers', async () => {
     const f = setup(threadGoldenPage())
     const expected = JSON.parse(

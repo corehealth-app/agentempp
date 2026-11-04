@@ -313,8 +313,16 @@ export function createConversationMealContinuationService(
       if (initial.action !== 'available') {
         if (readOnly || !bound || !['absent', 'reply_conflict'].includes(initial.action))
           return result('held', initial.action)
-        const admitted = observed(await guarded(() => writer.admit(bound)))
-        if (!admitted) return result('reconciliation_required', 'admission_uncertain')
+        const admission = await guarded(() => writer.admit(bound))
+        const admitted = observed(admission)
+        if (!admitted) {
+          const actual = detachConversationContinuationReadJson(
+            admission,
+          ) as ConversationMealContinuationWriteOutcome
+          if (actual.status === 'reconciliation_required' && actual.refusal === 'rate_limited')
+            return result('held', 'rate_limited')
+          return result('reconciliation_required', 'admission_uncertain')
+        }
         state = admitted
       } else state = initial
       const done = settled(state)

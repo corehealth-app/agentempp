@@ -6,6 +6,7 @@ import { z } from 'zod'
 import type { MobileAuthContext } from './auth'
 import { conversationJournalBindingSchema } from './conversation-command-candidate-contracts'
 import type { BoundConversationMealCommand } from './conversation-command-contracts'
+import { detachConversationMealEditJson } from './conversation-meal-edit-contracts'
 import type { ConversationMealFeedbackPresentation } from './conversation-meal-feedback-presentation'
 import {
   type ConversationMealEffectReceipt,
@@ -186,9 +187,12 @@ function guardedFeedback(
   b: {
     owner: string
     epoch: string
-    command: BoundConversationMealCommand
+    commandId: string
     admittedAt: string
-    receipt: ConversationMealEffectReceipt
+    receipt: Pick<
+      ConversationMealEffectReceipt,
+      'registration_id' | 'local_date' | 'meal_type' | 'log_ids'
+    >
   },
 ): ConversationMealFeedbackPresentation | null {
   if (raw === null) return null
@@ -206,7 +210,7 @@ function guardedFeedback(
       Buffer.byteLength(JSON.stringify(v), 'utf8') > 200000 ||
       v.original.registration_id !== b.receipt.registration_id ||
       v.original.local_date !== b.receipt.local_date ||
-      v.provenance.command_id !== b.command.commandId ||
+      v.provenance.command_id !== b.commandId ||
       v.provenance.epoch !== b.epoch ||
       v.current_policy.observed_at !== v.provenance.observed_at ||
       instant(v.provenance.observed_at) < instant(b.admittedAt)
@@ -252,6 +256,56 @@ function guardedFeedback(
   }
 }
 
+/** Closed optional presentation only. Caller first proves the actual report or
+ * linked effect, its original binding and current scope; this is not persistence
+ * or Auth authority and constructs no report command/receipt for a child. */
+export function parseConversationMealHistoricalPresentation(
+  raw: unknown,
+  binding: {
+    readonly ownerId: string
+    readonly commandId: string
+    readonly epoch: string
+    readonly admittedAt: string
+    readonly receipt: Pick<
+      ConversationMealEffectReceipt,
+      'registration_id' | 'local_date' | 'meal_type' | 'log_ids'
+    >
+  },
+): ConversationMealFeedbackPresentation | null {
+  try {
+    const b = z
+      .object({
+        ownerId: uuid,
+        commandId: uuid,
+        epoch: uuid,
+        admittedAt: conversationWriterClock,
+        receipt: z
+          .object({
+            registration_id: uuid,
+            local_date: z.string().date(),
+            meal_type: mealKind,
+            log_ids: z
+              .array(uuid)
+              .min(1)
+              .max(30)
+              .refine((a) => new Set(a).size === a.length),
+          })
+          .strict(),
+      })
+      .strict()
+      .parse(detachConversationMealEditJson(binding))
+    return guardedFeedback(detachConversationMealEditJson(raw), {
+      owner: b.ownerId,
+      commandId: b.commandId,
+      epoch: b.epoch,
+      admittedAt: b.admittedAt,
+      receipt: b.receipt,
+    })
+  } catch {
+    return null
+  }
+}
+
 /** Only after factual success and current-policy guarded read. No writer,
  * model, clinical recapture or enrichment retry occurs on this boundary. */
 export function projectSavedConversationMealCommandResult(
@@ -278,7 +332,7 @@ export function projectSavedConversationMealCommandResult(
     const feedback = guardedFeedback(input.feedback, {
       owner,
       epoch,
-      command,
+      commandId: command.commandId,
       admittedAt: b.admitted_at,
       receipt,
     })

@@ -1,0 +1,166 @@
+{
+  "provenance": "Actual unchanged editCanonical helper evaluated from conversation-meal-edit-contracts.ts at 09965cdf; SHA256; synthetic input only.",
+  "cases": [
+    {
+      "input": {
+        "schema": "conversation.meal-edit.v1",
+        "expected_revision": 0,
+        "expected_version": "v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "kind": "save",
+        "record_id": "10000000-0000-4000-8000-000000000005",
+        "items": [
+          {
+            "food_name": "Arroz cozido",
+            "quantity_g": 200,
+            "quantity_basis": "stated",
+            "user_kcal": 0
+          }
+        ]
+      },
+      "operation_input_hash": "5419dd891de8d02ab7386fe10d069e596026008d087639f821a7c4da5293e89c"
+    },
+    {
+      "input": {
+        "schema": "conversation.meal-edit.v1",
+        "expected_revision": 0,
+        "expected_version": "v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "kind": "save",
+        "record_id": "10000000-0000-4000-8000-000000000005",
+        "items": [
+          {
+            "food_name": "Arroz cozido",
+            "quantity_g": 200,
+            "quantity_basis": "stated",
+            "user_kcal": 1e-7
+          }
+        ]
+      },
+      "operation_input_hash": "b73fe33e7751351bcad5132f1fccb42002c087cf184efd39f7c341809ba5bd90"
+    },
+    {
+      "input": {
+        "schema": "conversation.meal-edit.v1",
+        "expected_revision": 0,
+        "expected_version": "v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "kind": "save",
+        "record_id": "10000000-0000-4000-8000-000000000005",
+        "items": [
+          {
+            "food_name": "Arroz cozido",
+            "quantity_g": 200,
+            "quantity_basis": "stated",
+            "user_kcal": 0.000001
+          }
+        ]
+      },
+      "operation_input_hash": "9e58635223d7c0622a2a08e94a608995211484a5bd52aaf47c122842ffd63dd3"
+    },
+    {
+      "input": {
+        "schema": "conversation.meal-edit.v1",
+        "expected_revision": 0,
+        "expected_version": "v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "kind": "save",
+        "record_id": "10000000-0000-4000-8000-000000000005",
+        "items": [
+          {
+            "food_name": "Arroz cozido",
+            "quantity_g": 200,
+            "quantity_basis": "stated",
+            "user_kcal": 0.1
+          }
+        ]
+      },
+      "operation_input_hash": "39e6e7daa23aa71a76fd5daa3666ad1158694498d4b233d67bf5e16c7ed46cb3"
+    },
+    {
+      "input": {
+        "schema": "conversation.meal-edit.v1",
+        "expected_revision": 0,
+        "expected_version": "v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "kind": "save",
+        "record_id": "10000000-0000-4000-8000-000000000005",
+        "items": [
+          {
+            "food_name": "Arroz cozido",
+            "quantity_g": 200,
+            "quantity_basis": "stated",
+            "user_kcal": 35
+          }
+        ]
+      },
+      "operation_input_hash": "98d82b9d2a4a22f67026b47e28b842051d92023a60df0b9cd83ad6a0c30ebb41"
+    },
+    {
+      "input": {
+        "schema": "conversation.meal-edit.v1",
+        "expected_revision": 0,
+        "expected_version": "v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "kind": "save",
+        "record_id": "10000000-0000-4000-8000-000000000005",
+        "items": [
+          {
+            "food_name": "Arroz cozido",
+            "quantity_g": 200,
+            "quantity_basis": "stated",
+            "user_kcal": 9999
+          }
+        ]
+      },
+      "operation_input_hash": "fc2aaa70e7645cb3e36860a4d9465be031e69b6e622cdca701d01112e89ae801"
+    },
+    {
+      "input": {
+        "schema": "conversation.meal-edit.v1",
+        "expected_revision": 0,
+        "expected_version": "v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "kind": "save",
+        "record_id": "10000000-0000-4000-8000-000000000005",
+        "items": [
+          {
+            "food_name": "Arroz cozido",
+            "quantity_g": 200,
+            "quantity_basis": "stated",
+            "user_kcal": 20000
+          }
+        ]
+      },
+      "operation_input_hash": "fce2616d5e310dc20dcfcd39cf88b7fe86b28ac74a6e638a86cc58dd711f61c5"
+    },
+    {
+      "input": {
+        "schema": "conversation.meal-edit.v1",
+        "expected_revision": 0,
+        "expected_version": "v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "kind": "save",
+        "record_id": "10000000-0000-4000-8000-000000000005",
+        "items": [
+          {
+            "food_name": "Arroz cozido",
+            "quantity_g": 200,
+            "quantity_basis": "stated",
+            "user_kcal": 1.2345678901234567
+          }
+        ]
+      },
+      "operation_input_hash": "3646c100afa085f6d6c31c92d019eacb4947791255b1f929f870f6d17caf68fb"
+    },
+    {
+      "input": {
+        "schema": "conversation.meal-edit.v1",
+        "expected_revision": 0,
+        "expected_version": "v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "kind": "save",
+        "record_id": "10000000-0000-4000-8000-000000000005",
+        "items": [
+          {
+            "food_name": "whey/é é\n",
+            "quantity_g": 200,
+            "quantity_basis": "stated"
+          }
+        ]
+      },
+      "operation_input_hash": "67698f97e968599e72163933e8fd26972217f60e477f8b68dd17ddb4d0ff7157"
+    }
+  ]
+}

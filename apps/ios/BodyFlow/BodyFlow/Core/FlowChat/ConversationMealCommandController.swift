@@ -42,9 +42,16 @@ actor ConversationMealCommandController {
         self.authority = authority; self.enqueueAuthority = enqueueAuthority; self.lease = lease
     }
     static func open(transport: MobileAPITransport, lifecycle: any SessionLifecycleProviding,
-                     store: EncryptedConversationOutboxStore = .device, keyVault: ConversationOutboxKeyVault = .init()) async throws -> Self {
+                     store: EncryptedConversationOutboxStore = .device, keyVault: ConversationOutboxKeyVault = .init(),
+                     expectedLease: SessionLease? = nil) async throws -> Self {
         guard transport.configuredOrigin != nil else { throw MobileAPITransportError.unavailableConfiguration }
         let lease = try await lifecycle.leaseForRequest()
+        if let expectedLease {
+            guard lease.userID == expectedLease.userID, lease.generation == expectedLease.generation else {
+                throw SessionLifecycleError.sessionSuperseded
+            }
+            try await lifecycle.validate(expectedLease)
+        }
         try await lifecycle.validate(lease); try Task.checkCancellation()
         let repository = try await MobileConversationCommandRepository.scoped(transport: transport, lease: lease)
         let outbox = try await ConversationOutboxSession.open(lifecycle: lifecycle, store: store, keyVault: keyVault, expectedLease: lease)

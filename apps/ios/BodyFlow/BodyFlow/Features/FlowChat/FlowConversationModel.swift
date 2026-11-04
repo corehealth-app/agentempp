@@ -218,6 +218,10 @@ final class FlowConversationModel {
     guard !isClosed, let context else { return false }
     return (try? context.withCurrentAuthority { true }) == true
   }
+  func withCurrentAuthority<Value>(_ operation: () throws -> Value) throws -> Value {
+    guard !isClosed, let context else { throw ConversationOutboxError.sessionClosed }
+    return try context.withCurrentAuthority(operation)
+  }
 
   private init(
     controller: any ConversationMealCommandControlling, lifecycle: any SessionLifecycleProviding,
@@ -236,14 +240,22 @@ final class FlowConversationModel {
     store: EncryptedConversationOutboxStore = .device,
     keyVault: ConversationOutboxKeyVault = .init(), media: FlowConversationMediaDependencies? = nil,
     editing: FlowConversationMealEditingDependencies? = nil,
-    historyPageSize: Int = 10
+    historyPageSize: Int = 10, expectedLease: SessionLease? = nil
   ) async throws -> FlowConversationModel {
     guard (1...25).contains(historyPageSize) else { throw ConversationOutboxError.invalidCommand }
     let lease = try await lifecycle.leaseForRequest()
+    if let expectedLease {
+      guard lease.userID == expectedLease.userID, lease.generation == expectedLease.generation
+      else {
+        throw SessionLifecycleError.sessionSuperseded
+      }
+      try await lifecycle.validate(expectedLease)
+    }
     let history = try await MobileConversationHistoryRepository.scoped(
       transport: transport, lifecycle: lifecycle, lease: lease)
     let controller = try await ConversationMealCommandController.open(
-      transport: transport, lifecycle: lifecycle, store: store, keyVault: keyVault)
+      transport: transport, lifecycle: lifecycle, store: store, keyVault: keyVault,
+      expectedLease: lease)
     let model = FlowConversationModel(
       controller: controller, lifecycle: lifecycle, lease: lease, media: media, history: history,
       historyPageSize: historyPageSize)
@@ -270,7 +282,7 @@ final class FlowConversationModel {
       if let editing {
         let editController = try await ConversationMealEditController.open(
           transport: transport, lifecycle: lifecycle, store: editing.store,
-          keyVault: editing.keyVault)
+          keyVault: editing.keyVault, expectedLease: lease)
         do {
           let editor = try await FlowConversationMealEditModel.open(
             controller: editController,
@@ -755,9 +767,15 @@ final class FlowConversationModel {
     }
   }
   func cancelTransientWork() { operation?.cancel() }
-  func close() async {
+  func invalidateSynchronously() {
     lifetime.close()
     closed = true
+    lease = nil
+    operation?.cancel()
+    mealEditor?.invalidateSynchronously()
+  }
+  func close() async {
+    invalidateSynchronously()
     publicationID = UUID()
     refreshingID = nil
     operation?.cancel()

@@ -36,14 +36,21 @@ struct BodyFlowApp: App {
         } else { billingFixture = nil }
         precondition(navigationFixture == nil || billingFixture == nil, "Select only one synthetic fixture")
         billingUIFixture = billingFixture
-        let configuration = navigationFixture?.configuration ?? billingFixture?.configuration ?? AppLaunchConfiguration.current()
+        let runtime = PerformeRuntimeConfiguration.load(from: Bundle.main.infoDictionary)
+        // An explicit bundled real candidate uses the existing real-account
+        // configuration in Debug as well. Test/demo arguments can only opt
+        // out; no launch argument can grant the command runtime or identity.
+        let requestsFlowAccount = FlowConversationRuntimeSelection.load(
+            Bundle.main.infoDictionary?[FlowConversationRuntimeSelection.infoKey]).requestsRealAccount
+        let usesDemoTest = ProcessInfo.processInfo.arguments.contains { $0.hasPrefix("--ui-testing") }
+        let defaultConfiguration = requestsFlowAccount && !usesDemoTest
+            ? AppLaunchConfiguration.resolve(arguments: [], buildFlavor: .release)
+            : AppLaunchConfiguration.current()
+        let configuration = navigationFixture?.configuration ?? billingFixture?.configuration ?? defaultConfiguration
         let dependencies: AppDependencies
         if let navigationFixture { dependencies = navigationFixture.dependencies }
         else if let billingFixture { dependencies = billingFixture.dependencies }
         else {
-            let runtime = PerformeRuntimeConfiguration.load(
-                from: Bundle.main.infoDictionary
-            )
             dependencies = AppDependencies.make(
                 configuration: configuration,
                 mobileAPIConfigurationProvider: runtime.map {
@@ -53,7 +60,8 @@ struct BodyFlowApp: App {
                 },
                 supabaseAuthConfiguration: runtime?.supabase,
                 currentClinicalRuntimeMode: runtime?.currentClinicalRuntimeMode ?? .legacy,
-                currentClinicalQABinding: runtime?.currentClinicalQABinding ?? .absent
+                currentClinicalQABinding: runtime?.currentClinicalQABinding ?? .absent,
+                flowConversationRuntime: runtime?.flowConversationRuntime ?? .legacy
             )
         }
         #else
@@ -70,12 +78,14 @@ struct BodyFlowApp: App {
             },
             supabaseAuthConfiguration: runtime?.supabase,
             currentClinicalRuntimeMode: runtime?.currentClinicalRuntimeMode ?? .legacy,
-            currentClinicalQABinding: runtime?.currentClinicalQABinding ?? .absent
+            currentClinicalQABinding: runtime?.currentClinicalQABinding ?? .absent,
+            flowConversationRuntime: runtime?.flowConversationRuntime ?? .legacy
         )
         #endif
         let mealRecordLifetime: MealRecordAuthenticationLifetime? =
             dependencies.mealRecordBindingSource != nil || dependencies.workoutRegistrationSessionSource != nil
                 || dependencies.billingSessionSource != nil
+                || dependencies.flowConversationSessions != nil
                 ? MealRecordAuthenticationLifetime() : nil
         self.mealRecordLifetime = mealRecordLifetime
         self.configuration = configuration

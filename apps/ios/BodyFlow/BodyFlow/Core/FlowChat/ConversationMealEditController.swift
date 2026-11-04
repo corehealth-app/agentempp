@@ -73,9 +73,17 @@ actor ConversationMealEditController {
     transport: MobileAPITransport, lifecycle: any SessionLifecycleProviding,
     store: EncryptedConversationMealEditOutboxStore = .device,
     keyVault: ConversationOutboxKeyVault = .init(
-      service: ConversationMealEditOutboxSession.keychainService)
+      service: ConversationMealEditOutboxSession.keychainService),
+    expectedLease: SessionLease? = nil
   ) async throws -> Self {
     let lease = try await lifecycle.leaseForRequest()
+    if let expectedLease {
+      guard lease.userID == expectedLease.userID, lease.generation == expectedLease.generation
+      else {
+        throw SessionLifecycleError.sessionSuperseded
+      }
+      try await lifecycle.validate(expectedLease)
+    }
     try await lifecycle.validate(lease)
     let repository = try await MobileConversationMealEditRepository.scoped(
       transport: transport, lifecycle: lifecycle, lease: lease)

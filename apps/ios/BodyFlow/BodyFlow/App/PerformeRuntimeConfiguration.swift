@@ -10,6 +10,7 @@ struct PerformeRuntimeConfiguration: Equatable, Sendable {
     let mobileAPI: MobileAPIConfiguration
     var currentClinicalRuntimeMode: CurrentClinicalRuntimeMode = .legacy
     var currentClinicalQABinding: CurrentClinicalQABinding = .absent
+    var flowConversationRuntime: FlowConversationRuntimeSelection = .legacy
 
     static func load(from values: [String: Any]?) -> PerformeRuntimeConfiguration? {
         guard let values,
@@ -38,7 +39,8 @@ struct PerformeRuntimeConfiguration: Equatable, Sendable {
             supabase: supabase,
             mobileAPI: mobileAPI,
             currentClinicalRuntimeMode: clinicalMode,
-            currentClinicalQABinding: qaBinding
+            currentClinicalQABinding: qaBinding,
+            flowConversationRuntime: .load(values[FlowConversationRuntimeSelection.infoKey])
         )
     }
 

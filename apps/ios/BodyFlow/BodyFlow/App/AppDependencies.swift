@@ -66,6 +66,9 @@ struct AppDependencies: Sendable {
     var workoutRegistrationSessionSource: WorkoutRegistrationSessionBindingSource? = nil
     /// Store identity and access reads use their own original Auth scope.
     var billingSessionSource: BillingSessionSource? = nil
+    /// Explicit bundled candidate only; absence preserves the release shell.
+    /// This inert source performs its own actual Auth/session bind on open.
+    var flowConversationSessions: FlowConversationSessionSource? = nil
 
     var patientTimeZone: PatientTimeZoneContext {
         patientTimeZoneStore.current
@@ -115,7 +118,8 @@ struct AppDependencies: Sendable {
         signupBodyPhotoCleanupStore: SignupBodyPhotoCleanupStore = .device,
         enablesConfirmedMealEditing: Bool = false,
         currentClinicalRuntimeMode: CurrentClinicalRuntimeMode = .legacy,
-        currentClinicalQABinding: CurrentClinicalQABinding = .absent
+        currentClinicalQABinding: CurrentClinicalQABinding = .absent,
+        flowConversationRuntime: FlowConversationRuntimeSelection = .legacy
     ) -> AppDependencies {
         let secureStore: any SecureStoring = switch configuration.demoStorageBoundary {
         case .memory:
@@ -749,6 +753,21 @@ struct AppDependencies: Sendable {
                     deviceDraft: onboardingDeviceDraft, qaBinding: currentClinicalQABinding)
             } else { nil }
 
+        let flowConversationSessions: FlowConversationSessionSource?
+        if flowConversationRuntime == .mealCommandV1, configuration.mode != .demo,
+           authentication is SupabaseAuthenticationService, currentClinicalRuntime != nil,
+           case .candidate = currentClinicalQABinding,
+           let transport = apiClient as? MobileAPITransport,
+           transport.supportsCurrentClinicalSessionBinding, let releaseLifecycle,
+           let storageOrigin = supabaseAuthConfiguration?.origin {
+            // The complete clinical family already matched both exact origins.
+            // Provenance is build selection, not Auth or clinical authority.
+            let staging = MediaStagingStore()
+            flowConversationSessions = FlowConversationSessionSource(
+                transport: transport, lifecycle: releaseLifecycle,
+                media: .init(uploader: StorageUploadTransport(storageOrigin: storageOrigin), staging: staging))
+        } else { flowConversationSessions = nil }
+
         return AppDependencies(
             apiClient: apiClient,
             authentication: authentication,
@@ -786,7 +805,8 @@ struct AppDependencies: Sendable {
             guidedTutorial: guidedTutorial,
             mealRecordBindingSource: mealRecordBindingSource,
             workoutRegistrationSessionSource: workoutRegistrationSessionSource,
-            billingSessionSource: billingSessionSource
+            billingSessionSource: billingSessionSource,
+            flowConversationSessions: flowConversationSessions
         )
     }
 

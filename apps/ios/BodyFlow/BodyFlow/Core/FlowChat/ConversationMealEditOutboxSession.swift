@@ -180,11 +180,20 @@ actor ConversationMealEditOutboxSession {
     }
     return try ticket(entry)
   }
-  func markWaiting(ticket: ConversationMealEditOutboxTicket, hold: ConversationMealEditOutboxHold)
+  func markWaiting(
+    ticket: ConversationMealEditOutboxTicket, hold: ConversationMealEditOutboxHold,
+    server: ConversationOutboxServerObservation? = nil
+  )
     async throws
   {
     try validateTicket(ticket)
-    try await stateOperation { store, owner, key in
+    if let server {
+      try validateObservation(server)
+      guard ticket.originalPatientOwnerID == server.ownerID,
+        ticket.originalServerEpoch == server.epoch
+      else { throw ConversationOutboxError.invalidServerObservation }
+    }
+    try await stateOperation(server: server) { store, owner, key in
       try store.update(owner: owner, key: key) { entries in
         let index = try editOutboxIndex(ticket, in: entries)
         guard entries[index].state != .queued else {
@@ -242,12 +251,20 @@ actor ConversationMealEditOutboxSession {
       try server.withCurrentAuthority { publish(.init(result: result)) }
     }
   }
-  func discardUnsent(id: ConversationMealEditOutboxID) async throws {
+  func discardUnsent(
+    id: ConversationMealEditOutboxID, server: ConversationOutboxServerObservation? = nil
+  ) async throws {
+    if let server { try validateObservation(server) }
     let lifetime = lifetime
-    try await stateOperation { store, owner, key in
+    try await stateOperation(server: server) { store, owner, key in
       try store.update(owner: owner, key: key) { entries in
         guard let index = entries.firstIndex(where: { $0.id == id }) else {
           throw ConversationOutboxError.commandNotFound
+        }
+        if let server {
+          guard entries[index].operation.ownerID == server.ownerID,
+            entries[index].operation.epoch == server.epoch
+          else { throw ConversationOutboxError.invalidServerObservation }
         }
         guard entries[index].state == .queued else {
           throw ConversationOutboxError.reconciliationRequired
@@ -257,11 +274,19 @@ actor ConversationMealEditOutboxSession {
       lifetime.recordClosed(id)
     }
   }
-  func holdForLocalReset(id: ConversationMealEditOutboxID) async throws {
-    try await stateOperation { store, owner, key in
+  func holdForLocalReset(
+    id: ConversationMealEditOutboxID, server: ConversationOutboxServerObservation? = nil
+  ) async throws {
+    if let server { try validateObservation(server) }
+    try await stateOperation(server: server) { store, owner, key in
       try store.update(owner: owner, key: key) { entries in
         guard let index = entries.firstIndex(where: { $0.id == id }) else {
           throw ConversationOutboxError.commandNotFound
+        }
+        if let server {
+          guard entries[index].operation.ownerID == server.ownerID,
+            entries[index].operation.epoch == server.epoch
+          else { throw ConversationOutboxError.invalidServerObservation }
         }
         if entries[index].state != .queued { entries[index].state = .waitingReconciliation }
         entries[index].hold = .reset

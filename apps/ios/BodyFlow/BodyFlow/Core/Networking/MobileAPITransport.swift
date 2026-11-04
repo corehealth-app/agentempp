@@ -94,9 +94,17 @@ struct MobileAPITransport: Sendable {
         return MobileResponse(data: envelope.data, meta: envelope.meta)
     }
 
+    /// Preserves status for protocols where 202 pending is distinct from a
+    /// terminal 200 packet. Uses the same auth, cancellation and URL policy.
+    func executeHTTP<Response: Decodable & Sendable>(
+        _ request: MobileAPIRequest<Response>
+    ) async throws -> MobileAPIHTTPResponse<Response> {
+        try await executeSuccessEnvelope(request)
+    }
+
     private func executeSuccessEnvelope<Response: Decodable & Sendable>(
         _ request: MobileAPIRequest<Response>
-    ) async throws -> MobileAPISuccessEnvelope<Response> {
+    ) async throws -> MobileAPIHTTPResponse<Response> {
         guard let configuration else {
             throw MobileAPITransportError.unavailableConfiguration
         }
@@ -125,7 +133,8 @@ struct MobileAPITransport: Sendable {
             return try await validatedDecode(
                 Response.self,
                 result: firstResult,
-                lease: lease
+                lease: lease,
+                closedEnvelope: request.conversation != nil
             )
         }
 
@@ -142,7 +151,8 @@ struct MobileAPITransport: Sendable {
             return try decode(
                 Response.self,
                 data: firstResult.data,
-                response: firstResult.response
+                response: firstResult.response,
+                closedEnvelope: request.conversation != nil
             )
         }
 
@@ -155,7 +165,8 @@ struct MobileAPITransport: Sendable {
         return try await validatedDecode(
             Response.self,
             result: secondResult,
-            lease: refreshedLease
+            lease: refreshedLease,
+            closedEnvelope: request.conversation != nil
         )
     }
 
@@ -184,8 +195,9 @@ struct MobileAPITransport: Sendable {
     private func validatedDecode<Response: Decodable & Sendable>(
         _ type: Response.Type,
         result: NetworkResult,
-        lease: SessionLease
-    ) async throws -> MobileAPISuccessEnvelope<Response> {
+        lease: SessionLease,
+        closedEnvelope: Bool
+    ) async throws -> MobileAPIHTTPResponse<Response> {
         do {
             try await sessionLifecycle.validate(lease)
         } catch is CancellationError {
@@ -196,7 +208,8 @@ struct MobileAPITransport: Sendable {
         return try decode(
             type,
             data: result.data,
-            response: result.response
+            response: result.response,
+            closedEnvelope: closedEnvelope
         )
     }
 
@@ -233,8 +246,9 @@ struct MobileAPITransport: Sendable {
             urlRequest.setValue(key.value, forHTTPHeaderField: "Idempotency-Key")
         }
 
+        request.conversation?.apply(to: &urlRequest)
         let preparedRequest = urlRequest
-        let redirectDelegate = MobileAPIRedirectDelegate(configuration: configuration)
+        let redirectDelegate = MobileAPIRedirectDelegate(configuration: configuration, allowsReadRedirects: request.conversation == nil)
         let cancellationRelay = NetworkTaskCancellationRelay()
         return try await withTaskCancellationHandler {
             let workID: UUID
@@ -368,11 +382,16 @@ struct MobileAPITransport: Sendable {
     private func decode<Response: Decodable & Sendable>(
         _ type: Response.Type,
         data: Data,
-        response: HTTPURLResponse
-    ) throws -> MobileAPISuccessEnvelope<Response> {
+        response: HTTPURLResponse,
+        closedEnvelope: Bool
+    ) throws -> MobileAPIHTTPResponse<Response> {
         let decoder = JSONDecoder()
         if (200...299).contains(response.statusCode) {
             do {
+                if closedEnvelope {
+                    do { _ = try decoder.decode(MobileConversationEnvelopeShape.self, from: data) }
+                    catch { throw MobileAPITransportError.invalidResponse }
+                }
                 let envelope = try decoder.decode(
                     MobileAPISuccessEnvelope<Response>.self,
                     from: data
@@ -382,7 +401,7 @@ struct MobileAPITransport: Sendable {
                 else {
                     throw MobileAPITransportError.invalidResponse
                 }
-                return envelope
+                return MobileAPIHTTPResponse(statusCode: response.statusCode, data: envelope.data, meta: envelope.meta)
             } catch let error as MobileAPITransportError {
                 throw error
             } catch {
@@ -551,6 +570,7 @@ private final class NetworkTaskCancellationRelay: @unchecked Sendable {
 
 private extension MobileAPIRequest {
     var isRetryEligible: Bool {
+        guard unauthorizedReplay != .never else { return false }
         if method == .get { return true }
         if case .required = idempotency { return true }
         return false
@@ -561,11 +581,13 @@ private final class MobileAPIRedirectDelegate: NSObject,
     URLSessionTaskDelegate,
     @unchecked Sendable {
     private let configuration: MobileAPIConfiguration
+    private let allowsReadRedirects: Bool
     private let lock = NSLock()
     private var rejected = false
 
-    init(configuration: MobileAPIConfiguration) {
+    init(configuration: MobileAPIConfiguration, allowsReadRedirects: Bool) {
         self.configuration = configuration
+        self.allowsReadRedirects = allowsReadRedirects
     }
 
     var wasRejected: Bool {
@@ -580,7 +602,7 @@ private final class MobileAPIRedirectDelegate: NSObject,
         completionHandler: @escaping @Sendable (URLRequest?) -> Void
     ) {
         let allowedStatusCodes = [301, 302, 303, 307, 308]
-        guard allowedStatusCodes.contains(response.statusCode),
+        guard allowsReadRedirects, allowedStatusCodes.contains(response.statusCode),
               task.originalRequest?.httpMethod == HTTPMethod.get.rawValue,
               request.httpMethod == HTTPMethod.get.rawValue,
               request.value(forHTTPHeaderField: "Idempotency-Key") == nil,
@@ -645,6 +667,16 @@ extension MobileAPITransport {
 }
 
 extension MobileAPITransport: CurrentClinicalSessionAuthorizing {
+    /// A protocol factory cannot silently inherit a transport already bound
+    /// to a different owner/generation or the token-only compatibility adapter.
+    func validateOriginalSession(_ lease: SessionLease) async throws {
+        guard boundSession != nil, !(sessionLifecycle is LegacySessionLifecycleAdapter) else { throw SessionLifecycleError.sessionSuperseded }
+        try Task.checkCancellation()
+        try await validateBoundSession(matching: lease)
+        try await sessionLifecycle.validate(lease)
+        try Task.checkCancellation()
+    }
+
     func validateCurrentClinicalSession() async throws {
         guard boundSession != nil, !(sessionLifecycle is LegacySessionLifecycleAdapter) else {
             throw SessionLifecycleError.sessionSuperseded

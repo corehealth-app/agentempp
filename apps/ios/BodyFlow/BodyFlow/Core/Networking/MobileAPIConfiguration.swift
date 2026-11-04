@@ -82,6 +82,8 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
     /// Longer limit for a request whose server work is known to be slow;
     /// nil keeps the transport default.
     let timeout: Duration?
+    let conversation: MobileConversationRequestHeaders?
+    let unauthorizedReplay: MobileAPIUnauthorizedReplay
 
     init(
         method: HTTPMethod,
@@ -89,7 +91,9 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
         queryItems: [URLQueryItem] = [],
         body: Data? = nil,
         idempotencyKey: IdempotencyKey? = nil,
-        timeout: Duration? = nil
+        timeout: Duration? = nil,
+        conversation: MobileConversationRequestHeaders? = nil,
+        unauthorizedReplay: MobileAPIUnauthorizedReplay = .standard
     ) throws {
         guard MobileAPIRequestPath.isValid(path) else {
             throw MobileAPIRequestError.invalidPath
@@ -98,6 +102,7 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
             throw MobileAPIRequestError.invalidQuery
         }
 
+        try conversation?.validate(method: method, path: path, query: queryItems, body: body, key: idempotencyKey, replay: unauthorizedReplay)
         let isMutation = method == .post || method == .patch || method == .delete
         guard isMutation || idempotencyKey == nil else {
             throw MobileAPIRequestError.unexpectedIdempotencyKey
@@ -108,6 +113,8 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
         self.queryItems = queryItems
         self.body = body
         self.timeout = timeout
+        self.conversation = conversation
+        self.unauthorizedReplay = unauthorizedReplay
         if isMutation {
             self.idempotency = .required(
                 idempotencyKey ?? Self.makeIdempotencyKey()

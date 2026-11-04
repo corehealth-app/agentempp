@@ -14,8 +14,9 @@ struct ConversationOutboxNativeLifecycleTests {
         let lifecycle = SessionLifecycleCoordinator(store: authStore, remote: OutboxNoNetworkAuth(), refreshPolicy: .init(now: { Date(timeIntervalSince1970: 1_000) }, leeway: 60))
         let vault = ConversationOutboxKeyVault(service: "synthetic", security: OutboxKeychainFake())
         let first = try await ConversationOutboxSession.open(lifecycle: lifecycle, store: fixture.store, keyVault: vault)
-        let id = try await first.enqueue(source: .text("private account A"), server: try server(await lifecycle.leaseForRequest(), epoch: fixture.epoch))
-        let ticket = try await first.prepareDispatch(commandID: id, server: try server(await lifecycle.leaseForRequest(), epoch: fixture.epoch))
+        let originalObservation = try server(await lifecycle.leaseForRequest(), epoch: fixture.epoch)
+        let id = try await first.enqueue(source: .text("private account A"), server: originalObservation)
+        let ticket = try await first.prepareDispatch(commandID: id, server: originalObservation)
         let originalA = try Data(contentsOf: fixture.store.fileURL(owner: fixture.owner))
         try await lifecycle.switch(to: record(userID: "00000000-0000-0000-0000-000000000002"))
         let second = try await ConversationOutboxSession.open(lifecycle: lifecycle, store: fixture.store, keyVault: vault)
@@ -25,7 +26,7 @@ struct ConversationOutboxNativeLifecycleTests {
         await #expect(throws: (any Error).self) { try await first.markWaiting(ticket: ticket, hold: .reset) }
         await #expect(throws: (any Error).self) { try await first.discardUnsent(commandID: id) }
         let probe = await MainActor.run { OutboxSnapshotProbe() }
-        await #expect(throws: (any Error).self) { try await first.publishSnapshot { probe.entries = $0 } }
+        await #expect(throws: (any Error).self) { try await first.publishSnapshot(server: originalObservation) { probe.entries = $0.entries } }
         #expect(await probe.entries?.count == nil)
         #expect(try Data(contentsOf: fixture.store.fileURL(owner: fixture.owner)) == originalA)
         #expect(try Data(contentsOf: fixture.store.fileURL(owner: ownerB)) == originalB)
@@ -52,14 +53,14 @@ struct ConversationOutboxNativeLifecycleTests {
         let payload = try #require((root["cases"] as? [[String: Any]])?.first?["payload"] as? [String: Any])
         let resultData = try JSONSerialization.data(withJSONObject: payload)
         let authStore = AuthenticationSessionStore(secureStore: InMemorySecureStore(), now: { Date(timeIntervalSince1970: 1_000) })
-        try await authStore.replace(with: record(userID: ownerID))
+        try await authStore.replace(with: record(userID: "90000000-0000-4000-8000-000000000001"))
         let lifecycle = SessionLifecycleCoordinator(store: authStore, remote: OutboxNoNetworkAuth(), refreshPolicy: .init(now: { Date(timeIntervalSince1970: 1_000) }, leeway: 60))
         let lease = try await lifecycle.leaseForRequest(), owner = try ConversationOutboxOwner(lease: lease)
         let keychain = OutboxKeychainFake()
         await keychain.seed(fixture.key.withUnsafeBytes { Data($0) }, owner: owner.hash)
         let vault = ConversationOutboxKeyVault(service: "synthetic", security: keychain)
-        let observed = try server(lease, epoch: #require(UUID(uuidString: epoch)))
-        try fixture.store.update(owner: owner, key: fixture.key) { $0.append(.init(command: command, originalServerEpoch: observed.epoch)) }
+        let observed = try server(lease, epoch: #require(UUID(uuidString: epoch)), patientOwnerID: #require(UUID(uuidString: ownerID)))
+        try fixture.store.update(owner: owner, key: fixture.key) { $0.append(.init(command: command, originalServerEpoch: observed.epoch, originalPatientOwnerID: observed.ownerID)) }
         let session = try await ConversationOutboxSession.open(lifecycle: lifecycle, store: fixture.store, keyVault: vault)
         let ticket = try await session.prepareDispatch(commandID: command.commandID, server: observed)
         let probe = await MainActor.run { NativeOutboxSavedProbe() }
@@ -72,6 +73,29 @@ struct ConversationOutboxNativeLifecycleTests {
         await session.invalidate()
     }
 
+    @Test func actualControllerUsesRealAuthLifecycleWithDistinctPatientOverMockedHTTP() async throws {
+        let fixture = try OutboxDiskFixture(); defer { fixture.remove() }
+        let wire = try ConversationControllerWireFixture()
+        let authStore = AuthenticationSessionStore(secureStore: InMemorySecureStore(), now: { Date(timeIntervalSince1970: 1_000) })
+        try await authStore.replace(with: record(userID: "90000000-0000-4000-8000-000000000001"))
+        let lifecycle = SessionLifecycleCoordinator(store: authStore, remote: OutboxNoNetworkAuth(), refreshPolicy: .init(now: { Date(timeIntervalSince1970: 1_000) }, leeway: 60))
+        let lease = try await lifecycle.leaseForRequest(), owner = try ConversationOutboxOwner(lease: lease)
+        let keys = OutboxKeychainFake(); await keys.seed(fixture.key.withUnsafeBytes { Data($0) }, owner: owner.hash)
+        let vault = ConversationOutboxKeyVault(service: "synthetic", security: keys)
+        try fixture.store.update(owner: owner, key: fixture.key) { $0.append(.init(command: wire.command, originalServerEpoch: wire.epoch, originalPatientOwnerID: wire.ownerID)) }
+        let network = try ConversationHTTPFixture.makeTransport(lifecycle: lifecycle)
+        await network.stub.respond { request, _ in request.url?.path.hasSuffix("/session") == true ? try wire.sessionReply() : try wire.savedReply() }
+        let controller = try await ConversationMealCommandController.open(transport: network.transport, lifecycle: lifecycle, store: fixture.store, keyVault: vault)
+        let probe = await MainActor.run { NativeOutboxSavedProbe() }
+        try await controller.send(commandID: wire.command.commandID) { if case let .saved(value) = $0 { probe.values.append(value) } }
+        #expect(try fixture.store.load(owner: owner, key: fixture.key).isEmpty)
+        let values = await probe.values
+        #expect(values.count == 1 && values[0].receipt.ownerID == wire.ownerID.uuidString.lowercased())
+        #expect(values[0].feedback?.scope.sessionGeneration == lease.generation)
+        #expect(await network.stub.requests.filter { $0.httpMethod == "POST" }.count == 1)
+        await controller.close()
+    }
+
     @Test func realKeychainRoundTripUsesUniqueSyntheticServiceAndCleansItsItem() async throws {
         let service = "app.performe.synthetic-outbox-test.\(UUID().uuidString.lowercased())"
         let fixture = try OutboxDiskFixture(); defer { fixture.remove() }
@@ -81,7 +105,7 @@ struct ConversationOutboxNativeLifecycleTests {
             let vault = ConversationOutboxKeyVault(service: service, security: security)
             let key = try await vault.key(owner: fixture.owner, mayCreate: true)
             try fixture.store.update(owner: fixture.owner, key: key) {
-                $0.append(.init(command: try ConversationMealCommand(source: .text("synthetic Keychain round trip")), originalServerEpoch: fixture.epoch))
+                $0.append(.init(command: try ConversationMealCommand(source: .text("synthetic Keychain round trip")), originalServerEpoch: fixture.epoch, originalPatientOwnerID: fixture.server.ownerID))
             }
             let reopened = try await ConversationOutboxKeyVault(service: service, security: security).key(owner: fixture.owner, mayCreate: false)
             #expect(try fixture.store.load(owner: fixture.owner, key: reopened).count == 1)
@@ -96,8 +120,8 @@ struct ConversationOutboxNativeLifecycleTests {
         }
     }
 
-    private func server(_ lease: SessionLease, epoch: UUID) throws -> ConversationOutboxServerObservation {
-        .init(ownerID: try #require(UUID(uuidString: lease.userID)), localSessionGeneration: lease.generation, epoch: epoch)
+    private func server(_ lease: SessionLease, epoch: UUID, patientOwnerID: UUID? = nil) throws -> ConversationOutboxServerObservation {
+        .init(authUserID: try #require(UUID(uuidString: lease.userID)), ownerID: try patientOwnerID ?? #require(UUID(uuidString: lease.userID)), localSessionGeneration: lease.generation, epoch: epoch)
     }
 
     private func record(userID: String) -> AuthenticationSessionRecord {

@@ -20,10 +20,10 @@ enum ConversationOutboxState: String, Codable, Sendable {
 }
 
 enum ConversationOutboxHold: String, Codable, Sendable {
-    case unknownOutcome, userCancelled, originalEpochUnavailable, staleEpoch, reset
+    case unknownOutcome, userCancelled, originalEpochUnavailable, originalOwnerUnavailable, notRecorded, staleEpoch, serverChanged, reset
 
     var priority: Int {
-        switch self { case .unknownOutcome: 0; case .userCancelled: 1; case .originalEpochUnavailable: 2; case .staleEpoch: 3; case .reset: 4 }
+        switch self { case .unknownOutcome: 0; case .userCancelled: 1; case .originalEpochUnavailable, .originalOwnerUnavailable, .notRecorded: 2; case .staleEpoch, .serverChanged: 3; case .reset: 4 }
     }
 }
 
@@ -32,40 +32,47 @@ struct ConversationOutboxEntry: Codable, Sendable, CustomStringConvertible, Cust
         case backendObservation = "backend-observation"
         case legacyV1Missing = "legacy-v1-missing"
     }
+    enum OwnerProvenance: String, Codable, Sendable { case backendSession = "backend-session", legacyUnbound = "legacy-unbound" }
     let commandID: UUID
     let wireBody: Data
     let inputHash: String
     let originalServerEpoch: UUID?
     let epochProvenance: EpochProvenance
+    let originalPatientOwnerID: UUID?
+    let ownerProvenance: OwnerProvenance
     var state: ConversationOutboxState
     var hold: ConversationOutboxHold?
 
-    init(command: ConversationMealCommand, originalServerEpoch: UUID) {
+    init(command: ConversationMealCommand, originalServerEpoch: UUID, originalPatientOwnerID: UUID) {
         commandID = command.commandID; wireBody = command.wireBody; inputHash = command.inputHash
         self.originalServerEpoch = originalServerEpoch; epochProvenance = .backendObservation
+        self.originalPatientOwnerID = originalPatientOwnerID; ownerProvenance = .backendSession
         state = .queued; hold = nil
     }
 
-    fileprivate init(legacy command: ConversationMealCommand, state: ConversationOutboxState, hold: ConversationOutboxHold?) {
+    fileprivate init(legacy command: ConversationMealCommand, state: ConversationOutboxState, hold: ConversationOutboxHold?, originalServerEpoch: UUID? = nil, epochProvenance: EpochProvenance = .legacyV1Missing) {
         commandID = command.commandID; wireBody = command.wireBody; inputHash = command.inputHash
-        originalServerEpoch = nil; epochProvenance = .legacyV1Missing
+        self.originalServerEpoch = originalServerEpoch; self.epochProvenance = epochProvenance
+        originalPatientOwnerID = nil; ownerProvenance = .legacyUnbound
         // Preserve the proof of never-dispatched work; unknown work stays
         // undiscardable, even though no usable dispatch ticket can be issued.
         self.state = state == .queued ? .queued : .waitingReconciliation
-        self.hold = hold ?? .originalEpochUnavailable
+        self.hold = hold ?? (originalServerEpoch == nil ? .originalEpochUnavailable : .originalOwnerUnavailable)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case commandID, wireBody, inputHash, originalServerEpoch, epochProvenance, state, hold
+        case commandID, wireBody, inputHash, originalServerEpoch, epochProvenance, originalPatientOwnerID, ownerProvenance, state, hold
     }
     init(from decoder: any Decoder) throws {
-        try outboxKeys(decoder, required: ["commandID", "wireBody", "inputHash", "originalServerEpoch", "epochProvenance", "state", "hold"])
+        try outboxKeys(decoder, required: ["commandID", "wireBody", "inputHash", "originalServerEpoch", "epochProvenance", "originalPatientOwnerID", "ownerProvenance", "state", "hold"])
         let c = try decoder.container(keyedBy: CodingKeys.self)
         commandID = try c.decode(UUID.self, forKey: .commandID)
         wireBody = try c.decode(Data.self, forKey: .wireBody)
         inputHash = try c.decode(String.self, forKey: .inputHash)
         originalServerEpoch = try c.decodeIfPresent(UUID.self, forKey: .originalServerEpoch)
         epochProvenance = try c.decode(EpochProvenance.self, forKey: .epochProvenance)
+        originalPatientOwnerID = try c.decodeIfPresent(UUID.self, forKey: .originalPatientOwnerID)
+        ownerProvenance = try c.decode(OwnerProvenance.self, forKey: .ownerProvenance)
         state = try c.decode(ConversationOutboxState.self, forKey: .state)
         hold = try c.decodeIfPresent(ConversationOutboxHold.self, forKey: .hold)
         try validate()
@@ -74,7 +81,9 @@ struct ConversationOutboxEntry: Codable, Sendable, CustomStringConvertible, Cust
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(commandID, forKey: .commandID); try c.encode(wireBody, forKey: .wireBody)
         try c.encode(inputHash, forKey: .inputHash); try c.encode(originalServerEpoch, forKey: .originalServerEpoch)
-        try c.encode(epochProvenance, forKey: .epochProvenance); try c.encode(state, forKey: .state)
+        try c.encode(epochProvenance, forKey: .epochProvenance)
+        try c.encode(originalPatientOwnerID, forKey: .originalPatientOwnerID); try c.encode(ownerProvenance, forKey: .ownerProvenance)
+        try c.encode(state, forKey: .state)
         try c.encode(hold, forKey: .hold)
     }
     func validate() throws {
@@ -82,18 +91,20 @@ struct ConversationOutboxEntry: Codable, Sendable, CustomStringConvertible, Cust
         guard command.commandID == commandID, command.wireBody == wireBody, command.inputHash == inputHash else {
             throw ConversationOutboxError.integrityFailure
         }
-        switch epochProvenance {
-        case .legacyV1Missing:
-            guard originalServerEpoch == nil, hold != nil, state != .dispatchedUnknown else { throw ConversationOutboxError.integrityFailure }
-        case .backendObservation:
-            guard originalServerEpoch != nil, hold != .originalEpochUnavailable else { throw ConversationOutboxError.integrityFailure }
+        guard (originalServerEpoch != nil) == (epochProvenance == .backendObservation),
+              (originalPatientOwnerID != nil) == (ownerProvenance == .backendSession),
+              ownerProvenance != .backendSession || epochProvenance == .backendObservation else { throw ConversationOutboxError.integrityFailure }
+        if originalServerEpoch == nil || originalPatientOwnerID == nil {
+            guard hold != nil, state != .dispatchedUnknown else { throw ConversationOutboxError.integrityFailure }
+            if state == .queued {
+                guard hold == .reset || hold == .originalEpochUnavailable || hold == .originalOwnerUnavailable else { throw ConversationOutboxError.integrityFailure }
+            }
+        } else {
+            guard hold != .originalEpochUnavailable, hold != .originalOwnerUnavailable else { throw ConversationOutboxError.integrityFailure }
             switch state {
-            case .queued:
-                guard hold == nil || hold == .reset else { throw ConversationOutboxError.integrityFailure }
-            case .dispatchedUnknown:
-                guard hold == nil else { throw ConversationOutboxError.integrityFailure }
-            case .waitingReconciliation:
-                guard hold != nil else { throw ConversationOutboxError.integrityFailure }
+            case .queued: guard hold == nil || hold == .reset else { throw ConversationOutboxError.integrityFailure }
+            case .dispatchedUnknown: guard hold == nil else { throw ConversationOutboxError.integrityFailure }
+            case .waitingReconciliation: guard hold != nil else { throw ConversationOutboxError.integrityFailure }
             }
         }
     }
@@ -110,7 +121,8 @@ struct EncryptedConversationOutboxStore: Sendable {
     // silently evicts a command whose server outcome may still be unknown.
     static let capacity = 50
     private static let maxBytes = capacity * 24_576 + 4_096
-    private static let header = Data("PCOBX002".utf8)
+    private static let header = Data("PCOBX003".utf8)
+    private static let previousHeader = Data("PCOBX002".utf8)
     private static let legacyHeader = Data("PCOBX001".utf8)
     private static let directoryCreationLock = NSLock()
     let root: URL
@@ -145,9 +157,9 @@ struct EncryptedConversationOutboxStore: Sendable {
             guard entries.count <= Self.capacity else { throw ConversationOutboxError.queueFull }
             try Self.validate(entries)
             try Self.validateTransitions(from: original, to: entries)
-            let plain = try JSONEncoder().encode(Envelope(version: 2, owner: owner.hash, entries: entries))
+            let plain = try JSONEncoder().encode(Envelope(version: 3, owner: owner.hash, entries: entries))
             guard plain.count <= Self.maxBytes else { throw ConversationOutboxError.queueFull }
-            let box = try AES.GCM.seal(plain, using: key, authenticating: aad(owner, version: 2))
+            let box = try AES.GCM.seal(plain, using: key, authenticating: aad(owner, version: 3))
             guard let combined = box.combined else { throw ConversationOutboxError.storageUnavailable }
             try atomicReplace(Self.header + combined, at: fileURL(owner: owner))
             return result
@@ -181,6 +193,45 @@ struct EncryptedConversationOutboxStore: Sendable {
             entries = try c.decode([LegacyEntry].self, forKey: .entries)
         }
     }
+    private struct PreviousEnvelope: Decodable {
+        let version: Int
+        let owner: String
+        let entries: [PreviousEntry]
+        private enum CodingKeys: String, CodingKey { case version, owner, entries }
+        init(from decoder: any Decoder) throws {
+            try outboxKeys(decoder, required: ["version", "owner", "entries"])
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            version = try c.decode(Int.self, forKey: .version); owner = try c.decode(String.self, forKey: .owner)
+            entries = try c.decode([PreviousEntry].self, forKey: .entries)
+        }
+    }
+    private struct PreviousEntry: Decodable {
+        let value: ConversationOutboxEntry
+        private enum CodingKeys: String, CodingKey { case commandID, wireBody, inputHash, originalServerEpoch, epochProvenance, state, hold }
+        init(from decoder: any Decoder) throws {
+            try outboxKeys(decoder, required: ["commandID", "wireBody", "inputHash", "originalServerEpoch", "epochProvenance", "state", "hold"])
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            let id = try c.decode(UUID.self, forKey: .commandID), wire = try c.decode(Data.self, forKey: .wireBody)
+            let hash = try c.decode(String.self, forKey: .inputHash), state = try c.decode(ConversationOutboxState.self, forKey: .state)
+            let hold = try c.decodeIfPresent(ConversationOutboxHold.self, forKey: .hold)
+            let epoch = try c.decodeIfPresent(UUID.self, forKey: .originalServerEpoch)
+            let provenance = try c.decode(ConversationOutboxEntry.EpochProvenance.self, forKey: .epochProvenance)
+            let command = try ConversationMealCommand(wireBody: wire)
+            guard command.commandID == id, command.wireBody == wire, command.inputHash == hash,
+                  hold != .originalOwnerUnavailable, hold != .notRecorded, hold != .serverChanged else { throw ConversationOutboxError.integrityFailure }
+            if provenance == .legacyV1Missing {
+                guard epoch == nil, hold != nil, state != .dispatchedUnknown else { throw ConversationOutboxError.integrityFailure }
+            } else {
+                guard epoch != nil, hold != .originalEpochUnavailable else { throw ConversationOutboxError.integrityFailure }
+                switch state {
+                case .queued: guard hold == nil || hold == .reset else { throw ConversationOutboxError.integrityFailure }
+                case .dispatchedUnknown: guard hold == nil else { throw ConversationOutboxError.integrityFailure }
+                case .waitingReconciliation: guard hold != nil else { throw ConversationOutboxError.integrityFailure }
+                }
+            }
+            value = ConversationOutboxEntry(legacy: command, state: state, hold: hold, originalServerEpoch: epoch, epochProvenance: provenance)
+        }
+    }
     private struct LegacyEntry: Decodable {
         let value: ConversationOutboxEntry
         private enum CodingKeys: String, CodingKey { case commandID, wireBody, inputHash, state, hold }
@@ -192,7 +243,7 @@ struct EncryptedConversationOutboxStore: Sendable {
             let hold = try c.decodeIfPresent(ConversationOutboxHold.self, forKey: .hold)
             let command = try ConversationMealCommand(wireBody: wire)
             guard command.commandID == id, command.wireBody == wire, command.inputHash == hash,
-                  hold != .originalEpochUnavailable,
+                  hold != .originalEpochUnavailable, hold != .originalOwnerUnavailable, hold != .notRecorded, hold != .serverChanged,
                   ((state == .waitingReconciliation) ? hold != nil : hold == nil) else { throw ConversationOutboxError.integrityFailure }
             value = ConversationOutboxEntry(legacy: command, state: state, hold: hold)
         }
@@ -205,7 +256,8 @@ struct EncryptedConversationOutboxStore: Sendable {
         guard let data = try readCiphertext(owner: owner) else { return [] }
         do {
             let version: Int
-            if data.starts(with: Self.header) { version = 2 }
+            if data.starts(with: Self.header) { version = 3 }
+            else if data.starts(with: Self.previousHeader) { version = 2 }
             else if data.starts(with: Self.legacyHeader) { version = 1 }
             else { throw ConversationOutboxError.integrityFailure }
             let box = try AES.GCM.SealedBox(combined: data.dropFirst(Self.header.count))
@@ -215,9 +267,13 @@ struct EncryptedConversationOutboxStore: Sendable {
                 let envelope = try JSONDecoder().decode(LegacyEnvelope.self, from: plain)
                 guard envelope.version == 1, envelope.owner == owner.hash else { throw ConversationOutboxError.integrityFailure }
                 entries = envelope.entries.map(\.value)
+            } else if version == 2 {
+                let envelope = try JSONDecoder().decode(PreviousEnvelope.self, from: plain)
+                guard envelope.version == 2, envelope.owner == owner.hash else { throw ConversationOutboxError.integrityFailure }
+                entries = envelope.entries.map(\.value)
             } else {
                 let envelope = try JSONDecoder().decode(Envelope.self, from: plain)
-                guard envelope.version == 2, envelope.owner == owner.hash else { throw ConversationOutboxError.integrityFailure }
+                guard envelope.version == 3, envelope.owner == owner.hash else { throw ConversationOutboxError.integrityFailure }
                 entries = envelope.entries
             }
             try Self.validate(entries)
@@ -229,7 +285,8 @@ struct EncryptedConversationOutboxStore: Sendable {
         for old in original {
             guard let new = entries.first(where: { $0.commandID == old.commandID }) else { continue }
             guard old.wireBody == new.wireBody, old.inputHash == new.inputHash,
-                  old.originalServerEpoch == new.originalServerEpoch, old.epochProvenance == new.epochProvenance else {
+                  old.originalServerEpoch == new.originalServerEpoch, old.epochProvenance == new.epochProvenance,
+                  old.originalPatientOwnerID == new.originalPatientOwnerID, old.ownerProvenance == new.ownerProvenance else {
                 // Hold monotonicity is checked explicitly below; identities can
                 // never be rebound, including nil legacy epoch becoming current.
                 throw ConversationOutboxError.integrityFailure

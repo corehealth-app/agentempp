@@ -95,7 +95,7 @@ struct ConversationMealCommandResultTests {
         #expect(try f.disk.store.load(owner: f.owner, key: f.disk.key).isEmpty)
         #expect(await probe.values.count == 1)
         #expect(await probe.values.first?.receipt.registrationID == "20000000-0000-4000-8000-000000000001")
-        #expect(await probe.values.first?.feedback?.scope.ownerID == f.lease.userID)
+        #expect(await probe.values.first?.feedback?.scope.ownerID == f.server.ownerID.uuidString.lowercased())
         await #expect(throws: ConversationOutboxError.commandNotFound) {
             try await f.session.acknowledgeSaved(ticket: ticket, resultData: data(payload()), server: f.server) { probe.values.append($0) }
         }
@@ -131,10 +131,10 @@ struct ConversationMealCommandResultTests {
             try mutate(&p, ["receipt", "owner_id"], owner); try mutate(&p, ["receipt", "provider_key"], "conversation.meal/\(owner)/\(ticket.commandID.uuidString.lowercased())")
         case "command":
             let command = "10000000-0000-4000-8000-000000000008"; p["command_id"] = command
-            try mutate(&p, ["receipt", "command_id"], command); try mutate(&p, ["receipt", "provider_key"], "conversation.meal/\(f.lease.userID)/\(command)")
+            try mutate(&p, ["receipt", "command_id"], command); try mutate(&p, ["receipt", "provider_key"], "conversation.meal/\(f.server.ownerID.uuidString.lowercased())/\(command)")
         case "hash": p["input_hash"] = String(repeating: "f", count: 64); try mutate(&p, ["receipt", "input_hash"], String(repeating: "f", count: 64))
         case "epoch": p["epoch"] = UUID().uuidString.lowercased()
-        case "observation": server = .init(ownerID: f.server.ownerID, localSessionGeneration: f.server.localSessionGeneration, epoch: UUID())
+        case "observation": server = .init(authUserID: f.server.authUserID, ownerID: f.server.ownerID, localSessionGeneration: f.server.localSessionGeneration, epoch: UUID())
         case "meal": try mutate(&p, ["receipt", "meal_type"], "jantar")
         case "http200": p = ["status": 200]
         default: Issue.record("Unknown attack")
@@ -221,12 +221,13 @@ struct ConversationMealCommandResultTests {
     }
     private func fixture() async throws -> Fixture {
         let disk = try OutboxDiskFixture(), root = try fixtures(), command = try fixtureCommand()
-        let lease = SessionLease(userID: try #require(root["owner_id"] as? String), generation: 7, bearer: "synthetic-only")
+        let patientID = try #require(root["owner_id"] as? String)
+        let lease = SessionLease(userID: "90000000-0000-4000-8000-000000000001", generation: 7, bearer: "synthetic-only")
         let owner = try ConversationOutboxOwner(lease: lease), keychain = OutboxKeychainFake()
         await keychain.seed(disk.key.withUnsafeBytes { Data($0) }, owner: owner.hash)
         let epochText = try #require(root["epoch"] as? String)
-        let server = ConversationOutboxServerObservation(ownerID: try #require(UUID(uuidString: lease.userID)), localSessionGeneration: lease.generation, epoch: try #require(UUID(uuidString: epochText)))
-        try disk.store.update(owner: owner, key: disk.key) { $0.append(.init(command: command, originalServerEpoch: server.epoch)) }
+        let server = ConversationOutboxServerObservation(authUserID: try #require(UUID(uuidString: lease.userID)), ownerID: try #require(UUID(uuidString: patientID)), localSessionGeneration: lease.generation, epoch: try #require(UUID(uuidString: epochText)))
+        try disk.store.update(owner: owner, key: disk.key) { $0.append(.init(command: command, originalServerEpoch: server.epoch, originalPatientOwnerID: server.ownerID)) }
         let lifecycle = OutboxLifecycleFake(lease: lease), vault = ConversationOutboxKeyVault(service: "synthetic", security: keychain)
         let session = try await ConversationOutboxSession.open(lifecycle: lifecycle, store: disk.store, keyVault: vault)
         return .init(disk: disk, lease: lease, owner: owner, lifecycle: lifecycle, vault: vault, server: server, command: command, session: session)

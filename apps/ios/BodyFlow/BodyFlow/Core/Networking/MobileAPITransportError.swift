@@ -9,6 +9,7 @@ enum MobileAPIRequestError: Error, Equatable, Sendable {
     case invalidPath
     case invalidQuery
     case unexpectedIdempotencyKey
+    case invalidConversationHeaders
 }
 
 enum MobileAPITransportError: Error, Equatable, Sendable {

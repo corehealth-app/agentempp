@@ -14,6 +14,8 @@ enum ConversationOutboxError: Error, Equatable, Sendable {
     case sessionClosed
     case invalidServerObservation
     case originalEpochUnavailable
+    case originalOwnerUnavailable
+    case staleObservation
 }
 
 /// The closed candidate wire contract. No owner, nutrition, URL, epoch or

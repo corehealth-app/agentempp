@@ -59,9 +59,9 @@ struct ConversationOutboxEpochTests {
         let old = try ConversationMealCommand(source: .text("legacy reset"))
         try writeLegacy(f, commands: [(old, .waitingReconciliation, .reset)])
         let new = try ConversationMealCommand(source: .text("new user intent"))
-        try f.store.update(owner: f.owner, key: f.key) { $0.append(.init(command: new, originalServerEpoch: f.epoch)) }
+        try f.store.update(owner: f.owner, key: f.key) { $0.append(.init(command: new, originalServerEpoch: f.epoch, originalPatientOwnerID: f.server.ownerID)) }
         let bytes = try Data(contentsOf: f.store.fileURL(owner: f.owner))
-        #expect(bytes.starts(with: Data("PCOBX002".utf8)))
+        #expect(bytes.starts(with: Data("PCOBX003".utf8)))
         let rows = try EncryptedConversationOutboxStore(directory: f.directory).load(owner: f.owner, key: f.key)
         #expect(rows.count == 2)
         #expect(rows[0].commandID == old.commandID && rows[0].wireBody == old.wireBody && rows[0].inputHash == old.inputHash)
@@ -76,7 +76,7 @@ struct ConversationOutboxEpochTests {
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: f.store.root.path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: f.store.root.path) }
         #expect(throws: ConversationOutboxError.storageUnavailable) {
-            try f.store.update(owner: f.owner, key: f.key) { $0.append(.init(command: try ConversationMealCommand(source: .text("new")), originalServerEpoch: f.epoch)) }
+            try f.store.update(owner: f.owner, key: f.key) { $0.append(.init(command: try ConversationMealCommand(source: .text("new")), originalServerEpoch: f.epoch, originalPatientOwnerID: f.server.ownerID)) }
         }
         #expect(try Data(contentsOf: f.store.fileURL(owner: f.owner)) == original)
     }
@@ -89,7 +89,7 @@ struct ConversationOutboxEpochTests {
             for _ in 0..<8 {
                 group.addTask {
                     let store = EncryptedConversationOutboxStore(directory: f.directory)
-                    try store.update(owner: f.owner, key: f.key) { $0.append(.init(command: try ConversationMealCommand(source: .text("new")), originalServerEpoch: f.epoch)) }
+                    try store.update(owner: f.owner, key: f.key) { $0.append(.init(command: try ConversationMealCommand(source: .text("new")), originalServerEpoch: f.epoch, originalPatientOwnerID: f.server.ownerID)) }
                 }
             }
             try await group.waitForAll()
@@ -103,7 +103,7 @@ struct ConversationOutboxEpochTests {
     @Test func lateObservationMismatchIsReadOnlyAndNeverHoldsAnotherEpoch() async throws {
         let f = try OutboxDiskFixture(); defer { f.remove() }
         let session = try await ConversationOutboxSession.open(lifecycle: OutboxLifecycleFake(lease: f.lease), store: f.store, keyVault: .init(service: "synthetic", security: OutboxKeychainFake()))
-        let newer = ConversationOutboxServerObservation(ownerID: f.server.ownerID, localSessionGeneration: f.lease.generation, epoch: UUID())
+        let newer = ConversationOutboxServerObservation(authUserID: f.server.authUserID, ownerID: f.server.ownerID, localSessionGeneration: f.lease.generation, epoch: UUID())
         let id = try await session.enqueue(source: .text("new epoch intent"), server: newer)
         let original = try Data(contentsOf: f.store.fileURL(owner: f.owner))
         await #expect(throws: ConversationOutboxError.reconciliationRequired) { try await session.prepareDispatch(commandID: id, server: f.server) }
@@ -141,7 +141,7 @@ struct ConversationOutboxEpochTests {
     @Test func accountOrLeaseMismatchCannotPersistOrPublishEpochBoundWork() async throws {
         let f = try OutboxDiskFixture(); defer { f.remove() }
         let session = try await ConversationOutboxSession.open(lifecycle: OutboxLifecycleFake(lease: f.lease), store: f.store, keyVault: .init(service: "synthetic", security: OutboxKeychainFake()))
-        for observation in [ConversationOutboxServerObservation(ownerID: UUID(), localSessionGeneration: f.lease.generation, epoch: f.epoch), ConversationOutboxServerObservation(ownerID: f.server.ownerID, localSessionGeneration: f.lease.generation + 1, epoch: f.epoch)] {
+        for observation in [ConversationOutboxServerObservation(authUserID: UUID(), ownerID: f.server.ownerID, localSessionGeneration: f.lease.generation, epoch: f.epoch), ConversationOutboxServerObservation(authUserID: f.server.authUserID, ownerID: f.server.ownerID, localSessionGeneration: f.lease.generation + 1, epoch: f.epoch)] {
             await #expect(throws: ConversationOutboxError.invalidServerObservation) { try await session.enqueue(source: .text("private"), server: observation) }
         }
         #expect(!(try f.store.containsCiphertext(owner: f.owner)))
@@ -151,10 +151,10 @@ struct ConversationOutboxEpochTests {
     @Test func retainedEntryCannotRetagEpochClearHoldOrReturnToQueued() throws {
         let f = try OutboxDiskFixture(); defer { f.remove() }
         let command = try ConversationMealCommand(source: .text("original"))
-        try f.store.update(owner: f.owner, key: f.key) { $0.append(.init(command: command, originalServerEpoch: f.epoch)) }
+        try f.store.update(owner: f.owner, key: f.key) { $0.append(.init(command: command, originalServerEpoch: f.epoch, originalPatientOwnerID: f.server.ownerID)) }
         let original = try Data(contentsOf: f.store.fileURL(owner: f.owner))
         #expect(throws: ConversationOutboxError.integrityFailure) {
-            try f.store.update(owner: f.owner, key: f.key) { $0[0] = .init(command: command, originalServerEpoch: UUID()) }
+            try f.store.update(owner: f.owner, key: f.key) { $0[0] = .init(command: command, originalServerEpoch: UUID(), originalPatientOwnerID: f.server.ownerID) }
         }
         #expect(try Data(contentsOf: f.store.fileURL(owner: f.owner)) == original)
         try f.store.update(owner: f.owner, key: f.key) { $0[0].state = .waitingReconciliation; $0[0].hold = .reset }
@@ -165,17 +165,17 @@ struct ConversationOutboxEpochTests {
         #expect(try Data(contentsOf: f.store.fileURL(owner: f.owner)) == held)
     }
 
-    @Test func authenticatedV2MissingEpochWithoutLegacyProvenanceAndAADRetagAreRejected() throws {
+    @Test func authenticatedV3MissingEpochWithoutLegacyProvenanceAndAADRetagAreRejected() throws {
         let f = try OutboxDiskFixture(); defer { f.remove() }
-        try f.store.update(owner: f.owner, key: f.key) { $0.append(.init(command: try ConversationMealCommand(source: .text("new")), originalServerEpoch: f.epoch)) }
+        try f.store.update(owner: f.owner, key: f.key) { $0.append(.init(command: try ConversationMealCommand(source: .text("new")), originalServerEpoch: f.epoch, originalPatientOwnerID: f.server.ownerID)) }
         let path = f.store.fileURL(owner: f.owner), original = try Data(contentsOf: path)
-        let aad = Data("performe.conversation.outbox\0version=2\0owner=\(f.owner.hash)".utf8)
+        let aad = Data("performe.conversation.outbox\0version=3\0owner=\(f.owner.hash)".utf8)
         let plain = try AES.GCM.open(AES.GCM.SealedBox(combined: original.dropFirst(8)), using: f.key, authenticating: aad)
         var envelope = try #require(JSONSerialization.jsonObject(with: plain) as? [String: Any])
         var entries = try #require(envelope["entries"] as? [[String: Any]])
         entries[0]["originalServerEpoch"] = NSNull(); envelope["entries"] = entries
         let forged = try #require(AES.GCM.seal(JSONSerialization.data(withJSONObject: envelope), using: f.key, authenticating: aad).combined)
-        try (Data("PCOBX002".utf8) + forged).write(to: path)
+        try (Data("PCOBX003".utf8) + forged).write(to: path)
         #expect(throws: ConversationOutboxError.integrityFailure) { try f.store.load(owner: f.owner, key: f.key) }
         try (Data("PCOBX001".utf8) + original.dropFirst(8)).write(to: path)
         #expect(throws: ConversationOutboxError.integrityFailure) { try f.store.load(owner: f.owner, key: f.key) }

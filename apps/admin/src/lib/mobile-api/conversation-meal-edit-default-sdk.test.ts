@@ -30,7 +30,10 @@ afterEach(() => {
   cell.db = null
   vi.unstubAllGlobals()
 })
-function setup(remap = false) {
+function setup(
+  remap = false,
+  options: { requestedEpoch?: string; requestedHash?: string; state?: () => unknown } = {},
+) {
   const b = editBinding(),
     calls: string[] = [],
     bearers: string[] = []
@@ -86,7 +89,7 @@ function setup(remap = false) {
     else if (url.pathname.endsWith('/read_conversation_meal_edit_operation'))
       data = { action: 'absent' }
     else if (url.pathname.endsWith('/read_conversation_meal_edit_state')) {
-      data = editReadState()
+      data = options.state ? options.state() : editReadState()
       if (remap) mapped = '10000000-0000-4000-8000-000000000099'
     } else throw new Error(`Unexpected request ${url.pathname}`)
     return new Response(JSON.stringify(data), {
@@ -108,8 +111,8 @@ function setup(remap = false) {
           Authorization: `Bearer ${candidateAuth.accessToken}`,
           'Content-Type': 'application/json',
           'X-Conversation-Owner': b.ownerId,
-          'X-Conversation-Epoch': b.epoch,
-          'X-Conversation-Input-Hash': b.inputHash,
+          'X-Conversation-Epoch': options.requestedEpoch ?? b.epoch,
+          'X-Conversation-Input-Hash': options.requestedHash ?? b.inputHash,
           'Idempotency-Key': `cmedit1:${editOperationId}`,
         },
         ...(method === 'GET' ? {} : { body: JSON.stringify(editInput()) }),
@@ -127,6 +130,57 @@ function setup(remap = false) {
   }
 }
 describe('actual default edit read Auth composition', () => {
+  it.each([
+    ['GROUP', 'epoch', 'stale_epoch'],
+    ['GROUP', 'hash', 'event_conflict'],
+    ['GROUP', 'both', 'stale_epoch'],
+    ['RECONCILE', 'epoch', 'stale_epoch'],
+    ['RECONCILE', 'hash', 'event_conflict'],
+    ['RECONCILE', 'both', 'stale_epoch'],
+  ] as const)('%s returns409 for a qualified private state with requested %s mismatch', async (method, mismatch, action) => {
+    const f = setup(false, {
+        ...(mismatch !== 'hash' ? { requestedEpoch: editOperationId } : {}),
+        ...(mismatch !== 'epoch' ? { requestedHash: 'f'.repeat(64) } : {}),
+      }),
+      response = await f.run(method)
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({
+      error: { code: `conversation_meal_edit_${action}` },
+    })
+    expect(
+      f.calls.filter((path) => path.endsWith('/read_conversation_meal_edit_state')),
+    ).toHaveLength(1)
+    expect(f.calls.some((path) => /\/(bootstrap_|commit_|undo_)/u.test(path))).toBe(false)
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    expect(f.outside).not.toHaveBeenCalled()
+  })
+  it.each([
+    'owner',
+    'command',
+    'current',
+    'extra',
+  ] as const)('keeps malformed actual %s state503 despite a mismatched request', async (corruption) => {
+    const f = setup(false, {
+        requestedEpoch: editOperationId,
+        requestedHash: 'f'.repeat(64),
+        state: () => {
+          const raw = editReadState()
+          if (corruption === 'owner') raw.command.owner_id = editOperationId
+          if (corruption === 'command') raw.command.command_id = editOperationId
+          if (corruption === 'current') raw.current_state.items[0].user_id = editOperationId
+          if (corruption === 'extra') Object.assign(raw, { private_extra: 'private-source' })
+          return raw
+        },
+      }),
+      response = await f.run('GROUP'),
+      packet = await response.json()
+    expect(response.status).toBe(503)
+    expect(packet).toMatchObject({ error: { code: 'conversation_meal_edit_unavailable' } })
+    expect(packet).not.toHaveProperty('data')
+    expect(JSON.stringify(packet)).not.toContain('private-source')
+    expect(f.calls.some((path) => /\/(bootstrap_|commit_|undo_)/u.test(path))).toBe(false)
+    expect(f.outside).not.toHaveBeenCalled()
+  })
   it.each([
     'GROUP',
     'RECONCILE',

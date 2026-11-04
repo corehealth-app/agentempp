@@ -118,6 +118,29 @@ describe('actual clarification-owned meal edits', () => {
     expect(calls).toEqual(['read_conversation_meal_edit_state'])
   })
   it.each([
+    'epoch',
+    'hash',
+  ] as const)('classifies requested child %s mismatch only after qualifying the actual linked state', async (mismatch) => {
+    const f = linked(),
+      calls: string[] = [],
+      db = {
+        rpc: async (name: string) => {
+          calls.push(name)
+          return { data: f.wire, error: null }
+        },
+      } as unknown as ServiceClient
+    const requested = {
+      ...f.binding,
+      ...(mismatch === 'epoch' ? { epoch: editOperationId } : { inputHash: 'f'.repeat(64) }),
+    }
+    await expect(createSupabaseConversationMealEditStore(db).readState(requested)).resolves.toEqual(
+      {
+        action: mismatch === 'epoch' ? 'stale_epoch' : 'event_conflict',
+      },
+    )
+    expect(calls).toEqual(['read_conversation_meal_edit_state'])
+  })
+  it.each([
     [
       'wrong parent provider',
       (w: ReturnType<typeof linked>['wire']) => {

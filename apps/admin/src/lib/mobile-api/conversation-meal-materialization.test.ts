@@ -17,6 +17,7 @@ import {
   mapConversationMealCalculationSources,
   materializeConversationMealInterpretation,
 } from './conversation-meal-materialization'
+import { createBoundConversationMealCorrectionReader } from './conversation-meal-personal-correction'
 import type { CapturedConversationMealSource } from './conversation-meal-source'
 import { applyMobilePreparedDishEstimate } from './prepared-dish-estimate'
 
@@ -43,7 +44,18 @@ function db(names: string[] = []) {
     data: names.filter((n) => n.toLowerCase() === p.search_term).map((n) => row(n)),
     error: null,
   }))
-  return { client: { rpc } as unknown as ServiceClient, rpc }
+  const from = vi.fn(() => {
+    const result = Promise.resolve({ data: [], error: null })
+    return Object.assign(result, {
+      select: () => result,
+      eq: () => result,
+      neq: () => result,
+      gte: () => result,
+      order: () => result,
+      limit: () => result,
+    })
+  })
+  return { client: { rpc, from } as unknown as ServiceClient, rpc, from }
 }
 function at<T>(list: readonly T[], index = 0): T {
   const item = list[index]
@@ -232,7 +244,7 @@ function visualFixture(items: Json[], caption?: string) {
 }
 async function materialize(
   f: ReturnType<typeof fixture> | ReturnType<typeof visualFixture>,
-  state = db(),
+  state: { client: ServiceClient } = db(),
 ) {
   return materializeConversationMealInterpretation(
     state.client,
@@ -603,6 +615,273 @@ describe('actual command interpretation materialization', () => {
       f.interpretation.foods[0]?.name,
     )
   })
+  it('preserves an owned active custom correction before the actual shared calculation', async () => {
+    const f = fixture('geleia da casa50g', [{ name: 'geleia da casa', quantity: '50', unit: 'g' }]),
+      state = correctionDb([correction()])
+    const result = prepared(await materialize(f, state))
+    expect(result.inputs[0]?.calculation_input).toEqual({
+      food_name: 'geleia da casa',
+      quantity_g: 50,
+    })
+    const calc = await calcMealMacros(
+      state.client,
+      result.inputs.map((i) => i.calculation_input),
+      'BR',
+      OWNER,
+      {
+        consumptionPolicy: 'consumed-meal-v1',
+        sourceReader: f.capture.sourceReader,
+        auditSink: f.capture.auditSink,
+      },
+    )
+    expect(calc.items).toMatchObject([
+      {
+        food_name: 'geleia caseira',
+        source: 'user_correction',
+        quantity_g: 50,
+        kcal: 40,
+        protein_g: 0,
+        carbs_g: 10,
+        fat_g: 0,
+      },
+    ])
+  })
+  it('preserves an active exact remap through verified destination and actual calculator', async () => {
+    const f = fixture('batata da casa100g', [
+        { name: 'batata da casa', quantity: '100', unit: 'g' },
+      ]),
+      state = correctionDb(
+        [
+          correction({
+            said_name: 'batata da casa',
+            corrected_to: 'mandioca',
+            custom_kcal_per_100g: null,
+            custom_carbs_g: null,
+          }),
+        ],
+        ['mandioca'],
+      )
+    const result = prepared(await materialize(f, state))
+    expect(result.inputs[0]?.calculation_input.food_name).toBe('batata da casa')
+    expect(state.calls.every((call) => call.method !== 'or')).toBe(true)
+    const calc = await calcMealMacros(
+      state.client,
+      result.inputs.map((i) => i.calculation_input),
+      'BR',
+      OWNER,
+      {
+        sourceReader: f.capture.sourceReader,
+        auditSink: f.capture.auditSink,
+        consumptionPolicy: 'consumed-meal-v1',
+      },
+    )
+    expect(calc.items[0]).toMatchObject({
+      food_name: 'mandioca',
+      quantity_g: 100,
+      matched_taco_id: 91,
+    })
+    expect(state.calls.filter((call) => call.method === 'gte')[0]?.args).toEqual([
+      'last_seen',
+      '2026-10-06T01:00:00.000Z',
+    ])
+  })
+  it('also qualifies exact corrected_to input without pre-rewriting the calculator name', async () => {
+    const f = fixture('geleia caseira50g', [{ name: 'geleia caseira', quantity: '50', unit: 'g' }]),
+      state = correctionDb([correction()])
+    expect(prepared(await materialize(f, state)).inputs[0]?.calculation_input.food_name).toBe(
+      'geleia caseira',
+    )
+    expect(
+      state.calls.some(
+        (call) =>
+          call.method === 'eq' &&
+          call.args[0] === 'corrected_to' &&
+          call.args[1] === 'geleia caseira',
+      ),
+    ).toBe(true)
+  })
+  it.each([
+    { status: 'learning', confirmed_count: 1 },
+    { status: 'active', confirmed_count: 1 },
+  ])('clarifies unproven correction approval %j', async (change) => {
+    const f = fixture('geleia da casa50g', [{ name: 'geleia da casa', quantity: '50', unit: 'g' }])
+    expect(await materialize(f, correctionDb([correction(change)]))).toMatchObject({
+      status: 'clarification_required',
+      reason: 'personal_correction_unproven',
+    })
+  })
+  it.each([
+    { status: 'retired' },
+    { last_seen: '2026-10-01T00:00:00Z' },
+  ])('does not revive retired/stale aliases %j', async (change) => {
+    const f = fixture('geleia da casa50g', [{ name: 'geleia da casa', quantity: '50', unit: 'g' }])
+    expect(await materialize(f, correctionDb([correction(change)]))).toMatchObject({
+      status: 'clarification_required',
+    })
+  })
+  it('selects latest learning before checking approval, not an older active mapping', async () => {
+    const f = fixture('geleia caseira50g', [{ name: 'geleia caseira', quantity: '50', unit: 'g' }])
+    const old = correction(),
+      recent = correction({
+        id: ASSET,
+        said_name: 'outra geleia',
+        status: 'learning',
+        confirmed_count: 1,
+        last_seen: '2026-11-04T13:00:00Z',
+      })
+    expect(await materialize(f, correctionDb([old, recent]))).toMatchObject({
+      status: 'clarification_required',
+      reason: 'personal_correction_unproven',
+    })
+  })
+  it.each([
+    { user_id: ASSET },
+    { last_seen: '2026-11-05T01:00:00.000002Z' },
+    { last_seen: '2026-02-30T12:00:00Z' },
+    { custom_kcal_per_100g: Infinity },
+  ])('refuses corrupt/unbound/future correction rows %j', async (change) => {
+    const f = fixture('geleia da casa50g', [{ name: 'geleia da casa', quantity: '50', unit: 'g' }])
+    await expect(
+      materialize(f, correctionDb([correction(change)], [], true)),
+    ).rejects.toMatchObject({ code: 'conversation_meal_materialization_unavailable' })
+  })
+  it('refuses equal-time competing winners rather than inventing a tie-breaker', async () => {
+    const f = fixture('geleia caseira50g', [{ name: 'geleia caseira', quantity: '50', unit: 'g' }])
+    await expect(
+      materialize(
+        f,
+        correctionDb([correction(), correction({ id: ASSET, said_name: 'outra geleia' })]),
+      ),
+    ).rejects.toMatchObject({ code: 'conversation_meal_materialization_unavailable' })
+  })
+  it('does not turn incomplete remap or invalid custom nutrition into a fuzzy alias', async () => {
+    const f = fixture('geleia da casa50g', [{ name: 'geleia da casa', quantity: '50', unit: 'g' }])
+    for (const change of [
+      { corrected_to: 'arroz estranho', custom_kcal_per_100g: null },
+      { custom_kcal_per_100g: -1 },
+      { custom_kcal_per_100g: 1000 },
+    ])
+      expect(await materialize(f, correctionDb([correction(change)]))).toMatchObject({
+        status: 'clarification_required',
+        reason: 'personal_correction_unproven',
+      })
+  })
+  it('requires the bound frozen clock and rejects correction outages without fallback', async () => {
+    const f = fixture('geleia da casa50g', [{ name: 'geleia da casa', quantity: '50', unit: 'g' }])
+    Object.assign(f.capture.sourceReader, { ownerId: ASSET })
+    await expect(materialize(f, correctionDb([correction()]))).rejects.toMatchObject({
+      code: 'conversation_meal_materialization_unavailable',
+    })
+    const other = fixture('geleia da casa50g', [
+      { name: 'geleia da casa', quantity: '50', unit: 'g' },
+    ])
+    Object.assign(other.capture.sourceReader, { asOf: '2026-11-06T01:00:00Z' })
+    await expect(materialize(other, correctionDb([correction()]))).rejects.toMatchObject({
+      code: 'conversation_meal_materialization_unavailable',
+    })
+    const state = correctionDb([])
+    state.from.mockImplementation(() => {
+      throw new Error('private-correction-token')
+    })
+    const clean = fixture('geleia da casa50g', [
+      { name: 'geleia da casa', quantity: '50', unit: 'g' },
+    ])
+    await expect(materialize(clean, state)).rejects.toMatchObject({
+      code: 'conversation_meal_materialization_unavailable',
+    })
+  })
+  it('captures actual read callback and never interpolates raw filter delimiters', async () => {
+    const state = correctionDb([correction()]),
+      read = createBoundConversationMealCorrectionReader(state.client, {
+        ownerId: OWNER,
+        asOf: '2026-11-05T01:00:00.000001Z',
+      })
+    const replacement = vi.fn()
+    Object.assign(state.client, { from: replacement })
+    expect(await read('geleia da casa')).toMatchObject({
+      status: 'active',
+      row: { corrected_to: 'geleia caseira' },
+    })
+    expect(replacement).not.toHaveBeenCalled()
+    expect(state.calls.every((call) => call.method !== 'or')).toBe(true)
+    await expect(read('geleia,corrected_to.neq.x')).rejects.toBeInstanceOf(Error)
+  })
+  it('ignores learning correction for an already qualified original food exactly as shared calculation does', async () => {
+    const f = fixture('arroz200g', [{ name: 'arroz', quantity: '200', unit: 'g' }]),
+      state = correctionDb([
+        correction({
+          said_name: 'arroz',
+          corrected_to: 'batata',
+          status: 'learning',
+          confirmed_count: 1,
+        }),
+      ])
+    const result = prepared(await materialize(f, state))
+    expect(result.inputs[0]?.calculation_input).toEqual({ food_name: 'arroz', quantity_g: 200 })
+  })
+  it('gives approved whole recipe correction precedence over component expansion and reaches actual calc', async () => {
+    const name = 'leite com 1 medida de whey',
+      f = fixture(`${name}200g`, [{ name, quantity: '200', unit: 'g' }]),
+      state = correctionDb([
+        correction({
+          said_name: name,
+          corrected_to: 'shake pessoal',
+          custom_kcal_per_100g: 100,
+          custom_protein_g: 10,
+          custom_carbs_g: 5,
+          custom_fat_g: 2,
+        }),
+      ])
+    const result = prepared(await materialize(f, state))
+    expect(result.inputs.map((i) => i.calculation_input)).toEqual([
+      { food_name: name, quantity_g: 200 },
+    ])
+    const calc = await calcMealMacros(
+      state.client,
+      result.inputs.map((i) => i.calculation_input),
+      'BR',
+      OWNER,
+      { sourceReader: f.capture.sourceReader, auditSink: f.capture.auditSink },
+    )
+    expect(calc.items).toMatchObject([
+      {
+        food_name: 'shake pessoal',
+        source: 'user_correction',
+        quantity_g: 200,
+        kcal: 200,
+        protein_g: 20,
+      },
+    ])
+  })
+  it('preserves an approved measured whole cup correction but never fabricates its missing whole mass', async () => {
+    const name = '1 caneca de leite com 1 medida de whey',
+      state = correctionDb([correction({ said_name: name, corrected_to: 'shake pessoal' })])
+    const measured = fixture(`${name}200g`, [{ name, quantity: '200', unit: 'g' }])
+    expect(
+      prepared(await materialize(measured, state)).inputs.map((i) => i.calculation_input),
+    ).toEqual([{ food_name: name, quantity_g: 200 }])
+    expect(await materialize(fixture(name, [{ name }]), state)).toMatchObject({
+      status: 'clarification_required',
+      reason: 'unsupported_compound_association',
+    })
+  })
+  it('keeps explicit custom zero and ordinary recipe expansion under ignored learning', async () => {
+    const f = fixture('geleia da casa50g', [{ name: 'geleia da casa', quantity: '50', unit: 'g' }]),
+      state = correctionDb([correction({ custom_kcal_per_100g: 0, custom_carbs_g: null })])
+    expect(prepared(await materialize(f, state)).inputs[0]?.calculation_input).toEqual({
+      food_name: 'geleia da casa',
+      quantity_g: 50,
+    })
+    const name = 'leite com 1 medida de whey',
+      recipe = fixture(`${name}200g`, [{ name, quantity: '200', unit: 'g' }])
+    const result = prepared(
+      await materialize(
+        recipe,
+        correctionDb([correction({ said_name: name, status: 'learning', confirmed_count: 1 })]),
+      ),
+    )
+    expect(result.inputs.map((i) => i.calculation_input.quantity_g)).toEqual([170, 30])
+  })
   it('maps shared merges back to all expanded inputs/original groups with least precise basis', async () => {
     const f = fixture('leite100g; arroz100g; leite200mL', [
       { name: 'leite', quantity: '100', unit: 'g' },
@@ -661,4 +940,89 @@ function calculationDb(catalogs: ReturnType<typeof row>[]) {
     },
   })
   return { ...state, tables }
+}
+
+function correction(change: Partial<Correction> = {}): Correction {
+  return {
+    id: '10000000-0000-4000-8000-000000000099',
+    user_id: OWNER,
+    said_name: 'geleia da casa',
+    corrected_to: 'geleia caseira',
+    status: 'active',
+    confirmed_count: 2,
+    last_seen: '2026-11-04T12:00:00Z',
+    custom_kcal_per_100g: 80,
+    custom_protein_g: null,
+    custom_carbs_g: 20,
+    custom_fat_g: null,
+    ...change,
+  }
+}
+type Correction = {
+  id: string
+  user_id: string
+  said_name: string
+  corrected_to: string
+  status: string
+  confirmed_count: number
+  last_seen: string
+  custom_kcal_per_100g: number | null
+  custom_protein_g: number | null
+  custom_carbs_g: number | null
+  custom_fat_g: number | null
+}
+function correctionDb(rows: Correction[], names: string[] = [], raw = false) {
+  const state = db(names),
+    calls: Array<{ method: string; args: unknown[] }> = []
+  const from = vi.fn((table: string) => {
+    if (table !== 'user_food_corrections') throw new Error('unexpected table')
+    const filters: Array<(row: Correction) => boolean> = []
+    let count = 100
+    const result = Promise.resolve().then(() => ({
+      data: rows
+        .filter((row) => raw || filters.every((fn) => fn(row)))
+        .sort((a, b) => Date.parse(b.last_seen) - Date.parse(a.last_seen))
+        .slice(0, count),
+      error: null,
+    }))
+    const query = Object.assign(result, {} as Record<string, unknown>)
+    query.select = (...args: unknown[]) => {
+      calls.push({ method: 'select', args })
+      return query
+    }
+    query.eq = (field: keyof Correction, value: unknown) => {
+      calls.push({ method: 'eq', args: [field, value] })
+      filters.push((row) => row[field] === value)
+      return query
+    }
+    query.neq = (field: keyof Correction, value: unknown) => {
+      calls.push({ method: 'neq', args: [field, value] })
+      filters.push((row) => row[field] !== value)
+      return query
+    }
+    query.gte = (field: keyof Correction, value: string) => {
+      calls.push({ method: 'gte', args: [field, value] })
+      filters.push((row) => Date.parse(String(row[field])) >= Date.parse(value))
+      return query
+    }
+    query.order = (...args: unknown[]) => {
+      calls.push({ method: 'order', args })
+      return query
+    }
+    query.limit = (value: number) => {
+      count = value
+      calls.push({ method: 'limit', args: [value] })
+      return query
+    }
+    query.or = (value: string) => {
+      calls.push({ method: 'or', args: [value] })
+      const match = /^said_name\.eq\.(.*),corrected_to\.eq\.(.*)$/u.exec(value)
+      if (!match) throw new Error('unsafe legacy filter')
+      filters.push((row) => row.said_name === match[1] || row.corrected_to === match[2])
+      return query
+    }
+    return query
+  })
+  Object.assign(state.client, { from })
+  return { ...state, from, calls }
 }

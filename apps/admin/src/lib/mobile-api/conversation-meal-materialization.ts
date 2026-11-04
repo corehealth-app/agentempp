@@ -25,6 +25,7 @@ import {
   parseConversationMealInterpretation,
 } from './conversation-meal-interpretation-contracts'
 import { validateConversationMealInterpretationModel } from './conversation-meal-interpretation-validation'
+import { createBoundConversationMealCorrectionReader } from './conversation-meal-personal-correction'
 import type { CapturedConversationMealSource } from './conversation-meal-source'
 import { MobileApiError } from './http'
 import type { MealDraft } from './meal-draft-service'
@@ -81,6 +82,7 @@ export type ConversationMealMaterialization =
       readonly reason:
         | 'interpretation_not_positive'
         | 'unqualified_whole_name'
+        | 'personal_correction_unproven'
         | 'missing_quantity'
         | 'unsupported_quantity'
         | 'low_confidence'
@@ -286,18 +288,34 @@ export async function materializeConversationMealInterpretation(
     const byUnit = new Map(source.sources.map((s) => [s.unit, s]))
     const read = (ref: Ref | null): string | null =>
       ref ? (byUnit.get(ref.unit)?.text?.slice(ref.start, ref.end) ?? unavailable()) : null
-    const qualified = new Map<string, boolean>()
-    const qualify = async (name: string): Promise<boolean> => {
+    if (
+      captured.sourceReader.ownerId !== source.owner_id ||
+      captured.sourceReader.asOf !== source.captured_at
+    )
+      unavailable()
+    const corrections = createBoundConversationMealCorrectionReader(db, {
+      ownerId: source.owner_id,
+      asOf: source.captured_at,
+    })
+    const correctionCache = new Map<string, Awaited<ReturnType<typeof corrections>>>()
+    const correctionFor = async (name: string) => {
+      const previous = correctionCache.get(name)
+      if (previous !== undefined) return previous
+      const value = await corrections(name)
+      correctionCache.set(name, value)
+      return value
+    }
+    const wholeQualified = new Map<string, boolean>()
+    const qualifyWhole = async (name: string): Promise<boolean> => {
       const whole = normalized(name)
-      if (!whole || name.length > 160) return false
-      const cached = qualified.get(whole)
-      if (cached !== undefined) return cached
+      if (!whole || name.length > 250) return false
+      const previous = wholeQualified.get(whole)
+      if (previous !== undefined) return previous
       if (
         consumedFoodDefault(name, country) ||
         everydayFoodDefault(name) ||
         isRecognizedPreparedDish(name)
       ) {
-        qualified.set(whole, true)
         return true
       }
       const result = await rpc('search_food_trgm', {
@@ -311,8 +329,35 @@ export async function materializeConversationMealInterpretation(
         rows = z.array(catalogRow).max(5).parse(raw)
       if (!isDeepStrictEqual(raw, rows)) unavailable()
       const found = rows.some((row) => normalized(row.name_pt) === whole)
-      qualified.set(whole, found)
+      wholeQualified.set(whole, found)
       return found
+    }
+    type Qualification =
+      | 'qualified'
+      | 'unqualified_whole_name'
+      | 'personal_correction_unproven'
+      | 'ambiguous_source_group'
+    const qualified = new Map<string, Qualification>()
+    const qualify = async (name: string): Promise<Qualification> => {
+      // Use the actual unchanged input spelling the calculator will receive.
+      const candidate = freshCandidate({ name }, 0)
+      if (!candidate) return 'ambiguous_source_group'
+      const key = candidate.name,
+        previous = qualified.get(key)
+      if (previous !== undefined) return previous
+      const correction = await correctionFor(key)
+      let answer: Qualification
+      if (correction.status === 'active')
+        answer =
+          correction.customNutrition || (await qualifyWhole(correction.row.corrected_to))
+            ? 'qualified'
+            : 'personal_correction_unproven'
+      else if (correction.status === 'unproven') answer = 'personal_correction_unproven'
+      else if (correction.status === 'learning')
+        answer = (await qualifyWhole(name)) ? 'qualified' : 'personal_correction_unproven'
+      else answer = (await qualifyWhole(name)) ? 'qualified' : 'unqualified_whole_name'
+      qualified.set(key, answer)
+      return answer
     }
     const inputs: MaterializedConversationMeal['inputs'][number][] = [],
       groups: ConversationMealSourceGroup[] = []
@@ -357,7 +402,8 @@ export async function materializeConversationMealInterpretation(
         // never silently choose a caption quantity or multiply a 2x estimate.
         if (quantityText !== null || unitText !== null)
           return clarify('ambiguous_source_group', [food.index])
-        if (!(await qualify(visual.name))) return clarify('unqualified_whole_name', [food.index])
+        const qualification = await qualify(visual.name)
+        if (qualification !== 'qualified') return clarify(qualification, [food.index])
         const indexed = freshCandidate({ name: visual.name }, inputs.length)
         if (!indexed) return clarify('ambiguous_source_group', [food.index])
         candidates.push({
@@ -387,53 +433,77 @@ export async function materializeConversationMealInterpretation(
         const compactName = /^leite(?: integral)? com (?:1|uma) (?:medida|dose) de whey$/u.test(
           normalized(name),
         )
-        if (compactName && !total) return clarify('unsupported_compound_association', [food.index])
-        if (cup || total) {
-          if (cup && (quantityText !== null || unitText !== null))
+        if (cup || compactName) {
+          const original = freshCandidate({ name }, inputs.length)
+          if (!original) return clarify('ambiguous_source_group', [food.index])
+          const correction = await correctionFor(original.name)
+          if (correction.status === 'unproven')
+            return clarify('personal_correction_unproven', [food.index])
+          if (correction.status === 'active') {
+            const qualification = await qualify(name)
+            if (qualification !== 'qualified') return clarify(qualification, [food.index])
+            // An approved whole-food correction precedes recipe expansion.
+            // Preserve a stated whole mass; never invent one from ingredients
+            // after the correction has changed the food's identity.
+            if (n === null || factor === null)
+              return clarify('unsupported_compound_association', [food.index])
+            const corrected = freshCandidate({ name, grams_stated: n * factor }, inputs.length)
+            if (!corrected) return clarify('ambiguous_source_group', [food.index])
+            candidates.push(corrected)
+          }
+        }
+        if (!candidates.length) {
+          if (compactName && !total)
             return clarify('unsupported_compound_association', [food.index])
-          const parts = cup ?? total ?? unavailable()
-          if (inputs.length + parts.length > 30) return clarify('item_limit', [food.index])
-          for (const [offset, part] of parts.entries()) {
-            if (!(await qualify(part.food_name)))
-              return clarify('unqualified_whole_name', [food.index])
-            const candidate = freshCandidate(
-              { name: part.food_name, grams_stated: part.quantity_g },
-              inputs.length + offset,
-              'portion_reference',
-            )
-            if (!candidate) unavailable()
-            candidates.push(candidate)
-          }
-          rule = cup ? 'milk_whey_cup' : 'milk_whey_total'
-        } else {
-          if (!(await qualify(name))) return clarify('unqualified_whole_name', [food.index])
-          let raw: MealDraftRawItem = { name },
-            reference = false
-          if (n !== null) {
-            if (factor !== null) raw = { name, grams_stated: n * factor }
-            else {
-              const unit = u === null ? null : canonicalUnit(u)
-              if (u !== null && unit === null) return clarify('unsupported_quantity', [food.index])
-              if (unit === 'caneca' || unit === 'medida') {
-                // Reuse only the already qualified exact food plus its fully
-                // associated original quantity/unit; this is conversion, not
-                // a parser reinterpreting or discarding meal discourse.
-                const household = mobileHouseholdTextItem(`${n} ${unit} de ${name}`)
-                if (!household) return clarify('unsupported_quantity', [food.index])
-                raw = household
-                reference = true
-                rule = 'mobile_household'
-              } else raw = { name, count: n, unit }
+          else if (cup || total) {
+            if (cup && (quantityText !== null || unitText !== null))
+              return clarify('unsupported_compound_association', [food.index])
+            const parts = cup ?? total ?? unavailable()
+            if (inputs.length + parts.length > 30) return clarify('item_limit', [food.index])
+            for (const [offset, part] of parts.entries()) {
+              const qualification = await qualify(part.food_name)
+              if (qualification !== 'qualified') return clarify(qualification, [food.index])
+              const candidate = freshCandidate(
+                { name: part.food_name, grams_stated: part.quantity_g },
+                inputs.length + offset,
+                'portion_reference',
+              )
+              if (!candidate) unavailable()
+              candidates.push(candidate)
             }
+            rule = cup ? 'milk_whey_cup' : 'milk_whey_total'
+          } else {
+            const qualification = await qualify(name)
+            if (qualification !== 'qualified') return clarify(qualification, [food.index])
+            let raw: MealDraftRawItem = { name },
+              reference = false
+            if (n !== null) {
+              if (factor !== null) raw = { name, grams_stated: n * factor }
+              else {
+                const unit = u === null ? null : canonicalUnit(u)
+                if (u !== null && unit === null)
+                  return clarify('unsupported_quantity', [food.index])
+                if (unit === 'caneca' || unit === 'medida') {
+                  // Reuse only the already qualified exact food plus its fully
+                  // associated original quantity/unit; this is conversion, not
+                  // a parser reinterpreting or discarding meal discourse.
+                  const household = mobileHouseholdTextItem(`${n} ${unit} de ${name}`)
+                  if (!household) return clarify('unsupported_quantity', [food.index])
+                  raw = household
+                  reference = true
+                  rule = 'mobile_household'
+                } else raw = { name, count: n, unit }
+              }
+            }
+            const candidate = freshCandidate(
+              raw,
+              inputs.length,
+              reference ? 'portion_reference' : undefined,
+            )
+            if (!candidate) return clarify('ambiguous_source_group', [food.index])
+            candidates.push(candidate)
+            if (isRecognizedPreparedDish(name)) rule = 'prepared_dish'
           }
-          const candidate = freshCandidate(
-            raw,
-            inputs.length,
-            reference ? 'portion_reference' : undefined,
-          )
-          if (!candidate) return clarify('ambiguous_source_group', [food.index])
-          candidates.push(candidate)
-          if (isRecognizedPreparedDish(name)) rule = 'prepared_dish'
         }
       }
       if (inputs.length + candidates.length > 30) return clarify('item_limit', [food.index])

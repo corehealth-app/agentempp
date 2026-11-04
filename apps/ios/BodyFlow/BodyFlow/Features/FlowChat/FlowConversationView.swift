@@ -147,7 +147,11 @@ struct FlowConversationView: View {
         }
         if let question = model.terminalQuestion {
           VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-            Text(questionText(question.reason)).font(BodyFlowTypography.headline)
+            Text(
+              question.observedQuestion.map {
+                FlowConversationThreadEventPresentation.question($0, english: english)
+              } ?? questionText(question.reason)
+            ).font(BodyFlowTypography.headline)
             Text(
               english
                 ? "A linked reply is not available yet. Your original report is preserved and has not recorded a meal."
@@ -167,6 +171,21 @@ struct FlowConversationView: View {
           .disabled(model.isLoadingHistory)
         }
         ForEach(Array(model.journalRows.reversed()), id: \.eventID) { entry in journalEntry(entry) }
+        ForEach(Array(model.threadRows.reversed()), id: \.eventID) { entry in
+          if let row = model.threadOriginalSavedRow(eventID: entry.eventID) {
+            savedCard(row)
+            if model.hasLocalUnresolved(commandID: row.id) {
+              Button(english ? "Sync confirmation" : "Sincronizar confirmação") {
+                Task { await model.reconcile(commandID: row.id) }
+              }.disabled(model.isWorking)
+            }
+          } else if let parent = model.threadDescriptor(entry.threadID) {
+            FlowConversationThreadEventView(
+              entry: entry, parent: parent,
+              observedQuestion: model.observedThreadQuestion(eventID: entry.eventID),
+              feedback: model.threadFeedback(eventID: entry.eventID), english: english)
+          }
+        }
         if model.isLoadingHistory {
           ProgressView(english ? "Loading history…" : "Carregando histórico…")
         }

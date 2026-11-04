@@ -1,0 +1,131 @@
+{
+  "parentBinding": {
+    "owner_id": "c3c70000-0000-4000-8000-000000000001",
+    "command_id": "c3c70000-0000-4000-8000-000000000003",
+    "input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+    "command_protocol": "conversation.command.v1",
+    "kind": "meal.report",
+    "epoch": "2d67c9bf-58ce-43b3-9fd5-2284e5b703a2",
+    "admitted_at": "2026-11-04T18:15:26.250194Z"
+  },
+  "childBinding": {
+    "owner_id": "c3c70000-0000-4000-8000-000000000001",
+    "command_id": "c3c70000-0000-4000-8000-000000000005",
+    "input_hash": "9b8c2629a7d48b8fe8317e9f024aac6ee45b1f64aedcb58fe8fb854a9436902a",
+    "command_protocol": "conversation.clarification.v1",
+    "kind": "meal.clarify",
+    "epoch": "2d67c9bf-58ce-43b3-9fd5-2284e5b703a2",
+    "admitted_at": "2026-11-04T18:15:27.997473Z"
+  },
+  "parentDecisionHash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+  "receipt": {
+    "schema": "conversation.meal-continuation-effect.v1",
+    "owner_id": "c3c70000-0000-4000-8000-000000000001",
+    "command_id": "c3c70000-0000-4000-8000-000000000005",
+    "input_hash": "9b8c2629a7d48b8fe8317e9f024aac6ee45b1f64aedcb58fe8fb854a9436902a",
+    "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+    "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+    "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+    "epoch": "2d67c9bf-58ce-43b3-9fd5-2284e5b703a2",
+    "registration_id": "11c34c7b-6487-4437-b8dd-3b738445cba5",
+    "provider_key": "conversation.clarification/c3c70000-0000-4000-8000-000000000001/c3c70000-0000-4000-8000-000000000003",
+    "meal_type": "almoco",
+    "local_date": "2026-11-04",
+    "timezone": "UTC",
+    "consumed_at": "2026-11-04T18:15:29.256011Z",
+    "log_ids": [
+      "85f03b88-7ece-4006-9c8e-82d0f3726585"
+    ],
+    "effect_version": "cmeal1:0f73142c3a8ab4d948bc97abcc1ebc6cf56a5e767d0e4f63c4aee79ca1b1e552"
+  },
+  "presentation": {
+    "schema": "conversation.feedback-presentation.v1",
+    "mode": "historical",
+    "assistant": "Flow AI",
+    "original": {
+      "schema": "registration.feedback.v2",
+      "registration_id": "11c34c7b-6487-4437-b8dd-3b738445cba5",
+      "kind": "meal",
+      "local_date": "2026-11-04"
+    },
+    "current_policy": {
+      "version": 1,
+      "observed_at": "2026-11-04T18:15:30.601019Z",
+      "assessment": "incomplete",
+      "recording_allowed": true,
+      "pause_weight_loss_guidance": false,
+      "professional_assessment_recommended": false,
+      "phase_selection_pending": false,
+      "target_source": "unavailable",
+      "hide": {
+        "objective": true,
+        "calories": true,
+        "protein": true,
+        "balance": true,
+        "block": true,
+        "budget": true
+      }
+    },
+    "provenance": {
+      "epoch": "2d67c9bf-58ce-43b3-9fd5-2284e5b703a2",
+      "command_id": "c3c70000-0000-4000-8000-000000000005",
+      "observed_at": "2026-11-04T18:15:30.601019Z"
+    },
+    "status": "available",
+    "format": "sections",
+    "recorded": {
+      "kind": "meal",
+      "meal_kind": "almoco",
+      "items": [
+        {
+          "kcal": 128.3,
+          "protein_g": 2.52,
+          "carbs_g": 28.06,
+          "fat_g": 0.23,
+          "log_id": "85f03b88-7ece-4006-9c8e-82d0f3726585",
+          "food_name": "arroz branco cozido",
+          "quantity_g": 100,
+          "quantity": {
+            "value": 100,
+            "unit": "g",
+            "estimated": false,
+            "reference_id": null
+          },
+          "nutrition_source": "canonical_fuzzy"
+        }
+      ],
+      "totals": {
+        "kcal": 128.3,
+        "protein_g": 2.5,
+        "carbs_g": 28.1,
+        "fat_g": 0.2
+      }
+    },
+    "sections": [
+      {
+        "key": "saved",
+        "text": "Almoço registrado."
+      },
+      {
+        "key": "items",
+        "text": "arroz branco cozido · 100 g\n128,3 kcal | Proteína: 2,52 g | Carboidratos: 28,06 g | Gorduras: 0,23 g"
+      },
+      {
+        "key": "summary",
+        "text": "Total aproximado da refeição: 128,3 kcal | Proteína: 2,5 g | Carboidratos: 28,1 g | Gorduras: 0,2 g"
+      },
+      {
+        "key": "day",
+        "text": "No momento deste registro (2026-11-04):\nO resumo oficial deste dia está indisponível; seu registro foi salvo."
+      },
+      {
+        "key": "block",
+        "text": "Progresso histórico sob as orientações atuais:\nOs dados consolidados do bloco estão indisponíveis."
+      },
+      {
+        "key": "education",
+        "text": "O comentário educativo está indisponível; seu registro continua salvo."
+      }
+    ]
+  }
+}

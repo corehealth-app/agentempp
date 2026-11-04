@@ -10,6 +10,7 @@ enum MobileConversationRequestHeaders: Sendable {
   case reconciliation(epoch: UUID, ownerID: UUID, inputHash: String)
   case mealGroup(epoch: UUID, ownerID: UUID, inputHash: String)
   case journal(epoch: UUID, ownerID: UUID)
+  case threadJournal(epoch: UUID, ownerID: UUID)
   case mealEdit(epoch: UUID, ownerID: UUID, inputHash: String)
   case mealEditReconciliation(epoch: UUID, ownerID: UUID, inputHash: String)
 
@@ -19,6 +20,7 @@ enum MobileConversationRequestHeaders: Sendable {
   ) throws {
     let base = "/api/mobile/v1/conversation/meal-commands"
     if case .journal = self {
+    } else if case .threadJournal = self {
     } else {
       guard query.isEmpty else { throw MobileAPIRequestError.invalidConversationHeaders }
     }
@@ -49,10 +51,14 @@ enum MobileConversationRequestHeaders: Sendable {
           originalInputHash: hash, epoch: epoch, operationID: operationID, wireBody: body),
         operation.wireBody == body, key.value == operation.idempotencyKey
       else { throw MobileAPIRequestError.invalidConversationHeaders }
-    case .journal:
+    case .journal, .threadJournal:
+      let isV2: Bool
+      if case .threadJournal = self { isV2 = true } else { isV2 = false }
       let names = query.map(\.name)
       guard method == .get, path == "/api/mobile/v1/conversation/journal", body == nil, key == nil,
-        Set(names).count == names.count, Set(names).isSubset(of: ["limit", "cursor"]),
+        Set(names).count == names.count,
+        Set(names).isSubset(of: isV2 ? ["version", "limit", "cursor"] : ["limit", "cursor"]),
+        !isV2 || query.first(where: { $0.name == "version" })?.value == "2",
         let rawLimit = query.first(where: { $0.name == "limit" })?.value, let limit = Int(rawLimit),
         String(limit) == rawLimit, (1...25).contains(limit)
       else { throw MobileAPIRequestError.invalidConversationHeaders }
@@ -90,7 +96,8 @@ enum MobileConversationRequestHeaders: Sendable {
     request.setValue("meal-command-v1", forHTTPHeaderField: "X-Conversation-Protocol")
     switch self {
     case .session: break
-    case .submit(let epoch, let owner), .journal(let epoch, let owner):
+    case .submit(let epoch, let owner), .journal(let epoch, let owner),
+      .threadJournal(let epoch, let owner):
       request.setValue(epoch.uuidString.lowercased(), forHTTPHeaderField: "X-Conversation-Epoch")
       request.setValue(owner.uuidString.lowercased(), forHTTPHeaderField: "X-Conversation-Owner")
     case .reconciliation(let epoch, let owner, let hash),

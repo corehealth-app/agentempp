@@ -50,7 +50,7 @@ struct FlowConversationSessionSource: Sendable {
     try await lifecycle.validate(lease)
     let model = try await FlowConversationModel.open(
       transport: transport, lifecycle: lifecycle, store: store, keyVault: keyVault,
-      media: media, editing: editing, expectedLease: lease)
+      media: media, editing: editing, historyVersion: .v2, expectedLease: lease)
     let session = FlowConversationBoundSession(model: model, lifecycle: lifecycle, lease: lease)
     do {
       try await lifecycle.validate(lease)

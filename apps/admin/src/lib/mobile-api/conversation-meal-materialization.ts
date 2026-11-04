@@ -17,11 +17,8 @@ import type { ServiceClient } from '@mpp/db'
 import { z } from 'zod'
 import type { BoundConversationMealCommand } from './conversation-command-contracts'
 import {
-  type ConversationMealQuestion,
-  parseConversationMealQuestion,
-} from './conversation-meal-continuation-input'
-import {
   type ConversationMealQuantityAnswerFacts,
+  convertConversationMealQuantity,
   resolveConversationMealQuantityAnswer,
 } from './conversation-meal-continuation-quantity'
 import { detachConversationMealEditJson } from './conversation-meal-edit-contracts'
@@ -259,7 +256,6 @@ export interface ConversationMealContinuationQuantityWitness {
 }
 interface QuantityOverlay {
   readonly replyId: string
-  readonly question: ConversationMealQuestion
   readonly facts: ConversationMealQuantityAnswerFacts
 }
 interface ContinuationOverlay {
@@ -314,7 +310,6 @@ export async function materializeConversationMealContinuation(
     const answers = freezeInterpretation(
       parsed.map((answer) => ({
         replyId: answer.replyId,
-        question: parseConversationMealQuestion(answer.question),
         facts: resolveConversationMealQuantityAnswer(answer.input, answer.question),
       })),
     )
@@ -328,54 +323,182 @@ export async function materializeConversationMealContinuation(
       answers,
       applied: new Set(),
     }
-    const materialization = await materializeConversationMealCore(
-      db,
-      command,
-      captured,
-      originalInterpretation,
-      options,
-      overlay,
-    )
-    if (overlay.applied.size !== answers.length) unavailable()
-    const quantity_witnesses = answers.map(({ replyId, facts }) => {
-      let input_indexes: readonly number[] = []
-      if (materialization.status === 'materialized') {
-        const groups = materialization.source_groups.filter((g) =>
-          g.interpretation_food_indexes.includes(facts.food_index),
-        )
-        const group = groups[0]
-        if (
-          groups.length !== 1 ||
-          !group ||
-          group.interpretation_food_indexes.length !== 1 ||
-          group.input_indexes.length !== 1
-        )
-          unavailable()
-        const input = materialization.inputs[group.input_indexes[0] ?? unavailable()]
-        if (
-          !input ||
-          input.calculation_input.quantity_g !== facts.quantity_g ||
-          input.candidate.quantity_basis !== facts.quantity_basis ||
-          !isDeepStrictEqual(input.candidate.quantity_display ?? null, facts.quantity_display)
-        )
-          unavailable()
-        input_indexes = group.input_indexes
-      }
-      return {
-        reply_id: replyId,
-        food_index: facts.food_index,
-        amount: facts.amount,
-        unit: facts.unit,
-        quantity_g: facts.quantity_g,
-        quantity_basis: facts.quantity_basis,
-        quantity_display: facts.quantity_display,
-        input_indexes,
-      }
-    })
-    return freezeInterpretation({ materialization, quantity_witnesses })
+    return await materializeOverlay(db, command, captured, originalInterpretation, options, overlay)
   } catch {
     return unavailable()
   }
+}
+
+/** A stored answer chain carries opaque SQL identities, not historical question
+ * objects. Its caller must prove the complete actual read/admission separately. */
+export async function materializeStoredConversationMealContinuation(
+  db: ServiceClient,
+  command: BoundConversationMealCommand,
+  captured: CapturedConversationMealSource,
+  originalInterpretation: ConversationMealInterpretation,
+  options: { confidenceThreshold: number },
+  continuation: {
+    resolutionSource: CapturedConversationMealSource
+    answerChain: readonly unknown[]
+  },
+): Promise<{
+  readonly materialization: ConversationMealMaterialization
+  readonly quantity_witnesses: readonly ConversationMealContinuationQuantityWitness[]
+}> {
+  try {
+    const values = closedPrimitiveObject(continuation, ['answerChain', 'resolutionSource'])
+    const raw = values.answerChain
+    if (!Array.isArray(raw) || Object.getPrototypeOf(raw) !== Array.prototype || raw.length > 31)
+      unavailable()
+    const descriptors = Object.getOwnPropertyDescriptors(raw)
+    if (Reflect.ownKeys(descriptors).length !== raw.length + 1) unavailable()
+    const source = buildConversationMealInterpretationSource(command, captured)
+    const interpretation = parseConversationMealInterpretation(originalInterpretation, {
+      ownerId: source.owner_id,
+      commandId: source.command_id,
+      inputHash: source.input_hash,
+      sourceHash: source.source_hash,
+      attemptId: originalInterpretation.attempt_id,
+    })
+    const uuid = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u)
+    const hash = z.string().regex(/^[0-9a-f]{64}$/u)
+    const replies = new Set<string>(),
+      questions = new Set<string>(),
+      targets = new Set<number>()
+    let mealType = false
+    const answers: QuantityOverlay[] = []
+    for (let n = 0; n < raw.length; n++) {
+      const d = descriptors[String(n)]
+      if (!d?.enumerable || !('value' in d)) unavailable()
+      const link = closedPrimitiveObject(d.value, [
+        'reply_id',
+        'reply_input_hash',
+        'question_key',
+        'answer',
+      ])
+      const replyId = uuid.parse(link.reply_id),
+        questionKey = hash.parse(link.question_key)
+      hash.parse(link.reply_input_hash)
+      if (replies.has(replyId) || questions.has(questionKey)) unavailable()
+      replies.add(replyId)
+      questions.add(questionKey)
+      const kind = Object.getOwnPropertyDescriptor(link.answer ?? {}, 'kind')
+      if (!kind || !('value' in kind)) unavailable()
+      if (kind.value === 'meal_type') {
+        const a = closedPrimitiveObject(link.answer, ['kind', 'meal_type'])
+        z.enum(['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro']).parse(a.meal_type)
+        if (mealType) unavailable()
+        mealType = true
+        continue
+      }
+      const a = closedPrimitiveObject(link.answer, ['kind', 'food_index', 'amount', 'unit'])
+      if (a.kind !== 'quantity') unavailable()
+      const index = z.number().finite().int().min(0).max(29).parse(a.food_index)
+      if (targets.has(index)) unavailable()
+      targets.add(index)
+      const food = interpretation.foods.find((f) => f.index === index)
+      if (!food || food.quantity !== null || food.unit !== null) unavailable()
+      const unit = food.name ? source.sources.find((s) => s.unit === food.name?.unit) : null
+      const visual =
+        food.visual_index === null
+          ? null
+          : source.sources.find((s) => s.unit === 'vision_items')?.visual_items[food.visual_index]
+      const name = food.name
+        ? unit?.text?.slice(food.name.start, food.name.end)
+        : record(visual)?.name
+      if (typeof name !== 'string') unavailable()
+      answers.push({
+        replyId,
+        facts: freezeInterpretation({
+          food_index: index,
+          food_name: name,
+          ...convertConversationMealQuantity(name, a.amount, a.unit),
+        }),
+      })
+    }
+    return await materializeOverlay(db, command, captured, originalInterpretation, options, {
+      resolutionSource: values.resolutionSource as CapturedConversationMealSource,
+      answers: freezeInterpretation(answers),
+      applied: new Set(),
+    })
+  } catch {
+    return unavailable()
+  }
+}
+function closedPrimitiveObject(raw: unknown, keys: string[]): Record<string, unknown> {
+  if (
+    !raw ||
+    typeof raw !== 'object' ||
+    Array.isArray(raw) ||
+    ![Object.prototype, null].includes(Object.getPrototypeOf(raw))
+  )
+    unavailable()
+  const descriptors = Object.getOwnPropertyDescriptors(raw)
+  if (!isDeepStrictEqual(Reflect.ownKeys(descriptors).sort(), [...keys].sort())) unavailable()
+  const out: Record<string, unknown> = {}
+  for (const key of keys) {
+    const d = descriptors[key]
+    if (!d?.enumerable || !('value' in d)) unavailable()
+    out[key] = d.value
+  }
+  return out
+}
+async function materializeOverlay(
+  db: ServiceClient,
+  command: BoundConversationMealCommand,
+  captured: CapturedConversationMealSource,
+  originalInterpretation: ConversationMealInterpretation,
+  options: { confidenceThreshold: number },
+  overlay: ContinuationOverlay,
+): Promise<{
+  readonly materialization: ConversationMealMaterialization
+  readonly quantity_witnesses: readonly ConversationMealContinuationQuantityWitness[]
+}> {
+  const materialization = await materializeConversationMealCore(
+    db,
+    command,
+    captured,
+    originalInterpretation,
+    options,
+    overlay,
+  )
+  if (overlay.applied.size !== overlay.answers.length) unavailable()
+  const quantity_witnesses = overlay.answers.map(({ replyId, facts }) => {
+    let input_indexes: readonly number[] = []
+    if (materialization.status === 'materialized') {
+      const groups = materialization.source_groups.filter((g) =>
+        g.interpretation_food_indexes.includes(facts.food_index),
+      )
+      const group = groups[0]
+      if (
+        groups.length !== 1 ||
+        !group ||
+        group.interpretation_food_indexes.length !== 1 ||
+        group.input_indexes.length !== 1
+      )
+        unavailable()
+      const input = materialization.inputs[group.input_indexes[0] ?? unavailable()]
+      if (
+        !input ||
+        input.calculation_input.quantity_g !== facts.quantity_g ||
+        input.candidate.quantity_basis !== facts.quantity_basis ||
+        !isDeepStrictEqual(input.candidate.quantity_display ?? null, facts.quantity_display)
+      )
+        unavailable()
+      input_indexes = group.input_indexes
+    }
+    return {
+      reply_id: replyId,
+      food_index: facts.food_index,
+      amount: facts.amount,
+      unit: facts.unit,
+      quantity_g: facts.quantity_g,
+      quantity_basis: facts.quantity_basis,
+      quantity_display: facts.quantity_display,
+      input_indexes,
+    }
+  })
+  return freezeInterpretation({ materialization, quantity_witnesses })
 }
 
 async function materializeConversationMealCore(
@@ -486,7 +609,7 @@ async function materializeConversationMealCore(
             ? null
             : record(byUnit.get('vision_items')?.visual_items[food.visual_index])
         const name = food.name ? read(food.name) : visual?.name
-        if (name !== answer.facts.food_name || answer.question.kind !== 'quantity') unavailable()
+        if (name !== answer.facts.food_name) unavailable()
         if (
           visual &&
           typeof visual.quantity_g_estimate === 'number' &&

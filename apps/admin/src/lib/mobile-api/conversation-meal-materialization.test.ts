@@ -17,6 +17,7 @@ import {
   mapConversationMealCalculationSources,
   materializeConversationMealContinuation,
   materializeConversationMealInterpretation,
+  materializeStoredConversationMealContinuation,
 } from './conversation-meal-materialization'
 import { createBoundConversationMealCorrectionReader } from './conversation-meal-personal-correction'
 import type { CapturedConversationMealSource } from './conversation-meal-source'
@@ -1452,5 +1453,200 @@ describe('continuation closed boundary and whole qualification preservation', ()
     })
     expect(state.rpc).not.toHaveBeenCalled()
     expect(state.from).not.toHaveBeenCalled()
+  })
+})
+
+function storedLink(index = 0, amount = 200, unit = 'g', id = ASSET) {
+  return {
+    reply_id: id,
+    reply_input_hash: '1'.repeat(64),
+    question_key: String(index + 2).repeat(64),
+    answer: { kind: 'quantity', food_index: index, amount, unit },
+  }
+}
+function storedRun(
+  f: ReturnType<typeof continuationFixture>,
+  answerChain: unknown[],
+  state = db(),
+) {
+  return materializeStoredConversationMealContinuation(
+    state.client,
+    f.command,
+    f.capture,
+    f.interpretation,
+    options,
+    { resolutionSource: f.resolution, answerChain },
+  )
+}
+describe('actual stored linked-answer materialization without historical questions', () => {
+  it('uses the original missing rice occurrence and preserves explicit beans and original evidence', async () => {
+    const f = continuationFixture(
+      fixture('Comi arroz e feijão 100 g', [
+        { name: 'arroz' },
+        { name: 'feijão', quantity: '100', unit: 'g' },
+      ]),
+    )
+    const original = structuredClone(f.interpretation),
+      result = await storedRun(f, [storedLink()])
+    expect(result.materialization.status).toBe('materialized')
+    if (result.materialization.status !== 'materialized') throw new Error('materialized required')
+    expect(result.materialization.inputs.map((x) => x.calculation_input.quantity_g)).toEqual([
+      200, 100,
+    ])
+    expect(result.quantity_witnesses[0]?.input_indexes).toEqual([0])
+    expect(f.interpretation).toEqual(original)
+    expect(result.materialization.source_hash).toBe(f.capture.sourceHash)
+  })
+  it('keeps an applied answer while another original quantity is still missing, then maps real indexes', async () => {
+    const f = continuationFixture(
+      fixture('Comi leite e whey', [{ name: 'leite' }, { name: 'whey' }]),
+    )
+    const milk = storedLink(0, 200, 'mL'),
+      whey = storedLink(1, 1, 'scoop', COMMAND)
+    const partial = await storedRun(f, [milk])
+    expect(partial.materialization).toEqual({
+      status: 'clarification_required',
+      reason: 'missing_quantity',
+      food_indexes: [1],
+    })
+    expect(partial.quantity_witnesses[0]?.input_indexes).toEqual([])
+    const complete = await storedRun(f, [
+      milk,
+      whey,
+      {
+        reply_id: OWNER,
+        reply_input_hash: 'a'.repeat(64),
+        question_key: 'b'.repeat(64),
+        answer: { kind: 'meal_type', meal_type: 'almoco' },
+      },
+    ])
+    expect(complete.materialization.status).toBe('materialized')
+    expect(complete.quantity_witnesses.map((w) => [w.quantity_g, w.input_indexes])).toEqual([
+      [206, [0]],
+      [30, [1]],
+    ])
+  })
+  it.each([
+    ['unknown link', (a: ReturnType<typeof storedLink>) => ({ ...a, hidden: true })],
+    [
+      'unknown answer',
+      (a: ReturnType<typeof storedLink>) => ({ ...a, answer: { ...a.answer, quantity_g: 200 } }),
+    ],
+    ['bad hash', (a: ReturnType<typeof storedLink>) => ({ ...a, reply_input_hash: 'BAD' })],
+    [
+      'wrong target',
+      (a: ReturnType<typeof storedLink>) => ({ ...a, answer: { ...a.answer, food_index: 1 } }),
+    ],
+    [
+      'unsupported reference',
+      (a: ReturnType<typeof storedLink>) => ({ ...a, answer: { ...a.answer, unit: 'scoop' } }),
+    ],
+  ])('rejects %s before catalog lookup', async (_label, mutate) => {
+    const f = continuationFixture(fixture('Comi arroz', [{ name: 'arroz' }])),
+      state = db()
+    await expect(storedRun(f, [mutate(storedLink())], state)).rejects.toThrow()
+    expect(state.rpc).not.toHaveBeenCalled()
+    expect(state.from).not.toHaveBeenCalled()
+  })
+  it('rejects duplicate reply/question/target and more than one meal target', async () => {
+    const f = continuationFixture(
+      fixture('Comi arroz e feijão', [{ name: 'arroz' }, { name: 'feijão' }]),
+    )
+    for (const answers of [
+      [storedLink(), storedLink()],
+      [storedLink(), { ...storedLink(1), reply_id: COMMAND, question_key: '2'.repeat(64) }],
+      [
+        {
+          reply_id: ASSET,
+          reply_input_hash: 'a'.repeat(64),
+          question_key: 'b'.repeat(64),
+          answer: { kind: 'meal_type', meal_type: 'almoco' },
+        },
+        {
+          reply_id: COMMAND,
+          reply_input_hash: 'c'.repeat(64),
+          question_key: 'd'.repeat(64),
+          answer: { kind: 'meal_type', meal_type: 'jantar' },
+        },
+      ],
+    ])
+      await expect(storedRun(f, answers)).rejects.toThrow()
+  })
+  it('never executes custom array prototypes, getters or unknown hooks', async () => {
+    const f = continuationFixture(fixture('Comi arroz', [{ name: 'arroz' }])),
+      calls = vi.fn()
+    const chain = [storedLink()]
+    Object.setPrototypeOf(chain, { toJSON: calls })
+    await expect(storedRun(f, chain)).rejects.toThrow()
+    const link = storedLink()
+    Object.defineProperty(link.answer, 'amount', { enumerable: true, get: calls })
+    await expect(storedRun(f, [link])).rejects.toThrow()
+    expect(calls).not.toHaveBeenCalled()
+  })
+  it('does not overwrite an explicit original mass', async () => {
+    const f = continuationFixture(
+      fixture('Comi arroz 100 g', [{ name: 'arroz', quantity: '100', unit: 'g' }]),
+    )
+    await expect(storedRun(f, [storedLink()])).rejects.toThrow()
+  })
+})
+
+describe('stored-answer original evidence and asynchronous snapshot preservation', () => {
+  it.each([
+    'Vou comer ',
+    'Não comi ',
+    'Minha filha comeu ',
+  ])('does not upgrade %s into a consumption', async (prefix) => {
+    const f = continuationFixture(fixture(`${prefix}arroz`, [{ name: 'arroz' }])),
+      state = db()
+    await expect(storedRun(f, [storedLink()], state)).rejects.toThrow()
+    expect(state.rpc).not.toHaveBeenCalled()
+    expect(state.from).not.toHaveBeenCalled()
+  })
+  it('retains the detached stored quantity when a caller mutates its answer during catalog resolution', async () => {
+    const name = 'geleia rara',
+      f = continuationFixture(fixture(`Comi ${name}`, [{ name }])),
+      state = db([name]),
+      chain = [storedLink(0, 25)]
+    const original = state.rpc.getMockImplementation()
+    state.rpc.mockImplementation(async (...args) => {
+      const current = chain[0]
+      if (!current) throw new Error('actual chain entry')
+      current.answer.amount = 999
+      return await (
+        original as (...v: typeof args) => Promise<Awaited<ReturnType<typeof state.rpc>>>
+      )(...args)
+    })
+    const result = await storedRun(f, chain, state)
+    expect(result.materialization.status).toBe('materialized')
+    expect(result.quantity_witnesses[0]?.quantity_g).toBe(25)
+    expect(result.quantity_witnesses[0]?.amount).toBe(25)
+  })
+  it('preserves qualified visual source positions and refuses an already resolved visual mass', async () => {
+    for (const mass of [null, 100]) {
+      const f = continuationFixture(
+          visualFixture([{ name: 'arroz', quantity_g_estimate: mass, confidence: 0.9 }]),
+        ),
+        state = db()
+      const promise = materializeStoredConversationMealContinuation(
+        state.client,
+        f.command,
+        f.capture,
+        f.interpretation,
+        options,
+        { resolutionSource: f.resolution, answerChain: [storedLink()] },
+      )
+      if (mass !== null) await expect(promise).rejects.toThrow()
+      else {
+        const r = await promise
+        expect(r.materialization.status).toBe('materialized')
+        if (r.materialization.status !== 'materialized') throw new Error('visual materialized')
+        expect(r.materialization.source_groups[0]?.source_positions[0]).toMatchObject({
+          visual_index: 0,
+          name: null,
+          quantity: null,
+        })
+      }
+    }
   })
 })

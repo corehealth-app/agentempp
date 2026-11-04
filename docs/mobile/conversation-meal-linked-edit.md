@@ -31,6 +31,13 @@ version and open-day checks apply. Unknown Save results reconcile by one read;
 they do not calculate or write again. Historical edit decoding can retain the
 actual child binding, but reading history never acknowledges a pending write.
 
+The group, edit and reconciliation endpoints authenticate existing patients
+without bootstrapping a profile. Before publishing their result, they recheck
+the original bearer subject and patient mapping using captured headers. A
+consumed reconciliation POST body is not copied or replayed. If access changes
+after a Save commits, the response is withheld and the original operation stays
+reconcilable; the Save is not repeated or automatically undone.
+
 The checked-in SDK effect fixture is the exact binding/effect subset of the
 synthetic local export `NativeLINKED-FEEDBACK-GOLDEN.json` (SHA-256
 `831b9d10b1c20a60869d0d394df9c5e3a0d71c3648c2fd38245b04fad9cf87bc`).

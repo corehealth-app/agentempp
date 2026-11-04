@@ -3,8 +3,14 @@ import { z } from 'zod'
 import { conversationMealCommandsEnabled } from './conversation-meal-command-routes'
 import { parseConversationMealEditInput } from './conversation-meal-edit-contracts'
 import { createConversationMealEditPublicService } from './conversation-meal-edit-public-service'
+import { createConversationMealReadonlyRuntime } from './conversation-meal-readonly-runtime'
 import { MobileApiError, mobileSuccess, readJsonBody } from './http'
-import { createMobileRouteWithContext, type MobileRouteRuntime } from './route'
+import { authenticatedReevaluationOwner } from './reevaluation-cycle-service'
+import {
+  createMobileRouteWithContext,
+  type MobileRouteContext,
+  type MobileRouteRuntime,
+} from './route'
 
 const uuid = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u)
 const hash = z.string().regex(/^[a-f0-9]{64}$/u)
@@ -59,10 +65,36 @@ function response(value: unknown, requestId: string) {
  * provider or app activation is performed by defining these adapters. */
 export function createConversationMealEditPublicRoutes(
   ports: ConversationMealEditPublicRoutePorts = {},
-  runtime?: MobileRouteRuntime,
+  runtime: MobileRouteRuntime = createConversationMealReadonlyRuntime(),
 ) {
   const enabled = ports.enabled?.bind(ports) ?? conversationMealCommandsEnabled,
-    service = ports.service?.bind(ports) ?? createConversationMealEditPublicService
+    service = ports.service?.bind(ports) ?? createConversationMealEditPublicService,
+    reauthenticate = runtime.authenticate.bind(runtime)
+  async function scopedResponse(context: MobileRouteContext, work: () => Promise<unknown>) {
+    const original = Object.freeze({
+      subject: context.auth.authUserId,
+      patient: authenticatedReevaluationOwner(context.auth),
+      token: context.auth.accessToken,
+      // Authentication needs headers only. The reconciliation POST body has
+      // already been consumed; it is neither copied nor replayed here.
+      request: new Request(context.request.url, { headers: new Headers(context.request.headers) }),
+    })
+    const value = await work()
+    const current = await reauthenticate(original.request, context.supabase)
+    if (
+      current.accessToken !== original.token ||
+      current.authUserId !== original.subject ||
+      current.identity.id !== original.subject ||
+      current.patient.authUserId !== original.subject ||
+      authenticatedReevaluationOwner(current) !== original.patient
+    )
+      throw new MobileApiError(
+        409,
+        'conversation_patient_changed',
+        'The original authenticated patient has changed',
+      )
+    return response(value, context.requestId)
+  }
   const available = () => {
     if (!enabled())
       throw new MobileApiError(
@@ -76,9 +108,8 @@ export function createConversationMealEditPublicRoutes(
       available()
       requireOriginalPatient(context.request, context.auth.userId)
       const identity = original(context.request, (await route.params).commandId)
-      return response(
-        await service(context.supabase).readGroup(context.auth, identity),
-        context.requestId,
+      return scopedResponse(context, () =>
+        service(context.supabase).readGroup(context.auth, identity),
       )
     }, runtime),
     EDIT: createMobileRouteWithContext<EditRoute>(async (context, route) => {
@@ -88,15 +119,14 @@ export function createConversationMealEditPublicRoutes(
         identity = original(context.request, params.commandId),
         operationId = uuid.parse(params.operationId),
         body = await editBody(context.request, operationId)
-      return response(
-        await service(context.supabase).execute(
+      return scopedResponse(context, () =>
+        service(context.supabase).execute(
           context.auth,
           identity,
           operationId,
           body,
           context.requestId,
         ),
-        context.requestId,
       )
     }, runtime),
     RECONCILE: createMobileRouteWithContext<EditRoute>(async (context, route) => {
@@ -106,9 +136,8 @@ export function createConversationMealEditPublicRoutes(
         identity = original(context.request, params.commandId),
         operationId = uuid.parse(params.operationId),
         body = await editBody(context.request, operationId)
-      return response(
-        await service(context.supabase).reconcile(context.auth, identity, operationId, body),
-        context.requestId,
+      return scopedResponse(context, () =>
+        service(context.supabase).reconcile(context.auth, identity, operationId, body),
       )
     }, runtime),
   })

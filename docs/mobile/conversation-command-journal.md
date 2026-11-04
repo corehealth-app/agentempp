@@ -75,9 +75,11 @@ O ensaio removeu somente o protótipo local comprovadamente vazio antes da insta
 transacional. Não é um plano de downgrade de produção: tombstones reais devem ser
 preservados. A migração permanece sem rollout cloud neste incremento.
 
-Ainda faltam autoridade semântica sobre a fonte completa, resolução nutricional,
-anotações estruturadas de preparo, CAS de mídia e política clínica, dia civil aberto
-após locks, writer de refeição atômico com recibo original congelado, selagem/retry,
-correção/desfazer, binding de mensagens e timeline paginada. Estados de refeição
-concluída e testes de efeito/recibo atômico pertencem a esse próximo writer; este
-journal não inventa um estado concluído nem um writer provisório.
+A autoridade SQL atômica inativa foi adicionada separadamente em
+`conversation-meal-atomic-writer.md`; ela não está ligada ao preparador ou a rotas.
+Ainda faltam integrar e qualificar o preparador semântico/calculador, suas anotações
+de preparo e os vínculos de mídia/clínica/dia aberto com essa autoridade SQL.
+Selagem v2/retry a partir da fonte original, correção/desfazer, binding de mensagens
+e timeline paginada também continuam pendentes. O writer separado já qualifica
+localmente efeitos/recibos atômicos; a experiência completa do aplicativo continua
+sem ativação ou QA de ponta a ponta neste incremento.

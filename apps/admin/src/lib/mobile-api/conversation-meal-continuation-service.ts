@@ -216,10 +216,15 @@ export function createConversationMealContinuationService(
       status: 'held' | 'reconciliation_required',
       reason: string,
     ): ConversationMealContinuationServiceResult => Object.freeze({ status, identity, reason })
+    // Read/write adapters intentionally reconcile uncertain I/O internally. A
+    // swallowed guard error must never reacquire scope on their next RPC.
+    let scopeChanged = false
     async function current() {
+      if (scopeChanged) throw new ScopeChanged()
       try {
-        if ((await check(scope)) !== true) throw new ScopeChanged()
+        if ((await check(scope)) !== true || scopeChanged) throw new ScopeChanged()
       } catch {
+        scopeChanged = true
         throw new ScopeChanged()
       }
     }
@@ -246,6 +251,14 @@ export function createConversationMealContinuationService(
     const writer = injectedWriter ?? createSupabaseConversationMealContinuationWriter(guardedDb)
     const sourceFactory =
       sourceFromRead ?? createSupabaseConversationMealContinuationSourceFactory(guardedDb).fromRead
+    async function writerCall<T>(fn: () => PromiseLike<T>): Promise<T> {
+      // The known default guards every physical RPC, including the independent
+      // post-write read. Injected writers may await arbitrary work and still
+      // require the outer guard. Never replace guardedDb with the raw SDK.
+      const value = await (injectedWriter ? guarded(fn) : fn())
+      if (scopeChanged) throw new ScopeChanged()
+      return value
+    }
     function qualify(raw: unknown): ConversationMealContinuationReadOutcome {
       const state = parseConversationMealContinuationRead(raw, identity)
       if (
@@ -294,26 +307,26 @@ export function createConversationMealContinuationService(
       )
         return result('reconciliation_required', 'ready_preparation_unavailable')
       const hash = s.reply.preparation.prepared_hash
-      const next = observed(await guarded(() => writer.commit(identity, hash)))
+      const next = observed(await writerCall(() => writer.commit(identity, hash)))
       if (!next || next.reply?.preparation?.prepared_hash !== hash)
         return result('reconciliation_required', 'commit_uncertain')
       return saved(next) ?? result('reconciliation_required', 'commit_unproven')
     }
     async function prepare(payload: unknown): Promise<ConversationMealContinuationServiceResult> {
       const input = parseConversationMealContinuationPreparationShape(payload)
-      const next = observed(await guarded(() => writer.prepare(identity, input)))
+      const next = observed(await writerCall(() => writer.prepare(identity, input)))
       if (!next || !isDeepStrictEqual(next.reply?.preparation?.preparation, input))
         return result('reconciliation_required', 'preparation_uncertain')
       const done = settled(next)
       return done ?? (await commit(next))
     }
     try {
-      const initial = qualify(await guarded(() => writer.read(identity)))
+      const initial = qualify(await writerCall(() => writer.read(identity)))
       let state: Available
       if (initial.action !== 'available') {
         if (readOnly || !bound || !['absent', 'reply_conflict'].includes(initial.action))
           return result('held', initial.action)
-        const admission = await guarded(() => writer.admit(bound))
+        const admission = await writerCall(() => writer.admit(bound))
         const admitted = observed(admission)
         if (!admitted) {
           const actual = detachConversationContinuationReadJson(

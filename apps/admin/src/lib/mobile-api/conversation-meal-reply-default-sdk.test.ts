@@ -11,11 +11,22 @@ import {
 } from './conversation-meal-reply-public-routes'
 
 afterEach(() => vi.unstubAllGlobals())
-function sdkFixture(key: 'prepared' | 'saved' = 'prepared') {
+type ScopeFault = 'token' | 'admin' | 'owner' | 'epoch'
+function sdkFixture(
+  key: 'prepared' | 'saved' = 'prepared',
+  failure?: {
+    after: 'read_conversation_meal_continuation' | 'commit_conversation_meal_continuation'
+    kind: ScopeFault
+  },
+) {
   const f = replyFixture(key),
     saved = replyFixture('saved')
-  let current: unknown = f.state
+  let current: unknown = f.state,
+    fault: ScopeFault | undefined
+  let boundaryReached = false,
+    failedOnce = false
   const calls: { path: string; method: string }[] = []
+  const continuationReads: unknown[] = []
   const outside = vi.fn(async () => {
     throw new Error('Real network is forbidden')
   })
@@ -26,7 +37,47 @@ function sdkFixture(key: 'prepared' | 'saved' = 'prepared') {
       ),
       method = init?.method ?? 'GET'
     calls.push({ path: url.pathname, method })
+    if (url.pathname.endsWith('/read_conversation_meal_continuation'))
+      continuationReads.push(JSON.parse(String(init?.body)))
     let data: unknown
+    // One transient denial is enough to close this request permanently. Later
+    // fixture responses recover, so an accidental guard retry cannot look safe.
+    const deny = fault && !failedOnce ? fault : undefined
+    if (
+      deny &&
+      ((deny === 'token' && url.pathname === '/auth/v1/user') ||
+        (deny === 'admin' && url.pathname === '/rest/v1/admin_users') ||
+        (deny === 'owner' && url.pathname === '/rest/v1/users') ||
+        (deny === 'epoch' && url.pathname.endsWith('/get_mobile_current_clinical_state')))
+    ) {
+      failedOnce = true
+      if (deny === 'token')
+        return new Response(JSON.stringify({ message: 'synthetic revoked token' }), { status: 401 })
+      if (deny === 'admin') return new Response(JSON.stringify([{ id: f.auth.authUserId }]))
+      if (deny === 'owner')
+        return new Response(
+          JSON.stringify([
+            {
+              id: 'c3cc0000-0000-4000-8000-000000000099',
+              auth_user_id: f.auth.authUserId,
+              email: null,
+              name: null,
+              locale: 'pt-BR',
+              timezone: 'UTC',
+              country: 'BR',
+              country_confirmed: true,
+              status: 'active',
+            },
+          ]),
+        )
+      return new Response(
+        JSON.stringify({ ...saved.profile, epoch: 'c3cc0000-0000-4000-8000-000000000099' }),
+      )
+    }
+    if (failure && !boundaryReached && url.pathname.endsWith(`/${failure.after}`)) {
+      boundaryReached = true
+      fault = failure.kind
+    }
     if (url.pathname === '/auth/v1/user')
       data = {
         id: f.auth.authUserId,
@@ -112,7 +163,7 @@ function sdkFixture(key: 'prepared' | 'saved' = 'prepared') {
         ...(method === 'POST' ? { body: JSON.stringify(f.submission) } : {}),
       },
     )
-  return { f, saved, db, calls, routes, request, outside }
+  return { f, saved, db, calls, continuationReads, routes, request, outside }
 }
 describe('default public reply actual SDK composition', () => {
   it('uses real readonly Auth/entitlement/epoch and actual K processing to recover one uncertain prepared commit', async () => {
@@ -149,7 +200,68 @@ describe('default public reply actual SDK composition', () => {
     expect(
       s.calls.filter((c) => c.path.endsWith('/read_conversation_meal_feedback_source')),
     ).toHaveLength(1)
+    for (const identity of s.continuationReads)
+      expect(identity).toEqual({
+        p_user_id: s.f.identity.ownerId,
+        p_parent_command_id: s.f.identity.parentCommandId,
+        p_parent_input_hash: s.f.identity.parentInputHash,
+        p_expected_epoch: s.f.identity.epoch,
+        p_reply_id: s.f.identity.replyId,
+        p_reply_input_hash: s.f.identity.replyInputHash,
+      })
     expect(s.outside).not.toHaveBeenCalled()
+    // Physical writer operations keep both guards and independent durable reads;
+    // an additional outer guard would exceed this bounded default SDK budget.
+    expect(s.calls.length).toBeLessThanOrEqual(159)
+  })
+  it('replays a saved default reply within its SDK budget without another factual write', async () => {
+    const s = sdkFixture('saved')
+    const response = await s.routes.POST(s.request('POST'), {
+      params: Promise.resolve({ commandId: s.f.identity.parentCommandId }),
+    })
+    expect(response.status).toBe(200)
+    expect((await response.json()).data).toMatchObject({
+      status: 'saved',
+      receipt: s.saved.state.reply?.receipt,
+    })
+    expect(s.continuationReads).toHaveLength(2)
+    expect(s.calls.some((c) => /admit_|prepare_|commit_/u.test(c.path))).toBe(false)
+    expect(s.calls.length).toBeLessThanOrEqual(129)
+    expect(s.outside).not.toHaveBeenCalled()
+  })
+  it.each([
+    'token',
+    'admin',
+    'owner',
+    'epoch',
+  ] as const)('closes default SDK publication after transient %s loss between physical RPCs', async (kind) => {
+    for (const after of [
+      'read_conversation_meal_continuation',
+      'commit_conversation_meal_continuation',
+    ] as const) {
+      const s = sdkFixture('prepared', { after, kind })
+      const response = await s.routes.POST(s.request('POST'), {
+        params: Promise.resolve({ commandId: s.f.identity.parentCommandId }),
+      })
+      expect(response.status).toBeGreaterThanOrEqual(400)
+      const body = await response.json()
+      expect(body).not.toHaveProperty('data.receipt')
+      const boundary = s.calls.findIndex((c) => c.path.endsWith(`/${after}`))
+      expect(boundary).toBeGreaterThanOrEqual(0)
+      expect(
+        s.calls
+          .slice(boundary + 1)
+          .some(
+            (c) =>
+              c.path.startsWith('/rest/v1/rpc/') &&
+              !c.path.endsWith('/get_mobile_current_clinical_state'),
+          ),
+      ).toBe(false)
+      expect(
+        s.calls.filter((c) => c.path.endsWith('/commit_conversation_meal_continuation')),
+      ).toHaveLength(after === 'commit_conversation_meal_continuation' ? 1 : 0)
+      expect(s.outside).not.toHaveBeenCalled()
+    }
   })
   it.each([
     'prepared',

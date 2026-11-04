@@ -196,7 +196,29 @@ export function createSupabaseConversationMealEditStore(
           raw = data(await rpc('read_conversation_meal_edit_state', identity(b)))
         const empty = refusal(['absent', 'stale_epoch', 'event_conflict']).safeParse(raw)
         if (empty.success) return freezeConversationWriter(empty.data)
-        return parseConversationMealEditState(raw, b)
+        // This read RPC receives owner/command only. Qualify its complete
+        // actual state before distinguishing an obsolete caller precondition
+        // from a malformed/private response. Owner and command never change.
+        const observed = z
+            .object({ command: z.object({ epoch: z.string(), input_hash: z.string() }) })
+            .parse(raw).command,
+          same = observed.epoch === b.epoch && observed.input_hash === b.inputHash,
+          state = parseConversationMealEditState(
+            raw,
+            same
+              ? b
+              : {
+                  ownerId: b.ownerId,
+                  commandId: b.commandId,
+                  epoch: observed.epoch,
+                  inputHash: observed.input_hash,
+                },
+          )
+        if (state.binding.epoch !== b.epoch)
+          return freezeConversationWriter({ action: 'stale_epoch' as const })
+        if (state.binding.input_hash !== b.inputHash)
+          return freezeConversationWriter({ action: 'event_conflict' as const })
+        return state
       } catch (error) {
         return fail(error)
       }

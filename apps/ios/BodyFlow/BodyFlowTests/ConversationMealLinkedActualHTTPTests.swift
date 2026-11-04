@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Testing
 
@@ -162,9 +163,11 @@ struct ConversationMealLinkedActualHTTPTests {
         diagnostic)
       #expect(nodes.contains { $0.identifier.hasPrefix("conversation.meal.edit.") }, diagnostic)
       if edited {
+        let item = try #require(group.current?.items.first)
         #expect(
           nodes.contains {
-            $0.identifier == "conversation.meal.current-quantity" && $0.label.contains("150")
+            $0.identifier == "conversation.meal.current-item.\(item.id.uuidString.lowercased())"
+              && $0.label.contains("150 g")
           }, diagnostic)
         #expect(nodes.contains { $0.identifier == "conversation.meal.undo-save" }, diagnostic)
       } else {

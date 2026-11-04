@@ -11,8 +11,12 @@ import {
   editState,
   editTargetId,
   writerBinding,
+  writerCommand,
 } from './__fixtures__/conversation-meal-edit'
-import { bindConversationMealEdit } from './conversation-meal-edit-contracts'
+import {
+  bindConversationMealEdit,
+  parseConversationMealEditState,
+} from './conversation-meal-edit-contracts'
 import { createSupabaseConversationMealEditStore } from './conversation-meal-edit-store'
 
 function transport(
@@ -78,6 +82,86 @@ describe('one-shot private command edit SDK store', () => {
         args: { p_user_id: editBinding().ownerId, p_command_id: editBinding().commandId },
       },
     ])
+  })
+  it.each([
+    'epoch',
+    'hash',
+    'both',
+  ] as const)('classifies a qualified actual state against the requested %s without another RPC', async (mismatch) => {
+    const t = transport(() => ({ data: editReadState(), error: null })),
+      requested = {
+        ...editBinding(),
+        ...(mismatch !== 'hash' ? { epoch: editOperationId } : {}),
+        ...(mismatch !== 'epoch' ? { inputHash: 'f'.repeat(64) } : {}),
+      }
+    await expect(t.store.readState(requested)).resolves.toEqual({
+      action: mismatch === 'hash' ? 'event_conflict' : 'stale_epoch',
+    })
+    expect(t.calls).toEqual([
+      {
+        name: 'read_conversation_meal_edit_state',
+        args: { p_user_id: requested.ownerId, p_command_id: requested.commandId },
+      },
+    ])
+  })
+  it.each([
+    'owner',
+    'command',
+    'context',
+    'receipt',
+    'clock',
+    'extra',
+  ] as const)('validates the entire actual %s state before classifying a requested mismatch', async (corruption) => {
+    const raw = editReadState()
+    if (corruption === 'owner') raw.command.owner_id = editOperationId
+    if (corruption === 'command') raw.command.command_id = editOperationId
+    if (corruption === 'context') raw.current_state.context.id = editOperationId
+    if (corruption === 'receipt') raw.original_receipt.log_ids = []
+    if (corruption === 'clock') raw.observed_at = 'private-invalid-clock'
+    if (corruption === 'extra') Object.assign(raw, { private_extra: 'private-source' })
+    const t = transport(() => ({ data: raw, error: null }))
+    await expect(
+      t.store.readState({ ...editBinding(), epoch: editOperationId, inputHash: 'f'.repeat(64) }),
+    ).rejects.toMatchObject({ status: 503, code: 'conversation_meal_edit_unavailable' })
+    expect(t.calls).toHaveLength(1)
+  })
+  it.each([
+    'owner',
+    'command',
+  ] as const)('never adopts an otherwise coherent foreign %s from the response', async (field) => {
+    const actual = editBinding(),
+      raw = editReadState()
+    if (field === 'owner') {
+      actual.ownerId = editOperationId
+      raw.command.owner_id = actual.ownerId
+      raw.original_receipt.owner_id = actual.ownerId
+      raw.current_state.context.id = actual.ownerId
+      raw.current_state.snapshot.user_id = actual.ownerId
+      raw.current_state.items[0].user_id = actual.ownerId
+    } else {
+      actual.commandId = editOperationId
+      raw.command.command_id = actual.commandId
+      raw.original_receipt.command_id = actual.commandId
+    }
+    raw.original_receipt.provider_key = `conversation.meal/${actual.ownerId}/${actual.commandId}`
+    raw.current_state.items[0].raw_provider_message_id = raw.original_receipt.provider_key
+    expect(() => parseConversationMealEditState(raw, actual)).not.toThrow()
+    const t = transport(() => ({ data: raw, error: null }))
+    await expect(
+      t.store.readState({ ...editBinding(), epoch: editOperationId, inputHash: 'f'.repeat(64) }),
+    ).rejects.toMatchObject({ status: 503, code: 'conversation_meal_edit_unavailable' })
+    expect(t.calls).toHaveLength(1)
+  })
+  it('preserves the full original-command witness when the requested binding matches', async () => {
+    const raw = editReadState()
+    raw.original_receipt.meal_type = 'jantar'
+    raw.current_state.items[0].meal_type = 'jantar'
+    expect(() => parseConversationMealEditState(raw, editBinding())).not.toThrow()
+    const t = transport(() => ({ data: raw, error: null }))
+    await expect(
+      t.store.readState({ ...editBinding(), originalCommand: writerCommand() }),
+    ).rejects.toMatchObject({ status: 503, code: 'conversation_meal_edit_unavailable' })
+    expect(t.calls).toHaveLength(1)
   })
   it.each([
     'readOperation',

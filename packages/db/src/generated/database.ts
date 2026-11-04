@@ -4234,6 +4234,19 @@ export type Database = {
         Args: { p_user_id: string; p_command_id: string }
         Returns: Json
       }
+      capture_conversation_meal_source: {
+        Args: { p_user_id: string; p_command_id: string }
+        Returns: Json
+      }
+      read_conversation_meal_nutrition_source: {
+        Args: {
+          p_user_id: string
+          p_command_id: string
+          p_kind: string
+          p_food_name: string | null
+        }
+        Returns: Json
+      }
       capture_mobile_registration_feedback_v2: {
         Args: { p_user_id: string; p_registration_id: string }
         Returns: Json

@@ -27,6 +27,8 @@ import SwiftUI
   let model: FlowConversationMealReplyModel
   @Environment(\.locale) private var locale
   @State private var confirmDiscard = false
+  @State private var showsUnitChoices = false
+  @State private var showsMealChoices = false
   private var language: SupportedAppLanguage { BodyFlowPresentationLanguage.resolve(locale) }
   private var english: Bool { language == .englishUnitedStates }
   var body: some View {
@@ -55,14 +57,23 @@ import SwiftUI
           )
           .keyboardType(.decimalPad).textFieldStyle(.roundedBorder).accessibilityIdentifier(
             "conversation.reply.quantity")
-          Picker(
-            english ? "Unit" : "Unidade",
-            selection: Binding(get: { model.quantityUnit }, set: { model.quantityUnit = $0 })
-          ) {
-            ForEach(question.allowedUnits, id: \.self) { value in
-              Text(verbatim: unitLabel(value)).tag(value)
+          Button(unitLabel(model.quantityUnit)) { showsUnitChoices = true }
+            .buttonStyle(.bordered).disabled(model.isWorking)
+            .accessibilityLabel(english ? "Unit" : "Unidade")
+            .accessibilityValue(unitLabel(model.quantityUnit))
+            .accessibilityIdentifier("conversation.reply.unit")
+            .confirmationDialog(
+              english ? "Unit" : "Unidade", isPresented: $showsUnitChoices,
+              titleVisibility: .visible
+            ) {
+              ForEach(question.allowedUnits, id: \.self) { value in
+                Button(unitLabel(value)) {
+                  guard !model.isLocked && !model.isWorking else { return }
+                  model.quantityUnit = value
+                }
+              }
+              Button(english ? "Cancel" : "Cancelar", role: .cancel) {}
             }
-          }.accessibilityIdentifier("conversation.reply.unit")
           if question.quantityReference != nil {
             Text(
               english
@@ -72,16 +83,29 @@ import SwiftUI
             .foregroundStyle(BodyFlowColor.secondaryText)
           }
         } else {
-          Picker(
-            english ? "Meal" : "Refeição",
-            selection: Binding(get: { model.mealType }, set: { model.mealType = $0 })
+          Button(
+            model.mealType.map(mealLabel) ?? (english ? "Select the meal" : "Selecione a refeição")
           ) {
-            Text(english ? "Select the meal" : "Selecione a refeição").tag(
-              ConversationMealCommand.MealType?.none)
+            showsMealChoices = true
+          }
+          .buttonStyle(.bordered).disabled(model.isWorking)
+          .accessibilityLabel(english ? "Meal" : "Refeição")
+          .accessibilityValue(
+            model.mealType.map(mealLabel) ?? (english ? "Not selected" : "Não selecionada")
+          )
+          .accessibilityIdentifier("conversation.reply.meal")
+          .confirmationDialog(
+            english ? "Meal" : "Refeição", isPresented: $showsMealChoices,
+            titleVisibility: .visible
+          ) {
             ForEach(ConversationMealCommand.MealType.allCases, id: \.self) { value in
-              Text(verbatim: mealLabel(value)).tag(Optional(value))
+              Button(mealLabel(value)) {
+                guard !model.isLocked && !model.isWorking else { return }
+                model.mealType = value
+              }
             }
-          }.accessibilityIdentifier("conversation.reply.meal")
+            Button(english ? "Cancel" : "Cancelar", role: .cancel) {}
+          }
         }
         if model.isWorking {
           ProgressView(english ? "Waiting for confirmation…" : "Aguardando confirmação…")

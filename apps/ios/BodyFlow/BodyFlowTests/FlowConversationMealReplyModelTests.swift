@@ -161,6 +161,35 @@ import Testing
     await m.close()
   }
   #if canImport(UIKit)
+    @Test func quantityUnitChoiceRemainsAnIdentifiedNativeButton() async throws {
+      let f = try ReplyControllerFixture()
+      defer { f.disk.remove() }
+      await f.http.lifecycle.replace(f.disk.lease)
+      let c = try await f.open()
+      let m = try await FlowConversationMealReplyModel.open(
+        controller: c, lifecycle: f.http.lifecycle, lease: f.disk.lease
+      ) { _, _ in }
+      m.accept(f.context)
+      let original = try f.disk.firstIntent()
+      try m.begin(
+        parentBinding: original.parentBinding, parentDecisionHash: original.parentDecisionHash,
+        question: original.question)
+      m.amountText = "0,125"
+      m.quantityUnit = "kg"
+      let host = SignUpRenderingProbe.host(
+        FlowConversationMealReplyContent(model: m).environment(
+          \.locale, Locale(identifier: "pt_BR")), width: 390, height: 1200)
+      defer { host.detach() }
+      let nodes = host.nodes()
+      #expect(
+        nodes.contains {
+          $0.identifier == "conversation.reply.unit" && $0.isButton && $0.label == "Unidade"
+        }, Comment(rawValue: nodes.map(\.description).joined(separator: "\n")))
+      #expect(m.amountText == "0,125" && m.quantityUnit == "kg" && !m.isLocked)
+      #expect(await f.http.stub.requests.isEmpty)
+      await m.close()
+    }
+
     @Test func actualMealQuestionAndLockedBreakfastAreVisibleWithoutEditableRetagControls()
       async throws
     {
@@ -179,7 +208,10 @@ import Testing
       let normal = SignUpRenderingProbe.host(
         FlowConversationMealReplyContent(model: m).environment(
           \.locale, Locale(identifier: "pt_BR")), width: 390, height: 1200)
-      #expect(normal.nodes().contains { $0.identifier == "conversation.reply.meal" })
+      let normalNodes = normal.nodes()
+      #expect(
+        normalNodes.contains { $0.identifier == "conversation.reply.meal" },
+        Comment(rawValue: normalNodes.map(\.description).joined(separator: "\n")))
       normal.detach()
       m.mealType = .cafe
       try FileManager.default.setAttributes(

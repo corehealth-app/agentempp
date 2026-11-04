@@ -263,6 +263,17 @@ describe('current clinical guard for historical command feedback', () => {
     const h = harness(raw),
       value = sections(await h.presentation.readHistorical(input()))
     expect(Object.values(value.current_policy.hide).every(Boolean)).toBe(true)
+    // This actual core flag is also present on the server wire and must remain
+    // named in the wrapper contract consumed by the strict native decoder.
+    expect(value.current_policy.hide.budget).toBe(true)
+    expect(Object.keys(value.current_policy.hide).sort()).toEqual([
+      'balance',
+      'block',
+      'budget',
+      'calories',
+      'objective',
+      'protein',
+    ])
     expect(value.current_policy.pause_weight_loss_guidance).toBe(false)
     expect(text(value.sections, 'day')).not.toContain('1.900')
     expect(text(value.sections, 'day')).not.toContain('1.774')

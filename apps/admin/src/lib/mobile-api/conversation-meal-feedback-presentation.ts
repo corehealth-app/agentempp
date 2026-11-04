@@ -1,7 +1,6 @@
 /** Read-only CURRENT-policy guard around immutable HISTORICAL feedback. This
  * wrapper is not a rewritten receipt, clinical write authority or Today panel. */
 import { isDeepStrictEqual } from 'node:util'
-import type { FlowClinicalPolicy } from '@mpp/agent'
 import type { RegistrationFeedback } from '@mpp/agent/registration-feedback'
 import {
   type FeedbackV2Section,
@@ -52,7 +51,7 @@ interface PresentationMetadata {
     kind: 'meal'
     local_date: string
   }
-  readonly current_policy: FlowClinicalPolicy
+  readonly current_policy: ReturnType<typeof projectCurrentClinicalPublicPolicy>
   readonly provenance: { epoch: string; command_id: string; observed_at: string }
 }
 export type ConversationMealFeedbackPresentation = PresentationMetadata &
@@ -151,7 +150,7 @@ function original(
     invalid()
   return freezeInterpretation(parsed)
 }
-function restricted(policy: FlowClinicalPolicy): boolean {
+function restricted(policy: PresentationMetadata['current_policy']): boolean {
   return (
     policy.assessment !== 'complete' ||
     !policy.recording_allowed ||
@@ -161,7 +160,7 @@ function restricted(policy: FlowClinicalPolicy): boolean {
 }
 function renderHistorical(
   saved: RegistrationFeedbackV2,
-  policy: FlowClinicalPolicy,
+  policy: PresentationMetadata['current_policy'],
 ): readonly FeedbackV2Section[] {
   // This private render adapter is never saved/returned as an original v2 DTO.
   // It changes only visibility of existing historical values, never numbers.
@@ -197,7 +196,12 @@ function renderHistorical(
           day.targets.protein_g = null
           day.protein_percentage = null
         }
-        if (pause || policy.hide.balance || day.targets.calories_kcal === null) {
+        if (
+          pause ||
+          policy.hide.balance ||
+          policy.hide.budget ||
+          day.targets.calories_kcal === null
+        ) {
           day.remaining_food_kcal = null
           day.food_excess_kcal = null
         }

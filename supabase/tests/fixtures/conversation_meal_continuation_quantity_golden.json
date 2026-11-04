@@ -1,0 +1,287 @@
+{
+  "schema": "synthetic.continuation-quantity-references.v1",
+  "unicode": "17.0",
+  "rows": [
+    {
+      "name": "leite",
+      "reference": {
+        "unit": "mL",
+        "grams_per_unit": 1.03,
+        "reference_id": "fao-infoods-v2-whole-milk-tb",
+        "estimated": true
+      }
+    },
+    {
+      "name": "LEITE INTEGRAL",
+      "reference": {
+        "unit": "mL",
+        "grams_per_unit": 1.03,
+        "reference_id": "fao-infoods-v2-whole-milk-tb",
+        "estimated": true
+      }
+    },
+    {
+      "name": "léite",
+      "reference": {
+        "unit": "mL",
+        "grams_per_unit": 1.03,
+        "reference_id": "fao-infoods-v2-whole-milk-tb",
+        "estimated": true
+      }
+    },
+    {
+      "name": "leite integral",
+      "reference": {
+        "unit": "mL",
+        "grams_per_unit": 1.03,
+        "reference_id": "fao-infoods-v2-whole-milk-tb",
+        "estimated": true
+      }
+    },
+    {
+      "name": "le^ite",
+      "reference": {
+        "unit": "mL",
+        "grams_per_unit": 1.03,
+        "reference_id": "fao-infoods-v2-whole-milk-tb",
+        "estimated": true
+      }
+    },
+    {
+      "name": "whey protein em pó",
+      "reference": {
+        "unit": "scoop",
+        "grams_per_unit": 30,
+        "reference_id": "app-household-whey-scoop-v1",
+        "estimated": true
+      }
+    },
+    {
+      "name": "whey protein",
+      "reference": {
+        "unit": "scoop",
+        "grams_per_unit": 30,
+        "reference_id": "app-household-whey-scoop-v1",
+        "estimated": true
+      }
+    },
+    {
+      "name": "pães franceses",
+      "reference": {
+        "unit": "unit",
+        "grams_per_unit": 50,
+        "reference_id": "app-household-french-bread-unit-v1",
+        "estimated": true
+      }
+    },
+    {
+      "name": "ÁGUA",
+      "reference": {
+        "unit": "mL",
+        "grams_per_unit": 1,
+        "reference_id": "fao-infoods-v2-water-cg",
+        "estimated": true
+      }
+    },
+    {
+      "name": "suco de laranja",
+      "reference": {
+        "unit": "mL",
+        "grams_per_unit": 1.038,
+        "reference_id": "fao-infoods-v2-orange-juice-sw",
+        "estimated": true
+      }
+    },
+    {
+      "name": "arroz",
+      "reference": null
+    },
+    {
+      "name": "leite marca x",
+      "reference": null
+    },
+    {
+      "name": "leite com whey",
+      "reference": null
+    },
+    {
+      "name": "caneca de café",
+      "reference": null
+    },
+    {
+      "name": "😀 leite",
+      "reference": null
+    },
+    {
+      "name": "whey protein brand",
+      "reference": null
+    },
+    {
+      "name": "paˈo frances",
+      "reference": {
+        "unit": "unit",
+        "grams_per_unit": 50,
+        "reference_id": "app-household-french-bread-unit-v1",
+        "estimated": true
+      }
+    }
+  ],
+  "conversion_cases": [
+    {
+      "name": "arroz",
+      "unit": "g",
+      "amount": 100,
+      "quantity_g": 100
+    },
+    {
+      "name": "arroz",
+      "unit": "g",
+      "amount": 1e-7,
+      "quantity_g": 1e-7
+    },
+    {
+      "name": "arroz",
+      "unit": "g",
+      "amount": 5e-7,
+      "quantity_g": 5e-7
+    },
+    {
+      "name": "arroz",
+      "unit": "g",
+      "amount": 5e-324,
+      "quantity_g": 5e-324
+    },
+    {
+      "name": "arroz",
+      "unit": "kg",
+      "amount": 1e-7,
+      "quantity_g": 0.00009999999999999999
+    },
+    {
+      "name": "arroz",
+      "unit": "kg",
+      "amount": 0.123456789123,
+      "quantity_g": 123.456789123
+    },
+    {
+      "name": "arroz",
+      "unit": "kg",
+      "amount": 5e-324,
+      "quantity_g": 4.94e-321
+    },
+    {
+      "name": "arroz",
+      "unit": "kg",
+      "amount": 9.999,
+      "quantity_g": 9999
+    },
+    {
+      "name": "arroz",
+      "unit": "kg",
+      "amount": 10,
+      "quantity_g": null
+    },
+    {
+      "name": "leite",
+      "unit": "mL",
+      "amount": 200,
+      "quantity_g": 206
+    },
+    {
+      "name": "leite",
+      "unit": "L",
+      "amount": 0.2,
+      "quantity_g": 206
+    },
+    {
+      "name": "leite",
+      "unit": "caneca",
+      "amount": 1,
+      "quantity_g": 206
+    },
+    {
+      "name": "leite",
+      "unit": "mL",
+      "amount": 5e-7,
+      "quantity_g": 0.000001
+    },
+    {
+      "name": "leite",
+      "unit": "mL",
+      "amount": 1e-7,
+      "quantity_g": null
+    },
+    {
+      "name": "leite",
+      "unit": "mL",
+      "amount": 5e-324,
+      "quantity_g": null
+    },
+    {
+      "name": "whey",
+      "unit": "scoop",
+      "amount": 1,
+      "quantity_g": 30
+    },
+    {
+      "name": "whey",
+      "unit": "scoop",
+      "amount": 0.333333333,
+      "quantity_g": 10
+    },
+    {
+      "name": "ovo",
+      "unit": "unit",
+      "amount": 2,
+      "quantity_g": 100
+    },
+    {
+      "name": "suco de laranja",
+      "unit": "L",
+      "amount": 0.123456789,
+      "quantity_g": 128.148147
+    },
+    {
+      "name": "arroz",
+      "unit": "kg",
+      "amount": 0.00123456789,
+      "quantity_g": 1.23456789
+    },
+    {
+      "name": "leite",
+      "unit": "caneca",
+      "amount": 1.5,
+      "quantity_g": 309
+    },
+    {
+      "name": "whey",
+      "unit": "scoop",
+      "amount": 1.5,
+      "quantity_g": 45
+    },
+    {
+      "name": "agua",
+      "unit": "mL",
+      "amount": 5e-7,
+      "quantity_g": 0.000001
+    },
+    {
+      "name": "agua",
+      "unit": "mL",
+      "amount": 4e-7,
+      "quantity_g": null
+    },
+    {
+      "name": "whey",
+      "unit": "scoop",
+      "amount": 333.30000001,
+      "quantity_g": 9999
+    },
+    {
+      "name": "whey",
+      "unit": "scoop",
+      "amount": 333.30000002,
+      "quantity_g": null
+    }
+  ]
+}

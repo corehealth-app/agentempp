@@ -4247,6 +4247,23 @@ export type Database = {
         }
         Returns: Json
       }
+      read_conversation_meal_feedback_source: {
+        Args: { p_user_id: string; p_command_id: string }
+        Returns: Json
+      }
+      read_conversation_meal_feedback_v2: {
+        Args: { p_user_id: string; p_command_id: string }
+        Returns: Json
+      }
+      commit_conversation_meal_feedback_v2: {
+        Args: {
+          p_user_id: string
+          p_command_id: string
+          p_expected_effect_version: string | null
+          p_feedback: Json
+        }
+        Returns: Json
+      }
       capture_mobile_registration_feedback_v2: {
         Args: { p_user_id: string; p_registration_id: string }
         Returns: Json

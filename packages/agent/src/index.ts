@@ -8,6 +8,7 @@ export * from './daily-state-service.js'
 export * from './day-close.js'
 export * from './diet-generator.js'
 export * from './educational-comment.js'
+export { everydayFoodDefault } from './everyday-food-defaults.js'
 export * from './express-mode-detector.js'
 export * from './false-duplication-detector.js'
 export type {

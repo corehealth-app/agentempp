@@ -1,0 +1,664 @@
+import {
+  calcMealMacros,
+  consumedFoodDefault,
+  everydayFoodDefault,
+  type MealCalcResult,
+} from '@mpp/agent'
+import type { Json, ServiceClient } from '@mpp/db'
+import { describe, expect, it, vi } from 'vitest'
+import { bindConversationCommand } from './conversation-command-contracts'
+import {
+  buildConversationMealInterpretationSource,
+  type ConversationMealInterpretation,
+  type MealInterpretationModelResult,
+} from './conversation-meal-interpretation-contracts'
+import { validateConversationMealInterpretationModel } from './conversation-meal-interpretation-validation'
+import {
+  mapConversationMealCalculationSources,
+  materializeConversationMealInterpretation,
+} from './conversation-meal-materialization'
+import type { CapturedConversationMealSource } from './conversation-meal-source'
+import { applyMobilePreparedDishEstimate } from './prepared-dish-estimate'
+
+const OWNER = '10000000-0000-4000-8000-000000000001'
+const COMMAND = '10000000-0000-4000-8000-000000000002'
+const ATTEMPT = '10000000-0000-4000-8000-000000000003'
+const ASSET = '10000000-0000-4000-8000-000000000004'
+const EPOCH = '10000000-0000-4000-8000-000000000005'
+const options = { confidenceThreshold: 0.6 }
+const row = (name: string, id = 91) => ({
+  id,
+  name_pt: name,
+  category: 'alimento',
+  similarity: 1,
+  kcal_per_100g: 100,
+  protein_g: 10,
+  carbs_g: 10,
+  fat_g: 2,
+  fiber_g: 0,
+  country_code: 'BR',
+})
+function db(names: string[] = []) {
+  const rpc = vi.fn(async (_name: string, p: Record<string, unknown>) => ({
+    data: names.filter((n) => n.toLowerCase() === p.search_term).map((n) => row(n)),
+    error: null,
+  }))
+  return { client: { rpc } as unknown as ServiceClient, rpc }
+}
+function at<T>(list: readonly T[], index = 0): T {
+  const item = list[index]
+  if (item === undefined) throw new Error('fixture item missing')
+  return item
+}
+type Item = { name: string; quantity?: string; unit?: string }
+function fixture(text: string, items: Item[]) {
+  const command = bindConversationCommand(OWNER, `cmsg1:${COMMAND}`, {
+    command_protocol: 'conversation.command.v1',
+    command_id: COMMAND,
+    kind: 'meal.report',
+    source: { channel: 'text', text },
+  })
+  const capture: CapturedConversationMealSource = {
+    action: 'captured',
+    sourceHash: 'a'.repeat(64),
+    capturedAt: '2026-11-05T01:00:00.000001Z',
+    epoch: EPOCH,
+    context: {
+      schema: 'conversation.meal-source.v1',
+      owner_id: OWNER,
+      command_id: COMMAND,
+      input_hash: command.inputHash,
+      epoch: EPOCH,
+      source_input: command.command,
+      source_units: ['command_text'],
+      source_evidence: {},
+      media: null,
+      catalog: {},
+      clinical: {},
+      day: {},
+      owner: {
+        country: 'BR',
+        country_confirmed: true,
+        locale: 'pt-BR',
+        timezone: 'America/Sao_Paulo',
+      },
+    },
+    sourceReader: {
+      ownerId: OWNER,
+      asOf: '2026-11-05T01:00:00.000001Z',
+      read: vi.fn(async () => []),
+    },
+    sourceReceipts: () => [],
+    auditSink: vi.fn(),
+    auditEvents: () => [],
+  }
+  const source = buildConversationMealInterpretationSource(command, capture)
+  const spans: MealInterpretationModelResult['sources'][number]['spans'] = []
+  const foods: MealInterpretationModelResult['foods'] = []
+  let cursor = 0
+  for (const [index, item] of items.entries()) {
+    const ref = (value: string) => {
+      const start = text.indexOf(value, cursor)
+      if (start < 0) throw new Error(`missing ${value}`)
+      return { unit: 'command_text' as const, start, end: start + value.length }
+    }
+    const name = ref(item.name),
+      quantity = item.quantity ? ref(item.quantity) : null,
+      unit =
+        item.unit && quantity
+          ? {
+              unit: 'command_text' as const,
+              start: text.indexOf(item.unit, quantity.end),
+              end: text.indexOf(item.unit, quantity.end) + item.unit.length,
+            }
+          : null
+    const parts = [
+      { ...name, kind: 'food' as const },
+      ...(quantity ? [{ ...quantity, kind: 'quantity' as const }] : []),
+      ...(unit ? [{ ...unit, kind: 'unit' as const }] : []),
+    ].sort((a, b) => a.start - b.start)
+    for (const part of parts) {
+      if (part.start > cursor)
+        spans.push({
+          start: cursor,
+          end: part.start,
+          kind: cursor === 0 && text.slice(0, part.start).trim() ? 'report' : 'separator',
+          food_index: null,
+        })
+      spans.push({ start: part.start, end: part.end, kind: part.kind, food_index: index })
+      cursor = part.end
+    }
+    foods.push({ index, name, quantity, unit, visual_index: null })
+  }
+  if (cursor < text.length)
+    spans.push({ start: cursor, end: text.length, kind: 'separator', food_index: null })
+  const reported = spans.some((s) => s.kind === 'report')
+  const model: MealInterpretationModelResult = {
+    schema: 'conversation.meal-interpretation.v1',
+    decision: 'reported_meal',
+    reason: reported ? 'explicit_report' : 'nominal_food_list',
+    sources: [
+      {
+        unit: 'command_text',
+        classification: reported ? 'reported' : 'nominal_list',
+        spans,
+        visual_indexes: [],
+      },
+    ],
+    foods,
+  }
+  const interpretation: ConversationMealInterpretation = {
+    ...model,
+    interpreter_version: 'conversation.meal-interpreter.v1',
+    owner_id: OWNER,
+    command_id: COMMAND,
+    attempt_id: ATTEMPT,
+    input_hash: command.inputHash,
+    source_hash: capture.sourceHash,
+    source_units: source.source_units,
+    provider_metadata: {
+      model: 'synthetic',
+      prompt_tokens: 1,
+      completion_tokens: 1,
+      cost_usd: null,
+      latency_ms: 1,
+    },
+  }
+  return { command, capture, source, model, interpretation }
+}
+function visualFixture(items: Json[], caption?: string) {
+  const base = fixture('arroz200g', [{ name: 'arroz', quantity: '200', unit: 'g' }])
+  const command = bindConversationCommand(OWNER, `cmsg1:${COMMAND}`, {
+    command_protocol: 'conversation.command.v1',
+    command_id: COMMAND,
+    kind: 'meal.report',
+    source: {
+      channel: 'media',
+      media_asset_id: ASSET,
+      user_action: 'register_consumed_meal',
+      ...(caption ? { caption } : {}),
+    },
+  })
+  const capture: CapturedConversationMealSource = {
+    ...base.capture,
+    context: {
+      ...base.capture.context,
+      input_hash: command.inputHash,
+      source_input: command.command,
+      source_units: [...(caption ? ['media_caption' as const] : []), 'vision_items'],
+      source_evidence: { caption: caption ?? null, transcript: null },
+      media: {
+        asset_id: ASSET,
+        kind: 'meal_photo',
+        status: 'processed',
+        processed_at: '2026-11-05T01:00:00Z',
+        updated_at: '2026-11-05T01:00:00Z',
+        context_text: null,
+        processing_result: {
+          items,
+          nutrition_label: {
+            product_name: 'arroz',
+            serving_size_g: 100,
+            per_serving: { kcal: 100, protein_g: 2, carbs_g: 20, fat_g: 1 },
+            per_100g: null,
+            confidence: 0.99,
+          },
+        },
+      },
+    },
+  }
+  const source = buildConversationMealInterpretationSource(command, capture)
+  const interpretation: ConversationMealInterpretation = {
+    ...base.interpretation,
+    input_hash: command.inputHash,
+    source_units: source.source_units,
+    reason: 'explicit_media_action',
+    sources: source.sources.map((s) => ({
+      unit: s.unit,
+      classification: s.unit === 'vision_items' ? 'visual' : 'media_pointer',
+      spans:
+        s.text === null ? [] : [{ start: 0, end: s.text.length, kind: 'other', food_index: null }],
+      visual_indexes: s.visual_items.map((_, i) => i),
+    })),
+    foods: items.map((_, index) => ({
+      index,
+      name: null,
+      quantity: null,
+      unit: null,
+      visual_index: index,
+    })),
+  }
+  return { command, capture, source, interpretation }
+}
+async function materialize(
+  f: ReturnType<typeof fixture> | ReturnType<typeof visualFixture>,
+  state = db(),
+) {
+  return materializeConversationMealInterpretation(
+    state.client,
+    f.command,
+    f.capture,
+    f.interpretation,
+    options,
+  )
+}
+function prepared<T extends { status: string }>(value: T): Extract<T, { status: 'materialized' }> {
+  if (value.status !== 'materialized')
+    throw new Error(`Expected materialized: ${JSON.stringify(value)}`)
+  return value as Extract<T, { status: 'materialized' }>
+}
+
+describe('actual command interpretation materialization', () => {
+  it('materializes nominal rice/beans and duplicate occurrences preserving original refs', async () => {
+    const f = fixture('arroz200g; feija\u0303o100g; arroz50g', [
+        { name: 'arroz', quantity: '200', unit: 'g' },
+        { name: 'feija\u0303o', quantity: '100', unit: 'g' },
+        { name: 'arroz', quantity: '50', unit: 'g' },
+      ]),
+      state = db()
+    const result = prepared(await materialize(f, state))
+    expect(result.inputs.map((x) => x.calculation_input)).toEqual([
+      { food_name: 'arroz', quantity_g: 200 },
+      { food_name: 'feija\u0303o', quantity_g: 100 },
+      { food_name: 'arroz', quantity_g: 50 },
+    ])
+    expect(result.source_groups.map((g) => g.interpretation_food_indexes)).toEqual([[0], [1], [2]])
+    expect(result.source_groups[1]?.source_positions[0]?.name).toEqual(
+      f.interpretation.foods[1]?.name,
+    )
+    expect(new Set(result.inputs.map((x) => x.candidate.candidate_id)).size).toBe(3)
+    expect(Object.isFrozen(result.source_groups)).toBe(true)
+    expect(state.rpc).not.toHaveBeenCalled()
+  })
+  it('qualifies whole verified catalog names and preserves explicit raw preparation', async () => {
+    const f = fixture('Arroz cru100g', [{ name: 'Arroz cru', quantity: '100', unit: 'g' }]),
+      state = db(['arroz cru'])
+    const result = prepared(await materialize(f, state))
+    expect(result.inputs[0]?.calculation_input.food_name).toBe('Arroz cru')
+    expect(state.rpc).toHaveBeenCalledWith('search_food_trgm', {
+      search_term: 'arroz cru',
+      min_similarity: 0.9,
+      max_results: 5,
+      p_country: 'BR',
+    })
+  })
+  it('never promotes unknown whole prose through a similar nutritional row', async () => {
+    const f = fixture('arroz triste100g', [{ name: 'arroz triste', quantity: '100', unit: 'g' }]),
+      state = db()
+    state.rpc.mockResolvedValue({ data: [row('arroz')], error: null })
+    expect(await materialize(f, state)).toMatchObject({
+      status: 'clarification_required',
+      reason: 'unqualified_whole_name',
+      food_indexes: [0],
+    })
+  })
+  it('keeps200g compact total as170g milk+30g whey with one source group', async () => {
+    const f = fixture('leite com 1 medida de whey 200g', [
+      { name: 'leite com 1 medida de whey', quantity: '200', unit: 'g' },
+    ])
+    expect(validateConversationMealInterpretationModel(f.model, f.source).decision).toBe(
+      'reported_meal',
+    )
+    const result = prepared(await materialize(f))
+    expect(
+      result.inputs.map((x) => [
+        x.calculation_input.food_name,
+        x.calculation_input.quantity_g,
+        x.candidate.quantity_basis,
+      ]),
+    ).toEqual([
+      ['leite integral', 170, 'portion_reference'],
+      ['whey protein em pó', 30, 'portion_reference'],
+    ])
+    expect(result.source_groups).toMatchObject([
+      { rule: 'milk_whey_total', input_indexes: [0, 1], interpretation_food_indexes: [0] },
+    ])
+  })
+  it('materializes exact full cup recipe using existing206g milk+30g whey references', async () => {
+    const f = fixture('1 caneca de leite com 1 medida de whey', [
+      { name: '1 caneca de leite com 1 medida de whey' },
+    ])
+    expect(validateConversationMealInterpretationModel(f.model, f.source).decision).toBe(
+      'reported_meal',
+    )
+    const result = prepared(await materialize(f))
+    expect(result.inputs.map((x) => x.calculation_input.quantity_g)).toEqual([206, 30])
+    expect(
+      result.inputs.every(
+        (x) => x.candidate.needs_review && x.candidate.quantity_basis === 'portion_reference',
+      ),
+    ).toBe(true)
+  })
+  it.each([
+    'Sonhei que comi ',
+    'Vou comer ',
+    'Não comi ',
+    'Costumo comer ',
+    'Minha filha comeu ',
+    'Ele disse: ',
+  ])('does not upgrade recipe framing: %s', async (prefix) => {
+    const f = fixture(`${prefix}leite com 1 medida de whey200g`, [
+      { name: 'leite com 1 medida de whey', quantity: '200', unit: 'g' },
+    ])
+    expect(await materialize(f)).toMatchObject({
+      status: 'clarification_required',
+      reason: 'interpretation_not_positive',
+    })
+  })
+  it('preserves explicit separate milk volume+whey mass, without adding another scoop', async () => {
+    const f = fixture('200mL leite; whey30g', [
+      { name: 'leite', quantity: '200', unit: 'mL' },
+      { name: 'whey', quantity: '30', unit: 'g' },
+    ])
+    const result = prepared(await materialize(f))
+    expect(result.inputs.map((x) => x.calculation_input.quantity_g)).toEqual([206, 30])
+    expect(result.inputs[0]?.candidate).toMatchObject({
+      count: 200,
+      unit_label: 'ml',
+      quantity_basis: 'portion_reference',
+      quantity_display: { unit: 'mL', grams_per_unit: 1.03 },
+    })
+    expect(result.inputs[1]?.candidate.quantity_basis).toBe('stated')
+    expect(result.source_groups.map((g) => g.input_indexes)).toEqual([[0], [1]])
+  })
+  it('keeps explicit grams unchanged and unsupported volume missing', async () => {
+    const stated = prepared(
+      await materialize(fixture('leite200g', [{ name: 'leite', quantity: '200', unit: 'g' }])),
+    )
+    expect(stated.inputs[0]?.calculation_input.quantity_g).toBe(200)
+    const f = fixture('leite de coco200mL', [
+      { name: 'leite de coco', quantity: '200', unit: 'mL' },
+    ])
+    expect(await materialize(f, db(['leite de coco']))).toMatchObject({
+      status: 'clarification_required',
+      reason: 'unsupported_quantity',
+    })
+  })
+  it('preserves whole180g prepared dish and does not split weight onto its ingredients', async () => {
+    const f = fixture('carne desfiada com molho e milho180g', [
+      { name: 'carne desfiada com molho e milho', quantity: '180', unit: 'g' },
+    ])
+    const result = prepared(await materialize(f))
+    expect(result.inputs).toHaveLength(1)
+    expect(result.inputs[0]?.calculation_input).toEqual({
+      food_name: 'carne desfiada com molho e milho',
+      quantity_g: 180,
+    })
+    expect(result.source_groups[0]?.rule).toBe('prepared_dish')
+    const unknown = fixture('carne desfiada com molho e ingrediente secreto180g', [
+      { name: 'carne desfiada com molho e ingrediente secreto', quantity: '180', unit: 'g' },
+    ])
+    expect(await materialize(unknown)).toMatchObject({
+      status: 'clarification_required',
+      reason: 'unqualified_whole_name',
+    })
+  })
+  it('preserves Vision indexes/count/estimated grams without label autoapproval', async () => {
+    const f = visualFixture([
+      { name: '2x ovo', quantity_g_estimate: 100, confidence: 0.9 },
+      { name: 'arroz', quantity_g_estimate: 150, confidence: 0.8 },
+    ])
+    const result = prepared(await materialize(f, db(['ovo'])))
+    expect(result.inputs.map((x) => x.calculation_input.quantity_g)).toEqual([100, 150])
+    expect(result.source_groups.map((g) => g.source_positions[0]?.visual_index)).toEqual([0, 1])
+    expect(result.inputs[0]?.candidate).toMatchObject({
+      count: 2,
+      quantity_basis: 'visual_estimate',
+      needs_review: true,
+    })
+    expect(result.nutrition_label).toMatchObject({ product_name: 'arroz', serving_size_g: 100 })
+    expect(result.inputs.every((x) => !('approved_nutrition' in x.calculation_input))).toBe(true)
+  })
+  it.each([
+    0, 0.3,
+  ])('refuses missing/low-confidence Vision quantity instead of dropping item (%s)', async (confidence) => {
+    const f = visualFixture([
+      { name: 'arroz', quantity_g_estimate: confidence === 0 ? 0 : 100, confidence },
+    ])
+    expect(await materialize(f)).toMatchObject({
+      status: 'clarification_required',
+      reason: confidence === 0 ? 'missing_quantity' : 'low_confidence',
+      food_indexes: [0],
+    })
+  })
+  it('refuses invalid/omitted visual items, conflicting caption and wrong source binding', async () => {
+    const f = visualFixture(
+      [{ name: 'arroz', quantity_g_estimate: 100, confidence: 0.9 }],
+      'Não comi',
+    )
+    expect(await materialize(f)).toMatchObject({
+      status: 'clarification_required',
+      reason: 'interpretation_not_positive',
+    })
+    const omitted = visualFixture([
+      { name: 'arroz', quantity_g_estimate: 100, confidence: 0.9 },
+      { name: '', quantity_g_estimate: 100, confidence: 0.9 },
+    ])
+    omitted.interpretation.foods.pop()
+    await expect(materialize(omitted)).rejects.toMatchObject({
+      code: 'conversation_meal_materialization_unavailable',
+    })
+    const changed = fixture('arroz200g', [{ name: 'arroz', quantity: '200', unit: 'g' }])
+    changed.interpretation.source_hash = 'b'.repeat(64)
+    await expect(materialize(changed)).rejects.toMatchObject({
+      code: 'conversation_meal_materialization_unavailable',
+    })
+  })
+  it('does not infer missing portions or allow expanded item overflow', async () => {
+    expect(
+      await materialize(fixture('banana', [{ name: 'banana' }]), db(['banana'])),
+    ).toMatchObject({ status: 'clarification_required', reason: 'missing_quantity' })
+    const names = Array.from({ length: 29 }, () => ({ name: 'arroz', quantity: '1', unit: 'g' }))
+    names.push({ name: 'leite com 1 medida de whey', quantity: '200', unit: 'g' })
+    const f = fixture(names.map((x) => `${x.name}${x.quantity}${x.unit}`).join('; '), names)
+    expect(await materialize(f)).toMatchObject({
+      status: 'clarification_required',
+      reason: 'item_limit',
+    })
+  })
+  it('fails closed/redacted on catalog failure and malformed rows rather than treating as a miss', async () => {
+    const f = fixture('goiaba100g', [{ name: 'goiaba', quantity: '100', unit: 'g' }]),
+      state = db()
+    state.rpc.mockRejectedValueOnce(new Error('private-token'))
+    await expect(materialize(f, state)).rejects.toMatchObject({
+      code: 'conversation_meal_materialization_unavailable',
+    })
+    state.rpc.mockResolvedValueOnce({
+      data: [{ ...row('goiaba'), kcal_per_100g: Infinity }],
+      error: null,
+    })
+    await expect(materialize(f, state)).rejects.toMatchObject({
+      code: 'conversation_meal_materialization_unavailable',
+    })
+  })
+  it.each([
+    20, 30,
+  ])('refuses compact total%s even if a whole catalog row exists; never adds a dose', async (grams) => {
+    const name = 'leite com 1 medida de whey',
+      f = fixture(`${name}${grams}g`, [{ name, quantity: String(grams), unit: 'g' }])
+    expect(await materialize(f, db([name]))).toMatchObject({
+      status: 'clarification_required',
+      reason: 'unsupported_compound_association',
+    })
+  })
+  it('does not clamp invalid visual confidence into accepted evidence', async () => {
+    const f = visualFixture([{ name: 'arroz', quantity_g_estimate: 100, confidence: 1.5 }])
+    expect(await materialize(f)).toMatchObject({
+      status: 'clarification_required',
+      reason: 'low_confidence',
+    })
+  })
+  it('preserves complete identities rather than a cleaned prefix and converts existing quantity aliases once', async () => {
+    const changed = fixture('de banana100g', [{ name: 'de banana', quantity: '100', unit: 'g' }])
+    expect(await materialize(changed, db(['de banana']))).toMatchObject({
+      status: 'clarification_required',
+      reason: 'ambiguous_source_group',
+    })
+    const f = fixture('leite0,2litros; whey1scoop', [
+      { name: 'leite', quantity: '0,2', unit: 'litros' },
+      { name: 'whey', quantity: '1', unit: 'scoop' },
+    ])
+    const result = prepared(await materialize(f))
+    expect(result.inputs.map((x) => x.calculation_input.quantity_g)).toEqual([206, 30])
+    expect(
+      result.inputs.every(
+        (x) => x.candidate.quantity_basis === 'portion_reference' && x.candidate.needs_review,
+      ),
+    ).toBe(true)
+  })
+  it('binds source, result, policy and RPC callback before any catalog await', async () => {
+    const f = fixture('goiaba100g; pera50g', [
+      { name: 'goiaba', quantity: '100', unit: 'g' },
+      { name: 'pera', quantity: '50', unit: 'g' },
+    ])
+    let finish!: (value: { data: ReturnType<typeof row>[]; error: null }) => void
+    const state = db(),
+      first = new Promise<{ data: ReturnType<typeof row>[]; error: null }>((resolve) => {
+        finish = resolve
+      })
+    state.rpc
+      .mockImplementationOnce(() => first)
+      .mockResolvedValueOnce({ data: [row('pera')], error: null })
+    const policy = { confidenceThreshold: 0.6 },
+      pending = materializeConversationMealInterpretation(
+        state.client,
+        f.command,
+        f.capture,
+        f.interpretation,
+        policy,
+      )
+    Object.assign(f.capture.context.owner, { country: 'XX' })
+    Object.assign(at(f.interpretation.foods, 1), { name: at(f.interpretation.foods).name })
+    policy.confidenceThreshold = NaN
+    const replacement = vi.fn()
+    Object.assign(state.client, { rpc: replacement })
+    finish({ data: [row('goiaba')], error: null })
+    const result = prepared(await pending)
+    expect(result.inputs.map((x) => x.calculation_input)).toEqual([
+      { food_name: 'goiaba', quantity_g: 100 },
+      { food_name: 'pera', quantity_g: 50 },
+    ])
+    expect(state.rpc).toHaveBeenCalledTimes(2)
+    expect(replacement).not.toHaveBeenCalled()
+  })
+  it('feeds the actual shared calculator and composes its real default merge map without writes', async () => {
+    const f = fixture('leite100g; arroz100g; leite200mL', [
+      { name: 'leite', quantity: '100', unit: 'g' },
+      { name: 'arroz', quantity: '100', unit: 'g' },
+      { name: 'leite', quantity: '200', unit: 'mL' },
+    ])
+    const catalogs = ['leite', 'arroz'].map((name) => {
+      const entry = consumedFoodDefault(name, 'BR') ?? everydayFoodDefault(name)
+      if (!entry) throw new Error('default')
+      return {
+        ...row(entry.catalog_name),
+        kcal_per_100g: entry.per_100g.kcal,
+        protein_g: entry.per_100g.protein_g,
+        carbs_g: entry.per_100g.carbs_g,
+        fat_g: entry.per_100g.fat_g,
+      }
+    })
+    const state = calculationDb(catalogs),
+      result = prepared(await materialize(f, state))
+    const calc = await calcMealMacros(
+      state.client,
+      result.inputs.map((i) => i.calculation_input),
+      'BR',
+      OWNER,
+      {
+        consumptionPolicy: 'consumed-meal-v1',
+        preparationAnnotations: 'consumed.preparation.v1',
+        sourceReader: f.capture.sourceReader,
+        auditSink: f.capture.auditSink,
+      },
+    )
+    expect(calc.input_indexes).toEqual([[0, 2], [1]])
+    expect(calc.items.map((i) => i.quantity_g)).toEqual([306, 100])
+    expect(mapConversationMealCalculationSources(result, calc)).toMatchObject([
+      { input_indexes: [0, 2], source_group_indexes: [0, 2], quantity_basis: 'portion_reference' },
+      { input_indexes: [1], source_group_indexes: [1], quantity_basis: 'stated' },
+    ])
+    expect(calc.preparation_annotations).toMatchObject([
+      { input_indexes: [1], kind: 'default_cooked' },
+    ])
+    expect(state.tables.every((table) => table === 'user_food_corrections')).toBe(true)
+  })
+  it('keeps actual shared prepared-dish calculation as a whole editable estimate', async () => {
+    const f = fixture('carne desfiada com molho e milho180g', [
+        { name: 'carne desfiada com molho e milho', quantity: '180', unit: 'g' },
+      ]),
+      state = calculationDb([]),
+      result = prepared(await materialize(f, state)),
+      inputs = result.inputs.map((i) => i.calculation_input)
+    const calc = await calcMealMacros(state.client, inputs, 'BR', OWNER, {
+      consumptionPolicy: 'consumed-meal-v1',
+      sourceReader: f.capture.sourceReader,
+      auditSink: f.capture.auditSink,
+    })
+    const estimate = applyMobilePreparedDishEstimate(calc, inputs, 'mobile_app', 'pt-BR')
+    expect(estimate.items).toMatchObject([{ quantity_g: 180, source: 'llm_estimate', kcal: 270 }])
+    expect(estimate.user_warnings.join(' ')).toContain('aproximados')
+    expect(mapConversationMealCalculationSources(result, estimate)[0]?.input_indexes).toEqual([0])
+    expect(result.source_groups[0]?.source_positions[0]?.name).toEqual(
+      f.interpretation.foods[0]?.name,
+    )
+  })
+  it('maps shared merges back to all expanded inputs/original groups with least precise basis', async () => {
+    const f = fixture('leite100g; arroz100g; leite200mL', [
+      { name: 'leite', quantity: '100', unit: 'g' },
+      { name: 'arroz', quantity: '100', unit: 'g' },
+      { name: 'leite', quantity: '200', unit: 'mL' },
+    ])
+    const result = prepared(await materialize(f))
+    const calc = { items: [{}, {}], input_indexes: [[0, 2], [1]] } as MealCalcResult
+    const metadata = mapConversationMealCalculationSources(result, calc)
+    expect(metadata).toMatchObject([
+      { input_indexes: [0, 2], source_group_indexes: [0, 2], quantity_basis: 'portion_reference' },
+      { input_indexes: [1], source_group_indexes: [1], quantity_basis: 'stated' },
+    ])
+    expect(metadata[0]).not.toHaveProperty('candidate_id')
+    expect(metadata[1]?.candidate_id).toBe(result.inputs[1]?.candidate.candidate_id)
+    expect(() =>
+      mapConversationMealCalculationSources(result, { ...calc, input_indexes: [[0], [1]] }),
+    ).toThrow()
+    expect(() =>
+      mapConversationMealCalculationSources(result, { ...calc, input_indexes: undefined }),
+    ).toThrow()
+    expect(() =>
+      mapConversationMealCalculationSources(result, {
+        ...calc,
+        input_indexes: [
+          [0, 2],
+          [0, 1],
+        ],
+      }),
+    ).toThrow()
+  })
+})
+
+function calculationDb(catalogs: ReturnType<typeof row>[]) {
+  const state = db(),
+    tables: string[] = []
+  state.rpc.mockImplementation(async (_name, params) => ({
+    data: catalogs.filter((item) => item.name_pt.toLowerCase() === params.search_term),
+    error: null,
+  }))
+  Object.assign(state.client, {
+    from(table: string) {
+      tables.push(table)
+      if (table !== 'user_food_corrections') throw new Error(`Unexpected table read/write ${table}`)
+      const result = Promise.resolve({ data: [], error: null })
+      const chain = Object.assign(result, {
+        select: () => result,
+        eq: () => result,
+        or: () => result,
+        neq: () => result,
+        gte: () => result,
+        order: () => result,
+        limit: () => result,
+      })
+      return chain
+    },
+  })
+  return { ...state, tables }
+}

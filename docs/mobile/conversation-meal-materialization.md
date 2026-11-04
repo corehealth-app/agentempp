@@ -1,0 +1,51 @@
+# Private command meal materialization
+
+`materializeConversationMealInterpretation(db, command, captured, interpretation, { confidenceThreshold })` converts a source-bound, SQL-sealed `conversation.meal-interpretation.v1` into actual shared-calculator inputs and review candidates. It is a private leaf: no route, admission, old verbal-intent gate, extractor, model call, calculation, domain/analytics write, semantic SQL proof, clinical authorization, or registration receipt is installed here. A materialized result is not a saved meal.
+
+The function rebuilds the complete frozen source from the original bound command and capture, binds the interpretation's owner/command/input hash/source hash, revalidates every UTF-16/visual reference against that source, and accepts only an unchanged positive interpretation. The attempt ID must already have been verified by the durable invocation adapter; this leaf cannot authenticate or mint an attempt. Negative/ambiguous saved decisions are never upgraded or regenerated. Data, configuration, and the actual SDK RPC callback are captured before the first await. Returned values are detached and recursively frozen.
+
+## Whole-name qualification
+
+Names come from the exact original name span, retaining Unicode offsets and duplicate occurrences, or the exact captured visual item index. They qualify only through an existing whole-name `consumedFoodDefault` / `everydayFoodDefault`, the existing positive prepared-dish grammar, or the real verified-catalog `search_food_trgm` RPC followed by normalized **whole** `name_pt` equality. Catalog result objects are closed, bounded to five rows, finite and detached. Similarity, nonzero macros, word shape, shared words, a successful calculation, or generic estimates never establish food identity. A catalog miss clarifies; malformed rows, failed reads, or changed bindings fail with a redacted unavailable error. Verified catalog lookup remains fenced by the captured global catalog revision at later preparation/commit; no new nutrition receipt or fallback history read is introduced here.
+
+The additive `@mpp/agent` export exposes the existing `everydayFoodDefault` without copying its rules. Existing default membership qualifies a nominal name only; the shared calculator still must load the actual default's verified row and refuse a missing consumed reference. It may use its established history/correction/nutrition logic later, under the real captured source reader. That nutrition logic is not a replacement for whole-name qualification.
+
+## Quantities and existing references
+
+Mass, volume, and count are read independently from their exact associated spans; an entire meal is never reconstructed and reparsed. Closed quantity/unit aliases map only to existing helper units. `resolveDraftItem` provides stable ordered candidate IDs, stated mass and existing count references. Its name cleaning/truncation cannot silently remove part of the original food identity. `mobileDraftQuantity` runs once on draft candidates, keeping exact existing density/display references; unsupported volumes remain unresolved. No quantity means missing input, not an implied serving. Existing reference quantities remain `portion_reference`, reviewable and estimated.
+
+The existing household conversion receives only a qualified whole name plus its already associated explicit quantity/unit. It cannot reinterpret source discourse. For example, a litre is converted through the original mL count and the exact supported density, and a scoop is an editable existing reference rather than a measured weight.
+
+| Original association | Materialized inputs | Basis |
+| --- | --- | --- |
+| `leite200g` | milk200g | stated; not reinterpreted as200mL |
+| `leite200mL; whey30g` | milk206g + whey30g | milk portion reference; whey stated; separate occurrences |
+| exact `1 caneca de leite com1medida/dose de whey` | milk206g + whey30g | existing editable references |
+| exact `leite [integral] com1medida/dose de whey` + total200g | milk170g + whey30g | both existing editable references; total remains200g |
+| recognized `carne desfiada/cozida com molho[de tomate] e milho[cozido]` +180g | one whole180g input | do not move the weight to an ingredient |
+
+The interpreter validator now permits only the two existing exact cup/compact names to contain their nested literal count inside a whole food-name span. This is a small technical amendment, not a new DTO field, new recipe, or new interpretation schema. Report/dream/future/habit/negation/third-party framing guards remain in force. The actual materializer must still invoke the existing recipe helper. Compact totals of at most30g, missing/unsupported total units, unknown brands/ingredients, or a second ambiguous amount cannot fall back to a generic catalog recipe or add another scoop. A cup name with an additional external amount clarifies. A previously saved negative interpretation remains negative.
+
+Prepared dishes retain their whole mass and `prepared_dish` group marker. The caller may subsequently invoke the actual `applyMobilePreparedDishEstimate` opt-in with its backend-owned mobile origin. All existing single-input/zero-composite/no-label/no-approved-nutrition guards and editable estimate warnings remain necessary. This materializer does not calculate a dish or create a new mixture ratio.
+
+## Visual items and labels
+
+Every original visual index must be represented exactly once in a positive result. Each captured visual row is mapped independently with `draftFromVisionItems` and assigned its final global candidate ID, so filtering cannot shift indexes or discard an item. Missing mass, low/missing/out-of-range confidence, invalid names, or an ambiguous caption association clarify. A captured `2x` count does not multiply the visual gram estimate. Visual mass remains `visual_estimate` and reviewable. A textual mass cannot silently override the visual mass.
+
+The result retains existing nutrition-label metadata and `labelCandidateId` as a review hint only. That helper's association hint is not consent or food identity proof. No `approved_nutrition`, `user_kcal`, `use_nutrition_label`, or model-selected nutrition is emitted. The current command body has no explicit label-selection contract; future use must retain the actual `resolveTrustedNutritionLabel` completeness/confidence checks and explicit association, from the frozen owned media rather than a new live read.
+
+## Source groups and shared-calculation mapping
+
+A `materialized` result has schema `conversation.meal-materialization.v1`, bound `input_hash`, `source_hash`, `attempt_id`, ordered `inputs`, `source_groups`, and nullable review-only `nutrition_label`. Each input contains `input_index`, `{ food_name, quantity_g }` as `calculation_input`, the review candidate (with optional existing `quantity_display`), and `source_group_index`. Groups contain original interpretation food indexes, exact name/quantity/unit UTF-16 refs or original visual index, the existing rule used, and the expanded calculator input indexes. A recipe can map one source occurrence to two inputs; duplicate literal occurrences remain distinct inputs and candidate IDs. Expansion above the existing30-item bound clarifies before any helper can truncate.
+
+`mapConversationMealCalculationSources(materialization, calculation)` composes the actual output-to-expanded-input map from `MealCalcResult.input_indexes`; absent means identity only when output/input counts agree. It rejects incomplete, duplicate, out-of-range or unsupported mappings. It returns per-output input indexes, all source-group indexes, confidence and the least precise quantity basis (`visual_estimate`, then `portion_reference`, then `stated`). Only a sole input retains one candidate ID/display reference; merged lines cannot claim a single occurrence's identity. Original source refs remain available through the groups. The helper accepts the private in-memory materializer result, not arbitrary HTTP/persisted JSON.
+
+For example, shared milk aliases at expanded inputs0 and2 can merge into output0, with input1→output1: `[[0,2],[1]]`. This does not lose either original occurrence or pair the neighboring food with the wrong source. SQL `semantic_proof.input_count` and preparation annotation indexes must use the expanded input space, not the model-food count. SQL still checks final coverage and duplicate canonical names; do not invent merges for items the actual calculator did not merge.
+
+## Composition and qualification gates
+
+Root owns the next durable composition. Pass both `captured.sourceReader` and `captured.auditSink` to shared `calcMealMacros`, with `consumptionPolicy: consumed-meal-v1` and the actual `preparationAnnotations: consumed.preparation.v1` opt-in. The reader replaces history reads only; the sink prevents pre-commit analytics inserts. Await all reads, collect every source receipt including MISS, and retain the actual annotations. This leaf never invokes the calculator or either collector callback.
+
+A materialization has no old `intent.first_person_report`, so a nominal list must not be coerced into the legacy candidate codec. Persist it only through an explicitly compatible/versioned private contract. Current complete-source proof, current clinical policy, prepared/effect CAS, epoch/catalog fences, atomic writer, feedback and public Flow activation remain separate gates.
+
+Local qualification uses synthetic source captures and mock SDK responses, including actual shared-calculator merge and prepared-dish estimate paths, with unexpected table operations rejected. It does not establish real SDK/REST/PG behavior, provider quality/cost/latency, or registration success. No runtime/provider/cloud/native changes are included.

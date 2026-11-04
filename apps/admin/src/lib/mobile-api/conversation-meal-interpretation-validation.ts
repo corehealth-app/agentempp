@@ -61,6 +61,14 @@ function nominal(text: string): boolean {
     return false
   const normalized = plain(text),
     words = normalized.split(' ')
+  // Only the existing mobile whole-recipe names may contain their literal
+  // nested count. Materialization must still invoke the exact recipe helper;
+  // this does not upgrade discourse framing or grant food/nutrition authority.
+  if (
+    /^leite(?: integral)? com (?:1|uma) (?:medida|dose) de whey$/u.test(normalized) ||
+    /^(?:1|uma) caneca de leite com (?:1|uma) (?:medida|dose) de whey$/u.test(normalized)
+  )
+    return true
   // Ambiguous discourse framing is not a new food name. In particular a dream
   // adjunct cannot hide inside the same food span as a genuine head noun.
   if (

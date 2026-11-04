@@ -8,7 +8,7 @@ struct EncryptedConversationOutboxStoreTests {
     @Test func restartRetainsExactBodyHashAndUnknownStateWithoutPlaintext() throws {
         let fixture = try OutboxDiskFixture(); defer { fixture.remove() }
         let command = try ConversationMealCommand(source: .text("PRIVATE MEAL arroz 😀 e\u{301}"))
-        try fixture.store.update(owner: fixture.owner, key: fixture.key) { $0.append(.init(command: command)) }
+        try fixture.store.update(owner: fixture.owner, key: fixture.key) { $0.append(.init(command: command, originalServerEpoch: fixture.epoch)) }
         try fixture.store.update(owner: fixture.owner, key: fixture.key) { $0[0].state = .dispatchedUnknown }
         let reopened = EncryptedConversationOutboxStore(directory: fixture.directory)
         let entries = try reopened.load(owner: fixture.owner, key: fixture.key)
@@ -29,7 +29,7 @@ struct EncryptedConversationOutboxStoreTests {
     @Test func wrongKeyAccountAndTamperingFailClosedAndPreserveCiphertext() throws {
         let fixture = try OutboxDiskFixture(); defer { fixture.remove() }
         try fixture.store.update(owner: fixture.owner, key: fixture.key) {
-            $0.append(.init(command: try ConversationMealCommand(source: .text("private"))))
+            $0.append(.init(command: try ConversationMealCommand(source: .text("private")), originalServerEpoch: fixture.epoch))
         }
         let path = fixture.store.fileURL(owner: fixture.owner)
         let original = try Data(contentsOf: path)
@@ -49,14 +49,14 @@ struct EncryptedConversationOutboxStoreTests {
     @Test func realAtomicWriteFailureLeavesPreviousQueueByteIdentical() throws {
         let fixture = try OutboxDiskFixture(); defer { fixture.remove() }
         try fixture.store.update(owner: fixture.owner, key: fixture.key) {
-            $0.append(.init(command: try ConversationMealCommand(source: .text("first"))))
+            $0.append(.init(command: try ConversationMealCommand(source: .text("first")), originalServerEpoch: fixture.epoch))
         }
         let original = try Data(contentsOf: fixture.store.fileURL(owner: fixture.owner))
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: fixture.store.root.path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fixture.store.root.path) }
         #expect(throws: ConversationOutboxError.storageUnavailable) {
             try fixture.store.update(owner: fixture.owner, key: fixture.key) {
-                $0.append(.init(command: try ConversationMealCommand(source: .text("second"))))
+                $0.append(.init(command: try ConversationMealCommand(source: .text("second")), originalServerEpoch: fixture.epoch))
             }
         }
         #expect(try Data(contentsOf: fixture.store.fileURL(owner: fixture.owner)) == original)
@@ -70,13 +70,13 @@ struct EncryptedConversationOutboxStoreTests {
         let fixture = try OutboxDiskFixture(); defer { fixture.remove() }
         try fixture.store.update(owner: fixture.owner, key: fixture.key) { entries in
             for _ in 0..<EncryptedConversationOutboxStore.capacity {
-                entries.append(.init(command: try ConversationMealCommand(source: .text("same body"))))
+                entries.append(.init(command: try ConversationMealCommand(source: .text("same body")), originalServerEpoch: fixture.epoch))
             }
         }
         let original = try Data(contentsOf: fixture.store.fileURL(owner: fixture.owner))
         #expect(throws: ConversationOutboxError.queueFull) {
             try fixture.store.update(owner: fixture.owner, key: fixture.key) {
-                $0.append(.init(command: try ConversationMealCommand(source: .text("overflow"))))
+                $0.append(.init(command: try ConversationMealCommand(source: .text("overflow")), originalServerEpoch: fixture.epoch))
             }
         }
         #expect(try Data(contentsOf: fixture.store.fileURL(owner: fixture.owner)) == original)
@@ -89,7 +89,7 @@ struct EncryptedConversationOutboxStoreTests {
                 group.addTask {
                     let store = EncryptedConversationOutboxStore(directory: fixture.directory)
                     try store.update(owner: fixture.owner, key: fixture.key) {
-                        $0.append(.init(command: try ConversationMealCommand(source: .text("independent intent"))))
+                        $0.append(.init(command: try ConversationMealCommand(source: .text("independent intent")), originalServerEpoch: fixture.epoch))
                     }
                 }
             }
@@ -103,18 +103,18 @@ struct EncryptedConversationOutboxStoreTests {
     @Test func authenticatedButInconsistentFrozenHashIsRejected() throws {
         let fixture = try OutboxDiskFixture(); defer { fixture.remove() }
         try fixture.store.update(owner: fixture.owner, key: fixture.key) {
-            $0.append(.init(command: try ConversationMealCommand(source: .text("original source"))))
+            $0.append(.init(command: try ConversationMealCommand(source: .text("original source")), originalServerEpoch: fixture.epoch))
         }
         let path = fixture.store.fileURL(owner: fixture.owner)
         let sealed = try Data(contentsOf: path)
-        let aad = Data("performe.conversation.outbox\0version=1\0owner=\(fixture.owner.hash)".utf8)
+        let aad = Data("performe.conversation.outbox\0version=2\0owner=\(fixture.owner.hash)".utf8)
         let plain = try AES.GCM.open(AES.GCM.SealedBox(combined: sealed.dropFirst(8)), using: fixture.key, authenticating: aad)
         var envelope = try #require(JSONSerialization.jsonObject(with: plain) as? [String: Any])
         var entries = try #require(envelope["entries"] as? [[String: Any]])
         entries[0]["inputHash"] = String(repeating: "0", count: 64); envelope["entries"] = entries
         let changed = try JSONSerialization.data(withJSONObject: envelope)
         let forged = try #require(AES.GCM.seal(changed, using: fixture.key, authenticating: aad).combined)
-        try (Data("PCOBX001".utf8) + forged).write(to: path)
+        try (Data("PCOBX002".utf8) + forged).write(to: path)
         #expect(throws: ConversationOutboxError.integrityFailure) { try fixture.store.load(owner: fixture.owner, key: fixture.key) }
     }
 }
@@ -125,6 +125,10 @@ struct OutboxDiskFixture {
     let key = SymmetricKey(size: .bits256)
     let lease = SessionLease(userID: "00000000-0000-0000-0000-000000000001", generation: 7, bearer: "synthetic-not-persisted")
     let owner: ConversationOutboxOwner
+    let epoch = UUID(uuidString: "50000000-0000-4000-8000-000000000001")!
+    var server: ConversationOutboxServerObservation {
+        ConversationOutboxServerObservation(ownerID: UUID(uuidString: lease.userID)!, localSessionGeneration: lease.generation, epoch: epoch)
+    }
     init() throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent("outbox-test-\(UUID())", isDirectory: true)
         store = EncryptedConversationOutboxStore(directory: directory)

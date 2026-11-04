@@ -8,6 +8,7 @@ struct ConversationOutboxTicket: Sendable, CustomStringConvertible, CustomReflec
     let inputHash: String
     let wireBody: Data
     let idempotencyKey: String
+    let originalServerEpoch: UUID
     let ownerHash: String
     let localSessionGeneration: UInt64
     fileprivate let scope: UUID
@@ -28,7 +29,7 @@ private final class ConversationOutboxLifetime: @unchecked Sendable {
 }
 
 /// Candidate core only. There is deliberately no transport call, HTTP-success
-/// acknowledgement, new registration, reward, automatic resend or UUID renewal.
+/// shortcut, new registration, reward, automatic resend or UUID renewal.
 actor ConversationOutboxSession {
     private let lifecycle: any SessionLifecycleProviding
     private let store: EncryptedConversationOutboxStore
@@ -78,21 +79,27 @@ actor ConversationOutboxSession {
 
     /// Every actual new user intent gets a fresh UUID, even identical source.
     /// Failed persistence returns no enqueue success and preserves prior disk.
-    func enqueue(source: ConversationMealCommand.Source, mealType: ConversationMealCommand.MealType? = nil) async throws -> UUID {
+    func enqueue(source: ConversationMealCommand.Source, mealType: ConversationMealCommand.MealType? = nil, server: ConversationOutboxServerObservation) async throws -> UUID {
+        try validateObservation(server)
         let command = try ConversationMealCommand(source: source, mealType: mealType)
         try await stateOperation { store, owner, key in
-            try store.update(owner: owner, key: key) { $0.append(.init(command: command)) }
+            try store.update(owner: owner, key: key) { $0.append(.init(command: command, originalServerEpoch: server.epoch)) }
         }
         return command.commandID
     }
 
     /// Persist unknown BEFORE returning bytes to a future transport. A crash
     /// before or after send consequently restores an unresolved original ID.
-    func prepareDispatch(commandID: UUID) async throws -> ConversationOutboxTicket {
+    func prepareDispatch(commandID: UUID, server: ConversationOutboxServerObservation) async throws -> ConversationOutboxTicket {
+        try validateObservation(server)
         let entry = try await stateOperation { store, owner, key in
             try store.update(owner: owner, key: key) { entries in
                 guard let index = entries.firstIndex(where: { $0.commandID == commandID }) else { throw ConversationOutboxError.commandNotFound }
-                guard entries[index].state == .queued else { throw ConversationOutboxError.reconciliationRequired }
+                guard let epoch = entries[index].originalServerEpoch else { throw ConversationOutboxError.originalEpochUnavailable }
+                guard entries[index].state == .queued, entries[index].hold == nil,
+                      epoch == server.epoch else { throw ConversationOutboxError.reconciliationRequired }
+                // An epoch mismatch is a read-only refusal. A late observation
+                // must not persist a hold on work created under a newer epoch.
                 entries[index].state = .dispatchedUnknown
                 return entries[index]
             }
@@ -111,7 +118,22 @@ actor ConversationOutboxSession {
         return try ticket(entry)
     }
 
-    func markWaiting(ticket: ConversationOutboxTicket, hold: ConversationOutboxHold) async throws {
+    /// No network permission is created by inspecting pending work for a
+    /// deliberate local decision (including a legacy entry without an epoch).
+    func decisionTicket(commandID: UUID) async throws -> ConversationOutboxDecisionTicket {
+        let entry = try await stateOperation { store, owner, key in
+            guard let entry = try store.load(owner: owner, key: key).first(where: { $0.commandID == commandID }) else { throw ConversationOutboxError.commandNotFound }
+            return entry
+        }
+        try lifetime.check()
+        guard let lease else { throw ConversationOutboxError.sessionClosed }
+        return ConversationOutboxDecisionTicket(commandID: entry.commandID, inputHash: entry.inputHash, wireBody: entry.wireBody,
+            originalServerEpoch: entry.originalServerEpoch, ownerHash: owner.hash, localSessionGeneration: lease.generation, scope: scope)
+    }
+
+    /// Explicit local reset only. Backend stale/reset responses use the exact
+    /// dispatched ticket in markWaiting, never an unordered epoch observation.
+    func holdForLocalReset(ticket: ConversationOutboxDecisionTicket) async throws {
         guard let lease else { throw ConversationOutboxError.sessionClosed }
         guard ticket.scope == scope, ticket.ownerHash == owner.hash, ticket.localSessionGeneration == lease.generation else {
             throw ConversationOutboxError.invalidTransition
@@ -120,10 +142,69 @@ actor ConversationOutboxSession {
             try store.update(owner: owner, key: key) { entries in
                 guard let index = entries.firstIndex(where: { $0.commandID == ticket.commandID }) else { throw ConversationOutboxError.commandNotFound }
                 guard entries[index].wireBody == ticket.wireBody, entries[index].inputHash == ticket.inputHash,
+                      entries[index].originalServerEpoch == ticket.originalServerEpoch else { throw ConversationOutboxError.invalidTransition }
+                if entries[index].state != .queued { entries[index].state = .waitingReconciliation }
+                entries[index].hold = .reset
+            }
+        }
+    }
+
+    func markWaiting(ticket: ConversationOutboxTicket, hold: ConversationOutboxHold) async throws {
+        guard let lease else { throw ConversationOutboxError.sessionClosed }
+        guard ticket.scope == scope, ticket.ownerHash == owner.hash, ticket.localSessionGeneration == lease.generation,
+              hold != .originalEpochUnavailable else { throw ConversationOutboxError.invalidTransition }
+        try await stateOperation { store, owner, key in
+            try store.update(owner: owner, key: key) { entries in
+                guard let index = entries.firstIndex(where: { $0.commandID == ticket.commandID }) else { throw ConversationOutboxError.commandNotFound }
+                guard entries[index].wireBody == ticket.wireBody, entries[index].inputHash == ticket.inputHash,
+                      entries[index].originalServerEpoch == ticket.originalServerEpoch,
                       entries[index].state != .queued else { throw ConversationOutboxError.invalidTransition }
                 entries[index].state = .waitingReconciliation
                 if entries[index].hold.map({ $0.priority < hold.priority }) ?? true { entries[index].hold = hold }
             }
+        }
+    }
+
+    /// Only an actual terminal saved packet from trusted authenticated transport
+    /// can remove dispatched work. Optional feedback is not factual authority.
+    /// If an account transition follows deletion, publication is suppressed;
+    /// that does not undo the original account's verified factual ACK.
+    func acknowledgeSaved(
+        ticket: ConversationOutboxTicket, resultData: Data,
+        server: ConversationOutboxServerObservation,
+        publish: @escaping @MainActor @Sendable (ConversationOutboxSavedPublication) -> Void
+    ) async throws {
+        try validateObservation(server)
+        guard let lease else { throw ConversationOutboxError.sessionClosed }
+        guard ticket.scope == scope, ticket.ownerHash == owner.hash,
+              ticket.localSessionGeneration == lease.generation else { throw ConversationOutboxError.invalidTransition }
+        let result = try JSONDecoder().decode(SavedConversationMealCommandResultSnapshot.self, from: resultData)
+        let original = try ConversationMealCommand(wireBody: ticket.wireBody)
+        let originalEpoch = ticket.originalServerEpoch.uuidString.lowercased()
+        guard UUID(uuidString: result.ownerID) == UUID(uuidString: lease.userID),
+              result.commandID == ticket.commandID.uuidString.lowercased(), result.inputHash == ticket.inputHash,
+              original.commandID == ticket.commandID, original.wireBody == ticket.wireBody, original.inputHash == ticket.inputHash,
+              server.epoch == ticket.originalServerEpoch, result.epoch == originalEpoch,
+              ticket.idempotencyKey == original.idempotencyKey else { throw ConversationOutboxError.invalidTransition }
+        if let wire = try JSONSerialization.jsonObject(with: ticket.wireBody) as? [String: Any],
+           let meal = wire["meal_type"] as? String, meal != result.receipt.mealType.rawValue { throw ConversationOutboxError.invalidTransition }
+        let visibleScope = ConversationFeedbackPresentationSnapshot.Scope(ownerID: result.ownerID, sessionGeneration: lease.generation, epoch: originalEpoch)
+        let publication = ConversationOutboxSavedPublication(receipt: result.receipt, feedback: result.boundFeedback(scope: visibleScope))
+        try await stateOperation { store, owner, key in
+            try store.update(owner: owner, key: key) { entries in
+                guard let index = entries.firstIndex(where: { $0.commandID == ticket.commandID }) else { throw ConversationOutboxError.commandNotFound }
+                let entry = entries[index]
+                guard entry.wireBody == ticket.wireBody, entry.inputHash == ticket.inputHash,
+                      entry.originalServerEpoch == ticket.originalServerEpoch else { throw ConversationOutboxError.invalidTransition }
+                guard entry.state != .queued, entry.hold != .reset, entry.hold != .staleEpoch,
+                      entry.hold != .originalEpochUnavailable else { throw ConversationOutboxError.reconciliationRequired }
+                entries.remove(at: index)
+            }
+        }
+        let lifetime = lifetime
+        try await lifecycle.performVisiblePatientStateOperation(lease: lease) {
+            try lifetime.check(); try Task.checkCancellation()
+            publish(publication)
         }
     }
 
@@ -158,9 +239,18 @@ actor ConversationOutboxSession {
     private func ticket(_ entry: ConversationOutboxEntry) throws -> ConversationOutboxTicket {
         try lifetime.check(); try Task.checkCancellation()
         guard let lease else { throw ConversationOutboxError.sessionClosed }
+        guard let epoch = entry.originalServerEpoch else { throw ConversationOutboxError.originalEpochUnavailable }
         return ConversationOutboxTicket(commandID: entry.commandID, inputHash: entry.inputHash, wireBody: entry.wireBody,
                                         idempotencyKey: "cmsg1:\(entry.commandID.uuidString.lowercased())",
-                                        ownerHash: owner.hash, localSessionGeneration: lease.generation, scope: scope)
+                                        originalServerEpoch: epoch, ownerHash: owner.hash, localSessionGeneration: lease.generation, scope: scope)
+    }
+
+    private func validateObservation(_ server: ConversationOutboxServerObservation) throws {
+        try lifetime.check()
+        guard let lease else { throw ConversationOutboxError.sessionClosed }
+        guard UUID(uuidString: lease.userID) == server.ownerID, lease.generation == server.localSessionGeneration else {
+            throw ConversationOutboxError.invalidServerObservation
+        }
     }
 
     private func stateOperation<Value: Sendable>(_ operation: @escaping @Sendable (EncryptedConversationOutboxStore, ConversationOutboxOwner, SymmetricKey) throws -> Value) async throws -> Value {

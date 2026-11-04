@@ -4,9 +4,257 @@ import Testing
 
 @testable import BodyFlow
 
+#if canImport(UIKit)
+  import SwiftUI
+#endif
+
 @Suite("Actual command-backed Flow feature model")
 @MainActor
 struct FlowConversationModelTests {
+  #if canImport(UIKit)
+    @Test func nativeComposerVisiblyLocksTheOriginalSourceAndMealAfterPersistenceUncertainty()
+      async throws
+    {
+      let f = try await Fixture.make()
+      defer { f.disk.remove() }
+      await f.http.stub.respond { _, _ in try f.wire.sessionReply() }
+      let m = try await f.open()
+      m.mealType = .cafe
+      m.composer = "original breakfast source"
+      try FileManager.default.setAttributes(
+        [.posixPermissions: 0o500], ofItemAtPath: f.disk.store.root.path)
+      await m.submit()
+      try FileManager.default.setAttributes(
+        [.posixPermissions: 0o700], ofItemAtPath: f.disk.store.root.path)
+      let host = SignUpRenderingProbe.host(
+        FlowConversationComposerContent(
+          model: m, capture: nil, captureAction: { _ in }, discardAction: { _, _ in }
+        ).environment(\.locale, Locale(identifier: "en_US")), width: 390, height: 900)
+      defer { host.detach() }
+      let nodes = host.nodes()
+      let diagnostic = Comment(rawValue: nodes.map(\.description).joined(separator: "\n"))
+      #expect(nodes.contains { $0.identifier == "conversation.prepared.locked" }, diagnostic)
+      #expect(
+        nodes.contains {
+          $0.identifier == "conversation.composer.locked"
+            && $0.label == "original breakfast source"
+        }, diagnostic)
+      #expect(
+        nodes.contains {
+          $0.identifier == "conversation.meal-selector.locked" && $0.label == "Breakfast"
+        }, diagnostic)
+      #expect(
+        !nodes.contains {
+          $0.identifier == "conversation.composer" || $0.identifier == "conversation.meal-selector"
+        }, diagnostic)
+      #expect(
+        nodes.contains {
+          $0.identifier == "conversation.send" && $0.label == "Continue with the original report"
+        }, diagnostic)
+      #expect(
+        m.mealType == .cafe && m.composer == "original breakfast source" && m.pendingDraftID != nil)
+      await m.close()
+    }
+  #endif
+
+  @Test func explicitDiscardOfNeverEnqueuedPreparedIntentKeepsOtherWork() async throws {
+    let f = try await Fixture.make()
+    defer { f.disk.remove() }
+    await f.http.stub.respond { _, _ in try f.wire.sessionReply() }
+    let m = try await f.open()
+    m.mealType = .cafe
+    m.composer = "never enqueued original"
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o500], ofItemAtPath: f.disk.store.root.path)
+    await m.submit()
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o700], ofItemAtPath: f.disk.store.root.path)
+    let originalID = try #require(m.pendingDraftID)
+    await m.discardPreparedIntent(commandID: UUID())
+    #expect(m.pendingDraftID == originalID && m.isComposerLocked)
+    let other = try ConversationMealCommand(source: .text("independent pending intent"))
+    try f.disk.store.update(owner: f.owner, key: f.disk.key) {
+      $0.append(
+        .init(
+          command: other, originalServerEpoch: f.wire.epoch, originalPatientOwnerID: f.wire.ownerID)
+      )
+    }
+    await m.discardPreparedIntent(commandID: originalID)
+    #expect(
+      !m.isComposerLocked && m.pendingDraftID == nil && m.composer.isEmpty && m.mealType == nil)
+    #expect(
+      try f.disk.store.load(owner: f.owner, key: f.disk.key).map(\.commandID) == [other.commandID])
+    #expect(await f.http.stub.requests.filter { $0.httpMethod == "POST" }.isEmpty)
+    await m.close()
+  }
+
+  @Test func preparedIntentThatIsAlreadyUnknownCannotBeDiscardedOrRenewed() async throws {
+    let f = try await Fixture.make()
+    defer { f.disk.remove() }
+    await f.http.stub.respond { _, _ in try f.wire.sessionReply() }
+    let m = try await f.open()
+    m.mealType = .cafe
+    m.composer = "original unresolved source"
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o500], ofItemAtPath: f.disk.store.root.path)
+    await m.submit()
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o700], ofItemAtPath: f.disk.store.root.path)
+    let id = try #require(m.pendingDraftID)
+    let original = try ConversationMealCommand(
+      commandID: id, source: .text("original unresolved source"), mealType: .cafe)
+    try f.disk.store.update(owner: f.owner, key: f.disk.key) {
+      var recovered = ConversationOutboxEntry(
+        command: original, originalServerEpoch: f.wire.epoch, originalPatientOwnerID: f.wire.ownerID
+      )
+      recovered.state = .dispatchedUnknown
+      $0.append(recovered)
+    }
+    let ciphertext = try Data(contentsOf: f.disk.store.fileURL(owner: f.owner))
+    await m.discardPreparedIntent(commandID: id)
+    #expect(
+      m.isComposerLocked && m.pendingDraftID == id && m.composer == "original unresolved source")
+    #expect(m.failure == .reconciliationRequired && m.savedRows.isEmpty)
+    #expect(try Data(contentsOf: f.disk.store.fileURL(owner: f.owner)) == ciphertext)
+    #expect(await f.http.stub.requests.filter { $0.httpMethod == "POST" }.isEmpty)
+    await m.close()
+  }
+
+  @Test func attachmentPreparationLocksSourceBeforeItsFirstEnqueueAttempt() async throws {
+    let f = try await Fixture.make()
+    defer { f.disk.remove() }
+    let staging = MediaStagingStore(
+      temporaryDirectory: f.disk.store.root.appendingPathComponent("staging"))
+    let url = try stageConversationSyntheticMedia(
+      staging: staging, data: Data("synthetic-media".utf8), fileExtension: "jpg")
+    let barrier = ConversationControllerBarrier()
+    await f.http.stub.respond { request, _ in
+      let path = request.url?.path ?? ""
+      if path.hasSuffix("/session") { return try f.wire.sessionReply() }
+      if path.contains("/media") {
+        if path.hasSuffix("/complete") { await barrier.enter() }
+        return try modelMediaReply(
+          request, assetID: "40000000-0000-4000-8000-000000000001",
+          state: request.httpMethod == "GET" ? "processed" : "uploaded")
+      }
+      throw URLError(.networkConnectionLost)
+    }
+    let m = try await f.open(
+      media: .init(uploader: ConversationMediaUploaderProbe(), staging: staging))
+    try m.attach(
+      .init(
+        fileURL: url, kind: .mealPhoto, mimeType: "image/jpeg", sizeBytes: 15, duration: nil,
+        channel: .camera), expectedContext: #require(m.captureContext))
+    m.mealType = .cafe
+    m.composer = "caption before preparation"
+    let operation = Task {
+      await m.submit()
+      await barrier.finish()
+    }
+    try #require(await barrier.waitEnteredOrFinished())
+    #expect(m.isComposerLocked)
+    m.mealType = .jantar
+    m.composer = "replacement during upload"
+    #expect(m.mealType == .cafe && m.composer == "caption before preparation")
+    await barrier.release()
+    await operation.value
+    #expect(!m.isComposerLocked && m.composer.isEmpty)
+    let row = try #require(f.disk.store.load(owner: f.owner, key: f.disk.key).first)
+    let command = try ConversationMealCommand(wireBody: row.wireBody)
+    #expect(command.mealType == .cafe)
+    if case .media(_, let caption) = command.source {
+      #expect(caption == "caption before preparation")
+    } else {
+      Issue.record("Media source required")
+    }
+    await m.close()
+  }
+
+  @Test func uncertainTextIntentKeepsOriginalTypeAndSourceVisibleUntilSameIntentRetry() async throws
+  {
+    let f = try await Fixture.make()
+    defer { f.disk.remove() }
+    await f.http.stub.respond { request, _ in
+      if request.url?.path.hasSuffix("/session") == true { return try f.wire.sessionReply() }
+      throw URLError(.networkConnectionLost)
+    }
+    let m = try await f.open()
+    m.mealType = .cafe
+    m.composer = "original breakfast source"
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o500], ofItemAtPath: f.disk.store.root.path)
+    await m.submit()
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o700], ofItemAtPath: f.disk.store.root.path)
+    let originalID = try #require(m.pendingDraftID)
+    m.mealType = .jantar
+    m.composer = "different source after uncertainty"
+    #expect(m.mealType == .cafe && m.composer == "original breakfast source")
+    #expect(m.pendingDraftID == originalID)
+    await m.submit()
+    let post = try #require(await f.http.stub.requests.first(where: { $0.httpMethod == "POST" }))
+    let command = try ConversationMealCommand(wireBody: #require(post.httpBody))
+    #expect(command.commandID == originalID && command.mealType == .cafe)
+    if case .text(let value) = command.source {
+      #expect(value == "original breakfast source")
+    } else {
+      Issue.record("Frozen text must remain text")
+    }
+    await m.close()
+  }
+
+  @Test func uncertainMediaIntentKeepsCaptionAndTypeVisibleWithoutAnotherUploadOrUUID() async throws
+  {
+    let f = try await Fixture.make()
+    defer { f.disk.remove() }
+    let staging = MediaStagingStore(
+      temporaryDirectory: f.disk.store.root.appendingPathComponent("staging"))
+    let url = try stageConversationSyntheticMedia(
+      staging: staging, data: Data("synthetic-media".utf8), fileExtension: "jpg")
+    let capture = StagedMedia(
+      fileURL: url, kind: .mealPhoto, mimeType: "image/jpeg", sizeBytes: 15, duration: nil,
+      channel: .gallery)
+    let completes = ConversationControllerCounter()
+    await f.http.stub.respond { request, _ in
+      let path = request.url?.path ?? ""
+      if path.hasSuffix("/session") { return try f.wire.sessionReply() }
+      if path.contains("/media") {
+        if path.hasSuffix("/complete"), await completes.next() == 1 {
+          try FileManager.default.setAttributes(
+            [.posixPermissions: 0o500], ofItemAtPath: f.disk.store.root.path)
+        }
+        return try modelMediaReply(
+          request, assetID: "40000000-0000-4000-8000-000000000001",
+          state: request.httpMethod == "GET" ? "processed" : "uploaded")
+      }
+      throw URLError(.networkConnectionLost)
+    }
+    let uploader = ConversationMediaUploaderProbe()
+    let m = try await f.open(media: .init(uploader: uploader, staging: staging))
+    try m.attach(capture, expectedContext: #require(m.captureContext))
+    m.mealType = .cafe
+    m.composer = "original photo caption"
+    await m.submit()
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o700], ofItemAtPath: f.disk.store.root.path)
+    let originalID = try #require(m.pendingDraftID)
+    m.mealType = .jantar
+    m.composer = "new caption that is not the original"
+    #expect(m.mealType == .cafe && m.composer == "original photo caption")
+    await m.submit()
+    let post = try #require(
+      await f.http.stub.requests.first(where: { $0.url?.path.hasSuffix("/meal-commands") == true }))
+    let command = try ConversationMealCommand(wireBody: #require(post.httpBody))
+    #expect(command.commandID == originalID && command.mealType == .cafe)
+    if case .media(_, let caption) = command.source {
+      #expect(caption == "original photo caption")
+    } else {
+      Issue.record("Frozen media must remain media")
+    }
+    #expect(await uploader.count == 1)
+    await m.close()
+  }
+
   @Test func photoCommandIsDurableBeforeProcessingAndProcessingLossRestoresSameQueuedIntent()
     async throws
   {

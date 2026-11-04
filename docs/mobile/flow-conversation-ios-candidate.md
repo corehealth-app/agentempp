@@ -59,8 +59,13 @@ legacy, reset or foreign entries are preserved; there is no eviction policy.
 
 A fresh owned `/meal` read supplies only current consumed food facts, quantity
 references, revision and server actions. Null current data or nutrition remains
-unavailable. Original six-section feedback stays separate in a historical
-disclosure. The original receipt and numbers never change after an edit.
+unavailable. Original six-section feedback is the direct response only when an actual owned
+current group proves the same immutable receipt, lineage, item IDs, names,
+canonical quantities, macros, provenance, meal and time. Revision0 alone is
+insufficient. Otherwise it stays separate in a historical disclosure. A newer
+owned journal edit invalidates an older cached group and prompts another owned
+GET; no old macros are presented as current. The original receipt and numbers
+never change after an edit.
 The actual QA fixture demonstrates original whey30g alongside current whey35g;
 current calories/macros come from the group, not from recalculation or old feedback.
 
@@ -82,19 +87,28 @@ the iOS data-protection write option; iOS tests retain the real protected stager
 No production staging code is weakened.
 
 This is not native-to-real-server, provider, physical-device or staging E2E proof.
-Save/Undo controls remain uncomposed until the distinct durable edit outbox,
-actual edit controller/reconciliation, server CAS and final native binding are
-qualified. Linked clarification, workout commands and broader planned features
+Save/Undo controls remain uncomposed until the durable edit core and its actual
+HTTP/controller/reconciliation, server CAS and final native binding are
+qualified together. Linked clarification, workout commands and broader planned features
 remain separate. No old writer fallback, dummy successful save, model-generated
 nutrition, new paid environment or production deployment is introduced.
 
-Two additional product gates from independent review remain before activation:
+Independent-review product rules are implemented as follows:
 
-- A new, unchanged registration must show all six sections immediately in its
-  primary response. The current dormant disclosure must be limited to edited or
-  unavailable lineage after actual group/receipt/facts prove whether it changed;
-  revision0 alone is insufficient.
-- A prepared intent after persistence uncertainty must be visibly locked or
-  separated from a new draft. Changes to only the meal selector or a media
-  caption/type must not silently send the old frozen intent as the edited one.
-  Type-only and caption/type failure-path RED tests are required in that slice.
+- All six literal server sections appear directly for proven unchanged v2
+  facts. Edited, unknown, mismatched or unavailable lineage stays historical;
+  optional feedback failure still never revokes the factual ACK.
+- Before enqueue, original text/caption/meal selection stays visibly locked
+  during media preparation and any persistence uncertainty. Explicit retry
+  preserves that same UUID/body. The actual queued-only discard gate, or a
+  gated proof of no local entry, may release only that captured draft ID;
+  unknown work stays protected. A newer draft remains editable after successful
+  persistence while the older POST is still pending.
+- The composer content is a reusable actual component inside the existing
+  persistent viewport. Native probes verify exact read-only source and meal
+  labels and the absence of editable original controls; they do not exercise a
+  production/staging provider or physical phone.
+
+The separate encrypted edit store/session core is present. Actual edit HTTP,
+controller, replay/ACK composition and Save/Undo UI still require qualification,
+as do linked clarification and release activation. No route or flag is enabled.

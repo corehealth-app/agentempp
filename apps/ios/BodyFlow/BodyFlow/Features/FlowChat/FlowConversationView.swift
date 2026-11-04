@@ -10,13 +10,12 @@ struct FlowConversationView: View {
   @State private var capturePresentation: FlowConversationCapturePresentation?
   @Environment(\.locale) private var locale
   @Environment(\.scenePhase) private var scenePhase
-  @FocusState private var composerFocused: Bool
   @State private var keyboardClearance: CGFloat = 0
   @State private var discardID: UUID?
+  @State private var discardIsPrepared = false
   private var english: Bool { BodyFlowPresentationLanguage.resolve(locale) == .englishUnitedStates }
 
   var body: some View {
-    @Bindable var model = model
     GeometryReader { geometry in
       ZStack {
         FlowKeyboardClearanceObserver(owner: ObjectIdentifier(model)) { keyboardClearance = $0 }
@@ -28,79 +27,12 @@ struct FlowConversationView: View {
           FlowComposerViewport(
             viewportHeight: geometry.size.height, keyboardClearance: keyboardClearance
           ) {
-            VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-              if let attached = model.attachment {
-                HStack {
-                  Label(
-                    attached.staged.kind == .audioNote
-                      ? (english ? "Audio attached" : "Áudio anexado")
-                      : (english ? "Photo attached" : "Foto anexada"),
-                    systemImage: attached.staged.kind == .audioNote ? "waveform" : "photo")
-                  Spacer()
-                  Button(english ? "Remove" : "Remover") { Task { await model.removeAttachment() } }
-                    .disabled(model.isWorking)
-                }
-                .accessibilityIdentifier("conversation.attachment")
-              }
-              HStack(alignment: .bottom, spacing: BodyFlowSpacing.sm) {
-                if let capture, model.captureContext != nil {
-                  Menu {
-                    if capture.camera.isAvailable() {
-                      Button(english ? "Take photo" : "Tirar foto", systemImage: "camera") {
-                        openCapture(.camera)
-                      }
-                    }
-                    Button(english ? "Photo library" : "Galeria", systemImage: "photo") {
-                      openCapture(.gallery)
-                    }
-                    Button(english ? "Record audio" : "Gravar áudio", systemImage: "mic") {
-                      openCapture(.recording)
-                    }
-                    Button(english ? "Choose audio" : "Selecionar áudio", systemImage: "waveform") {
-                      openCapture(.audioFile)
-                    }
-                  } label: {
-                    Image(systemName: "plus").frame(width: 44, height: 44)
-                  }
-                  .disabled(model.isWorking || model.terminalQuestion != nil)
-                  .accessibilityLabel(english ? "Attach photo or audio" : "Anexar foto ou áudio")
-                  .accessibilityIdentifier("conversation.attach")
-                }
-                TextField(
-                  english ? "Tell Flow what you ate…" : "Conte ao Flow o que você comeu…",
-                  text: $model.composer, axis: .vertical
-                )
-                .lineLimit(1...6)
-                .focused($composerFocused)
-                .font(BodyFlowTypography.body)
-                .accessibilityIdentifier("conversation.composer")
-                Button {
-                  composerFocused = false
-                  Task { await model.submit() }
-                } label: {
-                  Image(systemName: "paperplane.fill")
-                    .frame(
-                      width: BodyFlowSpacing.minimumTapTarget,
-                      height: BodyFlowSpacing.minimumTapTarget)
-                }
-                .buttonStyle(BodyFlowButtonStyle(role: .primary))
-                .disabled(!model.canSubmit)
-                .accessibilityLabel(english ? "Send meal report" : "Enviar relato de refeição")
-                .accessibilityIdentifier("conversation.send")
-              }
-              Picker(
-                english ? "Meal (optional)" : "Refeição (opcional)", selection: $model.mealType
-              ) {
-                Text(english ? "Meal (optional)" : "Refeição (opcional)").tag(
-                  nil as ConversationMealCommand.MealType?)
-                ForEach(ConversationMealCommand.MealType.allCases, id: \.self) { type in
-                  Text(mealName(type)).tag(Optional(type))
-                }
-              }
-              .pickerStyle(.menu)
-              .disabled(model.isWorking || model.terminalQuestion != nil)
+            FlowConversationComposerContent(
+              model: model, capture: capture, captureAction: openCapture
+            ) { id, prepared in
+              discardIsPrepared = prepared
+              discardID = id
             }
-            .padding(BodyFlowSpacing.md)
           }
         }
         .padding(.bottom, keyboardClearance)
@@ -110,6 +42,7 @@ struct FlowConversationView: View {
     .background(BodyFlowColor.color(.backgroundPrimary))
     .navigationTitle("Flow")
     .navigationBarTitleDisplayMode(.inline)
+    .accessibilityElement(children: .contain)
     .accessibilityIdentifier("screen.flow-conversation")
     .sheet(item: $capturePresentation) { presentation in
       if let capture {
@@ -124,15 +57,33 @@ struct FlowConversationView: View {
     }
     .alert(
       english ? "Discard unsent report?" : "Descartar relato não enviado?",
-      isPresented: Binding(get: { discardID != nil }, set: { if !$0 { discardID = nil } })
+      isPresented: Binding(
+        get: { discardID != nil },
+        set: {
+          if !$0 {
+            discardID = nil
+            discardIsPrepared = false
+          }
+        })
     ) {
       Button(english ? "Discard" : "Descartar", role: .destructive) {
         if let id = discardID {
+          let prepared = discardIsPrepared
           discardID = nil
-          Task { await model.discardUnsent(commandID: id) }
+          discardIsPrepared = false
+          Task {
+            if prepared {
+              await model.discardPreparedIntent(commandID: id)
+            } else {
+              await model.discardUnsent(commandID: id)
+            }
+          }
         }
       }
-      Button(english ? "Cancel" : "Cancelar", role: .cancel) { discardID = nil }
+      Button(english ? "Cancel" : "Cancelar", role: .cancel) {
+        discardID = nil
+        discardIsPrepared = false
+      }
     } message: {
       Text(
         english
@@ -209,7 +160,10 @@ struct FlowConversationView: View {
               }
             }
             if row.state == .queued {
-              Button(english ? "Discard" : "Descartar", role: .destructive) { discardID = row.id }
+              Button(english ? "Discard" : "Descartar", role: .destructive) {
+                discardIsPrepared = false
+                discardID = row.id
+              }
             }
           }
           .disabled(model.isWorking)
@@ -226,7 +180,10 @@ struct FlowConversationView: View {
               Button(
                 english ? "Discard unsent report" : "Descartar relato não enviado",
                 role: .destructive
-              ) { discardID = held.commandID }
+              ) {
+                discardIsPrepared = false
+                discardID = held.commandID
+              }
             }
           }
           .accessibilityIdentifier("conversation.held")
@@ -259,51 +216,24 @@ struct FlowConversationView: View {
 
   private func savedCard(_ row: FlowConversationSavedRow) -> some View {
     VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-      source(row.command.source)
-      VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-        if let group = model.currentGroup(commandID: row.id) {
-          FlowConversationMealGroupView(group: group)
-        } else {
-          Text(
-            english
-              ? "Current meal details are unavailable."
-              : "Os dados atuais da refeição estão indisponíveis."
-          )
-          .foregroundStyle(BodyFlowColor.secondaryText)
-          Button(english ? "Update meal" : "Atualizar refeição") {
-            Task { await model.loadCurrentGroup(commandID: row.id) }
-          }
-        }
-        DisclosureGroup(
-          english ? "Original historical registration" : "Registro original histórico"
+      if let scope = model.feedbackPresentationScope {
+        source(row.command.source)
+        FlowConversationSavedMealResponseView(
+          row: row, group: model.currentGroup(commandID: row.id), scope: scope
         ) {
-          if let feedback = row.feedback {
-            ConversationFeedbackPresentationView(feedback: feedback)
-          } else {
-            Label(
-              english ? "Meal recorded" : "Refeição registrada",
-              systemImage: "checkmark.circle.fill"
-            )
-            .font(BodyFlowTypography.cardTitle)
-            Text(
-              english
-                ? "Historical registration (\(row.receipt.localDate))"
-                : "Registro histórico (\(row.receipt.localDate))")
-            Text(
-              english
-                ? "Historical details are unavailable right now."
-                : "Os detalhes históricos estão indisponíveis no momento."
-            )
-            .foregroundStyle(BodyFlowColor.secondaryText)
-          }
+          Task { await model.loadCurrentGroup(commandID: row.id) }
         }
-        .accessibilityIdentifier("conversation.meal.original-history")
+        .padding(BodyFlowSpacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+          BodyFlowColor.color(.backgroundSecondary), in: RoundedRectangle(cornerRadius: 20)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("conversation.saved.\(row.id.uuidString.lowercased())")
+        .task(id: model.knownEditRevision(commandID: row.id)) {
+          await model.loadCurrentGroup(commandID: row.id)
+        }
       }
-      .padding(BodyFlowSpacing.md)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .background(BodyFlowColor.color(.backgroundSecondary), in: RoundedRectangle(cornerRadius: 20))
-      .accessibilityIdentifier("conversation.saved.\(row.id.uuidString.lowercased())")
-      .task(id: row.id) { await model.loadCurrentGroup(commandID: row.id) }
     }
   }
   @ViewBuilder private func journalEntry(_ entry: ConversationJournalPageSnapshot.Entry)
@@ -363,18 +293,7 @@ struct FlowConversationView: View {
 
   private func openCapture(_ choice: FlowConversationCapturePresentation.Choice) {
     guard let context = model.captureContext, model.terminalQuestion == nil else { return }
-    composerFocused = false
     capturePresentation = .init(choice: choice, context: context)
-  }
-  private func mealName(_ type: ConversationMealCommand.MealType) -> String {
-    switch type {
-    case .cafe: english ? "Breakfast" : "Café da manhã"
-    case .almoco: english ? "Lunch" : "Almoço"
-    case .lanche: english ? "Snack" : "Lanche"
-    case .jantar: english ? "Dinner" : "Jantar"
-    case .ceia: english ? "Supper" : "Ceia"
-    case .outro: english ? "Other" : "Outra"
-    }
   }
   private func questionText(_ reason: String?) -> String {
     switch reason {

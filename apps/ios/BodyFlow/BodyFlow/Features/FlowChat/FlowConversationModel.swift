@@ -56,6 +56,9 @@ final class FlowConversationModel {
   private(set) var historyUnavailable = false
   private var dismissedQuestions: Set<UUID> = []
   private var currentGroups: [UUID: ConversationMealGroupSnapshot] = [:]
+  // Highest owned effect survives page/reset replacement within this exact
+  // identity. A late group read cannot make a known edit disappear.
+  private var knownGroupEdits: [UUID: ConversationMealEditEffectSnapshot] = [:]
   private var groupRequests: [UUID: UUID] = [:]
   private var groupFailures: Set<UUID> = []
   private let lifetime = FlowConversationLifetime()
@@ -90,12 +93,22 @@ final class FlowConversationModel {
   }
   private(set) var isWorking = false
   private(set) var isRefreshing = false
-  var mealType: ConversationMealCommand.MealType?
+  private var selectedMealType: ConversationMealCommand.MealType?
+  private var preparingMediaIntent = false
+  var isComposerLocked: Bool { !isClosed && (preparedDraft != nil || preparingMediaIntent) }
+  var mealType: ConversationMealCommand.MealType? {
+    get { isClosed ? nil : selectedMealType }
+    set {
+      guard !isClosed, !isComposerLocked, selectedMealType != newValue else { return }
+      selectedMealType = newValue
+      draftRevision &+= 1
+    }
+  }
 
   var composer: String {
     get { isClosed ? "" : draft }
     set {
-      guard !isClosed else { return }
+      guard !isClosed, !isComposerLocked else { return }
       draft = newValue
       draftRevision &+= 1
     }
@@ -103,6 +116,14 @@ final class FlowConversationModel {
   var isClosed: Bool { closed || lifetime.isClosed }
   var canSubmit: Bool {
     guard !isClosed, !isWorking, lastIdentity != nil, blockedDecisionID == nil else { return false }
+    if let preparedDraft {
+      if let known = pending.first(where: { $0.id == preparedDraft.command.commandID }),
+        known.state != .queued || known.hold != nil
+      {
+        return false
+      }
+      return preparedDraft.context == lastIdentity
+    }
     if selectedAttachment != nil { return composer.utf16.count <= 1_000 }
     return !composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       && composer.utf16.count <= 2_000
@@ -113,7 +134,7 @@ final class FlowConversationModel {
       commandID: id, reason: latestDecision?.commandID == id ? latestDecision?.reason : nil)
   }
   func beginIndependentReport() {
-    guard hasCurrentScope, !isWorking else { return }
+    guard hasCurrentScope, !isWorking, !isComposerLocked, blockedDecisionID != nil else { return }
     if let id = blockedDecisionID { dismissedQuestions.insert(id) }
     blockedDecisionID = nil
     draft = ""
@@ -131,7 +152,8 @@ final class FlowConversationModel {
   }
   var attachment: FlowConversationAttachment? { hasCurrentScope ? selectedAttachment : nil }
   func attach(_ staged: StagedMedia, expectedContext: ConversationCommandContext.Identity) throws {
-    guard !isWorking, !isClosed, let context, context.identity == expectedContext,
+    guard !isWorking, !isClosed, !isComposerLocked, let context,
+      context.identity == expectedContext,
       mediaService != nil
     else {
       mediaDependencies?.staging.remove(staged.fileURL)
@@ -145,7 +167,7 @@ final class FlowConversationModel {
     draftRevision &+= 1
   }
   func removeAttachment() async {
-    guard !isWorking, let selected = selectedAttachment else { return }
+    guard !isWorking, !isComposerLocked, let selected = selectedAttachment else { return }
     selectedAttachment = nil
     preparedDraft = nil
     draftRevision &+= 1
@@ -154,6 +176,7 @@ final class FlowConversationModel {
       try? await mediaService?.discard(captureID: selected.id, context: context)
     }
   }
+  var preparedIntent: ConversationMealCommand? { hasCurrentScope ? preparedDraft?.command : nil }
   var pendingDraftID: UUID? { isClosed ? nil : preparedDraft?.command.commandID }
   var journalRows: [ConversationJournalPageSnapshot.Entry] {
     hasCurrentScope && historyIdentity == lastIdentity ? historyEntries : []
@@ -302,6 +325,18 @@ final class FlowConversationModel {
               {
                 throw MobileAPITransportError.invalidResponse
               }
+            } else if case .edit(let row) = item {
+              if let known = self.commands[row.result.commandID],
+                known.inputHash != row.result.originalInputHash
+              {
+                throw MobileAPITransportError.invalidResponse
+              }
+              if let known = self.knownGroupEdits[row.result.commandID],
+                known.revision == row.result.receipt.revision,
+                !Self.sameKnownEdit(known, row.result.receipt)
+              {
+                throw MobileAPITransportError.invalidResponse
+              }
             }
           }
           self.historyEntries = reset ? read.page.items : self.historyEntries + read.page.items
@@ -317,6 +352,24 @@ final class FlowConversationModel {
               {
                 self.blockedDecisionID = state.commandID
                 self.latestDecision = state
+              }
+            } else if case .edit(let row) = item {
+              let commandID = row.result.commandID
+              let effect = row.result.receipt
+              let newlyKnown =
+                self.knownGroupEdits[commandID].map {
+                  effect.revision > $0.revision
+                } ?? true
+              if newlyKnown { self.knownGroupEdits[commandID] = effect }
+              if let current = self.currentGroups[commandID] {
+                if !self.satisfiesKnownEdits(current) {
+                  self.currentGroups.removeValue(forKey: commandID)
+                  self.groupRequests.removeValue(forKey: commandID)
+                }
+              } else if newlyKnown {
+                // Invalidate even an empty-cache GET already in flight. A
+                // fresh GET still must pass the publication check below.
+                self.groupRequests.removeValue(forKey: commandID)
               }
             }
           }
@@ -356,6 +409,32 @@ final class FlowConversationModel {
     }
   }
 
+  var feedbackPresentationScope: ConversationFeedbackPresentationSnapshot.Scope? {
+    guard let context, hasCurrentScope else { return nil }
+    return .init(
+      ownerID: context.ownerID.uuidString.lowercased(),
+      sessionGeneration: context.sessionGeneration, epoch: context.epoch.uuidString.lowercased())
+  }
+  func knownEditRevision(commandID: UUID) -> Int {
+    guard hasCurrentScope else { return 0 }
+    return knownGroupEdits[commandID]?.revision ?? 0
+  }
+  private static func sameKnownEdit(
+    _ lhs: ConversationMealEditEffectSnapshot, _ rhs: ConversationMealEditEffectSnapshot
+  ) -> Bool {
+    lhs.operationID == rhs.operationID && lhs.operationInputHash == rhs.operationInputHash
+      && lhs.kind == rhs.kind && lhs.revision == rhs.revision
+      && ConversationProtocolInstant(lhs.appliedAt) == ConversationProtocolInstant(rhs.appliedAt)
+  }
+  private func satisfiesKnownEdits(_ group: ConversationMealGroupSnapshot) -> Bool {
+    guard let known = knownGroupEdits[group.commandID] else { return true }
+    guard group.revision >= known.revision,
+      let observed = ConversationProtocolInstant(group.observedAt),
+      let applied = ConversationProtocolInstant(known.appliedAt), observed >= applied
+    else { return false }
+    return group.revision > known.revision
+      || group.lastOperation.map { Self.sameKnownEdit($0, known) } == true
+  }
   func currentGroup(commandID: UUID) -> ConversationMealGroupSnapshot? {
     hasCurrentScope ? currentGroups[commandID] : nil
   }
@@ -377,6 +456,9 @@ final class FlowConversationModel {
         try context.withCurrentAuthority {
           guard self.groupRequests[commandID] == requestID, self.lastIdentity == context.identity
           else { throw ConversationOutboxError.staleObservation }
+          guard self.satisfiesKnownEdits(group) else {
+            throw MobileAPITransportError.invalidResponse
+          }
           self.currentGroups[commandID] = group
         }
       }
@@ -419,6 +501,8 @@ final class FlowConversationModel {
       let caption = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : draft
       let revision = draftRevision
       let mealType = mealType
+      preparingMediaIntent = true
+      defer { preparingMediaIntent = false }
       await run { requestID in
         guard let media = self.mediaService else { throw MealCaptureFailure.unavailable }
         let context = try await self.freshMediaContext(
@@ -443,6 +527,7 @@ final class FlowConversationModel {
         try await media.retainForEnqueue(
           captureID: selected.id, command: prepared.command, expectedContext: selected.identity)
         let id = try await self.persist(prepared, publicationID: requestID)
+        self.preparingMediaIntent = false
         self.mediaPhase = .processing
         try await media.process(
           command: prepared.command, expectedContext: prepared.context, context: context)
@@ -501,6 +586,11 @@ final class FlowConversationModel {
       publish: publisher(for: publicationID))
     guard id == prepared.command.commandID else { throw ConversationOutboxError.invalidTransition }
     try await visible(publicationID: publicationID) {
+      if let known = self.pending.first(where: { $0.id == id }),
+        known.state != .queued || known.hold != nil
+      {
+        throw ConversationOutboxError.reconciliationRequired
+      }
       guard self.lastIdentity == prepared.context else {
         throw ConversationOutboxError.invalidServerObservation
       }
@@ -525,6 +615,43 @@ final class FlowConversationModel {
     replayAllowed.remove(commandID)
     await run { id in
       try await self.controller.resubmit(commandID: commandID, publish: self.publisher(for: id))
+    }
+  }
+  /// Discard is explicit and uses the actual queued-only disk guard. Missing
+  /// local work after that gated read means this prepared source never left
+  /// RAM; unresolved/dispatched work is refused and retained without renewal.
+  func discardPreparedIntent(commandID expectedID: UUID) async {
+    guard !isWorking, hasCurrentScope, let prepared = preparedDraft,
+      prepared.command.commandID == expectedID
+    else { return }
+    await run { requestID in
+      do {
+        try await self.controller.discardUnsent(
+          commandID: prepared.command.commandID, publish: self.publisher(for: requestID))
+      } catch ConversationOutboxError.commandNotFound {
+        // The serialized local operation proved there is no encrypted intent.
+      }
+      try await self.visible(publicationID: requestID) {
+        guard self.lastIdentity == prepared.context else {
+          throw ConversationOutboxError.invalidServerObservation
+        }
+        self.releasePreparedIntent(commandID: prepared.command.commandID)
+      }
+    }
+  }
+  private func releasePreparedIntent(commandID: UUID) {
+    guard let prepared = preparedDraft, prepared.command.commandID == commandID else { return }
+    if draftRevision == prepared.revision {
+      draft = ""
+      draftRevision &+= 1
+      selectedMealType = nil
+    }
+    preparedDraft = nil
+    if selectedAttachment?.commandID == commandID {
+      if let selectedAttachment {
+        mediaDependencies?.staging.remove(selectedAttachment.staged.fileURL)
+      }
+      selectedAttachment = nil
     }
   }
   func discardUnsent(commandID: UUID) async {
@@ -552,6 +679,8 @@ final class FlowConversationModel {
     context = nil
     lastIdentity = nil
     draft = ""
+    selectedMealType = nil
+    preparingMediaIntent = false
     preparedDraft = nil
     if let selected = selectedAttachment {
       mediaDependencies?.staging.remove(selected.staged.fileURL)
@@ -560,6 +689,7 @@ final class FlowConversationModel {
     mediaPhase = nil
     resetHistory()
     dismissedQuestions.removeAll()
+    knownGroupEdits.removeAll()
     currentGroups.removeAll()
     groupRequests.removeAll()
     groupFailures.removeAll()
@@ -610,6 +740,8 @@ final class FlowConversationModel {
       else { return }
       if let old = lastIdentity, old != value.identity {
         draft = ""
+        selectedMealType = nil
+        preparingMediaIntent = false
         draftRevision &+= 1
         preparedDraft = nil
         if let selected = selectedAttachment {
@@ -618,6 +750,7 @@ final class FlowConversationModel {
         selectedAttachment = nil
         resetHistory()
         dismissedQuestions.removeAll()
+        knownGroupEdits.removeAll()
         currentGroups.removeAll()
         groupRequests.removeAll()
         groupFailures.removeAll()
@@ -664,6 +797,7 @@ final class FlowConversationModel {
         let id = UUID(uuidString: value.receipt.commandID), let command = commands[id],
         command.inputHash == value.receipt.inputHash
       else { return }
+      releasePreparedIntent(commandID: id)
       pending.removeAll { $0.id == id }
       queuedMetadata.removeAll { $0 == id }
       replayAllowed.remove(id)
@@ -675,6 +809,9 @@ final class FlowConversationModel {
       guard let context, hasCurrentScope, value.ownerID == context.ownerID,
         value.epoch == context.epoch
       else { return }
+      if value.status == .notRecorded, preparedDraft?.command.inputHash == value.inputHash {
+        releasePreparedIntent(commandID: value.commandID)
+      }
       if value.status == .notRecorded, !dismissedQuestions.contains(value.commandID) {
         blockedDecisionID = value.commandID
         latestDecision = value

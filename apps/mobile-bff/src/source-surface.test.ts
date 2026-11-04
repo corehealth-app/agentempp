@@ -126,6 +126,37 @@ function certifiedWorkoutRepositoryCopies(): string[] {
   return copies
 }
 
+function certifyInlineConversationEditModule(sharedChunk: string, journalRoute: string): void {
+  const markers = ['conversation.meal-edit-effect-public.v1', 'conversation.meal-group.v1']
+  const journalEntry = currentAppPathsManifest()[journalRoute]
+  expect(journalEntry).toBeTypeOf('string')
+  const copies = [sharedChunk, resolve(buildRoot, 'server', journalEntry ?? '')]
+  const modules = copies.map((file) => {
+    const source = ts.createSourceFile(
+      file,
+      readFileSync(file, 'utf8'),
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.JS,
+    )
+    const bodies: string[] = []
+    const visit = (node: ts.Node) => {
+      if (ts.isFunctionLike(node) && ts.isPropertyAssignment(node.parent)) {
+        const body = node.getText(source)
+        if (markers.every((marker) => body.includes(marker))) bodies.push(body)
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(source)
+    // Compare the entire physical Webpack module, not just DTO marker strings
+    // or selected functions. No generated source is omitted from the scans.
+    expect(bodies, file).toHaveLength(1)
+    return bodies[0]
+  })
+  expect(modules[0]).toBeTruthy()
+  expect(modules[0]).toBe(modules[1])
+}
+
 const allowedRouteExports = new Set([
   'GET',
   'POST',
@@ -729,14 +760,31 @@ describe('authoritative Mobile API source surface', () => {
     const editWriterChunk = uniqueChunk([
       'commit_conversation_meal_item_edit',
       'undo_conversation_meal_item_edit',
+      'undo_conversation_meal_registration',
       'read_conversation_meal_edit_operation',
     ])
-    expect(chunkConsumers(publicEditChunk)).toEqual([...editRoutes, journalRoute].sort())
+    // Reusing the closed edit JSON boundary in the actual materializer makes
+    // Webpack merge the public projection and writer chunks. The journal now
+    // embeds one byte-identical public projection module in its own entry.
+    // Certify only those four removed trace edges; every physical source and
+    // every writer marker remains subject to the original global checks.
+    expect(publicEditChunk).toBe(editWriterChunk)
+    certifyInlineConversationEditModule(publicEditChunk, journalRoute)
+    expect(chunkConsumers(publicEditChunk)).toEqual(editRoutes)
     expect(chunkConsumers(editWriterChunk)).toEqual(editRoutes)
+    for (const marker of ['conversation.meal-edit-effect-public.v1', 'conversation.meal-group.v1'])
+      expect(runtimeMarkerRoutes(marker)).toEqual([...editRoutes, journalRoute].sort())
+    for (const marker of [
+      'commit_conversation_meal_item_edit',
+      'undo_conversation_meal_item_edit',
+      'undo_conversation_meal_registration',
+      'read_conversation_meal_edit_operation',
+    ])
+      expect(runtimeMarkerRoutes(marker)).toEqual(editRoutes)
     expect(runtimeMarkerRoutes('read_conversation_meal_journal_page')).toEqual([journalRoute])
     for (const route of commandRoutes)
       expect(tracedTargets(route), route).toHaveLength(
-        route === journalRoute ? 121 : editRoutes.includes(route) ? 122 : 119,
+        route === journalRoute ? 121 - 1 : editRoutes.includes(route) ? 122 - 1 : 119,
       )
     const legacyTargets = new Set([...allRoutes, webhookRoute].flatMap(tracedTargets))
     const commandOnlyTargets = [...new Set(commandRoutes.flatMap(tracedTargets))]
@@ -744,21 +792,23 @@ describe('authoritative Mobile API source surface', () => {
       .sort()
     expect(commandOnlyTargets).toEqual(
       [
-        commandChunk,
-        publicEditChunk,
-        editWriterChunk,
-        ...commandRoutes.map((route) =>
-          realpathSync(
-            resolve(buildRoot, 'server/app', `${route.slice(1)}_client-reference-manifest.js`),
+        ...new Set([
+          commandChunk,
+          publicEditChunk,
+          editWriterChunk,
+          ...commandRoutes.map((route) =>
+            realpathSync(
+              resolve(buildRoot, 'server/app', `${route.slice(1)}_client-reference-manifest.js`),
+            ),
           ),
-        ),
+        ]),
       ].sort(),
     )
-    expect(surface.nftReferenceCount).toBe(
+    expect(surface.nftReferenceCount + editRoutes.length + 1).toBe(
       8028 + priorRoutes.length + 100 + 104 + 3 * 119 + 3 * 122 + 121,
     )
-    expect(surface.nftUniqueTargetCount).toBe(215 + 2 + 1 + 10)
-    expect(surface.nftRegularFileTargetCount).toBe(213 + 2 + 1 + 10)
+    expect(surface.nftUniqueTargetCount + 1).toBe(215 + 2 + 1 + 10)
+    expect(surface.nftRegularFileTargetCount + 1).toBe(213 + 2 + 1 + 10)
     expect(surface.nftDirectoryTargetCount).toBe(2)
     const additions = new Set(
       currentClinicalRouteAdditions.map((path) => `/api/mobile/v1/${path.replace(/\.ts$/, '')}`),

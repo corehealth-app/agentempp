@@ -8,17 +8,25 @@ enum AppNavigationLayout: Equatable, Sendable {
     static let previewArgument = "--ui-testing-conversational-navigation"
 
     static func resolve(arguments: [String], buildFlavor: AppBuildFlavor,
-                        runtimeMode: AppRuntimeMode, presentsRealAccountIdentity: Bool) -> Self {
-        buildFlavor == .debug && runtimeMode == .demo && !presentsRealAccountIdentity
+                        runtimeMode: AppRuntimeMode, presentsRealAccountIdentity: Bool,
+                        realConversationCandidate: Bool = false) -> Self {
+        if realConversationCandidate, runtimeMode != .demo, presentsRealAccountIdentity {
+            return .conversationalPreview
+        }
+        return buildFlavor == .debug && runtimeMode == .demo && !presentsRealAccountIdentity
             && arguments.contains(previewArgument) ? .conversationalPreview : .legacy
     }
 
-    static func current(runtimeMode: AppRuntimeMode, presentsRealAccountIdentity: Bool) -> Self {
+    static func current(runtimeMode: AppRuntimeMode, presentsRealAccountIdentity: Bool,
+                        realConversationCandidate: Bool = false) -> Self {
         #if DEBUG
         resolve(arguments: ProcessInfo.processInfo.arguments, buildFlavor: .debug,
-                runtimeMode: runtimeMode, presentsRealAccountIdentity: presentsRealAccountIdentity)
+                runtimeMode: runtimeMode, presentsRealAccountIdentity: presentsRealAccountIdentity,
+                realConversationCandidate: realConversationCandidate)
         #else
-        .legacy
+        resolve(arguments: [], buildFlavor: .release, runtimeMode: runtimeMode,
+                presentsRealAccountIdentity: presentsRealAccountIdentity,
+                realConversationCandidate: realConversationCandidate)
         #endif
     }
 

@@ -380,8 +380,15 @@ final class FlowConversationMealEditModel {
       }
     }
   }
-  func close() async {
+  func invalidateSynchronously() {
     lifetime.close()
+    lease = nil
+    task?.cancel()
+    context = nil
+    replay.removeAll()
+  }
+  func close() async {
+    invalidateSynchronously()
     task?.cancel()
     task = nil
     taskID = nil

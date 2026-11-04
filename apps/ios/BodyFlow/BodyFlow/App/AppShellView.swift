@@ -73,8 +73,13 @@ struct AppShellView: View {
         self.conversationModel = conversationModel
         self.conversationCapture = conversationCapture
         let launch = AppLaunchConfiguration.current()
-        let layout = AppNavigationLayout.current(runtimeMode: launch.mode,
-            presentsRealAccountIdentity: dependencies.presentsRealAccountIdentity)
+        // A real source was composed only from the actual non-demo family;
+        // Debug's generic launch resolver otherwise still describes a demo.
+        let shellMode: AppRuntimeMode = dependencies.flowConversationSessions != nil
+            ? .releaseUnavailable : launch.mode
+        let layout = AppNavigationLayout.current(runtimeMode: shellMode,
+            presentsRealAccountIdentity: dependencies.presentsRealAccountIdentity,
+            realConversationCandidate: dependencies.flowConversationSessions != nil)
         self.navigationLayout = layout
         _router = State(initialValue: AppRouter(layout: layout))
         #if DEBUG
@@ -228,9 +233,9 @@ struct AppShellView: View {
                 await localReminders.refresh()
             }
         }
-        .onChange(of: conversationModel?.savedEffectRevision) { _, revision in
+        .onChange(of: activeConversationModel?.savedEffectRevision) { _, revision in
             guard navigationLayout == .conversationalPreview, revision != nil, revision != 0,
-                  !sessionOwner.isInvalidated, let conversationModel,
+                  !sessionOwner.isInvalidated, let conversationModel = activeConversationModel,
                   conversationModel.acceptedIdentity?.authUserID == UUID(uuidString: sessionOwner.userID) else { return }
             // A verified factual ACK invalidates the official readers. Their
             // independent refresh failure never revokes or repeats that ACK.
@@ -653,6 +658,9 @@ struct AppShellView: View {
         switch tab {
         case .today:
             if let conversationModel { FlowConversationView(model: conversationModel, capture: conversationCapture) }
+            else if let coordinator = sessionOwner.flowConversation {
+                FlowConversationRootView(coordinator: coordinator)
+            }
             else { FlowChatView(model: flowChatModel, allowsSending: false) }
         case .plan:
             ConversationalPlanRootView(model: planViewModel, tab: .plan, scope: .nutrition, selectedTab: tabSelection)
@@ -665,6 +673,10 @@ struct AppShellView: View {
                 .accessibilityIdentifier("screen.jornada")
         case .profile: legacyRootView(for: .profile)
         }
+    }
+
+    private var activeConversationModel: FlowConversationModel? {
+        conversationModel ?? sessionOwner.flowConversation?.model
     }
 
     @ToolbarContentBuilder

@@ -15,6 +15,7 @@ final class Prompt14SessionOwner {
     let plan: any PlanProviding
     let currentObjective: (any CurrentObjectiveProviding)?
     let coverLoader: any ContentCoverLoading
+    let flowConversation: FlowConversationShellCoordinator?
 
     private(set) var mealRecordBinding: MealRecordSessionBinding?
     private(set) var workoutRegistrationBinding: WorkoutRegistrationSessionBinding?
@@ -56,6 +57,9 @@ final class Prompt14SessionOwner {
     init(userID: String, dependencies: AppDependencies, enablesMealRecordBinding: Bool = false,
          readerSession: CurrentClinicalReaderSession? = nil) {
         self.userID = userID
+        flowConversation = dependencies.flowConversationSessions.map {
+            FlowConversationShellCoordinator(userID: userID, source: $0)
+        }
         permitsMealRecordBinding = enablesMealRecordBinding
         workoutRegistrationSource = dependencies.workoutRegistrationSessionSource
         billingSource = dependencies.billingSessionSource
@@ -369,6 +373,7 @@ final class Prompt14SessionOwner {
     }
 
     func invalidateSynchronously() {
+        flowConversation?.invalidateSynchronously()
         mealRecordBinding?.invalidateSynchronously()
         workoutRegistrationBinding?.invalidateSynchronously()
         workoutResolutionTask?.cancel()
@@ -412,6 +417,7 @@ final class Prompt14SessionOwner {
                 mealRecordBinding = nil
                 await retiredMealRecords?.value
                 mealRecordRetirementTask = nil
+                await flowConversation?.close()
                 await gate.drain()
 
                 async let contentEnd: Void = lifetimeEndpoint.end { lifetime in

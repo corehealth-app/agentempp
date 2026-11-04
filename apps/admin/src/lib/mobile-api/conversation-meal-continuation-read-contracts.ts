@@ -365,6 +365,21 @@ const preparation = z.discriminatedUnion('status', [
     })
     .strict(),
 ])
+export type ConversationMealContinuationPreparation = Readonly<z.infer<typeof preparation>>
+/** Outbound shape only. This does not prove source freshness, quantities,
+ * accepted answers, current Auth or write permission; the SQL writer does. */
+export function parseConversationMealContinuationPreparationShape(
+  raw: unknown,
+): ConversationMealContinuationPreparation {
+  try {
+    const value = exact(preparation, raw)
+    if (Buffer.byteLength(JSON.stringify(value), 'utf8') > 262144)
+      conversationContinuationReadUnavailable()
+    return value
+  } catch {
+    return conversationContinuationReadUnavailable()
+  }
+}
 const effect = z
   .object({
     schema: z.literal('conversation.meal-continuation-effect.v1'),

@@ -610,4 +610,18 @@ describe('continuation effects, source leases and atomic recovery boundaries', (
     expect(s.writer.commit).not.toHaveBeenCalled()
     expect(s.writer.admit).not.toHaveBeenCalled()
   })
+  it('preserves the actual admission quota refusal without calculation or another mutation', async () => {
+    const s = setup(),
+      read = vi.fn().mockResolvedValue({ action: 'reply_conflict' }),
+      admit = vi.fn().mockResolvedValue({
+        status: 'reconciliation_required',
+        state: { action: 'reply_conflict' },
+        refusal: 'rate_limited',
+      })
+    const result = await s.create({ writer: { ...s.writer, read, admit } }).submit(s.auth, s.bound)
+    expect(result).toMatchObject({ status: 'held', reason: 'rate_limited' })
+    expect(admit).toHaveBeenCalledTimes(1)
+    expect(s.writer.prepare).not.toHaveBeenCalled()
+    expect(s.writer.commit).not.toHaveBeenCalled()
+  })
 })

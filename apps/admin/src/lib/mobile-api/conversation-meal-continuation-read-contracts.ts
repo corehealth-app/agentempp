@@ -404,6 +404,43 @@ const effect = z
     effect_version: z.string().regex(/^cmeal1:[a-f0-9]{64}$/u),
   })
   .strict()
+const feedbackBinding = z
+  .object({
+    parentBinding: conversationJournalBindingSchema,
+    childBinding,
+    parentDecisionHash: hash,
+    receipt: effect,
+  })
+  .strict()
+export type ConversationMealContinuationFeedbackBinding = Readonly<z.infer<typeof feedbackBinding>>
+/** A closed historical binding, not current Auth, source or mutation authority.
+ * The actual feedback RPC independently resolves this child and frozen source. */
+export function parseConversationMealContinuationFeedbackBinding(
+  raw: unknown,
+): ConversationMealContinuationFeedbackBinding {
+  const b = exact(feedbackBinding, raw),
+    p = b.parentBinding,
+    c = b.childBinding,
+    e = b.receipt
+  if (
+    p.owner_id !== c.owner_id ||
+    p.epoch !== c.epoch ||
+    p.command_id === c.command_id ||
+    e.owner_id !== c.owner_id ||
+    e.command_id !== c.command_id ||
+    e.input_hash !== c.input_hash ||
+    e.epoch !== c.epoch ||
+    e.parent_command_id !== p.command_id ||
+    e.parent_input_hash !== p.input_hash ||
+    e.parent_decision_hash !== b.parentDecisionHash ||
+    e.provider_key !== `conversation.clarification/${p.owner_id}/${p.command_id}` ||
+    conversationJournalInstant(c.admitted_at) < conversationJournalInstant(p.admitted_at) ||
+    conversationJournalInstant(e.consumed_at) < conversationJournalInstant(c.admitted_at) ||
+    getLocalDateString(e.timezone, new Date(e.consumed_at)) !== e.local_date
+  )
+    conversationContinuationReadUnavailable()
+  return freezeInterpretation(b)
+}
 const source = z
   .object({
     source_hash: hash,

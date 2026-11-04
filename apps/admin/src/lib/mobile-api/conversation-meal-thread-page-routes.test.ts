@@ -44,7 +44,7 @@ describe('existing GET explicit version dispatch', () => {
       cursor: null,
     })
     expect(f.service).not.toHaveBeenCalled()
-    expect(f.runtime.authenticate).toHaveBeenCalledTimes(1)
+    expect(f.runtime.authenticate).toHaveBeenCalledTimes(2)
     expect(r.headers.get('cache-control')).toBe('no-store')
     expect((await r.json()).data.schema).toBe('conversation.journal-page.v2')
   })

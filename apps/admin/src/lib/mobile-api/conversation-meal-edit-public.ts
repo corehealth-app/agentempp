@@ -123,8 +123,12 @@ const groupSchema = z
       .strict(),
   })
   .strict()
+const versionedGroupSchema = z.union([
+  groupSchema,
+  groupSchema.extend({ schema: z.literal('conversation.meal-group.v2') }),
+])
 export type PublicConversationMealGroup = Readonly<
-  Omit<z.infer<typeof groupSchema>, 'original_receipt'> & {
+  Omit<z.infer<typeof versionedGroupSchema>, 'original_receipt'> & {
     original_receipt: ReturnType<typeof parseConversationMealEditState>['originalReceipt']
   }
 >
@@ -285,8 +289,11 @@ export function projectConversationMealGroup(
           : last.undo_expires_at === null || instant(last.undo_expires_at) <= instant(s.observedAt)
             ? 'undo_expired'
             : null)
-    const value = closed(groupSchema, {
-      schema: 'conversation.meal-group.v1',
+    const value = closed(versionedGroupSchema, {
+      schema:
+        s.binding.command_protocol === 'conversation.clarification.v1'
+          ? 'conversation.meal-group.v2'
+          : 'conversation.meal-group.v1',
       owner_id: binding.ownerId,
       command_id: binding.commandId,
       input_hash: binding.inputHash,

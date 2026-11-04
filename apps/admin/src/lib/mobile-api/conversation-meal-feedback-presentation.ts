@@ -237,6 +237,13 @@ function renderHistorical(
     return section
   })
 }
+
+// Reuse the existing current-policy mask for actual linked child effects too.
+// Callers must first bind their real sealed receipt and current observations.
+export {
+  renderHistorical as renderHistoricalMealFeedbackSections,
+  restricted as isHistoricalMealFeedbackRestricted,
+}
 export function createSupabaseConversationMealFeedbackPresentation(
   db: ServiceClient,
   dependencies: ConversationMealFeedbackPresentationDependencies = {},

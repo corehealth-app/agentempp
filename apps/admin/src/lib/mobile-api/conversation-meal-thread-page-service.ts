@@ -5,7 +5,19 @@ import type { ServiceClient } from '@mpp/db'
 import { z } from 'zod'
 import type { MobileAuthContext } from './auth'
 import { bindConversationCommand } from './conversation-command-contracts'
-import { projectSavedConversationMealCommandResult } from './conversation-meal-command-result'
+import {
+  parseConversationMealHistoricalPresentation,
+  projectSavedConversationMealCommandResult,
+} from './conversation-meal-command-result'
+import {
+  type ConversationMealContinuationFeedbackScope,
+  type ConversationMealContinuationFeedbackService,
+  createSupabaseConversationMealContinuationFeedback,
+} from './conversation-meal-continuation-feedback'
+import {
+  detachConversationContinuationReadJson,
+  parseConversationMealContinuationFeedbackBinding,
+} from './conversation-meal-continuation-read-contracts'
 import {
   type ConversationMealFeedbackPresentation,
   type ConversationMealFeedbackPresentationService,
@@ -17,6 +29,7 @@ import {
   conversationJournalUnavailable as unavailable,
   conversationJournalUUID as uuid,
 } from './conversation-meal-journal-store'
+import { createConversationMealReplyScope } from './conversation-meal-reply-scope'
 import {
   type ConversationMealThreadCursor,
   type ConversationMealThreadDescriptor,
@@ -64,6 +77,7 @@ export interface ConversationMealThreadPagePorts {
   readonly store?: ConversationMealThreadPageStore
   readonly clinical?: CurrentClinicalStateSource
   readonly presentation?: ConversationMealFeedbackPresentationService
+  readonly linkedPresentation?: Pick<ConversationMealContinuationFeedbackService, 'readHistorical'>
 }
 const requestSchema = z
   .object({
@@ -141,7 +155,41 @@ export function createConversationMealThreadPageService(
     c = ports.clinical ?? createSupabaseCurrentClinicalStateSource(db),
     clinical = Object.freeze({ capture: c.capture.bind(c) }),
     p = ports.presentation ?? createSupabaseConversationMealFeedbackPresentation(db),
-    readHistorical = p.readHistorical.bind(p)
+    readHistorical = p.readHistorical.bind(p),
+    rpc = db.rpc?.bind(db),
+    from = db.from?.bind(db),
+    sdk = new Proxy(db, {
+      get(target, key, receiver) {
+        if (key === 'rpc') return rpc
+        if (key === 'from') return from
+        return Reflect.get(target, key, receiver)
+      },
+    }),
+    readLinkedHistorical =
+      ports.linkedPresentation?.readHistorical.bind(ports.linkedPresentation) ??
+      (async (input: ConversationMealContinuationFeedbackScope) => {
+        const b = input.binding,
+          scope = createConversationMealReplyScope(
+            sdk,
+            input.auth,
+            {
+              ownerId: b.childBinding.owner_id,
+              parentCommandId: b.parentBinding.command_id,
+              parentInputHash: b.parentBinding.input_hash,
+              epoch: b.childBinding.epoch,
+              replyId: b.childBinding.command_id,
+              replyInputHash: b.childBinding.input_hash,
+            },
+            { clinical },
+          )
+        const expected = freezeConversationWriter(detachConversationContinuationReadJson(input))
+        return createSupabaseConversationMealContinuationFeedback(sdk, {
+          clinicalSource: clinical,
+          checkCurrentScope: async (candidate) =>
+            isDeepStrictEqual(detachConversationContinuationReadJson(candidate), expected) &&
+            scope.check(),
+        }).readHistorical(input)
+      })
   return Object.freeze({
     async read(
       auth: MobileAuthContext,
@@ -219,8 +267,40 @@ export function createConversationMealThreadPageService(
                 null
             }
           }
-          // Linked historical presentation is a separately qualified seam. A reference
-          // alone is not a rendered six-block result, and no v1 adapter receives a child.
+          if (e.kind === 'fulfillment' && e.feedback_ref) {
+            const t = required(threads.get(e.thread_id))
+            try {
+              const binding = parseConversationMealContinuationFeedbackBinding({
+                parentBinding: t.parent_binding,
+                childBinding: e.child_binding,
+                parentDecisionHash: required(t.terminal_receipt).decision_hash,
+                receipt: e.receipt,
+              })
+              feedback = parseConversationMealHistoricalPresentation(
+                await readLinkedHistorical({ auth: who, binding }),
+                {
+                  ownerId: owner,
+                  commandId: binding.childBinding.command_id,
+                  epoch: request.epoch,
+                  admittedAt: binding.childBinding.admitted_at,
+                  receipt: {
+                    registration_id: binding.receipt.registration_id,
+                    local_date: binding.receipt.local_date,
+                    meal_type: binding.receipt.meal_type,
+                    log_ids: binding.receipt.log_ids,
+                  },
+                },
+              )
+              if (
+                feedback &&
+                (feedback.original.schema !== e.feedback_ref.schema ||
+                  feedback.original.registration_id !== e.feedback_ref.registration_id)
+              )
+                return unavailable()
+            } catch {
+              feedback = null
+            }
+          }
           const { feedback_ref: _ref, ...visible } = e
           entries.push(freezeConversationWriter({ ...visible, feedback }))
         }

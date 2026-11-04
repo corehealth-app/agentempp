@@ -2,12 +2,12 @@
  * admission, legacy mutation, provider or public projection occurs here. */
 import type { Json, ServiceClient } from '@mpp/db'
 import { z } from 'zod'
-import type { ConversationJournalBinding } from './conversation-command-candidate-contracts'
 import {
   bindConversationMealEdit,
   bindConversationMealEditIdentity,
   type ConversationMealEditBinding,
   type ConversationMealEditReceipt,
+  type ConversationMealEditServerBinding,
   type ConversationMealEditState,
   conversationMealEditUnavailable,
   detachConversationMealEditJson,
@@ -32,7 +32,7 @@ export type ConversationMealEditOperationRead =
   | Refusal<'absent' | 'stale_epoch' | 'input_conflict' | 'event_conflict'>
   | {
       readonly action: 'available'
-      readonly binding: ConversationJournalBinding
+      readonly binding: ConversationMealEditServerBinding
       readonly receipt: ConversationMealEditReceipt
     }
 export type ConversationMealEditWriteOutcome =
@@ -48,13 +48,15 @@ export type ConversationMealEditWriteOutcome =
     >
   | {
       readonly action: 'committed' | 'replay'
-      readonly binding: ConversationJournalBinding
+      readonly binding: ConversationMealEditServerBinding
       readonly receipt: ConversationMealEditReceipt
     }
 export interface ConversationMealEditWriteInput extends ConversationMealEditOperationInput {
   /** Private server values. Null permits SQL's original-winner replay. */
   readonly expectedState: unknown
   readonly requestId: string
+  /** Qualified original child FX from readState; not sent as an RPC argument. */
+  readonly originalReceipt?: unknown
 }
 export interface ConversationMealEditSaveInput extends ConversationMealEditWriteInput {
   readonly calculatedItems: unknown
@@ -130,6 +132,11 @@ export function createSupabaseConversationMealEditStore(
     try {
       const op = bindConversationMealEdit(input)
       if (op.input.kind !== kind) return conversationMealEditUnavailable()
+      const origin = Object.getOwnPropertyDescriptor(input, 'originalReceipt')
+      if (origin && (!origin.enumerable || !('value' in origin)))
+        return conversationMealEditUnavailable()
+      const originalReceipt =
+        origin?.value === undefined ? undefined : detachConversationMealEditJson(origin.value)
       const args: Record<string, Json> = {
         ...identity(op.binding),
         p_operation_id: op.operationId,
@@ -146,6 +153,8 @@ export function createSupabaseConversationMealEditStore(
           .parse(input.nutritionMode)
         args.p_quantity_change = detachConversationMealEditJson(input.quantityChange)
       }
+      if (originalReceipt !== undefined)
+        parseConversationMealEditCurrentState(args.p_expected_state, op.binding, originalReceipt)
       const name =
         kind === 'save'
           ? 'commit_conversation_meal_item_edit'
@@ -160,7 +169,11 @@ export function createSupabaseConversationMealEditStore(
       const binding = parseConversationMealEditServerBinding(v.command, op.binding),
         receipt = parseConversationMealEditReceipt(v.receipt, op)
       if (v.action === 'committed') {
-        const state = parseConversationMealEditCurrentState(args.p_expected_state, op.binding)
+        const state = parseConversationMealEditCurrentState(
+          args.p_expected_state,
+          op.binding,
+          originalReceipt,
+        )
         const previousIds = state.items.map((row) => row.id)
         if (
           receipt.snapshot.id !== state.snapshot.id ||

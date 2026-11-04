@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest'
 import { candidateAuth } from './__fixtures__/conversation-candidate'
 import { writerReceipt } from './__fixtures__/conversation-meal-writer'
 import { bindConversationCommand } from './conversation-command-contracts'
-import { projectSavedConversationMealCommandResult } from './conversation-meal-command-result'
+import {
+  parseConversationMealHistoricalPresentation,
+  projectSavedConversationMealCommandResult,
+} from './conversation-meal-command-result'
 
 // Actual cross-language outputs produced by the qualified current-policy
 // presentation service. No hand-written representation of its policy flags.
@@ -177,5 +180,48 @@ describe('closed saved meal result for authenticated transport, not a database p
     expect(project(i)).toEqual(project(i))
     expect(i).toEqual(before)
     // No runtime/client parameter exists on this pure projection boundary.
+  })
+})
+
+describe('narrow actual-command historical presentation seam', () => {
+  it('preserves all previously qualified v1 public fixture outputs', () => {
+    for (const c of fixtures.cases) {
+      const i = input(c.label),
+        r = i.receipt
+      expect(
+        parseConversationMealHistoricalPresentation(i.feedback, {
+          ownerId: i.command.ownerId,
+          commandId: i.command.commandId,
+          epoch: i.expectedEpoch,
+          admittedAt: i.serverBinding.admitted_at,
+          receipt: {
+            registration_id: r.registration_id,
+            local_date: r.local_date,
+            meal_type: r.meal_type,
+            log_ids: r.log_ids,
+          },
+        }),
+      ).toEqual(project(i).feedback)
+    }
+  })
+  it('qualifies common actual child facts without constructing a report command or v1 receipt', () => {
+    const i = input(),
+      child = '60000000-0000-4000-8000-000000000002'
+    i.feedback.provenance.command_id = child
+    const r = i.receipt
+    expect(
+      parseConversationMealHistoricalPresentation(i.feedback, {
+        ownerId: i.command.ownerId,
+        commandId: child,
+        epoch: i.expectedEpoch,
+        admittedAt: i.serverBinding.admitted_at,
+        receipt: {
+          registration_id: r.registration_id,
+          local_date: r.local_date,
+          meal_type: r.meal_type,
+          log_ids: r.log_ids,
+        },
+      }),
+    ).toEqual(i.feedback)
   })
 })

@@ -6,10 +6,7 @@ import { getLocalDateString } from '@mpp/agent'
 import type { Json } from '@mpp/db'
 import { z } from 'zod'
 import type { PrivateConfirmedMealState } from './confirmed-meal-read'
-import {
-  type ConversationJournalBinding,
-  conversationJournalBindingSchema,
-} from './conversation-command-candidate-contracts'
+import { conversationJournalBindingSchema } from './conversation-command-candidate-contracts'
 import type { BoundConversationMealCommand } from './conversation-command-contracts'
 import {
   type ConversationMealEffectReceipt,
@@ -85,6 +82,14 @@ export interface BoundConversationMealEdit {
   readonly input: ConversationMealEditInput
   readonly inputHash: string
 }
+// Keep the actual registry protocol. A clarification is never a v1 report.
+// Defined here to avoid a cycle through the continuation's canonical-input reader.
+const editChildBindingSchema = conversationJournalBindingSchema.extend({
+  command_protocol: z.literal('conversation.clarification.v1'),
+  kind: z.literal('meal.clarify'),
+})
+const editServerBindingSchema = z.union([conversationJournalBindingSchema, editChildBindingSchema])
+export type ConversationMealEditServerBinding = Readonly<z.infer<typeof editServerBindingSchema>>
 
 export function conversationMealEditUnavailable(): never {
   throw new MobileApiError(
@@ -213,8 +218,8 @@ export function bindConversationMealEdit(raw: {
 export function parseConversationMealEditServerBinding(
   raw: unknown,
   expected: ConversationMealEditBinding,
-): ConversationJournalBinding {
-  const actual = exact(conversationJournalBindingSchema, raw)
+): ConversationMealEditServerBinding {
+  const actual = exact(editServerBindingSchema, raw)
   clock.parse(actual.admitted_at)
   if (
     actual.owner_id !== expected.ownerId ||
@@ -242,17 +247,32 @@ const originalSchema = z
     effect_version: z.string().regex(/^cmeal1:[0-9a-f]{64}$/u),
   })
   .strict()
+const linkedOriginalSchema = originalSchema.extend({
+  schema: z.literal('conversation.meal-continuation-effect.v1'),
+  parent_command_id: uuid,
+  parent_input_hash: hash,
+  parent_decision_hash: hash,
+  epoch: uuid,
+})
+export type ConversationMealEditOriginalEffect =
+  | ConversationMealEffectReceipt
+  | Readonly<z.infer<typeof linkedOriginalSchema>>
 function originalReceipt(
   raw: unknown,
   b: ConversationMealEditBinding,
-): ConversationMealEffectReceipt {
+): ConversationMealEditOriginalEffect {
   if (b.originalCommand) return parseConversationMealEffectReceipt(raw, b.originalCommand)
-  const v = exact(originalSchema, raw)
+  const v = exact(z.union([originalSchema, linkedOriginalSchema]), raw)
+  const linked = v.schema === 'conversation.meal-continuation-effect.v1'
   if (
     v.owner_id !== b.ownerId ||
     v.command_id !== b.commandId ||
     v.input_hash !== b.inputHash ||
-    v.provider_key !== `conversation.meal/${b.ownerId}/${b.commandId}` ||
+    (linked && (v.epoch !== b.epoch || v.parent_command_id === b.commandId)) ||
+    v.provider_key !==
+      (linked
+        ? `conversation.clarification/${b.ownerId}/${v.parent_command_id}`
+        : `conversation.meal/${b.ownerId}/${b.commandId}`) ||
     new Set(v.log_ids).size !== v.log_ids.length ||
     getLocalDateString(v.timezone, new Date(v.consumed_at)) !== v.local_date
   )
@@ -331,9 +351,15 @@ const stateSchema = z
 export function parseConversationMealEditCurrentState(
   raw: unknown,
   binding: ConversationMealEditBinding,
+  /** Actual frozen effect from the qualified private state read, never HTTP input. */
+  origin?: unknown,
 ): PrivateConfirmedMealState {
   const b = bindConversationMealEditIdentity(binding),
     copy = detachConversationMealEditJson(raw)
+  const provider =
+    origin === undefined
+      ? `conversation.meal/${b.ownerId}/${b.commandId}`
+      : originalReceipt(origin, b).provider_key
   // Validate known columns, return the ORIGINAL detached JSON. Row additions
   // must participate in SQL CAS even when this app version does not know them.
   const v = stateSchema.parse(copy)
@@ -346,7 +372,7 @@ export function parseConversationMealEditCurrentState(
       (x, i) =>
         x.user_id !== b.ownerId ||
         x.snapshot_id !== v.snapshot.id ||
-        x.raw_provider_message_id !== `conversation.meal/${b.ownerId}/${b.commandId}` ||
+        x.raw_provider_message_id !== provider ||
         (i > 0 && x.id <= v.items[i - 1].id),
     )
   )
@@ -442,7 +468,7 @@ export function parseConversationMealEditHistoricalReceipt(
   binding: unknown,
 ): ConversationMealEditReceipt {
   try {
-    const actual = exact(conversationJournalBindingSchema, binding)
+    const actual = exact(editServerBindingSchema, binding)
     clock.parse(actual.admitted_at)
     const value = receipt(raw, {
       ownerId: actual.owner_id,
@@ -482,8 +508,8 @@ export function parseConversationMealEditReceipt(
 
 export interface ConversationMealEditState {
   readonly action: 'available'
-  readonly binding: ConversationJournalBinding
-  readonly originalReceipt: ConversationMealEffectReceipt
+  readonly binding: ConversationMealEditServerBinding
+  readonly originalReceipt: ConversationMealEditOriginalEffect
   readonly revision: number
   readonly currentState: PrivateConfirmedMealState | null
   readonly lineageCompatible: boolean
@@ -494,7 +520,7 @@ export interface ConversationMealEditState {
 const readStateSchema = z
   .object({
     action: z.literal('available'),
-    command: conversationJournalBindingSchema,
+    command: editServerBindingSchema,
     original_receipt: z.unknown(),
     revision,
     current_state: z.unknown().nullable(),
@@ -513,9 +539,17 @@ export function parseConversationMealEditState(
     binding = parseConversationMealEditServerBinding(v.command, b)
   const original = originalReceipt(v.original_receipt, b),
     current =
-      v.current_state === null ? null : parseConversationMealEditCurrentState(v.current_state, b)
+      v.current_state === null
+        ? null
+        : parseConversationMealEditCurrentState(v.current_state, b, original)
   const last = v.last_operation === null ? null : receipt(v.last_operation, b)
   if (
+    (binding.command_protocol === 'conversation.clarification.v1') !==
+      (original.schema === 'conversation.meal-continuation-effect.v1') ||
+    (original.schema === 'conversation.meal-continuation-effect.v1' &&
+      (instant(original.consumed_at) < instant(binding.admitted_at) ||
+        instant(v.registration_undo_expires_at) - instant(original.consumed_at) !==
+          300000000000n)) ||
     (v.revision === 0) !== (last === null) ||
     (last !== null &&
       (last.revision !== v.revision || instant(last.applied_at) > instant(v.observed_at))) ||

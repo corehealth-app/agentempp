@@ -291,4 +291,17 @@ describe('linked continuation one-write/one-read bridge', () => {
     expect(s.rpc).toHaveBeenCalledTimes(1)
     expect(s.rpc).toHaveBeenCalledWith('read_conversation_meal_continuation', expect.any(Object))
   })
+  it('preserves actual closed rate_limited while making one write and one read only', async () => {
+    const f = example('admitted_quantity_reply'),
+      s = server({ action: 'reply_conflict' }, { data: { action: 'rate_limited' }, error: null })
+    expect(await s.writer.admit(f.bound)).toEqual({
+      status: 'reconciliation_required',
+      state: { action: 'reply_conflict' },
+      refusal: 'rate_limited',
+    })
+    expect(s.rpc.mock.calls.map(([name]) => name)).toEqual([
+      'admit_conversation_meal_reply',
+      'read_conversation_meal_continuation',
+    ])
+  })
 })

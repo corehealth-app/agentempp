@@ -7,11 +7,11 @@ import { z } from 'zod'
 import type { MobileAuthContext } from './auth'
 import { prepareConfirmedMealMutation } from './confirmed-meal-mutation-preparation'
 import { privateConfirmedMealVersion } from './confirmed-meal-read'
-import type { ConversationJournalBinding } from './conversation-command-candidate-contracts'
 import {
   type BoundConversationMealEdit,
   bindConversationMealEdit,
   type ConversationMealEditReceipt,
+  type ConversationMealEditServerBinding,
   parseConversationMealEditReceipt,
   parseConversationMealEditServerBinding,
 } from './conversation-meal-edit-contracts'
@@ -33,7 +33,7 @@ const originalSchema = z
 export type ConversationMealEditOriginal = z.infer<typeof originalSchema>
 export interface PrivateConversationMealEditResult {
   readonly status: 'saved'
-  readonly binding: ConversationJournalBinding
+  readonly binding: ConversationMealEditServerBinding
   readonly operationId: string
   readonly inputHash: string
   readonly receipt: ConversationMealEditReceipt
@@ -59,7 +59,7 @@ function unavailable(): never {
 }
 function result(
   bound: BoundConversationMealEdit,
-  actual: ConversationJournalBinding,
+  actual: ConversationMealEditServerBinding,
   receipt: ConversationMealEditReceipt,
 ): PrivateConversationMealEditResult {
   if (
@@ -192,7 +192,14 @@ export function createConversationMealEditService(
           throw error
         }
       }
-      const input = { ...operation, expectedState: state, requestId: request }
+      const input = {
+        ...operation,
+        expectedState: state,
+        requestId: request,
+        ...(current.binding.command_protocol === 'conversation.clarification.v1'
+          ? { originalReceipt: current.originalReceipt }
+          : {}),
+      }
       let written: Awaited<ReturnType<ConversationMealEditStore['save']>>
       try {
         if (bound.input.kind === 'save') {

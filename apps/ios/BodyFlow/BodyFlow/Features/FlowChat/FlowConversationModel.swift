@@ -16,6 +16,7 @@ struct FlowConversationSavedRow: Identifiable, Sendable {
 struct FlowConversationTerminalQuestion: Sendable {
   let commandID: UUID
   let reason: String?
+  let observedQuestion: ConversationThreadPageSnapshot.Question?
 }
 enum FlowConversationFailure: Equatable, Sendable {
   case offline, storage, unavailable, invalidInput, reconciliationRequired, rateLimited, changed
@@ -32,12 +33,17 @@ struct FlowConversationAttachment: Identifiable, Sendable {
   let identity: ConversationCommandContext.Identity
 }
 enum FlowConversationMediaPhase: Equatable, Sendable { case uploading, processing }
+enum FlowConversationHistoryVersion: Sendable { case v1, v2 }
 
 /// New command feature, separate from the existing legacy Flow sender. Its
 /// asynchronous factory uses the actual authenticated controller/lifecycle;
 /// no demo repository or successful-save placeholder is installed here.
 @MainActor @Observable
 final class FlowConversationModel {
+  private struct ThreadEventPin {
+    let digest: String
+    let reportStatus: ConversationThreadPageSnapshot.ReportStatus?
+  }
   private struct PreparedDraft: Sendable {
     let command: ConversationMealCommand
     let context: ConversationCommandContext.Identity
@@ -47,7 +53,12 @@ final class FlowConversationModel {
   private let lifecycle: any SessionLifecycleProviding
   private let history: MobileConversationHistoryRepository
   private let historyPageSize: Int
+  private let historyVersion: FlowConversationHistoryVersion
   private var historyEntries: [ConversationJournalPageSnapshot.Entry] = []
+  private var threadEntries: [ConversationThreadPageSnapshot.Entry] = []
+  private var threadDescriptors: [UUID: ConversationThreadPageSnapshot.Thread] = [:]
+  private var threadObservedAt: String?
+  private var knownThreadEvents: [String: ThreadEventPin] = [:]
   private var historyIdentity: ConversationCommandContext.Identity?
   private var historyCursor: String?
   private var historyHasMore = false
@@ -133,7 +144,10 @@ final class FlowConversationModel {
   var terminalQuestion: FlowConversationTerminalQuestion? {
     guard hasCurrentScope, let id = blockedDecisionID else { return nil }
     return .init(
-      commandID: id, reason: latestDecision?.commandID == id ? latestDecision?.reason : nil)
+      commandID: id,
+      reason: latestDecision?.commandID == id
+        ? latestDecision?.reason : threadDescriptors[id]?.terminalReceipt?.reason,
+      observedQuestion: threadDescriptors[id]?.continuation?.question)
   }
   func beginIndependentReport() {
     guard hasCurrentScope, !isWorking, !isComposerLocked, blockedDecisionID != nil else { return }
@@ -183,6 +197,49 @@ final class FlowConversationModel {
   var journalRows: [ConversationJournalPageSnapshot.Entry] {
     hasCurrentScope && historyIdentity == lastIdentity ? historyEntries : []
   }
+  var threadRows: [ConversationThreadPageSnapshot.Entry] {
+    hasCurrentScope && historyIdentity == lastIdentity ? threadEntries : []
+  }
+  func threadDescriptor(_ id: UUID) -> ConversationThreadPageSnapshot.Thread? {
+    hasCurrentScope && historyIdentity == lastIdentity ? threadDescriptors[id] : nil
+  }
+  func observedThreadQuestion(eventID: String) -> ConversationThreadPageSnapshot.Question? {
+    guard hasCurrentScope, historyIdentity == lastIdentity, blockedDecisionID == nil,
+      let event = threadEntries.first(where: { $0.eventID == eventID }),
+      threadEntries.first(where: { $0.threadID == event.threadID })?.eventID == eventID
+    else { return nil }
+    return threadDescriptors[event.threadID]?.continuation?.question
+  }
+  func threadFeedback(eventID: String) -> ConversationFeedbackPresentationSnapshot.Bound? {
+    guard let scope = feedbackPresentationScope, historyIdentity == lastIdentity,
+      let entry = threadEntries.first(where: { $0.eventID == eventID }),
+      let parent = threadDescriptors[entry.threadID]
+    else { return nil }
+    let presentation: ConversationFeedbackPresentationSnapshot?
+    let binding: ConversationFeedbackPresentationSnapshot.Binding
+    switch entry.detail {
+    case .report(let report):
+      guard let r = report.receipt else { return nil }
+      presentation = report.feedback
+      binding = .init(
+        scope: scope, commandID: r.commandID, registrationID: r.registrationID,
+        localDate: r.localDate, mealKind: r.mealType.rawValue, logIDs: r.logIDs,
+        admittedAt: parent.parentBinding.admittedAt)
+    case .fulfillment(let result):
+      return result.receipt.boundFeedback(result.feedback, binding: result.binding, scope: scope)
+    default: return nil
+    }
+    return presentation?.bound(to: binding, current: scope)
+  }
+  func threadOriginalSavedRow(eventID: String) -> FlowConversationSavedRow? {
+    guard hasCurrentScope, historyIdentity == lastIdentity,
+      let entry = threadEntries.first(where: { $0.eventID == eventID }),
+      case .report(let report) = entry.detail, let receipt = report.receipt,
+      let parent = threadDescriptors[entry.threadID]
+    else { return nil }
+    return .init(
+      command: parent.originalCommand, receipt: receipt, feedback: threadFeedback(eventID: eventID))
+  }
   var hasMoreHistory: Bool { hasCurrentScope && historyHasMore }
   var pendingRows: [FlowConversationPendingRow] {
     hasCurrentScope ? pending.filter { !isInJournal($0.command) } : []
@@ -191,7 +248,11 @@ final class FlowConversationModel {
     hasCurrentScope ? saved.filter { !isInJournal($0.command) } : []
   }
   private func isInJournal(_ command: ConversationMealCommand) -> Bool {
-    historyIdentity == lastIdentity
+    if historyVersion == .v2 {
+      return historyIdentity == lastIdentity
+        && threadDescriptors[command.commandID]?.originalCommand.inputHash == command.inputHash
+    }
+    return historyIdentity == lastIdentity
       && historyEntries.contains {
         if case .command(let row) = $0 {
           return row.originalCommand.commandID == command.commandID
@@ -226,7 +287,8 @@ final class FlowConversationModel {
   private init(
     controller: any ConversationMealCommandControlling, lifecycle: any SessionLifecycleProviding,
     lease: SessionLease, media: FlowConversationMediaDependencies?,
-    history: MobileConversationHistoryRepository, historyPageSize: Int
+    history: MobileConversationHistoryRepository, historyPageSize: Int,
+    historyVersion: FlowConversationHistoryVersion
   ) {
     self.controller = controller
     self.lifecycle = lifecycle
@@ -234,13 +296,15 @@ final class FlowConversationModel {
     self.mediaDependencies = media
     self.history = history
     self.historyPageSize = historyPageSize
+    self.historyVersion = historyVersion
   }
   static func open(
     transport: MobileAPITransport, lifecycle: any SessionLifecycleProviding,
     store: EncryptedConversationOutboxStore = .device,
     keyVault: ConversationOutboxKeyVault = .init(), media: FlowConversationMediaDependencies? = nil,
     editing: FlowConversationMealEditingDependencies? = nil,
-    historyPageSize: Int = 10, expectedLease: SessionLease? = nil
+    historyPageSize: Int = 10, historyVersion: FlowConversationHistoryVersion = .v1,
+    expectedLease: SessionLease? = nil
   ) async throws -> FlowConversationModel {
     guard (1...25).contains(historyPageSize) else { throw ConversationOutboxError.invalidCommand }
     let lease = try await lifecycle.leaseForRequest()
@@ -258,7 +322,7 @@ final class FlowConversationModel {
       expectedLease: lease)
     let model = FlowConversationModel(
       controller: controller, lifecycle: lifecycle, lease: lease, media: media, history: history,
-      historyPageSize: historyPageSize)
+      historyPageSize: historyPageSize, historyVersion: historyVersion)
     do {
       try await lifecycle.validate(lease)
       try Task.checkCancellation()
@@ -311,7 +375,187 @@ final class FlowConversationModel {
     }
   }
 
+  private func loadThreadHistory(reset: Bool) async {
+    guard !isClosed, let lease, let context, hasCurrentScope, !context.observation.isEnqueueOnly
+    else { return }
+    guard
+      reset
+        || (!isLoadingHistory && historyHasMore && historyCursor != nil
+          && historyIdentity == context.identity)
+    else { return }
+    let requestID = UUID()
+    let cursor = reset ? nil : historyCursor
+    historyRequestID = requestID
+    isLoadingHistory = true
+    historyUnavailable = false
+    defer {
+      if historyRequestID == requestID {
+        isLoadingHistory = false
+        historyRequestID = nil
+      }
+    }
+    do {
+      let read = try await history.threadJournal(
+        cursor: cursor, limit: historyPageSize, context: context)
+      try await lifecycle.performVisiblePatientStateOperation(lease: lease) {
+        try self.lifetime.check()
+        try Task.checkCancellation()
+        try context.withCurrentAuthority {
+          guard self.historyRequestID == requestID, self.lastIdentity == context.identity else {
+            throw ConversationOutboxError.staleObservation
+          }
+          if let previous = self.threadObservedAt {
+            guard let a = ConversationProtocolInstant(previous),
+              let b = ConversationProtocolInstant(read.page.observedAt), b >= a
+            else { throw MobileAPITransportError.invalidResponse }
+          }
+          if !reset {
+            guard self.historyCursor == cursor,
+              Set(self.threadEntries.map(\.eventID)).isDisjoint(
+                with: Set(read.page.items.map(\.eventID)))
+            else { throw MobileAPITransportError.invalidResponse }
+            if let previous = self.threadEntries.last, let next = read.page.items.first {
+              guard let a = ConversationProtocolInstant(previous.at),
+                let b = ConversationProtocolInstant(next.at),
+                a > b
+                  || (a == b && next.eventID.utf8.lexicographicallyPrecedes(previous.eventID.utf8))
+              else { throw MobileAPITransportError.invalidResponse }
+            }
+          }
+          var descriptors = reset ? [:] : self.threadDescriptors
+          var eventPins = self.knownThreadEvents
+          for event in read.page.items {
+            if let known = eventPins[event.eventID], known.digest != event.readConsistencyDigest {
+              // A pending original may become terminal exactly once. All
+              // other factual event bodies remain immutable on refresh/reset.
+              guard known.reportStatus == .pending,
+                let status = event.reportStatus, status != .pending
+              else { throw MobileAPITransportError.invalidResponse }
+            }
+            eventPins[event.eventID] = .init(
+              digest: event.readConsistencyDigest, reportStatus: event.reportStatus)
+          }
+          for incoming in read.page.threads {
+            if let known = self.commands[incoming.threadID],
+              known.inputHash != incoming.originalCommand.inputHash
+            {
+              throw MobileAPITransportError.invalidResponse
+            }
+            if let known = self.threadDescriptors[incoming.threadID] {
+              guard known.parentBinding == incoming.parentBinding else {
+                throw MobileAPITransportError.invalidResponse
+              }
+              if let proof = known.terminalReceipt {
+                guard let next = incoming.terminalReceipt, proof.decisionHash == next.decisionHash,
+                  proof.reason == next.reason, proof.foodIndexes == next.foodIndexes,
+                  proof.sealedAt == next.sealedAt
+                else { throw MobileAPITransportError.invalidResponse }
+              }
+              if let head = known.continuation {
+                guard let next = incoming.continuation, next.revision >= head.revision,
+                  head.fulfilledBy == nil || head.fulfilledBy == next.fulfilledBy
+                else { throw MobileAPITransportError.invalidResponse }
+                if next.revision == head.revision {
+                  guard head.question?.questionKey == next.question?.questionKey,
+                    head.fulfilledBy == next.fulfilledBy
+                  else { throw MobileAPITransportError.invalidResponse }
+                  if let question = head.question, let nextQuestion = next.question,
+                    !question.hasSameContent(as: nextQuestion)
+                  {
+                    throw MobileAPITransportError.invalidResponse
+                  }
+                }
+              }
+            }
+            descriptors[incoming.threadID] = incoming
+          }
+          let combined = reset ? read.page.items : self.threadEntries + read.page.items
+          var children: [UUID: (UUID, ConversationThreadPageSnapshot.Binding)] = [:]
+          for event in combined {
+            if let child = event.childBinding {
+              guard descriptors[child.commandID] == nil else {
+                throw MobileAPITransportError.invalidResponse
+              }
+              if let previous = children[child.commandID],
+                previous.0 != event.threadID || previous.1 != child
+              {
+                throw MobileAPITransportError.invalidResponse
+              }
+              children[child.commandID] = (event.threadID, child)
+            }
+            if case .edit(let edit) = event.detail, !edit.binding.isChild,
+              let known = self.knownGroupEdits[edit.binding.commandID],
+              known.revision == edit.receipt.revision,
+              !Self.sameKnownEdit(known, edit.receipt)
+            {
+              throw MobileAPITransportError.invalidResponse
+            }
+          }
+          self.threadEntries = combined
+          self.knownThreadEvents = eventPins
+          self.threadDescriptors = descriptors
+          self.threadObservedAt = read.page.observedAt
+          self.historyIdentity = context.identity
+          self.historyCursor = read.page.nextCursor
+          self.historyHasMore = read.page.hasMore
+          for descriptor in read.page.threads {
+            self.commands[descriptor.threadID] = descriptor.originalCommand
+          }
+          if let blocked = self.blockedDecisionID,
+            self.threadDescriptors[blocked]?.continuation?.fulfilledBy != nil
+          {
+            self.blockedDecisionID = nil
+            self.latestDecision = nil
+          }
+          for event in read.page.items {
+            guard self.blockedDecisionID == nil,
+              let descriptor = self.threadDescriptors[event.threadID],
+              descriptor.terminalReceipt != nil, descriptor.continuation?.fulfilledBy == nil,
+              descriptor.continuation?.question != nil
+                || self.pending.contains(where: { $0.id == descriptor.threadID }),
+              !self.dismissedQuestions.contains(descriptor.threadID)
+            else { continue }
+            // Observed linked questions have no reply dispatcher yet. Preserve
+            // the original and require an explicit empty independent composer;
+            // an answer can never silently become a fresh unlinked report.
+            self.blockedDecisionID = descriptor.threadID
+            self.latestDecision = nil
+          }
+          for event in read.page.items {
+            // Genuine v1 parent edits retain the existing current-group fence.
+            // Child effects never become a v1 group/editor or an outbox ACK.
+            guard case .edit(let edit) = event.detail, !edit.binding.isChild else { continue }
+            let commandID = edit.binding.commandID
+            let newlyKnown =
+              self.knownGroupEdits[commandID].map { edit.receipt.revision > $0.revision } ?? true
+            if newlyKnown { self.knownGroupEdits[commandID] = edit.receipt }
+            if newlyKnown
+              || self.currentGroups[commandID].map({ !self.satisfiesKnownEdits($0) }) == true
+            {
+              self.currentGroups.removeValue(forKey: commandID)
+              self.groupRequests.removeValue(forKey: commandID)
+            }
+          }
+        }
+      }
+    } catch {
+      try? await lifecycle.performVisiblePatientStateOperation(lease: lease) {
+        try self.lifetime.check()
+        try context.withCurrentAuthority {
+          guard self.historyRequestID == requestID, self.lastIdentity == context.identity else {
+            return
+          }
+          self.historyUnavailable = true
+        }
+      }
+    }
+  }
+
   func loadHistory(reset: Bool = true) async {
+    if historyVersion == .v2 {
+      await loadThreadHistory(reset: reset)
+      return
+    }
     guard !isClosed, let lease, let context, hasCurrentScope, !context.observation.isEnqueueOnly
     else { return }
     guard
@@ -794,6 +1038,7 @@ final class FlowConversationModel {
     selectedAttachment = nil
     mediaPhase = nil
     resetHistory()
+    knownThreadEvents.removeAll()
     dismissedQuestions.removeAll()
     knownGroupEdits.removeAll()
     acknowledgedEdits.removeAll()
@@ -859,6 +1104,7 @@ final class FlowConversationModel {
         }
         selectedAttachment = nil
         resetHistory()
+        knownThreadEvents.removeAll()
         dismissedQuestions.removeAll()
         knownGroupEdits.removeAll()
         acknowledgedEdits.removeAll()
@@ -948,6 +1194,9 @@ final class FlowConversationModel {
   }
   private func resetHistory() {
     historyEntries.removeAll()
+    threadEntries.removeAll()
+    threadDescriptors.removeAll()
+    threadObservedAt = nil
     historyIdentity = nil
     historyCursor = nil
     historyHasMore = false

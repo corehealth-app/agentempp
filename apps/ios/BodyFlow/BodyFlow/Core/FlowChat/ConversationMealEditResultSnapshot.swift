@@ -67,6 +67,26 @@ struct ConversationMealEditEffectSnapshot: Decodable, Sendable {
       }
     } catch { throw editDecodeFailure(decoder) }
   }
+  func hasSameFacts(as other: Self) -> Bool {
+    ownerID == other.ownerID && commandID == other.commandID && operationID == other.operationID
+      && operationInputHash == other.operationInputHash && kind == other.kind
+      && revision == other.revision
+      && ConversationProtocolInstant(appliedAt) == ConversationProtocolInstant(other.appliedAt)
+      && undoExpiresAt.flatMap(ConversationProtocolInstant.init)
+        == other.undoExpiresAt.flatMap(ConversationProtocolInstant.init)
+      && targetOperationID == other.targetOperationID && removedItemIDs == other.removedItemIDs
+      && newItemIDs == other.newItemIDs && nextRecordID == other.nextRecordID
+  }
+  func matches(operation op: ConversationMealEditOperation) -> Bool {
+    guard ownerID == op.ownerID, commandID == op.commandID, operationID == op.operationID,
+      operationInputHash == op.operationInputHash, revision == op.expectedRevision + 1
+    else { return false }
+    switch op.action {
+    case .save(let recordID, _): return kind == .saved && removedItemIDs == [recordID]
+    case .undoSave(let target): return kind == .saveUndone && targetOperationID == target
+    case .undoRegistration: return kind == .registrationUndone && op.expectedRevision == 0
+    }
+  }
 }
 
 struct ConversationMealEditResultSnapshot: Decodable, Sendable {
@@ -103,13 +123,7 @@ struct ConversationMealEditResultSnapshot: Decodable, Sendable {
       receipt.operationID == op.operationID, receipt.operationInputHash == op.operationInputHash,
       receipt.revision == op.expectedRevision + 1
     else { return false }
-    switch op.action {
-    case .save(let recordID, _):
-      return receipt.kind == .saved && receipt.removedItemIDs == [recordID]
-    case .undoSave(let target):
-      return receipt.kind == .saveUndone && receipt.targetOperationID == target
-    case .undoRegistration: return receipt.kind == .registrationUndone && op.expectedRevision == 0
-    }
+    return receipt.matches(operation: op)
   }
 }
 struct ConversationMealEditAbsentSnapshot: Decodable, Sendable {

@@ -63,6 +63,9 @@ struct FlowConversationMealGroupView: View {
             }
           }
         }
+      } else if group.lastOperation?.kind == .registrationUndone {
+        Text(english ? "Registration undone" : "Registro desfeito")
+          .accessibilityIdentifier("conversation.meal.registration-undone")
       } else {
         Text(
           english

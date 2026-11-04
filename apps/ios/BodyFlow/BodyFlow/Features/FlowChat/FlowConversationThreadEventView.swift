@@ -11,7 +11,7 @@ struct FlowConversationThreadEventPresentation {
   init(
     entry: ConversationThreadPageSnapshot.Entry, parent: ConversationThreadPageSnapshot.Thread,
     observedQuestion: ConversationThreadPageSnapshot.Question?, english: Bool,
-    linkedRepliesAvailable: Bool = false
+    linkedRepliesAvailable: Bool = false, linkedMealsAvailable: Bool = false
   ) {
     switch entry.detail {
     case .report(let report):
@@ -87,9 +87,11 @@ struct FlowConversationThreadEventPresentation {
           : "Registro histórico (\(result.receipt.localDate))."
       ]
       linkedActionGate =
-        english
-        ? "Current details and editing for this linked meal are not available yet."
-        : "Os dados atuais e a edição desta refeição vinculada ainda não estão disponíveis."
+        linkedMealsAvailable
+        ? nil
+        : english
+          ? "Current details and editing for this linked meal are not available yet."
+          : "Os dados atuais e a edição desta refeição vinculada ainda não estão disponíveis."
     case .edit(let edit):
       sourceText = nil
       switch edit.receipt.kind {
@@ -103,7 +105,7 @@ struct FlowConversationThreadEventPresentation {
           : "Os dados do registro anterior permanecem históricos."
       ]
       linkedActionGate =
-        edit.binding.isChild
+        edit.binding.isChild && !linkedMealsAvailable
         ? (english
           ? "Current details and editing for this linked meal are not available yet."
           : "Os dados atuais e a edição desta refeição vinculada ainda não estão disponíveis.")
@@ -141,10 +143,11 @@ struct FlowConversationThreadEventPresentation {
     let feedback: ConversationFeedbackPresentationSnapshot.Bound?
     let english: Bool
     var linkedRepliesAvailable = false
+    var linkedMealsAvailable = false
     var body: some View {
       let value = FlowConversationThreadEventPresentation(
         entry: entry, parent: parent, observedQuestion: observedQuestion, english: english,
-        linkedRepliesAvailable: linkedRepliesAvailable)
+        linkedRepliesAvailable: linkedRepliesAvailable, linkedMealsAvailable: linkedMealsAvailable)
       VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
         Text(verbatim: value.title).font(BodyFlowTypography.headline).accessibilityAddTraits(
           .isHeader)

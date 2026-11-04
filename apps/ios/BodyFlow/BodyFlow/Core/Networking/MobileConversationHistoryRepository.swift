@@ -36,6 +36,31 @@ struct MobileConversationHistoryRepository: Sendable {
     else { throw MobileAPITransportError.invalidResponse }
     return group
   }
+  /// Actual two-phase cold read. The observed reference grants no write; only
+  /// the owned response's genuine original effect completes the identity.
+  func linkedGroup(
+    reference: ConversationMealLinkedReadReference, context: ConversationCommandContext
+  ) async throws -> ConversationMealLinkedGroupRead {
+    try await validate(context)
+    guard reference.ownerID == context.ownerID, reference.epoch == context.epoch else {
+      throw ConversationOutboxError.invalidServerObservation
+    }
+    let group = try await self.group(
+      commandID: reference.commandID, originalInputHash: reference.inputHash, context: context)
+    try await validate(context)
+    guard let identity = try? reference.resolve(group: group) else {
+      throw MobileAPITransportError.invalidResponse
+    }
+    return .init(group: group, identity: identity, context: context)
+  }
+  func group(linked identity: ConversationMealLinkedIdentity, context: ConversationCommandContext)
+    async throws -> ConversationMealGroupSnapshot
+  {
+    let read = try await linkedGroup(reference: identity.reference, context: context)
+    try await validate(context)
+    guard read.identity == identity else { throw MobileAPITransportError.invalidResponse }
+    return read.group
+  }
   /// Returning this read does not acknowledge or remove any outbox intent.
   /// Terminal delivery is an explicit separate controller capability.
   func journal(cursor: String? = nil, limit: Int = 10, context: ConversationCommandContext)
@@ -108,6 +133,22 @@ struct ConversationJournalRead: Sendable {
   let context: ConversationCommandContext
   fileprivate init(page: ConversationJournalPageSnapshot, context: ConversationCommandContext) {
     self.page = page
+    self.context = context
+  }
+}
+
+/// Produced only after the real adapter's Auth/lease/current-grant checks and
+/// full original-effect binding. It is not an outbox or write capability.
+struct ConversationMealLinkedGroupRead: Sendable {
+  let group: ConversationMealGroupSnapshot
+  let identity: ConversationMealLinkedIdentity
+  let context: ConversationCommandContext
+  fileprivate init(
+    group: ConversationMealGroupSnapshot, identity: ConversationMealLinkedIdentity,
+    context: ConversationCommandContext
+  ) {
+    self.group = group
+    self.identity = identity
     self.context = context
   }
 }

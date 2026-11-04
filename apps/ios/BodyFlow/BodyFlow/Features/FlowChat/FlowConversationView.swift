@@ -149,9 +149,14 @@ struct FlowConversationView: View {
             .foregroundStyle(BodyFlowColor.secondaryText)
           }
           FlowConversationMealReplyHeldActions(model: replies, english: english)
-          if model.hasUnpublishedLinkedDelivery, let result = replies.lastDelivered {
-            FlowConversationMealReplyDeliveryView(
-              result: result, feedback: replies.deliveredFeedback, english: english)
+          if let row = model.unpublishedLinkedMeal {
+            Text(
+              english
+                ? "Meal registered after a linked reply"
+                : "Refeição registrada após resposta vinculada"
+            )
+            .font(BodyFlowTypography.headline)
+            linkedCard(row)
           }
           if let question = replies.nextQuestion, model.terminalQuestion == nil {
             Text(
@@ -192,6 +197,15 @@ struct FlowConversationView: View {
           if let result = editor.lastSaved {
             Label(editNotice(result.receipt.kind), systemImage: "checkmark.circle.fill")
               .accessibilityIdentifier("conversation.edit.saved")
+          }
+          if editor.historicalNotice != nil {
+            Label(
+              english
+                ? "An earlier edit was found in history."
+                : "Uma edição anterior foi encontrada no histórico.",
+              systemImage: "clock.arrow.circlepath"
+            )
+            .accessibilityIdentifier("conversation.edit.historical-notice")
           }
         }
         if let question = model.terminalQuestion {
@@ -239,8 +253,10 @@ struct FlowConversationView: View {
             FlowConversationThreadEventView(
               entry: entry, parent: parent,
               observedQuestion: model.observedThreadQuestion(eventID: entry.eventID),
-              feedback: model.threadFeedback(eventID: entry.eventID), english: english,
-              linkedRepliesAvailable: model.mealReplies != nil)
+              feedback: model.linkedMealRow(eventID: entry.eventID) == nil
+                ? model.threadFeedback(eventID: entry.eventID) : nil, english: english,
+              linkedRepliesAvailable: model.mealReplies != nil, linkedMealsAvailable: true)
+            if let row = model.linkedMealRow(eventID: entry.eventID) { linkedCard(row) }
             if model.observedThreadQuestion(eventID: entry.eventID) != nil,
               model.canAnswerLinkedQuestion(parentID: entry.threadID)
             {
@@ -338,6 +354,26 @@ struct FlowConversationView: View {
     .refreshable { await model.refreshConversation() }
   }
 
+  private func linkedCard(_ row: FlowConversationLinkedMealRow) -> some View {
+    VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+      if let scope = model.feedbackPresentationScope {
+        FlowConversationLinkedMealResponseView(
+          row: row, group: model.currentGroup(commandID: row.id), scope: scope,
+          editing: model.mealEditActions(commandID: row.id)
+        ) { Task { await model.loadCurrentGroup(commandID: row.id) } }
+        .padding(BodyFlowSpacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+          BodyFlowColor.color(.backgroundSecondary), in: RoundedRectangle(cornerRadius: 20)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("conversation.linked-meal.\(row.id.uuidString.lowercased())")
+        .task(id: model.knownEditRevision(commandID: row.id)) {
+          await model.loadCurrentGroup(commandID: row.id)
+        }
+      }
+    }
+  }
   private func savedCard(_ row: FlowConversationSavedRow) -> some View {
     VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
       if let scope = model.feedbackPresentationScope {

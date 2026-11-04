@@ -30,6 +30,18 @@ struct FlowConversationThreadEventViewTests {
     #expect(rows.flatMap(\.lines).allSatisfy { !$0.contains("kcal") && !$0.contains("cmeal1:") })
   }
 
+  @Test func supportedLinkedMealsKeepEventsHistoricalWithoutClaimingEditingUnavailable() throws {
+    let page = try fixture()
+    let parent = try #require(page.threads.first)
+    for entry in page.items {
+      let value = FlowConversationThreadEventPresentation(
+        entry: entry, parent: parent, observedQuestion: nil, english: false,
+        linkedMealsAvailable: true)
+      #expect(value.linkedActionGate == nil)
+      #expect(value.lines.allSatisfy { !$0.contains("kcal") })
+    }
+  }
+
   @Test func observedQuestionIsClearlyReadOnlyAndNeverRelabelsHistoricalAnswer() throws {
     let page = try fixture()
     let parent = try #require(page.threads.first)

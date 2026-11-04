@@ -45,13 +45,17 @@ final class FlowConversationMealEditModel {
     @MainActor @Sendable (ConversationMealEditResultSnapshot, ConversationCommandContext) -> Void
   private let controller: ConversationMealEditController
   private let lifecycle: any SessionLifecycleProviding
+  typealias Historical =
+    @MainActor @Sendable (ConversationMealEditHistoricalNotice, ConversationCommandContext) -> Void
   private let onSaved: Saved
+  private let onHistorical: Historical
   private let lifetime = FlowMealEditLifetime()
   private var lease: SessionLease?
   private var workID: UUID?
   private var context: ConversationCommandContext?
   private var identity: ConversationCommandContext.Identity?
   private var group: ConversationMealGroupSnapshot?
+  private var linkedOrigin: ConversationMealLinkedIdentity?
   private var draft: ConversationMealItemEditDraft?
   private var requestedAction: ConversationMealEditOperation.Action?
   private var preparation: ConversationMealEditPreparation?
@@ -67,6 +71,7 @@ final class FlowConversationMealEditModel {
   private var taskID: UUID?
   private var storedFailure: FlowConversationFailure?
   private var acknowledgement: ConversationMealEditResultSnapshot?
+  private var recoveredHistory: ConversationMealEditHistoricalNotice?
   private(set) var isWorking = false
   private var isClosed: Bool { lease == nil || (try? lifetime.check()) == nil }
   private var hasScope: Bool {
@@ -82,7 +87,15 @@ final class FlowConversationMealEditModel {
   }
   var failure: FlowConversationFailure? { hasScope ? storedFailure : nil }
   var lastSaved: ConversationMealEditResultSnapshot? { hasScope ? acknowledgement : nil }
+  var historicalNotice: ConversationMealEditHistoricalNotice? { hasScope ? recoveredHistory : nil }
   var pendingOperation: ConversationMealEditOperation? { hasScope ? intent : nil }
+  var historicalRecoveryCommandID: UUID? {
+    guard hasScope, hasSnapshot, let intent,
+      !entries.contains(where: { $0.id == .init(operation: intent) }),
+      !held.contains(where: { $0.id == .init(operation: intent) })
+    else { return nil }
+    return intent.commandID
+  }
   var isLocked: Bool { hasScope && (isWorking || intent != nil) }
   var canBeginEditing: Bool {
     hasScope && !isWorking && formID == nil && intent == nil && entries.isEmpty
@@ -133,8 +146,9 @@ final class FlowConversationMealEditModel {
   }
   private init(
     controller: ConversationMealEditController, lifecycle: any SessionLifecycleProviding,
-    lease: SessionLease, onSaved: @escaping Saved
+    lease: SessionLease, onHistorical: @escaping Historical, onSaved: @escaping Saved
   ) {
+    self.onHistorical = onHistorical
     self.controller = controller
     self.lifecycle = lifecycle
     self.lease = lease
@@ -142,10 +156,12 @@ final class FlowConversationMealEditModel {
   }
   static func open(
     controller: ConversationMealEditController, lifecycle: any SessionLifecycleProviding,
-    lease: SessionLease, onSaved: @escaping Saved
+    lease: SessionLease, onHistorical: @escaping Historical = { _, _ in }, onSaved: @escaping Saved
   ) async throws -> FlowConversationMealEditModel {
     try await lifecycle.validate(lease)
-    let model = Self(controller: controller, lifecycle: lifecycle, lease: lease, onSaved: onSaved)
+    let model = Self(
+      controller: controller, lifecycle: lifecycle, lease: lease,
+      onHistorical: onHistorical, onSaved: onSaved)
     do {
       let lifetime = model.lifetime
       let id = try await lifecycle.beginPatientWork(lease: lease) { [weak model] in
@@ -182,6 +198,7 @@ final class FlowConversationMealEditModel {
       entries.removeAll()
       held.removeAll()
       acknowledgement = nil
+      recoveredHistory = nil
       storedFailure = nil
       isWorking = false
     }
@@ -204,21 +221,34 @@ final class FlowConversationMealEditModel {
     { if current(context) { storedFailure = failure(error) } }
   }
   func beginEditing(group: ConversationMealGroupSnapshot, itemID: UUID) throws {
-    guard canBeginEditing, matches(group), group.actions.save.allowed,
+    try beginEditing(linked: nil, group: group, itemID: itemID)
+  }
+  func beginEditing(
+    linked: ConversationMealLinkedIdentity, group: ConversationMealGroupSnapshot, itemID: UUID
+  ) throws {
+    try beginEditing(linked: Optional(linked), group: group, itemID: itemID)
+  }
+  private func beginEditing(
+    linked: ConversationMealLinkedIdentity?, group: ConversationMealGroupSnapshot, itemID: UUID
+  ) throws {
+    guard canBeginEditing, matches(group, linked: linked), group.actions.save.allowed,
       let item = group.current?.items.first(where: { $0.id == itemID })
     else { throw ConversationMealEditControllerError.unavailable }
     self.group = group
+    linkedOrigin = linked
     draft = .init(item)
     formID = UUID()
     presented = true
     storedFailure = nil
     acknowledgement = nil
+    recoveredHistory = nil
   }
   func presentPending(id: ConversationMealEditOutboxID) throws {
     guard hasScope, !isWorking, let entry = entries.first(where: { $0.id == id }),
       intent == nil || intent.map({ ConversationMealEditOutboxID(operation: $0) }) == id
     else { throw ConversationMealEditControllerError.reconciliationRequired }
     group = nil
+    linkedOrigin = nil
     draft = nil
     preparation = nil
     intent = entry.operation
@@ -272,10 +302,8 @@ final class FlowConversationMealEditModel {
           let item = draft.request(language: language),
           let version = group.current?.expectedVersion
         else { throw ConversationOutboxError.invalidCommand }
-        let preparation = try await self.controller.prepare(
-          commandID: group.commandID,
-          originalInputHash: group.originalInputHash, expectedRevision: group.revision,
-          expectedVersion: version, action: .save(recordID: draft.recordID, items: [item]),
+        let preparation = try await self.prepare(
+          group: group, version: version, action: .save(recordID: draft.recordID, items: [item]),
           context: context)
         try self.check(context)
         self.preparation = preparation
@@ -288,32 +316,60 @@ final class FlowConversationMealEditModel {
     guard let target = group.lastOperation?.operationID, group.actions.undoSave.allowed else {
       return
     }
-    await execute(group: group, action: .undoSave(targetOperationID: target))
+    await execute(linked: nil, group: group, action: .undoSave(targetOperationID: target))
   }
   func undoRegistration(group: ConversationMealGroupSnapshot) async {
     guard group.actions.undoRegistration.allowed else { return }
-    await execute(group: group, action: .undoRegistration)
+    await execute(linked: nil, group: group, action: .undoRegistration)
+  }
+  func undoSave(linked: ConversationMealLinkedIdentity, group: ConversationMealGroupSnapshot) async
+  {
+    guard let target = group.lastOperation?.operationID, group.actions.undoSave.allowed else {
+      return
+    }
+    await execute(linked: linked, group: group, action: .undoSave(targetOperationID: target))
+  }
+  func undoRegistration(
+    linked: ConversationMealLinkedIdentity, group: ConversationMealGroupSnapshot
+  ) async {
+    guard group.actions.undoRegistration.allowed else { return }
+    await execute(linked: linked, group: group, action: .undoRegistration)
   }
   private func execute(
-    group: ConversationMealGroupSnapshot, action: ConversationMealEditOperation.Action
+    linked: ConversationMealLinkedIdentity?, group: ConversationMealGroupSnapshot,
+    action: ConversationMealEditOperation.Action
   ) async {
-    guard canBeginEditing, matches(group), let context, let version = group.current?.expectedVersion
+    guard canBeginEditing, matches(group, linked: linked), let context,
+      let version = group.current?.expectedVersion
     else { return }
     self.group = group
+    linkedOrigin = linked
     draft = nil
     requestedAction = action
     formID = UUID()
     presented = true
     await run(context) {
-      let prepared = try await self.controller.prepare(
-        commandID: group.commandID,
-        originalInputHash: group.originalInputHash, expectedRevision: group.revision,
-        expectedVersion: version, action: action, context: context)
+      let prepared = try await self.prepare(
+        group: group, version: version, action: action, context: context)
       try self.check(context)
       self.preparation = prepared
       self.intent = prepared.operation
       try await self.dispatch(context)
     }
+  }
+  private func prepare(
+    group: ConversationMealGroupSnapshot, version: String,
+    action: ConversationMealEditOperation.Action,
+    context: ConversationCommandContext
+  ) async throws -> ConversationMealEditPreparation {
+    if let linkedOrigin {
+      return try await controller.prepare(
+        linked: linkedOrigin, expectedRevision: group.revision, expectedVersion: version,
+        action: action, context: context)
+    }
+    return try await controller.prepare(
+      commandID: group.commandID, originalInputHash: group.originalInputHash,
+      expectedRevision: group.revision, expectedVersion: version, action: action, context: context)
   }
   private func dispatch(_ context: ConversationCommandContext) async throws {
     guard let intent else { throw ConversationOutboxError.invalidCommand }
@@ -371,7 +427,8 @@ final class FlowConversationMealEditModel {
       context.observation.isSameGrant(as: read.context.observation),
       read.page.matches(
         authUserID: context.authUserID, ownerID: context.ownerID, epoch: context.epoch),
-      !entries.contains(where: { $0.id == .init(operation: intent) })
+      !entries.contains(where: { $0.id == .init(operation: intent) }),
+      !held.contains(where: { $0.id == .init(operation: intent) })
     else { return }
     for entry in read.page.items {
       if case .edit(let event) = entry, event.result.matches(operation: intent) {
@@ -379,6 +436,25 @@ final class FlowConversationMealEditModel {
         return
       }
     }
+  }
+  /// UI-only recovery after local ACK persistence but lost publication. The
+  /// actual complete same-grant snapshot must prove the intent already absent
+  /// from BOTH visible and held ciphertext. History never ACKs or enables replay.
+  func observeThreadJournal(
+    _ read: ConversationThreadJournalRead, linked: ConversationMealLinkedIdentity,
+    group: ConversationMealGroupSnapshot
+  ) {
+    guard hasScope, hasSnapshot, let context, let intent,
+      context.observation.isSameGrant(as: read.context.observation),
+      !entries.contains(where: { $0.id == .init(operation: intent) }),
+      !held.contains(where: { $0.id == .init(operation: intent) }),
+      let notice = ConversationMealEditHistoricalNotice.qualify(
+        operation: intent, read: read, linked: linked, group: group)
+    else { return }
+    clearForm()
+    recoveredHistory = notice
+    storedFailure = nil
+    onHistorical(notice, context)
   }
   func invalidateSynchronously() {
     lifetime.close()
@@ -399,6 +475,7 @@ final class FlowConversationMealEditModel {
     entries.removeAll()
     held.removeAll()
     acknowledgement = nil
+    recoveredHistory = nil
     storedFailure = nil
     isWorking = false
     hasSnapshot = false
@@ -410,6 +487,7 @@ final class FlowConversationMealEditModel {
   }
   private func clearForm() {
     group = nil
+    linkedOrigin = nil
     draft = nil
     requestedAction = nil
     preparation = nil
@@ -426,9 +504,14 @@ final class FlowConversationMealEditModel {
   private func current(_ value: ConversationCommandContext) -> Bool {
     hasScope && context?.observation.isSameGrant(as: value.observation) == true
   }
-  private func matches(_ group: ConversationMealGroupSnapshot) -> Bool {
-    guard let context, hasScope else { return false }
-    return group.ownerID == context.ownerID && group.epoch == context.epoch
+  private func matches(
+    _ group: ConversationMealGroupSnapshot, linked: ConversationMealLinkedIdentity?
+  ) -> Bool {
+    guard let context, hasScope, group.ownerID == context.ownerID, group.epoch == context.epoch
+    else {
+      return false
+    }
+    return linked.map { $0.matches(group: group) } ?? (group.originalReceipt.report != nil)
   }
   private func publisher(_ context: ConversationCommandContext)
     -> ConversationMealEditController.Publisher
@@ -470,6 +553,7 @@ final class FlowConversationMealEditModel {
     entries.removeAll { $0.id == id }
     if intent.map({ ConversationMealEditOutboxID(operation: $0) }) == id { clearForm() }
     acknowledgement = result
+    recoveredHistory = nil
     storedFailure = nil
     onSaved(result, context)
   }

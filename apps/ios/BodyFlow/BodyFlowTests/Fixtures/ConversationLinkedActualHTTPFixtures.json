@@ -1,0 +1,1017 @@
+{
+  "schema": "qa.coherent-linked-child-http.v1",
+  "scope": "LOCAL_COMPILED_HTTP_CONTROLLED_ORIGIN_NO_REAL_PROVIDER",
+  "source": "698b13507f1e26f2e17079d5a53ab0d83639ea68",
+  "BUILD_ID": "SVxPQBpgN9sgWxZ2Guk9O",
+  "auth_user_id": "38c1532e-33b6-4e77-91f5-949178b0d340",
+  "owner_id": "c3c70000-0000-4000-8000-000000000001",
+  "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+  "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+  "child_command_id": "c3c70000-0000-4000-8000-000000000005",
+  "session": {
+    "schema": "qa.public-http-observation.v1",
+    "request_index": 3,
+    "phase": "actual-session-setup",
+    "intent": {
+      "schema": "qa.public-http-intent.v1",
+      "method": "GET",
+      "path": "/api/mobile/v1/conversation/session",
+      "query": [],
+      "headers": {
+        "x-conversation-owner": "c3c70000-0000-4000-8000-000000000001"
+      },
+      "body_utf8": null,
+      "transport_body_sha256": null
+    },
+    "actual_status": 200,
+    "expected_status": 200,
+    "response_headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json; charset=utf-8",
+      "x-request-id": "1b6456e1-8cbf-491f-a4a4-79222a36d324",
+      "x-conversation-protocol": "meal-command-v1"
+    },
+    "packet": {
+      "data": {
+        "schema": "conversation.session.v1",
+        "auth_user_id": "38c1532e-33b6-4e77-91f5-949178b0d340",
+        "owner_id": "c3c70000-0000-4000-8000-000000000001",
+        "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+        "observed_at": "2026-11-04T22:24:26.777209Z",
+        "meal_command_protocol": "conversation.command.v1"
+      },
+      "meta": {
+        "api_version": "v1",
+        "request_id": "1b6456e1-8cbf-491f-a4a4-79222a36d324"
+      }
+    },
+    "timing": {
+      "wall_started_at": "2026-11-04T22:24:26.683Z",
+      "wall_finished_at": "2026-11-04T22:24:26.883Z",
+      "monotonic_started_ns": "1938554903833",
+      "monotonic_finished_ns": "1938754353333",
+      "response_headers_ms": 199.220625,
+      "response_body_ms": 199.4495
+    },
+    "fanout": {
+      "backend_requests": 5,
+      "RPC_requests": 3,
+      "Auth_requests": 1,
+      "by_method_path": {
+        "GET /auth/v1/user": 1,
+        "POST /rest/v1/rpc/bootstrap_patient_profile": 1,
+        "GET /rest/v1/users": 1,
+        "POST /rest/v1/rpc/resolve_user_entitlement": 1,
+        "POST /rest/v1/rpc/get_mobile_current_clinical_state": 1
+      }
+    },
+    "trace_offsets": {
+      "before": {
+        "network-server-10142.private.jsonl": 9
+      },
+      "after": {
+        "network-server-10142.private.jsonl": 19
+      }
+    },
+    "authorization_captured": false
+  },
+  "session_after_seed": {
+    "schema": "qa.public-http-observation.v1",
+    "request_index": 4,
+    "phase": "actual-session-post-seed",
+    "intent": {
+      "schema": "qa.public-http-intent.v1",
+      "method": "GET",
+      "path": "/api/mobile/v1/conversation/session",
+      "query": [],
+      "headers": {
+        "x-conversation-owner": "c3c70000-0000-4000-8000-000000000001",
+        "x-conversation-epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f"
+      },
+      "body_utf8": null,
+      "transport_body_sha256": null
+    },
+    "actual_status": 200,
+    "expected_status": 200,
+    "response_headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json; charset=utf-8",
+      "x-request-id": "d06cbd06-e21c-4920-a757-52112487b310",
+      "x-conversation-protocol": "meal-command-v1"
+    },
+    "packet": {
+      "data": {
+        "schema": "conversation.session.v1",
+        "auth_user_id": "38c1532e-33b6-4e77-91f5-949178b0d340",
+        "owner_id": "c3c70000-0000-4000-8000-000000000001",
+        "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+        "observed_at": "2026-11-04T22:24:27.705588Z",
+        "meal_command_protocol": "conversation.command.v1"
+      },
+      "meta": {
+        "api_version": "v1",
+        "request_id": "d06cbd06-e21c-4920-a757-52112487b310"
+      }
+    },
+    "timing": {
+      "wall_started_at": "2026-11-04T22:24:27.620Z",
+      "wall_finished_at": "2026-11-04T22:24:27.733Z",
+      "monotonic_started_ns": "1939491852333",
+      "monotonic_finished_ns": "1939604845708",
+      "response_headers_ms": 112.7145,
+      "response_body_ms": 112.993375
+    },
+    "fanout": {
+      "backend_requests": 5,
+      "RPC_requests": 3,
+      "Auth_requests": 1,
+      "by_method_path": {
+        "GET /auth/v1/user": 1,
+        "POST /rest/v1/rpc/bootstrap_patient_profile": 1,
+        "GET /rest/v1/users": 1,
+        "POST /rest/v1/rpc/resolve_user_entitlement": 1,
+        "POST /rest/v1/rpc/get_mobile_current_clinical_state": 1
+      }
+    },
+    "trace_offsets": {
+      "before": {
+        "network-server-10142.private.jsonl": 19
+      },
+      "after": {
+        "network-server-10142.private.jsonl": 29
+      }
+    },
+    "authorization_captured": false
+  },
+  "saved_reply": {
+    "schema": "qa.public-http-observation.v1",
+    "request_index": 8,
+    "phase": "mealtype-public-0",
+    "intent": {
+      "schema": "qa.public-http-intent.v1",
+      "method": "POST",
+      "path": "/api/mobile/v1/conversation/commands/c3c70000-0000-4000-8000-000000000003/replies",
+      "query": [],
+      "headers": {
+        "x-conversation-owner": "c3c70000-0000-4000-8000-000000000001",
+        "x-conversation-epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+        "idempotency-key": "cmreply1:c3c70000-0000-4000-8000-000000000005",
+        "content-type": "application/json"
+      },
+      "body_utf8": "{\"schema\":\"conversation.meal-reply-submit.v1\",\"reply_id\":\"c3c70000-0000-4000-8000-000000000005\",\"parent_input_hash\":\"4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903\",\"parent_decision_hash\":\"92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4\",\"input\":{\"schema\":\"conversation.meal-clarification.v1\",\"expected_revision\":1,\"question_key\":\"bc17b08cf6f2bc9be1120931db4eba0b73f9812856d23e3e6aa716729666c9f8\",\"answer\":{\"kind\":\"meal_type\",\"meal_type\":\"almoco\"}}}",
+      "transport_body_sha256": "d3f0aa68f158c30a2af8c8c44702665a080daa29325ddaf646528ddaab51094a"
+    },
+    "actual_status": 200,
+    "expected_status": 200,
+    "response_headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json; charset=utf-8",
+      "x-request-id": "450bf058-8504-45fa-8118-86df6a3df758",
+      "x-conversation-protocol": "meal-reply-v1"
+    },
+    "packet": {
+      "data": {
+        "schema": "conversation.meal-reply-result.v1",
+        "auth_user_id": "38c1532e-33b6-4e77-91f5-949178b0d340",
+        "owner_id": "c3c70000-0000-4000-8000-000000000001",
+        "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+        "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+        "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+        "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+        "reply_id": "c3c70000-0000-4000-8000-000000000005",
+        "reply_input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+        "parent_binding": {
+          "owner_id": "c3c70000-0000-4000-8000-000000000001",
+          "command_id": "c3c70000-0000-4000-8000-000000000003",
+          "input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+          "command_protocol": "conversation.command.v1",
+          "kind": "meal.report",
+          "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+          "admitted_at": "2026-11-04T22:24:27.176317Z"
+        },
+        "child_binding": {
+          "owner_id": "c3c70000-0000-4000-8000-000000000001",
+          "command_id": "c3c70000-0000-4000-8000-000000000005",
+          "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+          "command_protocol": "conversation.clarification.v1",
+          "kind": "meal.clarify",
+          "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+          "admitted_at": "2026-11-04T22:24:36.750963Z"
+        },
+        "observed_at": "2026-11-04T22:24:44.474553Z",
+        "status": "saved",
+        "receipt": {
+          "schema": "conversation.meal-continuation-effect.v1",
+          "owner_id": "c3c70000-0000-4000-8000-000000000001",
+          "command_id": "c3c70000-0000-4000-8000-000000000005",
+          "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+          "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+          "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+          "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+          "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+          "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+          "provider_key": "conversation.clarification/c3c70000-0000-4000-8000-000000000001/c3c70000-0000-4000-8000-000000000003",
+          "meal_type": "almoco",
+          "local_date": "2026-11-04",
+          "timezone": "UTC",
+          "consumed_at": "2026-11-04T22:24:40.849731Z",
+          "log_ids": [
+            "84d3d822-4f61-4724-a4c9-6737011d4efc"
+          ],
+          "effect_version": "cmeal1:d63736f60f6f89efbbc811b99538d11aebb36228d5f1a8a26319de0fc421ee03"
+        },
+        "question": null,
+        "feedback": {
+          "schema": "conversation.feedback-presentation.v1",
+          "mode": "historical",
+          "assistant": "Flow AI",
+          "original": {
+            "schema": "registration.feedback.v2",
+            "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+            "kind": "meal",
+            "local_date": "2026-11-04"
+          },
+          "current_policy": {
+            "version": 1,
+            "observed_at": "2026-11-04T22:24:44.278183Z",
+            "assessment": "incomplete",
+            "recording_allowed": true,
+            "pause_weight_loss_guidance": false,
+            "professional_assessment_recommended": false,
+            "phase_selection_pending": false,
+            "target_source": "unavailable",
+            "hide": {
+              "objective": true,
+              "calories": true,
+              "protein": true,
+              "balance": true,
+              "block": true,
+              "budget": true
+            }
+          },
+          "provenance": {
+            "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+            "command_id": "c3c70000-0000-4000-8000-000000000005",
+            "observed_at": "2026-11-04T22:24:44.278183Z"
+          },
+          "status": "available",
+          "format": "sections",
+          "recorded": {
+            "kind": "meal",
+            "meal_kind": "almoco",
+            "items": [
+              {
+                "kcal": 128.3,
+                "protein_g": 2.52,
+                "carbs_g": 28.06,
+                "fat_g": 0.23,
+                "log_id": "84d3d822-4f61-4724-a4c9-6737011d4efc",
+                "food_name": "arroz branco cozido",
+                "quantity_g": 100,
+                "quantity": {
+                  "value": 100,
+                  "unit": "g",
+                  "estimated": false,
+                  "reference_id": null
+                },
+                "nutrition_source": "canonical_fuzzy"
+              }
+            ],
+            "totals": {
+              "kcal": 128.3,
+              "protein_g": 2.5,
+              "carbs_g": 28.1,
+              "fat_g": 0.2
+            }
+          },
+          "sections": [
+            {
+              "key": "saved",
+              "text": "Almoço registrado."
+            },
+            {
+              "key": "items",
+              "text": "arroz branco cozido · 100 g\n128,3 kcal | Proteína: 2,52 g | Carboidratos: 28,06 g | Gorduras: 0,23 g"
+            },
+            {
+              "key": "summary",
+              "text": "Total aproximado da refeição: 128,3 kcal | Proteína: 2,5 g | Carboidratos: 28,1 g | Gorduras: 0,2 g"
+            },
+            {
+              "key": "day",
+              "text": "No momento deste registro (2026-11-04):\nO resumo oficial deste dia está indisponível; seu registro foi salvo."
+            },
+            {
+              "key": "block",
+              "text": "Progresso histórico sob as orientações atuais:\nOs dados consolidados do bloco estão indisponíveis."
+            },
+            {
+              "key": "education",
+              "text": "O comentário educativo está indisponível; seu registro continua salvo."
+            }
+          ]
+        },
+        "reason": null
+      },
+      "meta": {
+        "api_version": "v1",
+        "request_id": "450bf058-8504-45fa-8118-86df6a3df758"
+      }
+    },
+    "timing": {
+      "wall_started_at": "2026-11-04T22:24:35.954Z",
+      "wall_finished_at": "2026-11-04T22:24:44.557Z",
+      "monotonic_started_ns": "1947825602875",
+      "monotonic_finished_ns": "1956428958958",
+      "response_headers_ms": 8603.074541,
+      "response_body_ms": 8603.356083
+    },
+    "fanout": {
+      "backend_requests": 331,
+      "RPC_requests": 60,
+      "Auth_requests": 89,
+      "by_method_path": {
+        "GET /auth/v1/user": 89,
+        "GET /rest/v1/admin_users": 89,
+        "GET /rest/v1/users": 89,
+        "POST /rest/v1/rpc/resolve_user_entitlement": 1,
+        "POST /rest/v1/rpc/get_mobile_current_clinical_state": 46,
+        "POST /rest/v1/rpc/read_conversation_meal_continuation": 5,
+        "POST /rest/v1/rpc/admit_conversation_meal_reply": 1,
+        "GET /rest/v1/global_config": 1,
+        "GET /rest/v1/user_food_corrections": 3,
+        "POST /rest/v1/rpc/search_food_trgm": 1,
+        "POST /rest/v1/rpc/prepare_conversation_meal_continuation": 1,
+        "POST /rest/v1/rpc/commit_conversation_meal_continuation": 1,
+        "POST /rest/v1/rpc/read_conversation_meal_feedback_v2": 2,
+        "POST /rest/v1/rpc/read_conversation_meal_feedback_source": 1,
+        "POST /rest/v1/rpc/commit_conversation_meal_feedback_v2": 1
+      }
+    },
+    "trace_offsets": {
+      "before": {
+        "network-server-10142.private.jsonl": 421
+      },
+      "after": {
+        "network-server-10142.private.jsonl": 1083
+      }
+    },
+    "authorization_captured": false
+  },
+  "group_before_save": {
+    "schema": "qa.public-http-observation.v1",
+    "request_index": 16,
+    "phase": "child-group-v2",
+    "intent": {
+      "schema": "qa.public-http-intent.v1",
+      "method": "GET",
+      "path": "/api/mobile/v1/conversation/meal-commands/c3c70000-0000-4000-8000-000000000005/meal",
+      "query": [],
+      "headers": {
+        "x-conversation-owner": "c3c70000-0000-4000-8000-000000000001",
+        "x-conversation-epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+        "x-conversation-input-hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848"
+      },
+      "body_utf8": null,
+      "transport_body_sha256": null
+    },
+    "actual_status": 200,
+    "expected_status": 200,
+    "response_headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json; charset=utf-8",
+      "x-request-id": "3c6cfc60-9fcd-4491-810f-5f41af9fad33",
+      "x-conversation-protocol": "meal-command-v1"
+    },
+    "packet": {
+      "data": {
+        "schema": "conversation.meal-group.v2",
+        "owner_id": "c3c70000-0000-4000-8000-000000000001",
+        "command_id": "c3c70000-0000-4000-8000-000000000005",
+        "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+        "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+        "admitted_at": "2026-11-04T22:24:36.750963Z",
+        "observed_at": "2026-11-04T22:25:04.170114+00:00",
+        "original_receipt": {
+          "schema": "conversation.meal-continuation-effect.v1",
+          "owner_id": "c3c70000-0000-4000-8000-000000000001",
+          "command_id": "c3c70000-0000-4000-8000-000000000005",
+          "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+          "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+          "provider_key": "conversation.clarification/c3c70000-0000-4000-8000-000000000001/c3c70000-0000-4000-8000-000000000003",
+          "meal_type": "almoco",
+          "local_date": "2026-11-04",
+          "timezone": "UTC",
+          "consumed_at": "2026-11-04T22:24:40.849731Z",
+          "log_ids": [
+            "84d3d822-4f61-4724-a4c9-6737011d4efc"
+          ],
+          "effect_version": "cmeal1:d63736f60f6f89efbbc811b99538d11aebb36228d5f1a8a26319de0fc421ee03",
+          "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+          "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+          "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+          "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f"
+        },
+        "revision": 0,
+        "lineage_compatible": true,
+        "current": {
+          "expected_version": "v1:c95ed80716043cfe87cd86b55b134dd4ee8ea8b93267ec7890685b2c80cb090d",
+          "local_date": "2026-11-04",
+          "timezone": "UTC",
+          "day_closed": false,
+          "items": [
+            {
+              "id": "84d3d822-4f61-4724-a4c9-6737011d4efc",
+              "food_name": "arroz branco cozido",
+              "quantity_g": 100,
+              "quantity_display": null,
+              "kcal": 128.3,
+              "protein_g": 2.52,
+              "carbs_g": 28.06,
+              "fat_g": 0.23,
+              "source": "canonical_fuzzy",
+              "consumed_at": "2026-11-04T22:24:40.849731+00:00",
+              "meal_type": "almoco"
+            }
+          ]
+        },
+        "last_operation": null,
+        "registration_undo_expires_at": "2026-11-04T22:29:40.849731+00:00",
+        "actions": {
+          "save": {
+            "allowed": true
+          },
+          "undo_registration": {
+            "allowed": true
+          },
+          "undo_save": {
+            "allowed": false,
+            "reason": "no_save_to_undo"
+          }
+        }
+      },
+      "meta": {
+        "api_version": "v1",
+        "request_id": "3c6cfc60-9fcd-4491-810f-5f41af9fad33"
+      }
+    },
+    "timing": {
+      "wall_started_at": "2026-11-04T22:25:04.108Z",
+      "wall_finished_at": "2026-11-04T22:25:04.220Z",
+      "monotonic_started_ns": "1975979008916",
+      "monotonic_finished_ns": "1976091969416",
+      "response_headers_ms": 112.673417,
+      "response_body_ms": 112.9605
+    },
+    "fanout": {
+      "backend_requests": 8,
+      "RPC_requests": 2,
+      "Auth_requests": 2,
+      "by_method_path": {
+        "GET /auth/v1/user": 2,
+        "GET /rest/v1/admin_users": 2,
+        "GET /rest/v1/users": 2,
+        "POST /rest/v1/rpc/resolve_user_entitlement": 1,
+        "POST /rest/v1/rpc/read_conversation_meal_edit_state": 1
+      }
+    },
+    "trace_offsets": {
+      "before": {
+        "network-server-10142.private.jsonl": 2973
+      },
+      "after": {
+        "network-server-10142.private.jsonl": 2989
+      }
+    },
+    "authorization_captured": false
+  },
+  "save_input_and_lost_body": {
+    "schema": "qa.public-http-lost-body.v1",
+    "request_index": 18,
+    "phase": "actual-save-discard-body",
+    "intent": {
+      "schema": "qa.public-http-intent.v1",
+      "method": "POST",
+      "path": "/api/mobile/v1/conversation/meal-commands/c3c70000-0000-4000-8000-000000000005/edits/c3c70000-0000-4000-8000-000000000009",
+      "query": [],
+      "headers": {
+        "x-conversation-owner": "c3c70000-0000-4000-8000-000000000001",
+        "x-conversation-epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+        "x-conversation-input-hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+        "idempotency-key": "cmedit1:c3c70000-0000-4000-8000-000000000009",
+        "content-type": "application/json",
+        "content-length": "277"
+      },
+      "body_utf8": "{\"schema\":\"conversation.meal-edit.v1\",\"kind\":\"save\",\"expected_revision\":0,\"expected_version\":\"v1:c95ed80716043cfe87cd86b55b134dd4ee8ea8b93267ec7890685b2c80cb090d\",\"record_id\":\"84d3d822-4f61-4724-a4c9-6737011d4efc\",\"items\":[{\"food_name\":\"arroz branco cozido\",\"quantity_g\":150}]}",
+      "transport_body_sha256": "b5dab282647c36322d496dc2d93c84701d1f1f589cf6f62abbd7aa6be580449d"
+    },
+    "actual_status": 200,
+    "response_packet": null,
+    "client_discarded_body_after_headers": true,
+    "timing": {
+      "wall_started_at": "2026-11-04T22:25:04.690Z",
+      "wall_finished_at": "2026-11-04T22:25:04.872Z",
+      "monotonic_started_ns": "1976561904541",
+      "monotonic_finished_ns": "1976741904708",
+      "response_headers_ms": 180.000167
+    },
+    "fanout": {
+      "backend_requests": 10,
+      "RPC_requests": 4,
+      "Auth_requests": 2,
+      "by_method_path": {
+        "GET /auth/v1/user": 2,
+        "GET /rest/v1/admin_users": 2,
+        "GET /rest/v1/users": 2,
+        "POST /rest/v1/rpc/resolve_user_entitlement": 1,
+        "POST /rest/v1/rpc/read_conversation_meal_edit_operation": 1,
+        "POST /rest/v1/rpc/read_conversation_meal_edit_state": 1,
+        "POST /rest/v1/rpc/commit_conversation_meal_item_edit": 1
+      }
+    },
+    "trace_offsets": {
+      "before": {
+        "network-server-10142.private.jsonl": 3005
+      },
+      "after": {
+        "network-server-10142.private.jsonl": 3025
+      }
+    },
+    "authorization_captured": false
+  },
+  "save_ack_lost": null,
+  "save_reconcile_ack": {
+    "schema": "qa.public-http-observation.v1",
+    "request_index": 19,
+    "phase": "readonly-operation-reconcile",
+    "intent": {
+      "schema": "qa.public-http-intent.v1",
+      "method": "POST",
+      "path": "/api/mobile/v1/conversation/meal-commands/c3c70000-0000-4000-8000-000000000005/edits/c3c70000-0000-4000-8000-000000000009/reconcile",
+      "query": [],
+      "headers": {
+        "x-conversation-owner": "c3c70000-0000-4000-8000-000000000001",
+        "x-conversation-epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+        "x-conversation-input-hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+        "idempotency-key": "cmedit1:c3c70000-0000-4000-8000-000000000009",
+        "content-type": "application/json"
+      },
+      "body_utf8": "{\"schema\":\"conversation.meal-edit.v1\",\"kind\":\"save\",\"expected_revision\":0,\"expected_version\":\"v1:c95ed80716043cfe87cd86b55b134dd4ee8ea8b93267ec7890685b2c80cb090d\",\"record_id\":\"84d3d822-4f61-4724-a4c9-6737011d4efc\",\"items\":[{\"food_name\":\"arroz branco cozido\",\"quantity_g\":150}]}",
+      "transport_body_sha256": "b5dab282647c36322d496dc2d93c84701d1f1f589cf6f62abbd7aa6be580449d"
+    },
+    "actual_status": 200,
+    "expected_status": 200,
+    "response_headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json; charset=utf-8",
+      "x-request-id": "47e21e10-2498-47da-af3f-0358359f3a39",
+      "x-conversation-protocol": "meal-command-v1"
+    },
+    "packet": {
+      "data": {
+        "schema": "conversation.meal-edit-result.v1",
+        "status": "saved",
+        "owner_id": "c3c70000-0000-4000-8000-000000000001",
+        "command_id": "c3c70000-0000-4000-8000-000000000005",
+        "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+        "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+        "receipt": {
+          "schema": "conversation.meal-edit-effect-public.v1",
+          "owner_id": "c3c70000-0000-4000-8000-000000000001",
+          "command_id": "c3c70000-0000-4000-8000-000000000005",
+          "operation_id": "c3c70000-0000-4000-8000-000000000009",
+          "input_hash": "df4bbbe355d55236d85f20b3095e6db5b8bb1251ea739d961576d921942e9532",
+          "kind": "saved",
+          "revision": 1,
+          "applied_at": "2026-11-04T22:25:04.815524+00:00",
+          "undo_expires_at": "2026-11-04T22:30:04.815524+00:00",
+          "target_operation_id": null,
+          "removed_item_ids": [
+            "84d3d822-4f61-4724-a4c9-6737011d4efc"
+          ],
+          "new_item_ids": [
+            "d2ed8289-b2e0-4dc0-9761-cbf38b8d5dd0"
+          ],
+          "next_record_id": "d2ed8289-b2e0-4dc0-9761-cbf38b8d5dd0"
+        }
+      },
+      "meta": {
+        "api_version": "v1",
+        "request_id": "47e21e10-2498-47da-af3f-0358359f3a39"
+      }
+    },
+    "timing": {
+      "wall_started_at": "2026-11-04T22:25:05.061Z",
+      "wall_finished_at": "2026-11-04T22:25:05.170Z",
+      "monotonic_started_ns": "1976932264750",
+      "monotonic_finished_ns": "1977041131041",
+      "response_headers_ms": 108.725541,
+      "response_body_ms": 108.866291
+    },
+    "fanout": {
+      "backend_requests": 8,
+      "RPC_requests": 2,
+      "Auth_requests": 2,
+      "by_method_path": {
+        "GET /auth/v1/user": 2,
+        "GET /rest/v1/admin_users": 2,
+        "GET /rest/v1/users": 2,
+        "POST /rest/v1/rpc/resolve_user_entitlement": 1,
+        "POST /rest/v1/rpc/read_conversation_meal_edit_operation": 1
+      }
+    },
+    "trace_offsets": {
+      "before": {
+        "network-server-10142.private.jsonl": 3025
+      },
+      "after": {
+        "network-server-10142.private.jsonl": 3041
+      }
+    },
+    "authorization_captured": false
+  },
+  "group_before_undo": {
+    "schema": "qa.public-http-observation.v1",
+    "request_index": 21,
+    "phase": "save-undo",
+    "intent": {
+      "schema": "qa.public-http-intent.v1",
+      "method": "GET",
+      "path": "/api/mobile/v1/conversation/meal-commands/c3c70000-0000-4000-8000-000000000005/meal",
+      "query": [],
+      "headers": {
+        "x-conversation-owner": "c3c70000-0000-4000-8000-000000000001",
+        "x-conversation-epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+        "x-conversation-input-hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848"
+      },
+      "body_utf8": null,
+      "transport_body_sha256": null
+    },
+    "actual_status": 200,
+    "expected_status": 200,
+    "response_headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json; charset=utf-8",
+      "x-request-id": "7e5dd105-579f-4a8d-ba4d-67f691993755",
+      "x-conversation-protocol": "meal-command-v1"
+    },
+    "packet": {
+      "data": {
+        "schema": "conversation.meal-group.v2",
+        "owner_id": "c3c70000-0000-4000-8000-000000000001",
+        "command_id": "c3c70000-0000-4000-8000-000000000005",
+        "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+        "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+        "admitted_at": "2026-11-04T22:24:36.750963Z",
+        "observed_at": "2026-11-04T22:25:05.663909+00:00",
+        "original_receipt": {
+          "schema": "conversation.meal-continuation-effect.v1",
+          "owner_id": "c3c70000-0000-4000-8000-000000000001",
+          "command_id": "c3c70000-0000-4000-8000-000000000005",
+          "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+          "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+          "provider_key": "conversation.clarification/c3c70000-0000-4000-8000-000000000001/c3c70000-0000-4000-8000-000000000003",
+          "meal_type": "almoco",
+          "local_date": "2026-11-04",
+          "timezone": "UTC",
+          "consumed_at": "2026-11-04T22:24:40.849731Z",
+          "log_ids": [
+            "84d3d822-4f61-4724-a4c9-6737011d4efc"
+          ],
+          "effect_version": "cmeal1:d63736f60f6f89efbbc811b99538d11aebb36228d5f1a8a26319de0fc421ee03",
+          "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+          "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+          "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+          "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f"
+        },
+        "revision": 1,
+        "lineage_compatible": true,
+        "current": {
+          "expected_version": "v1:190ad69559b45124b8a02dd38361dacb28156d4a7e7a843190c8a45a48891a0e",
+          "local_date": "2026-11-04",
+          "timezone": "UTC",
+          "day_closed": false,
+          "items": [
+            {
+              "id": "d2ed8289-b2e0-4dc0-9761-cbf38b8d5dd0",
+              "food_name": "arroz branco cozido",
+              "quantity_g": 150,
+              "quantity_display": null,
+              "kcal": 192.5,
+              "protein_g": 3.78,
+              "carbs_g": 42.09,
+              "fat_g": 0.35,
+              "source": "canonical_fuzzy",
+              "consumed_at": "2026-11-04T22:24:40.849731+00:00",
+              "meal_type": "almoco"
+            }
+          ]
+        },
+        "last_operation": {
+          "schema": "conversation.meal-edit-effect-public.v1",
+          "owner_id": "c3c70000-0000-4000-8000-000000000001",
+          "command_id": "c3c70000-0000-4000-8000-000000000005",
+          "operation_id": "c3c70000-0000-4000-8000-000000000009",
+          "input_hash": "df4bbbe355d55236d85f20b3095e6db5b8bb1251ea739d961576d921942e9532",
+          "kind": "saved",
+          "revision": 1,
+          "applied_at": "2026-11-04T22:25:04.815524+00:00",
+          "undo_expires_at": "2026-11-04T22:30:04.815524+00:00",
+          "target_operation_id": null,
+          "removed_item_ids": [
+            "84d3d822-4f61-4724-a4c9-6737011d4efc"
+          ],
+          "new_item_ids": [
+            "d2ed8289-b2e0-4dc0-9761-cbf38b8d5dd0"
+          ],
+          "next_record_id": "d2ed8289-b2e0-4dc0-9761-cbf38b8d5dd0"
+        },
+        "registration_undo_expires_at": "2026-11-04T22:29:40.849731+00:00",
+        "actions": {
+          "save": {
+            "allowed": true
+          },
+          "undo_registration": {
+            "allowed": false,
+            "reason": "version_changed"
+          },
+          "undo_save": {
+            "allowed": true
+          }
+        }
+      },
+      "meta": {
+        "api_version": "v1",
+        "request_id": "7e5dd105-579f-4a8d-ba4d-67f691993755"
+      }
+    },
+    "timing": {
+      "wall_started_at": "2026-11-04T22:25:05.605Z",
+      "wall_finished_at": "2026-11-04T22:25:05.717Z",
+      "monotonic_started_ns": "1977476151875",
+      "monotonic_finished_ns": "1977588018666",
+      "response_headers_ms": 111.720958,
+      "response_body_ms": 111.866791
+    },
+    "fanout": {
+      "backend_requests": 8,
+      "RPC_requests": 2,
+      "Auth_requests": 2,
+      "by_method_path": {
+        "GET /auth/v1/user": 2,
+        "GET /rest/v1/admin_users": 2,
+        "GET /rest/v1/users": 2,
+        "POST /rest/v1/rpc/resolve_user_entitlement": 1,
+        "POST /rest/v1/rpc/read_conversation_meal_edit_state": 1
+      }
+    },
+    "trace_offsets": {
+      "before": {
+        "network-server-10142.private.jsonl": 3057
+      },
+      "after": {
+        "network-server-10142.private.jsonl": 3073
+      }
+    },
+    "authorization_captured": false
+  },
+  "undo_save_ack": {
+    "schema": "qa.public-http-observation.v1",
+    "request_index": 22,
+    "phase": "save-undo",
+    "intent": {
+      "schema": "qa.public-http-intent.v1",
+      "method": "POST",
+      "path": "/api/mobile/v1/conversation/meal-commands/c3c70000-0000-4000-8000-000000000005/edits/c3c70000-0000-4000-8000-00000000000a",
+      "query": [],
+      "headers": {
+        "x-conversation-owner": "c3c70000-0000-4000-8000-000000000001",
+        "x-conversation-epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+        "x-conversation-input-hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+        "idempotency-key": "cmedit1:c3c70000-0000-4000-8000-00000000000a",
+        "content-type": "application/json"
+      },
+      "body_utf8": "{\"schema\":\"conversation.meal-edit.v1\",\"kind\":\"undo_save\",\"expected_revision\":1,\"expected_version\":\"v1:190ad69559b45124b8a02dd38361dacb28156d4a7e7a843190c8a45a48891a0e\",\"target_operation_id\":\"c3c70000-0000-4000-8000-000000000009\"}",
+      "transport_body_sha256": "1a31b0ed4aaab0b92dad06b356b43b2bd58fff7e0b63c25192ddf9996169304d"
+    },
+    "actual_status": 200,
+    "expected_status": 200,
+    "response_headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json; charset=utf-8",
+      "x-request-id": "790f1d4b-689c-4b20-af9c-e5e4a833d5cc",
+      "x-conversation-protocol": "meal-command-v1"
+    },
+    "packet": {
+      "data": {
+        "schema": "conversation.meal-edit-result.v1",
+        "status": "saved",
+        "owner_id": "c3c70000-0000-4000-8000-000000000001",
+        "command_id": "c3c70000-0000-4000-8000-000000000005",
+        "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+        "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+        "receipt": {
+          "schema": "conversation.meal-edit-effect-public.v1",
+          "owner_id": "c3c70000-0000-4000-8000-000000000001",
+          "command_id": "c3c70000-0000-4000-8000-000000000005",
+          "operation_id": "c3c70000-0000-4000-8000-00000000000a",
+          "input_hash": "bc9a711af48f232946e7503caa3e4204edb15c1bf655fbd7093c91ea94ee27d5",
+          "kind": "save_undone",
+          "revision": 2,
+          "applied_at": "2026-11-04T22:25:05.925603+00:00",
+          "undo_expires_at": null,
+          "target_operation_id": "c3c70000-0000-4000-8000-000000000009",
+          "removed_item_ids": [
+            "d2ed8289-b2e0-4dc0-9761-cbf38b8d5dd0"
+          ],
+          "new_item_ids": [
+            "d987aca2-2618-437f-95a7-cdefd58103a0"
+          ],
+          "next_record_id": "d987aca2-2618-437f-95a7-cdefd58103a0"
+        }
+      },
+      "meta": {
+        "api_version": "v1",
+        "request_id": "790f1d4b-689c-4b20-af9c-e5e4a833d5cc"
+      }
+    },
+    "timing": {
+      "wall_started_at": "2026-11-04T22:25:05.838Z",
+      "wall_finished_at": "2026-11-04T22:25:05.980Z",
+      "monotonic_started_ns": "1977709270416",
+      "monotonic_finished_ns": "1977851291166",
+      "response_headers_ms": 141.788959,
+      "response_body_ms": 142.02075
+    },
+    "fanout": {
+      "backend_requests": 10,
+      "RPC_requests": 4,
+      "Auth_requests": 2,
+      "by_method_path": {
+        "GET /auth/v1/user": 2,
+        "GET /rest/v1/admin_users": 2,
+        "GET /rest/v1/users": 2,
+        "POST /rest/v1/rpc/resolve_user_entitlement": 1,
+        "POST /rest/v1/rpc/read_conversation_meal_edit_operation": 1,
+        "POST /rest/v1/rpc/read_conversation_meal_edit_state": 1,
+        "POST /rest/v1/rpc/undo_conversation_meal_item_edit": 1
+      }
+    },
+    "trace_offsets": {
+      "before": {
+        "network-server-10142.private.jsonl": 3073
+      },
+      "after": {
+        "network-server-10142.private.jsonl": 3093
+      }
+    },
+    "authorization_captured": false
+  },
+  "group_after_undo": {
+    "schema": "qa.public-http-observation.v1",
+    "request_index": 23,
+    "phase": "save-undo",
+    "intent": {
+      "schema": "qa.public-http-intent.v1",
+      "method": "GET",
+      "path": "/api/mobile/v1/conversation/meal-commands/c3c70000-0000-4000-8000-000000000005/meal",
+      "query": [],
+      "headers": {
+        "x-conversation-owner": "c3c70000-0000-4000-8000-000000000001",
+        "x-conversation-epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+        "x-conversation-input-hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848"
+      },
+      "body_utf8": null,
+      "transport_body_sha256": null
+    },
+    "actual_status": 200,
+    "expected_status": 200,
+    "response_headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json; charset=utf-8",
+      "x-request-id": "38da5687-416d-4d25-8033-36aa6747e5f7",
+      "x-conversation-protocol": "meal-command-v1"
+    },
+    "packet": {
+      "data": {
+        "schema": "conversation.meal-group.v2",
+        "owner_id": "c3c70000-0000-4000-8000-000000000001",
+        "command_id": "c3c70000-0000-4000-8000-000000000005",
+        "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+        "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+        "admitted_at": "2026-11-04T22:24:36.750963Z",
+        "observed_at": "2026-11-04T22:25:06.240237+00:00",
+        "original_receipt": {
+          "schema": "conversation.meal-continuation-effect.v1",
+          "owner_id": "c3c70000-0000-4000-8000-000000000001",
+          "command_id": "c3c70000-0000-4000-8000-000000000005",
+          "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+          "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+          "provider_key": "conversation.clarification/c3c70000-0000-4000-8000-000000000001/c3c70000-0000-4000-8000-000000000003",
+          "meal_type": "almoco",
+          "local_date": "2026-11-04",
+          "timezone": "UTC",
+          "consumed_at": "2026-11-04T22:24:40.849731Z",
+          "log_ids": [
+            "84d3d822-4f61-4724-a4c9-6737011d4efc"
+          ],
+          "effect_version": "cmeal1:d63736f60f6f89efbbc811b99538d11aebb36228d5f1a8a26319de0fc421ee03",
+          "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+          "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+          "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+          "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f"
+        },
+        "revision": 2,
+        "lineage_compatible": true,
+        "current": {
+          "expected_version": "v1:f441a2d29762130cf6849c81dfbcc375d6cf3f679158ad7ee56da6073db84b72",
+          "local_date": "2026-11-04",
+          "timezone": "UTC",
+          "day_closed": false,
+          "items": [
+            {
+              "id": "d987aca2-2618-437f-95a7-cdefd58103a0",
+              "food_name": "arroz branco cozido",
+              "quantity_g": 100,
+              "quantity_display": null,
+              "kcal": 128.3,
+              "protein_g": 2.52,
+              "carbs_g": 28.06,
+              "fat_g": 0.23,
+              "source": "canonical_fuzzy",
+              "consumed_at": "2026-11-04T22:24:40.849731+00:00",
+              "meal_type": "almoco"
+            }
+          ]
+        },
+        "last_operation": {
+          "schema": "conversation.meal-edit-effect-public.v1",
+          "owner_id": "c3c70000-0000-4000-8000-000000000001",
+          "command_id": "c3c70000-0000-4000-8000-000000000005",
+          "operation_id": "c3c70000-0000-4000-8000-00000000000a",
+          "input_hash": "bc9a711af48f232946e7503caa3e4204edb15c1bf655fbd7093c91ea94ee27d5",
+          "kind": "save_undone",
+          "revision": 2,
+          "applied_at": "2026-11-04T22:25:05.925603+00:00",
+          "undo_expires_at": null,
+          "target_operation_id": "c3c70000-0000-4000-8000-000000000009",
+          "removed_item_ids": [
+            "d2ed8289-b2e0-4dc0-9761-cbf38b8d5dd0"
+          ],
+          "new_item_ids": [
+            "d987aca2-2618-437f-95a7-cdefd58103a0"
+          ],
+          "next_record_id": "d987aca2-2618-437f-95a7-cdefd58103a0"
+        },
+        "registration_undo_expires_at": "2026-11-04T22:29:40.849731+00:00",
+        "actions": {
+          "save": {
+            "allowed": true
+          },
+          "undo_registration": {
+            "allowed": false,
+            "reason": "version_changed"
+          },
+          "undo_save": {
+            "allowed": false,
+            "reason": "no_save_to_undo"
+          }
+        }
+      },
+      "meta": {
+        "api_version": "v1",
+        "request_id": "38da5687-416d-4d25-8033-36aa6747e5f7"
+      }
+    },
+    "timing": {
+      "wall_started_at": "2026-11-04T22:25:06.179Z",
+      "wall_finished_at": "2026-11-04T22:25:06.290Z",
+      "monotonic_started_ns": "1978050260166",
+      "monotonic_finished_ns": "1978161487166",
+      "response_headers_ms": 111.094125,
+      "response_body_ms": 111.227
+    },
+    "fanout": {
+      "backend_requests": 8,
+      "RPC_requests": 2,
+      "Auth_requests": 2,
+      "by_method_path": {
+        "GET /auth/v1/user": 2,
+        "GET /rest/v1/admin_users": 2,
+        "GET /rest/v1/users": 2,
+        "POST /rest/v1/rpc/resolve_user_entitlement": 1,
+        "POST /rest/v1/rpc/read_conversation_meal_edit_state": 1
+      }
+    },
+    "trace_offsets": {
+      "before": {
+        "network-server-10142.private.jsonl": 3093
+      },
+      "after": {
+        "network-server-10142.private.jsonl": 3109
+      }
+    },
+    "authorization_captured": false
+  },
+  "whole_round_completed_assertions": true
+}

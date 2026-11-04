@@ -232,123 +232,182 @@ export function createSupabaseConversationMealSourceFactory(
           }),
           ['absent', 'stale_epoch', 'day_closed'],
         )
-        const captured = captureSchema.parse(rawCapture)
-        // Opaque private JSON must survive validation unchanged. A decoder
-        // dropping a reserved key is a refusal, never a rewritten SQL source.
-        if (!isDeepStrictEqual(captured, rawCapture)) return refuse()
-        const context = captured.context
-        if (
-          context.owner_id !== command.ownerId ||
-          context.command_id !== command.commandId ||
-          context.input_hash !== command.inputHash ||
-          !isDeepStrictEqual(context.source_input, command.command) ||
-          new Set(context.source_units).size !== context.source_units.length
+        return createConversationMealStoredSourcePorts(
+          rpc as ConversationMealNutritionRpc,
+          command,
+          rawCapture,
+          { kind: 'original' },
         )
-          return refuse()
-        if (
-          command.command.source.channel === 'text' &&
-          (!isDeepStrictEqual(context.source_units, ['command_text']) || context.media !== null)
-        )
-          return refuse()
-        const asOf = captured.captured_at,
-          cutoff = instant(asOf)
-        const receipts = new Map<string, ConversationMealSourceReceipt>()
-        const lookups = new Map<
-          string,
-          { id: string; hash: string; rows: readonly MealHistoryRow[] }
-        >()
-        const receiptLookups = new Map<string, string>()
-        const audits: MealCalculationAuditEvent[] = []
-        const sourceReader: MealNutritionSourceReader = Object.freeze({
-          ownerId: command.ownerId,
-          asOf,
-          async read(
-            kind: 'trusted_recent' | 'exact_median',
-            foodName: string | null,
-          ): Promise<readonly MealHistoryRow[]> {
-            try {
-              validateLookup(kind, foodName)
-              const key = JSON.stringify([kind, foodName])
-              const result = lookupSchema.parse(
-                rpcData(
-                  await rpc('read_conversation_meal_nutrition_source', {
-                    p_user_id: command.ownerId,
-                    p_command_id: command.commandId,
-                    p_kind: kind,
-                    p_food_name: foodName,
-                  }),
-                  ['absent', 'stale_epoch', 'source_required', 'source_conflict', 'sealed'],
-                ),
-              )
-              if (
-                result.owner_id !== command.ownerId ||
-                result.command_id !== command.commandId ||
-                result.as_of !== asOf ||
-                result.rows.length > (kind === 'trusted_recent' ? 50 : 20)
-              )
-                return refuse()
-              const seen = new Set<string>()
-              let previous: { at: bigint; id: string } | undefined
-              for (const row of result.rows) {
-                const at = instant(row.created_at)
-                if (
-                  row.user_id !== command.ownerId ||
-                  seen.has(row.id) ||
-                  at > cutoff ||
-                  at < cutoff - 30n * 86_400_000_000_000n ||
-                  (row.food_db_id === null) !== (row.food_db === null) ||
-                  (kind === 'trusted_recent' && !(row.kcal !== null && row.kcal > 0)) ||
-                  (previous && (at > previous.at || (at === previous.at && row.id > previous.id)))
-                )
-                  return refuse()
-                seen.add(row.id)
-                previous = { at, id: row.id }
-              }
-              const rows = detached(result.rows)
-              const current = {
-                id: result.source_receipt_id,
-                hash: result.source_receipt_hash,
-                rows,
-              }
-              const old = lookups.get(key),
-                other = receiptLookups.get(current.id)
-              if (
-                (old && !isDeepStrictEqual(old, current)) ||
-                (other !== undefined && other !== key)
-              )
-                return refuse()
-              lookups.set(key, current)
-              receiptLookups.set(current.id, key)
-              receipts.set(current.id, Object.freeze({ id: current.id, hash: current.hash }))
-              return rows
-            } catch (error) {
-              return refuse(error)
-            }
-          },
-        })
-        const auditSink: MealCalculationAuditSink = async (event) => {
-          try {
-            const copy = auditSchema.parse(structuredClone(event))
-            if (copy.user_id !== command.ownerId) return refuse()
-            audits.push(detached(copy))
-          } catch (error) {
-            return refuse(error)
-          }
-        }
-        return Object.freeze({
-          action: captured.action,
-          sourceHash: captured.source_hash,
-          capturedAt: asOf,
-          epoch: context.epoch,
-          context: detached(context),
-          sourceReader,
-          sourceReceipts: () => Object.freeze([...receipts.values()]),
-          auditSink,
-          auditEvents: () => Object.freeze([...audits]),
-        })
       } catch (error) {
         return refuse(error)
       }
     },
   })
+}
+
+/** Internal shared source-port seam. The lookup protocol is closed; it never
+ * captures or supplies Auth/source/write authority. The original factory and
+ * linked-source adapter must first validate their actual stored bindings. */
+export type ConversationMealNutritionRpc = (
+  ...args:
+    | [
+        name: 'read_conversation_meal_nutrition_source',
+        args: {
+          p_user_id: string
+          p_command_id: string
+          p_kind: string
+          p_food_name: string | null
+        },
+      ]
+    | [
+        name: 'read_conversation_meal_continuation_nutrition_source',
+        args: {
+          p_user_id: string
+          p_reply_id: string
+          p_kind: string
+          p_food_name: string | null
+        },
+      ]
+) => PromiseLike<unknown>
+const portLookup = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('original') }).strict(),
+  z.object({ kind: z.literal('continuation'), replyId: uuid }).strict(),
+])
+export function createConversationMealStoredSourcePorts(
+  rpc: ConversationMealNutritionRpc,
+  original: BoundConversationMealCommand,
+  rawCapture: unknown,
+  rawLookup: z.infer<typeof portLookup>,
+): CapturedConversationMealSource {
+  try {
+    const command = bound(original),
+      lookup = portLookup.parse(structuredClone(rawLookup))
+    const nutritionCommandId = lookup.kind === 'original' ? command.commandId : lookup.replyId
+    const captured = captureSchema.parse(rawCapture)
+    // Opaque private JSON must survive validation unchanged. A decoder
+    // dropping a reserved key is a refusal, never a rewritten SQL source.
+    if (!isDeepStrictEqual(captured, rawCapture)) return refuse()
+    const context = captured.context
+    if (
+      context.owner_id !== command.ownerId ||
+      context.command_id !== command.commandId ||
+      context.input_hash !== command.inputHash ||
+      !isDeepStrictEqual(context.source_input, command.command) ||
+      new Set(context.source_units).size !== context.source_units.length
+    )
+      return refuse()
+    if (
+      command.command.source.channel === 'text' &&
+      (!isDeepStrictEqual(context.source_units, ['command_text']) || context.media !== null)
+    )
+      return refuse()
+    const asOf = captured.captured_at,
+      cutoff = instant(asOf)
+    const receipts = new Map<string, ConversationMealSourceReceipt>()
+    const lookups = new Map<string, { id: string; hash: string; rows: readonly MealHistoryRow[] }>()
+    const receiptLookups = new Map<string, string>()
+    const audits: MealCalculationAuditEvent[] = []
+    const sourceReader: MealNutritionSourceReader = Object.freeze({
+      ownerId: command.ownerId,
+      asOf,
+      async read(
+        kind: 'trusted_recent' | 'exact_median',
+        foodName: string | null,
+      ): Promise<readonly MealHistoryRow[]> {
+        try {
+          validateLookup(kind, foodName)
+          const key = JSON.stringify([kind, foodName])
+          const result = lookupSchema.parse(
+            rpcData(
+              lookup.kind === 'original'
+                ? await rpc('read_conversation_meal_nutrition_source', {
+                    p_user_id: command.ownerId,
+                    p_command_id: command.commandId,
+                    p_kind: kind,
+                    p_food_name: foodName,
+                  })
+                : await rpc('read_conversation_meal_continuation_nutrition_source', {
+                    p_user_id: command.ownerId,
+                    p_reply_id: lookup.replyId,
+                    p_kind: kind,
+                    p_food_name: foodName,
+                  }),
+              lookup.kind === 'original'
+                ? ['absent', 'stale_epoch', 'source_required', 'source_conflict', 'sealed']
+                : [
+                    'absent',
+                    'stale_epoch',
+                    'source_required',
+                    'source_conflict',
+                    'sealed',
+                    'event_conflict',
+                  ],
+            ),
+          )
+          if (
+            result.owner_id !== command.ownerId ||
+            result.command_id !== nutritionCommandId ||
+            result.as_of !== asOf ||
+            result.rows.length > (kind === 'trusted_recent' ? 50 : 20)
+          )
+            return refuse()
+          const seen = new Set<string>()
+          let previous: { at: bigint; id: string } | undefined
+          for (const row of result.rows) {
+            const at = instant(row.created_at)
+            if (
+              row.user_id !== command.ownerId ||
+              seen.has(row.id) ||
+              at > cutoff ||
+              at < cutoff - 30n * 86_400_000_000_000n ||
+              (row.food_db_id === null) !== (row.food_db === null) ||
+              (kind === 'trusted_recent' && !(row.kcal !== null && row.kcal > 0)) ||
+              (previous && (at > previous.at || (at === previous.at && row.id > previous.id)))
+            )
+              return refuse()
+            seen.add(row.id)
+            previous = { at, id: row.id }
+          }
+          const rows = detached(result.rows)
+          const current = {
+            id: result.source_receipt_id,
+            hash: result.source_receipt_hash,
+            rows,
+          }
+          const old = lookups.get(key),
+            other = receiptLookups.get(current.id)
+          if ((old && !isDeepStrictEqual(old, current)) || (other !== undefined && other !== key))
+            return refuse()
+          lookups.set(key, current)
+          receiptLookups.set(current.id, key)
+          receipts.set(current.id, Object.freeze({ id: current.id, hash: current.hash }))
+          return rows
+        } catch (error) {
+          return refuse(error)
+        }
+      },
+    })
+    const auditSink: MealCalculationAuditSink = async (event) => {
+      try {
+        const copy = auditSchema.parse(structuredClone(event))
+        if (copy.user_id !== command.ownerId) return refuse()
+        audits.push(detached(copy))
+      } catch (error) {
+        return refuse(error)
+      }
+    }
+    return Object.freeze({
+      action: captured.action,
+      sourceHash: captured.source_hash,
+      capturedAt: asOf,
+      epoch: context.epoch,
+      context: detached(context),
+      sourceReader,
+      sourceReceipts: () => Object.freeze([...receipts.values()]),
+      auditSink,
+      auditEvents: () => Object.freeze([...audits]),
+    })
+  } catch (error) {
+    return refuse(error)
+  }
 }

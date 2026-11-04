@@ -125,10 +125,31 @@ actor ConversationMealEditController {
     action: ConversationMealEditOperation.Action, context: ConversationCommandContext,
     operationID: UUID = UUID()
   ) async throws -> ConversationMealEditPreparation {
+    try await prepare(
+      commandID: commandID, originalInputHash: originalInputHash, linked: nil,
+      expectedRevision: expectedRevision, expectedVersion: expectedVersion,
+      action: action, context: context, operationID: operationID)
+  }
+  func prepare(
+    linked identity: ConversationMealLinkedIdentity, expectedRevision: Int,
+    expectedVersion: String, action: ConversationMealEditOperation.Action,
+    context: ConversationCommandContext, operationID: UUID = UUID()
+  ) async throws -> ConversationMealEditPreparation {
+    try await prepare(
+      commandID: identity.commandID, originalInputHash: identity.inputHash, linked: identity,
+      expectedRevision: expectedRevision, expectedVersion: expectedVersion,
+      action: action, context: context, operationID: operationID)
+  }
+  private func prepare(
+    commandID: UUID, originalInputHash: String, linked: ConversationMealLinkedIdentity?,
+    expectedRevision: Int, expectedVersion: String, action: ConversationMealEditOperation.Action,
+    context: ConversationCommandContext, operationID: UUID
+  ) async throws -> ConversationMealEditPreparation {
     let lease = try await validate(context)
     let history = history
     let group = try await network(context: context) {
-      try await history.group(
+      if let linked { return try await history.group(linked: linked, context: context) }
+      return try await history.group(
         commandID: commandID, originalInputHash: originalInputHash, context: context)
     }
     let scope = scope
@@ -138,6 +159,9 @@ actor ConversationMealEditController {
         try lifetime.check()
         try Task.checkCancellation()
         return try context.withCurrentAuthority {
+          guard linked.map({ $0.matches(group: group) }) ?? true else {
+            throw ConversationMealEditControllerError.changed
+          }
           guard let current = group.current, group.revision == expectedRevision,
             current.expectedVersion == expectedVersion
           else { throw ConversationMealEditControllerError.changed }

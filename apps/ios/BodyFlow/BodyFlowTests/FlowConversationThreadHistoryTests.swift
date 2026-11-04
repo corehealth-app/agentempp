@@ -69,7 +69,18 @@ struct FlowConversationThreadHistoryTests {
     #expect(
       history.value(forHTTPHeaderField: "X-Conversation-Epoch")
         == f.page.epoch.uuidString.lowercased())
-    #expect(!requests.contains { $0.url?.path.hasSuffix("/meal") == true })
+    let mealReads = requests.filter { $0.url?.path.hasSuffix("/meal") == true }
+    let childRead = try #require(mealReads.first)
+    #expect(mealReads.count == 1)
+    #expect(childRead.url?.path.contains(child.uuidString.lowercased()) == true)
+    let childBinding = try #require(
+      f.page.items.compactMap(\.childBinding).first { $0.commandID == child })
+    #expect(
+      childRead.value(forHTTPHeaderField: "X-Conversation-Input-Hash") == childBinding.inputHash)
+    // The old harness deliberately has no meal endpoint. The read failure is
+    // visible, while the original unknown report remains sealed and unchanged.
+    #expect(model.currentGroup(commandID: child) == nil && model.groupUnavailable(commandID: child))
+    #expect(try Data(contentsOf: f.disk.store.fileURL(owner: f.owner)) == before)
     await model.close()
     #expect(model.threadRows.isEmpty)
     let reopened = try await f.open()

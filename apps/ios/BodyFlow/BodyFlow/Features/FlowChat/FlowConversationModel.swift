@@ -13,6 +13,12 @@ struct FlowConversationSavedRow: Identifiable, Sendable {
   let feedback: ConversationFeedbackPresentationSnapshot.Bound?
   var id: UUID { command.commandID }
 }
+struct FlowConversationLinkedMealRow: Identifiable, Sendable {
+  let reference: ConversationMealLinkedReadReference
+  let identity: ConversationMealLinkedIdentity?
+  let feedback: ConversationFeedbackPresentationSnapshot.Bound?
+  var id: UUID { reference.commandID }
+}
 struct FlowConversationTerminalQuestion: Sendable {
   let commandID: UUID
   let reason: String?
@@ -58,6 +64,7 @@ final class FlowConversationModel {
   private var threadEntries: [ConversationThreadPageSnapshot.Entry] = []
   private var threadDescriptors: [UUID: ConversationThreadPageSnapshot.Thread] = [:]
   private var threadObservedAt: String?
+  private var threadEditReads: [UUID: ConversationThreadJournalRead] = [:]
   private var knownThreadEvents: [String: ThreadEventPin] = [:]
   private var historyIdentity: ConversationCommandContext.Identity?
   private var historyCursor: String?
@@ -67,6 +74,10 @@ final class FlowConversationModel {
   private(set) var historyUnavailable = false
   private var dismissedQuestions: Set<UUID> = []
   private var currentGroups: [UUID: ConversationMealGroupSnapshot] = [:]
+  // Child observations never enter commands, which stores real v1 reports only.
+  private var linkedReadReferences: [UUID: ConversationMealLinkedReadReference] = [:]
+  private var linkedMealIdentities: [UUID: ConversationMealLinkedIdentity] = [:]
+  private var knownGroupInputHashes: [UUID: String] = [:]
   // Highest owned effect survives page/reset replacement within this exact
   // identity. A late group read cannot make a known edit disappear.
   private var knownGroupEdits: [UUID: ConversationMealEditEffectSnapshot] = [:]
@@ -244,6 +255,37 @@ final class FlowConversationModel {
       return value.binding == child
     }
   }
+  func linkedMealRow(eventID: String) -> FlowConversationLinkedMealRow? {
+    guard hasCurrentScope, historyIdentity == lastIdentity,
+      let event = threadEntries.first(where: { $0.eventID == eventID }),
+      let child = event.childBinding, child.isChild,
+      Self.showsLinkedMeal(event),
+      threadEntries.first(where: {
+        $0.childBinding?.commandID == child.commandID && Self.showsLinkedMeal($0)
+      })?.eventID == eventID,
+      let reference = linkedReadReferences[child.commandID]
+    else { return nil }
+    let feedback = threadEntries.first(where: {
+      if case .fulfillment(let value) = $0.detail { return value.binding == child }
+      return false
+    }).flatMap { threadFeedback(eventID: $0.eventID) }
+    return .init(
+      reference: reference, identity: linkedMealIdentities[child.commandID], feedback: feedback)
+  }
+  private static func showsLinkedMeal(_ entry: ConversationThreadPageSnapshot.Entry) -> Bool {
+    switch entry.detail {
+    case .fulfillment: return true
+    case .edit(let edit): return edit.binding.isChild
+    default: return false
+    }
+  }
+  var unpublishedLinkedMeal: FlowConversationLinkedMealRow? {
+    guard hasUnpublishedLinkedDelivery, let result = mealReplies?.lastDelivered,
+      let identity = linkedMealIdentities[result.replyID]
+    else { return nil }
+    return .init(
+      reference: identity.reference, identity: identity, feedback: mealReplies?.deliveredFeedback)
+  }
   func threadFeedback(eventID: String) -> ConversationFeedbackPresentationSnapshot.Bound? {
     guard let scope = feedbackPresentationScope, historyIdentity == lastIdentity,
       let entry = threadEntries.first(where: { $0.eventID == eventID }),
@@ -387,10 +429,13 @@ final class FlowConversationModel {
         do {
           let editor = try await FlowConversationMealEditModel.open(
             controller: editController,
-            lifecycle: lifecycle, lease: lease
-          ) { [weak model] result, context in
-            model?.receiveMealEdit(result, context: context)
-          }
+            lifecycle: lifecycle, lease: lease,
+            onHistorical: { [weak model] value, context in
+              model?.receiveHistoricalMealEdit(value, context: context)
+            },
+            onSaved: { [weak model] result, context in
+              model?.receiveMealEdit(result, context: context)
+            })
           model.mealEditor = editor
           if let context = model.context { editor.accept(context) }
           await editor.restore()
@@ -495,6 +540,9 @@ final class FlowConversationModel {
               digest: event.readConsistencyDigest, reportStatus: event.reportStatus)
           }
           for incoming in read.page.threads {
+            guard self.linkedReadReferences[incoming.threadID] == nil else {
+              throw MobileAPITransportError.invalidResponse
+            }
             if let known = self.commands[incoming.threadID],
               known.inputHash != incoming.originalCommand.inputHash
             {
@@ -530,9 +578,15 @@ final class FlowConversationModel {
           }
           let combined = reset ? read.page.items : self.threadEntries + read.page.items
           var children: [UUID: (UUID, ConversationThreadPageSnapshot.Binding)] = [:]
+          var references = self.linkedReadReferences
+          var linkedIdentities = self.linkedMealIdentities
+          var hashes = self.knownGroupInputHashes
+          var effects = self.knownGroupEdits
           for event in combined {
             if let child = event.childBinding {
-              guard descriptors[child.commandID] == nil else {
+              guard descriptors[child.commandID] == nil, self.commands[child.commandID] == nil,
+                let parent = descriptors[event.threadID], let decision = parent.terminalReceipt
+              else {
                 throw MobileAPITransportError.invalidResponse
               }
               if let previous = children[child.commandID],
@@ -541,15 +595,42 @@ final class FlowConversationModel {
                 throw MobileAPITransportError.invalidResponse
               }
               children[child.commandID] = (event.threadID, child)
+              let reference = try ConversationMealLinkedReadReference(
+                parentBinding: parent.parentBinding, childBinding: child,
+                parentDecisionHash: decision.decisionHash)
+              guard references[child.commandID].map({ $0 == reference }) ?? true,
+                hashes[child.commandID].map({ $0 == child.inputHash }) ?? true
+              else { throw MobileAPITransportError.invalidResponse }
+              references[child.commandID] = reference
+              if case .fulfillment(let value) = event.detail {
+                let identity = try ConversationMealLinkedIdentity(
+                  parentBinding: parent.parentBinding, childBinding: child,
+                  parentDecisionHash: decision.decisionHash, receipt: value.receipt)
+                guard linkedIdentities[child.commandID].map({ $0 == identity }) ?? true else {
+                  throw MobileAPITransportError.invalidResponse
+                }
+                linkedIdentities[child.commandID] = identity
+              }
             }
-            if case .edit(let edit) = event.detail, !edit.binding.isChild,
-              let known = self.knownGroupEdits[edit.binding.commandID],
-              known.revision == edit.receipt.revision,
-              !Self.sameKnownEdit(known, edit.receipt)
-            {
-              throw MobileAPITransportError.invalidResponse
+            if case .edit(let edit) = event.detail {
+              let id = edit.binding.commandID
+              guard hashes[id].map({ $0 == edit.binding.inputHash }) ?? true else {
+                throw MobileAPITransportError.invalidResponse
+              }
+              hashes[id] = edit.binding.inputHash
+              if let known = effects[id], known.revision == edit.receipt.revision,
+                !Self.sameKnownEdit(known, edit.receipt)
+              {
+                throw MobileAPITransportError.invalidResponse
+              }
+              if effects[id].map({ edit.receipt.revision > $0.revision }) ?? true {
+                effects[id] = edit.receipt
+              }
             }
           }
+          self.linkedReadReferences = references
+          self.linkedMealIdentities = linkedIdentities
+          self.knownGroupInputHashes = hashes
           self.threadEntries = combined
           self.knownThreadEvents = eventPins
           self.threadDescriptors = descriptors
@@ -581,10 +662,14 @@ final class FlowConversationModel {
             self.latestDecision = nil
           }
           for event in read.page.items {
-            // Genuine v1 parent edits retain the existing current-group fence.
-            // Child effects never become a v1 group/editor or an outbox ACK.
-            guard case .edit(let edit) = event.detail, !edit.binding.isChild else { continue }
+            // Parent and child edits share one monotonic current-group fence.
+            // A history observation never acknowledges protected ciphertext.
+            guard case .edit(let edit) = event.detail else { continue }
             let commandID = edit.binding.commandID
+            if self.knownGroupEdits[commandID].map({ edit.receipt.revision >= $0.revision }) ?? true
+            {
+              self.threadEditReads[commandID] = read
+            }
             let newlyKnown =
               self.knownGroupEdits[commandID].map { edit.receipt.revision > $0.revision } ?? true
             if newlyKnown { self.knownGroupEdits[commandID] = edit.receipt }
@@ -596,6 +681,14 @@ final class FlowConversationModel {
             }
           }
         }
+      }
+      if hasCurrentScope, self.context?.observation.isSameGrant(as: context.observation) == true,
+        let commandID = mealEditor?.historicalRecoveryCommandID,
+        linkedReadReferences[commandID] != nil, threadEditReads[commandID] != nil
+      {
+        // Recover only the presentation of an already absent local intent.
+        // The owned fresh group read cannot ACK ciphertext or grant replay.
+        await loadCurrentGroup(commandID: commandID)
       }
     } catch {
       try? await lifecycle.performVisiblePatientStateOperation(lease: lease) {
@@ -766,11 +859,13 @@ final class FlowConversationModel {
   private static func sameKnownEdit(
     _ lhs: ConversationMealEditEffectSnapshot, _ rhs: ConversationMealEditEffectSnapshot
   ) -> Bool {
-    lhs.operationID == rhs.operationID && lhs.operationInputHash == rhs.operationInputHash
-      && lhs.kind == rhs.kind && lhs.revision == rhs.revision
-      && ConversationProtocolInstant(lhs.appliedAt) == ConversationProtocolInstant(rhs.appliedAt)
+    lhs.hasSameFacts(as: rhs)
   }
   private func satisfiesKnownEdits(_ group: ConversationMealGroupSnapshot) -> Bool {
+    guard knownGroupInputHashes[group.commandID].map({ $0 == group.originalInputHash }) ?? true
+    else {
+      return false
+    }
     guard let known = knownGroupEdits[group.commandID] else { return true }
     guard group.revision >= known.revision,
       let observed = ConversationProtocolInstant(group.observedAt),
@@ -794,19 +889,41 @@ final class FlowConversationModel {
       context?.observation.isSameGrant(as: originalContext.observation) == true,
       let group = currentGroups[commandID]
     else { return }
-    do { try editor.beginEditing(group: group, itemID: itemID) } catch { failure = .changed }
+    do {
+      if let linked = linkedMealIdentities[commandID] {
+        try editor.beginEditing(linked: linked, group: group, itemID: itemID)
+      } else {
+        try editor.beginEditing(group: group, itemID: itemID)
+      }
+    } catch { failure = .changed }
   }
   func mealEditActions(commandID: UUID) -> FlowConversationMealEditActions? {
-    guard hasCurrentScope, commands[commandID] != nil, let editor = mealEditor else { return nil }
+    guard hasCurrentScope, let group = currentGroups[commandID], group.current != nil,
+      commands[commandID] != nil || linkedMealIdentities[commandID]?.matches(group: group) == true,
+      let editor = mealEditor
+    else { return nil }
+    let linked = linkedMealIdentities[commandID]
     return .init(
       editItem: { [weak self] item in
         Task { await self?.beginMealEdit(commandID: commandID, itemID: item.id) }
       },
       undoSave: { group in
-        Task { await editor.undoSave(group: group) }
+        Task {
+          if let linked {
+            await editor.undoSave(linked: linked, group: group)
+          } else {
+            await editor.undoSave(group: group)
+          }
+        }
       },
       undoRegistration: { group in
-        Task { await editor.undoRegistration(group: group) }
+        Task {
+          if let linked {
+            await editor.undoRegistration(linked: linked, group: group)
+          } else {
+            await editor.undoRegistration(group: group)
+          }
+        }
       }, isWorking: !editor.canBeginEditing)
   }
   private func receiveMealReply(
@@ -816,7 +933,18 @@ final class FlowConversationModel {
       result.authUserID == context.authUserID, result.parentBinding.ownerID == context.ownerID,
       result.parentBinding.epoch == context.epoch
     else { return }
-    if result.receipt != nil {
+    if let receipt = result.receipt, let child = result.childBinding {
+      guard
+        let identity = try? ConversationMealLinkedIdentity(
+          parentBinding: result.parentBinding, childBinding: child,
+          parentDecisionHash: result.parentDecisionHash, receipt: receipt),
+        commands[identity.commandID] == nil,
+        linkedReadReferences[identity.commandID].map({ $0 == identity.reference }) ?? true,
+        linkedMealIdentities[identity.commandID].map({ $0 == identity }) ?? true,
+        knownGroupInputHashes[identity.commandID].map({ $0 == identity.inputHash }) ?? true
+      else { return }
+      linkedReadReferences[identity.commandID] = identity.reference
+      linkedMealIdentities[identity.commandID] = identity
       dismissedQuestions.insert(result.parentBinding.commandID)
       if blockedDecisionID == result.parentBinding.commandID {
         blockedDecisionID = nil
@@ -843,6 +971,12 @@ final class FlowConversationModel {
     if let command = commands[result.commandID], command.inputHash != result.originalInputHash {
       return
     }
+    guard
+      linkedReadReferences[result.commandID].map({ $0.inputHash == result.originalInputHash })
+        ?? true,
+      knownGroupInputHashes[result.commandID].map({ $0 == result.originalInputHash }) ?? true
+    else { return }
+    knownGroupInputHashes[result.commandID] = result.originalInputHash
     let effect = result.receipt
     if let known = knownGroupEdits[result.commandID], known.revision == effect.revision,
       !Self.sameKnownEdit(known, effect)
@@ -863,25 +997,75 @@ final class FlowConversationModel {
       savedEffectRevision &+= 1
     }
   }
-  func loadCurrentGroup(commandID: UUID) async {
-    guard !isClosed, let lease, let context, hasCurrentScope, let command = commands[commandID]
+  private func receiveHistoricalMealEdit(
+    _ notice: ConversationMealEditHistoricalNotice, context value: ConversationCommandContext
+  ) {
+    guard hasCurrentScope, context?.observation.isSameGrant(as: value.observation) == true,
+      notice.identity.ownerID == value.ownerID, notice.identity.epoch == value.epoch,
+      linkedMealIdentities[notice.identity.commandID] == notice.identity,
+      knownGroupInputHashes[notice.identity.commandID].map({ $0 == notice.identity.inputHash })
+        ?? true
     else { return }
+    let effect = notice.receipt
+    if let known = knownGroupEdits[notice.identity.commandID],
+      known.revision == effect.revision, !known.hasSameFacts(as: effect)
+    {
+      return
+    }
+    if knownGroupEdits[notice.identity.commandID].map({ effect.revision > $0.revision }) ?? true {
+      knownGroupEdits[notice.identity.commandID] = effect
+    }
+    if acknowledgedEdits.insert(
+      .init(commandID: notice.identity.commandID, operationID: effect.operationID)
+    ).inserted {
+      savedEffectRevision &+= 1
+    }
+  }
+  func loadCurrentGroup(commandID: UUID) async {
+    guard !isClosed, let lease, let context, hasCurrentScope else { return }
+    let command = commands[commandID]
+    let reference = linkedReadReferences[commandID]
+    let identity = linkedMealIdentities[commandID]
+    guard command != nil || reference != nil else { return }
     let requestID = UUID()
     groupRequests[commandID] = requestID
     groupFailures.remove(commandID)
     do {
-      let group = try await history.group(
-        commandID: commandID, originalInputHash: command.inputHash, context: context)
+      let group: ConversationMealGroupSnapshot
+      let complete: ConversationMealLinkedIdentity?
+      if let reference {
+        let read = try await history.linkedGroup(reference: reference, context: context)
+        guard identity.map({ $0 == read.identity }) ?? true else {
+          throw MobileAPITransportError.invalidResponse
+        }
+        group = read.group
+        complete = read.identity
+      } else if let command {
+        group = try await history.group(
+          commandID: commandID, originalInputHash: command.inputHash, context: context)
+        complete = nil
+      } else {
+        return
+      }
       try await lifecycle.performVisiblePatientStateOperation(lease: lease) {
         try self.lifetime.check()
         try Task.checkCancellation()
         try context.withCurrentAuthority {
           guard self.groupRequests[commandID] == requestID, self.lastIdentity == context.identity
           else { throw ConversationOutboxError.staleObservation }
-          guard self.satisfiesKnownEdits(group) else {
-            throw MobileAPITransportError.invalidResponse
+          guard self.satisfiesKnownEdits(group),
+            reference.map({ self.linkedReadReferences[commandID] == $0 }) ?? true
+          else { throw MobileAPITransportError.invalidResponse }
+          if let complete {
+            guard self.linkedMealIdentities[commandID].map({ $0 == complete }) ?? true else {
+              throw MobileAPITransportError.invalidResponse
+            }
+            self.linkedMealIdentities[commandID] = complete
           }
           self.currentGroups[commandID] = group
+          if let complete, let read = self.threadEditReads[commandID] {
+            self.mealEditor?.observeThreadJournal(read, linked: complete, group: group)
+          }
         }
       }
     } catch {
@@ -1124,6 +1308,9 @@ final class FlowConversationModel {
     knownThreadEvents.removeAll()
     dismissedQuestions.removeAll()
     knownGroupEdits.removeAll()
+    knownGroupInputHashes.removeAll()
+    linkedReadReferences.removeAll()
+    linkedMealIdentities.removeAll()
     acknowledgedEdits.removeAll()
     currentGroups.removeAll()
     groupRequests.removeAll()
@@ -1194,6 +1381,9 @@ final class FlowConversationModel {
         knownThreadEvents.removeAll()
         dismissedQuestions.removeAll()
         knownGroupEdits.removeAll()
+        knownGroupInputHashes.removeAll()
+        linkedReadReferences.removeAll()
+        linkedMealIdentities.removeAll()
         acknowledgedEdits.removeAll()
         deliveredLinkedEffects.removeAll()
         currentGroups.removeAll()
@@ -1206,6 +1396,13 @@ final class FlowConversationModel {
         queuedMetadata.removeAll()
         blockedDecisionID = nil
         latestDecision = nil
+      }
+      if let previous = context, !previous.observation.isSameGrant(as: value.observation) {
+        resetHistory()
+        currentGroups.removeAll()
+        groupRequests.removeAll()
+        groupFailures.removeAll()
+        saved = saved.map { .init(command: $0.command, receipt: $0.receipt, feedback: nil) }
       }
       context = value
       lastIdentity = value.identity
@@ -1286,6 +1483,7 @@ final class FlowConversationModel {
     threadEntries.removeAll()
     threadDescriptors.removeAll()
     threadObservedAt = nil
+    threadEditReads.removeAll()
     historyIdentity = nil
     historyCursor = nil
     historyHasMore = false

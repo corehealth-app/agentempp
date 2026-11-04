@@ -4258,6 +4258,18 @@ export type Database = {
         Args: { p_user_id: string; p_command_id: string }
         Returns: Json
       }
+      read_conversation_meal_effect: {
+        Args: { p_user_id: string; p_command_id: string }
+        Returns: Json
+      }
+      prepare_conversation_meal: {
+        Args: { p_user_id: string; p_command_id: string; p_resolved: Json }
+        Returns: Json
+      }
+      commit_conversation_meal: {
+        Args: { p_user_id: string; p_command_id: string; p_resolved_hash: string }
+        Returns: Json
+      }
       read_conversation_meal_nutrition_source: {
         Args: {
           p_user_id: string

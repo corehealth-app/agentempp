@@ -59,6 +59,8 @@ final class FlowConversationModel {
   // Highest owned effect survives page/reset replacement within this exact
   // identity. A late group read cannot make a known edit disappear.
   private var knownGroupEdits: [UUID: ConversationMealEditEffectSnapshot] = [:]
+  private var acknowledgedEdits: Set<ConversationMealEditOutboxID> = []
+  private(set) var mealEditor: FlowConversationMealEditModel?
   private var groupRequests: [UUID: UUID] = [:]
   private var groupFailures: Set<UUID> = []
   private let lifetime = FlowConversationLifetime()
@@ -233,6 +235,7 @@ final class FlowConversationModel {
     transport: MobileAPITransport, lifecycle: any SessionLifecycleProviding,
     store: EncryptedConversationOutboxStore = .device,
     keyVault: ConversationOutboxKeyVault = .init(), media: FlowConversationMediaDependencies? = nil,
+    editing: FlowConversationMealEditingDependencies? = nil,
     historyPageSize: Int = 10
   ) async throws -> FlowConversationModel {
     guard (1...25).contains(historyPageSize) else { throw ConversationOutboxError.invalidCommand }
@@ -264,6 +267,31 @@ final class FlowConversationModel {
       }
       try await controller.publishSnapshot(model.publisher(for: model.publicationID))
       guard model.hasCurrentScope else { throw ConversationMealCommandControllerError.unavailable }
+      if let editing {
+        let editController = try await ConversationMealEditController.open(
+          transport: transport, lifecycle: lifecycle, store: editing.store,
+          keyVault: editing.keyVault)
+        do {
+          let editor = try await FlowConversationMealEditModel.open(
+            controller: editController,
+            lifecycle: lifecycle, lease: lease
+          ) { [weak model] result, context in
+            model?.receiveMealEdit(result, context: context)
+          }
+          model.mealEditor = editor
+          if let context = model.context { editor.accept(context) }
+          await editor.restore()
+          try await lifecycle.validate(lease)
+          try model.lifetime.check()
+          try Task.checkCancellation()
+          guard model.hasCurrentScope else {
+            throw ConversationMealCommandControllerError.unavailable
+          }
+        } catch {
+          await editController.close()
+          throw error
+        }
+      }
       return model
     } catch {
       await model.close()
@@ -373,6 +401,7 @@ final class FlowConversationModel {
               }
             }
           }
+          self.mealEditor?.observeJournal(read)
         }
       }
       // Page reading itself has no delivery side effect. Each exact local
@@ -441,6 +470,62 @@ final class FlowConversationModel {
   func groupUnavailable(commandID: UUID) -> Bool {
     hasCurrentScope && groupFailures.contains(commandID)
   }
+  func beginMealEdit(commandID: UUID, itemID: UUID) async {
+    guard let editor = mealEditor, editor.canBeginEditing, let originalContext = context,
+      hasCurrentScope
+    else { return }
+    await loadCurrentGroup(commandID: commandID)
+    guard hasCurrentScope,
+      context?.observation.isSameGrant(as: originalContext.observation) == true,
+      let group = currentGroups[commandID]
+    else { return }
+    do { try editor.beginEditing(group: group, itemID: itemID) } catch { failure = .changed }
+  }
+  func mealEditActions(commandID: UUID) -> FlowConversationMealEditActions? {
+    guard hasCurrentScope, commands[commandID] != nil, let editor = mealEditor else { return nil }
+    return .init(
+      editItem: { [weak self] item in
+        Task { await self?.beginMealEdit(commandID: commandID, itemID: item.id) }
+      },
+      undoSave: { group in
+        Task { await editor.undoSave(group: group) }
+      },
+      undoRegistration: { group in
+        Task { await editor.undoRegistration(group: group) }
+      }, isWorking: !editor.canBeginEditing)
+  }
+  private func receiveMealEdit(
+    _ result: ConversationMealEditResultSnapshot, context value: ConversationCommandContext
+  ) {
+    guard hasCurrentScope, context?.observation.isSameGrant(as: value.observation) == true,
+      result.ownerID == value.ownerID, result.epoch == value.epoch
+    else { return }
+    // A cold-restored operation already has a fully bound controller ACK;
+    // its original journal page may still be unavailable. Missing history
+    // cannot suppress factual refresh, while a known contradiction must.
+    if let command = commands[result.commandID], command.inputHash != result.originalInputHash {
+      return
+    }
+    let effect = result.receipt
+    if let known = knownGroupEdits[result.commandID], known.revision == effect.revision,
+      !Self.sameKnownEdit(known, effect)
+    {
+      return
+    }
+    if knownGroupEdits[result.commandID].map({ effect.revision > $0.revision }) ?? true {
+      knownGroupEdits[result.commandID] = effect
+    }
+    // Factual ACK survives all subsequent refresh failures. Invalidate both
+    // cached and in-flight reads before publishing the official-panel signal.
+    currentGroups.removeValue(forKey: result.commandID)
+    groupRequests.removeValue(forKey: result.commandID)
+    groupFailures.remove(result.commandID)
+    if acknowledgedEdits.insert(.init(commandID: result.commandID, operationID: effect.operationID))
+      .inserted
+    {
+      savedEffectRevision &+= 1
+    }
+  }
   func loadCurrentGroup(commandID: UUID) async {
     guard !isClosed, let lease, let context, hasCurrentScope, let command = commands[commandID]
     else { return }
@@ -493,7 +578,10 @@ final class FlowConversationModel {
   }
   func refreshConversation() async {
     await refresh()
-    if hasCurrentScope { await loadHistory() }
+    if hasCurrentScope {
+      await mealEditor?.restore()
+      await loadHistory()
+    }
   }
   func submit() async {
     guard canSubmit, let identity = lastIdentity else { return }
@@ -690,6 +778,7 @@ final class FlowConversationModel {
     resetHistory()
     dismissedQuestions.removeAll()
     knownGroupEdits.removeAll()
+    acknowledgedEdits.removeAll()
     currentGroups.removeAll()
     groupRequests.removeAll()
     groupFailures.removeAll()
@@ -706,6 +795,8 @@ final class FlowConversationModel {
     isRefreshing = false
     await mediaService?.close()
     mediaService = nil
+    await mealEditor?.close()
+    mealEditor = nil
     await controller.close()
     if let id = workID {
       workID = nil
@@ -723,6 +814,7 @@ final class FlowConversationModel {
     guard !isClosed else { return }
     switch event {
     case .scopeSuspended:
+      mealEditor?.suspend()
       resetHistory()
       currentGroups.removeAll()
       groupRequests.removeAll()
@@ -751,6 +843,7 @@ final class FlowConversationModel {
         resetHistory()
         dismissedQuestions.removeAll()
         knownGroupEdits.removeAll()
+        acknowledgedEdits.removeAll()
         currentGroups.removeAll()
         groupRequests.removeAll()
         groupFailures.removeAll()
@@ -764,6 +857,7 @@ final class FlowConversationModel {
       }
       context = value
       lastIdentity = value.identity
+      mealEditor?.accept(value)
       failure = nil
     case .snapshot(let value):
       guard let context, hasCurrentScope else { return }

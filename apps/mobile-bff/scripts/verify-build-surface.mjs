@@ -3,15 +3,19 @@ import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'nod
 import { dirname, extname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const expectedMobileRouteCount = 82
-const expectedMobileRouteHash = '81cebb1636073fffe9bb8316c11dd5e2aef6603ead95b7007458719d0bcaa53e'
-const expectedRouteCount = 83
-const expectedRouteHash = '7da84c6d7303c8dc1bccaea6c75f05546d399ebdf794375ead21e186e14bacf9'
+const expectedMobileRouteCount = 84
+const expectedMobileRouteHash = 'ce7e7f5eeef07c517594e9e5d188e9e469e318eaa5e73788b387254715b56297'
+const expectedRouteCount = 85
+const expectedRouteHash = '55f824f5d65f2af80403535744fa3e1bf54dc2c01082bfb33276df0b32f665a5'
 const addedReadEditRoutes = new Set([
   '/api/mobile/v1/conversation/journal',
   '/api/mobile/v1/conversation/meal-commands/[commandId]/meal',
   '/api/mobile/v1/conversation/meal-commands/[commandId]/edits/[operationId]',
   '/api/mobile/v1/conversation/meal-commands/[commandId]/edits/[operationId]/reconcile',
+])
+const addedReplyRoutes = new Set([
+  '/api/mobile/v1/conversation/commands/[commandId]/replies/[replyId]',
+  '/api/mobile/v1/conversation/commands/[commandId]/replies',
 ])
 const revenueCatRoute = '/api/webhooks/revenuecat'
 const revenueCatAppPath = `${revenueCatRoute}/route`
@@ -547,6 +551,27 @@ function verifyBuildSurface() {
 
   for (const [label, paths, count, hash] of [
     [
+      'PRIOR82_MOBILE',
+      surface.mobileRoutePaths,
+      82,
+      '81cebb1636073fffe9bb8316c11dd5e2aef6603ead95b7007458719d0bcaa53e',
+    ],
+    [
+      'PRIOR83_ALL',
+      surface.routePaths,
+      83,
+      '7da84c6d7303c8dc1bccaea6c75f05546d399ebdf794375ead21e186e14bacf9',
+    ],
+  ]) {
+    const prior = paths.filter((path) => !addedReplyRoutes.has(path)),
+      priorHash = sha256(prior.map((path) => `${path}\n`).join(''))
+    console.info(`BUILD_${label}_ROUTE_PATH_COUNT=${prior.length}`)
+    console.info(`BUILD_${label}_ROUTE_PATH_STREAM_SHA256=${priorHash}`)
+    if (prior.length !== count) fail(`${label}_ROUTE_COUNT:${prior.length}`)
+    if (priorHash !== hash) fail(`${label}_ROUTE_HASH:${priorHash}`)
+  }
+  for (const [label, paths, count, hash] of [
+    [
       'PRIOR_MOBILE',
       surface.mobileRoutePaths,
       78,
@@ -559,7 +584,9 @@ function verifyBuildSurface() {
       '132ed9ce40561f48626a98b93905039b7f49e9ffbb3d890c83399b1e7927b6fc',
     ],
   ]) {
-    const prior = paths.filter((path) => !addedReadEditRoutes.has(path))
+    const prior = paths.filter(
+      (path) => !addedReadEditRoutes.has(path) && !addedReplyRoutes.has(path),
+    )
     const priorHash = sha256(prior.map((path) => `${path}\n`).join(''))
     console.info(`BUILD_${label}_ROUTE_PATH_COUNT=${prior.length}`)
     console.info(`BUILD_${label}_ROUTE_PATH_STREAM_SHA256=${priorHash}`)

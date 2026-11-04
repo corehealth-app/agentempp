@@ -3,8 +3,8 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const expectedCount = 82
-const expectedHash = '1edcfecc752f7657306d9a4f852c9ff3b37f2770270441a3bb37972366957c98'
+const expectedCount = 84
+const expectedHash = '092bd3ded789b200042cf29119e279e22d6900f8cdc86889108f28d2764673f3'
 const previousCount = 78
 const previousHash = '3ab0b1fdb146ab6a06846b5702cfa70a1a7b997d73b3235655ec248c32f68874'
 const addedReadEditRoutes = new Set([
@@ -13,9 +13,14 @@ const addedReadEditRoutes = new Set([
   'conversation/meal-commands/[commandId]/edits/[operationId]/route.ts',
   'conversation/meal-commands/[commandId]/edits/[operationId]/reconcile/route.ts',
 ])
+const addedReplyRoutes = new Set([
+  'conversation/commands/[commandId]/replies/[replyId]/route.ts',
+  'conversation/commands/[commandId]/replies/route.ts',
+])
 const boundedConversationRoutes = new Set([
   'conversation/meal-commands/route.ts',
   ...addedReadEditRoutes,
+  ...addedReplyRoutes,
 ])
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
@@ -175,7 +180,14 @@ for (const [surface, records] of [
   ['SOURCE', sources],
   ['WRAPPER', wrappers],
 ]) {
-  const previous = records.filter((record) => !addedReadEditRoutes.has(record.path))
+  const prior82 = records.filter((record) => !addedReplyRoutes.has(record.path))
+  const prior82Hash = hashRecords(prior82)
+  console.info(`${surface}_PRIOR82_ROUTE_EXPORT_COUNT=${prior82.length}`)
+  console.info(`${surface}_PRIOR82_ROUTE_EXPORT_STREAM_SHA256=${prior82Hash}`)
+  if (prior82.length !== 82) fail(`${surface}_PRIOR82_COUNT:${prior82.length}`)
+  if (prior82Hash !== '1edcfecc752f7657306d9a4f852c9ff3b37f2770270441a3bb37972366957c98')
+    fail(`${surface}_PRIOR82_HASH:${prior82Hash}`)
+  const previous = prior82.filter((record) => !addedReadEditRoutes.has(record.path))
   const hash = hashRecords(previous)
   console.info(`${surface}_PRIOR_ROUTE_EXPORT_COUNT=${previous.length}`)
   console.info(`${surface}_PRIOR_ROUTE_EXPORT_STREAM_SHA256=${hash}`)

@@ -1,0 +1,500 @@
+{
+  "source": "createSupabaseConversationMealFeedbackPresentation@794850c361bf0499fec660d034458c5a8d8fd14d",
+  "owner": "10000000-0000-4000-8000-000000000001",
+  "command_id": "10000000-0000-4000-8000-000000000009",
+  "epoch": "50000000-0000-4000-8000-000000000001",
+  "admitted_at": "2026-11-03T10:00:00Z",
+  "registration_id": "20000000-0000-4000-8000-000000000001",
+  "local_date": "2026-11-03",
+  "meal_kind": "cafe",
+  "log_ids": [
+    "30000000-0000-4000-8000-000000000001"
+  ],
+  "cases": [
+    {
+      "label": "unrestricted",
+      "payload": {
+        "schema": "conversation.feedback-presentation.v1",
+        "mode": "historical",
+        "assistant": "Flow AI",
+        "original": {
+          "schema": "registration.feedback.v2",
+          "registration_id": "20000000-0000-4000-8000-000000000001",
+          "kind": "meal",
+          "local_date": "2026-11-03"
+        },
+        "current_policy": {
+          "version": 1,
+          "observed_at": "2026-11-04T12:00:00.000001Z",
+          "assessment": "complete",
+          "recording_allowed": true,
+          "pause_weight_loss_guidance": false,
+          "professional_assessment_recommended": false,
+          "phase_selection_pending": false,
+          "target_source": "assigned_phase",
+          "hide": {
+            "objective": false,
+            "calories": false,
+            "protein": false,
+            "balance": false,
+            "block": false,
+            "budget": false
+          }
+        },
+        "provenance": {
+          "epoch": "50000000-0000-4000-8000-000000000001",
+          "command_id": "10000000-0000-4000-8000-000000000009",
+          "observed_at": "2026-11-04T12:00:00.000001Z"
+        },
+        "status": "available",
+        "format": "sections",
+        "recorded": {
+          "kind": "meal",
+          "meal_kind": "cafe",
+          "items": [
+            {
+              "kcal": 126.12,
+              "protein_g": 6.3,
+              "carbs_g": 9.5,
+              "fat_g": 6.5,
+              "log_id": "30000000-0000-4000-8000-000000000001",
+              "food_name": "leite integral",
+              "quantity_g": 206,
+              "quantity": {
+                "value": 200,
+                "unit": "mL",
+                "estimated": true,
+                "reference_id": "fao-infoods-v2-whole-milk-tb"
+              },
+              "nutrition_source": "product_label"
+            }
+          ],
+          "totals": {
+            "kcal": 126.1,
+            "protein_g": 6.3,
+            "carbs_g": 9.5,
+            "fat_g": 6.5
+          }
+        },
+        "sections": [
+          {
+            "key": "saved",
+            "text": "Café da manhã registrado."
+          },
+          {
+            "key": "items",
+            "text": "leite integral · 200 mL (estimado, editável)\n126,12 kcal | Proteína: 6,3 g | Carboidratos: 9,5 g | Gorduras: 6,5 g"
+          },
+          {
+            "key": "summary",
+            "text": "Total aproximado da refeição: 126,1 kcal | Proteína: 6,3 g | Carboidratos: 9,5 g | Gorduras: 6,5 g"
+          },
+          {
+            "key": "day",
+            "text": "No momento deste registro (2026-11-03):\nDia: 2026-11-03\nConsumido: 126 / 1.900 kcal (6,6%).\nProteína: 6,3 / 120 g (5,3%).\nRestam para comida: 1.774 kcal.\nExercício registrado: 504 kcal. Esse gasto não aumenta a comida disponível."
+          },
+          {
+            "key": "block",
+            "text": "Progresso consolidado no momento do registro:\nBloco 7.700: 500 / 7.700 kcal (6%).\nSaldo total já consolidado: 15.900 kcal · Blocos concluídos: 2.\nReferência teórica; este registro não cria crédito imediato nem garante uma mudança física de peso."
+          },
+          {
+            "key": "education",
+            "text": "Comentário educativo no momento do registro:\nEntre os itens registrados, leite integral tem a maior contribuição de energia e leite integral a maior contribuição de proteína. Mudar uma porção afeta a energia e os nutrientes; compare os itens antes de decidir o que ajustar. Seu bloco de longo prazo usa dias consolidados, sem crédito imediato por este registro. Quer me contar o que você prefere para conversarmos sobre um ajuste adequado?"
+          }
+        ]
+      }
+    },
+    {
+      "label": "pause",
+      "payload": {
+        "schema": "conversation.feedback-presentation.v1",
+        "mode": "historical",
+        "assistant": "Flow AI",
+        "original": {
+          "schema": "registration.feedback.v2",
+          "registration_id": "20000000-0000-4000-8000-000000000001",
+          "kind": "meal",
+          "local_date": "2026-11-03"
+        },
+        "current_policy": {
+          "version": 1,
+          "observed_at": "2026-11-04T12:00:00.000001Z",
+          "assessment": "complete",
+          "recording_allowed": true,
+          "pause_weight_loss_guidance": true,
+          "professional_assessment_recommended": true,
+          "phase_selection_pending": false,
+          "target_source": "official_only",
+          "hide": {
+            "objective": false,
+            "calories": false,
+            "protein": false,
+            "balance": false,
+            "block": false,
+            "budget": false
+          }
+        },
+        "provenance": {
+          "epoch": "50000000-0000-4000-8000-000000000001",
+          "command_id": "10000000-0000-4000-8000-000000000009",
+          "observed_at": "2026-11-04T12:00:00.000001Z"
+        },
+        "status": "available",
+        "format": "sections",
+        "recorded": {
+          "kind": "meal",
+          "meal_kind": "cafe",
+          "items": [
+            {
+              "kcal": 126.12,
+              "protein_g": 6.3,
+              "carbs_g": 9.5,
+              "fat_g": 6.5,
+              "log_id": "30000000-0000-4000-8000-000000000001",
+              "food_name": "leite integral",
+              "quantity_g": 206,
+              "quantity": {
+                "value": 200,
+                "unit": "mL",
+                "estimated": true,
+                "reference_id": "fao-infoods-v2-whole-milk-tb"
+              },
+              "nutrition_source": "product_label"
+            }
+          ],
+          "totals": {
+            "kcal": 126.1,
+            "protein_g": 6.3,
+            "carbs_g": 9.5,
+            "fat_g": 6.5
+          }
+        },
+        "sections": [
+          {
+            "key": "saved",
+            "text": "Café da manhã registrado."
+          },
+          {
+            "key": "items",
+            "text": "leite integral · 200 mL (estimado, editável)\n126,12 kcal | Proteína: 6,3 g | Carboidratos: 9,5 g | Gorduras: 6,5 g"
+          },
+          {
+            "key": "summary",
+            "text": "Total aproximado da refeição: 126,1 kcal | Proteína: 6,3 g | Carboidratos: 9,5 g | Gorduras: 6,5 g"
+          },
+          {
+            "key": "day",
+            "text": "No momento deste registro (2026-11-03):\nDia: 2026-11-03\nConsumido: 126 kcal. Meta indisponível.\nProteína: 6,3 g. Meta indisponível.\nSaldo alimentar indisponível.\nExercício registrado: 504 kcal. Esse gasto não aumenta a comida disponível."
+          },
+          {
+            "key": "block",
+            "text": "Progresso histórico sob as orientações atuais:\nAs orientações de longo prazo estão pausadas."
+          },
+          {
+            "key": "education",
+            "text": "Seu registro continua disponível. As orientações de perda de peso estão pausadas; procure avaliação profissional antes de alterar suas metas."
+          }
+        ]
+      }
+    },
+    {
+      "label": "protected",
+      "payload": {
+        "schema": "conversation.feedback-presentation.v1",
+        "mode": "historical",
+        "assistant": "Flow AI",
+        "original": {
+          "schema": "registration.feedback.v2",
+          "registration_id": "20000000-0000-4000-8000-000000000001",
+          "kind": "meal",
+          "local_date": "2026-11-03"
+        },
+        "current_policy": {
+          "version": 1,
+          "observed_at": "2026-11-04T12:00:00.000001Z",
+          "assessment": "complete",
+          "recording_allowed": true,
+          "pause_weight_loss_guidance": true,
+          "professional_assessment_recommended": true,
+          "phase_selection_pending": false,
+          "target_source": "official_only",
+          "hide": {
+            "objective": false,
+            "calories": false,
+            "protein": true,
+            "balance": false,
+            "block": false,
+            "budget": false
+          }
+        },
+        "provenance": {
+          "epoch": "50000000-0000-4000-8000-000000000001",
+          "command_id": "10000000-0000-4000-8000-000000000009",
+          "observed_at": "2026-11-04T12:00:00.000001Z"
+        },
+        "status": "available",
+        "format": "sections",
+        "recorded": {
+          "kind": "meal",
+          "meal_kind": "cafe",
+          "items": [
+            {
+              "kcal": 126.12,
+              "protein_g": 6.3,
+              "carbs_g": 9.5,
+              "fat_g": 6.5,
+              "log_id": "30000000-0000-4000-8000-000000000001",
+              "food_name": "leite integral",
+              "quantity_g": 206,
+              "quantity": {
+                "value": 200,
+                "unit": "mL",
+                "estimated": true,
+                "reference_id": "fao-infoods-v2-whole-milk-tb"
+              },
+              "nutrition_source": "product_label"
+            }
+          ],
+          "totals": {
+            "kcal": 126.1,
+            "protein_g": 6.3,
+            "carbs_g": 9.5,
+            "fat_g": 6.5
+          }
+        },
+        "sections": [
+          {
+            "key": "saved",
+            "text": "Café da manhã registrado."
+          },
+          {
+            "key": "items",
+            "text": "leite integral · 200 mL (estimado, editável)\n126,12 kcal | Proteína: 6,3 g | Carboidratos: 9,5 g | Gorduras: 6,5 g"
+          },
+          {
+            "key": "summary",
+            "text": "Total aproximado da refeição: 126,1 kcal | Proteína: 6,3 g | Carboidratos: 9,5 g | Gorduras: 6,5 g"
+          },
+          {
+            "key": "day",
+            "text": "No momento deste registro (2026-11-03):\nDia: 2026-11-03\nConsumido: 126 kcal. Meta indisponível.\nProteína: 6,3 g. Meta indisponível.\nSaldo alimentar indisponível.\nExercício registrado: 504 kcal. Esse gasto não aumenta a comida disponível."
+          },
+          {
+            "key": "block",
+            "text": "Progresso histórico sob as orientações atuais:\nAs orientações de longo prazo estão pausadas."
+          },
+          {
+            "key": "education",
+            "text": "Seu registro continua disponível. As orientações de perda de peso estão pausadas; procure avaliação profissional antes de alterar suas metas."
+          }
+        ]
+      }
+    },
+    {
+      "label": "incomplete",
+      "payload": {
+        "schema": "conversation.feedback-presentation.v1",
+        "mode": "historical",
+        "assistant": "Flow AI",
+        "original": {
+          "schema": "registration.feedback.v2",
+          "registration_id": "20000000-0000-4000-8000-000000000001",
+          "kind": "meal",
+          "local_date": "2026-11-03"
+        },
+        "current_policy": {
+          "version": 1,
+          "observed_at": "2026-11-04T12:00:00.000001Z",
+          "assessment": "incomplete",
+          "recording_allowed": true,
+          "pause_weight_loss_guidance": false,
+          "professional_assessment_recommended": false,
+          "phase_selection_pending": false,
+          "target_source": "official_only",
+          "hide": {
+            "objective": false,
+            "calories": false,
+            "protein": false,
+            "balance": false,
+            "block": false,
+            "budget": false
+          }
+        },
+        "provenance": {
+          "epoch": "50000000-0000-4000-8000-000000000001",
+          "command_id": "10000000-0000-4000-8000-000000000009",
+          "observed_at": "2026-11-04T12:00:00.000001Z"
+        },
+        "status": "available",
+        "format": "sections",
+        "recorded": {
+          "kind": "meal",
+          "meal_kind": "cafe",
+          "items": [
+            {
+              "kcal": 126.12,
+              "protein_g": 6.3,
+              "carbs_g": 9.5,
+              "fat_g": 6.5,
+              "log_id": "30000000-0000-4000-8000-000000000001",
+              "food_name": "leite integral",
+              "quantity_g": 206,
+              "quantity": {
+                "value": 200,
+                "unit": "mL",
+                "estimated": true,
+                "reference_id": "fao-infoods-v2-whole-milk-tb"
+              },
+              "nutrition_source": "product_label"
+            }
+          ],
+          "totals": {
+            "kcal": 126.1,
+            "protein_g": 6.3,
+            "carbs_g": 9.5,
+            "fat_g": 6.5
+          }
+        },
+        "sections": [
+          {
+            "key": "saved",
+            "text": "Café da manhã registrado."
+          },
+          {
+            "key": "items",
+            "text": "leite integral · 200 mL (estimado, editável)\n126,12 kcal | Proteína: 6,3 g | Carboidratos: 9,5 g | Gorduras: 6,5 g"
+          },
+          {
+            "key": "summary",
+            "text": "Total aproximado da refeição: 126,1 kcal | Proteína: 6,3 g | Carboidratos: 9,5 g | Gorduras: 6,5 g"
+          },
+          {
+            "key": "day",
+            "text": "No momento deste registro (2026-11-03):\nO resumo oficial deste dia está indisponível; seu registro foi salvo."
+          },
+          {
+            "key": "block",
+            "text": "Progresso histórico sob as orientações atuais:\nOs dados consolidados do bloco estão indisponíveis."
+          },
+          {
+            "key": "education",
+            "text": "O comentário educativo está indisponível; seu registro continua salvo."
+          }
+        ]
+      }
+    },
+    {
+      "label": "legacy",
+      "payload": {
+        "schema": "conversation.feedback-presentation.v1",
+        "mode": "historical",
+        "assistant": "Flow AI",
+        "original": {
+          "schema": "registration.feedback.v1",
+          "registration_id": "20000000-0000-4000-8000-000000000001",
+          "kind": "meal",
+          "local_date": "2026-11-03"
+        },
+        "current_policy": {
+          "version": 1,
+          "observed_at": "2026-11-04T12:00:00.000001Z",
+          "assessment": "complete",
+          "recording_allowed": true,
+          "pause_weight_loss_guidance": false,
+          "professional_assessment_recommended": false,
+          "phase_selection_pending": false,
+          "target_source": "assigned_phase",
+          "hide": {
+            "objective": false,
+            "calories": false,
+            "protein": false,
+            "balance": false,
+            "block": false,
+            "budget": false
+          }
+        },
+        "provenance": {
+          "epoch": "50000000-0000-4000-8000-000000000001",
+          "command_id": "10000000-0000-4000-8000-000000000009",
+          "observed_at": "2026-11-04T12:00:00.000001Z"
+        },
+        "status": "available",
+        "format": "legacy",
+        "legacy_body": {
+          "schema": "registration.feedback.v1",
+          "registration_id": "20000000-0000-4000-8000-000000000001",
+          "kind": "meal",
+          "locale": "en",
+          "meal_totals": {
+            "kcal": 126.1,
+            "protein_g": 6.3,
+            "carbs_g": 9.5,
+            "fat_g": 6.5
+          },
+          "day": null,
+          "lines": [
+            {
+              "key": "meal_totals",
+              "text": "Synthetic total"
+            },
+            {
+              "key": "day_unavailable",
+              "text": "Unavailable"
+            }
+          ],
+          "food_comment": null,
+          "incentive": null
+        }
+      }
+    },
+    {
+      "label": "placeholder",
+      "payload": {
+        "schema": "conversation.feedback-presentation.v1",
+        "mode": "historical",
+        "assistant": "Flow AI",
+        "original": {
+          "schema": "registration.feedback.v1",
+          "registration_id": "20000000-0000-4000-8000-000000000001",
+          "kind": "meal",
+          "local_date": "2026-11-03"
+        },
+        "current_policy": {
+          "version": 1,
+          "observed_at": "2026-11-04T12:00:00.000001Z",
+          "assessment": "complete",
+          "recording_allowed": true,
+          "pause_weight_loss_guidance": true,
+          "professional_assessment_recommended": true,
+          "phase_selection_pending": false,
+          "target_source": "official_only",
+          "hide": {
+            "objective": false,
+            "calories": false,
+            "protein": false,
+            "balance": false,
+            "block": false,
+            "budget": false
+          }
+        },
+        "provenance": {
+          "epoch": "50000000-0000-4000-8000-000000000001",
+          "command_id": "10000000-0000-4000-8000-000000000009",
+          "observed_at": "2026-11-04T12:00:00.000001Z"
+        },
+        "status": "unavailable",
+        "format": "placeholder",
+        "sections": [
+          {
+            "key": "saved",
+            "text": "Your meal remains saved."
+          },
+          {
+            "key": "summary",
+            "text": "This historical summary is currently unavailable. Your meal remains saved."
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -5,6 +5,64 @@ import Testing
 
 @Suite("Dormant authenticated conversation command controller")
 struct ConversationMealCommandControllerTests {
+    @Test func terminalNotRecordedRestoresAfterReopenWithoutFoodACKOrAnotherPOST() async throws {
+        let f = try await Fixture.make(); defer { f.disk.remove() }
+        await f.http.stub.respond { request, _ in
+            request.url?.path.hasSuffix("/session") == true ? try f.wire.sessionReply() : try f.wire.stateReply("not_recorded")
+        }
+        let first = try await f.open(), probe = await MainActor.run { ConversationControllerProbe() }
+        try await first.send(commandID: f.wire.command.commandID) { probe.events.append($0) }
+        await first.close()
+        let original = try f.disk.store.load(owner: f.owner, key: f.disk.key)
+        let reopened = try await f.open()
+        try await reopened.reconcile(commandID: f.wire.command.commandID) { probe.events.append($0) }
+        let decision = try #require(await probe.states.last)
+        #expect(decision.value.status == .notRecorded && decision.value.reason == "missing_quantity" && decision.value.foodIndexes == [0])
+        let saved = await probe.saved
+        #expect(!decision.canResubmit && saved.isEmpty)
+        await #expect(throws: ConversationMealCommandControllerError.reconciliationRequired) { try await reopened.resubmit(commandID: f.wire.command.commandID) { probe.events.append($0) } }
+        let rows = try f.disk.store.load(owner: f.owner, key: f.disk.key)
+        #expect(rows.count == 1 && rows[0].commandID == original[0].commandID && rows[0].wireBody == original[0].wireBody && rows[0].hold == .notRecorded)
+        #expect(await f.http.stub.requests.filter { $0.httpMethod == "POST" }.count == 1)
+        await reopened.close()
+    }
+
+    @Test func preparedSourceCannotBeRetaggedToNewPatientBeforeEnqueueStarts() async throws {
+        let f = try await Fixture.make(seed: false); defer { f.disk.remove() }
+        let mapping = ConversationControllerMapping(owner: f.wire.ownerID)
+        await f.http.stub.respond { _, _ in try f.wire.sessionReply(owner: await mapping.owner) }
+        let c = try await f.open(), probe = await MainActor.run { ConversationControllerProbe() }
+        try await c.refreshSession { probe.events.append($0) }
+        let original = try #require(await probe.contexts.last)
+        let command = try ConversationMealCommand(source: .text("source prepared for patient A"))
+        await mapping.replace(UUID())
+        try await c.refreshSession { probe.events.append($0) }
+        await #expect(throws: ConversationOutboxError.invalidServerObservation) {
+            try await c.enqueue(command: command, expectedContext: original.identity) { probe.events.append($0) }
+        }
+        #expect(try f.disk.store.load(owner: f.owner, key: f.disk.key).isEmpty)
+        #expect(await f.http.stub.requests.filter { $0.httpMethod == "POST" }.isEmpty)
+        await c.close()
+    }
+
+    @Test func acceptedContextCarriesRealBackendIdentityAndOldGrantRevokesOnRefresh() async throws {
+        let f = try await Fixture.make(); defer { f.disk.remove() }
+        await f.http.stub.respond { _, _ in try f.wire.sessionReply() }
+        let c = try await f.open(), probe = await MainActor.run { ConversationControllerProbe() }
+        try await c.refreshSession { probe.events.append($0) }
+        let first = try #require(await probe.contexts.last)
+        #expect(first.authUserID.uuidString.lowercased() == f.lease.userID)
+        #expect(first.ownerID == f.wire.ownerID && first.authUserID != first.ownerID)
+        #expect(first.epoch == f.wire.epoch && first.sessionGeneration == f.lease.generation)
+        #expect(first.observedAt == "2026-11-04T12:00:00.000000001Z")
+        try first.withCurrentAuthority {}
+        try await c.refreshSession { probe.events.append($0) }
+        #expect(throws: ConversationOutboxError.staleObservation) { try first.withCurrentAuthority {} }
+        try #require(await probe.contexts.last).withCurrentAuthority {}
+        await c.close()
+        #expect(throws: ConversationOutboxError.staleObservation) { try first.withCurrentAuthority {} }
+    }
+
     @Test func accountCancellationClosesRetainedControllerAndFinishesItsOwnedWork() async throws {
         let f = try await Fixture.make(); defer { f.disk.remove() }
         await f.http.stub.respond { _, _ in try f.wire.sessionReply() }
@@ -416,6 +474,7 @@ actor ConversationControllerMapping {
 }
 @MainActor final class ConversationControllerProbe {
     var events: [ConversationMealCommandEvent] = []
+    var contexts: [ConversationCommandContext] { events.compactMap { if case let .scopeAccepted(v) = $0 { v } else { nil } } }
     var saved: [ConversationOutboxSavedPublication] { events.compactMap { if case let .saved(v) = $0 { v } else { nil } } }
     var states: [(value: ConversationMealCommandStateSnapshot, canResubmit: Bool)] { events.compactMap { if case let .state(v, allowed) = $0 { (v, allowed) } else { nil } } }
     var snapshots: [ConversationOutboxViewSnapshot] { events.compactMap { if case let .snapshot(v) = $0 { v } else { nil } } }

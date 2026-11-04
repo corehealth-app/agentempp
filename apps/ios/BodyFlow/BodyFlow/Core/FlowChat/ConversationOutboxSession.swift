@@ -23,7 +23,10 @@ struct ConversationOutboxTicket: Sendable, CustomStringConvertible, CustomReflec
 private final class ConversationOutboxLifetime: @unchecked Sendable {
     private let lock = NSLock()
     private var closed = false
-    func close() { lock.withLock { closed = true } }
+    private var delivered: Set<UUID> = []
+    func refuseDelivered(_ commandID: UUID) throws { try lock.withLock { if delivered.contains(commandID) { throw ConversationOutboxError.invalidTransition } } }
+    func recordDelivery(_ commandID: UUID) { lock.withLock { _ = delivered.insert(commandID) } }
+    func close() { lock.withLock { closed = true; delivered.removeAll() } }
     func check() throws {
         try lock.withLock { if closed { throw ConversationOutboxError.sessionClosed } }
     }
@@ -86,10 +89,26 @@ actor ConversationOutboxSession {
     /// Every actual new user intent gets a fresh UUID, even identical source.
     /// Failed persistence returns no enqueue success and preserves prior disk.
     func enqueue(source: ConversationMealCommand.Source, mealType: ConversationMealCommand.MealType? = nil, server: ConversationOutboxServerObservation) async throws -> UUID {
-        try validateObservation(server, forEnqueue: true)
         let command = try ConversationMealCommand(source: source, mealType: mealType)
+        return try await enqueue(command: command, server: server)
+    }
+
+    /// The caller may prepare one new intent before its first await. A local
+    /// persistence/publication uncertainty then reuses that exact identity;
+    /// recognizing it never clears a hold or returns unknown work to queued.
+    func enqueue(command: ConversationMealCommand, server: ConversationOutboxServerObservation) async throws -> UUID {
+        try validateObservation(server, forEnqueue: true)
+        let lifetime = lifetime
         try await stateOperation(server: server) { store, owner, key in
-            try store.update(owner: owner, key: key) { $0.append(.init(command: command, originalServerEpoch: server.epoch, originalPatientOwnerID: server.ownerID)) }
+            try lifetime.refuseDelivered(command.commandID)
+            try store.update(owner: owner, key: key) { entries in
+                if let existing = entries.first(where: { $0.commandID == command.commandID }) {
+                    guard existing.wireBody == command.wireBody, existing.inputHash == command.inputHash,
+                          existing.originalPatientOwnerID == server.ownerID, existing.originalServerEpoch == server.epoch else {
+                        throw ConversationOutboxError.invalidTransition
+                    }
+                } else { entries.append(.init(command: command, originalServerEpoch: server.epoch, originalPatientOwnerID: server.ownerID)) }
+            }
         }
         return command.commandID
     }
@@ -225,6 +244,7 @@ actor ConversationOutboxSession {
            let meal = wire["meal_type"] as? String, meal != result.receipt.mealType.rawValue { throw ConversationOutboxError.invalidTransition }
         let visibleScope = ConversationFeedbackPresentationSnapshot.Scope(ownerID: result.ownerID, sessionGeneration: lease.generation, epoch: originalEpoch)
         let publication = ConversationOutboxSavedPublication(receipt: result.receipt, feedback: result.boundFeedback(scope: visibleScope))
+        let lifetime = lifetime
         try await stateOperation(server: server) { store, owner, key in
             try store.update(owner: owner, key: key) { entries in
                 guard let index = entries.firstIndex(where: { $0.commandID == ticket.commandID }) else { throw ConversationOutboxError.commandNotFound }
@@ -235,11 +255,43 @@ actor ConversationOutboxSession {
                       entry.hold != .originalEpochUnavailable, entry.hold != .originalOwnerUnavailable else { throw ConversationOutboxError.reconciliationRequired }
                 entries.remove(at: index)
             }
+            lifetime.recordDelivery(ticket.commandID)
         }
-        let lifetime = lifetime
         try await lifecycle.performVisiblePatientStateOperation(lease: lease) {
             try lifetime.check(); try Task.checkCancellation()
             try server.withCurrentAuthority { publish(publication) }
+        }
+    }
+
+    /// Explicit delivery cleanup for a sealed non-registration decision read
+    /// through the owned journal. This never publishes a saved meal or reward.
+    /// The page decoder supplies immutable command/decision binding; the actual
+    /// controller must additionally establish trusted transport/current grant.
+    func closeTerminalDelivery(ticket: ConversationOutboxTicket, entry: ConversationJournalPageSnapshot.CommandEntry, server: ConversationOutboxServerObservation) async throws {
+        try validateObservation(server)
+        guard let lease else { throw ConversationOutboxError.sessionClosed }
+        guard ticket.scope == scope, ticket.ownerHash == owner.hash, ticket.localSessionGeneration == lease.generation,
+              ticket.originalPatientOwnerID == server.ownerID, ticket.originalServerEpoch == server.epoch,
+              let proof = entry.terminalReceipt, case let .state(state) = entry.result, proof.matches(state: state),
+              proof.ownerID == ticket.originalPatientOwnerID, proof.commandID == ticket.commandID,
+              proof.originalInputHash == ticket.inputHash, proof.epoch == ticket.originalServerEpoch,
+              entry.originalCommand.commandID == ticket.commandID, entry.originalCommand.inputHash == ticket.inputHash,
+              entry.originalCommand.wireBody == ticket.wireBody,
+              let admitted = ConversationProtocolInstant(entry.at), let sealed = ConversationProtocolInstant(proof.sealedAt), sealed >= admitted else { throw ConversationOutboxError.invalidTransition }
+        let lifetime = lifetime
+        try await stateOperation(server: server) { store, owner, key in
+            try store.update(owner: owner, key: key) { entries in
+                guard let index = entries.firstIndex(where: { $0.commandID == ticket.commandID }) else { throw ConversationOutboxError.commandNotFound }
+                let entry = entries[index]
+                guard entry.wireBody == ticket.wireBody, entry.inputHash == ticket.inputHash,
+                      entry.originalServerEpoch == ticket.originalServerEpoch, entry.originalPatientOwnerID == ticket.originalPatientOwnerID else { throw ConversationOutboxError.invalidTransition }
+                guard entry.state != .queued, entry.hold != .reset, entry.hold != .staleEpoch, entry.hold != .serverChanged,
+                      entry.hold != .originalEpochUnavailable, entry.hold != .originalOwnerUnavailable else { throw ConversationOutboxError.reconciliationRequired }
+                entries.remove(at: index)
+            }
+            // AFTER atomic replacement, BEFORE releasing the patient/grant gate.
+            // A previously waiting enqueue cannot resurrect this delivered ID.
+            lifetime.recordDelivery(ticket.commandID)
         }
     }
 

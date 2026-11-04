@@ -31,6 +31,8 @@ struct ConversationMealCommand: Sendable, CustomStringConvertible, CustomReflect
     }
 
     let commandID: UUID
+    let source: Source
+    let mealType: MealType?
     let wireBody: Data
     let inputHash: String
     var idempotencyKey: String { "cmsg1:\(commandID.uuidString.lowercased())" }
@@ -56,6 +58,8 @@ struct ConversationMealCommand: Sendable, CustomStringConvertible, CustomReflect
         }
         if let mealType { object["meal_type"] = mealType.rawValue }
         self.commandID = commandID
+        self.source = source
+        self.mealType = mealType
         // ASCII field names sort identically to the server's recursive canonical
         // JSON. Foundation's unescaped Unicode and slash output matches JSON.stringify.
         wireBody = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])

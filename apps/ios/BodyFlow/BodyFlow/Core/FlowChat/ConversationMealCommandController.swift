@@ -6,6 +6,7 @@ enum ConversationMealCommandControllerError: Error, Equatable, Sendable {
 enum ConversationMealCommandEvent: Sendable {
     enum DeferredReason: Sendable { case offline, rateLimited, changed, storage, unavailable }
     case scopeSuspended
+    case scopeAccepted(ConversationCommandContext)
     case snapshot(ConversationOutboxViewSnapshot)
     case queued(UUID)
     case saved(ConversationOutboxSavedPublication)
@@ -29,6 +30,7 @@ actor ConversationMealCommandController {
     private let enqueueAuthority: ConversationOutboxObservationAuthority
     private var lease: SessionLease?
     private var server: ConversationOutboxServerObservation?
+    private var serverObservedAt: String?
     private var enqueueServer: ConversationOutboxServerObservation?
     private var permissions: [UUID: ReplayPermission] = [:]
     private var workID: UUID?
@@ -68,9 +70,18 @@ actor ConversationMealCommandController {
     /// Cold open without a verified session cannot invent that capability.
     func enqueue(source: ConversationMealCommand.Source, mealType: ConversationMealCommand.MealType? = nil,
                  publish: @escaping Publisher) async throws -> UUID {
+        try await enqueuePrepared(command: ConversationMealCommand(source: source, mealType: mealType), expectedContext: nil, publish: publish)
+    }
+    func enqueue(command: ConversationMealCommand, expectedContext: ConversationCommandContext.Identity, publish: @escaping Publisher) async throws -> UUID {
+        try await enqueuePrepared(command: command, expectedContext: expectedContext, publish: publish)
+    }
+    private func enqueuePrepared(command: ConversationMealCommand, expectedContext: ConversationCommandContext.Identity?, publish: @escaping Publisher) async throws -> UUID {
         let lease = try await requireLease()
         guard let captured = enqueueServer else { throw ConversationMealCommandControllerError.unavailable }
-        let id = try await outbox.enqueue(source: source, mealType: mealType, server: captured)
+        let identity = ConversationCommandContext.Identity(authUserID: captured.authUserID, ownerID: captured.ownerID,
+            sessionGeneration: captured.localSessionGeneration, epoch: captured.epoch)
+        guard expectedContext == nil || expectedContext == identity else { throw ConversationOutboxError.invalidServerObservation }
+        let id = try await outbox.enqueue(command: command, server: captured)
         if server != nil { try await publishSnapshot(publish) }
         else {
             // A failed/pending refresh grants no raw publication or transport.
@@ -84,7 +95,8 @@ actor ConversationMealCommandController {
     func refreshSession(_ publish: @escaping Publisher) async throws { _ = try await refresh(publish: publish) }
     func publishSnapshot(_ publish: @escaping Publisher) async throws {
         _ = try await requireLease()
-        guard let server else { throw ConversationMealCommandControllerError.unavailable }
+        guard let server, let observedAt = serverObservedAt else { throw ConversationMealCommandControllerError.unavailable }
+        try await deliver(.scopeAccepted(.init(observation: server, observedAt: observedAt)), server: server, publish: publish)
         try await outbox.publishSnapshot(server: server) { publish(.snapshot($0)) }
     }
     func send(commandID: UUID, publish: @escaping Publisher) async throws {
@@ -122,8 +134,25 @@ actor ConversationMealCommandController {
         permissions.removeValue(forKey: commandID)
         try await publishSnapshot(publish)
     }
+    /// An explicit bound terminal-delivery capability, not a history-read ACK.
+    /// No saved event, domain effect, model request or resubmission is produced.
+    func closeTerminalDelivery(read: ConversationJournalRead, commandID: UUID, publish: @escaping Publisher) async throws {
+        _ = try await requireLease()
+        guard let server, !server.isEnqueueOnly, server.isSameGrant(as: read.context.observation),
+              read.page.matches(authUserID: server.authUserID, ownerID: server.ownerID, epoch: server.epoch),
+              let entry = read.page.items.compactMap({ item -> ConversationJournalPageSnapshot.CommandEntry? in
+                  if case let .command(value) = item, value.originalCommand.commandID == commandID, value.terminalReceipt != nil { return value }; return nil
+              }).first else { throw ConversationOutboxError.invalidServerObservation }
+        try server.withCurrentAuthority {}
+        let ticket = try await outbox.reconciliationTicket(commandID: commandID)
+        try matches(ticket, server: server)
+        try await outbox.closeTerminalDelivery(ticket: ticket, entry: entry, server: server)
+        try server.withCurrentAuthority {}; permissions.removeValue(forKey: commandID)
+        try await publishSnapshot(publish)
+    }
+
     func close() async {
-        authority.close(); enqueueAuthority.close(); server = nil; enqueueServer = nil; permissions.removeAll(); lease = nil
+        authority.close(); enqueueAuthority.close(); server = nil; serverObservedAt = nil; enqueueServer = nil; permissions.removeAll(); lease = nil
         let cancellations = networkCancellations.values; networkCancellations.removeAll()
         for cancel in cancellations { cancel() }
         await outbox.invalidate()
@@ -132,7 +161,7 @@ actor ConversationMealCommandController {
 
     private func refresh(publish: Publisher?) async throws -> ConversationOutboxServerObservation {
         let lease = try await requireLease(), refreshID = try authority.beginRefresh()
-        server = nil; permissions.removeAll()
+        server = nil; serverObservedAt = nil; permissions.removeAll()
         if let publish {
             let authority = authority
             try await lifecycle.performVisiblePatientStateOperation(lease: lease) {
@@ -158,8 +187,8 @@ actor ConversationMealCommandController {
         enqueueServer = pair.captured
         _ = try await requireLease()
         try pair.current.withCurrentAuthority {}
-        server = pair.current
-        if let publish { try await outbox.publishSnapshot(server: pair.current) { publish(.snapshot($0)) } }
+        server = pair.current; serverObservedAt = value.observedAt
+        if let publish { try await publishSnapshot(publish) }
         return pair.current
     }
     private func transmit(ticket: ConversationOutboxTicket, server: ConversationOutboxServerObservation, publish: @escaping Publisher) async throws {

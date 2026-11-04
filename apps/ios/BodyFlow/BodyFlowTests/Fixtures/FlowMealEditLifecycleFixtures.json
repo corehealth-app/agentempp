@@ -1,0 +1,338 @@
+{
+  "schema": "synthetic.conversation-flow-edit-lifecycle.v1",
+  "scope": "Actual local synthetic Auth/SQL/public HTTP packets; controlled interpreter only. Not a customer or deployed/device acceptance.",
+  "auth_user_id": "6fd8301f-dbcd-4780-885e-69b5146da34e",
+  "original_command": {
+    "command_protocol": "conversation.command.v1",
+    "command_id": "b3b01000-0000-4000-8000-000000006703",
+    "kind": "meal.report",
+    "meal_type": "cafe",
+    "source": {
+      "channel": "text",
+      "text": "Comi 1 caneca de leite com uma medida de whey"
+    }
+  },
+  "session": {
+    "data": {
+      "schema": "conversation.session.v1",
+      "auth_user_id": "6fd8301f-dbcd-4780-885e-69b5146da34e",
+      "owner_id": "b3b01000-0000-4000-8000-000000006380",
+      "epoch": "c9ceee93-6d6b-4207-8bf9-de9b50ea93d4",
+      "observed_at": "2026-11-04T08:38:26.264364Z",
+      "meal_command_protocol": "conversation.command.v1"
+    },
+    "meta": {
+      "api_version": "v1",
+      "request_id": "t4-http-4"
+    }
+  },
+  "original_saved": {
+    "data": {
+      "schema": "conversation.meal-command-result.v1",
+      "status": "saved",
+      "owner_id": "b3b01000-0000-4000-8000-000000006380",
+      "command_id": "b3b01000-0000-4000-8000-000000006703",
+      "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+      "epoch": "c9ceee93-6d6b-4207-8bf9-de9b50ea93d4",
+      "admitted_at": "2026-11-04T08:38:28.660327Z",
+      "receipt": {
+        "schema": "conversation.meal-effect.v1",
+        "owner_id": "b3b01000-0000-4000-8000-000000006380",
+        "command_id": "b3b01000-0000-4000-8000-000000006703",
+        "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+        "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+        "provider_key": "conversation.meal/b3b01000-0000-4000-8000-000000006380/b3b01000-0000-4000-8000-000000006703",
+        "meal_type": "cafe",
+        "local_date": "2026-11-04",
+        "timezone": "UTC",
+        "consumed_at": "2026-11-04T08:38:29.164555Z",
+        "log_ids": [
+          "3513c30c-628d-408d-96f2-f4e87ad3993b",
+          "fbfe36ca-6497-4cd7-953a-356f9985f83c"
+        ],
+        "effect_version": "cmeal1:22eafbd56e192d4cce9fbb9ed27f067b4ac4d95d6f6eee5b7bd2884b963a9252"
+      },
+      "feedback": {
+        "schema": "conversation.feedback-presentation.v1",
+        "mode": "historical",
+        "assistant": "Flow AI",
+        "original": {
+          "schema": "registration.feedback.v2",
+          "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+          "kind": "meal",
+          "local_date": "2026-11-04"
+        },
+        "current_policy": {
+          "version": 1,
+          "observed_at": "2026-11-04T08:38:29.452121Z",
+          "assessment": "complete",
+          "recording_allowed": true,
+          "pause_weight_loss_guidance": false,
+          "professional_assessment_recommended": false,
+          "phase_selection_pending": false,
+          "target_source": "assigned_phase",
+          "hide": {
+            "objective": false,
+            "calories": false,
+            "protein": false,
+            "balance": false,
+            "block": false,
+            "budget": false
+          }
+        },
+        "provenance": {
+          "epoch": "c9ceee93-6d6b-4207-8bf9-de9b50ea93d4",
+          "command_id": "b3b01000-0000-4000-8000-000000006703",
+          "observed_at": "2026-11-04T08:38:29.452121Z"
+        },
+        "status": "available",
+        "format": "sections",
+        "recorded": {
+          "kind": "meal",
+          "meal_kind": "cafe",
+          "items": [
+            {
+              "kcal": 125.7,
+              "protein_g": 6.49,
+              "carbs_g": 9.89,
+              "fat_g": 6.7,
+              "log_id": "3513c30c-628d-408d-96f2-f4e87ad3993b",
+              "food_name": "leite integral",
+              "quantity_g": 206,
+              "quantity": {
+                "value": 200,
+                "unit": "mL",
+                "estimated": true,
+                "reference_id": "fao-infoods-v2-whole-milk-tb"
+              },
+              "nutrition_source": "canonical_fuzzy"
+            },
+            {
+              "kcal": 105.6,
+              "protein_g": 23.44,
+              "carbs_g": 1.88,
+              "fat_g": 0.47,
+              "log_id": "fbfe36ca-6497-4cd7-953a-356f9985f83c",
+              "food_name": "whey protein em pó",
+              "quantity_g": 30,
+              "quantity": {
+                "value": 1,
+                "unit": "scoop",
+                "estimated": true,
+                "reference_id": "app-household-whey-scoop-v1"
+              },
+              "nutrition_source": "canonical_fuzzy"
+            }
+          ],
+          "totals": {
+            "kcal": 231.3,
+            "protein_g": 29.9,
+            "carbs_g": 11.8,
+            "fat_g": 7.2
+          }
+        },
+        "sections": [
+          {
+            "key": "saved",
+            "text": "Café da manhã registrado."
+          },
+          {
+            "key": "items",
+            "text": "leite integral · 200 mL (estimado, editável)\n125,7 kcal | Proteína: 6,49 g | Carboidratos: 9,89 g | Gorduras: 6,7 g\n\nwhey protein em pó · 1 medida (estimado, editável)\n105,6 kcal | Proteína: 23,44 g | Carboidratos: 1,88 g | Gorduras: 0,47 g"
+          },
+          {
+            "key": "summary",
+            "text": "Total aproximado da refeição: 231,3 kcal | Proteína: 29,9 g | Carboidratos: 11,8 g | Gorduras: 7,2 g"
+          },
+          {
+            "key": "day",
+            "text": "No momento deste registro (2026-11-04):\nDia: 2026-11-04\nConsumido: 897 / 1.600 kcal (56,1%).\nProteína: 49,57 / 120 g (41,3%).\nRestam para comida: 703 kcal.\nExercício registrado: 0 kcal. Esse gasto não aumenta a comida disponível."
+          },
+          {
+            "key": "block",
+            "text": "Progresso consolidado no momento do registro:\nBloco 7.700: 500 / 7.700 kcal (6%).\nSaldo total já consolidado: 15.900 kcal · Blocos concluídos: 2.\nReferência teórica; este registro não cria crédito imediato nem garante uma mudança física de peso."
+          },
+          {
+            "key": "education",
+            "text": "Comentário educativo no momento do registro:\nLeite e whey contribuem juntos para a proteína mostrada nesta bebida. A medida é uma referência editável; conferir o rótulo ajuda a considerar diferenças entre produtos. Seu bloco de longo prazo usa dias consolidados, sem crédito imediato por este registro. Quer me contar o que você prefere para conversarmos sobre um ajuste adequado?"
+          }
+        ]
+      }
+    },
+    "meta": {
+      "api_version": "v1",
+      "request_id": "t4-http-10"
+    }
+  },
+  "current_after_save": {
+    "schema": "conversation.meal-group.v1",
+    "owner_id": "b3b01000-0000-4000-8000-000000006380",
+    "command_id": "b3b01000-0000-4000-8000-000000006703",
+    "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+    "epoch": "c9ceee93-6d6b-4207-8bf9-de9b50ea93d4",
+    "admitted_at": "2026-11-04T08:38:28.660327Z",
+    "observed_at": "2026-11-04T08:38:30.205869+00:00",
+    "original_receipt": {
+      "schema": "conversation.meal-effect.v1",
+      "owner_id": "b3b01000-0000-4000-8000-000000006380",
+      "command_id": "b3b01000-0000-4000-8000-000000006703",
+      "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+      "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+      "provider_key": "conversation.meal/b3b01000-0000-4000-8000-000000006380/b3b01000-0000-4000-8000-000000006703",
+      "meal_type": "cafe",
+      "local_date": "2026-11-04",
+      "timezone": "UTC",
+      "consumed_at": "2026-11-04T08:38:29.164555Z",
+      "log_ids": [
+        "3513c30c-628d-408d-96f2-f4e87ad3993b",
+        "fbfe36ca-6497-4cd7-953a-356f9985f83c"
+      ],
+      "effect_version": "cmeal1:22eafbd56e192d4cce9fbb9ed27f067b4ac4d95d6f6eee5b7bd2884b963a9252"
+    },
+    "revision": 7,
+    "lineage_compatible": true,
+    "current": {
+      "expected_version": "v1:da2faf6b37127d5fc3a897d0e0bf59f7f406603fa7ac27fc945284dad7cbd1a1",
+      "local_date": "2026-11-04",
+      "timezone": "UTC",
+      "day_closed": false,
+      "items": [
+        {
+          "id": "054d9f1d-495a-4f1b-88c1-271f7c63ab82",
+          "food_name": "whey protein em pó",
+          "quantity_g": 35,
+          "quantity_display": {
+            "unit": "scoop",
+            "grams_per_unit": 30,
+            "reference_id": "app-household-whey-scoop-v1",
+            "estimated": true
+          },
+          "kcal": 123.2,
+          "protein_g": 27.35,
+          "carbs_g": 2.19,
+          "fat_g": 0.55,
+          "source": "canonical_fuzzy",
+          "consumed_at": "2026-11-04T08:38:29.164555+00:00",
+          "meal_type": "cafe"
+        },
+        {
+          "id": "3513c30c-628d-408d-96f2-f4e87ad3993b",
+          "food_name": "leite integral",
+          "quantity_g": 206,
+          "quantity_display": {
+            "unit": "mL",
+            "grams_per_unit": 1.03,
+            "reference_id": "fao-infoods-v2-whole-milk-tb",
+            "estimated": true
+          },
+          "kcal": 125.7,
+          "protein_g": 6.49,
+          "carbs_g": 9.89,
+          "fat_g": 6.7,
+          "source": "canonical_fuzzy",
+          "consumed_at": "2026-11-04T08:38:29.164555+00:00",
+          "meal_type": "cafe"
+        }
+      ]
+    },
+    "last_operation": {
+      "schema": "conversation.meal-edit-effect-public.v1",
+      "owner_id": "b3b01000-0000-4000-8000-000000006380",
+      "command_id": "b3b01000-0000-4000-8000-000000006703",
+      "operation_id": "c7be336d-46e9-4d08-8cc9-ca8fc698238b",
+      "input_hash": "e165a71dcd9071891d35b548ae8e8fa92871d027e733ae47a9aa1bfe7b051c0d",
+      "kind": "saved",
+      "revision": 7,
+      "applied_at": "2026-11-04T08:38:30.083174+00:00",
+      "undo_expires_at": "2026-11-04T08:43:30.083174+00:00",
+      "target_operation_id": null,
+      "removed_item_ids": [
+        "f447582e-0a0c-43ea-abfe-3df22ba8399d"
+      ],
+      "new_item_ids": [
+        "054d9f1d-495a-4f1b-88c1-271f7c63ab82"
+      ],
+      "next_record_id": "054d9f1d-495a-4f1b-88c1-271f7c63ab82"
+    },
+    "registration_undo_expires_at": "2026-11-04T08:43:29.164555+00:00",
+    "actions": {
+      "save": {
+        "allowed": true
+      },
+      "undo_registration": {
+        "allowed": false,
+        "reason": "version_changed"
+      },
+      "undo_save": {
+        "allowed": true
+      }
+    }
+  },
+  "edit_ack": {
+    "data": {
+      "schema": "conversation.meal-edit-result.v1",
+      "status": "saved",
+      "owner_id": "b3b01000-0000-4000-8000-000000006380",
+      "command_id": "b3b01000-0000-4000-8000-000000006703",
+      "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+      "epoch": "c9ceee93-6d6b-4207-8bf9-de9b50ea93d4",
+      "receipt": {
+        "schema": "conversation.meal-edit-effect-public.v1",
+        "owner_id": "b3b01000-0000-4000-8000-000000006380",
+        "command_id": "b3b01000-0000-4000-8000-000000006703",
+        "operation_id": "c7be336d-46e9-4d08-8cc9-ca8fc698238b",
+        "input_hash": "e165a71dcd9071891d35b548ae8e8fa92871d027e733ae47a9aa1bfe7b051c0d",
+        "kind": "saved",
+        "revision": 7,
+        "applied_at": "2026-11-04T08:38:30.083174+00:00",
+        "undo_expires_at": "2026-11-04T08:43:30.083174+00:00",
+        "target_operation_id": null,
+        "removed_item_ids": [
+          "f447582e-0a0c-43ea-abfe-3df22ba8399d"
+        ],
+        "new_item_ids": [
+          "054d9f1d-495a-4f1b-88c1-271f7c63ab82"
+        ],
+        "next_record_id": "054d9f1d-495a-4f1b-88c1-271f7c63ab82"
+      }
+    },
+    "meta": {
+      "api_version": "v1",
+      "request_id": "t7-edit-http-14"
+    }
+  },
+  "undo_ack": {
+    "data": {
+      "schema": "conversation.meal-edit-result.v1",
+      "status": "saved",
+      "owner_id": "b3b01000-0000-4000-8000-000000006380",
+      "command_id": "b3b01000-0000-4000-8000-000000006703",
+      "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+      "epoch": "c9ceee93-6d6b-4207-8bf9-de9b50ea93d4",
+      "receipt": {
+        "schema": "conversation.meal-edit-effect-public.v1",
+        "owner_id": "b3b01000-0000-4000-8000-000000006380",
+        "command_id": "b3b01000-0000-4000-8000-000000006703",
+        "operation_id": "edb81fcc-d523-430f-a4f4-074030203814",
+        "input_hash": "c108db45f4b005d83e4c42a363ca55e8cb969f48a09be5b1990f8f44ceade519",
+        "kind": "save_undone",
+        "revision": 8,
+        "applied_at": "2026-11-04T08:38:30.265818+00:00",
+        "undo_expires_at": null,
+        "target_operation_id": "c7be336d-46e9-4d08-8cc9-ca8fc698238b",
+        "removed_item_ids": [
+          "054d9f1d-495a-4f1b-88c1-271f7c63ab82"
+        ],
+        "new_item_ids": [
+          "1a2e960f-493f-43da-bcaf-9d26ce1377f3"
+        ],
+        "next_record_id": "1a2e960f-493f-43da-bcaf-9d26ce1377f3"
+      }
+    },
+    "meta": {
+      "api_version": "v1",
+      "request_id": "t7-edit-http-18"
+    }
+  },
+  "response_protocol": "meal-command-v1"
+}

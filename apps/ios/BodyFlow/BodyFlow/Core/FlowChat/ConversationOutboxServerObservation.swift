@@ -25,6 +25,9 @@ struct ConversationOutboxServerObservation: Sendable {
         self.localSessionGeneration = localSessionGeneration; self.epoch = epoch
         self.authority = authority; self.token = token; isEnqueueOnly = enqueueOnly
     }
+    func isSameGrant(as other: Self) -> Bool {
+        authority === other.authority && token == other.token && authUserID == other.authUserID && ownerID == other.ownerID && localSessionGeneration == other.localSessionGeneration && epoch == other.epoch && isEnqueueOnly == other.isEnqueueOnly
+    }
     func withCurrentAuthority<Value>(_ operation: () throws -> Value) throws -> Value {
         try authority.perform(token: token, operation)
     }

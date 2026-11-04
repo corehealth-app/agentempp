@@ -84,6 +84,14 @@ It never generates a new ID or automatically resubmits from an unknown outcome.
 Starting another refresh revokes older permissions. A late old POST callback
 cannot consume a newer GET permission. Not-recorded remains a durable held
 clarification tombstone, never ACKed or silently rewritten as new intent.
+The backend now durably seals this terminal decision and GET can restore the
+same closed reason/indexes after reopening. Native still retains the encrypted
+identity and permanent hold: a terminal negative is not a food-effect ACK.
+Future bound journal composition may hide a duplicate local tombstone only
+after matching patient, command UUID, original hash and epoch to its remote
+decision. That presentation deduplication does not delete the encrypted entry,
+retry POST, mint a replacement UUID or award anything. Removing terminal work
+would require a separately qualified proof/retention contract.
 
 The backend's known `conversation_command_changed`/`conversation_patient_changed`
 409 codes create a permanent exact-entry serverChanged hold; unrelated conflicts

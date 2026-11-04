@@ -84,6 +84,7 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
     let timeout: Duration?
     let conversation: MobileConversationRequestHeaders?
     let unauthorizedReplay: MobileAPIUnauthorizedReplay
+    let conversationMediaOwnerID: UUID?
 
     init(
         method: HTTPMethod,
@@ -93,7 +94,8 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
         idempotencyKey: IdempotencyKey? = nil,
         timeout: Duration? = nil,
         conversation: MobileConversationRequestHeaders? = nil,
-        unauthorizedReplay: MobileAPIUnauthorizedReplay = .standard
+        unauthorizedReplay: MobileAPIUnauthorizedReplay = .standard,
+        conversationMediaOwnerID: UUID? = nil
     ) throws {
         guard MobileAPIRequestPath.isValid(path) else {
             throw MobileAPIRequestError.invalidPath
@@ -103,6 +105,9 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
         }
 
         try conversation?.validate(method: method, path: path, query: queryItems, body: body, key: idempotencyKey, replay: unauthorizedReplay)
+        if conversationMediaOwnerID != nil {
+            try MobileConversationMediaOwner.validate(method: method, path: path, query: queryItems, body: body, key: idempotencyKey, conversation: conversation, replay: unauthorizedReplay)
+        }
         let isMutation = method == .post || method == .patch || method == .delete
         guard isMutation || idempotencyKey == nil else {
             throw MobileAPIRequestError.unexpectedIdempotencyKey
@@ -115,6 +120,7 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
         self.timeout = timeout
         self.conversation = conversation
         self.unauthorizedReplay = unauthorizedReplay
+        self.conversationMediaOwnerID = conversationMediaOwnerID
         if isMutation {
             self.idempotency = .required(
                 idempotencyKey ?? Self.makeIdempotencyKey()

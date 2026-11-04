@@ -493,7 +493,7 @@ struct FlowChatView: View {
 
 /// One persistent scroll container keeps the native field/focus identity while
 /// two-line AX input and limit feedback can outgrow the keyboard-safe viewport.
-private struct FlowComposerViewport<Content: View>: View {
+struct FlowComposerViewport<Content: View>: View {
     let viewportHeight: CGFloat
     let keyboardClearance: CGFloat
     private let content: Content

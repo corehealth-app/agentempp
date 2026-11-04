@@ -4,6 +4,33 @@ import Testing
 
 @Suite("Conversation HTTP uses the existing authenticated transport", .serialized)
 struct ConversationHTTPTransportTests {
+    @Test func boundMediaPreservesOriginalOwnerBodyKeyAndNeverReplaysUnauthorizedMutation() async throws {
+        let f = try ConversationHTTPFixture()
+        await f.stub.respond { _, _ in .failure(401, "unauthorized") }
+        let body = Data(#"{"kind":"meal_photo","mime_type":"image/jpeg","size_bytes":20}"#.utf8)
+        let request = try MobileAPIRequest<ConversationHTTPValue>(method: .post, path: "/api/mobile/v1/media", body: body,
+            idempotencyKey: IdempotencyKey(validating: "cmedia1:00000000-0000-4000-8000-000000000001:create"))
+            .withConversationMediaOwner(f.ownerID)
+        await #expect(throws: (any Error).self) { try await f.transport.executeHTTP(request) }
+        let sent = await f.stub.requests
+        #expect(sent.count == 1 && sent[0].httpBody == body)
+        #expect(sent[0].value(forHTTPHeaderField: "X-Conversation-Owner") == f.ownerID.uuidString.lowercased())
+        #expect(sent[0].value(forHTTPHeaderField: "Idempotency-Key") == "cmedia1:00000000-0000-4000-8000-000000000001:create")
+        #expect(await f.lifecycle.refreshCount == 0)
+    }
+
+    @Test func mediaOwnerPreconditionCannotEscapeMediaRoutesOrRetagItself() throws {
+        let owner = UUID(), other = UUID()
+        let valid = try MobileAPIRequest<ConversationHTTPValue>(method: .get, path: "/api/mobile/v1/media/10000000-0000-4000-8000-000000000001").withConversationMediaOwner(owner)
+        #expect(throws: MobileAPIRequestError.invalidConversationHeaders) { try valid.withConversationMediaOwner(other) }
+        for path in ["/api/mobile/v1/me", "/api/mobile/v1/media/../me", "/api/mobile/v1/media/not-uuid", "/api/mobile/v1/media/10000000-0000-4000-8000-000000000001/private"] {
+            #expect(throws: (any Error).self) { try MobileAPIRequest<ConversationHTTPValue>(method: .get, path: path).withConversationMediaOwner(owner) }
+        }
+        #expect(throws: MobileAPIRequestError.invalidConversationHeaders) {
+            try MobileAPIRequest<ConversationHTTPValue>(method: .get, path: "/api/mobile/v1/media/10000000-0000-4000-8000-000000000001", queryItems: [.init(name: "owner", value: other.uuidString)]).withConversationMediaOwner(owner)
+        }
+    }
+
     @Test func exactProtocolHeadersAndOriginalBodyAreSentOnce() async throws {
         let f = try ConversationHTTPFixture()
         await f.stub.respond { _, _ in .success() }

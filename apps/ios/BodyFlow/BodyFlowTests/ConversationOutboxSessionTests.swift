@@ -4,6 +4,25 @@ import Testing
 
 @Suite("Conversation outbox authenticated lifecycle")
 struct ConversationOutboxSessionTests {
+    @Test func preparedIntentSurvivesLocalEnqueueReplayWithoutRenewingOrResettingIt() async throws {
+        let fixture = try OutboxDiskFixture(); defer { fixture.remove() }
+        let session = try await ConversationOutboxSession.open(lifecycle: OutboxLifecycleFake(lease: fixture.lease), store: fixture.store, keyVault: .init(service: "synthetic", security: OutboxKeychainFake()))
+        let command = try ConversationMealCommand(source: .text("source known before await"))
+        #expect(try await session.enqueue(command: command, server: fixture.server) == command.commandID)
+        let ticket = try await session.prepareDispatch(commandID: command.commandID, server: fixture.server)
+        try await session.markWaiting(ticket: ticket, hold: .reset)
+        #expect(try await session.enqueue(command: command, server: fixture.server) == command.commandID)
+        let entries = try await snapshot(session, server: fixture.server)
+        #expect(entries.count == 1 && entries[0].state == .waitingReconciliation && entries[0].hold == .reset)
+        #expect(entries[0].wireBody == command.wireBody)
+        let changed = try ConversationMealCommand(commandID: command.commandID, source: .text("different body"))
+        await #expect(throws: ConversationOutboxError.invalidTransition) { try await session.enqueue(command: changed, server: fixture.server) }
+        let duplicateIntent = try ConversationMealCommand(source: .text("source known before await"))
+        #expect(try await session.enqueue(command: duplicateIntent, server: fixture.server) != command.commandID)
+        #expect(try await snapshot(session, server: fixture.server).count == 2)
+        await session.invalidate()
+    }
+
     @Test func newIntentGetsNewIDButRestartReconciliationReusesExactIdentity() async throws {
         let fixture = try OutboxDiskFixture(); defer { fixture.remove() }
         let lifecycle = OutboxLifecycleFake(lease: fixture.lease)

@@ -45,6 +45,10 @@ struct AppShellView: View {
     let mealRecordContext: MealRecordReadyContext?
     let mealRecordRecoveryAvailability: MealRecordRecoveryAvailability
     let recoverMealRecord: (@MainActor () async -> Void)?
+    /// Explicit candidate injection only. The existing navigation gate and
+    /// release factory remain unchanged; no demo sender is substituted.
+    let conversationModel: FlowConversationModel?
+    let conversationCapture: FlowConversationCaptureCapability?
 
     init(
         userID: String,
@@ -54,7 +58,9 @@ struct AppShellView: View {
         signOut: (@MainActor () async -> Void)? = nil,
         mealRecordContext: MealRecordReadyContext? = nil,
         mealRecordRecoveryAvailability: MealRecordRecoveryAvailability = .unavailable,
-        recoverMealRecord: (@MainActor () async -> Void)? = nil
+        recoverMealRecord: (@MainActor () async -> Void)? = nil,
+        conversationModel: FlowConversationModel? = nil,
+        conversationCapture: FlowConversationCaptureCapability? = nil
     ) {
         self.userID = userID
         self.dependencies = dependencies
@@ -64,6 +70,8 @@ struct AppShellView: View {
         self.mealRecordContext = mealRecordContext
         self.mealRecordRecoveryAvailability = mealRecordRecoveryAvailability
         self.recoverMealRecord = recoverMealRecord
+        self.conversationModel = conversationModel
+        self.conversationCapture = conversationCapture
         let launch = AppLaunchConfiguration.current()
         let layout = AppNavigationLayout.current(runtimeMode: launch.mode,
             presentsRealAccountIdentity: dependencies.presentsRealAccountIdentity)
@@ -218,6 +226,20 @@ struct AppShellView: View {
                 // change of the documented zone, then re-syncs.
                 await sessionOwner.refreshPatientTimeZone()
                 await localReminders.refresh()
+            }
+        }
+        .onChange(of: conversationModel?.savedEffectRevision) { _, revision in
+            guard navigationLayout == .conversationalPreview, revision != nil, revision != 0,
+                  !sessionOwner.isInvalidated, let conversationModel,
+                  conversationModel.acceptedIdentity?.authUserID == UUID(uuidString: sessionOwner.userID) else { return }
+            // A verified factual ACK invalidates the official readers. Their
+            // independent refresh failure never revokes or repeats that ACK.
+            invalidationCenter.record(.registrationConfirmed)
+            let todayRevision = invalidationCenter.revision(for: .today)
+            let historyRevision = invalidationCenter.revision(for: .history)
+            Task {
+                await todayViewModel.load(revision: todayRevision)
+                await historyViewModel.load(revision: historyRevision)
             }
         }
         .onChange(of: invalidationCenter.revision(for: .routineList(kind: .supplement))) {
@@ -630,7 +652,8 @@ struct AppShellView: View {
     private func candidateRootView(for tab: AppTab) -> some View {
         switch tab {
         case .today:
-            FlowChatView(model: flowChatModel, allowsSending: false)
+            if let conversationModel { FlowConversationView(model: conversationModel, capture: conversationCapture) }
+            else { FlowChatView(model: flowChatModel, allowsSending: false) }
         case .plan:
             ConversationalPlanRootView(model: planViewModel, tab: .plan, scope: .nutrition, selectedTab: tabSelection)
         case .register:
@@ -664,6 +687,9 @@ struct AppShellView: View {
                 NavigationLink(value: AppRoute.content(.library(initialSelection: .all))) {
                     Label(presentationLanguage == .englishUnitedStates ? "Library" : "Biblioteca", systemImage: "books.vertical")
                 }.accessibilityIdentifier("navigation.library")
+                NavigationLink(value: AppRoute.flowChat) {
+                    Label(presentationLanguage == .englishUnitedStates ? "Earlier conversations" : "Conversas anteriores", systemImage: "bubble.left.and.bubble.right")
+                }.accessibilityIdentifier("navigation.legacy-conversation")
                 NavigationLink(value: AppRoute.mainHistory) {
                     Label(presentationLanguage == .englishUnitedStates ? "History" : "Histórico", systemImage: "clock.arrow.circlepath")
                 }.accessibilityIdentifier("navigation.history")

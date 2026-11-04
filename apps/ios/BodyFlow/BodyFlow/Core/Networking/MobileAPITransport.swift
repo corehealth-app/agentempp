@@ -247,8 +247,9 @@ struct MobileAPITransport: Sendable {
         }
 
         request.conversation?.apply(to: &urlRequest)
+        if let owner = request.conversationMediaOwnerID { urlRequest.setValue(owner.uuidString.lowercased(), forHTTPHeaderField: "X-Conversation-Owner") }
         let preparedRequest = urlRequest
-        let redirectDelegate = MobileAPIRedirectDelegate(configuration: configuration, allowsReadRedirects: request.conversation == nil)
+        let redirectDelegate = MobileAPIRedirectDelegate(configuration: configuration, allowsReadRedirects: request.conversation == nil && request.conversationMediaOwnerID == nil)
         let cancellationRelay = NetworkTaskCancellationRelay()
         return try await withTaskCancellationHandler {
             let workID: UUID

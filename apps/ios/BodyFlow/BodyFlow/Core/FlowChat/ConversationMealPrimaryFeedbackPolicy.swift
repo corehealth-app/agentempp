@@ -13,7 +13,7 @@ enum ConversationMealPrimaryFeedbackPolicy {
     guard let feedback, let group, let current = group.current,
       feedback.scope == scope, group.ownerID.uuidString.lowercased() == scope.ownerID,
       group.epoch.uuidString.lowercased() == scope.epoch, group.revision == 0,
-      group.lineageCompatible, group.lastOperation == nil, group.originalReceipt == receipt,
+      group.lineageCompatible, group.lastOperation == nil, group.originalReceipt.report == receipt,
       group.commandID.uuidString.lowercased() == receipt.commandID,
       group.originalInputHash == receipt.inputHash, receipt.ownerID == scope.ownerID,
       current.localDate == receipt.localDate, current.timezone == receipt.timezone,

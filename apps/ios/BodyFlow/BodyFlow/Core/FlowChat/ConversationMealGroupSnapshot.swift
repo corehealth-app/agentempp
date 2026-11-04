@@ -3,6 +3,62 @@ import Foundation
 /// Factual server observation only. Actions remain server-owned; decoding does
 /// not grant a session lease, determine eligibility from device time or write.
 struct ConversationMealGroupSnapshot: Decodable, Sendable {
+  /// The group keeps the genuine original receipt. A clarification effect is
+  /// never converted to a report effect or used as a report outbox ACK.
+  enum OriginalReceipt: Sendable {
+    case report(SavedConversationMealCommandResultSnapshot.Receipt)
+    case linked(ConversationThreadPageSnapshot.LinkedReceipt)
+    var report: SavedConversationMealCommandResultSnapshot.Receipt? {
+      if case .report(let value) = self { return value }
+      return nil
+    }
+    var linked: ConversationThreadPageSnapshot.LinkedReceipt? {
+      if case .linked(let value) = self { return value }
+      return nil
+    }
+    var ownerID: String {
+      switch self {
+      case .report(let value): value.ownerID
+      case .linked(let value): value.ownerID.uuidString.lowercased()
+      }
+    }
+    var commandID: String {
+      switch self {
+      case .report(let value): value.commandID
+      case .linked(let value): value.commandID.uuidString.lowercased()
+      }
+    }
+    var inputHash: String {
+      switch self {
+      case .report(let value): value.inputHash
+      case .linked(let value): value.inputHash
+      }
+    }
+    var registrationID: String {
+      switch self {
+      case .report(let value): value.registrationID
+      case .linked(let value): value.registrationID.uuidString.lowercased()
+      }
+    }
+    var providerKey: String {
+      switch self {
+      case .report(let value): value.providerKey
+      case .linked(let value): value.providerKey
+      }
+    }
+    var consumedAt: String {
+      switch self {
+      case .report(let value): value.consumedAt
+      case .linked(let value): value.consumedAt
+      }
+    }
+    var localDate: String {
+      switch self {
+      case .report(let value): value.localDate
+      case .linked(let value): value.localDate
+      }
+    }
+  }
   struct Item: Sendable {
     let id: UUID
     let foodName: String
@@ -61,7 +117,7 @@ struct ConversationMealGroupSnapshot: Decodable, Sendable {
   let epoch: UUID
   let admittedAt: String
   let observedAt: String
-  let originalReceipt: SavedConversationMealCommandResultSnapshot.Receipt
+  let originalReceipt: OriginalReceipt
   let revision: Int
   let lineageCompatible: Bool
   let current: Current?
@@ -82,15 +138,23 @@ struct ConversationMealGroupSnapshot: Decodable, Sendable {
         "original_receipt", "revision", "lineage_compatible", "current", "last_operation",
         "registration_undo_expires_at", "actions",
       ])
-      try editCheck(o.required("schema").string() == "conversation.meal-group.v1")
+      let schema = try o.required("schema").string()
+      try editCheck(["conversation.meal-group.v1", "conversation.meal-group.v2"].contains(schema))
       ownerID = try o.required("owner_id").uuid()
       commandID = try o.required("command_id").uuid()
       originalInputHash = try o.required("input_hash").hash()
       epoch = try o.required("epoch").uuid()
       admittedAt = try o.required("admitted_at").clock()
       observedAt = try o.required("observed_at").clock()
-      originalReceipt = try o.required("original_receipt").decode(
-        SavedConversationMealCommandResultSnapshot.Receipt.self)
+      if schema == "conversation.meal-group.v1" {
+        originalReceipt = try .report(
+          o.required("original_receipt").decode(
+            SavedConversationMealCommandResultSnapshot.Receipt.self))
+      } else {
+        originalReceipt = try .linked(
+          o.required("original_receipt").decode(
+            ConversationThreadPageSnapshot.LinkedReceipt.self))
+      }
       try editCheck(
         originalReceipt.ownerID == ownerID.uuidString.lowercased()
           && originalReceipt.commandID == commandID.uuidString.lowercased()
@@ -113,6 +177,17 @@ struct ConversationMealGroupSnapshot: Decodable, Sendable {
             && editInstant(last.appliedAt) >= editInstant(admittedAt))
       }
       registrationUndoExpiresAt = try o.required("registration_undo_expires_at").clock()
+      if let receipt = originalReceipt.linked {
+        try editCheck(
+          receipt.epoch == epoch && receipt.parentCommandID != commandID
+            && receipt.providerKey
+              == "conversation.clarification/\(ownerID.uuidString.lowercased())/\(receipt.parentCommandID.uuidString.lowercased())"
+        )
+        let consumed = try editInstant(receipt.consumedAt)
+        let deadline = try editInstant(registrationUndoExpiresAt)
+        try editCheck(
+          deadline.seconds - consumed.seconds == 300 && deadline.nanos == consumed.nanos)
+      }
       let a = try o.required("actions").object(["save", "undo_registration", "undo_save"])
       actions = try Actions(
         save: Availability(a.required("save")),

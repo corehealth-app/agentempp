@@ -113,6 +113,45 @@ struct ConversationOutboxEntry: Codable, Sendable, CustomStringConvertible, Cust
     var customMirror: Mirror { Mirror(self, children: [:], displayStyle: .struct) }
 }
 
+/// A typed answer is not a report. Its exact original submission and question
+/// stay protected in the same Auth-scoped file and shared capacity budget.
+struct ConversationMealReplyOutboxEntry: Codable, Sendable, CustomStringConvertible, CustomReflectable {
+    let intent: ConversationMealReplyIntent
+    var state: ConversationOutboxState
+    var hold: ConversationOutboxHold?
+    init(intent: ConversationMealReplyIntent) {
+        self.intent = intent; state = .queued; hold = nil
+    }
+    private enum CodingKeys: String, CodingKey { case intent, state, hold }
+    init(from decoder: any Decoder) throws {
+        try outboxKeys(decoder, required: ["intent", "state", "hold"])
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        intent = try c.decode(ConversationMealReplyIntent.self, forKey: .intent)
+        state = try c.decode(ConversationOutboxState.self, forKey: .state)
+        hold = try c.decodeIfPresent(ConversationOutboxHold.self, forKey: .hold)
+        try validate()
+    }
+    func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(intent, forKey: .intent); try c.encode(state, forKey: .state)
+        try c.encode(hold, forKey: .hold)
+    }
+    func validate() throws {
+        if let hold {
+            guard [.unknownOutcome, .userCancelled, .staleEpoch, .serverChanged, .reset].contains(hold) else {
+                throw ConversationOutboxError.integrityFailure
+            }
+        }
+        switch state {
+        case .queued: guard hold == nil || hold == .reset else { throw ConversationOutboxError.integrityFailure }
+        case .dispatchedUnknown: guard hold == nil else { throw ConversationOutboxError.integrityFailure }
+        case .waitingReconciliation: guard hold != nil else { throw ConversationOutboxError.integrityFailure }
+        }
+    }
+    var description: String { "ConversationMealReplyOutboxEntry(redacted)" }
+    var customMirror: Mirror { Mirror(self, children: [:], displayStyle: .struct) }
+}
+
 /// A synchronous disk transaction is called only inside the lifecycle's
 /// patient-state gate. flock also excludes another store instance/process.
 /// Ciphertext is retained on corruption, missing key, account change or logout.
@@ -122,6 +161,7 @@ struct EncryptedConversationOutboxStore: Sendable {
     static let capacity = 50
     private static let maxBytes = capacity * 24_576 + 4_096
     private static let header = Data("PCOBX003".utf8)
+    private static let mixedHeader = Data("PCOBX004".utf8)
     private static let previousHeader = Data("PCOBX002".utf8)
     private static let legacyHeader = Data("PCOBX001".utf8)
     private static let directoryCreationLock = NSLock()
@@ -142,7 +182,11 @@ struct EncryptedConversationOutboxStore: Sendable {
     }
 
     func load(owner: ConversationOutboxOwner, key: SymmetricKey) throws -> [ConversationOutboxEntry] {
-        try locked { try read(owner: owner, key: key) }
+        try locked { try readState(owner: owner, key: key).entries }
+    }
+
+    func loadReplies(owner: ConversationOutboxOwner, key: SymmetricKey) throws -> [ConversationMealReplyOutboxEntry] {
+        try locked { try readState(owner: owner, key: key).replies }
     }
 
     @discardableResult
@@ -151,18 +195,69 @@ struct EncryptedConversationOutboxStore: Sendable {
         _ mutation: (inout [ConversationOutboxEntry]) throws -> Value
     ) throws -> Value {
         try locked {
-            var entries = try read(owner: owner, key: key)
-            let original = entries
-            let result = try mutation(&entries)
-            guard entries.count <= Self.capacity else { throw ConversationOutboxError.queueFull }
-            try Self.validate(entries)
-            try Self.validateTransitions(from: original, to: entries)
-            let plain = try JSONEncoder().encode(Envelope(version: 3, owner: owner.hash, entries: entries))
-            guard plain.count <= Self.maxBytes else { throw ConversationOutboxError.queueFull }
-            let box = try AES.GCM.seal(plain, using: key, authenticating: aad(owner, version: 3))
-            guard let combined = box.combined else { throw ConversationOutboxError.storageUnavailable }
-            try atomicReplace(Self.header + combined, at: fileURL(owner: owner))
+            var state = try readState(owner: owner, key: key)
+            let original = state.entries
+            let result = try mutation(&state.entries)
+            try Self.validateTransitions(from: original, to: state.entries)
+            try write(state, owner: owner, key: key)
             return result
+        }
+    }
+
+    @discardableResult
+    func updateReplies<Value: Sendable>(
+        owner: ConversationOutboxOwner, key: SymmetricKey,
+        _ mutation: (inout [ConversationMealReplyOutboxEntry]) throws -> Value
+    ) throws -> Value {
+        try locked {
+            var state = try readState(owner: owner, key: key)
+            let original = state.replies
+            let result = try mutation(&state.replies)
+            try Self.validateReplyTransitions(from: original, to: state.replies)
+            state.version = 4
+            try write(state, owner: owner, key: key)
+            return result
+        }
+    }
+
+    private struct State {
+        var version: Int
+        var entries: [ConversationOutboxEntry]
+        var replies: [ConversationMealReplyOutboxEntry]
+    }
+    private func write(_ state: State, owner: ConversationOutboxOwner, key: SymmetricKey) throws {
+        guard state.entries.count + state.replies.count <= Self.capacity else { throw ConversationOutboxError.queueFull }
+        try Self.validate(state.entries)
+        try Self.validateReplies(state.replies, reports: state.entries)
+        // Old report-only callers retain their qualified format until the first
+        // typed reply. Once v4, closing its last reply never downgrades the file.
+        let version = state.version == 4 ? 4 : 3
+        let plain: Data
+        if version == 4 {
+            plain = try JSONEncoder().encode(MixedEnvelope(owner: owner.hash, entries: state.entries, replies: state.replies))
+        } else {
+            plain = try JSONEncoder().encode(Envelope(version: 3, owner: owner.hash, entries: state.entries))
+        }
+        guard plain.count <= Self.maxBytes else { throw ConversationOutboxError.queueFull }
+        let box = try AES.GCM.seal(plain, using: key, authenticating: aad(owner, version: version))
+        guard let combined = box.combined else { throw ConversationOutboxError.storageUnavailable }
+        try atomicReplace((version == 4 ? Self.mixedHeader : Self.header) + combined, at: fileURL(owner: owner))
+    }
+    private struct MixedEnvelope: Codable {
+        let version: Int
+        let owner: String
+        let entries: [ConversationOutboxEntry]
+        let replies: [ConversationMealReplyOutboxEntry]
+        private enum CodingKeys: String, CodingKey { case version, owner, entries, replies }
+        init(owner: String, entries: [ConversationOutboxEntry], replies: [ConversationMealReplyOutboxEntry]) {
+            version = 4; self.owner = owner; self.entries = entries; self.replies = replies
+        }
+        init(from decoder: any Decoder) throws {
+            try outboxKeys(decoder, required: ["version", "owner", "entries", "replies"])
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            version = try c.decode(Int.self, forKey: .version); owner = try c.decode(String.self, forKey: .owner)
+            entries = try c.decode([ConversationOutboxEntry].self, forKey: .entries)
+            replies = try c.decode([ConversationMealReplyOutboxEntry].self, forKey: .replies)
         }
     }
 
@@ -252,17 +347,19 @@ struct EncryptedConversationOutboxStore: Sendable {
         Data("performe.conversation.outbox\0version=\(version)\0owner=\(owner.hash)".utf8)
     }
 
-    private func read(owner: ConversationOutboxOwner, key: SymmetricKey) throws -> [ConversationOutboxEntry] {
-        guard let data = try readCiphertext(owner: owner) else { return [] }
+    private func readState(owner: ConversationOutboxOwner, key: SymmetricKey) throws -> State {
+        guard let data = try readCiphertext(owner: owner) else { return .init(version: 3, entries: [], replies: []) }
         do {
             let version: Int
-            if data.starts(with: Self.header) { version = 3 }
+            if data.starts(with: Self.mixedHeader) { version = 4 }
+            else if data.starts(with: Self.header) { version = 3 }
             else if data.starts(with: Self.previousHeader) { version = 2 }
             else if data.starts(with: Self.legacyHeader) { version = 1 }
             else { throw ConversationOutboxError.integrityFailure }
             let box = try AES.GCM.SealedBox(combined: data.dropFirst(Self.header.count))
             let plain = try AES.GCM.open(box, using: key, authenticating: aad(owner, version: version))
             let entries: [ConversationOutboxEntry]
+            var replies: [ConversationMealReplyOutboxEntry] = []
             if version == 1 {
                 let envelope = try JSONDecoder().decode(LegacyEnvelope.self, from: plain)
                 guard envelope.version == 1, envelope.owner == owner.hash else { throw ConversationOutboxError.integrityFailure }
@@ -271,14 +368,45 @@ struct EncryptedConversationOutboxStore: Sendable {
                 let envelope = try JSONDecoder().decode(PreviousEnvelope.self, from: plain)
                 guard envelope.version == 2, envelope.owner == owner.hash else { throw ConversationOutboxError.integrityFailure }
                 entries = envelope.entries.map(\.value)
-            } else {
+            } else if version == 3 {
                 let envelope = try JSONDecoder().decode(Envelope.self, from: plain)
                 guard envelope.version == 3, envelope.owner == owner.hash else { throw ConversationOutboxError.integrityFailure }
                 entries = envelope.entries
+            } else {
+                let envelope = try JSONDecoder().decode(MixedEnvelope.self, from: plain)
+                guard envelope.version == 4, envelope.owner == owner.hash else { throw ConversationOutboxError.integrityFailure }
+                entries = envelope.entries; replies = envelope.replies
             }
             try Self.validate(entries)
-            return entries
+            try Self.validateReplies(replies, reports: entries)
+            return .init(version: version, entries: entries, replies: replies)
         } catch { throw ConversationOutboxError.integrityFailure }
+    }
+
+    private static func validateReplies(_ replies: [ConversationMealReplyOutboxEntry], reports: [ConversationOutboxEntry]) throws {
+        guard reports.count + replies.count <= Self.capacity,
+              Set(replies.map { $0.intent.replyID }).count == replies.count,
+              Set(reports.map(\.commandID)).isDisjoint(with: Set(replies.map { $0.intent.replyID })) else {
+            throw ConversationOutboxError.integrityFailure
+        }
+        for reply in replies { try reply.validate() }
+    }
+    private static func validateReplyTransitions(from original: [ConversationMealReplyOutboxEntry], to replies: [ConversationMealReplyOutboxEntry]) throws {
+        for old in original {
+            guard let next = replies.first(where: { $0.intent.replyID == old.intent.replyID }) else { continue }
+            guard old.intent.wireBody == next.intent.wireBody,
+                  old.intent.replyInputHash == next.intent.replyInputHash,
+                  old.intent.parentBinding == next.intent.parentBinding,
+                  old.intent.parentDecisionHash == next.intent.parentDecisionHash,
+                  old.intent.question.encodedData == next.intent.question.encodedData else {
+                throw ConversationOutboxError.integrityFailure
+            }
+            if old.state != .queued && next.state == .queued { throw ConversationOutboxError.integrityFailure }
+            if old.state == .waitingReconciliation && next.state != .waitingReconciliation { throw ConversationOutboxError.integrityFailure }
+            if let hold = old.hold {
+                guard let nextHold = next.hold, nextHold.priority >= hold.priority else { throw ConversationOutboxError.integrityFailure }
+            }
+        }
     }
 
     private static func validateTransitions(from original: [ConversationOutboxEntry], to entries: [ConversationOutboxEntry]) throws {

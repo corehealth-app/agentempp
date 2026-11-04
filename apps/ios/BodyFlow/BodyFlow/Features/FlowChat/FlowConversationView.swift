@@ -55,10 +55,20 @@ struct FlowConversationView: View {
         set: { if $0 == nil { model.mealEditor?.dismiss() } }
       )
     ) { presentation in FlowConversationMealEditorView(model: presentation.model) }
+    .sheet(
+      item: Binding(
+        get: { model.mealReplies?.presentation },
+        set: { if $0 == nil { model.mealReplies?.dismiss() } })
+    ) { presentation in
+      FlowConversationMealReplyView(model: presentation.model)
+    }
     .task { await model.refreshConversation() }
     .onDisappear { model.cancelTransientWork() }
     .onChange(of: model.isWorking) { _, busy in if !busy { Task { await model.loadHistory() } } }
     .onChange(of: model.mealEditor?.isWorking) { _, busy in
+      if busy == false { Task { await model.loadHistory() } }
+    }
+    .onChange(of: model.mealReplies?.isWorking) { _, busy in
       if busy == false { Task { await model.loadHistory() } }
     }
     .onChange(of: scenePhase) { _, phase in
@@ -114,6 +124,45 @@ struct FlowConversationView: View {
           ProgressView(english ? "Updating…" : "Atualizando…").accessibilityIdentifier(
             "conversation.refreshing")
         }
+        if let replies = model.mealReplies {
+          if replies.pendingIntent != nil {
+            Button(
+              english ? "Review original pending answer" : "Revisar resposta original pendente"
+            ) { replies.presentOriginalIntent() }
+            .accessibilityIdentifier("conversation.reply.review-original")
+          }
+          ForEach(
+            replies.pendingEntries.filter { $0.intent.replyID != replies.pendingIntent?.replyID },
+            id: \.intent.replyID
+          ) { entry in
+            Button(english ? "Review pending linked answer" : "Revisar resposta vinculada pendente")
+            { try? replies.presentPending(replyID: entry.intent.replyID) }
+            .disabled(replies.isWorking || replies.pendingIntent != nil).accessibilityIdentifier(
+              "conversation.reply.restore")
+          }
+          if replies.heldCount > 0 {
+            Text(
+              english
+                ? "A protected answer is preserved for its original account and meal context."
+                : "Uma resposta protegida está preservada para a conta e o contexto originais."
+            )
+            .foregroundStyle(BodyFlowColor.secondaryText)
+          }
+          FlowConversationMealReplyHeldActions(model: replies, english: english)
+          if model.hasUnpublishedLinkedDelivery, let result = replies.lastDelivered {
+            FlowConversationMealReplyDeliveryView(
+              result: result, feedback: replies.deliveredFeedback, english: english)
+          }
+          if let question = replies.nextQuestion, model.terminalQuestion == nil {
+            Text(
+              verbatim: FlowConversationThreadEventPresentation.question(question, english: english)
+            )
+            Button(english ? "Answer Flow" : "Responder ao Flow") {
+              try? replies.beginNextQuestion()
+            }
+            .disabled(!replies.canBegin).accessibilityIdentifier("conversation.reply.next-question")
+          }
+        }
         if let editor = model.mealEditor {
           if editor.hasPreparedIntent {
             Button(
@@ -152,11 +201,18 @@ struct FlowConversationView: View {
                 FlowConversationThreadEventPresentation.question($0, english: english)
               } ?? questionText(question.reason)
             ).font(BodyFlowTypography.headline)
-            Text(
-              english
-                ? "A linked reply is not available yet. Your original report is preserved and has not recorded a meal."
-                : "A resposta vinculada ainda não está disponível. Seu relato original está preservado e não registrou uma refeição."
-            )
+            if model.canAnswerLinkedQuestion(parentID: question.commandID) {
+              Button(english ? "Answer Flow" : "Responder ao Flow") {
+                model.beginLinkedReply(parentID: question.commandID)
+              }
+              .accessibilityIdentifier("conversation.reply.answer-question")
+            } else if model.mealReplies == nil || question.observedQuestion == nil {
+              Text(
+                english
+                  ? "A linked reply is unavailable right now. Your original report is preserved and has not recorded a meal."
+                  : "A resposta vinculada está indisponível no momento. Seu relato original está preservado e não registrou uma refeição."
+              )
+            }
             Button(english ? "Write an independent report" : "Escrever relato independente") {
               model.beginIndependentReport()
             }
@@ -183,7 +239,16 @@ struct FlowConversationView: View {
             FlowConversationThreadEventView(
               entry: entry, parent: parent,
               observedQuestion: model.observedThreadQuestion(eventID: entry.eventID),
-              feedback: model.threadFeedback(eventID: entry.eventID), english: english)
+              feedback: model.threadFeedback(eventID: entry.eventID), english: english,
+              linkedRepliesAvailable: model.mealReplies != nil)
+            if model.observedThreadQuestion(eventID: entry.eventID) != nil,
+              model.canAnswerLinkedQuestion(parentID: entry.threadID)
+            {
+              Button(english ? "Answer Flow" : "Responder ao Flow") {
+                model.beginLinkedReply(parentID: entry.threadID)
+              }
+              .accessibilityIdentifier("conversation.reply.history-question")
+            }
           }
         }
         if model.isLoadingHistory {

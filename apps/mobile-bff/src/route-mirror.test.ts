@@ -17,6 +17,17 @@ const testDirectory = dirname(fileURLToPath(import.meta.url))
 const sourceRoot = resolve(testDirectory, '../../admin/src/app/api/mobile/v1')
 const wrapperRoot = resolve(testDirectory, 'app/api/mobile/v1')
 
+const addedReadEditRoutes = new Set([
+  'conversation/journal/route.ts',
+  'conversation/meal-commands/[commandId]/meal/route.ts',
+  'conversation/meal-commands/[commandId]/edits/[operationId]/route.ts',
+  'conversation/meal-commands/[commandId]/edits/[operationId]/reconcile/route.ts',
+])
+const boundedConversationRoutes = new Set([
+  'conversation/meal-commands/route.ts',
+  ...addedReadEditRoutes,
+])
+
 interface RouteRecord {
   path: string
   exports: string[]
@@ -53,6 +64,7 @@ function wrapperRecords(): RouteRecord[] {
   return walkFiles(wrapperRoot)
     .filter((path) => path.endsWith(`${sep}route.ts`))
     .map((path) => {
+      const relativePath = relative(wrapperRoot, path).split(sep).join('/')
       const wrapper = readFileSync(path, 'utf8')
       expect(wrapper).not.toMatch(/export\s+\*/)
       const statements = Array.from(
@@ -65,9 +77,9 @@ function wrapperRecords(): RouteRecord[] {
         .replace(statement[0], '')
         .replace(/^export\s+const\s+runtime\s*=\s*['"]nodejs['"]\s*;?\s*$/gm, '')
         .replace(
-          path.endsWith(`${sep}auth${sep}password-recovery${sep}route.ts`)
+          relativePath === 'auth/password-recovery/route.ts'
             ? /^export\s+const\s+maxDuration\s*=\s*45\s*;?\s*$/gm
-            : path.endsWith(`${sep}conversation${sep}meal-commands${sep}route.ts`)
+            : boundedConversationRoutes.has(relativePath)
               ? /^export\s+const\s+maxDuration\s*=\s*120\s*;?\s*$/gm
               : /^export\s+const\s+maxDuration\s*=\s*300\s*;?\s*$/gm,
           '',
@@ -163,18 +175,28 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
     )
   })
 
+  test('preserves all 78 previously approved route exports exactly', () => {
+    for (const records of [sourceRecords(), wrapperRecords()]) {
+      const previous = records.filter((record) => !addedReadEditRoutes.has(record.path))
+      expect(previous).toHaveLength(78)
+      expect(hashRecords(previous)).toBe(
+        '3ab0b1fdb146ab6a06846b5702cfa70a1a7b997d73b3235655ec248c32f68874',
+      )
+    }
+  })
+
   test.each([
     {
       name: 'Unapproved Auth replacing clarification at the same count',
       replace: true,
-      count: 78,
-      hash: 'a55f0c64f4d5a08de34355f6b8d4e3f9647b792f4f4e972fb67717ba14457db5',
+      count: 82,
+      hash: '1132fd048c595fc58ae4fb6d03ccd4fc6225de786a4b1460380d3fe189a2000e',
     },
     {
       name: 'Unapproved Auth added alongside clarification',
       replace: false,
-      count: 79,
-      hash: 'b972f1bcfde1196fcd18be1a8553c147a06a128fd882b217e030cf855c695685',
+      count: 83,
+      hash: '61ab520ae4b6fc66f69be7bd40d9d32edc0e0d0f5c9c946be736bcf14e116452',
     },
   ])('rejects $name through the closed inventory', ({ replace, count, hash }) => {
     withUnexpectedAuthComposition(replace, (script) => {
@@ -191,7 +213,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
     })
   })
 
-  test('accepts the approved 78-route mirror with recovery and the owned clarification in the CLI gate', () => {
+  test('accepts the approved 82-route mirror with the bounded journal and direct edits in the CLI gate', () => {
     const registration = sourceRecords().find(
       (record) => record.path === 'registrations/[id]/route.ts',
     )
@@ -205,11 +227,17 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
 
     expect(result.error).toBeUndefined()
     expect(result.status, result.stderr).toBe(0)
-    expect(result.stdout).toContain('SOURCE_ROUTE_EXPORT_COUNT=78')
-    expect(result.stdout).toContain('WRAPPER_ROUTE_EXPORT_COUNT=78')
+    expect(result.stdout).toContain('SOURCE_ROUTE_EXPORT_COUNT=82')
+    expect(result.stdout).toContain('WRAPPER_ROUTE_EXPORT_COUNT=82')
     for (const surface of ['SOURCE', 'WRAPPER']) {
       expect(result.stdout).toContain(
-        `${surface}_ROUTE_EXPORT_STREAM_SHA256=3ab0b1fdb146ab6a06846b5702cfa70a1a7b997d73b3235655ec248c32f68874`,
+        `${surface}_ROUTE_EXPORT_STREAM_SHA256=1edcfecc752f7657306d9a4f852c9ff3b37f2770270441a3bb37972366957c98`,
+      )
+    }
+    for (const surface of ['SOURCE', 'WRAPPER']) {
+      expect(result.stdout).toContain(`${surface}_PRIOR_ROUTE_EXPORT_COUNT=78`)
+      expect(result.stdout).toContain(
+        `${surface}_PRIOR_ROUTE_EXPORT_STREAM_SHA256=3ab0b1fdb146ab6a06846b5702cfa70a1a7b997d73b3235655ec248c32f68874`,
       )
     }
     expect(result.stdout).toContain('ROUTE_MIRROR_STATUS=VERIFIED')
@@ -220,7 +248,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
     const wrappers = wrapperRecords()
 
     console.info(`WRAPPER_ROUTE_EXPORT_COUNT=${wrappers.length}`)
-    expect(wrappers, `expected 78 wrappers but observed ${wrappers.length}`).toHaveLength(78)
+    expect(wrappers, `expected 82 wrappers but observed ${wrappers.length}`).toHaveLength(82)
 
     expect(wrappers.map(({ path, exports }) => ({ path, exports }))).toEqual(sources)
 
@@ -231,15 +259,14 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
 
     const hash = hashRecords(wrappers)
     console.info(`WRAPPER_ROUTE_EXPORT_STREAM_SHA256=${hash}`)
-    expect(hash).toBe('3ab0b1fdb146ab6a06846b5702cfa70a1a7b997d73b3235655ec248c32f68874')
+    expect(hash).toBe('1edcfecc752f7657306d9a4f852c9ff3b37f2770270441a3bb37972366957c98')
   })
 
-  test('declares the command POST timeout locally for Next static analysis', () => {
-    const wrapper = readFileSync(
-      resolve(wrapperRoot, 'conversation/meal-commands/route.ts'),
-      'utf8',
-    )
-    expect(wrapper).toContain("export const runtime = 'nodejs'")
+  test.each([...boundedConversationRoutes])('declares bounded timeout locally for %s', (path) => {
+    const wrapper = readFileSync(resolve(wrapperRoot, path), 'utf8')
+    if (path === 'conversation/meal-commands/route.ts') {
+      expect(wrapper).toContain("export const runtime = 'nodejs'")
+    }
     expect(wrapper).toContain('export const maxDuration = 120')
     const config = JSON.parse(
       readFileSync(
@@ -247,7 +274,9 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
         'utf8',
       ),
     )
-    expect(config.functions['/api/mobile/v1/conversation/meal-commands'].maxDuration).toBe(120)
+    expect(config.functions[`/api/mobile/v1/${path.replace(/\/route\.ts$/, '')}`].maxDuration).toBe(
+      120,
+    )
   })
   test('declares Flow route runtime limits locally for Next static analysis', () => {
     const flowWrapper = readFileSync(resolve(wrapperRoot, 'flow/chat/route.ts'), 'utf8')

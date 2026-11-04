@@ -1,0 +1,156 @@
+{
+  "data": {
+    "schema": "conversation.journal-page.v1",
+    "auth_user_id": "10000000-0000-4000-8000-000000000002",
+    "owner_id": "10000000-0000-4000-8000-000000000001",
+    "epoch": "10000000-0000-4000-8000-000000000003",
+    "observed_at": "2026-11-04T12:03:00.000001Z",
+    "items": [
+      {
+        "event_id": "edit/10000000-0000-4000-8000-000000000002/10000000-0000-4000-8000-000000000080",
+        "at": "2026-11-04T12:01:00.123456Z",
+        "kind": "edit",
+        "result": {
+          "schema": "conversation.meal-edit-result.v1",
+          "status": "saved",
+          "owner_id": "10000000-0000-4000-8000-000000000001",
+          "command_id": "10000000-0000-4000-8000-000000000002",
+          "input_hash": "d74050d7026b612f959ea907f0cb4dd79280539fe8e463f543f2e4ed5fc9ecf6",
+          "epoch": "10000000-0000-4000-8000-000000000003",
+          "receipt": {
+            "schema": "conversation.meal-edit-effect-public.v1",
+            "owner_id": "10000000-0000-4000-8000-000000000001",
+            "command_id": "10000000-0000-4000-8000-000000000002",
+            "operation_id": "10000000-0000-4000-8000-000000000080",
+            "input_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "kind": "saved",
+            "revision": 1,
+            "applied_at": "2026-11-04T12:01:00.123456+00:00",
+            "undo_expires_at": "2026-11-04T12:06:00.123456+00:00",
+            "target_operation_id": null,
+            "removed_item_ids": [
+              "10000000-0000-4000-8000-000000000005"
+            ],
+            "new_item_ids": [
+              "10000000-0000-4000-8000-000000000081"
+            ],
+            "next_record_id": "10000000-0000-4000-8000-000000000081"
+          }
+        }
+      },
+      {
+        "event_id": "command/10000000-0000-4000-8000-000000000009",
+        "at": "2026-11-04T12:00:00.000003Z",
+        "kind": "command",
+        "original_command": {
+          "command_protocol": "conversation.command.v1",
+          "command_id": "10000000-0000-4000-8000-000000000009",
+          "kind": "meal.report",
+          "meal_type": "almoco",
+          "source": {
+            "channel": "text",
+            "text": "Comi arroz 100 g"
+          }
+        },
+        "result": {
+          "schema": "conversation.meal-command-state.v1",
+          "status": "not_recorded",
+          "owner_id": "10000000-0000-4000-8000-000000000001",
+          "command_id": "10000000-0000-4000-8000-000000000009",
+          "input_hash": "acd6e7d432b2a8062a9109afdeb743800b163fba0ac74d570b13a6b7792d6f43",
+          "epoch": "10000000-0000-4000-8000-000000000003",
+          "reason": "nutrition_unresolved",
+          "food_indexes": [
+            0
+          ]
+        },
+        "terminal_receipt": {
+          "schema": "conversation.meal-decision-public.v1",
+          "status": "not_recorded",
+          "owner_id": "10000000-0000-4000-8000-000000000001",
+          "command_id": "10000000-0000-4000-8000-000000000009",
+          "input_hash": "acd6e7d432b2a8062a9109afdeb743800b163fba0ac74d570b13a6b7792d6f43",
+          "epoch": "10000000-0000-4000-8000-000000000003",
+          "reason": "nutrition_unresolved",
+          "food_indexes": [
+            0
+          ],
+          "decision_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "sealed_at": "2026-11-04T12:01:00.000004Z"
+        }
+      },
+      {
+        "event_id": "command/10000000-0000-4000-8000-000000000008",
+        "at": "2026-11-04T12:00:00.000002Z",
+        "kind": "command",
+        "original_command": {
+          "command_protocol": "conversation.command.v1",
+          "command_id": "10000000-0000-4000-8000-000000000008",
+          "kind": "meal.report",
+          "meal_type": "almoco",
+          "source": {
+            "channel": "text",
+            "text": "Comi arroz 100 g"
+          }
+        },
+        "result": {
+          "schema": "conversation.meal-command-state.v1",
+          "status": "pending",
+          "owner_id": "10000000-0000-4000-8000-000000000001",
+          "command_id": "10000000-0000-4000-8000-000000000008",
+          "input_hash": "40786b2fe03f874ebcd962c2ca7609de7424ef48fa74d58272a0937c24400ce4",
+          "epoch": "10000000-0000-4000-8000-000000000003"
+        },
+        "terminal_receipt": null
+      },
+      {
+        "event_id": "command/10000000-0000-4000-8000-000000000002",
+        "at": "2026-11-04T12:00:00.000001Z",
+        "kind": "command",
+        "original_command": {
+          "command_protocol": "conversation.command.v1",
+          "command_id": "10000000-0000-4000-8000-000000000002",
+          "kind": "meal.report",
+          "meal_type": "almoco",
+          "source": {
+            "channel": "text",
+            "text": "Comi arroz 100 g"
+          }
+        },
+        "result": {
+          "schema": "conversation.meal-command-result.v1",
+          "status": "saved",
+          "owner_id": "10000000-0000-4000-8000-000000000001",
+          "command_id": "10000000-0000-4000-8000-000000000002",
+          "input_hash": "d74050d7026b612f959ea907f0cb4dd79280539fe8e463f543f2e4ed5fc9ecf6",
+          "epoch": "10000000-0000-4000-8000-000000000003",
+          "admitted_at": "2026-11-04T12:00:00.000001Z",
+          "receipt": {
+            "schema": "conversation.meal-effect.v1",
+            "owner_id": "10000000-0000-4000-8000-000000000001",
+            "command_id": "10000000-0000-4000-8000-000000000002",
+            "input_hash": "d74050d7026b612f959ea907f0cb4dd79280539fe8e463f543f2e4ed5fc9ecf6",
+            "registration_id": "10000000-0000-4000-8000-000000000004",
+            "provider_key": "conversation.meal/10000000-0000-4000-8000-000000000001/10000000-0000-4000-8000-000000000002",
+            "meal_type": "almoco",
+            "local_date": "2026-11-04",
+            "timezone": "America/Sao_Paulo",
+            "consumed_at": "2026-11-04T12:00:01.000004Z",
+            "log_ids": [
+              "10000000-0000-4000-8000-000000000005"
+            ],
+            "effect_version": "cmeal1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "feedback": null
+        },
+        "terminal_receipt": null
+      }
+    ],
+    "has_more": false,
+    "next_cursor": null
+  },
+  "meta": {
+    "api_version": "v1",
+    "request_id": "synthetic-journal-fixture"
+  }
+}

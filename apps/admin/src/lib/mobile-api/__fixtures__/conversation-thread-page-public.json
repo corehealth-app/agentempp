@@ -1,0 +1,187 @@
+{
+  "data": {
+    "schema": "conversation.journal-page.v2",
+    "auth_user_id": "10000000-0000-4000-8000-000000000002",
+    "owner_id": "10000000-0000-4000-8000-000000000001",
+    "epoch": "10000000-0000-4000-8000-000000000003",
+    "observed_at": "2026-11-04T12:03:00.000001Z",
+    "threads": [
+      {
+        "schema": "conversation.meal-thread.v1",
+        "thread_id": "10000000-0000-4000-8000-000000000002",
+        "parent_binding": {
+          "owner_id": "10000000-0000-4000-8000-000000000001",
+          "command_id": "10000000-0000-4000-8000-000000000002",
+          "input_hash": "539a6e224df950b2a60566182a95e019d020f95e8a1e15b52c7ef7680c56dd2e",
+          "command_protocol": "conversation.command.v1",
+          "kind": "meal.report",
+          "epoch": "10000000-0000-4000-8000-000000000003",
+          "admitted_at": "2026-11-04T12:00:00.000001Z"
+        },
+        "original_command": {
+          "command_protocol": "conversation.command.v1",
+          "command_id": "10000000-0000-4000-8000-000000000002",
+          "kind": "meal.report",
+          "meal_type": "almoco",
+          "source": {
+            "channel": "text",
+            "text": "Comi leite"
+          }
+        },
+        "terminal_receipt": {
+          "schema": "conversation.meal-decision-public.v1",
+          "status": "not_recorded",
+          "owner_id": "10000000-0000-4000-8000-000000000001",
+          "command_id": "10000000-0000-4000-8000-000000000002",
+          "input_hash": "539a6e224df950b2a60566182a95e019d020f95e8a1e15b52c7ef7680c56dd2e",
+          "epoch": "10000000-0000-4000-8000-000000000003",
+          "reason": "missing_quantity",
+          "food_indexes": [0],
+          "decision_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "sealed_at": "2026-11-04T12:00:00.000009Z"
+        },
+        "continuation": {
+          "revision": 1,
+          "question": null,
+          "fulfilled_by": "10000000-0000-4000-8000-000000000041"
+        }
+      }
+    ],
+    "items": [
+      {
+        "event_id": "edit/10000000-0000-4000-8000-000000000041/10000000-0000-4000-8000-000000000080",
+        "at": "2026-11-04T12:00:04.123456Z",
+        "kind": "edit",
+        "thread_id": "10000000-0000-4000-8000-000000000002",
+        "effect_binding": {
+          "owner_id": "10000000-0000-4000-8000-000000000001",
+          "command_id": "10000000-0000-4000-8000-000000000041",
+          "input_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "command_protocol": "conversation.clarification.v1",
+          "kind": "meal.clarify",
+          "epoch": "10000000-0000-4000-8000-000000000003",
+          "admitted_at": "2026-11-04T12:00:01.000001Z"
+        },
+        "receipt": {
+          "schema": "conversation.meal-edit-effect-public.v1",
+          "owner_id": "10000000-0000-4000-8000-000000000001",
+          "command_id": "10000000-0000-4000-8000-000000000041",
+          "operation_id": "10000000-0000-4000-8000-000000000080",
+          "input_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "kind": "saved",
+          "revision": 1,
+          "applied_at": "2026-11-04T12:00:04.123456+00:00",
+          "undo_expires_at": "2026-11-04T12:05:04.123456+00:00",
+          "target_operation_id": null,
+          "removed_item_ids": ["10000000-0000-4000-8000-000000000005"],
+          "new_item_ids": ["10000000-0000-4000-8000-000000000081"],
+          "next_record_id": "10000000-0000-4000-8000-000000000081"
+        }
+      },
+      {
+        "event_id": "fulfillment/10000000-0000-4000-8000-000000000002/10000000-0000-4000-8000-000000000041",
+        "at": "2026-11-04T12:00:03.000001Z",
+        "kind": "fulfillment",
+        "thread_id": "10000000-0000-4000-8000-000000000002",
+        "child_binding": {
+          "owner_id": "10000000-0000-4000-8000-000000000001",
+          "command_id": "10000000-0000-4000-8000-000000000041",
+          "input_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "command_protocol": "conversation.clarification.v1",
+          "kind": "meal.clarify",
+          "epoch": "10000000-0000-4000-8000-000000000003",
+          "admitted_at": "2026-11-04T12:00:01.000001Z"
+        },
+        "receipt": {
+          "schema": "conversation.meal-continuation-effect.v1",
+          "owner_id": "10000000-0000-4000-8000-000000000001",
+          "command_id": "10000000-0000-4000-8000-000000000041",
+          "input_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "registration_id": "10000000-0000-4000-8000-000000000041",
+          "provider_key": "conversation.clarification/10000000-0000-4000-8000-000000000001/10000000-0000-4000-8000-000000000002",
+          "meal_type": "almoco",
+          "local_date": "2026-11-04",
+          "timezone": "America/Sao_Paulo",
+          "consumed_at": "2026-11-04T12:00:03.000001Z",
+          "log_ids": ["10000000-0000-4000-8000-000000000005"],
+          "effect_version": "cmeal1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "parent_command_id": "10000000-0000-4000-8000-000000000002",
+          "parent_input_hash": "539a6e224df950b2a60566182a95e019d020f95e8a1e15b52c7ef7680c56dd2e",
+          "parent_decision_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "epoch": "10000000-0000-4000-8000-000000000003"
+        },
+        "feedback": null
+      },
+      {
+        "event_id": "reply-result/10000000-0000-4000-8000-000000000002/10000000-0000-4000-8000-000000000041",
+        "at": "2026-11-04T12:00:02.000001Z",
+        "kind": "reply_result",
+        "thread_id": "10000000-0000-4000-8000-000000000002",
+        "child_binding": {
+          "owner_id": "10000000-0000-4000-8000-000000000001",
+          "command_id": "10000000-0000-4000-8000-000000000041",
+          "input_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "command_protocol": "conversation.clarification.v1",
+          "kind": "meal.clarify",
+          "epoch": "10000000-0000-4000-8000-000000000003",
+          "admitted_at": "2026-11-04T12:00:01.000001Z"
+        },
+        "prepared_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "status": "prepared",
+        "next_question": null
+      },
+      {
+        "event_id": "reply/10000000-0000-4000-8000-000000000002/10000000-0000-4000-8000-000000000041",
+        "at": "2026-11-04T12:00:01.000001Z",
+        "kind": "reply",
+        "thread_id": "10000000-0000-4000-8000-000000000002",
+        "child_binding": {
+          "owner_id": "10000000-0000-4000-8000-000000000001",
+          "command_id": "10000000-0000-4000-8000-000000000041",
+          "input_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "command_protocol": "conversation.clarification.v1",
+          "kind": "meal.clarify",
+          "epoch": "10000000-0000-4000-8000-000000000003",
+          "admitted_at": "2026-11-04T12:00:01.000001Z"
+        },
+        "body": {
+          "schema": "conversation.meal-clarification.v1",
+          "expected_revision": 0,
+          "question_key": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "answer": {
+            "kind": "quantity",
+            "food_index": 0,
+            "amount": 200,
+            "unit": "mL"
+          }
+        },
+        "question": {
+          "schema": "conversation.meal-question.v1",
+          "question_key": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "revision": 0,
+          "kind": "quantity",
+          "food_index": 0,
+          "food_name": "leite",
+          "allowed_units": ["g", "kg", "mL", "L", "caneca"],
+          "quantity_reference": {
+            "unit": "mL",
+            "grams_per_unit": 1.03,
+            "reference_id": "fao-infoods-v2-whole-milk-tb",
+            "estimated": true
+          }
+        }
+      },
+      {
+        "event_id": "command/10000000-0000-4000-8000-000000000002",
+        "at": "2026-11-04T12:00:00.000001Z",
+        "kind": "report",
+        "thread_id": "10000000-0000-4000-8000-000000000002",
+        "status": "not_recorded",
+        "receipt": null,
+        "feedback": null
+      }
+    ],
+    "has_more": false,
+    "next_cursor": null
+  }
+}

@@ -1,0 +1,431 @@
+{
+  "headers": {
+    "X-Conversation-Owner": "10000000-0000-4000-8000-000000000001",
+    "X-Conversation-Epoch": "10000000-0000-4000-8000-000000000003",
+    "X-Conversation-Input-Hash": "d74050d7026b612f959ea907f0cb4dd79280539fe8e463f543f2e4ed5fc9ecf6",
+    "Idempotency-Key": "cmedit1:10000000-0000-4000-8000-000000000080"
+  },
+  "operation_id": "10000000-0000-4000-8000-000000000080",
+  "input": {
+    "schema": "conversation.meal-edit.v1",
+    "expected_revision": 0,
+    "expected_version": "v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "kind": "save",
+    "record_id": "10000000-0000-4000-8000-000000000005",
+    "items": [
+      {
+        "food_name": "Arroz cozido",
+        "quantity_g": 200,
+        "quantity_basis": "stated"
+      }
+    ]
+  },
+  "operation_input_hash": "852da25cacdb763d018a5e3a4b777a306ab3d6ea2c92d31b58332c90afeb4c4c",
+  "group": {
+    "data": {
+      "schema": "conversation.meal-group.v1",
+      "owner_id": "10000000-0000-4000-8000-000000000001",
+      "command_id": "10000000-0000-4000-8000-000000000002",
+      "input_hash": "d74050d7026b612f959ea907f0cb4dd79280539fe8e463f543f2e4ed5fc9ecf6",
+      "epoch": "10000000-0000-4000-8000-000000000003",
+      "admitted_at": "2026-11-04T12:00:00.000001Z",
+      "observed_at": "2026-11-04T12:01:00.000004+00:00",
+      "original_receipt": {
+        "schema": "conversation.meal-effect.v1",
+        "owner_id": "10000000-0000-4000-8000-000000000001",
+        "command_id": "10000000-0000-4000-8000-000000000002",
+        "input_hash": "d74050d7026b612f959ea907f0cb4dd79280539fe8e463f543f2e4ed5fc9ecf6",
+        "registration_id": "10000000-0000-4000-8000-000000000004",
+        "provider_key": "conversation.meal/10000000-0000-4000-8000-000000000001/10000000-0000-4000-8000-000000000002",
+        "meal_type": "almoco",
+        "local_date": "2026-11-04",
+        "timezone": "America/Sao_Paulo",
+        "consumed_at": "2026-11-04T12:00:01.000004Z",
+        "log_ids": [
+          "10000000-0000-4000-8000-000000000005"
+        ],
+        "effect_version": "cmeal1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "revision": 0,
+      "lineage_compatible": true,
+      "current": {
+        "expected_version": "v1:88086917f9f92ffac8e868d6e56fec20d7802a8a45857d3293b70e9d88c4bf97",
+        "local_date": "2026-11-04",
+        "timezone": "America/Sao_Paulo",
+        "day_closed": false,
+        "items": [
+          {
+            "id": "10000000-0000-4000-8000-000000000005",
+            "food_name": "iogurte natural",
+            "quantity_g": 85,
+            "quantity_display": null,
+            "kcal": 55,
+            "protein_g": 3,
+            "carbs_g": 4.5,
+            "fat_g": 2.75,
+            "source": "product_label",
+            "consumed_at": "2026-11-04T12:00:01.000004Z",
+            "meal_type": "almoco"
+          }
+        ]
+      },
+      "last_operation": null,
+      "registration_undo_expires_at": "2026-11-04T12:05:00.000004+00:00",
+      "actions": {
+        "save": {
+          "allowed": true
+        },
+        "undo_registration": {
+          "allowed": true
+        },
+        "undo_save": {
+          "allowed": false,
+          "reason": "no_save_to_undo"
+        }
+      }
+    },
+    "meta": {
+      "api_version": "v1",
+      "request_id": "public-edit-fixture"
+    }
+  },
+  "milk": {
+    "data": {
+      "schema": "conversation.meal-group.v1",
+      "owner_id": "10000000-0000-4000-8000-000000000001",
+      "command_id": "10000000-0000-4000-8000-000000000002",
+      "input_hash": "d74050d7026b612f959ea907f0cb4dd79280539fe8e463f543f2e4ed5fc9ecf6",
+      "epoch": "10000000-0000-4000-8000-000000000003",
+      "admitted_at": "2026-11-04T12:00:00.000001Z",
+      "observed_at": "2026-11-04T12:01:00.000004+00:00",
+      "original_receipt": {
+        "schema": "conversation.meal-effect.v1",
+        "owner_id": "10000000-0000-4000-8000-000000000001",
+        "command_id": "10000000-0000-4000-8000-000000000002",
+        "input_hash": "d74050d7026b612f959ea907f0cb4dd79280539fe8e463f543f2e4ed5fc9ecf6",
+        "registration_id": "10000000-0000-4000-8000-000000000004",
+        "provider_key": "conversation.meal/10000000-0000-4000-8000-000000000001/10000000-0000-4000-8000-000000000002",
+        "meal_type": "almoco",
+        "local_date": "2026-11-04",
+        "timezone": "America/Sao_Paulo",
+        "consumed_at": "2026-11-04T12:00:01.000004Z",
+        "log_ids": [
+          "10000000-0000-4000-8000-000000000005"
+        ],
+        "effect_version": "cmeal1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "revision": 0,
+      "lineage_compatible": true,
+      "current": {
+        "expected_version": "v1:4dc7a451cc23d291ebb8fa9331c7c246a505434fed25e7c30670bc90ee4c453f",
+        "local_date": "2026-11-04",
+        "timezone": "America/Sao_Paulo",
+        "day_closed": false,
+        "items": [
+          {
+            "id": "10000000-0000-4000-8000-000000000005",
+            "food_name": "leite",
+            "quantity_g": 206,
+            "quantity_display": {
+              "unit": "mL",
+              "grams_per_unit": 1.03,
+              "reference_id": "fao-infoods-v2-whole-milk-tb",
+              "estimated": true
+            },
+            "kcal": 55,
+            "protein_g": 3,
+            "carbs_g": 4.5,
+            "fat_g": 2.75,
+            "source": "product_label",
+            "consumed_at": "2026-11-04T12:00:01.000004Z",
+            "meal_type": "almoco"
+          }
+        ]
+      },
+      "last_operation": null,
+      "registration_undo_expires_at": "2026-11-04T12:05:00.000004+00:00",
+      "actions": {
+        "save": {
+          "allowed": true
+        },
+        "undo_registration": {
+          "allowed": true
+        },
+        "undo_save": {
+          "allowed": false,
+          "reason": "no_save_to_undo"
+        }
+      }
+    },
+    "meta": {
+      "api_version": "v1",
+      "request_id": "public-edit-fixture"
+    }
+  },
+  "whey": {
+    "data": {
+      "schema": "conversation.meal-group.v1",
+      "owner_id": "10000000-0000-4000-8000-000000000001",
+      "command_id": "10000000-0000-4000-8000-000000000002",
+      "input_hash": "d74050d7026b612f959ea907f0cb4dd79280539fe8e463f543f2e4ed5fc9ecf6",
+      "epoch": "10000000-0000-4000-8000-000000000003",
+      "admitted_at": "2026-11-04T12:00:00.000001Z",
+      "observed_at": "2026-11-04T12:01:00.000004+00:00",
+      "original_receipt": {
+        "schema": "conversation.meal-effect.v1",
+        "owner_id": "10000000-0000-4000-8000-000000000001",
+        "command_id": "10000000-0000-4000-8000-000000000002",
+        "input_hash": "d74050d7026b612f959ea907f0cb4dd79280539fe8e463f543f2e4ed5fc9ecf6",
+        "registration_id": "10000000-0000-4000-8000-000000000004",
+        "provider_key": "conversation.meal/10000000-0000-4000-8000-000000000001/10000000-0000-4000-8000-000000000002",
+        "meal_type": "almoco",
+        "local_date": "2026-11-04",
+        "timezone": "America/Sao_Paulo",
+        "consumed_at": "2026-11-04T12:00:01.000004Z",
+        "log_ids": [
+          "10000000-0000-4000-8000-000000000005"
+        ],
+        "effect_version": "cmeal1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "revision": 0,
+      "lineage_compatible": true,
+      "current": {
+        "expected_version": "v1:9ad7ee02152774e66c486bd676b6848ef653e4ffb27368c51b039fab5f07b7be",
+        "local_date": "2026-11-04",
+        "timezone": "America/Sao_Paulo",
+        "day_closed": false,
+        "items": [
+          {
+            "id": "10000000-0000-4000-8000-000000000005",
+            "food_name": "whey",
+            "quantity_g": 30,
+            "quantity_display": {
+              "unit": "scoop",
+              "grams_per_unit": 30,
+              "reference_id": "app-household-whey-scoop-v1",
+              "estimated": true
+            },
+            "kcal": 55,
+            "protein_g": 3,
+            "carbs_g": 4.5,
+            "fat_g": 2.75,
+            "source": "product_label",
+            "consumed_at": "2026-11-04T12:00:01.000004Z",
+            "meal_type": "almoco"
+          }
+        ]
+      },
+      "last_operation": null,
+      "registration_undo_expires_at": "2026-11-04T12:05:00.000004+00:00",
+      "actions": {
+        "save": {
+          "allowed": true
+        },
+        "undo_registration": {
+          "allowed": true
+        },
+        "undo_save": {
+          "allowed": false,
+          "reason": "no_save_to_undo"
+        }
+      }
+    },
+    "meta": {
+      "api_version": "v1",
+      "request_id": "public-edit-fixture"
+    }
+  },
+  "unavailable_group": {
+    "data": {
+      "schema": "conversation.meal-group.v1",
+      "owner_id": "10000000-0000-4000-8000-000000000001",
+      "command_id": "10000000-0000-4000-8000-000000000002",
+      "input_hash": "d74050d7026b612f959ea907f0cb4dd79280539fe8e463f543f2e4ed5fc9ecf6",
+      "epoch": "10000000-0000-4000-8000-000000000003",
+      "admitted_at": "2026-11-04T12:00:00.000001Z",
+      "observed_at": "2026-11-04T12:01:00.000004+00:00",
+      "original_receipt": {
+        "schema": "conversation.meal-effect.v1",
+        "owner_id": "10000000-0000-4000-8000-000000000001",
+        "command_id": "10000000-0000-4000-8000-000000000002",
+        "input_hash": "d74050d7026b612f959ea907f0cb4dd79280539fe8e463f543f2e4ed5fc9ecf6",
+        "registration_id": "10000000-0000-4000-8000-000000000004",
+        "provider_key": "conversation.meal/10000000-0000-4000-8000-000000000001/10000000-0000-4000-8000-000000000002",
+        "meal_type": "almoco",
+        "local_date": "2026-11-04",
+        "timezone": "America/Sao_Paulo",
+        "consumed_at": "2026-11-04T12:00:01.000004Z",
+        "log_ids": [
+          "10000000-0000-4000-8000-000000000005"
+        ],
+        "effect_version": "cmeal1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "revision": 0,
+      "lineage_compatible": true,
+      "current": null,
+      "last_operation": null,
+      "registration_undo_expires_at": "2026-11-04T12:05:00.000004+00:00",
+      "actions": {
+        "save": {
+          "allowed": false,
+          "reason": "current_group_unavailable"
+        },
+        "undo_registration": {
+          "allowed": false,
+          "reason": "current_group_unavailable"
+        },
+        "undo_save": {
+          "allowed": false,
+          "reason": "current_group_unavailable"
+        }
+      }
+    },
+    "meta": {
+      "api_version": "v1",
+      "request_id": "public-edit-fixture"
+    }
+  },
+  "saved": {
+    "data": {
+      "schema": "conversation.meal-edit-result.v1",
+      "status": "saved",
+      "owner_id": "10000000-0000-4000-8000-000000000001",
+      "command_id": "10000000-0000-4000-8000-000000000002",
+      "input_hash": "d74050d7026b612f959ea907f0cb4dd79280539fe8e463f543f2e4ed5fc9ecf6",
+      "epoch": "10000000-0000-4000-8000-000000000003",
+      "receipt": {
+        "schema": "conversation.meal-edit-effect-public.v1",
+        "owner_id": "10000000-0000-4000-8000-000000000001",
+        "command_id": "10000000-0000-4000-8000-000000000002",
+        "operation_id": "10000000-0000-4000-8000-000000000080",
+        "input_hash": "852da25cacdb763d018a5e3a4b777a306ab3d6ea2c92d31b58332c90afeb4c4c",
+        "kind": "saved",
+        "revision": 1,
+        "applied_at": "2026-11-04T12:01:00.123456+00:00",
+        "undo_expires_at": "2026-11-04T12:06:00.123456+00:00",
+        "target_operation_id": null,
+        "removed_item_ids": [
+          "10000000-0000-4000-8000-000000000005"
+        ],
+        "new_item_ids": [
+          "10000000-0000-4000-8000-000000000081"
+        ],
+        "next_record_id": "10000000-0000-4000-8000-000000000081"
+      }
+    },
+    "meta": {
+      "api_version": "v1",
+      "request_id": "public-edit-fixture"
+    }
+  },
+  "absent": {
+    "data": {
+      "schema": "conversation.meal-edit-state.v1",
+      "status": "absent",
+      "owner_id": "10000000-0000-4000-8000-000000000001",
+      "command_id": "10000000-0000-4000-8000-000000000002",
+      "input_hash": "d74050d7026b612f959ea907f0cb4dd79280539fe8e463f543f2e4ed5fc9ecf6",
+      "epoch": "10000000-0000-4000-8000-000000000003",
+      "operation_id": "10000000-0000-4000-8000-000000000080",
+      "operation_input_hash": "852da25cacdb763d018a5e3a4b777a306ab3d6ea2c92d31b58332c90afeb4c4c"
+    },
+    "meta": {
+      "api_version": "v1",
+      "request_id": "public-edit-fixture"
+    }
+  },
+  "undo_save_input": {
+    "schema": "conversation.meal-edit.v1",
+    "expected_revision": 1,
+    "expected_version": "v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "kind": "undo_save",
+    "target_operation_id": "10000000-0000-4000-8000-000000000082"
+  },
+  "undo_save": {
+    "data": {
+      "schema": "conversation.meal-edit-result.v1",
+      "status": "saved",
+      "owner_id": "10000000-0000-4000-8000-000000000001",
+      "command_id": "10000000-0000-4000-8000-000000000002",
+      "input_hash": "d74050d7026b612f959ea907f0cb4dd79280539fe8e463f543f2e4ed5fc9ecf6",
+      "epoch": "10000000-0000-4000-8000-000000000003",
+      "receipt": {
+        "schema": "conversation.meal-edit-effect-public.v1",
+        "owner_id": "10000000-0000-4000-8000-000000000001",
+        "command_id": "10000000-0000-4000-8000-000000000002",
+        "operation_id": "10000000-0000-4000-8000-000000000080",
+        "input_hash": "338e299a3aa970c172051e1ff3481537499329ca37c1318fb1a02aa288885974",
+        "kind": "save_undone",
+        "revision": 2,
+        "applied_at": "2026-11-04T12:01:00.123456+00:00",
+        "undo_expires_at": null,
+        "target_operation_id": "10000000-0000-4000-8000-000000000082",
+        "removed_item_ids": [
+          "10000000-0000-4000-8000-000000000005"
+        ],
+        "new_item_ids": [
+          "10000000-0000-4000-8000-000000000081"
+        ],
+        "next_record_id": "10000000-0000-4000-8000-000000000081"
+      }
+    },
+    "meta": {
+      "api_version": "v1",
+      "request_id": "public-edit-fixture"
+    }
+  },
+  "undo_registration_input": {
+    "schema": "conversation.meal-edit.v1",
+    "expected_revision": 0,
+    "expected_version": "v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "kind": "undo_registration"
+  },
+  "undo_registration": {
+    "data": {
+      "schema": "conversation.meal-edit-result.v1",
+      "status": "saved",
+      "owner_id": "10000000-0000-4000-8000-000000000001",
+      "command_id": "10000000-0000-4000-8000-000000000002",
+      "input_hash": "d74050d7026b612f959ea907f0cb4dd79280539fe8e463f543f2e4ed5fc9ecf6",
+      "epoch": "10000000-0000-4000-8000-000000000003",
+      "receipt": {
+        "schema": "conversation.meal-edit-effect-public.v1",
+        "owner_id": "10000000-0000-4000-8000-000000000001",
+        "command_id": "10000000-0000-4000-8000-000000000002",
+        "operation_id": "10000000-0000-4000-8000-000000000080",
+        "input_hash": "8f685a0492b097a2fdf0c5f4dcaf83f3812af73e2aa0094ea8c3d6195dea2066",
+        "kind": "registration_undone",
+        "revision": 1,
+        "applied_at": "2026-11-04T12:01:00.123456+00:00",
+        "undo_expires_at": null,
+        "target_operation_id": null,
+        "removed_item_ids": [
+          "10000000-0000-4000-8000-000000000005"
+        ],
+        "new_item_ids": [],
+        "next_record_id": null
+      }
+    },
+    "meta": {
+      "api_version": "v1",
+      "request_id": "public-edit-fixture"
+    }
+  },
+  "exponent_hash_case": {
+    "input": {
+      "schema": "conversation.meal-edit.v1",
+      "expected_revision": 0,
+      "expected_version": "v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "kind": "save",
+      "record_id": "10000000-0000-4000-8000-000000000005",
+      "items": [
+        {
+          "food_name": "rice",
+          "quantity_g": 100,
+          "user_kcal": 1e-7
+        }
+      ]
+    },
+    "operation_input_hash": "19ebb3357283fe574bb936567e16dd1b94a021be4e018df217a9da259f7873f3"
+  }
+}

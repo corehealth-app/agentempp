@@ -14,6 +14,42 @@ import { createConversationMealCommandService } from './conversation-meal-comman
 import { registerPersistedConversationMeal } from './conversation-meal-registration-service'
 
 const command = writerCommand()
+function terminalDecision() {
+  return {
+    action: 'available',
+    binding: writerBinding(),
+    decision: {
+      schema: 'conversation.meal-decision.v1',
+      status: 'not_recorded',
+      reason: 'missing_quantity',
+      food_indexes: [0],
+      owner_id: command.ownerId,
+      command_id: command.commandId,
+      epoch: writerEpoch,
+      input_hash: command.inputHash,
+      source_hash: 'b'.repeat(64),
+      attempt_id: '10000000-0000-4000-8000-000000000080',
+      semantic_result_hash: 'c'.repeat(64),
+      decision_hash: 'd'.repeat(64),
+      sealed_at: '2026-11-04T12:01:00.000004Z',
+    },
+  }
+}
+function completedSemanticProof() {
+  const d = terminalDecision().decision
+  return {
+    action: 'available',
+    status: 'completed',
+    owner_id: d.owner_id,
+    command_id: d.command_id,
+    epoch: d.epoch,
+    input_hash: d.input_hash,
+    source_hash: d.source_hash,
+    attempt_id: d.attempt_id,
+    result_hash: d.semantic_result_hash,
+    result: { present: true },
+  }
+}
 function ports() {
   const binding = writerBinding(),
     receipt = writerReceipt()
@@ -58,6 +94,10 @@ function ports() {
       historicalFeedback: { private: 'NEVER PUBLISH' },
     }),
     presentation: { readHistorical: vi.fn().mockResolvedValue(null) },
+    decisions: {
+      read: vi.fn().mockResolvedValue({ action: 'absent' }),
+      seal: vi.fn().mockResolvedValue({ ...terminalDecision(), action: 'sealed' }),
+    },
   }
 }
 function fixture() {
@@ -239,6 +279,9 @@ describe('public command submission and effect-only reconciliation', () => {
   })
   it('clarification returns original identity without a saved-effect claim', async () => {
     const f = fixture()
+    f.p.semantics.read
+      .mockResolvedValueOnce({ action: 'absent' })
+      .mockResolvedValueOnce(completedSemanticProof())
     f.p.register.mockResolvedValue({
       status: 'not_recorded',
       command,
@@ -255,6 +298,174 @@ describe('public command submission and effect-only reconciliation', () => {
       reason: 'missing_quantity',
       food_indexes: [0],
     })
+    expect(f.p.decisions.seal).toHaveBeenCalledTimes(1)
+    expect(f.p.decisions.seal).toHaveBeenCalledWith(
+      {
+        ownerId: command.ownerId,
+        commandId: command.commandId,
+        inputHash: command.inputHash,
+        epoch: writerEpoch,
+      },
+      {
+        sourceHash: 'b'.repeat(64),
+        attemptId: terminalDecision().decision.attempt_id,
+        resultHash: 'c'.repeat(64),
+      },
+      {
+        schema: 'conversation.meal-decision.v1',
+        status: 'not_recorded',
+        reason: 'missing_quantity',
+        food_indexes: [0],
+      },
+    )
+  })
+  it('returns the immutable non-registration winner on POST before interpretation or registration', async () => {
+    const f = fixture()
+    f.p.decisions.read.mockResolvedValue(terminalDecision())
+    expect(await f.submit()).toMatchObject({
+      status: 'not_recorded',
+      reason: 'missing_quantity',
+      food_indexes: [0],
+    })
+    for (const method of [
+      f.p.createInterpreter,
+      f.p.register,
+      f.p.semantics.read,
+      f.p.decisions.seal,
+      f.p.journal.admit,
+    ])
+      expect(method).not.toHaveBeenCalled()
+  })
+  it('restores a terminal clarification on GET without calculations, writes or semantic invocation', async () => {
+    const f = fixture()
+    f.p.writer.readPrepared.mockResolvedValue({ ...stored(), receipt: null, resolved: null })
+    f.p.decisions.read.mockResolvedValue(terminalDecision())
+    expect(await f.read()).toMatchObject({
+      status: 'not_recorded',
+      reason: 'missing_quantity',
+      food_indexes: [0],
+    })
+    for (const method of [
+      f.p.createInterpreter,
+      f.p.register,
+      f.p.semantics.read,
+      f.p.decisions.seal,
+      f.p.journal.admit,
+    ])
+      expect(method).not.toHaveBeenCalled()
+  })
+  it('recovers a lost seal response by one terminal read without sealing again', async () => {
+    const f = fixture()
+    f.p.register.mockResolvedValue({
+      status: 'not_recorded',
+      command,
+      reason: 'missing_quantity',
+      foodIndexes: [0],
+    })
+    f.p.semantics.read
+      .mockResolvedValueOnce({ action: 'absent' })
+      .mockResolvedValueOnce(completedSemanticProof())
+    f.p.decisions.seal.mockRejectedValue(new Error('response lost after seal'))
+    f.p.decisions.read
+      .mockResolvedValueOnce({ action: 'absent' })
+      .mockResolvedValueOnce(terminalDecision())
+    expect(await f.submit()).toMatchObject({ status: 'not_recorded', reason: 'missing_quantity' })
+    expect(f.p.decisions.seal).toHaveBeenCalledTimes(1)
+    expect(f.p.decisions.read).toHaveBeenCalledTimes(2)
+    expect(f.p.register).toHaveBeenCalledTimes(1)
+  })
+  it('keeps an unproven seal outcome in reconciliation without claiming a terminal answer', async () => {
+    const f = fixture()
+    f.p.register.mockResolvedValue({
+      status: 'not_recorded',
+      command,
+      reason: 'missing_quantity',
+      foodIndexes: [0],
+    })
+    f.p.semantics.read
+      .mockResolvedValueOnce({ action: 'absent' })
+      .mockResolvedValueOnce(completedSemanticProof())
+    f.p.decisions.seal.mockRejectedValue(new Error('unknown outcome'))
+    await expect(f.submit()).rejects.toMatchObject({
+      status: 409,
+      code: 'conversation_decision_reconciliation_required',
+    })
+    expect(f.p.decisions.seal).toHaveBeenCalledTimes(1)
+    expect(f.p.decisions.read).toHaveBeenCalledTimes(2)
+    expect(f.p.register).toHaveBeenCalledTimes(1)
+  })
+  it.each([
+    'started',
+    'unknown',
+    'error',
+  ])('cannot seal a terminal answer from an unfinished %s attempt', async (status) => {
+    const f = fixture()
+    f.p.register.mockResolvedValue({
+      status: 'not_recorded',
+      command,
+      reason: 'missing_quantity',
+      foodIndexes: [0],
+    })
+    f.p.semantics.read.mockResolvedValueOnce({ action: 'absent' }).mockResolvedValueOnce({
+      ...completedSemanticProof(),
+      status,
+      result: null,
+      result_hash: null,
+    })
+    await expect(f.submit()).rejects.toMatchObject({ status: 503 })
+    expect(f.p.decisions.seal).not.toHaveBeenCalled()
+  })
+  it('rejects a changed semantic epoch before sealing or returning its decision', async () => {
+    const f = fixture()
+    f.p.register.mockResolvedValue({
+      status: 'not_recorded',
+      command,
+      reason: 'missing_quantity',
+      foodIndexes: [0],
+    })
+    f.p.semantics.read.mockResolvedValueOnce({ action: 'absent' }).mockResolvedValueOnce({
+      ...completedSemanticProof(),
+      epoch: '10000000-0000-4000-8000-000000000099',
+    })
+    await expect(f.submit()).rejects.toMatchObject({ status: 409 })
+    expect(f.p.decisions.seal).not.toHaveBeenCalled()
+  })
+  it('classifies an actual stale-epoch semantic refusal as a permanent scope change', async () => {
+    const f = fixture()
+    f.p.register.mockResolvedValue({
+      status: 'not_recorded',
+      command,
+      reason: 'missing_quantity',
+      foodIndexes: [0],
+    })
+    f.p.semantics.read
+      .mockResolvedValueOnce({ action: 'absent' })
+      .mockResolvedValueOnce({ action: 'stale_epoch' })
+    await expect(f.submit()).rejects.toMatchObject({
+      status: 409,
+      code: 'conversation_command_changed',
+    })
+    expect(f.p.decisions.seal).not.toHaveBeenCalled()
+  })
+  it('returns a concurrent factual winner instead of the losing terminal decision', async () => {
+    const f = fixture()
+    f.p.register.mockResolvedValue({
+      status: 'not_recorded',
+      command,
+      reason: 'missing_quantity',
+      foodIndexes: [0],
+    })
+    f.p.semantics.read
+      .mockResolvedValueOnce({ action: 'absent' })
+      .mockResolvedValueOnce(completedSemanticProof())
+    f.p.decisions.seal.mockResolvedValue({ action: 'resolved_conflict' })
+    f.p.writer.readPrepared
+      .mockResolvedValueOnce({ action: 'absent' })
+      .mockResolvedValueOnce(stored())
+    expect(await f.submit()).toMatchObject({ status: 'saved', receipt: writerReceipt() })
+    expect(f.p.register).toHaveBeenCalledTimes(1)
+    expect(f.p.decisions.seal).toHaveBeenCalledTimes(1)
+    expect(f.p.writer.commit).not.toHaveBeenCalled()
   })
   it('GET reconciliation reads a saved result without a provider or registration', async () => {
     const f = fixture()

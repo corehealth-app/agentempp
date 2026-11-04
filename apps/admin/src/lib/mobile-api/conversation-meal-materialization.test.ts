@@ -15,10 +15,13 @@ import {
 import { validateConversationMealInterpretationModel } from './conversation-meal-interpretation-validation'
 import {
   mapConversationMealCalculationSources,
+  materializeConversationMealContinuation,
   materializeConversationMealInterpretation,
+  materializeStoredConversationMealContinuation,
 } from './conversation-meal-materialization'
 import { createBoundConversationMealCorrectionReader } from './conversation-meal-personal-correction'
 import type { CapturedConversationMealSource } from './conversation-meal-source'
+import { mobileQuantityDisplay } from './mobile-quantity-display'
 import { applyMobilePreparedDishEstimate } from './prepared-dish-estimate'
 
 const OWNER = '10000000-0000-4000-8000-000000000001'
@@ -1026,3 +1029,624 @@ function correctionDb(rows: Correction[], names: string[] = [], raw = false) {
   Object.assign(state.client, { from })
   return { ...state, from, calls }
 }
+
+function continuationFixture<
+  T extends ReturnType<typeof fixture> | ReturnType<typeof visualFixture>,
+>(f: T) {
+  Object.assign(f.capture.context.day, { date: '2026-11-04', day_closed: false })
+  const resolution: CapturedConversationMealSource = {
+    ...f.capture,
+    sourceHash: 'b'.repeat(64),
+    capturedAt: '2026-11-05T02:00:00.000002Z',
+    context: structuredClone(f.capture.context),
+    sourceReader: { ...f.capture.sourceReader, asOf: '2026-11-05T02:00:00.000002Z' },
+  }
+  return { ...f, resolution }
+}
+function quantityReply(name: string, foodIndex = 0, amount = 200, unit = 'g', id = ASSET) {
+  const ref = mobileQuantityDisplay(name),
+    units = ['g', 'kg']
+  if (ref?.unit === 'mL') {
+    units.push('mL', 'L')
+    if (ref.reference_id === 'fao-infoods-v2-whole-milk-tb') units.push('caneca')
+  } else if (ref) units.push(ref.unit)
+  return {
+    replyId: id,
+    input: {
+      schema: 'conversation.meal-clarification.v1',
+      expected_revision: foodIndex,
+      question_key: 'e'.repeat(64),
+      answer: { kind: 'quantity', food_index: foodIndex, amount, unit },
+    },
+    question: {
+      schema: 'conversation.meal-question.v1',
+      question_key: 'e'.repeat(64),
+      revision: foodIndex,
+      kind: 'quantity',
+      food_index: foodIndex,
+      food_name: name,
+      allowed_units: units,
+      quantity_reference: ref,
+    },
+  }
+}
+function continueMeal(
+  f: ReturnType<typeof continuationFixture>,
+  answers: unknown[],
+  state: { client: ServiceClient } = db(),
+  policy = options,
+) {
+  return materializeConversationMealContinuation(
+    state.client,
+    f.command,
+    f.capture,
+    f.interpretation,
+    policy,
+    { resolutionSource: f.resolution, quantityAnswers: answers },
+  )
+}
+
+describe('separate linked missing quantity overlay', () => {
+  it('applies rice answer and preserves beans, original source/model bytes and source positions', async () => {
+    const f = continuationFixture(
+      fixture('arroz; feijão100g', [
+        { name: 'arroz' },
+        { name: 'feijão', quantity: '100', unit: 'g' },
+      ]),
+    )
+    const before = structuredClone(f.interpretation),
+      answer = quantityReply('arroz')
+    expect(await materialize(f)).toMatchObject({
+      status: 'clarification_required',
+      reason: 'missing_quantity',
+      food_indexes: [0],
+    })
+    const result = await continueMeal(f, [answer]),
+      material = prepared(result.materialization)
+    expect(material.inputs.map((i) => i.calculation_input)).toEqual([
+      { food_name: 'arroz', quantity_g: 200 },
+      { food_name: 'feijão', quantity_g: 100 },
+    ])
+    expect(material).toMatchObject({
+      input_hash: f.command.inputHash,
+      source_hash: f.capture.sourceHash,
+      attempt_id: ATTEMPT,
+    })
+    expect(material.source_groups[0]?.rule).toBe('literal')
+    expect(material.source_groups[0]?.source_positions[0]).toMatchObject({
+      name: f.interpretation.foods[0]?.name,
+      quantity: null,
+      unit_ref: null,
+    })
+    expect(f.interpretation).toEqual(before)
+    expect(result.quantity_witnesses).toEqual([
+      {
+        reply_id: ASSET,
+        food_index: 0,
+        amount: 200,
+        unit: 'g',
+        quantity_g: 200,
+        quantity_basis: 'stated',
+        quantity_display: null,
+        input_indexes: [0],
+      },
+    ])
+    expect(Object.isFrozen(result.quantity_witnesses[0]?.input_indexes)).toBe(true)
+  })
+  it('returns no invented partial input slots, then actual mapping after both answers', async () => {
+    const f = continuationFixture(
+        fixture('arroz; feijão', [{ name: 'arroz' }, { name: 'feijão' }]),
+      ),
+      first = quantityReply('arroz'),
+      second = quantityReply('feijão', 1, 100, 'g', COMMAND)
+    expect((await continueMeal(f, [])).quantity_witnesses).toEqual([])
+    const partial = await continueMeal(f, [first])
+    expect(partial.materialization).toEqual({
+      status: 'clarification_required',
+      reason: 'missing_quantity',
+      food_indexes: [1],
+    })
+    expect(partial.quantity_witnesses[0]?.input_indexes).toEqual([])
+    const complete = await continueMeal(f, [first, second])
+    expect(complete.quantity_witnesses.map((w) => w.input_indexes)).toEqual([[0], [1]])
+    expect(
+      prepared(complete.materialization).inputs.map((i) => i.calculation_input.quantity_g),
+    ).toEqual([200, 100])
+  })
+  it('retains reference metadata without adding source text refs or replacing the original rule', async () => {
+    const f = continuationFixture(fixture('leite; whey', [{ name: 'leite' }, { name: 'whey' }]))
+    const result = await continueMeal(f, [
+      quantityReply('leite', 0, 200, 'mL'),
+      quantityReply('whey', 1, 1.5, 'scoop', COMMAND),
+    ])
+    expect(
+      prepared(result.materialization).inputs.map((i) => [
+        i.calculation_input.quantity_g,
+        i.candidate.quantity_basis,
+        i.candidate.needs_review,
+      ]),
+    ).toEqual([
+      [206, 'portion_reference', true],
+      [45, 'portion_reference', true],
+    ])
+    expect(result.quantity_witnesses[0]?.quantity_display).toEqual(mobileQuantityDisplay('leite'))
+    expect(prepared(result.materialization).source_groups.map((g) => g.rule)).toEqual([
+      'literal',
+      'literal',
+    ])
+    expect(
+      prepared(result.materialization).source_groups.every(
+        (g) => g.source_positions[0]?.quantity === null,
+      ),
+    ).toBe(true)
+  })
+  it.each([
+    'wrong-name',
+    'wrong-target',
+    'explicit',
+    'duplicate-food',
+    'duplicate-reply',
+    'extra',
+    'meal-type',
+    'unapplied-later',
+  ])('refuses invalid/unapplied answer %s', async (attack) => {
+    const explicit = attack === 'explicit',
+      f = continuationFixture(
+        fixture(
+          explicit ? 'arroz100g; feijão' : 'arroz; feijão',
+          explicit
+            ? [{ name: 'arroz', quantity: '100', unit: 'g' }, { name: 'feijão' }]
+            : [{ name: 'arroz' }, { name: 'feijão' }],
+        ),
+      )
+    const a = quantityReply('arroz'),
+      b = quantityReply('feijão', 1, 100, 'g', COMMAND),
+      state = db()
+    let answers: unknown[] = [a]
+    if (attack === 'wrong-name') a.question.food_name = 'feijão'
+    if (attack === 'wrong-target') {
+      a.input.answer.food_index = 2
+      a.question.food_index = 2
+    }
+    if (attack === 'duplicate-food') answers = [a, { ...a, replyId: COMMAND }]
+    if (attack === 'duplicate-reply') answers = [a, { ...b, replyId: ASSET }]
+    if (attack === 'extra') answers = [{ ...a, owner_id: OWNER }]
+    if (attack === 'meal-type')
+      answers = [
+        {
+          ...a,
+          input: { ...a.input, answer: { kind: 'meal_type', meal_type: 'cafe' } },
+          question: {
+            ...a.question,
+            kind: 'meal_type',
+            food_index: null,
+            food_name: null,
+            quantity_reference: null,
+            allowed_units: [],
+          },
+        },
+      ]
+    if (attack === 'unapplied-later') answers = [b]
+    await expect(continueMeal(f, answers, state)).rejects.toMatchObject({
+      code: 'conversation_meal_materialization_unavailable',
+    })
+    if (attack !== 'unapplied-later') {
+      expect(state.rpc).not.toHaveBeenCalled()
+      expect(state.from).not.toHaveBeenCalled()
+    }
+  })
+  it('refuses exact expanded cup/ambiguous compact recipe answers instead of overwriting portions', async () => {
+    for (const name of ['1 caneca de leite com 1 medida de whey', 'leite com 1 medida de whey']) {
+      const f = continuationFixture(fixture(name, [{ name }]))
+      await expect(continueMeal(f, [quantityReply(name)])).rejects.toMatchObject({
+        code: 'conversation_meal_materialization_unavailable',
+      })
+    }
+  })
+  it('uses fresh correction cutoff while original interpretation remains bound to old capture', async () => {
+    const f = continuationFixture(fixture('geleia da casa', [{ name: 'geleia da casa' }])),
+      state = correctionDb([correction({ last_seen: '2026-11-05T01:30:00.000001Z' })])
+    const result = await continueMeal(f, [quantityReply('geleia da casa', 0, 50)], state)
+    expect(prepared(result.materialization).inputs[0]?.calculation_input).toEqual({
+      food_name: 'geleia da casa',
+      quantity_g: 50,
+    })
+    expect(result.materialization).toMatchObject({ source_hash: f.capture.sourceHash })
+    expect(
+      state.calls
+        .filter((c) => c.method === 'gte')
+        .every((c) => c.args[1] === '2026-10-06T02:00:00.000Z'),
+    ).toBe(true)
+    expect(f.capture.sourceReader.asOf).toBe('2026-11-05T01:00:00.000001Z')
+    expect(f.resolution.sourceReader.asOf).toBe('2026-11-05T02:00:00.000002Z')
+  })
+  it.each([
+    'owner',
+    'epoch',
+    'day',
+    'empty-day',
+    'zone',
+    'country',
+    'locale',
+    'source-input',
+    'source-units',
+    'source-evidence',
+    'original-reader',
+    'fresh-reader',
+    'fresh-clock',
+  ])('refuses crossed %s before querying', async (attack) => {
+    const f = continuationFixture(fixture('arroz', [{ name: 'arroz' }])),
+      state = db()
+    const c = f.resolution.context
+    if (attack === 'owner') Object.assign(c, { owner_id: ASSET })
+    if (attack === 'epoch') Object.assign(f.resolution, { epoch: ASSET })
+    if (attack === 'day') c.day.date = '2026-11-05'
+    if (attack === 'empty-day') {
+      delete c.day.date
+      delete f.capture.context.day.date
+    }
+    if (attack === 'zone') c.owner.timezone = 'UTC'
+    if (attack === 'country') c.owner.country = 'US'
+    if (attack === 'locale') c.owner.locale = 'en-US'
+    if (attack === 'source-input') Object.assign(c.source_input.source, { text: 'feijão' })
+    if (attack === 'source-units') Object.assign(c, { source_units: ['vision_items'] })
+    if (attack === 'source-evidence')
+      Object.assign(c, { source_evidence: { transcript: 'changed' } })
+    if (attack === 'original-reader') Object.assign(f.capture.sourceReader, { ownerId: ASSET })
+    if (attack === 'fresh-reader') Object.assign(f.resolution.sourceReader, { ownerId: ASSET })
+    if (attack === 'fresh-clock')
+      Object.assign(f.resolution.sourceReader, { asOf: f.capture.capturedAt })
+    await expect(continueMeal(f, [quantityReply('arroz')], state)).rejects.toMatchObject({
+      code: 'conversation_meal_materialization_unavailable',
+    })
+    expect(state.rpc).not.toHaveBeenCalled()
+    expect(state.from).not.toHaveBeenCalled()
+  })
+  it('rejects media drift before querying and preserves explicit resolved visual mass', async () => {
+    const f = continuationFixture(
+        visualFixture([{ name: 'arroz', quantity_g_estimate: null, confidence: 0.9 }]),
+      ),
+      state = db()
+    const media = f.resolution.context.media
+    if (!media) throw new Error('missing media')
+    media.updated_at = '2026-11-05T01:10:00Z'
+    await expect(continueMeal(f, [quantityReply('arroz')], state)).rejects.toMatchObject({
+      code: 'conversation_meal_materialization_unavailable',
+    })
+    expect(state.from).not.toHaveBeenCalled()
+    const resolved = continuationFixture(
+      visualFixture([{ name: 'arroz', quantity_g_estimate: 100, confidence: 0.9 }]),
+    )
+    await expect(continueMeal(resolved, [quantityReply('arroz')])).rejects.toMatchObject({
+      code: 'conversation_meal_materialization_unavailable',
+    })
+  })
+  it('applies only qualified confident missing visual quantity with unchanged visual index', async () => {
+    const f = continuationFixture(
+      visualFixture([{ name: 'arroz', quantity_g_estimate: null, confidence: 0.9 }]),
+    )
+    const result = await continueMeal(f, [quantityReply('arroz')])
+    expect(prepared(result.materialization).source_groups[0]).toMatchObject({
+      rule: 'visual',
+      input_indexes: [0],
+      source_positions: [{ visual_index: 0, name: null, quantity: null }],
+    })
+    expect(prepared(result.materialization).inputs[0]?.candidate).toMatchObject({
+      quantity_g: 200,
+      quantity_basis: 'stated',
+      confidence: 0.9,
+      needs_review: false,
+      review_reason: null,
+    })
+    const low = continuationFixture(
+      visualFixture([{ name: 'arroz', quantity_g_estimate: null, confidence: 0.2 }]),
+    )
+    await expect(continueMeal(low, [quantityReply('arroz')])).rejects.toMatchObject({
+      code: 'conversation_meal_materialization_unavailable',
+    })
+  })
+  it('pins both captures, all answers and callbacks before the first awaited lookup', async () => {
+    const f = continuationFixture(
+        fixture('arroz; feijão100g', [
+          { name: 'arroz' },
+          { name: 'feijão', quantity: '100', unit: 'g' },
+        ]),
+      ),
+      a = quantityReply('arroz'),
+      state = db(),
+      policy = { confidenceThreshold: 0.6 }
+    const pending = continueMeal(f, [a], state, policy)
+    a.input.answer.amount = 999
+    a.question.food_name = 'feijão'
+    f.resolution.context.owner.timezone = 'UTC'
+    f.capture.context.owner.country = 'US'
+    policy.confidenceThreshold = NaN
+    Object.assign(f.resolution.sourceReader, { asOf: 'invalid' })
+    const replacement = vi.fn()
+    Object.assign(state.client, { rpc: replacement, from: replacement })
+    const result = prepared((await pending).materialization)
+    expect(result.inputs.map((i) => i.calculation_input.quantity_g)).toEqual([200, 100])
+    expect(result.source_hash).toBe('a'.repeat(64))
+    expect(replacement).not.toHaveBeenCalled()
+  })
+})
+
+describe('continuation closed boundary and whole qualification preservation', () => {
+  it('rejects foreign outer symbol and getter without invoking it', async () => {
+    const f = continuationFixture(fixture('arroz', [{ name: 'arroz' }])),
+      state = db(),
+      a = quantityReply('arroz')
+    const foreign = {
+      resolutionSource: f.resolution,
+      quantityAnswers: [a],
+      [Symbol('foreign')]: true,
+    }
+    await expect(
+      materializeConversationMealContinuation(
+        state.client,
+        f.command,
+        f.capture,
+        f.interpretation,
+        options,
+        foreign,
+      ),
+    ).rejects.toMatchObject({ code: 'conversation_meal_materialization_unavailable' })
+    let reads = 0
+    const getter = {
+      resolutionSource: f.resolution,
+      get quantityAnswers() {
+        reads++
+        return [a]
+      },
+    }
+    await expect(
+      materializeConversationMealContinuation(
+        state.client,
+        f.command,
+        f.capture,
+        f.interpretation,
+        options,
+        getter,
+      ),
+    ).rejects.toMatchObject({ code: 'conversation_meal_materialization_unavailable' })
+    expect(reads).toBe(0)
+    expect(state.from).not.toHaveBeenCalled()
+  })
+  it('rejects over-bound/sparse/non-JSON answer batches before querying', async () => {
+    const f = continuationFixture(fixture('arroz', [{ name: 'arroz' }])),
+      state = db(),
+      a = quantityReply('arroz')
+    for (const answers of [
+      Array.from({ length: 31 }, () => a),
+      new Array(1),
+      [{ ...a, extra: undefined }],
+      [{ ...a, input: { ...a.input, answer: { ...a.input.answer, amount: NaN } } }],
+    ])
+      await expect(continueMeal(f, answers, state)).rejects.toMatchObject({
+        code: 'conversation_meal_materialization_unavailable',
+      })
+    expect(state.rpc).not.toHaveBeenCalled()
+    expect(state.from).not.toHaveBeenCalled()
+  })
+  it('preserves prepared whole-dish rule with one actual missing-mass candidate', async () => {
+    const name = 'carne desfiada com molho e milho',
+      f = continuationFixture(fixture(name, [{ name }]))
+    const result = await continueMeal(f, [quantityReply(name, 0, 180)])
+    expect(prepared(result.materialization).source_groups[0]).toMatchObject({
+      rule: 'prepared_dish',
+      input_indexes: [0],
+    })
+    expect(prepared(result.materialization).inputs[0]?.calculation_input).toEqual({
+      food_name: name,
+      quantity_g: 180,
+    })
+  })
+  it.each([
+    'Vou comer ',
+    'Não comi ',
+    'Minha filha comeu ',
+  ])('cannot upgrade original framing %s with a quantity answer', async (prefix) => {
+    const f = continuationFixture(fixture(`${prefix}arroz`, [{ name: 'arroz' }])),
+      state = db()
+    await expect(continueMeal(f, [quantityReply('arroz')], state)).rejects.toMatchObject({
+      code: 'conversation_meal_materialization_unavailable',
+    })
+    expect(state.rpc).not.toHaveBeenCalled()
+    expect(state.from).not.toHaveBeenCalled()
+  })
+})
+
+function storedLink(index = 0, amount = 200, unit = 'g', id = ASSET) {
+  return {
+    reply_id: id,
+    reply_input_hash: '1'.repeat(64),
+    question_key: String(index + 2).repeat(64),
+    answer: { kind: 'quantity', food_index: index, amount, unit },
+  }
+}
+function storedRun(
+  f: ReturnType<typeof continuationFixture>,
+  answerChain: unknown[],
+  state = db(),
+) {
+  return materializeStoredConversationMealContinuation(
+    state.client,
+    f.command,
+    f.capture,
+    f.interpretation,
+    options,
+    { resolutionSource: f.resolution, answerChain },
+  )
+}
+describe('actual stored linked-answer materialization without historical questions', () => {
+  it('uses the original missing rice occurrence and preserves explicit beans and original evidence', async () => {
+    const f = continuationFixture(
+      fixture('Comi arroz e feijão 100 g', [
+        { name: 'arroz' },
+        { name: 'feijão', quantity: '100', unit: 'g' },
+      ]),
+    )
+    const original = structuredClone(f.interpretation),
+      result = await storedRun(f, [storedLink()])
+    expect(result.materialization.status).toBe('materialized')
+    if (result.materialization.status !== 'materialized') throw new Error('materialized required')
+    expect(result.materialization.inputs.map((x) => x.calculation_input.quantity_g)).toEqual([
+      200, 100,
+    ])
+    expect(result.quantity_witnesses[0]?.input_indexes).toEqual([0])
+    expect(f.interpretation).toEqual(original)
+    expect(result.materialization.source_hash).toBe(f.capture.sourceHash)
+  })
+  it('keeps an applied answer while another original quantity is still missing, then maps real indexes', async () => {
+    const f = continuationFixture(
+      fixture('Comi leite e whey', [{ name: 'leite' }, { name: 'whey' }]),
+    )
+    const milk = storedLink(0, 200, 'mL'),
+      whey = storedLink(1, 1, 'scoop', COMMAND)
+    const partial = await storedRun(f, [milk])
+    expect(partial.materialization).toEqual({
+      status: 'clarification_required',
+      reason: 'missing_quantity',
+      food_indexes: [1],
+    })
+    expect(partial.quantity_witnesses[0]?.input_indexes).toEqual([])
+    const complete = await storedRun(f, [
+      milk,
+      whey,
+      {
+        reply_id: OWNER,
+        reply_input_hash: 'a'.repeat(64),
+        question_key: 'b'.repeat(64),
+        answer: { kind: 'meal_type', meal_type: 'almoco' },
+      },
+    ])
+    expect(complete.materialization.status).toBe('materialized')
+    expect(complete.quantity_witnesses.map((w) => [w.quantity_g, w.input_indexes])).toEqual([
+      [206, [0]],
+      [30, [1]],
+    ])
+  })
+  it.each([
+    ['unknown link', (a: ReturnType<typeof storedLink>) => ({ ...a, hidden: true })],
+    [
+      'unknown answer',
+      (a: ReturnType<typeof storedLink>) => ({ ...a, answer: { ...a.answer, quantity_g: 200 } }),
+    ],
+    ['bad hash', (a: ReturnType<typeof storedLink>) => ({ ...a, reply_input_hash: 'BAD' })],
+    [
+      'wrong target',
+      (a: ReturnType<typeof storedLink>) => ({ ...a, answer: { ...a.answer, food_index: 1 } }),
+    ],
+    [
+      'unsupported reference',
+      (a: ReturnType<typeof storedLink>) => ({ ...a, answer: { ...a.answer, unit: 'scoop' } }),
+    ],
+  ])('rejects %s before catalog lookup', async (_label, mutate) => {
+    const f = continuationFixture(fixture('Comi arroz', [{ name: 'arroz' }])),
+      state = db()
+    await expect(storedRun(f, [mutate(storedLink())], state)).rejects.toThrow()
+    expect(state.rpc).not.toHaveBeenCalled()
+    expect(state.from).not.toHaveBeenCalled()
+  })
+  it('rejects duplicate reply/question/target and more than one meal target', async () => {
+    const f = continuationFixture(
+      fixture('Comi arroz e feijão', [{ name: 'arroz' }, { name: 'feijão' }]),
+    )
+    for (const answers of [
+      [storedLink(), storedLink()],
+      [storedLink(), { ...storedLink(1), reply_id: COMMAND, question_key: '2'.repeat(64) }],
+      [
+        {
+          reply_id: ASSET,
+          reply_input_hash: 'a'.repeat(64),
+          question_key: 'b'.repeat(64),
+          answer: { kind: 'meal_type', meal_type: 'almoco' },
+        },
+        {
+          reply_id: COMMAND,
+          reply_input_hash: 'c'.repeat(64),
+          question_key: 'd'.repeat(64),
+          answer: { kind: 'meal_type', meal_type: 'jantar' },
+        },
+      ],
+    ])
+      await expect(storedRun(f, answers)).rejects.toThrow()
+  })
+  it('never executes custom array prototypes, getters or unknown hooks', async () => {
+    const f = continuationFixture(fixture('Comi arroz', [{ name: 'arroz' }])),
+      calls = vi.fn()
+    const chain = [storedLink()]
+    Object.setPrototypeOf(chain, { toJSON: calls })
+    await expect(storedRun(f, chain)).rejects.toThrow()
+    const link = storedLink()
+    Object.defineProperty(link.answer, 'amount', { enumerable: true, get: calls })
+    await expect(storedRun(f, [link])).rejects.toThrow()
+    expect(calls).not.toHaveBeenCalled()
+  })
+  it('does not overwrite an explicit original mass', async () => {
+    const f = continuationFixture(
+      fixture('Comi arroz 100 g', [{ name: 'arroz', quantity: '100', unit: 'g' }]),
+    )
+    await expect(storedRun(f, [storedLink()])).rejects.toThrow()
+  })
+})
+
+describe('stored-answer original evidence and asynchronous snapshot preservation', () => {
+  it.each([
+    'Vou comer ',
+    'Não comi ',
+    'Minha filha comeu ',
+  ])('does not upgrade %s into a consumption', async (prefix) => {
+    const f = continuationFixture(fixture(`${prefix}arroz`, [{ name: 'arroz' }])),
+      state = db()
+    await expect(storedRun(f, [storedLink()], state)).rejects.toThrow()
+    expect(state.rpc).not.toHaveBeenCalled()
+    expect(state.from).not.toHaveBeenCalled()
+  })
+  it('retains the detached stored quantity when a caller mutates its answer during catalog resolution', async () => {
+    const name = 'geleia rara',
+      f = continuationFixture(fixture(`Comi ${name}`, [{ name }])),
+      state = db([name]),
+      chain = [storedLink(0, 25)]
+    const original = state.rpc.getMockImplementation()
+    state.rpc.mockImplementation(async (...args) => {
+      const current = chain[0]
+      if (!current) throw new Error('actual chain entry')
+      current.answer.amount = 999
+      return await (
+        original as (...v: typeof args) => Promise<Awaited<ReturnType<typeof state.rpc>>>
+      )(...args)
+    })
+    const result = await storedRun(f, chain, state)
+    expect(result.materialization.status).toBe('materialized')
+    expect(result.quantity_witnesses[0]?.quantity_g).toBe(25)
+    expect(result.quantity_witnesses[0]?.amount).toBe(25)
+  })
+  it('preserves qualified visual source positions and refuses an already resolved visual mass', async () => {
+    for (const mass of [null, 100]) {
+      const f = continuationFixture(
+          visualFixture([{ name: 'arroz', quantity_g_estimate: mass, confidence: 0.9 }]),
+        ),
+        state = db()
+      const promise = materializeStoredConversationMealContinuation(
+        state.client,
+        f.command,
+        f.capture,
+        f.interpretation,
+        options,
+        { resolutionSource: f.resolution, answerChain: [storedLink()] },
+      )
+      if (mass !== null) await expect(promise).rejects.toThrow()
+      else {
+        const r = await promise
+        expect(r.materialization.status).toBe('materialized')
+        if (r.materialization.status !== 'materialized') throw new Error('visual materialized')
+        expect(r.materialization.source_groups[0]?.source_positions[0]).toMatchObject({
+          visual_index: 0,
+          name: null,
+          quantity: null,
+        })
+      }
+    }
+  })
+})

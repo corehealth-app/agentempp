@@ -19,6 +19,12 @@ import {
   type SavedConversationMealCommandResult,
 } from './conversation-meal-command-result'
 import {
+  type ConversationMealDecisionAvailable,
+  type ConversationMealDecisionStore,
+  createSupabaseConversationMealDecisionStore,
+  parseConversationMealDecisionReceipt,
+} from './conversation-meal-decision-store'
+import {
   type ConversationMealFeedbackPresentationService,
   createSupabaseConversationMealFeedbackPresentation,
 } from './conversation-meal-feedback-presentation'
@@ -86,6 +92,7 @@ export interface ConversationMealCommandServicePorts {
   createInterpreter?: () => ConversationMealInterpreterPort
   register?: typeof registerPersistedConversationMeal
   presentation?: ConversationMealFeedbackPresentationService
+  decisions?: ConversationMealDecisionStore
 }
 function unavailable(): never {
   throw new MobileApiError(
@@ -213,6 +220,11 @@ export function createConversationMealCommandService(
       markUnknown: ms.markUnknown.bind(ms),
     })
   const register = ports.register?.bind(ports) ?? registerPersistedConversationMeal
+  const ds = ports.decisions ?? createSupabaseConversationMealDecisionStore(db),
+    decisions: ConversationMealDecisionStore = Object.freeze({
+      read: ds.read.bind(ds),
+      seal: ds.seal.bind(ds),
+    })
   const ps = ports.presentation ?? createSupabaseConversationMealFeedbackPresentation(db),
     readPresentation = ps.readHistorical.bind(ps)
   const makeInterpreter =
@@ -248,6 +260,31 @@ export function createConversationMealCommandService(
       receipt,
       feedback,
     })
+  }
+  const decisionIdentity = (command: BoundConversationMealCommand, epoch: string) =>
+    Object.freeze({
+      ownerId: command.ownerId,
+      commandId: command.commandId,
+      inputHash: command.inputHash,
+      epoch,
+    })
+  const terminalReply = (
+    command: BoundConversationMealCommand,
+    epoch: string,
+    v: ConversationMealDecisionAvailable,
+  ) => {
+    const b = validatedBinding(v.binding, command, epoch),
+      d = parseConversationMealDecisionReceipt(v.decision, b)
+    return state(command.ownerId, command.commandId, command.inputHash, epoch, 'not_recorded', {
+      reason: d.reason,
+      food_indexes: [...d.food_indexes],
+    })
+  }
+  const readTerminal = async (command: BoundConversationMealCommand, epoch: string) => {
+    const v = await decisions.read(decisionIdentity(command, epoch))
+    if (v.action === 'available' && 'decision' in v) return terminalReply(command, epoch, v)
+    if (v.action !== 'absent') return changed()
+    return null
   }
   const sanitize = (e: unknown): never => {
     if (e instanceof MobileApiError) throw e
@@ -289,7 +326,10 @@ export function createConversationMealCommandService(
         if (prior.action === 'available') {
           const b = validatedBinding(prior.binding, command, c.epoch)
           if (prior.receipt) return saved(c.auth, command, c.epoch, b, prior.receipt)
-        } else await observe(c.owner, c.epoch)
+        }
+        const terminal = await readTerminal(command, c.epoch)
+        if (terminal) return terminal
+        if (prior.action !== 'available') await observe(c.owner, c.epoch)
         let interpreter = noNewProvider
         if (!(prior.action === 'available' && prior.resolved)) {
           const current = await semantics.read(command)
@@ -330,7 +370,63 @@ export function createConversationMealCommandService(
           food_indexes: [...result.foodIndexes],
         })
         if (new Set(info.food_indexes).size !== info.food_indexes.length) return unavailable()
-        return state(c.owner, command.commandId, command.inputHash, c.epoch, 'not_recorded', info)
+        // A terminal reply needs the actual completed immutable model attempt,
+        // including downstream nutrition/materialization refusals. Unknown or
+        // unfinished provider work cannot manufacture a durable decision.
+        const semantic = await semantics.read(command)
+        if (semantic.action === 'stale_epoch') return changed()
+        if (
+          !('status' in semantic) ||
+          semantic.status !== 'completed' ||
+          !semantic.result ||
+          !semantic.result_hash
+        )
+          return unavailable()
+        if (
+          semantic.epoch !== c.epoch ||
+          semantic.owner_id !== c.owner ||
+          semantic.command_id !== command.commandId ||
+          semantic.input_hash !== command.inputHash
+        )
+          return changed()
+        let sealed: Awaited<ReturnType<ConversationMealDecisionStore['seal']>>
+        try {
+          sealed = await decisions.seal(
+            decisionIdentity(command, c.epoch),
+            {
+              sourceHash: semantic.source_hash,
+              attemptId: semantic.attempt_id,
+              resultHash: semantic.result_hash,
+            },
+            { schema: 'conversation.meal-decision.v1', status: 'not_recorded', ...info },
+          )
+        } catch {
+          // The seal may have committed. Read once; never seal or register a
+          // second time merely because its HTTP response was lost.
+          try {
+            const recovered = await readTerminal(command, c.epoch)
+            if (recovered) return recovered
+          } catch (readError) {
+            if (readError instanceof MobileApiError && readError.status === 409) throw readError
+          }
+          throw new MobileApiError(
+            409,
+            'conversation_decision_reconciliation_required',
+            'The original decision must be reconciled',
+          )
+        }
+        if ('decision' in sealed && (sealed.action === 'sealed' || sealed.action === 'replay'))
+          return terminalReply(command, c.epoch, sealed)
+        if (sealed.action === 'decision_conflict') {
+          const winner = await readTerminal(command, c.epoch)
+          if (winner) return winner
+        }
+        if (sealed.action === 'resolved_conflict') {
+          const winner = await fencedWriter.readPrepared(command)
+          if (winner.action === 'available' && winner.receipt)
+            return saved(c.auth, command, c.epoch, winner.binding, winner.receipt)
+        }
+        return changed()
       } catch (e) {
         return sanitize(e)
       }
@@ -365,7 +461,10 @@ export function createConversationMealCommandService(
         if (prior.action !== 'available') return changed()
         const b = validatedBinding(prior.binding, command, c.epoch)
         if (prior.receipt) return saved(c.auth, command, c.epoch, b, prior.receipt)
-        return state(c.owner, id, inputHash, c.epoch, 'pending')
+        return (
+          (await readTerminal(command, c.epoch)) ??
+          state(c.owner, id, inputHash, c.epoch, 'pending')
+        )
       } catch (e) {
         return sanitize(e)
       }

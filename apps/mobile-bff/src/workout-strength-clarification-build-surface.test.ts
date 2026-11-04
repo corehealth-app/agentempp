@@ -70,7 +70,7 @@ describe('current-authority clarification in the fresh mobile server build', () 
     expect(
       source.find((record) => record.path === 'auth/password-recovery/route.ts')?.exports,
     ).toEqual(['GET', 'HEAD', 'POST', 'dynamic', 'maxDuration', 'runtime'])
-    expect(source).toHaveLength(78)
+    expect(source).toHaveLength(82)
     const prior75 = source.filter((record) => !record.path.startsWith('conversation/'))
     expect(prior75).toHaveLength(75)
     expect(

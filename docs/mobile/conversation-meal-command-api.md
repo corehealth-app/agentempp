@@ -92,13 +92,24 @@ and unique `food_indexes` (0–29, at most 30). None is proof of a food effect o
 saved-result ACK. A 401 on a command POST must not trigger transparent replay;
 unknown outcomes require explicit reconciliation with the same identity/body.
 
+A non-registration reply is now sealed durably against the actual original
+source, completed semantic attempt and result hash. POST replay and GET recover
+that first terminal answer before any model or registration work. Unfinished or
+uncertain provider attempts cannot manufacture it. A lost seal response permits
+one terminal read; an unproven result remains reconciliation-required. Existing
+saved effects take precedence, and competing terminal/prepared-effect writers
+are serialized by the same SQL owner lane. The opaque SQL decision checksum is
+preserved without JavaScript reserialization. See the private SQL contract in
+`docs/conversation-meal-decisions-journal.md`.
+
 ## Remaining activation gates
 
-- GET currently recovers saved effects, not durable terminal negative or
-  clarification decisions; a command without an effect remains pending on GET.
-  Persist those decisions and continuation links before the complete chat UX.
-- Real native transport/controller, paginated conversation, direct item save,
-  five-minute versioned undo and clinical-policy refresh on display remain
+- A genuinely unfinished command remains pending; a sealed negative or
+  clarification is recovered by GET. Follow-up clarification links still need
+  integration before the complete chat experience.
+- Native transport/controller and private SQL Save/Undo have passed their
+  focused qualification. Public paginated conversation, editable-group
+  projection, direct item controls and clinical-policy refresh on display remain
   separate integrations. Do not activate the prototype four-tab UI as a finished
   Flow, infer a meal slot from fabricated personal windows, or silently approve
   nutrition-label metadata.
@@ -118,3 +129,10 @@ equal legitimate consumptions, A/B isolation, milk/whey, quota refusal and old
 epoch refusal after reset. All task-owned Auth sessions/tokens/audit and domain
 fixtures were removed; original global fingerprints were restored. This is not
 deployed Next, native device, real-provider or customer acceptance evidence.
+
+The later connected run passed 27 HTTP requests plus the actual SDK Save/Undo
+operations. It recovered negative replies on GET/replay without a new model
+call, and traversed the actual SQL journal in pages of three: 17 unique events
+(four original registrations, six terminal non-registrations, seven edits).
+Reading that private journal created no new consumption or reward. Its edit
+snapshots are not a public DTO and must be omitted from public responses.

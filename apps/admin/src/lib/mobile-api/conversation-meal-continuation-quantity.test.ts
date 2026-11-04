@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseConversationMealReplyBody } from './conversation-meal-continuation-input'
+import * as quantityConversion from './conversation-meal-continuation-quantity'
 import {
   ConversationMealContinuationQuantityError,
   resolveConversationMealQuantityAnswer,
@@ -255,5 +256,61 @@ describe('linked explicit quantity conversion only', () => {
     })
     expect(() => resolveConversationMealQuantityAnswer(malicious, question())).toThrow()
     expect(reads).toBe(0)
+  })
+})
+
+describe('historical quantity conversion without fabricated question', () => {
+  it.each([
+    ['leite', 200, 'mL', 206],
+    ['leite', 1, 'caneca', 206],
+    ['whey', 1, 'scoop', 30],
+    ['whey', 1.5, 'scoop', 45],
+    ['ovo', 2, 'unit', 100],
+    ['água', 0.0000005, 'mL', 0.000001],
+    ['arroz', 1e-7, 'g', 1e-7],
+    ['arroz', 1e-7, 'kg', 0.00009999999999999999],
+  ] as const)('converts exact original name %s %s %s with no question identity', (name, amount, unit, grams) => {
+    const result = quantityConversion.convertConversationMealQuantity(name, amount, unit)
+    expect(result).toEqual({
+      amount,
+      unit,
+      quantity_g: grams,
+      quantity_basis: unit === 'g' || unit === 'kg' ? 'stated' : 'portion_reference',
+      quantity_display: unit === 'g' || unit === 'kg' ? null : mobileQuantityDisplay(name),
+    })
+    expect(Object.isFrozen(result)).toBe(true)
+    if (result.quantity_display) expect(Object.isFrozen(result.quantity_display)).toBe(true)
+  })
+
+  it.each([
+    ['leite', 0, 'g'],
+    ['leite', -1, 'g'],
+    ['leite', NaN, 'g'],
+    ['leite', Infinity, 'g'],
+    ['leite', 10000, 'g'],
+    ['leite', 10, 'kg'],
+    ['leite', Number.MIN_VALUE, 'mL'],
+    ['whey', Number.MIN_VALUE, 'scoop'],
+    ['leite em pó', 200, 'mL'],
+    ['whey Growth', 1, 'scoop'],
+    ['leite com whey', 1, 'caneca'],
+    ['água', 1, 'caneca'],
+    ['whey', 1, 'unit'],
+    ['leite', 1, 'scoop'],
+    ['ovo', 200, 'mL'],
+    ['', 1, 'g'],
+    [' '.repeat(10), 1, 'g'],
+    ['x'.repeat(161), 1, 'g'],
+    ['leite\u0000', 1, 'g'],
+    ['leite\u007f', 1, 'g'],
+    ['\ud800', 1, 'g'],
+    [new String('leite'), 200, 'mL'],
+    ['leite', '200', 'mL'],
+    ['leite', 200, 'ml'],
+    [{ food_name: 'leite', grams_per_unit: 1 }, 200, 'mL'],
+  ])('refuses invalid original primitives without caller factors: %s/%s/%s', (name, amount, unit) => {
+    expect(() => quantityConversion.convertConversationMealQuantity(name, amount, unit)).toThrow(
+      ConversationMealContinuationQuantityError,
+    )
   })
 })

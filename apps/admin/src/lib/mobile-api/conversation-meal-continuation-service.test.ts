@@ -458,6 +458,36 @@ describe('continuation effects, source leases and atomic recovery boundaries', (
     ])
     expect(s.writer.read).not.toHaveBeenCalled()
   })
+  it('latches a transient scope denial swallowed by the default writer before its durable read', async () => {
+    const s = setup('prepared')
+    let denyNext = false,
+      committed = false
+    s.checkCurrentScope.mockImplementation(async () => {
+      if (!denyNext) return true
+      denyNext = false
+      return false
+    })
+    s.rpc.mockImplementation(async (name) => {
+      if (name === 'read_conversation_meal_continuation')
+        return {
+          data: committed ? actual.samples.saved : actual.samples.prepared,
+          error: null,
+        } as never
+      if (name === 'commit_conversation_meal_continuation') {
+        denyNext = true
+        committed = true
+        return { data: { action: 'committed' }, error: null } as never
+      }
+      throw new Error('Unexpected RPC after closed scope')
+    })
+    const result = await s.create({ writer: undefined }).submit(s.auth, s.bound)
+    expect(result).toMatchObject({ status: 'reconciliation_required', reason: 'scope_changed' })
+    expect(result).not.toHaveProperty('receipt')
+    expect(s.rpc.mock.calls.map(([name]) => name)).toEqual([
+      'read_conversation_meal_continuation',
+      'commit_conversation_meal_continuation',
+    ])
+  })
   it('guards each fresh lookup and stops after revocation before another receipt or writer', async () => {
     const s = setup()
     let active = true

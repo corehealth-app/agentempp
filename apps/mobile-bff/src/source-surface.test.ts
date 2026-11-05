@@ -102,6 +102,126 @@ function runtimeMarkerRoutes(marker: string): string[] {
     .sort()
 }
 
+// Exact 13-module extraction observed in the T29 production build. The new
+// nutrition helper import makes Webpack split this existing conversation graph.
+// These bodies include dormant writer adapters; this certificate never declares
+// them absent and never exempts any physical code from the global scans.
+function certifyNutritionJournalSplitContent(text: string): void {
+  const source = ts.createSourceFile(
+    'nutrition-shared.js',
+    text,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  )
+  const modules: ts.ObjectLiteralExpression[] = []
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      ts.isPropertyAccessExpression(node.left) &&
+      node.left.getText(source) === 'exports.modules' &&
+      ts.isObjectLiteralExpression(node.right)
+    ) {
+      modules.push(node.right)
+      return
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  expect(modules, 'one certified nutrition-shared module table').toHaveLength(1)
+  const bodies =
+    modules[0]?.properties.map((property) => {
+      if (!ts.isPropertyAssignment(property) || !ts.isArrowFunction(property.initializer))
+        throw new Error('Unexpected nutrition-shared module shape')
+      return { id: property.name.getText(source), body: property.initializer.getText(source) }
+    }) ?? []
+  expect(bodies, 'certified nutrition-shared module count').toHaveLength(13)
+  expect(
+    bodies.map(({ id, body }) => `${id}:${createHash('sha256').update(body).digest('hex')}`).sort(),
+    'certified nutrition-shared module contents',
+  ).toEqual([
+    '13300:20fedfa25d9bd861ab851d7e94918af627b1fa5102cf509f796ba219040cd74f',
+    '19514:a189839890f820d1a04f8f29b5dd89af51577d935e8af5e7a344cc8a5a9344fd',
+    '20853:5e5378aa0bd0fb541859f4fa6a9dc8c853525dcb697ac43864a72c61837772e9',
+    '21378:3666116fbbe020c4e11038c8dca63660d541b8bd16140556f52cf892fcebb2f5',
+    '36693:9068c240f4c1876773b0af9412297b57d5d55615bbd36e8f0a5a5e5c22bf6be1',
+    '52158:129ea4b769605c4e7ddee1f1bc26688f2d09e77a0922726299741a808f4ae420',
+    '63980:f72ee9fa08b0b391b72a08dd315418ae96759089e54bc5ed728d37806082807e',
+    '65556:67cface7bcca0fbc359c687a3a93842798eb2ad00ab0cbe316e78d18d042cf28',
+    '69423:92c1e5942911be88cdfa8be3db786dd90ea4bd441445cc4278f057c779557c1b',
+    '69431:22fe4905a8681297dba0a50a7a0a75352d687ff4ea3da18f93310480e3276753',
+    '69837:c1f2cd4695fc36a8720f7a56d70f830b15b7056f68902b042e3a03f23a6862f5',
+    '78013:3e125f85cbbf10ef184f6c5b9190a447508e4918dbfda0e05fb72eb495c5d1a3',
+    '89813:4efdc6ad1e8da72c83ac441a24930a99fc63ac573bdebc1ae0564f434615206d',
+  ])
+}
+
+function certifiedNutritionJournalSplit(commandRoutes: string[]): string {
+  const chunks = semanticChunks([
+    'conversation.meal-interpreter.v1',
+    'read_mobile_registration_feedback',
+    'seal_conversation_meal_decision',
+    'commit_conversation_meal_feedback_v2',
+  ])
+  expect(chunks, 'one exact nutrition/journal extraction').toHaveLength(1)
+  const chunk = chunks[0] ?? ''
+  certifyNutritionJournalSplitContent(readFileSync(chunk, 'utf8'))
+  expect(chunkConsumers(chunk)).toEqual([...commandRoutes, nutritionWindowAppPath].sort())
+  for (const route of [...commandRoutes, nutritionWindowAppPath]) {
+    expect(
+      tracedTargets(route).filter((target) => target === chunk),
+      route,
+    ).toEqual([chunk])
+  }
+  return chunk
+}
+
+function certifySharedModule(file: string, marker: string, expectedHash: string): void {
+  const source = ts.createSourceFile(
+    file,
+    readFileSync(file, 'utf8'),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  )
+  const bodies: string[] = []
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isFunctionLike(node) &&
+      ts.isPropertyAssignment(node.parent) &&
+      ts.isObjectLiteralExpression(node.parent.parent) &&
+      ts.isBinaryExpression(node.parent.parent.parent) &&
+      node.parent.parent.parent.left.getText(source) === 'exports.modules'
+    ) {
+      const text = node.getText(source)
+      if (text.includes(marker)) bodies.push(text)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  expect(bodies, `one complete unchanged ${marker} module`).toHaveLength(1)
+  expect(
+    createHash('sha256')
+      .update(bodies[0] ?? '')
+      .digest('hex'),
+  ).toBe(expectedHash)
+}
+
+function certifiedClinicalPolicySelectorCopies(): string[] {
+  // Query validation moved away from the historical project selector; the
+  // photo chunk still co-locates the two unchanged modules.
+  const copies = semanticChunks(['invalid_clinical_policy_representation'])
+  expect(copies).toHaveLength(2)
+  for (const file of copies)
+    certifySharedModule(
+      file,
+      'invalid_clinical_policy_representation',
+      '41c7168d26dd5810aaecb7cb941e6141f4203a5eb1a49396b32772c91330e29f',
+    )
+  return copies
+}
+
 function certifiedWorkoutRepositoryCopies(): string[] {
   const markers = ['admit', 'materialize', 'get', 'edit', 'cancel', 'confirm'].map(
     (operation) => `${operation}_mobile_workout_registration`,
@@ -613,6 +733,111 @@ describe('authoritative Mobile API source surface', () => {
     expect(surface.serverActionReferences).toEqual([])
   })
 
+  test('rejects a changed or additional module in the exact nutrition journal split certificate', () => {
+    const chunks = semanticChunks([
+      'conversation.meal-interpreter.v1',
+      'read_mobile_registration_feedback',
+      'seal_conversation_meal_decision',
+      'commit_conversation_meal_feedback_v2',
+    ])
+    expect(chunks).toHaveLength(1)
+    const text = readFileSync(chunks[0] ?? '', 'utf8')
+    expect(() => certifyNutritionJournalSplitContent(text)).not.toThrow()
+    expect(() =>
+      certifyNutritionJournalSplitContent(
+        text.replace('seal_conversation_meal_decision', 'seal_changed_decision'),
+      ),
+    ).toThrow(/certified nutrition-shared module contents/)
+    expect(() =>
+      certifyNutritionJournalSplitContent(
+        text.replace('exports.modules={', 'exports.modules={0:()=>{},'),
+      ),
+    ).toThrow(/certified nutrition-shared module count/)
+    expect(() => certifyNutritionJournalSplitContent(text.replace('13300:', '999999:'))).toThrow(
+      /certified nutrition-shared module contents/,
+    )
+  })
+
+  test('keeps the nutrition live call graph on the journal instant helper and readonly runtime only', () => {
+    const library = resolve(appRoot, '../admin/src/lib/mobile-api')
+    const parse = (name: string) =>
+      ts.createSourceFile(
+        name,
+        readFileSync(resolve(library, name), 'utf8'),
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TS,
+      )
+    const source = parse('nutrition-window-service.ts')
+    const imports = source.statements.filter(ts.isImportDeclaration).map((node) => ({
+      path: (node.moduleSpecifier as ts.StringLiteral).text,
+      names:
+        node.importClause?.namedBindings && ts.isNamedImports(node.importClause.namedBindings)
+          ? node.importClause.namedBindings.elements.map((item) => item.name.text).sort()
+          : [],
+    }))
+    expect(imports).toEqual([
+      { path: 'node:crypto', names: ['createHash'] },
+      {
+        path: '@mpp/agent',
+        names: ['addIsoDateDays', 'getLocalDateString', 'getLocalDayUtcBounds'],
+      },
+      { path: 'zod', names: ['z'] },
+      { path: './conversation-meal-journal-store', names: ['conversationJournalInstant'] },
+      { path: './http', names: ['MobileApiError'] },
+      { path: './idempotency', names: ['hashMobileRequest'] },
+    ])
+    const calls: ts.CallExpression[] = []
+    const visit = (node: ts.Node) => {
+      if (ts.isCallExpression(node)) calls.push(node)
+      ts.forEachChild(node, visit)
+    }
+    visit(source)
+    expect(
+      calls.filter((node) => node.expression.getText(source) === 'conversationJournalInstant'),
+    ).toHaveLength(2)
+    expect(
+      calls
+        .filter(
+          (node) =>
+            ts.isPropertyAccessExpression(node.expression) &&
+            ['rpc', 'from', 'insert', 'update', 'upsert', 'delete'].includes(
+              node.expression.name.text,
+            ),
+        )
+        .map((node) => node.expression.getText(source).replace(/\s+/g, '')),
+    ).toEqual(['Array.from', "createHash('sha256').update"])
+    const repository = parse('nutrition-window-repository.ts')
+    const rpc: string[] = []
+    const visitRPC = (node: ts.Node) => {
+      if (
+        ts.isCallExpression(node) &&
+        ts.isPropertyAccessExpression(node.expression) &&
+        node.expression.name.text === 'rpc'
+      ) {
+        expect(node.arguments[0] && ts.isStringLiteral(node.arguments[0])).toBe(true)
+        rpc.push((node.arguments[0] as ts.StringLiteral).text)
+      }
+      ts.forEachChild(node, visitRPC)
+    }
+    visitRPC(repository)
+    expect(rpc).toEqual(['read_nutrition_window_units'])
+    const runtime = parse('nutrition-window-runtime.ts')
+    const runtimeFactory = runtime.statements.find(
+      (node): node is ts.FunctionDeclaration =>
+        ts.isFunctionDeclaration(node) && node.name?.text === 'createNutritionWindowReadService',
+    )
+    if (!runtimeFactory?.body) throw new Error('Missing actual nutrition readonly runtime')
+    const constructorCalls: string[] = []
+    const visitConstructor = (node: ts.Node) => {
+      if (ts.isFunctionLike(node)) return
+      if (ts.isCallExpression(node)) constructorCalls.push(node.expression.getText(runtime))
+      ts.forEachChild(node, visitConstructor)
+    }
+    visitConstructor(runtimeFactory.body)
+    expect(constructorCalls).toEqual(['createSupabaseCurrentClinicalStateSource', 'Object.freeze'])
+  })
+
   test('keeps the compiled nutrition reader confined to its GET entry and readonly owned RPC', () => {
     expect(currentAppPathsManifest()[nutritionWindowAppPath]).toBe(
       'app/api/mobile/v1/nutrition/window/route.js',
@@ -1072,12 +1297,17 @@ describe('authoritative Mobile API source surface', () => {
       ...editRoutes.map((route) => [route, 122] as const),
       ...replyRoutes.map((route) => [route, 121] as const),
     ])
+    const nutritionJournalSplit = certifiedNutritionJournalSplit(commandRoutes)
+    // Normalize only this certified new edge, for the nine original routes.
+    // No route, module, writer marker or trace is removed from global scans.
+    const priorCommandTargets = (route: string): string[] =>
+      tracedTargets(route).filter((target) => target !== nutritionJournalSplit)
     expect([...expectedCommandCounts.keys()].sort()).toEqual(commandRoutes)
     for (const [route, count] of expectedCommandCounts)
-      expect(tracedTargets(route), route).toHaveLength(count)
+      expect(priorCommandTargets(route), route).toHaveLength(count)
     expect(new Set([commandChunk, publicEditChunk, readonlyScopeChunk, replyChunk]).size).toBe(4)
     const legacyTargets = new Set([...allRoutes, webhookRoute].flatMap(tracedTargets))
-    const commandOnlyTargets = [...new Set(commandRoutes.flatMap(tracedTargets))]
+    const commandOnlyTargets = [...new Set(commandRoutes.flatMap(priorCommandTargets))]
       .filter((target) => !legacyTargets.has(target))
       .sort()
     expect(commandOnlyTargets).toEqual(
@@ -1099,8 +1329,10 @@ describe('authoritative Mobile API source surface', () => {
     // Raw totals, without folding any new chunk/edge into historical scopes.
     // Exactly six readonly edges and two reply-writer edges were proved above.
     const priorBuildRoutes = allBuildRoutes.filter((route) => route !== nutritionWindowAppPath)
-    const priorBuildTargets = new Set(priorBuildRoutes.flatMap(tracedTargets))
-    expect(priorBuildRoutes.reduce((sum, route) => sum + tracedTargets(route).length, 0)).toBe(
+    const priorBuildTrace = (route: string): string[] =>
+      commandRoutes.includes(route) ? priorCommandTargets(route) : tracedTargets(route)
+    const priorBuildTargets = new Set(priorBuildRoutes.flatMap(priorBuildTrace))
+    expect(priorBuildRoutes.reduce((sum, route) => sum + priorBuildTrace(route).length, 0)).toBe(
       8202 + 104 + 3 * 119 + 3 * 122 + 121 + 2 * 121,
     )
     expect(priorBuildTargets.size).toBe(217 + 1 + 9 + 4)
@@ -1115,7 +1347,14 @@ describe('authoritative Mobile API source surface', () => {
     const nutritionTargets = tracedTargets(nutritionWindowAppPath)
     const nutritionOnlyTargets = nutritionTargets.filter((target) => !priorBuildTargets.has(target))
     expect(surface.nftReferenceCount).toBe(
-      8202 + 104 + 3 * 119 + 3 * 122 + 121 + 2 * 121 + nutritionTargets.length,
+      8202 +
+        104 +
+        3 * 119 +
+        3 * 122 +
+        121 +
+        2 * 121 +
+        commandRoutes.length +
+        nutritionTargets.length,
     )
     expect(surface.nftUniqueTargetCount).toBe(217 + 1 + 9 + 4 + nutritionOnlyTargets.length)
     expect(surface.nftRegularFileTargetCount).toBe(
@@ -1229,8 +1468,10 @@ describe('authoritative Mobile API source surface', () => {
         // Read-only BF provenance now shares the daily repository with legacy
         // admission. Certify all three ports in that one existing seven-route
         // chunk, while the whole closer retains its original six consumers.
+        // Admission is a separate unchanged module; do not assume it stays
+        // co-located with the daily reader/protection module.
+        admissionMarker: 'admit_mobile_clinical_legacy_generation',
         markers: [
-          'admit_mobile_clinical_legacy_generation',
           'clinical_client_update_required',
           'get_mobile_clinical_daily_context',
           'get_mobile_clinical_daily_receipt',
@@ -1269,11 +1510,10 @@ describe('authoritative Mobile API source surface', () => {
     }
     for (const edge of clinicalEdges) {
       let chunk: string
-      if ('otherAdded' in edge) {
+      if ('otherAdded' in edge && edge.otherAdded !== undefined) {
         // The same closed selector is compiled once for current clinical
         // routes and once for photos; neither copy may acquire other callers.
-        const copies = semanticChunks(edge.markers)
-        expect(copies).toHaveLength(2)
+        const copies = certifiedClinicalPolicySelectorCopies()
         const historicalCopy = copies.filter((file) =>
           chunkConsumers(file).includes(edge.old[0] ?? ''),
         )
@@ -1292,12 +1532,59 @@ describe('authoritative Mobile API source surface', () => {
           ...('commands' in edge && edge.commands ? commandRoutes : []),
         ].sort(),
       )
-      if ('otherAdded' in edge) {
+      if ('otherAdded' in edge && edge.otherAdded !== undefined) {
+        // Preserve the original project capability boundary independently of
+        // the pure query selector's physical chunk location.
+        expect(runtimeMarkerRoutes('MOBILE_CURRENT_CLINICAL_PROJECT_REF')).toEqual(
+          [
+            ...edge.old,
+            ...edge.added,
+            ...commandRoutes,
+            ...edge.otherAdded,
+            '/api/mobile/v1/onboarding/health/route',
+            '/api/mobile/v1/onboarding/reconsent/route',
+          ].sort(),
+        )
         // Webpack extracted the error code separately from the now shared
         // pure selector. Require the original guard in every legacy closure.
         const guarded = runtimeMarkerRoutes('current_clinical_runtime_unavailable')
         for (const route of [...edge.old, ...edge.added, ...(edge.otherAdded ?? [])])
           expect(guarded).toContain(route)
+      }
+      if ('admissionMarker' in edge && edge.admissionMarker !== undefined) {
+        const copies = semanticChunks([edge.admissionMarker])
+        expect(copies).toHaveLength(3)
+        for (const file of copies)
+          certifySharedModule(
+            file,
+            edge.admissionMarker,
+            '0c64099813e18981be9bf9399c12bf706d60648d49146bd754dfb412f8eb827a',
+          )
+        expect(runtimeMarkerRoutes(edge.admissionMarker)).toEqual(
+          [
+            ...edge.old,
+            ...commandRoutes,
+            ...routeNames([
+              'reevaluation',
+              'reevaluation/start',
+              'reevaluation/form',
+              'reevaluation/assess',
+              'reevaluation/preview',
+              'reevaluation/confirm',
+              'reevaluation/health',
+            ]),
+          ].sort(),
+        )
+        certifySharedModule(
+          chunk,
+          'clinical_client_update_required',
+          '3db7d0c2422f27a6ea42823b287f21185acb6b3661804db5d41eb197b1f2fb6c',
+        )
+        certifySharedModule(
+          chunk,
+          'get_mobile_clinical_daily_context',
+          'c09b5f9f2cbc0b24316b5699adf421e721d0bbc62122865ea9c203e0feff657f',
+        )
       }
       for (const route of edge.old) removeHistoricalEdge(route, chunk)
     }
@@ -1378,13 +1665,13 @@ describe('authoritative Mobile API source surface', () => {
     // its query selector stays inline in precisely the two History entries.
     const receiptCopies = semanticChunks(['read_mobile_registration_feedback'])
     expect(receiptCopies).toHaveLength(2)
-    expect(receiptCopies).toContain(commandChunk)
-    const legacyReceiptCopies = receiptCopies.filter((chunk) => chunk !== commandChunk)
+    expect(receiptCopies).toContain(nutritionJournalSplit)
+    const legacyReceiptCopies = receiptCopies.filter((chunk) => chunk !== nutritionJournalSplit)
     expect(legacyReceiptCopies).toHaveLength(1)
     const receiptChunk = legacyReceiptCopies[0] ?? ''
     expect(historicalConsumers(receiptChunk)).toEqual([...reviewRoutes, clarificationRoute].sort())
     expect(runtimeMarkerRoutes('read_mobile_registration_feedback')).toEqual(
-      [...historyFeedbackRoutes, ...reviewRoutes, ...commandRoutes].sort(),
+      [...historyFeedbackRoutes, ...reviewRoutes, ...commandRoutes, nutritionWindowAppPath].sort(),
     )
     expect(runtimeMarkerRoutes('proposal->>source_provider_message_id')).toEqual(
       [...historyFeedbackRoutes, ...editRoutes, journalRoute].sort(),

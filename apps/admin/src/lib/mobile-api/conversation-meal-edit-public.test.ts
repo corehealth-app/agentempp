@@ -26,13 +26,21 @@ const auth = {
   identity: { ...candidateAuth.identity, id: editAuthId },
   patient: { ...candidateAuth.patient, authUserId: editAuthId },
 }
-function group(wire = editReadState()) {
+function group(wire: unknown = editReadState()) {
   const state = parseConversationMealEditState(wire, editBinding())
   return projectConversationMealGroup(auth, editBinding(), state)
 }
+/** The shared native wire receipt predates workout coverage. Keep that
+ * historical private input separate from today's complete snapshot. */
+function preCoverageReadState() {
+  const wire = editReadState()
+  const { exercise_energy_complete, ...snapshot } = wire.current_state.snapshot
+  expect(exercise_energy_complete).toBe(true)
+  return { ...wire, current_state: { ...wire.current_state, snapshot } }
+}
 describe('closed factual command meal group and operation result', () => {
   it('keeps the exact shared native wire fixtures and PostgreSQL decimal operation hash', () => {
-    expect(group()).toEqual(wireFixture.group.data)
+    expect(group(preCoverageReadState())).toEqual(wireFixture.group.data)
     const op = bindConversationMealEdit({
       binding: editBinding(),
       operationId: editOperationId,
@@ -54,6 +62,20 @@ describe('closed factual command meal group and operation result', () => {
         input: wireFixture.exponent_hash_case.input,
       }).inputHash,
     ).toBe(wireFixture.exponent_hash_case.operation_input_hash)
+  })
+  it('keeps current workout coverage in the full version without rewriting the historical wire receipt', () => {
+    const complete = editReadState()
+    const incomplete = editReadState()
+    incomplete.current_state.snapshot.exercise_energy_complete = false
+    const historicalVersion = group(preCoverageReadState()).current?.expected_version
+    const completeVersion = group(complete).current?.expected_version
+    const incompleteVersion = group(incomplete).current?.expected_version
+    expect(completeVersion).toBeDefined()
+    expect(incompleteVersion).toBeDefined()
+    expect(completeVersion).not.toBe(incompleteVersion)
+    expect(completeVersion).not.toBe(historicalVersion)
+    expect(incompleteVersion).not.toBe(historicalVersion)
+    expect(historicalVersion).toBe(wireFixture.group.data.current.expected_version)
   })
   it('projects current facts and the FULL private version without returning private state or guidance', () => {
     const wire = editReadState(),

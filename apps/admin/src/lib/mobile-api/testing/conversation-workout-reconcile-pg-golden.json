@@ -1,0 +1,2017 @@
+{
+  "reconcile_prosrc_sha256": "8ccd6bc3cbb3d791d99e395ac69728e993c8b1077644836ff762e824f8cd9d65",
+  "workout_reconcile_actual_golden": [
+    {
+      "kind": "known_workout",
+      "epoch": "18574851-8f1c-4a58-a6ae-cd69564204f7",
+      "response": {
+        "action": "available",
+        "effect": {
+          "receipt": {
+            "epoch": "18574851-8f1c-4a58-a6ae-cd69564204f7",
+            "schema": "conversation.workout-effect.v1",
+            "activity": {
+              "intensity": "moderada",
+              "duration_min": 30,
+              "workout_type": "caminhada",
+              "estimated_kcal": 154
+            },
+            "owner_id": "139f0000-0000-4000-8000-000000000033",
+            "time_zone": "UTC",
+            "command_id": "139f0000-0000-4000-8000-000000000034",
+            "input_hash": "33c8b80c99a131b8113e587ca961f728e53b3a787b13404f802fbb8362ef80d4",
+            "local_date": "2026-11-05",
+            "provenance": "conversation.workout.v1",
+            "workout_id": "f9bcad42-4ee4-45ba-a721-bcf1b867d01f",
+            "snapshot_id": "16376c6a-a183-4ba2-b25e-7001bbfbf1e6",
+            "source_hash": "4080c327e46c4a308f301511ea9894c54a02e195e55fe054b679698a8d4b8275",
+            "committed_at": "2026-11-05T05:12:16.874709Z",
+            "performed_at": "2026-11-05T05:12:16.825949Z",
+            "lifecycle_key": "bed385e0-c925-4106-8d74-996fe9da68ac",
+            "operation_key": "cwork1:139f0000-0000-4000-8000-000000000034",
+            "prepared_hash": "524cc39e5e770c60eccb1093f612960fb0909fac815e27cddfb9e6f2ae9718b4",
+            "effect_version": 1,
+            "registration_id": "139f0000-0000-4000-8000-000000000034"
+          },
+          "original_facts": {
+            "workout": {
+              "id": "f9bcad42-4ee4-45ba-a721-bcf1b867d01f",
+              "user_id": "139f0000-0000-4000-8000-000000000033",
+              "intensity": "moderada",
+              "snapshot_id": "16376c6a-a183-4ba2-b25e-7001bbfbf1e6",
+              "duration_min": 30,
+              "performed_at": "2026-11-05T05:12:16.825949Z",
+              "workout_type": "caminhada",
+              "estimated_kcal": 154,
+              "raw_provider_message_id": "cwork1:139f0000-0000-4000-8000-000000000034"
+            },
+            "snapshot": {
+              "id": "16376c6a-a183-4ba2-b25e-7001bbfbf1e6",
+              "date": "2026-11-05",
+              "user_id": "139f0000-0000-4000-8000-000000000033"
+            },
+            "strength_capture": {
+              "fact": {
+                "anchor": {
+                  "ownerID": "139f0000-0000-4000-8000-000000000033",
+                  "snapshotID": "16376c6a-a183-4ba2-b25e-7001bbfbf1e6",
+                  "performedAt": "2026-11-05T05:12:16.825949Z",
+                  "lifecycleKey": "bed385e0-c925-4106-8d74-996fe9da68ac",
+                  "snapshotDate": "2026-11-05",
+                  "workoutLogID": "f9bcad42-4ee4-45ba-a721-bcf1b867d01f",
+                  "storedWorkoutType": "caminhada"
+                },
+                "calendar": {
+                  "status": "proven",
+                  "timeZone": "UTC",
+                  "localDate": "2026-11-05",
+                  "snapshotID": "16376c6a-a183-4ba2-b25e-7001bbfbf1e6",
+                  "zoneSource": "official_owner_zone_at_recording",
+                  "performedAt": "2026-11-05T05:12:16.825949Z",
+                  "snapshotDate": "2026-11-05",
+                  "zoneObservedAt": "2026-11-05T05:12:16.874709Z"
+                },
+                "revision": 0,
+                "clarification": {
+                  "status": "not_applicable"
+                },
+                "classification": {
+                  "method": "active_slug",
+                  "status": "matched",
+                  "catalogue": {
+                    "id": "3c72c746-3df2-4c99-8980-99600823d46c",
+                    "slug": "caminhada",
+                    "category": "cardio",
+                    "isActive": true,
+                    "displayName": "Caminhada",
+                    "updatedAtLiteral": "2026-11-03T13:44:51.889890Z"
+                  },
+                  "observation": {
+                    "observedAt": "2026-11-05T05:12:16.874709Z",
+                    "matcherVersion": "active_slug_then_unique_canonical_display_v1",
+                    "observationKey": "dfa9a9df-72ce-49e8-b461-d77a7761c073"
+                  }
+                }
+              },
+              "status": "committed",
+              "binding": {
+                "ownerID": "139f0000-0000-4000-8000-000000000033",
+                "resolution": "sql_insert",
+                "lifecycleKey": "bed385e0-c925-4106-8d74-996fe9da68ac",
+                "operationKey": "cwork1:139f0000-0000-4000-8000-000000000034",
+                "workoutLogID": "f9bcad42-4ee4-45ba-a721-bcf1b867d01f",
+                "originalOperationType": "caminhada"
+              }
+            }
+          }
+        },
+        "source": {
+          "context": {
+            "epoch": "18574851-8f1c-4a58-a6ae-cd69564204f7",
+            "media": null,
+            "schema": "conversation.workout-source.v1",
+            "clinical": {
+              "body": {
+                "sex": null,
+                "locale": "pt-BR",
+                "timezone": "UTC",
+                "height_cm": null,
+                "weight_kg": 80.0,
+                "birth_date": null,
+                "body_fat_percent": null,
+                "training_frequency": null
+              },
+              "date": "2026-11-05",
+              "mode": "profile",
+              "epoch": "18574851-8f1c-4a58-a6ae-cd69564204f7",
+              "safety": null,
+              "missing": [
+                "birth_date",
+                "height_cm"
+              ],
+              "user_id": "139f0000-0000-4000-8000-000000000033",
+              "version": 1,
+              "timezone": "UTC",
+              "assessment": "incomplete",
+              "observed_at": "2026-11-05T05:12:16.826244Z",
+              "context_hash": "bb5faef82ce10d590c7a523174fff0884e278ae68a743da2954faf5ccc25e1bb",
+              "health_state": {
+                "items": [],
+                "user_id": "139f0000-0000-4000-8000-000000000033",
+                "version": 1,
+                "hold_active": false,
+                "hide_protein": false,
+                "safety_revision": "0",
+                "declared_no_plan": false,
+                "last_declared_at": null
+              },
+              "phase_origin": {
+                "kind": "not_completed"
+              },
+              "profile_hash": "efb43d587245dae2c5c427c49423a31ec61cfbea7e5e8adcd9963d8db27b2921",
+              "profile_present": true,
+              "first_completion": true,
+              "generation_token": {
+                "receipt_count": 0,
+                "onboarding_completed": false,
+                "onboarding_completed_at": null
+              },
+              "signup_generation": null,
+              "calculation_config": [
+                {
+                  "key": "calc.activity_factors",
+                  "value": {
+                    "alto": 1.725,
+                    "leve": 1.375,
+                    "atleta": 1.9,
+                    "moderado": 1.55,
+                    "sedentario": 1.2
+                  },
+                  "updated_at": "2026-11-03T13:44:51.580242Z"
+                },
+                {
+                  "key": "calc.badges",
+                  "value": [
+                    {
+                      "key": "Primeira Semana",
+                      "type": "streak",
+                      "threshold": 7
+                    },
+                    {
+                      "key": "Mês de Ferro",
+                      "type": "streak",
+                      "threshold": 30
+                    },
+                    {
+                      "key": "Atleta Real",
+                      "type": "streak",
+                      "threshold": 90
+                    },
+                    {
+                      "key": "Primeiro Bloco",
+                      "type": "blocks",
+                      "threshold": 1
+                    },
+                    {
+                      "key": "XP Master",
+                      "type": "xp",
+                      "threshold": 1000
+                    },
+                    {
+                      "key": "Elite",
+                      "type": "xp",
+                      "threshold": 3500
+                    }
+                  ],
+                  "updated_at": "2026-11-03T13:44:51.580242Z"
+                },
+                {
+                  "key": "calc.bf_goal_rules",
+                  "value": [
+                    {
+                      "above": 30,
+                      "subtract": 10
+                    },
+                    {
+                      "above": 20,
+                      "target": 20
+                    },
+                    {
+                      "above": 18,
+                      "target": 18
+                    },
+                    {
+                      "above": 15,
+                      "target": 15
+                    },
+                    {
+                      "above": 0,
+                      "target": 10
+                    }
+                  ],
+                  "updated_at": "2026-11-03T13:44:51.580242Z"
+                },
+                {
+                  "key": "calc.bf_limits",
+                  "value": {
+                    "feminino": {
+                      "gain": 27,
+                      "recomp": 28
+                    },
+                    "masculino": {
+                      "gain": 19,
+                      "recomp": 20
+                    }
+                  },
+                  "updated_at": "2026-11-03T13:44:51.580242Z"
+                },
+                {
+                  "key": "calc.bmr_katch",
+                  "value": {
+                    "base": 370,
+                    "lbm_coef": 21.6
+                  },
+                  "updated_at": "2026-11-03T13:44:51.580242Z"
+                },
+                {
+                  "key": "calc.bmr_mifflin",
+                  "value": {
+                    "age_coef": 5,
+                    "height_coef": 6.25,
+                    "male_offset": 5,
+                    "weight_coef": 10,
+                    "female_offset": -161
+                  },
+                  "updated_at": "2026-11-03T13:44:51.580242Z"
+                },
+                {
+                  "key": "calc.imc_goal_steps",
+                  "value": [
+                    30,
+                    25,
+                    23,
+                    22,
+                    21
+                  ],
+                  "updated_at": "2026-11-03T13:44:51.580242Z"
+                },
+                {
+                  "key": "calc.imc_limit_recomp",
+                  "value": 25,
+                  "updated_at": "2026-11-03T13:44:51.580242Z"
+                },
+                {
+                  "key": "calc.kcal_block",
+                  "value": 7700,
+                  "updated_at": "2026-11-03T13:44:51.580242Z"
+                },
+                {
+                  "key": "calc.levels",
+                  "value": [
+                    {
+                      "max": 99,
+                      "min": 0,
+                      "name": "Início",
+                      "level": 1
+                    },
+                    {
+                      "max": 299,
+                      "min": 100,
+                      "name": "Constância",
+                      "level": 2
+                    },
+                    {
+                      "max": 599,
+                      "min": 300,
+                      "name": "Foco",
+                      "level": 3
+                    },
+                    {
+                      "max": 999,
+                      "min": 600,
+                      "name": "Disciplina",
+                      "level": 4
+                    },
+                    {
+                      "max": 1499,
+                      "min": 1000,
+                      "name": "Performance",
+                      "level": 5
+                    },
+                    {
+                      "max": 2199,
+                      "min": 1500,
+                      "name": "Domínio",
+                      "level": 6
+                    },
+                    {
+                      "max": 2999,
+                      "min": 2200,
+                      "name": "Elite MPP",
+                      "level": 7
+                    },
+                    {
+                      "max": null,
+                      "min": 3000,
+                      "name": "Lenda MPP",
+                      "level": 8
+                    }
+                  ],
+                  "updated_at": "2026-11-03T13:44:51.580242Z"
+                },
+                {
+                  "key": "calc.protein_factors",
+                  "value": {
+                    "muita": 1.6,
+                    "pouca": 1.8,
+                    "moderada": 1.8,
+                    "training_low": 1.7,
+                    "optimal_mid_training": 1.9,
+                    "optimal_high_training": 2.0
+                  },
+                  "updated_at": "2026-11-03T13:44:51.580242Z"
+                },
+                {
+                  "key": "calc.sleep_min_hours",
+                  "value": 6.5,
+                  "updated_at": "2026-11-03T13:44:53.028403Z"
+                },
+                {
+                  "key": "calc.training_min",
+                  "value": 3,
+                  "updated_at": "2026-11-03T13:44:51.580242Z"
+                },
+                {
+                  "key": "calc.xp_rules",
+                  "value": {
+                    "base": 10,
+                    "protein_bonus": 5,
+                    "training_bonus": 5,
+                    "protein_threshold_g": 100
+                  },
+                  "updated_at": "2026-11-03T13:44:51.580242Z"
+                }
+              ]
+            },
+            "owner_id": "139f0000-0000-4000-8000-000000000033",
+            "catalogue": [
+              {
+                "id": "066f4453-52f0-49fc-8fc8-d3bb5caf2c3f",
+                "slug": "abdominal",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Abdominal (alias)",
+                "kcal_per_min": 4.5
+              },
+              {
+                "id": "07a4a350-1dd4-4cf5-94c6-da66670af534",
+                "slug": "escada",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Escada / Stair",
+                "kcal_per_min": 10.0
+              },
+              {
+                "id": "1413d7e3-d0ac-48de-be1b-9a850b800034",
+                "slug": "treino_a",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Treino A",
+                "kcal_per_min": 6.0
+              },
+              {
+                "id": "1c75bc51-d1a4-4c38-a13a-e5a4bd106c7e",
+                "slug": "pilates_solo",
+                "category": "mobilidade",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Pilates solo (alias)",
+                "kcal_per_min": 4.0
+              },
+              {
+                "id": "1fba0c33-fe24-4c3d-8761-0c3da7f890bd",
+                "slug": "corrida_leve",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Corrida leve",
+                "kcal_per_min": 8.0
+              },
+              {
+                "id": "20ebae76-91b8-47db-9c98-c96b000c0242",
+                "slug": "musculacao",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Musculação (genérico)",
+                "kcal_per_min": 6.0
+              },
+              {
+                "id": "2101aefb-c6a3-45bc-9b51-5ae690e08061",
+                "slug": "peito",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Peito (alias)",
+                "kcal_per_min": 5.5
+              },
+              {
+                "id": "21470c53-5204-4c05-ab54-1078b78c2160",
+                "slug": "cardio",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Cardio (genérico)",
+                "kcal_per_min": 8.0
+              },
+              {
+                "id": "21fd2430-5765-4b41-80fe-5a2bdaef83ce",
+                "slug": "yoga",
+                "category": "mobilidade",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Yoga",
+                "kcal_per_min": 3.0
+              },
+              {
+                "id": "2222b43b-1217-4f73-a218-b9c01c2acb87",
+                "slug": "corrida_intensa",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Corrida intensa",
+                "kcal_per_min": 13.0
+              },
+              {
+                "id": "24875cda-b1b7-4a94-af59-698708bd7a64",
+                "slug": "volei",
+                "category": "esporte",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Vôlei",
+                "kcal_per_min": 6.5
+              },
+              {
+                "id": "258e980a-7d8b-4b8f-ae70-d92752971476",
+                "slug": "jiu_jitsu",
+                "category": "esporte",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Jiu-jitsu (alias)",
+                "kcal_per_min": 10.5
+              },
+              {
+                "id": "2ad6941f-acc8-454e-b907-565b65c5afb5",
+                "slug": "treino_b",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Treino B",
+                "kcal_per_min": 6.0
+              },
+              {
+                "id": "387508e8-fb8e-49dd-afbb-6485e7a9af64",
+                "slug": "bjj",
+                "category": "esporte",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "BJJ (alias)",
+                "kcal_per_min": 10.5
+              },
+              {
+                "id": "38ac2519-ba6e-43f7-b60d-382a3a22c6a3",
+                "slug": "jumping_jacks",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Polichinelos",
+                "kcal_per_min": 8.0
+              },
+              {
+                "id": "3c72c746-3df2-4c99-8980-99600823d46c",
+                "slug": "caminhada",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Caminhada",
+                "kcal_per_min": 4.5
+              },
+              {
+                "id": "3fec146b-10cc-43d1-85ed-dec2e4b73451",
+                "slug": "muay_thai",
+                "category": "esporte",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Muay Thai",
+                "kcal_per_min": 11.0
+              },
+              {
+                "id": "488243ec-ba84-4285-8d7d-42ba9052623b",
+                "slug": "bicicleta",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Bicicleta",
+                "kcal_per_min": 8.0
+              },
+              {
+                "id": "518fedab-37ca-495b-9d86-29fc94a6731d",
+                "slug": "futebol",
+                "category": "esporte",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Futebol",
+                "kcal_per_min": 8.0
+              },
+              {
+                "id": "5414cd44-8695-4eac-b5ba-4d2f46227869",
+                "slug": "ombro_trapezio",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Ombro e trapézio",
+                "kcal_per_min": 5.0
+              },
+              {
+                "id": "552871e9-0737-49a9-ab52-bb7b85203c5a",
+                "slug": "outro",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Outro",
+                "kcal_per_min": 6.0
+              },
+              {
+                "id": "581817fd-b6ea-4db3-a19c-ed205d25ed63",
+                "slug": "escalada",
+                "category": "esporte",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Escalada",
+                "kcal_per_min": 9.5
+              },
+              {
+                "id": "5babf87e-1736-4be7-8994-bc13c1a4c907",
+                "slug": "corrida",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Corrida",
+                "kcal_per_min": 11.0
+              },
+              {
+                "id": "636a3a74-e8e9-462d-bec8-23433caa4217",
+                "slug": "zumba",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Zumba",
+                "kcal_per_min": 7.5
+              },
+              {
+                "id": "648bd3eb-2ae0-485a-a409-f1e74f09ae77",
+                "slug": "costas_biceps",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Costas e bíceps",
+                "kcal_per_min": 5.5
+              },
+              {
+                "id": "6525bc81-a68b-47b8-b6c5-e298f9eacbe4",
+                "slug": "basquete",
+                "category": "esporte",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Basquete",
+                "kcal_per_min": 8.5
+              },
+              {
+                "id": "670f11e2-e2ae-4bb7-8c91-475840585726",
+                "slug": "calistenia",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Calistenia",
+                "kcal_per_min": 6.5
+              },
+              {
+                "id": "6a5481c0-7f25-4836-b60f-b7c48a9a2d00",
+                "slug": "mobility",
+                "category": "mobilidade",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Mobility / mobilidade",
+                "kcal_per_min": 3.0
+              },
+              {
+                "id": "6aa16018-98db-4922-a05c-508970aea833",
+                "slug": "full_body",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Full body",
+                "kcal_per_min": 6.5
+              },
+              {
+                "id": "78e22ade-d734-43bd-950b-b4c3e7958a24",
+                "slug": "ombros",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Ombros (alias)",
+                "kcal_per_min": 5.0
+              },
+              {
+                "id": "79583ef5-ac79-4a7e-bd68-fd0bab32bd4d",
+                "slug": "funcional",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Treino funcional (alias)",
+                "kcal_per_min": 9.0
+              },
+              {
+                "id": "8115015a-6387-4e0b-98d1-dfa10459405d",
+                "slug": "alongamento",
+                "category": "mobilidade",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Alongamento",
+                "kcal_per_min": 2.5
+              },
+              {
+                "id": "8b86054b-c26c-46d2-bf33-f7941370ab45",
+                "slug": "spinning",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Spinning",
+                "kcal_per_min": 9.0
+              },
+              {
+                "id": "8cfaaac1-ea3f-4ab8-a5c4-3b56c85d5ddf",
+                "slug": "boxe",
+                "category": "esporte",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Boxe (alias)",
+                "kcal_per_min": 10.5
+              },
+              {
+                "id": "9290fd60-a4a0-451a-a2cd-1fc19611a888",
+                "slug": "pilates",
+                "category": "mobilidade",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Pilates",
+                "kcal_per_min": 4.0
+              },
+              {
+                "id": "93f02d20-aed0-4f6d-a809-1f22dfc00c7e",
+                "slug": "tenis",
+                "category": "esporte",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Tênis",
+                "kcal_per_min": 7.5
+              },
+              {
+                "id": "95ddad52-df8d-49fd-afb3-c718bb0bc14c",
+                "slug": "remo",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Remo / Remoergômetro",
+                "kcal_per_min": 9.0
+              },
+              {
+                "id": "981d21fa-7118-4714-829c-f5ef709844cc",
+                "slug": "peito_triceps",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Peito e tríceps",
+                "kcal_per_min": 5.5
+              },
+              {
+                "id": "a1231a2d-9674-415d-bbaf-a4f85a1b944c",
+                "slug": "costas",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Costas (alias)",
+                "kcal_per_min": 5.5
+              },
+              {
+                "id": "aff80759-8e65-4bab-af8e-6d7fd4a2f623",
+                "slug": "caminhada_rapida",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Caminhada rápida",
+                "kcal_per_min": 6.0
+              },
+              {
+                "id": "b17d0e88-72f0-47a7-85b7-990d8714d3a9",
+                "slug": "beach_tennis",
+                "category": "esporte",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Beach tennis",
+                "kcal_per_min": 7.0
+              },
+              {
+                "id": "b5b1aedd-52a0-4f82-b35d-eab1eb30da9e",
+                "slug": "flex",
+                "category": "mobilidade",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Flexibilidade (alias)",
+                "kcal_per_min": 2.5
+              },
+              {
+                "id": "b6bc3430-b4d1-4e12-9f14-e2f8e99f073f",
+                "slug": "pernas",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Pernas (alias)",
+                "kcal_per_min": 7.0
+              },
+              {
+                "id": "b871b601-9938-4137-bea0-4d30f778ed9b",
+                "slug": "luta",
+                "category": "esporte",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Luta / Jiu-jitsu / Boxe",
+                "kcal_per_min": 10.5
+              },
+              {
+                "id": "b901dad6-df08-4d76-82ee-f08234b261c5",
+                "slug": "perna_completa",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Perna completa",
+                "kcal_per_min": 7.0
+              },
+              {
+                "id": "bb7eaa69-f5b8-4360-bc38-9484a6a94fbe",
+                "slug": "natacao",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Natação",
+                "kcal_per_min": 10.0
+              },
+              {
+                "id": "bdccb304-1365-45e4-ae83-4f373a055585",
+                "slug": "biceps_triceps",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Bíceps e tríceps",
+                "kcal_per_min": 5.0
+              },
+              {
+                "id": "c5400d93-def6-472c-91d4-bc221f88c888",
+                "slug": "eliptico",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Elíptico",
+                "kcal_per_min": 8.5
+              },
+              {
+                "id": "c556565b-377b-4a07-9875-31c5f0e08c6d",
+                "slug": "hiit",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "HIIT",
+                "kcal_per_min": 12.0
+              },
+              {
+                "id": "ca85dcd3-7cd7-4d1f-94f6-e787a8cd5c9b",
+                "slug": "esteira",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Esteira",
+                "kcal_per_min": 8.0
+              },
+              {
+                "id": "d4979ad7-13f6-434a-8ea8-01a484017f79",
+                "slug": "crossfit",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "CrossFit / Funcional",
+                "kcal_per_min": 9.0
+              },
+              {
+                "id": "d97d676b-4d14-4f48-a265-b0765bb22fe5",
+                "slug": "aerobico",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Aeróbico (alias)",
+                "kcal_per_min": 8.0
+              },
+              {
+                "id": "db7e86c0-ea91-4814-9a99-25f7ca66f4da",
+                "slug": "crossfit_wod",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "CrossFit WOD (alias)",
+                "kcal_per_min": 9.0
+              },
+              {
+                "id": "e5217e6d-0499-4b31-b4c6-98a0df8bfd02",
+                "slug": "danca",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Dança",
+                "kcal_per_min": 6.5
+              },
+              {
+                "id": "e63ae545-eefd-4299-a8a3-c91290cff471",
+                "slug": "handstand",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Handstand / parada de mão",
+                "kcal_per_min": 6.0
+              },
+              {
+                "id": "e6b7967c-5f86-4a15-a5f0-792ea7801e9d",
+                "slug": "abdomen",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Abdômen",
+                "kcal_per_min": 4.5
+              },
+              {
+                "id": "f4813a3d-dcef-4703-b0b3-fa858ab8f34e",
+                "slug": "treino_c",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Treino C",
+                "kcal_per_min": 6.0
+              },
+              {
+                "id": "f8f08f21-a13b-4787-b1c0-ecf65e0c5c3e",
+                "slug": "gluteos",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Glúteos",
+                "kcal_per_min": 6.5
+              }
+            ],
+            "command_id": "139f0000-0000-4000-8000-000000000034",
+            "day_closed": false,
+            "input_hash": "33c8b80c99a131b8113e587ca961f728e53b3a787b13404f802fbb8362ef80d4",
+            "admitted_at": "2026-11-05T05:12:16.825949Z",
+            "captured_at": "2026-11-05T05:12:16.826244Z",
+            "source_input": {
+              "kind": "workout.report",
+              "source": {
+                "text": "Fiz 30 minutos de caminhada moderada.",
+                "channel": "text"
+              },
+              "command_id": "139f0000-0000-4000-8000-000000000034",
+              "command_protocol": "conversation.command.v1"
+            }
+          },
+          "source_hash": "4080c327e46c4a308f301511ea9894c54a02e195e55fe054b679698a8d4b8275"
+        },
+        "current": {
+          "status": "present",
+          "workout": {
+            "id": "f9bcad42-4ee4-45ba-a721-bcf1b867d01f",
+            "notes": "conversation.workout.v1",
+            "user_id": "139f0000-0000-4000-8000-000000000033",
+            "intensity": "moderada",
+            "created_at": "2026-11-05T05:12:15.860762+00:00",
+            "snapshot_id": "16376c6a-a183-4ba2-b25e-7001bbfbf1e6",
+            "duration_min": 30,
+            "performed_at": "2026-11-05T05:12:16.825949+00:00",
+            "workout_type": "caminhada",
+            "estimated_kcal": 154,
+            "raw_message_id": null,
+            "raw_provider_message_id": "cwork1:139f0000-0000-4000-8000-000000000034"
+          },
+          "snapshot": {
+            "id": "16376c6a-a183-4ba2-b25e-7001bbfbf1e6",
+            "date": "2026-11-05",
+            "fat_g": 0.0,
+            "steps": null,
+            "carbs_g": 0.0,
+            "user_id": "139f0000-0000-4000-8000-000000000033",
+            "closed_at": null,
+            "protein_g": 0.0,
+            "xp_earned": 0,
+            "created_at": "2026-11-05T05:12:15.860762+00:00",
+            "day_closed": false,
+            "day_status": "complete",
+            "updated_at": "2026-11-05T05:12:16.875135+00:00",
+            "sleep_hours": null,
+            "daily_balance": -154,
+            "training_done": true,
+            "protein_target": null,
+            "calories_target": null,
+            "current_protocol": null,
+            "calories_consumed": 0,
+            "exercise_calories": 154,
+            "water_consumed_ml": 0,
+            "deficit_accumulated": 0,
+            "gap_reminder_sent_at": null,
+            "exercise_energy_complete": true
+          }
+        },
+        "preparation": {
+          "prepared": {
+            "epoch": "18574851-8f1c-4a58-a6ae-cd69564204f7",
+            "energy": {
+              "source": "calc_workout_kcal",
+              "status": "available",
+              "weight_kg": 80
+            },
+            "status": "ready",
+            "activity": {
+              "intensity": "moderada",
+              "duration_min": 30,
+              "workout_type": "caminhada",
+              "estimated_kcal": 154
+            },
+            "evidence": [
+              {
+                "text": "Fiz 30 minutos de caminhada moderada.",
+                "unit": "command_text"
+              }
+            ],
+            "owner_id": "139f0000-0000-4000-8000-000000000033",
+            "time_zone": "UTC",
+            "command_id": "139f0000-0000-4000-8000-000000000034",
+            "input_hash": "33c8b80c99a131b8113e587ca961f728e53b3a787b13404f802fbb8362ef80d4",
+            "local_date": "2026-11-05",
+            "source_hash": "4080c327e46c4a308f301511ea9894c54a02e195e55fe054b679698a8d4b8275",
+            "performed_at": "2026-11-05T05:12:16.825949Z"
+          },
+          "prepared_hash": "524cc39e5e770c60eccb1093f612960fb0909fac815e27cddfb9e6f2ae9718b4"
+        }
+      },
+      "bound_command": {
+        "command": {
+          "kind": "workout.report",
+          "source": {
+            "text": "Fiz 30 minutos de caminhada moderada.",
+            "channel": "text"
+          },
+          "command_id": "139f0000-0000-4000-8000-000000000034",
+          "command_protocol": "conversation.command.v1"
+        },
+        "ownerId": "139f0000-0000-4000-8000-000000000033",
+        "commandId": "139f0000-0000-4000-8000-000000000034",
+        "inputHash": "33c8b80c99a131b8113e587ca961f728e53b3a787b13404f802fbb8362ef80d4"
+      }
+    },
+    {
+      "kind": "unknown_workout",
+      "epoch": "f943e3fd-550b-4980-bec5-3ef3879dbf2a",
+      "response": {
+        "action": "available",
+        "effect": {
+          "receipt": {
+            "epoch": "f943e3fd-550b-4980-bec5-3ef3879dbf2a",
+            "schema": "conversation.workout-effect.v1",
+            "activity": {
+              "intensity": null,
+              "duration_min": 30,
+              "workout_type": "caminhada",
+              "estimated_kcal": null
+            },
+            "owner_id": "139f0000-0000-4000-8000-000000000030",
+            "time_zone": "UTC",
+            "command_id": "139f0000-0000-4000-8000-000000000031",
+            "input_hash": "1f0c2a303422cdb3299a36454acba638a616634f6ae3ddbf47419148dc2c4143",
+            "local_date": "2026-11-05",
+            "provenance": "conversation.workout.v1",
+            "workout_id": "e41cb0b0-8e75-47be-bbd1-58aa546d3ba4",
+            "snapshot_id": "694315b3-e789-44e8-bab6-d97b138274bb",
+            "source_hash": "856439840dc8bcb26bd1a5cd8956558b1d1f4c617e374c227eadd1cd39056c2b",
+            "committed_at": "2026-11-05T05:12:16.792193Z",
+            "performed_at": "2026-11-05T05:12:16.738150Z",
+            "lifecycle_key": "68bad823-10fb-434a-b87a-2e31770ccbf4",
+            "operation_key": "cwork1:139f0000-0000-4000-8000-000000000031",
+            "prepared_hash": "888f9a289a8e3c21784e489509fa611982553170303b0069f032d1e878580d14",
+            "effect_version": 1,
+            "registration_id": "139f0000-0000-4000-8000-000000000031"
+          },
+          "original_facts": {
+            "workout": {
+              "id": "e41cb0b0-8e75-47be-bbd1-58aa546d3ba4",
+              "user_id": "139f0000-0000-4000-8000-000000000030",
+              "intensity": null,
+              "snapshot_id": "694315b3-e789-44e8-bab6-d97b138274bb",
+              "duration_min": 30,
+              "performed_at": "2026-11-05T05:12:16.738150Z",
+              "workout_type": "caminhada",
+              "estimated_kcal": null,
+              "raw_provider_message_id": "cwork1:139f0000-0000-4000-8000-000000000031"
+            },
+            "snapshot": {
+              "id": "694315b3-e789-44e8-bab6-d97b138274bb",
+              "date": "2026-11-05",
+              "user_id": "139f0000-0000-4000-8000-000000000030"
+            },
+            "strength_capture": {
+              "fact": {
+                "anchor": {
+                  "ownerID": "139f0000-0000-4000-8000-000000000030",
+                  "snapshotID": "694315b3-e789-44e8-bab6-d97b138274bb",
+                  "performedAt": "2026-11-05T05:12:16.738150Z",
+                  "lifecycleKey": "68bad823-10fb-434a-b87a-2e31770ccbf4",
+                  "snapshotDate": "2026-11-05",
+                  "workoutLogID": "e41cb0b0-8e75-47be-bbd1-58aa546d3ba4",
+                  "storedWorkoutType": "caminhada"
+                },
+                "calendar": {
+                  "status": "proven",
+                  "timeZone": "UTC",
+                  "localDate": "2026-11-05",
+                  "snapshotID": "694315b3-e789-44e8-bab6-d97b138274bb",
+                  "zoneSource": "official_owner_zone_at_recording",
+                  "performedAt": "2026-11-05T05:12:16.738150Z",
+                  "snapshotDate": "2026-11-05",
+                  "zoneObservedAt": "2026-11-05T05:12:16.792193Z"
+                },
+                "revision": 0,
+                "clarification": {
+                  "status": "not_applicable"
+                },
+                "classification": {
+                  "method": "active_slug",
+                  "status": "matched",
+                  "catalogue": {
+                    "id": "3c72c746-3df2-4c99-8980-99600823d46c",
+                    "slug": "caminhada",
+                    "category": "cardio",
+                    "isActive": true,
+                    "displayName": "Caminhada",
+                    "updatedAtLiteral": "2026-11-03T13:44:51.889890Z"
+                  },
+                  "observation": {
+                    "observedAt": "2026-11-05T05:12:16.792193Z",
+                    "matcherVersion": "active_slug_then_unique_canonical_display_v1",
+                    "observationKey": "13d449ee-bcae-4cb5-8eaa-a16b1a2bdb03"
+                  }
+                }
+              },
+              "status": "committed",
+              "binding": {
+                "ownerID": "139f0000-0000-4000-8000-000000000030",
+                "resolution": "sql_insert",
+                "lifecycleKey": "68bad823-10fb-434a-b87a-2e31770ccbf4",
+                "operationKey": "cwork1:139f0000-0000-4000-8000-000000000031",
+                "workoutLogID": "e41cb0b0-8e75-47be-bbd1-58aa546d3ba4",
+                "originalOperationType": "caminhada"
+              }
+            }
+          }
+        },
+        "source": {
+          "context": {
+            "epoch": "f943e3fd-550b-4980-bec5-3ef3879dbf2a",
+            "media": null,
+            "schema": "conversation.workout-source.v1",
+            "clinical": {
+              "body": {
+                "sex": null,
+                "locale": "pt-BR",
+                "timezone": "UTC",
+                "height_cm": null,
+                "weight_kg": null,
+                "birth_date": null,
+                "body_fat_percent": null,
+                "training_frequency": null
+              },
+              "date": "2026-11-05",
+              "mode": "profile",
+              "epoch": "f943e3fd-550b-4980-bec5-3ef3879dbf2a",
+              "safety": null,
+              "missing": [
+                "birth_date",
+                "height_cm",
+                "weight_kg"
+              ],
+              "user_id": "139f0000-0000-4000-8000-000000000030",
+              "version": 1,
+              "timezone": "UTC",
+              "assessment": "incomplete",
+              "observed_at": "2026-11-05T05:12:16.739051Z",
+              "context_hash": "53cc1631e2a58f95e44d4fc2538110d6a886627568af097023c9664754917c93",
+              "health_state": {
+                "items": [],
+                "user_id": "139f0000-0000-4000-8000-000000000030",
+                "version": 1,
+                "hold_active": false,
+                "hide_protein": false,
+                "safety_revision": "0",
+                "declared_no_plan": false,
+                "last_declared_at": null
+              },
+              "phase_origin": {
+                "kind": "not_completed"
+              },
+              "profile_hash": "8f7e490fd47b9b1db1beff2c5eabe6dfc88cb39116145a2b4c97e4d802d6380d",
+              "profile_present": false,
+              "first_completion": true,
+              "generation_token": null,
+              "signup_generation": null,
+              "calculation_config": [
+                {
+                  "key": "calc.activity_factors",
+                  "value": {
+                    "alto": 1.725,
+                    "leve": 1.375,
+                    "atleta": 1.9,
+                    "moderado": 1.55,
+                    "sedentario": 1.2
+                  },
+                  "updated_at": "2026-11-03T13:44:51.580242Z"
+                },
+                {
+                  "key": "calc.badges",
+                  "value": [
+                    {
+                      "key": "Primeira Semana",
+                      "type": "streak",
+                      "threshold": 7
+                    },
+                    {
+                      "key": "Mês de Ferro",
+                      "type": "streak",
+                      "threshold": 30
+                    },
+                    {
+                      "key": "Atleta Real",
+                      "type": "streak",
+                      "threshold": 90
+                    },
+                    {
+                      "key": "Primeiro Bloco",
+                      "type": "blocks",
+                      "threshold": 1
+                    },
+                    {
+                      "key": "XP Master",
+                      "type": "xp",
+                      "threshold": 1000
+                    },
+                    {
+                      "key": "Elite",
+                      "type": "xp",
+                      "threshold": 3500
+                    }
+                  ],
+                  "updated_at": "2026-11-03T13:44:51.580242Z"
+                },
+                {
+                  "key": "calc.bf_goal_rules",
+                  "value": [
+                    {
+                      "above": 30,
+                      "subtract": 10
+                    },
+                    {
+                      "above": 20,
+                      "target": 20
+                    },
+                    {
+                      "above": 18,
+                      "target": 18
+                    },
+                    {
+                      "above": 15,
+                      "target": 15
+                    },
+                    {
+                      "above": 0,
+                      "target": 10
+                    }
+                  ],
+                  "updated_at": "2026-11-03T13:44:51.580242Z"
+                },
+                {
+                  "key": "calc.bf_limits",
+                  "value": {
+                    "feminino": {
+                      "gain": 27,
+                      "recomp": 28
+                    },
+                    "masculino": {
+                      "gain": 19,
+                      "recomp": 20
+                    }
+                  },
+                  "updated_at": "2026-11-03T13:44:51.580242Z"
+                },
+                {
+                  "key": "calc.bmr_katch",
+                  "value": {
+                    "base": 370,
+                    "lbm_coef": 21.6
+                  },
+                  "updated_at": "2026-11-03T13:44:51.580242Z"
+                },
+                {
+                  "key": "calc.bmr_mifflin",
+                  "value": {
+                    "age_coef": 5,
+                    "height_coef": 6.25,
+                    "male_offset": 5,
+                    "weight_coef": 10,
+                    "female_offset": -161
+                  },
+                  "updated_at": "2026-11-03T13:44:51.580242Z"
+                },
+                {
+                  "key": "calc.imc_goal_steps",
+                  "value": [
+                    30,
+                    25,
+                    23,
+                    22,
+                    21
+                  ],
+                  "updated_at": "2026-11-03T13:44:51.580242Z"
+                },
+                {
+                  "key": "calc.imc_limit_recomp",
+                  "value": 25,
+                  "updated_at": "2026-11-03T13:44:51.580242Z"
+                },
+                {
+                  "key": "calc.kcal_block",
+                  "value": 7700,
+                  "updated_at": "2026-11-03T13:44:51.580242Z"
+                },
+                {
+                  "key": "calc.levels",
+                  "value": [
+                    {
+                      "max": 99,
+                      "min": 0,
+                      "name": "Início",
+                      "level": 1
+                    },
+                    {
+                      "max": 299,
+                      "min": 100,
+                      "name": "Constância",
+                      "level": 2
+                    },
+                    {
+                      "max": 599,
+                      "min": 300,
+                      "name": "Foco",
+                      "level": 3
+                    },
+                    {
+                      "max": 999,
+                      "min": 600,
+                      "name": "Disciplina",
+                      "level": 4
+                    },
+                    {
+                      "max": 1499,
+                      "min": 1000,
+                      "name": "Performance",
+                      "level": 5
+                    },
+                    {
+                      "max": 2199,
+                      "min": 1500,
+                      "name": "Domínio",
+                      "level": 6
+                    },
+                    {
+                      "max": 2999,
+                      "min": 2200,
+                      "name": "Elite MPP",
+                      "level": 7
+                    },
+                    {
+                      "max": null,
+                      "min": 3000,
+                      "name": "Lenda MPP",
+                      "level": 8
+                    }
+                  ],
+                  "updated_at": "2026-11-03T13:44:51.580242Z"
+                },
+                {
+                  "key": "calc.protein_factors",
+                  "value": {
+                    "muita": 1.6,
+                    "pouca": 1.8,
+                    "moderada": 1.8,
+                    "training_low": 1.7,
+                    "optimal_mid_training": 1.9,
+                    "optimal_high_training": 2.0
+                  },
+                  "updated_at": "2026-11-03T13:44:51.580242Z"
+                },
+                {
+                  "key": "calc.sleep_min_hours",
+                  "value": 6.5,
+                  "updated_at": "2026-11-03T13:44:53.028403Z"
+                },
+                {
+                  "key": "calc.training_min",
+                  "value": 3,
+                  "updated_at": "2026-11-03T13:44:51.580242Z"
+                },
+                {
+                  "key": "calc.xp_rules",
+                  "value": {
+                    "base": 10,
+                    "protein_bonus": 5,
+                    "training_bonus": 5,
+                    "protein_threshold_g": 100
+                  },
+                  "updated_at": "2026-11-03T13:44:51.580242Z"
+                }
+              ]
+            },
+            "owner_id": "139f0000-0000-4000-8000-000000000030",
+            "catalogue": [
+              {
+                "id": "066f4453-52f0-49fc-8fc8-d3bb5caf2c3f",
+                "slug": "abdominal",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Abdominal (alias)",
+                "kcal_per_min": 4.5
+              },
+              {
+                "id": "07a4a350-1dd4-4cf5-94c6-da66670af534",
+                "slug": "escada",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Escada / Stair",
+                "kcal_per_min": 10.0
+              },
+              {
+                "id": "1413d7e3-d0ac-48de-be1b-9a850b800034",
+                "slug": "treino_a",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Treino A",
+                "kcal_per_min": 6.0
+              },
+              {
+                "id": "1c75bc51-d1a4-4c38-a13a-e5a4bd106c7e",
+                "slug": "pilates_solo",
+                "category": "mobilidade",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Pilates solo (alias)",
+                "kcal_per_min": 4.0
+              },
+              {
+                "id": "1fba0c33-fe24-4c3d-8761-0c3da7f890bd",
+                "slug": "corrida_leve",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Corrida leve",
+                "kcal_per_min": 8.0
+              },
+              {
+                "id": "20ebae76-91b8-47db-9c98-c96b000c0242",
+                "slug": "musculacao",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Musculação (genérico)",
+                "kcal_per_min": 6.0
+              },
+              {
+                "id": "2101aefb-c6a3-45bc-9b51-5ae690e08061",
+                "slug": "peito",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Peito (alias)",
+                "kcal_per_min": 5.5
+              },
+              {
+                "id": "21470c53-5204-4c05-ab54-1078b78c2160",
+                "slug": "cardio",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Cardio (genérico)",
+                "kcal_per_min": 8.0
+              },
+              {
+                "id": "21fd2430-5765-4b41-80fe-5a2bdaef83ce",
+                "slug": "yoga",
+                "category": "mobilidade",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Yoga",
+                "kcal_per_min": 3.0
+              },
+              {
+                "id": "2222b43b-1217-4f73-a218-b9c01c2acb87",
+                "slug": "corrida_intensa",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Corrida intensa",
+                "kcal_per_min": 13.0
+              },
+              {
+                "id": "24875cda-b1b7-4a94-af59-698708bd7a64",
+                "slug": "volei",
+                "category": "esporte",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Vôlei",
+                "kcal_per_min": 6.5
+              },
+              {
+                "id": "258e980a-7d8b-4b8f-ae70-d92752971476",
+                "slug": "jiu_jitsu",
+                "category": "esporte",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Jiu-jitsu (alias)",
+                "kcal_per_min": 10.5
+              },
+              {
+                "id": "2ad6941f-acc8-454e-b907-565b65c5afb5",
+                "slug": "treino_b",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Treino B",
+                "kcal_per_min": 6.0
+              },
+              {
+                "id": "387508e8-fb8e-49dd-afbb-6485e7a9af64",
+                "slug": "bjj",
+                "category": "esporte",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "BJJ (alias)",
+                "kcal_per_min": 10.5
+              },
+              {
+                "id": "38ac2519-ba6e-43f7-b60d-382a3a22c6a3",
+                "slug": "jumping_jacks",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Polichinelos",
+                "kcal_per_min": 8.0
+              },
+              {
+                "id": "3c72c746-3df2-4c99-8980-99600823d46c",
+                "slug": "caminhada",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Caminhada",
+                "kcal_per_min": 4.5
+              },
+              {
+                "id": "3fec146b-10cc-43d1-85ed-dec2e4b73451",
+                "slug": "muay_thai",
+                "category": "esporte",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Muay Thai",
+                "kcal_per_min": 11.0
+              },
+              {
+                "id": "488243ec-ba84-4285-8d7d-42ba9052623b",
+                "slug": "bicicleta",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Bicicleta",
+                "kcal_per_min": 8.0
+              },
+              {
+                "id": "518fedab-37ca-495b-9d86-29fc94a6731d",
+                "slug": "futebol",
+                "category": "esporte",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Futebol",
+                "kcal_per_min": 8.0
+              },
+              {
+                "id": "5414cd44-8695-4eac-b5ba-4d2f46227869",
+                "slug": "ombro_trapezio",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Ombro e trapézio",
+                "kcal_per_min": 5.0
+              },
+              {
+                "id": "552871e9-0737-49a9-ab52-bb7b85203c5a",
+                "slug": "outro",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Outro",
+                "kcal_per_min": 6.0
+              },
+              {
+                "id": "581817fd-b6ea-4db3-a19c-ed205d25ed63",
+                "slug": "escalada",
+                "category": "esporte",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Escalada",
+                "kcal_per_min": 9.5
+              },
+              {
+                "id": "5babf87e-1736-4be7-8994-bc13c1a4c907",
+                "slug": "corrida",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Corrida",
+                "kcal_per_min": 11.0
+              },
+              {
+                "id": "636a3a74-e8e9-462d-bec8-23433caa4217",
+                "slug": "zumba",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Zumba",
+                "kcal_per_min": 7.5
+              },
+              {
+                "id": "648bd3eb-2ae0-485a-a409-f1e74f09ae77",
+                "slug": "costas_biceps",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Costas e bíceps",
+                "kcal_per_min": 5.5
+              },
+              {
+                "id": "6525bc81-a68b-47b8-b6c5-e298f9eacbe4",
+                "slug": "basquete",
+                "category": "esporte",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Basquete",
+                "kcal_per_min": 8.5
+              },
+              {
+                "id": "670f11e2-e2ae-4bb7-8c91-475840585726",
+                "slug": "calistenia",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Calistenia",
+                "kcal_per_min": 6.5
+              },
+              {
+                "id": "6a5481c0-7f25-4836-b60f-b7c48a9a2d00",
+                "slug": "mobility",
+                "category": "mobilidade",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Mobility / mobilidade",
+                "kcal_per_min": 3.0
+              },
+              {
+                "id": "6aa16018-98db-4922-a05c-508970aea833",
+                "slug": "full_body",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Full body",
+                "kcal_per_min": 6.5
+              },
+              {
+                "id": "78e22ade-d734-43bd-950b-b4c3e7958a24",
+                "slug": "ombros",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Ombros (alias)",
+                "kcal_per_min": 5.0
+              },
+              {
+                "id": "79583ef5-ac79-4a7e-bd68-fd0bab32bd4d",
+                "slug": "funcional",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Treino funcional (alias)",
+                "kcal_per_min": 9.0
+              },
+              {
+                "id": "8115015a-6387-4e0b-98d1-dfa10459405d",
+                "slug": "alongamento",
+                "category": "mobilidade",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Alongamento",
+                "kcal_per_min": 2.5
+              },
+              {
+                "id": "8b86054b-c26c-46d2-bf33-f7941370ab45",
+                "slug": "spinning",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Spinning",
+                "kcal_per_min": 9.0
+              },
+              {
+                "id": "8cfaaac1-ea3f-4ab8-a5c4-3b56c85d5ddf",
+                "slug": "boxe",
+                "category": "esporte",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Boxe (alias)",
+                "kcal_per_min": 10.5
+              },
+              {
+                "id": "9290fd60-a4a0-451a-a2cd-1fc19611a888",
+                "slug": "pilates",
+                "category": "mobilidade",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Pilates",
+                "kcal_per_min": 4.0
+              },
+              {
+                "id": "93f02d20-aed0-4f6d-a809-1f22dfc00c7e",
+                "slug": "tenis",
+                "category": "esporte",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Tênis",
+                "kcal_per_min": 7.5
+              },
+              {
+                "id": "95ddad52-df8d-49fd-afb3-c718bb0bc14c",
+                "slug": "remo",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Remo / Remoergômetro",
+                "kcal_per_min": 9.0
+              },
+              {
+                "id": "981d21fa-7118-4714-829c-f5ef709844cc",
+                "slug": "peito_triceps",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Peito e tríceps",
+                "kcal_per_min": 5.5
+              },
+              {
+                "id": "a1231a2d-9674-415d-bbaf-a4f85a1b944c",
+                "slug": "costas",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Costas (alias)",
+                "kcal_per_min": 5.5
+              },
+              {
+                "id": "aff80759-8e65-4bab-af8e-6d7fd4a2f623",
+                "slug": "caminhada_rapida",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Caminhada rápida",
+                "kcal_per_min": 6.0
+              },
+              {
+                "id": "b17d0e88-72f0-47a7-85b7-990d8714d3a9",
+                "slug": "beach_tennis",
+                "category": "esporte",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Beach tennis",
+                "kcal_per_min": 7.0
+              },
+              {
+                "id": "b5b1aedd-52a0-4f82-b35d-eab1eb30da9e",
+                "slug": "flex",
+                "category": "mobilidade",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Flexibilidade (alias)",
+                "kcal_per_min": 2.5
+              },
+              {
+                "id": "b6bc3430-b4d1-4e12-9f14-e2f8e99f073f",
+                "slug": "pernas",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Pernas (alias)",
+                "kcal_per_min": 7.0
+              },
+              {
+                "id": "b871b601-9938-4137-bea0-4d30f778ed9b",
+                "slug": "luta",
+                "category": "esporte",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Luta / Jiu-jitsu / Boxe",
+                "kcal_per_min": 10.5
+              },
+              {
+                "id": "b901dad6-df08-4d76-82ee-f08234b261c5",
+                "slug": "perna_completa",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Perna completa",
+                "kcal_per_min": 7.0
+              },
+              {
+                "id": "bb7eaa69-f5b8-4360-bc38-9484a6a94fbe",
+                "slug": "natacao",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Natação",
+                "kcal_per_min": 10.0
+              },
+              {
+                "id": "bdccb304-1365-45e4-ae83-4f373a055585",
+                "slug": "biceps_triceps",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Bíceps e tríceps",
+                "kcal_per_min": 5.0
+              },
+              {
+                "id": "c5400d93-def6-472c-91d4-bc221f88c888",
+                "slug": "eliptico",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Elíptico",
+                "kcal_per_min": 8.5
+              },
+              {
+                "id": "c556565b-377b-4a07-9875-31c5f0e08c6d",
+                "slug": "hiit",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "HIIT",
+                "kcal_per_min": 12.0
+              },
+              {
+                "id": "ca85dcd3-7cd7-4d1f-94f6-e787a8cd5c9b",
+                "slug": "esteira",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Esteira",
+                "kcal_per_min": 8.0
+              },
+              {
+                "id": "d4979ad7-13f6-434a-8ea8-01a484017f79",
+                "slug": "crossfit",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "CrossFit / Funcional",
+                "kcal_per_min": 9.0
+              },
+              {
+                "id": "d97d676b-4d14-4f48-a265-b0765bb22fe5",
+                "slug": "aerobico",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Aeróbico (alias)",
+                "kcal_per_min": 8.0
+              },
+              {
+                "id": "db7e86c0-ea91-4814-9a99-25f7ca66f4da",
+                "slug": "crossfit_wod",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "CrossFit WOD (alias)",
+                "kcal_per_min": 9.0
+              },
+              {
+                "id": "e5217e6d-0499-4b31-b4c6-98a0df8bfd02",
+                "slug": "danca",
+                "category": "cardio",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Dança",
+                "kcal_per_min": 6.5
+              },
+              {
+                "id": "e63ae545-eefd-4299-a8a3-c91290cff471",
+                "slug": "handstand",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Handstand / parada de mão",
+                "kcal_per_min": 6.0
+              },
+              {
+                "id": "e6b7967c-5f86-4a15-a5f0-792ea7801e9d",
+                "slug": "abdomen",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:51.889890Z",
+                "display_name": "Abdômen",
+                "kcal_per_min": 4.5
+              },
+              {
+                "id": "f4813a3d-dcef-4703-b0b3-fa858ab8f34e",
+                "slug": "treino_c",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Treino C",
+                "kcal_per_min": 6.0
+              },
+              {
+                "id": "f8f08f21-a13b-4787-b1c0-ecf65e0c5c3e",
+                "slug": "gluteos",
+                "category": "musculacao",
+                "is_active": true,
+                "updated_at": "2026-11-03T13:44:52.039353Z",
+                "display_name": "Glúteos",
+                "kcal_per_min": 6.5
+              }
+            ],
+            "command_id": "139f0000-0000-4000-8000-000000000031",
+            "day_closed": false,
+            "input_hash": "1f0c2a303422cdb3299a36454acba638a616634f6ae3ddbf47419148dc2c4143",
+            "admitted_at": "2026-11-05T05:12:16.738150Z",
+            "captured_at": "2026-11-05T05:12:16.739051Z",
+            "source_input": {
+              "kind": "workout.report",
+              "source": {
+                "text": "Fiz 30 minutos de caminhada.",
+                "channel": "text"
+              },
+              "command_id": "139f0000-0000-4000-8000-000000000031",
+              "command_protocol": "conversation.command.v1"
+            }
+          },
+          "source_hash": "856439840dc8bcb26bd1a5cd8956558b1d1f4c617e374c227eadd1cd39056c2b"
+        },
+        "current": {
+          "status": "present",
+          "workout": {
+            "id": "e41cb0b0-8e75-47be-bbd1-58aa546d3ba4",
+            "notes": "conversation.workout.v1",
+            "user_id": "139f0000-0000-4000-8000-000000000030",
+            "intensity": null,
+            "created_at": "2026-11-05T05:12:15.860762+00:00",
+            "snapshot_id": "694315b3-e789-44e8-bab6-d97b138274bb",
+            "duration_min": 30,
+            "performed_at": "2026-11-05T05:12:16.73815+00:00",
+            "workout_type": "caminhada",
+            "estimated_kcal": null,
+            "raw_message_id": null,
+            "raw_provider_message_id": "cwork1:139f0000-0000-4000-8000-000000000031"
+          },
+          "snapshot": {
+            "id": "694315b3-e789-44e8-bab6-d97b138274bb",
+            "date": "2026-11-05",
+            "fat_g": 0.0,
+            "steps": null,
+            "carbs_g": 0.0,
+            "user_id": "139f0000-0000-4000-8000-000000000030",
+            "closed_at": null,
+            "protein_g": 0.0,
+            "xp_earned": 0,
+            "created_at": "2026-11-05T05:12:15.860762+00:00",
+            "day_closed": false,
+            "day_status": "complete",
+            "updated_at": "2026-11-05T05:12:16.79319+00:00",
+            "sleep_hours": null,
+            "daily_balance": 0,
+            "training_done": true,
+            "protein_target": null,
+            "calories_target": null,
+            "current_protocol": null,
+            "calories_consumed": 0,
+            "exercise_calories": 0,
+            "water_consumed_ml": 0,
+            "deficit_accumulated": 0,
+            "gap_reminder_sent_at": null,
+            "exercise_energy_complete": false
+          }
+        },
+        "preparation": {
+          "prepared": {
+            "epoch": "f943e3fd-550b-4980-bec5-3ef3879dbf2a",
+            "energy": {
+              "status": "unavailable"
+            },
+            "status": "ready",
+            "activity": {
+              "intensity": null,
+              "duration_min": 30,
+              "workout_type": "caminhada",
+              "estimated_kcal": null
+            },
+            "evidence": [
+              {
+                "text": "Fiz 30 minutos de caminhada.",
+                "unit": "command_text"
+              }
+            ],
+            "owner_id": "139f0000-0000-4000-8000-000000000030",
+            "time_zone": "UTC",
+            "command_id": "139f0000-0000-4000-8000-000000000031",
+            "input_hash": "1f0c2a303422cdb3299a36454acba638a616634f6ae3ddbf47419148dc2c4143",
+            "local_date": "2026-11-05",
+            "source_hash": "856439840dc8bcb26bd1a5cd8956558b1d1f4c617e374c227eadd1cd39056c2b",
+            "performed_at": "2026-11-05T05:12:16.738150Z"
+          },
+          "prepared_hash": "888f9a289a8e3c21784e489509fa611982553170303b0069f032d1e878580d14"
+        }
+      },
+      "bound_command": {
+        "command": {
+          "kind": "workout.report",
+          "source": {
+            "text": "Fiz 30 minutos de caminhada.",
+            "channel": "text"
+          },
+          "command_id": "139f0000-0000-4000-8000-000000000031",
+          "command_protocol": "conversation.command.v1"
+        },
+        "ownerId": "139f0000-0000-4000-8000-000000000030",
+        "commandId": "139f0000-0000-4000-8000-000000000031",
+        "inputHash": "1f0c2a303422cdb3299a36454acba638a616634f6ae3ddbf47419148dc2c4143"
+      }
+    }
+  ],
+  "qualification": {
+    "mode": "actual public reconcile function body within existing owned local rollback transaction; synthetic fixtures; not HTTP/E2E",
+    "source_result": "V3-QUALIFY-R9-RESULT.json",
+    "transaction": "ROLLBACK",
+    "core_migration_sha256": "82e5db7b25a572a0c30eafdd476b1234ff2974d3e43661665f4ac1e49df323ea",
+    "v3_migration_sha256": "24e48789b800fc5149d6bbbff4b6a946cddedb0ea1a3dbc53c490bb7f7ed5ab3"
+  }
+}

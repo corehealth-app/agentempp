@@ -1,4 +1,5 @@
 import { type LLMCallParams, type LLMResult, OpenRouterLLM } from '@mpp/providers'
+import { AuthenticationError } from 'openai'
 import { describe, expect, it, vi } from 'vitest'
 import { bindConversationCommand } from './conversation-command-contracts'
 import {
@@ -442,6 +443,188 @@ describe('closed semantic interpreter input and result', () => {
       expect(error).toMatchObject({ status: 503 })
     }
     expect(complete).toHaveBeenCalledTimes(1)
+  })
+  it('records only the provider stage, whitelisted SDK name and HTTP status for a secret-bearing 401', async () => {
+    const f = textSource('arroz200g'),
+      source = buildConversationMealInterpretationSource(f.command, f.capture),
+      secret = 'password=diagnostic-secret-sentinel',
+      failure = new AuthenticationError(401, { message: secret, code: secret }, secret, {
+        authorization: secret,
+        'x-request-id': secret,
+      }),
+      sink = vi.fn(),
+      complete = vi.fn<(p: LLMCallParams) => Promise<LLMResult>>(async () => {
+        throw failure
+      }),
+      interpreter = createOpenRouterConversationMealInterpreter('synthetic', { complete }, sink)
+    await expect(
+      interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 }),
+    ).rejects.toMatchObject({
+      status: 503,
+      code: 'conversation_meal_interpretation_unavailable',
+      message: 'Meal interpretation is unavailable',
+    })
+    expect(sink.mock.calls).toEqual([
+      [
+        {
+          event: 'conversation_meal_interpreter_failure',
+          stage: 'provider',
+          error_name: 'AuthenticationError',
+          http_status: 401,
+        },
+      ],
+    ])
+    expect(JSON.stringify(sink.mock.calls)).not.toContain(secret)
+    expect(complete).toHaveBeenCalledTimes(1)
+    expect(complete.mock.calls[0]?.[0]).toMatchObject({ maxRetries: 0 })
+  })
+  it.each([
+    'source',
+    'decode',
+    'validation',
+    'result',
+  ] as const)('attributes failure to %s without including source or model output', async (stage) => {
+    const text = 'arroz200g',
+      f = textSource(text),
+      source = buildConversationMealInterpretationSource(f.command, f.capture),
+      reply = providerResult(modelFor(text, [{ name: 'arroz', quantity: '200', unit: 'g' }])),
+      sink = vi.fn()
+    if (stage === 'decode') reply.content = '{private-model-output'
+    if (stage === 'validation') reply.content = JSON.stringify({ private_model_output: text })
+    if (stage === 'result') reply.costUsd = Number.POSITIVE_INFINITY
+    const complete = vi.fn(async () => reply),
+      interpreter = createOpenRouterConversationMealInterpreter('synthetic', { complete }, sink)
+    await expect(
+      interpreter.interpret(source, {
+        attemptId: epoch,
+        remainingMs: stage === 'source' ? 0 : 1000,
+      }),
+    ).rejects.toMatchObject({ code: 'conversation_meal_interpretation_unavailable', status: 503 })
+    expect(sink).toHaveBeenCalledTimes(1)
+    expect(sink.mock.calls[0]?.[0]).toMatchObject({
+      event: 'conversation_meal_interpreter_failure',
+      stage,
+    })
+    for (const key of Object.keys(sink.mock.calls[0]?.[0]))
+      expect(['error_name', 'event', 'http_status', 'stage']).toContain(key)
+    for (const value of [
+      owner,
+      id,
+      epoch,
+      source.source_hash,
+      source.input_hash,
+      text,
+      'private-model-output',
+      'private_model_output',
+    ])
+      expect(JSON.stringify(sink.mock.calls)).not.toContain(value)
+    expect(complete).toHaveBeenCalledTimes(stage === 'source' ? 0 : 1)
+  })
+  it.each([
+    99,
+    600,
+    401.5,
+    '401',
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+  ])('omits non-HTTP status %s and untrusted error names', async (status) => {
+    const f = textSource('arroz200g'),
+      source = buildConversationMealInterpretationSource(f.command, f.capture),
+      sink = vi.fn(),
+      complete = vi.fn(async () => {
+        throw {
+          status,
+          name: 'password=secret',
+          message: 'password=secret',
+          code: 'password=secret',
+        }
+      }),
+      interpreter = createOpenRouterConversationMealInterpreter('synthetic', { complete }, sink)
+    await expect(
+      interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 }),
+    ).rejects.toMatchObject({ status: 503 })
+    expect(sink.mock.calls).toEqual([
+      [
+        {
+          event: 'conversation_meal_interpreter_failure',
+          stage: 'provider',
+          error_name: 'UnknownError',
+        },
+      ],
+    ])
+  })
+  it('does not evaluate error accessors or let a failing sink replace the API error', async () => {
+    const f = textSource('arroz200g'),
+      source = buildConversationMealInterpretationSource(f.command, f.capture),
+      accessor = vi.fn(() => {
+        throw new Error('password=accessor')
+      }),
+      failure = Object.defineProperties({}, { name: { get: accessor }, status: { get: accessor } }),
+      sink = vi.fn(() => {
+        throw new Error('password=sink')
+      }),
+      complete = vi.fn(async () => {
+        throw failure
+      }),
+      interpreter = createOpenRouterConversationMealInterpreter('synthetic', { complete }, sink)
+    await expect(
+      interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 }),
+    ).rejects.toMatchObject({
+      status: 503,
+      code: 'conversation_meal_interpretation_unavailable',
+      message: 'Meal interpretation is unavailable',
+    })
+    expect(accessor).not.toHaveBeenCalled()
+    expect(sink.mock.calls).toEqual([
+      [
+        {
+          event: 'conversation_meal_interpreter_failure',
+          stage: 'provider',
+          error_name: 'UnknownError',
+        },
+      ],
+    ])
+    expect(complete).toHaveBeenCalledTimes(1)
+  })
+  it('emits a structured default diagnostic for provider setup failure', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      expect(() => createOpenRouterConversationMealInterpreter('')).toThrow(
+        'Meal interpretation is unavailable',
+      )
+      expect(logged.mock.calls).toEqual([
+        [
+          {
+            event: 'conversation_meal_interpreter_failure',
+            stage: 'provider',
+            error_name: 'MobileApiError',
+            http_status: 503,
+          },
+        ],
+      ])
+    } finally {
+      logged.mockRestore()
+    }
+  })
+  it('leaves a normal result unchanged and emits no diagnostic', async () => {
+    const text = 'arroz200g',
+      f = textSource(text),
+      source = buildConversationMealInterpretationSource(f.command, f.capture),
+      complete = vi.fn(async () =>
+        providerResult(modelFor(text, [{ name: 'arroz', quantity: '200', unit: 'g' }])),
+      ),
+      sink = vi.fn(),
+      interpreter = createOpenRouterConversationMealInterpreter('synthetic', { complete }, sink),
+      result = await interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 })
+    expect(result).toEqual(
+      await createOpenRouterConversationMealInterpreter('synthetic', { complete }).interpret(
+        source,
+        { attemptId: epoch, remainingMs: 1000 },
+      ),
+    )
+    expect(sink).not.toHaveBeenCalled()
+    expect(result.decision).toBe('reported_meal')
+    expect(Object.isFrozen(result)).toBe(true)
   })
 })
 

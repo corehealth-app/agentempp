@@ -147,10 +147,10 @@ function runtimeExactStringRoutes(value: string): string[] {
     .sort()
 }
 
-// Exact T35 extraction: the original13 module bodies are byte-identical.
-// Current scope, continuation read contracts and journal store are three
-// explicit co-located source modules added by the reviewed public composition. The new
-// nutrition helper import makes Webpack split this existing conversation graph.
+// Exact T36 extraction: all16 previously certified module bodies are byte-identical.
+// Default existing-account Auth additionally co-locates the unchanged reply-scope
+// aliases and readonly runtime (previously in reply/edit chunks). No source body
+// or physical route/NFT consumer was discarded by this packaging translation.
 // These bodies include dormant writer adapters; this certificate never declares
 // them absent and never exempts any physical code from the global scans.
 function certifyNutritionJournalSplitContent(text: string): void {
@@ -183,13 +183,15 @@ function certifyNutritionJournalSplitContent(text: string): void {
         throw new Error('Unexpected nutrition-shared module shape')
       return { id: property.name.getText(source), body: property.initializer.getText(source) }
     }) ?? []
-  expect(bodies, 'certified nutrition-shared module count').toHaveLength(16)
+  expect(bodies, 'certified nutrition-shared module count').toHaveLength(18)
   expect(
     bodies.map(({ id, body }) => `${id}:${createHash('sha256').update(body).digest('hex')}`).sort(),
     'certified nutrition-shared module contents',
   ).toEqual(
     [
       '11098:0f937cf4b4455cd62f9a2e23e4a054de6f383f851bb1f4935956fab07bd7408b',
+      '40747:411b3586832f4b981362200d53a3836cff6395e29cee48554464d97d48fa94a9',
+      '93639:ce2fe7a229147bad36167351267198cbd255aa881701566612da47ce193e2e04',
       '49634:3287a6bd255d2b4c020831638d46e96459e466cba56777c0944ce83426355ff4',
       '85685:d9cd62e929f6b9034fba709dfe002a5f0d3df9f77f6b8713f080d9da94356a0d',
       '13300:20fedfa25d9bd861ab851d7e94918af627b1fa5102cf509f796ba219040cd74f',

@@ -9,6 +9,7 @@ import {
   type ConversationMealCommandReply,
   createConversationMealCommandService,
 } from './conversation-meal-command-service'
+import { createConversationMealReadonlyRuntime } from './conversation-meal-readonly-runtime'
 import { resolveCurrentClinicalRuntime } from './current-clinical-runtime-switch'
 import { MobileApiError, mobileSuccess, readJsonBody } from './http'
 import { createMobileRoute, createMobileRouteWithContext, type MobileRouteRuntime } from './route'
@@ -60,7 +61,8 @@ export function createConversationMealCommandRoutes(
   ports: ConversationMealCommandRoutePorts = {},
   runtime?: MobileRouteRuntime,
 ) {
-  const enabled = ports.enabled?.bind(ports) ?? conversationMealCommandsEnabled,
+  const readonlyRuntime = runtime ?? createConversationMealReadonlyRuntime(),
+    enabled = ports.enabled?.bind(ports) ?? conversationMealCommandsEnabled,
     service = ports.service?.bind(ports) ?? createConversationMealCommandService
   const available = () => {
     if (!enabled())
@@ -81,7 +83,7 @@ export function createConversationMealCommandRoutes(
           'X-Conversation-Protocol': 'meal-command-v1',
         },
       )
-    }, runtime),
+    }, readonlyRuntime),
     POST: createMobileRoute(async (context) => {
       available()
       requireOriginalPatient(context.request, context.auth.userId)
@@ -102,7 +104,7 @@ export function createConversationMealCommandRoutes(
         context.requestId,
         selected,
       )
-    }, runtime),
+    }, readonlyRuntime),
     GET: createMobileRouteWithContext<CommandRouteContext>(async (context, route) => {
       available()
       requireOriginalPatient(context.request, context.auth.userId)
@@ -121,6 +123,6 @@ export function createConversationMealCommandRoutes(
         context.requestId,
         selected,
       )
-    }, runtime),
+    }, readonlyRuntime),
   })
 }

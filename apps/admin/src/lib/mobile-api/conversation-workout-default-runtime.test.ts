@@ -1,6 +1,7 @@
 import type { ServiceClient } from '@mpp/db'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { candidateAuth } from './__fixtures__/conversation-candidate'
+import { createConversationMealCommandRoutes } from './conversation-meal-command-routes'
 import { createConversationWorkoutCommandRoutes } from './conversation-workout-command-routes'
 
 const ports = vi.hoisted(() => ({
@@ -18,11 +19,14 @@ beforeEach(() => {
   ports.bootstrap.mockResolvedValue({ data: candidateAuth.userId, error: null })
 })
 
-it.each([
-  'SESSION',
-  'GET',
-  'POST',
-] as const)('default %s refuses OFF capability without bootstrapping an existing account', async (method) => {
+it.each(
+  (['meal', 'workout'] as const).flatMap((family) =>
+    (['SESSION', 'GET', 'POST'] as const).map((method) => ({ family, method })),
+  ),
+)('default $family $method refuses OFF capability without bootstrapping', async ({
+  family,
+  method,
+}) => {
   const p = candidateAuth.patient,
     patient = {
       id: p.id,
@@ -59,7 +63,10 @@ it.each([
     from,
   } as unknown as ServiceClient
   const service = vi.fn(),
-    routes = createConversationWorkoutCommandRoutes({ enabled: () => false, service }),
+    routes =
+      family === 'meal'
+        ? createConversationMealCommandRoutes({ enabled: () => false, service })
+        : createConversationWorkoutCommandRoutes({ enabled: () => false, service }),
     request = new Request('https://app.invalid/workout', {
       method: method === 'POST' ? 'POST' : 'GET',
       headers: { Authorization: 'Bearer qa-original-token' },
@@ -73,7 +80,10 @@ it.each([
   expect(service).not.toHaveBeenCalled()
   expect(ports.entitlement).toHaveBeenCalledTimes(1)
 })
-it('default session refuses an absent patient without creating it', async () => {
+it.each([
+  'meal',
+  'workout',
+] as const)('default %s session refuses an absent patient without creating it', async (family) => {
   const query = {
     select: vi.fn(() => query),
     eq: vi.fn(() => query),
@@ -95,10 +105,11 @@ it('default session refuses an absent patient without creating it', async () => 
     from: vi.fn(() => query),
   } as unknown as ServiceClient
   const service = vi.fn(),
-    response = await createConversationWorkoutCommandRoutes({
-      enabled: () => true,
-      service,
-    }).SESSION(
+    routes =
+      family === 'meal'
+        ? createConversationMealCommandRoutes({ enabled: () => true, service })
+        : createConversationWorkoutCommandRoutes({ enabled: () => true, service }),
+    response = await routes.SESSION(
       new Request('https://app.invalid/workout-session', {
         headers: { Authorization: 'Bearer qa-original-token' },
       }),

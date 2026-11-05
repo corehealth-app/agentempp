@@ -15,7 +15,10 @@ struct TodaySnapshot: Codable, Equatable, Sendable {
     /// Null when the day has no calorie target (contract); never shown as 0.
     let remainingFoodKcal: Int?
     let foodExcessKcal: Int?
-    let exerciseKcal: Int
+    let exerciseKcal: Int?
+    /// Required only for negotiated v4; nil preserves historical v2/v3 shape.
+    var exerciseEnergy: TodayExerciseEnergy? = nil
+    var dailyBalanceEnergy: TodayBalanceEnergy? = nil
     /// Consumed minus the day's expenditure for the patient's protocol
     /// (negative = deficit, positive = surplus), as the server computed it.
     let dailyBalanceKcal: Int?
@@ -51,6 +54,8 @@ struct TodaySnapshot: Codable, Equatable, Sendable {
         case remainingFoodKcal = "remaining_food_kcal"
         case foodExcessKcal = "food_excess_kcal"
         case exerciseKcal = "exercise_kcal"
+        case exerciseEnergy = "exercise_energy"
+        case dailyBalanceEnergy = "daily_balance_energy"
         case dailyBalanceKcal = "daily_balance_kcal"
         case dailyBalanceStatus = "daily_balance_status"
         case dailyBalanceIncludesExercise = "daily_balance_includes_exercise"
@@ -68,6 +73,113 @@ struct TodaySnapshot: Codable, Equatable, Sendable {
         case calculationVersion = "calculation_version"
         case updatedAt = "updated_at"
         case generatedAt = "generated_at"
+    }
+}
+
+extension TodaySnapshot {
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        calculationVersion = try c.decode(String.self, forKey: .calculationVersion)
+        localDate = try c.decode(String.self, forKey: .localDate)
+        protocolName = try c.decodeIfPresent(String.self, forKey: .protocolName)
+        currentProtocol = try c.decodeIfPresent(String.self, forKey: .currentProtocol)
+        clinicalPolicy = try c.decodeIfPresent(CurrentClinicalPolicy.self, forKey: .clinicalPolicy)
+        strengthTrainingWeek = try c.decodeIfPresent(TodayStrengthTrainingWeek.self, forKey: .strengthTrainingWeek)
+        targets = try c.decode(TodayTargets.self, forKey: .targets)
+        consumed = try c.decode(TodayConsumed.self, forKey: .consumed)
+        remainingFoodKcal = try c.decodeIfPresent(Int.self, forKey: .remainingFoodKcal)
+        foodExcessKcal = try c.decodeIfPresent(Int.self, forKey: .foodExcessKcal)
+        exerciseKcal = calculationVersion == "bodyflow.daily-state.v4"
+            ? try c.decodeIfPresent(Int.self, forKey: .exerciseKcal)
+            : try c.decode(Int.self, forKey: .exerciseKcal)
+        exerciseEnergy = try c.decodeIfPresent(TodayExerciseEnergy.self, forKey: .exerciseEnergy)
+        dailyBalanceEnergy = try c.decodeIfPresent(TodayBalanceEnergy.self, forKey: .dailyBalanceEnergy)
+        dailyBalanceKcal = try c.decodeIfPresent(Int.self, forKey: .dailyBalanceKcal)
+        dailyBalanceStatus = try c.decode(String.self, forKey: .dailyBalanceStatus)
+        dailyBalanceIncludesExercise = try c.decodeIfPresent(Bool.self, forKey: .dailyBalanceIncludesExercise)
+        dailyBalanceReferenceKcal = try c.decodeIfPresent(Int.self, forKey: .dailyBalanceReferenceKcal)
+        proteinStatus = try c.decode(TodayProteinStatus.self, forKey: .proteinStatus)
+        meals = try c.decode([TodayMeal].self, forKey: .meals)
+        workouts = try c.decode([TodayWorkout].self, forKey: .workouts)
+        hydration = try c.decode(TodayHydration.self, forKey: .hydration)
+        supplements = try c.decode(TodayRoutineSection.self, forKey: .supplements)
+        medications = try c.decode(TodayRoutineSection.self, forKey: .medications)
+        pendingActions = try c.decode(TodayPendingActions.self, forKey: .pendingActions)
+        block7700 = try c.decodeIfPresent(TodayBlock7700.self, forKey: .block7700)
+        completionStatus = try c.decode(TodayCompletionStatus.self, forKey: .completionStatus)
+        sources = try c.decode(TodaySources.self, forKey: .sources)
+        updatedAt = try c.decodeIfPresent(APITimestamp.self, forKey: .updatedAt)
+        generatedAt = try c.decode(APITimestamp.self, forKey: .generatedAt)
+        if calculationVersion == "bodyflow.daily-state.v4" {
+            let required: [CodingKeys] = [.exerciseKcal, .exerciseEnergy, .dailyBalanceEnergy,
+                .dailyBalanceKcal, .dailyBalanceReferenceKcal, .dailyBalanceIncludesExercise, .clinicalPolicy]
+            guard required.allSatisfy(c.contains), let exerciseEnergy, let dailyBalanceEnergy,
+                  let clinicalPolicy,
+                  (exerciseEnergy == .available ? exerciseKcal.map { $0 >= 0 } == true : exerciseKcal == nil)
+            else { throw Self.invalidEnergy(decoder) }
+            let emptyBalance = dailyBalanceKcal == nil && dailyBalanceReferenceKcal == nil && dailyBalanceIncludesExercise == nil
+            switch dailyBalanceEnergy {
+            case .available:
+                guard !clinicalPolicy.hide.balance, targets.caloriesKcal != nil,
+                      dailyBalanceKcal != nil, dailyBalanceReferenceKcal.map({ $0 >= 0 }) == true,
+                      let dailyBalanceIncludesExercise,
+                      !dailyBalanceIncludesExercise || exerciseEnergy == .available
+                else { throw Self.invalidEnergy(decoder) }
+            case .protected:
+                guard emptyBalance, clinicalPolicy.hide.balance else { throw Self.invalidEnergy(decoder) }
+            case .unavailable(.unknownWorkoutEnergy):
+                guard emptyBalance, !clinicalPolicy.hide.balance, targets.caloriesKcal != nil,
+                      exerciseEnergy == .unavailable else { throw Self.invalidEnergy(decoder) }
+            case .unavailable(.targetUnavailable):
+                guard emptyBalance, !clinicalPolicy.hide.balance, targets.caloriesKcal == nil
+                else { throw Self.invalidEnergy(decoder) }
+            }
+        } else if c.contains(.exerciseEnergy) || c.contains(.dailyBalanceEnergy) {
+            throw Self.invalidEnergy(decoder)
+        }
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(localDate, forKey: .localDate)
+        try c.encodeIfPresent(protocolName, forKey: .protocolName)
+        try c.encodeIfPresent(currentProtocol, forKey: .currentProtocol)
+        try c.encodeIfPresent(clinicalPolicy, forKey: .clinicalPolicy)
+        try c.encodeIfPresent(strengthTrainingWeek, forKey: .strengthTrainingWeek)
+        try c.encode(targets, forKey: .targets)
+        try c.encode(consumed, forKey: .consumed)
+        try c.encodeIfPresent(remainingFoodKcal, forKey: .remainingFoodKcal)
+        try c.encodeIfPresent(foodExcessKcal, forKey: .foodExcessKcal)
+        try c.encode(exerciseKcal, forKey: .exerciseKcal)
+        try c.encodeIfPresent(exerciseEnergy, forKey: .exerciseEnergy)
+        try c.encodeIfPresent(dailyBalanceEnergy, forKey: .dailyBalanceEnergy)
+        if calculationVersion == "bodyflow.daily-state.v4" {
+            try c.encode(dailyBalanceKcal, forKey: .dailyBalanceKcal)
+            try c.encode(dailyBalanceIncludesExercise, forKey: .dailyBalanceIncludesExercise)
+            try c.encode(dailyBalanceReferenceKcal, forKey: .dailyBalanceReferenceKcal)
+        } else {
+            try c.encodeIfPresent(dailyBalanceKcal, forKey: .dailyBalanceKcal)
+            try c.encodeIfPresent(dailyBalanceIncludesExercise, forKey: .dailyBalanceIncludesExercise)
+            try c.encodeIfPresent(dailyBalanceReferenceKcal, forKey: .dailyBalanceReferenceKcal)
+        }
+        try c.encode(dailyBalanceStatus, forKey: .dailyBalanceStatus)
+        try c.encode(proteinStatus, forKey: .proteinStatus)
+        try c.encode(meals, forKey: .meals)
+        try c.encode(workouts, forKey: .workouts)
+        try c.encode(hydration, forKey: .hydration)
+        try c.encode(supplements, forKey: .supplements)
+        try c.encode(medications, forKey: .medications)
+        try c.encode(pendingActions, forKey: .pendingActions)
+        try c.encodeIfPresent(block7700, forKey: .block7700)
+        try c.encode(completionStatus, forKey: .completionStatus)
+        try c.encode(sources, forKey: .sources)
+        try c.encode(calculationVersion, forKey: .calculationVersion)
+        try c.encodeIfPresent(updatedAt, forKey: .updatedAt)
+        try c.encode(generatedAt, forKey: .generatedAt)
+    }
+
+    private static func invalidEnergy(_ decoder: any Decoder) -> DecodingError {
+        .dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Inconsistent Today energy representation"))
     }
 }
 
@@ -235,7 +347,7 @@ extension TodaySnapshot {
     /// A response without `daily_balance_includes_exercise` comes from a
     /// server that always subtracted exercise from the balance.
     var dailyBalanceCountsExercise: Bool {
-        dailyBalanceIncludesExercise ?? true
+        dailyBalanceIncludesExercise ?? (calculationVersion != "bodyflow.daily-state.v4")
     }
 }
 

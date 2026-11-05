@@ -10,6 +10,7 @@ struct PerformeRuntimeConfiguration: Equatable, Sendable {
     let mobileAPI: MobileAPIConfiguration
     var currentClinicalRuntimeMode: CurrentClinicalRuntimeMode = .legacy
     var currentClinicalQABinding: CurrentClinicalQABinding = .absent
+    var todayEnergyRepresentation: TodayEnergyRepresentation = .legacy
     var flowConversationRuntime: FlowConversationRuntimeSelection = .legacy
 
     static func load(from values: [String: Any]?) -> PerformeRuntimeConfiguration? {
@@ -28,18 +29,30 @@ struct PerformeRuntimeConfiguration: Equatable, Sendable {
             return nil
         }
         let qaBinding = CurrentClinicalQABinding.load(from: values[CurrentClinicalQABinding.infoKey])
-        let clinicalMode: CurrentClinicalRuntimeMode
+        var clinicalMode: CurrentClinicalRuntimeMode
         if values[currentClinicalRuntimeKey] == nil { clinicalMode = .legacy }
         else if resolvedString(values[currentClinicalRuntimeKey]) == "current_clinical_v1",
                 CurrentClinicalRuntimeComposition.allows(storageOrigin: supabase.origin,
                     apiOrigin: mobileAPI.origin, qaBinding: qaBinding) {
             clinicalMode = .currentV1
         } else { clinicalMode = .unavailable }
+        let todayEnergy: TodayEnergyRepresentation
+        if values[TodayEnergyRepresentation.infoKey] == nil { todayEnergy = .legacy }
+        else if let raw = resolvedString(values[TodayEnergyRepresentation.infoKey]),
+                raw == TodayEnergyRepresentation.fieldAvailabilityV1.rawValue,
+                clinicalMode == .currentV1, case .candidate = qaBinding {
+            todayEnergy = .fieldAvailabilityV1
+        } else {
+            // An invalid explicit choice cannot silently restore numeric v3.
+            todayEnergy = .legacy
+            clinicalMode = .unavailable
+        }
         return PerformeRuntimeConfiguration(
             supabase: supabase,
             mobileAPI: mobileAPI,
             currentClinicalRuntimeMode: clinicalMode,
             currentClinicalQABinding: qaBinding,
+            todayEnergyRepresentation: todayEnergy,
             flowConversationRuntime: .load(values[FlowConversationRuntimeSelection.infoKey])
         )
     }

@@ -51,7 +51,9 @@ struct TodayPresentation: Equatable, Sendable {
             exerciseKcal: snapshot.exerciseKcal,
             dailyBalanceKcal: snapshot.dailyBalanceKcal,
             dailyBalanceStatus: snapshot.dailyBalanceStatus,
-            dailyBalanceIncludesExercise: snapshot.dailyBalanceCountsExercise
+            dailyBalanceIncludesExercise: snapshot.dailyBalanceCountsExercise,
+            exerciseEnergy: snapshot.exerciseEnergy,
+            dailyBalanceEnergy: snapshot.dailyBalanceEnergy
         )
         protein = TodayProteinDescriptor(
             consumedG: snapshot.proteinStatus.consumedG,

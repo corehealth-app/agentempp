@@ -617,6 +617,54 @@ struct TodayViewModelTests {
         ), meta: base.meta)
     }
 
+    @Test("A fresh unknown replaces known exercise; a later error keeps that unknown observation")
+    func fieldAvailabilityRefreshReplacesKnownNumbers() async throws {
+        let known = try Self.snapshot(localDate: "2026-11-05")
+        let unknown = try TodayFieldAvailabilityFixture.response()
+        let provider = TodayQueueProvider([.success(known), .success(unknown), .failure(.serviceUnavailable)])
+        let model = TodayViewModel(provider: provider)
+        await model.load(revision: 0)
+        #expect(model.state == .loaded(known.data))
+        await model.load(revision: 1)
+        #expect(model.state == .loaded(unknown.data))
+        await model.retry()
+        #expect(model.state == .failed(previousValue: unknown.data, error: .serviceUnavailable))
+    }
+
+    @Test("A late known response cannot replace a newer unknown exercise observation")
+    func lateKnownCannotOverwriteUnknown() async throws {
+        let provider = TodayControlledProvider()
+        let model = TodayViewModel(provider: provider)
+        let unknown = try TodayFieldAvailabilityFixture.response()
+        let old = Task { await model.load(revision: 0) }
+        await provider.waitUntilStarted(1)
+        let fresh = Task { await model.load(revision: 1) }
+        await provider.waitUntilStarted(2)
+        await provider.succeed(call: 2, with: unknown)
+        await fresh.value
+        await provider.succeed(call: 1, with: try Self.snapshot(localDate: "2026-11-05"))
+        await old.value
+        #expect(model.state == .loaded(unknown.data))
+    }
+
+    @Test("Cancellation cannot publish old known energy after a current unknown observation")
+    func cancelledRefreshRestoresCurrentUnknown() async throws {
+        let provider = TodayControlledProvider()
+        let model = TodayViewModel(provider: provider)
+        let unknown = try TodayFieldAvailabilityFixture.response()
+        let initial = Task { await model.load(revision: 0) }
+        await provider.waitUntilStarted(1)
+        await provider.succeed(call: 1, with: unknown)
+        await initial.value
+        let pending = Task { await model.load(revision: 1) }
+        await provider.waitUntilStarted(2)
+        pending.cancel()
+        await provider.succeed(call: 2, with: try Self.snapshot(localDate: "2026-11-05"))
+        await pending.value
+        #expect(model.state == .loaded(unknown.data))
+        #expect(!model.isRefreshing)
+    }
+
     private static func snapshot(
         localDate: String,
         completionStatus: String = "pending_information"

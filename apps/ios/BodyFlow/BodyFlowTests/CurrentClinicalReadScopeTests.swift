@@ -47,9 +47,9 @@ struct CurrentClinicalReadScopeTests {
         #expect(await base.requests.count == 1)
     }
 
-    @Test("Current official policy is retained", arguments: [0, 1, 2, 3, 4])
+    @Test("Current official policy is retained", arguments: [0, 1, 2, 3, 4, 5])
     func acceptsCurrentPolicy(_ kind: Int) async throws {
-        let base = try ClinicalReadSuccessTransport(withPolicy: true)
+        let base = try ClinicalReadSuccessTransport(withPolicy: true, todayV4: kind == 5)
         try await Self.read(kind, AuthorizedClinicalReadTransport(base: base, scope: ClinicalReadSessionScope()))
         #expect(await base.requests.count == 1)
     }
@@ -63,9 +63,9 @@ struct CurrentClinicalReadScopeTests {
         #expect(await base.requests.count == 1)
     }
 
-    @Test("Late success cannot cross B or a new A", arguments: [0, 1, 2, 3, 4], [false, true])
+    @Test("Late success cannot cross B or a new A", arguments: [0, 1, 2, 3, 4, 5], [false, true])
     func lateSuccessIsRefused(_ kind: Int, _ returnToA: Bool) async throws {
-        let base = try ClinicalReadSuccessTransport(withPolicy: true)
+        let base = try ClinicalReadSuccessTransport(withPolicy: true, todayV4: kind == 5)
         let scope = ClinicalReadSessionScope()
         let transport = AuthorizedClinicalReadTransport(base: base, scope: scope)
         await base.holdNext()
@@ -80,9 +80,9 @@ struct CurrentClinicalReadScopeTests {
         #expect(await base.requests.count == 1)
     }
 
-    @Test("Late failure does not become a retry in a new session", arguments: [0, 1, 2, 3, 4])
+    @Test("Late failure does not become a retry in a new session", arguments: [0, 1, 2, 3, 4, 5])
     func lateFailureIsRefused(_ kind: Int) async throws {
-        let base = try ClinicalReadSuccessTransport(withPolicy: true)
+        let base = try ClinicalReadSuccessTransport(withPolicy: true, todayV4: kind == 5)
         let scope = ClinicalReadSessionScope()
         let transport = AuthorizedClinicalReadTransport(base: base, scope: scope)
         await base.holdNext()
@@ -95,6 +95,42 @@ struct CurrentClinicalReadScopeTests {
         #expect(await base.requests.count == 1)
     }
 
+    @Test("Only Today explicitly negotiates energy; other readers retain their exact queries")
+    func fieldAvailabilityQueryIsTodayOnly() async throws {
+        let base = try ClinicalReadSuccessTransport(withPolicy: true, todayV4: true)
+        let transport = AuthorizedClinicalReadTransport(base: base, scope: ClinicalReadSessionScope())
+        let repo = MobileBodyFlowRepository(transport: transport, clinicalRepresentation: .currentV1,
+            todayEnergyRepresentation: .fieldAvailabilityV1)
+        #expect(try await repo.today().data.exerciseKcal == nil)
+        _ = try await repo.plan()
+        _ = try await repo.trends(days: 7)
+        _ = try await repo.history(.firstPage)
+        let queries = await base.queries
+        #expect(queries[0].filter { $0.name == "day_energy" }.map(\.value) == ["field_availability_v1"])
+        #expect(queries[0].filter { $0.name == "clinical_policy" }.map(\.value) == ["current_clinical_v1"])
+        #expect(queries.dropFirst().allSatisfy { !$0.contains { $0.name == "day_energy" } })
+    }
+
+    @Test("Energy negotiation cannot use a legacy transport or accept a v3 fallback")
+    func fieldAvailabilityHasNoImplicitAuthorityOrVersionFallback() async throws {
+        let base = try ClinicalReadSuccessTransport(withPolicy: true)
+        let authorized = AuthorizedClinicalReadTransport(base: base, scope: ClinicalReadSessionScope())
+        await #expect(throws: BodyFlowCapabilityError.serviceUnavailable) {
+            try await MobileBodyFlowRepository(transport: authorized, todayEnergyRepresentation: .fieldAvailabilityV1).today()
+        }
+        #expect(await base.requests.isEmpty)
+        await #expect(throws: BodyFlowCapabilityError.serviceUnavailable) {
+            try await MobileBodyFlowRepository(transport: base, clinicalRepresentation: .currentV1,
+                todayEnergyRepresentation: .fieldAvailabilityV1).today()
+        }
+        #expect(await base.requests.isEmpty)
+        await #expect(throws: BodyFlowCapabilityError.serviceUnavailable) {
+            try await MobileBodyFlowRepository(transport: authorized, clinicalRepresentation: .currentV1,
+                todayEnergyRepresentation: .fieldAvailabilityV1).today()
+        }
+        #expect(await base.requests.count == 1)
+    }
+
     private static func read(_ kind: Int, _ transport: AuthorizedClinicalReadTransport) async throws {
         let repo = MobileBodyFlowRepository(transport: transport, clinicalRepresentation: .currentV1)
         switch kind {
@@ -102,6 +138,8 @@ struct CurrentClinicalReadScopeTests {
         case 1: _ = try await repo.plan()
         case 2: _ = try await repo.progress()
         case 3: _ = try await repo.trends(days: 7)
+        case 5: _ = try await MobileBodyFlowRepository(transport: transport, clinicalRepresentation: .currentV1,
+            todayEnergyRepresentation: .fieldAvailabilityV1).today()
         default: _ = try await MobileCurrentObjectiveRepository(transport: transport, clinicalRepresentation: .currentV1).currentObjective()
         }
     }
@@ -114,11 +152,12 @@ private struct ClinicalReadTokenOnly: SessionTokenProviding {
 private actor ClinicalReadSuccessTransport: MobileAPIEnvelopeExecuting, MobileAPIExecuting {
     let payloads: [String: Data]
     private(set) var requests: [String] = []
+    private(set) var queries: [[URLQueryItem]] = []
     private var holdsNext = false
     private var held: CheckedContinuation<Void, Never>?
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private var failure = false
-    init(withPolicy: Bool = false, emptyProgress: Bool = false) throws {
+    init(withPolicy: Bool = false, emptyProgress: Bool = false, todayV4: Bool = false) throws {
         func data<T: Encodable>(_ value: T) throws -> Data {
             let raw = try JSONEncoder().encode(value)
             guard withPolicy else { return raw }
@@ -129,11 +168,12 @@ private actor ClinicalReadSuccessTransport: MobileAPIEnvelopeExecuting, MobileAP
         let objective = CurrentObjectiveSnapshot(currentProtocol: .maintenance,
             targets: .init(calories: 2300, proteinG: 144), welcome: nil)
         payloads = try [
-            "/api/mobile/v1/today": data(BodyFlowTestFixtures.decodeInconsistentToday().data),
+            "/api/mobile/v1/today": todayV4 ? JSONEncoder().encode(TodayFieldAvailabilityFixture.response().data) : data(BodyFlowTestFixtures.decodeInconsistentToday().data),
             "/api/mobile/v1/plan": data(PlanSnapshot(training: nil, nutrition: [])),
             "/api/mobile/v1/progress": emptyProgress ? Data("null".utf8) : data(BodyFlowTestFixtures.progressSnapshot),
             "/api/mobile/v1/trends": data(TrendsSnapshot.empty(days: 7)),
             "/api/mobile/v1/protocol": data(objective),
+            "/api/mobile/v1/history": JSONEncoder().encode(BodyFlowTestFixtures.decodeEmptyHistory().data),
         ]
     }
     func holdNext() { holdsNext = true }
@@ -158,6 +198,7 @@ private actor ClinicalReadSuccessTransport: MobileAPIEnvelopeExecuting, MobileAP
         return try #require(payloads[path])
     }
     func executeEnvelope<Response: Codable & Sendable>(_ request: MobileAPIRequest<Response>) async throws -> MobileResponse<Response> {
+        queries.append(request.queryItems)
         let bytes = try await payload(request.path)
         return try MobileResponse(data: JSONDecoder().decode(Response.self, from: bytes),
             meta: MobileResponseMetadata(apiVersion: "v1", requestID: "clinical-reader-qa"))

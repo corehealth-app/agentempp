@@ -24,6 +24,7 @@ enum SignUpRenderingProbe {
         let identifier: String
         let isElement: Bool
         let label: String
+        let value: String
         let hint: String
         let isButton: Bool
         let isSelected: Bool
@@ -168,6 +169,7 @@ enum SignUpRenderingProbe {
                     identifier: identifier,
                     isElement: object.isAccessibilityElement,
                     label: object.accessibilityLabel ?? "",
+                    value: object.accessibilityValue ?? "",
                     hint: object.accessibilityHint ?? "",
                     isButton: traits.contains(.button),
                     isSelected: traits.contains(.selected),

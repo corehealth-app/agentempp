@@ -2444,6 +2444,22 @@
     "en" : { "stringUnit" : { "state" : "translated", "value" : "Appearance" } },
     "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Aparência" } }
   } },
+  "today.energy.exercise.unavailable" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "An activity has unknown energy expenditure." } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Há atividade com gasto energético desconhecido." } }
+  } },
+  "today.energy.balance.unknown-exercise" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Unavailable while exercise energy is unknown." } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Indisponível enquanto houver gasto de exercício desconhecido." } }
+  } },
+  "today.energy.balance.target-unavailable" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "The day's target is unavailable." } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Meta do dia indisponível." } }
+  } },
+  "today.energy.balance.protected" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Day balance is protected by clinical guidance." } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Balanço protegido pela orientação clínica." } }
+  } },
   "today.energy.exercise.caption" : { "localizations" : {
     "en" : { "stringUnit" : { "state" : "translated", "value" : "Not part of what is left for food" } },
     "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Não entra no que resta para comida" } }

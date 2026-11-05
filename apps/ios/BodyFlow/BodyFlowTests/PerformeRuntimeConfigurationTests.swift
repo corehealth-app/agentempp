@@ -69,6 +69,32 @@ struct PerformeRuntimeConfigurationTests {
         #expect(runtime.currentClinicalRuntimeMode == .unavailable)
     }
 
+    @Test("Today field availability is a signed QA build choice, dormant by default")
+    func todayEnergyBuildSelectionIsExplicit() throws {
+        let normal = try #require(PerformeRuntimeConfiguration.load(from: Self.previewValues()))
+        #expect(normal.todayEnergyRepresentation == .legacy)
+        var values = Self.previewValues()
+        values["PERFORME_TODAY_ENERGY_REPRESENTATION"] = "field_availability_v1"
+        let qa = try #require(PerformeRuntimeConfiguration.load(from: values))
+        #expect(qa.todayEnergyRepresentation == .fieldAvailabilityV1)
+        #expect(qa.currentClinicalRuntimeMode == .currentV1)
+    }
+
+    @Test("Unknown or unbound energy selection never activates a distributed default", arguments: [0, 1, 2, 3])
+    func unqualifiedTodayEnergyBuildIsUnavailable(_ defect: Int) throws {
+        var values = Self.previewValues()
+        values["PERFORME_TODAY_ENERGY_REPRESENTATION"] = "field_availability_v1"
+        if defect == 0 { values["PERFORME_TODAY_ENERGY_REPRESENTATION"] = "unknown" }
+        if defect == 1 {
+            values.removeValue(forKey: CurrentClinicalQABinding.infoKey)
+            values["PERFORME_MOBILE_API_ORIGIN"] = "https://performe-ai-staging-bff.vercel.app"
+        }
+        if defect == 2 { values.removeValue(forKey: PerformeRuntimeConfiguration.currentClinicalRuntimeKey) }
+        if defect == 3 { values["PERFORME_TODAY_ENERGY_REPRESENTATION"] = true }
+        let runtime = try #require(PerformeRuntimeConfiguration.load(from: values))
+        #expect(runtime.currentClinicalRuntimeMode == .unavailable)
+    }
+
     private static func previewValues() -> [String: Any] {
         ["PERFORME_SUPABASE_URL": "https://xitugspwfxkcluxvrdeg.supabase.co",
          "PERFORME_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_synthetic",

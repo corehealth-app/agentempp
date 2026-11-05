@@ -112,18 +112,41 @@ struct CurrentClinicalRuntimeCompositionTests {
         #expect(dependencies.today is MobileBodyFlowRepository)
     }
 
+    @Test("Only an exact candidate binding installs Today v4; other clinical readers keep v1")
+    func candidateTodayEnergySelectionReachesBoundReader() async throws {
+        let lease = SessionLease(userID: "auth-A", generation: 1, bearer: "synthetic")
+        let lifecycle = ClinicalAssemblyLifecycle(lease: lease)
+        let binding = CurrentClinicalQABinding.load(from: [
+            "origin":"https://candidate-qa.vercel.app", "deployment_id":"dpl_syntheticCandidate",
+            "project_id":CurrentClinicalQABinding.projectID,
+            "source_manifest_sha256":String(repeating:"a", count:64),
+            "receipt_sha256":String(repeating:"b", count:64), "region":"gru1",
+        ])
+        let bound = try Self.dependencies(lifecycle: lifecycle, apiOrigin: "https://candidate-qa.vercel.app",
+            qaBinding: binding, todayEnergyRepresentation: .fieldAvailabilityV1)
+        let factory = try #require(bound.currentClinicalReadSessions)
+        let session = try await factory.bind("auth-A")
+        #expect((session.today as? MobileBodyFlowRepository)?.todayEnergyRepresentation == .fieldAvailabilityV1)
+        #expect((session.today as? MobileBodyFlowRepository)?.clinicalRepresentation == .currentV1)
+        #expect((session.plan as? MobileBodyFlowRepository)?.todayEnergyRepresentation == .legacy)
+        let unbound = try Self.dependencies(lifecycle: lifecycle, todayEnergyRepresentation: .fieldAvailabilityV1)
+        let refused = try #require(unbound.currentClinicalReadSessions)
+        await #expect(throws: BodyFlowCapabilityError.serviceUnavailable) { _ = try await refused.bind("auth-A") }
+    }
+
     private static func dependencies(lifecycle: any SessionLifecycleProviding,
                                      project: String = "xitugspwfxkcluxvrdeg",
                                      apiOrigin: String = "https://performe-ai-staging-bff.vercel.app",
                                      mode: CurrentClinicalRuntimeMode = .currentV1,
-                                     qaBinding: CurrentClinicalQABinding = .absent) throws -> AppDependencies {
+                                     qaBinding: CurrentClinicalQABinding = .absent,
+                                     todayEnergyRepresentation: TodayEnergyRepresentation = .legacy) throws -> AppDependencies {
         AppDependencies.make(configuration: .resolve(arguments: [], buildFlavor: .release),
             mobileAPIConfigurationProvider: StaticMobileAPIConfigurationProvider(configuration:
                 try MobileAPIConfiguration(originString: apiOrigin)),
             supabaseAuthConfiguration: try SupabaseAuthConfiguration(originString: "https://" + project + ".supabase.co", key: "sb_publishable_synthetic"),
             authenticationSessionStore: AuthenticationSessionStore(secureStore: InMemorySecureStore()),
             sessionLifecycleOverride: lifecycle, currentClinicalRuntimeMode: mode,
-            currentClinicalQABinding: qaBinding)
+            currentClinicalQABinding: qaBinding, todayEnergyRepresentation: todayEnergyRepresentation)
     }
 }
 
@@ -132,9 +155,20 @@ private struct ClinicalAssemblyTokenOnly: SessionTokenProviding {
 }
 private actor ClinicalAssemblyLifecycle: SessionLifecycleProviding {
     private(set) var leaseCalls = 0
+    private let lease: SessionLease?
+    init(lease: SessionLease? = nil) { self.lease = lease }
     func currentBearerToken() async -> String? { "synthetic" }
-    func leaseForRequest() async throws -> SessionLease { leaseCalls += 1; throw SessionLifecycleError.missingSession }
-    func validate(_ lease: SessionLease) async throws { throw SessionLifecycleError.missingSession }
+    func leaseForRequest() async throws -> SessionLease {
+        leaseCalls += 1
+        guard let lease else { throw SessionLifecycleError.missingSession }
+        return lease
+    }
+    func validate(_ lease: SessionLease) async throws {
+        guard let expected = self.lease, expected.userID == lease.userID,
+              expected.generation == lease.generation else {
+            throw SessionLifecycleError.missingSession
+        }
+    }
     func refreshAfterUnauthorized(lease: SessionLease) async throws -> SessionLease { throw SessionLifecycleError.missingSession }
     func signOut() async -> RemoteRevocationOutcome { .confirmed }
     func beginPatientWork(lease: SessionLease, cancel: @escaping @Sendable () -> Void) async throws -> UUID { throw SessionLifecycleError.missingSession }

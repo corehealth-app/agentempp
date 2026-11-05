@@ -61,6 +61,7 @@ struct BodyFlowApp: App {
                 supabaseAuthConfiguration: runtime?.supabase,
                 currentClinicalRuntimeMode: runtime?.currentClinicalRuntimeMode ?? .legacy,
                 currentClinicalQABinding: runtime?.currentClinicalQABinding ?? .absent,
+                todayEnergyRepresentation: runtime?.todayEnergyRepresentation ?? .legacy,
                 flowConversationRuntime: runtime?.flowConversationRuntime ?? .legacy
             )
         }
@@ -79,6 +80,7 @@ struct BodyFlowApp: App {
             supabaseAuthConfiguration: runtime?.supabase,
             currentClinicalRuntimeMode: runtime?.currentClinicalRuntimeMode ?? .legacy,
             currentClinicalQABinding: runtime?.currentClinicalQABinding ?? .absent,
+            todayEnergyRepresentation: runtime?.todayEnergyRepresentation ?? .legacy,
             flowConversationRuntime: runtime?.flowConversationRuntime ?? .legacy
         )
         #endif

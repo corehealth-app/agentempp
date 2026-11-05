@@ -119,6 +119,7 @@ struct AppDependencies: Sendable {
         enablesConfirmedMealEditing: Bool = false,
         currentClinicalRuntimeMode: CurrentClinicalRuntimeMode = .legacy,
         currentClinicalQABinding: CurrentClinicalQABinding = .absent,
+        todayEnergyRepresentation: TodayEnergyRepresentation = .legacy,
         flowConversationRuntime: FlowConversationRuntimeSelection = .legacy
     ) -> AppDependencies {
         let secureStore: any SecureStoring = switch configuration.demoStorageBoundary {
@@ -750,7 +751,8 @@ struct AppDependencies: Sendable {
             if currentClinicalRuntimeMode == .currentV1, configuration.mode != .demo {
                 CurrentClinicalRuntimeComposition.make(transport: apiClient as? MobileAPITransport,
                     lifecycle: releaseLifecycle, storageOrigin: supabaseAuthConfiguration?.origin,
-                    deviceDraft: onboardingDeviceDraft, qaBinding: currentClinicalQABinding)
+                    deviceDraft: onboardingDeviceDraft, qaBinding: currentClinicalQABinding,
+                    todayEnergyRepresentation: todayEnergyRepresentation)
             } else { nil }
 
         let flowConversationSessions: FlowConversationSessionSource?

@@ -30,7 +30,8 @@ struct CurrentClinicalReaderSessionFactory: Sendable {
     let bind: @Sendable (String) async throws -> CurrentClinicalReaderSession
 
     static func live(transport: MobileAPITransport,
-                     lifecycle: any SessionLifecycleProviding) -> Self {
+                     lifecycle: any SessionLifecycleProviding,
+                     todayEnergyRepresentation: TodayEnergyRepresentation = .legacy) -> Self {
         Self { userID in
             try Task.checkCancellation()
             let lease = try await lifecycle.leaseForRequest()
@@ -38,7 +39,8 @@ struct CurrentClinicalReaderSessionFactory: Sendable {
             try await lifecycle.validate(lease)
             let scoped = transport.scoped(to: lease)
             try await scoped.validateCurrentClinicalSession()
-            let reads = MobileBodyFlowRepository(transport: scoped, clinicalRepresentation: .currentV1)
+            let reads = MobileBodyFlowRepository(transport: scoped, clinicalRepresentation: .currentV1,
+                todayEnergyRepresentation: todayEnergyRepresentation)
             let session = CurrentClinicalReaderSession(userID: userID, today: reads, history: reads,
                 plan: MobileBodyFlowRepository(transport: scoped.withResponseBodyLimit(
                     MobileAPITransport.planResponseBodyLimit), clinicalRepresentation: .currentV1),

@@ -17,10 +17,19 @@ struct MobileBodyFlowRepository: TodayProviding, HistoryProviding,
     PlanProviding, ProgressProviding, MeProviding {
     let transport: any MobileAPIEnvelopeExecuting
     var clinicalRepresentation: CurrentClinicalRepresentation = .legacy
+    var todayEnergyRepresentation: TodayEnergyRepresentation = .legacy
 
     func today() async throws -> TodayResponse {
-        let response: TodayResponse = try await read("/api/mobile/v1/today", queryItems: clinicalRepresentation.queryItems)
+        if todayEnergyRepresentation == .fieldAvailabilityV1, clinicalRepresentation != .currentV1 {
+            throw BodyFlowCapabilityError.serviceUnavailable
+        }
+        let response: TodayResponse = try await read("/api/mobile/v1/today",
+            queryItems: clinicalRepresentation.queryItems + todayEnergyRepresentation.queryItems)
         try clinicalRepresentation.requirePolicy(response.data.clinicalPolicy)
+        guard (response.data.calculationVersion == "bodyflow.daily-state.v4")
+            == (todayEnergyRepresentation == .fieldAvailabilityV1) else {
+            throw BodyFlowCapabilityError.serviceUnavailable
+        }
         return response
     }
 

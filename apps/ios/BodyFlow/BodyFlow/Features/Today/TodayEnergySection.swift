@@ -32,13 +32,15 @@ struct TodayEnergyDescriptor: Equatable, Sendable {
     let consumedKcal: Int
     let remainingFoodKcal: Int?
     let foodExcessKcal: Int?
-    let exerciseKcal: Int
+    let exerciseKcal: Int?
     let dailyBalanceKcal: Int?
     let dailyBalanceStatus: String
     /// Whether the day balance already subtracts the day's exercise. True in
     /// recomposition and for a server that does not say; false in the goals
     /// whose expenditure carries exercise inside the activity level.
     var dailyBalanceIncludesExercise = true
+    var exerciseEnergy: TodayExerciseEnergy? = nil
+    var dailyBalanceEnergy: TodayBalanceEnergy? = nil
 
     var targetText: String {
         TodayValueFormatter.optionalKcal(targetKcal)
@@ -57,7 +59,16 @@ struct TodayEnergyDescriptor: Equatable, Sendable {
     }
 
     var exerciseText: String {
-        TodayValueFormatter.kcal(exerciseKcal)
+        exerciseText(for: .portugueseBrazil)
+    }
+
+    func exerciseText(for language: SupportedAppLanguage) -> String {
+        TodayValueFormatter.optionalKcal(exerciseKcal, language: language)
+    }
+
+    func exerciseCaption(for language: SupportedAppLanguage) -> String {
+        TodayCopy.string(exerciseEnergy == .unavailable
+            ? "today.energy.exercise.unavailable" : "today.energy.exercise.caption", language: language)
     }
 
     var netBalanceText: String {
@@ -134,7 +145,16 @@ struct TodayEnergyDescriptor: Equatable, Sendable {
 
     /// What the balance did with exercise, as the server reported it.
     func netBalanceCaption(for language: SupportedAppLanguage) -> String {
-        TodayCopy.string(
+        switch dailyBalanceEnergy {
+        case .unavailable(.unknownWorkoutEnergy):
+            return TodayCopy.string("today.energy.balance.unknown-exercise", language: language)
+        case .unavailable(.targetUnavailable):
+            return TodayCopy.string("today.energy.balance.target-unavailable", language: language)
+        case .protected:
+            return TodayCopy.string("today.energy.balance.protected", language: language)
+        case .available, nil: break
+        }
+        return TodayCopy.string(
             dailyBalanceIncludesExercise
                 ? "today.energy.net-balance.detail"
                 : "today.energy.net-balance.detail.activity-level",
@@ -530,8 +550,8 @@ struct TodaySummaryPanel: View {
         pairTile(
             domain: .exercise,
             title: copy("today.energy.exercise"),
-            value: TodayValueFormatter.kcal(energy.exerciseKcal, language: language),
-            caption: copy("today.energy.exercise.caption")
+            value: energy.exerciseText(for: language),
+            caption: energy.exerciseCaption(for: language)
         )
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("today.exercise")
@@ -581,30 +601,7 @@ struct TodaySummaryPanel: View {
     }
 
     private var energyDetails: some View {
-        detailGroup(copy("today.energy.title")) {
-            FixtureMetricRow(
-                title: copy("today.energy.net-balance"),
-                value: energy.netBalanceText(for: language)
-            )
-            .accessibilityValue(energy.netBalanceAccessibilityValue(for: language))
-            .accessibilityIdentifier("today.energy.net-balance")
-            Text(energy.netBalanceCaption(for: language))
-                .font(BodyFlowTypography.caption)
-                .foregroundStyle(BodyFlowColor.secondaryText)
-            Divider()
-            FixtureMetricRow(
-                title: copy("today.energy.exercise"),
-                value: TodayValueFormatter.kcal(
-                    energy.exerciseKcal,
-                    language: language
-                )
-            )
-            Divider()
-            FixtureMetricRow(
-                title: copy("today.energy.balance-status"),
-                value: TodayStatusText.label(energy.dailyBalanceStatus, kind: .balance, language: language)
-            )
-        }
+        TodayEnergyDetailsView(energy: energy, language: language)
     }
 
     private var proteinDetails: some View {
@@ -691,6 +688,46 @@ struct TodaySummaryPanel: View {
 
     private var language: SupportedAppLanguage {
         BodyFlowPresentationLanguage.resolve(locale)
+    }
+
+    private func copy(_ key: String.LocalizationValue) -> String {
+        TodayCopy.string(key, language: language)
+    }
+}
+
+/// The production disclosure content, also hostable without a ScrollView's
+/// inaccessible descendant AX proxy. No separate test presentation exists.
+@MainActor
+struct TodayEnergyDetailsView: View {
+    let energy: TodayEnergyDescriptor
+    let language: SupportedAppLanguage
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+            Text(verbatim: copy("today.energy.title"))
+                .font(BodyFlowTypography.cardTitle)
+                .foregroundStyle(BodyFlowColor.primaryText)
+                .accessibilityAddTraits(.isHeader)
+            FixtureMetricRow(title: copy("today.energy.net-balance"),
+                value: energy.netBalanceText(for: language))
+                .accessibilityValue(energy.netBalanceAccessibilityValue(for: language))
+                .accessibilityIdentifier("today.energy.net-balance")
+            Text(energy.netBalanceCaption(for: language))
+                .font(BodyFlowTypography.caption)
+                .foregroundStyle(BodyFlowColor.secondaryText)
+            Divider()
+            FixtureMetricRow(title: copy("today.energy.exercise"), value: energy.exerciseText(for: language))
+            Divider()
+            FixtureMetricRow(title: copy("today.energy.balance-status"), value: balanceStatus)
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var balanceStatus: String {
+        switch energy.dailyBalanceEnergy {
+        case .unavailable, .protected: copy("common.not-available")
+        case .available, nil: TodayStatusText.label(energy.dailyBalanceStatus, kind: .balance, language: language)
+        }
     }
 
     private func copy(_ key: String.LocalizationValue) -> String {

@@ -38,11 +38,16 @@ struct CurrentClinicalRuntimeComposition: Sendable {
 
     static func make(transport: MobileAPITransport?, lifecycle: (any SessionLifecycleProviding)?,
                      storageOrigin: URL?, deviceDraft: OnboardingDeviceDraftStore,
-                     qaBinding: CurrentClinicalQABinding = .absent) -> Self? {
+                     qaBinding: CurrentClinicalQABinding = .absent,
+                     todayEnergyRepresentation: TodayEnergyRepresentation = .legacy) -> Self? {
         guard let transport, transport.supportsCurrentClinicalSessionBinding, let lifecycle,
               let storageOrigin, let apiOrigin = transport.configuredOrigin,
               allows(storageOrigin: storageOrigin, apiOrigin: apiOrigin, qaBinding: qaBinding) else { return nil }
-        return Self(readers: .live(transport: transport, lifecycle: lifecycle),
+        if todayEnergyRepresentation == .fieldAvailabilityV1 {
+            guard case .candidate = qaBinding else { return nil }
+        }
+        return Self(readers: .live(transport: transport, lifecycle: lifecycle,
+                                  todayEnergyRepresentation: todayEnergyRepresentation),
             onboarding: MobileOnboardingRepository(transport: transport, deviceDraft: deviceDraft,
                 sessionLifecycle: lifecycle, clinicalRepresentation: .currentV1),
             flowChat: MobileFlowChatRepository(transport: transport, sessionLifecycle: lifecycle,

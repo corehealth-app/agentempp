@@ -1,5 +1,9 @@
 import type { ServiceClient } from '@mpp/db'
 import { z } from 'zod'
+import {
+  conversationFeedbackPresentationMobileHeaders,
+  negotiateConversationFeedbackPresentation,
+} from './conversation-feedback-presentation-negotiation'
 import { createConversationMealReadonlyRuntime as createConversationMealReplyReadonlyRuntime } from './conversation-meal-readonly-runtime'
 
 export { createConversationMealReadonlyRuntime as createConversationMealReplyReadonlyRuntime } from './conversation-meal-readonly-runtime'
@@ -54,9 +58,11 @@ function response(
     ReturnType<ReturnType<typeof createConversationMealReplyPublicService>['reconcile']>
   >,
   requestId: string,
+  selected: 'legacy' | '2',
 ) {
   return mobileSuccess(result, requestId, result.status === 'reconciliation_required' ? 202 : 200, {
     'X-Conversation-Protocol': 'meal-reply-v1',
+    ...conversationFeedbackPresentationMobileHeaders(selected),
   })
 }
 export function createConversationMealReplyPublicRoutes(
@@ -82,27 +88,45 @@ export function createConversationMealReplyPublicRoutes(
           'conversation_meal_reply_invalid_query',
           'Reply submission accepts no query parameters',
         )
-      const epoch = scope(context.request, context.auth.userId),
+      const selected = negotiateConversationFeedbackPresentation(context.request.headers),
+        epoch = scope(context.request, context.auth.userId),
         parent = uuid.parse((await route.params).commandId),
         body = parseConversationMealReplySubmission(await readJsonBody(context.request, 16384)),
         key = z
           .literal(`cmreply1:${body.reply_id}`)
           .parse(context.request.headers.get('Idempotency-Key'))
       return response(
-        await service(context.supabase).submit(context.auth, parent, epoch, body, key),
+        await service(context.supabase).submit(
+          context.auth,
+          parent,
+          epoch,
+          body,
+          key,
+          ...(selected === '2' ? ['2' as const] : []),
+        ),
         context.requestId,
+        selected,
       )
     }, runtime),
     GET: createMobileRouteWithContext<ReplyRoute>(async (context, route) => {
       available()
-      const epoch = scope(context.request, context.auth.userId),
+      const selected = negotiateConversationFeedbackPresentation(context.request.headers),
+        epoch = scope(context.request, context.auth.userId),
         params = await route.params,
         parent = uuid.parse(params.commandId),
         replyId = uuid.parse(params.replyId),
         input = query(context.request)
       return response(
-        await service(context.supabase).reconcile(context.auth, parent, replyId, epoch, input),
+        await service(context.supabase).reconcile(
+          context.auth,
+          parent,
+          replyId,
+          epoch,
+          input,
+          ...(selected === '2' ? ['2' as const] : []),
+        ),
         context.requestId,
+        selected,
       )
     }, runtime),
   })

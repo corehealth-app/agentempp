@@ -13,6 +13,17 @@ import {
   bindConversationCommand,
 } from './conversation-command-contracts'
 import type { ConversationCommandJournal } from './conversation-command-journal'
+import {
+  type ConversationReadonlyAuth,
+  createConversationCurrentScope,
+} from './conversation-current-scope'
+import type { ConversationFeedbackPresentationNegotiation } from './conversation-feedback-presentation-negotiation'
+import type { ConversationFeedbackPresentationV2 } from './conversation-feedback-presentation-v2'
+import {
+  type ConversationFeedbackPublicCompositionFactory,
+  createConversationFeedbackPublicComposition,
+} from './conversation-feedback-public-composition'
+import { conversationFeedbackV3WriterEnabled } from './conversation-feedback-server-policy'
 import { createSupabaseConversationFencedJournal } from './conversation-fenced-journal'
 import {
   projectSavedConversationMealCommandResult,
@@ -35,6 +46,7 @@ import {
   interpretPersistedConversationMeal,
 } from './conversation-meal-interpretation-service'
 import { createOpenRouterConversationMealInterpreter } from './conversation-meal-interpreter'
+import { conversationJournalInstant } from './conversation-meal-journal-store'
 import { registerPersistedConversationMeal } from './conversation-meal-registration-service'
 import {
   type ConversationMealSemanticStore,
@@ -44,6 +56,10 @@ import {
   type ConversationMealWriter,
   createSupabaseConversationMealWriter,
 } from './conversation-meal-writer'
+import {
+  currentClinicalReadBinding,
+  projectCurrentClinicalPublicPolicy,
+} from './current-clinical-read-model'
 import {
   type CurrentClinicalStateSource,
   captureCurrentClinicalState,
@@ -73,8 +89,13 @@ export interface ConversationMealCommandState {
   readonly reason?: string
   readonly food_indexes?: readonly number[]
 }
+export type NegotiatedSavedConversationMealCommandResult = Omit<
+  SavedConversationMealCommandResult,
+  'feedback'
+> & { readonly feedback: ConversationFeedbackPresentationV2 | null }
 export type ConversationMealCommandReply =
   | SavedConversationMealCommandResult
+  | NegotiatedSavedConversationMealCommandResult
   | ConversationMealCommandState
 export interface ConversationSessionObservation {
   readonly schema: 'conversation.session.v1'
@@ -88,11 +109,15 @@ export interface ConversationMealCommandServicePorts {
   writer?: ConversationMealWriter
   journal?: (originalEpoch: string) => ConversationCommandJournal
   clinical?: CurrentClinicalStateSource
+  auth?: ConversationReadonlyAuth
   semantics?: ConversationMealSemanticStore
   createInterpreter?: () => ConversationMealInterpreterPort
   register?: typeof registerPersistedConversationMeal
   presentation?: ConversationMealFeedbackPresentationService
   decisions?: ConversationMealDecisionStore
+  /** Trusted composition ports. Never populated from request headers/body. */
+  feedbackV3?: ConversationFeedbackPublicCompositionFactory
+  feedbackV3WriterEnabled?: () => boolean
 }
 function unavailable(): never {
   throw new MobileApiError(
@@ -210,6 +235,13 @@ export function createConversationMealCommandService(
       },
       commit: writer.commit,
     })
+  const rootAuth = ports.auth
+    ? Object.freeze({
+        verifyAccessToken: ports.auth.verifyAccessToken.bind(ports.auth),
+        loadPatient: ports.auth.loadPatient.bind(ports.auth),
+        isAdmin: ports.auth.isAdmin.bind(ports.auth),
+      })
+    : undefined
   const cs = ports.clinical ?? createSupabaseCurrentClinicalStateSource(db),
     clinical = Object.freeze({ capture: cs.capture.bind(cs) })
   const ms = ports.semantics ?? createSupabaseConversationMealSemanticStore(db),
@@ -227,6 +259,16 @@ export function createConversationMealCommandService(
     })
   const ps = ports.presentation ?? createSupabaseConversationMealFeedbackPresentation(db),
     readPresentation = ps.readHistorical.bind(ps)
+  const feedback3 =
+      ports.feedbackV3?.bind(ports) ??
+      ((auth: MobileAuthContext, epoch: string) =>
+        createConversationFeedbackPublicComposition(db, auth, epoch, {
+          clinical,
+          ...(rootAuth ? { auth: rootAuth } : {}),
+        })),
+    writeFeedback3 = (
+      ports.feedbackV3WriterEnabled?.bind(ports) ?? conversationFeedbackV3WriterEnabled
+    )()
   const makeInterpreter =
     ports.createInterpreter?.bind(ports) ??
     (() => createOpenRouterConversationMealInterpreter(process.env.OPENROUTER_API_KEY ?? ''))
@@ -244,15 +286,60 @@ export function createConversationMealCommandService(
     epoch: string,
     rawBinding: ConversationJournalBinding,
     receipt: ConversationMealEffectReceipt,
-  ): Promise<SavedConversationMealCommandResult> => {
+    selected: ConversationFeedbackPresentationNegotiation,
+  ): Promise<ConversationMealCommandReply> => {
     const serverBinding = validatedBinding(rawBinding, command, epoch)
-    let feedback: unknown = null
-    try {
-      feedback = await readPresentation({ auth, command, receipt, serverBinding })
-    } catch {
-      /* Optional current observation/enrichment never retries a saved effect. */
+    const scope = createConversationCurrentScope(
+        db,
+        auth,
+        { authUserId: auth.authUserId, ownerId: command.ownerId, epoch },
+        { clinical, ...(rootAuth ? { auth: rootAuth } : {}) },
+      ),
+      before = await scope.observe()
+    let feedback: unknown = null,
+      v2: ConversationFeedbackPresentationV2 | null = null
+    if (selected === '2') {
+      try {
+        v2 = freezeInterpretation(
+          await feedback3(auth, epoch).readHistorical({
+            auth,
+            proof: { kind: 'meal.report', command, receipt, serverBinding },
+          }),
+        )
+      } catch {
+        /* optional enrichment cannot repeat a saved effect */
+      }
+      // A denied fresh token/admin/mapping/epoch is mandatory. Keep this
+      // outside the optional catch and before any legacy presentation fallback.
+      await scope.observe()
     }
-    return projectSavedConversationMealCommandResult({
+    if (!v2) {
+      try {
+        feedback = freezeInterpretation(
+          await readPresentation({ auth, command, receipt, serverBinding }),
+        )
+      } catch {
+        /* factual ACK survives missing optional education */
+      }
+    }
+    const final = await scope.observe()
+    if (final) {
+      if (v2) {
+        const { observed_at: _latest, ...latest } = projectCurrentClinicalPublicPolicy(final),
+          { observed_at: _shown, ...shown } = v2.current_policy,
+          at = conversationJournalInstant(v2.provenance.observed_at)
+        if (
+          !isDeepStrictEqual(latest, shown) ||
+          at < conversationJournalInstant(receipt.consumed_at) ||
+          at < conversationJournalInstant(serverBinding.admitted_at) ||
+          at > conversationJournalInstant(final.observed_at)
+        )
+          v2 = null
+      }
+      if (before && currentClinicalReadBinding(before) !== currentClinicalReadBinding(final))
+        feedback = null
+    }
+    const result = projectSavedConversationMealCommandResult({
       auth,
       command,
       expectedEpoch: epoch,
@@ -260,6 +347,7 @@ export function createConversationMealCommandService(
       receipt,
       feedback,
     })
+    return v2 ? freezeInterpretation({ ...result, feedback: v2 }) : result
   }
   const decisionIdentity = (command: BoundConversationMealCommand, epoch: string) =>
     Object.freeze({
@@ -315,6 +403,7 @@ export function createConversationMealCommandService(
       key: string | null,
       raw: unknown,
       expectedEpoch: string,
+      selected: ConversationFeedbackPresentationNegotiation = 'legacy',
     ): Promise<ConversationMealCommandReply> {
       try {
         const c = context(auth, expectedEpoch),
@@ -325,7 +414,7 @@ export function createConversationMealCommandService(
         if (prior.action === 'stale_epoch') return changed()
         if (prior.action === 'available') {
           const b = validatedBinding(prior.binding, command, c.epoch)
-          if (prior.receipt) return saved(c.auth, command, c.epoch, b, prior.receipt)
+          if (prior.receipt) return saved(c.auth, command, c.epoch, b, prior.receipt, selected)
         }
         const terminal = await readTerminal(command, c.epoch)
         if (terminal) return terminal
@@ -342,6 +431,23 @@ export function createConversationMealCommandService(
           writer: fencedWriter,
           journal,
           interpreter,
+          ...(writeFeedback3
+            ? {
+                originalEnrichment: (() => {
+                  type Bridge = ReturnType<ConversationFeedbackPublicCompositionFactory>
+                  const legacy = (value: Awaited<ReturnType<Bridge['readRoot']>>) =>
+                    value?.schema === 'registration.feedback.v3' ? null : value
+                  // Construct optional bridge only inside the post-effect hook;
+                  // a failed factory cannot prevent or retry factual recording.
+                  return Object.freeze({
+                    ensureOriginal: async (input: Parameters<Bridge['ensureRoot']>[0]) =>
+                      legacy(await feedback3(c.auth, c.epoch).ensureRoot(input)),
+                    readOriginal: async (input: Parameters<Bridge['readRoot']>[0]) =>
+                      legacy(await feedback3(c.auth, c.epoch).readRoot(input)),
+                  })
+                })(),
+              }
+            : {}),
           interpret: async (bound, source) =>
             (
               await interpretPersistedConversationMeal(
@@ -360,7 +466,7 @@ export function createConversationMealCommandService(
         })
         if (!isDeepStrictEqual(result.command, command)) return unavailable()
         if (result.status === 'saved')
-          return saved(c.auth, command, c.epoch, result.serverBinding, result.receipt)
+          return saved(c.auth, command, c.epoch, result.serverBinding, result.receipt, selected)
         const current = await journal.read({ ownerId: c.owner, commandId: command.commandId })
         if (current.action !== 'available') return changed()
         validatedBinding(current.binding, command, c.epoch)
@@ -424,7 +530,7 @@ export function createConversationMealCommandService(
         if (sealed.action === 'resolved_conflict') {
           const winner = await fencedWriter.readPrepared(command)
           if (winner.action === 'available' && winner.receipt)
-            return saved(c.auth, command, c.epoch, winner.binding, winner.receipt)
+            return saved(c.auth, command, c.epoch, winner.binding, winner.receipt, selected)
         }
         return changed()
       } catch (e) {
@@ -436,6 +542,7 @@ export function createConversationMealCommandService(
       commandId: string,
       originalHash: string,
       expectedEpoch: string,
+      selected: ConversationFeedbackPresentationNegotiation = 'legacy',
     ): Promise<ConversationMealCommandReply> {
       try {
         const c = context(auth, expectedEpoch),
@@ -460,7 +567,7 @@ export function createConversationMealCommandService(
         const prior = await writer.readPrepared(command)
         if (prior.action !== 'available') return changed()
         const b = validatedBinding(prior.binding, command, c.epoch)
-        if (prior.receipt) return saved(c.auth, command, c.epoch, b, prior.receipt)
+        if (prior.receipt) return saved(c.auth, command, c.epoch, b, prior.receipt, selected)
         return (
           (await readTerminal(command, c.epoch)) ??
           state(c.owner, id, inputHash, c.epoch, 'pending')

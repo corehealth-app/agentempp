@@ -63,6 +63,35 @@ function request(
   })
 }
 describe('new authenticated conversation meal command routes', () => {
+  it.each([
+    'POST',
+    'GET',
+  ])('negotiates presentation2 on %s without changing protocol or authority', async (method) => {
+    const f = fixture(),
+      r = request(method, command.command, { 'X-Conversation-Feedback-Presentation': '2' })
+    const response =
+      method === 'POST'
+        ? await f.routes.POST(r)
+        : await f.routes.GET(r, { params: Promise.resolve({ commandId: command.commandId }) })
+    expect(response.headers.get('X-Conversation-Feedback-Presentation')).toBe('2')
+    expect(response.headers.get('Vary')).toBe('Authorization, X-Conversation-Feedback-Presentation')
+    expect(response.headers.get('Cache-Control')).toBe('no-store')
+    expect(response.headers.get('X-Conversation-Protocol')).toBe('meal-command-v1')
+    expect((method === 'POST' ? f.submit : f.read).mock.calls[0].at(-1)).toBe('2')
+  })
+  it.each(['unknown', '3', '02', '2, 2'])('retains old root negotiation for %s', async (value) => {
+    const f = fixture(),
+      response = await f.routes.POST(
+        request('POST', command.command, { 'X-Conversation-Feedback-Presentation': value }),
+      )
+    expect(response.headers.get('X-Conversation-Feedback-Presentation')).toBeNull()
+    expect(f.submit).toHaveBeenCalledWith(
+      candidateAuth,
+      `cmsg1:${command.commandId}`,
+      command.command,
+      writerEpoch,
+    )
+  })
   it('requires the same auth/entitlement for current server session observation', async () => {
     const f = fixture(),
       response = await f.routes.SESSION(

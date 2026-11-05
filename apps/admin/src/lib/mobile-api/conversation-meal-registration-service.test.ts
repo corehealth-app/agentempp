@@ -192,6 +192,62 @@ function stored(receipt: unknown = null, resolved: unknown = null) {
 }
 
 describe('actual source-to-factual meal registration composition', () => {
+  it('passes the actual held binding to server-selected enrichment only after committed facts', async () => {
+    const d = dependencies(),
+      ensureOriginal = vi.fn().mockResolvedValue(null),
+      readOriginal = vi.fn()
+    const result = await registerPersistedConversationMeal(
+      db,
+      candidateAuth,
+      `cmsg1:${writerCommand().commandId}`,
+      writerCommand().command,
+      { ...d, originalEnrichment: { ensureOriginal, readOriginal } },
+    )
+    expect(result.status).toBe('saved')
+    expect(ensureOriginal).toHaveBeenCalledWith({
+      auth: candidateAuth,
+      command: writerCommand(),
+      receipt: writerReceipt(),
+      serverBinding: writerBinding(),
+    })
+    expect(ensureOriginal.mock.invocationCallOrder[0]).toBeGreaterThan(
+      d.writer.commit.mock.invocationCallOrder[0],
+    )
+    expect(d.feedback.ensureOriginal).not.toHaveBeenCalled()
+    expect(d.feedback.readOriginal).not.toHaveBeenCalled()
+    expect(readOriginal).not.toHaveBeenCalled()
+  })
+  it.each([
+    'prepared',
+    'lost',
+  ] as const)('keeps selected canonical enrichment readonly for %s effect recovery', async (mode) => {
+    const d = dependencies(),
+      ensureOriginal = vi.fn(),
+      readOriginal = vi.fn().mockResolvedValue(null)
+    if (mode === 'prepared')
+      d.writer.readPrepared.mockResolvedValue(
+        stored(writerReceipt(), {
+          resolvedHash: 'c'.repeat(64),
+          value: writerResolved(),
+          preparedAt: writerSource().capturedAt,
+        }),
+      )
+    else {
+      d.writer.commit.mockRejectedValue(new Error('lost'))
+      d.writer.readEffect.mockResolvedValue({ action: 'available', receipt: writerReceipt() })
+    }
+    const result = await registerPersistedConversationMeal(
+      db,
+      candidateAuth,
+      `cmsg1:${writerCommand().commandId}`,
+      writerCommand().command,
+      { ...d, originalEnrichment: { ensureOriginal, readOriginal } },
+    )
+    expect(result.status).toBe('saved')
+    expect(readOriginal).toHaveBeenCalledTimes(1)
+    expect(ensureOriginal).not.toHaveBeenCalled()
+    expect(d.feedback.ensureOriginal).not.toHaveBeenCalled()
+  })
   it('does not reconcile or process after a known admission quota refusal', async () => {
     const d = dependencies()
     d.journal.admit.mockRejectedValue(

@@ -3,10 +3,15 @@ import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'nod
 import { dirname, extname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const expectedMobileRouteCount = 85
-const expectedMobileRouteHash = '637c96d6e9baccb01b5b780f73ea89dbb628cb949264620c40ca474b1500b267'
-const expectedRouteCount = 86
-const expectedRouteHash = '6cf74c6833a222ddc0b21838a47498a472abaf1cdd7f5bbce1057e0944bc0e3c'
+const expectedMobileRouteCount = 88
+const expectedMobileRouteHash = 'bc55eaf07caffd4b70de61dcc3a6b00d9e10cb8eb7e9cfe6996716e9bf981b05'
+const expectedRouteCount = 89
+const expectedRouteHash = '030d287839ebf4191e33357d3f5bfada7d405e1ab0b18a1367018d9311392b87'
+const workoutTransports = new Set([
+  '/api/mobile/v1/conversation/workout-session',
+  '/api/mobile/v1/conversation/workout-commands',
+  '/api/mobile/v1/conversation/workout-commands/[commandId]',
+])
 const nutritionWindowRoute = '/api/mobile/v1/nutrition/window'
 const addedReadEditRoutes = new Set([
   '/api/mobile/v1/conversation/journal',
@@ -550,8 +555,30 @@ function verifyBuildSurface() {
     `BUILD_NFT_ALLOWLISTED_DIRECTORY_TARGET_COUNT=${surface.nftAllowlistedDirectoryTargetCount}`,
   )
 
-  const prior84Mobile = surface.mobileRoutePaths.filter((path) => path !== nutritionWindowRoute)
-  const prior85All = surface.routePaths.filter((path) => path !== nutritionWindowRoute)
+  const prior85Mobile = surface.mobileRoutePaths.filter((path) => !workoutTransports.has(path))
+  const prior86All = surface.routePaths.filter((path) => !workoutTransports.has(path))
+  for (const [label, paths, count, hash] of [
+    [
+      'PRIOR85_MOBILE',
+      prior85Mobile,
+      85,
+      '637c96d6e9baccb01b5b780f73ea89dbb628cb949264620c40ca474b1500b267',
+    ],
+    [
+      'PRIOR86_ALL',
+      prior86All,
+      86,
+      '6cf74c6833a222ddc0b21838a47498a472abaf1cdd7f5bbce1057e0944bc0e3c',
+    ],
+  ]) {
+    const priorHash = sha256(paths.map((path) => `${path}\n`).join(''))
+    console.info(`BUILD_${label}_ROUTE_PATH_COUNT=${paths.length}`)
+    console.info(`BUILD_${label}_ROUTE_PATH_STREAM_SHA256=${priorHash}`)
+    if (paths.length !== count) fail(`${label}_ROUTE_COUNT:${paths.length}`)
+    if (priorHash !== hash) fail(`${label}_ROUTE_HASH:${priorHash}`)
+  }
+  const prior84Mobile = prior85Mobile.filter((path) => path !== nutritionWindowRoute)
+  const prior85All = prior86All.filter((path) => path !== nutritionWindowRoute)
   for (const [label, paths, count, hash] of [
     [
       'PRIOR84_MOBILE',

@@ -348,7 +348,7 @@ struct ConversationThreadPageSnapshot: Decodable, Sendable {
       items = try rawItems.map { raw in
         let id = try raw.member("thread_id").uuid()
         guard let parent = byID[id] else { throw ConversationMealEditInvalid.value }
-        return try Self.entry(raw, parent: parent, owner: owner, epoch: epoch, observed: observed)
+        return try Self.entry(raw, parent: parent, owner: owner, epoch: epoch, observed: observed, selection: .selected(from: decoder))
       }
       try editCheck(
         Set(items.map(\.eventID)).count == items.count
@@ -457,7 +457,8 @@ struct ConversationThreadPageSnapshot: Decodable, Sendable {
       continuation: continuation)
   }
   private static func entry(
-    _ raw: ConversationMealEditJSON, parent: Thread, owner: UUID, epoch: UUID, observed: String
+    _ raw: ConversationMealEditJSON, parent: Thread, owner: UUID, epoch: UUID, observed: String,
+    selection: ConversationFeedbackPresentationSelection?
   ) throws -> Entry {
     let kind = try raw.member("kind").string()
     let base: Set<String> = ["event_id", "at", "kind", "thread_id"]
@@ -508,7 +509,7 @@ struct ConversationThreadPageSnapshot: Decodable, Sendable {
         feedback = try optionalFeedback(
           o.required("feedback"), owner: owner, epoch: epoch, binding: parent.parentBinding,
           registrationID: r.registrationID, date: r.localDate, meal: r.mealType, logs: r.logIDs,
-          observed: observed)
+          observed: observed, selection: selection, consumedAt: r.consumedAt)
       } else {
         if case .null = try o.required("feedback") {
         } else {
@@ -555,7 +556,7 @@ struct ConversationThreadPageSnapshot: Decodable, Sendable {
       let feedback = try optionalFeedback(
         o.required("feedback"), owner: owner, epoch: epoch, binding: b,
         registrationID: r.registrationID.uuidString.lowercased(), date: r.localDate,
-        meal: r.mealType, logs: r.logIDs.map { $0.uuidString.lowercased() }, observed: observed)
+        meal: r.mealType, logs: r.logIDs.map { $0.uuidString.lowercased() }, observed: observed, selection: selection, consumedAt: r.consumedAt)
       detail = .fulfillment(.init(binding: b, receipt: r, feedback: feedback))
     default:
       let b = try Binding(o.required("effect_binding"))
@@ -582,10 +583,10 @@ struct ConversationThreadPageSnapshot: Decodable, Sendable {
   private static func optionalFeedback(
     _ raw: ConversationMealEditJSON, owner: UUID, epoch: UUID, binding: Binding,
     registrationID: String, date: String, meal: ConversationMealCommand.MealType, logs: [String],
-    observed: String
+    observed: String, selection: ConversationFeedbackPresentationSelection?, consumedAt: String
   ) throws -> ConversationFeedbackPresentationSnapshot? {
     guard let bytes = try? raw.data(), bytes.count <= 200_000,
-      let value = try? JSONDecoder().decode(
+      let value = try? ConversationFeedbackPresentationSelection.decoder(selection: selection).decode(
         ConversationFeedbackPresentationSnapshot.self, from: bytes),
       let instant = ConversationProtocolInstant(value.provenance.observedAt),
       instant <= (try editInstant(observed))
@@ -595,10 +596,9 @@ struct ConversationThreadPageSnapshot: Decodable, Sendable {
       value.original.registrationID == registrationID, value.original.localDate == date,
       instant >= (try editInstant(binding.admittedAt))
     else { return nil }
-    if case .sections(let recorded, _) = value.content {
-      guard recorded.mealKind == meal.rawValue, Set(recorded.items.map(\.logID)) == Set(logs) else {
-        return nil
-      }
+    guard value.matchesRecordedMeal(kind: meal.rawValue, logIDs: logs) else { return nil }
+    if case .v3Sections = value.content {
+      guard let effect = ConversationProtocolInstant(consumedAt), instant >= effect else { return nil }
     }
     return value
   }

@@ -1,0 +1,96 @@
+{
+  "provenance": "Counterfactual UNIT fixture only for decoder metadata propagation. Existing public-projector outer IDs, receipt and literal clocks retained. Meal facts are controlled fresh prepareV3 inputs from the known-meal PG fixture with UNIT item binding, NOT an observed canonical for this journal entry, not API resealing, public HTTP or authority.",
+  "source_page_sha256": "f45316e815835eeea27854ee1abbd8f847f7176a4de1c46c2ff6787ff01cb925",
+  "source_leaf_sha256": "e644dd58e42db870b90422de6f6a7436102867519bf00f7a255b5d70805f0c0d",
+  "event_id": "fulfillment/10000000-0000-4000-8000-000000000002/10000000-0000-4000-8000-000000000041",
+  "expected": {
+    "schema": "conversation.feedback-presentation.v2",
+    "mode": "historical",
+    "assistant": "Flow AI",
+    "original": {
+      "schema": "registration.feedback.v3",
+      "registration_id": "10000000-0000-4000-8000-000000000041",
+      "kind": "meal",
+      "local_date": "2026-11-04"
+    },
+    "status": "available",
+    "format": "sections",
+    "recorded": {
+      "kind": "meal",
+      "meal_kind": "almoco",
+      "items": [
+        {
+          "kcal": 126.12,
+          "protein_g": 6.3,
+          "carbs_g": 9.5,
+          "fat_g": 6.5,
+          "log_id": "10000000-0000-4000-8000-000000000005",
+          "food_name": "leite integral",
+          "quantity_g": 206,
+          "quantity": {
+            "value": 200,
+            "unit": "mL",
+            "estimated": true,
+            "reference_id": "fao-infoods-v2-whole-milk-tb"
+          },
+          "nutrition_source": "product_label"
+        }
+      ],
+      "totals": {
+        "kcal": 126.1,
+        "protein_g": 6.3,
+        "carbs_g": 9.5,
+        "fat_g": 6.5
+      }
+    },
+    "sections": [
+      {
+        "key": "saved",
+        "text": "Almoço registrado."
+      },
+      {
+        "key": "items",
+        "text": "leite integral · 200 mL (estimado, editável)\n126,12 kcal | Proteína: 6,3 g | Carboidratos: 9,5 g | Gorduras: 6,5 g"
+      },
+      {
+        "key": "summary",
+        "text": "Total aproximado da refeição: 126,1 kcal | Proteína: 6,3 g | Carboidratos: 9,5 g | Gorduras: 6,5 g"
+      },
+      {
+        "key": "day",
+        "text": "No momento deste registro (2026-11-04):\nO resumo oficial deste dia está indisponível; seu registro foi salvo."
+      },
+      {
+        "key": "block",
+        "text": "Progresso consolidado no momento do registro:\nOs dados consolidados do bloco estão indisponíveis."
+      },
+      {
+        "key": "education",
+        "text": "Comentário educativo no momento do registro:\nEntre os itens registrados, leite integral tem a maior contribuição de energia e leite integral a maior contribuição de proteína. Mudar uma porção afeta a energia e os nutrientes; compare os itens antes de decidir o que ajustar. Quer me contar o que você prefere para conversarmos sobre um ajuste adequado?"
+      }
+    ],
+    "current_policy": {
+      "version": 1,
+      "observed_at": "2026-11-04T12:03:00.000001Z",
+      "assessment": "complete",
+      "recording_allowed": true,
+      "pause_weight_loss_guidance": false,
+      "professional_assessment_recommended": false,
+      "phase_selection_pending": false,
+      "target_source": "official_only",
+      "hide": {
+        "objective": false,
+        "calories": false,
+        "protein": false,
+        "balance": false,
+        "block": false,
+        "budget": false
+      }
+    },
+    "provenance": {
+      "epoch": "10000000-0000-4000-8000-000000000003",
+      "command_id": "10000000-0000-4000-8000-000000000041",
+      "observed_at": "2026-11-04T12:03:00.000001Z"
+    }
+  }
+}

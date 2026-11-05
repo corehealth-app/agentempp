@@ -134,7 +134,8 @@ struct MobileAPITransport: Sendable {
                 Response.self,
                 result: firstResult,
                 lease: lease,
-                closedEnvelope: request.conversation != nil
+                closedEnvelope: request.conversation != nil,
+                feedbackPresentation: request.feedbackPresentation
             )
         }
 
@@ -152,7 +153,8 @@ struct MobileAPITransport: Sendable {
                 Response.self,
                 data: firstResult.data,
                 response: firstResult.response,
-                closedEnvelope: request.conversation != nil
+                closedEnvelope: request.conversation != nil,
+                feedbackPresentation: request.feedbackPresentation
             )
         }
 
@@ -166,7 +168,8 @@ struct MobileAPITransport: Sendable {
             Response.self,
             result: secondResult,
             lease: refreshedLease,
-            closedEnvelope: request.conversation != nil
+            closedEnvelope: request.conversation != nil,
+            feedbackPresentation: request.feedbackPresentation
         )
     }
 
@@ -196,7 +199,8 @@ struct MobileAPITransport: Sendable {
         _ type: Response.Type,
         result: NetworkResult,
         lease: SessionLease,
-        closedEnvelope: Bool
+        closedEnvelope: Bool,
+        feedbackPresentation: ConversationFeedbackPresentationSelection?
     ) async throws -> MobileAPIHTTPResponse<Response> {
         do {
             try await sessionLifecycle.validate(lease)
@@ -209,7 +213,8 @@ struct MobileAPITransport: Sendable {
             type,
             data: result.data,
             response: result.response,
-            closedEnvelope: closedEnvelope
+            closedEnvelope: closedEnvelope,
+            feedbackPresentation: feedbackPresentation
         )
     }
 
@@ -247,6 +252,9 @@ struct MobileAPITransport: Sendable {
         }
 
         request.conversation?.apply(to: &urlRequest)
+        if let selection = request.feedbackPresentation {
+            urlRequest.setValue(selection.rawValue, forHTTPHeaderField: ConversationFeedbackPresentationSelection.header)
+        }
         if let owner = request.conversationMediaOwnerID { urlRequest.setValue(owner.uuidString.lowercased(), forHTTPHeaderField: "X-Conversation-Owner") }
         let preparedRequest = urlRequest
         let redirectDelegate = MobileAPIRedirectDelegate(configuration: configuration, allowsReadRedirects: request.conversation == nil && request.conversationMediaOwnerID == nil)
@@ -384,9 +392,12 @@ struct MobileAPITransport: Sendable {
         _ type: Response.Type,
         data: Data,
         response: HTTPURLResponse,
-        closedEnvelope: Bool
+        closedEnvelope: Bool,
+        feedbackPresentation: ConversationFeedbackPresentationSelection?
     ) throws -> MobileAPIHTTPResponse<Response> {
-        let decoder = JSONDecoder()
+        let decoder = ConversationFeedbackPresentationSelection.decoder(selection: .negotiated(
+            request: feedbackPresentation,
+            echo: response.value(forHTTPHeaderField: ConversationFeedbackPresentationSelection.header)))
         if (200...299).contains(response.statusCode) {
             do {
                 if closedEnvelope {

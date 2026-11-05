@@ -134,7 +134,7 @@ struct ConversationJournalPageSnapshot: Decodable, Sendable {
       let scopeEpoch = epoch
       let finalObservation = observedAt
       items = try rows.map {
-        try Self.entry($0, ownerID: scopeOwner, epoch: scopeEpoch, observedAt: finalObservation)
+        try Self.entry($0, ownerID: scopeOwner, epoch: scopeEpoch, observedAt: finalObservation, selection: .selected(from: decoder))
       }
       try editCheck(Set(items.map(\.eventID)).count == items.count)
       for (previous, next) in zip(items, items.dropFirst()) {
@@ -152,7 +152,8 @@ struct ConversationJournalPageSnapshot: Decodable, Sendable {
     self.authUserID == authUserID && self.ownerID == ownerID && self.epoch == epoch
   }
   private static func entry(
-    _ raw: ConversationMealEditJSON, ownerID: UUID, epoch: UUID, observedAt: String
+    _ raw: ConversationMealEditJSON, ownerID: UUID, epoch: UUID, observedAt: String,
+    selection: ConversationFeedbackPresentationSelection?
   ) throws -> Entry {
     let kind = try raw.member("kind").string()
     if kind == "edit" {
@@ -180,7 +181,7 @@ struct ConversationJournalPageSnapshot: Decodable, Sendable {
     let explicitMealType = try originalFields["meal_type"].map { try $0.string() }
     let source = try sourceValue.data()
     let command = try ConversationMealCommand(wireBody: source)
-    let result = try o.required("result").decode(ConversationMealCommandReply.self)
+    let result = try o.required("result").decode(ConversationMealCommandReply.self, selection: selection)
     let terminal = try o.required("terminal_receipt").optional {
       try $0.decode(ConversationMealDecisionReceiptSnapshot.self)
     }

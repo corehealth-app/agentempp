@@ -1,0 +1,3297 @@
+{
+  "provenance": "Separate v3 UNIT preparation, not relabeling of original v2, a canonical row, an API page or proof of a public producer. No new owner/Auth/command/registration/epoch IDs or literal clocks are invented. Root current rev0 is explicitly counterfactual unit data; linked current group is actual R3. Actual canonical2 stays canonical2 and must receive wrapper1 on the real API.",
+  "fixtures": [
+    {
+      "case": "root-primary-compatible-unit-pt-BR",
+      "provenance": "Counterfactual unchanged ROOT current group, derived exactly as existing ConversationMealPrimaryFeedbackPolicyTests.Fixture from genuine original food facts/IDs/receipt clocks. Revision0/lineage/noLastOp are UNIT assignments, NOT a real observed root rev0 or new SQL authority.",
+      "original_canonical_schema": "registration.feedback.v2",
+      "unit_canonical_produced_by": "actual pinned prepareRegistrationFeedbackV3; officialDay:null; never persisted/resealed",
+      "api_eligible_from_original_canonical": false,
+      "external_binding": {
+        "auth_user_id": "6fd8301f-dbcd-4780-885e-69b5146da34e",
+        "owner_id": "b3b01000-0000-4000-8000-000000006380",
+        "epoch": "c9ceee93-6d6b-4207-8bf9-de9b50ea93d4",
+        "command_id": "b3b01000-0000-4000-8000-000000006703",
+        "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+        "kind": "meal",
+        "local_date": "2026-11-04",
+        "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+        "admitted_at": "2026-11-04T08:38:28.660327Z",
+        "scope_provenance": "Actual Root4 immutable IDs, receipt and literal clocks; visible session generation remains a native unit grant."
+      },
+      "receipt": {
+        "schema": "conversation.meal-effect.v1",
+        "owner_id": "b3b01000-0000-4000-8000-000000006380",
+        "command_id": "b3b01000-0000-4000-8000-000000006703",
+        "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+        "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+        "provider_key": "conversation.meal/b3b01000-0000-4000-8000-000000006380/b3b01000-0000-4000-8000-000000006703",
+        "meal_type": "cafe",
+        "local_date": "2026-11-04",
+        "timezone": "UTC",
+        "consumed_at": "2026-11-04T08:38:29.164555Z",
+        "log_ids": [
+          "3513c30c-628d-408d-96f2-f4e87ad3993b",
+          "fbfe36ca-6497-4cd7-953a-356f9985f83c"
+        ],
+        "effect_version": "cmeal1:22eafbd56e192d4cce9fbb9ed27f067b4ac4d95d6f6eee5b7bd2884b963a9252"
+      },
+      "group": {
+        "schema": "conversation.meal-group.v1",
+        "owner_id": "b3b01000-0000-4000-8000-000000006380",
+        "command_id": "b3b01000-0000-4000-8000-000000006703",
+        "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+        "epoch": "c9ceee93-6d6b-4207-8bf9-de9b50ea93d4",
+        "admitted_at": "2026-11-04T08:38:28.660327Z",
+        "observed_at": "2026-11-04T08:38:30.205869+00:00",
+        "original_receipt": {
+          "schema": "conversation.meal-effect.v1",
+          "owner_id": "b3b01000-0000-4000-8000-000000006380",
+          "command_id": "b3b01000-0000-4000-8000-000000006703",
+          "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+          "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+          "provider_key": "conversation.meal/b3b01000-0000-4000-8000-000000006380/b3b01000-0000-4000-8000-000000006703",
+          "meal_type": "cafe",
+          "local_date": "2026-11-04",
+          "timezone": "UTC",
+          "consumed_at": "2026-11-04T08:38:29.164555Z",
+          "log_ids": [
+            "3513c30c-628d-408d-96f2-f4e87ad3993b",
+            "fbfe36ca-6497-4cd7-953a-356f9985f83c"
+          ],
+          "effect_version": "cmeal1:22eafbd56e192d4cce9fbb9ed27f067b4ac4d95d6f6eee5b7bd2884b963a9252"
+        },
+        "revision": 0,
+        "lineage_compatible": true,
+        "current": {
+          "expected_version": "v1:da2faf6b37127d5fc3a897d0e0bf59f7f406603fa7ac27fc945284dad7cbd1a1",
+          "local_date": "2026-11-04",
+          "timezone": "UTC",
+          "day_closed": false,
+          "items": [
+            {
+              "kcal": 125.7,
+              "protein_g": 6.49,
+              "carbs_g": 9.89,
+              "fat_g": 6.7,
+              "food_name": "leite integral",
+              "quantity_g": 206,
+              "id": "3513c30c-628d-408d-96f2-f4e87ad3993b",
+              "source": "canonical_fuzzy",
+              "quantity_display": {
+                "unit": "mL",
+                "grams_per_unit": 1.03,
+                "reference_id": "fao-infoods-v2-whole-milk-tb",
+                "estimated": true
+              },
+              "consumed_at": "2026-11-04T08:38:29.164555Z",
+              "meal_type": "cafe"
+            },
+            {
+              "kcal": 105.6,
+              "protein_g": 23.44,
+              "carbs_g": 1.88,
+              "fat_g": 0.47,
+              "food_name": "whey protein em pó",
+              "quantity_g": 30,
+              "id": "fbfe36ca-6497-4cd7-953a-356f9985f83c",
+              "source": "canonical_fuzzy",
+              "quantity_display": {
+                "unit": "scoop",
+                "grams_per_unit": 30,
+                "reference_id": "app-household-whey-scoop-v1",
+                "estimated": true
+              },
+              "consumed_at": "2026-11-04T08:38:29.164555Z",
+              "meal_type": "cafe"
+            }
+          ]
+        },
+        "last_operation": null,
+        "registration_undo_expires_at": "2026-11-04T08:43:29.164555+00:00",
+        "actions": {
+          "save": {
+            "allowed": true
+          },
+          "undo_registration": {
+            "allowed": false,
+            "reason": "version_changed"
+          },
+          "undo_save": {
+            "allowed": true
+          }
+        }
+      },
+      "expected_wrapper": {
+        "schema": "conversation.feedback-presentation.v2",
+        "mode": "historical",
+        "assistant": "Flow AI",
+        "original": {
+          "schema": "registration.feedback.v3",
+          "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+          "kind": "meal",
+          "local_date": "2026-11-04"
+        },
+        "status": "available",
+        "format": "sections",
+        "recorded": {
+          "kind": "meal",
+          "meal_kind": "cafe",
+          "items": [
+            {
+              "kcal": 125.7,
+              "protein_g": 6.49,
+              "carbs_g": 9.89,
+              "fat_g": 6.7,
+              "log_id": "3513c30c-628d-408d-96f2-f4e87ad3993b",
+              "food_name": "leite integral",
+              "quantity_g": 206,
+              "quantity": {
+                "value": 200,
+                "unit": "mL",
+                "estimated": true,
+                "reference_id": "fao-infoods-v2-whole-milk-tb"
+              },
+              "nutrition_source": "canonical_fuzzy"
+            },
+            {
+              "kcal": 105.6,
+              "protein_g": 23.44,
+              "carbs_g": 1.88,
+              "fat_g": 0.47,
+              "log_id": "fbfe36ca-6497-4cd7-953a-356f9985f83c",
+              "food_name": "whey protein em pó",
+              "quantity_g": 30,
+              "quantity": {
+                "value": 1,
+                "unit": "scoop",
+                "estimated": true,
+                "reference_id": "app-household-whey-scoop-v1"
+              },
+              "nutrition_source": "canonical_fuzzy"
+            }
+          ],
+          "totals": {
+            "kcal": 231.3,
+            "protein_g": 29.9,
+            "carbs_g": 11.8,
+            "fat_g": 7.2
+          }
+        },
+        "sections": [
+          {
+            "key": "saved",
+            "text": "Café da manhã registrado."
+          },
+          {
+            "key": "items",
+            "text": "leite integral · 200 mL (estimado, editável)\n125,7 kcal | Proteína: 6,49 g | Carboidratos: 9,89 g | Gorduras: 6,7 g\n\nwhey protein em pó · 1 medida (estimado, editável)\n105,6 kcal | Proteína: 23,44 g | Carboidratos: 1,88 g | Gorduras: 0,47 g"
+          },
+          {
+            "key": "summary",
+            "text": "Total aproximado da refeição: 231,3 kcal | Proteína: 29,9 g | Carboidratos: 11,8 g | Gorduras: 7,2 g"
+          },
+          {
+            "key": "day",
+            "text": "No momento deste registro (2026-11-04):\nO resumo oficial deste dia está indisponível; seu registro foi salvo."
+          },
+          {
+            "key": "block",
+            "text": "Progresso consolidado no momento do registro:\nOs dados consolidados do bloco estão indisponíveis."
+          },
+          {
+            "key": "education",
+            "text": "O comentário educativo está indisponível; seu registro continua salvo."
+          }
+        ],
+        "current_policy": {
+          "version": 1,
+          "observed_at": "2026-11-04T08:38:29.452121Z",
+          "assessment": "complete",
+          "recording_allowed": true,
+          "pause_weight_loss_guidance": false,
+          "professional_assessment_recommended": false,
+          "phase_selection_pending": false,
+          "target_source": "assigned_phase",
+          "hide": {
+            "objective": false,
+            "calories": false,
+            "protein": false,
+            "balance": false,
+            "block": false,
+            "budget": false
+          }
+        },
+        "provenance": {
+          "epoch": "c9ceee93-6d6b-4207-8bf9-de9b50ea93d4",
+          "command_id": "b3b01000-0000-4000-8000-000000006703",
+          "observed_at": "2026-11-04T08:38:29.452121Z"
+        }
+      },
+      "expected_primary": true,
+      "mutations": [
+        {
+          "case": "revision",
+          "group": {
+            "schema": "conversation.meal-group.v1",
+            "owner_id": "b3b01000-0000-4000-8000-000000006380",
+            "command_id": "b3b01000-0000-4000-8000-000000006703",
+            "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+            "epoch": "c9ceee93-6d6b-4207-8bf9-de9b50ea93d4",
+            "admitted_at": "2026-11-04T08:38:28.660327Z",
+            "observed_at": "2026-11-04T08:38:30.205869+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-effect.v1",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006703",
+              "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+              "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+              "provider_key": "conversation.meal/b3b01000-0000-4000-8000-000000006380/b3b01000-0000-4000-8000-000000006703",
+              "meal_type": "cafe",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T08:38:29.164555Z",
+              "log_ids": [
+                "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                "fbfe36ca-6497-4cd7-953a-356f9985f83c"
+              ],
+              "effect_version": "cmeal1:22eafbd56e192d4cce9fbb9ed27f067b4ac4d95d6f6eee5b7bd2884b963a9252"
+            },
+            "revision": 1,
+            "lineage_compatible": true,
+            "current": {
+              "expected_version": "v1:da2faf6b37127d5fc3a897d0e0bf59f7f406603fa7ac27fc945284dad7cbd1a1",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "kcal": 125.7,
+                  "protein_g": 6.49,
+                  "carbs_g": 9.89,
+                  "fat_g": 6.7,
+                  "food_name": "leite integral",
+                  "quantity_g": 206,
+                  "id": "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                  "source": "canonical_fuzzy",
+                  "quantity_display": {
+                    "unit": "mL",
+                    "grams_per_unit": 1.03,
+                    "reference_id": "fao-infoods-v2-whole-milk-tb",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                },
+                {
+                  "kcal": 105.6,
+                  "protein_g": 23.44,
+                  "carbs_g": 1.88,
+                  "fat_g": 0.47,
+                  "food_name": "whey protein em pó",
+                  "quantity_g": 30,
+                  "id": "fbfe36ca-6497-4cd7-953a-356f9985f83c",
+                  "source": "canonical_fuzzy",
+                  "quantity_display": {
+                    "unit": "scoop",
+                    "grams_per_unit": 30,
+                    "reference_id": "app-household-whey-scoop-v1",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T08:43:29.164555+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": false,
+                "reason": "version_changed"
+              },
+              "undo_save": {
+                "allowed": true
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "lineage",
+          "group": {
+            "schema": "conversation.meal-group.v1",
+            "owner_id": "b3b01000-0000-4000-8000-000000006380",
+            "command_id": "b3b01000-0000-4000-8000-000000006703",
+            "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+            "epoch": "c9ceee93-6d6b-4207-8bf9-de9b50ea93d4",
+            "admitted_at": "2026-11-04T08:38:28.660327Z",
+            "observed_at": "2026-11-04T08:38:30.205869+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-effect.v1",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006703",
+              "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+              "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+              "provider_key": "conversation.meal/b3b01000-0000-4000-8000-000000006380/b3b01000-0000-4000-8000-000000006703",
+              "meal_type": "cafe",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T08:38:29.164555Z",
+              "log_ids": [
+                "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                "fbfe36ca-6497-4cd7-953a-356f9985f83c"
+              ],
+              "effect_version": "cmeal1:22eafbd56e192d4cce9fbb9ed27f067b4ac4d95d6f6eee5b7bd2884b963a9252"
+            },
+            "revision": 0,
+            "lineage_compatible": false,
+            "current": {
+              "expected_version": "v1:da2faf6b37127d5fc3a897d0e0bf59f7f406603fa7ac27fc945284dad7cbd1a1",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "kcal": 125.7,
+                  "protein_g": 6.49,
+                  "carbs_g": 9.89,
+                  "fat_g": 6.7,
+                  "food_name": "leite integral",
+                  "quantity_g": 206,
+                  "id": "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                  "source": "canonical_fuzzy",
+                  "quantity_display": {
+                    "unit": "mL",
+                    "grams_per_unit": 1.03,
+                    "reference_id": "fao-infoods-v2-whole-milk-tb",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                },
+                {
+                  "kcal": 105.6,
+                  "protein_g": 23.44,
+                  "carbs_g": 1.88,
+                  "fat_g": 0.47,
+                  "food_name": "whey protein em pó",
+                  "quantity_g": 30,
+                  "id": "fbfe36ca-6497-4cd7-953a-356f9985f83c",
+                  "source": "canonical_fuzzy",
+                  "quantity_display": {
+                    "unit": "scoop",
+                    "grams_per_unit": 30,
+                    "reference_id": "app-household-whey-scoop-v1",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T08:43:29.164555+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": false,
+                "reason": "version_changed"
+              },
+              "undo_save": {
+                "allowed": true
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "current-null",
+          "group": {
+            "schema": "conversation.meal-group.v1",
+            "owner_id": "b3b01000-0000-4000-8000-000000006380",
+            "command_id": "b3b01000-0000-4000-8000-000000006703",
+            "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+            "epoch": "c9ceee93-6d6b-4207-8bf9-de9b50ea93d4",
+            "admitted_at": "2026-11-04T08:38:28.660327Z",
+            "observed_at": "2026-11-04T08:38:30.205869+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-effect.v1",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006703",
+              "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+              "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+              "provider_key": "conversation.meal/b3b01000-0000-4000-8000-000000006380/b3b01000-0000-4000-8000-000000006703",
+              "meal_type": "cafe",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T08:38:29.164555Z",
+              "log_ids": [
+                "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                "fbfe36ca-6497-4cd7-953a-356f9985f83c"
+              ],
+              "effect_version": "cmeal1:22eafbd56e192d4cce9fbb9ed27f067b4ac4d95d6f6eee5b7bd2884b963a9252"
+            },
+            "revision": 0,
+            "lineage_compatible": true,
+            "current": null,
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T08:43:29.164555+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": false,
+                "reason": "version_changed"
+              },
+              "undo_save": {
+                "allowed": true
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "quantity",
+          "group": {
+            "schema": "conversation.meal-group.v1",
+            "owner_id": "b3b01000-0000-4000-8000-000000006380",
+            "command_id": "b3b01000-0000-4000-8000-000000006703",
+            "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+            "epoch": "c9ceee93-6d6b-4207-8bf9-de9b50ea93d4",
+            "admitted_at": "2026-11-04T08:38:28.660327Z",
+            "observed_at": "2026-11-04T08:38:30.205869+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-effect.v1",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006703",
+              "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+              "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+              "provider_key": "conversation.meal/b3b01000-0000-4000-8000-000000006380/b3b01000-0000-4000-8000-000000006703",
+              "meal_type": "cafe",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T08:38:29.164555Z",
+              "log_ids": [
+                "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                "fbfe36ca-6497-4cd7-953a-356f9985f83c"
+              ],
+              "effect_version": "cmeal1:22eafbd56e192d4cce9fbb9ed27f067b4ac4d95d6f6eee5b7bd2884b963a9252"
+            },
+            "revision": 0,
+            "lineage_compatible": true,
+            "current": {
+              "expected_version": "v1:da2faf6b37127d5fc3a897d0e0bf59f7f406603fa7ac27fc945284dad7cbd1a1",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "kcal": 125.7,
+                  "protein_g": 6.49,
+                  "carbs_g": 9.89,
+                  "fat_g": 6.7,
+                  "food_name": "leite integral",
+                  "quantity_g": 207,
+                  "id": "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                  "source": "canonical_fuzzy",
+                  "quantity_display": {
+                    "unit": "mL",
+                    "grams_per_unit": 1.03,
+                    "reference_id": "fao-infoods-v2-whole-milk-tb",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                },
+                {
+                  "kcal": 105.6,
+                  "protein_g": 23.44,
+                  "carbs_g": 1.88,
+                  "fat_g": 0.47,
+                  "food_name": "whey protein em pó",
+                  "quantity_g": 30,
+                  "id": "fbfe36ca-6497-4cd7-953a-356f9985f83c",
+                  "source": "canonical_fuzzy",
+                  "quantity_display": {
+                    "unit": "scoop",
+                    "grams_per_unit": 30,
+                    "reference_id": "app-household-whey-scoop-v1",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T08:43:29.164555+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": false,
+                "reason": "version_changed"
+              },
+              "undo_save": {
+                "allowed": true
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "source-null",
+          "group": {
+            "schema": "conversation.meal-group.v1",
+            "owner_id": "b3b01000-0000-4000-8000-000000006380",
+            "command_id": "b3b01000-0000-4000-8000-000000006703",
+            "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+            "epoch": "c9ceee93-6d6b-4207-8bf9-de9b50ea93d4",
+            "admitted_at": "2026-11-04T08:38:28.660327Z",
+            "observed_at": "2026-11-04T08:38:30.205869+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-effect.v1",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006703",
+              "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+              "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+              "provider_key": "conversation.meal/b3b01000-0000-4000-8000-000000006380/b3b01000-0000-4000-8000-000000006703",
+              "meal_type": "cafe",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T08:38:29.164555Z",
+              "log_ids": [
+                "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                "fbfe36ca-6497-4cd7-953a-356f9985f83c"
+              ],
+              "effect_version": "cmeal1:22eafbd56e192d4cce9fbb9ed27f067b4ac4d95d6f6eee5b7bd2884b963a9252"
+            },
+            "revision": 0,
+            "lineage_compatible": true,
+            "current": {
+              "expected_version": "v1:da2faf6b37127d5fc3a897d0e0bf59f7f406603fa7ac27fc945284dad7cbd1a1",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "kcal": 125.7,
+                  "protein_g": 6.49,
+                  "carbs_g": 9.89,
+                  "fat_g": 6.7,
+                  "food_name": "leite integral",
+                  "quantity_g": 206,
+                  "id": "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                  "source": null,
+                  "quantity_display": {
+                    "unit": "mL",
+                    "grams_per_unit": 1.03,
+                    "reference_id": "fao-infoods-v2-whole-milk-tb",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                },
+                {
+                  "kcal": 105.6,
+                  "protein_g": 23.44,
+                  "carbs_g": 1.88,
+                  "fat_g": 0.47,
+                  "food_name": "whey protein em pó",
+                  "quantity_g": 30,
+                  "id": "fbfe36ca-6497-4cd7-953a-356f9985f83c",
+                  "source": "canonical_fuzzy",
+                  "quantity_display": {
+                    "unit": "scoop",
+                    "grams_per_unit": 30,
+                    "reference_id": "app-household-whey-scoop-v1",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T08:43:29.164555+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": false,
+                "reason": "version_changed"
+              },
+              "undo_save": {
+                "allowed": true
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "epoch",
+          "group": {
+            "schema": "conversation.meal-group.v1",
+            "owner_id": "b3b01000-0000-4000-8000-000000006380",
+            "command_id": "b3b01000-0000-4000-8000-000000006703",
+            "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+            "epoch": "b7720000-0000-4000-8000-000000009999",
+            "admitted_at": "2026-11-04T08:38:28.660327Z",
+            "observed_at": "2026-11-04T08:38:30.205869+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-effect.v1",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006703",
+              "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+              "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+              "provider_key": "conversation.meal/b3b01000-0000-4000-8000-000000006380/b3b01000-0000-4000-8000-000000006703",
+              "meal_type": "cafe",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T08:38:29.164555Z",
+              "log_ids": [
+                "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                "fbfe36ca-6497-4cd7-953a-356f9985f83c"
+              ],
+              "effect_version": "cmeal1:22eafbd56e192d4cce9fbb9ed27f067b4ac4d95d6f6eee5b7bd2884b963a9252"
+            },
+            "revision": 0,
+            "lineage_compatible": true,
+            "current": {
+              "expected_version": "v1:da2faf6b37127d5fc3a897d0e0bf59f7f406603fa7ac27fc945284dad7cbd1a1",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "kcal": 125.7,
+                  "protein_g": 6.49,
+                  "carbs_g": 9.89,
+                  "fat_g": 6.7,
+                  "food_name": "leite integral",
+                  "quantity_g": 206,
+                  "id": "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                  "source": "canonical_fuzzy",
+                  "quantity_display": {
+                    "unit": "mL",
+                    "grams_per_unit": 1.03,
+                    "reference_id": "fao-infoods-v2-whole-milk-tb",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                },
+                {
+                  "kcal": 105.6,
+                  "protein_g": 23.44,
+                  "carbs_g": 1.88,
+                  "fat_g": 0.47,
+                  "food_name": "whey protein em pó",
+                  "quantity_g": 30,
+                  "id": "fbfe36ca-6497-4cd7-953a-356f9985f83c",
+                  "source": "canonical_fuzzy",
+                  "quantity_display": {
+                    "unit": "scoop",
+                    "grams_per_unit": 30,
+                    "reference_id": "app-household-whey-scoop-v1",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T08:43:29.164555+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": false,
+                "reason": "version_changed"
+              },
+              "undo_save": {
+                "allowed": true
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "command",
+          "group": {
+            "schema": "conversation.meal-group.v1",
+            "owner_id": "b3b01000-0000-4000-8000-000000006380",
+            "command_id": "b7720000-0000-4000-8000-000000009999",
+            "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+            "epoch": "c9ceee93-6d6b-4207-8bf9-de9b50ea93d4",
+            "admitted_at": "2026-11-04T08:38:28.660327Z",
+            "observed_at": "2026-11-04T08:38:30.205869+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-effect.v1",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006703",
+              "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+              "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+              "provider_key": "conversation.meal/b3b01000-0000-4000-8000-000000006380/b3b01000-0000-4000-8000-000000006703",
+              "meal_type": "cafe",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T08:38:29.164555Z",
+              "log_ids": [
+                "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                "fbfe36ca-6497-4cd7-953a-356f9985f83c"
+              ],
+              "effect_version": "cmeal1:22eafbd56e192d4cce9fbb9ed27f067b4ac4d95d6f6eee5b7bd2884b963a9252"
+            },
+            "revision": 0,
+            "lineage_compatible": true,
+            "current": {
+              "expected_version": "v1:da2faf6b37127d5fc3a897d0e0bf59f7f406603fa7ac27fc945284dad7cbd1a1",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "kcal": 125.7,
+                  "protein_g": 6.49,
+                  "carbs_g": 9.89,
+                  "fat_g": 6.7,
+                  "food_name": "leite integral",
+                  "quantity_g": 206,
+                  "id": "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                  "source": "canonical_fuzzy",
+                  "quantity_display": {
+                    "unit": "mL",
+                    "grams_per_unit": 1.03,
+                    "reference_id": "fao-infoods-v2-whole-milk-tb",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                },
+                {
+                  "kcal": 105.6,
+                  "protein_g": 23.44,
+                  "carbs_g": 1.88,
+                  "fat_g": 0.47,
+                  "food_name": "whey protein em pó",
+                  "quantity_g": 30,
+                  "id": "fbfe36ca-6497-4cd7-953a-356f9985f83c",
+                  "source": "canonical_fuzzy",
+                  "quantity_display": {
+                    "unit": "scoop",
+                    "grams_per_unit": 30,
+                    "reference_id": "app-household-whey-scoop-v1",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T08:43:29.164555+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": false,
+                "reason": "version_changed"
+              },
+              "undo_save": {
+                "allowed": true
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "clock-before-policy",
+          "group": {
+            "schema": "conversation.meal-group.v1",
+            "owner_id": "b3b01000-0000-4000-8000-000000006380",
+            "command_id": "b3b01000-0000-4000-8000-000000006703",
+            "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+            "epoch": "c9ceee93-6d6b-4207-8bf9-de9b50ea93d4",
+            "admitted_at": "2026-11-04T08:38:28.660327Z",
+            "observed_at": "2026-11-04T08:38:29.164555Z",
+            "original_receipt": {
+              "schema": "conversation.meal-effect.v1",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006703",
+              "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+              "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+              "provider_key": "conversation.meal/b3b01000-0000-4000-8000-000000006380/b3b01000-0000-4000-8000-000000006703",
+              "meal_type": "cafe",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T08:38:29.164555Z",
+              "log_ids": [
+                "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                "fbfe36ca-6497-4cd7-953a-356f9985f83c"
+              ],
+              "effect_version": "cmeal1:22eafbd56e192d4cce9fbb9ed27f067b4ac4d95d6f6eee5b7bd2884b963a9252"
+            },
+            "revision": 0,
+            "lineage_compatible": true,
+            "current": {
+              "expected_version": "v1:da2faf6b37127d5fc3a897d0e0bf59f7f406603fa7ac27fc945284dad7cbd1a1",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "kcal": 125.7,
+                  "protein_g": 6.49,
+                  "carbs_g": 9.89,
+                  "fat_g": 6.7,
+                  "food_name": "leite integral",
+                  "quantity_g": 206,
+                  "id": "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                  "source": "canonical_fuzzy",
+                  "quantity_display": {
+                    "unit": "mL",
+                    "grams_per_unit": 1.03,
+                    "reference_id": "fao-infoods-v2-whole-milk-tb",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                },
+                {
+                  "kcal": 105.6,
+                  "protein_g": 23.44,
+                  "carbs_g": 1.88,
+                  "fat_g": 0.47,
+                  "food_name": "whey protein em pó",
+                  "quantity_g": 30,
+                  "id": "fbfe36ca-6497-4cd7-953a-356f9985f83c",
+                  "source": "canonical_fuzzy",
+                  "quantity_display": {
+                    "unit": "scoop",
+                    "grams_per_unit": 30,
+                    "reference_id": "app-household-whey-scoop-v1",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T08:43:29.164555+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": false,
+                "reason": "version_changed"
+              },
+              "undo_save": {
+                "allowed": true
+              }
+            }
+          },
+          "expected_primary": false
+        }
+      ]
+    },
+    {
+      "case": "root-primary-compatible-unit-en",
+      "provenance": "Counterfactual unchanged ROOT current group, derived exactly as existing ConversationMealPrimaryFeedbackPolicyTests.Fixture from genuine original food facts/IDs/receipt clocks. Revision0/lineage/noLastOp are UNIT assignments, NOT a real observed root rev0 or new SQL authority.",
+      "original_canonical_schema": "registration.feedback.v2",
+      "unit_canonical_produced_by": "actual pinned prepareRegistrationFeedbackV3; officialDay:null; never persisted/resealed",
+      "api_eligible_from_original_canonical": false,
+      "external_binding": {
+        "auth_user_id": "6fd8301f-dbcd-4780-885e-69b5146da34e",
+        "owner_id": "b3b01000-0000-4000-8000-000000006380",
+        "epoch": "c9ceee93-6d6b-4207-8bf9-de9b50ea93d4",
+        "command_id": "b3b01000-0000-4000-8000-000000006703",
+        "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+        "kind": "meal",
+        "local_date": "2026-11-04",
+        "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+        "admitted_at": "2026-11-04T08:38:28.660327Z",
+        "scope_provenance": "Actual Root4 immutable IDs, receipt and literal clocks; visible session generation remains a native unit grant."
+      },
+      "receipt": {
+        "schema": "conversation.meal-effect.v1",
+        "owner_id": "b3b01000-0000-4000-8000-000000006380",
+        "command_id": "b3b01000-0000-4000-8000-000000006703",
+        "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+        "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+        "provider_key": "conversation.meal/b3b01000-0000-4000-8000-000000006380/b3b01000-0000-4000-8000-000000006703",
+        "meal_type": "cafe",
+        "local_date": "2026-11-04",
+        "timezone": "UTC",
+        "consumed_at": "2026-11-04T08:38:29.164555Z",
+        "log_ids": [
+          "3513c30c-628d-408d-96f2-f4e87ad3993b",
+          "fbfe36ca-6497-4cd7-953a-356f9985f83c"
+        ],
+        "effect_version": "cmeal1:22eafbd56e192d4cce9fbb9ed27f067b4ac4d95d6f6eee5b7bd2884b963a9252"
+      },
+      "group": {
+        "schema": "conversation.meal-group.v1",
+        "owner_id": "b3b01000-0000-4000-8000-000000006380",
+        "command_id": "b3b01000-0000-4000-8000-000000006703",
+        "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+        "epoch": "c9ceee93-6d6b-4207-8bf9-de9b50ea93d4",
+        "admitted_at": "2026-11-04T08:38:28.660327Z",
+        "observed_at": "2026-11-04T08:38:30.205869+00:00",
+        "original_receipt": {
+          "schema": "conversation.meal-effect.v1",
+          "owner_id": "b3b01000-0000-4000-8000-000000006380",
+          "command_id": "b3b01000-0000-4000-8000-000000006703",
+          "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+          "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+          "provider_key": "conversation.meal/b3b01000-0000-4000-8000-000000006380/b3b01000-0000-4000-8000-000000006703",
+          "meal_type": "cafe",
+          "local_date": "2026-11-04",
+          "timezone": "UTC",
+          "consumed_at": "2026-11-04T08:38:29.164555Z",
+          "log_ids": [
+            "3513c30c-628d-408d-96f2-f4e87ad3993b",
+            "fbfe36ca-6497-4cd7-953a-356f9985f83c"
+          ],
+          "effect_version": "cmeal1:22eafbd56e192d4cce9fbb9ed27f067b4ac4d95d6f6eee5b7bd2884b963a9252"
+        },
+        "revision": 0,
+        "lineage_compatible": true,
+        "current": {
+          "expected_version": "v1:da2faf6b37127d5fc3a897d0e0bf59f7f406603fa7ac27fc945284dad7cbd1a1",
+          "local_date": "2026-11-04",
+          "timezone": "UTC",
+          "day_closed": false,
+          "items": [
+            {
+              "kcal": 125.7,
+              "protein_g": 6.49,
+              "carbs_g": 9.89,
+              "fat_g": 6.7,
+              "food_name": "leite integral",
+              "quantity_g": 206,
+              "id": "3513c30c-628d-408d-96f2-f4e87ad3993b",
+              "source": "canonical_fuzzy",
+              "quantity_display": {
+                "unit": "mL",
+                "grams_per_unit": 1.03,
+                "reference_id": "fao-infoods-v2-whole-milk-tb",
+                "estimated": true
+              },
+              "consumed_at": "2026-11-04T08:38:29.164555Z",
+              "meal_type": "cafe"
+            },
+            {
+              "kcal": 105.6,
+              "protein_g": 23.44,
+              "carbs_g": 1.88,
+              "fat_g": 0.47,
+              "food_name": "whey protein em pó",
+              "quantity_g": 30,
+              "id": "fbfe36ca-6497-4cd7-953a-356f9985f83c",
+              "source": "canonical_fuzzy",
+              "quantity_display": {
+                "unit": "scoop",
+                "grams_per_unit": 30,
+                "reference_id": "app-household-whey-scoop-v1",
+                "estimated": true
+              },
+              "consumed_at": "2026-11-04T08:38:29.164555Z",
+              "meal_type": "cafe"
+            }
+          ]
+        },
+        "last_operation": null,
+        "registration_undo_expires_at": "2026-11-04T08:43:29.164555+00:00",
+        "actions": {
+          "save": {
+            "allowed": true
+          },
+          "undo_registration": {
+            "allowed": false,
+            "reason": "version_changed"
+          },
+          "undo_save": {
+            "allowed": true
+          }
+        }
+      },
+      "expected_wrapper": {
+        "schema": "conversation.feedback-presentation.v2",
+        "mode": "historical",
+        "assistant": "Flow AI",
+        "original": {
+          "schema": "registration.feedback.v3",
+          "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+          "kind": "meal",
+          "local_date": "2026-11-04"
+        },
+        "status": "available",
+        "format": "sections",
+        "recorded": {
+          "kind": "meal",
+          "meal_kind": "cafe",
+          "items": [
+            {
+              "kcal": 125.7,
+              "protein_g": 6.49,
+              "carbs_g": 9.89,
+              "fat_g": 6.7,
+              "log_id": "3513c30c-628d-408d-96f2-f4e87ad3993b",
+              "food_name": "leite integral",
+              "quantity_g": 206,
+              "quantity": {
+                "value": 200,
+                "unit": "mL",
+                "estimated": true,
+                "reference_id": "fao-infoods-v2-whole-milk-tb"
+              },
+              "nutrition_source": "canonical_fuzzy"
+            },
+            {
+              "kcal": 105.6,
+              "protein_g": 23.44,
+              "carbs_g": 1.88,
+              "fat_g": 0.47,
+              "log_id": "fbfe36ca-6497-4cd7-953a-356f9985f83c",
+              "food_name": "whey protein em pó",
+              "quantity_g": 30,
+              "quantity": {
+                "value": 1,
+                "unit": "scoop",
+                "estimated": true,
+                "reference_id": "app-household-whey-scoop-v1"
+              },
+              "nutrition_source": "canonical_fuzzy"
+            }
+          ],
+          "totals": {
+            "kcal": 231.3,
+            "protein_g": 29.9,
+            "carbs_g": 11.8,
+            "fat_g": 7.2
+          }
+        },
+        "sections": [
+          {
+            "key": "saved",
+            "text": "Breakfast recorded."
+          },
+          {
+            "key": "items",
+            "text": "leite integral · 200 mL (estimated, editable)\n125.7 kcal | Protein: 6.49 g | Carbohydrates: 9.89 g | Fat: 6.7 g\n\nwhey protein em pó · 1 scoop (estimated, editable)\n105.6 kcal | Protein: 23.44 g | Carbohydrates: 1.88 g | Fat: 0.47 g"
+          },
+          {
+            "key": "summary",
+            "text": "Approximate meal total: 231.3 kcal | Protein: 29.9 g | Carbohydrates: 11.8 g | Fat: 7.2 g"
+          },
+          {
+            "key": "day",
+            "text": "At the time of this registration (2026-11-04):\nThe official summary for this day is unavailable; your record was saved."
+          },
+          {
+            "key": "block",
+            "text": "Historical consolidated progress:\nConsolidated block data is unavailable."
+          },
+          {
+            "key": "education",
+            "text": "The educational comment is unavailable; your record remains saved."
+          }
+        ],
+        "current_policy": {
+          "version": 1,
+          "observed_at": "2026-11-04T08:38:29.452121Z",
+          "assessment": "complete",
+          "recording_allowed": true,
+          "pause_weight_loss_guidance": false,
+          "professional_assessment_recommended": false,
+          "phase_selection_pending": false,
+          "target_source": "assigned_phase",
+          "hide": {
+            "objective": false,
+            "calories": false,
+            "protein": false,
+            "balance": false,
+            "block": false,
+            "budget": false
+          }
+        },
+        "provenance": {
+          "epoch": "c9ceee93-6d6b-4207-8bf9-de9b50ea93d4",
+          "command_id": "b3b01000-0000-4000-8000-000000006703",
+          "observed_at": "2026-11-04T08:38:29.452121Z"
+        }
+      },
+      "expected_primary": true,
+      "mutations": [
+        {
+          "case": "revision",
+          "group": {
+            "schema": "conversation.meal-group.v1",
+            "owner_id": "b3b01000-0000-4000-8000-000000006380",
+            "command_id": "b3b01000-0000-4000-8000-000000006703",
+            "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+            "epoch": "c9ceee93-6d6b-4207-8bf9-de9b50ea93d4",
+            "admitted_at": "2026-11-04T08:38:28.660327Z",
+            "observed_at": "2026-11-04T08:38:30.205869+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-effect.v1",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006703",
+              "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+              "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+              "provider_key": "conversation.meal/b3b01000-0000-4000-8000-000000006380/b3b01000-0000-4000-8000-000000006703",
+              "meal_type": "cafe",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T08:38:29.164555Z",
+              "log_ids": [
+                "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                "fbfe36ca-6497-4cd7-953a-356f9985f83c"
+              ],
+              "effect_version": "cmeal1:22eafbd56e192d4cce9fbb9ed27f067b4ac4d95d6f6eee5b7bd2884b963a9252"
+            },
+            "revision": 1,
+            "lineage_compatible": true,
+            "current": {
+              "expected_version": "v1:da2faf6b37127d5fc3a897d0e0bf59f7f406603fa7ac27fc945284dad7cbd1a1",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "kcal": 125.7,
+                  "protein_g": 6.49,
+                  "carbs_g": 9.89,
+                  "fat_g": 6.7,
+                  "food_name": "leite integral",
+                  "quantity_g": 206,
+                  "id": "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                  "source": "canonical_fuzzy",
+                  "quantity_display": {
+                    "unit": "mL",
+                    "grams_per_unit": 1.03,
+                    "reference_id": "fao-infoods-v2-whole-milk-tb",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                },
+                {
+                  "kcal": 105.6,
+                  "protein_g": 23.44,
+                  "carbs_g": 1.88,
+                  "fat_g": 0.47,
+                  "food_name": "whey protein em pó",
+                  "quantity_g": 30,
+                  "id": "fbfe36ca-6497-4cd7-953a-356f9985f83c",
+                  "source": "canonical_fuzzy",
+                  "quantity_display": {
+                    "unit": "scoop",
+                    "grams_per_unit": 30,
+                    "reference_id": "app-household-whey-scoop-v1",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T08:43:29.164555+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": false,
+                "reason": "version_changed"
+              },
+              "undo_save": {
+                "allowed": true
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "lineage",
+          "group": {
+            "schema": "conversation.meal-group.v1",
+            "owner_id": "b3b01000-0000-4000-8000-000000006380",
+            "command_id": "b3b01000-0000-4000-8000-000000006703",
+            "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+            "epoch": "c9ceee93-6d6b-4207-8bf9-de9b50ea93d4",
+            "admitted_at": "2026-11-04T08:38:28.660327Z",
+            "observed_at": "2026-11-04T08:38:30.205869+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-effect.v1",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006703",
+              "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+              "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+              "provider_key": "conversation.meal/b3b01000-0000-4000-8000-000000006380/b3b01000-0000-4000-8000-000000006703",
+              "meal_type": "cafe",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T08:38:29.164555Z",
+              "log_ids": [
+                "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                "fbfe36ca-6497-4cd7-953a-356f9985f83c"
+              ],
+              "effect_version": "cmeal1:22eafbd56e192d4cce9fbb9ed27f067b4ac4d95d6f6eee5b7bd2884b963a9252"
+            },
+            "revision": 0,
+            "lineage_compatible": false,
+            "current": {
+              "expected_version": "v1:da2faf6b37127d5fc3a897d0e0bf59f7f406603fa7ac27fc945284dad7cbd1a1",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "kcal": 125.7,
+                  "protein_g": 6.49,
+                  "carbs_g": 9.89,
+                  "fat_g": 6.7,
+                  "food_name": "leite integral",
+                  "quantity_g": 206,
+                  "id": "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                  "source": "canonical_fuzzy",
+                  "quantity_display": {
+                    "unit": "mL",
+                    "grams_per_unit": 1.03,
+                    "reference_id": "fao-infoods-v2-whole-milk-tb",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                },
+                {
+                  "kcal": 105.6,
+                  "protein_g": 23.44,
+                  "carbs_g": 1.88,
+                  "fat_g": 0.47,
+                  "food_name": "whey protein em pó",
+                  "quantity_g": 30,
+                  "id": "fbfe36ca-6497-4cd7-953a-356f9985f83c",
+                  "source": "canonical_fuzzy",
+                  "quantity_display": {
+                    "unit": "scoop",
+                    "grams_per_unit": 30,
+                    "reference_id": "app-household-whey-scoop-v1",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T08:43:29.164555+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": false,
+                "reason": "version_changed"
+              },
+              "undo_save": {
+                "allowed": true
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "current-null",
+          "group": {
+            "schema": "conversation.meal-group.v1",
+            "owner_id": "b3b01000-0000-4000-8000-000000006380",
+            "command_id": "b3b01000-0000-4000-8000-000000006703",
+            "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+            "epoch": "c9ceee93-6d6b-4207-8bf9-de9b50ea93d4",
+            "admitted_at": "2026-11-04T08:38:28.660327Z",
+            "observed_at": "2026-11-04T08:38:30.205869+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-effect.v1",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006703",
+              "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+              "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+              "provider_key": "conversation.meal/b3b01000-0000-4000-8000-000000006380/b3b01000-0000-4000-8000-000000006703",
+              "meal_type": "cafe",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T08:38:29.164555Z",
+              "log_ids": [
+                "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                "fbfe36ca-6497-4cd7-953a-356f9985f83c"
+              ],
+              "effect_version": "cmeal1:22eafbd56e192d4cce9fbb9ed27f067b4ac4d95d6f6eee5b7bd2884b963a9252"
+            },
+            "revision": 0,
+            "lineage_compatible": true,
+            "current": null,
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T08:43:29.164555+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": false,
+                "reason": "version_changed"
+              },
+              "undo_save": {
+                "allowed": true
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "quantity",
+          "group": {
+            "schema": "conversation.meal-group.v1",
+            "owner_id": "b3b01000-0000-4000-8000-000000006380",
+            "command_id": "b3b01000-0000-4000-8000-000000006703",
+            "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+            "epoch": "c9ceee93-6d6b-4207-8bf9-de9b50ea93d4",
+            "admitted_at": "2026-11-04T08:38:28.660327Z",
+            "observed_at": "2026-11-04T08:38:30.205869+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-effect.v1",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006703",
+              "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+              "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+              "provider_key": "conversation.meal/b3b01000-0000-4000-8000-000000006380/b3b01000-0000-4000-8000-000000006703",
+              "meal_type": "cafe",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T08:38:29.164555Z",
+              "log_ids": [
+                "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                "fbfe36ca-6497-4cd7-953a-356f9985f83c"
+              ],
+              "effect_version": "cmeal1:22eafbd56e192d4cce9fbb9ed27f067b4ac4d95d6f6eee5b7bd2884b963a9252"
+            },
+            "revision": 0,
+            "lineage_compatible": true,
+            "current": {
+              "expected_version": "v1:da2faf6b37127d5fc3a897d0e0bf59f7f406603fa7ac27fc945284dad7cbd1a1",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "kcal": 125.7,
+                  "protein_g": 6.49,
+                  "carbs_g": 9.89,
+                  "fat_g": 6.7,
+                  "food_name": "leite integral",
+                  "quantity_g": 207,
+                  "id": "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                  "source": "canonical_fuzzy",
+                  "quantity_display": {
+                    "unit": "mL",
+                    "grams_per_unit": 1.03,
+                    "reference_id": "fao-infoods-v2-whole-milk-tb",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                },
+                {
+                  "kcal": 105.6,
+                  "protein_g": 23.44,
+                  "carbs_g": 1.88,
+                  "fat_g": 0.47,
+                  "food_name": "whey protein em pó",
+                  "quantity_g": 30,
+                  "id": "fbfe36ca-6497-4cd7-953a-356f9985f83c",
+                  "source": "canonical_fuzzy",
+                  "quantity_display": {
+                    "unit": "scoop",
+                    "grams_per_unit": 30,
+                    "reference_id": "app-household-whey-scoop-v1",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T08:43:29.164555+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": false,
+                "reason": "version_changed"
+              },
+              "undo_save": {
+                "allowed": true
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "source-null",
+          "group": {
+            "schema": "conversation.meal-group.v1",
+            "owner_id": "b3b01000-0000-4000-8000-000000006380",
+            "command_id": "b3b01000-0000-4000-8000-000000006703",
+            "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+            "epoch": "c9ceee93-6d6b-4207-8bf9-de9b50ea93d4",
+            "admitted_at": "2026-11-04T08:38:28.660327Z",
+            "observed_at": "2026-11-04T08:38:30.205869+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-effect.v1",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006703",
+              "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+              "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+              "provider_key": "conversation.meal/b3b01000-0000-4000-8000-000000006380/b3b01000-0000-4000-8000-000000006703",
+              "meal_type": "cafe",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T08:38:29.164555Z",
+              "log_ids": [
+                "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                "fbfe36ca-6497-4cd7-953a-356f9985f83c"
+              ],
+              "effect_version": "cmeal1:22eafbd56e192d4cce9fbb9ed27f067b4ac4d95d6f6eee5b7bd2884b963a9252"
+            },
+            "revision": 0,
+            "lineage_compatible": true,
+            "current": {
+              "expected_version": "v1:da2faf6b37127d5fc3a897d0e0bf59f7f406603fa7ac27fc945284dad7cbd1a1",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "kcal": 125.7,
+                  "protein_g": 6.49,
+                  "carbs_g": 9.89,
+                  "fat_g": 6.7,
+                  "food_name": "leite integral",
+                  "quantity_g": 206,
+                  "id": "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                  "source": null,
+                  "quantity_display": {
+                    "unit": "mL",
+                    "grams_per_unit": 1.03,
+                    "reference_id": "fao-infoods-v2-whole-milk-tb",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                },
+                {
+                  "kcal": 105.6,
+                  "protein_g": 23.44,
+                  "carbs_g": 1.88,
+                  "fat_g": 0.47,
+                  "food_name": "whey protein em pó",
+                  "quantity_g": 30,
+                  "id": "fbfe36ca-6497-4cd7-953a-356f9985f83c",
+                  "source": "canonical_fuzzy",
+                  "quantity_display": {
+                    "unit": "scoop",
+                    "grams_per_unit": 30,
+                    "reference_id": "app-household-whey-scoop-v1",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T08:43:29.164555+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": false,
+                "reason": "version_changed"
+              },
+              "undo_save": {
+                "allowed": true
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "epoch",
+          "group": {
+            "schema": "conversation.meal-group.v1",
+            "owner_id": "b3b01000-0000-4000-8000-000000006380",
+            "command_id": "b3b01000-0000-4000-8000-000000006703",
+            "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+            "epoch": "b7720000-0000-4000-8000-000000009999",
+            "admitted_at": "2026-11-04T08:38:28.660327Z",
+            "observed_at": "2026-11-04T08:38:30.205869+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-effect.v1",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006703",
+              "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+              "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+              "provider_key": "conversation.meal/b3b01000-0000-4000-8000-000000006380/b3b01000-0000-4000-8000-000000006703",
+              "meal_type": "cafe",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T08:38:29.164555Z",
+              "log_ids": [
+                "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                "fbfe36ca-6497-4cd7-953a-356f9985f83c"
+              ],
+              "effect_version": "cmeal1:22eafbd56e192d4cce9fbb9ed27f067b4ac4d95d6f6eee5b7bd2884b963a9252"
+            },
+            "revision": 0,
+            "lineage_compatible": true,
+            "current": {
+              "expected_version": "v1:da2faf6b37127d5fc3a897d0e0bf59f7f406603fa7ac27fc945284dad7cbd1a1",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "kcal": 125.7,
+                  "protein_g": 6.49,
+                  "carbs_g": 9.89,
+                  "fat_g": 6.7,
+                  "food_name": "leite integral",
+                  "quantity_g": 206,
+                  "id": "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                  "source": "canonical_fuzzy",
+                  "quantity_display": {
+                    "unit": "mL",
+                    "grams_per_unit": 1.03,
+                    "reference_id": "fao-infoods-v2-whole-milk-tb",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                },
+                {
+                  "kcal": 105.6,
+                  "protein_g": 23.44,
+                  "carbs_g": 1.88,
+                  "fat_g": 0.47,
+                  "food_name": "whey protein em pó",
+                  "quantity_g": 30,
+                  "id": "fbfe36ca-6497-4cd7-953a-356f9985f83c",
+                  "source": "canonical_fuzzy",
+                  "quantity_display": {
+                    "unit": "scoop",
+                    "grams_per_unit": 30,
+                    "reference_id": "app-household-whey-scoop-v1",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T08:43:29.164555+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": false,
+                "reason": "version_changed"
+              },
+              "undo_save": {
+                "allowed": true
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "command",
+          "group": {
+            "schema": "conversation.meal-group.v1",
+            "owner_id": "b3b01000-0000-4000-8000-000000006380",
+            "command_id": "b7720000-0000-4000-8000-000000009999",
+            "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+            "epoch": "c9ceee93-6d6b-4207-8bf9-de9b50ea93d4",
+            "admitted_at": "2026-11-04T08:38:28.660327Z",
+            "observed_at": "2026-11-04T08:38:30.205869+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-effect.v1",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006703",
+              "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+              "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+              "provider_key": "conversation.meal/b3b01000-0000-4000-8000-000000006380/b3b01000-0000-4000-8000-000000006703",
+              "meal_type": "cafe",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T08:38:29.164555Z",
+              "log_ids": [
+                "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                "fbfe36ca-6497-4cd7-953a-356f9985f83c"
+              ],
+              "effect_version": "cmeal1:22eafbd56e192d4cce9fbb9ed27f067b4ac4d95d6f6eee5b7bd2884b963a9252"
+            },
+            "revision": 0,
+            "lineage_compatible": true,
+            "current": {
+              "expected_version": "v1:da2faf6b37127d5fc3a897d0e0bf59f7f406603fa7ac27fc945284dad7cbd1a1",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "kcal": 125.7,
+                  "protein_g": 6.49,
+                  "carbs_g": 9.89,
+                  "fat_g": 6.7,
+                  "food_name": "leite integral",
+                  "quantity_g": 206,
+                  "id": "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                  "source": "canonical_fuzzy",
+                  "quantity_display": {
+                    "unit": "mL",
+                    "grams_per_unit": 1.03,
+                    "reference_id": "fao-infoods-v2-whole-milk-tb",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                },
+                {
+                  "kcal": 105.6,
+                  "protein_g": 23.44,
+                  "carbs_g": 1.88,
+                  "fat_g": 0.47,
+                  "food_name": "whey protein em pó",
+                  "quantity_g": 30,
+                  "id": "fbfe36ca-6497-4cd7-953a-356f9985f83c",
+                  "source": "canonical_fuzzy",
+                  "quantity_display": {
+                    "unit": "scoop",
+                    "grams_per_unit": 30,
+                    "reference_id": "app-household-whey-scoop-v1",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T08:43:29.164555+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": false,
+                "reason": "version_changed"
+              },
+              "undo_save": {
+                "allowed": true
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "clock-before-policy",
+          "group": {
+            "schema": "conversation.meal-group.v1",
+            "owner_id": "b3b01000-0000-4000-8000-000000006380",
+            "command_id": "b3b01000-0000-4000-8000-000000006703",
+            "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+            "epoch": "c9ceee93-6d6b-4207-8bf9-de9b50ea93d4",
+            "admitted_at": "2026-11-04T08:38:28.660327Z",
+            "observed_at": "2026-11-04T08:38:29.164555Z",
+            "original_receipt": {
+              "schema": "conversation.meal-effect.v1",
+              "owner_id": "b3b01000-0000-4000-8000-000000006380",
+              "command_id": "b3b01000-0000-4000-8000-000000006703",
+              "input_hash": "c7f501894c6384d077b54b7e5a3b52fbb5b1feffab8baf356b6397a9a331eb66",
+              "registration_id": "51c2aac6-9761-47f2-a34f-927082cd01b1",
+              "provider_key": "conversation.meal/b3b01000-0000-4000-8000-000000006380/b3b01000-0000-4000-8000-000000006703",
+              "meal_type": "cafe",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T08:38:29.164555Z",
+              "log_ids": [
+                "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                "fbfe36ca-6497-4cd7-953a-356f9985f83c"
+              ],
+              "effect_version": "cmeal1:22eafbd56e192d4cce9fbb9ed27f067b4ac4d95d6f6eee5b7bd2884b963a9252"
+            },
+            "revision": 0,
+            "lineage_compatible": true,
+            "current": {
+              "expected_version": "v1:da2faf6b37127d5fc3a897d0e0bf59f7f406603fa7ac27fc945284dad7cbd1a1",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "kcal": 125.7,
+                  "protein_g": 6.49,
+                  "carbs_g": 9.89,
+                  "fat_g": 6.7,
+                  "food_name": "leite integral",
+                  "quantity_g": 206,
+                  "id": "3513c30c-628d-408d-96f2-f4e87ad3993b",
+                  "source": "canonical_fuzzy",
+                  "quantity_display": {
+                    "unit": "mL",
+                    "grams_per_unit": 1.03,
+                    "reference_id": "fao-infoods-v2-whole-milk-tb",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                },
+                {
+                  "kcal": 105.6,
+                  "protein_g": 23.44,
+                  "carbs_g": 1.88,
+                  "fat_g": 0.47,
+                  "food_name": "whey protein em pó",
+                  "quantity_g": 30,
+                  "id": "fbfe36ca-6497-4cd7-953a-356f9985f83c",
+                  "source": "canonical_fuzzy",
+                  "quantity_display": {
+                    "unit": "scoop",
+                    "grams_per_unit": 30,
+                    "reference_id": "app-household-whey-scoop-v1",
+                    "estimated": true
+                  },
+                  "consumed_at": "2026-11-04T08:38:29.164555Z",
+                  "meal_type": "cafe"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T08:43:29.164555+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": false,
+                "reason": "version_changed"
+              },
+              "undo_save": {
+                "allowed": true
+              }
+            }
+          },
+          "expected_primary": false
+        }
+      ]
+    },
+    {
+      "case": "linked-primary-compatible-unit-pt-BR",
+      "provenance": "Actual R3 group_before_save observation and genuine linked receipt/child binding retained; v3 canonical is newly prepared UNIT only, not the actual HTTP feedback.",
+      "original_canonical_schema": "registration.feedback.v2",
+      "unit_canonical_produced_by": "actual pinned prepareRegistrationFeedbackV3; officialDay:null; never persisted/resealed",
+      "api_eligible_from_original_canonical": false,
+      "external_binding": {
+        "auth_user_id": "38c1532e-33b6-4e77-91f5-949178b0d340",
+        "owner_id": "c3c70000-0000-4000-8000-000000000001",
+        "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+        "command_id": "c3c70000-0000-4000-8000-000000000005",
+        "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+        "kind": "meal",
+        "local_date": "2026-11-04",
+        "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+        "admitted_at": "2026-11-04T22:24:36.750963Z",
+        "scope_provenance": "Actual R3 subject/owner/child epoch and literal admission/effect/policy/group clocks; visible session generation remains a native unit grant."
+      },
+      "receipt": {
+        "schema": "conversation.meal-continuation-effect.v1",
+        "owner_id": "c3c70000-0000-4000-8000-000000000001",
+        "command_id": "c3c70000-0000-4000-8000-000000000005",
+        "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+        "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+        "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+        "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+        "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+        "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+        "provider_key": "conversation.clarification/c3c70000-0000-4000-8000-000000000001/c3c70000-0000-4000-8000-000000000003",
+        "meal_type": "almoco",
+        "local_date": "2026-11-04",
+        "timezone": "UTC",
+        "consumed_at": "2026-11-04T22:24:40.849731Z",
+        "log_ids": [
+          "84d3d822-4f61-4724-a4c9-6737011d4efc"
+        ],
+        "effect_version": "cmeal1:d63736f60f6f89efbbc811b99538d11aebb36228d5f1a8a26319de0fc421ee03"
+      },
+      "group": {
+        "schema": "conversation.meal-group.v2",
+        "owner_id": "c3c70000-0000-4000-8000-000000000001",
+        "command_id": "c3c70000-0000-4000-8000-000000000005",
+        "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+        "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+        "admitted_at": "2026-11-04T22:24:36.750963Z",
+        "observed_at": "2026-11-04T22:25:04.170114+00:00",
+        "original_receipt": {
+          "schema": "conversation.meal-continuation-effect.v1",
+          "owner_id": "c3c70000-0000-4000-8000-000000000001",
+          "command_id": "c3c70000-0000-4000-8000-000000000005",
+          "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+          "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+          "provider_key": "conversation.clarification/c3c70000-0000-4000-8000-000000000001/c3c70000-0000-4000-8000-000000000003",
+          "meal_type": "almoco",
+          "local_date": "2026-11-04",
+          "timezone": "UTC",
+          "consumed_at": "2026-11-04T22:24:40.849731Z",
+          "log_ids": [
+            "84d3d822-4f61-4724-a4c9-6737011d4efc"
+          ],
+          "effect_version": "cmeal1:d63736f60f6f89efbbc811b99538d11aebb36228d5f1a8a26319de0fc421ee03",
+          "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+          "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+          "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+          "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f"
+        },
+        "revision": 0,
+        "lineage_compatible": true,
+        "current": {
+          "expected_version": "v1:c95ed80716043cfe87cd86b55b134dd4ee8ea8b93267ec7890685b2c80cb090d",
+          "local_date": "2026-11-04",
+          "timezone": "UTC",
+          "day_closed": false,
+          "items": [
+            {
+              "id": "84d3d822-4f61-4724-a4c9-6737011d4efc",
+              "food_name": "arroz branco cozido",
+              "quantity_g": 100,
+              "quantity_display": null,
+              "kcal": 128.3,
+              "protein_g": 2.52,
+              "carbs_g": 28.06,
+              "fat_g": 0.23,
+              "source": "canonical_fuzzy",
+              "consumed_at": "2026-11-04T22:24:40.849731+00:00",
+              "meal_type": "almoco"
+            }
+          ]
+        },
+        "last_operation": null,
+        "registration_undo_expires_at": "2026-11-04T22:29:40.849731+00:00",
+        "actions": {
+          "save": {
+            "allowed": true
+          },
+          "undo_registration": {
+            "allowed": true
+          },
+          "undo_save": {
+            "allowed": false,
+            "reason": "no_save_to_undo"
+          }
+        }
+      },
+      "expected_wrapper": {
+        "schema": "conversation.feedback-presentation.v2",
+        "mode": "historical",
+        "assistant": "Flow AI",
+        "original": {
+          "schema": "registration.feedback.v3",
+          "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+          "kind": "meal",
+          "local_date": "2026-11-04"
+        },
+        "status": "available",
+        "format": "sections",
+        "recorded": {
+          "kind": "meal",
+          "meal_kind": "almoco",
+          "items": [
+            {
+              "kcal": 128.3,
+              "protein_g": 2.52,
+              "carbs_g": 28.06,
+              "fat_g": 0.23,
+              "log_id": "84d3d822-4f61-4724-a4c9-6737011d4efc",
+              "food_name": "arroz branco cozido",
+              "quantity_g": 100,
+              "quantity": {
+                "value": 100,
+                "unit": "g",
+                "estimated": false,
+                "reference_id": null
+              },
+              "nutrition_source": "canonical_fuzzy"
+            }
+          ],
+          "totals": {
+            "kcal": 128.3,
+            "protein_g": 2.5,
+            "carbs_g": 28.1,
+            "fat_g": 0.2
+          }
+        },
+        "sections": [
+          {
+            "key": "saved",
+            "text": "Almoço registrado."
+          },
+          {
+            "key": "items",
+            "text": "arroz branco cozido · 100 g\n128,3 kcal | Proteína: 2,52 g | Carboidratos: 28,06 g | Gorduras: 0,23 g"
+          },
+          {
+            "key": "summary",
+            "text": "Total aproximado da refeição: 128,3 kcal | Proteína: 2,5 g | Carboidratos: 28,1 g | Gorduras: 0,2 g"
+          },
+          {
+            "key": "day",
+            "text": "No momento deste registro (2026-11-04):\nO resumo oficial deste dia está indisponível; seu registro foi salvo."
+          },
+          {
+            "key": "block",
+            "text": "Progresso histórico sob as orientações atuais:\nAs orientações de longo prazo estão pausadas."
+          },
+          {
+            "key": "education",
+            "text": "O comentário educativo está indisponível; seu registro continua salvo."
+          }
+        ],
+        "current_policy": {
+          "version": 1,
+          "observed_at": "2026-11-04T22:24:44.278183Z",
+          "assessment": "incomplete",
+          "recording_allowed": true,
+          "pause_weight_loss_guidance": false,
+          "professional_assessment_recommended": false,
+          "phase_selection_pending": false,
+          "target_source": "unavailable",
+          "hide": {
+            "objective": true,
+            "calories": true,
+            "protein": true,
+            "balance": true,
+            "block": true,
+            "budget": true
+          }
+        },
+        "provenance": {
+          "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+          "command_id": "c3c70000-0000-4000-8000-000000000005",
+          "observed_at": "2026-11-04T22:24:44.278183Z"
+        }
+      },
+      "expected_primary": true,
+      "mutations": [
+        {
+          "case": "revision",
+          "group": {
+            "schema": "conversation.meal-group.v2",
+            "owner_id": "c3c70000-0000-4000-8000-000000000001",
+            "command_id": "c3c70000-0000-4000-8000-000000000005",
+            "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+            "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+            "admitted_at": "2026-11-04T22:24:36.750963Z",
+            "observed_at": "2026-11-04T22:25:04.170114+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-continuation-effect.v1",
+              "owner_id": "c3c70000-0000-4000-8000-000000000001",
+              "command_id": "c3c70000-0000-4000-8000-000000000005",
+              "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+              "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+              "provider_key": "conversation.clarification/c3c70000-0000-4000-8000-000000000001/c3c70000-0000-4000-8000-000000000003",
+              "meal_type": "almoco",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T22:24:40.849731Z",
+              "log_ids": [
+                "84d3d822-4f61-4724-a4c9-6737011d4efc"
+              ],
+              "effect_version": "cmeal1:d63736f60f6f89efbbc811b99538d11aebb36228d5f1a8a26319de0fc421ee03",
+              "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+              "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+              "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+              "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f"
+            },
+            "revision": 1,
+            "lineage_compatible": true,
+            "current": {
+              "expected_version": "v1:c95ed80716043cfe87cd86b55b134dd4ee8ea8b93267ec7890685b2c80cb090d",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "id": "84d3d822-4f61-4724-a4c9-6737011d4efc",
+                  "food_name": "arroz branco cozido",
+                  "quantity_g": 100,
+                  "quantity_display": null,
+                  "kcal": 128.3,
+                  "protein_g": 2.52,
+                  "carbs_g": 28.06,
+                  "fat_g": 0.23,
+                  "source": "canonical_fuzzy",
+                  "consumed_at": "2026-11-04T22:24:40.849731+00:00",
+                  "meal_type": "almoco"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T22:29:40.849731+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": true
+              },
+              "undo_save": {
+                "allowed": false,
+                "reason": "no_save_to_undo"
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "lineage",
+          "group": {
+            "schema": "conversation.meal-group.v2",
+            "owner_id": "c3c70000-0000-4000-8000-000000000001",
+            "command_id": "c3c70000-0000-4000-8000-000000000005",
+            "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+            "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+            "admitted_at": "2026-11-04T22:24:36.750963Z",
+            "observed_at": "2026-11-04T22:25:04.170114+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-continuation-effect.v1",
+              "owner_id": "c3c70000-0000-4000-8000-000000000001",
+              "command_id": "c3c70000-0000-4000-8000-000000000005",
+              "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+              "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+              "provider_key": "conversation.clarification/c3c70000-0000-4000-8000-000000000001/c3c70000-0000-4000-8000-000000000003",
+              "meal_type": "almoco",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T22:24:40.849731Z",
+              "log_ids": [
+                "84d3d822-4f61-4724-a4c9-6737011d4efc"
+              ],
+              "effect_version": "cmeal1:d63736f60f6f89efbbc811b99538d11aebb36228d5f1a8a26319de0fc421ee03",
+              "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+              "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+              "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+              "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f"
+            },
+            "revision": 0,
+            "lineage_compatible": false,
+            "current": {
+              "expected_version": "v1:c95ed80716043cfe87cd86b55b134dd4ee8ea8b93267ec7890685b2c80cb090d",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "id": "84d3d822-4f61-4724-a4c9-6737011d4efc",
+                  "food_name": "arroz branco cozido",
+                  "quantity_g": 100,
+                  "quantity_display": null,
+                  "kcal": 128.3,
+                  "protein_g": 2.52,
+                  "carbs_g": 28.06,
+                  "fat_g": 0.23,
+                  "source": "canonical_fuzzy",
+                  "consumed_at": "2026-11-04T22:24:40.849731+00:00",
+                  "meal_type": "almoco"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T22:29:40.849731+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": true
+              },
+              "undo_save": {
+                "allowed": false,
+                "reason": "no_save_to_undo"
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "current-null",
+          "group": {
+            "schema": "conversation.meal-group.v2",
+            "owner_id": "c3c70000-0000-4000-8000-000000000001",
+            "command_id": "c3c70000-0000-4000-8000-000000000005",
+            "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+            "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+            "admitted_at": "2026-11-04T22:24:36.750963Z",
+            "observed_at": "2026-11-04T22:25:04.170114+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-continuation-effect.v1",
+              "owner_id": "c3c70000-0000-4000-8000-000000000001",
+              "command_id": "c3c70000-0000-4000-8000-000000000005",
+              "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+              "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+              "provider_key": "conversation.clarification/c3c70000-0000-4000-8000-000000000001/c3c70000-0000-4000-8000-000000000003",
+              "meal_type": "almoco",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T22:24:40.849731Z",
+              "log_ids": [
+                "84d3d822-4f61-4724-a4c9-6737011d4efc"
+              ],
+              "effect_version": "cmeal1:d63736f60f6f89efbbc811b99538d11aebb36228d5f1a8a26319de0fc421ee03",
+              "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+              "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+              "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+              "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f"
+            },
+            "revision": 0,
+            "lineage_compatible": true,
+            "current": null,
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T22:29:40.849731+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": true
+              },
+              "undo_save": {
+                "allowed": false,
+                "reason": "no_save_to_undo"
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "quantity",
+          "group": {
+            "schema": "conversation.meal-group.v2",
+            "owner_id": "c3c70000-0000-4000-8000-000000000001",
+            "command_id": "c3c70000-0000-4000-8000-000000000005",
+            "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+            "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+            "admitted_at": "2026-11-04T22:24:36.750963Z",
+            "observed_at": "2026-11-04T22:25:04.170114+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-continuation-effect.v1",
+              "owner_id": "c3c70000-0000-4000-8000-000000000001",
+              "command_id": "c3c70000-0000-4000-8000-000000000005",
+              "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+              "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+              "provider_key": "conversation.clarification/c3c70000-0000-4000-8000-000000000001/c3c70000-0000-4000-8000-000000000003",
+              "meal_type": "almoco",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T22:24:40.849731Z",
+              "log_ids": [
+                "84d3d822-4f61-4724-a4c9-6737011d4efc"
+              ],
+              "effect_version": "cmeal1:d63736f60f6f89efbbc811b99538d11aebb36228d5f1a8a26319de0fc421ee03",
+              "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+              "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+              "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+              "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f"
+            },
+            "revision": 0,
+            "lineage_compatible": true,
+            "current": {
+              "expected_version": "v1:c95ed80716043cfe87cd86b55b134dd4ee8ea8b93267ec7890685b2c80cb090d",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "id": "84d3d822-4f61-4724-a4c9-6737011d4efc",
+                  "food_name": "arroz branco cozido",
+                  "quantity_g": 101,
+                  "quantity_display": null,
+                  "kcal": 128.3,
+                  "protein_g": 2.52,
+                  "carbs_g": 28.06,
+                  "fat_g": 0.23,
+                  "source": "canonical_fuzzy",
+                  "consumed_at": "2026-11-04T22:24:40.849731+00:00",
+                  "meal_type": "almoco"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T22:29:40.849731+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": true
+              },
+              "undo_save": {
+                "allowed": false,
+                "reason": "no_save_to_undo"
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "source-null",
+          "group": {
+            "schema": "conversation.meal-group.v2",
+            "owner_id": "c3c70000-0000-4000-8000-000000000001",
+            "command_id": "c3c70000-0000-4000-8000-000000000005",
+            "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+            "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+            "admitted_at": "2026-11-04T22:24:36.750963Z",
+            "observed_at": "2026-11-04T22:25:04.170114+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-continuation-effect.v1",
+              "owner_id": "c3c70000-0000-4000-8000-000000000001",
+              "command_id": "c3c70000-0000-4000-8000-000000000005",
+              "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+              "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+              "provider_key": "conversation.clarification/c3c70000-0000-4000-8000-000000000001/c3c70000-0000-4000-8000-000000000003",
+              "meal_type": "almoco",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T22:24:40.849731Z",
+              "log_ids": [
+                "84d3d822-4f61-4724-a4c9-6737011d4efc"
+              ],
+              "effect_version": "cmeal1:d63736f60f6f89efbbc811b99538d11aebb36228d5f1a8a26319de0fc421ee03",
+              "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+              "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+              "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+              "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f"
+            },
+            "revision": 0,
+            "lineage_compatible": true,
+            "current": {
+              "expected_version": "v1:c95ed80716043cfe87cd86b55b134dd4ee8ea8b93267ec7890685b2c80cb090d",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "id": "84d3d822-4f61-4724-a4c9-6737011d4efc",
+                  "food_name": "arroz branco cozido",
+                  "quantity_g": 100,
+                  "quantity_display": null,
+                  "kcal": 128.3,
+                  "protein_g": 2.52,
+                  "carbs_g": 28.06,
+                  "fat_g": 0.23,
+                  "source": null,
+                  "consumed_at": "2026-11-04T22:24:40.849731+00:00",
+                  "meal_type": "almoco"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T22:29:40.849731+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": true
+              },
+              "undo_save": {
+                "allowed": false,
+                "reason": "no_save_to_undo"
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "epoch",
+          "group": {
+            "schema": "conversation.meal-group.v2",
+            "owner_id": "c3c70000-0000-4000-8000-000000000001",
+            "command_id": "c3c70000-0000-4000-8000-000000000005",
+            "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+            "epoch": "b7720000-0000-4000-8000-000000009999",
+            "admitted_at": "2026-11-04T22:24:36.750963Z",
+            "observed_at": "2026-11-04T22:25:04.170114+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-continuation-effect.v1",
+              "owner_id": "c3c70000-0000-4000-8000-000000000001",
+              "command_id": "c3c70000-0000-4000-8000-000000000005",
+              "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+              "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+              "provider_key": "conversation.clarification/c3c70000-0000-4000-8000-000000000001/c3c70000-0000-4000-8000-000000000003",
+              "meal_type": "almoco",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T22:24:40.849731Z",
+              "log_ids": [
+                "84d3d822-4f61-4724-a4c9-6737011d4efc"
+              ],
+              "effect_version": "cmeal1:d63736f60f6f89efbbc811b99538d11aebb36228d5f1a8a26319de0fc421ee03",
+              "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+              "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+              "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+              "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f"
+            },
+            "revision": 0,
+            "lineage_compatible": true,
+            "current": {
+              "expected_version": "v1:c95ed80716043cfe87cd86b55b134dd4ee8ea8b93267ec7890685b2c80cb090d",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "id": "84d3d822-4f61-4724-a4c9-6737011d4efc",
+                  "food_name": "arroz branco cozido",
+                  "quantity_g": 100,
+                  "quantity_display": null,
+                  "kcal": 128.3,
+                  "protein_g": 2.52,
+                  "carbs_g": 28.06,
+                  "fat_g": 0.23,
+                  "source": "canonical_fuzzy",
+                  "consumed_at": "2026-11-04T22:24:40.849731+00:00",
+                  "meal_type": "almoco"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T22:29:40.849731+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": true
+              },
+              "undo_save": {
+                "allowed": false,
+                "reason": "no_save_to_undo"
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "command",
+          "group": {
+            "schema": "conversation.meal-group.v2",
+            "owner_id": "c3c70000-0000-4000-8000-000000000001",
+            "command_id": "b7720000-0000-4000-8000-000000009999",
+            "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+            "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+            "admitted_at": "2026-11-04T22:24:36.750963Z",
+            "observed_at": "2026-11-04T22:25:04.170114+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-continuation-effect.v1",
+              "owner_id": "c3c70000-0000-4000-8000-000000000001",
+              "command_id": "c3c70000-0000-4000-8000-000000000005",
+              "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+              "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+              "provider_key": "conversation.clarification/c3c70000-0000-4000-8000-000000000001/c3c70000-0000-4000-8000-000000000003",
+              "meal_type": "almoco",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T22:24:40.849731Z",
+              "log_ids": [
+                "84d3d822-4f61-4724-a4c9-6737011d4efc"
+              ],
+              "effect_version": "cmeal1:d63736f60f6f89efbbc811b99538d11aebb36228d5f1a8a26319de0fc421ee03",
+              "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+              "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+              "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+              "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f"
+            },
+            "revision": 0,
+            "lineage_compatible": true,
+            "current": {
+              "expected_version": "v1:c95ed80716043cfe87cd86b55b134dd4ee8ea8b93267ec7890685b2c80cb090d",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "id": "84d3d822-4f61-4724-a4c9-6737011d4efc",
+                  "food_name": "arroz branco cozido",
+                  "quantity_g": 100,
+                  "quantity_display": null,
+                  "kcal": 128.3,
+                  "protein_g": 2.52,
+                  "carbs_g": 28.06,
+                  "fat_g": 0.23,
+                  "source": "canonical_fuzzy",
+                  "consumed_at": "2026-11-04T22:24:40.849731+00:00",
+                  "meal_type": "almoco"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T22:29:40.849731+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": true
+              },
+              "undo_save": {
+                "allowed": false,
+                "reason": "no_save_to_undo"
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "clock-before-policy",
+          "group": {
+            "schema": "conversation.meal-group.v2",
+            "owner_id": "c3c70000-0000-4000-8000-000000000001",
+            "command_id": "c3c70000-0000-4000-8000-000000000005",
+            "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+            "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+            "admitted_at": "2026-11-04T22:24:36.750963Z",
+            "observed_at": "2026-11-04T22:24:40.849731Z",
+            "original_receipt": {
+              "schema": "conversation.meal-continuation-effect.v1",
+              "owner_id": "c3c70000-0000-4000-8000-000000000001",
+              "command_id": "c3c70000-0000-4000-8000-000000000005",
+              "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+              "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+              "provider_key": "conversation.clarification/c3c70000-0000-4000-8000-000000000001/c3c70000-0000-4000-8000-000000000003",
+              "meal_type": "almoco",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T22:24:40.849731Z",
+              "log_ids": [
+                "84d3d822-4f61-4724-a4c9-6737011d4efc"
+              ],
+              "effect_version": "cmeal1:d63736f60f6f89efbbc811b99538d11aebb36228d5f1a8a26319de0fc421ee03",
+              "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+              "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+              "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+              "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f"
+            },
+            "revision": 0,
+            "lineage_compatible": true,
+            "current": {
+              "expected_version": "v1:c95ed80716043cfe87cd86b55b134dd4ee8ea8b93267ec7890685b2c80cb090d",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "id": "84d3d822-4f61-4724-a4c9-6737011d4efc",
+                  "food_name": "arroz branco cozido",
+                  "quantity_g": 100,
+                  "quantity_display": null,
+                  "kcal": 128.3,
+                  "protein_g": 2.52,
+                  "carbs_g": 28.06,
+                  "fat_g": 0.23,
+                  "source": "canonical_fuzzy",
+                  "consumed_at": "2026-11-04T22:24:40.849731+00:00",
+                  "meal_type": "almoco"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T22:29:40.849731+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": true
+              },
+              "undo_save": {
+                "allowed": false,
+                "reason": "no_save_to_undo"
+              }
+            }
+          },
+          "expected_primary": false
+        }
+      ]
+    },
+    {
+      "case": "linked-primary-compatible-unit-en",
+      "provenance": "Actual R3 group_before_save observation and genuine linked receipt/child binding retained; v3 canonical is newly prepared UNIT only, not the actual HTTP feedback.",
+      "original_canonical_schema": "registration.feedback.v2",
+      "unit_canonical_produced_by": "actual pinned prepareRegistrationFeedbackV3; officialDay:null; never persisted/resealed",
+      "api_eligible_from_original_canonical": false,
+      "external_binding": {
+        "auth_user_id": "38c1532e-33b6-4e77-91f5-949178b0d340",
+        "owner_id": "c3c70000-0000-4000-8000-000000000001",
+        "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+        "command_id": "c3c70000-0000-4000-8000-000000000005",
+        "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+        "kind": "meal",
+        "local_date": "2026-11-04",
+        "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+        "admitted_at": "2026-11-04T22:24:36.750963Z",
+        "scope_provenance": "Actual R3 subject/owner/child epoch and literal admission/effect/policy/group clocks; visible session generation remains a native unit grant."
+      },
+      "receipt": {
+        "schema": "conversation.meal-continuation-effect.v1",
+        "owner_id": "c3c70000-0000-4000-8000-000000000001",
+        "command_id": "c3c70000-0000-4000-8000-000000000005",
+        "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+        "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+        "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+        "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+        "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+        "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+        "provider_key": "conversation.clarification/c3c70000-0000-4000-8000-000000000001/c3c70000-0000-4000-8000-000000000003",
+        "meal_type": "almoco",
+        "local_date": "2026-11-04",
+        "timezone": "UTC",
+        "consumed_at": "2026-11-04T22:24:40.849731Z",
+        "log_ids": [
+          "84d3d822-4f61-4724-a4c9-6737011d4efc"
+        ],
+        "effect_version": "cmeal1:d63736f60f6f89efbbc811b99538d11aebb36228d5f1a8a26319de0fc421ee03"
+      },
+      "group": {
+        "schema": "conversation.meal-group.v2",
+        "owner_id": "c3c70000-0000-4000-8000-000000000001",
+        "command_id": "c3c70000-0000-4000-8000-000000000005",
+        "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+        "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+        "admitted_at": "2026-11-04T22:24:36.750963Z",
+        "observed_at": "2026-11-04T22:25:04.170114+00:00",
+        "original_receipt": {
+          "schema": "conversation.meal-continuation-effect.v1",
+          "owner_id": "c3c70000-0000-4000-8000-000000000001",
+          "command_id": "c3c70000-0000-4000-8000-000000000005",
+          "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+          "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+          "provider_key": "conversation.clarification/c3c70000-0000-4000-8000-000000000001/c3c70000-0000-4000-8000-000000000003",
+          "meal_type": "almoco",
+          "local_date": "2026-11-04",
+          "timezone": "UTC",
+          "consumed_at": "2026-11-04T22:24:40.849731Z",
+          "log_ids": [
+            "84d3d822-4f61-4724-a4c9-6737011d4efc"
+          ],
+          "effect_version": "cmeal1:d63736f60f6f89efbbc811b99538d11aebb36228d5f1a8a26319de0fc421ee03",
+          "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+          "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+          "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+          "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f"
+        },
+        "revision": 0,
+        "lineage_compatible": true,
+        "current": {
+          "expected_version": "v1:c95ed80716043cfe87cd86b55b134dd4ee8ea8b93267ec7890685b2c80cb090d",
+          "local_date": "2026-11-04",
+          "timezone": "UTC",
+          "day_closed": false,
+          "items": [
+            {
+              "id": "84d3d822-4f61-4724-a4c9-6737011d4efc",
+              "food_name": "arroz branco cozido",
+              "quantity_g": 100,
+              "quantity_display": null,
+              "kcal": 128.3,
+              "protein_g": 2.52,
+              "carbs_g": 28.06,
+              "fat_g": 0.23,
+              "source": "canonical_fuzzy",
+              "consumed_at": "2026-11-04T22:24:40.849731+00:00",
+              "meal_type": "almoco"
+            }
+          ]
+        },
+        "last_operation": null,
+        "registration_undo_expires_at": "2026-11-04T22:29:40.849731+00:00",
+        "actions": {
+          "save": {
+            "allowed": true
+          },
+          "undo_registration": {
+            "allowed": true
+          },
+          "undo_save": {
+            "allowed": false,
+            "reason": "no_save_to_undo"
+          }
+        }
+      },
+      "expected_wrapper": {
+        "schema": "conversation.feedback-presentation.v2",
+        "mode": "historical",
+        "assistant": "Flow AI",
+        "original": {
+          "schema": "registration.feedback.v3",
+          "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+          "kind": "meal",
+          "local_date": "2026-11-04"
+        },
+        "status": "available",
+        "format": "sections",
+        "recorded": {
+          "kind": "meal",
+          "meal_kind": "almoco",
+          "items": [
+            {
+              "kcal": 128.3,
+              "protein_g": 2.52,
+              "carbs_g": 28.06,
+              "fat_g": 0.23,
+              "log_id": "84d3d822-4f61-4724-a4c9-6737011d4efc",
+              "food_name": "arroz branco cozido",
+              "quantity_g": 100,
+              "quantity": {
+                "value": 100,
+                "unit": "g",
+                "estimated": false,
+                "reference_id": null
+              },
+              "nutrition_source": "canonical_fuzzy"
+            }
+          ],
+          "totals": {
+            "kcal": 128.3,
+            "protein_g": 2.5,
+            "carbs_g": 28.1,
+            "fat_g": 0.2
+          }
+        },
+        "sections": [
+          {
+            "key": "saved",
+            "text": "Lunch recorded."
+          },
+          {
+            "key": "items",
+            "text": "arroz branco cozido · 100 g\n128.3 kcal | Protein: 2.52 g | Carbohydrates: 28.06 g | Fat: 0.23 g"
+          },
+          {
+            "key": "summary",
+            "text": "Approximate meal total: 128.3 kcal | Protein: 2.5 g | Carbohydrates: 28.1 g | Fat: 0.2 g"
+          },
+          {
+            "key": "day",
+            "text": "At the time of this registration (2026-11-04):\nThe official summary for this day is unavailable; your record was saved."
+          },
+          {
+            "key": "block",
+            "text": "Historical progress under current guidance:\nLong-term guidance is paused."
+          },
+          {
+            "key": "education",
+            "text": "The educational comment is unavailable; your record remains saved."
+          }
+        ],
+        "current_policy": {
+          "version": 1,
+          "observed_at": "2026-11-04T22:24:44.278183Z",
+          "assessment": "incomplete",
+          "recording_allowed": true,
+          "pause_weight_loss_guidance": false,
+          "professional_assessment_recommended": false,
+          "phase_selection_pending": false,
+          "target_source": "unavailable",
+          "hide": {
+            "objective": true,
+            "calories": true,
+            "protein": true,
+            "balance": true,
+            "block": true,
+            "budget": true
+          }
+        },
+        "provenance": {
+          "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+          "command_id": "c3c70000-0000-4000-8000-000000000005",
+          "observed_at": "2026-11-04T22:24:44.278183Z"
+        }
+      },
+      "expected_primary": true,
+      "mutations": [
+        {
+          "case": "revision",
+          "group": {
+            "schema": "conversation.meal-group.v2",
+            "owner_id": "c3c70000-0000-4000-8000-000000000001",
+            "command_id": "c3c70000-0000-4000-8000-000000000005",
+            "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+            "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+            "admitted_at": "2026-11-04T22:24:36.750963Z",
+            "observed_at": "2026-11-04T22:25:04.170114+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-continuation-effect.v1",
+              "owner_id": "c3c70000-0000-4000-8000-000000000001",
+              "command_id": "c3c70000-0000-4000-8000-000000000005",
+              "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+              "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+              "provider_key": "conversation.clarification/c3c70000-0000-4000-8000-000000000001/c3c70000-0000-4000-8000-000000000003",
+              "meal_type": "almoco",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T22:24:40.849731Z",
+              "log_ids": [
+                "84d3d822-4f61-4724-a4c9-6737011d4efc"
+              ],
+              "effect_version": "cmeal1:d63736f60f6f89efbbc811b99538d11aebb36228d5f1a8a26319de0fc421ee03",
+              "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+              "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+              "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+              "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f"
+            },
+            "revision": 1,
+            "lineage_compatible": true,
+            "current": {
+              "expected_version": "v1:c95ed80716043cfe87cd86b55b134dd4ee8ea8b93267ec7890685b2c80cb090d",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "id": "84d3d822-4f61-4724-a4c9-6737011d4efc",
+                  "food_name": "arroz branco cozido",
+                  "quantity_g": 100,
+                  "quantity_display": null,
+                  "kcal": 128.3,
+                  "protein_g": 2.52,
+                  "carbs_g": 28.06,
+                  "fat_g": 0.23,
+                  "source": "canonical_fuzzy",
+                  "consumed_at": "2026-11-04T22:24:40.849731+00:00",
+                  "meal_type": "almoco"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T22:29:40.849731+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": true
+              },
+              "undo_save": {
+                "allowed": false,
+                "reason": "no_save_to_undo"
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "lineage",
+          "group": {
+            "schema": "conversation.meal-group.v2",
+            "owner_id": "c3c70000-0000-4000-8000-000000000001",
+            "command_id": "c3c70000-0000-4000-8000-000000000005",
+            "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+            "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+            "admitted_at": "2026-11-04T22:24:36.750963Z",
+            "observed_at": "2026-11-04T22:25:04.170114+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-continuation-effect.v1",
+              "owner_id": "c3c70000-0000-4000-8000-000000000001",
+              "command_id": "c3c70000-0000-4000-8000-000000000005",
+              "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+              "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+              "provider_key": "conversation.clarification/c3c70000-0000-4000-8000-000000000001/c3c70000-0000-4000-8000-000000000003",
+              "meal_type": "almoco",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T22:24:40.849731Z",
+              "log_ids": [
+                "84d3d822-4f61-4724-a4c9-6737011d4efc"
+              ],
+              "effect_version": "cmeal1:d63736f60f6f89efbbc811b99538d11aebb36228d5f1a8a26319de0fc421ee03",
+              "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+              "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+              "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+              "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f"
+            },
+            "revision": 0,
+            "lineage_compatible": false,
+            "current": {
+              "expected_version": "v1:c95ed80716043cfe87cd86b55b134dd4ee8ea8b93267ec7890685b2c80cb090d",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "id": "84d3d822-4f61-4724-a4c9-6737011d4efc",
+                  "food_name": "arroz branco cozido",
+                  "quantity_g": 100,
+                  "quantity_display": null,
+                  "kcal": 128.3,
+                  "protein_g": 2.52,
+                  "carbs_g": 28.06,
+                  "fat_g": 0.23,
+                  "source": "canonical_fuzzy",
+                  "consumed_at": "2026-11-04T22:24:40.849731+00:00",
+                  "meal_type": "almoco"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T22:29:40.849731+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": true
+              },
+              "undo_save": {
+                "allowed": false,
+                "reason": "no_save_to_undo"
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "current-null",
+          "group": {
+            "schema": "conversation.meal-group.v2",
+            "owner_id": "c3c70000-0000-4000-8000-000000000001",
+            "command_id": "c3c70000-0000-4000-8000-000000000005",
+            "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+            "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+            "admitted_at": "2026-11-04T22:24:36.750963Z",
+            "observed_at": "2026-11-04T22:25:04.170114+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-continuation-effect.v1",
+              "owner_id": "c3c70000-0000-4000-8000-000000000001",
+              "command_id": "c3c70000-0000-4000-8000-000000000005",
+              "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+              "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+              "provider_key": "conversation.clarification/c3c70000-0000-4000-8000-000000000001/c3c70000-0000-4000-8000-000000000003",
+              "meal_type": "almoco",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T22:24:40.849731Z",
+              "log_ids": [
+                "84d3d822-4f61-4724-a4c9-6737011d4efc"
+              ],
+              "effect_version": "cmeal1:d63736f60f6f89efbbc811b99538d11aebb36228d5f1a8a26319de0fc421ee03",
+              "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+              "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+              "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+              "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f"
+            },
+            "revision": 0,
+            "lineage_compatible": true,
+            "current": null,
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T22:29:40.849731+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": true
+              },
+              "undo_save": {
+                "allowed": false,
+                "reason": "no_save_to_undo"
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "quantity",
+          "group": {
+            "schema": "conversation.meal-group.v2",
+            "owner_id": "c3c70000-0000-4000-8000-000000000001",
+            "command_id": "c3c70000-0000-4000-8000-000000000005",
+            "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+            "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+            "admitted_at": "2026-11-04T22:24:36.750963Z",
+            "observed_at": "2026-11-04T22:25:04.170114+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-continuation-effect.v1",
+              "owner_id": "c3c70000-0000-4000-8000-000000000001",
+              "command_id": "c3c70000-0000-4000-8000-000000000005",
+              "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+              "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+              "provider_key": "conversation.clarification/c3c70000-0000-4000-8000-000000000001/c3c70000-0000-4000-8000-000000000003",
+              "meal_type": "almoco",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T22:24:40.849731Z",
+              "log_ids": [
+                "84d3d822-4f61-4724-a4c9-6737011d4efc"
+              ],
+              "effect_version": "cmeal1:d63736f60f6f89efbbc811b99538d11aebb36228d5f1a8a26319de0fc421ee03",
+              "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+              "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+              "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+              "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f"
+            },
+            "revision": 0,
+            "lineage_compatible": true,
+            "current": {
+              "expected_version": "v1:c95ed80716043cfe87cd86b55b134dd4ee8ea8b93267ec7890685b2c80cb090d",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "id": "84d3d822-4f61-4724-a4c9-6737011d4efc",
+                  "food_name": "arroz branco cozido",
+                  "quantity_g": 101,
+                  "quantity_display": null,
+                  "kcal": 128.3,
+                  "protein_g": 2.52,
+                  "carbs_g": 28.06,
+                  "fat_g": 0.23,
+                  "source": "canonical_fuzzy",
+                  "consumed_at": "2026-11-04T22:24:40.849731+00:00",
+                  "meal_type": "almoco"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T22:29:40.849731+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": true
+              },
+              "undo_save": {
+                "allowed": false,
+                "reason": "no_save_to_undo"
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "source-null",
+          "group": {
+            "schema": "conversation.meal-group.v2",
+            "owner_id": "c3c70000-0000-4000-8000-000000000001",
+            "command_id": "c3c70000-0000-4000-8000-000000000005",
+            "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+            "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+            "admitted_at": "2026-11-04T22:24:36.750963Z",
+            "observed_at": "2026-11-04T22:25:04.170114+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-continuation-effect.v1",
+              "owner_id": "c3c70000-0000-4000-8000-000000000001",
+              "command_id": "c3c70000-0000-4000-8000-000000000005",
+              "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+              "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+              "provider_key": "conversation.clarification/c3c70000-0000-4000-8000-000000000001/c3c70000-0000-4000-8000-000000000003",
+              "meal_type": "almoco",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T22:24:40.849731Z",
+              "log_ids": [
+                "84d3d822-4f61-4724-a4c9-6737011d4efc"
+              ],
+              "effect_version": "cmeal1:d63736f60f6f89efbbc811b99538d11aebb36228d5f1a8a26319de0fc421ee03",
+              "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+              "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+              "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+              "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f"
+            },
+            "revision": 0,
+            "lineage_compatible": true,
+            "current": {
+              "expected_version": "v1:c95ed80716043cfe87cd86b55b134dd4ee8ea8b93267ec7890685b2c80cb090d",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "id": "84d3d822-4f61-4724-a4c9-6737011d4efc",
+                  "food_name": "arroz branco cozido",
+                  "quantity_g": 100,
+                  "quantity_display": null,
+                  "kcal": 128.3,
+                  "protein_g": 2.52,
+                  "carbs_g": 28.06,
+                  "fat_g": 0.23,
+                  "source": null,
+                  "consumed_at": "2026-11-04T22:24:40.849731+00:00",
+                  "meal_type": "almoco"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T22:29:40.849731+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": true
+              },
+              "undo_save": {
+                "allowed": false,
+                "reason": "no_save_to_undo"
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "epoch",
+          "group": {
+            "schema": "conversation.meal-group.v2",
+            "owner_id": "c3c70000-0000-4000-8000-000000000001",
+            "command_id": "c3c70000-0000-4000-8000-000000000005",
+            "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+            "epoch": "b7720000-0000-4000-8000-000000009999",
+            "admitted_at": "2026-11-04T22:24:36.750963Z",
+            "observed_at": "2026-11-04T22:25:04.170114+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-continuation-effect.v1",
+              "owner_id": "c3c70000-0000-4000-8000-000000000001",
+              "command_id": "c3c70000-0000-4000-8000-000000000005",
+              "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+              "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+              "provider_key": "conversation.clarification/c3c70000-0000-4000-8000-000000000001/c3c70000-0000-4000-8000-000000000003",
+              "meal_type": "almoco",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T22:24:40.849731Z",
+              "log_ids": [
+                "84d3d822-4f61-4724-a4c9-6737011d4efc"
+              ],
+              "effect_version": "cmeal1:d63736f60f6f89efbbc811b99538d11aebb36228d5f1a8a26319de0fc421ee03",
+              "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+              "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+              "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+              "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f"
+            },
+            "revision": 0,
+            "lineage_compatible": true,
+            "current": {
+              "expected_version": "v1:c95ed80716043cfe87cd86b55b134dd4ee8ea8b93267ec7890685b2c80cb090d",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "id": "84d3d822-4f61-4724-a4c9-6737011d4efc",
+                  "food_name": "arroz branco cozido",
+                  "quantity_g": 100,
+                  "quantity_display": null,
+                  "kcal": 128.3,
+                  "protein_g": 2.52,
+                  "carbs_g": 28.06,
+                  "fat_g": 0.23,
+                  "source": "canonical_fuzzy",
+                  "consumed_at": "2026-11-04T22:24:40.849731+00:00",
+                  "meal_type": "almoco"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T22:29:40.849731+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": true
+              },
+              "undo_save": {
+                "allowed": false,
+                "reason": "no_save_to_undo"
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "command",
+          "group": {
+            "schema": "conversation.meal-group.v2",
+            "owner_id": "c3c70000-0000-4000-8000-000000000001",
+            "command_id": "b7720000-0000-4000-8000-000000009999",
+            "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+            "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+            "admitted_at": "2026-11-04T22:24:36.750963Z",
+            "observed_at": "2026-11-04T22:25:04.170114+00:00",
+            "original_receipt": {
+              "schema": "conversation.meal-continuation-effect.v1",
+              "owner_id": "c3c70000-0000-4000-8000-000000000001",
+              "command_id": "c3c70000-0000-4000-8000-000000000005",
+              "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+              "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+              "provider_key": "conversation.clarification/c3c70000-0000-4000-8000-000000000001/c3c70000-0000-4000-8000-000000000003",
+              "meal_type": "almoco",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T22:24:40.849731Z",
+              "log_ids": [
+                "84d3d822-4f61-4724-a4c9-6737011d4efc"
+              ],
+              "effect_version": "cmeal1:d63736f60f6f89efbbc811b99538d11aebb36228d5f1a8a26319de0fc421ee03",
+              "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+              "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+              "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+              "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f"
+            },
+            "revision": 0,
+            "lineage_compatible": true,
+            "current": {
+              "expected_version": "v1:c95ed80716043cfe87cd86b55b134dd4ee8ea8b93267ec7890685b2c80cb090d",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "id": "84d3d822-4f61-4724-a4c9-6737011d4efc",
+                  "food_name": "arroz branco cozido",
+                  "quantity_g": 100,
+                  "quantity_display": null,
+                  "kcal": 128.3,
+                  "protein_g": 2.52,
+                  "carbs_g": 28.06,
+                  "fat_g": 0.23,
+                  "source": "canonical_fuzzy",
+                  "consumed_at": "2026-11-04T22:24:40.849731+00:00",
+                  "meal_type": "almoco"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T22:29:40.849731+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": true
+              },
+              "undo_save": {
+                "allowed": false,
+                "reason": "no_save_to_undo"
+              }
+            }
+          },
+          "expected_primary": false
+        },
+        {
+          "case": "clock-before-policy",
+          "group": {
+            "schema": "conversation.meal-group.v2",
+            "owner_id": "c3c70000-0000-4000-8000-000000000001",
+            "command_id": "c3c70000-0000-4000-8000-000000000005",
+            "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+            "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f",
+            "admitted_at": "2026-11-04T22:24:36.750963Z",
+            "observed_at": "2026-11-04T22:24:40.849731Z",
+            "original_receipt": {
+              "schema": "conversation.meal-continuation-effect.v1",
+              "owner_id": "c3c70000-0000-4000-8000-000000000001",
+              "command_id": "c3c70000-0000-4000-8000-000000000005",
+              "input_hash": "33ab1e357d8f1371fb0387efd6ed2a6c24b88792105cc02e078479399fc66848",
+              "registration_id": "1c786ec4-c6cc-40d5-8c60-9f56cc139d33",
+              "provider_key": "conversation.clarification/c3c70000-0000-4000-8000-000000000001/c3c70000-0000-4000-8000-000000000003",
+              "meal_type": "almoco",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "consumed_at": "2026-11-04T22:24:40.849731Z",
+              "log_ids": [
+                "84d3d822-4f61-4724-a4c9-6737011d4efc"
+              ],
+              "effect_version": "cmeal1:d63736f60f6f89efbbc811b99538d11aebb36228d5f1a8a26319de0fc421ee03",
+              "parent_command_id": "c3c70000-0000-4000-8000-000000000003",
+              "parent_input_hash": "4a61a7063c1789b1ab7eba5c329f5652b415ef6c9252cec518f13030cca3e903",
+              "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+              "epoch": "a77d2ebe-587b-4711-b7c6-69ff15a4001f"
+            },
+            "revision": 0,
+            "lineage_compatible": true,
+            "current": {
+              "expected_version": "v1:c95ed80716043cfe87cd86b55b134dd4ee8ea8b93267ec7890685b2c80cb090d",
+              "local_date": "2026-11-04",
+              "timezone": "UTC",
+              "day_closed": false,
+              "items": [
+                {
+                  "id": "84d3d822-4f61-4724-a4c9-6737011d4efc",
+                  "food_name": "arroz branco cozido",
+                  "quantity_g": 100,
+                  "quantity_display": null,
+                  "kcal": 128.3,
+                  "protein_g": 2.52,
+                  "carbs_g": 28.06,
+                  "fat_g": 0.23,
+                  "source": "canonical_fuzzy",
+                  "consumed_at": "2026-11-04T22:24:40.849731+00:00",
+                  "meal_type": "almoco"
+                }
+              ]
+            },
+            "last_operation": null,
+            "registration_undo_expires_at": "2026-11-04T22:29:40.849731+00:00",
+            "actions": {
+              "save": {
+                "allowed": true
+              },
+              "undo_registration": {
+                "allowed": true
+              },
+              "undo_save": {
+                "allowed": false,
+                "reason": "no_save_to_undo"
+              }
+            }
+          },
+          "expected_primary": false
+        }
+      ]
+    }
+  ]
+}

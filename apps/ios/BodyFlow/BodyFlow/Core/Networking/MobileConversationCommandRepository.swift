@@ -6,12 +6,12 @@ struct MobileConversationCommandRepository: Sendable {
     static let responseBodyLimit = 262_144
     private static let base = "/api/mobile/v1/conversation/meal-commands"
     private let transport: MobileAPITransport
-    private init(transport: MobileAPITransport) { self.transport = transport }
+    private let feedbackPresentation: ConversationFeedbackPresentationSelection?
 
-    static func scoped(transport: MobileAPITransport, lease: SessionLease) async throws -> Self {
+    static func scoped(transport: MobileAPITransport, lease: SessionLease, feedbackPresentation: ConversationFeedbackPresentationSelection? = nil) async throws -> Self {
         let scoped = transport.withResponseBodyLimit(responseBodyLimit).scoped(to: lease)
         try await scoped.validateOriginalSession(lease)
-        return .init(transport: scoped)
+        return .init(transport: scoped, feedbackPresentation: feedbackPresentation)
     }
     func session() async throws -> ConversationSessionSnapshot {
         let response = try await transport.executeHTTP(MobileAPIRequest<ConversationSessionSnapshot>(method: .get,
@@ -25,14 +25,14 @@ struct MobileConversationCommandRepository: Sendable {
             // Reuse the existing bounded Flow turn ceiling. The server keeps
             // its own shorter provider/route budgets; this adds no retry.
             timeout: MobileAPITransport.longestRequestTimeout,
-            conversation: .submit(epoch: ticket.originalServerEpoch, ownerID: ticket.originalPatientOwnerID), unauthorizedReplay: .never))
+            conversation: .submit(epoch: ticket.originalServerEpoch, ownerID: ticket.originalPatientOwnerID), unauthorizedReplay: .never, feedbackPresentation: feedbackPresentation))
         guard response.data.acceptsHTTPStatus(response.statusCode) else { throw MobileAPITransportError.invalidResponse }
         return response.data
     }
     func read(_ ticket: ConversationOutboxTicket) async throws -> ConversationMealCommandReply {
         let response = try await transport.executeHTTP(MobileAPIRequest<ConversationMealCommandReply>(method: .get,
             path: Self.base + "/" + ticket.commandID.uuidString.lowercased(),
-            conversation: .reconciliation(epoch: ticket.originalServerEpoch, ownerID: ticket.originalPatientOwnerID, inputHash: ticket.inputHash)))
+            conversation: .reconciliation(epoch: ticket.originalServerEpoch, ownerID: ticket.originalPatientOwnerID, inputHash: ticket.inputHash), feedbackPresentation: feedbackPresentation))
         guard response.data.acceptsHTTPStatus(response.statusCode) else { throw MobileAPITransportError.invalidResponse }
         return response.data
     }

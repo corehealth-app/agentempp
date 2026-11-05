@@ -1,4 +1,8 @@
 import { readFileSync } from 'node:fs'
+import {
+  parseFeedbackV3Registration,
+  prepareRegistrationFeedbackV3,
+} from '@mpp/agent/registration-feedback-v3'
 import type { ServiceClient } from '@mpp/db'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -14,6 +18,7 @@ import {
   threadQuery,
   threadSavedReport,
 } from './__fixtures__/conversation-thread-page'
+import { createConversationFeedbackPublicComposition } from './conversation-feedback-public-composition'
 import {
   createConversationMealThreadPageService,
   decodeConversationMealThreadCursor,
@@ -43,6 +48,96 @@ function setup(raw: unknown = threadPage()) {
   }
 }
 describe('real public v2 read projection', () => {
+  it.each([
+    'report',
+    'fulfillment',
+  ] as const)('reads original3 on negotiated %s with genuine null SQL feedback_ref without fabricating a ref or ensuring', async (kind) => {
+    const report = threadSavedReport(journalCommand('registered')),
+      raw =
+        kind === 'report'
+          ? { ...threadPage(), threads: [report.descriptor], items: [report.event] }
+          : threadPage(),
+      e = raw.items[0]
+    if (!('receipt' in e) || !e.receipt) throw new Error('Missing existing qualified receipt')
+    e.feedback_ref = null
+    const receipt = e.receipt,
+      source = replyPresentation(),
+      recorded = structuredClone(source.recorded)
+    recorded.meal_kind = receipt.meal_type
+    recorded.items = receipt.log_ids.map((id, index) => ({
+      ...recorded.items[index % recorded.items.length],
+      log_id: id,
+    }))
+    const state = readCurrentClinicalState(journalClinical(), raw.owner_id),
+      who = {
+        ...journalAuth(),
+        identity: { ...journalAuth().identity, email: 'synthetic-journal@example.invalid' },
+      },
+      canonical = prepareRegistrationFeedbackV3({
+        registrationId: receipt.registration_id,
+        localDate: receipt.local_date,
+        locale: 'pt-BR',
+        registration: parseFeedbackV3Registration(recorded),
+        officialDay: null,
+        policy: projectCurrentClinicalPublicPolicy(state),
+        educationAvailable: false,
+      }),
+      original = {
+        readRoot: vi.fn().mockResolvedValue(canonical),
+        readReply: vi.fn().mockResolvedValue(canonical),
+        readWorkout: vi.fn(),
+        ensureRoot: vi.fn(),
+        ensureReply: vi.fn(),
+        ensureWorkout: vi.fn(),
+      },
+      feedbackV3 = vi.fn(() =>
+        createConversationFeedbackPublicComposition({} as ServiceClient, who, raw.epoch, {
+          auth: {
+            verifyAccessToken: async () => who.identity,
+            loadPatient: async () => who.patient,
+            isAdmin: async () => false,
+          },
+          clinical: { capture: async () => state },
+          original,
+        }),
+      ),
+      f = setup(raw),
+      service = createConversationMealThreadPageService({} as ServiceClient, {
+        store: { read: f.read },
+        clinical: { capture: f.capture },
+        presentation: { readHistorical: f.readHistorical },
+        feedbackV3,
+      })
+    // UNIT new canonical from qualified SQL receipt IDs/renderer facts. No
+    // SQL3/HTTP3 observation or rewritten history page is claimed.
+    const result = await service.read(who, f.request, '2')
+    expect(result.items[0]).toMatchObject({
+      kind,
+      receipt,
+      feedback: {
+        schema: 'conversation.feedback-presentation.v2',
+        original: { registration_id: receipt.registration_id },
+      },
+    })
+    expect(result.items[0]).not.toHaveProperty('feedback_ref')
+    expect(e.feedback_ref).toBeNull()
+    expect(kind === 'report' ? original.readRoot : original.readReply).toHaveBeenCalledTimes(1)
+    expect(original.ensureRoot).not.toHaveBeenCalled()
+    expect(original.ensureReply).not.toHaveBeenCalled()
+    expect(original.ensureWorkout).not.toHaveBeenCalled()
+    const old = setup(raw),
+      oldFactory = vi.fn(() => {
+        throw new Error('No new reader without negotiation')
+      })
+    const legacy = await createConversationMealThreadPageService({} as ServiceClient, {
+      store: { read: old.read },
+      clinical: { capture: old.capture },
+      presentation: { readHistorical: old.readHistorical },
+      feedbackV3: oldFactory,
+    }).read(who, old.request)
+    expect(oldFactory).not.toHaveBeenCalled()
+    expect(legacy.items[0]).toMatchObject({ kind, feedback: null })
+  })
   it('reads actual linked historical feedback with real parent/child binding and never enriches on GET', async () => {
     const raw = threadPage(),
       fx = raw.items[0] as ReturnType<

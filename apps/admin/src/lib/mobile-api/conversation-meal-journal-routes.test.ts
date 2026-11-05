@@ -42,6 +42,31 @@ function request(query = '', headers: Record<string, string> = {}) {
   })
 }
 describe('read-only authenticated conversation journal GET', () => {
+  it('negotiates presentation2 only on actual journal2 and keeps legacy journal literal', async () => {
+    const f = setup(),
+      read2 = vi.fn().mockResolvedValue({ schema: 'conversation.journal-page.v2' }),
+      routes = createConversationMealJournalRoutes(
+        { enabled: () => true, service: f.service, version2Service: () => ({ read: read2 }) },
+        f.runtime,
+      )
+    const r = await routes.GET(
+      request('?version=2', { 'X-Conversation-Feedback-Presentation': '2' }),
+    )
+    expect(r.headers.get('X-Conversation-Feedback-Presentation')).toBe('2')
+    expect(r.headers.get('Vary')).toBe('Authorization, X-Conversation-Feedback-Presentation')
+    expect(read2).toHaveBeenCalledWith(
+      journalAuth(),
+      { epoch: writerEpoch, limit: 10, cursor: null },
+      '2',
+    )
+    const old = await routes.GET(request('', { 'X-Conversation-Feedback-Presentation': '2' }))
+    expect(old.headers.get('X-Conversation-Feedback-Presentation')).toBeNull()
+    expect(f.read).toHaveBeenCalledWith(journalAuth(), {
+      epoch: writerEpoch,
+      limit: 10,
+      cursor: null,
+    })
+  })
   it('uses actual Auth/entitlement, owner/epoch preconditions and the standard no-store envelope', async () => {
     const f = setup(),
       response = await f.routes.GET(request('?limit=2&cursor=opaque'))

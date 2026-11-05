@@ -1,5 +1,9 @@
 import type { ServiceClient } from '@mpp/db'
 import { z } from 'zod'
+import {
+  conversationFeedbackPresentationMobileHeaders,
+  negotiateConversationFeedbackPresentation,
+} from './conversation-feedback-presentation-negotiation'
 import { conversationMealCommandsEnabled } from './conversation-meal-command-routes'
 import { createConversationMealJournalService } from './conversation-meal-journal-service'
 import { conversationJournalUUID } from './conversation-meal-journal-store'
@@ -68,7 +72,11 @@ export function createConversationMealJournalRoutes(
     const epoch = conversationJournalUUID.parse(
         context.request.headers.get('X-Conversation-Epoch'),
       ),
-      { version, ...input } = query(context.request)
+      { version, ...input } = query(context.request),
+      selected =
+        version === '2'
+          ? negotiateConversationFeedbackPresentation(context.request.headers)
+          : 'legacy'
     // Freeze original identity and request headers before any service await.
     // A late callback cannot replace the original bearer for the final check.
     const original =
@@ -85,6 +93,7 @@ export function createConversationMealJournalRoutes(
     const value = await (version === '2' ? version2Service : service)(context.supabase).read(
       context.auth,
       { epoch, ...input },
+      ...(selected === '2' ? ['2' as const] : []),
     )
     if (original) {
       const current = await reauthenticate(original.request, context.supabase)
@@ -101,7 +110,12 @@ export function createConversationMealJournalRoutes(
           'The original authenticated patient has changed',
         )
     }
-    return mobileSuccess(value, context.requestId)
+    return mobileSuccess(
+      value,
+      context.requestId,
+      200,
+      conversationFeedbackPresentationMobileHeaders(selected),
+    )
   }
   const legacy = createMobileRoute(handler, runtime),
     readOnly = createMobileRoute(handler, readonlyRuntime)

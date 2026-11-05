@@ -82,7 +82,7 @@ struct SavedConversationMealCommandResultSnapshot: Decodable, Sendable {
             // without turning enrichment failure into lost factual success.
             if let raw = try? c.decode(SavedPacketValue.self, forKey: .feedback),
                let bytes = try? raw.data(), bytes.count <= 200_000,
-               let candidate = try? JSONDecoder().decode(ConversationFeedbackPresentationSnapshot.self, from: bytes),
+               let candidate = try? ConversationFeedbackPresentationSelection.decoder(selection: .selected(from: decoder)).decode(ConversationFeedbackPresentationSnapshot.self, from: bytes),
                Self.acceptsFeedback(candidate, receipt: receipt, commandID: commandID, epoch: epoch, admitted: admitted) {
                 feedback = candidate
             } else { feedback = nil }
@@ -105,6 +105,10 @@ struct SavedConversationMealCommandResultSnapshot: Decodable, Sendable {
         switch value.content {
         case let .sections(recorded, sections):
             return recorded.mealKind == receipt.mealType.rawValue && Set(recorded.items.map(\.logID)) == Set(receipt.logIDs) &&
+                sections.allSatisfy { $0.text.utf16.count <= 64_000 }
+        case let .v3Sections(_, sections):
+            guard let effect = SavedPacketInstant(receipt.consumedAt), observed >= effect else { return false }
+            return value.matchesRecordedMeal(kind: receipt.mealType.rawValue, logIDs: receipt.logIDs) &&
                 sections.allSatisfy { $0.text.utf16.count <= 64_000 }
         case let .placeholder(sections): return sections.allSatisfy { $0.text.utf16.count <= 64_000 }
         case .legacy: return true // The existing closed wrapper already checks restricted policy and v1 identity/day.

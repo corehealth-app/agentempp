@@ -1,0 +1,341 @@
+{
+  "provenance": "Synthetic accounts through actual PostgreSQL capture/commit, 62 assertions and ROLLBACK; not public HTTP, provider or E2E. Receipt fields unmodified; section text from actual frozen pure renderer.",
+  "source_fixture_sha256": "a956e2a970bd33165a4725993a3c6ffada7ab2646a61b9234004fa8cfa0687ff",
+  "renderer_sha256": "e644dd58e42db870b90422de6f6a7436102867519bf00f7a255b5d70805f0c0d",
+  "cases": [
+    {
+      "label": "known_meal",
+      "payload": {
+        "day": {
+          "targets": {
+            "protein_g": 120,
+            "calories_kcal": 1900
+          },
+          "consumed": {
+            "fat_g": 6.5,
+            "carbs_g": 9.5,
+            "protein_g": 6.3,
+            "calories_kcal": 126
+          },
+          "local_date": "2026-11-05",
+          "exercise_kcal": 0,
+          "exercise_energy": {
+            "status": "available"
+          },
+          "current_protocol": "recomposicao",
+          "food_excess_kcal": 0,
+          "calorie_percentage": 6.6,
+          "protein_percentage": 5.3,
+          "remaining_food_kcal": 1774
+        },
+        "block": {
+          "status": "unavailable"
+        },
+        "locale": "pt-BR",
+        "schema": "registration.feedback.v3",
+        "guidance": "available",
+        "assistant": "Flow AI",
+        "education": {
+          "status": "unavailable"
+        },
+        "local_date": "2026-11-05",
+        "registration": {
+          "kind": "meal",
+          "items": [
+            {
+              "kcal": 126.12,
+              "fat_g": 6.5,
+              "log_id": "b144de16-6ebb-4437-952b-661e4321c5c7",
+              "carbs_g": 9.5,
+              "quantity": {
+                "unit": "mL",
+                "value": 200,
+                "estimated": true,
+                "reference_id": "fao-infoods-v2-whole-milk-tb"
+              },
+              "food_name": "leite integral",
+              "protein_g": 6.3,
+              "quantity_g": 206,
+              "nutrition_source": "product_label"
+            }
+          ],
+          "totals": {
+            "kcal": 126.1,
+            "fat_g": 6.5,
+            "carbs_g": 9.5,
+            "protein_g": 6.3
+          },
+          "meal_kind": "cafe"
+        },
+        "registration_id": "139f0000-0000-4000-8000-000000000002"
+      },
+      "sections": [
+        {
+          "key": "saved",
+          "text": "Café da manhã registrado."
+        },
+        {
+          "key": "items",
+          "text": "leite integral · 200 mL (estimado, editável)\n126,12 kcal | Proteína: 6,3 g | Carboidratos: 9,5 g | Gorduras: 6,5 g"
+        },
+        {
+          "key": "summary",
+          "text": "Total aproximado da refeição: 126,1 kcal | Proteína: 6,3 g | Carboidratos: 9,5 g | Gorduras: 6,5 g"
+        },
+        {
+          "key": "day",
+          "text": "Dia: 2026-11-05\nConsumido: 126 / 1.900 kcal (6,6%).\nProteína: 6,3 / 120 g (5,3%).\nRestam para comida: 1.774 kcal.\nExercício registrado: 0 kcal. Esse gasto não aumenta a comida disponível."
+        },
+        {
+          "key": "block",
+          "text": "Os dados consolidados do bloco estão indisponíveis."
+        },
+        {
+          "key": "education",
+          "text": "O comentário educativo está indisponível; seu registro continua salvo."
+        }
+      ]
+    },
+    {
+      "label": "known_workout",
+      "payload": {
+        "day": {
+          "targets": {
+            "protein_g": null,
+            "calories_kcal": null
+          },
+          "consumed": {
+            "fat_g": 0,
+            "carbs_g": 0,
+            "protein_g": 0,
+            "calories_kcal": 0
+          },
+          "local_date": "2026-11-05",
+          "exercise_kcal": 154,
+          "exercise_energy": {
+            "status": "available"
+          },
+          "current_protocol": null,
+          "food_excess_kcal": null,
+          "calorie_percentage": null,
+          "protein_percentage": null,
+          "remaining_food_kcal": null
+        },
+        "block": {
+          "status": "protected"
+        },
+        "locale": "pt-BR",
+        "schema": "registration.feedback.v3",
+        "guidance": "unavailable",
+        "assistant": "Flow AI",
+        "education": {
+          "status": "unavailable"
+        },
+        "local_date": "2026-11-05",
+        "registration": {
+          "kind": "workout",
+          "log_id": "8943b5cf-f8c6-49ee-b0c3-3808b09bdb70",
+          "intensity": "moderada",
+          "duration_min": 30,
+          "workout_type": "caminhada",
+          "estimated_kcal": 154
+        },
+        "registration_id": "139f0000-0000-4000-8000-000000000034"
+      },
+      "sections": [
+        {
+          "key": "saved",
+          "text": "Atividade registrada."
+        },
+        {
+          "key": "items",
+          "text": "caminhada · 30 min · moderada"
+        },
+        {
+          "key": "summary",
+          "text": "Gasto estimado: 154 kcal."
+        },
+        {
+          "key": "day",
+          "text": "Dia: 2026-11-05\nConsumido: 0 kcal. Meta indisponível.\nProteína: 0 g. Meta indisponível.\nSaldo alimentar indisponível.\nExercício registrado: 154 kcal. Esse gasto não aumenta a comida disponível."
+        },
+        {
+          "key": "block",
+          "text": "As orientações de longo prazo estão pausadas."
+        },
+        {
+          "key": "education",
+          "text": "O comentário educativo está indisponível; seu registro continua salvo."
+        }
+      ]
+    },
+    {
+      "label": "precoverage_meal",
+      "payload": {
+        "day": {
+          "targets": {
+            "protein_g": null,
+            "calories_kcal": null
+          },
+          "consumed": {
+            "fat_g": 0.21,
+            "carbs_g": 28.21,
+            "protein_g": 2.31,
+            "calories_kcal": 130
+          },
+          "local_date": "2026-11-05",
+          "exercise_kcal": null,
+          "exercise_energy": {
+            "reason": "source_unavailable",
+            "status": "unavailable"
+          },
+          "current_protocol": null,
+          "food_excess_kcal": null,
+          "calorie_percentage": null,
+          "protein_percentage": null,
+          "remaining_food_kcal": null
+        },
+        "block": {
+          "status": "protected"
+        },
+        "locale": "pt-BR",
+        "schema": "registration.feedback.v3",
+        "guidance": "unavailable",
+        "assistant": "Flow AI",
+        "education": {
+          "status": "unavailable"
+        },
+        "local_date": "2026-11-05",
+        "registration": {
+          "kind": "meal",
+          "items": [
+            {
+              "kcal": 130.04,
+              "fat_g": 0.21,
+              "log_id": "a5dfa9ee-99e1-472e-b1cd-2595821d2ba0",
+              "carbs_g": 28.21,
+              "quantity": {
+                "unit": "g",
+                "value": 100,
+                "estimated": false,
+                "reference_id": null
+              },
+              "food_name": "arroz sintetico",
+              "protein_g": 2.31,
+              "quantity_g": 100,
+              "nutrition_source": "user_kcal"
+            }
+          ],
+          "totals": {
+            "kcal": 130,
+            "fat_g": 0.2,
+            "carbs_g": 28.2,
+            "protein_g": 2.3
+          },
+          "meal_kind": "almoco"
+        },
+        "registration_id": "74094976-9aa0-42b5-91a4-e0052ef9eb19"
+      },
+      "sections": [
+        {
+          "key": "saved",
+          "text": "Almoço registrado."
+        },
+        {
+          "key": "items",
+          "text": "arroz sintetico · 100 g\n130,04 kcal | Proteína: 2,31 g | Carboidratos: 28,21 g | Gorduras: 0,21 g"
+        },
+        {
+          "key": "summary",
+          "text": "Total aproximado da refeição: 130 kcal | Proteína: 2,3 g | Carboidratos: 28,2 g | Gorduras: 0,2 g"
+        },
+        {
+          "key": "day",
+          "text": "Dia: 2026-11-05\nConsumido: 130 kcal. Meta indisponível.\nProteína: 2,31 g. Meta indisponível.\nSaldo alimentar indisponível.\nGasto de exercício indisponível. Exercício não aumenta a comida disponível."
+        },
+        {
+          "key": "block",
+          "text": "As orientações de longo prazo estão pausadas."
+        },
+        {
+          "key": "education",
+          "text": "O comentário educativo está indisponível; seu registro continua salvo."
+        }
+      ]
+    },
+    {
+      "label": "unknown_workout",
+      "payload": {
+        "day": {
+          "targets": {
+            "protein_g": null,
+            "calories_kcal": null
+          },
+          "consumed": {
+            "fat_g": 0,
+            "carbs_g": 0,
+            "protein_g": 0,
+            "calories_kcal": 0
+          },
+          "local_date": "2026-11-05",
+          "exercise_kcal": null,
+          "exercise_energy": {
+            "reason": "unknown_workout_energy",
+            "status": "unavailable"
+          },
+          "current_protocol": null,
+          "food_excess_kcal": null,
+          "calorie_percentage": null,
+          "protein_percentage": null,
+          "remaining_food_kcal": null
+        },
+        "block": {
+          "status": "protected"
+        },
+        "locale": "pt-BR",
+        "schema": "registration.feedback.v3",
+        "guidance": "unavailable",
+        "assistant": "Flow AI",
+        "education": {
+          "status": "unavailable"
+        },
+        "local_date": "2026-11-05",
+        "registration": {
+          "kind": "workout",
+          "log_id": "8f435fe2-2c8a-46d3-b692-e09b5564b705",
+          "intensity": null,
+          "duration_min": 30,
+          "workout_type": "caminhada",
+          "estimated_kcal": null
+        },
+        "registration_id": "139f0000-0000-4000-8000-000000000031"
+      },
+      "sections": [
+        {
+          "key": "saved",
+          "text": "Atividade registrada."
+        },
+        {
+          "key": "items",
+          "text": "caminhada · 30 min · Intensidade indisponível"
+        },
+        {
+          "key": "summary",
+          "text": "Gasto estimado indisponível."
+        },
+        {
+          "key": "day",
+          "text": "Dia: 2026-11-05\nConsumido: 0 kcal. Meta indisponível.\nProteína: 0 g. Meta indisponível.\nSaldo alimentar indisponível.\nGasto de exercício indisponível. Exercício não aumenta a comida disponível."
+        },
+        {
+          "key": "block",
+          "text": "As orientações de longo prazo estão pausadas."
+        },
+        {
+          "key": "education",
+          "text": "O comentário educativo está indisponível; seu registro continua salvo."
+        }
+      ]
+    }
+  ]
+}

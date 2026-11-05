@@ -4,6 +4,13 @@ import { isDeepStrictEqual } from 'node:util'
 import type { ServiceClient } from '@mpp/db'
 import { z } from 'zod'
 import type { MobileAuthContext } from './auth'
+import type { ConversationFeedbackPresentationNegotiation } from './conversation-feedback-presentation-negotiation'
+import type { ConversationFeedbackPresentationV2 } from './conversation-feedback-presentation-v2'
+import {
+  type ConversationFeedbackPublicCompositionFactory,
+  createConversationFeedbackPublicComposition,
+} from './conversation-feedback-public-composition'
+import { conversationFeedbackV3WriterEnabled } from './conversation-feedback-server-policy'
 import { createSupabaseConversationMealContinuationFeedback } from './conversation-meal-continuation-feedback'
 import {
   type ConversationMealContinuationReadIdentity,
@@ -20,6 +27,7 @@ import type {
 } from './conversation-meal-continuation-service'
 import { createConversationMealContinuationService } from './conversation-meal-continuation-service'
 import { freezeInterpretation } from './conversation-meal-interpretation-contracts'
+import { conversationJournalInstant as instant } from './conversation-meal-journal-store'
 import {
   bindConversationMealReplySubmission,
   type ConversationMealReplyIdentity,
@@ -31,6 +39,8 @@ import {
   type ConversationMealReplyScopeDependencies,
   createConversationMealReplyScope,
 } from './conversation-meal-reply-scope'
+import { projectCurrentClinicalPublicPolicy } from './current-clinical-read-model'
+import { readCurrentClinicalState } from './current-clinical-state'
 import { MobileApiError } from './http'
 import { authenticatedReevaluationOwner } from './reevaluation-cycle-service'
 
@@ -63,6 +73,8 @@ export interface ConversationMealReplyFeedbackPort {
   readHistorical(input: ConversationMealReplyFeedbackInput): Promise<unknown>
 }
 export interface ConversationMealReplyPublicPorts extends ConversationMealReplyScopeDependencies {
+  readonly feedbackV3?: ConversationFeedbackPublicCompositionFactory
+  readonly feedbackV3WriterEnabled?: () => boolean
   readonly reader?: ConversationMealContinuationReadStore
   readonly processor?: (
     db: ServiceClient,
@@ -122,15 +134,27 @@ export function createConversationMealReplyPublicService(
       ? { clinical: Object.freeze({ capture: ports.clinical.capture.bind(ports.clinical) }) }
       : {}),
   })
+  const feedback3 =
+      ports.feedbackV3?.bind(ports) ??
+      ((auth: MobileAuthContext, epoch: string) =>
+        createConversationFeedbackPublicComposition(sdk, auth, epoch, scopeDependencies)),
+    writeFeedback3 = (
+      ports.feedbackV3WriterEnabled?.bind(ports) ?? conversationFeedbackV3WriterEnabled
+    )()
   async function run(
     who: MobileAuthContext,
     identity: ConversationMealReplyIdentity,
     bound: ReturnType<typeof bindConversationMealReplySubmission> | null,
+    selected: ConversationFeedbackPresentationNegotiation,
   ) {
     const scope = createConversationMealReplyScope(sdk, who, identity, scopeDependencies)
     await scope.observe()
     let outcome: unknown = null
-    if (bound) {
+    // Only the server-selected family adds this observation. A known saved
+    // identity is a read-only replay, never a second submit/canonical capture.
+    const prior = bound && writeFeedback3 ? await actual(identity) : null,
+      savedReplay = prior?.action === 'available' && prior.reply?.state === 'saved' ? prior : null
+    if (bound && !savedReplay) {
       const process = processor(sdk, {
           checkCurrentScope: (s: ConversationMealContinuationScope) => scope.check(s),
         }),
@@ -172,7 +196,7 @@ export function createConversationMealReplyPublicService(
       await scope.observe()
       let raw: unknown
       try {
-        raw = await read(i)
+        raw = detachConversationContinuationReadJson(await read(i))
       } catch {
         await scope.observe()
         return conversationMealReplyUnavailable()
@@ -180,7 +204,7 @@ export function createConversationMealReplyPublicService(
       await scope.observe()
       return parseConversationMealContinuationRead(raw, i)
     }
-    const first = await actual(identity)
+    const first = savedReplay ?? (await actual(identity))
     let proof: { kind: 'reply' | 'parent_only_after_reply_conflict'; state: unknown }
     if (first.action === 'available') proof = { kind: 'reply', state: first }
     else if (first.action === 'reply_conflict') {
@@ -201,7 +225,8 @@ export function createConversationMealReplyPublicService(
       return changed('decision_conflict')
     if (bound && state.reply && !isDeepStrictEqual(state.reply.body, bound.reply.input))
       return changed('input_conflict')
-    let feedback: unknown = null
+    let feedback: unknown = null,
+      v2: ConversationFeedbackPresentationV2 | null = null
     if (
       proof.kind === 'reply' &&
       state.reply?.state === 'saved' &&
@@ -246,19 +271,47 @@ export function createConversationMealReplyPublicService(
           ) as ConversationMealReplyFeedbackPort['readHistorical']
         if (bound) {
           try {
-            await ensure(input)
+            if (writeFeedback3) {
+              const success = z
+                .object({
+                  status: z.literal('saved'),
+                  identity: z.unknown(),
+                  receipt: z.unknown(),
+                  historicalFeedback: z.null(),
+                  feedbackGate: z.literal('continuation_feedback_v2_unavailable'),
+                })
+                .strict()
+                .safeParse(detachConversationContinuationReadJson(outcome))
+              if (
+                !savedReplay &&
+                success.success &&
+                isDeepStrictEqual(
+                  parseConversationMealReplyIdentity(
+                    success.data.identity as ConversationMealContinuationReadIdentity,
+                  ),
+                  identity,
+                ) &&
+                isDeepStrictEqual(success.data.receipt, input.binding.receipt)
+              )
+                await feedback3(who, identity.epoch).ensureReply(input)
+            } else await ensure(input)
           } catch {
             /* optional seal failure never repeats factual food */
           }
           await scope.observe()
         }
-        feedback = await historical(input)
+        if (selected === '2')
+          v2 = await feedback3(who, identity.epoch).readHistorical({
+            auth: who,
+            proof: { kind: 'meal.clarify', binding: input.binding },
+          })
+        if (!v2) feedback = await historical(input)
       } catch {
         feedback = null
       }
     }
     const observation = await scope.observe()
-    return projectConversationMealReplyResult({
+    const result = projectConversationMealReplyResult({
       auth: who,
       identity,
       proof,
@@ -267,6 +320,21 @@ export function createConversationMealReplyPublicService(
       outcome,
       feedback,
     })
+    if (v2 && result.status === 'saved' && result.receipt && result.child_binding) {
+      const { observed_at: _p, ...policy } = projectCurrentClinicalPublicPolicy(
+          readCurrentClinicalState(observation, identity.ownerId),
+        ),
+        { observed_at: _f, ...current } = v2.current_policy,
+        at = instant(v2.provenance.observed_at)
+      if (
+        isDeepStrictEqual(policy, current) &&
+        at >= instant(state.observed_at) &&
+        at <= instant(result.observed_at) &&
+        at >= instant(result.receipt.consumed_at)
+      )
+        return freezeInterpretation({ ...result, feedback: v2 })
+    }
+    return result
   }
   return Object.freeze({
     async submit(
@@ -275,6 +343,7 @@ export function createConversationMealReplyPublicService(
       epoch: string,
       raw: unknown,
       idempotencyKey: string | null,
+      selected: ConversationFeedbackPresentationNegotiation = 'legacy',
     ) {
       const who = freezeInterpretation(
           detachConversationContinuationReadJson(auth) as MobileAuthContext,
@@ -295,7 +364,7 @@ export function createConversationMealReplyPublicService(
           replyId: bound.submission.reply_id,
           replyInputHash: bound.reply.inputHash,
         })
-      return run(who, i, bound)
+      return run(who, i, bound, selected)
     },
     async reconcile(
       auth: MobileAuthContext,
@@ -303,6 +372,7 @@ export function createConversationMealReplyPublicService(
       replyId: string,
       epoch: string,
       query: { parent_input_hash: string; reply_input_hash: string },
+      selected: ConversationFeedbackPresentationNegotiation = 'legacy',
     ) {
       const who = freezeInterpretation(
           detachConversationContinuationReadJson(auth) as MobileAuthContext,
@@ -323,7 +393,7 @@ export function createConversationMealReplyPublicService(
           replyId,
           replyInputHash: q.reply_input_hash,
         })
-      return run(who, i, null)
+      return run(who, i, null, selected)
     },
   })
 }

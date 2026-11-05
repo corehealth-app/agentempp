@@ -806,7 +806,7 @@ struct WorkoutRegistrationContent: View {
                 Text(copy("registration.confirmed.workout-title")).font(BodyFlowTypography.title).fontWeight(.semibold)
                 Text(copy(strengthQuestion == nil ? "registration.confirmed.read-only" : "registration.confirmed.workout-note"))
                     .foregroundStyle(BodyFlowColor.secondaryText)
-                if let feedback = model.confirmedRegistration?.feedback {
+                if let feedback = model.confirmedRegistration?.feedback?.admittedToLegacyConfirmation() {
                     RegistrationFeedbackView(feedback: feedback)
                 }
             }
@@ -1014,7 +1014,7 @@ private struct MealRegistrationContent: View {
                     .fontWeight(.semibold)
                 Text(copy("registration.confirmed.read-only"))
                     .foregroundStyle(BodyFlowColor.secondaryText)
-                if let feedback = model.confirmedRegistration?.feedback {
+                if let feedback = model.confirmedRegistration?.feedback?.admittedToLegacyConfirmation() {
                     RegistrationFeedbackView(feedback: feedback)
                 }
             }

@@ -11,6 +11,11 @@ function currentAppPaths(): Record<string, string> {
 }
 const cache = new Map<string, string>()
 const addition = 'workouts/[id]/strength-clarification/route.ts'
+const workoutTransportAdditions = new Set([
+  'conversation/workout-commands/[commandId]/route.ts',
+  'conversation/workout-commands/route.ts',
+  'conversation/workout-session/route.ts',
+])
 function routeFiles(root: string): string[] {
   return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
     const path = resolve(root, entry.name)
@@ -62,7 +67,7 @@ function routesReaching(marker: string) {
 }
 
 describe('current-authority clarification in the fresh mobile server build', () => {
-  it('adds exactly one mirrored route while preserving the prior 54-route export stream and the independent completion-intent addition', () => {
+  it('keeps all88 mirrored exports and exact3 workout additions while preserving every historical stream', () => {
     const appRoot = resolve(root, '../..')
     const source = exportStream(resolve(appRoot, '../admin/src/app/api/mobile/v1'), false)
     const mirror = exportStream(resolve(appRoot, 'src/app/api/mobile/v1'), true)
@@ -70,12 +75,35 @@ describe('current-authority clarification in the fresh mobile server build', () 
     expect(
       source.find((record) => record.path === 'auth/password-recovery/route.ts')?.exports,
     ).toEqual(['GET', 'HEAD', 'POST', 'dynamic', 'maxDuration', 'runtime'])
-    expect(source).toHaveLength(85)
+    expect(source).toHaveLength(88)
+    expect(
+      createHash('sha256')
+        .update(source.map((record) => `${record.path}\0${record.exports.join(',')}\n`).join(''))
+        .digest('hex'),
+    ).toBe('99623e7e5caf5d3b3df20eeb6bf840e6fb416f5e489498232a0c984a0a6e53b4')
+    expect(source.filter((record) => workoutTransportAdditions.has(record.path))).toEqual([
+      {
+        path: 'conversation/workout-commands/[commandId]/route.ts',
+        exports: ['GET', 'maxDuration', 'runtime'],
+      },
+      {
+        path: 'conversation/workout-commands/route.ts',
+        exports: ['POST', 'maxDuration', 'runtime'],
+      },
+      { path: 'conversation/workout-session/route.ts', exports: ['GET', 'maxDuration', 'runtime'] },
+    ])
+    const prior85 = source.filter((record) => !workoutTransportAdditions.has(record.path))
+    expect(prior85).toHaveLength(85)
+    expect(
+      createHash('sha256')
+        .update(prior85.map((record) => `${record.path}\0${record.exports.join(',')}\n`).join(''))
+        .digest('hex'),
+    ).toBe('afb3a6182ad8e1335a24edeb3f2394f411ee6935f9994c1ecfb0c164079c3d12')
     expect(source.find((record) => record.path === 'nutrition/window/route.ts')).toEqual({
       path: 'nutrition/window/route.ts',
       exports: ['GET', 'dynamic', 'runtime'],
     })
-    const prior84 = source.filter((record) => record.path !== 'nutrition/window/route.ts')
+    const prior84 = prior85.filter((record) => record.path !== 'nutrition/window/route.ts')
     expect(prior84).toHaveLength(84)
     expect(
       createHash('sha256')

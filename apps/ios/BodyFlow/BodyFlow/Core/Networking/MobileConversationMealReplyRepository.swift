@@ -5,14 +5,16 @@ struct MobileConversationMealReplyRepository: Sendable {
   private let transport: MobileAPITransport
   private let lifecycle: any SessionLifecycleProviding
   private let lease: SessionLease
+  private let feedbackPresentation: ConversationFeedbackPresentationSelection?
   static func scoped(
-    transport: MobileAPITransport, lifecycle: any SessionLifecycleProviding, lease: SessionLease
+    transport: MobileAPITransport, lifecycle: any SessionLifecycleProviding, lease: SessionLease,
+    feedbackPresentation: ConversationFeedbackPresentationSelection? = nil
   ) async throws -> Self {
     let transport = transport.withResponseBodyLimit(
       MobileConversationCommandRepository.responseBodyLimit
     ).scoped(to: lease)
     try await transport.validateOriginalSession(lease)
-    return .init(transport: transport, lifecycle: lifecycle, lease: lease)
+    return .init(transport: transport, lifecycle: lifecycle, lease: lease, feedbackPresentation: feedbackPresentation)
   }
   func submit(_ ticket: ConversationMealReplyOutboxTicket, context: ConversationCommandContext)
     async throws -> ConversationMealReplyResultSnapshot
@@ -23,7 +25,7 @@ struct MobileConversationMealReplyRepository: Sendable {
         method: .post, path: path(ticket), body: ticket.wireBody,
         idempotencyKey: IdempotencyKey(validating: ticket.idempotencyKey),
         timeout: MobileAPITransport.longestRequestTimeout,
-        conversation: .mealReplySubmit(ticket.intent), unauthorizedReplay: .never))
+        conversation: .mealReplySubmit(ticket.intent), unauthorizedReplay: .never, feedbackPresentation: feedbackPresentation))
     try await validate(ticket, context: context)
     guard response.data.acceptsHTTPStatus(response.statusCode),
       response.data.matches(intent: ticket.intent, authUserID: context.authUserID)
@@ -42,7 +44,7 @@ struct MobileConversationMealReplyRepository: Sendable {
           .init(name: "parent_input_hash", value: ticket.parentInputHash),
           .init(name: "reply_input_hash", value: ticket.replyInputHash),
         ],
-        conversation: .mealReplyReconciliation(ticket.intent)))
+        conversation: .mealReplyReconciliation(ticket.intent), feedbackPresentation: feedbackPresentation))
     try await validate(ticket, context: context)
     guard response.data.acceptsHTTPStatus(response.statusCode),
       response.data.matches(intent: ticket.intent, authUserID: context.authUserID)

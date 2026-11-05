@@ -334,8 +334,10 @@ indirect enum ConversationMealEditJSON: Codable {
     e.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
     return try e.encode(self)
   }
-  func decode<T: Decodable>(_ type: T.Type) throws -> T {
-    try JSONDecoder().decode(type, from: data())
+  func decode<T: Decodable>(
+    _ type: T.Type, selection: ConversationFeedbackPresentationSelection? = nil
+  ) throws -> T {
+    try ConversationFeedbackPresentationSelection.decoder(selection: selection).decode(type, from: data())
   }
   func boundPublicPacket() throws { try editCheck(data().count <= 65_536) }
   func object(_ keys: Set<String>) throws -> [String: Self] {

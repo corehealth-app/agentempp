@@ -1,0 +1,1700 @@
+{
+  "provenance": "Controlled synthetic UNIT inputs through frozen actual prepareRegistrationFeedbackV3/renderRegistrationFeedbackV3; not PostgreSQL, HTTP, provider or E2E",
+  "wire_sha256": "6e0a9ac12a88cd6368a78c3599ffbb33712dd629a6c82c2e8c1defa9737e5bb3",
+  "input_fixture_sha256": "8bfe53cdd7352d71e31afe0d0258a9451d171fec1dde0a6e421c5fd9e3d09ba8",
+  "v2_factual_fixture_sha256": "e4f81fc50ed0a5e8865dfbd859896023d34e4992a14df22be6ad5d2f8b33f1bb",
+  "cases": [
+    {
+      "label": "unknown_workout/pt-BR",
+      "payload": {
+        "schema": "registration.feedback.v3",
+        "registration_id": "10000000-0000-4000-8000-000000000001",
+        "local_date": "2026-11-05",
+        "locale": "pt-BR",
+        "assistant": "Flow AI",
+        "registration": {
+          "kind": "workout",
+          "log_id": "20000000-0000-4000-8000-000000000001",
+          "workout_type": "caminhada",
+          "duration_min": 30,
+          "intensity": null,
+          "estimated_kcal": null
+        },
+        "day": {
+          "local_date": "2026-11-05",
+          "current_protocol": "recomposicao",
+          "consumed": {
+            "calories_kcal": 1785,
+            "protein_g": 126,
+            "carbs_g": 180,
+            "fat_g": 45
+          },
+          "targets": {
+            "calories_kcal": 2400,
+            "protein_g": 150
+          },
+          "calorie_percentage": 74.4,
+          "protein_percentage": 84,
+          "remaining_food_kcal": 615,
+          "food_excess_kcal": 0,
+          "exercise_kcal": null,
+          "exercise_energy": {
+            "status": "unavailable",
+            "reason": "unknown_workout_energy"
+          }
+        },
+        "block": {
+          "status": "available",
+          "target_kcal": 7700,
+          "current_kcal": 3120,
+          "percentage": 41,
+          "completed_blocks": 2,
+          "total_credited_kcal": 18520
+        },
+        "guidance": "available",
+        "education": {
+          "status": "available",
+          "text": "A caminhada contribui para uma rotina ativa. Seu valor vai além das calorias estimadas; é um estímulo diferente dos exercícios de fortalecimento muscular. Seu bloco de longo prazo usa dias consolidados, sem crédito imediato por este registro. Quer me contar o que você prefere para conversarmos sobre um ajuste adequado?",
+          "provenance": {
+            "source": "reviewed_template",
+            "catalog_version": "registration.education.v1",
+            "template_id": "activity_walking",
+            "preferences_known": false
+          }
+        }
+      },
+      "sections": [
+        {
+          "key": "saved",
+          "text": "Atividade registrada."
+        },
+        {
+          "key": "items",
+          "text": "caminhada · 30 min · Intensidade indisponível"
+        },
+        {
+          "key": "summary",
+          "text": "Gasto estimado indisponível."
+        },
+        {
+          "key": "day",
+          "text": "Dia: 2026-11-05\nConsumido: 1.785 / 2.400 kcal (74,4%).\nProteína: 126 / 150 g (84%).\nRestam para comida: 615 kcal.\nGasto de exercício indisponível. Exercício não aumenta a comida disponível."
+        },
+        {
+          "key": "block",
+          "text": "Bloco 7.700: 3.120 / 7.700 kcal (41%).\nSaldo total já consolidado: 18.520 kcal · Blocos concluídos: 2.\nReferência teórica; este registro não cria crédito imediato nem garante uma mudança física de peso."
+        },
+        {
+          "key": "education",
+          "text": "A caminhada contribui para uma rotina ativa. Seu valor vai além das calorias estimadas; é um estímulo diferente dos exercícios de fortalecimento muscular. Seu bloco de longo prazo usa dias consolidados, sem crédito imediato por este registro. Quer me contar o que você prefere para conversarmos sobre um ajuste adequado?"
+        }
+      ]
+    },
+    {
+      "label": "unknown_workout/en",
+      "payload": {
+        "schema": "registration.feedback.v3",
+        "registration_id": "10000000-0000-4000-8000-000000000001",
+        "local_date": "2026-11-05",
+        "locale": "en",
+        "assistant": "Flow AI",
+        "registration": {
+          "kind": "workout",
+          "log_id": "20000000-0000-4000-8000-000000000001",
+          "workout_type": "caminhada",
+          "duration_min": 30,
+          "intensity": null,
+          "estimated_kcal": null
+        },
+        "day": {
+          "local_date": "2026-11-05",
+          "current_protocol": "recomposicao",
+          "consumed": {
+            "calories_kcal": 1785,
+            "protein_g": 126,
+            "carbs_g": 180,
+            "fat_g": 45
+          },
+          "targets": {
+            "calories_kcal": 2400,
+            "protein_g": 150
+          },
+          "calorie_percentage": 74.4,
+          "protein_percentage": 84,
+          "remaining_food_kcal": 615,
+          "food_excess_kcal": 0,
+          "exercise_kcal": null,
+          "exercise_energy": {
+            "status": "unavailable",
+            "reason": "unknown_workout_energy"
+          }
+        },
+        "block": {
+          "status": "available",
+          "target_kcal": 7700,
+          "current_kcal": 3120,
+          "percentage": 41,
+          "completed_blocks": 2,
+          "total_credited_kcal": 18520
+        },
+        "guidance": "available",
+        "education": {
+          "status": "available",
+          "text": "Walking contributes to an active routine. Its value goes beyond estimated calories; it is a different stimulus from muscle-strengthening exercise. Your long-term block uses consolidated days, not an immediate credit for this record. Would you like to tell me what you prefer so we can discuss a suitable adjustment?",
+          "provenance": {
+            "source": "reviewed_template",
+            "catalog_version": "registration.education.v1",
+            "template_id": "activity_walking",
+            "preferences_known": false
+          }
+        }
+      },
+      "sections": [
+        {
+          "key": "saved",
+          "text": "Activity recorded."
+        },
+        {
+          "key": "items",
+          "text": "caminhada · 30 min · Intensity unavailable"
+        },
+        {
+          "key": "summary",
+          "text": "Estimated expenditure unavailable."
+        },
+        {
+          "key": "day",
+          "text": "Day: 2026-11-05\nConsumed: 1,785 / 2,400 kcal (74.4%).\nProtein: 126 / 150 g (84%).\nRemaining for food: 615 kcal.\nExercise expenditure unavailable. Exercise does not increase the food budget."
+        },
+        {
+          "key": "block",
+          "text": "Block 7,700: 3,120 / 7,700 kcal (41%).\nTotal already consolidated: 18,520 kcal · Completed blocks: 2.\nTheoretical reference; this record does not create an immediate credit or guarantee a physical weight change."
+        },
+        {
+          "key": "education",
+          "text": "Walking contributes to an active routine. Its value goes beyond estimated calories; it is a different stimulus from muscle-strengthening exercise. Your long-term block uses consolidated days, not an immediate credit for this record. Would you like to tell me what you prefer so we can discuss a suitable adjustment?"
+        }
+      ]
+    },
+    {
+      "label": "known_zero/pt-BR",
+      "payload": {
+        "schema": "registration.feedback.v3",
+        "registration_id": "10000000-0000-4000-8000-000000000001",
+        "local_date": "2026-11-05",
+        "locale": "pt-BR",
+        "assistant": "Flow AI",
+        "registration": {
+          "kind": "workout",
+          "log_id": "20000000-0000-4000-8000-000000000001",
+          "workout_type": "caminhada",
+          "duration_min": 30,
+          "intensity": null,
+          "estimated_kcal": 0
+        },
+        "day": {
+          "local_date": "2026-11-05",
+          "current_protocol": "recomposicao",
+          "consumed": {
+            "calories_kcal": 1785,
+            "protein_g": 126,
+            "carbs_g": 180,
+            "fat_g": 45
+          },
+          "targets": {
+            "calories_kcal": 2400,
+            "protein_g": 150
+          },
+          "calorie_percentage": 74.4,
+          "protein_percentage": 84,
+          "remaining_food_kcal": 615,
+          "food_excess_kcal": 0,
+          "exercise_kcal": 0,
+          "exercise_energy": {
+            "status": "available"
+          }
+        },
+        "block": {
+          "status": "available",
+          "target_kcal": 7700,
+          "current_kcal": 3120,
+          "percentage": 41,
+          "completed_blocks": 2,
+          "total_credited_kcal": 18520
+        },
+        "guidance": "available",
+        "education": {
+          "status": "available",
+          "text": "A caminhada contribui para uma rotina ativa. Seu valor vai além das calorias estimadas; é um estímulo diferente dos exercícios de fortalecimento muscular. Seu bloco de longo prazo usa dias consolidados, sem crédito imediato por este registro. Quer me contar o que você prefere para conversarmos sobre um ajuste adequado?",
+          "provenance": {
+            "source": "reviewed_template",
+            "catalog_version": "registration.education.v1",
+            "template_id": "activity_walking",
+            "preferences_known": false
+          }
+        }
+      },
+      "sections": [
+        {
+          "key": "saved",
+          "text": "Atividade registrada."
+        },
+        {
+          "key": "items",
+          "text": "caminhada · 30 min · Intensidade indisponível"
+        },
+        {
+          "key": "summary",
+          "text": "Gasto estimado: 0 kcal."
+        },
+        {
+          "key": "day",
+          "text": "Dia: 2026-11-05\nConsumido: 1.785 / 2.400 kcal (74,4%).\nProteína: 126 / 150 g (84%).\nRestam para comida: 615 kcal.\nExercício registrado: 0 kcal. Esse gasto não aumenta a comida disponível."
+        },
+        {
+          "key": "block",
+          "text": "Bloco 7.700: 3.120 / 7.700 kcal (41%).\nSaldo total já consolidado: 18.520 kcal · Blocos concluídos: 2.\nReferência teórica; este registro não cria crédito imediato nem garante uma mudança física de peso."
+        },
+        {
+          "key": "education",
+          "text": "A caminhada contribui para uma rotina ativa. Seu valor vai além das calorias estimadas; é um estímulo diferente dos exercícios de fortalecimento muscular. Seu bloco de longo prazo usa dias consolidados, sem crédito imediato por este registro. Quer me contar o que você prefere para conversarmos sobre um ajuste adequado?"
+        }
+      ]
+    },
+    {
+      "label": "known_zero/en",
+      "payload": {
+        "schema": "registration.feedback.v3",
+        "registration_id": "10000000-0000-4000-8000-000000000001",
+        "local_date": "2026-11-05",
+        "locale": "en",
+        "assistant": "Flow AI",
+        "registration": {
+          "kind": "workout",
+          "log_id": "20000000-0000-4000-8000-000000000001",
+          "workout_type": "caminhada",
+          "duration_min": 30,
+          "intensity": null,
+          "estimated_kcal": 0
+        },
+        "day": {
+          "local_date": "2026-11-05",
+          "current_protocol": "recomposicao",
+          "consumed": {
+            "calories_kcal": 1785,
+            "protein_g": 126,
+            "carbs_g": 180,
+            "fat_g": 45
+          },
+          "targets": {
+            "calories_kcal": 2400,
+            "protein_g": 150
+          },
+          "calorie_percentage": 74.4,
+          "protein_percentage": 84,
+          "remaining_food_kcal": 615,
+          "food_excess_kcal": 0,
+          "exercise_kcal": 0,
+          "exercise_energy": {
+            "status": "available"
+          }
+        },
+        "block": {
+          "status": "available",
+          "target_kcal": 7700,
+          "current_kcal": 3120,
+          "percentage": 41,
+          "completed_blocks": 2,
+          "total_credited_kcal": 18520
+        },
+        "guidance": "available",
+        "education": {
+          "status": "available",
+          "text": "Walking contributes to an active routine. Its value goes beyond estimated calories; it is a different stimulus from muscle-strengthening exercise. Your long-term block uses consolidated days, not an immediate credit for this record. Would you like to tell me what you prefer so we can discuss a suitable adjustment?",
+          "provenance": {
+            "source": "reviewed_template",
+            "catalog_version": "registration.education.v1",
+            "template_id": "activity_walking",
+            "preferences_known": false
+          }
+        }
+      },
+      "sections": [
+        {
+          "key": "saved",
+          "text": "Activity recorded."
+        },
+        {
+          "key": "items",
+          "text": "caminhada · 30 min · Intensity unavailable"
+        },
+        {
+          "key": "summary",
+          "text": "Estimated expenditure: 0 kcal."
+        },
+        {
+          "key": "day",
+          "text": "Day: 2026-11-05\nConsumed: 1,785 / 2,400 kcal (74.4%).\nProtein: 126 / 150 g (84%).\nRemaining for food: 615 kcal.\nRecorded exercise: 0 kcal. It does not increase the food budget."
+        },
+        {
+          "key": "block",
+          "text": "Block 7,700: 3,120 / 7,700 kcal (41%).\nTotal already consolidated: 18,520 kcal · Completed blocks: 2.\nTheoretical reference; this record does not create an immediate credit or guarantee a physical weight change."
+        },
+        {
+          "key": "education",
+          "text": "Walking contributes to an active routine. Its value goes beyond estimated calories; it is a different stimulus from muscle-strengthening exercise. Your long-term block uses consolidated days, not an immediate credit for this record. Would you like to tell me what you prefer so we can discuss a suitable adjustment?"
+        }
+      ]
+    },
+    {
+      "label": "gain_unknown/pt-BR",
+      "payload": {
+        "schema": "registration.feedback.v3",
+        "registration_id": "10000000-0000-4000-8000-000000000001",
+        "local_date": "2026-11-05",
+        "locale": "pt-BR",
+        "assistant": "Flow AI",
+        "registration": {
+          "kind": "workout",
+          "log_id": "20000000-0000-4000-8000-000000000001",
+          "workout_type": "caminhada",
+          "duration_min": 30,
+          "intensity": null,
+          "estimated_kcal": null
+        },
+        "day": {
+          "local_date": "2026-11-05",
+          "current_protocol": "ganho_massa",
+          "consumed": {
+            "calories_kcal": 1785,
+            "protein_g": 126,
+            "carbs_g": 180,
+            "fat_g": 45
+          },
+          "targets": {
+            "calories_kcal": 2400,
+            "protein_g": 150
+          },
+          "calorie_percentage": 74.4,
+          "protein_percentage": 84,
+          "remaining_food_kcal": 615,
+          "food_excess_kcal": 0,
+          "exercise_kcal": null,
+          "exercise_energy": {
+            "status": "unavailable",
+            "reason": "unknown_workout_energy"
+          }
+        },
+        "block": {
+          "status": "not_applicable"
+        },
+        "guidance": "available",
+        "education": {
+          "status": "available",
+          "text": "A caminhada contribui para uma rotina ativa. Seu valor vai além das calorias estimadas; é um estímulo diferente dos exercícios de fortalecimento muscular. No seu objetivo atual, acompanhe o conjunto da rotina sem interpretar este evento como ganho de massa. Quer me contar o que você prefere para conversarmos sobre um ajuste adequado?",
+          "provenance": {
+            "source": "reviewed_template",
+            "catalog_version": "registration.education.v1",
+            "template_id": "activity_walking",
+            "preferences_known": false
+          }
+        }
+      },
+      "sections": [
+        {
+          "key": "saved",
+          "text": "Atividade registrada."
+        },
+        {
+          "key": "items",
+          "text": "caminhada · 30 min · Intensidade indisponível"
+        },
+        {
+          "key": "summary",
+          "text": "Gasto estimado indisponível."
+        },
+        {
+          "key": "day",
+          "text": "Dia: 2026-11-05\nConsumido: 1.785 / 2.400 kcal (74,4%).\nProteína: 126 / 150 g (84%).\nRestam para comida: 615 kcal.\nGasto de exercício indisponível. Exercício não aumenta a comida disponível."
+        },
+        {
+          "key": "block",
+          "text": "O Bloco 7.700 não se aplica ao seu objetivo atual."
+        },
+        {
+          "key": "education",
+          "text": "A caminhada contribui para uma rotina ativa. Seu valor vai além das calorias estimadas; é um estímulo diferente dos exercícios de fortalecimento muscular. No seu objetivo atual, acompanhe o conjunto da rotina sem interpretar este evento como ganho de massa. Quer me contar o que você prefere para conversarmos sobre um ajuste adequado?"
+        }
+      ]
+    },
+    {
+      "label": "gain_unknown/en",
+      "payload": {
+        "schema": "registration.feedback.v3",
+        "registration_id": "10000000-0000-4000-8000-000000000001",
+        "local_date": "2026-11-05",
+        "locale": "en",
+        "assistant": "Flow AI",
+        "registration": {
+          "kind": "workout",
+          "log_id": "20000000-0000-4000-8000-000000000001",
+          "workout_type": "caminhada",
+          "duration_min": 30,
+          "intensity": null,
+          "estimated_kcal": null
+        },
+        "day": {
+          "local_date": "2026-11-05",
+          "current_protocol": "ganho_massa",
+          "consumed": {
+            "calories_kcal": 1785,
+            "protein_g": 126,
+            "carbs_g": 180,
+            "fat_g": 45
+          },
+          "targets": {
+            "calories_kcal": 2400,
+            "protein_g": 150
+          },
+          "calorie_percentage": 74.4,
+          "protein_percentage": 84,
+          "remaining_food_kcal": 615,
+          "food_excess_kcal": 0,
+          "exercise_kcal": null,
+          "exercise_energy": {
+            "status": "unavailable",
+            "reason": "unknown_workout_energy"
+          }
+        },
+        "block": {
+          "status": "not_applicable"
+        },
+        "guidance": "available",
+        "education": {
+          "status": "available",
+          "text": "Walking contributes to an active routine. Its value goes beyond estimated calories; it is a different stimulus from muscle-strengthening exercise. For your current goal, follow the whole routine rather than interpreting this event as muscle gain. Would you like to tell me what you prefer so we can discuss a suitable adjustment?",
+          "provenance": {
+            "source": "reviewed_template",
+            "catalog_version": "registration.education.v1",
+            "template_id": "activity_walking",
+            "preferences_known": false
+          }
+        }
+      },
+      "sections": [
+        {
+          "key": "saved",
+          "text": "Activity recorded."
+        },
+        {
+          "key": "items",
+          "text": "caminhada · 30 min · Intensity unavailable"
+        },
+        {
+          "key": "summary",
+          "text": "Estimated expenditure unavailable."
+        },
+        {
+          "key": "day",
+          "text": "Day: 2026-11-05\nConsumed: 1,785 / 2,400 kcal (74.4%).\nProtein: 126 / 150 g (84%).\nRemaining for food: 615 kcal.\nExercise expenditure unavailable. Exercise does not increase the food budget."
+        },
+        {
+          "key": "block",
+          "text": "Block 7,700 does not apply to your current objective."
+        },
+        {
+          "key": "education",
+          "text": "Walking contributes to an active routine. Its value goes beyond estimated calories; it is a different stimulus from muscle-strengthening exercise. For your current goal, follow the whole routine rather than interpreting this event as muscle gain. Would you like to tell me what you prefer so we can discuss a suitable adjustment?"
+        }
+      ]
+    },
+    {
+      "label": "source_unavailable/pt-BR",
+      "payload": {
+        "schema": "registration.feedback.v3",
+        "registration_id": "10000000-0000-4000-8000-000000000001",
+        "local_date": "2026-11-05",
+        "locale": "pt-BR",
+        "assistant": "Flow AI",
+        "registration": {
+          "kind": "workout",
+          "log_id": "20000000-0000-4000-8000-000000000001",
+          "workout_type": "caminhada",
+          "duration_min": 30,
+          "intensity": null,
+          "estimated_kcal": null
+        },
+        "day": {
+          "local_date": "2026-11-05",
+          "current_protocol": "recomposicao",
+          "consumed": {
+            "calories_kcal": 1785,
+            "protein_g": 126,
+            "carbs_g": 180,
+            "fat_g": 45
+          },
+          "targets": {
+            "calories_kcal": 2400,
+            "protein_g": 150
+          },
+          "calorie_percentage": 74.4,
+          "protein_percentage": 84,
+          "remaining_food_kcal": 615,
+          "food_excess_kcal": 0,
+          "exercise_kcal": null,
+          "exercise_energy": {
+            "status": "unavailable",
+            "reason": "source_unavailable"
+          }
+        },
+        "block": {
+          "status": "available",
+          "target_kcal": 7700,
+          "current_kcal": 3120,
+          "percentage": 41,
+          "completed_blocks": 2,
+          "total_credited_kcal": 18520
+        },
+        "guidance": "available",
+        "education": {
+          "status": "available",
+          "text": "A caminhada contribui para uma rotina ativa. Seu valor vai além das calorias estimadas; é um estímulo diferente dos exercícios de fortalecimento muscular. Seu bloco de longo prazo usa dias consolidados, sem crédito imediato por este registro. Quer me contar o que você prefere para conversarmos sobre um ajuste adequado?",
+          "provenance": {
+            "source": "reviewed_template",
+            "catalog_version": "registration.education.v1",
+            "template_id": "activity_walking",
+            "preferences_known": false
+          }
+        }
+      },
+      "sections": [
+        {
+          "key": "saved",
+          "text": "Atividade registrada."
+        },
+        {
+          "key": "items",
+          "text": "caminhada · 30 min · Intensidade indisponível"
+        },
+        {
+          "key": "summary",
+          "text": "Gasto estimado indisponível."
+        },
+        {
+          "key": "day",
+          "text": "Dia: 2026-11-05\nConsumido: 1.785 / 2.400 kcal (74,4%).\nProteína: 126 / 150 g (84%).\nRestam para comida: 615 kcal.\nGasto de exercício indisponível. Exercício não aumenta a comida disponível."
+        },
+        {
+          "key": "block",
+          "text": "Bloco 7.700: 3.120 / 7.700 kcal (41%).\nSaldo total já consolidado: 18.520 kcal · Blocos concluídos: 2.\nReferência teórica; este registro não cria crédito imediato nem garante uma mudança física de peso."
+        },
+        {
+          "key": "education",
+          "text": "A caminhada contribui para uma rotina ativa. Seu valor vai além das calorias estimadas; é um estímulo diferente dos exercícios de fortalecimento muscular. Seu bloco de longo prazo usa dias consolidados, sem crédito imediato por este registro. Quer me contar o que você prefere para conversarmos sobre um ajuste adequado?"
+        }
+      ]
+    },
+    {
+      "label": "no_targets/pt-BR",
+      "payload": {
+        "schema": "registration.feedback.v3",
+        "registration_id": "10000000-0000-4000-8000-000000000001",
+        "local_date": "2026-11-05",
+        "locale": "pt-BR",
+        "assistant": "Flow AI",
+        "registration": {
+          "kind": "workout",
+          "log_id": "20000000-0000-4000-8000-000000000001",
+          "workout_type": "caminhada",
+          "duration_min": 30,
+          "intensity": null,
+          "estimated_kcal": null
+        },
+        "day": {
+          "local_date": "2026-11-05",
+          "current_protocol": "recomposicao",
+          "consumed": {
+            "calories_kcal": 1785,
+            "protein_g": 126,
+            "carbs_g": 180,
+            "fat_g": 45
+          },
+          "targets": {
+            "calories_kcal": null,
+            "protein_g": null
+          },
+          "calorie_percentage": null,
+          "protein_percentage": null,
+          "remaining_food_kcal": null,
+          "food_excess_kcal": null,
+          "exercise_kcal": null,
+          "exercise_energy": {
+            "status": "unavailable",
+            "reason": "unknown_workout_energy"
+          }
+        },
+        "block": {
+          "status": "available",
+          "target_kcal": 7700,
+          "current_kcal": 3120,
+          "percentage": 41,
+          "completed_blocks": 2,
+          "total_credited_kcal": 18520
+        },
+        "guidance": "available",
+        "education": {
+          "status": "available",
+          "text": "A caminhada contribui para uma rotina ativa. Seu valor vai além das calorias estimadas; é um estímulo diferente dos exercícios de fortalecimento muscular. Seu bloco de longo prazo usa dias consolidados, sem crédito imediato por este registro. Quer me contar o que você prefere para conversarmos sobre um ajuste adequado?",
+          "provenance": {
+            "source": "reviewed_template",
+            "catalog_version": "registration.education.v1",
+            "template_id": "activity_walking",
+            "preferences_known": false
+          }
+        }
+      },
+      "sections": [
+        {
+          "key": "saved",
+          "text": "Atividade registrada."
+        },
+        {
+          "key": "items",
+          "text": "caminhada · 30 min · Intensidade indisponível"
+        },
+        {
+          "key": "summary",
+          "text": "Gasto estimado indisponível."
+        },
+        {
+          "key": "day",
+          "text": "Dia: 2026-11-05\nConsumido: 1.785 kcal. Meta indisponível.\nProteína: 126 g. Meta indisponível.\nSaldo alimentar indisponível.\nGasto de exercício indisponível. Exercício não aumenta a comida disponível."
+        },
+        {
+          "key": "block",
+          "text": "Bloco 7.700: 3.120 / 7.700 kcal (41%).\nSaldo total já consolidado: 18.520 kcal · Blocos concluídos: 2.\nReferência teórica; este registro não cria crédito imediato nem garante uma mudança física de peso."
+        },
+        {
+          "key": "education",
+          "text": "A caminhada contribui para uma rotina ativa. Seu valor vai além das calorias estimadas; é um estímulo diferente dos exercícios de fortalecimento muscular. Seu bloco de longo prazo usa dias consolidados, sem crédito imediato por este registro. Quer me contar o que você prefere para conversarmos sobre um ajuste adequado?"
+        }
+      ]
+    },
+    {
+      "label": "guidance_unavailable/pt-BR",
+      "payload": {
+        "schema": "registration.feedback.v3",
+        "registration_id": "10000000-0000-4000-8000-000000000001",
+        "local_date": "2026-11-05",
+        "locale": "pt-BR",
+        "assistant": "Flow AI",
+        "registration": {
+          "kind": "workout",
+          "log_id": "20000000-0000-4000-8000-000000000001",
+          "workout_type": "caminhada",
+          "duration_min": 30,
+          "intensity": null,
+          "estimated_kcal": null
+        },
+        "day": {
+          "local_date": "2026-11-05",
+          "current_protocol": null,
+          "consumed": {
+            "calories_kcal": 1785,
+            "protein_g": 126,
+            "carbs_g": 180,
+            "fat_g": 45
+          },
+          "targets": {
+            "calories_kcal": null,
+            "protein_g": null
+          },
+          "calorie_percentage": null,
+          "protein_percentage": null,
+          "remaining_food_kcal": null,
+          "food_excess_kcal": null,
+          "exercise_kcal": null,
+          "exercise_energy": {
+            "status": "unavailable",
+            "reason": "unknown_workout_energy"
+          }
+        },
+        "block": {
+          "status": "protected"
+        },
+        "guidance": "unavailable",
+        "education": {
+          "status": "available",
+          "text": "A caminhada contribui para uma rotina ativa. Seu valor vai além das calorias estimadas; é um estímulo diferente dos exercícios de fortalecimento muscular. Quer me contar o que você prefere para conversarmos sobre um ajuste adequado?",
+          "provenance": {
+            "source": "reviewed_template",
+            "catalog_version": "registration.education.v1",
+            "template_id": "activity_walking",
+            "preferences_known": false
+          }
+        }
+      },
+      "sections": [
+        {
+          "key": "saved",
+          "text": "Atividade registrada."
+        },
+        {
+          "key": "items",
+          "text": "caminhada · 30 min · Intensidade indisponível"
+        },
+        {
+          "key": "summary",
+          "text": "Gasto estimado indisponível."
+        },
+        {
+          "key": "day",
+          "text": "Dia: 2026-11-05\nConsumido: 1.785 kcal. Meta indisponível.\nProteína: 126 g. Meta indisponível.\nSaldo alimentar indisponível.\nGasto de exercício indisponível. Exercício não aumenta a comida disponível."
+        },
+        {
+          "key": "block",
+          "text": "As orientações de longo prazo estão pausadas."
+        },
+        {
+          "key": "education",
+          "text": "A caminhada contribui para uma rotina ativa. Seu valor vai além das calorias estimadas; é um estímulo diferente dos exercícios de fortalecimento muscular. Quer me contar o que você prefere para conversarmos sobre um ajuste adequado?"
+        }
+      ]
+    },
+    {
+      "label": "clinical_pause/pt-BR",
+      "payload": {
+        "schema": "registration.feedback.v3",
+        "registration_id": "10000000-0000-4000-8000-000000000001",
+        "local_date": "2026-11-05",
+        "locale": "pt-BR",
+        "assistant": "Flow AI",
+        "registration": {
+          "kind": "workout",
+          "log_id": "20000000-0000-4000-8000-000000000001",
+          "workout_type": "caminhada",
+          "duration_min": 30,
+          "intensity": null,
+          "estimated_kcal": null
+        },
+        "day": {
+          "local_date": "2026-11-05",
+          "current_protocol": null,
+          "consumed": {
+            "calories_kcal": 1785,
+            "protein_g": 126,
+            "carbs_g": 180,
+            "fat_g": 45
+          },
+          "targets": {
+            "calories_kcal": null,
+            "protein_g": null
+          },
+          "calorie_percentage": null,
+          "protein_percentage": null,
+          "remaining_food_kcal": null,
+          "food_excess_kcal": null,
+          "exercise_kcal": null,
+          "exercise_energy": {
+            "status": "unavailable",
+            "reason": "unknown_workout_energy"
+          }
+        },
+        "block": {
+          "status": "protected"
+        },
+        "guidance": "paused",
+        "education": {
+          "status": "available",
+          "text": "Seu registro continua disponível. As orientações de perda de peso estão pausadas; procure avaliação profissional antes de alterar suas metas.",
+          "provenance": {
+            "source": "reviewed_template",
+            "catalog_version": "registration.education.v1",
+            "template_id": "clinical_pause",
+            "preferences_known": false
+          }
+        }
+      },
+      "sections": [
+        {
+          "key": "saved",
+          "text": "Atividade registrada."
+        },
+        {
+          "key": "items",
+          "text": "caminhada · 30 min · Intensidade indisponível"
+        },
+        {
+          "key": "summary",
+          "text": "Gasto estimado indisponível."
+        },
+        {
+          "key": "day",
+          "text": "Dia: 2026-11-05\nConsumido: 1.785 kcal. Meta indisponível.\nProteína: 126 g. Meta indisponível.\nSaldo alimentar indisponível.\nGasto de exercício indisponível. Exercício não aumenta a comida disponível."
+        },
+        {
+          "key": "block",
+          "text": "As orientações de longo prazo estão pausadas."
+        },
+        {
+          "key": "education",
+          "text": "Seu registro continua disponível. As orientações de perda de peso estão pausadas; procure avaliação profissional antes de alterar suas metas."
+        }
+      ]
+    },
+    {
+      "label": "day_unavailable/pt-BR",
+      "payload": {
+        "schema": "registration.feedback.v3",
+        "registration_id": "10000000-0000-4000-8000-000000000001",
+        "local_date": "2026-11-05",
+        "locale": "pt-BR",
+        "assistant": "Flow AI",
+        "registration": {
+          "kind": "workout",
+          "log_id": "20000000-0000-4000-8000-000000000001",
+          "workout_type": "caminhada",
+          "duration_min": 30,
+          "intensity": null,
+          "estimated_kcal": null
+        },
+        "day": null,
+        "block": {
+          "status": "unavailable"
+        },
+        "guidance": "available",
+        "education": {
+          "status": "available",
+          "text": "A caminhada contribui para uma rotina ativa. Seu valor vai além das calorias estimadas; é um estímulo diferente dos exercícios de fortalecimento muscular. Quer me contar o que você prefere para conversarmos sobre um ajuste adequado?",
+          "provenance": {
+            "source": "reviewed_template",
+            "catalog_version": "registration.education.v1",
+            "template_id": "activity_walking",
+            "preferences_known": false
+          }
+        }
+      },
+      "sections": [
+        {
+          "key": "saved",
+          "text": "Atividade registrada."
+        },
+        {
+          "key": "items",
+          "text": "caminhada · 30 min · Intensidade indisponível"
+        },
+        {
+          "key": "summary",
+          "text": "Gasto estimado indisponível."
+        },
+        {
+          "key": "day",
+          "text": "O resumo oficial deste dia está indisponível; seu registro foi salvo."
+        },
+        {
+          "key": "block",
+          "text": "Os dados consolidados do bloco estão indisponíveis."
+        },
+        {
+          "key": "education",
+          "text": "A caminhada contribui para uma rotina ativa. Seu valor vai além das calorias estimadas; é um estímulo diferente dos exercícios de fortalecimento muscular. Quer me contar o que você prefere para conversarmos sobre um ajuste adequado?"
+        }
+      ]
+    },
+    {
+      "label": "education_unavailable/pt-BR",
+      "payload": {
+        "schema": "registration.feedback.v3",
+        "registration_id": "10000000-0000-4000-8000-000000000001",
+        "local_date": "2026-11-05",
+        "locale": "pt-BR",
+        "assistant": "Flow AI",
+        "registration": {
+          "kind": "workout",
+          "log_id": "20000000-0000-4000-8000-000000000001",
+          "workout_type": "caminhada",
+          "duration_min": 30,
+          "intensity": null,
+          "estimated_kcal": null
+        },
+        "day": {
+          "local_date": "2026-11-05",
+          "current_protocol": "recomposicao",
+          "consumed": {
+            "calories_kcal": 1785,
+            "protein_g": 126,
+            "carbs_g": 180,
+            "fat_g": 45
+          },
+          "targets": {
+            "calories_kcal": 2400,
+            "protein_g": 150
+          },
+          "calorie_percentage": 74.4,
+          "protein_percentage": 84,
+          "remaining_food_kcal": 615,
+          "food_excess_kcal": 0,
+          "exercise_kcal": null,
+          "exercise_energy": {
+            "status": "unavailable",
+            "reason": "unknown_workout_energy"
+          }
+        },
+        "block": {
+          "status": "available",
+          "target_kcal": 7700,
+          "current_kcal": 3120,
+          "percentage": 41,
+          "completed_blocks": 2,
+          "total_credited_kcal": 18520
+        },
+        "guidance": "available",
+        "education": {
+          "status": "unavailable"
+        }
+      },
+      "sections": [
+        {
+          "key": "saved",
+          "text": "Atividade registrada."
+        },
+        {
+          "key": "items",
+          "text": "caminhada · 30 min · Intensidade indisponível"
+        },
+        {
+          "key": "summary",
+          "text": "Gasto estimado indisponível."
+        },
+        {
+          "key": "day",
+          "text": "Dia: 2026-11-05\nConsumido: 1.785 / 2.400 kcal (74,4%).\nProteína: 126 / 150 g (84%).\nRestam para comida: 615 kcal.\nGasto de exercício indisponível. Exercício não aumenta a comida disponível."
+        },
+        {
+          "key": "block",
+          "text": "Bloco 7.700: 3.120 / 7.700 kcal (41%).\nSaldo total já consolidado: 18.520 kcal · Blocos concluídos: 2.\nReferência teórica; este registro não cria crédito imediato nem garante uma mudança física de peso."
+        },
+        {
+          "key": "education",
+          "text": "O comentário educativo está indisponível; seu registro continua salvo."
+        }
+      ]
+    },
+    {
+      "label": "milk_whey_unknown_day/pt-BR",
+      "payload": {
+        "schema": "registration.feedback.v3",
+        "registration_id": "10000000-0000-4000-8000-000000000001",
+        "local_date": "2026-11-05",
+        "locale": "pt-BR",
+        "assistant": "Flow AI",
+        "registration": {
+          "kind": "meal",
+          "meal_kind": "cafe",
+          "items": [
+            {
+              "kcal": 100,
+              "protein_g": 10,
+              "carbs_g": 5,
+              "fat_g": 3,
+              "log_id": "c2b00000-0000-4000-8000-000000000002",
+              "food_name": "leite integral",
+              "quantity_g": 100,
+              "quantity": {
+                "value": 100,
+                "unit": "g",
+                "estimated": false,
+                "reference_id": null
+              },
+              "nutrition_source": "taco"
+            },
+            {
+              "kcal": 100,
+              "protein_g": 10,
+              "carbs_g": 5,
+              "fat_g": 3,
+              "log_id": "c2b00000-0000-4000-8000-000000000003",
+              "food_name": "whey",
+              "quantity_g": 100,
+              "quantity": {
+                "value": 100,
+                "unit": "g",
+                "estimated": false,
+                "reference_id": null
+              },
+              "nutrition_source": "taco"
+            }
+          ],
+          "totals": {
+            "kcal": 200,
+            "protein_g": 20,
+            "carbs_g": 5,
+            "fat_g": 3
+          }
+        },
+        "day": {
+          "local_date": "2026-11-05",
+          "current_protocol": "recomposicao",
+          "consumed": {
+            "calories_kcal": 1785,
+            "protein_g": 126,
+            "carbs_g": 180,
+            "fat_g": 45
+          },
+          "targets": {
+            "calories_kcal": 2400,
+            "protein_g": 150
+          },
+          "calorie_percentage": 74.4,
+          "protein_percentage": 84,
+          "remaining_food_kcal": 615,
+          "food_excess_kcal": 0,
+          "exercise_kcal": null,
+          "exercise_energy": {
+            "status": "unavailable",
+            "reason": "unknown_workout_energy"
+          }
+        },
+        "block": {
+          "status": "available",
+          "target_kcal": 7700,
+          "current_kcal": 3120,
+          "percentage": 41,
+          "completed_blocks": 2,
+          "total_credited_kcal": 18520
+        },
+        "guidance": "available",
+        "education": {
+          "status": "available",
+          "text": "Leite e whey contribuem juntos para a proteína mostrada nesta bebida. A medida é uma referência editável; conferir o rótulo ajuda a considerar diferenças entre produtos. Seu bloco de longo prazo usa dias consolidados, sem crédito imediato por este registro. Quer me contar o que você prefere para conversarmos sobre um ajuste adequado?",
+          "provenance": {
+            "source": "reviewed_template",
+            "catalog_version": "registration.education.v1",
+            "template_id": "milk_whey",
+            "preferences_known": false
+          }
+        }
+      },
+      "sections": [
+        {
+          "key": "saved",
+          "text": "Café da manhã registrado."
+        },
+        {
+          "key": "items",
+          "text": "leite integral · 100 g\n100 kcal | Proteína: 10 g | Carboidratos: 5 g | Gorduras: 3 g\n\nwhey · 100 g\n100 kcal | Proteína: 10 g | Carboidratos: 5 g | Gorduras: 3 g"
+        },
+        {
+          "key": "summary",
+          "text": "Total aproximado da refeição: 200 kcal | Proteína: 20 g | Carboidratos: 5 g | Gorduras: 3 g"
+        },
+        {
+          "key": "day",
+          "text": "Dia: 2026-11-05\nConsumido: 1.785 / 2.400 kcal (74,4%).\nProteína: 126 / 150 g (84%).\nRestam para comida: 615 kcal.\nGasto de exercício indisponível. Exercício não aumenta a comida disponível."
+        },
+        {
+          "key": "block",
+          "text": "Bloco 7.700: 3.120 / 7.700 kcal (41%).\nSaldo total já consolidado: 18.520 kcal · Blocos concluídos: 2.\nReferência teórica; este registro não cria crédito imediato nem garante uma mudança física de peso."
+        },
+        {
+          "key": "education",
+          "text": "Leite e whey contribuem juntos para a proteína mostrada nesta bebida. A medida é uma referência editável; conferir o rótulo ajuda a considerar diferenças entre produtos. Seu bloco de longo prazo usa dias consolidados, sem crédito imediato por este registro. Quer me contar o que você prefere para conversarmos sobre um ajuste adequado?"
+        }
+      ]
+    },
+    {
+      "label": "source_unavailable/en",
+      "payload": {
+        "schema": "registration.feedback.v3",
+        "registration_id": "10000000-0000-4000-8000-000000000001",
+        "local_date": "2026-11-05",
+        "locale": "en",
+        "assistant": "Flow AI",
+        "registration": {
+          "kind": "workout",
+          "log_id": "20000000-0000-4000-8000-000000000001",
+          "workout_type": "caminhada",
+          "duration_min": 30,
+          "intensity": null,
+          "estimated_kcal": null
+        },
+        "day": {
+          "local_date": "2026-11-05",
+          "current_protocol": "recomposicao",
+          "consumed": {
+            "calories_kcal": 1785,
+            "protein_g": 126,
+            "carbs_g": 180,
+            "fat_g": 45
+          },
+          "targets": {
+            "calories_kcal": 2400,
+            "protein_g": 150
+          },
+          "calorie_percentage": 74.4,
+          "protein_percentage": 84,
+          "remaining_food_kcal": 615,
+          "food_excess_kcal": 0,
+          "exercise_kcal": null,
+          "exercise_energy": {
+            "status": "unavailable",
+            "reason": "source_unavailable"
+          }
+        },
+        "block": {
+          "status": "available",
+          "target_kcal": 7700,
+          "current_kcal": 3120,
+          "percentage": 41,
+          "completed_blocks": 2,
+          "total_credited_kcal": 18520
+        },
+        "guidance": "available",
+        "education": {
+          "status": "available",
+          "text": "Walking contributes to an active routine. Its value goes beyond estimated calories; it is a different stimulus from muscle-strengthening exercise. Your long-term block uses consolidated days, not an immediate credit for this record. Would you like to tell me what you prefer so we can discuss a suitable adjustment?",
+          "provenance": {
+            "source": "reviewed_template",
+            "catalog_version": "registration.education.v1",
+            "template_id": "activity_walking",
+            "preferences_known": false
+          }
+        }
+      },
+      "sections": [
+        {
+          "key": "saved",
+          "text": "Activity recorded."
+        },
+        {
+          "key": "items",
+          "text": "caminhada · 30 min · Intensity unavailable"
+        },
+        {
+          "key": "summary",
+          "text": "Estimated expenditure unavailable."
+        },
+        {
+          "key": "day",
+          "text": "Day: 2026-11-05\nConsumed: 1,785 / 2,400 kcal (74.4%).\nProtein: 126 / 150 g (84%).\nRemaining for food: 615 kcal.\nExercise expenditure unavailable. Exercise does not increase the food budget."
+        },
+        {
+          "key": "block",
+          "text": "Block 7,700: 3,120 / 7,700 kcal (41%).\nTotal already consolidated: 18,520 kcal · Completed blocks: 2.\nTheoretical reference; this record does not create an immediate credit or guarantee a physical weight change."
+        },
+        {
+          "key": "education",
+          "text": "Walking contributes to an active routine. Its value goes beyond estimated calories; it is a different stimulus from muscle-strengthening exercise. Your long-term block uses consolidated days, not an immediate credit for this record. Would you like to tell me what you prefer so we can discuss a suitable adjustment?"
+        }
+      ]
+    },
+    {
+      "label": "no_targets/en",
+      "payload": {
+        "schema": "registration.feedback.v3",
+        "registration_id": "10000000-0000-4000-8000-000000000001",
+        "local_date": "2026-11-05",
+        "locale": "en",
+        "assistant": "Flow AI",
+        "registration": {
+          "kind": "workout",
+          "log_id": "20000000-0000-4000-8000-000000000001",
+          "workout_type": "caminhada",
+          "duration_min": 30,
+          "intensity": null,
+          "estimated_kcal": null
+        },
+        "day": {
+          "local_date": "2026-11-05",
+          "current_protocol": "recomposicao",
+          "consumed": {
+            "calories_kcal": 1785,
+            "protein_g": 126,
+            "carbs_g": 180,
+            "fat_g": 45
+          },
+          "targets": {
+            "calories_kcal": null,
+            "protein_g": null
+          },
+          "calorie_percentage": null,
+          "protein_percentage": null,
+          "remaining_food_kcal": null,
+          "food_excess_kcal": null,
+          "exercise_kcal": null,
+          "exercise_energy": {
+            "status": "unavailable",
+            "reason": "unknown_workout_energy"
+          }
+        },
+        "block": {
+          "status": "available",
+          "target_kcal": 7700,
+          "current_kcal": 3120,
+          "percentage": 41,
+          "completed_blocks": 2,
+          "total_credited_kcal": 18520
+        },
+        "guidance": "available",
+        "education": {
+          "status": "available",
+          "text": "Walking contributes to an active routine. Its value goes beyond estimated calories; it is a different stimulus from muscle-strengthening exercise. Your long-term block uses consolidated days, not an immediate credit for this record. Would you like to tell me what you prefer so we can discuss a suitable adjustment?",
+          "provenance": {
+            "source": "reviewed_template",
+            "catalog_version": "registration.education.v1",
+            "template_id": "activity_walking",
+            "preferences_known": false
+          }
+        }
+      },
+      "sections": [
+        {
+          "key": "saved",
+          "text": "Activity recorded."
+        },
+        {
+          "key": "items",
+          "text": "caminhada · 30 min · Intensity unavailable"
+        },
+        {
+          "key": "summary",
+          "text": "Estimated expenditure unavailable."
+        },
+        {
+          "key": "day",
+          "text": "Day: 2026-11-05\nConsumed: 1,785 kcal. Target unavailable.\nProtein: 126 g. Target unavailable.\nFood budget unavailable.\nExercise expenditure unavailable. Exercise does not increase the food budget."
+        },
+        {
+          "key": "block",
+          "text": "Block 7,700: 3,120 / 7,700 kcal (41%).\nTotal already consolidated: 18,520 kcal · Completed blocks: 2.\nTheoretical reference; this record does not create an immediate credit or guarantee a physical weight change."
+        },
+        {
+          "key": "education",
+          "text": "Walking contributes to an active routine. Its value goes beyond estimated calories; it is a different stimulus from muscle-strengthening exercise. Your long-term block uses consolidated days, not an immediate credit for this record. Would you like to tell me what you prefer so we can discuss a suitable adjustment?"
+        }
+      ]
+    },
+    {
+      "label": "guidance_unavailable/en",
+      "payload": {
+        "schema": "registration.feedback.v3",
+        "registration_id": "10000000-0000-4000-8000-000000000001",
+        "local_date": "2026-11-05",
+        "locale": "en",
+        "assistant": "Flow AI",
+        "registration": {
+          "kind": "workout",
+          "log_id": "20000000-0000-4000-8000-000000000001",
+          "workout_type": "caminhada",
+          "duration_min": 30,
+          "intensity": null,
+          "estimated_kcal": null
+        },
+        "day": {
+          "local_date": "2026-11-05",
+          "current_protocol": null,
+          "consumed": {
+            "calories_kcal": 1785,
+            "protein_g": 126,
+            "carbs_g": 180,
+            "fat_g": 45
+          },
+          "targets": {
+            "calories_kcal": null,
+            "protein_g": null
+          },
+          "calorie_percentage": null,
+          "protein_percentage": null,
+          "remaining_food_kcal": null,
+          "food_excess_kcal": null,
+          "exercise_kcal": null,
+          "exercise_energy": {
+            "status": "unavailable",
+            "reason": "unknown_workout_energy"
+          }
+        },
+        "block": {
+          "status": "protected"
+        },
+        "guidance": "unavailable",
+        "education": {
+          "status": "available",
+          "text": "Walking contributes to an active routine. Its value goes beyond estimated calories; it is a different stimulus from muscle-strengthening exercise. Would you like to tell me what you prefer so we can discuss a suitable adjustment?",
+          "provenance": {
+            "source": "reviewed_template",
+            "catalog_version": "registration.education.v1",
+            "template_id": "activity_walking",
+            "preferences_known": false
+          }
+        }
+      },
+      "sections": [
+        {
+          "key": "saved",
+          "text": "Activity recorded."
+        },
+        {
+          "key": "items",
+          "text": "caminhada · 30 min · Intensity unavailable"
+        },
+        {
+          "key": "summary",
+          "text": "Estimated expenditure unavailable."
+        },
+        {
+          "key": "day",
+          "text": "Day: 2026-11-05\nConsumed: 1,785 kcal. Target unavailable.\nProtein: 126 g. Target unavailable.\nFood budget unavailable.\nExercise expenditure unavailable. Exercise does not increase the food budget."
+        },
+        {
+          "key": "block",
+          "text": "Long-term guidance is paused."
+        },
+        {
+          "key": "education",
+          "text": "Walking contributes to an active routine. Its value goes beyond estimated calories; it is a different stimulus from muscle-strengthening exercise. Would you like to tell me what you prefer so we can discuss a suitable adjustment?"
+        }
+      ]
+    },
+    {
+      "label": "clinical_pause/en",
+      "payload": {
+        "schema": "registration.feedback.v3",
+        "registration_id": "10000000-0000-4000-8000-000000000001",
+        "local_date": "2026-11-05",
+        "locale": "en",
+        "assistant": "Flow AI",
+        "registration": {
+          "kind": "workout",
+          "log_id": "20000000-0000-4000-8000-000000000001",
+          "workout_type": "caminhada",
+          "duration_min": 30,
+          "intensity": null,
+          "estimated_kcal": null
+        },
+        "day": {
+          "local_date": "2026-11-05",
+          "current_protocol": null,
+          "consumed": {
+            "calories_kcal": 1785,
+            "protein_g": 126,
+            "carbs_g": 180,
+            "fat_g": 45
+          },
+          "targets": {
+            "calories_kcal": null,
+            "protein_g": null
+          },
+          "calorie_percentage": null,
+          "protein_percentage": null,
+          "remaining_food_kcal": null,
+          "food_excess_kcal": null,
+          "exercise_kcal": null,
+          "exercise_energy": {
+            "status": "unavailable",
+            "reason": "unknown_workout_energy"
+          }
+        },
+        "block": {
+          "status": "protected"
+        },
+        "guidance": "paused",
+        "education": {
+          "status": "available",
+          "text": "Your record remains available. Weight-loss guidance is paused; seek a professional assessment before changing your targets.",
+          "provenance": {
+            "source": "reviewed_template",
+            "catalog_version": "registration.education.v1",
+            "template_id": "clinical_pause",
+            "preferences_known": false
+          }
+        }
+      },
+      "sections": [
+        {
+          "key": "saved",
+          "text": "Activity recorded."
+        },
+        {
+          "key": "items",
+          "text": "caminhada · 30 min · Intensity unavailable"
+        },
+        {
+          "key": "summary",
+          "text": "Estimated expenditure unavailable."
+        },
+        {
+          "key": "day",
+          "text": "Day: 2026-11-05\nConsumed: 1,785 kcal. Target unavailable.\nProtein: 126 g. Target unavailable.\nFood budget unavailable.\nExercise expenditure unavailable. Exercise does not increase the food budget."
+        },
+        {
+          "key": "block",
+          "text": "Long-term guidance is paused."
+        },
+        {
+          "key": "education",
+          "text": "Your record remains available. Weight-loss guidance is paused; seek a professional assessment before changing your targets."
+        }
+      ]
+    },
+    {
+      "label": "day_unavailable/en",
+      "payload": {
+        "schema": "registration.feedback.v3",
+        "registration_id": "10000000-0000-4000-8000-000000000001",
+        "local_date": "2026-11-05",
+        "locale": "en",
+        "assistant": "Flow AI",
+        "registration": {
+          "kind": "workout",
+          "log_id": "20000000-0000-4000-8000-000000000001",
+          "workout_type": "caminhada",
+          "duration_min": 30,
+          "intensity": null,
+          "estimated_kcal": null
+        },
+        "day": null,
+        "block": {
+          "status": "unavailable"
+        },
+        "guidance": "available",
+        "education": {
+          "status": "available",
+          "text": "Walking contributes to an active routine. Its value goes beyond estimated calories; it is a different stimulus from muscle-strengthening exercise. Would you like to tell me what you prefer so we can discuss a suitable adjustment?",
+          "provenance": {
+            "source": "reviewed_template",
+            "catalog_version": "registration.education.v1",
+            "template_id": "activity_walking",
+            "preferences_known": false
+          }
+        }
+      },
+      "sections": [
+        {
+          "key": "saved",
+          "text": "Activity recorded."
+        },
+        {
+          "key": "items",
+          "text": "caminhada · 30 min · Intensity unavailable"
+        },
+        {
+          "key": "summary",
+          "text": "Estimated expenditure unavailable."
+        },
+        {
+          "key": "day",
+          "text": "The official summary for this day is unavailable; your record was saved."
+        },
+        {
+          "key": "block",
+          "text": "Consolidated block data is unavailable."
+        },
+        {
+          "key": "education",
+          "text": "Walking contributes to an active routine. Its value goes beyond estimated calories; it is a different stimulus from muscle-strengthening exercise. Would you like to tell me what you prefer so we can discuss a suitable adjustment?"
+        }
+      ]
+    },
+    {
+      "label": "education_unavailable/en",
+      "payload": {
+        "schema": "registration.feedback.v3",
+        "registration_id": "10000000-0000-4000-8000-000000000001",
+        "local_date": "2026-11-05",
+        "locale": "en",
+        "assistant": "Flow AI",
+        "registration": {
+          "kind": "workout",
+          "log_id": "20000000-0000-4000-8000-000000000001",
+          "workout_type": "caminhada",
+          "duration_min": 30,
+          "intensity": null,
+          "estimated_kcal": null
+        },
+        "day": {
+          "local_date": "2026-11-05",
+          "current_protocol": "recomposicao",
+          "consumed": {
+            "calories_kcal": 1785,
+            "protein_g": 126,
+            "carbs_g": 180,
+            "fat_g": 45
+          },
+          "targets": {
+            "calories_kcal": 2400,
+            "protein_g": 150
+          },
+          "calorie_percentage": 74.4,
+          "protein_percentage": 84,
+          "remaining_food_kcal": 615,
+          "food_excess_kcal": 0,
+          "exercise_kcal": null,
+          "exercise_energy": {
+            "status": "unavailable",
+            "reason": "unknown_workout_energy"
+          }
+        },
+        "block": {
+          "status": "available",
+          "target_kcal": 7700,
+          "current_kcal": 3120,
+          "percentage": 41,
+          "completed_blocks": 2,
+          "total_credited_kcal": 18520
+        },
+        "guidance": "available",
+        "education": {
+          "status": "unavailable"
+        }
+      },
+      "sections": [
+        {
+          "key": "saved",
+          "text": "Activity recorded."
+        },
+        {
+          "key": "items",
+          "text": "caminhada · 30 min · Intensity unavailable"
+        },
+        {
+          "key": "summary",
+          "text": "Estimated expenditure unavailable."
+        },
+        {
+          "key": "day",
+          "text": "Day: 2026-11-05\nConsumed: 1,785 / 2,400 kcal (74.4%).\nProtein: 126 / 150 g (84%).\nRemaining for food: 615 kcal.\nExercise expenditure unavailable. Exercise does not increase the food budget."
+        },
+        {
+          "key": "block",
+          "text": "Block 7,700: 3,120 / 7,700 kcal (41%).\nTotal already consolidated: 18,520 kcal · Completed blocks: 2.\nTheoretical reference; this record does not create an immediate credit or guarantee a physical weight change."
+        },
+        {
+          "key": "education",
+          "text": "The educational comment is unavailable; your record remains saved."
+        }
+      ]
+    },
+    {
+      "label": "milk_whey_unknown_day/en",
+      "payload": {
+        "schema": "registration.feedback.v3",
+        "registration_id": "10000000-0000-4000-8000-000000000001",
+        "local_date": "2026-11-05",
+        "locale": "en",
+        "assistant": "Flow AI",
+        "registration": {
+          "kind": "meal",
+          "meal_kind": "cafe",
+          "items": [
+            {
+              "kcal": 100,
+              "protein_g": 10,
+              "carbs_g": 5,
+              "fat_g": 3,
+              "log_id": "c2b00000-0000-4000-8000-000000000002",
+              "food_name": "leite integral",
+              "quantity_g": 100,
+              "quantity": {
+                "value": 100,
+                "unit": "g",
+                "estimated": false,
+                "reference_id": null
+              },
+              "nutrition_source": "taco"
+            },
+            {
+              "kcal": 100,
+              "protein_g": 10,
+              "carbs_g": 5,
+              "fat_g": 3,
+              "log_id": "c2b00000-0000-4000-8000-000000000003",
+              "food_name": "whey",
+              "quantity_g": 100,
+              "quantity": {
+                "value": 100,
+                "unit": "g",
+                "estimated": false,
+                "reference_id": null
+              },
+              "nutrition_source": "taco"
+            }
+          ],
+          "totals": {
+            "kcal": 200,
+            "protein_g": 20,
+            "carbs_g": 5,
+            "fat_g": 3
+          }
+        },
+        "day": {
+          "local_date": "2026-11-05",
+          "current_protocol": "recomposicao",
+          "consumed": {
+            "calories_kcal": 1785,
+            "protein_g": 126,
+            "carbs_g": 180,
+            "fat_g": 45
+          },
+          "targets": {
+            "calories_kcal": 2400,
+            "protein_g": 150
+          },
+          "calorie_percentage": 74.4,
+          "protein_percentage": 84,
+          "remaining_food_kcal": 615,
+          "food_excess_kcal": 0,
+          "exercise_kcal": null,
+          "exercise_energy": {
+            "status": "unavailable",
+            "reason": "unknown_workout_energy"
+          }
+        },
+        "block": {
+          "status": "available",
+          "target_kcal": 7700,
+          "current_kcal": 3120,
+          "percentage": 41,
+          "completed_blocks": 2,
+          "total_credited_kcal": 18520
+        },
+        "guidance": "available",
+        "education": {
+          "status": "available",
+          "text": "Milk and whey both contribute to the protein shown for this drink. The scoop is an editable reference; checking the label helps account for differences between products. Your long-term block uses consolidated days, not an immediate credit for this record. Would you like to tell me what you prefer so we can discuss a suitable adjustment?",
+          "provenance": {
+            "source": "reviewed_template",
+            "catalog_version": "registration.education.v1",
+            "template_id": "milk_whey",
+            "preferences_known": false
+          }
+        }
+      },
+      "sections": [
+        {
+          "key": "saved",
+          "text": "Breakfast recorded."
+        },
+        {
+          "key": "items",
+          "text": "leite integral · 100 g\n100 kcal | Protein: 10 g | Carbohydrates: 5 g | Fat: 3 g\n\nwhey · 100 g\n100 kcal | Protein: 10 g | Carbohydrates: 5 g | Fat: 3 g"
+        },
+        {
+          "key": "summary",
+          "text": "Approximate meal total: 200 kcal | Protein: 20 g | Carbohydrates: 5 g | Fat: 3 g"
+        },
+        {
+          "key": "day",
+          "text": "Day: 2026-11-05\nConsumed: 1,785 / 2,400 kcal (74.4%).\nProtein: 126 / 150 g (84%).\nRemaining for food: 615 kcal.\nExercise expenditure unavailable. Exercise does not increase the food budget."
+        },
+        {
+          "key": "block",
+          "text": "Block 7,700: 3,120 / 7,700 kcal (41%).\nTotal already consolidated: 18,520 kcal · Completed blocks: 2.\nTheoretical reference; this record does not create an immediate credit or guarantee a physical weight change."
+        },
+        {
+          "key": "education",
+          "text": "Milk and whey both contribute to the protein shown for this drink. The scoop is an editable reference; checking the label helps account for differences between products. Your long-term block uses consolidated days, not an immediate credit for this record. Would you like to tell me what you prefer so we can discuss a suitable adjustment?"
+        }
+      ]
+    }
+  ]
+}

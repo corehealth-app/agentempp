@@ -8,7 +8,6 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
-  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
@@ -52,6 +51,20 @@ const conversationReplyAdditions = [
   'conversation/commands/[commandId]/replies/[replyId]/route.ts',
   'conversation/commands/[commandId]/replies/route.ts',
 ]
+// Only these three transports are subtracted at the historical 85/86 boundary.
+// All current routes remain inputs to the global source/build/transitive scans.
+const conversationWorkoutAdditions = [
+  'conversation/workout-commands/[commandId]/route.ts',
+  'conversation/workout-commands/route.ts',
+  'conversation/workout-session/route.ts',
+]
+const conversationWorkoutSourcePaths = new Set(conversationWorkoutAdditions)
+const conversationWorkoutURLs = new Set(
+  conversationWorkoutAdditions.map((path) => `/api/mobile/v1/${path.replace(/\/route.ts$/, '')}`),
+)
+const conversationWorkoutAppPaths = new Set(
+  [...conversationWorkoutURLs].map((path) => `${path}/route`),
+)
 const conversationReadEditAdditions = [
   'conversation/journal/route.ts',
   'conversation/meal-commands/[commandId]/edits/[operationId]/reconcile/route.ts',
@@ -102,7 +115,41 @@ function runtimeMarkerRoutes(marker: string): string[] {
     .sort()
 }
 
-// Exact 13-module extraction observed in the T29 production build. The new
+const exactStringCache = new Map<string, { text: string; values: ReadonlySet<string> }>()
+function containsExactJSString(file: string, value: string): boolean {
+  const text = readFileSync(file, 'utf8'),
+    prior = exactStringCache.get(file)
+  if (prior?.text === text) return prior.values.has(value)
+  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS),
+    values = new Set<string>()
+  const visit = (node: ts.Node) => {
+    if (ts.isStringLiteralLike(node)) values.add(node.text)
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  exactStringCache.set(file, { text, values })
+  return values.has(value)
+}
+function exactStringChunks(value: string): string[] {
+  return walkFiles(resolve(buildRoot, 'server/chunks'))
+    .filter((file) => file.endsWith('.js') && containsExactJSString(file, value))
+    .map((file) => realpathSync(file))
+    .sort()
+}
+function runtimeExactStringRoutes(value: string): string[] {
+  return Object.entries(currentAppPathsManifest())
+    .filter(([route, target]) =>
+      [resolve(buildRoot, 'server', target), ...tracedTargets(route)].some(
+        (file) => file.endsWith('.js') && containsExactJSString(file, value),
+      ),
+    )
+    .map(([route]) => route)
+    .sort()
+}
+
+// Exact T35 extraction: the original13 module bodies are byte-identical.
+// Current scope, continuation read contracts and journal store are three
+// explicit co-located source modules added by the reviewed public composition. The new
 // nutrition helper import makes Webpack split this existing conversation graph.
 // These bodies include dormant writer adapters; this certificate never declares
 // them absent and never exempts any physical code from the global scans.
@@ -136,25 +183,30 @@ function certifyNutritionJournalSplitContent(text: string): void {
         throw new Error('Unexpected nutrition-shared module shape')
       return { id: property.name.getText(source), body: property.initializer.getText(source) }
     }) ?? []
-  expect(bodies, 'certified nutrition-shared module count').toHaveLength(13)
+  expect(bodies, 'certified nutrition-shared module count').toHaveLength(16)
   expect(
     bodies.map(({ id, body }) => `${id}:${createHash('sha256').update(body).digest('hex')}`).sort(),
     'certified nutrition-shared module contents',
-  ).toEqual([
-    '13300:20fedfa25d9bd861ab851d7e94918af627b1fa5102cf509f796ba219040cd74f',
-    '19514:a189839890f820d1a04f8f29b5dd89af51577d935e8af5e7a344cc8a5a9344fd',
-    '20853:5e5378aa0bd0fb541859f4fa6a9dc8c853525dcb697ac43864a72c61837772e9',
-    '21378:3666116fbbe020c4e11038c8dca63660d541b8bd16140556f52cf892fcebb2f5',
-    '36693:9068c240f4c1876773b0af9412297b57d5d55615bbd36e8f0a5a5e5c22bf6be1',
-    '52158:129ea4b769605c4e7ddee1f1bc26688f2d09e77a0922726299741a808f4ae420',
-    '63980:f72ee9fa08b0b391b72a08dd315418ae96759089e54bc5ed728d37806082807e',
-    '65556:67cface7bcca0fbc359c687a3a93842798eb2ad00ab0cbe316e78d18d042cf28',
-    '69423:92c1e5942911be88cdfa8be3db786dd90ea4bd441445cc4278f057c779557c1b',
-    '69431:22fe4905a8681297dba0a50a7a0a75352d687ff4ea3da18f93310480e3276753',
-    '69837:c1f2cd4695fc36a8720f7a56d70f830b15b7056f68902b042e3a03f23a6862f5',
-    '78013:3e125f85cbbf10ef184f6c5b9190a447508e4918dbfda0e05fb72eb495c5d1a3',
-    '89813:4efdc6ad1e8da72c83ac441a24930a99fc63ac573bdebc1ae0564f434615206d',
-  ])
+  ).toEqual(
+    [
+      '11098:0f937cf4b4455cd62f9a2e23e4a054de6f383f851bb1f4935956fab07bd7408b',
+      '49634:3287a6bd255d2b4c020831638d46e96459e466cba56777c0944ce83426355ff4',
+      '85685:d9cd62e929f6b9034fba709dfe002a5f0d3df9f77f6b8713f080d9da94356a0d',
+      '13300:20fedfa25d9bd861ab851d7e94918af627b1fa5102cf509f796ba219040cd74f',
+      '19514:a189839890f820d1a04f8f29b5dd89af51577d935e8af5e7a344cc8a5a9344fd',
+      '20853:5e5378aa0bd0fb541859f4fa6a9dc8c853525dcb697ac43864a72c61837772e9',
+      '21378:3666116fbbe020c4e11038c8dca63660d541b8bd16140556f52cf892fcebb2f5',
+      '36693:9068c240f4c1876773b0af9412297b57d5d55615bbd36e8f0a5a5e5c22bf6be1',
+      '52158:129ea4b769605c4e7ddee1f1bc26688f2d09e77a0922726299741a808f4ae420',
+      '63980:f72ee9fa08b0b391b72a08dd315418ae96759089e54bc5ed728d37806082807e',
+      '65556:67cface7bcca0fbc359c687a3a93842798eb2ad00ab0cbe316e78d18d042cf28',
+      '69423:92c1e5942911be88cdfa8be3db786dd90ea4bd441445cc4278f057c779557c1b',
+      '69431:22fe4905a8681297dba0a50a7a0a75352d687ff4ea3da18f93310480e3276753',
+      '69837:c1f2cd4695fc36a8720f7a56d70f830b15b7056f68902b042e3a03f23a6862f5',
+      '78013:3e125f85cbbf10ef184f6c5b9190a447508e4918dbfda0e05fb72eb495c5d1a3',
+      '89813:4efdc6ad1e8da72c83ac441a24930a99fc63ac573bdebc1ae0564f434615206d',
+    ].sort(),
+  )
 }
 
 function certifiedNutritionJournalSplit(commandRoutes: string[]): string {
@@ -223,6 +275,46 @@ function certifiedClinicalPolicySelectorCopies(): string[] {
   return copies
 }
 
+const absorbedSelectorRoutes = new Set([
+  ...reviewRoutes,
+  '/api/mobile/v1/workouts/[id]/strength-clarification/route',
+])
+function certifyPhysicalModule(file: string, id: string, allowedHashes: readonly string[]): void {
+  const text = readFileSync(file, 'utf8'),
+    source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
+  const found: ts.ArrowFunction[] = []
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isPropertyAssignment(node) &&
+      node.name.getText(source) === id &&
+      ts.isArrowFunction(node.initializer)
+    )
+      found.push(node.initializer)
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  expect(found, `one physical reviewed module ${id}`).toHaveLength(1)
+  const body = found[0]?.getText(source) ?? ''
+  expect(allowedHashes).toContain(createHash('sha256').update(body).digest('hex'))
+  expect(text.startsWith('"use strict";') || body.startsWith('(a,b,c)=>{"use strict";')).toBe(true)
+}
+function certifyAbsorbedWorkoutSelector(): void {
+  const copies = semanticChunks(['MOBILE_WORKOUT_REGISTRATION_PROJECT_REF']),
+    entry = currentAppPathsManifest()['/api/mobile/v1/workouts/[id]/strength-clarification/route']
+  expect(copies).toHaveLength(2)
+  if (!entry) throw new Error('Missing protected clarification entry')
+  for (const file of [...copies, resolve(buildRoot, 'server', entry)])
+    certifyPhysicalModule(file, '47804', [
+      '09553b4b4395aa7bbb18baaf1991e1fd6086fd58cd64de575a16dba316741806',
+      '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209',
+    ])
+  expect(runtimeMarkerRoutes('MOBILE_WORKOUT_REGISTRATION_PROJECT_REF')).toEqual(
+    [...absorbedSelectorRoutes, ...conversationWorkoutAppPaths].sort(),
+  )
+}
+const absorbedReferences = (routes: readonly string[]) =>
+  routes.filter((route) => absorbedSelectorRoutes.has(route)).length
+
 function certifiedWorkoutRepositoryCopies(): string[] {
   const markers = ['admit', 'materialize', 'get', 'edit', 'cancel', 'confirm'].map(
     (operation) => `${operation}_mobile_workout_registration`,
@@ -249,9 +341,27 @@ function certifiedWorkoutRepositoryCopies(): string[] {
     // The narrow factory and its enclosing Webpack module. Compare the whole
     // module, using syntax/semantics rather than generated module/chunk IDs.
     expect(candidates).toHaveLength(2)
-    return candidates.sort((left, right) => left.length - right.length)[1] ?? ''
+    const module = candidates.sort((left, right) => left.length - right.length)[1] ?? ''
+    const hash = createHash('sha256').update(module).digest('hex')
+    expect([
+      'babb0feec0652c4cd31dc1dc36dbb98f9414262aa1361c1d43a7a59b56ddf733',
+      'a023ad0988d9517992016e45acb6fc52741d468bf27c49538d31aab3b0140415',
+    ]).toContain(hash)
+    // The identical reviewed repository is strict in both physical copies:
+    // one inherits the file directive, the other carries it in this module.
+    expect(
+      readFileSync(path, 'utf8').startsWith('"use strict";') ||
+        module.startsWith('(a,b,c)=>{"use strict";'),
+    ).toBe(true)
+    return module.replace(/^\(a,b,c\)=>\{"use strict";/, '(a,b,c)=>{')
   })
   expect(bodies[0]).toBe(bodies[1])
+  const entry =
+    currentAppPathsManifest()['/api/mobile/v1/workouts/[id]/strength-clarification/route']
+  if (!entry) throw new Error('Missing clarification entry')
+  certifyPhysicalModule(resolve(buildRoot, 'server', entry), '32072', [
+    'babb0feec0652c4cd31dc1dc36dbb98f9414262aa1361c1d43a7a59b56ddf733',
+  ])
   return copies
 }
 
@@ -394,20 +504,50 @@ function withSyntheticBuild<T>(
 }
 
 describe('authoritative Mobile API source surface', () => {
-  test('keeps the approved 85-route path and named-export manifest', () => {
+  test('distinguishes an exact legacy RPC from its v3 successor and invalidates changed-file cache', () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'performe-exact-rpc-')),
+      file = resolve(root, 'rpc.js')
+    try {
+      writeFileSync(file, 'db.rpc("commit_mobile_registration_feedback_v3")')
+      expect(containsExactJSString(file, 'commit_mobile_registration_feedback')).toBe(false)
+      expect(containsExactJSString(file, 'commit_mobile_registration_feedback_v3')).toBe(true)
+      writeFileSync(file, 'db.rpc(`commit_mobile_registration_feedback`)')
+      expect(containsExactJSString(file, 'commit_mobile_registration_feedback')).toBe(true)
+      expect(containsExactJSString(file, 'commit_mobile_registration_feedback_v3')).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+  test('keeps the approved 88-route manifest and exact prior85 export stream', () => {
     const records = sourceRecords()
     const hash = hashRecords(records)
 
     console.info(`SOURCE_ROUTE_EXPORT_COUNT=${records.length}`)
     console.info(`SOURCE_ROUTE_EXPORT_STREAM_SHA256=${hash}`)
 
-    expect(records).toHaveLength(85)
-    expect(hash).toBe('afb3a6182ad8e1335a24edeb3f2394f411ee6935f9994c1ecfb0c164079c3d12')
+    expect(records).toHaveLength(88)
+    expect(hash).toBe('99623e7e5caf5d3b3df20eeb6bf840e6fb416f5e489498232a0c984a0a6e53b4')
+    expect(records.filter((record) => conversationWorkoutSourcePaths.has(record.path))).toEqual([
+      {
+        path: 'conversation/workout-commands/[commandId]/route.ts',
+        exports: ['GET', 'maxDuration', 'runtime'],
+      },
+      {
+        path: 'conversation/workout-commands/route.ts',
+        exports: ['POST', 'maxDuration', 'runtime'],
+      },
+      { path: 'conversation/workout-session/route.ts', exports: ['GET', 'maxDuration', 'runtime'] },
+    ])
+    const prior85 = records.filter((record) => !conversationWorkoutSourcePaths.has(record.path))
+    expect(prior85).toHaveLength(85)
+    expect(hashRecords(prior85)).toBe(
+      'afb3a6182ad8e1335a24edeb3f2394f411ee6935f9994c1ecfb0c164079c3d12',
+    )
     expect(records.find((record) => record.path === nutritionWindowSourceRoute)).toEqual({
       path: nutritionWindowSourceRoute,
       exports: ['GET', 'dynamic', 'runtime'],
     })
-    const prior84 = records.filter((record) => record.path !== nutritionWindowSourceRoute)
+    const prior84 = prior85.filter((record) => record.path !== nutritionWindowSourceRoute)
     expect(prior84).toHaveLength(84)
     expect(hashRecords(prior84)).toBe(
       '092bd3ded789b200042cf29119e279e22d6900f8cdc86889108f28d2764673f3',
@@ -645,7 +785,7 @@ describe('authoritative Mobile API source surface', () => {
     expect(hasServerActionDirective(inlineServerAction)).toBe(true)
   })
 
-  test('preserves 84 prior Mobile routes plus the nutrition window and RevenueCat webhook in the Next build', () => {
+  test('preserves the prior85 Mobile and prior86 total streams within the additive 88/89 build', () => {
     const surface = inspectBuildSurface(buildRoot)
 
     console.info(`BUILD_ROUTE_PATH_COUNT=${surface.routePaths.length}`)
@@ -660,16 +800,35 @@ describe('authoritative Mobile API source surface', () => {
     console.info(`BUILD_MIDDLEWARE_COUNT=${surface.middlewareEntries.length}`)
     console.info(`BUILD_SERVER_ACTION_REFERENCE_COUNT=${surface.serverActionReferences.length}`)
 
-    expect(surface.routePaths).toHaveLength(86)
+    expect(surface.routePaths).toHaveLength(89)
     expect(surface.routePathHash).toBe(
-      '6cf74c6833a222ddc0b21838a47498a472abaf1cdd7f5bbce1057e0944bc0e3c',
+      '030d287839ebf4191e33357d3f5bfada7d405e1ab0b18a1367018d9311392b87',
     )
-    expect(surface.mobileRoutePaths).toHaveLength(85)
+    expect(surface.mobileRoutePaths).toHaveLength(88)
     expect(surface.mobileRoutePathHash).toBe(
-      '637c96d6e9baccb01b5b780f73ea89dbb628cb949264620c40ca474b1500b267',
+      'bc55eaf07caffd4b70de61dcc3a6b00d9e10cb8eb7e9cfe6996716e9bf981b05',
     )
-    const prior84Mobile = surface.mobileRoutePaths.filter((path) => path !== nutritionWindowURL)
-    const prior85All = surface.routePaths.filter((path) => path !== nutritionWindowURL)
+    expect(surface.mobileRoutePaths.filter((path) => conversationWorkoutURLs.has(path))).toEqual(
+      [...conversationWorkoutURLs].sort(),
+    )
+    const prior85Mobile = surface.mobileRoutePaths.filter(
+      (path) => !conversationWorkoutURLs.has(path),
+    )
+    const prior86All = surface.routePaths.filter((path) => !conversationWorkoutURLs.has(path))
+    expect(prior85Mobile).toHaveLength(85)
+    expect(
+      createHash('sha256')
+        .update(prior85Mobile.map((path) => `${path}\n`).join(''))
+        .digest('hex'),
+    ).toBe('637c96d6e9baccb01b5b780f73ea89dbb628cb949264620c40ca474b1500b267')
+    expect(prior86All).toHaveLength(86)
+    expect(
+      createHash('sha256')
+        .update(prior86All.map((path) => `${path}\n`).join(''))
+        .digest('hex'),
+    ).toBe('6cf74c6833a222ddc0b21838a47498a472abaf1cdd7f5bbce1057e0944bc0e3c')
+    const prior84Mobile = prior85Mobile.filter((path) => path !== nutritionWindowURL)
+    const prior85All = prior86All.filter((path) => path !== nutritionWindowURL)
     expect(prior84Mobile).toHaveLength(84)
     expect(
       createHash('sha256')
@@ -889,7 +1048,7 @@ describe('authoritative Mobile API source surface', () => {
   test.each([
     false,
     true,
-  ])('checks the 85 Mobile and 86 total inventory in the synthetic CLI with extra nutrition route=%s', (extraRoute) => {
+  ])('checks the 88 Mobile and 89 total inventory in the synthetic CLI with extra nutrition route=%s', (extraRoute) => {
     const appPaths = Object.fromEntries([
       ...sourceRecords().map(({ path }) => {
         const appPath = `/api/mobile/v1/${path.replace(/\.ts$/, '')}`
@@ -918,21 +1077,30 @@ describe('authoritative Mobile API source surface', () => {
         })
         expect(result.error).toBeUndefined()
         expect(result.status, result.stderr).toBe(extraRoute ? 1 : 0)
-        expect(result.stdout).toContain(`BUILD_MOBILE_ROUTE_PATH_COUNT=${extraRoute ? 86 : 85}`)
-        expect(result.stdout).toContain(`BUILD_ROUTE_PATH_COUNT=${extraRoute ? 87 : 86}`)
+        expect(result.stdout).toContain(`BUILD_MOBILE_ROUTE_PATH_COUNT=${extraRoute ? 89 : 88}`)
+        expect(result.stdout).toContain(`BUILD_ROUTE_PATH_COUNT=${extraRoute ? 90 : 89}`)
         if (extraRoute) {
+          expect(result.stderr).toContain('BUILD_SURFACE_ERROR=PRIOR85_MOBILE_ROUTE_COUNT:86')
           expect(result.stderr).toContain('BUILD_SURFACE_ERROR=PRIOR84_MOBILE_ROUTE_COUNT:85')
           expect(result.stderr).toContain('BUILD_SURFACE_ERROR=PRIOR84_MOBILE_ROUTE_HASH:')
           expect(result.stdout).not.toContain('BUILD_SURFACE_STATUS=VERIFIED')
         } else {
           expect(result.stderr).toBe('')
+          expect(result.stdout).toContain('BUILD_PRIOR85_MOBILE_ROUTE_PATH_COUNT=85')
+          expect(result.stdout).toContain('BUILD_PRIOR86_ALL_ROUTE_PATH_COUNT=86')
+          expect(result.stdout).toContain(
+            'BUILD_PRIOR85_MOBILE_ROUTE_PATH_STREAM_SHA256=637c96d6e9baccb01b5b780f73ea89dbb628cb949264620c40ca474b1500b267',
+          )
+          expect(result.stdout).toContain(
+            'BUILD_PRIOR86_ALL_ROUTE_PATH_STREAM_SHA256=6cf74c6833a222ddc0b21838a47498a472abaf1cdd7f5bbce1057e0944bc0e3c',
+          )
           expect(result.stdout).toContain('BUILD_PRIOR84_MOBILE_ROUTE_PATH_COUNT=84')
           expect(result.stdout).toContain('BUILD_PRIOR85_ALL_ROUTE_PATH_COUNT=85')
           expect(result.stdout).toContain(
-            'BUILD_MOBILE_ROUTE_PATH_STREAM_SHA256=637c96d6e9baccb01b5b780f73ea89dbb628cb949264620c40ca474b1500b267',
+            'BUILD_MOBILE_ROUTE_PATH_STREAM_SHA256=bc55eaf07caffd4b70de61dcc3a6b00d9e10cb8eb7e9cfe6996716e9bf981b05',
           )
           expect(result.stdout).toContain(
-            'BUILD_ROUTE_PATH_STREAM_SHA256=6cf74c6833a222ddc0b21838a47498a472abaf1cdd7f5bbce1057e0944bc0e3c',
+            'BUILD_ROUTE_PATH_STREAM_SHA256=030d287839ebf4191e33357d3f5bfada7d405e1ab0b18a1367018d9311392b87',
           )
         }
       } finally {
@@ -947,6 +1115,7 @@ describe('authoritative Mobile API source surface', () => {
     ) as { functions: Record<string, { maxDuration?: number }> }
     const paths = [
       '/api/mobile/v1/conversation/meal-commands',
+      ...conversationWorkoutURLs,
       ...conversationReadEditAdditions.map(
         (path) => `/api/mobile/v1/${path.replace(/\/route.ts$/, '')}`,
       ),
@@ -992,14 +1161,14 @@ describe('authoritative Mobile API source surface', () => {
       mutate: (appPaths: Record<string, string>) => ({ ...appPaths }),
       omittedTargets: ['app/api/mobile/v1/today/route.js'],
     },
-  ])('rejects $name while the same 86 URL keys remain', ({
+  ])('rejects $name while the same 89 URL keys remain', ({
     expectedError,
     mutate,
     omittedTargets,
   }) => {
     const appPaths = mutate(currentAppPathsManifest())
 
-    expect(Object.keys(appPaths)).toHaveLength(86)
+    expect(Object.keys(appPaths)).toHaveLength(89)
     expect(() => withSyntheticBuild(appPaths, inspectBuildSurface, omittedTargets)).toThrow(
       expectedError,
     )
@@ -1129,13 +1298,14 @@ describe('authoritative Mobile API source surface', () => {
     const currentMobileRoutes = allBuildRoutes.filter((route) =>
       route.startsWith('/api/mobile/v1/'),
     )
-    expect(currentMobileRoutes).toHaveLength(85)
+    expect(currentMobileRoutes).toHaveLength(88)
     expect(
       currentMobileRoutes
         .filter((route) => route.startsWith('/api/mobile/v1/conversation/'))
         .sort(),
     ).toEqual(
       [
+        ...conversationWorkoutAppPaths,
         ...conversationReadEditAdditions.map(
           (path) => `/api/mobile/v1/${path.replace(/\.ts$/, '')}`,
         ),
@@ -1146,7 +1316,7 @@ describe('authoritative Mobile API source surface', () => {
       ].sort(),
     )
     // Keep the full historical 75-route dependency graph pinned below. The
-    // nine conversation routes and the exact nutrition addition remain in every global forbidden scan.
+    // twelve conversation routes and the exact nutrition addition remain in every global forbidden scan.
     const allRoutes = currentMobileRoutes.filter(
       (route) =>
         route !== nutritionWindowAppPath && !route.startsWith('/api/mobile/v1/conversation/'),
@@ -1183,6 +1353,7 @@ describe('authoritative Mobile API source surface', () => {
     // actual trace/consumer/security checks physical. Collapse ONLY these two
     // proven copies for the historical unique-node count, never for semantics.
     const repositoryCopies = certifiedWorkoutRepositoryCopies()
+    certifyAbsorbedWorkoutSelector()
     const repositoryUniqueSize = (targets: string[]) =>
       new Set(
         targets.map((target) =>
@@ -1190,9 +1361,12 @@ describe('authoritative Mobile API source surface', () => {
         ),
       ).size
     const priorTargetSet = new Set(priorRoutes.flatMap(priorTargets))
-    expect(priorRoutes.reduce((sum, route) => sum + priorTargets(route).length, 0)).toBe(8028)
-    expect(priorTargetSet.size).toBe(215)
-    expect(repositoryUniqueSize([...priorTargetSet])).toBe(214)
+    expect(
+      priorRoutes.reduce((sum, route) => sum + priorTargets(route).length, 0) +
+        absorbedReferences(priorRoutes),
+    ).toBe(8028)
+    expect(priorTargetSet.size + 1).toBe(215)
+    expect(repositoryUniqueSize([...priorTargetSet]) + 1).toBe(214)
     expect(tracedTargets(recoveryRoute)).toHaveLength(100)
     expect(
       [...new Set(allRoutes.flatMap(tracedTargets))]
@@ -1213,9 +1387,12 @@ describe('authoritative Mobile API source surface', () => {
     // still216 logical identities; the webhook adds only its own manifest.
     const webhookRoute = '/api/webhooks/revenuecat/route'
     const mobileTargets = new Set(allRoutes.flatMap(tracedTargets))
-    expect(allRoutes.reduce((sum, route) => sum + tracedTargets(route).length, 0)).toBe(8202)
-    expect(mobileTargets.size).toBe(217)
-    expect(repositoryUniqueSize([...mobileTargets])).toBe(216)
+    expect(
+      allRoutes.reduce((sum, route) => sum + tracedTargets(route).length, 0) +
+        absorbedReferences(allRoutes),
+    ).toBe(8202)
+    expect(mobileTargets.size + 1).toBe(217)
+    expect(repositoryUniqueSize([...mobileTargets]) + 1).toBe(216)
     expect(tracedTargets(webhookRoute)).toHaveLength(104)
     expect(tracedTargets(webhookRoute).filter((target) => !mobileTargets.has(target))).toEqual([
       realpathSync(
@@ -1229,124 +1406,151 @@ describe('authoritative Mobile API source surface', () => {
       webhookRoute,
     ])
     expect(runtimeMarkerRoutes('x-revenuecat-webhook-signature')).toEqual([webhookRoute])
+    // Current conversation closure, certified physically in this actual build.
+    // Historical meal counts are retained with only the explicitly qualified
+    // extraction1098 and three new common2279 edges accounted for below.
     const commandRoutes = currentMobileRoutes
-      .filter((route) => route.startsWith('/api/mobile/v1/conversation/'))
-      .sort()
-    const commandChunk = uniqueChunk([
-      'conversation.meal-command-result.v1',
-      'MOBILE_CONVERSATION_COMMANDS_ENABLED',
-      'conversation_admission_rate_limited',
-    ])
-    expect(chunkConsumers(commandChunk)).toEqual(commandRoutes)
-    expect(runtimeMarkerRoutes('conversation_commands_unavailable')).toEqual(commandRoutes)
-    const journalRoute = '/api/mobile/v1/conversation/journal/route'
-    const editRoutes = conversationReadEditAdditions
-      .filter((p) => !p.startsWith('conversation/journal/'))
-      .map((p) => `/api/mobile/v1/${p.replace(/\.ts$/, '')}`)
-      .sort()
-    const replyRoutes = conversationReplyAdditions
-      .map((path) => `/api/mobile/v1/${path.replace(/\.ts$/, '')}`)
-      .sort()
-    const priorReadonlyRoutes = [...replyRoutes, journalRoute, ...editRoutes].sort()
-    const readonlyRoutes = [...priorReadonlyRoutes, nutritionWindowAppPath].sort()
-    const readonlyScopeChunk = uniqueChunk([
-      'conversation_scope_unavailable',
-      'patient_admin_account_conflict',
-      'read_conversation_meal_journal_page',
-    ])
-    const replyChunk = uniqueChunk([
-      'conversation.meal-reply-result.v1',
-      'admit_conversation_meal_reply',
-      'commit_conversation_meal_continuation',
-    ])
-    expect(chunkConsumers(readonlyScopeChunk)).toEqual(readonlyRoutes)
+        .filter((route) => route.startsWith('/api/mobile/v1/conversation/'))
+        .sort(),
+      historicalMealCommandRoutes = commandRoutes.filter(
+        (route) => !conversationWorkoutAppPaths.has(route),
+      ),
+      workoutRoutes = [...conversationWorkoutAppPaths].sort(),
+      journalRoute = '/api/mobile/v1/conversation/journal/route',
+      editRoutes = conversationReadEditAdditions
+        .filter((p) => !p.startsWith('conversation/journal/'))
+        .map((p) => `/api/mobile/v1/${p.replace(/\.ts$/, '')}`)
+        .sort(),
+      replyRoutes = conversationReplyAdditions
+        .map((p) => `/api/mobile/v1/${p.replace(/\.ts$/, '')}`)
+        .sort(),
+      rootRoutes = [
+        '/api/mobile/v1/conversation/meal-commands/[commandId]/route',
+        '/api/mobile/v1/conversation/meal-commands/route',
+        '/api/mobile/v1/conversation/session/route',
+      ].sort()
+    expect(commandRoutes).toHaveLength(12)
+    expect(historicalMealCommandRoutes).toEqual(
+      [...rootRoutes, journalRoute, ...editRoutes, ...replyRoutes].sort(),
+    )
+    const mealChunk = uniqueChunk([
+        'conversation_admission_rate_limited',
+        'conversation_commands_unavailable',
+      ]),
+      commonChunk = uniqueChunk([
+        'read_mobile_registration_feedback_v3',
+        'commit_mobile_registration_feedback_v3',
+      ]),
+      workoutChunk = uniqueChunk([
+        'conversation.workout-command-result.v1',
+        'MOBILE_CONVERSATION_WORKOUT_COMMANDS_ENABLED',
+      ]),
+      scopeChunk = certifiedNutritionJournalSplit(commandRoutes),
+      replyChunk = uniqueChunk([
+        'conversation.meal-reply-result.v1',
+        'admit_conversation_meal_reply',
+        'commit_conversation_meal_continuation',
+      ]),
+      publicEditChunk = uniqueChunk([
+        'conversation.meal-edit-effect-public.v1',
+        'conversation.meal-group.v1',
+        'conversation.meal-group.v2',
+      ]),
+      editWriterChunk = uniqueChunk([
+        'commit_conversation_meal_item_edit',
+        'undo_conversation_meal_item_edit',
+        'undo_conversation_meal_registration',
+        'read_conversation_meal_edit_operation',
+      ])
     expect(
-      chunkConsumers(readonlyScopeChunk).filter((route) => route !== nutritionWindowAppPath),
-    ).toEqual(priorReadonlyRoutes)
-    expect(chunkConsumers(replyChunk)).toEqual(replyRoutes)
-    for (const route of Object.keys(currentAppPathsManifest())) {
-      expect(
-        tracedTargets(route).filter((target) => target === readonlyScopeChunk),
-        route,
-      ).toHaveLength(readonlyRoutes.includes(route) ? 1 : 0)
-      expect(
-        tracedTargets(route).filter((target) => target === replyChunk),
-        route,
-      ).toHaveLength(replyRoutes.includes(route) ? 1 : 0)
-    }
-    const publicEditChunk = uniqueChunk([
-      'conversation.meal-edit-effect-public.v1',
-      'conversation.meal-group.v1',
-      'conversation.meal-group.v2',
-    ])
-    const editWriterChunk = uniqueChunk([
-      'commit_conversation_meal_item_edit',
-      'undo_conversation_meal_item_edit',
-      'undo_conversation_meal_registration',
-      'read_conversation_meal_edit_operation',
-    ])
-    // Reusing the closed edit JSON boundary in the actual materializer makes
-    // Webpack merge the public projection and writer chunks. The journal now
-    // embeds one byte-identical public projection module in its own entry.
-    // Certify only those four removed trace edges; every physical source and
-    // every writer marker remains subject to the original global checks.
+      new Set([mealChunk, commonChunk, workoutChunk, scopeChunk, replyChunk, publicEditChunk]).size,
+    ).toBe(6)
     expect(publicEditChunk).toBe(editWriterChunk)
     certifyInlineConversationEditModule(publicEditChunk, journalRoute)
-    expect(chunkConsumers(publicEditChunk)).toEqual(editRoutes)
-    expect(chunkConsumers(editWriterChunk)).toEqual(editRoutes)
-    for (const marker of [
-      'conversation.meal-edit-effect-public.v1',
-      'conversation.meal-group.v1',
-      'conversation.meal-group.v2',
-    ])
-      expect(runtimeMarkerRoutes(marker)).toEqual([...editRoutes, journalRoute].sort())
-    for (const marker of [
-      'commit_conversation_meal_item_edit',
-      'undo_conversation_meal_item_edit',
-      'undo_conversation_meal_registration',
-      'read_conversation_meal_edit_operation',
-    ])
-      expect(runtimeMarkerRoutes(marker)).toEqual(editRoutes)
-    // This physical read marker travels with the shared readonly Auth module.
-    // The source-level constructor/import guard above prohibits a journal call.
-    expect(runtimeMarkerRoutes('read_conversation_meal_journal_page')).toEqual(readonlyRoutes)
-    expect(runtimeMarkerRoutes('read_conversation_meal_journal_page_v2')).toEqual([journalRoute])
-    for (const marker of [
-      'conversation.meal-reply-result.v1',
-      'admit_conversation_meal_reply',
-      'prepare_conversation_meal_continuation',
-      'commit_conversation_meal_continuation',
-    ])
-      expect(runtimeMarkerRoutes(marker)).toEqual(replyRoutes)
+    for (const [chunk, routes] of [
+      [mealChunk, historicalMealCommandRoutes],
+      [commonChunk, commandRoutes],
+      [workoutChunk, workoutRoutes],
+      [scopeChunk, [...commandRoutes, nutritionWindowAppPath].sort()],
+      [replyChunk, replyRoutes],
+      [publicEditChunk, editRoutes],
+    ] as const)
+      expect(chunkConsumers(chunk)).toEqual(routes)
+    for (const [marker, routes] of [
+      ['conversation_commands_unavailable', historicalMealCommandRoutes],
+      ['read_conversation_meal_journal_page', [...commandRoutes, nutritionWindowAppPath].sort()],
+      ['read_conversation_meal_journal_page_v2', [journalRoute]],
+      ...[
+        'conversation.meal-edit-effect-public.v1',
+        'conversation.meal-group.v1',
+        'conversation.meal-group.v2',
+      ].map((marker) => [marker, [...editRoutes, journalRoute].sort()] as const),
+      ...[
+        'commit_conversation_meal_item_edit',
+        'undo_conversation_meal_item_edit',
+        'undo_conversation_meal_registration',
+        'read_conversation_meal_edit_operation',
+      ].map((marker) => [marker, editRoutes] as const),
+      ...[
+        'conversation.meal-reply-result.v1',
+        'admit_conversation_meal_reply',
+        'prepare_conversation_meal_continuation',
+        'commit_conversation_meal_continuation',
+      ].map((marker) => [marker, replyRoutes] as const),
+    ] as const)
+      expect(runtimeMarkerRoutes(marker)).toEqual(routes)
+    for (const route of allBuildRoutes) {
+      for (const [chunk, consumers] of [
+        [mealChunk, historicalMealCommandRoutes],
+        [commonChunk, commandRoutes],
+        [workoutChunk, workoutRoutes],
+        [scopeChunk, [...commandRoutes, nutritionWindowAppPath]],
+        [replyChunk, replyRoutes],
+        [editWriterChunk, editRoutes],
+      ] as const)
+        expect(
+          tracedTargets(route).filter((target) => target === chunk),
+          route,
+        ).toHaveLength(consumers.includes(route) ? 1 : 0)
+    }
+    const nutritionJournalSplit = scopeChunk
     const expectedCommandCounts = new Map([
-      ['/api/mobile/v1/conversation/meal-commands/[commandId]/route', 119],
-      ['/api/mobile/v1/conversation/meal-commands/route', 119],
-      ['/api/mobile/v1/conversation/session/route', 119],
+      ...rootRoutes.map((route) => [route, 119] as const),
       [journalRoute, 121],
       ...editRoutes.map((route) => [route, 122] as const),
       ...replyRoutes.map((route) => [route, 121] as const),
     ])
-    const nutritionJournalSplit = certifiedNutritionJournalSplit(commandRoutes)
-    // Normalize only this certified new edge, for the nine original routes.
-    // No route, module, writer marker or trace is removed from global scans.
-    const priorCommandTargets = (route: string): string[] =>
-      tracedTargets(route).filter((target) => target !== nutritionJournalSplit)
-    expect([...expectedCommandCounts.keys()].sort()).toEqual(commandRoutes)
     for (const [route, count] of expectedCommandCounts)
-      expect(priorCommandTargets(route), route).toHaveLength(count)
-    expect(new Set([commandChunk, publicEditChunk, readonlyScopeChunk, replyChunk]).size).toBe(4)
-    const legacyTargets = new Set([...allRoutes, webhookRoute].flatMap(tracedTargets))
-    const commandOnlyTargets = [...new Set(commandRoutes.flatMap(priorCommandTargets))]
-      .filter((target) => !legacyTargets.has(target))
-      .sort()
+      expect(
+        tracedTargets(route).filter(
+          (target) =>
+            target !== scopeChunk && !(rootRoutes.includes(route) && target === commonChunk),
+        ),
+        route,
+      ).toHaveLength(count)
+    const currentCounts = new Map([
+      ...rootRoutes.map((route) => [route, 121] as const),
+      [journalRoute, 122],
+      ...editRoutes.map((route) => [route, 123] as const),
+      ...replyRoutes.map((route) => [route, 122] as const),
+      ...workoutRoutes.map((route) => [route, 117] as const),
+    ])
+    expect([...currentCounts.keys()].sort()).toEqual(commandRoutes)
+    for (const [route, count] of currentCounts)
+      expect(tracedTargets(route), route).toHaveLength(count)
+    const legacyTargets = new Set([...allRoutes, webhookRoute].flatMap(tracedTargets)),
+      commandOnlyTargets = [...new Set(commandRoutes.flatMap(tracedTargets))]
+        .filter((target) => !legacyTargets.has(target))
+        .sort()
     expect(commandOnlyTargets).toEqual(
       [
         ...new Set([
-          commandChunk,
-          publicEditChunk,
-          editWriterChunk,
-          readonlyScopeChunk,
+          mealChunk,
+          commonChunk,
+          workoutChunk,
+          scopeChunk,
           replyChunk,
+          publicEditChunk,
           ...commandRoutes.map((route) =>
             realpathSync(
               resolve(buildRoot, 'server/app', `${route.slice(1)}_client-reference-manifest.js`),
@@ -1355,40 +1559,17 @@ describe('authoritative Mobile API source surface', () => {
         ]),
       ].sort(),
     )
-    // Raw totals, without folding any new chunk/edge into historical scopes.
-    // Exactly six readonly edges and two reply-writer edges were proved above.
-    const priorBuildRoutes = allBuildRoutes.filter((route) => route !== nutritionWindowAppPath)
-    const priorBuildTrace = (route: string): string[] =>
-      commandRoutes.includes(route) ? priorCommandTargets(route) : tracedTargets(route)
-    const priorBuildTargets = new Set(priorBuildRoutes.flatMap(priorBuildTrace))
-    expect(priorBuildRoutes.reduce((sum, route) => sum + priorBuildTrace(route).length, 0)).toBe(
-      8202 + 104 + 3 * 119 + 3 * 122 + 121 + 2 * 121,
-    )
-    expect(priorBuildTargets.size).toBe(217 + 1 + 9 + 4)
-    expect([...priorBuildTargets].filter((target) => statSync(target).isFile())).toHaveLength(
-      215 + 1 + 9 + 4,
-    )
-    expect([...priorBuildTargets].filter((target) => statSync(target).isDirectory())).toHaveLength(
-      2,
-    )
-    // Only the exact additive route is removed from historical counts. Its full
-    // physical graph remains in inspectBuildSurface's security/directory scans.
-    const nutritionTargets = tracedTargets(nutritionWindowAppPath)
-    const nutritionOnlyTargets = nutritionTargets.filter((target) => !priorBuildTargets.has(target))
+    expect(legacyTargets.size).toBe(217) // one absorbed selector target vs original218
+    expect(
+      [...allRoutes, webhookRoute].reduce((sum, route) => sum + tracedTargets(route).length, 0) +
+        absorbedReferences(allRoutes),
+    ).toBe(8202 + 104)
+    expect(tracedTargets(nutritionWindowAppPath)).toHaveLength(115)
     expect(surface.nftReferenceCount).toBe(
-      8202 +
-        104 +
-        3 * 119 +
-        3 * 122 +
-        121 +
-        2 * 121 +
-        commandRoutes.length +
-        nutritionTargets.length,
+      8202 + 104 - 6 + 3 * 121 + 122 + 3 * 123 + 2 * 122 + 3 * 117 + 115,
     )
-    expect(surface.nftUniqueTargetCount).toBe(217 + 1 + 9 + 4 + nutritionOnlyTargets.length)
-    expect(surface.nftRegularFileTargetCount).toBe(
-      215 + 1 + 9 + 4 + nutritionOnlyTargets.filter((target) => statSync(target).isFile()).length,
-    )
+    expect(surface.nftUniqueTargetCount).toBe(217 + 12 + 6 + 1)
+    expect(surface.nftRegularFileTargetCount).toBe(215 + 12 + 6 + 1)
     expect(surface.nftDirectoryTargetCount).toBe(2)
     const additions = new Set(
       currentClinicalRouteAdditions.map((path) => `/api/mobile/v1/${path.replace(/\.ts$/, '')}`),
@@ -1399,9 +1580,12 @@ describe('authoritative Mobile API source surface', () => {
       (route) => !additions.has(route) && route !== '/api/mobile/v1/auth/password-recovery/route',
     )
     expect(historicalRoutes).toHaveLength(56)
-    expect(historicalRoutes.reduce((sum, route) => sum + priorTargets(route).length, 0)).toBe(6089)
-    expect(new Set(historicalRoutes.flatMap(priorTargets)).size).toBe(194)
-    expect(repositoryUniqueSize(historicalRoutes.flatMap(priorTargets))).toBe(193)
+    expect(
+      historicalRoutes.reduce((sum, route) => sum + priorTargets(route).length, 0) +
+        absorbedReferences(historicalRoutes),
+    ).toBe(6089)
+    expect(new Set(historicalRoutes.flatMap(priorTargets)).size + 1).toBe(194)
+    expect(repositoryUniqueSize(historicalRoutes.flatMap(priorTargets)) + 1).toBe(193)
     const routeNames = (names: string[]) =>
       names.map((name) => `/api/mobile/v1/${name}/route`).sort()
     const clinicalEdges = [
@@ -1551,7 +1735,16 @@ describe('authoritative Mobile API source surface', () => {
         const photoCopy = copies.filter((file) => file !== chunk)
         expect(photoCopy).toHaveLength(1)
         expect(chunkConsumers(photoCopy[0] ?? '')).toEqual(edge.otherAdded)
-      } else chunk = uniqueChunk(edge.markers)
+      } else {
+        // New canonical/read-only adapters may contain the same RPC name in
+        // their closed allowlist. The historical clinical reader is selected
+        // by its original consumer; every complete physical graph stays scanned.
+        const candidates = semanticChunks(edge.markers).filter((file) =>
+          chunkConsumers(file).includes(edge.old[0] ?? ''),
+        )
+        expect(candidates, edge.markers.join(', ')).toHaveLength(1)
+        chunk = candidates[0] ?? ''
+      }
       // Preserve every historical consumer exactly; the additive nutrition
       // closure is checked independently above and in the global scans.
       expect(chunkConsumers(chunk).filter((route) => route !== nutritionWindowAppPath)).toEqual(
@@ -1592,7 +1785,7 @@ describe('authoritative Mobile API source surface', () => {
         expect(runtimeMarkerRoutes(edge.admissionMarker)).toEqual(
           [
             ...edge.old,
-            ...commandRoutes,
+            ...historicalMealCommandRoutes,
             ...routeNames([
               'reevaluation',
               'reevaluation/start',
@@ -1661,10 +1854,19 @@ describe('authoritative Mobile API source surface', () => {
     const historicalConsumers = (chunk: string): string[] =>
       historicalRoutes.filter((route) => historicalTargets(route).includes(chunk)).sort()
     expect([...exemptions.values()].reduce((sum, edges) => sum + edges.size, 0)).toBe(56)
-    expect(historicalRoutes.reduce((sum, route) => sum + historicalTargets(route).length, 0)).toBe(
-      6033,
-    )
-    expect(new Set(historicalRoutes.flatMap(historicalTargets)).size).toBe(187)
+    expect(
+      historicalRoutes.reduce((sum, route) => sum + historicalTargets(route).length, 0) +
+        absorbedReferences(historicalRoutes),
+    ).toBe(6033)
+    expect(new Set(historicalRoutes.flatMap(historicalTargets)).size + 1).toBe(187)
+    // Removing the qualified legacy-facts module now also removes its second
+    // co-located repository copy from this historical projection. Its missing
+    // duplicate offsets the absorbed selector node in the old logical count;
+    // both actual copies remain checked globally before any projection.
+    expect(
+      new Set(historicalRoutes.flatMap(historicalTargets)).has(repositoryCopies[0] ?? '') !==
+        new Set(historicalRoutes.flatMap(historicalTargets)).has(repositoryCopies[1] ?? ''),
+    ).toBe(true)
     expect(repositoryUniqueSize(historicalRoutes.flatMap(historicalTargets))).toBe(186)
     expect(
       createHash('sha256')
@@ -1672,7 +1874,10 @@ describe('authoritative Mobile API source surface', () => {
           historicalRoutes
             .slice()
             .sort()
-            .map((route) => `${route}\0${historicalTargets(route).length}\n`)
+            .map(
+              (route) =>
+                `${route}\0${historicalTargets(route).length + (absorbedSelectorRoutes.has(route) ? 1 : 0)}\n`,
+            )
             .join(''),
         )
         .digest('hex'),
@@ -1694,14 +1899,31 @@ describe('authoritative Mobile API source surface', () => {
     expect(historicalConsumers(catalogChunk)).toEqual(catalogRoutes)
     // The historical read now shares the same repository as the five reviews;
     // its query selector stays inline in precisely the two History entries.
-    const receiptCopies = semanticChunks(['read_mobile_registration_feedback'])
+    const receiptCopies = exactStringChunks('read_mobile_registration_feedback')
     expect(receiptCopies).toHaveLength(2)
     expect(receiptCopies).toContain(nutritionJournalSplit)
     const legacyReceiptCopies = receiptCopies.filter((chunk) => chunk !== nutritionJournalSplit)
     expect(legacyReceiptCopies).toHaveLength(1)
     const receiptChunk = legacyReceiptCopies[0] ?? ''
-    expect(historicalConsumers(receiptChunk)).toEqual([...reviewRoutes, clarificationRoute].sort())
-    expect(runtimeMarkerRoutes('read_mobile_registration_feedback')).toEqual(
+    // Both History endpoints now inline exactly the same qualified reader.
+    // Include that actual module, rather than inventing a missing NFT edge.
+    for (const file of [
+      nutritionJournalSplit,
+      receiptChunk,
+      ...historyFeedbackRoutes.map((route) => {
+        const target = currentAppPathsManifest()[route]
+        if (!target) throw new Error('Missing protected History entry')
+        return resolve(buildRoot, 'server', target)
+      }),
+    ])
+      certifyPhysicalModule(file, '63980', [
+        'f72ee9fa08b0b391b72a08dd315418ae96759089e54bc5ed728d37806082807e',
+        '578c992110323cefc0434b5aa193a8fbb16132af1125dca06743123b04535cd1',
+      ])
+    expect([...chunkConsumers(receiptChunk), clarificationRoute].sort()).toEqual(
+      [...reviewRoutes, clarificationRoute].sort(),
+    )
+    expect(runtimeExactStringRoutes('read_mobile_registration_feedback')).toEqual(
       [...historyFeedbackRoutes, ...reviewRoutes, ...commandRoutes, nutritionWindowAppPath].sort(),
     )
     expect(runtimeMarkerRoutes('proposal->>source_provider_message_id')).toEqual(
@@ -1791,8 +2013,15 @@ describe('authoritative Mobile API source surface', () => {
       }
       if (historyFeedbackRoutes.includes(route)) {
         const ownedRepository = repositoryCopies.filter((copy) => raw.includes(copy))
-        expect(ownedRepository, route).toHaveLength(1)
-        extras.push(ownedRepository[0] ?? '', readModelChunk)
+        if (route === clarificationRoute) {
+          // Qualified module32072 is inline here. Its prior NFT edge is
+          // absent, with its exact complete body already checked above.
+          expect(ownedRepository, route).toHaveLength(0)
+          extras.push(readModelChunk)
+        } else {
+          expect(ownedRepository, route).toHaveLength(1)
+          extras.push(ownedRepository[0] ?? '', readModelChunk)
+        }
       }
       if (route === clarificationRoute) extras.push(officialStateChunk, databaseSelectorChunk)
       expect(new Set(extras).size, route).toBe(extras.length)
@@ -1803,19 +2032,30 @@ describe('authoritative Mobile API source surface', () => {
         ).toEqual([target])
       extrasByRoute.set(route, new Set(extras))
     }
-    expect([...extrasByRoute.values()].reduce((sum, extras) => sum + extras.size, 0)).toBe(57)
+    expect([...extrasByRoute.values()].reduce((sum, extras) => sum + extras.size, 0) + 1).toBe(57)
     const physicalTargets = (route: string): string[] =>
       historicalTargets(route).filter((target) => !extrasByRoute.get(route)?.has(target))
     const normalized = historicalRoutes
       .sort()
       .map((route) => [route, physicalTargets(route)] as const)
-    expect(normalized.reduce((sum, [, targets]) => sum + targets.length, 0)).toBe(5976)
-    expect(new Set(normalized.flatMap(([, targets]) => targets)).size).toBe(185)
+    expect(
+      normalized.reduce((sum, [, targets]) => sum + targets.length, 0) +
+        absorbedReferences(historicalRoutes) -
+        1,
+    ).toBe(5976)
+    expect(new Set(normalized.flatMap(([, targets]) => targets)).size + 1).toBe(185)
     // Frozen count stream from the complete pre-C13 56-route build, not a
     // number calculated from current observed-minus-expected differences.
     expect(
       createHash('sha256')
-        .update(normalized.map(([route, targets]) => `${route}\0${targets.length}\n`).join(''))
+        .update(
+          normalized
+            .map(
+              ([route, targets]) =>
+                `${route}\0${targets.length + (absorbedSelectorRoutes.has(route) && route !== clarificationRoute ? 1 : 0)}\n`,
+            )
+            .join(''),
+        )
         .digest('hex'),
     ).toBe('a89cfdaa746fd822c59908f78e15920a97edcf500b09e60490693b32a287ac7c')
     const ownManifest = (route: string): string =>
@@ -1929,17 +2169,24 @@ describe('authoritative Mobile API source surface', () => {
       baselineReferences += targets.length
       for (const target of targets) baselineTargets.add(target)
     }
-    expect(baselineReferences).toBe(5326)
-    expect(baselineTargets.size).toBe(176)
+    const absorbedBaseline = absorbedReferences(
+      historicalRoutes.filter((route) => !Object.hasOwn(addedRoutes, route)),
+    )
+    expect(baselineReferences + absorbedBaseline).toBe(5326)
+    expect(baselineTargets.size + 1).toBe(176)
     // Removing only the separately authorized six references reproduces E2's
     // original50 graph. All other historical graph assertions stay intact.
-    expect(baselineReferences - draftRoutes.length).toBe(5320)
-    expect([...baselineTargets].filter((target) => target !== draftChunk)).toHaveLength(175)
+    expect(baselineReferences + absorbedBaseline - draftRoutes.length).toBe(5320)
+    expect([...baselineTargets].filter((target) => target !== draftChunk).length + 1).toBe(175)
 
     const beyondBaseline = (route: string): string[] =>
       [...new Set(physicalTargets(route))].filter((target) => !baselineTargets.has(target))
     for (const [addedRoute, references] of Object.entries(addedRoutes)) {
-      expect(physicalTargets(addedRoute), addedRoute).toHaveLength(references)
+      expect(
+        physicalTargets(addedRoute).length +
+          (absorbedSelectorRoutes.has(addedRoute) && addedRoute !== clarificationRoute ? 1 : 0),
+        addedRoute,
+      ).toBe(references)
     }
     expect(beyondBaseline('/api/mobile/v1/meal-records/[id]/route')).toEqual([
       ownManifest('/api/mobile/v1/meal-records/[id]/route'),
@@ -1995,31 +2242,50 @@ describe('authoritative Mobile API source surface', () => {
       ...historyFeedbackRoutes,
       ...conversationReadEditAdditions.map((p) => `/api/mobile/v1/${p.replace(/\.ts$/, '')}`),
     ].sort()
-    expect([...new Set(chunks.flatMap(chunkConsumers))].sort()).toEqual(repositoryRoutes)
+    expect(
+      [
+        ...new Set(chunks.flatMap(chunkConsumers)),
+        '/api/mobile/v1/workouts/[id]/strength-clarification/route',
+      ].sort(),
+    ).toEqual(repositoryRoutes)
     for (const route of Object.keys(currentAppPathsManifest())) {
       expect(
         tracedTargets(route).filter((path) => chunks.includes(path)),
         route,
-      ).toHaveLength(repositoryRoutes.includes(route) ? 1 : 0)
+      ).toHaveLength(
+        repositoryRoutes.includes(route) &&
+          route !== '/api/mobile/v1/workouts/[id]/strength-clarification/route'
+          ? 1
+          : 0,
+      )
     }
     const switchChunks = semanticChunks(['MOBILE_WORKOUT_REGISTRATION_PROJECT_REF'])
-    const writerChunks = semanticChunks(['commit_mobile_registration_feedback'])
-    expect(switchChunks).toHaveLength(1)
+    const writerChunks = exactStringChunks('commit_mobile_registration_feedback')
+    expect(switchChunks).toHaveLength(2)
     expect(writerChunks).toHaveLength(1)
     expect(readFileSync(switchChunks[0] ?? '', 'utf8')).toContain('ui-v1')
     // The selector/repository now also serves the protected read question,
     // while the feedback writer remains an independent five-review chunk.
     expect(writerChunks).not.toEqual(switchChunks)
-    expect(chunkConsumers(switchChunks[0] ?? '')).toEqual(
-      [...reviewRoutes, '/api/mobile/v1/workouts/[id]/strength-clarification/route'].sort(),
+    certifyAbsorbedWorkoutSelector()
+    expect(
+      switchChunks.map(chunkConsumers).sort((a, b) => a.join().localeCompare(b.join())),
+    ).toEqual(
+      [[...conversationWorkoutAppPaths].sort(), reviewRoutes].sort((a, b) =>
+        a.join().localeCompare(b.join()),
+      ),
     )
     expect(chunkConsumers(writerChunks[0] ?? '')).toEqual(reviewRoutes)
     // Include entries as well as NFTs. The clarification entry already used
     // this flag before C13; its protected question is not a feedback writer.
     expect(runtimeMarkerRoutes('MOBILE_WORKOUT_REGISTRATION_PROJECT_REF')).toEqual(
-      [...reviewRoutes, '/api/mobile/v1/workouts/[id]/strength-clarification/route'].sort(),
+      [
+        ...reviewRoutes,
+        '/api/mobile/v1/workouts/[id]/strength-clarification/route',
+        ...conversationWorkoutAppPaths,
+      ].sort(),
     )
-    expect(runtimeMarkerRoutes('commit_mobile_registration_feedback')).toEqual(reviewRoutes)
+    expect(runtimeExactStringRoutes('commit_mobile_registration_feedback')).toEqual(reviewRoutes)
   })
 
   test('keeps both History feedback reads free of catalog, cursor and feedback writer dependencies', () => {

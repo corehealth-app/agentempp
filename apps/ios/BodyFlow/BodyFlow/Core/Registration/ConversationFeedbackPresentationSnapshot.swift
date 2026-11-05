@@ -7,6 +7,11 @@ struct ConversationFeedbackPresentationSnapshot: Decodable, Equatable, Sendable 
         let schema: String
         let registrationID: String
         let localDate: String
+        let kind: String
+        init(schema: String, registrationID: String, localDate: String, kind: String = "meal") {
+            self.schema = schema; self.registrationID = registrationID
+            self.localDate = localDate; self.kind = kind
+        }
     }
     /// The actual public projection includes the core budget visibility flag.
     /// Keep it here without changing older read-surface policy compatibility.
@@ -28,7 +33,7 @@ struct ConversationFeedbackPresentationSnapshot: Decodable, Equatable, Sendable 
         let phaseSelectionPending: Bool
         let targetSource: CurrentClinicalPolicy.TargetSource
         let hide: Hidden
-        fileprivate init(_ p: CurrentClinicalPolicy, budget: Bool) {
+        init(_ p: CurrentClinicalPolicy, budget: Bool) {
             version = p.version; observedAt = p.observedAt; assessment = p.assessment
             recordingAllowed = p.recordingAllowed; pauseWeightLossGuidance = p.pauseWeightLossGuidance
             professionalAssessmentRecommended = p.professionalAssessmentRecommended
@@ -50,6 +55,7 @@ struct ConversationFeedbackPresentationSnapshot: Decodable, Equatable, Sendable 
     }
     enum Content: Equatable, Sendable {
         case sections(recorded: RegistrationFeedbackV2Snapshot.Meal, sections: [Section])
+        case v3Sections(recorded: RegistrationFeedbackV3Snapshot.Registration, sections: [Section])
         case legacy(RegistrationFeedbackV1Snapshot)
         case placeholder([Section])
     }
@@ -93,7 +99,7 @@ struct ConversationFeedbackPresentationSnapshot: Decodable, Equatable, Sendable 
     /// must publish under the existing visible-session mutation gate, and clear
     /// bound values on account/generation/epoch changes. This performs no ACK.
     func bound(to binding: Binding, current: Scope) -> Bound? {
-        guard binding.scope == current, validUUID(current.ownerID), validUUID(current.epoch),
+        guard original.kind == "meal", binding.scope == current, validUUID(current.ownerID), validUUID(current.epoch),
               provenance.epoch == current.epoch, provenance.commandID == binding.commandID,
               original.registrationID == binding.registrationID, original.localDate == binding.localDate,
               !binding.logIDs.isEmpty, binding.logIDs.count <= 30,
@@ -105,11 +111,37 @@ struct ConversationFeedbackPresentationSnapshot: Decodable, Equatable, Sendable 
             guard recorded.mealKind == binding.mealKind,
                   Set(recorded.items.map(\.logID)) == Set(binding.logIDs) else { return nil }
         }
+        if case let .v3Sections(recorded, _) = content {
+            guard case let .meal(meal) = recorded, meal.mealKind == binding.mealKind,
+                  Set(meal.items.map(\.logID)) == Set(binding.logIDs) else { return nil }
+        }
         return Bound(presentation: self, scope: current)
+    }
+
+    /// Each version compares its own factual types; workout never acquires a meal binding.
+    func matchesRecordedMeal(kind: String, logIDs: [String]) -> Bool {
+        guard original.kind == "meal" else { return false }
+        switch content {
+        case let .sections(meal, _):
+            return meal.mealKind == kind && Set(meal.items.map(\.logID)) == Set(logIDs)
+        case let .v3Sections(recorded, _):
+            guard case let .meal(meal) = recorded else { return false }
+            return meal.mealKind == kind && Set(meal.items.map(\.logID)) == Set(logIDs)
+        case .legacy, .placeholder: return true
+        }
     }
 
     init(from decoder: any Decoder) throws {
         do {
+            let wireSchema = try decoder.container(keyedBy: PresentationSchemaKey.self).decode(String.self, forKey: .schema)
+            if wireSchema == "conversation.feedback-presentation.v2" {
+                guard ConversationFeedbackPresentationSelection.selected(from: decoder) == .v2 else { throw InvalidPresentation.value }
+                let value = try ConversationFeedbackPresentationV2Snapshot(from: decoder)
+                original = value.original; currentPolicy = value.currentPolicy
+                provenance = value.provenance
+                content = .v3Sections(recorded: value.recorded, sections: value.sections)
+                return
+            }
             let raw = try PresentationValue(from: decoder)
             let format = try raw.member("format").string()
             let common = ["schema", "mode", "assistant", "original", "current_policy", "provenance", "status", "format"]
@@ -224,7 +256,7 @@ private enum InvalidPresentation: Error { case value }
 private func check(_ condition: Bool) throws { if !condition { throw InvalidPresentation.value } }
 private func validUUID(_ value: String) -> Bool { value.utf8.count == 36 && UUID(uuidString: value) != nil }
 
-private indirect enum PresentationValue: Decodable, Encodable {
+indirect enum PresentationValue: Decodable, Encodable {
     case object([String: Self]), array([Self]), string(String), number(Double), bool(Bool), null
     init(from decoder: any Decoder) throws {
         let c = try decoder.singleValueContainer()
@@ -277,7 +309,7 @@ private func validCivil(_ s: String) -> Bool {
     return (1...[31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1]).contains(d)
 }
 /// RFC3339 comparison retains all nine fractional digits for pre-admission fences.
-private struct PresentationInstant: Comparable {
+struct PresentationInstant: Comparable {
     let seconds: Int64
     let nanos: Int
     init?(_ raw: String) {
@@ -296,3 +328,5 @@ private struct PresentationInstant: Comparable {
     }
     static func < (a: Self, b: Self) -> Bool { a.seconds == b.seconds ? a.nanos < b.nanos : a.seconds < b.seconds }
 }
+
+private enum PresentationSchemaKey: String, CodingKey { case schema }

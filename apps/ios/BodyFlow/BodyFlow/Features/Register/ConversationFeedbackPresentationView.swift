@@ -15,7 +15,7 @@ struct ConversationFeedbackPresentationView: View {
                 .font(BodyFlowTypography.body)
                 .accessibilityIdentifier("conversation.feedback.historical")
             switch feedback.presentation.content {
-            case let .sections(_, sections), let .placeholder(sections):
+            case let .sections(_, sections), let .v3Sections(_, sections), let .placeholder(sections):
                 ForEach(sections, id: \.key) { section in
                     Text(verbatim: section.text)
                         .accessibilityIdentifier("conversation.feedback.section.\(section.key.rawValue)")

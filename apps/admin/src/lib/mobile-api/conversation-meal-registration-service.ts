@@ -25,6 +25,7 @@ import {
 import { createConversationMealDayInitializer } from './conversation-meal-day'
 import {
   type ConversationMealFeedbackService,
+  type ConversationMealOriginalFeedbackInput,
   createSupabaseConversationMealFeedbackService,
   type OriginalConversationMealFeedback,
 } from './conversation-meal-feedback-service'
@@ -81,6 +82,20 @@ export interface ConversationMealRegistrationDependencies {
   calculate?: typeof calcMealMacros
   confidenceThreshold?: () => Promise<number>
   feedback?: ConversationMealFeedbackService
+  /** Optional server-selected ORIGINAL family; actual writer/journal binding,
+   * never a client precondition. Replay only invokes readOriginal. */
+  originalEnrichment?: {
+    ensureOriginal(
+      input: ConversationMealOriginalFeedbackInput & {
+        readonly serverBinding: ConversationJournalBinding
+      },
+    ): Promise<OriginalConversationMealFeedback | null>
+    readOriginal(
+      input: ConversationMealOriginalFeedbackInput & {
+        readonly serverBinding: ConversationJournalBinding
+      },
+    ): Promise<OriginalConversationMealFeedback | null>
+  }
 }
 export type ConversationMealRegistrationResult =
   | {
@@ -372,6 +387,13 @@ export async function registerPersistedConversationMeal(
   const feedback = dependencies.feedback ?? createSupabaseConversationMealFeedbackService(db)
   const ensureOriginal = feedback.ensureOriginal.bind(feedback),
     readOriginal = feedback.readOriginal.bind(feedback)
+  const enrichment = dependencies.originalEnrichment,
+    boundOriginal = enrichment
+      ? Object.freeze({
+          ensure: enrichment.ensureOriginal.bind(enrichment),
+          read: enrichment.readOriginal.bind(enrichment),
+        })
+      : null
   const success = async (
     rawReceipt: ConversationMealEffectReceipt,
     b: ConversationJournalBinding,
@@ -380,11 +402,14 @@ export async function registerPersistedConversationMeal(
     const receipt = parseConversationMealEffectReceipt(rawReceipt, command)
     let historicalFeedback: OriginalConversationMealFeedback | null = null
     try {
-      historicalFeedback = await (replay ? readOriginal : ensureOriginal)({
-        auth,
-        command,
-        receipt,
-      })
+      historicalFeedback = boundOriginal
+        ? await (replay ? boundOriginal.read : boundOriginal.ensure)({
+            auth,
+            command,
+            receipt,
+            serverBinding: b,
+          })
+        : await (replay ? readOriginal : ensureOriginal)({ auth, command, receipt })
     } catch {
       /* The factual effect is already committed. Never retry it for enrichment. */
     }

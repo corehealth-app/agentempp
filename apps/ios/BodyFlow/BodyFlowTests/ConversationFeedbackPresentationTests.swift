@@ -29,6 +29,8 @@ struct ConversationFeedbackPresentationTests {
                 #expect(recorded.items[0].quantity.unit == "mL")
                 #expect(recorded.items[0].quantityG == 206)
                 #expect(recorded.totals.kcal == 126.1)
+            case .v3Sections:
+                Issue.record("A literal wrapper1 fixture must never decode as wrapper2/v3")
             case let .legacy(body):
                 #expect(body.lines[0].text == "Synthetic total")
                 #expect(!value.isRestricted)
@@ -205,6 +207,8 @@ struct ConversationFeedbackPresentationTests {
                     #expect(node.frame.width > 0 && node.frame.height > 0)
                 }
                 #expect(!nodes.contains { $0.label.contains("Synthetic total") })
+            case .v3Sections:
+                Issue.record("A literal wrapper1 fixture must never decode as wrapper2/v3")
             case let .legacy(body):
                 for line in body.lines {
                     let node = try #require(nodes.first { $0.identifier == "registration.feedback.line.\(line.key.rawValue)" && $0.isElement })

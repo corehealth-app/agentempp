@@ -85,6 +85,7 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
     let conversation: MobileConversationRequestHeaders?
     let unauthorizedReplay: MobileAPIUnauthorizedReplay
     let conversationMediaOwnerID: UUID?
+    let feedbackPresentation: ConversationFeedbackPresentationSelection?
 
     init(
         method: HTTPMethod,
@@ -95,7 +96,8 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
         timeout: Duration? = nil,
         conversation: MobileConversationRequestHeaders? = nil,
         unauthorizedReplay: MobileAPIUnauthorizedReplay = .standard,
-        conversationMediaOwnerID: UUID? = nil
+        conversationMediaOwnerID: UUID? = nil,
+        feedbackPresentation: ConversationFeedbackPresentationSelection? = nil
     ) throws {
         guard MobileAPIRequestPath.isValid(path) else {
             throw MobileAPIRequestError.invalidPath
@@ -107,6 +109,9 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
         try conversation?.validate(method: method, path: path, query: queryItems, body: body, key: idempotencyKey, replay: unauthorizedReplay)
         if conversationMediaOwnerID != nil {
             try MobileConversationMediaOwner.validate(method: method, path: path, query: queryItems, body: body, key: idempotencyKey, conversation: conversation, replay: unauthorizedReplay)
+        }
+        if feedbackPresentation != nil, conversation?.supportsFeedbackPresentation != true {
+            throw MobileAPIRequestError.invalidConversationHeaders
         }
         let isMutation = method == .post || method == .patch || method == .delete
         guard isMutation || idempotencyKey == nil else {
@@ -121,6 +126,7 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
         self.conversation = conversation
         self.unauthorizedReplay = unauthorizedReplay
         self.conversationMediaOwnerID = conversationMediaOwnerID
+        self.feedbackPresentation = feedbackPresentation
         if isMutation {
             self.idempotency = .required(
                 idempotencyKey ?? Self.makeIdempotencyKey()

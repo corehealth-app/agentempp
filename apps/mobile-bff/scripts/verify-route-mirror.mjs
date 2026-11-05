@@ -3,8 +3,13 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const expectedCount = 85
-const expectedHash = 'afb3a6182ad8e1335a24edeb3f2394f411ee6935f9994c1ecfb0c164079c3d12'
+const expectedCount = 88
+const expectedHash = '99623e7e5caf5d3b3df20eeb6bf840e6fb416f5e489498232a0c984a0a6e53b4'
+const workoutTransports = new Map([
+  ['conversation/workout-session/route.ts', 'GET'],
+  ['conversation/workout-commands/route.ts', 'POST'],
+  ['conversation/workout-commands/[commandId]/route.ts', 'GET'],
+])
 const nutritionWindowRoute = 'nutrition/window/route.ts'
 const previousCount = 78
 const previousHash = '3ab0b1fdb146ab6a06846b5702cfa70a1a7b997d73b3235655ec248c32f68874'
@@ -22,6 +27,7 @@ const boundedConversationRoutes = new Set([
   'conversation/meal-commands/route.ts',
   ...addedReadEditRoutes,
   ...addedReplyRoutes,
+  ...workoutTransports.keys(),
 ])
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
@@ -181,10 +187,22 @@ for (const [surface, records] of [
   ['SOURCE', sources],
   ['WRAPPER', wrappers],
 ]) {
+  for (const [path, method] of workoutTransports) {
+    const record = records.find((record) => record.path === path)
+    if (JSON.stringify(record?.exports) !== JSON.stringify([method, 'maxDuration', 'runtime']))
+      fail(`${surface}_WORKOUT_EXPORTS:${path}:${JSON.stringify(record?.exports)}`)
+  }
+  const prior85 = records.filter((record) => !workoutTransports.has(record.path))
+  const prior85Hash = hashRecords(prior85)
+  console.info(`${surface}_PRIOR85_ROUTE_EXPORT_COUNT=${prior85.length}`)
+  console.info(`${surface}_PRIOR85_ROUTE_EXPORT_STREAM_SHA256=${prior85Hash}`)
+  if (prior85.length !== 85) fail(`${surface}_PRIOR85_COUNT:${prior85.length}`)
+  if (prior85Hash !== 'afb3a6182ad8e1335a24edeb3f2394f411ee6935f9994c1ecfb0c164079c3d12')
+    fail(`${surface}_PRIOR85_HASH:${prior85Hash}`)
   const nutrition = records.find((record) => record.path === nutritionWindowRoute)
   if (JSON.stringify(nutrition?.exports) !== JSON.stringify(['GET', 'dynamic', 'runtime']))
     fail(`${surface}_NUTRITION_EXPORTS:${JSON.stringify(nutrition?.exports)}`)
-  const prior84 = records.filter((record) => record.path !== nutritionWindowRoute)
+  const prior84 = prior85.filter((record) => record.path !== nutritionWindowRoute)
   const prior84Hash = hashRecords(prior84)
   console.info(`${surface}_PRIOR84_ROUTE_EXPORT_COUNT=${prior84.length}`)
   console.info(`${surface}_PRIOR84_ROUTE_EXPORT_STREAM_SHA256=${prior84Hash}`)

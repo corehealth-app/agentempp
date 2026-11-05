@@ -23,6 +23,11 @@ struct RegistrationFeedbackView: View {
                     Text(verbatim: section.text)
                         .accessibilityIdentifier("registration.feedback.section.\(section.key.rawValue)")
                 }
+            case let .v3(value):
+                ForEach(value.sections, id: \.key) { section in
+                    Text(verbatim: section.text)
+                        .accessibilityIdentifier("registration.feedback.section.\(section.key.rawValue)")
+                }
             }
         }
         .font(BodyFlowTypography.body)

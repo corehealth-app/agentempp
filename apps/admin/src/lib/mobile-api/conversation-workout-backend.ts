@@ -179,7 +179,7 @@ export function createConversationWorkoutBackend(
       )
       const result = await writer.commit(source, prepared)
       if (closed) return unavailable()
-      return result
+      return result.status === 'saved' ? workoutSnapshot({ ...result, source, prepared }) : result
     } catch {
       return unavailable()
     }

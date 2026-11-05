@@ -102,7 +102,7 @@ struct ConversationMealReplyResultSnapshot: Decodable, Sendable {
         feedback = nil
       } else {
         let candidate = try? o.required("feedback").decode(
-          ConversationFeedbackPresentationSnapshot.self)
+          ConversationFeedbackPresentationSnapshot.self, selection: .selected(from: decoder))
         feedback = Self.validFeedback(
           candidate, receipt: receipt!, child: childBinding!, observedAt: observedAt)
       }
@@ -165,11 +165,8 @@ struct ConversationMealReplyResultSnapshot: Decodable, Sendable {
       instant >= consumed,
       let admitted = ConversationProtocolInstant(child.admittedAt), instant >= admitted
     else { return nil }
-    if case .sections(let recorded, _) = value.content {
-      guard recorded.mealKind == receipt.mealType.rawValue,
-        Set(recorded.items.map(\.logID)) == Set(receipt.logIDs.map { $0.uuidString.lowercased() })
-      else { return nil }
-    }
+    guard value.matchesRecordedMeal(kind: receipt.mealType.rawValue,
+        logIDs: receipt.logIDs.map { $0.uuidString.lowercased() }) else { return nil }
     return value
   }
 }

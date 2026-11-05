@@ -54,6 +54,15 @@ function ports() {
   const binding = writerBinding(),
     receipt = writerReceipt()
   return {
+    auth: {
+      verifyAccessToken: vi.fn(async () => ({
+        ...candidateAuth.identity,
+        email: 'qa-existing@example.invalid',
+        emailConfirmedAt: '2026-11-04T12:00:00Z',
+      })),
+      loadPatient: vi.fn(async () => candidateAuth.patient),
+      isAdmin: vi.fn(async () => false),
+    },
     writer: {
       readPrepared: vi.fn().mockResolvedValue({ action: 'absent' }),
       readEffect: vi.fn(),
@@ -177,7 +186,11 @@ describe('public command submission and effect-only reconciliation', () => {
     expect(f.p.createInterpreter).not.toHaveBeenCalled()
     expect(f.p.register).not.toHaveBeenCalled()
     expect(f.p.journal.admit).not.toHaveBeenCalled()
-    expect(f.p.clinical.capture).not.toHaveBeenCalled()
+    // Mandatory current-profile guards observe twice; no daily recomputation or domain admission.
+    expect(f.p.clinical.capture.mock.calls).toEqual([
+      [{ userId: command.ownerId, mode: 'profile', expectedEpoch: writerEpoch }],
+      [{ userId: command.ownerId, mode: 'profile', expectedEpoch: writerEpoch }],
+    ])
   })
   it('passes the exact fenced journal to the real registration boundary and never returns raw private feedback', async () => {
     const f = fixture(),

@@ -10,6 +10,9 @@ enum ConversationMealPrimaryFeedbackPolicy {
     group: ConversationMealGroupSnapshot?,
     scope: ConversationFeedbackPresentationSnapshot.Scope
   ) -> Bool {
+    if case .v3Sections = feedback?.presentation.content {
+      return ConversationMealV3PrimaryFeedbackPolicy.showsPrimary(receipt: receipt, feedback: feedback, group: group, scope: scope)
+    }
     guard let feedback, let group, let current = group.current,
       let actualOriginal = group.originalReceipt.linked,
       identicalLinkedReceipt(actualOriginal, receipt),
@@ -75,6 +78,9 @@ enum ConversationMealPrimaryFeedbackPolicy {
     group: ConversationMealGroupSnapshot?,
     scope: ConversationFeedbackPresentationSnapshot.Scope
   ) -> Bool {
+    if case .v3Sections = feedback?.presentation.content {
+      return ConversationMealV3PrimaryFeedbackPolicy.showsPrimary(receipt: receipt, feedback: feedback, group: group, scope: scope)
+    }
     guard let feedback, let group, let current = group.current,
       feedback.scope == scope, group.ownerID.uuidString.lowercased() == scope.ownerID,
       group.epoch.uuidString.lowercased() == scope.epoch, group.revision == 0,

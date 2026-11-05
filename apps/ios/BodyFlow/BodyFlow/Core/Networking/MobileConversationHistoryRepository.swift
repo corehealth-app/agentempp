@@ -6,14 +6,16 @@ struct MobileConversationHistoryRepository: Sendable {
   private let transport: MobileAPITransport
   private let lifecycle: any SessionLifecycleProviding
   private let lease: SessionLease
+  private let feedbackPresentation: ConversationFeedbackPresentationSelection?
   static func scoped(
-    transport: MobileAPITransport, lifecycle: any SessionLifecycleProviding, lease: SessionLease
+    transport: MobileAPITransport, lifecycle: any SessionLifecycleProviding, lease: SessionLease,
+    feedbackPresentation: ConversationFeedbackPresentationSelection? = nil
   ) async throws -> Self {
     let scoped = transport.withResponseBodyLimit(
       MobileConversationCommandRepository.responseBodyLimit
     ).scoped(to: lease)
     try await scoped.validateOriginalSession(lease)
-    return .init(transport: scoped, lifecycle: lifecycle, lease: lease)
+    return .init(transport: scoped, lifecycle: lifecycle, lease: lease, feedbackPresentation: feedbackPresentation)
   }
   func group(commandID: UUID, originalInputHash: String, context: ConversationCommandContext)
     async throws -> ConversationMealGroupSnapshot
@@ -73,7 +75,7 @@ struct MobileConversationHistoryRepository: Sendable {
       MobileAPIRequest<ConversationJournalPageSnapshot>(
         method: .get,
         path: "/api/mobile/v1/conversation/journal", queryItems: query,
-        conversation: .journal(epoch: context.epoch, ownerID: context.ownerID)))
+        conversation: .journal(epoch: context.epoch, ownerID: context.ownerID), feedbackPresentation: feedbackPresentation))
     try await validate(context)
     guard response.statusCode == 200,
       response.data.matches(
@@ -96,7 +98,7 @@ struct MobileConversationHistoryRepository: Sendable {
     let response = try await transport.executeHTTP(
       MobileAPIRequest<ConversationThreadPageSnapshot>(
         method: .get, path: "/api/mobile/v1/conversation/journal", queryItems: query,
-        conversation: .threadJournal(epoch: context.epoch, ownerID: context.ownerID)))
+        conversation: .threadJournal(epoch: context.epoch, ownerID: context.ownerID), feedbackPresentation: feedbackPresentation))
     try await validate(context)
     guard response.statusCode == 200, response.data.items.count <= limit,
       response.data.matches(

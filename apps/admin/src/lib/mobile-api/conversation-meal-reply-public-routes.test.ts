@@ -54,6 +54,33 @@ function request(
   )
 }
 describe('public linked reply POST and readonly GET', () => {
+  it.each([
+    'POST',
+    'GET',
+  ])('negotiates presentation2 on linked %s preserving closed keys and readonly GET', async (method) => {
+    const f = setup(),
+      q =
+        method === 'GET'
+          ? `?parent_input_hash=${f.identity.parentInputHash}&reply_input_hash=${f.identity.replyInputHash}`
+          : '',
+      r = request(f, method, q)
+    r.headers.set('X-Conversation-Feedback-Presentation', '2')
+    const response =
+      method === 'POST'
+        ? await f.routes.POST(r, {
+            params: Promise.resolve({ commandId: f.identity.parentCommandId }),
+          })
+        : await f.routes.GET(r, {
+            params: Promise.resolve({
+              commandId: f.identity.parentCommandId,
+              replyId: f.identity.replyId,
+            }),
+          })
+    expect(response.headers.get('X-Conversation-Feedback-Presentation')).toBe('2')
+    expect(response.headers.get('Vary')).toBe('Authorization, X-Conversation-Feedback-Presentation')
+    expect(response.headers.get('X-Conversation-Protocol')).toBe('meal-reply-v1')
+    expect((method === 'POST' ? f.submit : f.reconcile).mock.calls[0].at(-1)).toBe('2')
+  })
   it('pins both Admin/BFF wrappers to the actual handlers and 120-second server budgets', () => {
     for (const [path, method] of [
       ['commands/[commandId]/replies', 'POST'],

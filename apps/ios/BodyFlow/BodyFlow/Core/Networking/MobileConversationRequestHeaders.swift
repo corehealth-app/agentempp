@@ -114,6 +114,12 @@ enum MobileConversationRequestHeaders: Sendable {
       else { throw MobileAPIRequestError.invalidConversationHeaders }
     }
   }
+  var supportsFeedbackPresentation: Bool {
+    switch self {
+    case .submit, .reconciliation, .mealReplySubmit, .mealReplyReconciliation, .journal, .threadJournal: true
+    case .session, .mealGroup, .mealEdit, .mealEditReconciliation: false
+    }
+  }
   func apply(to request: inout URLRequest) {
     request.setValue("meal-command-v1", forHTTPHeaderField: "X-Conversation-Protocol")
     switch self {

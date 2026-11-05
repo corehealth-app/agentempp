@@ -5,6 +5,12 @@ import type { ServiceClient } from '@mpp/db'
 import { z } from 'zod'
 import type { MobileAuthContext } from './auth'
 import { bindConversationCommand } from './conversation-command-contracts'
+import type { ConversationFeedbackPresentationNegotiation } from './conversation-feedback-presentation-negotiation'
+import type { ConversationFeedbackPresentationV2 } from './conversation-feedback-presentation-v2'
+import {
+  type ConversationFeedbackPublicCompositionFactory,
+  createConversationFeedbackPublicComposition,
+} from './conversation-feedback-public-composition'
 import {
   parseConversationMealHistoricalPresentation,
   projectSavedConversationMealCommandResult,
@@ -73,7 +79,22 @@ export interface PublicConversationMealThreadPage {
   readonly has_more: boolean
   readonly next_cursor: string | null
 }
+type NegotiatedPublicEvent<T> = T extends { kind: 'report' | 'fulfillment' }
+  ? Omit<T, 'feedback_ref'> & {
+      readonly feedback:
+        | ConversationMealFeedbackPresentation
+        | ConversationFeedbackPresentationV2
+        | null
+    }
+  : T
+export type NegotiatedPublicConversationMealThreadEvent =
+  NegotiatedPublicEvent<ConversationMealThreadEvent>
+export type NegotiatedPublicConversationMealThreadPage = Omit<
+  PublicConversationMealThreadPage,
+  'items'
+> & { readonly items: readonly NegotiatedPublicConversationMealThreadEvent[] }
 export interface ConversationMealThreadPagePorts {
+  readonly feedbackV3?: ConversationFeedbackPublicCompositionFactory
   readonly store?: ConversationMealThreadPageStore
   readonly clinical?: CurrentClinicalStateSource
   readonly presentation?: ConversationMealFeedbackPresentationService
@@ -190,11 +211,16 @@ export function createConversationMealThreadPageService(
             scope.check(),
         }).readHistorical(input)
       })
+  const feedback3 =
+    ports.feedbackV3?.bind(ports) ??
+    ((auth: MobileAuthContext, epoch: string) =>
+      createConversationFeedbackPublicComposition(sdk, auth, epoch, { clinical }))
   return Object.freeze({
     async read(
       auth: MobileAuthContext,
       raw: ConversationMealThreadPageRequest,
-    ): Promise<PublicConversationMealThreadPage> {
+      selected: ConversationFeedbackPresentationNegotiation = 'legacy',
+    ): Promise<NegotiatedPublicConversationMealThreadPage> {
       try {
         const who = freezeConversationWriter(structuredClone(auth)),
           owner = authenticatedReevaluationOwner(who),
@@ -231,33 +257,54 @@ export function createConversationMealThreadPageService(
           return changed()
         }
         const threads = new Map(page.threads.map((t) => [t.thread_id, t])),
-          entries: PublicConversationMealThreadEvent[] = []
+          entries: NegotiatedPublicConversationMealThreadEvent[] = []
         for (const e of page.items) {
           if (e.kind !== 'report' && e.kind !== 'fulfillment') {
             entries.push(e)
             continue
           }
-          let feedback: ConversationMealFeedbackPresentation | null = null
-          if (e.kind === 'report' && e.receipt && e.feedback_ref) {
+          let feedback:
+            | ConversationMealFeedbackPresentation
+            | ConversationFeedbackPresentationV2
+            | null = null
+          if (e.kind === 'report' && e.receipt && (e.feedback_ref || selected === '2')) {
             const t = required(threads.get(e.thread_id)),
               command = bindConversationCommand(owner, `cmsg1:${t.thread_id}`, t.original_command)
             try {
-              const proposed = await readHistorical({
-                auth: who,
-                command,
-                receipt: e.receipt,
-                serverBinding: t.parent_binding,
-              })
-              feedback = projectSavedConversationMealCommandResult({
-                auth: who,
-                command,
-                expectedEpoch: request.epoch,
-                serverBinding: t.parent_binding,
-                receipt: e.receipt,
-                feedback: proposed,
-              }).feedback
+              const v2 =
+                selected === '2' &&
+                (!e.feedback_ref || e.feedback_ref.schema === 'registration.feedback.v3')
+                  ? await feedback3(who, request.epoch).readHistorical({
+                      auth: who,
+                      proof: {
+                        kind: 'meal.report',
+                        command,
+                        receipt: e.receipt,
+                        serverBinding: t.parent_binding,
+                      },
+                    })
+                  : null
+              const proposed = v2
+                ? null
+                : await readHistorical({
+                    auth: who,
+                    command,
+                    receipt: e.receipt,
+                    serverBinding: t.parent_binding,
+                  })
+              feedback =
+                v2 ??
+                projectSavedConversationMealCommandResult({
+                  auth: who,
+                  command,
+                  expectedEpoch: request.epoch,
+                  serverBinding: t.parent_binding,
+                  receipt: e.receipt,
+                  feedback: proposed,
+                }).feedback
               if (
                 feedback &&
+                e.feedback_ref &&
                 (feedback.original.schema !== e.feedback_ref.schema ||
                   feedback.original.registration_id !== e.feedback_ref.registration_id)
               )
@@ -267,7 +314,7 @@ export function createConversationMealThreadPageService(
                 null
             }
           }
-          if (e.kind === 'fulfillment' && e.feedback_ref) {
+          if (e.kind === 'fulfillment' && (e.feedback_ref || selected === '2')) {
             const t = required(threads.get(e.thread_id))
             try {
               const binding = parseConversationMealContinuationFeedbackBinding({
@@ -276,23 +323,34 @@ export function createConversationMealThreadPageService(
                 parentDecisionHash: required(t.terminal_receipt).decision_hash,
                 receipt: e.receipt,
               })
-              feedback = parseConversationMealHistoricalPresentation(
-                await readLinkedHistorical({ auth: who, binding }),
-                {
-                  ownerId: owner,
-                  commandId: binding.childBinding.command_id,
-                  epoch: request.epoch,
-                  admittedAt: binding.childBinding.admitted_at,
-                  receipt: {
-                    registration_id: binding.receipt.registration_id,
-                    local_date: binding.receipt.local_date,
-                    meal_type: binding.receipt.meal_type,
-                    log_ids: binding.receipt.log_ids,
+              const v2 =
+                selected === '2' &&
+                (!e.feedback_ref || e.feedback_ref.schema === 'registration.feedback.v3')
+                  ? await feedback3(who, request.epoch).readHistorical({
+                      auth: who,
+                      proof: { kind: 'meal.clarify', binding },
+                    })
+                  : null
+              feedback =
+                v2 ??
+                parseConversationMealHistoricalPresentation(
+                  await readLinkedHistorical({ auth: who, binding }),
+                  {
+                    ownerId: owner,
+                    commandId: binding.childBinding.command_id,
+                    epoch: request.epoch,
+                    admittedAt: binding.childBinding.admitted_at,
+                    receipt: {
+                      registration_id: binding.receipt.registration_id,
+                      local_date: binding.receipt.local_date,
+                      meal_type: binding.receipt.meal_type,
+                      log_ids: binding.receipt.log_ids,
+                    },
                   },
-                },
-              )
+                )
               if (
                 feedback &&
+                e.feedback_ref &&
                 (feedback.original.schema !== e.feedback_ref.schema ||
                   feedback.original.registration_id !== e.feedback_ref.registration_id)
               )
@@ -301,6 +359,8 @@ export function createConversationMealThreadPageService(
               feedback = null
             }
           }
+          if (!e.feedback_ref && feedback?.schema !== 'conversation.feedback-presentation.v2')
+            feedback = null
           const { feedback_ref: _ref, ...visible } = e
           entries.push(freezeConversationWriter({ ...visible, feedback }))
         }
@@ -329,12 +389,12 @@ export function createConversationMealThreadPageService(
               return changed()
           }
         }
-        const items: PublicConversationMealThreadEvent[] = [],
+        const items: NegotiatedPublicConversationMealThreadEvent[] = [],
           included = new Map<string, ConversationMealThreadDescriptor>()
         const packet = (
           more: boolean,
           cursor: string | null,
-        ): PublicConversationMealThreadPage => ({
+        ): NegotiatedPublicConversationMealThreadPage => ({
           schema: 'conversation.journal-page.v2',
           auth_user_id: authId,
           owner_id: owner,
@@ -347,7 +407,7 @@ export function createConversationMealThreadPageService(
           has_more: more,
           next_cursor: cursor,
         })
-        const cursorFor = (e: PublicConversationMealThreadEvent) =>
+        const cursorFor = (e: NegotiatedPublicConversationMealThreadEvent) =>
           encodeConversationMealThreadCursor(owner, request.epoch, { at: e.at, id: e.event_id })
         for (let i = 0; i < entries.length; i++) {
           const e = entries[i],

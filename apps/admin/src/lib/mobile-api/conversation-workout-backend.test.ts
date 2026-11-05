@@ -178,9 +178,12 @@ it('recovers actual PG prepared identity and durable receipt without re-estimati
     },
     { checkCurrentScope: async () => true },
   )
-  expect(await service.report(command, c.epoch)).toMatchObject({
+  const result = await service.report(command, c.epoch)
+  expect(result).toMatchObject({
     status: 'saved',
     effect: { receipt: actual.effect.receipt },
+    source: parseConversationWorkoutSource(command, actual.source),
+    prepared: actual.preparation.prepared,
   })
   expect(calls.map((c) => c.name)).toEqual([
     'read_conversation_workout_preparation',

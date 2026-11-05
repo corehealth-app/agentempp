@@ -4,6 +4,7 @@ import Foundation
 enum RegistrationFeedbackSnapshot: Codable, Hashable, Sendable {
     case v1(RegistrationFeedbackV1Snapshot)
     case v2(RegistrationFeedbackV2Snapshot)
+    case v3(RegistrationFeedbackV3Snapshot)
 
     typealias Kind = RegistrationFeedbackV1Snapshot.Kind
     typealias Locale = RegistrationFeedbackV1Snapshot.Locale
@@ -17,6 +18,7 @@ enum RegistrationFeedbackSnapshot: Codable, Hashable, Sendable {
         switch try values.decode(String.self, forKey: .schema) {
         case "registration.feedback.v1": self = .v1(try RegistrationFeedbackV1Snapshot(from: decoder))
         case "registration.feedback.v2": self = .v2(try RegistrationFeedbackV2Snapshot(from: decoder))
+        case "registration.feedback.v3": self = .v3(try RegistrationFeedbackV3Snapshot(from: decoder))
         default:
             throw DecodingError.dataCorruptedError(forKey: .schema, in: values,
                 debugDescription: "Unsupported registration feedback version")
@@ -26,19 +28,20 @@ enum RegistrationFeedbackSnapshot: Codable, Hashable, Sendable {
         switch self {
         case let .v1(value): try value.encode(to: encoder)
         case let .v2(value): try value.encode(to: encoder)
+        case let .v3(value): try value.encode(to: encoder)
         }
     }
     var schema: String {
-        switch self { case let .v1(v): v.schema; case .v2: "registration.feedback.v2" }
+        switch self { case let .v1(v): v.schema; case .v2: "registration.feedback.v2"; case .v3: "registration.feedback.v3" }
     }
     var registrationID: String {
-        switch self { case let .v1(v): v.registrationID; case let .v2(v): v.registrationID }
+        switch self { case let .v1(v): v.registrationID; case let .v2(v): v.registrationID; case let .v3(v): v.registrationID }
     }
     var kind: Kind {
-        switch self { case let .v1(v): v.kind; case let .v2(v): v.kind }
+        switch self { case let .v1(v): v.kind; case let .v2(v): v.kind; case let .v3(v): v.kind }
     }
     var locale: Locale {
-        switch self { case let .v1(v): v.locale; case let .v2(v): v.locale }
+        switch self { case let .v1(v): v.locale; case let .v2(v): v.locale; case let .v3(v): v.locale }
     }
     // Preserve the existing historical v1 API. V2 renders its own typed facts.
     var mealTotals: Nutrients? { if case let .v1(v) = self { v.mealTotals } else { nil } }
@@ -47,7 +50,7 @@ enum RegistrationFeedbackSnapshot: Codable, Hashable, Sendable {
     var foodComment: String? { if case let .v1(v) = self { v.foodComment } else { nil } }
     var incentive: String? { if case let .v1(v) = self { v.incentive } else { nil } }
     var isValid: Bool {
-        switch self { case let .v1(v): v.isValid; case .v2: true }
+        switch self { case let .v1(v): v.isValid; case .v2, .v3: true }
     }
     /// Existing history has no current clinical projection. Its historical v1 behavior
     /// remains available; v2 needs a separately authenticated presentation surface.
@@ -55,11 +58,19 @@ enum RegistrationFeedbackSnapshot: Codable, Hashable, Sendable {
         guard case .v1 = self, kind == expected else { return nil }
         return self
     }
+    /// Old confirmation screens have no fresh clinical projection for v3.
+    /// Preserve the receipt in the ACK; displaying it needs the new bound wrapper.
+    func admittedToLegacyConfirmation() -> Self? {
+        switch self {
+        case .v1, .v2: self
+        case .v3: nil
+        }
+    }
     func bound(to id: String, status: String, proposal: RegistrationProposalSnapshot) -> Self? {
         guard status == "confirmed", registrationID == id else { return nil }
         switch self {
         case let .v1(value): return value.bound(to: id, status: status, proposal: proposal).map(Self.v1)
-        case .v2:
+        case .v2, .v3:
             switch proposal {
             case .meal: return kind == .meal ? self : nil
             case .workout: return kind == .workout ? self : nil

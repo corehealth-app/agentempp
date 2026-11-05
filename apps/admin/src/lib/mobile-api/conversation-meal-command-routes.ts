@@ -2,6 +2,10 @@ import type { ServiceClient } from '@mpp/db'
 import { z } from 'zod'
 import { conversationMealCommandSchema } from './conversation-command-contracts'
 import {
+  conversationFeedbackPresentationMobileHeaders,
+  negotiateConversationFeedbackPresentation,
+} from './conversation-feedback-presentation-negotiation'
+import {
   type ConversationMealCommandReply,
   createConversationMealCommandService,
 } from './conversation-meal-command-service'
@@ -33,9 +37,14 @@ export function conversationMealCommandsEnabled(
     resolveCurrentClinicalRuntime(env).mode === 'current'
   )
 }
-function reply(result: ConversationMealCommandReply, requestId: string): Response {
+function reply(
+  result: ConversationMealCommandReply,
+  requestId: string,
+  selected: 'legacy' | '2',
+): Response {
   return mobileSuccess(result, requestId, result.status === 'pending' ? 202 : 200, {
     'X-Conversation-Protocol': 'meal-command-v1',
+    ...conversationFeedbackPresentationMobileHeaders(selected),
   })
 }
 function requireOriginalPatient(request: Request, authenticatedPatient: string): void {
@@ -76,25 +85,41 @@ export function createConversationMealCommandRoutes(
     POST: createMobileRoute(async (context) => {
       available()
       requireOriginalPatient(context.request, context.auth.userId)
-      const epoch = uuid.parse(context.request.headers.get('X-Conversation-Epoch')),
+      const selected = negotiateConversationFeedbackPresentation(context.request.headers),
+        epoch = uuid.parse(context.request.headers.get('X-Conversation-Epoch')),
         body = conversationMealCommandSchema.parse(await readJsonBody(context.request, 16384)),
         key = z
           .literal(`cmsg1:${body.command_id}`)
           .parse(context.request.headers.get('Idempotency-Key'))
       return reply(
-        await service(context.supabase).submit(context.auth, key, body, epoch),
+        await service(context.supabase).submit(
+          context.auth,
+          key,
+          body,
+          epoch,
+          ...(selected === '2' ? ['2' as const] : []),
+        ),
         context.requestId,
+        selected,
       )
     }, runtime),
     GET: createMobileRouteWithContext<CommandRouteContext>(async (context, route) => {
       available()
       requireOriginalPatient(context.request, context.auth.userId)
-      const epoch = uuid.parse(context.request.headers.get('X-Conversation-Epoch')),
+      const selected = negotiateConversationFeedbackPresentation(context.request.headers),
+        epoch = uuid.parse(context.request.headers.get('X-Conversation-Epoch')),
         inputHash = hash.parse(context.request.headers.get('X-Conversation-Input-Hash')),
         commandId = uuid.parse((await route.params).commandId)
       return reply(
-        await service(context.supabase).read(context.auth, commandId, inputHash, epoch),
+        await service(context.supabase).read(
+          context.auth,
+          commandId,
+          inputHash,
+          epoch,
+          ...(selected === '2' ? ['2' as const] : []),
+        ),
         context.requestId,
+        selected,
       )
     }, runtime),
   })

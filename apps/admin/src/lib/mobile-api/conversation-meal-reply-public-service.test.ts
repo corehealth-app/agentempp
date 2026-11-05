@@ -51,6 +51,25 @@ function setup(key: Parameters<typeof replyFixture>[0] = 'saved') {
   }
 }
 describe('real public reply flow and explicit readonly recovery', () => {
+  it('pins the actual read response before post-scope callbacks can mutate its receipt', async () => {
+    const f = setup(),
+      transport = structuredClone(f.state),
+      i = f.identity
+    f.read.mockResolvedValue(transport)
+    f.capture.mockImplementation(async () => {
+      if (f.read.mock.calls.length && transport.reply?.receipt)
+        transport.reply.receipt.log_ids = ['c3cc0000-0000-4000-8000-000000000099']
+      return f.profile
+    })
+    const result = await f.service.reconcile(f.auth, i.parentCommandId, i.replyId, i.epoch, {
+      parent_input_hash: i.parentInputHash,
+      reply_input_hash: i.replyInputHash,
+    })
+    expect(result.status).toBe('saved')
+    expect(result.receipt).toEqual(f.state.reply?.receipt)
+    expect(f.ensureOriginal).not.toHaveBeenCalled()
+    expect(f.submit).not.toHaveBeenCalled()
+  })
   it('submits once then requires an actual same-identity complete read before optional enrichment', async () => {
     const f = setup()
     expect(f.processor).not.toHaveBeenCalled()

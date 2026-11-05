@@ -101,7 +101,11 @@ export type ConversationMealThreadDescriptor = Omit<
 }
 const feedbackRef = z
   .object({
-    schema: z.enum(['registration.feedback.v1', 'registration.feedback.v2']),
+    schema: z.enum([
+      'registration.feedback.v1',
+      'registration.feedback.v2',
+      'registration.feedback.v3',
+    ]),
     registration_id: uuid,
   })
   .strict()

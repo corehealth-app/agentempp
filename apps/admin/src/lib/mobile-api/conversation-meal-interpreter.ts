@@ -41,6 +41,75 @@ export interface ConversationMealInterpreter {
     invocation: { attemptId: string; remainingMs: number },
   ): Promise<ConversationMealInterpretation>
 }
+const diagnosticErrorNames = [
+  'Error',
+  'TypeError',
+  'RangeError',
+  'SyntaxError',
+  'AbortError',
+  'TimeoutError',
+  'ZodError',
+  'MobileApiError',
+  'APIError',
+  'APIUserAbortError',
+  'APIConnectionError',
+  'APIConnectionTimeoutError',
+  'BadRequestError',
+  'AuthenticationError',
+  'PermissionDeniedError',
+  'NotFoundError',
+  'ConflictError',
+  'UnprocessableEntityError',
+  'RateLimitError',
+  'InternalServerError',
+] as const
+export interface ConversationMealInterpreterDiagnostic {
+  readonly event: 'conversation_meal_interpreter_failure'
+  readonly stage: 'source' | 'provider' | 'decode' | 'validation' | 'result'
+  readonly error_name: (typeof diagnosticErrorNames)[number] | 'UnknownError'
+  readonly http_status?: number
+}
+type DiagnosticSink = (diagnostic: ConversationMealInterpreterDiagnostic) => void
+
+function ownData(value: unknown, key: string): unknown {
+  if ((typeof value !== 'object' || value === null) && typeof value !== 'function') return undefined
+  try {
+    return Object.getOwnPropertyDescriptor(value, key)?.value
+  } catch {
+    return undefined
+  }
+}
+
+function reportFailure(
+  stage: ConversationMealInterpreterDiagnostic['stage'],
+  error: unknown,
+  sink: DiagnosticSink,
+): void {
+  // Inspect data descriptors only: no getters, stringification, messages,
+  // stacks, codes, headers, bodies, source IDs or provider output can escape.
+  let name = ownData(error, 'name')
+  if (name === undefined && error !== null && typeof error === 'object') {
+    try {
+      name = ownData(ownData(Object.getPrototypeOf(error), 'constructor'), 'name')
+    } catch {
+      // An uninspectable exception remains UnknownError.
+    }
+  }
+  const status = ownData(error, 'status'),
+    diagnostic: ConversationMealInterpreterDiagnostic = Object.freeze({
+      event: 'conversation_meal_interpreter_failure',
+      stage,
+      error_name: diagnosticErrorNames.find((allowed) => allowed === name) ?? 'UnknownError',
+      ...(typeof status === 'number' && Number.isInteger(status) && status >= 100 && status <= 599
+        ? { http_status: status }
+        : {}),
+    })
+  try {
+    sink(diagnostic)
+  } catch {
+    // Diagnostics cannot change the API error or authorize another attempt.
+  }
+}
 const invocationSchema = z
   .object({
     attemptId: z
@@ -80,15 +149,23 @@ async function decode(result: LLMResult): Promise<unknown> {
 export function createOpenRouterConversationMealInterpreter(
   apiKey: string,
   injected?: Pick<OpenRouterLLM, 'complete'>,
+  diagnosticSink: DiagnosticSink = (diagnostic) => console.error(diagnostic),
 ): ConversationMealInterpreter {
-  if (typeof apiKey !== 'string' || !apiKey.trim()) return interpretationUnavailable()
-  const llm = injected ?? new OpenRouterLLM({ apiKey, appName: 'Performe AI Mobile' }),
+  let complete: OpenRouterLLM['complete']
+  try {
+    if (typeof apiKey !== 'string' || !apiKey.trim()) return interpretationUnavailable()
+    const llm = injected ?? new OpenRouterLLM({ apiKey, appName: 'Performe AI Mobile' })
     complete = llm.complete.bind(llm)
+  } catch (error) {
+    reportFailure('provider', error, diagnosticSink)
+    throw error
+  }
   return Object.freeze({
     async interpret(
       originalSource: ConversationMealInterpretationSource,
       invocation: { attemptId: string; remainingMs: number },
     ): Promise<ConversationMealInterpretation> {
+      let stage: ConversationMealInterpreterDiagnostic['stage'] = 'source'
       try {
         const source = validateConversationMealInterpretationSource(originalSource),
           job = invocationSchema.parse(structuredClone(invocation))
@@ -105,20 +182,24 @@ export function createOpenRouterConversationMealInterpreter(
             }),
           },
         ]
-        const reply = structuredClone(
-          await complete({
-            model: MEAL_TEXT_EXTRACTION_MODEL,
-            systemPrompt: MEAL_INTERPRETER_PROMPT,
-            messages,
-            temperature: 0,
-            maxTokens: MEAL_INTERPRETER_MAX_TOKENS,
-            responseFormat: { type: 'json_object' },
-            toolChoice: 'none',
-            requestTimeoutMs: timeout,
-            maxRetries: 0,
-          }),
-        )
-        const model = validateConversationMealInterpretationModel(await decode(reply), source)
+        stage = 'provider'
+        const providerReply = await complete({
+          model: MEAL_TEXT_EXTRACTION_MODEL,
+          systemPrompt: MEAL_INTERPRETER_PROMPT,
+          messages,
+          temperature: 0,
+          maxTokens: MEAL_INTERPRETER_MAX_TOKENS,
+          responseFormat: { type: 'json_object' },
+          toolChoice: 'none',
+          requestTimeoutMs: timeout,
+          maxRetries: 0,
+        })
+        stage = 'decode'
+        const reply = structuredClone(providerReply),
+          decoded = await decode(reply)
+        stage = 'validation'
+        const model = validateConversationMealInterpretationModel(decoded, source)
+        stage = 'result'
         const value = mealInterpretationSchema.parse({
           ...model,
           interpreter_version: MEAL_INTERPRETER_VERSION,
@@ -148,7 +229,8 @@ export function createOpenRouterConversationMealInterpreter(
         )
           return interpretationUnavailable()
         return freezeInterpretation(value)
-      } catch {
+      } catch (error) {
+        reportFailure(stage, error, diagnosticSink)
         return interpretationUnavailable()
       }
     },

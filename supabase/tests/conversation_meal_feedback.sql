@@ -41,6 +41,14 @@ BEGIN
  PERFORM pg_temp.writer_ok(code='P5510' AND pg_temp.feedback_owner_state(a)=before_all,'failed seal rolls back without affecting original domain');
  x:=pg_temp.feedback_service_commit(a,cmd,committed#>>'{receipt,effect_version}',f);
  PERFORM pg_temp.writer_ok(x=jsonb_build_object('action','committed','feedback',f),'frozen original seals after live C11 replacement');
+ -- Current schema adds only this exact canonical metadata claim. Preserve
+ -- the full existing domain/reward comparison, including every other table;
+ -- historical schemas without claims retain their literal expected state.
+ IF before_all ? 'private.mobile_registration_feedback_claims' THEN
+  before_all:=jsonb_set(before_all,ARRAY['private.mobile_registration_feedback_claims'],
+   (before_all->'private.mobile_registration_feedback_claims')||jsonb_build_array(jsonb_build_object(
+    'user_id',a,'origin','pending_registration','registration_id',rid,'version',2,'pending_id',rid,'workout_command_id',NULL)));
+ END IF;
  PERFORM pg_temp.writer_ok((pg_temp.feedback_owner_state(a)-'private.mobile_registration_feedback_v2')=(before_all-'private.mobile_registration_feedback_v2'),'sealing changes only receipt table');
  PERFORM pg_temp.writer_ok((SELECT command_id=cmd AND proposal_hash=encode(extensions.digest(convert_to((source#>'{context,confirmed,proposal}')::text,'UTF8'),'sha256'),'hex') FROM private.mobile_registration_feedback_v2 WHERE registration_id=rid),'v2 receipt linked to owned command and original proposal hash');
  PERFORM pg_temp.writer_ok(public.read_conversation_meal_feedback_v2(a,cmd)=jsonb_build_object('action','available','feedback',f),'command read returns original v2 receipt');

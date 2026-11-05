@@ -85,6 +85,14 @@ BEGIN
  PERFORM pg_temp.store_ok(c#>'{clinical,observed_at}'<>source#>'{clinical,observed_at}' AND private.mobile_registration_feedback_v2_source_binding(c)=private.mobile_registration_feedback_v2_source_binding(source),'real second clock capture preserves stable source');
  x:=pg_temp.service_commit(a,rid,c,f);
  PERFORM pg_temp.store_ok(x=jsonb_build_object('action','committed','feedback',f),'service-role first commit returns exact closed receipt');
+ -- Current schema adds only this exact canonical metadata claim. Preserve
+ -- the full existing domain/reward comparison, including every other table;
+ -- historical schemas without claims retain their literal expected state.
+ IF before_all ? 'private.mobile_registration_feedback_claims' THEN
+  before_all:=jsonb_set(before_all,ARRAY['private.mobile_registration_feedback_claims'],
+   (before_all->'private.mobile_registration_feedback_claims')||jsonb_build_array(jsonb_build_object(
+    'user_id',a,'origin','pending_registration','registration_id',rid,'version',2,'pending_id',rid,'workout_command_id',NULL)));
+ END IF;
  PERFORM pg_temp.store_ok((pg_temp.v2_owner_state(a)-'private.mobile_registration_feedback_v2')=(before_all-'private.mobile_registration_feedback_v2'),'first commit changes no domain table or reward');
  PERFORM pg_temp.store_ok((SELECT count(*)=1 FROM private.mobile_registration_feedback_v2 WHERE registration_id=rid),'one durable receipt');
  PERFORM pg_temp.store_ok(public.read_flow_shared_phrase_cursor(a)=old_cursor,'v2 never advances shared or legacy phrase state');

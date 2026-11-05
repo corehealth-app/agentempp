@@ -4324,6 +4324,24 @@ export type Database = {
         }
         Returns: Json
       }
+      capture_mobile_registration_feedback_v3: {
+        Args: { p_user_id: string; p_registration_id: string; p_origin: string }
+        Returns: Json
+      }
+      read_mobile_registration_feedback_v3: {
+        Args: { p_user_id: string; p_registration_id: string; p_origin: string }
+        Returns: Json
+      }
+      commit_mobile_registration_feedback_v3: {
+        Args: {
+          p_user_id: string
+          p_registration_id: string
+          p_origin: string
+          p_expected_context: Json
+          p_feedback: Json
+        }
+        Returns: Json
+      }
       read_mobile_registration_feedback: {
         Args: { p_user_id: string; p_registration_id: string }
         Returns: Json

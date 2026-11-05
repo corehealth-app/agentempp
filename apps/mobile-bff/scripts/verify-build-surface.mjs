@@ -3,10 +3,11 @@ import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'nod
 import { dirname, extname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const expectedMobileRouteCount = 84
-const expectedMobileRouteHash = 'ce7e7f5eeef07c517594e9e5d188e9e469e318eaa5e73788b387254715b56297'
-const expectedRouteCount = 85
-const expectedRouteHash = '55f824f5d65f2af80403535744fa3e1bf54dc2c01082bfb33276df0b32f665a5'
+const expectedMobileRouteCount = 85
+const expectedMobileRouteHash = '637c96d6e9baccb01b5b780f73ea89dbb628cb949264620c40ca474b1500b267'
+const expectedRouteCount = 86
+const expectedRouteHash = '6cf74c6833a222ddc0b21838a47498a472abaf1cdd7f5bbce1057e0944bc0e3c'
+const nutritionWindowRoute = '/api/mobile/v1/nutrition/window'
 const addedReadEditRoutes = new Set([
   '/api/mobile/v1/conversation/journal',
   '/api/mobile/v1/conversation/meal-commands/[commandId]/meal',
@@ -549,16 +550,38 @@ function verifyBuildSurface() {
     `BUILD_NFT_ALLOWLISTED_DIRECTORY_TARGET_COUNT=${surface.nftAllowlistedDirectoryTargetCount}`,
   )
 
+  const prior84Mobile = surface.mobileRoutePaths.filter((path) => path !== nutritionWindowRoute)
+  const prior85All = surface.routePaths.filter((path) => path !== nutritionWindowRoute)
+  for (const [label, paths, count, hash] of [
+    [
+      'PRIOR84_MOBILE',
+      prior84Mobile,
+      84,
+      'ce7e7f5eeef07c517594e9e5d188e9e469e318eaa5e73788b387254715b56297',
+    ],
+    [
+      'PRIOR85_ALL',
+      prior85All,
+      85,
+      '55f824f5d65f2af80403535744fa3e1bf54dc2c01082bfb33276df0b32f665a5',
+    ],
+  ]) {
+    const priorHash = sha256(paths.map((path) => `${path}\n`).join(''))
+    console.info(`BUILD_${label}_ROUTE_PATH_COUNT=${paths.length}`)
+    console.info(`BUILD_${label}_ROUTE_PATH_STREAM_SHA256=${priorHash}`)
+    if (paths.length !== count) fail(`${label}_ROUTE_COUNT:${paths.length}`)
+    if (priorHash !== hash) fail(`${label}_ROUTE_HASH:${priorHash}`)
+  }
   for (const [label, paths, count, hash] of [
     [
       'PRIOR82_MOBILE',
-      surface.mobileRoutePaths,
+      prior84Mobile,
       82,
       '81cebb1636073fffe9bb8316c11dd5e2aef6603ead95b7007458719d0bcaa53e',
     ],
     [
       'PRIOR83_ALL',
-      surface.routePaths,
+      prior85All,
       83,
       '7da84c6d7303c8dc1bccaea6c75f05546d399ebdf794375ead21e186e14bacf9',
     ],
@@ -573,13 +596,13 @@ function verifyBuildSurface() {
   for (const [label, paths, count, hash] of [
     [
       'PRIOR_MOBILE',
-      surface.mobileRoutePaths,
+      prior84Mobile,
       78,
       'feb10dcfc43742d384f5852b573634fc4a5226e52c15856eb24a1f2c5ee9aa54',
     ],
     [
       'PRIOR_ALL',
-      surface.routePaths,
+      prior85All,
       79,
       '132ed9ce40561f48626a98b93905039b7f49e9ffbb3d890c83399b1e7927b6fc',
     ],

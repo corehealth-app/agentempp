@@ -3,8 +3,9 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const expectedCount = 84
-const expectedHash = '092bd3ded789b200042cf29119e279e22d6900f8cdc86889108f28d2764673f3'
+const expectedCount = 85
+const expectedHash = 'afb3a6182ad8e1335a24edeb3f2394f411ee6935f9994c1ecfb0c164079c3d12'
+const nutritionWindowRoute = 'nutrition/window/route.ts'
 const previousCount = 78
 const previousHash = '3ab0b1fdb146ab6a06846b5702cfa70a1a7b997d73b3235655ec248c32f68874'
 const addedReadEditRoutes = new Set([
@@ -180,7 +181,17 @@ for (const [surface, records] of [
   ['SOURCE', sources],
   ['WRAPPER', wrappers],
 ]) {
-  const prior82 = records.filter((record) => !addedReplyRoutes.has(record.path))
+  const nutrition = records.find((record) => record.path === nutritionWindowRoute)
+  if (JSON.stringify(nutrition?.exports) !== JSON.stringify(['GET', 'dynamic', 'runtime']))
+    fail(`${surface}_NUTRITION_EXPORTS:${JSON.stringify(nutrition?.exports)}`)
+  const prior84 = records.filter((record) => record.path !== nutritionWindowRoute)
+  const prior84Hash = hashRecords(prior84)
+  console.info(`${surface}_PRIOR84_ROUTE_EXPORT_COUNT=${prior84.length}`)
+  console.info(`${surface}_PRIOR84_ROUTE_EXPORT_STREAM_SHA256=${prior84Hash}`)
+  if (prior84.length !== 84) fail(`${surface}_PRIOR84_COUNT:${prior84.length}`)
+  if (prior84Hash !== '092bd3ded789b200042cf29119e279e22d6900f8cdc86889108f28d2764673f3')
+    fail(`${surface}_PRIOR84_HASH:${prior84Hash}`)
+  const prior82 = prior84.filter((record) => !addedReplyRoutes.has(record.path))
   const prior82Hash = hashRecords(prior82)
   console.info(`${surface}_PRIOR82_ROUTE_EXPORT_COUNT=${prior82.length}`)
   console.info(`${surface}_PRIOR82_ROUTE_EXPORT_STREAM_SHA256=${prior82Hash}`)

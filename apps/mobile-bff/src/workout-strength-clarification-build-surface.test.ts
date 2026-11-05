@@ -6,9 +6,9 @@ import { describe, expect, it } from 'vitest'
 import { currentClinicalRouteAdditions } from './current-clinical-route-inventory'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../.next/server')
-const paths: Record<string, string> = JSON.parse(
-  readFileSync(resolve(root, 'app-paths-manifest.json'), 'utf8'),
-)
+function currentAppPaths(): Record<string, string> {
+  return JSON.parse(readFileSync(resolve(root, 'app-paths-manifest.json'), 'utf8'))
+}
 const cache = new Map<string, string>()
 const addition = 'workouts/[id]/strength-clarification/route.ts'
 function routeFiles(root: string): string[] {
@@ -41,7 +41,7 @@ function exportStream(root: string, wrapper: boolean) {
     .sort((a, b) => a.path.localeCompare(b.path, 'en'))
 }
 function routesReaching(marker: string) {
-  return Object.entries(paths)
+  return Object.entries(currentAppPaths())
     .filter(([route, target]) => {
       if (!route.startsWith('/api/mobile/v1/')) return false
       const entry = resolve(root, target)
@@ -70,19 +70,30 @@ describe('current-authority clarification in the fresh mobile server build', () 
     expect(
       source.find((record) => record.path === 'auth/password-recovery/route.ts')?.exports,
     ).toEqual(['GET', 'HEAD', 'POST', 'dynamic', 'maxDuration', 'runtime'])
-    expect(source).toHaveLength(84)
+    expect(source).toHaveLength(85)
+    expect(source.find((record) => record.path === 'nutrition/window/route.ts')).toEqual({
+      path: 'nutrition/window/route.ts',
+      exports: ['GET', 'dynamic', 'runtime'],
+    })
+    const prior84 = source.filter((record) => record.path !== 'nutrition/window/route.ts')
+    expect(prior84).toHaveLength(84)
+    expect(
+      createHash('sha256')
+        .update(prior84.map((record) => `${record.path}\0${record.exports.join(',')}\n`).join(''))
+        .digest('hex'),
+    ).toBe('092bd3ded789b200042cf29119e279e22d6900f8cdc86889108f28d2764673f3')
     const replies = new Set([
       'conversation/commands/[commandId]/replies/[replyId]/route.ts',
       'conversation/commands/[commandId]/replies/route.ts',
     ])
-    const prior82 = source.filter((record) => !replies.has(record.path))
+    const prior82 = prior84.filter((record) => !replies.has(record.path))
     expect(prior82).toHaveLength(82)
     expect(
       createHash('sha256')
         .update(prior82.map((record) => `${record.path}\0${record.exports.join(',')}\n`).join(''))
         .digest('hex'),
     ).toBe('1edcfecc752f7657306d9a4f852c9ff3b37f2770270441a3bb37972366957c98')
-    const prior75 = source.filter((record) => !record.path.startsWith('conversation/'))
+    const prior75 = prior84.filter((record) => !record.path.startsWith('conversation/'))
     expect(prior75).toHaveLength(75)
     expect(
       createHash('sha256')

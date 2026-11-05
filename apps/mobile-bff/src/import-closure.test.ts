@@ -40,6 +40,17 @@ describe('dedicated Mobile BFF import closure', () => {
       'mobile-route-support\tapps/admin/src/app/api/mobile/v1/content/handlers.ts',
     )
     expect(records).toContain('mobile-api-lib\tapps/admin/src/lib/mobile-api/route.ts')
+    expect(records).toContain(
+      'mobile-wrapper\tapps/mobile-bff/src/app/api/mobile/v1/nutrition/window/route.ts',
+    )
+    expect(records).toContain(
+      'mobile-route\tapps/admin/src/app/api/mobile/v1/nutrition/window/route.ts',
+    )
+    for (const module of ['routes', 'runtime', 'repository', 'service']) {
+      expect(records).toContain(
+        `mobile-api-lib\tapps/admin/src/lib/mobile-api/nutrition-window-${module}.ts`,
+      )
+    }
     expect(records).toContain('approved-server-lib\tapps/admin/src/lib/supabase/server.ts')
     expect(records).toContain('published-inngest-client\tpackages/inngest-functions/src/client.ts')
     expect(records).not.toContain('external-package\t@mpp/inngest-functions')

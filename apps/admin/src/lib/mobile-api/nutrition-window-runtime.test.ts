@@ -1,5 +1,6 @@
+import { readFileSync } from 'node:fs'
 import type { ServiceClient } from '@mpp/db'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { MobileAuthContext } from './auth'
 import type { NutritionWindowQuery, NutritionWindowReadPort } from './nutrition-window-repository'
 import { createNutritionWindowReadService } from './nutrition-window-runtime'
@@ -8,10 +9,10 @@ const OWNER = 'a1111111-1111-4111-8111-111111111111'
 const AUTH = 'a2222222-2222-4222-8222-222222222222'
 const EPOCH = 'a3333333-3333-4333-8333-333333333333'
 const at = '2026-11-04T15:00:00.000000Z'
-function state(epoch: string | null = EPOCH) {
+function state(epoch: string | null = EPOCH, owner = OWNER) {
   return {
     version: 1,
-    user_id: OWNER,
+    user_id: owner,
     mode: 'profile',
     profile_present: true,
     epoch,
@@ -39,7 +40,7 @@ function state(epoch: string | null = EPOCH) {
     missing: [],
     health_state: {
       version: 1,
-      user_id: OWNER,
+      user_id: owner,
       safety_revision: '0',
       hold_active: false,
       declared_no_plan: false,
@@ -81,13 +82,19 @@ const auth: MobileAuthContext = {
     status: 'active',
   },
 }
-function harness(epoch: string | null = EPOCH) {
+type UnitRead = { owner_id: string; items: Array<{ meal: Record<string, unknown> }> }
+function harness(epoch: string | null = EPOCH, units?: UnitRead) {
+  const owner = units?.owner_id ?? OWNER
+  const forbiddenWrite = vi.fn(() => {
+    throw new Error('No write, bootstrap or closer capability')
+  })
   const rpcCalls: Array<{ name: string; args: unknown }> = [],
     tables: string[] = []
   const port: NutritionWindowReadPort = {
     from(table) {
       tables.push(table)
-      const response = Promise.resolve({ data: [], error: null, count: 0 })
+      const data = table === 'meal_logs' && units ? units.items.map((item) => item.meal) : []
+      const response = Promise.resolve({ data, error: null, count: data.length })
       const q: NutritionWindowQuery = {
         select: () => q,
         eq: () => q,
@@ -101,6 +108,12 @@ function harness(epoch: string | null = EPOCH) {
         // biome-ignore lint/suspicious/noThenProperty: actual PostgREST read queries are PromiseLike
         then: response.then.bind(response),
       }
+      Object.assign(q, {
+        insert: forbiddenWrite,
+        update: forbiddenWrite,
+        upsert: forbiddenWrite,
+        delete: forbiddenWrite,
+      })
       return q
     },
   }
@@ -108,10 +121,23 @@ function harness(epoch: string | null = EPOCH) {
     ...port,
     rpc: async (name: string, args: unknown) => {
       rpcCalls.push({ name, args })
-      return { data: state(epoch), error: null }
+      if (name === 'get_mobile_current_clinical_state')
+        return { data: state(epoch, owner), error: null }
+      if (name === 'read_nutrition_window_units' && units) return { data: units, error: null }
+      return forbiddenWrite()
     },
   } as unknown as ServiceClient
-  return { client, rpcCalls, tables }
+  return {
+    client,
+    rpcCalls,
+    tables,
+    forbiddenWrite,
+    auth: {
+      ...auth,
+      userId: owner,
+      patient: { ...auth.patient, id: owner },
+    },
+  }
 }
 describe('Actual nutrition read service composition never bootstraps or applies a day', () => {
   it('is inert at construction and uses only profile observations plus two complete bounded captures', async () => {
@@ -143,6 +169,48 @@ describe('Actual nutrition read service composition never bootstraps or applies 
       'meal_logs',
       'prescriptions',
     ])
+  })
+  it('uses real owned SQL unit pieces through the actual runtime without any writer, bootstrap or closer call', async () => {
+    const golden = JSON.parse(
+      readFileSync(
+        new URL(
+          '../../../../ios/BodyFlow/BodyFlowTests/Fixtures/NutritionWindowUnitsSQLPieces.json',
+          import.meta.url,
+        ),
+        'utf8',
+      ),
+    ) as { pieces: Array<{ observation: UnitRead }> }
+    const units = golden.pieces[0].observation,
+      f = harness(EPOCH, units),
+      service = createNutritionWindowReadService(f.client)
+    expect(f.rpcCalls).toEqual([])
+    expect(f.tables).toEqual([])
+    const value = await service.read(f.auth, '2026-11-05')
+    expect(value.owner_id).toBe(units.owner_id)
+    expect(value.days.flatMap((day) => day.meals).map((meal) => meal.id)).toEqual(
+      units.items.map((item) => item.meal.id),
+    )
+    expect(f.rpcCalls.map((call) => call.name)).toEqual([
+      'get_mobile_current_clinical_state',
+      'read_nutrition_window_units',
+      'read_nutrition_window_units',
+      'get_mobile_current_clinical_state',
+    ])
+    for (const call of f.rpcCalls.filter((call) => call.name === 'read_nutrition_window_units')) {
+      expect(call.args).toEqual({
+        p_user_id: units.owner_id,
+        p_meal_ids: units.items.map((item) => item.meal.id),
+      })
+    }
+    expect(f.tables).toEqual([
+      'daily_snapshots',
+      'meal_logs',
+      'prescriptions',
+      'daily_snapshots',
+      'meal_logs',
+      'prescriptions',
+    ])
+    expect(f.forbiddenWrite).not.toHaveBeenCalled()
   })
   it('refuses an absent signup epoch without creating it or reading a fake empty week', async () => {
     const f = harness(null)

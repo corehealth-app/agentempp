@@ -66,6 +66,7 @@ import {
   computeDailyTargets,
   computeProgress,
   creditDayToBloco,
+  exerciseEnergyComplete,
   netBalance,
   resolveClosedDayStatus,
   resolveFlowBloco7700Policy,
@@ -131,7 +132,8 @@ export interface DayCloseProgress {
 
 export interface DayCloseDetail {
   caloriesConsumed: number
-  exerciseCalories: number
+  exerciseCalories: number | null
+  exerciseEnergy?: { status: 'unavailable'; reason: 'unknown_workout_energy' }
   /** Target on the day row before the close; null when there was no row or no target. */
   storedCaloriesTarget: number | null
   /** Target the close writes (or would write, on a dry run). */
@@ -141,6 +143,7 @@ export interface DayCloseDetail {
   dayStatus: DayStatus
   xpEarned: number
   blockCredit: number
+  blockCreditStatus?: 'calculated' | 'not_applicable' | 'preserved_unknown'
   /** Badges this day added. */
   newBadges: string[]
   /** `user_progress` after this day. */
@@ -148,6 +151,7 @@ export interface DayCloseDetail {
 }
 
 export interface DayCloseResult {
+  calculation_version?: 'bodyflow.day-close.v2'
   date: string
   /** Written; on a dry run, "would be written". */
   closed: boolean
@@ -426,7 +430,7 @@ async function closeDay(
     supabase
       .from('daily_snapshots')
       .select(
-        'id, day_closed, day_status, gap_reminder_sent_at, calories_target, protein_target, updated_at',
+        'id, day_closed, day_status, gap_reminder_sent_at, calories_target, protein_target, exercise_energy_complete, updated_at',
       )
       .eq('user_id', userId)
       .eq('date', date)
@@ -512,6 +516,7 @@ async function closeDay(
     (sum, workout) => sum + (Number(workout.estimated_kcal) || 0),
     0,
   )
+  const energyComplete = exerciseEnergyComplete(workouts, existing?.exercise_energy_complete)
   const trainingDone = workouts.length > 0
 
   // `Number(...)`: a numeric column may arrive as text, as the production
@@ -654,17 +659,19 @@ async function closeDay(
     fallbackPattern: gapInfo?.pattern.fallbackUsed ?? false,
   })
 
-  const blockCredit = creditDayToBloco(
-    {
-      hasActivity,
-      dayStatus,
-      caloriesConsumed: kcalConsumed,
-      caloriesTarget: targets.calories_target,
-      dailyBalance,
-      designDeficit,
-    },
-    blockPolicy,
-  )
+  const blockCredit = energyComplete
+    ? creditDayToBloco(
+        {
+          hasActivity,
+          dayStatus,
+          caloriesConsumed: kcalConsumed,
+          caloriesTarget: targets.calories_target,
+          dailyBalance,
+          designDeficit,
+        },
+        blockPolicy,
+      )
+    : 0
 
   // Read as late as possible: the finalization writes absolute values
   // computed from this row, so the shorter the distance to it, the smaller
@@ -724,13 +731,22 @@ async function closeDay(
   const newBadges = next.badgesEarned.filter((badge) => !prev.badgesEarned.includes(badge))
 
   const result: DayCloseResult = {
+    ...(energyComplete ? {} : { calculation_version: 'bodyflow.day-close.v2' as const }),
     date,
     closed: true,
     dryRun,
     late,
     detail: {
       caloriesConsumed: dayFields.calories_consumed,
-      exerciseCalories: dayFields.exercise_calories,
+      exerciseCalories: energyComplete ? dayFields.exercise_calories : null,
+      ...(energyComplete
+        ? {}
+        : {
+            exerciseEnergy: {
+              status: 'unavailable' as const,
+              reason: 'unknown_workout_energy' as const,
+            },
+          }),
       storedCaloriesTarget,
       caloriesTarget: dayFields.calories_target,
       storedProteinTarget,
@@ -738,6 +754,7 @@ async function closeDay(
       dayStatus,
       xpEarned,
       blockCredit,
+      ...(energyComplete ? {} : { blockCreditStatus: 'preserved_unknown' as const }),
       newBadges,
       progress: {
         xpTotal: next.xpTotal,
@@ -861,7 +878,8 @@ async function closeDay(
       snapshot_date: date,
       calories_consumed: Math.round(kcalConsumed),
       calories_target: targets.calories_target,
-      exercise_calories: Math.round(exerciseKcal),
+      exercise_calories: energyComplete ? Math.round(exerciseKcal) : null,
+      ...(energyComplete ? {} : { exercise_energy_complete: false }),
       training_done: trainingDone,
       day_status: dayStatus,
       xp_earned: xpEarned,

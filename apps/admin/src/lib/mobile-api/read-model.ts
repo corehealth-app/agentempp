@@ -3,8 +3,13 @@ import {
   type DailyStateServiceDependencies,
   isUnresolvedNutritionSource,
   loadOfficialDailyState,
+  loadOfficialDailyStateWithEnergy,
 } from '@mpp/agent'
-import { normalizeProtocol, resolveFlowBloco7700Policy } from '@mpp/core'
+import {
+  ExerciseEnergyRepresentationRequired,
+  normalizeProtocol,
+  resolveFlowBloco7700Policy,
+} from '@mpp/core'
 import type { Json, ServiceClient } from '@mpp/db'
 import type { MobileAuthContext } from './auth'
 import type { HistoryQuery, TrendsQuery } from './contracts'
@@ -184,6 +189,35 @@ export async function loadToday(
       meals: state.meals.map((item) => ({ ...item, ...mobileQuantityFields(item.food_name) })),
     }
   } catch (error) {
+    if (error instanceof ExerciseEnergyRepresentationRequired)
+      throw new MobileApiError(
+        409,
+        'day_energy_client_update_required',
+        'Update the app to view this information',
+      )
+    if (error instanceof DailyStateLoadError) {
+      throw new MobileApiError(500, 'data_access_failed', 'Daily state lookup failed')
+    }
+    throw error
+  }
+}
+
+export async function loadTodayWithEnergy(
+  supabase: ServiceClient,
+  userId: string,
+  timezone: string,
+  now = new Date(),
+  dependencies?: DailyStateServiceDependencies,
+) {
+  try {
+    const state = dependencies
+      ? await loadOfficialDailyStateWithEnergy(supabase, userId, timezone, now, dependencies)
+      : await loadOfficialDailyStateWithEnergy(supabase, userId, timezone, now)
+    return {
+      ...state,
+      meals: state.meals.map((item) => ({ ...item, ...mobileQuantityFields(item.food_name) })),
+    }
+  } catch (error) {
     if (error instanceof DailyStateLoadError) {
       throw new MobileApiError(500, 'data_access_failed', 'Daily state lookup failed')
     }
@@ -285,6 +319,7 @@ export async function loadProgress(supabase: ServiceClient, userId: string) {
 }
 
 export interface TrendsSnapshotRow {
+  exercise_energy_complete?: boolean
   date: string
   calories_consumed: number
   calories_target: number | null
@@ -347,6 +382,12 @@ export function shapeTrends(
   days: number,
   current?: { weight: TrendsCurrentWeight | null; timezone: string },
 ) {
+  if (snapshots.some((row) => row.exercise_energy_complete === false))
+    throw new MobileApiError(
+      409,
+      'day_energy_client_update_required',
+      'Update the app to view this information',
+    )
   const byDate = [...snapshots].sort((a, b) => a.date.localeCompare(b.date)).slice(-days)
   let datedWeights = weights
     .filter((row) => row.weight_kg !== null)
@@ -398,7 +439,7 @@ export async function loadTrends(
     supabase
       .from('daily_snapshots')
       .select(
-        'date, calories_consumed, calories_target, exercise_calories, protein_g, protein_target, water_consumed_ml, deficit_accumulated, xp_earned, day_closed',
+        'date, calories_consumed, calories_target, exercise_calories, exercise_energy_complete, protein_g, protein_target, water_consumed_ml, deficit_accumulated, xp_earned, day_closed',
       )
       .eq('user_id', userId)
       .order('date', { ascending: false })

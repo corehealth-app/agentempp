@@ -1,7 +1,9 @@
 import {
   buildDailyState,
+  buildDailyStateWithEnergy,
   computeDailyTargets,
   type DailyStateDayStatus,
+  type DailyStateInput,
   type DailyStateMealType,
   type DailyStateRoutineItemInput,
   dailyTargetByProtocol,
@@ -57,7 +59,7 @@ const DEFAULT_DEPENDENCIES: DailyStateServiceDependencies = {
 }
 
 const SNAPSHOT_VERSION_SELECT =
-  'id, calories_consumed, calories_target, protein_g, protein_target, carbs_g, fat_g, exercise_calories, water_consumed_ml, current_protocol, day_closed, day_status, updated_at'
+  'id, calories_consumed, calories_target, protein_g, protein_target, carbs_g, fat_g, exercise_calories, exercise_energy_complete, water_consumed_ml, current_protocol, day_closed, day_status, updated_at'
 const SNAPSHOT_WITH_LOGS_SELECT = `${SNAPSHOT_VERSION_SELECT}, meal_logs(id, meal_type, food_name, quantity_g, kcal, protein_g, carbs_g, fat_g, consumed_at, source), workout_logs(id, workout_type, duration_min, estimated_kcal, intensity, performed_at)`
 const routineUuidSchema = z.string().uuid()
 const routineDateTimeSchema = z.string().datetime({ offset: true })
@@ -265,6 +267,7 @@ function snapshotFingerprint(
     carbs_g: number
     fat_g: number
     exercise_calories: number
+    exercise_energy_complete?: boolean
     water_consumed_ml: number
     current_protocol: string | null
     day_closed: boolean
@@ -282,6 +285,7 @@ function snapshotFingerprint(
     carbs_g: snapshot.carbs_g,
     fat_g: snapshot.fat_g,
     exercise_calories: snapshot.exercise_calories,
+    exercise_energy_complete: snapshot.exercise_energy_complete,
     water_consumed_ml: snapshot.water_consumed_ml,
     current_protocol: snapshot.current_protocol,
     day_closed: snapshot.day_closed,
@@ -560,7 +564,7 @@ async function loadOfficialDailyStateAttempt(
       : dailyTargetByProtocol(profile, config),
   })
 
-  return buildDailyState({
+  return {
     localDate,
     generatedAt: nowIso,
     protocol: profile?.current_protocol ?? null,
@@ -579,6 +583,7 @@ async function loadOfficialDailyStateAttempt(
           carbsG: snapshot.carbs_g,
           fatG: snapshot.fat_g,
           exerciseCalories: snapshot.exercise_calories,
+          exerciseEnergyComplete: snapshot.exercise_energy_complete,
           waterConsumedMl: snapshot.water_consumed_ml,
           protocol: snapshot.current_protocol,
           dayClosed: snapshot.day_closed,
@@ -611,10 +616,10 @@ async function loadOfficialDailyStateAttempt(
           updatedAt: progress.updated_at,
         }
       : null,
-  })
+  } satisfies DailyStateInput
 }
 
-export async function loadOfficialDailyState(
+async function loadOfficialDailyInput(
   supabase: ServiceClient,
   userId: string,
   timezone: string,
@@ -633,4 +638,14 @@ export async function loadOfficialDailyState(
     }
   }
   throw new DailyStateLoadError('daily state consistency')
+}
+
+export async function loadOfficialDailyState(...args: Parameters<typeof loadOfficialDailyInput>) {
+  return buildDailyState(await loadOfficialDailyInput(...args))
+}
+/** Additive explicit representation; old numeric callers keep their v3 shape. */
+export async function loadOfficialDailyStateWithEnergy(
+  ...args: Parameters<typeof loadOfficialDailyInput>
+) {
+  return buildDailyStateWithEnergy(await loadOfficialDailyInput(...args))
 }

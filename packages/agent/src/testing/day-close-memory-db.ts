@@ -251,6 +251,7 @@ export class DayCloseMemoryDb {
           carbs_g: 0,
           fat_g: 0,
           exercise_calories: 0,
+          exercise_energy_complete: true,
           training_done: false,
           xp_earned: 0,
           current_protocol: null,
@@ -425,6 +426,28 @@ export class DayCloseMemoryDb {
     )
     day.training_done = logs.length > 0
     day.updated_at = this.timestamp()
+  }
+
+  /** The actual coverage trigger after a physical correction. */
+  setWorkoutEnergy(workoutId: string, kcal: number | null): void {
+    const row = this.tables.workout_logs.find((value) => value.id === workoutId)
+    if (!row) throw new Error('memory db: missing workout')
+    row.estimated_kcal = kcal
+    const snapshot = this.tables.daily_snapshots.find(
+      (value) => value.id === row.snapshot_id && value.user_id === row.user_id,
+    )
+    if (!snapshot) return
+    const rows = this.tables.workout_logs.filter(
+      (value) => value.snapshot_id === snapshot.id && value.user_id === row.user_id,
+    )
+    snapshot.exercise_energy_complete = rows.every(
+      (value) => typeof value.estimated_kcal === 'number' && Number.isFinite(value.estimated_kcal),
+    )
+    snapshot.exercise_calories = rows.reduce(
+      (sum, value) => sum + (typeof value.estimated_kcal === 'number' ? value.estimated_kcal : 0),
+      0,
+    )
+    snapshot.updated_at = this.timestamp()
   }
 
   /** An inbound Flow message: a row in `messages`, and no day row. */

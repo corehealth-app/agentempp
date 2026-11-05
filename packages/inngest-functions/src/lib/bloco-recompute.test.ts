@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { applyUserBlocoCorrection, recomputeUserBloco } from './bloco-recompute.js'
 
 type Options = {
+  energyComplete?: boolean
   profileError?: string
   snapshotsError?: string
   logsError?: string
@@ -30,6 +31,7 @@ function makeClient(options: Options = {}) {
               calories_consumed: 1500,
               calories_target: 1900,
               exercise_calories: 0,
+              exercise_energy_complete: options.energyComplete ?? true,
               daily_balance: -400,
               day_status: 'complete',
               training_done: false,
@@ -126,4 +128,10 @@ describe('applyUserBlocoCorrection', () => {
       'bloco progress row not found',
     )
   })
+})
+
+it('refuses a derived whole-history recomputation with incomplete coverage without rewriting old ledger', async () => {
+  await expect(
+    recomputeUserBloco(makeClient({ energyComplete: false }) as never, 'user-1'),
+  ).rejects.toThrow('incomplete_workout_energy')
 })

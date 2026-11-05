@@ -8,6 +8,7 @@ import {
   deriveMealGap,
   deriveMealPatternFromRows,
   deriveSkippedMealsFromCandidates,
+  exerciseEnergyComplete,
   netBalance,
   resolveClosedDayStatus,
   type UserProgress,
@@ -95,6 +96,7 @@ const context = z
           protein_target: finite.nullable(),
           current_protocol: closePhase.nullable(),
           day_closed: z.boolean(),
+          exercise_energy_complete: z.boolean().optional(),
           day_status: closeStatus.nullable(),
           gap_reminder_sent_at: timestamp.nullable(),
         })
@@ -299,6 +301,10 @@ export function prepareClinicalDayClose(raw: unknown, expected: unknown) {
   const calories = sum('kcal'),
     protein = sum('protein_g')
   const exercise = facts.day_workouts.reduce((n, w) => n + (w.estimated_kcal ?? 0), 0)
+  const energyComplete = exerciseEnergyComplete(
+    facts.day_workouts,
+    facts.snapshot?.exercise_energy_complete,
+  )
   const trainingDone = facts.day_workouts.length > 0
   const xp = calcDailyXP(
     {
@@ -351,7 +357,7 @@ export function prepareClinicalDayClose(raw: unknown, expected: unknown) {
   // Human policy: unknown historical deficit closes records/XP but preserves
   // the existing block. Do not substitute500,0 or today's deficit in its math.
   const blockCredit =
-    blockEnabled && designDeficit !== null
+    energyComplete && blockEnabled && designDeficit !== null
       ? creditDayToBloco(
           {
             hasActivity,
@@ -444,7 +450,8 @@ export function prepareClinicalDayClose(raw: unknown, expected: unknown) {
       snapshot_date: scope.date,
       calories_consumed: fields.calories_consumed,
       calories_target: caloriesTarget,
-      exercise_calories: fields.exercise_calories,
+      exercise_calories: energyComplete ? fields.exercise_calories : null,
+      ...(energyComplete ? {} : { exercise_energy_complete: false }),
       training_done: trainingDone,
       day_status: dayStatus,
       xp_earned: xp,

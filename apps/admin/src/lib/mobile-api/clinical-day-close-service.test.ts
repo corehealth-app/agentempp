@@ -236,3 +236,26 @@ describe('backend-only whole-close RPC adapter', () => {
     expect(rpc).toHaveBeenCalledTimes(1)
   })
 })
+
+it('replays a closed v2 unknown-energy result without converting null into zero or re-running effects', async () => {
+  const packet = acknowledgement()
+  Object.assign(packet.result, { calculation_version: 'bodyflow.day-close.v2' })
+  Object.assign(packet.result.detail, {
+    exerciseCalories: null,
+    exerciseEnergy: { status: 'unavailable', reason: 'unknown_workout_energy' },
+    blockCredit: 0,
+    blockCreditStatus: 'preserved_unknown',
+  })
+  const repo = repository()
+  repo.findReceipt.mockResolvedValueOnce(packet)
+  const result = await createClinicalDayCloseService({ enabled: true, repository: repo }).run(
+    auth(),
+    command(),
+  )
+  expect(result).toEqual(packet.result)
+  expect(result).toMatchObject({
+    detail: { exerciseCalories: null, exerciseEnergy: { status: 'unavailable' } },
+  })
+  expect(repo.capture).not.toHaveBeenCalled()
+  expect(repo.apply).not.toHaveBeenCalled()
+})

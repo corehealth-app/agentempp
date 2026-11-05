@@ -1,8 +1,12 @@
 /** One read-only clinical composition. No default route, writer or feature flag.
  * Clinical daily application/closer, native contracts and Flow must be integrated
  * together before activation; a read projection cannot create their authority. */
-import { getMealPattern, getSkippedMealsForDate } from '@mpp/agent'
-import { type DailyState, dailyTargetByProtocol } from '@mpp/core'
+import {
+  type DailyStateServiceDependencies,
+  getMealPattern,
+  getSkippedMealsForDate,
+} from '@mpp/agent'
+import { type DailyState, type DailyStateWithEnergy, dailyTargetByProtocol } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
 import type { MobileAuthContext } from './auth'
 import { readClinicalRepresentation } from './clinical-representation'
@@ -25,7 +29,14 @@ import {
 import { MobileApiError } from './http'
 import { hashMobileRequest } from './idempotency'
 import { protocolReadModel } from './protocol-service'
-import { loadPlan, loadProfile, loadProgress, loadToday, loadTrends } from './read-model'
+import {
+  loadPlan,
+  loadProfile,
+  loadProgress,
+  loadToday,
+  loadTodayWithEnergy,
+  loadTrends,
+} from './read-model'
 import { authenticatedReevaluationOwner } from './reevaluation-cycle-service'
 import { createSupabaseClinicalDailyRepository } from './supabase-clinical-daily'
 
@@ -41,6 +52,11 @@ export interface ClinicalReadAdmission {
 }
 export interface CurrentClinicalReaderSources {
   today(client: ServiceClient, owner: string, state: State): Promise<DailyState>
+  todayWithEnergy?(
+    client: ServiceClient,
+    owner: string,
+    state: State,
+  ): Promise<DailyStateWithEnergy>
   progress: typeof loadProgress
   plan: typeof loadPlan
   trends: typeof loadTrends
@@ -133,7 +149,7 @@ function requireProtocolLocale(state: State) {
     )
   return locale
 }
-function projectToday(data: DailyState, state: State) {
+function projectToday<T extends DailyState | DailyStateWithEnergy>(data: T, state: State) {
   if (data.local_date !== state.date) throw currentClinicalError('changed')
   checkProtocol(state, data.current_protocol)
   const p = projectCurrentClinicalState(state)
@@ -191,6 +207,18 @@ function projectToday(data: DailyState, state: State) {
       targets: source,
       block_7700: p.hide.block ? ('unavailable' as const) : data.sources.block_7700,
     },
+  }
+}
+function projectTodayWithEnergy(data: DailyStateWithEnergy, state: State) {
+  const projected = projectToday(data, state),
+    policy = projectCurrentClinicalState(state)
+  return {
+    ...projected,
+    daily_balance_energy: policy.hide.balance
+      ? { status: 'protected' as const }
+      : projected.targets.calories_kcal === null
+        ? { status: 'unavailable' as const, reason: 'target_unavailable' as const }
+        : data.daily_balance_energy,
   }
 }
 /** Read-only formula evidence, bound to the same current observation. A mutable
@@ -251,60 +279,82 @@ function dailyFormulaEvidence(raw: unknown, owner: string, state: State) {
     formulaBodyFatPercent: selected.formulaBodyFatPercent,
   }
 }
+async function clinicalTodayDependencies(
+  client: ServiceClient,
+  owner: string,
+  state: State,
+): Promise<DailyStateServiceDependencies> {
+  const config = readClinicalCalculationConfigRows(state.calculation_config).config
+  const policy = projectCurrentClinicalState(state)
+  const evidence =
+    policy.targetSource === 'assigned_phase'
+      ? dailyFormulaEvidence(
+          await createSupabaseClinicalDailyRepository(client).capture(owner),
+          owner,
+          state,
+        )
+      : null
+  return {
+    requireFreshProgress: true,
+    loadConfig: async () => config,
+    loadMealPattern: getMealPattern,
+    loadSkippedMeals: getSkippedMealsForDate,
+    resolveTargetRead: (profile, capturedConfig, date) => {
+      if (date !== state.date) throw currentClinicalError('changed')
+      checkProtocol(state, profile?.current_protocol ?? null)
+      if (
+        evidence &&
+        (!profile ||
+          (
+            [
+              'sex',
+              'birth_date',
+              'height_cm',
+              'weight_kg',
+              'body_fat_percent',
+              'activity_level',
+              'training_frequency',
+              'hunger_level',
+              'current_protocol',
+              'deficit_level',
+            ] as const
+          ).some((key) => profile[key] !== evidence.profile[key]))
+      )
+        throw currentClinicalError('changed')
+      return {
+        // The daily writer owns application/provenance. Read-only composition
+        // never invents its missing snapshot through legacy NULL/TDEE fallback.
+        calculatedTargets: { calories_target: null, protein_target: null },
+        targetByProtocol:
+          evidence && profile
+            ? dailyTargetByProtocol(
+                { ...profile, body_fat_percent: evidence.formulaBodyFatPercent },
+                capturedConfig,
+                state.date,
+              )
+            : null,
+      }
+    },
+  }
+}
 const defaultSources: CurrentClinicalReaderSources = {
   async today(client, owner, state) {
-    const config = readClinicalCalculationConfigRows(state.calculation_config).config
-    const policy = projectCurrentClinicalState(state)
-    const evidence =
-      policy.targetSource === 'assigned_phase'
-        ? dailyFormulaEvidence(
-            await createSupabaseClinicalDailyRepository(client).capture(owner),
-            owner,
-            state,
-          )
-        : null
-    return loadToday(client, owner, state.timezone, new Date(state.observed_at), {
-      requireFreshProgress: true,
-      loadConfig: async () => config,
-      loadMealPattern: getMealPattern,
-      loadSkippedMeals: getSkippedMealsForDate,
-      resolveTargetRead: (profile, capturedConfig, date) => {
-        if (date !== state.date) throw currentClinicalError('changed')
-        checkProtocol(state, profile?.current_protocol ?? null)
-        if (
-          evidence &&
-          (!profile ||
-            (
-              [
-                'sex',
-                'birth_date',
-                'height_cm',
-                'weight_kg',
-                'body_fat_percent',
-                'activity_level',
-                'training_frequency',
-                'hunger_level',
-                'current_protocol',
-                'deficit_level',
-              ] as const
-            ).some((key) => profile[key] !== evidence.profile[key]))
-        )
-          throw currentClinicalError('changed')
-        return {
-          // The daily writer owns application/provenance. Read-only composition
-          // never invents its missing snapshot through legacy NULL/TDEE fallback.
-          calculatedTargets: { calories_target: null, protein_target: null },
-          targetByProtocol:
-            evidence && profile
-              ? dailyTargetByProtocol(
-                  { ...profile, body_fat_percent: evidence.formulaBodyFatPercent },
-                  capturedConfig,
-                  state.date,
-                )
-              : null,
-        }
-      },
-    })
+    return loadToday(
+      client,
+      owner,
+      state.timezone,
+      new Date(state.observed_at),
+      await clinicalTodayDependencies(client, owner, state),
+    )
+  },
+  async todayWithEnergy(client, owner, state) {
+    return loadTodayWithEnergy(
+      client,
+      owner,
+      state.timezone,
+      new Date(state.observed_at),
+      await clinicalTodayDependencies(client, owner, state),
+    )
   },
   progress: loadProgress,
   plan: loadPlan,
@@ -381,14 +431,43 @@ export function createCurrentClinicalReadModel(
       url: string,
       decorate?: (
         owner: string,
-        data: Presented<ReturnType<typeof projectToday>>,
-      ) => Promise<Presented<ReturnType<typeof projectToday>>>,
+        data: Presented<ReturnType<typeof projectToday<DailyState>>>,
+      ) => Promise<Presented<ReturnType<typeof projectToday<DailyState>>>>,
     ) {
       return run(
         auth,
         url,
         (owner, state) => reads.today(client, owner, state),
         projectToday,
+        decorate,
+      )
+    },
+    todayWithEnergy(
+      auth: MobileAuthContext,
+      url: string,
+      decorate?: (
+        owner: string,
+        data: Presented<ReturnType<typeof projectTodayWithEnergy>>,
+      ) => Promise<Presented<ReturnType<typeof projectTodayWithEnergy>>>,
+    ) {
+      if (!readClinicalRepresentation(url).dayEnergyCompatible)
+        return Promise.reject(
+          new MobileApiError(
+            400,
+            'day_energy_representation_required',
+            'Explicit day energy representation required',
+          ),
+        )
+      const read = reads.todayWithEnergy
+      if (!read)
+        return Promise.reject(
+          new MobileApiError(503, 'day_energy_source_unavailable', 'Day energy unavailable'),
+        )
+      return run(
+        auth,
+        url,
+        (owner, state) => read(client, owner, state),
+        projectTodayWithEnergy,
         decorate,
       )
     },

@@ -217,3 +217,9 @@ describe('feedback v2 official-day provenance', () => {
     expect(proveFeedbackV2Day(observation(), d)?.targets.protein_g).toBe(120)
   })
 })
+
+it('never seals an incomplete exercise total as a numeric v2 day', () => {
+  const raw = context()
+  Object.assign(raw.snapshot, { exercise_energy_complete: false })
+  expect(proveFeedbackV2Day(parseFeedbackV2Capture(raw, who), day())).toBeNull()
+})

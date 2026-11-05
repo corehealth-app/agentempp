@@ -31,6 +31,7 @@ const savedDay = z.object({
   calories_target: amount.nullable(),
   protein_target: amount.nullable(),
   exercise_calories: amount,
+  exercise_energy_complete: z.boolean().optional(),
 })
 export interface FeedbackV2ClinicalContext {
   policy: FlowClinicalPolicy
@@ -50,6 +51,7 @@ export function proveFeedbackV2Day(
     const { context, facts, clinical } = observation
     const s = savedDay.parse(context.snapshot)
     if (
+      s.exercise_energy_complete === false ||
       s.user_id !== context.user_id ||
       s.date !== facts.localDate ||
       clinical.date !== facts.localDate ||

@@ -66,6 +66,7 @@ function fixture(): State {
       protein_target: 100,
       daily_balance: -1945,
       exercise_calories: 0,
+      exercise_energy_complete: true,
       closed_at: null,
       created_at: '2026-10-09T03:00:00Z',
       updated_at: '2026-10-09T12:00:00Z',

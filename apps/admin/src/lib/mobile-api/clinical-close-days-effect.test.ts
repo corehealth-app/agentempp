@@ -245,3 +245,25 @@ describe('guarded dormant HTTP closer effect', () => {
     expect(h.db.writes).toEqual([])
   })
 })
+
+it('accepts a closed v2 null-energy acknowledgement through discovery without fallback or numeric coercion', async () => {
+  const h = harness()
+  vi.spyOn(console, 'info').mockImplementation(() => {})
+  const base = closed('2026-10-04')
+  const unknown = clinicalClosedResultSchema.parse({
+    ...base,
+    calculation_version: 'bodyflow.day-close.v2',
+    detail: {
+      ...base.detail,
+      exerciseCalories: null,
+      exerciseEnergy: { status: 'unavailable', reason: 'unknown_workout_energy' },
+      blockCredit: 0,
+      blockCreditStatus: 'preserved_unknown',
+    },
+  })
+  h.run.mockResolvedValueOnce(unknown)
+  await h.effect(h.scope)
+  expect(unknown.detail.exerciseCalories).toBeNull()
+  expect(h.db.writes).toEqual([])
+  expect(h.run).toHaveBeenCalled()
+})

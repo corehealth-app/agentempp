@@ -10,7 +10,7 @@ import type {
   ClinicalReadEndpoint,
   createCurrentClinicalReadModel,
 } from './current-clinical-read-model'
-import { mobileSuccess } from './http'
+import { MobileApiError, mobileSuccess } from './http'
 import { authenticatedReevaluationOwner } from './reevaluation-cycle-service'
 import { createMobileRoute, type MobileRouteRuntime } from './route'
 
@@ -47,11 +47,14 @@ function fixedRuntime(runtime: MobileRouteRuntime | undefined) {
 export type ClinicalTodayData = Awaited<
   ReturnType<ReturnType<typeof createCurrentClinicalReadModel>['today']>
 >
-export type ClinicalTodayEnrichment = (
+export type ClinicalTodayEnergyData = Awaited<
+  ReturnType<ReturnType<typeof createCurrentClinicalReadModel>['todayWithEnergy']>
+>
+export type ClinicalTodayEnrichment = <T extends ClinicalTodayData | ClinicalTodayEnergyData>(
   client: ServiceClient,
   owner: string,
-  data: ClinicalTodayData,
-) => Promise<ClinicalTodayData>
+  data: T,
+) => Promise<T>
 export function createCurrentClinicalReadGetRoute(
   endpoint: ClinicalReadEndpoint,
   runtime: MobileRouteRuntime | undefined,
@@ -70,6 +73,12 @@ export function createCurrentClinicalReadGetRoute(
       client = context.supabase,
       requestId = context.requestId
     const representation = readClinicalRepresentation(url)
+    if (endpoint !== 'today' && representation.dayEnergyCompatible)
+      throw new MobileApiError(
+        400,
+        'unsupported_day_energy_endpoint',
+        'Day energy representation is only supported for Today',
+      )
     const query =
       endpoint === 'trends'
         ? trendsQuerySchema.parse(Object.fromEntries(representation.search.entries()))
@@ -84,11 +93,17 @@ export function createCurrentClinicalReadGetRoute(
     // Never publish the preflight policy: effects can legitimately change the
     // state. Every reader performs its own fresh pre/post authority captures.
     if (endpoint === 'today') {
-      const data = await model.today(
-        auth,
-        url,
-        decorateToday ? (owner, current) => decorateToday(client, owner, current) : undefined,
-      )
+      const data = representation.dayEnergyCompatible
+        ? await model.todayWithEnergy(
+            auth,
+            url,
+            decorateToday ? (owner, current) => decorateToday(client, owner, current) : undefined,
+          )
+        : await model.today(
+            auth,
+            url,
+            decorateToday ? (owner, current) => decorateToday(client, owner, current) : undefined,
+          )
       return mobileSuccess(data, requestId)
     }
     if (endpoint === 'progress') return mobileSuccess(await model.progress(auth, url), requestId)

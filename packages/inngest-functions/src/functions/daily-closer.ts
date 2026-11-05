@@ -1,6 +1,3 @@
-import { calcDailyXP, computeProgress, creditDayToBloco } from '@mpp/core'
-import type { DailySnapshot, UserProgress } from '@mpp/core'
-import type { ServiceClient } from '@mpp/db'
 import {
   getGapForDate,
   getLocalDateMinusDays,
@@ -9,6 +6,9 @@ import {
   loadCalcConfig,
   loadDailyTargets,
 } from '@mpp/agent'
+import type { DailySnapshot, UserProgress } from '@mpp/core'
+import { calcDailyXP, computeProgress, creditDayToBloco, exerciseEnergyComplete } from '@mpp/core'
+import type { ServiceClient } from '@mpp/db'
 import { inngest } from '../client.js'
 import { finalizeDailyClose } from '../lib/daily-close-finalizer.js'
 import { resolveClosedDayStatus } from '../lib/day-status-policy.js'
@@ -84,7 +84,9 @@ async function closeUserDay(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: existing, error: existingError } = await (supabase as any)
     .from('daily_snapshots')
-    .select('id, day_closed, day_status, gap_reminder_sent_at')
+    .select(
+      'id, day_closed, day_status, gap_reminder_sent_at, exercise_energy_complete, updated_at',
+    )
     .eq('user_id', userId)
     .eq('date', yesterday)
     .maybeSingle()
@@ -94,6 +96,8 @@ async function closeUserDay(
     day_closed: boolean | null
     day_status: string | null
     gap_reminder_sent_at: string | null
+    exercise_energy_complete?: boolean
+    updated_at: string
   } | null
 
   if (existingTyped?.day_closed) return { skipped: true, reason: 'já fechado' }
@@ -104,7 +108,7 @@ async function closeUserDay(
     yesterday,
   )
 
-  const [mealsResult, workoutsResult, messagesResult] = await Promise.all([
+  const [mealsResult, workoutsResult, messagesResult, linkedWorkoutsResult] = await Promise.all([
     supabase
       .from('meal_logs')
       .select('food_name, quantity_g, kcal, protein_g, carbs_g, fat_g, consumed_at')
@@ -113,7 +117,7 @@ async function closeUserDay(
       .lt('consumed_at', endOfDay),
     supabase
       .from('workout_logs')
-      .select('workout_type, duration_min, estimated_kcal, performed_at')
+      .select('id, snapshot_id, workout_type, duration_min, estimated_kcal, performed_at')
       .eq('user_id', userId)
       .gte('performed_at', startOfDay)
       .lt('performed_at', endOfDay),
@@ -124,11 +128,27 @@ async function closeUserDay(
       .gte('created_at', startOfDay)
       .lt('created_at', endOfDay)
       .limit(50),
+    existingTyped
+      ? supabase
+          .from('workout_logs')
+          .select('id, snapshot_id, workout_type, duration_min, estimated_kcal, performed_at')
+          .eq('user_id', userId)
+          .eq('snapshot_id', existingTyped.id)
+      : Promise.resolve({ data: [], error: null }),
   ])
-  const historyError = mealsResult.error ?? workoutsResult.error ?? messagesResult.error
+  const historyError =
+    mealsResult.error ?? workoutsResult.error ?? messagesResult.error ?? linkedWorkoutsResult.error
   if (historyError) throw new Error(historyError.message ?? 'daily close history lookup failed')
   const meals = mealsResult.data
-  const workouts = workoutsResult.data
+  // A recorded snapshot anchor survives a timezone change. Use all of this
+  // snapshot's owned rows; retain the temporal fallback only for legacy rows
+  // without an anchor, and never count another snapshot's activity twice.
+  const workouts = existingTyped
+    ? [
+        ...(linkedWorkoutsResult.data ?? []),
+        ...(workoutsResult.data ?? []).filter((row) => row.snapshot_id === null),
+      ]
+    : workoutsResult.data
   const messages = messagesResult.data
 
   // Verifica se houve QUALQUER atividade no dia (meal, workout ou msg IN).
@@ -201,6 +221,13 @@ async function closeUserDay(
   const proteinG = (meals ?? []).reduce((s, m) => s + (Number(m.protein_g) || 0), 0)
   const carbsG = (meals ?? []).reduce((s, m) => s + (Number(m.carbs_g) || 0), 0)
   const fatG = (meals ?? []).reduce((s, m) => s + (Number(m.fat_g) || 0), 0)
+  // The current timezone interval may omit an activity recorded against this
+  // snapshot in the previous timezone. Stored false and every owned linked
+  // row are coverage witnesses; this reader never upgrades false from a subset.
+  const energyComplete = exerciseEnergyComplete(
+    workouts ?? [],
+    existingTyped?.exercise_energy_complete,
+  )
   const exerciseKcal = (workouts ?? []).reduce((s, w) => s + (Number(w.estimated_kcal) || 0), 0)
   const trainingDone = (workouts ?? []).length > 0
 
@@ -259,16 +286,25 @@ async function closeUserDay(
     current_protocol: profile?.current_protocol ?? null,
   }
 
-  const { data: snap, error: snapshotUpsertError } = await supabase
-    .from('daily_snapshots')
-    .upsert(snapshotData, { onConflict: 'user_id,date' })
-    .select('*')
-    .single()
+  // A physical workout correction stamps the snapshot too. Its complete sum
+  // and coverage must win together over this older read, even when only the
+  // row version changed. A newly appeared snapshot must also be left intact.
+  const snapshotWrite = existingTyped
+    ? supabase
+        .from('daily_snapshots')
+        .update(snapshotData)
+        .eq('id', existingTyped.id)
+        .eq('day_closed', false)
+        .eq('updated_at', existingTyped.updated_at)
+    : supabase
+        .from('daily_snapshots')
+        .upsert(snapshotData, { onConflict: 'user_id,date', ignoreDuplicates: true })
+  const { data: snap, error: snapshotUpsertError } = await snapshotWrite.select('*').maybeSingle()
 
   if (snapshotUpsertError) {
     throw new Error(snapshotUpsertError.message ?? 'failed to upsert snapshot')
   }
-  if (!snap) throw new Error('failed to upsert snapshot')
+  if (!snap) return { skipped: true, reason: 'changed_concurrently' }
 
   // computeProgress
   const { data: prevProgress, error: prevProgressError } = await supabase
@@ -395,14 +431,16 @@ async function closeUserDay(
     })
   }
 
-  const dayCredit = creditDayToBloco({
-    hasActivity,
-    dayStatus: finalDayStatus,
-    caloriesConsumed: kcalConsumed,
-    caloriesTarget: targets.calories_target,
-    dailyBalance: snap.daily_balance ?? 0,
-    designDeficit,
-  })
+  const dayCredit = energyComplete
+    ? creditDayToBloco({
+        hasActivity,
+        dayStatus: finalDayStatus,
+        caloriesConsumed: kcalConsumed,
+        caloriesTarget: targets.calories_target,
+        dailyBalance: snap.daily_balance ?? 0,
+        designDeficit,
+      })
+    : 0
 
   const next = computeProgress(dailySnap, prev, calcConfig, dayCredit)
 
@@ -470,7 +508,8 @@ async function closeUserDay(
       snapshot_date: yesterday,
       calories_consumed: Math.round(kcalConsumed),
       calories_target: targets.calories_target,
-      exercise_calories: Math.round(exerciseKcal),
+      exercise_calories: energyComplete ? Math.round(exerciseKcal) : null,
+      ...(energyComplete ? {} : { exercise_energy_complete: false }),
       training_done: trainingDone,
       day_status: finalDayStatus,
       xp_earned: xpEarned,

@@ -321,3 +321,36 @@ describe('real pure core calculation from whole-close SQL facts', () => {
     expect(() => effect(value)).toThrow()
   })
 })
+
+it('holds dependent block credit with unknown workout energy, keeping existing XP and prior ledger', () => {
+  const value = wire()
+  Object.assign(value.facts, {
+    progress: {
+      xp_total: 40,
+      level: 1,
+      current_streak: 0,
+      longest_streak: 0,
+      blocks_completed: 1,
+      deficit_block: 321,
+      badges_earned: [],
+      last_active_date: null,
+    },
+  })
+  Object.assign(value.facts, {
+    day_workouts: [
+      {
+        id: '139c0000-0000-4000-8000-000000000099',
+        user_id: value.user_id,
+        estimated_kcal: null,
+        performed_at: value.facts.calendar.day_start,
+      },
+    ],
+  })
+  const e = effect(value)
+  expect(e.blockCredit).toBe(0)
+  expect(e.fields.xp_earned).toBe(20)
+  expect(e.progress.deficitBlock).toBe(321)
+  expect(
+    e.telemetry.find((event) => event.event === 'daily_closer.completed')?.properties,
+  ).toMatchObject({ exercise_calories: null, exercise_energy_complete: false })
+})

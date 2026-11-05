@@ -1,0 +1,94 @@
+{
+  "provenance": "Actual local owned whole-close PostgreSQL writer under rollback only",
+  "workout_close_golden": [
+    {
+      "kind": "known",
+      "envelope": {
+        "result": {
+          "date": "2026-11-03",
+          "late": true,
+          "closed": true,
+          "detail": {
+            "progress": {
+              "level": 1,
+              "xpTotal": 15,
+              "badgesEarned": [],
+              "deficitBlock": 400,
+              "currentStreak": 1,
+              "longestStreak": 1,
+              "lastActiveDate": "2026-11-03",
+              "blocksCompleted": 0
+            },
+            "xpEarned": 15,
+            "dayStatus": "complete",
+            "newBadges": [],
+            "blockCredit": 400,
+            "proteinTarget": 130,
+            "caloriesTarget": 2000,
+            "caloriesConsumed": 1600,
+            "exerciseCalories": 0,
+            "blockCreditStatus": "calculated",
+            "storedProteinTarget": 130.0,
+            "storedCaloriesTarget": 2000
+          },
+          "dryRun": false
+        },
+        "request": {
+          "date": "2026-11-03",
+          "from": "2026-10-24",
+          "kind": "close",
+          "timezone": "America/Sao_Paulo"
+        },
+        "user_id": "b3b01000-0000-4000-8000-000000001392",
+        "operation_key": "a212aa89-fecf-44c7-8be9-83838fb010ac"
+      }
+    },
+    {
+      "kind": "unknown",
+      "envelope": {
+        "result": {
+          "date": "2026-11-03",
+          "late": true,
+          "closed": true,
+          "detail": {
+            "progress": {
+              "level": 1,
+              "xpTotal": 60,
+              "badgesEarned": [],
+              "deficitBlock": 321,
+              "currentStreak": 1,
+              "longestStreak": 1,
+              "lastActiveDate": "2026-11-03",
+              "blocksCompleted": 1
+            },
+            "xpEarned": 20,
+            "dayStatus": "complete",
+            "newBadges": [],
+            "blockCredit": 0,
+            "proteinTarget": 130,
+            "caloriesTarget": 2000,
+            "exerciseEnergy": {
+              "reason": "unknown_workout_energy",
+              "status": "unavailable"
+            },
+            "caloriesConsumed": 1600,
+            "exerciseCalories": null,
+            "blockCreditStatus": "preserved_unknown",
+            "storedProteinTarget": 130.0,
+            "storedCaloriesTarget": 2000
+          },
+          "dryRun": false,
+          "calculation_version": "bodyflow.day-close.v2"
+        },
+        "request": {
+          "date": "2026-11-03",
+          "from": "2026-10-24",
+          "kind": "close",
+          "timezone": "America/Sao_Paulo"
+        },
+        "user_id": "b3b01000-0000-4000-8000-000000001391",
+        "operation_key": "2f0f235e-175d-4347-bbae-84c6ce03c5d2"
+      }
+    }
+  ]
+}

@@ -353,3 +353,24 @@ describe('dormant conversational workout source and performed authority', () => 
     expect(resolveConversationWorkoutReport(source).status).not.toBe('ready')
   })
 })
+
+it('accepts captured rate/category metadata without changing old source identities', () => {
+  const f = fixture()
+  const row = f.context.catalogue[0]
+  if (!row) throw new Error('Missing captured catalogue row')
+  Object.assign(row, { category: 'cardio', kcal_per_min: 4.5 })
+  expect(f.source().context.catalogue[0]).toMatchObject({ category: 'cardio', kcal_per_min: 4.5 })
+  Object.assign(row, { kcal_per_min: -1 })
+  expect(() => f.source()).toThrow()
+})
+it('keeps generic outro unresolved instead of authorizing a fabricated catalogue fact', () => {
+  const f = fixture('Fiz 30 minutos de outro')
+  const row = f.context.catalogue[0]
+  if (!row) throw new Error('Missing captured catalogue row')
+  row.slug = 'outro'
+  row.display_name = 'Outro'
+  expect(resolveConversationWorkoutReport(f.source())).toMatchObject({
+    status: 'needs_reply',
+    question: { field: 'activity' },
+  })
+})

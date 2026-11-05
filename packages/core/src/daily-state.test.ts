@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   buildDailyState,
+  buildDailyStateWithEnergy,
   DAILY_STATE_CALCULATION_VERSION,
   type DailyStateInput,
   type DailyStateSnapshotInput,
@@ -1042,5 +1043,86 @@ describe('buildDailyState — daily_balance_kcal per protocol (v3)', () => {
     expect(restOn).toEqual(restOff)
     expect(on.food_excess_kcal).toBe(220)
     expect(on.block_7700.current_kcal).toBe(3_850)
+  })
+})
+
+describe('negotiated daily-state v4 exercise availability', () => {
+  const unknown = () =>
+    input({
+      snapshot: {
+        caloriesConsumed: 800,
+        caloriesTarget: 1900,
+        proteinG: 60,
+        proteinTarget: 140,
+        carbsG: 90,
+        fatG: 20,
+        exerciseCalories: 120,
+        exerciseEnergyComplete: false,
+        waterConsumedMl: 500,
+        protocol: 'recomposicao',
+        dayClosed: false,
+        dayStatus: null,
+        updatedAt: NOW,
+      },
+      workouts: [
+        {
+          id: 'workout',
+          workout_type: 'caminhada',
+          duration_min: 30,
+          intensity: null,
+          estimated_kcal: null,
+          performed_at: NOW,
+        },
+      ],
+      progress: { deficitBlock: 500, blocksCompleted: 2, updatedAt: NOW },
+    })
+  it('withholds unknown energy only, preserving official food/protein and approved ledger', () => {
+    const d = buildDailyStateWithEnergy(unknown())
+    expect(d).toMatchObject({
+      calculation_version: 'bodyflow.daily-state.v4',
+      exercise_kcal: null,
+      exercise_energy: { status: 'unavailable', reason: 'unknown_workout_energy' },
+      daily_balance_kcal: null,
+      daily_balance_reference_kcal: null,
+      daily_balance_energy: { status: 'unavailable', reason: 'unknown_workout_energy' },
+      consumed: { calories_kcal: 800, protein_g: 60 },
+      remaining_food_kcal: 1100,
+      protein_status: { target_g: 140, remaining_g: 80 },
+      block_7700: { current_kcal: 500, completed_blocks: 2 },
+    })
+  })
+  it.each([
+    'ganho_massa',
+    'manutencao',
+  ] as const)('keeps independent %s balance available', (protocol) => {
+    const i = unknown()
+    i.protocol = protocol
+    if (!i.snapshot) throw new Error('Missing unknown day fixture')
+    i.snapshot.protocol = protocol
+    const d = buildDailyStateWithEnergy(i)
+    expect(d.exercise_kcal).toBeNull()
+    expect(d.daily_balance_kcal).not.toBeNull()
+    expect(d.daily_balance_includes_exercise).toBe(false)
+    expect(d.daily_balance_energy).toEqual({ status: 'available' })
+  })
+  it('separates proven empty zero from unknown and preserves numeric v3 known bytes', () => {
+    const i = input()
+    const legacy = buildDailyState(i)
+    const v4 = buildDailyStateWithEnergy(i)
+    expect(v4).toEqual({
+      ...legacy,
+      calculation_version: 'bodyflow.daily-state.v4',
+      exercise_energy: { status: 'available' },
+      daily_balance_energy: { status: 'available' },
+    })
+    expect(v4.exercise_kcal).toBe(0)
+    expect(() => buildDailyState(unknown())).toThrow('exercise_energy_representation_required')
+  })
+  it('rejects a false completeness claim when an actual captured workout is unknown', () => {
+    const i = unknown()
+    if (!i.snapshot) throw new Error('Missing unknown day fixture')
+    i.snapshot.exerciseEnergyComplete = true
+    expect(buildDailyStateWithEnergy(i).exercise_kcal).toBeNull()
+    expect(() => buildDailyState(i)).toThrow('exercise_energy_representation_required')
   })
 })

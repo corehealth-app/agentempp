@@ -1,6 +1,10 @@
 import { DEFAULT_CALC_CONFIG } from '@mpp/core'
 import { describe, expect, it } from 'vitest'
-import { DailyStateLoadError, loadOfficialDailyState } from './daily-state-service.js'
+import {
+  DailyStateLoadError,
+  loadOfficialDailyState,
+  loadOfficialDailyStateWithEnergy,
+} from './daily-state-service.js'
 
 interface FakeTable {
   rows?: unknown[]
@@ -982,5 +986,48 @@ describe('loadOfficialDailyState', () => {
       ),
     ).rejects.toEqual(new DailyStateLoadError('daily state consistency'))
     expect(db.queries.filter((table) => table === 'daily_snapshots')).toHaveLength(4)
+  })
+})
+
+it('latches coverage-only changes and returns explicit null on the negotiated reader', async () => {
+  const snapshot = (complete: boolean) => ({
+    id: 'snapshot-1',
+    calories_consumed: 800,
+    calories_target: 1900,
+    protein_g: 60,
+    protein_target: 140,
+    carbs_g: 90,
+    fat_g: 20,
+    exercise_calories: 0,
+    exercise_energy_complete: complete,
+    water_consumed_ml: 500,
+    current_protocol: 'recomposicao',
+    day_closed: false,
+    day_status: null,
+    updated_at: '2026-07-20T14:00:00.000001Z',
+    meal_logs: [],
+    workout_logs: [],
+  })
+  const db = fakeSupabase({
+    user_profiles: { single: null },
+    daily_snapshots: {
+      singleSequence: [snapshot(true), snapshot(false), snapshot(false), snapshot(false)],
+    },
+    user_progress: { single: null },
+    pending_registrations: { rows: [] },
+  })
+  const d = await loadOfficialDailyStateWithEnergy(
+    db.client as never,
+    'user-1',
+    'UTC',
+    new Date('2026-07-20T15:00:00Z'),
+    dependencies,
+  )
+  expect(db.queries.filter((t) => t === 'daily_snapshots')).toHaveLength(4)
+  expect(d).toMatchObject({
+    calculation_version: 'bodyflow.daily-state.v4',
+    exercise_kcal: null,
+    exercise_energy: { status: 'unavailable' },
+    consumed: { calories_kcal: 800 },
   })
 })

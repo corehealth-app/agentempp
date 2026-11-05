@@ -134,6 +134,8 @@ const contextSchema = z
             display_name: workoutText(200),
             is_active: z.literal(true),
             updated_at: workoutClock,
+            category: z.enum(['musculacao', 'cardio', 'esporte', 'mobilidade']).optional(),
+            kcal_per_min: z.number().finite().nonnegative().nullable().optional(),
           })
           .strict(),
       )

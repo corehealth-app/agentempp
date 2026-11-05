@@ -11,6 +11,22 @@ export function readClinicalRepresentation(url: string) {
       'invalid_clinical_policy_representation',
       'Invalid clinical representation',
     )
+  const energy = search.getAll('day_energy')
+  if (
+    energy.length > 1 ||
+    (energy.length === 1 &&
+      (energy[0] !== 'field_availability_v1' || values[0] !== 'current_clinical_v1'))
+  )
+    throw new MobileApiError(
+      400,
+      'invalid_day_energy_representation',
+      'Invalid day energy representation',
+    )
+  search.delete('day_energy')
   search.delete('clinical_policy')
-  return { compatible: values[0] === 'current_clinical_v1', search }
+  return {
+    compatible: values[0] === 'current_clinical_v1',
+    dayEnergyCompatible: energy[0] === 'field_availability_v1',
+    search,
+  }
 }

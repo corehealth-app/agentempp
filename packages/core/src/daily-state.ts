@@ -28,6 +28,8 @@ export interface DailyStateSnapshotInput {
   carbsG: number
   fatG: number
   exerciseCalories: number
+  /** Snapshot metadata; false means its stored numeric sum is only partial. */
+  exerciseEnergyComplete?: boolean
   waterConsumedMl: number
   protocol: Protocol | null
   dayClosed: boolean
@@ -274,7 +276,7 @@ function routineSection(items: DailyStateRoutineItemInput[], itemType: RoutineIt
   }
 }
 
-export function buildDailyState(input: DailyStateInput) {
+function buildDailyStateNumbers(input: DailyStateInput) {
   const snapshot = input.snapshot
   const snapshotCaloriesTarget = positiveOrNull(snapshot?.caloriesTarget ?? null)
   const calculatedCaloriesTarget = positiveOrNull(input.calculatedTargets.calories_target)
@@ -476,3 +478,59 @@ export function buildDailyState(input: DailyStateInput) {
 }
 
 export type DailyState = ReturnType<typeof buildDailyState>
+
+/** Existing numeric clients cannot encode incomplete exercise honestly. This
+ * error is a representation boundary, never permission to publish a partial0. */
+export class ExerciseEnergyRepresentationRequired extends Error {
+  constructor() {
+    super('exercise_energy_representation_required')
+  }
+}
+export function exerciseEnergyComplete(
+  workouts: readonly { estimated_kcal: unknown }[],
+  marker?: boolean,
+): boolean {
+  return (
+    marker !== false &&
+    workouts.every(
+      (w) =>
+        typeof w.estimated_kcal === 'number' &&
+        Number.isFinite(w.estimated_kcal) &&
+        w.estimated_kcal >= 0,
+    )
+  )
+}
+export function buildDailyState(input: DailyStateInput) {
+  if (!exerciseEnergyComplete(input.workouts, input.snapshot?.exerciseEnergyComplete))
+    throw new ExerciseEnergyRepresentationRequired()
+  return buildDailyStateNumbers(input)
+}
+/** Explicit v4 only. Food/protein/hydration and already consolidated block
+ * ledger remain independent; an unknown exercise never grows a food budget. */
+export function buildDailyStateWithEnergy(input: DailyStateInput) {
+  const day = buildDailyStateNumbers(input)
+  const complete = exerciseEnergyComplete(input.workouts, input.snapshot?.exerciseEnergyComplete)
+  const balanceKnown =
+    day.daily_balance_kcal !== null && (complete || day.daily_balance_includes_exercise === false)
+  return {
+    ...day,
+    calculation_version: 'bodyflow.daily-state.v4' as const,
+    exercise_kcal: complete ? day.exercise_kcal : null,
+    exercise_energy: complete
+      ? { status: 'available' as const }
+      : { status: 'unavailable' as const, reason: 'unknown_workout_energy' as const },
+    daily_balance_kcal: balanceKnown ? day.daily_balance_kcal : null,
+    daily_balance_reference_kcal: balanceKnown ? day.daily_balance_reference_kcal : null,
+    daily_balance_includes_exercise: balanceKnown ? day.daily_balance_includes_exercise : null,
+    daily_balance_energy: balanceKnown
+      ? { status: 'available' as const }
+      : {
+          status: 'unavailable' as const,
+          reason:
+            !complete && day.daily_balance_includes_exercise !== false
+              ? ('unknown_workout_energy' as const)
+              : ('target_unavailable' as const),
+        },
+  }
+}
+export type DailyStateWithEnergy = ReturnType<typeof buildDailyStateWithEnergy>

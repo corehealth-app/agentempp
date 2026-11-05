@@ -117,7 +117,7 @@ export const clinicalDayCloseEffectSchema = z.discriminatedUnion('kind', [
     .strict(),
 ])
 export type ClinicalDayCloseEffect = z.infer<typeof clinicalDayCloseEffectSchema>
-export const clinicalClosedResultSchema = z
+const clinicalLegacyClosedResultSchema = z
   .object({
     date: civilDate,
     closed: z.literal(true),
@@ -141,6 +141,27 @@ export const clinicalClosedResultSchema = z
       .strict(),
   })
   .strict()
+/** A new closed representation for an unavailable total. Old known receipts
+ * retain their exact shape and are parsed by the unchanged legacy branch. */
+export const clinicalUnknownEnergyClosedResultSchema = clinicalLegacyClosedResultSchema
+  .extend({
+    calculation_version: z.literal('bodyflow.day-close.v2'),
+    detail: clinicalLegacyClosedResultSchema.shape.detail
+      .extend({
+        exerciseCalories: z.null(),
+        exerciseEnergy: z
+          .object({ status: z.literal('unavailable'), reason: z.literal('unknown_workout_energy') })
+          .strict(),
+        blockCredit: z.literal(0),
+        blockCreditStatus: z.literal('preserved_unknown'),
+      })
+      .strict(),
+  })
+  .strict()
+export const clinicalClosedResultSchema = z.union([
+  clinicalLegacyClosedResultSchema,
+  clinicalUnknownEnergyClosedResultSchema,
+])
 export const clinicalResetResultSchema = z
   .object({
     kind: z.literal('applied'),

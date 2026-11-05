@@ -1,5 +1,5 @@
+import { accumulateBloco, creditDayToBloco } from '@mpp/core'
 import type { ServiceClient } from '@mpp/db'
-import { creditDayToBloco, accumulateBloco } from '@mpp/core'
 import { throwIfQueryFailed } from './query-error.js'
 
 export interface BlocoRecompute {
@@ -34,6 +34,7 @@ interface SnapRow {
   calories_consumed: number | null
   calories_target: number | null
   exercise_calories: number | null
+  exercise_energy_complete?: boolean
   daily_balance: number | null
   day_status: string | null
   training_done: boolean | null
@@ -79,7 +80,7 @@ export async function recomputeUserBloco(
   const { data: snaps, error: snapshotsError } = await supabase
     .from('daily_snapshots')
     .select(
-      'id, calories_consumed, calories_target, exercise_calories, daily_balance, day_status, training_done',
+      'id, calories_consumed, calories_target, exercise_calories, exercise_energy_complete, daily_balance, day_status, training_done',
     )
     .eq('user_id', userId)
     .eq('day_closed', true)
@@ -101,6 +102,8 @@ export async function recomputeUserBloco(
     }
   }
 
+  if (rows.some((s) => s.exercise_energy_complete === false))
+    throw new Error('incomplete_workout_energy')
   const credits = rows.map((s) => {
     const hasAct =
       (mealCounts[s.id] ?? 0) > 0 || (s.exercise_calories ?? 0) > 0 || !!s.training_done

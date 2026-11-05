@@ -1848,3 +1848,61 @@ describe('dry run', () => {
     expect(db.writes).toEqual([])
   })
 })
+
+it('withholds new energy credit for an unknown workout while preserving the approved XP and ledger', async () => {
+  const db = setup(RECOMP, { xp_total: 40, blocks_completed: 1, deficit_block: 321 })
+  day(db, '2026-10-04', { kcal: 1500, protein: 110, workout: 100 })
+  const workout = db.tables.workout_logs[0]
+  if (!workout || typeof workout.id !== 'string') throw new Error('Missing performed workout')
+  db.setWorkoutEnergy(workout.id, null)
+  const result = await closeLocalDay(db.client, {
+    userId: USER,
+    timezone: SAO_PAULO,
+    date: '2026-10-04',
+    now: sp('2026-10-05', '08:00'),
+  })
+  expect(result).toMatchObject({
+    calculation_version: 'bodyflow.day-close.v2',
+    detail: {
+      exerciseCalories: null,
+      exerciseEnergy: { status: 'unavailable', reason: 'unknown_workout_energy' },
+    },
+  })
+  expect(result.detail).toMatchObject({
+    blockCredit: 0,
+    xpEarned: 20,
+    progress: { xpTotal: 60, blocksCompleted: 1, deficitBlock: 321 },
+  })
+})
+
+it('preserves physical energy repair100 and complete coverage when it wins before the shared conditional write', async () => {
+  const db = setup(RECOMP, { xp_total: 40, blocks_completed: 1, deficit_block: 321 })
+  day(db, '2026-10-04', { kcal: 1500, protein: 110, workout: 100 })
+  const row = db.tables.workout_logs[0]
+  if (!row || typeof row.id !== 'string') throw new Error('Missing workout')
+  db.setWorkoutEnergy(row.id, null)
+  db.before = (operation) => {
+    if (operation.kind === 'update' && operation.target === 'daily_snapshots') {
+      db.before = null
+      db.setWorkoutEnergy(row.id as string, 100)
+    }
+  }
+  expect(
+    await closeLocalDay(db.client, {
+      userId: USER,
+      timezone: SAO_PAULO,
+      date: '2026-10-04',
+      now: sp('2026-10-05', '08:00'),
+    }),
+  ).toMatchObject({ closed: false, reason: 'changed_concurrently' })
+  expect(db.tables.workout_logs[0]?.estimated_kcal).toBe(100)
+  expect(db.snapshot(USER, '2026-10-04')).toMatchObject({
+    exercise_calories: 100,
+    exercise_energy_complete: true,
+    training_done: true,
+    day_closed: false,
+  })
+  expect(db.progress(USER)).toMatchObject({ xp_total: 40, blocks_completed: 1, deficit_block: 321 })
+  expect(db.operations.some((operation) => operation.kind === 'rpc')).toBe(false)
+  expect(db.events(USER)).toEqual([])
+})

@@ -93,7 +93,8 @@ export function resolveConversationWorkoutReport(original: CapturedConversationW
     )
       return question(source, 'activity')
     const selected = rows[0]
-    if (rows.length !== 1 || !selected) return question(source, 'activity')
+    if (rows.length !== 1 || !selected || selected.slug === 'outro')
+      return question(source, 'activity')
     const duration = match[1] === undefined ? null : Number(match[1])
     if (duration === null) {
       missingDuration = true

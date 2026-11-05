@@ -1235,6 +1235,7 @@ export type Database = {
           day_status: string
           deficit_accumulated: number
           exercise_calories: number
+          exercise_energy_complete: boolean
           fat_g: number
           gap_reminder_sent_at: string | null
           id: string
@@ -1261,6 +1262,7 @@ export type Database = {
           day_status?: string
           deficit_accumulated?: number
           exercise_calories?: number
+          exercise_energy_complete?: boolean
           fat_g?: number
           gap_reminder_sent_at?: string | null
           id?: string
@@ -1287,6 +1289,7 @@ export type Database = {
           day_status?: string
           deficit_accumulated?: number
           exercise_calories?: number
+          exercise_energy_complete?: boolean
           fat_g?: number
           gap_reminder_sent_at?: string | null
           id?: string

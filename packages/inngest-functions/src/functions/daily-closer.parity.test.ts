@@ -747,3 +747,254 @@ describe('declared divergence inside the window (RC F): a message-only day with 
     expect(shared.progress(USER)).toMatchObject({ xp_total: 10, current_streak: 1 })
   })
 })
+
+it('unknown workout energy holds credit in both closers while preserving existing training XP and prior block', async () => {
+  const f: Fixture = {
+    protocol: 'recomposicao',
+    progress: { xp_total: 40, blocks_completed: 1, deficit_block: 321 },
+    seed: (db) => {
+      meal(db, 'recomposicao', { kcal: 1500, protein: 110 })
+      workout(db, 'recomposicao', 100)
+      const row = db.tables.workout_logs[0]
+      if (!row || typeof row.id !== 'string') throw new Error('Missing performed workout')
+      db.setWorkoutEnergy(row.id, null)
+    },
+  }
+  const production = build(f),
+    shared = build(f)
+  await runProductionCloser(production)
+  clearCalcConfigCache()
+  const result = await closeLocalDay(shared.client, {
+    userId: USER,
+    timezone: TIMEZONE,
+    date: YESTERDAY,
+    now: new Date(),
+    advanceReevaluation: true,
+  })
+  expect(finalizeCalls(shared)).toEqual(finalizeCalls(production))
+  expect(result.detail).toMatchObject({ blockCredit: 0, xpEarned: 20 })
+  expect(production.progress(USER)).toMatchObject({
+    xp_total: 60,
+    blocks_completed: 1,
+    deficit_block: 321,
+  })
+  expect(shared.progress(USER)).toMatchObject({
+    xp_total: 60,
+    blocks_completed: 1,
+    deficit_block: 321,
+  })
+  expect(production.snapshot(USER, YESTERDAY)).toMatchObject({ exercise_energy_complete: false })
+  expect(
+    production.events(USER).find((e) => e.event === 'daily_closer.completed')?.properties,
+  ).toMatchObject({ exercise_calories: null, exercise_energy_complete: false })
+})
+
+it('does not replace stored unknown coverage with the new-timezone subset or add energy credit', async () => {
+  const f: Fixture = {
+    protocol: 'recomposicao',
+    progress: { xp_total: 40, blocks_completed: 1, deficit_block: 321 },
+    seed: (db) => {
+      meal(db, 'recomposicao', { kcal: 1500, protein: 110 })
+      db.registerWorkout({
+        userId: USER,
+        date: YESTERDAY,
+        performedAt: `${YESTERDAY}T01:00:00.000Z`,
+        kcal: 100,
+        caloriesTarget: TARGETS.recomposicao,
+        proteinTarget: 120,
+      })
+      const row = db.tables.workout_logs[0],
+        snapshot = db.snapshot(USER, YESTERDAY)
+      if (!row || !snapshot) throw new Error('Missing recorded UTC workout fixture')
+      if (typeof row.id !== 'string') throw new Error('Missing workout id')
+      db.setWorkoutEnergy(row.id, null)
+    },
+  }
+  const db = build(f)
+  await runProductionCloser(db)
+  expect(db.snapshot(USER, YESTERDAY)).toMatchObject({ exercise_energy_complete: false })
+  expect(db.progress(USER)).toMatchObject({ blocks_completed: 1, deficit_block: 321 })
+  const upsert = db.operations.find(
+    (op) => op.target === 'daily_snapshots' && (op.kind === 'upsert' || op.kind === 'update'),
+  )
+  expect(upsert).toBeDefined()
+  expect(upsert?.values).not.toMatchObject({ exercise_energy_complete: true })
+  expect(
+    db.events(USER).find((e) => e.event === 'daily_closer.completed')?.properties,
+  ).toMatchObject({ exercise_calories: null, exercise_energy_complete: false })
+})
+
+it('honors a stored unavailable witness even when this read sees no unknown row', async () => {
+  const f: Fixture = {
+    protocol: 'recomposicao',
+    progress: { blocks_completed: 1, deficit_block: 321 },
+    seed: (db) => {
+      meal(db, 'recomposicao', { kcal: 1500, protein: 110 })
+      const snapshot = db.tables.daily_snapshots.find(
+        (row) => row.user_id === USER && row.date === YESTERDAY,
+      )
+      if (!snapshot) throw new Error('Missing stored coverage witness')
+      snapshot.exercise_energy_complete = false
+    },
+  }
+  const db = build(f)
+  await runProductionCloser(db)
+  expect(db.snapshot(USER, YESTERDAY)).toMatchObject({ exercise_energy_complete: false })
+  expect(db.progress(USER)).toMatchObject({ blocks_completed: 1, deficit_block: 321 })
+})
+it('keeps the actual marker when a NULL row appears after the initial snapshot read', async () => {
+  const f: Fixture = {
+    protocol: 'recomposicao',
+    progress: { blocks_completed: 1, deficit_block: 321 },
+    seed: (db) => {
+      meal(db, 'recomposicao', { kcal: 1500, protein: 110 })
+      db.registerWorkout({
+        userId: USER,
+        date: YESTERDAY,
+        performedAt: `${YESTERDAY}T01:00:00Z`,
+        kcal: 100,
+        caloriesTarget: TARGETS.recomposicao,
+        proteinTarget: 120,
+      })
+    },
+  }
+  const db = build(f)
+  let changed = false
+  db.before = (operation) => {
+    if (!changed && operation.kind === 'select' && operation.target === 'workout_logs') {
+      changed = true
+      const row = db.tables.workout_logs[0]
+      if (!row || typeof row.id !== 'string') throw new Error('Missing recorded workout')
+      db.setWorkoutEnergy(row.id, null)
+    }
+  }
+  await runProductionCloser(db)
+  expect(changed).toBe(true)
+  expect(db.snapshot(USER, YESTERDAY)).toMatchObject({ exercise_energy_complete: false })
+  expect(db.progress(USER)).toMatchObject({ blocks_completed: 1, deficit_block: 321 })
+})
+it('never overwrites a concurrent correction restoring real complete coverage with stale false', async () => {
+  const f: Fixture = {
+    protocol: 'recomposicao',
+    progress: { blocks_completed: 1, deficit_block: 321 },
+    seed: (db) => {
+      meal(db, 'recomposicao', { kcal: 1500, protein: 110 })
+      workout(db, 'recomposicao', 100)
+      const row = db.tables.workout_logs[0]
+      if (!row || typeof row.id !== 'string') throw new Error('Missing recorded workout')
+      db.setWorkoutEnergy(row.id, null)
+    },
+  }
+  const db = build(f)
+  db.before = (operation) => {
+    if (
+      (operation.kind === 'upsert' || operation.kind === 'update') &&
+      operation.target === 'daily_snapshots'
+    ) {
+      db.before = null
+      const row = db.tables.workout_logs[0]
+      if (!row || typeof row.id !== 'string') throw new Error('Missing recorded workout')
+      db.setWorkoutEnergy(row.id, 100)
+    }
+  }
+  const summary = await runProductionCloser(db)
+  expect(db.tables.workout_logs[0]?.estimated_kcal).toBe(100)
+  expect(db.snapshot(USER, YESTERDAY)).toMatchObject({
+    exercise_calories: 100,
+    exercise_energy_complete: true,
+    training_done: true,
+    day_closed: false,
+  })
+  expect(summary).toMatchObject({ processed: 0, skipped: 1, failed: 0 })
+  expect(db.progress(USER)).toMatchObject({ blocks_completed: 1, deficit_block: 321 })
+  expect(finalizeCalls(db)).toEqual([])
+  expect(db.events(USER)).toEqual([])
+  const upsert = db.operations.find(
+    (op) => op.target === 'daily_snapshots' && (op.kind === 'upsert' || op.kind === 'update'),
+  )
+  expect(upsert?.values).not.toHaveProperty('exercise_energy_complete')
+})
+
+it('preserves a known anchored workout amount and existing training XP after the timezone changes', async () => {
+  const f: Fixture = {
+    protocol: 'recomposicao',
+    seed: (db) => {
+      meal(db, 'recomposicao', { kcal: 1500, protein: 110 })
+      db.registerWorkout({
+        userId: USER,
+        date: YESTERDAY,
+        performedAt: `${YESTERDAY}T01:00:00Z`,
+        kcal: 100,
+        caloriesTarget: TARGETS.recomposicao,
+        proteinTarget: 120,
+      })
+    },
+  }
+  const db = build(f)
+  await runProductionCloser(db)
+  expect(db.snapshot(USER, YESTERDAY)).toMatchObject({
+    exercise_calories: 100,
+    exercise_energy_complete: true,
+    training_done: true,
+    xp_earned: 20,
+  })
+})
+
+it.each([
+  'version',
+  'closed',
+] as const)('refuses a concurrent snapshot %s change without altering aggregates or effects', async (change) => {
+  const f: Fixture = {
+    protocol: 'recomposicao',
+    progress: { xp_total: 40, blocks_completed: 1, deficit_block: 321 },
+    seed: (db) => {
+      meal(db, 'recomposicao', { kcal: 1500, protein: 110 })
+      workout(db, 'recomposicao', 100)
+    },
+  }
+  const db = build(f)
+  let expected: MemoryRow | null = null
+  db.before = (operation) => {
+    if (
+      (operation.kind === 'update' || operation.kind === 'upsert') &&
+      operation.target === 'daily_snapshots'
+    ) {
+      db.before = null
+      const row = db.tables.daily_snapshots.find(
+        (row) => row.user_id === USER && row.date === YESTERDAY,
+      )
+      if (!row) throw new Error('Missing snapshot')
+      if (change === 'version') row.updated_at = db.timestamp()
+      else row.day_closed = true
+      expected = db.snapshot(USER, YESTERDAY)
+    }
+  }
+  expect(await runProductionCloser(db)).toMatchObject({ processed: 0, skipped: 1, failed: 0 })
+  expect(db.snapshot(USER, YESTERDAY)).toEqual(expected)
+  expect(db.progress(USER)).toMatchObject({ xp_total: 40, blocks_completed: 1, deficit_block: 321 })
+  expect(finalizeCalls(db)).toEqual([])
+  expect(db.events(USER)).toEqual([])
+})
+it('does not overwrite a workout snapshot that appears before the message-only insert', async () => {
+  const db = build({
+    protocol: 'recomposicao',
+    progress: { xp_total: 40, blocks_completed: 1, deficit_block: 321 },
+    seed: (db) => db.addInboundMessage(USER, local(YESTERDAY, '18:00')),
+  })
+  db.before = (operation) => {
+    if (operation.kind === 'upsert' && operation.target === 'daily_snapshots') {
+      db.before = null
+      workout(db, 'recomposicao', 100)
+    }
+  }
+  expect(await runProductionCloser(db)).toMatchObject({ processed: 0, skipped: 1, failed: 0 })
+  expect(db.snapshot(USER, YESTERDAY)).toMatchObject({
+    exercise_calories: 100,
+    exercise_energy_complete: true,
+    training_done: true,
+    day_closed: false,
+  })
+  expect(db.progress(USER)).toMatchObject({ xp_total: 40, blocks_completed: 1, deficit_block: 321 })
+  expect(finalizeCalls(db)).toEqual([])
+  expect(db.events(USER)).toEqual([])
+})

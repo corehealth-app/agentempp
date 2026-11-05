@@ -173,6 +173,10 @@ describe('dormant current Flow clinical composition', () => {
     value = await s.port.period('semana')
     expect(value.avgNetBalance).toBeNull()
     expect(value.avgConsumed).toBe(1000)
+    expect(value.avgProtein).toBe(50)
+    first.daily_balance = null
+    value = await s.port.period('semana')
+    expect(value).toMatchObject({ avgConsumed: 1000, avgProtein: 50, avgNetBalance: null })
     const h = setup('no_plan')
     expect((await h.port.period('mes')).avgNetBalance).toBeNull()
     expect(s.periodRows).toHaveBeenCalledWith(

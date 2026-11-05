@@ -1,5 +1,5 @@
-/** Dormant transport/receipt foundation only. No default SDK, public caller,
- * SQL installation or legacy UI confirmation is supplied. Rich mutation data
+/** Transport and durable receipt validation. No public caller or legacy UI
+ * confirmation is supplied. Rich mutation data
  * never acknowledges an effect; one actual same-identity read must prove it. */
 import { isDeepStrictEqual } from 'node:util'
 import { prepareRegistrationFeedbackV2 } from '@mpp/agent/registration-feedback-v2'
@@ -118,7 +118,8 @@ function preparedPin(source: CapturedConversationWorkoutSource, raw: unknown) {
   return workoutSnapshot(expected)
 }
 /** Full private projection plus real strength wire. Shape validation cannot
- * authenticate a fabricated SQL producer, so this module remains uncomposed. */
+ * authenticate a fabricated SQL producer; the backend supplies trusted transport
+ * and mandatory fresh scope observation. */
 export function parseConversationWorkoutEffect(
   rawSource: CapturedConversationWorkoutSource,
   rawPrepared: unknown,
@@ -344,3 +345,5 @@ export function createConversationWorkoutWriter(
       run(source, prepared, false),
   })
 }
+
+export { preparedPin as pinConversationWorkoutPreparation }

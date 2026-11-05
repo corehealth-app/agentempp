@@ -1325,3 +1325,46 @@ describe('clinical HTTP preflight and server-only composition', () => {
     expect(h.reads.today).not.toHaveBeenCalled()
   })
 })
+
+it('negotiates field availability explicitly and rejects malformed/duplicate requests before IO', () => {
+  const r = readClinicalRepresentation(`${url}&day_energy=field_availability_v1&days=7`)
+  expect(r.dayEnergyCompatible).toBe(true)
+  expect([...r.search.entries()]).toEqual([['days', '7']])
+  for (const suffix of [
+    'day_energy=x',
+    'day_energy=field_availability_v1&day_energy=field_availability_v1',
+  ])
+    expect(() => readClinicalRepresentation(`${url}&${suffix}`)).toThrow()
+})
+it('presents nullable exercise under v4 without masking independently proved food and prior ledger', async () => {
+  const h = setup()
+  const v4 = {
+    ...h.baseToday,
+    calculation_version: 'bodyflow.daily-state.v4' as const,
+    exercise_kcal: null,
+    exercise_energy: { status: 'unavailable' as const, reason: 'unknown_workout_energy' as const },
+    daily_balance_kcal: null,
+    daily_balance_reference_kcal: null,
+    daily_balance_includes_exercise: null,
+    daily_balance_energy: {
+      status: 'unavailable' as const,
+      reason: 'unknown_workout_energy' as const,
+    },
+  }
+  const todayWithEnergy = vi.fn(async () => v4)
+  const model = createCurrentClinicalReadModel(
+    h.client,
+    { capture: h.current },
+    { ...h.reads, todayWithEnergy },
+  )
+  const r = await model.todayWithEnergy(auth, `${url}&day_energy=field_availability_v1`)
+  expect(r).toMatchObject({
+    exercise_kcal: null,
+    exercise_energy: { status: 'unavailable' },
+    targets: { calories_kcal: 1900, protein_g: 130 },
+    remaining_food_kcal: 1250,
+    block_7700: { current_kcal: 300, completed_blocks: 2 },
+  })
+  expect(h.reads.today).not.toHaveBeenCalled()
+  await expect(model.todayWithEnergy(auth, url)).rejects.toMatchObject({ status: 400 })
+})

@@ -66,6 +66,7 @@ export function fixture() {
     fat_g: 4.75,
     daily_balance: -1845,
     exercise_calories: 100,
+    exercise_energy_complete: true,
     protein_target: 120,
     closed_at: null,
     created_at: now.toISOString(),

@@ -549,8 +549,36 @@ describe('authoritative Mobile API source surface', () => {
       ].sort(),
     )
     expect(constructions).toEqual(['URL'])
-    const scope = parse('conversation-meal-reply-scope.ts'),
-      journal = scope.statements.find(
+    // The reviewed extraction keeps the public aliases in the reply boundary
+    // and moves the same readonly Auth/clock observer into one shared module.
+    // Seal both modules; keep the original journal and inert-factory checks.
+    const facade = parse('conversation-meal-reply-scope.ts')
+    expect(createHash('sha256').update(facade.text).digest('hex')).toBe(
+      '9731da3c0ff8ad9eae1248aa1d3b6f0d9026aba200dc241b41adca410d7bf6e8',
+    )
+    const delegated = facade.statements.find(
+      (node): node is ts.ExportDeclaration =>
+        ts.isExportDeclaration(node) &&
+        node.moduleSpecifier !== undefined &&
+        ts.isStringLiteral(node.moduleSpecifier) &&
+        node.moduleSpecifier.text === './conversation-current-scope',
+    )
+    if (!delegated?.exportClause || !ts.isNamedExports(delegated.exportClause))
+      throw new Error('Missing qualified readonly Auth aliases')
+    expect(
+      delegated.exportClause.elements.map((node) => [
+        (node.propertyName ?? node.name).text,
+        node.name.text,
+      ]),
+    ).toEqual([
+      ['authenticateConversationPatientReadonly', 'authenticateConversationReplyPatient'],
+      ['createConversationReadonlyAuth', 'createConversationMealReplyReadonlyAuth'],
+    ])
+    const scope = parse('conversation-current-scope.ts')
+    expect(createHash('sha256').update(scope.text).digest('hex')).toBe(
+      'e00e2c5367834cee2640cf57db5979eadbad3a786732c915e7801d4e454097c1',
+    )
+    const journal = scope.statements.find(
         (node): node is ts.ImportDeclaration =>
           ts.isImportDeclaration(node) &&
           ts.isStringLiteral(node.moduleSpecifier) &&

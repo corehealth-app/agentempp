@@ -37,14 +37,16 @@ import Testing
         }
       }
     }
-    @Test func dayShowsTwoLegitimateConsumedRegistrationsAndASeparatePrescription() async throws {
+    @Test func dayContentShowsTwoLegitimateConsumedRegistrationsAndASeparatePrescription()
+      async throws
+    {
       let snapshot = try NutritionWindowFixture().snapshot()
       let model = NutritionWindowModel(
         provider: NutritionRenderingProvider(value: snapshot),
         expectedAuthUserID: snapshot.authUserID)
       await model.load(revision: 0)
       let host = SignUpRenderingProbe.host(
-        NutritionWindowRootView(model: model, revision: 0, isSelected: false)
+        NutritionWindowContentView(model: model, revision: 0)
           .environment(\.locale, Locale(identifier: "pt_BR")), width: 390, height: 2400)
       defer { host.detach() }
       let nodes = host.nodes()
@@ -62,7 +64,7 @@ import Testing
       #expect(nodes.contains { $0.label.contains("Metas do dia indisponíveis") })
       #expect(!nodes.contains { $0.identifier.contains("meal.edit") })
     }
-    @Test func weekShowsSevenOfficialDaysAndConfirmedEmptyTotals() async throws {
+    @Test func weekContentShowsSevenOfficialDaysAndConfirmedEmptyTotals() async throws {
       let snapshot = try NutritionWindowFixture().snapshot()
       let model = NutritionWindowModel(
         provider: NutritionRenderingProvider(value: snapshot),
@@ -70,7 +72,7 @@ import Testing
       await model.load(revision: 0)
       model.period = .week
       let host = SignUpRenderingProbe.host(
-        NutritionWindowRootView(model: model, revision: 0, isSelected: false)
+        NutritionWindowContentView(model: model, revision: 0)
           .environment(\.locale, Locale(identifier: "pt_BR")), width: 390, height: 7000)
       defer { host.detach() }
       let nodes = host.nodes()
@@ -84,14 +86,33 @@ import Testing
       #expect(
         monday.label.contains("0 kcal") && monday.label.contains("Metas do dia indisponíveis"))
     }
-    @Test func unavailableScopeShowsNoCachedNutritionFacts() async throws {
+    @Test func fullRootKeepsTheSameWeekContentInsideARealScrollableViewport() async throws {
+      let snapshot = try NutritionWindowFixture().snapshot()
+      let model = NutritionWindowModel(
+        provider: NutritionRenderingProvider(value: snapshot),
+        expectedAuthUserID: snapshot.authUserID)
+      await model.load(revision: 0)
+      model.period = .week
+      let host = SignUpRenderingProbe.host(
+        NutritionWindowRootView(model: model, revision: 0, isSelected: false)
+          .environment(\.locale, Locale(identifier: "pt_BR")), width: 390, height: 800)
+      defer { host.detach() }
+      let scroll = try #require(
+        host.scrollViews().first {
+          $0.bounds.height > 0 && $0.contentSize.height > $0.bounds.height
+        })
+      #expect(scroll.isScrollEnabled && scroll.contentSize.width > 0)
+      #expect(host.geometry().isMounted)
+      #expect(model.snapshot?.sourceVersion == snapshot.sourceVersion)
+    }
+    @Test func unavailableContentShowsNoCachedNutritionFacts() async throws {
       let snapshot = try NutritionWindowFixture().snapshot()
       let model = NutritionWindowModel(
         provider: NutritionRenderingProvider(value: snapshot),
         expectedAuthUserID: snapshot.authUserID, isCurrent: { false })
       await model.load(revision: 0)
       let host = SignUpRenderingProbe.host(
-        NutritionWindowRootView(model: model, revision: 0, isSelected: false)
+        NutritionWindowContentView(model: model, revision: 0)
           .environment(\.locale, Locale(identifier: "pt_BR")), width: 390, height: 1200)
       defer { host.detach() }
       let nodes = host.nodes()

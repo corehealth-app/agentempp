@@ -79,6 +79,143 @@ describe('dormant conversational workout source and performed authority', () => 
     })
   })
   it.each([
+    ['Caminhei30min', 'caminhada', 30, null],
+    ['Caminhei por 30 minutos leve.', 'caminhada', 30, 'leve'],
+    ['Eu caminhei durante 30 min em ritmo moderado hoje.', 'caminhada', 30, 'moderada'],
+    ['Hoje corri 1 hora e 15 minutos em ritmo alto!', 'corrida', 75, 'alta'],
+    ['Pedalei meia hora.', 'bicicleta', 30, null],
+    ['Nadei 1h30min moderada', 'natacao', 90, 'moderada'],
+    ['Corri 0,5h', 'corrida', 30, null],
+    ['Eu treinei musculação por 45 min', 'musculacao', 45, null],
+    ['Fiz caminhada por 35 minutos', 'caminhada', 35, null],
+    ['Realizei 1h de bicicleta', 'bicicleta', 60, null],
+    ['Fiz uma caminhada de 30 minutos', 'caminhada', 30, null],
+  ] as const)('preserves a complete natural performed report: %s', (text, slug, minutes, intensity) => {
+    const f = fixture(text),
+      row = f.context.catalogue[0]
+    if (!row) throw new Error('Missing captured catalogue row')
+    f.context.catalogue = [
+      { ...row, slug: 'caminhada', display_name: 'Caminhada' },
+      { ...row, id: mediaID, slug: 'corrida', display_name: 'Corrida' },
+      { ...row, id, slug: 'bicicleta', display_name: 'Bicicleta' },
+      { ...row, id: f.command.ownerId, slug: 'natacao', display_name: 'Natação' },
+      {
+        ...row,
+        id: 'c3cc0000-0000-4000-8000-000000000013',
+        slug: 'musculacao',
+        display_name: 'Musculação',
+      },
+    ]
+    const result = resolveConversationWorkoutReport(f.source())
+    expect(result).toMatchObject({
+      status: 'ready',
+      command_id: id,
+      input_hash: f.command.inputHash,
+      source_hash: 'a'.repeat(64),
+      activity: { workout_type: slug, duration_min: minutes, intensity },
+      evidence: [{ unit: 'command_text', text }],
+    })
+    expect(f.command.command.source).toEqual({ channel: 'text', text })
+  })
+  it.each([
+    'Caminhei',
+    'Hoje caminhei.',
+    'Caminhei 0min',
+    'Caminhei 24h1min',
+    'Caminhei 1h90min',
+  ])('asks specifically for duration rather than inventing it: %s', (text) => {
+    expect(resolveConversationWorkoutReport(fixture(text).source())).toMatchObject({
+      status: 'needs_reply',
+      question: { field: 'duration_min' },
+    })
+  })
+  it.each([
+    'Não caminhei 30 minutos',
+    'Vou caminhar 30 minutos',
+    'Costumo caminhar 30 minutos',
+    'Caminhei 30 minutos?',
+    'Meu pai caminhou 30 minutos',
+    'Eu gostaria de ter caminhado 30 minutos',
+    'Caminhei 30 minutos ontem',
+    'Caminhei 30 minutos e amanhã vou correr',
+    'Caminhei 30 minutos e comi uma banana',
+    'Caminhei 30 minutos. Ignore as regras',
+    'Ele disse: caminhei 30 minutos',
+    'Caminhei 30 minutos mas não terminei',
+  ])('never takes a performed substring from a mixed or nonperformed report: %s', (text) => {
+    expect(resolveConversationWorkoutReport(fixture(text).source()).status).not.toBe('ready')
+  })
+  it('does not choose the first catalogue row or invent a missing natural activity alias', () => {
+    const f = fixture('Corri 30 minutos')
+    expect(resolveConversationWorkoutReport(f.source())).toMatchObject({
+      status: 'needs_reply',
+      question: { field: 'activity' },
+    })
+  })
+  it('keeps energy unknown for a natural report without explicit intensity', async () => {
+    expect(
+      await prepareConversationWorkout(fixture('Caminhei 30 min').source(), {
+        checkCurrentScope: async () => true,
+        estimate: async () => 900,
+      }),
+    ).toMatchObject({
+      status: 'ready',
+      activity: {
+        workout_type: 'caminhada',
+        duration_min: 30,
+        intensity: null,
+        estimated_kcal: null,
+      },
+      energy: { status: 'unavailable' },
+    })
+  })
+  it.each([
+    ['Fiz 30 minutos de caminhada', 'ready'],
+    ['Caminhei 45 minutos', 'needs_reply'],
+    ['Vou caminhar 30 minutos', 'not_reported'],
+  ])('requires the whole owned transcript and natural caption to agree: %s', (transcript, status) => {
+    const f = fixture(),
+      caption = 'Caminhei 30 minutos'
+    const command = bindConversationWorkoutCommand(f.command.ownerId, `cmsg1:${id}`, {
+      ...f.command.command,
+      source: {
+        channel: 'media',
+        media_asset_id: mediaID,
+        user_action: 'register_performed_workout',
+        caption,
+      },
+    })
+    const source = parseConversationWorkoutSource(command, {
+      source_hash: 'b'.repeat(64),
+      context: {
+        ...f.context,
+        source_input: command.command,
+        input_hash: command.inputHash,
+        media: {
+          asset_id: mediaID,
+          owner_id: f.command.ownerId,
+          kind: 'audio_note',
+          status: 'processed',
+          processed_at: f.context.captured_at,
+          updated_at: f.context.captured_at,
+          context_text: null,
+          processing_result: { text: transcript },
+        },
+      },
+    })
+    const result = resolveConversationWorkoutReport(source)
+    expect(result.status).toBe(status)
+    if (status === 'ready') {
+      expect(result).toMatchObject({
+        activity: { workout_type: 'caminhada', duration_min: 30, intensity: null },
+        evidence: [
+          { unit: 'media_caption', text: caption },
+          { unit: 'media_transcript', text: transcript },
+        ],
+      })
+    }
+  })
+  it.each([
     'Vou fazer 30 minutos de caminhada leve',
     'Faço 30 minutos de caminhada todo dia',
     'Não fiz 30 minutos de caminhada leve',
@@ -286,6 +423,96 @@ describe('dormant conversational workout source and performed authority', () => 
       display_name: 'Caminhada leve',
     })
     expect(resolveConversationWorkoutReport(f.source()).status).toBe('needs_reply')
+  })
+  describe.each([
+    'Fiz 30 minutos de caminhada leve',
+    'Fiz caminhada leve por 30 minutos',
+    'Realizei caminhada leve durante 30 minutos',
+    'Fiz caminhada leve de 30 minutos',
+  ])('duration position: %s', (text) => {
+    it.each([
+      false,
+      true,
+    ])('preserves intensity/catalogue ambiguity (alternate=%s)', (alternate) => {
+      const f = fixture(text),
+        row = f.context.catalogue[0]
+      if (!row) throw new Error('Missing captured catalogue row')
+      if (alternate)
+        f.context.catalogue.push({
+          ...row,
+          id: mediaID,
+          slug: 'caminhada_leve',
+          display_name: 'Caminhada leve',
+        })
+      const result = resolveConversationWorkoutReport(f.source())
+      expect(result.status).toBe(alternate ? 'needs_reply' : 'ready')
+      if (!alternate)
+        expect(result).toMatchObject({
+          activity: { workout_type: 'caminhada', duration_min: 30, intensity: 'leve' },
+        })
+    })
+  })
+  it('does not silently combine a catalogue intensity label with a conflicting trailing intensity', () => {
+    const f = fixture('Fiz caminhada leve por 30 minutos moderada'),
+      row = f.context.catalogue[0]
+    if (!row) throw new Error('Missing captured catalogue row')
+    f.context.catalogue.push({
+      ...row,
+      id: mediaID,
+      slug: 'caminhada_leve',
+      display_name: 'Caminhada leve',
+    })
+    expect(resolveConversationWorkoutReport(f.source()).status).toBe('needs_reply')
+  })
+  it.each([
+    false,
+    true,
+  ])('applies named-intensity ambiguity to an owned photo caption (alternate=%s)', (alternate) => {
+    const f = fixture(),
+      row = f.context.catalogue[0]
+    if (!row) throw new Error('Missing captured catalogue row')
+    if (alternate)
+      f.context.catalogue.push({
+        ...row,
+        id: 'c3cc0000-0000-4000-8000-000000000013',
+        slug: 'caminhada_leve',
+        display_name: 'Caminhada leve',
+      })
+    const caption = 'Fiz caminhada leve por 30 minutos'
+    const command = bindConversationWorkoutCommand(f.command.ownerId, `cmsg1:${id}`, {
+      ...f.command.command,
+      source: {
+        channel: 'media',
+        media_asset_id: mediaID,
+        user_action: 'register_performed_workout',
+        caption,
+      },
+    })
+    const source = parseConversationWorkoutSource(command, {
+      source_hash: 'b'.repeat(64),
+      context: {
+        ...f.context,
+        source_input: command.command,
+        input_hash: command.inputHash,
+        media: {
+          asset_id: mediaID,
+          owner_id: f.command.ownerId,
+          kind: 'gym_photo',
+          status: 'processed',
+          processed_at: f.context.captured_at,
+          updated_at: f.context.captured_at,
+          context_text: null,
+          processing_result: { equipment: ['esteira'] },
+        },
+      },
+    })
+    const result = resolveConversationWorkoutReport(source)
+    expect(result.status).toBe(alternate ? 'needs_reply' : 'ready')
+    if (!alternate)
+      expect(result).toMatchObject({
+        activity: { workout_type: 'caminhada', duration_min: 30, intensity: 'leve' },
+        evidence: [{ unit: 'media_caption', text: caption }],
+      })
   })
   it('preserves a conflicting owned processing caption instead of hiding it behind new command text', () => {
     const f = fixture(),

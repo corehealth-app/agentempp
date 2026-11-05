@@ -54,9 +54,88 @@ function question(source: CapturedConversationWorkoutSource, field: 'duration_mi
 }
 const forbidden =
   /\?|\b(?:nao|nunca|amanha|ontem|sempre|costumo|faco|fazia|farei|faria|vou|iria|se|sonh\w*|pai|mae|ele|ela|voce|voces|todos|toda|todo|semanalmente|diariamente)\b/u
-/** This first increment handles one complete literal performed clause, not a
- * generic NLP promise. Future interpreter evidence must preserve this guard's
- * complete-source requirement before any atomic writer is composed. */
+const durationPattern =
+  '(?:\\d{1,4}\\s*(?:minutos?|min)|\\d{1,2}(?:[.,]\\d{1,2})?\\s*(?:horas?|h)(?:\\s*(?:e\\s+)?\\d{1,2}\\s*(?:minutos?|min)?)?|meia hora)'
+const durationOnly = new RegExp(`^${durationPattern}$`, 'u')
+function durationMinutes(text: string): number | null {
+  if (text === 'meia hora') return 30
+  const minutes = /^(\d{1,4})\s*(?:minutos?|min)$/u.exec(text)
+  if (minutes) return Number(minutes[1])
+  const hours =
+    /^(\d{1,2})(?:[.,](\d{1,2}))?\s*(?:horas?|h)(?:\s*(?:e\s+)?(\d{1,2})\s*(?:minutos?|min)?)?$/u.exec(
+      text,
+    )
+  if (!hours) return null
+  const fraction = hours[2] ?? '',
+    scale = 10 ** fraction.length,
+    extra = Number(hours[3] ?? 0),
+    total = ((Number(hours[1]) * scale + Number(fraction)) * 60) / scale + extra
+  return extra < 60 && Number.isInteger(total) ? total : null
+}
+interface PerformedClause {
+  name: string
+  duration: number | null
+  intensity: Intensity | null
+  intensityLabel: string | null
+}
+const intensitySuffix = /(?: em ritmo| com intensidade)? (leve|moderad[oa]|alt[oa])$/u
+function intensityForLabel(label: string | null): Intensity | null {
+  if (label === null) return null
+  if (label === 'leve') return 'leve'
+  return label.startsWith('moderad') ? 'moderada' : 'alta'
+}
+/** Closed complete clauses only. These aliases identify an activity, never a
+ * rate, intensity, weight or calorie default. The captured catalogue must still
+ * resolve the name uniquely. All other discourse stays unresolved. */
+function performedClause(original: string): PerformedClause | null {
+  let text = original.replace(/[.!]$/u, '').trim()
+  if (text.startsWith('hoje ')) text = text.slice(5)
+  if (text.endsWith(' hoje')) text = text.slice(0, -5)
+  const explicit = intensitySuffix.exec(text),
+    label = explicit?.[1] ?? null,
+    intensity = intensityForLabel(label)
+  if (explicit) text = text.slice(0, explicit.index)
+  const natural = /^(?:eu )?(caminhei|corri|pedalei|nadei)(?:\s+|(?=\d)|$)(.*)$/u.exec(text)
+  if (natural) {
+    const names: Record<string, string> = {
+      caminhei: 'caminhada',
+      corri: 'corrida',
+      pedalei: 'bicicleta',
+      nadei: 'natacao',
+    }
+    const tail = (natural[2] ?? '').replace(/^(?:por|durante) /u, ''),
+      name = names[natural[1] ?? '']
+    if (!name || (tail !== '' && !durationOnly.test(tail))) return null
+    return {
+      name,
+      duration: tail === '' ? null : durationMinutes(tail),
+      intensity,
+      intensityLabel: label,
+    }
+  }
+  const literal = /^(?:eu )?(?:fiz|realizei|pratiquei|treinei) (.+)$/u.exec(text)
+  if (!literal?.[1]) return null
+  const prefix = new RegExp(`^(${durationPattern}) de ([\\p{L} _-]+)$`, 'u').exec(literal[1]),
+    suffix = new RegExp(`^([\\p{L} _-]+?) (?:por |durante |de )?(${durationPattern})$`, 'u').exec(
+      literal[1],
+    ),
+    name = (prefix?.[2] ?? suffix?.[1] ?? literal[1]).replace(/^(?:um|uma) /u, ''),
+    duration = prefix?.[1] ?? suffix?.[2],
+    embedded = intensitySuffix.exec(name),
+    resolvedLabel = label ?? embedded?.[1] ?? null
+  if (!/^[\p{L} _-]+$/u.test(name)) return null
+  // A duration after the activity must not turn its intensity adjective into
+  // a different catalogue identity. Repeated/conflicting labels stay unresolved.
+  if (embedded && label !== null) return null
+  return {
+    name: embedded ? name.slice(0, embedded.index) : name,
+    duration: duration === undefined ? null : durationMinutes(duration),
+    intensity: intensityForLabel(resolvedLabel),
+    intensityLabel: resolvedLabel,
+  }
+}
+/** Every owned source unit must independently describe the same completed
+ * activity. This is not permission to dispatch from an unsealed generic intake. */
 export function resolveConversationWorkoutReport(original: CapturedConversationWorkoutSource) {
   const source = pinned(original),
     evidence: { unit: string; text: string }[] = []
@@ -71,12 +150,9 @@ export function resolveConversationWorkoutReport(original: CapturedConversationW
         status: 'not_reported' as const,
         reason: 'non_performed_or_conflicting_source' as const,
       })
-    const match =
-      /^(?:eu )?(?:fiz|realizei) (?:(\d{1,4}) (?:min|minuto|minutos) de )?([\p{L} _-]+?)(?: (leve|moderada|alta))?[.!]?$/u.exec(
-        text,
-      )
-    if (!match) return question(source, 'activity')
-    const name = match[2] ?? '',
+    const clause = performedClause(text)
+    if (!clause) return question(source, 'activity')
+    const name = clause.name,
       rows = source.context.catalogue.filter(
         (row) =>
           normalize(row.slug.replace(/_/gu, ' ')) === name || normalize(row.display_name) === name,
@@ -84,18 +160,20 @@ export function resolveConversationWorkoutReport(original: CapturedConversationW
     // A real catalogue label may contain an intensity word. Preserve ambiguity
     // instead of silently choosing a different slug/rate.
     if (
-      match[3] &&
-      source.context.catalogue.some(
-        (row) =>
-          normalize(row.slug.replace(/_/gu, ' ')) === `${name} ${match[3]}` ||
-          normalize(row.display_name) === `${name} ${match[3]}`,
+      clause.intensityLabel &&
+      source.context.catalogue.some((row) =>
+        [clause.intensityLabel, clause.intensity].some(
+          (word) =>
+            normalize(row.slug.replace(/_/gu, ' ')) === `${name} ${word}` ||
+            normalize(row.display_name) === `${name} ${word}`,
+        ),
       )
     )
       return question(source, 'activity')
     const selected = rows[0]
     if (rows.length !== 1 || !selected || selected.slug === 'outro')
       return question(source, 'activity')
-    const duration = match[1] === undefined ? null : Number(match[1])
+    const duration = clause.duration
     if (duration === null) {
       missingDuration = true
       continue
@@ -104,7 +182,7 @@ export function resolveConversationWorkoutReport(original: CapturedConversationW
     const next: Activity = {
       workout_type: selected.slug,
       duration_min: duration,
-      intensity: (match[3] as Intensity | undefined) ?? null,
+      intensity: clause.intensity,
     }
     if (activity && !isDeepStrictEqual(next, activity)) return question(source, 'activity')
     activity = next

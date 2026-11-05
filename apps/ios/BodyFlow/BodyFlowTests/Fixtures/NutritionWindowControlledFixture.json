@@ -1,0 +1,246 @@
+{
+  "provenance": "Controlled synthetic projection of actual nutrition-window service; not a live HTTP/SQL/provider capture",
+  "window": {
+    "schema": "nutrition.window.v1",
+    "auth_user_id": "a2222222-2222-4222-8222-222222222222",
+    "owner_id": "a1111111-1111-4111-8111-111111111111",
+    "epoch": "a3333333-3333-4333-8333-333333333333",
+    "timezone": "America/Sao_Paulo",
+    "current_local_date": "2026-11-04",
+    "selected_local_date": "2026-11-04",
+    "week_start": "2026-11-02",
+    "week_end": "2026-11-08",
+    "observed_at": "2026-11-04T15:00:00.000000Z",
+    "source_version": "6fe0e3d084e841d0be9ed985ee2049e2a715405ecf0c8abb758efa986ba58750",
+    "completeness": "complete",
+    "clinical_policy": {
+      "version": 1,
+      "observed_at": "2026-11-04T15:00:00.000000Z",
+      "assessment": "complete",
+      "recording_allowed": true,
+      "pause_weight_loss_guidance": false,
+      "professional_assessment_recommended": false,
+      "phase_selection_pending": false,
+      "target_source": "official_only",
+      "hide": {
+        "objective": false,
+        "calories": false,
+        "protein": false,
+        "balance": false,
+        "block": false,
+        "budget": false
+      }
+    },
+    "days": [
+      {
+        "local_date": "2026-11-02",
+        "day_closed": null,
+        "day_version": null,
+        "meals": [],
+        "totals": {
+          "source": "empty_confirmed_set",
+          "kcal": 0,
+          "protein_g": 0,
+          "carbs_g": 0,
+          "fat_g": 0
+        },
+        "targets": {
+          "source": "unavailable",
+          "calories_kcal": null,
+          "protein_g": null
+        },
+        "planned": {
+          "status": "available",
+          "meals": [],
+          "unavailable_prescription_ids": []
+        }
+      },
+      {
+        "local_date": "2026-11-03",
+        "day_closed": null,
+        "day_version": null,
+        "meals": [],
+        "totals": {
+          "source": "empty_confirmed_set",
+          "kcal": 0,
+          "protein_g": 0,
+          "carbs_g": 0,
+          "fat_g": 0
+        },
+        "targets": {
+          "source": "unavailable",
+          "calories_kcal": null,
+          "protein_g": null
+        },
+        "planned": {
+          "status": "available",
+          "meals": [],
+          "unavailable_prescription_ids": []
+        }
+      },
+      {
+        "local_date": "2026-11-04",
+        "day_closed": false,
+        "day_version": "2026-11-04T15:00:00.000000Z",
+        "meals": [
+          {
+            "id": "a4444444-4444-4444-8444-444444444444",
+            "registration_key": "7eefdc01687528714da18afec2e1b7d58d47ae449c3ae63d30451d3398f6f171",
+            "meal_type": "almoco",
+            "food_name": "Arroz branco cozido",
+            "quantity_g": 150,
+            "kcal": 192.45,
+            "protein_g": 3.78,
+            "carbs_g": 42.09,
+            "fat_g": 0.345,
+            "consumed_at": "2026-11-04T15:00:00.000000Z",
+            "nutrition_source": "canonical_fuzzy"
+          },
+          {
+            "id": "a7777777-7777-4777-8777-777777777777",
+            "registration_key": "fb032028d979139a93a90ac13dfc48fbade318f8220ae0d9df9c749bff612cab",
+            "meal_type": "almoco",
+            "food_name": "Arroz branco cozido",
+            "quantity_g": 150,
+            "kcal": 192.45,
+            "protein_g": 3.78,
+            "carbs_g": 42.09,
+            "fat_g": 0.345,
+            "consumed_at": "2026-11-04T15:00:00.000000Z",
+            "nutrition_source": "canonical_fuzzy"
+          }
+        ],
+        "totals": {
+          "source": "daily_snapshot",
+          "kcal": 385,
+          "protein_g": 7.56,
+          "carbs_g": 84.18,
+          "fat_g": 0.69
+        },
+        "targets": {
+          "source": "daily_snapshot",
+          "calories_kcal": null,
+          "protein_g": null
+        },
+        "planned": {
+          "status": "available",
+          "meals": [
+            {
+              "meal_type": "almoco",
+              "day_of_week": 3,
+              "items": [
+                {
+                  "food_name": "Feijão cozido",
+                  "quantity_g": 100,
+                  "kcal": 76,
+                  "protein_g": 4.8,
+                  "carbs_g": 13.6,
+                  "fat_g": 0.5
+                }
+              ],
+              "total_kcal": 76,
+              "total_protein_g": 4.8,
+              "id": "a6666666-6666-4666-8666-666666666666/0",
+              "prescription_id": "a6666666-6666-4666-8666-666666666666",
+              "generated_at": "2026-11-02T03:00:00.000000Z",
+              "valid_until": "2026-11-09T03:00:00.000000Z"
+            }
+          ],
+          "unavailable_prescription_ids": []
+        }
+      },
+      {
+        "local_date": "2026-11-05",
+        "day_closed": null,
+        "day_version": null,
+        "meals": [],
+        "totals": {
+          "source": "empty_confirmed_set",
+          "kcal": 0,
+          "protein_g": 0,
+          "carbs_g": 0,
+          "fat_g": 0
+        },
+        "targets": {
+          "source": "unavailable",
+          "calories_kcal": null,
+          "protein_g": null
+        },
+        "planned": {
+          "status": "available",
+          "meals": [],
+          "unavailable_prescription_ids": []
+        }
+      },
+      {
+        "local_date": "2026-11-06",
+        "day_closed": null,
+        "day_version": null,
+        "meals": [],
+        "totals": {
+          "source": "empty_confirmed_set",
+          "kcal": 0,
+          "protein_g": 0,
+          "carbs_g": 0,
+          "fat_g": 0
+        },
+        "targets": {
+          "source": "unavailable",
+          "calories_kcal": null,
+          "protein_g": null
+        },
+        "planned": {
+          "status": "available",
+          "meals": [],
+          "unavailable_prescription_ids": []
+        }
+      },
+      {
+        "local_date": "2026-11-07",
+        "day_closed": null,
+        "day_version": null,
+        "meals": [],
+        "totals": {
+          "source": "empty_confirmed_set",
+          "kcal": 0,
+          "protein_g": 0,
+          "carbs_g": 0,
+          "fat_g": 0
+        },
+        "targets": {
+          "source": "unavailable",
+          "calories_kcal": null,
+          "protein_g": null
+        },
+        "planned": {
+          "status": "available",
+          "meals": [],
+          "unavailable_prescription_ids": []
+        }
+      },
+      {
+        "local_date": "2026-11-08",
+        "day_closed": null,
+        "day_version": null,
+        "meals": [],
+        "totals": {
+          "source": "empty_confirmed_set",
+          "kcal": 0,
+          "protein_g": 0,
+          "carbs_g": 0,
+          "fat_g": 0
+        },
+        "targets": {
+          "source": "unavailable",
+          "calories_kcal": null,
+          "protein_g": null
+        },
+        "planned": {
+          "status": "available",
+          "meals": [],
+          "unavailable_prescription_ids": []
+        }
+      }
+    ]
+  }
+}

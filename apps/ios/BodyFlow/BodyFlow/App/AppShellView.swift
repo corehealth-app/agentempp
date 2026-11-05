@@ -9,6 +9,7 @@ struct AppShellView: View {
     @State private var mealRecordSessions: MealRecordShellSessionCoordinator
     @State private var todayViewModel: TodayViewModel
     @State private var planViewModel: PlanViewModel
+    @State private var nutritionViewModel: NutritionWindowModel
     @State private var progressViewModel: ProgressViewModel
     @State private var historyViewModel: HistoryViewModel
     @State private var historyCoordinator: HistoryFeatureCoordinator
@@ -103,6 +104,10 @@ struct AppShellView: View {
         _planViewModel = State(
             initialValue: PlanViewModel(provider: sessionOwner.plan)
         )
+        _nutritionViewModel = State(initialValue: NutritionWindowModel(provider: sessionOwner.nutrition,
+            expectedAuthUserID: UUID(uuidString: userID), isCurrent: { [weak sessionOwner] in
+                sessionOwner?.isInvalidated == false
+            }))
         _progressViewModel = State(
             initialValue: ProgressViewModel(provider: sessionOwner.progress)
         )
@@ -663,7 +668,8 @@ struct AppShellView: View {
             }
             else { FlowChatView(model: flowChatModel, allowsSending: false) }
         case .plan:
-            ConversationalPlanRootView(model: planViewModel, tab: .plan, scope: .nutrition, selectedTab: tabSelection)
+            NutritionWindowRootView(model: nutritionViewModel,
+                revision: invalidationCenter.revision(for: .today), isSelected: selectedTab == .plan)
         case .register:
             ConversationalPlanRootView(model: planViewModel, tab: .register, scope: .training, selectedTab: tabSelection)
         case .progress:

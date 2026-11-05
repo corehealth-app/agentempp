@@ -116,7 +116,7 @@ import {
 } from '@mpp/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearCalcConfigCache, loadCalcConfig } from '../calc-config-loader.js'
-import { loadOfficialDailyState } from '../daily-state-service.js'
+import { loadOfficialDailyState, loadOfficialDailyStateWithEnergy } from '../daily-state-service.js'
 import type { PipelineDeps } from '../pipeline.js'
 import { processAuthenticatedMessage } from '../pipeline.js'
 import { resetRouterFlagCacheForTests } from '../router-flag.js'
@@ -410,6 +410,10 @@ function dayRow(s: Scenario): Row {
     carbs_g: 47.32,
     fat_g: 10.27,
     exercise_calories: s.exercise,
+    // Historical numbers are read through the CURRENT SQL row shape, not a
+    // pre-DDL wire receipt. The coverage column is NOT NULL DEFAULT true;
+    // owned NULL workouts backfill false and are exercised separately below.
+    exercise_energy_complete: true,
     water_consumed_ml: 500,
     // The generated column, as the database computes it (unchanged).
     daily_balance: s.consumed - s.target - s.exercise,
@@ -426,7 +430,13 @@ function dayRow(s: Scenario): Row {
 
 function harness(
   s: Scenario,
-  options: { text?: string; script?: ScriptedStep[]; config?: Row[] } = {},
+  options: {
+    text?: string
+    script?: ScriptedStep[]
+    config?: Row[]
+    workouts?: Row[]
+    scalarCoverage?: boolean
+  } = {},
 ): Harness {
   const day = dayRow(s)
   const text = options.text ?? 'Mostre meu progresso recente.'
@@ -477,10 +487,18 @@ function harness(
         if (read.filters.day_closed === true) return []
         if (read.filters.date !== s.date) return null
         // The app reads the day with its logs embedded; none are needed here.
-        if (read.columns.includes('meal_logs(')) return { ...day, meal_logs: [], workout_logs: [] }
+        if (read.columns.includes('meal_logs('))
+          return { ...day, meal_logs: [], workout_logs: options.workouts ?? [] }
         if (read.columns.trim() === '*') return day
         return Object.fromEntries(
-          read.columns.split(',').map((key) => [key.trim(), day[key.trim()] ?? null]),
+          read.columns
+            .split(',')
+            .map((key) => [
+              key.trim(),
+              key.trim() === 'exercise_energy_complete' && options.scalarCoverage !== undefined
+                ? options.scalarCoverage
+                : (day[key.trim()] ?? null),
+            ]),
         )
       }
       case 'global_config':
@@ -575,9 +593,8 @@ function harness(
   return { deps: { supabase, llm, maxToolIterations: 3 }, inserts, llmCalls }
 }
 
-/** GET /today: the real service, with the real calc-config loader. */
-function today(s: Scenario, h: Harness = harness(s)) {
-  return loadOfficialDailyState(h.deps.supabase, USER_ID, TIMEZONE, new Date(s.now), {
+function dailyReadDependencies() {
+  return {
     loadConfig: loadCalcConfig,
     // The meal pattern is not part of the balance.
     loadMealPattern: async () => ({
@@ -588,7 +605,26 @@ function today(s: Scenario, h: Harness = harness(s)) {
       fallbackUsed: false,
     }),
     loadSkippedMeals: async () => new Set<'cafe' | 'almoco' | 'lanche' | 'jantar' | 'ceia'>(),
-  })
+  }
+}
+/** GET /today: the real service, with the real calc-config loader. */
+function today(s: Scenario, h: Harness = harness(s)) {
+  return loadOfficialDailyState(
+    h.deps.supabase,
+    USER_ID,
+    TIMEZONE,
+    new Date(s.now),
+    dailyReadDependencies(),
+  )
+}
+function todayWithEnergy(s: Scenario, h: Harness) {
+  return loadOfficialDailyStateWithEnergy(
+    h.deps.supabase,
+    USER_ID,
+    TIMEZONE,
+    new Date(s.now),
+    dailyReadDependencies(),
+  )
 }
 
 function flow(s: Scenario, h: Harness, text = 'Mostre meu progresso recente.') {
@@ -1473,10 +1509,12 @@ describe('review 2026-10-04 — closed day whose row carries another protocol th
     expect(state.daily_balance_reference_kcal).toBe(2343)
     expect(state.daily_balance_includes_exercise).toBe(true)
     // Historical energy stays official; today's objective controls C3 visibility.
-    expect(balanceLine(await flowContext(s))).toBe(expenditureLine(s).replace(
-      'o crédito no bloco 7700 só acontece no fechamento do dia',
-      '[referência interna omitida]',
-    ))
+    expect(balanceLine(await flowContext(s))).toBe(
+      expenditureLine(s).replace(
+        'o crédito no bloco 7700 só acontece no fechamento do dia',
+        '[referência interna omitida]',
+      ),
+    )
     expect(await flowTool(s)).toMatchObject({
       gasto_de_referencia_kcal: 2343,
       balanco_do_dia_com_exercicio_kcal: -832,
@@ -1624,5 +1662,81 @@ describe('review 2026-10-04 — the multiplier of the calc config', () => {
       gasto_de_referencia_kcal: 2666,
       balanco_do_dia_sem_exercicio_kcal: 134,
     })
+  })
+})
+
+describe('current SQL coverage metadata over the historical balance scenarios', () => {
+  it.each([
+    { name: 'known positive', kcal: 42, storedKnownSum: 42, marker: true, complete: true },
+    { name: 'known zero', kcal: 0, storedKnownSum: 0, marker: true, complete: true },
+    {
+      name: 'actual NULL with the backfilled false marker',
+      kcal: null,
+      storedKnownSum: 0,
+      marker: false,
+      complete: false,
+    },
+    {
+      name: 'saved false witness with a known observed subset',
+      kcal: 0,
+      storedKnownSum: 0,
+      marker: false,
+      complete: false,
+    },
+    {
+      name: 'actual NULL cannot be overridden by a true marker',
+      kcal: null,
+      storedKnownSum: 0,
+      marker: true,
+      complete: false,
+    },
+  ])('keeps $name distinct without changing official food or consolidated progress', async ({
+    kcal,
+    storedKnownSum,
+    marker,
+    complete,
+  }) => {
+    // SQL keeps the numeric known partial sum separately; an actual NULL log
+    // is still NULL, and the public value below must remain unavailable.
+    const scenario: Scenario = {
+      ...RECOMP_19_05,
+      exercise: storedKnownSum,
+      row: { exercise_energy_complete: marker },
+    }
+    const h = harness(scenario, {
+      workouts: [
+        {
+          id: 'coverage-workout',
+          workout_type: 'caminhada',
+          duration_min: 30,
+          estimated_kcal: kcal,
+          intensity: null,
+          performed_at: scenario.now,
+        },
+      ],
+    })
+    const day = await todayWithEnergy(scenario, h)
+    expect(day.exercise_kcal).toBe(complete ? kcal : null)
+    expect(day.exercise_energy).toEqual(
+      complete
+        ? { status: 'available' }
+        : { status: 'unavailable', reason: 'unknown_workout_energy' },
+    )
+    expect(day.consumed.calories_kcal).toBe(scenario.consumed)
+    expect(day.consumed.protein_g).toBe(59.03)
+    expect(day.food_excess_kcal).toBe(scenario.foodExcess)
+    expect(day.block_7700.current_kcal).toBe(scenario.block)
+    if (complete) expect((await today(scenario, h)).exercise_kcal).toBe(kcal)
+    else {
+      expect(day.daily_balance_kcal).toBeNull()
+      await expect(today(scenario, h)).rejects.toThrow('exercise_energy_representation_required')
+    }
+    expect(h.inserts).toEqual([])
+  })
+  it('still refuses a marker-only change between the embedded source and scalar latch', async () => {
+    const h = harness(RECOMP_19_05, { scalarCoverage: false })
+    await expect(today(RECOMP_19_05, h)).rejects.toThrow('daily state consistency failed')
+    await expect(todayWithEnergy(RECOMP_19_05, h)).rejects.toThrow('daily state consistency failed')
+    expect(h.inserts).toEqual([])
   })
 })

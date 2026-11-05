@@ -200,7 +200,7 @@ function certifySharedModule(file: string, marker: string, expectedHash: string)
     ts.forEachChild(node, visit)
   }
   visit(source)
-  expect(bodies, `one complete unchanged ${marker} module`).toHaveLength(1)
+  expect(bodies, `one complete qualified ${marker} module`).toHaveLength(1)
   expect(
     createHash('sha256')
       .update(bodies[0] ?? '')
@@ -209,15 +209,16 @@ function certifySharedModule(file: string, marker: string, expectedHash: string)
 }
 
 function certifiedClinicalPolicySelectorCopies(): string[] {
-  // Query validation moved away from the historical project selector; the
-  // photo chunk still co-locates the two unchanged modules.
+  // The query selector now also validates the closed day_energy opt-in.
+  // Both full module copies must match that reviewed additive parser; the
+  // photo chunk still co-locates it with the unchanged project selector.
   const copies = semanticChunks(['invalid_clinical_policy_representation'])
   expect(copies).toHaveLength(2)
   for (const file of copies)
     certifySharedModule(
       file,
       'invalid_clinical_policy_representation',
-      '41c7168d26dd5810aaecb7cb941e6141f4203a5eb1a49396b32772c91330e29f',
+      'b544bf4ddfa7a5a941baaa9527fc43835826b73036df3cfea287fe5541411547',
     )
   return copies
 }
@@ -1575,10 +1576,12 @@ describe('authoritative Mobile API source surface', () => {
             ]),
           ].sort(),
         )
+        // The reviewed reader now negotiates Today v4 field availability;
+        // certify its complete module while retaining all global scans.
         certifySharedModule(
           chunk,
           'clinical_client_update_required',
-          '3db7d0c2422f27a6ea42823b287f21185acb6b3661804db5d41eb197b1f2fb6c',
+          '5b0a2553a7042b12554aebdc1e7d10a15150229326a28336a89ea86703d0a61e',
         )
         certifySharedModule(
           chunk,

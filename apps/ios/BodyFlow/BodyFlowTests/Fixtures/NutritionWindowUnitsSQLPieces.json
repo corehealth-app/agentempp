@@ -1,0 +1,308 @@
+{
+  "pieces": [
+    {
+      "food": "legacy",
+      "stage": "original",
+      "observation": {
+        "items": [
+          {
+            "meal": {
+              "id": "1b2944d3-b962-4961-8f7d-34ed4b816285",
+              "kcal": 130.04,
+              "fat_g": 0.21,
+              "source": "user_kcal",
+              "carbs_g": 28.21,
+              "user_id": "7aec1c88-00dd-44e9-a075-e39f75431eac",
+              "food_name": "arroz sintetico",
+              "meal_type": "almoco",
+              "protein_g": 2.31,
+              "quantity_g": 100.0,
+              "consumed_at": "2026-11-05T00:28:50.928565+00:00",
+              "snapshot_id": "684ad1b1-735f-4d98-bbf2-247132a2d424",
+              "raw_provider_message_id": "conversation.meal/7aec1c88-00dd-44e9-a075-e39f75431eac/17e5158d-4922-4a9a-a638-a87366594196"
+            },
+            "binding": {
+              "revision": 0,
+              "command_id": "17e5158d-4922-4a9a-a638-a87366594196",
+              "group_version": "722fdc11e99778f6a104a334552ddaad45a7dbb0f7c6c2004dae9101c5d4095e"
+            },
+            "display_quantity": null
+          }
+        ],
+        "schema": "nutrition.window-units.v1",
+        "owner_id": "7aec1c88-00dd-44e9-a075-e39f75431eac"
+      }
+    },
+    {
+      "food": "milk",
+      "stage": "original",
+      "observation": {
+        "items": [
+          {
+            "meal": {
+              "id": "0e26bb00-8864-428c-b2ac-cd3eba2f1d57",
+              "kcal": 120.0,
+              "fat_g": 2.0,
+              "source": "user_kcal",
+              "carbs_g": 10.0,
+              "user_id": "df2364b1-d7a5-43af-b897-6b0d30dd836a",
+              "food_name": "leite",
+              "meal_type": "almoco",
+              "protein_g": 10.0,
+              "quantity_g": 206.0,
+              "consumed_at": "2026-11-05T00:28:50.603922+00:00",
+              "snapshot_id": "6da2d113-aea8-4b1e-b188-487fd2b836ab",
+              "raw_provider_message_id": "conversation.meal/df2364b1-d7a5-43af-b897-6b0d30dd836a/075b982a-6a03-47d0-b927-1cf6592d9a9a"
+            },
+            "binding": {
+              "revision": 0,
+              "command_id": "075b982a-6a03-47d0-b927-1cf6592d9a9a",
+              "group_version": "858eff18afbe8ca3e2811c74fcca2cca8789be84d5d33fda090aef2dcc655111"
+            },
+            "display_quantity": {
+              "unit": "mL",
+              "value": 200,
+              "estimated": false,
+              "reference": {
+                "unit": "mL",
+                "value": 200,
+                "quantity_g": 206.0,
+                "quantity_basis": "portion_reference",
+                "original_log_id": "0e26bb00-8864-428c-b2ac-cd3eba2f1d57"
+              },
+              "provenance": "sealed_original"
+            }
+          }
+        ],
+        "schema": "nutrition.window-units.v1",
+        "owner_id": "df2364b1-d7a5-43af-b897-6b0d30dd836a"
+      }
+    },
+    {
+      "food": "milk",
+      "stage": "saved",
+      "observation": {
+        "items": [
+          {
+            "meal": {
+              "id": "4b38b987-55a1-4b88-90c7-98f5de278ffb",
+              "kcal": 240.0,
+              "fat_g": 4.0,
+              "source": "user_kcal",
+              "carbs_g": 20.0,
+              "user_id": "df2364b1-d7a5-43af-b897-6b0d30dd836a",
+              "food_name": "leite",
+              "meal_type": "almoco",
+              "protein_g": 20.0,
+              "quantity_g": 412.0,
+              "consumed_at": "2026-11-05T00:28:50.603922+00:00",
+              "snapshot_id": "6da2d113-aea8-4b1e-b188-487fd2b836ab",
+              "raw_provider_message_id": "conversation.meal/df2364b1-d7a5-43af-b897-6b0d30dd836a/075b982a-6a03-47d0-b927-1cf6592d9a9a"
+            },
+            "binding": {
+              "revision": 1,
+              "command_id": "075b982a-6a03-47d0-b927-1cf6592d9a9a",
+              "group_version": "44dd2ea25ff937cec83e24daa2ac96b7207481f829c9eddaca35f5fb725e211e"
+            },
+            "display_quantity": {
+              "unit": "mL",
+              "value": 400.0,
+              "estimated": true,
+              "reference": {
+                "unit": "mL",
+                "value": 200,
+                "quantity_g": 206.0,
+                "quantity_basis": "portion_reference",
+                "original_log_id": "0e26bb00-8864-428c-b2ac-cd3eba2f1d57"
+              },
+              "provenance": "audited_same_food_scale"
+            }
+          }
+        ],
+        "schema": "nutrition.window-units.v1",
+        "owner_id": "df2364b1-d7a5-43af-b897-6b0d30dd836a"
+      }
+    },
+    {
+      "food": "milk",
+      "stage": "undone",
+      "observation": {
+        "items": [
+          {
+            "meal": {
+              "id": "7cd0bb28-b0e7-4580-ac4b-6d540527980d",
+              "kcal": 120.0,
+              "fat_g": 2.0,
+              "source": "user_kcal",
+              "carbs_g": 10.0,
+              "user_id": "df2364b1-d7a5-43af-b897-6b0d30dd836a",
+              "food_name": "leite",
+              "meal_type": "almoco",
+              "protein_g": 10.0,
+              "quantity_g": 206.0,
+              "consumed_at": "2026-11-05T00:28:50.603922+00:00",
+              "snapshot_id": "6da2d113-aea8-4b1e-b188-487fd2b836ab",
+              "raw_provider_message_id": "conversation.meal/df2364b1-d7a5-43af-b897-6b0d30dd836a/075b982a-6a03-47d0-b927-1cf6592d9a9a"
+            },
+            "binding": {
+              "revision": 2,
+              "command_id": "075b982a-6a03-47d0-b927-1cf6592d9a9a",
+              "group_version": "a60dfdfcfb7dc505106c39859fc97a68ad4f40c1978821b980806557b339947f"
+            },
+            "display_quantity": {
+              "unit": "mL",
+              "value": 200,
+              "estimated": false,
+              "reference": {
+                "unit": "mL",
+                "value": 200,
+                "quantity_g": 206.0,
+                "quantity_basis": "portion_reference",
+                "original_log_id": "0e26bb00-8864-428c-b2ac-cd3eba2f1d57"
+              },
+              "provenance": "audited_restore"
+            }
+          }
+        ],
+        "schema": "nutrition.window-units.v1",
+        "owner_id": "df2364b1-d7a5-43af-b897-6b0d30dd836a"
+      }
+    },
+    {
+      "food": "whey",
+      "stage": "original",
+      "observation": {
+        "items": [
+          {
+            "meal": {
+              "id": "770de50b-2981-468e-87a8-1fd66c6c95a7",
+              "kcal": 120.0,
+              "fat_g": 2.0,
+              "source": "user_kcal",
+              "carbs_g": 10.0,
+              "user_id": "064e8126-06e7-47f1-b35e-37bb3ded4444",
+              "food_name": "whey",
+              "meal_type": "almoco",
+              "protein_g": 10.0,
+              "quantity_g": 30.0,
+              "consumed_at": "2026-11-05T00:28:50.779465+00:00",
+              "snapshot_id": "e62d068d-c195-4a43-a8fc-cf9b495c085c",
+              "raw_provider_message_id": "conversation.meal/064e8126-06e7-47f1-b35e-37bb3ded4444/a133cbce-66ca-41f7-b46d-d53df6bafa2c"
+            },
+            "binding": {
+              "revision": 0,
+              "command_id": "a133cbce-66ca-41f7-b46d-d53df6bafa2c",
+              "group_version": "efca18b52007f049664d724c4e3f91099e5cba66d74442ddd14bffbb2d38ad05"
+            },
+            "display_quantity": {
+              "unit": "scoop",
+              "value": 1,
+              "estimated": false,
+              "reference": {
+                "unit": "scoop",
+                "value": 1,
+                "quantity_g": 30.0,
+                "quantity_basis": "portion_reference",
+                "original_log_id": "770de50b-2981-468e-87a8-1fd66c6c95a7"
+              },
+              "provenance": "sealed_original"
+            }
+          }
+        ],
+        "schema": "nutrition.window-units.v1",
+        "owner_id": "064e8126-06e7-47f1-b35e-37bb3ded4444"
+      }
+    },
+    {
+      "food": "whey",
+      "stage": "saved",
+      "observation": {
+        "items": [
+          {
+            "meal": {
+              "id": "f13e6192-945e-439f-9c63-6fa611a72af9",
+              "kcal": 160.0,
+              "fat_g": 2.67,
+              "source": "user_kcal",
+              "carbs_g": 13.33,
+              "user_id": "064e8126-06e7-47f1-b35e-37bb3ded4444",
+              "food_name": "whey",
+              "meal_type": "almoco",
+              "protein_g": 13.33,
+              "quantity_g": 40.0,
+              "consumed_at": "2026-11-05T00:28:50.779465+00:00",
+              "snapshot_id": "e62d068d-c195-4a43-a8fc-cf9b495c085c",
+              "raw_provider_message_id": "conversation.meal/064e8126-06e7-47f1-b35e-37bb3ded4444/a133cbce-66ca-41f7-b46d-d53df6bafa2c"
+            },
+            "binding": {
+              "revision": 1,
+              "command_id": "a133cbce-66ca-41f7-b46d-d53df6bafa2c",
+              "group_version": "308ddaf963651ecf03c92b6963b845fca488fd08dfa0eb988d5e434638ff77da"
+            },
+            "display_quantity": {
+              "unit": "scoop",
+              "value": 1.333333,
+              "estimated": true,
+              "reference": {
+                "unit": "scoop",
+                "value": 1,
+                "quantity_g": 30.0,
+                "quantity_basis": "portion_reference",
+                "original_log_id": "770de50b-2981-468e-87a8-1fd66c6c95a7"
+              },
+              "provenance": "audited_same_food_scale"
+            }
+          }
+        ],
+        "schema": "nutrition.window-units.v1",
+        "owner_id": "064e8126-06e7-47f1-b35e-37bb3ded4444"
+      }
+    },
+    {
+      "food": "whey",
+      "stage": "undone",
+      "observation": {
+        "items": [
+          {
+            "meal": {
+              "id": "e0890ab7-aaa2-4612-a5d6-763dbb311bab",
+              "kcal": 120.0,
+              "fat_g": 2.0,
+              "source": "user_kcal",
+              "carbs_g": 10.0,
+              "user_id": "064e8126-06e7-47f1-b35e-37bb3ded4444",
+              "food_name": "whey",
+              "meal_type": "almoco",
+              "protein_g": 10.0,
+              "quantity_g": 30.0,
+              "consumed_at": "2026-11-05T00:28:50.779465+00:00",
+              "snapshot_id": "e62d068d-c195-4a43-a8fc-cf9b495c085c",
+              "raw_provider_message_id": "conversation.meal/064e8126-06e7-47f1-b35e-37bb3ded4444/a133cbce-66ca-41f7-b46d-d53df6bafa2c"
+            },
+            "binding": {
+              "revision": 2,
+              "command_id": "a133cbce-66ca-41f7-b46d-d53df6bafa2c",
+              "group_version": "ab4d08b5aceebd0fc5ee622f97a06efc560ab06759ab43766eecb50db1ec59a9"
+            },
+            "display_quantity": {
+              "unit": "scoop",
+              "value": 1,
+              "estimated": false,
+              "reference": {
+                "unit": "scoop",
+                "value": 1,
+                "quantity_g": 30.0,
+                "quantity_basis": "portion_reference",
+                "original_log_id": "770de50b-2981-468e-87a8-1fd66c6c95a7"
+              },
+              "provenance": "audited_restore"
+            }
+          }
+        ],
+        "schema": "nutrition.window-units.v1",
+        "owner_id": "064e8126-06e7-47f1-b35e-37bb3ded4444"
+      }
+    }
+  ],
+  "provenance": "Actual readonly RPC pieces under controlled rollback-only SQL fixture; not HTTP/provider"
+}

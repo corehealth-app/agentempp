@@ -10,6 +10,20 @@ struct CurrentClinicalReaderSession: Sendable {
     let progress: any ProgressProviding
     let me: any MeProviding
     let currentObjective: any CurrentObjectiveProviding
+    let nutrition: (any NutritionWindowProviding)?
+
+    init(userID: String, today: any TodayProviding, history: any HistoryProviding,
+         plan: any PlanProviding, progress: any ProgressProviding, me: any MeProviding,
+         currentObjective: any CurrentObjectiveProviding, nutrition: (any NutritionWindowProviding)? = nil) {
+        self.userID = userID
+        self.today = today
+        self.history = history
+        self.plan = plan
+        self.progress = progress
+        self.me = me
+        self.currentObjective = currentObjective
+        self.nutrition = nutrition
+    }
 }
 
 struct CurrentClinicalReaderSessionFactory: Sendable {
@@ -30,7 +44,8 @@ struct CurrentClinicalReaderSessionFactory: Sendable {
                     MobileAPITransport.planResponseBodyLimit), clinicalRepresentation: .currentV1),
                 progress: reads, me: reads,
                 currentObjective: MobileCurrentObjectiveRepository(transport: scoped,
-                    clinicalRepresentation: .currentV1))
+                    clinicalRepresentation: .currentV1),
+                nutrition: try await MobileNutritionWindowRepository.scoped(transport: scoped, lifecycle: lifecycle, lease: lease))
             try await lifecycle.validate(lease)
             try Task.checkCancellation()
             return session

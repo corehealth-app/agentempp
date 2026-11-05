@@ -86,18 +86,23 @@ struct CurrentClinicalReaderSessionTests {
         let owner = try #require(coordinator.renderableOwner)
         await owner.awaitPatientTimeZoneResolution()
         let objective = try #require(owner.currentObjective)
+        let nutritionReference = NutritionWindowReadReference(try NutritionWindowFixture().snapshot())
         await #expect(throws: ClinicalReaderProbeFailure.called) { _ = try await owner.today.today() }
         await #expect(throws: ClinicalReaderProbeFailure.called) { _ = try await owner.plan.plan() }
+        await #expect(throws: ClinicalReaderProbeFailure.called) { _ = try await owner.nutrition.nutritionWindow(date: nil) }
+        await #expect(throws: ClinicalReaderProbeFailure.called) { _ = try await owner.nutrition.rebindNutritionWindow(nutritionReference, date: nil) }
         await #expect(throws: ClinicalReaderProbeFailure.called) { _ = try await owner.history.history(.firstPage) }
         await #expect(throws: ClinicalReaderProbeFailure.called) { _ = try await owner.progress.progress() }
         await #expect(throws: ClinicalReaderProbeFailure.called) { _ = try await owner.progress.profileWeight() }
         await #expect(throws: ClinicalReaderProbeFailure.called) { _ = try await owner.progress.trends(days: 7) }
         await #expect(throws: ClinicalReaderProbeFailure.called) { _ = try await objective.currentObjective() }
-        #expect(Set(await probe.calls) == ["me", "today", "plan", "history", "progress", "profile", "trends", "objective"])
+        #expect(Set(await probe.calls) == ["me", "today", "plan", "nutrition", "nutrition-rebind", "history", "progress", "profile", "trends", "objective"])
         let before = await probe.calls
         await coordinator.transition(to: nil)
         await #expect(throws: CancellationError.self) { _ = try await owner.today.today() }
         await #expect(throws: CancellationError.self) { _ = try await owner.plan.plan() }
+        await #expect(throws: CancellationError.self) { _ = try await owner.nutrition.nutritionWindow(date: nil) }
+        await #expect(throws: CancellationError.self) { _ = try await owner.nutrition.rebindNutritionWindow(nutritionReference, date: nil) }
         await #expect(throws: CancellationError.self) { _ = try await owner.history.history(.firstPage) }
         await #expect(throws: CancellationError.self) { _ = try await owner.progress.progress() }
         await #expect(throws: CancellationError.self) { _ = try await objective.currentObjective() }
@@ -143,7 +148,7 @@ struct CurrentClinicalReaderSessionTests {
 
     nonisolated private static func bundle(userID: String, probe: ClinicalShellReadProbe) -> CurrentClinicalReaderSession {
         .init(userID: userID, today: probe, history: probe, plan: probe,
-              progress: probe, me: probe, currentObjective: probe)
+              progress: probe, me: probe, currentObjective: probe, nutrition: probe)
     }
 }
 
@@ -163,10 +168,12 @@ private actor ClinicalReaderBindHold {
 }
 private enum ClinicalReaderProbeFailure: Error { case called }
 private actor ClinicalShellReadProbe: TodayProviding, HistoryProviding, PlanProviding,
-    ProgressProviding, MeProviding, CurrentObjectiveProviding {
+    ProgressProviding, MeProviding, CurrentObjectiveProviding, NutritionWindowProviding {
     private(set) var calls: [String] = []
     func today() async throws -> TodayResponse { calls.append("today"); throw ClinicalReaderProbeFailure.called }
     func history(_ query: HistoryQuery) async throws -> HistoryResponse { calls.append("history"); throw ClinicalReaderProbeFailure.called }
+    func rebindNutritionWindow(_ reference: NutritionWindowReadReference, date: String?) async throws -> NutritionWindowSnapshot { calls.append("nutrition-rebind"); throw ClinicalReaderProbeFailure.called }
+    func nutritionWindow(date: String?) async throws -> NutritionWindowSnapshot { calls.append("nutrition"); throw ClinicalReaderProbeFailure.called }
     func plan() async throws -> PlanResponse { calls.append("plan"); throw ClinicalReaderProbeFailure.called }
     func progress() async throws -> ProgressResponse { calls.append("progress"); throw ClinicalReaderProbeFailure.called }
     func profileWeight() async throws -> ProfileWeightResponse? { calls.append("profile"); throw ClinicalReaderProbeFailure.called }

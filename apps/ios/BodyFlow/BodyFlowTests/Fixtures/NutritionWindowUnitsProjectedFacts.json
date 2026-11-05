@@ -1,0 +1,204 @@
+{
+  "provenance": "Exact actual nutrition RPC pieces through actual public meal projector; no HTTP/day/Auth/clinical claim",
+  "sql_pieces_sha256": "140b2633e83046a0102d608237c2d0f1d6467e25bced17f0334e4d0b00dfd376",
+  "records": [
+    {
+      "food": "legacy",
+      "stage": "original",
+      "meal": {
+        "id": "1b2944d3-b962-4961-8f7d-34ed4b816285",
+        "registration_key": "e2187ed428d935d0855fe771ed291cca769be7e14fe234b79f53e1034aceadfa",
+        "meal_type": "almoco",
+        "food_name": "arroz sintetico",
+        "quantity_g": 100,
+        "display_quantity": null,
+        "kcal": 130.04,
+        "protein_g": 2.31,
+        "carbs_g": 28.21,
+        "fat_g": 0.21,
+        "consumed_at": "2026-11-05T00:28:50.928565+00:00",
+        "nutrition_source": "user_kcal"
+      }
+    },
+    {
+      "food": "milk",
+      "stage": "original",
+      "meal": {
+        "id": "0e26bb00-8864-428c-b2ac-cd3eba2f1d57",
+        "registration_key": "1bedacdf7648711de930338b5b22d33f0ef6fc85d69e7a2eb06ba5d848a52ec1",
+        "meal_type": "almoco",
+        "food_name": "leite",
+        "quantity_g": 206,
+        "display_quantity": {
+          "value": 200,
+          "unit": "mL",
+          "estimated": false,
+          "provenance": "sealed_original",
+          "reference": {
+            "original_log_id": "0e26bb00-8864-428c-b2ac-cd3eba2f1d57",
+            "value": 200,
+            "unit": "mL",
+            "quantity_g": 206,
+            "quantity_basis": "portion_reference"
+          }
+        },
+        "kcal": 120,
+        "protein_g": 10,
+        "carbs_g": 10,
+        "fat_g": 2,
+        "consumed_at": "2026-11-05T00:28:50.603922+00:00",
+        "nutrition_source": "user_kcal"
+      }
+    },
+    {
+      "food": "milk",
+      "stage": "saved",
+      "meal": {
+        "id": "4b38b987-55a1-4b88-90c7-98f5de278ffb",
+        "registration_key": "1bedacdf7648711de930338b5b22d33f0ef6fc85d69e7a2eb06ba5d848a52ec1",
+        "meal_type": "almoco",
+        "food_name": "leite",
+        "quantity_g": 412,
+        "display_quantity": {
+          "value": 400,
+          "unit": "mL",
+          "estimated": true,
+          "provenance": "audited_same_food_scale",
+          "reference": {
+            "original_log_id": "0e26bb00-8864-428c-b2ac-cd3eba2f1d57",
+            "value": 200,
+            "unit": "mL",
+            "quantity_g": 206,
+            "quantity_basis": "portion_reference"
+          }
+        },
+        "kcal": 240,
+        "protein_g": 20,
+        "carbs_g": 20,
+        "fat_g": 4,
+        "consumed_at": "2026-11-05T00:28:50.603922+00:00",
+        "nutrition_source": "user_kcal"
+      }
+    },
+    {
+      "food": "milk",
+      "stage": "undone",
+      "meal": {
+        "id": "7cd0bb28-b0e7-4580-ac4b-6d540527980d",
+        "registration_key": "1bedacdf7648711de930338b5b22d33f0ef6fc85d69e7a2eb06ba5d848a52ec1",
+        "meal_type": "almoco",
+        "food_name": "leite",
+        "quantity_g": 206,
+        "display_quantity": {
+          "value": 200,
+          "unit": "mL",
+          "estimated": false,
+          "provenance": "audited_restore",
+          "reference": {
+            "original_log_id": "0e26bb00-8864-428c-b2ac-cd3eba2f1d57",
+            "value": 200,
+            "unit": "mL",
+            "quantity_g": 206,
+            "quantity_basis": "portion_reference"
+          }
+        },
+        "kcal": 120,
+        "protein_g": 10,
+        "carbs_g": 10,
+        "fat_g": 2,
+        "consumed_at": "2026-11-05T00:28:50.603922+00:00",
+        "nutrition_source": "user_kcal"
+      }
+    },
+    {
+      "food": "whey",
+      "stage": "original",
+      "meal": {
+        "id": "770de50b-2981-468e-87a8-1fd66c6c95a7",
+        "registration_key": "abd27914783016aa7ac26d75c8aaf596a658552dcac75e9bcef01b2eea72941b",
+        "meal_type": "almoco",
+        "food_name": "whey",
+        "quantity_g": 30,
+        "display_quantity": {
+          "value": 1,
+          "unit": "scoop",
+          "estimated": false,
+          "provenance": "sealed_original",
+          "reference": {
+            "original_log_id": "770de50b-2981-468e-87a8-1fd66c6c95a7",
+            "value": 1,
+            "unit": "scoop",
+            "quantity_g": 30,
+            "quantity_basis": "portion_reference"
+          }
+        },
+        "kcal": 120,
+        "protein_g": 10,
+        "carbs_g": 10,
+        "fat_g": 2,
+        "consumed_at": "2026-11-05T00:28:50.779465+00:00",
+        "nutrition_source": "user_kcal"
+      }
+    },
+    {
+      "food": "whey",
+      "stage": "saved",
+      "meal": {
+        "id": "f13e6192-945e-439f-9c63-6fa611a72af9",
+        "registration_key": "abd27914783016aa7ac26d75c8aaf596a658552dcac75e9bcef01b2eea72941b",
+        "meal_type": "almoco",
+        "food_name": "whey",
+        "quantity_g": 40,
+        "display_quantity": {
+          "value": 1.333333,
+          "unit": "scoop",
+          "estimated": true,
+          "provenance": "audited_same_food_scale",
+          "reference": {
+            "original_log_id": "770de50b-2981-468e-87a8-1fd66c6c95a7",
+            "value": 1,
+            "unit": "scoop",
+            "quantity_g": 30,
+            "quantity_basis": "portion_reference"
+          }
+        },
+        "kcal": 160,
+        "protein_g": 13.33,
+        "carbs_g": 13.33,
+        "fat_g": 2.67,
+        "consumed_at": "2026-11-05T00:28:50.779465+00:00",
+        "nutrition_source": "user_kcal"
+      }
+    },
+    {
+      "food": "whey",
+      "stage": "undone",
+      "meal": {
+        "id": "e0890ab7-aaa2-4612-a5d6-763dbb311bab",
+        "registration_key": "abd27914783016aa7ac26d75c8aaf596a658552dcac75e9bcef01b2eea72941b",
+        "meal_type": "almoco",
+        "food_name": "whey",
+        "quantity_g": 30,
+        "display_quantity": {
+          "value": 1,
+          "unit": "scoop",
+          "estimated": false,
+          "provenance": "audited_restore",
+          "reference": {
+            "original_log_id": "770de50b-2981-468e-87a8-1fd66c6c95a7",
+            "value": 1,
+            "unit": "scoop",
+            "quantity_g": 30,
+            "quantity_basis": "portion_reference"
+          }
+        },
+        "kcal": 120,
+        "protein_g": 10,
+        "carbs_g": 10,
+        "fat_g": 2,
+        "consumed_at": "2026-11-05T00:28:50.779465+00:00",
+        "nutrition_source": "user_kcal"
+      }
+    }
+  ]
+}

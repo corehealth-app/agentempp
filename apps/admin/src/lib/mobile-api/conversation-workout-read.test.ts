@@ -278,6 +278,16 @@ function readerSetup() {
 }
 
 describe('inert workout read adapter with actual shared scope', () => {
+  it('detaches the RPC response before fresh Auth observation can alter a retained alias', async () => {
+    const f = readerSetup(),
+      original = structuredClone(f.wire)
+    f.authPort.verifyAccessToken.mockImplementation(async () => {
+      if (f.rpc.mock.calls.length === 1) f.wire.effect.receipt.epoch = f.auth.authUserId
+      return f.auth.identity
+    })
+    expect(await f.store.read()).toEqual(original)
+    expect(f.rpc).toHaveBeenCalledTimes(1)
+  })
   it('uses only the STABLE reconciliation RPC with immutable original identity and full guards', async () => {
     const f = readerSetup()
     expect(f.events).toEqual([])

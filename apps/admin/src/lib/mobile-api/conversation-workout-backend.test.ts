@@ -83,6 +83,23 @@ function setup(text = 'Fiz caminhada') {
   }
 }
 describe('concrete workout backend composition', () => {
+  it('detaches an SDK read before the following scope observation can mutate its alias', async () => {
+    const h = setup()
+    h.responses.read_conversation_workout_preparation = {
+      action: 'available',
+      source: h.rawSource,
+      preparation: h.stored,
+    }
+    h.checkCurrentScope.mockImplementation(async () => {
+      if (h.rpc.mock.calls.length === 1) h.rawSource.context.epoch = h.command.commandId
+      return true
+    })
+    expect(await h.service.report(h.command, h.epoch)).toMatchObject({
+      status: 'needs_reply',
+      question: { field: 'duration_min' },
+    })
+    expect(h.rpc).toHaveBeenCalledTimes(1)
+  })
   it('preserves one server sealed question and its immutable source, no domain RPC', async () => {
     const h = setup()
     const result = await h.service.report(h.command, h.epoch)

@@ -83,7 +83,7 @@ export function createConversationWorkoutBackend(
     async function call(name: Name, body: Readonly<Record<string, unknown>>) {
       await current()
       try {
-        const value = await rpc(name, body)
+        const value = workoutSnapshot(await rpc(name, body))
         await current()
         return data(value)
       } catch (error) {

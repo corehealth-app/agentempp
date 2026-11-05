@@ -310,7 +310,7 @@ export function createConversationWorkoutWriter(
     async function call(name: Parameters<typeof rpc>[0], body: Readonly<Record<string, unknown>>) {
       await current()
       try {
-        const result = await rpc(name, body)
+        const result = workoutSnapshot(await rpc(name, body))
         await current()
         return data(result)
       } catch (error) {

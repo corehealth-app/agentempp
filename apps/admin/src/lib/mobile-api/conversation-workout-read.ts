@@ -263,7 +263,7 @@ export function createSupabaseConversationWorkoutReadStore(
       await scope.observe()
       let raw: unknown
       try {
-        raw = await rpc('reconcile_conversation_workout', args)
+        raw = workoutSnapshot(await rpc('reconcile_conversation_workout', args))
       } catch {
         await scope.observe()
         return unavailable()

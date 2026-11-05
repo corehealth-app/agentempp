@@ -144,6 +144,26 @@ async function fixture() {
 }
 
 describe('dormant workout own-provenance effect codec and durable bridge', () => {
+  it('detaches saved facts before a following scope observation mutates an SDK alias', async () => {
+    const f = await fixture(),
+      original = structuredClone(f.effect)
+    let returned = false
+    const rpc = vi.fn(async () => {
+      returned = true
+      return { data: f.effect, error: null }
+    })
+    const writer = createConversationWorkoutWriter(
+      { rpc },
+      {
+        checkCurrentScope: async () => {
+          if (returned) f.effect.receipt.epoch = id(99)
+          return true
+        },
+      },
+    )
+    expect(await writer.read(f.source, f.prepared)).toEqual({ status: 'saved', effect: original })
+    expect(rpc).toHaveBeenCalledTimes(1)
+  })
   it('projects actual bound facts with unknown kcal, without a ui-v1 confirmation or derived credit', async () => {
     const f = await fixture(),
       effect = parseConversationWorkoutEffect(f.source, f.prepared, f.effect)

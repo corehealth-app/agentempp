@@ -13,6 +13,7 @@ import {
   parseConversationIntakeSource,
   pinConversationIntake,
 } from './conversation-intake-contracts'
+import type { createConversationIntakeRecoveryStore } from './conversation-intake-recovery-store'
 import {
   ConversationIntakeScopeRefusal,
   type createConversationIntakeStore,
@@ -41,6 +42,7 @@ export interface ConversationIntakeLookup {
 }
 export interface ConversationIntakeDriverPorts {
   readonly store: Store
+  readonly recovery: ReturnType<typeof createConversationIntakeRecoveryStore>
   readonly scope: {
     /** Real current Auth/admin/mapping/epoch observation; never historical data. */
     observeCurrentScope(identity: ConversationIntakeLookup): Promise<CurrentClinicalSnapshot>
@@ -158,6 +160,10 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
       seal: ports.store.seal.bind(ports.store),
     }),
     observe = ports.scope.observeCurrentScope.bind(ports.scope),
+    recovery = Object.freeze({
+      read: ports.recovery.read.bind(ports.recovery),
+      reconcile: ports.recovery.reconcile.bind(ports.recovery),
+    }),
     makeRouter = ports.createRouter.bind(ports),
     domains = Object.freeze({
       meal: Object.freeze({
@@ -292,6 +298,56 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
             lookup: id,
           })
     }
+    async function recover(row: NonNullable<ReturnType<typeof ownedRead>>) {
+      const sourceHash = row.source_hash
+      if (!row.claimed || sourceHash === null)
+        return pending('routing_reconciliation_required', row.intake)
+      const proof = await call(() => recovery.read(row.command, row.intake, sourceHash))
+      function refusal(action: string) {
+        if (['stale_epoch', 'input_conflict', 'source_conflict', 'claim_conflict'].includes(action))
+          throw failure('conversation_intake_changed')
+        return pending('routing_reconciliation_required', row.intake)
+      }
+      if (proof.action !== 'available') return refusal(proof.action)
+      const claimId = proof.claim_id
+      let routing: {
+        origin: 'router' | 'interrupted' | 'sealed_selection_backfill'
+        decision: unknown
+      } | null = proof.result
+      // A concurrent real selection always wins. The private routing proof is
+      // never itself a selection, child identity, factual record or public ACK.
+      let actual = ownedRead(await call(() => store.read(id)))
+      if (actual?.selection) return selected(actual.selection, 'submit')
+      if (!actual?.claimed || actual.source_hash !== sourceHash)
+        throw failure('conversation_intake_changed')
+      if (routing === null) {
+        // SQL alone owns the lease clock and60s policy. One POST reconciliation
+        // may close an interrupted claim; GET and uncertain-outcome catch never
+        // enter this branch or repeat a provider call.
+        const result = await call(() =>
+          recovery.reconcile(row.command, row.intake, sourceHash, claimId),
+        )
+        actual = ownedRead(await call(() => store.read(id)))
+        if (actual?.selection) return selected(actual.selection, 'submit')
+        if (!('result' in result)) return refusal(result.action)
+        routing = result.result.result
+      }
+      if (routing === null || routing.origin !== 'router')
+        return pending('routing_reconciliation_required', row.intake)
+      // Resume the SAME immutable result/claim only. Quota/day/source guards
+      // remain in the actual seal; no recapture or paid reclassification.
+      const decision = parseConversationIntakeRoutingDecision(routing.decision),
+        sealed = await call(() => store.seal(row.command, id.epoch, sourceHash, claimId, decision))
+      if (!('selection' in sealed)) {
+        const current = ownedRead(await call(() => store.read(id)))
+        if (current?.selection) return selected(current.selection, 'submit')
+        return pending(sealed.action, row.intake, 'held')
+      }
+      const value = parseConversationIntakeSelection(row.command, row.intake, sealed.selection)
+      if (value.source_hash !== sourceHash || !isDeepStrictEqual(value.decision, decision))
+        throw failure('conversation_intake_changed')
+      return selected(value, 'submit')
+    }
     return {
       id,
       current,
@@ -300,6 +356,7 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
       ownedRead,
       selected,
       readOnly,
+      recover,
       mandatory(error: unknown) {
         // Auth/identity refusals stay closed. A typed 5xx may follow an effect;
         // only a read can determine its outcome without submitting it again.
@@ -338,7 +395,7 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
       try {
         const prior = op.ownedRead(await op.call(() => store.read(op.id)))
         if (prior?.selection) return await op.selected(prior.selection, 'submit')
-        if (prior?.claimed) return op.pending('routing_reconciliation_required', prior.intake)
+        if (prior?.claimed) return await op.recover(prior)
         let binding = prior?.intake
         if (!binding) {
           const admitted = await op.call(() => store.admit(command, epoch))
@@ -359,7 +416,13 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
         const router = makeRouter(),
           route = router.route.bind(router)
         const claim = await op.call(() => store.claim(command, epoch, source.sourceHash))
-        if (claim.action === 'already_claimed') return op.readOnly(true)
+        if (claim.action === 'already_claimed') {
+          const actual = op.ownedRead(await op.call(() => store.read(op.id)))
+          if (actual?.selection) return await op.selected(actual.selection, 'submit')
+          return actual?.claimed
+            ? await op.recover(actual)
+            : op.pending('routing_reconciliation_required', binding)
+        }
         if (claim.action !== 'claimed') return op.pending(claim.action, binding, 'held')
         await op.current()
         const decision = parseConversationIntakeRoutingDecision(await op.call(() => route(source)))

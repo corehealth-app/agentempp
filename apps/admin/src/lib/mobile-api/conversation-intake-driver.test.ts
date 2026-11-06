@@ -5,11 +5,13 @@ import { bindConversationCommand } from './conversation-command-contracts'
 import {
   bindConversationIntake,
   type ConversationIntakeRoutingDecision,
+  parseConversationIntakeRoutingDecision,
 } from './conversation-intake-contracts'
 import {
   type ConversationIntakeDriverPorts,
   createConversationIntakeDriver,
 } from './conversation-intake-driver'
+import type { createConversationIntakeRecoveryStore } from './conversation-intake-recovery-store'
 import { createOpenRouterConversationIntakeRouter } from './conversation-intake-router'
 import { createConversationIntakeStore } from './conversation-intake-store'
 import { projectSavedConversationMealCommandResult } from './conversation-meal-command-result'
@@ -129,15 +131,9 @@ function setup(text = 'Caminhei 30 min', media = false) {
       claimed = true
       return { action: 'claimed' as const, claim_id: claimId }
     }),
-    seal: vi.fn(
-      async (
-        _c: unknown,
-        _e: unknown,
-        _s: unknown,
-        _claim: unknown,
-        d: ConversationIntakeRoutingDecision,
-      ) => {
-        sealed = selection(d)
+    seal: vi.fn<ReturnType<typeof createConversationIntakeStore>['seal']>(
+      async (_c: unknown, _e: unknown, _s: unknown, _claim: unknown, d: unknown) => {
+        sealed = selection(parseConversationIntakeRoutingDecision(d))
         return { action: 'sealed' as const, selection: sealed }
       },
     ),
@@ -167,6 +163,20 @@ function setup(text = 'Caminhei 30 min', media = false) {
     ),
   })
   const domains = { meal: domain(), workout: domain() }
+  type Recovery = ReturnType<typeof createConversationIntakeRecoveryStore>
+  const proof = {
+    action: 'available' as const,
+    intake: binding,
+    source_hash: sourceHash,
+    claim_id: claimId,
+    lease_anchor_at: '2026-11-05T12:00:00.000003Z',
+    lease_clock_origin: 'claim' as const,
+    result: null,
+  }
+  const recovery = {
+    read: vi.fn<Recovery['read']>(async () => proof),
+    reconcile: vi.fn<Recovery['reconcile']>(async () => ({ action: 'in_flight' })),
+  }
   const route = vi.fn(async () => decision),
     createRouter = vi.fn<ConversationIntakeDriverPorts['createRouter']>(() => ({ route })),
     scope = {
@@ -175,7 +185,7 @@ function setup(text = 'Caminhei 30 min', media = false) {
         return f.profile
       }),
     },
-    ports = { store, domains, createRouter, scope }
+    ports = { store, recovery, domains, createRouter, scope }
   const driver = createConversationIntakeDriver(ports)
   return {
     auth: f.auth,
@@ -190,6 +200,8 @@ function setup(text = 'Caminhei 30 min', media = false) {
     domains,
     route,
     createRouter,
+    recovery,
+    proof,
     scope,
     driver,
     ports,
@@ -212,6 +224,146 @@ function selectedChild(f: ReturnType<typeof setup>) {
   if (!child) throw new Error('Missing fixture child')
   return child
 }
+
+describe('POST-only recovery of the original routing claim', () => {
+  function known(f: ReturnType<typeof setup>) {
+    return {
+      ...f.proof,
+      result: {
+        schema: 'conversation.intake-routing-result.v1' as const,
+        decision: f.decision,
+        decision_hash: workoutDigest(f.decision),
+        recorded_at: '2026-11-05T12:00:00.000004Z',
+        origin: 'router' as const,
+      },
+    }
+  }
+  it('uses a durable routing decision to retry only original typed admission, without provider or recapture', async () => {
+    const f = setup()
+    f.setState({ claimed: true })
+    f.recovery.read.mockResolvedValue(known(f))
+    expect(await f.driver.submit(f.command, f.epoch)).toMatchObject({
+      status: 'selected',
+      result: { status: 'pending' },
+    })
+    expect(f.recovery.read).toHaveBeenCalledWith(f.command, f.binding, sourceHash)
+    expect(f.store.seal).toHaveBeenCalledWith(f.command, f.epoch, sourceHash, claimId, f.decision)
+    expect(f.domains.workout.submit).toHaveBeenCalledOnce()
+    expect(f.createRouter).not.toHaveBeenCalled()
+    expect(f.store.capture).not.toHaveBeenCalled()
+    expect(f.store.claim).not.toHaveBeenCalled()
+    expect(f.recovery.reconcile).not.toHaveBeenCalled()
+  })
+  it('lets SQL decide whether an unresolved claim is still in flight, without using a client clock', async () => {
+    const f = setup()
+    f.setState({ claimed: true })
+    expect(await f.driver.submit(f.command, f.epoch)).toMatchObject({
+      status: 'pending',
+      reason: 'routing_reconciliation_required',
+    })
+    expect(f.recovery.reconcile).toHaveBeenCalledWith(f.command, f.binding, sourceHash, claimId)
+    expect(f.store.seal).not.toHaveBeenCalled()
+    expect(f.createRouter).not.toHaveBeenCalled()
+    expect(f.domains.workout.submit).not.toHaveBeenCalled()
+  })
+  it('consumes only the actual selection after SQL closes an interrupted claim', async () => {
+    const f = setup()
+    f.setState({ claimed: true })
+    const decision: ConversationIntakeRoutingDecision = {
+      schema: 'conversation.intake-routing.v1',
+      kind: 'clarification_required',
+      reason: 'routing_interrupted',
+      question: {
+        field: 'description',
+        text: 'Não foi possível concluir o processamento. Pode confirmar o que deseja registrar?',
+      },
+    }
+    const selection = { ...f.selection(decision), selected_at: '2026-11-05T12:01:01Z' }
+    f.recovery.reconcile.mockImplementation(async () => {
+      f.setState({ selection })
+      return {
+        action: 'reconciled',
+        result: {
+          ...f.proof,
+          result: {
+            schema: 'conversation.intake-routing-result.v1',
+            decision,
+            decision_hash: workoutDigest(decision),
+            recorded_at: selection.selected_at,
+            origin: 'interrupted',
+          },
+        },
+      }
+    })
+    expect(await f.driver.submit(f.command, f.epoch)).toMatchObject({
+      status: 'clarification_required',
+      reason: 'routing_interrupted',
+      question: decision.question,
+    })
+    expect(f.store.seal).not.toHaveBeenCalled()
+    expect(f.domains.workout.submit).not.toHaveBeenCalled()
+    expect(f.createRouter).not.toHaveBeenCalled()
+  })
+  it('never fabricates a selection from an interrupted private proof', async () => {
+    const f = setup()
+    f.setState({ claimed: true })
+    f.recovery.read.mockResolvedValue({
+      ...known(f),
+      result: { ...known(f).result, origin: 'interrupted' },
+    })
+    expect(await f.driver.submit(f.command, f.epoch)).toMatchObject({ status: 'pending' })
+    expect(f.store.seal).not.toHaveBeenCalled()
+    expect(f.domains.workout.submit).not.toHaveBeenCalled()
+    expect(f.createRouter).not.toHaveBeenCalled()
+  })
+  it('prefers a real concurrent selection observed after routing-proof lookup', async () => {
+    const f = setup()
+    f.setState({ claimed: true })
+    f.recovery.read.mockImplementation(async () => {
+      f.setState({ selection: f.selection() })
+      return known(f)
+    })
+    expect(await f.driver.submit(f.command, f.epoch)).toMatchObject({ status: 'selected' })
+    expect(f.store.seal).not.toHaveBeenCalled()
+    expect(f.domains.workout.submit).toHaveBeenCalledOnce()
+    expect(f.createRouter).not.toHaveBeenCalled()
+  })
+  it.each([
+    'day_closed',
+    'day_changed',
+    'rate_limited',
+  ] as const)('preserves the original durable decision when actual seal refuses %s', async (action) => {
+    const f = setup()
+    f.setState({ claimed: true })
+    f.recovery.read.mockResolvedValue(known(f))
+    f.store.seal.mockResolvedValue({ action })
+    expect(await f.driver.submit(f.command, f.epoch)).toMatchObject({
+      status: 'held',
+      reason: action,
+    })
+    expect(f.store.seal).toHaveBeenCalledOnce()
+    expect(f.recovery.reconcile).not.toHaveBeenCalled()
+    expect(f.createRouter).not.toHaveBeenCalled()
+    expect(f.domains.workout.submit).not.toHaveBeenCalled()
+  })
+  it('does not run mutating recovery after an uncertain seal in the same attempt', async () => {
+    const f = setup()
+    f.store.seal.mockRejectedValueOnce(new Error('Transport lost after seal'))
+    expect(await f.driver.submit(f.command, f.epoch)).toMatchObject({ status: 'pending' })
+    expect(f.recovery.read).not.toHaveBeenCalled()
+    expect(f.recovery.reconcile).not.toHaveBeenCalled()
+    expect(f.store.seal).toHaveBeenCalledOnce()
+  })
+  it('GET remains observational for a claimed parent', async () => {
+    const f = setup()
+    f.setState({ claimed: true })
+    expect(await f.driver.read(f.lookup)).toMatchObject({ status: 'pending' })
+    expect(f.recovery.read).not.toHaveBeenCalled()
+    expect(f.recovery.reconcile).not.toHaveBeenCalled()
+    expect(f.store.seal).not.toHaveBeenCalled()
+    expect(f.createRouter).not.toHaveBeenCalled()
+  })
+})
 
 /** Exercise the real typed meal projector with its synthetic receipt fixture.
  * This is the transport contract, not evidence of a physical domain write. */

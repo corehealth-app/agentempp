@@ -22,6 +22,10 @@ import {
   createConversationIntakeDriver,
 } from './conversation-intake-driver'
 import {
+  type ConversationIntakeRecoveryRPCPort,
+  createConversationIntakeRecoveryStore,
+} from './conversation-intake-recovery-store'
+import {
   type ConversationIntakeRPCPort,
   createConversationIntakeStore,
 } from './conversation-intake-store'
@@ -220,15 +224,15 @@ export function createConversationIntakeRuntime(
   // Generated DB types do not yet declare these five names. Keep that transport
   // cast local and narrow; store codecs still validate every physical response.
   const rpc = db.rpc.bind(db) as unknown as ConversationIntakeRPCPort['rpc'],
-    store = createConversationIntakeStore(
-      { rpc },
-      {
-        async checkCurrentScope(identity) {
-          await observe(identity)
-          return true
-        },
+    scopePort = Object.freeze({
+      async checkCurrentScope(identity: ConversationIntakeLookup) {
+        await observe(identity)
+        return true
       },
-    ),
+    }),
+    store = createConversationIntakeStore({ rpc }, scopePort),
+    recoveryRPC = db.rpc.bind(db) as unknown as ConversationIntakeRecoveryRPCPort['rpc'],
+    recovery = createConversationIntakeRecoveryStore({ rpc: recoveryRPC }, scopePort),
     // The existing meal facade resumes prepared effects through several RPCs.
     // Its RPCs are awaited (not builder-chained). Guard the request-owned client
     // seam as well as the outer service, preserving the real writers/codecs.
@@ -265,6 +269,7 @@ export function createConversationIntakeRuntime(
     workout = createConversationWorkoutCommandService(db, dependencies),
     driver = createConversationIntakeDriver({
       store,
+      recovery,
       scope: { observeCurrentScope: observe },
       createRouter: makeRouter,
       domains: {

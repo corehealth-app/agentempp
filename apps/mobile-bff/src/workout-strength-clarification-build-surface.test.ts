@@ -11,6 +11,11 @@ function currentAppPaths(): Record<string, string> {
 }
 const cache = new Map<string, string>()
 const addition = 'workouts/[id]/strength-clarification/route.ts'
+const intakeTransportAdditions = new Set([
+  'conversation/intakes/route.ts',
+  'conversation/intakes/[intakeId]/route.ts',
+  'conversation/intakes/session/route.ts',
+])
 const workoutTransportAdditions = new Set([
   'conversation/workout-commands/[commandId]/route.ts',
   'conversation/workout-commands/route.ts',
@@ -67,7 +72,7 @@ function routesReaching(marker: string) {
 }
 
 describe('current-authority clarification in the fresh mobile server build', () => {
-  it('keeps all88 mirrored exports and exact3 workout additions while preserving every historical stream', () => {
+  it('keeps all91 mirrored exports, exact3 neutral intakes and prior88/workout additions while preserving every historical stream', () => {
     const appRoot = resolve(root, '../..')
     const source = exportStream(resolve(appRoot, '../admin/src/app/api/mobile/v1'), false)
     const mirror = exportStream(resolve(appRoot, 'src/app/api/mobile/v1'), true)
@@ -75,10 +80,17 @@ describe('current-authority clarification in the fresh mobile server build', () 
     expect(
       source.find((record) => record.path === 'auth/password-recovery/route.ts')?.exports,
     ).toEqual(['GET', 'HEAD', 'POST', 'dynamic', 'maxDuration', 'runtime'])
-    expect(source).toHaveLength(88)
+    expect(source).toHaveLength(91)
     expect(
       createHash('sha256')
         .update(source.map((record) => `${record.path}\0${record.exports.join(',')}\n`).join(''))
+        .digest('hex'),
+    ).toBe('93200635df44342607fb57b71a1b623e1dbd1ff442f6fdbe5997a9f7fe81dd67')
+    const prior88 = source.filter((record) => !intakeTransportAdditions.has(record.path))
+    expect(prior88).toHaveLength(88)
+    expect(
+      createHash('sha256')
+        .update(prior88.map((record) => `${record.path}\0${record.exports.join(',')}\n`).join(''))
         .digest('hex'),
     ).toBe('99623e7e5caf5d3b3df20eeb6bf840e6fb416f5e489498232a0c984a0a6e53b4')
     expect(source.filter((record) => workoutTransportAdditions.has(record.path))).toEqual([
@@ -92,7 +104,7 @@ describe('current-authority clarification in the fresh mobile server build', () 
       },
       { path: 'conversation/workout-session/route.ts', exports: ['GET', 'maxDuration', 'runtime'] },
     ])
-    const prior85 = source.filter((record) => !workoutTransportAdditions.has(record.path))
+    const prior85 = prior88.filter((record) => !workoutTransportAdditions.has(record.path))
     expect(prior85).toHaveLength(85)
     expect(
       createHash('sha256')

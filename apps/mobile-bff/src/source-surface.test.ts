@@ -65,6 +65,18 @@ const conversationWorkoutURLs = new Set(
 const conversationWorkoutAppPaths = new Set(
   [...conversationWorkoutURLs].map((path) => `${path}/route`),
 )
+const conversationIntakeAdditions = [
+  'conversation/intakes/[intakeId]/route.ts',
+  'conversation/intakes/route.ts',
+  'conversation/intakes/session/route.ts',
+]
+const conversationIntakeSourcePaths = new Set(conversationIntakeAdditions)
+const conversationIntakeURLs = new Set(
+  conversationIntakeAdditions.map((path) => `/api/mobile/v1/${path.replace(/\/route.ts$/, '')}`),
+)
+const conversationIntakeAppPaths = new Set(
+  [...conversationIntakeURLs].map((path) => `${path}/route`),
+)
 const conversationReadEditAdditions = [
   'conversation/journal/route.ts',
   'conversation/meal-commands/[commandId]/edits/[operationId]/reconcile/route.ts',
@@ -156,6 +168,9 @@ function runtimeExactStringRoutes(value: string): string[] {
 // T40 exposes three existing pure Auth decoders for the request-owned refusal
 // latch. Only module11098 changes; the other17 bodies and exact consumers stay
 // pinned. Source qualification proves the three extractions are otherwise exact.
+// T43's actual intake runtime retains those three exports. The same source SHA
+// is sealed below; module11098 is newly certified in full, with the other17
+// compiled bodies still byte-identical. No old raw module body is claimed here.
 function certifyNutritionJournalSplitContent(text: string): void {
   const source = ts.createSourceFile(
     'nutrition-shared.js',
@@ -192,7 +207,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
     'certified nutrition-shared module contents',
   ).toEqual(
     [
-      '11098:13a5e44e49a46bead1ee67ffeebfe2f352296d52c880d44fcfb08846f39209eb',
+      '11098:d8cccef169992ad42803f27d81d5b753a50e5798e8f649ad3acd7aea98fa6925',
       '40747:411b3586832f4b981362200d53a3836cff6395e29cee48554464d97d48fa94a9',
       '93639:ce2fe7a229147bad36167351267198cbd255aa881701566612da47ce193e2e04',
       '49634:3287a6bd255d2b4c020831638d46e96459e466cba56777c0944ce83426355ff4',
@@ -314,7 +329,11 @@ function certifyAbsorbedWorkoutSelector(): void {
       '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209',
     ])
   expect(runtimeMarkerRoutes('MOBILE_WORKOUT_REGISTRATION_PROJECT_REF')).toEqual(
-    [...absorbedSelectorRoutes, ...conversationWorkoutAppPaths].sort(),
+    [
+      ...absorbedSelectorRoutes,
+      ...conversationWorkoutAppPaths,
+      ...conversationIntakeAppPaths,
+    ].sort(),
   )
 }
 const absorbedReferences = (routes: readonly string[]) =>
@@ -523,15 +542,28 @@ describe('authoritative Mobile API source surface', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
-  test('keeps the approved 88-route manifest and exact prior85 export stream', () => {
+  test('keeps the additive 91-route manifest and exact prior88 and prior85 export streams', () => {
     const records = sourceRecords()
     const hash = hashRecords(records)
 
     console.info(`SOURCE_ROUTE_EXPORT_COUNT=${records.length}`)
     console.info(`SOURCE_ROUTE_EXPORT_STREAM_SHA256=${hash}`)
 
-    expect(records).toHaveLength(88)
-    expect(hash).toBe('99623e7e5caf5d3b3df20eeb6bf840e6fb416f5e489498232a0c984a0a6e53b4')
+    expect(records).toHaveLength(91)
+    expect(hash).toBe('93200635df44342607fb57b71a1b623e1dbd1ff442f6fdbe5997a9f7fe81dd67')
+    expect(records.filter((record) => conversationIntakeSourcePaths.has(record.path))).toEqual([
+      {
+        path: 'conversation/intakes/[intakeId]/route.ts',
+        exports: ['GET', 'maxDuration', 'runtime'],
+      },
+      { path: 'conversation/intakes/route.ts', exports: ['POST', 'maxDuration', 'runtime'] },
+      { path: 'conversation/intakes/session/route.ts', exports: ['GET', 'dynamic', 'runtime'] },
+    ])
+    const prior88 = records.filter((record) => !conversationIntakeSourcePaths.has(record.path))
+    expect(prior88).toHaveLength(88)
+    expect(hashRecords(prior88)).toBe(
+      '99623e7e5caf5d3b3df20eeb6bf840e6fb416f5e489498232a0c984a0a6e53b4',
+    )
     expect(records.filter((record) => conversationWorkoutSourcePaths.has(record.path))).toEqual([
       {
         path: 'conversation/workout-commands/[commandId]/route.ts',
@@ -543,7 +575,7 @@ describe('authoritative Mobile API source surface', () => {
       },
       { path: 'conversation/workout-session/route.ts', exports: ['GET', 'maxDuration', 'runtime'] },
     ])
-    const prior85 = records.filter((record) => !conversationWorkoutSourcePaths.has(record.path))
+    const prior85 = prior88.filter((record) => !conversationWorkoutSourcePaths.has(record.path))
     expect(prior85).toHaveLength(85)
     expect(hashRecords(prior85)).toBe(
       'afb3a6182ad8e1335a24edeb3f2394f411ee6935f9994c1ecfb0c164079c3d12',
@@ -790,7 +822,7 @@ describe('authoritative Mobile API source surface', () => {
     expect(hasServerActionDirective(inlineServerAction)).toBe(true)
   })
 
-  test('preserves the prior85 Mobile and prior86 total streams within the additive 88/89 build', () => {
+  test('preserves the prior88 Mobile and prior89 total streams within the additive 91/92 build', () => {
     const surface = inspectBuildSurface(buildRoot)
 
     console.info(`BUILD_ROUTE_PATH_COUNT=${surface.routePaths.length}`)
@@ -805,21 +837,38 @@ describe('authoritative Mobile API source surface', () => {
     console.info(`BUILD_MIDDLEWARE_COUNT=${surface.middlewareEntries.length}`)
     console.info(`BUILD_SERVER_ACTION_REFERENCE_COUNT=${surface.serverActionReferences.length}`)
 
-    expect(surface.routePaths).toHaveLength(89)
+    expect(surface.routePaths).toHaveLength(92)
     expect(surface.routePathHash).toBe(
-      '030d287839ebf4191e33357d3f5bfada7d405e1ab0b18a1367018d9311392b87',
+      '797033352a07011df4c7b3a15092077e086562815d39ad40aa5ac529f9d58e52',
     )
-    expect(surface.mobileRoutePaths).toHaveLength(88)
+    expect(surface.mobileRoutePaths).toHaveLength(91)
     expect(surface.mobileRoutePathHash).toBe(
-      'bc55eaf07caffd4b70de61dcc3a6b00d9e10cb8eb7e9cfe6996716e9bf981b05',
+      '619cb940b40c0218985aa4da7869fd87d00ce703c5ef80cb6a5805ebac789156',
     )
+    expect(surface.mobileRoutePaths.filter((path) => conversationIntakeURLs.has(path))).toEqual(
+      [...conversationIntakeURLs].sort(),
+    )
+    const prior88Mobile = surface.mobileRoutePaths.filter(
+        (path) => !conversationIntakeURLs.has(path),
+      ),
+      prior89All = surface.routePaths.filter((path) => !conversationIntakeURLs.has(path))
+    expect(prior88Mobile).toHaveLength(88)
+    expect(
+      createHash('sha256')
+        .update(prior88Mobile.map((path) => `${path}\n`).join(''))
+        .digest('hex'),
+    ).toBe('bc55eaf07caffd4b70de61dcc3a6b00d9e10cb8eb7e9cfe6996716e9bf981b05')
+    expect(prior89All).toHaveLength(89)
+    expect(
+      createHash('sha256')
+        .update(prior89All.map((path) => `${path}\n`).join(''))
+        .digest('hex'),
+    ).toBe('030d287839ebf4191e33357d3f5bfada7d405e1ab0b18a1367018d9311392b87')
     expect(surface.mobileRoutePaths.filter((path) => conversationWorkoutURLs.has(path))).toEqual(
       [...conversationWorkoutURLs].sort(),
     )
-    const prior85Mobile = surface.mobileRoutePaths.filter(
-      (path) => !conversationWorkoutURLs.has(path),
-    )
-    const prior86All = surface.routePaths.filter((path) => !conversationWorkoutURLs.has(path))
+    const prior85Mobile = prior88Mobile.filter((path) => !conversationWorkoutURLs.has(path))
+    const prior86All = prior89All.filter((path) => !conversationWorkoutURLs.has(path))
     expect(prior85Mobile).toHaveLength(85)
     expect(
       createHash('sha256')
@@ -1053,7 +1102,7 @@ describe('authoritative Mobile API source surface', () => {
   test.each([
     false,
     true,
-  ])('checks the 88 Mobile and 89 total inventory in the synthetic CLI with extra nutrition route=%s', (extraRoute) => {
+  ])('checks the 91 Mobile and 92 total inventory in the synthetic CLI with extra nutrition route=%s', (extraRoute) => {
     const appPaths = Object.fromEntries([
       ...sourceRecords().map(({ path }) => {
         const appPath = `/api/mobile/v1/${path.replace(/\.ts$/, '')}`
@@ -1082,15 +1131,25 @@ describe('authoritative Mobile API source surface', () => {
         })
         expect(result.error).toBeUndefined()
         expect(result.status, result.stderr).toBe(extraRoute ? 1 : 0)
-        expect(result.stdout).toContain(`BUILD_MOBILE_ROUTE_PATH_COUNT=${extraRoute ? 89 : 88}`)
-        expect(result.stdout).toContain(`BUILD_ROUTE_PATH_COUNT=${extraRoute ? 90 : 89}`)
+        expect(result.stdout).toContain(`BUILD_MOBILE_ROUTE_PATH_COUNT=${extraRoute ? 92 : 91}`)
+        expect(result.stdout).toContain(`BUILD_ROUTE_PATH_COUNT=${extraRoute ? 93 : 92}`)
         if (extraRoute) {
+          expect(result.stderr).toContain('BUILD_SURFACE_ERROR=PRIOR88_MOBILE_ROUTE_COUNT:89')
+          expect(result.stderr).toContain('BUILD_SURFACE_ERROR=PRIOR89_ALL_ROUTE_COUNT:90')
           expect(result.stderr).toContain('BUILD_SURFACE_ERROR=PRIOR85_MOBILE_ROUTE_COUNT:86')
           expect(result.stderr).toContain('BUILD_SURFACE_ERROR=PRIOR84_MOBILE_ROUTE_COUNT:85')
           expect(result.stderr).toContain('BUILD_SURFACE_ERROR=PRIOR84_MOBILE_ROUTE_HASH:')
           expect(result.stdout).not.toContain('BUILD_SURFACE_STATUS=VERIFIED')
         } else {
           expect(result.stderr).toBe('')
+          expect(result.stdout).toContain('BUILD_PRIOR88_MOBILE_ROUTE_PATH_COUNT=88')
+          expect(result.stdout).toContain('BUILD_PRIOR89_ALL_ROUTE_PATH_COUNT=89')
+          expect(result.stdout).toContain(
+            'BUILD_PRIOR88_MOBILE_ROUTE_PATH_STREAM_SHA256=bc55eaf07caffd4b70de61dcc3a6b00d9e10cb8eb7e9cfe6996716e9bf981b05',
+          )
+          expect(result.stdout).toContain(
+            'BUILD_PRIOR89_ALL_ROUTE_PATH_STREAM_SHA256=030d287839ebf4191e33357d3f5bfada7d405e1ab0b18a1367018d9311392b87',
+          )
           expect(result.stdout).toContain('BUILD_PRIOR85_MOBILE_ROUTE_PATH_COUNT=85')
           expect(result.stdout).toContain('BUILD_PRIOR86_ALL_ROUTE_PATH_COUNT=86')
           expect(result.stdout).toContain(
@@ -1102,10 +1161,10 @@ describe('authoritative Mobile API source surface', () => {
           expect(result.stdout).toContain('BUILD_PRIOR84_MOBILE_ROUTE_PATH_COUNT=84')
           expect(result.stdout).toContain('BUILD_PRIOR85_ALL_ROUTE_PATH_COUNT=85')
           expect(result.stdout).toContain(
-            'BUILD_MOBILE_ROUTE_PATH_STREAM_SHA256=bc55eaf07caffd4b70de61dcc3a6b00d9e10cb8eb7e9cfe6996716e9bf981b05',
+            'BUILD_MOBILE_ROUTE_PATH_STREAM_SHA256=619cb940b40c0218985aa4da7869fd87d00ce703c5ef80cb6a5805ebac789156',
           )
           expect(result.stdout).toContain(
-            'BUILD_ROUTE_PATH_STREAM_SHA256=030d287839ebf4191e33357d3f5bfada7d405e1ab0b18a1367018d9311392b87',
+            'BUILD_ROUTE_PATH_STREAM_SHA256=797033352a07011df4c7b3a15092077e086562815d39ad40aa5ac529f9d58e52',
           )
         }
       } finally {
@@ -1121,6 +1180,8 @@ describe('authoritative Mobile API source surface', () => {
     const paths = [
       '/api/mobile/v1/conversation/meal-commands',
       ...conversationWorkoutURLs,
+      '/api/mobile/v1/conversation/intakes',
+      '/api/mobile/v1/conversation/intakes/[intakeId]',
       ...conversationReadEditAdditions.map(
         (path) => `/api/mobile/v1/${path.replace(/\/route.ts$/, '')}`,
       ),
@@ -1129,6 +1190,9 @@ describe('authoritative Mobile API source surface', () => {
       ),
     ]
     for (const path of paths) expect(manifest.functions[path]?.maxDuration, path).toBe(120)
+    expect(
+      manifest.functions['/api/mobile/v1/conversation/intakes/session']?.maxDuration,
+    ).toBeUndefined()
     expect(manifest.functions['/api/mobile/v1/auth/password-recovery']?.maxDuration).toBe(45)
   })
 
@@ -1166,14 +1230,14 @@ describe('authoritative Mobile API source surface', () => {
       mutate: (appPaths: Record<string, string>) => ({ ...appPaths }),
       omittedTargets: ['app/api/mobile/v1/today/route.js'],
     },
-  ])('rejects $name while the same 89 URL keys remain', ({
+  ])('rejects $name while the same 92 URL keys remain', ({
     expectedError,
     mutate,
     omittedTargets,
   }) => {
     const appPaths = mutate(currentAppPathsManifest())
 
-    expect(Object.keys(appPaths)).toHaveLength(89)
+    expect(Object.keys(appPaths)).toHaveLength(92)
     expect(() => withSyntheticBuild(appPaths, inspectBuildSurface, omittedTargets)).toThrow(
       expectedError,
     )
@@ -1303,7 +1367,7 @@ describe('authoritative Mobile API source surface', () => {
     const currentMobileRoutes = allBuildRoutes.filter((route) =>
       route.startsWith('/api/mobile/v1/'),
     )
-    expect(currentMobileRoutes).toHaveLength(88)
+    expect(currentMobileRoutes).toHaveLength(91)
     expect(
       currentMobileRoutes
         .filter((route) => route.startsWith('/api/mobile/v1/conversation/'))
@@ -1311,6 +1375,7 @@ describe('authoritative Mobile API source surface', () => {
     ).toEqual(
       [
         ...conversationWorkoutAppPaths,
+        ...conversationIntakeAppPaths,
         ...conversationReadEditAdditions.map(
           (path) => `/api/mobile/v1/${path.replace(/\.ts$/, '')}`,
         ),
@@ -1321,7 +1386,7 @@ describe('authoritative Mobile API source surface', () => {
       ].sort(),
     )
     // Keep the full historical 75-route dependency graph pinned below. The
-    // twelve conversation routes and the exact nutrition addition remain in every global forbidden scan.
+    // fifteen conversation routes and the exact nutrition addition remain in every global forbidden scan.
     const allRoutes = currentMobileRoutes.filter(
       (route) =>
         route !== nutritionWindowAppPath && !route.startsWith('/api/mobile/v1/conversation/'),
@@ -1418,9 +1483,13 @@ describe('authoritative Mobile API source surface', () => {
         .filter((route) => route.startsWith('/api/mobile/v1/conversation/'))
         .sort(),
       historicalMealCommandRoutes = commandRoutes.filter(
-        (route) => !conversationWorkoutAppPaths.has(route),
+        (route) =>
+          !conversationWorkoutAppPaths.has(route) && !conversationIntakeAppPaths.has(route),
       ),
       workoutRoutes = [...conversationWorkoutAppPaths].sort(),
+      intakeRoutes = [...conversationIntakeAppPaths].sort(),
+      mealCommandConsumers = [...historicalMealCommandRoutes, ...intakeRoutes].sort(),
+      workoutCommandConsumers = [...workoutRoutes, ...intakeRoutes].sort(),
       journalRoute = '/api/mobile/v1/conversation/journal/route',
       editRoutes = conversationReadEditAdditions
         .filter((p) => !p.startsWith('conversation/journal/'))
@@ -1434,7 +1503,7 @@ describe('authoritative Mobile API source surface', () => {
         '/api/mobile/v1/conversation/meal-commands/route',
         '/api/mobile/v1/conversation/session/route',
       ].sort()
-    expect(commandRoutes).toHaveLength(12)
+    expect(commandRoutes).toHaveLength(15)
     expect(historicalMealCommandRoutes).toEqual(
       [...rootRoutes, journalRoute, ...editRoutes, ...replyRoutes].sort(),
     )
@@ -1466,23 +1535,42 @@ describe('authoritative Mobile API source surface', () => {
         'undo_conversation_meal_item_edit',
         'undo_conversation_meal_registration',
         'read_conversation_meal_edit_operation',
+      ]),
+      intakeChunk = uniqueChunk([
+        'conversation.intake-result.v1',
+        'read_conversation_intake_routing_result',
+        'reconcile_conversation_intake_routing',
       ])
+    certifySharedModule(
+      intakeChunk,
+      'reconcile_conversation_intake_routing',
+      '5aceaf6ef747341340fb7595f538d283702c2744563806f28b1d2c1a628771b1',
+    )
     expect(
-      new Set([mealChunk, commonChunk, workoutChunk, scopeChunk, replyChunk, publicEditChunk]).size,
-    ).toBe(6)
+      new Set([
+        mealChunk,
+        commonChunk,
+        workoutChunk,
+        scopeChunk,
+        replyChunk,
+        publicEditChunk,
+        intakeChunk,
+      ]).size,
+    ).toBe(7)
     expect(publicEditChunk).toBe(editWriterChunk)
     certifyInlineConversationEditModule(publicEditChunk, journalRoute)
     for (const [chunk, routes] of [
-      [mealChunk, historicalMealCommandRoutes],
+      [mealChunk, mealCommandConsumers],
       [commonChunk, commandRoutes],
-      [workoutChunk, workoutRoutes],
+      [workoutChunk, workoutCommandConsumers],
       [scopeChunk, [...commandRoutes, nutritionWindowAppPath].sort()],
       [replyChunk, replyRoutes],
       [publicEditChunk, editRoutes],
+      [intakeChunk, intakeRoutes],
     ] as const)
       expect(chunkConsumers(chunk)).toEqual(routes)
     for (const [marker, routes] of [
-      ['conversation_commands_unavailable', historicalMealCommandRoutes],
+      ['conversation_commands_unavailable', mealCommandConsumers],
       ['read_conversation_meal_journal_page', [...commandRoutes, nutritionWindowAppPath].sort()],
       ['read_conversation_meal_journal_page_v2', [journalRoute]],
       ...[
@@ -1504,14 +1592,25 @@ describe('authoritative Mobile API source surface', () => {
       ].map((marker) => [marker, replyRoutes] as const),
     ] as const)
       expect(runtimeMarkerRoutes(marker)).toEqual(routes)
+    for (const rpc of [
+      'admit_conversation_intake',
+      'capture_conversation_intake_source',
+      'claim_conversation_intake_routing',
+      'seal_conversation_intake_routing',
+      'read_conversation_intake',
+      'read_conversation_intake_routing_result',
+      'reconcile_conversation_intake_routing',
+    ])
+      expect(runtimeExactStringRoutes(rpc), rpc).toEqual(intakeRoutes)
     for (const route of allBuildRoutes) {
       for (const [chunk, consumers] of [
-        [mealChunk, historicalMealCommandRoutes],
+        [mealChunk, mealCommandConsumers],
         [commonChunk, commandRoutes],
-        [workoutChunk, workoutRoutes],
+        [workoutChunk, workoutCommandConsumers],
         [scopeChunk, [...commandRoutes, nutritionWindowAppPath]],
         [replyChunk, replyRoutes],
         [editWriterChunk, editRoutes],
+        [intakeChunk, intakeRoutes],
       ] as const)
         expect(
           tracedTargets(route).filter((target) => target === chunk),
@@ -1539,6 +1638,7 @@ describe('authoritative Mobile API source surface', () => {
       ...editRoutes.map((route) => [route, 123] as const),
       ...replyRoutes.map((route) => [route, 122] as const),
       ...workoutRoutes.map((route) => [route, 117] as const),
+      ...intakeRoutes.map((route) => [route, 123] as const),
     ])
     expect([...currentCounts.keys()].sort()).toEqual(commandRoutes)
     for (const [route, count] of currentCounts)
@@ -1556,6 +1656,7 @@ describe('authoritative Mobile API source surface', () => {
           scopeChunk,
           replyChunk,
           publicEditChunk,
+          intakeChunk,
           ...commandRoutes.map((route) =>
             realpathSync(
               resolve(buildRoot, 'server/app', `${route.slice(1)}_client-reference-manifest.js`),
@@ -1571,10 +1672,10 @@ describe('authoritative Mobile API source surface', () => {
     ).toBe(8202 + 104)
     expect(tracedTargets(nutritionWindowAppPath)).toHaveLength(115)
     expect(surface.nftReferenceCount).toBe(
-      8202 + 104 - 6 + 3 * 121 + 122 + 3 * 123 + 2 * 122 + 3 * 117 + 115,
+      8202 + 104 - 6 + 3 * 121 + 122 + 3 * 123 + 2 * 122 + 3 * 117 + 3 * 123 + 115,
     )
-    expect(surface.nftUniqueTargetCount).toBe(217 + 12 + 6 + 1)
-    expect(surface.nftRegularFileTargetCount).toBe(215 + 12 + 6 + 1)
+    expect(surface.nftUniqueTargetCount).toBe(217 + 15 + 7 + 1)
+    expect(surface.nftRegularFileTargetCount).toBe(215 + 15 + 7 + 1)
     expect(surface.nftDirectoryTargetCount).toBe(2)
     const additions = new Set(
       currentClinicalRouteAdditions.map((path) => `/api/mobile/v1/${path.replace(/\.ts$/, '')}`),
@@ -1790,7 +1891,7 @@ describe('authoritative Mobile API source surface', () => {
         expect(runtimeMarkerRoutes(edge.admissionMarker)).toEqual(
           [
             ...edge.old,
-            ...historicalMealCommandRoutes,
+            ...mealCommandConsumers,
             ...routeNames([
               'reevaluation',
               'reevaluation/start',
@@ -2268,7 +2369,11 @@ describe('authoritative Mobile API source surface', () => {
     const writerChunks = exactStringChunks('commit_mobile_registration_feedback')
     expect(switchChunks).toHaveLength(2)
     expect(writerChunks).toHaveLength(1)
-    expect(readFileSync(switchChunks[0] ?? '', 'utf8')).toContain('ui-v1')
+    const reviewSwitch = switchChunks.filter((chunk) =>
+      chunkConsumers(chunk).includes(reviewRoutes[0] ?? ''),
+    )
+    expect(reviewSwitch).toHaveLength(1)
+    expect(readFileSync(reviewSwitch[0] ?? '', 'utf8')).toContain('ui-v1')
     // The selector/repository now also serves the protected read question,
     // while the feedback writer remains an independent five-review chunk.
     expect(writerChunks).not.toEqual(switchChunks)
@@ -2276,8 +2381,8 @@ describe('authoritative Mobile API source surface', () => {
     expect(
       switchChunks.map(chunkConsumers).sort((a, b) => a.join().localeCompare(b.join())),
     ).toEqual(
-      [[...conversationWorkoutAppPaths].sort(), reviewRoutes].sort((a, b) =>
-        a.join().localeCompare(b.join()),
+      [[...conversationWorkoutAppPaths, ...conversationIntakeAppPaths].sort(), reviewRoutes].sort(
+        (a, b) => a.join().localeCompare(b.join()),
       ),
     )
     expect(chunkConsumers(writerChunks[0] ?? '')).toEqual(reviewRoutes)
@@ -2288,6 +2393,7 @@ describe('authoritative Mobile API source surface', () => {
         ...reviewRoutes,
         '/api/mobile/v1/workouts/[id]/strength-clarification/route',
         ...conversationWorkoutAppPaths,
+        ...conversationIntakeAppPaths,
       ].sort(),
     )
     expect(runtimeExactStringRoutes('commit_mobile_registration_feedback')).toEqual(reviewRoutes)

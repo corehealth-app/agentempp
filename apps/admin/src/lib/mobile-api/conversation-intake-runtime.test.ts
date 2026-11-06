@@ -15,6 +15,7 @@ import {
   bindConversationIntake,
   type ConversationIntakeRoutingDecision,
 } from './conversation-intake-contracts'
+import { createConversationIntakeRoutes } from './conversation-intake-routes'
 import { createConversationIntakeRuntime } from './conversation-intake-runtime'
 import { bindConversationWorkoutCommand, workoutDigest } from './conversation-workout-contracts'
 import type { CurrentClinicalStateSource } from './current-clinical-state'
@@ -198,6 +199,99 @@ function setup() {
     },
   }
 }
+
+describe('actual request-bound routing recovery adapter', () => {
+  function configure(h: ReturnType<typeof setup>, terminal = false, revoke = false) {
+    h.claimed()
+    const originalRPC = required(h.rpc.getMockImplementation()),
+      decision = h.selection('not_reported').decision
+    h.rpc.mockImplementation(async (name, args) => {
+      if (name === 'read_conversation_intake_routing_result') {
+        if (revoke) h.authPort.isAdmin.mockResolvedValueOnce(true)
+        return {
+          data: {
+            action: 'available',
+            intake: h.binding,
+            source_hash: h.sourceHash,
+            claim_id: h.claimId,
+            lease_anchor_at: '2026-11-05T12:00:00.000003Z',
+            lease_clock_origin: 'claim',
+            result: terminal
+              ? {
+                  schema: 'conversation.intake-routing-result.v1',
+                  decision_hash: workoutDigest(decision),
+                  decision,
+                  recorded_at: '2026-11-05T12:00:00.000004Z',
+                  origin: 'router',
+                }
+              : null,
+          },
+          error: null,
+        }
+      }
+      if (name === 'reconcile_conversation_intake_routing')
+        return { data: { action: 'in_flight' }, error: null }
+      return originalRPC(name, args)
+    })
+  }
+  it('resumes a durable original non-recording decision through the physical adapter without provider', async () => {
+    const h = setup()
+    configure(h, true)
+    expect(await h.create().submit(h.command)).toMatchObject({ status: 'not_recorded' })
+    expect(h.rpc.mock.calls.map(([name]) => name)).toEqual([
+      'read_conversation_intake',
+      'read_conversation_intake_routing_result',
+      'read_conversation_intake',
+      'seal_conversation_intake_routing',
+    ])
+    expect(h.rpc.mock.calls[1]?.[1]).toEqual({
+      p_user_id: h.lookup.ownerId,
+      p_intake_id: intakeId,
+      p_input_hash: h.lookup.inputHash,
+      p_expected_epoch: h.lookup.epoch,
+      p_source_hash: h.sourceHash,
+    })
+    expect(h.createRouter).not.toHaveBeenCalled()
+  })
+  it('uses SQL reconciliation once on the same original binding and claim', async () => {
+    const h = setup()
+    configure(h)
+    expect(await h.create().submit(h.command)).toMatchObject({
+      status: 'pending',
+      reason: 'routing_reconciliation_required',
+    })
+    const calls = h.rpc.mock.calls.filter(
+      ([name]) => name === 'reconcile_conversation_intake_routing',
+    )
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.[1]).toEqual({
+      p_user_id: h.lookup.ownerId,
+      p_intake_id: intakeId,
+      p_input_hash: h.lookup.inputHash,
+      p_expected_epoch: h.lookup.epoch,
+      p_source_hash: h.sourceHash,
+      p_claim_id: h.claimId,
+    })
+    expect(h.rpc.mock.calls.some(([name]) => name === 'seal_conversation_intake_routing')).toBe(
+      false,
+    )
+    expect(h.createRouter).not.toHaveBeenCalled()
+  })
+  it('a physical proof read that observes temporary admin membership cannot proceed after it heals', async () => {
+    const h = setup()
+    configure(h, false, true)
+    const runtime = h.create()
+    await expect(runtime.submit(h.command)).rejects.toMatchObject({
+      code: 'patient_admin_account_conflict',
+    })
+    await expect(runtime.read()).rejects.toMatchObject({ code: 'patient_admin_account_conflict' })
+    expect(h.rpc.mock.calls.map(([name]) => name)).toEqual([
+      'read_conversation_intake',
+      'read_conversation_intake_routing_result',
+    ])
+    expect(h.createRouter).not.toHaveBeenCalled()
+  })
+})
 
 type MealBoundaryControls = {
   authPort: {
@@ -668,6 +762,7 @@ describe('private request-bound intake runtime', () => {
   it.each([
     'read',
     'submit',
+    'HTTP_POST',
   ] as const)('projects a saved original through the real default workout %s, not an injected result', async (method) => {
     const row = structuredClone(actualWorkout.workout_reconcile_actual_golden[0])
     if (!row?.response.source || !row.response.preparation || !row.response.effect)
@@ -765,7 +860,36 @@ describe('private request-bound intake runtime', () => {
           clinical: { capture: async () => qualifiedSource.context.clinical },
         },
       )
-    const result = method === 'read' ? await runtime.read() : await runtime.submit(command)
+    const result = await (async () => {
+      if (method === 'read') return runtime.read()
+      if (method === 'submit') return runtime.submit(command)
+      // Actual HTTP handler, input binding, neutral runtime and typed facade;
+      // only external Auth/SQL use fixtures. This is not network/provider QA.
+      const response = await createConversationIntakeRoutes(
+        { enabled: () => true, service: () => runtime },
+        {
+          createServiceClient: () => ({ rpc }) as unknown as ServiceClient,
+          authenticate: async () => auth,
+          authorizeEntitlement: async () => {},
+          createRequestId: () => 'actual-intake-handler-test',
+        },
+      ).POST(
+        new Request('https://app.invalid/api/mobile/v1/conversation/intakes', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': `cintake1:${intakeId}`,
+            'X-Conversation-Owner': auth.userId,
+            'X-Conversation-Epoch': row.epoch,
+          },
+          body: JSON.stringify(command.input),
+        }),
+      )
+      expect(response.status).toBe(200)
+      expect(response.headers.get('X-Conversation-Protocol')).toBe('intake-v1')
+      expect(response.headers.get('Cache-Control')).toBe('no-store')
+      return (await response.json()).data
+    })()
     expect(result).toMatchObject({
       status: 'selected',
       result: {

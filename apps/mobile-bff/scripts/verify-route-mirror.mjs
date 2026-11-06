@@ -3,8 +3,13 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const expectedCount = 88
-const expectedHash = '99623e7e5caf5d3b3df20eeb6bf840e6fb416f5e489498232a0c984a0a6e53b4'
+const expectedCount = 91
+const expectedHash = '93200635df44342607fb57b71a1b623e1dbd1ff442f6fdbe5997a9f7fe81dd67'
+const intakeTransports = new Map([
+  ['conversation/intakes/route.ts', ['POST', 'maxDuration', 'runtime']],
+  ['conversation/intakes/[intakeId]/route.ts', ['GET', 'maxDuration', 'runtime']],
+  ['conversation/intakes/session/route.ts', ['GET', 'dynamic', 'runtime']],
+])
 const workoutTransports = new Map([
   ['conversation/workout-session/route.ts', 'GET'],
   ['conversation/workout-commands/route.ts', 'POST'],
@@ -28,6 +33,8 @@ const boundedConversationRoutes = new Set([
   ...addedReadEditRoutes,
   ...addedReplyRoutes,
   ...workoutTransports.keys(),
+  'conversation/intakes/route.ts',
+  'conversation/intakes/[intakeId]/route.ts',
 ])
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
@@ -105,6 +112,12 @@ function wrapperRecords() {
       const residue = wrapper
         .replace(statement[0], '')
         .replace(/^export\s+const\s+runtime\s*=\s*['"]nodejs['"]\s*;?\s*$/gm, '')
+        .replace(
+          relativePath === 'conversation/intakes/session/route.ts'
+            ? /^export\s+const\s+dynamic\s*=\s*['"]force-dynamic['"]\s*;?\s*$/gm
+            : /$^/,
+          '',
+        )
         .replace(
           relativePath === 'auth/password-recovery/route.ts'
             ? /^export\s+const\s+maxDuration\s*=\s*45\s*;?\s*$/gm
@@ -187,12 +200,24 @@ for (const [surface, records] of [
   ['SOURCE', sources],
   ['WRAPPER', wrappers],
 ]) {
+  for (const [path, exports] of intakeTransports) {
+    const record = records.find((record) => record.path === path)
+    if (JSON.stringify(record?.exports) !== JSON.stringify(exports))
+      fail(`${surface}_INTAKE_EXPORTS:${path}:${JSON.stringify(record?.exports)}`)
+  }
+  const prior88 = records.filter((record) => !intakeTransports.has(record.path))
+  const prior88Hash = hashRecords(prior88)
+  console.info(`${surface}_PRIOR88_ROUTE_EXPORT_COUNT=${prior88.length}`)
+  console.info(`${surface}_PRIOR88_ROUTE_EXPORT_STREAM_SHA256=${prior88Hash}`)
+  if (prior88.length !== 88) fail(`${surface}_PRIOR88_COUNT:${prior88.length}`)
+  if (prior88Hash !== '99623e7e5caf5d3b3df20eeb6bf840e6fb416f5e489498232a0c984a0a6e53b4')
+    fail(`${surface}_PRIOR88_HASH:${prior88Hash}`)
   for (const [path, method] of workoutTransports) {
     const record = records.find((record) => record.path === path)
     if (JSON.stringify(record?.exports) !== JSON.stringify([method, 'maxDuration', 'runtime']))
       fail(`${surface}_WORKOUT_EXPORTS:${path}:${JSON.stringify(record?.exports)}`)
   }
-  const prior85 = records.filter((record) => !workoutTransports.has(record.path))
+  const prior85 = prior88.filter((record) => !workoutTransports.has(record.path))
   const prior85Hash = hashRecords(prior85)
   console.info(`${surface}_PRIOR85_ROUTE_EXPORT_COUNT=${prior85.length}`)
   console.info(`${surface}_PRIOR85_ROUTE_EXPORT_STREAM_SHA256=${prior85Hash}`)

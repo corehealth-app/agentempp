@@ -235,7 +235,10 @@ function certifyNutritionJournalSplitContent(text: string): void {
 // full above, plus the new closed61104 lineage validator. No changed raw body
 // is presented as byte-identical. Independent Git13 trace proof attributes
 // every new physical edge; global scans below still inspect the entire graph.
-function certifyExactSharedTable(file: string, pins: readonly (readonly [string, string])[]): void {
+function certifyExactSharedTable(
+  file: string,
+  pins: readonly (readonly [string, string])[],
+): ReadonlyMap<string, string> {
   const source = ts.createSourceFile(
     file,
     readFileSync(file, 'utf8'),
@@ -256,16 +259,18 @@ function certifyExactSharedTable(file: string, pins: readonly (readonly [string,
   }
   visit(source)
   expect(tables).toHaveLength(1)
+  const bodies = new Map<string, string>()
   const observed =
     tables[0]?.properties.map((property) => {
       if (!ts.isPropertyAssignment(property) || !ts.isArrowFunction(property.initializer))
         throw new Error('Unexpected shared module shape')
-      return [
-        property.name.getText(source),
-        createHash('sha256').update(property.initializer.getText(source)).digest('hex'),
-      ].join(':')
+      const id = property.name.getText(source)
+      const body = property.initializer.getText(source)
+      bodies.set(id, body)
+      return [id, createHash('sha256').update(body).digest('hex')].join(':')
     }) ?? []
   expect(observed.sort()).toEqual(pins.map(([id, hash]) => `${id}:${hash}`).sort())
+  return bodies
 }
 const photoPurposeRoutesR59 = [
   '/api/mobile/v1/conversation/commands/[commandId]/replies/[replyId]/route',
@@ -299,14 +304,24 @@ const photoManifestRoutesR59 = [
   '/api/mobile/v1/onboarding/body-photos/route',
   '/api/mobile/v1/onboarding/route',
 ]
-function certifyPhotoPurposeEdgesR59() {
+function certifyPhotoPurposeEdgesR62() {
   const chunks = semanticChunks(['analyzeConversationImage', 'conversation.image-result.v1'])
   expect(chunks).toHaveLength(1)
   const chunk = chunks[0] ?? ''
-  certifyExactSharedTable(chunk, [
-    ['84359', 'e4ee0d8f1f9944845cba5265618eea34ea63840f275167b99585d6371bc44574'],
+  const bodies = certifyExactSharedTable(chunk, [
+    ['84359', 'd5cd1170f272342d9e151612ecaaa64bee38e42f0f28189555cddae46c764ff8'],
     ['86248', 'bca65f93158ff60efe08f14a45537b8db4e719a9deb863c2b452b37a11862673'],
   ])
+  // R62's routing diagnostics import the existing OpenAI error classes directly.
+  // Webpack factors that SDK differently: Gemini changes only this loader ID.
+  // Reverse exactly one link to retain the independent full R59 body pin; no
+  // raw code or transitive is removed from the physical/global scans below.
+  const gemini = bodies.get('84359') ?? ''
+  const sdkLinkR62 = 'e=c(86603)'
+  expect(gemini.split(sdkLinkR62)).toHaveLength(2)
+  expect(createHash('sha256').update(gemini.replace(sdkLinkR62, 'e=c(15361)')).digest('hex')).toBe(
+    'e4ee0d8f1f9944845cba5265618eea34ea63840f275167b99585d6371bc44574',
+  )
   expect(chunkConsumers(chunk)).toEqual(photoPurposeRoutesR59)
   const manifest = realpathSync(resolve(appRoot, '../../packages/providers/package.json'))
   expect(createHash('sha256').update(readFileSync(manifest)).digest('hex')).toBe(
@@ -1544,7 +1559,7 @@ describe('authoritative Mobile API source surface', () => {
       'current_clinical_runtime_unavailable',
     ])
       expect(vendorSource).not.toContain(marker)
-    const { isEdge: purposeEdge, chunk: ordinaryPhotoChunk } = certifyPhotoPurposeEdgesR59()
+    const { isEdge: purposeEdge, chunk: ordinaryPhotoChunk } = certifyPhotoPurposeEdgesR62()
     const priorTargets = (route: string): string[] =>
       tracedTargets(route).filter(
         (target) => target !== nextHttpSplit && !purposeEdge(route, target),
@@ -1672,11 +1687,24 @@ describe('authoritative Mobile API source surface', () => {
         'read_conversation_intake_routing_result',
         'reconcile_conversation_intake_routing',
       ])
+    // R62 qualifies the router's closed failure diagnostics and existing SDK
+    // error-class imports against this exact source and complete module body.
+    // Independent R59 body: 1ad24d6589b874c420dbfc09b405b86c331378f98a646adf764ea0e8bf60a855.
+    // The other three modules stay byte-exact; no physical/global scan changes.
+    expect(
+      createHash('sha256')
+        .update(
+          readFileSync(
+            resolve(appRoot, '../admin/src/lib/mobile-api/conversation-intake-router.ts'),
+          ),
+        )
+        .digest('hex'),
+    ).toBe('59468451392c18de6c80d7e4820d1bdb43eee9f5e9043996ecd5e70c8226a044')
     certifyExactSharedTable(intakeChunk, [
       ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
       ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
       ['50522', 'bced34a3d3a43ba50d1205c55bd2ead6cd4dbc8fc679a8ab5c46e9ed4af692e5'],
-      ['69520', '1ad24d6589b874c420dbfc09b405b86c331378f98a646adf764ea0e8bf60a855'],
+      ['69520', 'bcfdd2d7bb47f1acdc50ebf2f7272d167b2e404523eb98f282dfa2b9239ebfb4'],
     ])
     // Full typed service code remains physically present, including dormant
     // writers. Journal3 invokes only read through its tested closed RPC port.

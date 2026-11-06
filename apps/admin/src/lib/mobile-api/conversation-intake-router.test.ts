@@ -1,4 +1,10 @@
 import type { LLMCallParams, LLMResult } from '@mpp/providers'
+import {
+  APIConnectionError,
+  APIConnectionTimeoutError,
+  APIUserAbortError,
+  AuthenticationError,
+} from 'openai'
 import { describe, expect, it, vi } from 'vitest'
 import {
   bindConversationIntake,
@@ -57,8 +63,9 @@ function reply(content = JSON.stringify(decision)): LLMResult {
 function setup(content = JSON.stringify(decision)) {
   const complete = vi.fn<(_input: LLMCallParams) => Promise<LLMResult>>(async () => reply(content)),
     provider = { complete },
-    router = createOpenRouterConversationIntakeRouter('synthetic-private-key', provider)
-  return { complete, provider, router }
+    diagnostic = vi.fn(),
+    router = createOpenRouterConversationIntakeRouter('synthetic-private-key', provider, diagnostic)
+  return { complete, provider, router, diagnostic }
 }
 function mediaSource(
   kind: 'audio_note' | 'meal_photo' | 'gym_photo',
@@ -306,5 +313,153 @@ describe('neutral provider routing without performed or nutrition authority', ()
       await f.router.route(mediaSource('audio_note', { text: 'a'.repeat(2001) })),
     ).toMatchObject({ kind: 'clarification_required', reason: 'routing_unavailable' })
     expect(f.complete).not.toHaveBeenCalled()
+  })
+})
+
+describe('safe routing failure diagnostics without changing the durable outcome', () => {
+  it('reports a genuine provider HTTP status and elapsed duration without provider contents', async () => {
+    const f = setup(),
+      clock = vi.spyOn(performance, 'now').mockReturnValueOnce(100).mockReturnValueOnce(350)
+    f.complete.mockRejectedValueOnce(
+      new AuthenticationError(
+        401,
+        { message: 'private-provider-body' },
+        'private-provider-message',
+        { authorization: 'private-provider-token' },
+      ),
+    )
+    try {
+      expect(await f.router.route(source('private-user-discourse'))).toMatchObject({
+        kind: 'clarification_required',
+        reason: 'routing_unavailable',
+      })
+      expect(f.diagnostic.mock.calls).toEqual([
+        [{ phase: 'provider', category: 'http_error', duration_ms: 250, http_status: 401 }],
+      ])
+      expect(f.complete).toHaveBeenCalledOnce()
+    } finally {
+      clock.mockRestore()
+    }
+  })
+  it.each([
+    [new APIConnectionTimeoutError({ message: 'private-timeout-details' }), 'timeout'],
+    [new APIConnectionError({ message: 'private-connection-details' }), 'connection_error'],
+    [new APIUserAbortError({ message: 'private-abort-details' }), 'aborted'],
+    [new Error('private-provider-details'), 'provider_error'],
+    [
+      { status: 401, name: 'APIConnectionTimeoutError', message: 'private-forged' },
+      'provider_error',
+    ],
+  ])('uses a closed provider error category without inventing an HTTP status', async (error, category) => {
+    const f = setup()
+    f.complete.mockRejectedValueOnce(error)
+    expect(await f.router.route(source())).toMatchObject({ reason: 'routing_unavailable' })
+    expect(f.diagnostic.mock.calls).toEqual([
+      [{ phase: 'provider', category, duration_ms: expect.any(Number) }],
+    ])
+    expect(f.complete).toHaveBeenCalledOnce()
+  })
+  it.each([
+    [{ ...reply(), finishReason: 'length' }, 'invalid_result', 'length'],
+    [{ ...reply(), finishReason: 'private-unexpected-finish' }, 'invalid_result', 'unknown'],
+    [reply('private-invalid-json'), 'invalid_json', 'stop'],
+    [reply(JSON.stringify({ ...decision, kind: 'private-invalid-kind' })), 'invalid_shape', 'stop'],
+  ])('separates completion, JSON and schema rejection without logging raw output', async (result, category, finishReason) => {
+    const f = setup()
+    f.complete.mockResolvedValueOnce(result)
+    expect(await f.router.route(source())).toMatchObject({ reason: 'routing_unavailable' })
+    expect(f.diagnostic).toHaveBeenCalledOnce()
+    const event = f.diagnostic.mock.calls[0]?.[0]
+    expect(event).toMatchObject({
+      phase: 'decode',
+      category,
+      duration_ms: expect.any(Number),
+      finish_reason: finishReason,
+    })
+    expect(Object.keys(event).sort()).toEqual(
+      [
+        'phase',
+        'category',
+        'duration_ms',
+        'finish_reason',
+        ...(category === 'invalid_shape' ? ['validation_issue_codes'] : []),
+      ].sort(),
+    )
+    if (category === 'invalid_shape')
+      expect(event.validation_issue_codes).toEqual(['invalid_enum_value'])
+    expect(JSON.stringify(event)).not.toMatch(/private|c3cc|reported_consumption|meal\.report/u)
+    expect(event).not.toHaveProperty('http_status')
+    expect(f.complete).toHaveBeenCalledOnce()
+  })
+  it('reports discourse validation codes without transcripts, paths, IDs or provider invocation', async () => {
+    const f = setup()
+    expect(
+      await f.router.route(mediaSource('audio_note', { text: 'private-'.repeat(300) })),
+    ).toMatchObject({ reason: 'routing_unavailable' })
+    expect(f.diagnostic.mock.calls).toEqual([
+      [
+        {
+          phase: 'discourse',
+          category: 'invalid_discourse',
+          duration_ms: expect.any(Number),
+          validation_issue_codes: ['too_big'],
+        },
+      ],
+    ])
+    expect(f.complete).not.toHaveBeenCalled()
+  })
+  it('keeps invalid immutable input outside the diagnostic catch', async () => {
+    const f = setup()
+    await expect(
+      f.router.route({ ...source(), sourceHash: 'private-changed' }),
+    ).rejects.toMatchObject({
+      code: 'conversation_intake_changed',
+    })
+    expect(f.diagnostic).not.toHaveBeenCalled()
+    expect(f.complete).not.toHaveBeenCalled()
+  })
+  it('does not inspect getters or stringify a thrown provider object', async () => {
+    const f = setup(),
+      access = vi.fn(() => {
+        throw new Error('private-poison')
+      }),
+      error = new AuthenticationError(401, undefined, 'private-error', {})
+    for (const key of ['name', 'message', 'status', 'headers', 'error', 'issues', 'toJSON'])
+      Object.defineProperty(error, key, { configurable: true, get: access })
+    f.complete.mockRejectedValueOnce(error)
+    expect(await f.router.route(source())).toMatchObject({ reason: 'routing_unavailable' })
+    expect(access).not.toHaveBeenCalled()
+    expect(f.diagnostic.mock.calls).toEqual([
+      [{ phase: 'provider', category: 'provider_error', duration_ms: expect.any(Number) }],
+    ])
+  })
+  it('does not turn a failed diagnostic sink into another provider call or failure', async () => {
+    const f = setup()
+    f.complete.mockRejectedValueOnce(new APIConnectionTimeoutError())
+    f.diagnostic.mockImplementationOnce(() => {
+      throw new Error('private-logger-failure')
+    })
+    expect(await f.router.route(source())).toMatchObject({ reason: 'routing_unavailable' })
+    expect(f.diagnostic).toHaveBeenCalledOnce()
+    expect(f.complete).toHaveBeenCalledOnce()
+  })
+  it('uses the same safe event for the default server logger and emits nothing on success', async () => {
+    const log = vi.spyOn(console, 'warn').mockImplementation(() => undefined),
+      complete = vi.fn(async () => reply()),
+      router = createOpenRouterConversationIntakeRouter('synthetic-private-key', { complete })
+    try {
+      expect(await router.route(source())).toEqual(decision)
+      expect(log).not.toHaveBeenCalled()
+      complete.mockRejectedValueOnce(new APIConnectionTimeoutError())
+      expect(await router.route(source())).toMatchObject({ reason: 'routing_unavailable' })
+      expect(log.mock.calls).toEqual([
+        [
+          '[mobile-api] conversation_intake_routing_failed',
+          { phase: 'provider', category: 'timeout', duration_ms: expect.any(Number) },
+        ],
+      ])
+    } finally {
+      log.mockRestore()
+    }
   })
 })

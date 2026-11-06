@@ -663,7 +663,19 @@ describe('authoritative Mobile API source surface', () => {
     console.info(`SOURCE_ROUTE_EXPORT_STREAM_SHA256=${hash}`)
 
     expect(records).toHaveLength(91)
-    expect(hash).toBe('93200635df44342607fb57b71a1b623e1dbd1ff442f6fdbe5997a9f7fe81dd67')
+    expect(hash).toBe('1aee269695cf61901f5ecb802e8509ae9004481024926043353d1f7cf32db9f7')
+    expect(
+      records.find((record) => record.path === 'conversation/commands/[commandId]/replies/route.ts')
+        ?.exports,
+    ).toEqual(['GET', 'POST', 'maxDuration', 'runtime'])
+    const prior91 = records.map((record) =>
+      record.path === 'conversation/commands/[commandId]/replies/route.ts'
+        ? { ...record, exports: record.exports.filter((name) => name !== 'GET') }
+        : record,
+    )
+    expect(hashRecords(prior91)).toBe(
+      '93200635df44342607fb57b71a1b623e1dbd1ff442f6fdbe5997a9f7fe81dd67',
+    )
     expect(records.filter((record) => conversationIntakeSourcePaths.has(record.path))).toEqual([
       {
         path: 'conversation/intakes/[intakeId]/route.ts',
@@ -672,7 +684,7 @@ describe('authoritative Mobile API source surface', () => {
       { path: 'conversation/intakes/route.ts', exports: ['POST', 'maxDuration', 'runtime'] },
       { path: 'conversation/intakes/session/route.ts', exports: ['GET', 'dynamic', 'runtime'] },
     ])
-    const prior88 = records.filter((record) => !conversationIntakeSourcePaths.has(record.path))
+    const prior88 = prior91.filter((record) => !conversationIntakeSourcePaths.has(record.path))
     expect(prior88).toHaveLength(88)
     expect(hashRecords(prior88)).toBe(
       '99623e7e5caf5d3b3df20eeb6bf840e6fb416f5e489498232a0c984a0a6e53b4',
@@ -715,7 +727,7 @@ describe('authoritative Mobile API source surface', () => {
       },
       {
         path: 'conversation/commands/[commandId]/replies/route.ts',
-        exports: ['POST', 'maxDuration', 'runtime'],
+        exports: ['GET', 'POST', 'maxDuration', 'runtime'],
       },
     ])
     const extensions = new Set(conversationReadEditAdditions)

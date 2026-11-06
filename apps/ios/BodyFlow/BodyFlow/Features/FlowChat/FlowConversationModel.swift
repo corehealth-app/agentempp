@@ -86,6 +86,9 @@ final class FlowConversationModel {
   private(set) var mealEditor: FlowConversationMealEditModel?
   private(set) var mealReplies: FlowConversationMealReplyModel?
   private(set) var neutralIntake: FlowNeutralIntakeModel?
+  private var parentQuestionRepository: MobileConversationMealReplyRepository?
+  private var parentQuestionRequests: [UUID: UUID] = [:]
+  private var parentQuestionReads: [UUID: ConversationMealParentQuestionSnapshot] = [:]
   private var deliveredLinkedEffects: Set<UUID> = []
   private var groupRequests: [UUID: UUID] = [:]
   private var groupFailures: Set<UUID> = []
@@ -249,10 +252,71 @@ final class FlowConversationModel {
         question: question)
     } catch { failure = .changed }
   }
+  func canReadNeutralMealQuestion(intakeID: UUID) -> Bool {
+    hasCurrentScope && mealReplies?.canBegin == true && parentQuestionRepository != nil
+      && neutralIntake?.mealQuestionChild(intakeID: intakeID) != nil
+      && parentQuestionRequests.isEmpty
+  }
+  func neutralMealQuestion(intakeID: UUID) -> ConversationThreadPageSnapshot.Question? {
+    guard hasCurrentScope, let child = neutralIntake?.mealQuestionChild(intakeID: intakeID),
+      let read = parentQuestionReads[intakeID], let context,
+      read.matches(child: child, context: context)
+    else { return nil }
+    return mealReplies?.currentQuestion(parentID: child.commandID, fallback: read.question)
+  }
+  /// The selected typed child is an owned lookup, never a reconstructed report.
+  func beginNeutralMealReply(intakeID: UUID) async {
+    guard canReadNeutralMealQuestion(intakeID: intakeID), let repository = parentQuestionRepository,
+      let child = neutralIntake?.mealQuestionChild(intakeID: intakeID), let context, let lease
+    else { return }
+    let requestID = UUID()
+    // Detach the previous observation/form before awaiting another read. A
+    // protected prepared answer cannot enter this path because canBegin is false.
+    mealReplies?.dismiss()
+    parentQuestionReads.removeAll()
+    parentQuestionRequests[intakeID] = requestID
+    defer { if parentQuestionRequests[intakeID] == requestID { parentQuestionRequests.removeValue(forKey: intakeID) } }
+    do {
+      let read = try await repository.readParent(child: child, context: context)
+      try await lifecycle.performVisiblePatientStateOperation(lease: lease) {
+        try Task.checkCancellation()
+        try context.withCurrentAuthority {
+          guard self.hasCurrentScope, self.context?.observation.isSameGrant(as: context.observation) == true,
+            self.parentQuestionRequests[intakeID] == requestID,
+            let original = self.neutralIntake?.terminalRows.first(where: { $0.id == intakeID }),
+            self.neutralIntake?.mealQuestionChild(intakeID: intakeID)?.inputHash == child.inputHash,
+            read.parentDecisionHash != original.response.selection?.decisionHash
+          else { throw ConversationOutboxError.staleObservation }
+          self.mealReplies?.observeParentHead(read)
+          self.parentQuestionReads[intakeID] = read
+          guard read.status == .needsReply, let question = read.question else {
+            self.failure = .changed
+            return
+          }
+          try self.mealReplies?.begin(parentBinding: read.parentBinding,
+            parentDecisionHash: read.parentDecisionHash, question: question)
+        }
+      }
+    } catch {
+      guard hasCurrentScope, self.context?.observation.isSameGrant(as: context.observation) == true,
+        parentQuestionRequests[intakeID] == requestID else { return }
+      failure = .unavailable
+    }
+  }
   var hasUnpublishedLinkedDelivery: Bool {
     guard hasCurrentScope, let result = mealReplies?.lastDelivered, let child = result.childBinding,
       result.receipt != nil
     else { return false }
+    if unifiedHistory.acceptedIdentity == context?.identity,
+      unifiedRows.contains(where: { entry in
+        guard case .meal(let meal) = entry.record else { return false }
+        return entry.kind == .fulfillment && entry.status == .registered
+          && entry.commandID == child.commandID && entry.parentCommandID == result.parentCommandID
+          && entry.originEpoch == child.epoch
+          && meal.registrationID == result.receipt?.registrationID
+          && meal.logIDs == result.receipt?.logIDs && meal.effectVersion == result.receipt?.effectVersion
+          && meal.mealType == result.receipt?.mealType.rawValue && meal.localDate == result.receipt?.localDate
+      }) { return false }
     return !threadEntries.contains { entry in
       guard case .fulfillment(let value) = entry.detail else { return false }
       return value.binding == child
@@ -540,11 +604,13 @@ final class FlowConversationModel {
       if linkedReplies {
         let replyController = try await ConversationMealReplyController.open(
           transport: transport, lifecycle: lifecycle, store: store, keyVault: keyVault,
-          expectedLease: lease)
+          expectedLease: lease, feedbackPresentation: neutralIntakeEnabled ? .v2 : nil)
         do {
           let replies = try await FlowConversationMealReplyModel.open(
             controller: replyController, lifecycle: lifecycle, lease: lease
           ) { [weak model] result, context in model?.receiveMealReply(result, context: context) }
+          model.parentQuestionRepository = try await MobileConversationMealReplyRepository.scoped(
+            transport: transport, lifecycle: lifecycle, lease: lease)
           model.mealReplies = replies
           if let context = model.context { replies.accept(context) }
           await replies.restore()
@@ -1101,7 +1167,11 @@ final class FlowConversationModel {
         blockedDecisionID = nil
         latestDecision = nil
       }
-      if deliveredLinkedEffects.insert(result.replyID).inserted { savedEffectRevision &+= 1 }
+      if deliveredLinkedEffects.insert(result.replyID).inserted {
+        neutralIntake?.invalidateFeedback()
+        unifiedHistory.invalidateCommentary(appliedAt: receipt.consumedAt)
+        savedEffectRevision &+= 1
+      }
     } else if result.question != nil {
       blockedDecisionID = result.parentBinding.commandID
       dismissedQuestions.remove(result.parentBinding.commandID)
@@ -1451,10 +1521,19 @@ final class FlowConversationModel {
         commandID: commandID, publish: self.publisher(for: id))
     }
   }
-  func cancelTransientWork() { operation?.cancel(); neutralIntake?.cancelTransientWork(); unifiedHistory.cancel() }
+  func cancelTransientWork() {
+    parentQuestionRequests.removeAll()
+    parentQuestionReads.removeAll()
+    operation?.cancel()
+    neutralIntake?.cancelTransientWork()
+    unifiedHistory.cancel()
+  }
   func invalidateSynchronously() {
     lifetime.close()
     closed = true
+    parentQuestionRequests.removeAll()
+    parentQuestionReads.removeAll()
+    parentQuestionRepository = nil
     lease = nil
     operation?.cancel()
     mealEditor?.invalidateSynchronously()
@@ -1530,6 +1609,8 @@ final class FlowConversationModel {
     guard !isClosed else { return }
     switch event {
     case .scopeSuspended:
+      parentQuestionRequests.removeAll()
+      parentQuestionReads.removeAll()
       mealEditor?.suspend()
       mealReplies?.suspend()
       resetHistory()
@@ -1580,6 +1661,8 @@ final class FlowConversationModel {
         latestDecision = nil
       }
       if let previous = context, !previous.observation.isSameGrant(as: value.observation) {
+        parentQuestionRequests.removeAll()
+        parentQuestionReads.removeAll()
         resetHistory()
         currentGroups.removeAll()
         groupRequests.removeAll()

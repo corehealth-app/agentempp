@@ -4,7 +4,8 @@ import { dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const expectedCount = 91
-const expectedHash = '93200635df44342607fb57b71a1b623e1dbd1ff442f6fdbe5997a9f7fe81dd67'
+const expectedHash = '1aee269695cf61901f5ecb802e8509ae9004481024926043353d1f7cf32db9f7'
+const mealQuestionRoute = 'conversation/commands/[commandId]/replies/route.ts'
 const intakeTransports = new Map([
   ['conversation/intakes/route.ts', ['POST', 'maxDuration', 'runtime']],
   ['conversation/intakes/[intakeId]/route.ts', ['GET', 'maxDuration', 'runtime']],
@@ -200,12 +201,30 @@ for (const [surface, records] of [
   ['SOURCE', sources],
   ['WRAPPER', wrappers],
 ]) {
+  const question = records.find((record) => record.path === mealQuestionRoute)
+  if (
+    JSON.stringify(question?.exports) !== JSON.stringify(['GET', 'POST', 'maxDuration', 'runtime'])
+  )
+    fail(`${surface}_MEAL_QUESTION_EXPORTS:${JSON.stringify(question?.exports)}`)
+  // T47 adds exactly GET to one existing path. Every prior method/configuration
+  // remains frozen, including all 91 routes before this one additive method.
+  const prior91 = records.map((record) =>
+    record.path === mealQuestionRoute
+      ? { ...record, exports: record.exports.filter((name) => name !== 'GET') }
+      : record,
+  )
+  const prior91Hash = hashRecords(prior91)
+  console.info(`${surface}_PRIOR91_ROUTE_EXPORT_COUNT=${prior91.length}`)
+  console.info(`${surface}_PRIOR91_ROUTE_EXPORT_STREAM_SHA256=${prior91Hash}`)
+  if (prior91.length !== 91) fail(`${surface}_PRIOR91_COUNT:${prior91.length}`)
+  if (prior91Hash !== '93200635df44342607fb57b71a1b623e1dbd1ff442f6fdbe5997a9f7fe81dd67')
+    fail(`${surface}_PRIOR91_HASH:${prior91Hash}`)
   for (const [path, exports] of intakeTransports) {
     const record = records.find((record) => record.path === path)
     if (JSON.stringify(record?.exports) !== JSON.stringify(exports))
       fail(`${surface}_INTAKE_EXPORTS:${path}:${JSON.stringify(record?.exports)}`)
   }
-  const prior88 = records.filter((record) => !intakeTransports.has(record.path))
+  const prior88 = prior91.filter((record) => !intakeTransports.has(record.path))
   const prior88Hash = hashRecords(prior88)
   console.info(`${surface}_PRIOR88_ROUTE_EXPORT_COUNT=${prior88.length}`)
   console.info(`${surface}_PRIOR88_ROUTE_EXPORT_STREAM_SHA256=${prior88Hash}`)

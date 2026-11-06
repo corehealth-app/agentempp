@@ -103,10 +103,25 @@ struct FlowNeutralIntakeTranscriptContent: View {
           FlowConversationMealControlsContent(model: conversation, commandID: row.childID)
         }
       }
-      ForEach(model.terminalRows.filter { !historicalTerminalIntakeIDs.contains($0.id) }) { row in
+      ForEach(model.terminalRows.filter {
+        !historicalTerminalIntakeIDs.contains($0.id)
+          || model.mealQuestionChild(intakeID: $0.id) != nil
+      }) { row in
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-          source(row.input)
-          Text(status(row.response)).accessibilityIdentifier("conversation.neutral.closed")
+          if !historicalTerminalIntakeIDs.contains(row.id) {
+            source(row.input)
+            Text(status(row.response)).accessibilityIdentifier("conversation.neutral.closed")
+          }
+          if model.mealQuestionChild(intakeID: row.id) != nil, let conversation {
+            if let question = conversation.neutralMealQuestion(intakeID: row.id) {
+              Text(verbatim: FlowConversationThreadEventPresentation.question(question, english: english))
+            }
+            Button(english ? "Answer Flow" : "Responder ao Flow") {
+              Task { await conversation.beginNeutralMealReply(intakeID: row.id) }
+            }
+            .disabled(!conversation.canReadNeutralMealQuestion(intakeID: row.id))
+            .accessibilityIdentifier("conversation.neutral.answer-meal")
+          }
         }.padding(BodyFlowSpacing.md).accessibilityElement(children: .contain)
       }
       ForEach(model.pendingRows, id: \.input.intakeID) { row in

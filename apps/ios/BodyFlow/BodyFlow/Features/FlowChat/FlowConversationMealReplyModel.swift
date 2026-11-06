@@ -183,6 +183,7 @@ private final class FlowMealReplyLifetime: @unchecked Sendable {
       storedFailure = nil
     }
     if context?.observation.isSameGrant(as: value.observation) != true {
+      if requestedID == nil { clearForm() }
       replay.removeAll()
       hasSnapshot = false
       acknowledgement = acknowledgement?.withoutFeedback()
@@ -191,6 +192,7 @@ private final class FlowMealReplyLifetime: @unchecked Sendable {
     identity = value.identity
   }
   func suspend() {
+    if requestedID == nil { clearForm() }
     acknowledgement = acknowledgement?.withoutFeedback()
     context = nil
     replay.removeAll()
@@ -417,6 +419,19 @@ private final class FlowMealReplyLifetime: @unchecked Sendable {
       storedFailure = .changed
       replay.removeAll()
     }
+  }
+  /// Current pure parent observation. Never rewrites a protected prepared answer.
+  func observeParentHead(_ read: ConversationMealParentQuestionSnapshot) {
+    guard hasScope, let context, read.authUserID == context.authUserID,
+      read.ownerID == context.ownerID, read.epoch == context.epoch,
+      let observed = ConversationProtocolInstant(read.observedAt),
+      let accepted = ConversationProtocolInstant(context.observedAt), observed >= accepted
+    else { return }
+    let parent = read.parentCommandID
+    if read.reason == "parent_fulfilled" { fulfilledParents.insert(parent) }
+    if let old = heads[parent], old.revision > read.headRevision { return }
+    heads[parent] = .init(revision: read.headRevision, questionKey: read.question?.questionKey)
+    if let offer, !accepts(offer) { storedFailure = .changed; replay.removeAll() }
   }
   private func accepts(_ offer: Offer) -> Bool {
     guard !fulfilledParents.contains(offer.parent.commandID) else { return false }

@@ -38,6 +38,14 @@ const addedIntakeRoutes = new Map([
   ['conversation/intakes/session/route.ts', ['GET', 'dynamic', 'runtime']],
 ])
 const nutritionWindowRoute = 'nutrition/window/route.ts'
+const mealQuestionRoute = 'conversation/commands/[commandId]/replies/route.ts'
+function beforeMealQuestionGET(records: RouteRecord[]): RouteRecord[] {
+  return records.map((record) =>
+    record.path === mealQuestionRoute
+      ? { ...record, exports: record.exports.filter((name) => name !== 'GET') }
+      : record,
+  )
+}
 const boundedConversationRoutes = new Set([
   'conversation/meal-commands/route.ts',
   ...addedReadEditRoutes,
@@ -183,7 +191,7 @@ function withUnexpectedAuthComposition<T>(
 }
 
 function withNutritionMutation<T>(
-  mutation: 'method' | 'extra-route',
+  mutation: 'method' | 'extra-route' | 'question-missing' | 'question-extra',
   inspect: (script: string) => T,
 ): T {
   const root = mkdtempSync(resolve(testDirectory, '../.mobile-bff-nutrition-scope-'))
@@ -203,7 +211,21 @@ function withNutritionMutation<T>(
         mkdirSync(dirname(target), { recursive: true })
         writeFileSync(target, readFileSync(file))
       }
-      if (mutation === 'method') {
+      if (mutation === 'question-missing' || mutation === 'question-extra') {
+        const target = resolve(to, mealQuestionRoute),
+          source = readFileSync(target, 'utf8')
+        writeFileSync(
+          target,
+          from === sourceRoot
+            ? mutation === 'question-missing'
+              ? source.replace(/^export const GET =.*\n/gm, '')
+              : `${source}\nexport function HEAD() {}\n`
+            : source.replace(
+                'GET, POST',
+                mutation === 'question-missing' ? 'POST' : 'GET, HEAD, POST',
+              ),
+        )
+      } else if (mutation === 'method') {
         const target = resolve(to, nutritionWindowRoute)
         writeFileSync(target, readFileSync(target, 'utf8').replace(/\bGET\b/g, 'POST'))
       } else {
@@ -224,18 +246,34 @@ function withNutritionMutation<T>(
 }
 
 describe('dedicated Mobile BFF wrapper mirror', () => {
+  test.each([
+    'question-missing',
+    'question-extra',
+  ] as const)('rejects a changed parent-only question method: %s', (mutation) => {
+    withNutritionMutation(mutation, (script) => {
+      const result = spawnSync(process.execPath, [script], { encoding: 'utf8', timeout: 30_000 })
+      expect(result.status).toBe(1)
+      for (const surface of ['SOURCE', 'WRAPPER'])
+        expect(result.stderr).toContain(`ROUTE_MIRROR_ERROR=${surface}_MEAL_QUESTION_EXPORTS:`)
+      expect(result.stdout).not.toContain('ROUTE_MIRROR_STATUS=VERIFIED')
+    })
+  })
   test('adds only three closed neutral intake exports and preserves every prior88 export', () => {
     for (const records of [sourceRecords(), wrapperRecords()]) {
       expect(records).toHaveLength(91)
       expect(hashRecords(records)).toBe(
-        '93200635df44342607fb57b71a1b623e1dbd1ff442f6fdbe5997a9f7fe81dd67',
+        '1aee269695cf61901f5ecb802e8509ae9004481024926043353d1f7cf32db9f7',
       )
       expect(
         records
           .filter((record) => addedIntakeRoutes.has(record.path))
           .map(({ path, exports }) => ({ path, exports })),
       ).toEqual([...addedIntakeRoutes].map(([path, exports]) => ({ path, exports })))
-      const prior88 = records.filter((record) => !addedIntakeRoutes.has(record.path))
+      const beforeQuestion = beforeMealQuestionGET(records)
+      expect(hashRecords(beforeQuestion)).toBe(
+        '93200635df44342607fb57b71a1b623e1dbd1ff442f6fdbe5997a9f7fe81dd67',
+      )
+      const prior88 = beforeQuestion.filter((record) => !addedIntakeRoutes.has(record.path))
       expect(prior88).toHaveLength(88)
       expect(hashRecords(prior88)).toBe(
         '99623e7e5caf5d3b3df20eeb6bf840e6fb416f5e489498232a0c984a0a6e53b4',
@@ -244,7 +282,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
   })
   test('adds exactly the three separate workout exports and preserves the original 85', () => {
     for (const records of [sourceRecords(), wrapperRecords()]) {
-      const prior85 = records.filter(
+      const prior85 = beforeMealQuestionGET(records).filter(
         (record) => !addedWorkoutRoutes.has(record.path) && !addedIntakeRoutes.has(record.path),
       )
       expect(prior85).toHaveLength(85)
@@ -282,7 +320,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
         path: nutritionWindowRoute,
         exports: ['GET', 'dynamic', 'runtime'],
       })
-      const prior84 = records.filter(
+      const prior84 = beforeMealQuestionGET(records).filter(
         (record) =>
           record.path !== nutritionWindowRoute &&
           !addedWorkoutRoutes.has(record.path) &&
@@ -384,7 +422,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
         },
         {
           path: 'conversation/commands/[commandId]/replies/route.ts',
-          exports: ['POST', 'maxDuration', 'runtime'],
+          exports: ['GET', 'POST', 'maxDuration', 'runtime'],
         },
       ])
     }
@@ -397,7 +435,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
       count: 84,
       hash: 'c3635c150461af36b4593ce6c2f7621e59a19a2e45482b50ad82f1f6c022cd2b',
       prior88Hash: '11cb5dc130ca668a61a0c3a8d692c3a82ee66b9090e199ba2313aef3a1e81010',
-      currentHash: 'fe1a7eaacef7cd2cd6bf184f0bbf1b37f547c42f030a702f9525dc393a57fe54',
+      currentHash: '75dec280108bfade9b139aee97ceff237dccfbaf3d63df401dcf9abbef7b0569',
     },
     {
       name: 'Unapproved Auth added alongside clarification',
@@ -405,7 +443,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
       count: 85,
       hash: '18329037e36d0abc3dc1cf713945338caffce15b37fd214fd50567484c3dcc91',
       prior88Hash: 'c31e1667bb9a9056a820f87f669f4c7dca3400ca13c15b8eb904931244080805',
-      currentHash: 'aec9ba7165f1e5a73b5c096c601774f9a4bbbb42f49eedadba91bd58d1edfd0d',
+      currentHash: '32fcca3a4c4a1b963472f09a0c89a7d6a421dffed47aca358e7629fc625d39b9',
     },
   ])('rejects $name through the closed inventory', ({
     replace,
@@ -453,7 +491,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
     expect(result.stdout).toContain('WRAPPER_ROUTE_EXPORT_COUNT=91')
     for (const surface of ['SOURCE', 'WRAPPER']) {
       expect(result.stdout).toContain(
-        `${surface}_ROUTE_EXPORT_STREAM_SHA256=93200635df44342607fb57b71a1b623e1dbd1ff442f6fdbe5997a9f7fe81dd67`,
+        `${surface}_ROUTE_EXPORT_STREAM_SHA256=1aee269695cf61901f5ecb802e8509ae9004481024926043353d1f7cf32db9f7`,
       )
     }
     for (const surface of ['SOURCE', 'WRAPPER']) {
@@ -487,7 +525,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
 
     const hash = hashRecords(wrappers)
     console.info(`WRAPPER_ROUTE_EXPORT_STREAM_SHA256=${hash}`)
-    expect(hash).toBe('93200635df44342607fb57b71a1b623e1dbd1ff442f6fdbe5997a9f7fe81dd67')
+    expect(hash).toBe('1aee269695cf61901f5ecb802e8509ae9004481024926043353d1f7cf32db9f7')
   })
 
   test.each([...boundedConversationRoutes])('declares bounded timeout locally for %s', (path) => {

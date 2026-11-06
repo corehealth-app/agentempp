@@ -72,7 +72,8 @@ actor ConversationMealReplyController {
     store: EncryptedConversationOutboxStore = .device,
     keyVault: ConversationOutboxKeyVault = .init(
       service: ConversationMealReplyOutboxSession.keychainService),
-    expectedLease: SessionLease? = nil
+    expectedLease: SessionLease? = nil,
+    feedbackPresentation: ConversationFeedbackPresentationSelection? = nil
   ) async throws -> Self {
     let lease = try await lifecycle.leaseForRequest()
     if let expectedLease {
@@ -84,7 +85,7 @@ actor ConversationMealReplyController {
     }
     try await lifecycle.validate(lease)
     let repository = try await MobileConversationMealReplyRepository.scoped(
-      transport: transport, lifecycle: lifecycle, lease: lease)
+      transport: transport, lifecycle: lifecycle, lease: lease, feedbackPresentation: feedbackPresentation)
     let outbox = try await ConversationMealReplyOutboxSession.open(
       lifecycle: lifecycle, store: store, keyVault: keyVault, expectedLease: lease)
     let lifetime = MealReplyControllerLifetime()

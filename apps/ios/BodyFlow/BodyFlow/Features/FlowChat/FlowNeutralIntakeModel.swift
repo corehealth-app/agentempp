@@ -126,6 +126,17 @@ final class FlowNeutralIntakeModel {
   var pendingRows: [ConversationNeutralIntakeOutboxEntry] { isVisible ? entries : [] }
   var savedRows: [FlowNeutralIntakeSavedRow] { isVisible ? records : [] }
   var terminalRows: [FlowNeutralIntakeTerminalRow] { isVisible ? terminalRecords : [] }
+  /// Genuine terminal selection only; journal display fields cannot recover this hash.
+  func mealQuestionChild(intakeID: UUID) -> FlowNeutralIntakeChild? {
+    guard isVisible, let row = terminalRecords.first(where: { $0.id == intakeID }),
+      row.identity == context?.identity, case .meal(.state(let state)) = row.response.result,
+      state.status == .notRecorded,
+      state.reason.map({ ["missing_quantity", "meal_type_required"].contains($0) }) == true,
+      let selection = row.response.selection,
+      selection.child.kind == .meal
+    else { return nil }
+    return selection.child
+  }
   var offlineQueuedCount: Int { isVisible ? 0 : queuedIDs.count }
   func state(intakeID: UUID) -> FlowNeutralIntakeResponseSnapshot? {
     isVisible ? states[intakeID] : nil

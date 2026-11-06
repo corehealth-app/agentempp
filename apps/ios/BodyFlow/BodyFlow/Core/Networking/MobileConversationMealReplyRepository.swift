@@ -16,6 +16,33 @@ struct MobileConversationMealReplyRepository: Sendable {
     try await transport.validateOriginalSession(lease)
     return .init(transport: transport, lifecycle: lifecycle, lease: lease, feedbackPresentation: feedbackPresentation)
   }
+  /// Reads only the selected typed parent. It neither allocates a reply ID nor writes.
+  func readParent(child: FlowNeutralIntakeChild, context: ConversationCommandContext)
+    async throws -> ConversationMealParentQuestionSnapshot
+  {
+    try await validateParent(child, context: context)
+    let response = try await transport.executeHTTP(
+      MobileAPIRequest<ConversationMealParentQuestionSnapshot>(
+        method: .get,
+        path: "/api/mobile/v1/conversation/commands/\(child.commandID.uuidString.lowercased())/replies",
+        queryItems: [.init(name: "parent_input_hash", value: child.inputHash)],
+        conversation: .mealParentQuestion(child)))
+    try await validateParent(child, context: context)
+    guard response.statusCode == 200, response.data.matches(child: child, context: context),
+      let observed = ConversationProtocolInstant(response.data.observedAt),
+      let accepted = ConversationProtocolInstant(context.observedAt), observed >= accepted
+    else { throw MobileAPITransportError.invalidResponse }
+    return response.data
+  }
+  private func validateParent(_ child: FlowNeutralIntakeChild, context: ConversationCommandContext) async throws {
+    guard !context.observation.isEnqueueOnly, child.kind == .meal,
+      child.ownerID == context.ownerID, child.epoch == context.epoch,
+      context.authUserID == UUID(uuidString: lease.userID), context.sessionGeneration == lease.generation
+    else { throw ConversationOutboxError.invalidServerObservation }
+    try await lifecycle.validate(lease)
+    try Task.checkCancellation()
+    try context.withCurrentAuthority {}
+  }
   func submit(_ ticket: ConversationMealReplyOutboxTicket, context: ConversationCommandContext)
     async throws -> ConversationMealReplyResultSnapshot
   {

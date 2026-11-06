@@ -1,0 +1,95 @@
+{
+  "qualification": "UNIT projection of genuine SQL read fixtures; NOT actual HTTP qualification",
+  "samples": {
+    "quantity": {
+      "schema": "conversation.meal-question-read.v1",
+      "auth_user_id": "c3cc0000-0000-4000-8000-000000000002",
+      "owner_id": "c3cc0000-0000-4000-8000-000000000001",
+      "epoch": "98b9a460-d972-4443-bf33-946904443fd9",
+      "parent_command_id": "c3cc0000-0000-4000-8000-000000000003",
+      "parent_input_hash": "f554a0ea473b12827a6276501df2b9161089ea1265112c5fc380512b40024a58",
+      "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+      "parent_binding": {
+        "kind": "meal.report",
+        "epoch": "98b9a460-d972-4443-bf33-946904443fd9",
+        "owner_id": "c3cc0000-0000-4000-8000-000000000001",
+        "command_id": "c3cc0000-0000-4000-8000-000000000003",
+        "input_hash": "f554a0ea473b12827a6276501df2b9161089ea1265112c5fc380512b40024a58",
+        "admitted_at": "2026-11-04T13:57:31.532903Z",
+        "command_protocol": "conversation.command.v1"
+      },
+      "head_revision": 0,
+      "observed_at": "2026-11-04T13:57:31.888537Z",
+      "status": "needs_reply",
+      "question": {
+        "kind": "quantity",
+        "schema": "conversation.meal-question.v1",
+        "revision": 0,
+        "food_name": "arroz",
+        "food_index": 0,
+        "question_key": "d65e541612ab9ab7cd36f100fafa0e2ae26b106f15fed31e422fa73bb5405129",
+        "allowed_units": [
+          "g",
+          "kg"
+        ],
+        "quantity_reference": null
+      },
+      "reason": null
+    },
+    "meal_type": {
+      "schema": "conversation.meal-question-read.v1",
+      "auth_user_id": "c3cc0000-0000-4000-8000-000000000002",
+      "owner_id": "c3cc0000-0000-4000-8000-000000000001",
+      "epoch": "98b9a460-d972-4443-bf33-946904443fd9",
+      "parent_command_id": "c3cc0000-0000-4000-8000-000000000003",
+      "parent_input_hash": "f554a0ea473b12827a6276501df2b9161089ea1265112c5fc380512b40024a58",
+      "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+      "parent_binding": {
+        "kind": "meal.report",
+        "epoch": "98b9a460-d972-4443-bf33-946904443fd9",
+        "owner_id": "c3cc0000-0000-4000-8000-000000000001",
+        "command_id": "c3cc0000-0000-4000-8000-000000000003",
+        "input_hash": "f554a0ea473b12827a6276501df2b9161089ea1265112c5fc380512b40024a58",
+        "admitted_at": "2026-11-04T13:57:31.532903Z",
+        "command_protocol": "conversation.command.v1"
+      },
+      "head_revision": 1,
+      "observed_at": "2026-11-04T13:57:32.182419Z",
+      "status": "needs_reply",
+      "question": {
+        "kind": "meal_type",
+        "schema": "conversation.meal-question.v1",
+        "revision": 1,
+        "food_name": null,
+        "food_index": null,
+        "question_key": "08b79f143fd1cbd7017be7bbf3c564e109f7e8b62dbb014d76ab6242ddd0a85d",
+        "allowed_units": [],
+        "quantity_reference": null
+      },
+      "reason": null
+    },
+    "fulfilled": {
+      "schema": "conversation.meal-question-read.v1",
+      "auth_user_id": "c3cc0000-0000-4000-8000-000000000002",
+      "owner_id": "c3cc0000-0000-4000-8000-000000000001",
+      "epoch": "98b9a460-d972-4443-bf33-946904443fd9",
+      "parent_command_id": "c3cc0000-0000-4000-8000-000000000003",
+      "parent_input_hash": "f554a0ea473b12827a6276501df2b9161089ea1265112c5fc380512b40024a58",
+      "parent_decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4",
+      "parent_binding": {
+        "kind": "meal.report",
+        "epoch": "98b9a460-d972-4443-bf33-946904443fd9",
+        "owner_id": "c3cc0000-0000-4000-8000-000000000001",
+        "command_id": "c3cc0000-0000-4000-8000-000000000003",
+        "input_hash": "f554a0ea473b12827a6276501df2b9161089ea1265112c5fc380512b40024a58",
+        "admitted_at": "2026-11-04T13:57:31.532903Z",
+        "command_protocol": "conversation.command.v1"
+      },
+      "head_revision": 2,
+      "observed_at": "2026-11-04T13:57:32.909918Z",
+      "status": "closed",
+      "question": null,
+      "reason": "parent_fulfilled"
+    }
+  }
+}

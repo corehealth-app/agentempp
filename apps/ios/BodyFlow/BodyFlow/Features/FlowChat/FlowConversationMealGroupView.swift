@@ -7,6 +7,7 @@ struct FlowConversationMealGroupView: View {
   let group: ConversationMealGroupSnapshot
   var editing: FlowConversationMealEditActions? = nil
   var showsFacts = true
+  var showsCurrentQuantity = false
   @State private var undoRequest: UndoRequest?
   private struct UndoRequest {
     let group: ConversationMealGroupSnapshot
@@ -19,13 +20,13 @@ struct FlowConversationMealGroupView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
       Text(
-        showsFacts
+        showsFacts || showsCurrentQuantity
           ? (english ? "Current meal" : "Refeição atual")
           : (english ? "Recorded foods" : "Alimentos registrados")
       )
       .font(BodyFlowTypography.cardTitle).accessibilityAddTraits(.isHeader)
       .accessibilityIdentifier("conversation.meal.current-title")
-      if showsFacts && group.revision > 0 {
+      if (showsFacts || showsCurrentQuantity) && group.revision > 0 {
         Label(
           english
             ? "Updated after the original registration" : "Atualizada após o registro original",
@@ -38,8 +39,10 @@ struct FlowConversationMealGroupView: View {
           HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
               Text(verbatim: item.foodName).font(BodyFlowTypography.headline)
-              if showsFacts {
+              if showsFacts || showsCurrentQuantity {
                 Text(quantity(item)).accessibilityIdentifier("conversation.meal.current-quantity")
+              }
+              if showsFacts {
                 Text(
                   verbatim:
                     "\(amount(item.kcal)) kcal · P \(amount(item.proteinG)) g · C \(amount(item.carbsG)) g · \(english ? "F" : "G") \(amount(item.fatG)) g"

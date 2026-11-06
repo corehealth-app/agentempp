@@ -156,6 +156,15 @@ final class FlowConversationJournalV3Model {
     commentaryCurrent = false
     commentaryEventIDs.removeAll()
   }
+  /// A real edit ACK fences commentary and in-flight pages before its effect.
+  /// Existing facts and their original receipt identities remain visible.
+  func invalidateCommentary(appliedAt: String) {
+    cancel()
+    guard let applied = ConversationProtocolInstant(appliedAt) else { return }
+    if observedAt.flatMap(ConversationProtocolInstant.init).map({ $0 < applied }) ?? true {
+      observedAt = appliedAt
+    }
+  }
   /// A grant refresh hides all bodies but retains same-identity factual pins.
   /// Profile/reevaluation changes do not imply a new conversation epoch.
   func suspend() {

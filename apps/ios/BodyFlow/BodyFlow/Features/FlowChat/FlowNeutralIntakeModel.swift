@@ -153,6 +153,10 @@ final class FlowNeutralIntakeModel {
   func suspendVisibility() {
     context = nil
     continuationIDs.removeAll()
+    invalidateFeedback()
+  }
+  /// A new factual effect changes current day commentary, not original ACKs.
+  func invalidateFeedback() {
     records = records.map {
       var row = $0
       row.feedback = nil

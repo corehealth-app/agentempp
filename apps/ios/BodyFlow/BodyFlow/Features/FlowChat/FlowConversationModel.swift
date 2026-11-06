@@ -974,6 +974,54 @@ final class FlowConversationModel {
     return group.revision > known.revision
       || group.lastOperation.map { Self.sameKnownEdit($0, known) } == true
   }
+  /// The neutral controller already published this typed ACK after its real
+  /// delivery CAS. It supplies an original child hash, never a reconstructed
+  /// cmsg command or authority derived from historical text/record IDs.
+  private func neutralMealAcknowledgement(commandID: UUID)
+    -> SavedConversationMealCommandResultSnapshot?
+  {
+    guard let identity = acceptedIdentity, let neutralIntake,
+      let row = neutralIntake.savedRows.first(where: { $0.childID == commandID }),
+      row.identity == identity, case .meal(let saved) = row.acknowledgement,
+      saved.ownerID == identity.ownerID.uuidString.lowercased(),
+      saved.epoch == identity.epoch.uuidString.lowercased(),
+      saved.commandID == commandID.uuidString.lowercased(),
+      saved.receipt.ownerID == saved.ownerID, saved.receipt.commandID == saved.commandID,
+      saved.receipt.inputHash == saved.inputHash
+    else { return nil }
+    return saved
+  }
+  private func matchesNeutralMeal(
+    _ group: ConversationMealGroupSnapshot,
+    acknowledgement: SavedConversationMealCommandResultSnapshot
+  ) -> Bool {
+    group.commandID.uuidString.lowercased() == acknowledgement.commandID
+      && group.ownerID.uuidString.lowercased() == acknowledgement.ownerID
+      && group.epoch.uuidString.lowercased() == acknowledgement.epoch
+      && group.originalInputHash == acknowledgement.inputHash
+      && ConversationProtocolInstant(group.admittedAt)
+        == ConversationProtocolInstant(acknowledgement.admittedAt)
+      && group.originalReceipt.report == acknowledgement.receipt
+  }
+  func canRequestMealDetails(commandID: UUID) -> Bool {
+    hasCurrentScope && mealEditor != nil
+      && (commands[commandID] != nil
+        || linkedReadReferences[commandID] != nil
+        || neutralMealAcknowledgement(commandID: commandID) != nil)
+  }
+  func isLoadingMealDetails(commandID: UUID) -> Bool {
+    hasCurrentScope && groupRequests[commandID] != nil
+  }
+
+  func unifiedMealControlsCommandID(eventID: String) -> UUID? {
+    if let row = unifiedOperationalSavedRow(eventID: eventID) { return row.id }
+    guard let entry = unifiedRows.first(where: { $0.eventID == eventID }),
+      let intakeID = entry.intakeID, unifiedSavedIntakeIDs.contains(intakeID),
+      let commandID = entry.commandID, case .meal = entry.record,
+      neutralMealAcknowledgement(commandID: commandID) != nil
+    else { return nil }
+    return commandID
+  }
   func currentGroup(commandID: UUID) -> ConversationMealGroupSnapshot? {
     hasCurrentScope ? currentGroups[commandID] : nil
   }
@@ -999,7 +1047,10 @@ final class FlowConversationModel {
   }
   func mealEditActions(commandID: UUID) -> FlowConversationMealEditActions? {
     guard hasCurrentScope, let group = currentGroups[commandID], group.current != nil,
-      commands[commandID] != nil || linkedMealIdentities[commandID]?.matches(group: group) == true,
+      commands[commandID] != nil || linkedMealIdentities[commandID]?.matches(group: group) == true
+        || neutralMealAcknowledgement(commandID: commandID).map({
+          matchesNeutralMeal(group, acknowledgement: $0)
+        }) == true,
       let editor = mealEditor
     else { return nil }
     let linked = linkedMealIdentities[commandID]
@@ -1091,6 +1142,8 @@ final class FlowConversationModel {
     currentGroups.removeValue(forKey: result.commandID)
     groupRequests.removeValue(forKey: result.commandID)
     groupFailures.remove(result.commandID)
+    neutralIntake?.invalidateFeedback()
+    unifiedHistory.invalidateCommentary(appliedAt: effect.appliedAt)
     if acknowledgedEdits.insert(.init(commandID: result.commandID, operationID: effect.operationID))
       .inserted
     {
@@ -1126,10 +1179,18 @@ final class FlowConversationModel {
     let command = commands[commandID]
     let reference = linkedReadReferences[commandID]
     let identity = linkedMealIdentities[commandID]
-    guard command != nil || reference != nil else { return }
+    let neutral = neutralMealAcknowledgement(commandID: commandID)
+    guard command != nil || reference != nil || neutral != nil else {
+      currentGroups.removeValue(forKey: commandID)
+      groupRequests.removeValue(forKey: commandID)
+      return
+    }
     let requestID = UUID()
     groupRequests[commandID] = requestID
     groupFailures.remove(commandID)
+    defer {
+      if groupRequests[commandID] == requestID { groupRequests.removeValue(forKey: commandID) }
+    }
     do {
       let group: ConversationMealGroupSnapshot
       let complete: ConversationMealLinkedIdentity?
@@ -1144,6 +1205,10 @@ final class FlowConversationModel {
         group = try await history.group(
           commandID: commandID, originalInputHash: command.inputHash, context: context)
         complete = nil
+      } else if let neutral {
+        group = try await history.group(
+          commandID: commandID, originalInputHash: neutral.inputHash, context: context)
+        complete = nil
       } else {
         return
       }
@@ -1156,6 +1221,13 @@ final class FlowConversationModel {
           guard self.satisfiesKnownEdits(group),
             reference.map({ self.linkedReadReferences[commandID] == $0 }) ?? true
           else { throw MobileAPITransportError.invalidResponse }
+          if let neutral {
+            guard let current = self.neutralMealAcknowledgement(commandID: commandID),
+              current.receipt == neutral.receipt, current.inputHash == neutral.inputHash,
+              self.matchesNeutralMeal(group, acknowledgement: current)
+            else { throw MobileAPITransportError.invalidResponse }
+            self.knownGroupInputHashes[commandID] = current.inputHash
+          }
           if let complete {
             guard self.linkedMealIdentities[commandID].map({ $0 == complete }) ?? true else {
               throw MobileAPITransportError.invalidResponse

@@ -246,21 +246,8 @@ struct FlowConversationView: View {
         ForEach(Array(model.unifiedRows.reversed()), id: \.eventID) { entry in
           FlowConversationJournalV3Content(
             entry: entry, feedback: model.unifiedHistory.feedback(for: entry), english: english)
-          if let row = model.unifiedOperationalSavedRow(eventID: entry.eventID), model.mealEditor != nil {
-            VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-              if let group = model.currentGroup(commandID: row.id) {
-                FlowConversationMealGroupView(
-                  group: group, editing: model.mealEditActions(commandID: row.id), showsFacts: false)
-              } else {
-                Button(english ? "Update meal controls" : "Atualizar controles da refeição") {
-                  Task { await model.loadCurrentGroup(commandID: row.id) }
-                }
-              }
-            }
-            .accessibilityIdentifier("conversation.journal3.operational")
-            .task(id: model.knownEditRevision(commandID: row.id)) {
-              await model.loadCurrentGroup(commandID: row.id)
-            }
+          if let commandID = model.unifiedMealControlsCommandID(eventID: entry.eventID) {
+            FlowConversationMealControlsContent(model: model, commandID: commandID)
           }
         }
         ForEach(Array(model.journalRows.reversed()), id: \.eventID) { entry in journalEntry(entry) }
@@ -304,7 +291,7 @@ struct FlowConversationView: View {
         ForEach(model.savedRows) { row in savedCard(row) }
         if let neutral = model.neutralIntake {
           FlowNeutralIntakeTranscriptContent(
-            model: neutral,
+            model: neutral, conversation: model,
             historicalMealIDs: Set(neutral.savedRows.filter { model.hasJournalChild($0.childID) }.map(\.childID)),
             historicalSavedIntakeIDs: model.unifiedSavedIntakeIDs,
             historicalOriginalIntakeIDs: Set(model.unifiedRows.filter { $0.kind == .intake }.compactMap(\.intakeID)),

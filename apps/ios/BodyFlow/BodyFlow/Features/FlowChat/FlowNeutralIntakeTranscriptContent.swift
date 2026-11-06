@@ -88,6 +88,7 @@ struct FlowNeutralIntakeComposerContent: View {
 @MainActor
 struct FlowNeutralIntakeTranscriptContent: View {
   let model: FlowNeutralIntakeModel
+  var conversation: FlowConversationModel? = nil
   var historicalMealIDs: Set<UUID> = []
   var historicalSavedIntakeIDs: Set<UUID> = []
   var historicalOriginalIntakeIDs: Set<UUID> = []
@@ -98,6 +99,9 @@ struct FlowNeutralIntakeTranscriptContent: View {
     VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
       ForEach(model.savedRows.filter { !historicalMealIDs.contains($0.childID) && !historicalSavedIntakeIDs.contains($0.id) }) { row in
         FlowNeutralIntakeSavedContent(row: row, english: english)
+        if case .meal = row.acknowledgement, let conversation {
+          FlowConversationMealControlsContent(model: conversation, commandID: row.childID)
+        }
       }
       ForEach(model.terminalRows.filter { !historicalTerminalIntakeIDs.contains($0.id) }) { row in
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {

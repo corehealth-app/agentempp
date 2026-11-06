@@ -67,6 +67,29 @@ describe('read-only authenticated conversation journal GET', () => {
       cursor: null,
     })
   })
+  it('selects journal3 additively with readonly Auth and a final original identity check', async () => {
+    const f = setup(),
+      read3 = vi.fn().mockResolvedValue({
+        schema: 'conversation.journal-page.v3',
+        mode: 'historical',
+        items: [],
+      }),
+      routes = createConversationMealJournalRoutes(
+        { enabled: () => true, service: f.service, version3Service: () => ({ read: read3 }) },
+        f.runtime,
+      ),
+      response = await routes.GET(request('?version=3&limit=2&cursor=opaque'))
+    expect(response.status).toBe(200)
+    expect(read3).toHaveBeenCalledWith(journalAuth(), {
+      epoch: writerEpoch,
+      limit: 2,
+      cursor: 'opaque',
+    })
+    expect(f.read).not.toHaveBeenCalled()
+    expect(f.runtime.authenticate).toHaveBeenCalledTimes(2)
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    expect((await response.json()).data.schema).toBe('conversation.journal-page.v3')
+  })
   it('uses actual Auth/entitlement, owner/epoch preconditions and the standard no-store envelope', async () => {
     const f = setup(),
       response = await f.routes.GET(request('?limit=2&cursor=opaque'))

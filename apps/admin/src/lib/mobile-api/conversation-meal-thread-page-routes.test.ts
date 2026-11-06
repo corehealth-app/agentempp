@@ -57,7 +57,7 @@ describe('existing GET explicit version dispatch', () => {
   it.each([
     '?version=',
     '?version=0',
-    '?version=3',
+    '?version=4',
     '?version=02',
     '?version=2&version=2',
     '?version=2&unknown=x',

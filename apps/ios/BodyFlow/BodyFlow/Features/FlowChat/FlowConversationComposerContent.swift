@@ -13,6 +13,10 @@ struct FlowConversationComposerContent: View {
   @Environment(\.locale) private var locale
   private var english: Bool { BodyFlowPresentationLanguage.resolve(locale) == .englishUnitedStates }
   var body: some View {
+    if let neutral = model.neutralIntake { FlowNeutralIntakeComposerContent(model: neutral) }
+    else { legacyContent }
+  }
+  @ViewBuilder private var legacyContent: some View {
     @Bindable var model = model
     VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
       if let prepared = model.preparedIntent, !model.isWorking {

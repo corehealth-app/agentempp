@@ -118,6 +118,76 @@ struct ConversationFeedbackPresentationSnapshot: Decodable, Equatable, Sendable 
         return Bound(presentation: self, scope: current)
     }
 
+    /// The actual saved workout supplies its own factual binding. This never
+    /// constructs a meal binding or upgrades a raw canonical v3 receipt.
+    static func boundWorkout(_ result: SavedConversationWorkoutCommandResultSnapshot, scope: Scope) -> Bound? {
+        guard let value = result.feedback, scope.ownerID == result.ownerID.uuidString.lowercased(),
+              scope.epoch == result.epoch.uuidString.lowercased(), value.original.kind == "workout",
+              value.original.registrationID == result.registration.registrationID.uuidString.lowercased(),
+              value.original.localDate == result.registration.localDate,
+              value.provenance.commandID == result.commandID.uuidString.lowercased(),
+              value.provenance.epoch == scope.epoch,
+              let committed = ConversationProtocolInstant(result.registration.committedAt),
+              let observed = ConversationProtocolInstant(value.provenance.observedAt), committed <= observed,
+              case let .workout(recorded) = value.recorded,
+              recorded.logID == result.activity.logID.uuidString.lowercased(),
+              recorded.workoutType.utf16.elementsEqual(result.activity.workoutType.utf16),
+              recorded.durationMin == Double(result.activity.durationMin),
+              recorded.intensity == result.activity.intensity,
+              recorded.estimatedKcal == result.activity.estimatedKcal.map(Double.init) else { return nil }
+        return Bound(presentation: Self(workoutProjection: value), scope: scope)
+    }
+    /// A public historical fact binds commentary without creating a saved ACK.
+    /// The authenticated page owner/scope is supplied only by the read adapter.
+    func boundHistorical(
+      _ entry: ConversationJournalV3PageSnapshot.Entry,
+      ownerID: UUID, epoch: UUID, sessionGeneration: UInt64,
+      pageObservedAt: String
+    ) -> Bound? {
+      guard entry.originEpoch == epoch, entry.status == .registered,
+        let commandID = entry.commandID, provenance.commandID == commandID.uuidString.lowercased(),
+        provenance.epoch == epoch.uuidString.lowercased(),
+        let event = ConversationProtocolInstant(entry.at),
+        let shown = ConversationProtocolInstant(provenance.observedAt),
+        let page = ConversationProtocolInstant(pageObservedAt), event <= shown, shown <= page
+      else { return nil }
+      let scope = Scope(
+        ownerID: ownerID.uuidString.lowercased(), sessionGeneration: sessionGeneration,
+        epoch: epoch.uuidString.lowercased())
+      switch entry.record {
+      case .meal(let meal):
+        return bound(
+          to: .init(
+            scope: scope, commandID: commandID.uuidString.lowercased(),
+            registrationID: meal.registrationID.uuidString.lowercased(), localDate: meal.localDate,
+            mealKind: meal.mealType, logIDs: meal.logIDs.map { $0.uuidString.lowercased() },
+            admittedAt: entry.at), current: scope)
+      case .workout(let workout):
+        guard original.kind == "workout",
+          original.registrationID == workout.registrationID.uuidString.lowercased(),
+          original.localDate == workout.localDate,
+          let committed = ConversationProtocolInstant(workout.committedAt), committed <= shown,
+          case .v3Sections(let registration, _) = content, case .workout(let facts) = registration,
+          facts.logID == workout.workoutID.uuidString.lowercased(),
+          facts.workoutType.utf16.elementsEqual(workout.workoutType.utf16),
+          facts.durationMin == Double(workout.durationMin),
+          facts.intensity == workout.intensity,
+          facts.estimatedKcal == workout.estimatedKcal.map(Double.init)
+        else { return nil }
+        return Bound(presentation: self, scope: scope)
+      case .edit, nil: return nil
+      }
+    }
+
+    init(historicalProjection: ConversationFeedbackPresentationV2Snapshot) {
+      self.init(workoutProjection: historicalProjection)
+    }
+    private init(workoutProjection: ConversationFeedbackPresentationV2Snapshot) {
+        original = workoutProjection.original; currentPolicy = workoutProjection.currentPolicy
+        provenance = workoutProjection.provenance
+        content = .v3Sections(recorded: workoutProjection.recorded, sections: workoutProjection.sections)
+    }
+
     /// Each version compares its own factual types; workout never acquires a meal binding.
     func matchesRecordedMeal(kind: String, logIDs: [String]) -> Bool {
         guard original.kind == "meal" else { return false }

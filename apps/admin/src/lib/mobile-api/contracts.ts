@@ -306,7 +306,7 @@ const mediaUploadBaseSchema = z.object({
 
 const mediaPhotoUploadSchema = mediaUploadBaseSchema
   .extend({
-    kind: z.enum(['meal_photo', 'body_checkin_photo', 'gym_photo']),
+    kind: z.enum(['meal_photo', 'body_checkin_photo', 'gym_photo', 'conversation_photo']),
     mime_type: patientImageMimeSchema,
     size_bytes: z
       .number()

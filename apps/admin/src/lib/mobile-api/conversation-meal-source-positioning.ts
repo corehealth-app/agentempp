@@ -251,6 +251,12 @@ export async function positionConversationMealSource(
   rawObservation: unknown,
   options: { confidenceThreshold: number },
 ): Promise<ConversationMealSourcePositioning> {
+  if ('intake_origin' in bound.command)
+    throw new MobileApiError(
+      409,
+      'conversation_intake_projection_requires_persisted_source',
+      'The original persisted intake source is required',
+    )
   const who = structuredClone(auth),
     owner = authenticatedReevaluationOwner(who)
   let command: BoundConversationMealCommand

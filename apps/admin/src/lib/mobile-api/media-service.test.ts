@@ -80,6 +80,105 @@ function makeDeps(existing: MediaAssetRecord | null = null): MediaServiceDepende
 }
 
 describe('mobile media service', () => {
+  it('does not expose a clinical or malformed legacy payload under the new photo purpose', async () => {
+    const deps = makeDeps(
+      asset({
+        kind: 'conversation_photo',
+        bucket_id: 'meal-photos',
+        status: 'processed',
+        processing_result: { type: 'body', bf_percent_estimate: 20 },
+      }),
+    )
+    await expect(getMediaAsset(deps, USER_ID, ASSET_ID)).rejects.toMatchObject({
+      status: 503,
+      code: 'conversation_photo_result_unavailable',
+    })
+    expect(deps.storage.createSignedDownload).not.toHaveBeenCalled()
+  })
+  it('refuses conversational photographs before storage or lookup unless explicitly enabled', async () => {
+    const deps = makeDeps()
+    await expect(
+      createMediaAsset(
+        deps,
+        USER_ID,
+        { kind: 'conversation_photo', mime_type: 'image/jpeg', size_bytes: 1200 },
+        'neutral-photo-key',
+      ),
+    ).rejects.toMatchObject({ status: 503, code: 'conversation_photo_unavailable' })
+    expect(deps.repository.findByRequestHash).not.toHaveBeenCalled()
+    expect(deps.storage.createSignedUpload).not.toHaveBeenCalled()
+  })
+  it('keeps a distinct immutable purpose using existing private ordinary-photo infrastructure', async () => {
+    const photo = asset({ kind: 'conversation_photo', bucket_id: 'meal-photos' }),
+      deps = makeDeps()
+    vi.mocked(deps.repository.create).mockResolvedValue(photo)
+    vi.mocked(deps.repository.findOwned).mockResolvedValue(photo)
+    const result = await createMediaAsset(
+      deps,
+      USER_ID,
+      { kind: 'conversation_photo', mime_type: 'image/jpeg', size_bytes: 1200 },
+      'neutral-photo-key',
+      new Date('2026-11-06T12:00:00Z'),
+      ASSET_ID,
+      { conversationPhotoEnabled: () => true },
+    )
+    expect(result.asset.kind).toBe('conversation_photo')
+    expect(deps.repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'conversation_photo',
+        bucketId: 'meal-photos',
+        retentionUntil: '2026-12-06T12:00:00.000Z',
+      }),
+    )
+    expect(deps.events.sendProcessingRequested).not.toHaveBeenCalled()
+  })
+  it.each([
+    'input',
+    'existing',
+  ] as const)('does not retag a legacy asset through a %s purpose collision', async (side) => {
+    const deps = makeDeps(
+      asset({
+        kind: side === 'input' ? 'meal_photo' : 'conversation_photo',
+        bucket_id: 'meal-photos',
+      }),
+    )
+    await expect(
+      createMediaAsset(
+        deps,
+        USER_ID,
+        {
+          kind: side === 'input' ? 'conversation_photo' : 'meal_photo',
+          mime_type: 'image/jpeg',
+          size_bytes: 1200,
+        },
+        'neutral-photo-key',
+        undefined,
+        undefined,
+        { conversationPhotoEnabled: () => true },
+      ),
+    ).rejects.toMatchObject({ status: 409, code: 'idempotency_key_conflict' })
+    expect(deps.storage.createSignedUpload).not.toHaveBeenCalled()
+  })
+  it('does not return a signed capability after the purpose is revoked during signing', async () => {
+    const photo = asset({ kind: 'conversation_photo', bucket_id: 'meal-photos' }),
+      deps = makeDeps(photo)
+    let enabled = true
+    vi.mocked(deps.storage.createSignedUpload).mockImplementation(async () => {
+      enabled = false
+      return { signedUrl: 'https://storage.test/private-ticket' }
+    })
+    await expect(
+      createMediaAsset(
+        deps,
+        USER_ID,
+        { kind: 'conversation_photo', mime_type: 'image/jpeg', size_bytes: 1200 },
+        'neutral-photo-key',
+        undefined,
+        undefined,
+        { conversationPhotoEnabled: () => enabled },
+      ),
+    ).rejects.toMatchObject({ code: 'conversation_photo_unavailable' })
+  })
   it('creates an immutable body-checkin path with private retention and a temporary upload', async () => {
     const deps = makeDeps()
 

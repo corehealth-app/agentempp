@@ -50,7 +50,9 @@ function wav(seconds: number): Uint8Array {
   const bytes = new Uint8Array(44 + dataSize).fill(0x80)
   const view = new DataView(bytes.buffer)
   const ascii = (offset: number, text: string) =>
-    [...text].forEach((char, index) => view.setUint8(offset + index, char.charCodeAt(0)))
+    [...text].forEach((char, index) => {
+      view.setUint8(offset + index, char.charCodeAt(0))
+    })
   ascii(0, 'RIFF')
   view.setUint32(4, 36 + dataSize, true)
   ascii(8, 'WAVE')
@@ -68,6 +70,159 @@ function wav(seconds: number): Uint8Array {
 }
 
 describe('media asset processing', () => {
+  function neutral() {
+    const who = {
+      assetId: '11110000-0000-4000-8000-000000000001',
+      userId: '11110000-0000-4000-8000-000000000002',
+      requestId: 'a'.repeat(64),
+    }
+    const deps = makeDeps(
+      record({
+        id: who.assetId,
+        user_id: who.userId,
+        kind: 'conversation_photo',
+        object_path: `${who.userId}/${who.assetId}.jpg`,
+        processing_request_id: who.requestId,
+      }),
+    )
+    deps.conversationPhotosEnabled = () => true
+    const ready = {
+      schema: 'conversation.image-result.v1',
+      status: 'ready',
+      classification: 'equipment',
+      analysis: { type: 'equipment', equipment: ['halteres'], location: 'casa', confidence: 0.9 },
+    }
+    vi.mocked(deps.providers.analyzeImage).mockResolvedValue(ready)
+    return { who, deps, ready }
+  }
+  it('dispatches only the neutral purpose and preserves its versioned observations', async () => {
+    const f = neutral()
+    expect(await processMediaAsset(f.deps, f.who)).toEqual({ status: 'processed' })
+    expect(f.deps.providers.analyzeImage).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'conversation_photo' }),
+    )
+    expect(f.deps.repository.markProcessed).toHaveBeenCalledWith(
+      f.who.assetId,
+      f.who.userId,
+      f.who.requestId,
+      f.ready,
+    )
+  })
+  it('holds the new purpose off before downloading or invoking AI', async () => {
+    const f = neutral()
+    f.deps.conversationPhotosEnabled = () => false
+    expect(await processMediaAsset(f.deps, f.who)).toEqual({
+      status: 'failed',
+      reason: 'conversation_photo_unavailable',
+    })
+    expect(f.deps.storage.download).not.toHaveBeenCalled()
+    expect(f.deps.providers.analyzeImage).not.toHaveBeenCalled()
+  })
+  it.each([
+    'download',
+    'provider',
+  ] as const)('honors live revocation after %s without publishing a result', async (phase) => {
+    const f = neutral()
+    let enabled = true
+    f.deps.conversationPhotosEnabled = () => enabled
+    if (phase === 'download')
+      vi.mocked(f.deps.storage.download).mockImplementation(async () => {
+        enabled = false
+        return jpeg
+      })
+    else
+      vi.mocked(f.deps.providers.analyzeImage).mockImplementation(async () => {
+        enabled = false
+        return f.ready
+      })
+    expect(await processMediaAsset(f.deps, f.who)).toEqual({
+      status: 'failed',
+      reason: 'conversation_photo_unavailable',
+    })
+    expect(f.deps.repository.markProcessed).not.toHaveBeenCalled()
+    if (phase === 'download') expect(f.deps.providers.analyzeImage).not.toHaveBeenCalled()
+    expect(f.deps.repository.markFailed).toHaveBeenCalledWith(
+      f.who.assetId,
+      f.who.userId,
+      f.who.requestId,
+      'conversation_photo_unavailable',
+    )
+  })
+  it('captures the original request and claimed metadata before asynchronous mutations', async () => {
+    const f = neutral(),
+      original = { ...f.who }
+    const row = record({
+      id: original.assetId,
+      user_id: original.userId,
+      kind: 'conversation_photo',
+      object_path: `${original.userId}/${original.assetId}.jpg`,
+      processing_request_id: original.requestId,
+    })
+    vi.mocked(f.deps.repository.claim).mockImplementation(async () => {
+      f.who.userId = '11110000-0000-4000-8000-000000000099'
+      f.who.requestId = 'b'.repeat(64)
+      return row
+    })
+    vi.mocked(f.deps.storage.download).mockImplementation(async () => {
+      row.kind = 'body_checkin_photo'
+      row.context_text = 'changed caption'
+      return jpeg
+    })
+    expect(await processMediaAsset(f.deps, f.who)).toEqual({ status: 'processed' })
+    expect(f.deps.providers.analyzeImage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'conversation_photo',
+        contextText: 'Frango grelhado com arroz',
+      }),
+    )
+    expect(f.deps.repository.markProcessed).toHaveBeenCalledWith(
+      original.assetId,
+      original.userId,
+      original.requestId,
+      f.ready,
+    )
+  })
+  it('rejects a mismatched original owner before inspecting private bytes', async () => {
+    const f = neutral()
+    expect(
+      await processMediaAsset(f.deps, { ...f.who, userId: '11110000-0000-4000-8000-000000000003' }),
+    ).toEqual({ status: 'failed', reason: 'conversation_photo_scope_changed' })
+    expect(f.deps.storage.download).not.toHaveBeenCalled()
+    expect(f.deps.providers.analyzeImage).not.toHaveBeenCalled()
+  })
+  it('cannot persist a clinical analysis under the neutral purpose', async () => {
+    const f = neutral()
+    vi.mocked(f.deps.providers.analyzeImage).mockResolvedValue({
+      type: 'body',
+      bf_percent_estimate: 20,
+    })
+    await expect(processMediaAsset(f.deps, f.who)).rejects.toThrow()
+    expect(f.deps.repository.markProcessed).not.toHaveBeenCalled()
+    expect(f.deps.repository.markFailed).toHaveBeenCalledWith(
+      f.who.assetId,
+      f.who.userId,
+      f.who.requestId,
+      'provider_error',
+    )
+  })
+  it('keeps a safe unsupported result terminal rather than retrying as a body check-in', async () => {
+    const f = neutral(),
+      result = {
+        schema: 'conversation.image-result.v1',
+        status: 'unsupported',
+        classification: 'body',
+        reason: 'image_not_supported_for_conversation',
+      }
+    vi.mocked(f.deps.providers.analyzeImage).mockResolvedValue(result)
+    expect(await processMediaAsset(f.deps, f.who)).toEqual({ status: 'processed' })
+    expect(f.deps.repository.markProcessed).toHaveBeenCalledWith(
+      f.who.assetId,
+      f.who.userId,
+      f.who.requestId,
+      result,
+    )
+    expect(f.deps.providers.analyzeImage).toHaveBeenCalledOnce()
+  })
   it('validates and analyzes an image together with its user caption', async () => {
     const deps = makeDeps()
 

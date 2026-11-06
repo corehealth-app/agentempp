@@ -6,8 +6,12 @@ import { z } from 'zod'
 import {
   type BoundConversationMealCommand,
   bindConversationCommand,
-  conversationMealCommandSchema,
+  conversationMealExecutionCommandSchema,
 } from './conversation-command-contracts'
+import {
+  assertConversationIntakeMediaCapture,
+  conversationIntakeMediaProjectionSchema,
+} from './conversation-intake-media-origin'
 import type { CapturedConversationMealSource } from './conversation-meal-source'
 import { MobileApiError } from './http'
 
@@ -60,14 +64,14 @@ const mediaSchema = z
     context_text: z.string().nullable(),
   })
   .strict()
-const contextSchema = z
+const legacyContextSchema = z
   .object({
     schema: z.literal('conversation.meal-source.v1'),
     owner_id: uuid,
     command_id: uuid,
     input_hash: conversationWriterHash,
     epoch: uuid,
-    source_input: conversationMealCommandSchema,
+    source_input: conversationMealExecutionCommandSchema,
     source_units: z.array(sourceUnit).min(1).max(4),
     source_evidence: z.union([
       z.object({}).strict(),
@@ -97,6 +101,36 @@ const contextSchema = z
       .strict(),
   })
   .strict()
+const contextSchema = z.union([
+  legacyContextSchema,
+  legacyContextSchema
+    .extend({
+      schema: z.literal('conversation.meal-source.v2'),
+      source_input: conversationMealExecutionCommandSchema,
+      source_units: z
+        .array(
+          z.enum([
+            'command_text',
+            'media_caption',
+            'media_context',
+            'media_transcript',
+            'vision_items',
+          ]),
+        )
+        .min(1)
+        .max(4),
+      source_evidence: z
+        .object({
+          caption: z.string().nullable(),
+          context_text: z.string().nullable(),
+          transcript: z.string().nullable(),
+        })
+        .strict(),
+      media: mediaSchema.extend({ owner_id: uuid }).strict(),
+      intake_projection: conversationIntakeMediaProjectionSchema,
+    })
+    .strict(),
+])
 export interface ConversationMealStoredSource {
   readonly sourceHash: string
   readonly capturedAt: string
@@ -240,6 +274,8 @@ export function parseConversationMealStoredSource(
       new Set(c.source_units).size !== c.source_units.length
     )
       return conversationWriterUnavailable()
+    if ('intake_origin' in command.command) assertConversationIntakeMediaCapture(command, c)
+    else if (c.schema !== 'conversation.meal-source.v1') return conversationWriterUnavailable()
     if (command.command.source.channel === 'text') {
       if (
         !isDeepStrictEqual(c.source_units, ['command_text']) ||
@@ -256,7 +292,10 @@ export function parseConversationMealStoredSource(
         !['meal_photo', 'audio_note'].includes(String(m.kind))
       )
         return conversationWriterUnavailable()
-      const caption = command.command.source.caption ?? m.context_text,
+      const caption =
+          c.schema === 'conversation.meal-source.v2'
+            ? command.command.source.caption
+            : (command.command.source.caption ?? m.context_text),
         transcript =
           m.kind === 'audio_note' &&
           m.processing_result &&
@@ -267,11 +306,18 @@ export function parseConversationMealStoredSource(
       const units: string[] = []
       if (typeof caption === 'string' && caption.replace(/^ +| +$/gu, '') !== '')
         units.push('media_caption')
+      if (
+        c.schema === 'conversation.meal-source.v2' &&
+        m.context_text?.replace(/^ +| +$/gu, '') !== ''
+      ) {
+        if (m.context_text !== null) units.push('media_context')
+      }
       units.push(m.kind === 'audio_note' ? 'media_transcript' : 'vision_items')
       if (
         !isDeepStrictEqual(c.source_units, units) ||
         !isDeepStrictEqual(c.source_evidence, {
           caption: caption ?? null,
+          ...(c.schema === 'conversation.meal-source.v2' ? { context_text: m.context_text } : {}),
           transcript: transcript ?? null,
         })
       )

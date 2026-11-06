@@ -1,5 +1,6 @@
+import { conversationPhotoWorkerEnabled } from '@mpp/core/conversation-photo-purpose'
 import type { Json, ServiceClient } from '@mpp/db'
-import { GeminiVision, GroqSTT } from '@mpp/providers'
+import { GeminiVision, GroqSTT, parseConversationImageResult } from '@mpp/providers'
 import { z } from 'zod'
 import { inngest } from '../client.js'
 import { createWorkerSupabase } from '../lib/env.js'
@@ -13,6 +14,7 @@ import {
 
 export type ProcessableMediaKind =
   | 'meal_photo'
+  | 'conversation_photo'
   | 'body_checkin_photo'
   | 'gym_photo'
   | 'audio_note'
@@ -39,6 +41,8 @@ export interface MediaProcessingInput {
 }
 
 export interface MediaProcessingDependencies {
+  /** Trusted live worker policy; the new kind is OFF when absent. */
+  conversationPhotosEnabled?: () => boolean
   repository: {
     claim(input: MediaProcessingInput): Promise<ProcessableMediaAsset | null>
     markProcessed(
@@ -94,7 +98,14 @@ export async function measureAudioDurationFromContainer(input: {
 const claimedMediaSchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
-  kind: z.enum(['meal_photo', 'body_checkin_photo', 'gym_photo', 'audio_note', 'plan_document']),
+  kind: z.enum([
+    'meal_photo',
+    'body_checkin_photo',
+    'gym_photo',
+    'audio_note',
+    'plan_document',
+    'conversation_photo',
+  ]),
   bucket_id: z.string().min(1),
   object_path: z.string().min(1),
   mime_type: z.string().min(1),
@@ -157,17 +168,71 @@ export async function processMediaAsset(
         | 'audio_too_long'
         | 'audio_duration_unreadable'
         | 'plan_document_unsupported'
+        | 'conversation_photo_unavailable'
+        | 'conversation_photo_scope_changed'
     }
   | { status: 'skipped' }
 > {
-  const asset = await deps.repository.claim(input)
-  if (!asset) {
+  const original = Object.freeze({
+      assetId: input.assetId,
+      userId: input.userId,
+      requestId: input.requestId,
+    }),
+    enabled = deps.conversationPhotosEnabled?.bind(deps) ?? (() => false),
+    claimed = await deps.repository.claim(original)
+  if (!claimed) {
     // Nothing to read (already read, deleted, or claimed by another
     // request). A plan draft that still waited for it must not wait forever.
     if (deps.planDocuments) {
       await failWaitingPlanDrafts(deps.planDocuments, input, 'document_unreadable')
     }
     return { status: 'skipped' }
+  }
+  let asset: ProcessableMediaAsset = claimed
+  let purposeRefused = false
+  function purposeOpen() {
+    if (asset?.kind !== 'conversation_photo') return true
+    try {
+      if (purposeRefused || enabled() !== true) throw new Error('Unavailable purpose')
+    } catch {
+      purposeRefused = true
+    }
+    return !purposeRefused
+  }
+  async function refusePurpose() {
+    await deps.repository.markFailed(
+      original.assetId,
+      original.userId,
+      original.requestId,
+      'conversation_photo_unavailable',
+    )
+    return { status: 'failed' as const, reason: 'conversation_photo_unavailable' as const }
+  }
+  if (asset.kind === 'conversation_photo') {
+    try {
+      const value = claimedMediaSchema.parse(asset)
+      if (
+        value.id !== original.assetId ||
+        value.user_id !== original.userId ||
+        value.processing_request_id !== original.requestId ||
+        value.bucket_id !== 'meal-photos' ||
+        !['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'].includes(
+          value.mime_type,
+        ) ||
+        !new RegExp(`^${value.user_id}/${value.id}[.][a-z0-9]+$`, 'u').test(value.object_path)
+      )
+        throw new Error('Changed scope')
+      asset = Object.freeze(value)
+    } catch {
+      await deps.repository.markFailed(
+        original.assetId,
+        original.userId,
+        original.requestId,
+        'conversation_photo_scope_changed',
+      )
+      return { status: 'failed', reason: 'conversation_photo_scope_changed' }
+    }
+    if (!purposeOpen()) return refusePurpose()
   }
   const failPlanDrafts = async () => {
     if (asset.kind === 'plan_document' && deps.planDocuments) {
@@ -186,18 +251,19 @@ export async function processMediaAsset(
     await deps.repository.markFailed(
       asset.id,
       asset.user_id,
-      input.requestId,
+      original.requestId,
       'storage_download_error',
     )
     await failPlanDrafts()
     throw error
   }
+  if (!purposeOpen()) return refusePurpose()
 
   if (!mediaSignatureMatches(bytes, asset.mime_type)) {
     await deps.repository.markFailed(
       asset.id,
       asset.user_id,
-      input.requestId,
+      original.requestId,
       'invalid_file_signature',
     )
     await failPlanDrafts()
@@ -218,7 +284,7 @@ export async function processMediaAsset(
           ? ('audio_too_long' as const)
           : null
     if (reason) {
-      await deps.repository.markFailed(asset.id, asset.user_id, input.requestId, reason)
+      await deps.repository.markFailed(asset.id, asset.user_id, original.requestId, reason)
       return { status: 'failed', reason }
     }
   }
@@ -228,7 +294,7 @@ export async function processMediaAsset(
       await deps.repository.markFailed(
         asset.id,
         asset.user_id,
-        input.requestId,
+        original.requestId,
         'plan_document_unsupported',
       )
       return { status: 'failed', reason: 'plan_document_unsupported' }
@@ -243,13 +309,13 @@ export async function processMediaAsset(
         mimeType: asset.mime_type,
         bytes,
       })
-      await deps.repository.markProcessed(asset.id, asset.user_id, input.requestId, summary)
+      await deps.repository.markProcessed(asset.id, asset.user_id, original.requestId, summary)
       return { status: 'processed' }
     } catch (error) {
       // The database refused an outcome: the asset does not stay
       // "processing" and the drafts that still wait are told.
       await deps.repository
-        .markFailed(asset.id, asset.user_id, input.requestId, 'plan_document_error')
+        .markFailed(asset.id, asset.user_id, original.requestId, 'plan_document_error')
         .catch(() => undefined)
       await failPlanDrafts()
       throw error
@@ -257,7 +323,7 @@ export async function processMediaAsset(
   }
 
   try {
-    const result =
+    let result =
       asset.kind === 'audio_note'
         ? await deps.providers.transcribeAudio({ bytes, mimeType: asset.mime_type })
         : await deps.providers.analyzeImage({
@@ -266,10 +332,12 @@ export async function processMediaAsset(
             contextText: asset.context_text,
             kind: asset.kind,
           })
-    await deps.repository.markProcessed(asset.id, asset.user_id, input.requestId, result)
+    if (!purposeOpen()) return refusePurpose()
+    if (asset.kind === 'conversation_photo') result = parseConversationImageResult(result)
+    await deps.repository.markProcessed(asset.id, asset.user_id, original.requestId, result)
     return { status: 'processed' }
   } catch (error) {
-    await deps.repository.markFailed(asset.id, asset.user_id, input.requestId, 'provider_error')
+    await deps.repository.markFailed(asset.id, asset.user_id, original.requestId, 'provider_error')
     throw error
   }
 }
@@ -326,7 +394,7 @@ function createProcessingRepository(
 }
 
 function imageHint(
-  kind: AnalyzableImageKind,
+  kind: Exclude<AnalyzableImageKind, 'conversation_photo'>,
 ): 'meal' | 'body' | 'equipment' {
   if (kind === 'body_checkin_photo') return 'body'
   if (kind === 'gym_photo') return 'equipment'
@@ -349,6 +417,7 @@ function audioFilename(mimeType: string): string {
 async function createDefaultMediaProcessingDependencies(): Promise<MediaProcessingDependencies> {
   const supabase = createWorkerSupabase()
   return {
+    conversationPhotosEnabled: conversationPhotoWorkerEnabled,
     repository: createProcessingRepository(supabase),
     storage: {
       async download(bucketId, objectPath) {
@@ -360,9 +429,15 @@ async function createDefaultMediaProcessingDependencies(): Promise<MediaProcessi
     planDocuments: createDefaultPlanDocumentDependencies(supabase),
     providers: {
       async analyzeImage(input) {
+        const current = () => {
+          if (input.kind === 'conversation_photo' && !conversationPhotoWorkerEnabled())
+            throw new Error('Conversation image purpose unavailable')
+        }
+        current()
         const apiKey = process.env.OPENROUTER_API_KEY
         if (!apiKey) throw new Error('OPENROUTER_API_KEY ausente')
         const config = await loadVisionConfig(supabase)
+        current()
         const vision = new GeminiVision({
           apiKey,
           heliconeApiKey: process.env.HELICONE_API_KEY,
@@ -372,10 +447,15 @@ async function createDefaultMediaProcessingDependencies(): Promise<MediaProcessi
         })
         const dataUri = `data:${input.mimeType};base64,${Buffer.from(input.bytes).toString('base64')}`
         return safeProviderJson(
-          await vision.analyzeImage(dataUri, {
-            hint: imageHint(input.kind),
-            userMessage: input.contextText ?? undefined,
-          }),
+          input.kind === 'conversation_photo'
+            ? await vision.analyzeConversationImage(dataUri, {
+                userMessage: input.contextText ?? undefined,
+                purposeEnabled: conversationPhotoWorkerEnabled,
+              })
+            : await vision.analyzeImage(dataUri, {
+                hint: imageHint(input.kind),
+                userMessage: input.contextText ?? undefined,
+              }),
         )
       },
       async transcribeAudio(input) {

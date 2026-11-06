@@ -578,7 +578,9 @@ function proveLinks(chain: Chain, parent: Parent): void {
             : null
           : f.name.unit === 'media_caption'
             ? context.source_evidence.caption
-            : context.source_evidence.transcript
+            : f.name.unit === 'media_context' && 'context_text' in context.source_evidence
+              ? context.source_evidence.context_text
+              : context.source_evidence.transcript
       if (typeof sourceText !== 'string') conversationContinuationReadUnavailable()
       const name = sourceText.slice(f.name.start, f.name.end),
         reference = mobileQuantityDisplay(name)
@@ -700,7 +702,9 @@ function proveQuestion(raw: unknown, p: Parent, answers: Chain, expectedRevision
           : null
         : f.name.unit === 'media_caption'
           ? c.source_evidence.caption
-          : c.source_evidence.transcript
+          : f.name.unit === 'media_context' && 'context_text' in c.source_evidence
+            ? c.source_evidence.context_text
+            : c.source_evidence.transcript
     if (typeof s !== 'string' || s.slice(f.name.start, f.name.end) !== q.food_name)
       conversationContinuationReadUnavailable()
   } else {

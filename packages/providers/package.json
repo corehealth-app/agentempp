@@ -10,6 +10,7 @@
     "./llm": "./src/llm/index.ts",
     "./stt": "./src/stt/index.ts",
     "./vision": "./src/vision/index.ts",
+    "./vision/conversation-image-result": "./src/vision/conversation-image-result.ts",
     "./embeddings": "./src/embeddings/index.ts",
     "./messaging": "./src/messaging/index.ts"
   },

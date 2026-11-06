@@ -5,7 +5,7 @@ import { z } from 'zod'
 import type { BoundConversationMealCommand } from './conversation-command-contracts'
 import {
   bindConversationCommand,
-  conversationMealCommandSchema,
+  conversationMealExecutionCommandSchema,
 } from './conversation-command-contracts'
 import { MobileApiError } from './http'
 
@@ -54,7 +54,7 @@ const boundCommand = z
     ownerId: uuid,
     commandId: uuid,
     inputHash: hash,
-    command: conversationMealCommandSchema,
+    command: conversationMealExecutionCommandSchema,
   })
   .strict()
 const intent = z.discriminatedUnion('decision', [

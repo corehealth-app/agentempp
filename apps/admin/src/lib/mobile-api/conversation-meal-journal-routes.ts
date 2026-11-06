@@ -4,6 +4,7 @@ import {
   conversationFeedbackPresentationMobileHeaders,
   negotiateConversationFeedbackPresentation,
 } from './conversation-feedback-presentation-negotiation'
+import { createConversationJournalV3Service } from './conversation-journal-v3-service'
 import { conversationMealCommandsEnabled } from './conversation-meal-command-routes'
 import { createConversationMealJournalService } from './conversation-meal-journal-service'
 import { conversationJournalUUID } from './conversation-meal-journal-store'
@@ -14,6 +15,9 @@ import { authenticatedReevaluationOwner } from './reevaluation-cycle-service'
 import { createMobileRoute, type MobileRouteContext, type MobileRouteRuntime } from './route'
 
 export interface ConversationMealJournalRoutePorts {
+  readonly version3Service?: (
+    db: ServiceClient,
+  ) => Pick<ReturnType<typeof createConversationJournalV3Service>, 'read'>
   readonly version2Service?: (
     db: ServiceClient,
   ) => Pick<ReturnType<typeof createConversationMealThreadPageService>, 'read'>
@@ -32,7 +36,7 @@ function query(request: Request) {
         'A closed history query is required',
       )
   }
-  const version = search.has('version') ? z.enum(['1', '2']).parse(search.get('version')) : '1'
+  const version = search.has('version') ? z.enum(['1', '2', '3']).parse(search.get('version')) : '1'
   return {
     version,
     limit: search.has('limit')
@@ -53,6 +57,7 @@ export function createConversationMealJournalRoutes(
   const enabled = ports.enabled?.bind(ports) ?? conversationMealCommandsEnabled,
     service = ports.service?.bind(ports) ?? createConversationMealJournalService,
     version2Service = ports.version2Service?.bind(ports) ?? createConversationMealThreadPageService,
+    version3Service = ports.version3Service?.bind(ports) ?? createConversationJournalV3Service,
     readonlyRuntime = runtime ?? createConversationMealReadonlyRuntime(),
     reauthenticate = readonlyRuntime.authenticate.bind(readonlyRuntime)
   const handler = async (context: MobileRouteContext) => {
@@ -80,7 +85,7 @@ export function createConversationMealJournalRoutes(
     // Freeze original identity and request headers before any service await.
     // A late callback cannot replace the original bearer for the final check.
     const original =
-      version === '2'
+      version !== '1'
         ? Object.freeze({
             subject: context.auth.authUserId,
             patient: authenticatedReevaluationOwner(context.auth),
@@ -90,11 +95,14 @@ export function createConversationMealJournalRoutes(
             }),
           })
         : null
-    const value = await (version === '2' ? version2Service : service)(context.supabase).read(
-      context.auth,
-      { epoch, ...input },
-      ...(selected === '2' ? ['2' as const] : []),
-    )
+    const value =
+      version === '3'
+        ? await version3Service(context.supabase).read(context.auth, { epoch, ...input })
+        : await (version === '2' ? version2Service : service)(context.supabase).read(
+            context.auth,
+            { epoch, ...input },
+            ...(selected === '2' ? ['2' as const] : []),
+          )
     if (original) {
       const current = await reauthenticate(original.request, context.supabase)
       if (

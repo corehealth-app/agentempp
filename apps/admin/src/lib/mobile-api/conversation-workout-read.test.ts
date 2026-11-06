@@ -1,13 +1,60 @@
 import type { ServiceClient } from '@mpp/db'
 import { describe, expect, it, vi } from 'vitest'
 import { replyFixture } from './__fixtures__/conversation-meal-reply'
-import { bindConversationWorkoutCommand, workoutDigest } from './conversation-workout-contracts'
+import {
+  bindConversationWorkoutCommand,
+  conversationWorkoutCommandSchema,
+  workoutDigest,
+} from './conversation-workout-contracts'
 import {
   createSupabaseConversationWorkoutReadStore,
   parseConversationWorkoutReconciliation,
 } from './conversation-workout-read'
+import journalActual from './testing/conversation-journal-v3-pg-golden.json'
 import actual from './testing/conversation-workout-pg-golden.json'
 
+describe('actual neutral-media private workout reconciliation', () => {
+  function media() {
+    const row = structuredClone(
+      journalActual.cases.find((r) => r.label === 'audio_note')?.reconciles[0],
+    )
+    if (!row?.response.source) throw new Error('Actual neutral-media reconcile required')
+    const b = row.binding
+    return {
+      row,
+      identity: {
+        ownerId: b.owner_id,
+        commandId: b.command_id,
+        inputHash: b.input_hash,
+        epoch: b.epoch,
+      },
+    }
+  }
+  it('accepts genuine execution source while the public v1 input codec remains closed', () => {
+    const { row, identity } = media()
+    expect(
+      conversationWorkoutCommandSchema.safeParse(row.response.source?.context.source_input).success,
+    ).toBe(false)
+    expect(parseConversationWorkoutReconciliation(row.response, identity)).toEqual(row.response)
+  })
+  it.each([
+    'claim_id',
+    'source_hash',
+    'decision_hash',
+    'epoch',
+    'input_hash',
+    'intake_id',
+  ] as const)('refuses forged original %s without relaxing later proof checks', (field) => {
+    const { row, identity } = media(),
+      source = row.response.source
+    if (!source?.context.source_input.intake_origin)
+      throw new Error('Actual stored origin required')
+    Object.assign(source.context.source_input.intake_origin, {
+      [field]: field.endsWith('hash') ? '0'.repeat(64) : 'c1450000-0000-4000-8000-000000000099',
+    })
+    expect(() => parseConversationWorkoutReconciliation(row.response, identity)).toThrow()
+  })
+})
 /** Real PG source/preparation/effect bytes; the reconcile envelope/current rows
  * are synthetic constructions of the existing SQL to_jsonb row contract. */
 function sample(index = 0) {

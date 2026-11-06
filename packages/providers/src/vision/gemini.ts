@@ -14,6 +14,11 @@
  */
 import OpenAI from 'openai'
 import type { RequestOptions } from 'openai/core'
+import {
+  type ConversationImageResult,
+  parseConversationImageResult,
+  projectConversationImageResult,
+} from './conversation-image-result.js'
 
 export interface VisionConfig {
   apiKey: string
@@ -620,21 +625,98 @@ export class GeminiVision {
     return this.analyzeOther(imageUrl)
   }
 
-  async analyzeEquipment(imageUrl: string): Promise<VisionEquipmentAnalysis> {
-    const start = Date.now()
-    const completion = await this.client.chat.completions.create({
-      model: this.model,
-      temperature: 0.2,
-      max_tokens: 1024,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: this.prompts.equipment },
+  /** A distinct purpose: an image in the chat can never invoke body/scale or
+   * generic analysis, including through model output or a caller caption. */
+  async analyzeConversationImage(
+    imageUrl: string,
+    options: { userMessage?: string; purposeEnabled?: () => boolean } = {},
+  ): Promise<ConversationImageResult> {
+    const enabled = options.purposeEnabled
+    let refused = false
+    const current = () => {
+      try {
+        if (refused || enabled?.() !== true) throw new Error('Unavailable purpose')
+      } catch {
+        refused = true
+        throw new Error('Conversation image purpose unavailable')
+      }
+    }
+    current()
+    const userMessage = options.userMessage,
+      requestOptions = Object.freeze({
+        timeout: 12_000,
+        maxRetries: 0,
+        signal: AbortSignal.timeout(40_000),
+      }),
+      response = await this.client.chat.completions.create(
         {
-          role: 'user',
-          content: [{ type: 'image_url', image_url: { url: imageUrl } }],
+          model: this.model,
+          temperature: 0,
+          max_tokens: 12,
+          messages: [
+            { role: 'system', content: this.prompts.classifier },
+            { role: 'user', content: [{ type: 'image_url', image_url: { url: imageUrl } }] },
+          ],
         },
-      ],
-    })
+        requestOptions,
+      ),
+      classified = (response.choices[0]?.message?.content ?? '').trim().toLowerCase()
+    current()
+    if (classified !== 'meal' && classified !== 'equipment' && classified !== 'nutrition_label')
+      return parseConversationImageResult({
+        schema: 'conversation.image-result.v1',
+        status: 'unsupported',
+        classification: ['body', 'scale', 'other'].includes(classified) ? classified : 'unknown',
+        reason: 'image_not_supported_for_conversation',
+      })
+    if (classified === 'equipment') {
+      const result = await this.analyzeEquipment(imageUrl, requestOptions)
+      current()
+      return projectConversationImageResult(classified, result)
+    }
+    if (classified === 'nutrition_label') {
+      const result = await this.analyzeNutritionLabel(imageUrl, userMessage, requestOptions)
+      current()
+      return projectConversationImageResult(classified, result)
+    }
+    let meal = await this.analyzeMeal(imageUrl, userMessage, requestOptions)
+    current()
+    if (meal.nutrition_label_visible) {
+      try {
+        meal = {
+          ...meal,
+          nutrition_label: await this.analyzeNutritionLabel(imageUrl, userMessage, requestOptions),
+        }
+      } catch {
+        current()
+        meal = { ...meal, nutrition_label_error: 'nutrition_label_unreadable' }
+      }
+    }
+    current()
+    return projectConversationImageResult('meal', meal)
+  }
+
+  async analyzeEquipment(
+    imageUrl: string,
+    requestOptions?: Pick<RequestOptions, 'signal' | 'timeout' | 'maxRetries'>,
+  ): Promise<VisionEquipmentAnalysis> {
+    const start = Date.now()
+    const completion = await this.client.chat.completions.create(
+      {
+        model: this.model,
+        temperature: 0.2,
+        max_tokens: 1024,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: this.prompts.equipment },
+          {
+            role: 'user',
+            content: [{ type: 'image_url', image_url: { url: imageUrl } }],
+          },
+        ],
+      },
+      requestOptions,
+    )
     const raw = completion.choices[0]?.message?.content ?? ''
     const parsed = parseJsonLoose(raw) as {
       equipment?: unknown
@@ -665,29 +747,36 @@ export class GeminiVision {
     }
   }
 
-  async analyzeMeal(imageUrl: string, userMessage?: string): Promise<VisionMealAnalysis> {
+  async analyzeMeal(
+    imageUrl: string,
+    userMessage?: string,
+    requestOptions?: Pick<RequestOptions, 'signal' | 'timeout' | 'maxRetries'>,
+  ): Promise<VisionMealAnalysis> {
     const start = Date.now()
-    const completion = await this.client.chat.completions.create({
-      model: this.model,
-      temperature: 0.2,
-      max_tokens: 2048,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: this.prompts.meal },
-        {
-          role: 'user',
-          content: [
-            { type: 'image_url', image_url: { url: imageUrl } },
-            {
-              type: 'text',
-              text: userMessage
-                ? `Mensagem do usuário junto com a foto: "${userMessage}"\n\nIdentifique os alimentos.`
-                : 'Identifique os alimentos visíveis nesta refeição.',
-            },
-          ],
-        },
-      ],
-    })
+    const completion = await this.client.chat.completions.create(
+      {
+        model: this.model,
+        temperature: 0.2,
+        max_tokens: 2048,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: this.prompts.meal },
+          {
+            role: 'user',
+            content: [
+              { type: 'image_url', image_url: { url: imageUrl } },
+              {
+                type: 'text',
+                text: userMessage
+                  ? `Mensagem do usuário junto com a foto: "${userMessage}"\n\nIdentifique os alimentos.`
+                  : 'Identifique os alimentos visíveis nesta refeição.',
+              },
+            ],
+          },
+        ],
+      },
+      requestOptions,
+    )
     const raw = completion.choices[0]?.message?.content ?? ''
     const parsed = parseJsonLoose(raw)
     if (Object.keys(parsed).length === 0) {
@@ -861,31 +950,35 @@ export class GeminiVision {
   async analyzeNutritionLabel(
     imageUrl: string,
     userMessage?: string,
+    requestOptions?: Pick<RequestOptions, 'signal' | 'timeout' | 'maxRetries'>,
   ): Promise<VisionNutritionLabelAnalysis> {
     const start = Date.now()
     // Usa nutritionLabelModel (Sonnet 4.6 Vision por default na config de
     // produção) — OCR muito superior pra texto denso de rótulo vs Gemini Flash.
-    const completion = await this.client.chat.completions.create({
-      model: this.nutritionLabelModel,
-      temperature: 0,
-      max_tokens: 1024,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: this.prompts.nutrition_label },
-        {
-          role: 'user',
-          content: [
-            { type: 'image_url', image_url: { url: imageUrl } },
-            {
-              type: 'text',
-              text: userMessage
-                ? `Mensagem do usuário junto: "${userMessage}"\n\nExtraia os valores da tabela nutricional.`
-                : 'Extraia os valores da tabela nutricional.',
-            },
-          ],
-        },
-      ],
-    })
+    const completion = await this.client.chat.completions.create(
+      {
+        model: this.nutritionLabelModel,
+        temperature: 0,
+        max_tokens: 1024,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: this.prompts.nutrition_label },
+          {
+            role: 'user',
+            content: [
+              { type: 'image_url', image_url: { url: imageUrl } },
+              {
+                type: 'text',
+                text: userMessage
+                  ? `Mensagem do usuário junto: "${userMessage}"\n\nExtraia os valores da tabela nutricional.`
+                  : 'Extraia os valores da tabela nutricional.',
+              },
+            ],
+          },
+        ],
+      },
+      requestOptions,
+    )
     const raw = completion.choices[0]?.message?.content ?? ''
     const parsed = parseJsonLoose(raw)
     if (Object.keys(parsed).length === 0) {

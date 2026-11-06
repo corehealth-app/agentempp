@@ -12,8 +12,12 @@ import { z } from 'zod'
 import {
   type BoundConversationMealCommand,
   bindConversationCommand,
-  conversationMealCommandSchema,
+  conversationMealExecutionCommandSchema,
 } from './conversation-command-contracts'
+import {
+  assertConversationIntakeMediaCapture,
+  conversationIntakeMediaProjectionSchema,
+} from './conversation-intake-media-origin'
 import { MobileApiError } from './http'
 
 const uuid = z
@@ -26,14 +30,14 @@ const json: z.ZodType<Json> = z.lazy(() =>
   z.union([z.null(), z.boolean(), z.string(), finite, z.array(json), z.record(json)]),
 )
 const jsonObject = z.record(json)
-const contextSchema = z
+const legacyContextSchema = z
   .object({
     schema: z.literal('conversation.meal-source.v1'),
     owner_id: uuid,
     command_id: uuid,
     input_hash: hash,
     epoch: uuid,
-    source_input: conversationMealCommandSchema,
+    source_input: conversationMealExecutionCommandSchema,
     source_units: z
       .array(z.enum(['command_text', 'media_caption', 'media_transcript', 'vision_items']))
       .min(1)
@@ -46,6 +50,28 @@ const contextSchema = z
     day: jsonObject,
   })
   .strict()
+const contextSchema = z.union([
+  legacyContextSchema,
+  legacyContextSchema
+    .extend({
+      schema: z.literal('conversation.meal-source.v2'),
+      source_input: conversationMealExecutionCommandSchema,
+      source_units: z
+        .array(
+          z.enum([
+            'command_text',
+            'media_caption',
+            'media_context',
+            'media_transcript',
+            'vision_items',
+          ]),
+        )
+        .min(1)
+        .max(4),
+      intake_projection: conversationIntakeMediaProjectionSchema,
+    })
+    .strict(),
+])
 type SourceContext = z.infer<typeof contextSchema>
 export interface ConversationMealSourceReceipt {
   readonly id: string
@@ -301,6 +327,8 @@ export function createConversationMealStoredSourcePorts(
       (!isDeepStrictEqual(context.source_units, ['command_text']) || context.media !== null)
     )
       return refuse()
+    if ('intake_origin' in command.command) assertConversationIntakeMediaCapture(command, context)
+    else if (context.schema !== 'conversation.meal-source.v1') return refuse()
     const asOf = captured.captured_at,
       cutoff = instant(asOf)
     const receipts = new Map<string, ConversationMealSourceReceipt>()

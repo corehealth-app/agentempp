@@ -108,6 +108,34 @@ struct MobileConversationHistoryRepository: Sendable {
     else { throw MobileAPITransportError.invalidResponse }
     return .init(page: response.data, context: context)
   }
+  /// Historical-only schema3. No request/echo3, original intent or ACK is derived.
+  func unifiedJournal(cursor: String? = nil, limit: Int = 10, context: ConversationCommandContext)
+    async throws -> ConversationJournalV3Read
+  {
+    try await validate(context)
+    guard (1...25).contains(limit) else { throw MobileAPIRequestError.invalidConversationHeaders }
+    if let cursor {
+      try ConversationJournalV3PageSnapshot.validateCursor(
+        cursor, ownerID: context.ownerID, epoch: context.epoch)
+    }
+    var query = [
+      URLQueryItem(name: "version", value: "3"), .init(name: "limit", value: String(limit)),
+    ]
+    if let cursor { query.append(.init(name: "cursor", value: cursor)) }
+    let response = try await transport.withResponseBodyLimit(262_144).executeHTTP(
+      MobileAPIRequest<ConversationJournalV3PageSnapshot>(
+        method: .get,
+        path: "/api/mobile/v1/conversation/journal", queryItems: query,
+        conversation: .unifiedJournal(epoch: context.epoch, ownerID: context.ownerID)))
+    try await validate(context)
+    guard response.statusCode == 200, response.data.items.count <= limit,
+      response.data.matches(
+        authUserID: context.authUserID, ownerID: context.ownerID, epoch: context.epoch),
+      let observed = ConversationProtocolInstant(response.data.observedAt),
+      let accepted = ConversationProtocolInstant(context.observedAt), observed >= accepted
+    else { throw MobileAPITransportError.invalidResponse }
+    return .init(page: response.data, context: context)
+  }
   private func validate(_ context: ConversationCommandContext) async throws {
     guard !context.observation.isEnqueueOnly, context.authUserID == UUID(uuidString: lease.userID),
       context.sessionGeneration == lease.generation
@@ -152,5 +180,14 @@ struct ConversationMealLinkedGroupRead: Sendable {
     self.group = group
     self.identity = identity
     self.context = context
+  }
+}
+
+/// Adapter-only observation carrier. It has no write/delivery capability.
+struct ConversationJournalV3Read: Sendable {
+  let page: ConversationJournalV3PageSnapshot
+  let context: ConversationCommandContext
+  fileprivate init(page: ConversationJournalV3PageSnapshot, context: ConversationCommandContext) {
+    self.page = page; self.context = context
   }
 }

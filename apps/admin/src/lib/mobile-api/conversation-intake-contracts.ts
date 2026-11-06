@@ -7,6 +7,10 @@ import {
   bindConversationCommand,
   type ConversationMealCommand,
 } from './conversation-command-contracts'
+import {
+  type ConversationIntakeMediaProjection,
+  conversationIntakeMediaProjectionSchema,
+} from './conversation-intake-media-origin'
 import { detachConversationContinuationReadJson } from './conversation-meal-continuation-read-contracts'
 import { conversationJournalInstant } from './conversation-meal-journal-store'
 import {
@@ -121,7 +125,8 @@ const selectedCommandSchema = z
   })
   .strict()
 export interface ConversationIntakeSelection {
-  readonly schema: 'conversation.intake-selection.v1'
+  readonly schema: 'conversation.intake-selection.v1' | 'conversation.intake-selection.v2'
+  readonly media_projection?: ConversationIntakeMediaProjection
   readonly intake: ConversationIntakeBinding
   readonly source_hash: string
   readonly decision_hash: string
@@ -148,6 +153,15 @@ const selectionSchema = z
     command: selectedCommandSchema.nullable(),
   })
   .strict()
+const executionSelectionSchema = z.union([
+  selectionSchema,
+  selectionSchema
+    .extend({
+      schema: z.literal('conversation.intake-selection.v2'),
+      media_projection: conversationIntakeMediaProjectionSchema,
+    })
+    .strict(),
+])
 export function intakeSnapshot<T>(raw: T): T {
   return detachConversationContinuationReadJson(raw) as T
 }
@@ -245,7 +259,7 @@ export function parseConversationIntakeSelection(
 ): ConversationIntakeSelection {
   const bound = pinConversationIntake(original),
     binding = parseConversationIntakeBinding(bound, rawBinding),
-    value = selectionSchema.parse(intakeSnapshot(raw)),
+    value = executionSelectionSchema.parse(intakeSnapshot(raw)),
     at = conversationJournalInstant,
     actualBinding = parseConversationIntakeBinding(bound, value.intake)
   require(
@@ -258,11 +272,11 @@ export function parseConversationIntakeSelection(
   )
   const decision = value.decision
   if (decision.kind === 'not_reported' || decision.kind === 'clarification_required') {
-    require(value.command === null)
+    require(value.schema === 'conversation.intake-selection.v1' && value.command === null)
     return intakeSnapshot({ ...value, command: null })
   }
   const c = value.command
-  require(bound.input.source.channel === 'text' && c !== null)
+  require(c !== null)
   require(
     c.kind === decision.kind &&
       c.owner_id === bound.ownerId &&
@@ -281,10 +295,39 @@ export function parseConversationIntakeSelection(
       typed.inputHash === c.input_hash &&
       typed.command.kind === c.kind,
   )
-  require(
-    typed.command.source.channel === 'text' &&
-      typed.command.source.text === bound.input.source.text,
-  )
+  if (bound.input.source.channel === 'text') {
+    require(
+      value.schema === 'conversation.intake-selection.v1' &&
+        typed.command.source.channel === 'text' &&
+        typed.command.source.text === bound.input.source.text,
+    )
+  } else {
+    require(
+      value.schema === 'conversation.intake-selection.v2' &&
+        'media_projection' in value &&
+        'intake_origin' in typed.command &&
+        typed.command.source.channel === 'media' &&
+        isDeepStrictEqual(typed.command.source, bound.input.source),
+    )
+    const p = value.media_projection,
+      o = typed.command.intake_origin
+    require(
+      isDeepStrictEqual(o, p.origin) &&
+        o.intake_id === bound.intakeId &&
+        o.input_hash === bound.inputHash &&
+        o.source_hash === value.source_hash &&
+        o.decision_hash === value.decision_hash &&
+        o.epoch === binding.epoch &&
+        p.child_input_hash === typed.inputHash &&
+        p.media.owner_id === bound.ownerId &&
+        p.media.asset_id === bound.input.source.media_asset_id &&
+        at(p.media.processed_at) <= at(value.selected_at) &&
+        at(p.media.updated_at) <= at(value.selected_at) &&
+        (typed.command.kind === 'meal.report'
+          ? ['meal_photo', 'audio_note'].includes(p.media.kind)
+          : ['gym_photo', 'audio_note'].includes(p.media.kind)),
+    )
+  }
   if (typed.command.kind === 'meal.report')
     require(typed.command.meal_type === bound.input.meal_type_hint)
   return intakeSnapshot({ ...value, command: { ...c, input: typed.command } })

@@ -12,7 +12,7 @@ import { resolveConversationWorkoutReport } from './conversation-workout-authori
 import {
   bindConversationWorkoutCommand,
   type CapturedConversationWorkoutSource,
-  conversationWorkoutCommandSchema,
+  conversationWorkoutExecutionCommandSchema,
   parseConversationWorkoutSource,
   workoutClock,
   workoutDigest,
@@ -154,7 +154,7 @@ export function parseConversationWorkoutReconciliation(
   const storedSource = z
     .object({
       source_hash: workoutHash,
-      context: z.object({ source_input: conversationWorkoutCommandSchema }).passthrough(),
+      context: z.object({ source_input: conversationWorkoutExecutionCommandSchema }).passthrough(),
     })
     .strict()
     .parse(value.source)

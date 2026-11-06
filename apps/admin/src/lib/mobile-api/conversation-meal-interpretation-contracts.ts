@@ -7,8 +7,12 @@ import { z } from 'zod'
 import {
   type BoundConversationMealCommand,
   bindConversationCommand,
-  conversationMealCommandSchema,
+  conversationMealExecutionCommandSchema,
 } from './conversation-command-contracts'
+import {
+  assertConversationIntakeMediaCapture,
+  conversationIntakeMediaProjectionSchema,
+} from './conversation-intake-media-origin'
 import { MobileApiError } from './http'
 
 export const MEAL_INTERPRETER_VERSION = 'conversation.meal-interpreter.v1' as const
@@ -16,11 +20,12 @@ export const MEAL_INTERPRETATION_MAX_BYTES = 131_072
 export const mealInterpretationUnitSchema = z.enum([
   'command_text',
   'media_caption',
+  'media_context',
   'media_transcript',
   'vision_items',
 ])
 export type MealInterpretationUnit = z.infer<typeof mealInterpretationUnitSchema>
-const textUnit = z.enum(['command_text', 'media_caption', 'media_transcript'])
+const textUnit = z.enum(['command_text', 'media_caption', 'media_context', 'media_transcript'])
 const uuid = z
   .string()
   .uuid()
@@ -296,15 +301,16 @@ export function buildConversationMealInterpretationSource(
     const rawContext = structuredClone(captured.context)
     const c = z
       .object({
-        schema: z.literal('conversation.meal-source.v1'),
+        schema: z.enum(['conversation.meal-source.v1', 'conversation.meal-source.v2']),
         owner_id: uuid,
         command_id: uuid,
         input_hash: hash,
         epoch: uuid,
-        source_input: conversationMealCommandSchema,
+        source_input: conversationMealExecutionCommandSchema,
         source_units: z.array(mealInterpretationUnitSchema).min(1).max(4),
         source_evidence: z.record(json),
-        media: mediaSchema.nullable(),
+        media: z.union([mediaSchema, mediaSchema.extend({ owner_id: uuid }).strict()]).nullable(),
+        intake_projection: conversationIntakeMediaProjectionSchema.optional(),
       })
       .passthrough()
       .parse(rawContext)
@@ -317,6 +323,9 @@ export function buildConversationMealInterpretationSource(
       !isDeepStrictEqual(c.source_input, command.command) ||
       new Set(c.source_units).size !== c.source_units.length
     )
+      return interpretationUnavailable()
+    if ('intake_origin' in command.command) assertConversationIntakeMediaCapture(command, c)
+    else if (c.schema !== 'conversation.meal-source.v1' || c.intake_projection !== undefined)
       return interpretationUnavailable()
     const sources: ConversationMealInterpretationSource['sources'] = []
     let media_binding: ConversationMealInterpretationSource['media_binding'] = null
@@ -335,14 +344,31 @@ export function buildConversationMealInterpretationSource(
       const evidence = z
         .object({
           caption: z.string().max(1000).nullable(),
+          context_text: z.string().max(2000).nullable().optional(),
           transcript: z.string().max(2000).nullable(),
         })
         .strict()
         .parse(c.source_evidence)
-      if (evidence.caption !== (input.caption ?? m.context_text)) return interpretationUnavailable()
+      if (
+        evidence.caption !==
+          (c.schema === 'conversation.meal-source.v2'
+            ? (input.caption ?? null)
+            : (input.caption ?? m.context_text)) ||
+        (c.schema === 'conversation.meal-source.v2'
+          ? evidence.context_text !== m.context_text
+          : evidence.context_text !== undefined)
+      )
+        return interpretationUnavailable()
       const result = z.record(json).parse(m.processing_result)
       if (evidence.caption !== null && evidence.caption.replace(/^ +| +$/gu, '').length > 0)
         sources.push({ unit: 'media_caption', text: evidence.caption, visual_items: [] })
+      if (
+        c.schema === 'conversation.meal-source.v2' &&
+        evidence.context_text !== null &&
+        evidence.context_text !== undefined &&
+        evidence.context_text.replace(/^ +| +$/gu, '').length > 0
+      )
+        sources.push({ unit: 'media_context', text: evidence.context_text, visual_items: [] })
       if (m.kind === 'audio_note') {
         if (
           typeof result.text !== 'string' ||

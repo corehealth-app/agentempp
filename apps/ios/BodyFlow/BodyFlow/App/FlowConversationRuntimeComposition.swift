@@ -3,7 +3,7 @@ import Foundation
 /// Bundled build selection, never a launch argument, user setting or server
 /// grant. Actual protocol/session authority still comes from authenticated GET.
 enum FlowConversationRuntimeSelection: Equatable, Sendable {
-  case legacy, mealCommandV1, unavailable
+  case legacy, mealCommandV1, neutralIntakeV1, unavailable
   static let infoKey = "PERFORME_FLOW_COMMAND_RUNTIME"
   static func load(_ raw: Any?) -> Self {
     guard let raw else { return .legacy }
@@ -11,6 +11,7 @@ enum FlowConversationRuntimeSelection: Equatable, Sendable {
     switch value {
     case "legacy": return .legacy
     case "meal_command_v1": return .mealCommandV1
+    case "neutral_intake_v1": return .neutralIntakeV1
     default: return .unavailable
     }
   }
@@ -26,13 +27,14 @@ struct FlowConversationSessionSource: Sendable {
   private let store: EncryptedConversationOutboxStore
   private let keyVault: ConversationOutboxKeyVault
   private let editing: FlowConversationMealEditingDependencies
+  private let neutralIntakeEnabled: Bool
   var captureStaging: MediaStagingStore? { media?.staging }
   init(
     transport: MobileAPITransport, lifecycle: any SessionLifecycleProviding,
     media: FlowConversationMediaDependencies?,
     store: EncryptedConversationOutboxStore = .device,
     keyVault: ConversationOutboxKeyVault = .init(),
-    editing: FlowConversationMealEditingDependencies = .init()
+    editing: FlowConversationMealEditingDependencies = .init(), neutralIntakeEnabled: Bool = false
   ) {
     self.transport = transport
     self.lifecycle = lifecycle
@@ -40,6 +42,7 @@ struct FlowConversationSessionSource: Sendable {
     self.store = store
     self.keyVault = keyVault
     self.editing = editing
+    self.neutralIntakeEnabled = neutralIntakeEnabled
   }
   @MainActor func open(expectedUserID: String) async throws -> FlowConversationBoundSession {
     try Task.checkCancellation()
@@ -50,7 +53,7 @@ struct FlowConversationSessionSource: Sendable {
     try await lifecycle.validate(lease)
     let model = try await FlowConversationModel.open(
       transport: transport, lifecycle: lifecycle, store: store, keyVault: keyVault,
-      media: media, editing: editing, linkedReplies: true, historyVersion: .v2, expectedLease: lease
+      media: media, editing: editing, linkedReplies: true, historyVersion: neutralIntakeEnabled ? .v3 : .v2, neutralIntakeEnabled: neutralIntakeEnabled, expectedLease: lease
     )
     let session = FlowConversationBoundSession(model: model, lifecycle: lifecycle, lease: lease)
     do {

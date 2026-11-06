@@ -14,6 +14,7 @@ const mediaAssetRowSchema = z.object({
   user_id: z.string().uuid(),
   kind: z.enum([
     'meal_photo',
+    'conversation_photo',
     'body_checkin_photo',
     'gym_photo',
     'audio_note',

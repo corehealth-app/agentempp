@@ -1,9 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { parseConversationImageResult } from '@mpp/providers/vision/conversation-image-result'
 import type { MediaUploadInput } from './contracts'
 import { MobileApiError } from './http'
 
 export type MediaAssetKind =
   | 'meal_photo'
+  | 'conversation_photo'
   | 'body_checkin_photo'
   | 'gym_photo'
   | 'audio_note'
@@ -105,6 +107,9 @@ export interface MediaServiceDependencies {
 
 const mediaPolicy = {
   meal_photo: { bucketId: 'meal-photos', retentionDays: 30, downloadTtl: 300 },
+  // Ordinary nonclinical chat images reuse private photo infrastructure and
+  // its existing30day retention. A distinct kind never means body assessment.
+  conversation_photo: { bucketId: 'meal-photos', retentionDays: 30, downloadTtl: 300 },
   body_checkin_photo: {
     bucketId: 'body-checkin-photos',
     retentionDays: 730,
@@ -144,6 +149,21 @@ function addDays(now: Date, days: number): string {
 }
 
 function mediaAssetDto(asset: MediaAssetRecord) {
+  let result =
+    asset.kind !== 'body_checkin_photo' && asset.status === 'processed'
+      ? (asset.processing_result ?? null)
+      : null
+  if (asset.kind === 'conversation_photo' && asset.status === 'processed') {
+    try {
+      result = parseConversationImageResult(result)
+    } catch {
+      throw new MobileApiError(
+        503,
+        'conversation_photo_result_unavailable',
+        'Conversation image result is unavailable',
+      )
+    }
+  }
   return {
     id: asset.id,
     kind: asset.kind,
@@ -157,10 +177,7 @@ function mediaAssetDto(asset: MediaAssetRecord) {
     uploaded_at: asset.uploaded_at,
     processed_at: asset.processed_at,
     deleted_at: asset.deleted_at,
-    result:
-      asset.kind !== 'body_checkin_photo' && asset.status === 'processed'
-        ? (asset.processing_result ?? null)
-        : null,
+    result,
     created_at: asset.created_at,
     updated_at: asset.updated_at,
   }
@@ -188,6 +205,8 @@ function requireOwnedAsset(asset: MediaAssetRecord | null): MediaAssetRecord {
 export const MAX_AUDIO_DURATION_MS = 180_000
 
 interface MediaCreationOptions {
+  /** Trusted live capability; absent is OFF. Never read from request JSON. */
+  conversationPhotoEnabled?: () => boolean
   /** Generic /media opts in; the dedicated sign-up keeps body upload support. */
   rejectBodyPhotos?: boolean
   /** Internal dedicated signup caller; public upload schemas cannot set this. */
@@ -270,6 +289,40 @@ export async function createMediaAssetRecord(
   assetId = randomUUID(),
   options: MediaCreationOptions = {},
 ) {
+  // Preserve the new purpose's original primitives across storage/SDK waits.
+  if (input.kind === 'conversation_photo') input = Object.freeze({ ...input })
+  const enabled = options.conversationPhotoEnabled?.bind(options) ?? (() => false)
+  let refused = false
+  function purpose(asset?: MediaAssetRecord): void {
+    if (input.kind !== 'conversation_photo' && asset?.kind !== 'conversation_photo') return
+    try {
+      if (refused || enabled() !== true) throw new Error('Unavailable purpose')
+    } catch {
+      refused = true
+      throw new MobileApiError(
+        503,
+        'conversation_photo_unavailable',
+        'Conversation image purpose is unavailable',
+      )
+    }
+    if (
+      asset &&
+      (input.kind !== 'conversation_photo' ||
+        asset.kind !== input.kind ||
+        asset.user_id !== userId ||
+        asset.mime_type !== input.mime_type ||
+        asset.declared_size_bytes !== input.size_bytes ||
+        asset.context_text !== (input.context_text ?? null) ||
+        asset.bucket_id !== 'meal-photos' ||
+        asset.object_path !== `${userId}/${asset.id}.${extensionByMimeType[input.mime_type]}`)
+    )
+      throw new MobileApiError(
+        409,
+        'idempotency_key_conflict',
+        'The original media purpose has changed',
+      )
+  }
+  purpose()
   assertUploadKindAllowed(input.kind, options)
   if (
     input.kind === 'audio_note' &&
@@ -280,10 +333,19 @@ export async function createMediaAssetRecord(
   }
   const sourceRequestHash = sha256(requestKey)
   const finish = async (asset: MediaAssetRecord, replayed: boolean) => {
+    purpose(asset)
     assertSignupCreation(asset, userId, input, options)
     if (options.signupOrigin) assertSignupPhotoUploadOpen(asset)
     const upload =
       !replayed || asset.status === 'pending_upload' ? await signedUpload(deps, asset, now) : null
+    purpose(asset)
+    if (input.kind === 'conversation_photo') {
+      const latest = requireOwnedAsset(await deps.repository.findOwned(userId, asset.id))
+      purpose(latest)
+      if (latest.status === 'deleted' || (upload !== null && latest.status !== 'pending_upload'))
+        throw new MobileApiError(409, 'media_upload_not_pending', 'Media upload is not pending')
+      return { asset: latest, upload, replayed }
+    }
     if (!options.signupOrigin) return { asset, upload, replayed }
     // Signing cannot hold the SQL lock or revoke a ticket. Re-read before returning it.
     const latest = await deps.repository.findOwned(userId, asset.id)
@@ -292,6 +354,7 @@ export async function createMediaAssetRecord(
     return { asset: latest, upload: latest.status === 'pending_upload' ? upload : null, replayed }
   }
   const existing = await deps.repository.findByRequestHash(userId, sourceRequestHash)
+  purpose(existing ?? undefined)
   if (existing) {
     // A differently labelled input must not refresh a stored body's ticket.
     assertUploadKindAllowed(existing.kind, options)
@@ -377,20 +440,21 @@ export async function getMediaAsset(
   assetId: string,
 ) {
   const asset = requireOwnedAsset(await deps.repository.findOwned(userId, assetId))
-  if (asset.status === 'deleted') return { ...mediaAssetDto(asset), download: null }
+  const dto = mediaAssetDto(asset)
+  if (asset.status === 'deleted') return { ...dto, download: null }
   if (!['uploaded', 'processing', 'processed'].includes(asset.status)) {
-    return { ...mediaAssetDto(asset), download: null }
+    return { ...dto, download: null }
   }
 
   const policy = mediaPolicy[asset.kind as keyof typeof mediaPolicy]
-  if (!policy) return { ...mediaAssetDto(asset), download: null }
+  if (!policy) return { ...dto, download: null }
   const signedUrl = await deps.storage.createSignedDownload(
     asset.bucket_id,
     asset.object_path,
     policy.downloadTtl,
   )
   return {
-    ...mediaAssetDto(asset),
+    ...dto,
     download: {
       signed_url: signedUrl,
       expires_in_seconds: policy.downloadTtl,

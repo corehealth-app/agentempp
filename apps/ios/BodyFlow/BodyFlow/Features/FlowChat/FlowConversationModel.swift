@@ -39,7 +39,7 @@ struct FlowConversationAttachment: Identifiable, Sendable {
   let identity: ConversationCommandContext.Identity
 }
 enum FlowConversationMediaPhase: Equatable, Sendable { case uploading, processing }
-enum FlowConversationHistoryVersion: Sendable { case v1, v2 }
+enum FlowConversationHistoryVersion: Sendable { case v1, v2, v3 }
 
 /// New command feature, separate from the existing legacy Flow sender. Its
 /// asynchronous factory uses the actual authenticated controller/lifecycle;
@@ -60,6 +60,7 @@ final class FlowConversationModel {
   private let history: MobileConversationHistoryRepository
   private let historyPageSize: Int
   private let historyVersion: FlowConversationHistoryVersion
+  let unifiedHistory: FlowConversationJournalV3Model
   private var historyEntries: [ConversationJournalPageSnapshot.Entry] = []
   private var threadEntries: [ConversationThreadPageSnapshot.Entry] = []
   private var threadDescriptors: [UUID: ConversationThreadPageSnapshot.Thread] = [:]
@@ -84,6 +85,7 @@ final class FlowConversationModel {
   private var acknowledgedEdits: Set<ConversationMealEditOutboxID> = []
   private(set) var mealEditor: FlowConversationMealEditModel?
   private(set) var mealReplies: FlowConversationMealReplyModel?
+  private(set) var neutralIntake: FlowNeutralIntakeModel?
   private var deliveredLinkedEffects: Set<UUID> = []
   private var groupRequests: [UUID: UUID] = [:]
   private var groupFailures: Set<UUID> = []
@@ -106,6 +108,7 @@ final class FlowConversationModel {
   private var preparedDraft: PreparedDraft?
   private var pending: [FlowConversationPendingRow] = []
   private var saved: [FlowConversationSavedRow] = []
+  private var savedIdentities: [UUID: ConversationCommandContext.Identity] = [:]
   private var commands: [UUID: ConversationMealCommand] = [:]
   private var replayAllowed: Set<UUID> = []
   private var blockedDecisionID: UUID?
@@ -316,12 +319,90 @@ final class FlowConversationModel {
     return .init(
       command: parent.originalCommand, receipt: receipt, feedback: threadFeedback(eventID: eventID))
   }
-  var hasMoreHistory: Bool { hasCurrentScope && historyHasMore }
+  var hasMoreHistory: Bool {
+    hasCurrentScope && (historyVersion == .v3 ? unifiedHistory.hasMore : historyHasMore)
+  }
+  var unifiedRows: [ConversationJournalV3PageSnapshot.Entry] {
+    hasCurrentScope && historyVersion == .v3 ? unifiedHistory.rows : []
+  }
+  var isLoadingUnifiedHistory: Bool { historyVersion == .v3 && unifiedHistory.isLoading }
+  var unifiedHistoryUnavailable: Bool { historyVersion == .v3 && unifiedHistory.unavailable }
   var pendingRows: [FlowConversationPendingRow] {
     hasCurrentScope ? pending.filter { !isInJournal($0.command) } : []
   }
   var savedRows: [FlowConversationSavedRow] {
-    hasCurrentScope ? saved.filter { !isInJournal($0.command) } : []
+    hasCurrentScope ? saved.filter { !isInJournal($0.command) && !isInUnifiedHistory($0) } : []
+  }
+  /// Only a controller-published RAM ACK can retain operational controls.
+  /// History contributes fresh display commentary, never dispatch authority.
+  func unifiedOperationalSavedRow(eventID: String) -> FlowConversationSavedRow? {
+    guard let entry = unifiedRows.first(where: { $0.eventID == eventID }),
+      let row = saved.first(where: { matchesUnifiedSaved($0, entry: entry) })
+    else { return nil }
+    return .init(
+      command: row.command, receipt: row.receipt, feedback: unifiedHistory.feedback(for: entry))
+  }
+  private func isInUnifiedHistory(_ row: FlowConversationSavedRow) -> Bool {
+    unifiedRows.contains { matchesUnifiedSaved(row, entry: $0) }
+  }
+  private func matchesUnifiedSaved(
+    _ row: FlowConversationSavedRow, entry: ConversationJournalV3PageSnapshot.Entry
+  ) -> Bool {
+    guard let context, hasCurrentScope, unifiedHistory.acceptedIdentity == context.identity,
+      savedIdentities[row.id] == context.identity, entry.originEpoch == context.epoch,
+      row.receipt.ownerID == context.ownerID.uuidString.lowercased(),
+      row.receipt.commandID == row.id.uuidString.lowercased(),
+      row.receipt.inputHash == row.command.inputHash,
+      entry.commandID == row.id, entry.status == .registered, case .meal(let meal) = entry.record
+    else { return false }
+    return meal.registrationID.uuidString.lowercased() == row.receipt.registrationID
+      && meal.localDate == row.receipt.localDate && meal.mealType == row.receipt.mealType.rawValue
+      && Set(meal.logIDs.map { $0.uuidString.lowercased() }) == Set(row.receipt.logIDs)
+      && meal.effectVersion == row.receipt.effectVersion
+  }
+  var unifiedTerminalIntakeIDs: Set<UUID> {
+    guard let identity = acceptedIdentity, let neutralIntake else { return [] }
+    return Set(
+      neutralIntake.terminalRows.filter { row in
+        guard row.identity == identity else { return false }
+        return unifiedRows.contains { entry in
+          entry.kind == .intake && entry.intakeID == row.id && entry.status == .notRecorded
+            && entry.commandID == row.response.selection?.child.commandID
+            && row.response.deliveryState == .notRecorded
+        }
+      }.map(\.id))
+  }
+  var unifiedSavedIntakeIDs: Set<UUID> {
+    guard let identity = acceptedIdentity, let neutralIntake else { return [] }
+    return Set(
+      neutralIntake.savedRows.filter { row in
+        guard row.identity == identity else { return false }
+        return unifiedRows.contains { entry in
+          guard entry.intakeID == row.id, entry.commandID == row.childID else { return false }
+          switch (entry.record, row.acknowledgement) {
+          case (.meal(let meal), .meal(let saved)):
+            return meal.registrationID.uuidString.lowercased() == saved.receipt.registrationID
+              && meal.localDate == saved.receipt.localDate
+              && meal.mealType == saved.receipt.mealType.rawValue
+              && meal.effectVersion == saved.receipt.effectVersion
+              && Set(meal.logIDs.map { $0.uuidString.lowercased() }) == Set(saved.receipt.logIDs)
+          case (.workout(let workout), .workout(let saved)):
+            return workout.registrationID == saved.registration.registrationID
+              && workout.workoutID == saved.activity.logID
+              && workout.localDate == saved.registration.localDate
+              && workout.timeZone == saved.registration.timeZone
+              && ConversationProtocolInstant(workout.performedAt)
+                == ConversationProtocolInstant(saved.registration.performedAt)
+              && ConversationProtocolInstant(workout.committedAt)
+                == ConversationProtocolInstant(saved.registration.committedAt)
+              && workout.workoutType == saved.activity.workoutType
+              && workout.durationMin == saved.activity.durationMin
+              && workout.intensity == saved.activity.intensity
+              && workout.estimatedKcal == saved.activity.estimatedKcal
+          default: return false
+          }
+        }
+      }.map(\.id))
   }
   private func isInJournal(_ command: ConversationMealCommand) -> Bool {
     if historyVersion == .v2 {
@@ -348,6 +429,11 @@ final class FlowConversationModel {
       command: entry.originalCommand, receipt: value.receipt,
       feedback: value.boundFeedback(scope: scope))
   }
+  func hasJournalChild(_ childID: UUID) -> Bool {
+    guard hasCurrentScope, historyIdentity == lastIdentity else { return false }
+    if threadDescriptors[childID] != nil { return true }
+    return historyEntries.contains { if case let .command(value) = $0 { return value.originalCommand.commandID == childID }; return false }
+  }
   func hasLocalUnresolved(commandID: UUID) -> Bool {
     hasCurrentScope && pending.contains { $0.id == commandID }
   }
@@ -373,6 +459,7 @@ final class FlowConversationModel {
     self.history = history
     self.historyPageSize = historyPageSize
     self.historyVersion = historyVersion
+    self.unifiedHistory = .init(history: history, lifecycle: lifecycle)
   }
   static func open(
     transport: MobileAPITransport, lifecycle: any SessionLifecycleProviding,
@@ -380,11 +467,11 @@ final class FlowConversationModel {
     keyVault: ConversationOutboxKeyVault = .init(), media: FlowConversationMediaDependencies? = nil,
     editing: FlowConversationMealEditingDependencies? = nil, linkedReplies: Bool = false,
     historyPageSize: Int = 10, historyVersion: FlowConversationHistoryVersion = .v1,
-    expectedLease: SessionLease? = nil
+    neutralIntakeEnabled: Bool = false, expectedLease: SessionLease? = nil
   ) async throws -> FlowConversationModel {
     guard (1...25).contains(historyPageSize) else { throw ConversationOutboxError.invalidCommand }
     if linkedReplies {
-      guard case .v2 = historyVersion else { throw ConversationOutboxError.invalidCommand }
+      guard historyVersion == .v2 || historyVersion == .v3 else { throw ConversationOutboxError.invalidCommand }
     }
     let lease = try await lifecycle.leaseForRequest()
     if let expectedLease {
@@ -395,7 +482,7 @@ final class FlowConversationModel {
       try await lifecycle.validate(expectedLease)
     }
     let history = try await MobileConversationHistoryRepository.scoped(
-      transport: transport, lifecycle: lifecycle, lease: lease)
+      transport: transport, lifecycle: lifecycle, lease: lease, feedbackPresentation: neutralIntakeEnabled ? .v2 : nil)
     let controller = try await ConversationMealCommandController.open(
       transport: transport, lifecycle: lifecycle, store: store, keyVault: keyVault,
       expectedLease: lease)
@@ -471,6 +558,12 @@ final class FlowConversationModel {
           await replyController.close()
           throw error
         }
+      }
+      if neutralIntakeEnabled {
+        guard let current = model.context else { throw ConversationOutboxError.invalidServerObservation }
+        model.neutralIntake = try await FlowNeutralIntakeModel.open(transport: transport, lifecycle: lifecycle, store: store, keyVault: keyVault, expectedLease: lease, parentIdentity: current.identity,
+          parentIsCurrent: { [weak model] identity in model?.hasCurrentScope == true && model?.context?.identity == identity },
+          onFactualEffect: { [weak model] in guard let model, model.hasCurrentScope else { return }; model.savedEffectRevision &+= 1 })
       }
       return model
     } catch {
@@ -704,6 +797,13 @@ final class FlowConversationModel {
   }
 
   func loadHistory(reset: Bool = true) async {
+    if historyVersion == .v3 {
+      guard !isClosed, let lease, let context, hasCurrentScope else { return }
+      await unifiedHistory.load(context: context, lease: lease, limit: historyPageSize, reset: reset) { [weak self] identity in
+        self?.hasCurrentScope == true && self?.context?.identity == identity
+      }
+      return
+    }
     if historyVersion == .v2 {
       await loadThreadHistory(reset: reset)
       return
@@ -1098,8 +1198,11 @@ final class FlowConversationModel {
     } catch { await showFailure(error, publicationID: id) }
   }
   func refreshConversation() async {
+    neutralIntake?.suspendVisibility()
     await refresh()
     if hasCurrentScope {
+      if let identity = context?.identity { neutralIntake?.acceptParent(identity) }
+      await neutralIntake?.refresh()
       await mealEditor?.restore()
       await mealReplies?.restore()
       await loadHistory()
@@ -1276,7 +1379,7 @@ final class FlowConversationModel {
         commandID: commandID, publish: self.publisher(for: id))
     }
   }
-  func cancelTransientWork() { operation?.cancel() }
+  func cancelTransientWork() { operation?.cancel(); neutralIntake?.cancelTransientWork(); unifiedHistory.cancel() }
   func invalidateSynchronously() {
     lifetime.close()
     closed = true
@@ -1284,6 +1387,8 @@ final class FlowConversationModel {
     operation?.cancel()
     mealEditor?.invalidateSynchronously()
     mealReplies?.invalidateSynchronously()
+    neutralIntake?.invalidateSynchronously()
+    unifiedHistory.close()
   }
   func close() async {
     invalidateSynchronously()
@@ -1317,6 +1422,7 @@ final class FlowConversationModel {
     groupFailures.removeAll()
     pending.removeAll()
     saved.removeAll()
+    savedIdentities.removeAll()
     commands.removeAll()
     replayAllowed.removeAll()
     heldRows.removeAll()
@@ -1333,6 +1439,8 @@ final class FlowConversationModel {
     await mealReplies?.close()
     mealReplies = nil
     deliveredLinkedEffects.removeAll()
+    await neutralIntake?.close()
+    neutralIntake = nil
     await controller.close()
     if let id = workID {
       workID = nil
@@ -1367,6 +1475,7 @@ final class FlowConversationModel {
         value.sessionGeneration == lease.generation,
         (try? value.withCurrentAuthority { true }) == true
       else { return }
+      neutralIntake?.acceptParent(value.identity)
       if let old = lastIdentity, old != value.identity {
         draft = ""
         selectedMealType = nil
@@ -1391,6 +1500,7 @@ final class FlowConversationModel {
         groupFailures.removeAll()
         pending.removeAll()
         saved.removeAll()
+        savedIdentities.removeAll()
         commands.removeAll()
         heldRows.removeAll()
         queuedMetadata.removeAll()
@@ -1447,6 +1557,7 @@ final class FlowConversationModel {
       replayAllowed.remove(id)
       if !saved.contains(where: { $0.id == id }) {
         saved.append(.init(command: command, receipt: value.receipt, feedback: value.feedback))
+        savedIdentities[id] = context.identity
         savedEffectRevision &+= 1
       }
     case .state(let value, let canResubmit):
@@ -1479,6 +1590,7 @@ final class FlowConversationModel {
     }
   }
   private func resetHistory() {
+    unifiedHistory.suspend()
     historyEntries.removeAll()
     threadEntries.removeAll()
     threadDescriptors.removeAll()

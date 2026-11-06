@@ -1,0 +1,830 @@
+{
+  "schema": "t45.public-unit-projections.v1",
+  "evidence": "Observed final default service outputs over actual rollback SQL pages/reconciles and explicit synthetic unit Auth/current policy; external observer only serializes successful results. Not HTTP/device/live-session QA.",
+  "service_sha256": "776e28afed1d87ce0477e224145bfe9b6777f33cd03fff667dc85d89e1e5305d",
+  "export_log_sha256": "9a8deeee07fad0106d4a0971b1a8499671365632cca93204a714f8ab12b279b2",
+  "pages": [
+    {
+      "schema": "conversation.journal-page.v3",
+      "mode": "historical",
+      "auth_user_id": "10000000-0000-4000-8000-000000000002",
+      "owner_id": "59564be0-f190-456f-86d6-5b108376b990",
+      "epoch": "b6c07d9e-7e8d-4ba1-b8a8-a677ce181b69",
+      "observed_at": "2026-11-06T02:44:12.703114Z",
+      "items": [
+        {
+          "event_id": "intake/266b0d6d-ee09-4ae6-9a95-6e73c7dba347",
+          "at": "2026-11-06T02:44:12.399740Z",
+          "thread_id": "266b0d6d-ee09-4ae6-9a95-6e73c7dba347",
+          "kind": "intake",
+          "lineage": {
+            "kind": "intake",
+            "intake_id": "266b0d6d-ee09-4ae6-9a95-6e73c7dba347",
+            "command_id": "315e43ab-23d7-48a3-9b2a-1aa6c878ef62",
+            "parent_command_id": null,
+            "origin_epoch": "b6c07d9e-7e8d-4ba1-b8a8-a677ce181b69"
+          },
+          "input": {
+            "channel": "media",
+            "caption": null
+          },
+          "outcome": {
+            "status": "registered",
+            "record": {
+              "kind": "workout",
+              "registration": {
+                "provenance": "conversation.workout.v1",
+                "registration_id": "315e43ab-23d7-48a3-9b2a-1aa6c878ef62",
+                "workout_id": "289779a1-b6ae-465f-a00e-ba4722db513f",
+                "performed_at": "2026-11-06T02:44:12.467046Z",
+                "local_date": "2026-11-06",
+                "time_zone": "UTC",
+                "committed_at": "2026-11-06T02:44:12.636444Z",
+                "effect_version": 1
+              },
+              "activity": {
+                "kind": "workout",
+                "log_id": "289779a1-b6ae-465f-a00e-ba4722db513f",
+                "intensity": "leve",
+                "duration_min": 30,
+                "workout_type": "caminhada",
+                "estimated_kcal": null
+              }
+            },
+            "feedback": null
+          }
+        }
+      ],
+      "has_more": false,
+      "next_cursor": null
+    },
+    {
+      "schema": "conversation.journal-page.v3",
+      "mode": "historical",
+      "auth_user_id": "10000000-0000-4000-8000-000000000002",
+      "owner_id": "670f33f2-95be-47f0-97a5-34e38fe35453",
+      "epoch": "5cc4ae74-ab5e-43a3-9ec6-33cdf296c90d",
+      "observed_at": "2026-11-06T02:44:12.390383Z",
+      "items": [
+        {
+          "event_id": "intake/aa6739c6-c1fd-47f9-8bc2-2d3716a980d6",
+          "at": "2026-11-06T02:44:12.143704Z",
+          "thread_id": "aa6739c6-c1fd-47f9-8bc2-2d3716a980d6",
+          "kind": "intake",
+          "lineage": {
+            "kind": "intake",
+            "intake_id": "aa6739c6-c1fd-47f9-8bc2-2d3716a980d6",
+            "command_id": "a4977b49-9530-41f2-bfe5-61dd97c90623",
+            "parent_command_id": null,
+            "origin_epoch": "5cc4ae74-ab5e-43a3-9ec6-33cdf296c90d"
+          },
+          "input": {
+            "channel": "media",
+            "caption": "Comi arroz"
+          },
+          "outcome": {
+            "status": "registered",
+            "record": {
+              "kind": "meal",
+              "registration_id": "45e40e65-97a8-481c-8463-e9c554d5f7b8",
+              "meal_type": "almoco",
+              "local_date": "2026-11-06",
+              "log_ids": [
+                "5f84b9b2-5ea9-408a-9a8e-9324e287e29f"
+              ],
+              "effect_version": "cmeal1:5e6d81c000220ab48d50ef0eaabf3191f8ee147a580392984b4b81f1c01d91d2"
+            },
+            "feedback": null
+          }
+        }
+      ],
+      "has_more": false,
+      "next_cursor": null
+    },
+    {
+      "schema": "conversation.journal-page.v3",
+      "mode": "historical",
+      "auth_user_id": "10000000-0000-4000-8000-000000000002",
+      "owner_id": "c1450000-0000-4000-8000-000000000001",
+      "epoch": "4a0f548c-977e-4378-b0aa-2979a73d6134",
+      "observed_at": "2026-11-06T02:44:11.951492Z",
+      "items": [
+        {
+          "event_id": "workout/c1450000-0000-4000-8000-000000000008",
+          "at": "2026-11-06T02:44:11.864524Z",
+          "thread_id": "c1450000-0000-4000-8000-000000000008",
+          "kind": "workout",
+          "lineage": {
+            "kind": "workout.report",
+            "intake_id": null,
+            "command_id": "c1450000-0000-4000-8000-000000000008",
+            "parent_command_id": null,
+            "origin_epoch": "4a0f548c-977e-4378-b0aa-2979a73d6134"
+          },
+          "input": {
+            "channel": "text",
+            "text": "Fiz 30 minutos de caminhada."
+          },
+          "outcome": {
+            "status": "pending",
+            "reason": "reconciliation_required",
+            "feedback": null
+          }
+        },
+        {
+          "event_id": "intake/c1450000-0000-4000-8000-000000000007",
+          "at": "2026-11-06T02:44:11.794016Z",
+          "thread_id": "c1450000-0000-4000-8000-000000000007",
+          "kind": "intake",
+          "lineage": {
+            "kind": "intake",
+            "intake_id": "c1450000-0000-4000-8000-000000000007",
+            "command_id": "df79521f-38a0-4c4f-9882-a0665537923f",
+            "parent_command_id": null,
+            "origin_epoch": "4a0f548c-977e-4378-b0aa-2979a73d6134"
+          },
+          "input": {
+            "channel": "text",
+            "text": "Fiz 30 minutos de caminhada."
+          },
+          "outcome": {
+            "status": "pending",
+            "reason": "reconciliation_required",
+            "feedback": null
+          }
+        },
+        {
+          "event_id": "intake/c1450000-0000-4000-8000-000000000006",
+          "at": "2026-11-06T02:44:11.697658Z",
+          "thread_id": "c1450000-0000-4000-8000-000000000006",
+          "kind": "intake",
+          "lineage": {
+            "kind": "intake",
+            "intake_id": "c1450000-0000-4000-8000-000000000006",
+            "command_id": "4555ef02-7d4a-4e29-bbd8-977c4bbae73c",
+            "parent_command_id": null,
+            "origin_epoch": "4a0f548c-977e-4378-b0aa-2979a73d6134"
+          },
+          "input": {
+            "channel": "text",
+            "text": "Comi arroz."
+          },
+          "outcome": {
+            "status": "pending",
+            "feedback": null
+          }
+        },
+        {
+          "event_id": "intake/c1450000-0000-4000-8000-000000000005",
+          "at": "2026-11-06T02:44:11.628832Z",
+          "thread_id": "c1450000-0000-4000-8000-000000000005",
+          "kind": "intake",
+          "lineage": {
+            "kind": "intake",
+            "intake_id": "c1450000-0000-4000-8000-000000000005",
+            "command_id": "7992c8a8-6174-42a1-87c7-de479d3c0900",
+            "parent_command_id": null,
+            "origin_epoch": "4a0f548c-977e-4378-b0aa-2979a73d6134"
+          },
+          "input": {
+            "channel": "text",
+            "text": "Fiz 30 minutos de caminhada."
+          },
+          "outcome": {
+            "status": "pending",
+            "reason": "reconciliation_required",
+            "feedback": null
+          }
+        },
+        {
+          "event_id": "intake/c1450000-0000-4000-8000-000000000004",
+          "at": "2026-11-06T02:44:11.615040Z",
+          "thread_id": "c1450000-0000-4000-8000-000000000004",
+          "kind": "intake",
+          "lineage": {
+            "kind": "intake",
+            "intake_id": "c1450000-0000-4000-8000-000000000004",
+            "command_id": null,
+            "parent_command_id": null,
+            "origin_epoch": "4a0f548c-977e-4378-b0aa-2979a73d6134"
+          },
+          "input": {
+            "channel": "text",
+            "text": "Fiz 30 minutos de caminhada."
+          },
+          "outcome": {
+            "status": "pending",
+            "reason": "intake_pending",
+            "feedback": null
+          }
+        },
+        {
+          "event_id": "edit/c1450000-0000-4000-8000-000000000009/c1450000-0000-4000-8000-000000000010",
+          "at": "2026-11-06T02:44:11.613881Z",
+          "thread_id": "c1450000-0000-4000-8000-000000000003",
+          "kind": "edit",
+          "lineage": {
+            "kind": "meal.edit",
+            "intake_id": null,
+            "command_id": "c1450000-0000-4000-8000-000000000009",
+            "parent_command_id": "c1450000-0000-4000-8000-000000000003",
+            "origin_epoch": "4a0f548c-977e-4378-b0aa-2979a73d6134"
+          },
+          "input": null,
+          "outcome": {
+            "status": "registered",
+            "record": {
+              "kind": "meal_edit",
+              "operation_id": "c1450000-0000-4000-8000-000000000010",
+              "change": "saved",
+              "revision": 1,
+              "applied_at": "2026-11-06T02:44:11.613881+00:00",
+              "target_operation_id": null,
+              "removed_item_ids": [
+                "7e6be613-a546-4eed-b6dd-da56ee2966fd"
+              ],
+              "new_item_ids": [
+                "8cbac732-c874-4752-8e08-83cde9ebdc7f"
+              ],
+              "next_record_id": "8cbac732-c874-4752-8e08-83cde9ebdc7f"
+            },
+            "feedback": null
+          }
+        },
+        {
+          "event_id": "fulfillment/c1450000-0000-4000-8000-000000000003/c1450000-0000-4000-8000-000000000009",
+          "at": "2026-11-06T02:44:11.547807Z",
+          "thread_id": "c1450000-0000-4000-8000-000000000003",
+          "kind": "fulfillment",
+          "lineage": {
+            "kind": "meal.clarify",
+            "intake_id": null,
+            "command_id": "c1450000-0000-4000-8000-000000000009",
+            "parent_command_id": "c1450000-0000-4000-8000-000000000003",
+            "origin_epoch": "4a0f548c-977e-4378-b0aa-2979a73d6134"
+          },
+          "input": null,
+          "outcome": {
+            "status": "registered",
+            "record": {
+              "kind": "meal",
+              "registration_id": "70c6fb85-9fda-461d-a57a-fd2d47ed2428",
+              "meal_type": "almoco",
+              "local_date": "2026-11-06",
+              "log_ids": [
+                "7e6be613-a546-4eed-b6dd-da56ee2966fd"
+              ],
+              "effect_version": "cmeal1:c5e0ede620e224644627f888e1eb9608c434effeccdb9cd0b933b8104f48e9f5"
+            },
+            "feedback": null
+          }
+        },
+        {
+          "event_id": "reply-result/c1450000-0000-4000-8000-000000000003/c1450000-0000-4000-8000-000000000009",
+          "at": "2026-11-06T02:44:11.503009Z",
+          "thread_id": "c1450000-0000-4000-8000-000000000003",
+          "kind": "reply_result",
+          "lineage": {
+            "kind": "meal.clarify",
+            "intake_id": null,
+            "command_id": "c1450000-0000-4000-8000-000000000009",
+            "parent_command_id": "c1450000-0000-4000-8000-000000000003",
+            "origin_epoch": "4a0f548c-977e-4378-b0aa-2979a73d6134"
+          },
+          "input": null,
+          "outcome": {
+            "status": "pending",
+            "reason": "preparation_observed",
+            "observed_question": null,
+            "feedback": null
+          }
+        },
+        {
+          "event_id": "reply/c1450000-0000-4000-8000-000000000003/c1450000-0000-4000-8000-000000000009",
+          "at": "2026-11-06T02:44:11.445156Z",
+          "thread_id": "c1450000-0000-4000-8000-000000000003",
+          "kind": "reply",
+          "lineage": {
+            "kind": "meal.clarify",
+            "intake_id": null,
+            "command_id": "c1450000-0000-4000-8000-000000000009",
+            "parent_command_id": "c1450000-0000-4000-8000-000000000003",
+            "origin_epoch": "4a0f548c-977e-4378-b0aa-2979a73d6134"
+          },
+          "input": {
+            "channel": "structured",
+            "answer": {
+              "kind": "meal_type",
+              "meal_type": "almoco"
+            }
+          },
+          "outcome": {
+            "status": "pending",
+            "reason": "reply_observed",
+            "observed_question": {
+              "kind": "meal_type",
+              "food_index": null,
+              "food_name": null,
+              "allowed_units": [],
+              "quantity_reference": null
+            },
+            "feedback": null
+          }
+        },
+        {
+          "event_id": "command/c1450000-0000-4000-8000-000000000003",
+          "at": "2026-11-06T02:44:11.328410Z",
+          "thread_id": "c1450000-0000-4000-8000-000000000003",
+          "kind": "report",
+          "lineage": {
+            "kind": "meal.report",
+            "intake_id": null,
+            "command_id": "c1450000-0000-4000-8000-000000000003",
+            "parent_command_id": null,
+            "origin_epoch": "4a0f548c-977e-4378-b0aa-2979a73d6134"
+          },
+          "input": {
+            "channel": "text",
+            "text": "Comi 100g de arroz sintetico"
+          },
+          "outcome": {
+            "status": "not_recorded",
+            "reason": "meal_type_required",
+            "feedback": null
+          }
+        }
+      ],
+      "has_more": false,
+      "next_cursor": null
+    },
+    {
+      "schema": "conversation.journal-page.v3",
+      "mode": "historical",
+      "auth_user_id": "10000000-0000-4000-8000-000000000002",
+      "owner_id": "139f0000-0000-4000-8000-000000000033",
+      "epoch": "18574851-8f1c-4a58-a6ae-cd69564204f7",
+      "observed_at": "2026-11-05T05:12:19.874000Z",
+      "items": [
+        {
+          "event_id": "intake/c1450000-0000-4000-8000-000000000015",
+          "at": "2026-11-05T05:12:16.825949Z",
+          "thread_id": "c1450000-0000-4000-8000-000000000015",
+          "kind": "intake",
+          "lineage": {
+            "kind": "intake",
+            "intake_id": "c1450000-0000-4000-8000-000000000015",
+            "command_id": "139f0000-0000-4000-8000-000000000034",
+            "parent_command_id": null,
+            "origin_epoch": "18574851-8f1c-4a58-a6ae-cd69564204f7"
+          },
+          "input": {
+            "channel": "text",
+            "text": "Fiz 30 minutos de caminhada moderada."
+          },
+          "outcome": {
+            "status": "registered",
+            "record": {
+              "kind": "workout",
+              "registration": {
+                "provenance": "conversation.workout.v1",
+                "registration_id": "139f0000-0000-4000-8000-000000000034",
+                "workout_id": "f9bcad42-4ee4-45ba-a721-bcf1b867d01f",
+                "performed_at": "2026-11-05T05:12:16.825949Z",
+                "local_date": "2026-11-05",
+                "time_zone": "UTC",
+                "committed_at": "2026-11-05T05:12:16.874709Z",
+                "effect_version": 1
+              },
+              "activity": {
+                "kind": "workout",
+                "log_id": "f9bcad42-4ee4-45ba-a721-bcf1b867d01f",
+                "intensity": "moderada",
+                "duration_min": 30,
+                "workout_type": "caminhada",
+                "estimated_kcal": 154
+              }
+            },
+            "feedback": {
+              "schema": "conversation.feedback-presentation.v2",
+              "mode": "historical",
+              "assistant": "Flow AI",
+              "original": {
+                "schema": "registration.feedback.v3",
+                "registration_id": "139f0000-0000-4000-8000-000000000034",
+                "kind": "workout",
+                "local_date": "2026-11-05"
+              },
+              "status": "available",
+              "format": "sections",
+              "recorded": {
+                "kind": "workout",
+                "log_id": "f9bcad42-4ee4-45ba-a721-bcf1b867d01f",
+                "workout_type": "caminhada",
+                "duration_min": 30,
+                "intensity": "moderada",
+                "estimated_kcal": 154
+              },
+              "sections": [
+                {
+                  "key": "saved",
+                  "text": "Atividade registrada."
+                },
+                {
+                  "key": "items",
+                  "text": "caminhada · 30 min · moderada"
+                },
+                {
+                  "key": "summary",
+                  "text": "Gasto estimado: 154 kcal."
+                },
+                {
+                  "key": "day",
+                  "text": "No momento deste registro (2026-11-05):\nO resumo oficial deste dia está indisponível; seu registro foi salvo."
+                },
+                {
+                  "key": "block",
+                  "text": "Progresso histórico sob as orientações atuais:\nAs orientações de longo prazo estão pausadas."
+                },
+                {
+                  "key": "education",
+                  "text": "O comentário educativo está indisponível; seu registro continua salvo."
+                }
+              ],
+              "current_policy": {
+                "version": 1,
+                "observed_at": "2026-11-05T05:12:19.874000Z",
+                "assessment": "incomplete",
+                "recording_allowed": true,
+                "pause_weight_loss_guidance": false,
+                "professional_assessment_recommended": false,
+                "phase_selection_pending": false,
+                "target_source": "unavailable",
+                "hide": {
+                  "objective": true,
+                  "calories": true,
+                  "protein": true,
+                  "balance": true,
+                  "block": true,
+                  "budget": true
+                }
+              },
+              "provenance": {
+                "epoch": "18574851-8f1c-4a58-a6ae-cd69564204f7",
+                "command_id": "139f0000-0000-4000-8000-000000000034",
+                "observed_at": "2026-11-05T05:12:19.874000Z"
+              }
+            }
+          }
+        }
+      ],
+      "has_more": false,
+      "next_cursor": null
+    },
+    {
+      "schema": "conversation.journal-page.v3",
+      "mode": "historical",
+      "auth_user_id": "10000000-0000-4000-8000-000000000002",
+      "owner_id": "139f0000-0000-4000-8000-000000000030",
+      "epoch": "f943e3fd-550b-4980-bec5-3ef3879dbf2a",
+      "observed_at": "2026-11-05T05:12:19.792000Z",
+      "items": [
+        {
+          "event_id": "intake/c1450000-0000-4000-8000-000000000015",
+          "at": "2026-11-05T05:12:16.738150Z",
+          "thread_id": "c1450000-0000-4000-8000-000000000015",
+          "kind": "intake",
+          "lineage": {
+            "kind": "intake",
+            "intake_id": "c1450000-0000-4000-8000-000000000015",
+            "command_id": "139f0000-0000-4000-8000-000000000031",
+            "parent_command_id": null,
+            "origin_epoch": "f943e3fd-550b-4980-bec5-3ef3879dbf2a"
+          },
+          "input": {
+            "channel": "text",
+            "text": "Fiz 30 minutos de caminhada."
+          },
+          "outcome": {
+            "status": "registered",
+            "record": {
+              "kind": "workout",
+              "registration": {
+                "provenance": "conversation.workout.v1",
+                "registration_id": "139f0000-0000-4000-8000-000000000031",
+                "workout_id": "e41cb0b0-8e75-47be-bbd1-58aa546d3ba4",
+                "performed_at": "2026-11-05T05:12:16.738150Z",
+                "local_date": "2026-11-05",
+                "time_zone": "UTC",
+                "committed_at": "2026-11-05T05:12:16.792193Z",
+                "effect_version": 1
+              },
+              "activity": {
+                "kind": "workout",
+                "log_id": "e41cb0b0-8e75-47be-bbd1-58aa546d3ba4",
+                "intensity": null,
+                "duration_min": 30,
+                "workout_type": "caminhada",
+                "estimated_kcal": null
+              }
+            },
+            "feedback": null
+          }
+        }
+      ],
+      "has_more": false,
+      "next_cursor": null
+    },
+    {
+      "schema": "conversation.journal-page.v3",
+      "mode": "historical",
+      "auth_user_id": "10000000-0000-4000-8000-000000000002",
+      "owner_id": "10000000-0000-4000-8000-000000000001",
+      "epoch": "10000000-0000-4000-8000-000000000003",
+      "observed_at": "2026-11-04T12:03:00.000001Z",
+      "items": [
+        {
+          "event_id": "edit/10000000-0000-4000-8000-000000000041/10000000-0000-4000-8000-000000000080",
+          "at": "2026-11-04T12:00:04.123456Z",
+          "thread_id": "10000000-0000-4000-8000-000000000002",
+          "kind": "edit",
+          "lineage": {
+            "kind": "meal.edit",
+            "intake_id": null,
+            "command_id": "10000000-0000-4000-8000-000000000041",
+            "parent_command_id": "10000000-0000-4000-8000-000000000002",
+            "origin_epoch": "10000000-0000-4000-8000-000000000003"
+          },
+          "input": null,
+          "outcome": {
+            "status": "registered",
+            "record": {
+              "kind": "meal_edit",
+              "operation_id": "10000000-0000-4000-8000-000000000080",
+              "change": "saved",
+              "revision": 1,
+              "applied_at": "2026-11-04T12:00:04.123456+00:00",
+              "target_operation_id": null,
+              "removed_item_ids": [
+                "10000000-0000-4000-8000-000000000005"
+              ],
+              "new_item_ids": [
+                "10000000-0000-4000-8000-000000000081"
+              ],
+              "next_record_id": "10000000-0000-4000-8000-000000000081"
+            },
+            "feedback": null
+          }
+        },
+        {
+          "event_id": "fulfillment/10000000-0000-4000-8000-000000000002/10000000-0000-4000-8000-000000000041",
+          "at": "2026-11-04T12:00:03.000001Z",
+          "thread_id": "10000000-0000-4000-8000-000000000002",
+          "kind": "fulfillment",
+          "lineage": {
+            "kind": "meal.clarify",
+            "intake_id": null,
+            "command_id": "10000000-0000-4000-8000-000000000041",
+            "parent_command_id": "10000000-0000-4000-8000-000000000002",
+            "origin_epoch": "10000000-0000-4000-8000-000000000003"
+          },
+          "input": null,
+          "outcome": {
+            "status": "registered",
+            "record": {
+              "kind": "meal",
+              "registration_id": "10000000-0000-4000-8000-000000000041",
+              "meal_type": "almoco",
+              "local_date": "2026-11-04",
+              "log_ids": [
+                "10000000-0000-4000-8000-000000000005"
+              ],
+              "effect_version": "cmeal1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "feedback": null
+          }
+        },
+        {
+          "event_id": "reply-result/10000000-0000-4000-8000-000000000002/10000000-0000-4000-8000-000000000041",
+          "at": "2026-11-04T12:00:02.000001Z",
+          "thread_id": "10000000-0000-4000-8000-000000000002",
+          "kind": "reply_result",
+          "lineage": {
+            "kind": "meal.clarify",
+            "intake_id": null,
+            "command_id": "10000000-0000-4000-8000-000000000041",
+            "parent_command_id": "10000000-0000-4000-8000-000000000002",
+            "origin_epoch": "10000000-0000-4000-8000-000000000003"
+          },
+          "input": null,
+          "outcome": {
+            "status": "pending",
+            "reason": "preparation_observed",
+            "observed_question": null,
+            "feedback": null
+          }
+        },
+        {
+          "event_id": "reply/10000000-0000-4000-8000-000000000002/10000000-0000-4000-8000-000000000041",
+          "at": "2026-11-04T12:00:01.000001Z",
+          "thread_id": "10000000-0000-4000-8000-000000000002",
+          "kind": "reply",
+          "lineage": {
+            "kind": "meal.clarify",
+            "intake_id": null,
+            "command_id": "10000000-0000-4000-8000-000000000041",
+            "parent_command_id": "10000000-0000-4000-8000-000000000002",
+            "origin_epoch": "10000000-0000-4000-8000-000000000003"
+          },
+          "input": {
+            "channel": "structured",
+            "answer": {
+              "kind": "quantity",
+              "food_index": 0,
+              "amount": 200,
+              "unit": "mL"
+            }
+          },
+          "outcome": {
+            "status": "pending",
+            "reason": "reply_observed",
+            "observed_question": {
+              "kind": "quantity",
+              "food_index": 0,
+              "food_name": "leite",
+              "allowed_units": [
+                "g",
+                "kg",
+                "mL",
+                "L",
+                "caneca"
+              ],
+              "quantity_reference": {
+                "unit": "mL",
+                "grams_per_unit": 1.03,
+                "reference_id": "fao-infoods-v2-whole-milk-tb",
+                "estimated": true
+              }
+            },
+            "feedback": null
+          }
+        },
+        {
+          "event_id": "command/10000000-0000-4000-8000-000000000002",
+          "at": "2026-11-04T12:00:00.000001Z",
+          "thread_id": "10000000-0000-4000-8000-000000000002",
+          "kind": "report",
+          "lineage": {
+            "kind": "meal.report",
+            "intake_id": null,
+            "command_id": "10000000-0000-4000-8000-000000000002",
+            "parent_command_id": null,
+            "origin_epoch": "10000000-0000-4000-8000-000000000003"
+          },
+          "input": {
+            "channel": "text",
+            "text": "Comi leite"
+          },
+          "outcome": {
+            "status": "not_recorded",
+            "reason": "missing_quantity",
+            "feedback": null
+          }
+        }
+      ],
+      "has_more": false,
+      "next_cursor": null
+    },
+    {
+      "schema": "conversation.journal-page.v3",
+      "mode": "historical",
+      "auth_user_id": "10000000-0000-4000-8000-000000000002",
+      "owner_id": "10000000-0000-4000-8000-000000000001",
+      "epoch": "10000000-0000-4000-8000-000000000003",
+      "observed_at": "2026-11-04T12:03:00.000001Z",
+      "items": [
+        {
+          "event_id": "edit/10000000-0000-4000-8000-000000000002/10000000-0000-4000-8000-000000000080",
+          "at": "2026-11-04T12:00:04.123456Z",
+          "thread_id": "10000000-0000-4000-8000-000000000002",
+          "kind": "edit",
+          "lineage": {
+            "kind": "meal.edit",
+            "intake_id": null,
+            "command_id": "10000000-0000-4000-8000-000000000002",
+            "parent_command_id": null,
+            "origin_epoch": "10000000-0000-4000-8000-000000000003"
+          },
+          "input": null,
+          "outcome": {
+            "status": "registered",
+            "record": {
+              "kind": "meal_edit",
+              "operation_id": "10000000-0000-4000-8000-000000000080",
+              "change": "saved",
+              "revision": 1,
+              "applied_at": "2026-11-04T12:00:04.123456+00:00",
+              "target_operation_id": null,
+              "removed_item_ids": [
+                "10000000-0000-4000-8000-000000000005"
+              ],
+              "new_item_ids": [
+                "10000000-0000-4000-8000-000000000081"
+              ],
+              "next_record_id": "10000000-0000-4000-8000-000000000081"
+            },
+            "feedback": null
+          }
+        },
+        {
+          "event_id": "command/10000000-0000-4000-8000-000000000002",
+          "at": "2026-11-04T12:00:00.000001Z",
+          "thread_id": "10000000-0000-4000-8000-000000000002",
+          "kind": "report",
+          "lineage": {
+            "kind": "meal.report",
+            "intake_id": null,
+            "command_id": "10000000-0000-4000-8000-000000000002",
+            "parent_command_id": null,
+            "origin_epoch": "10000000-0000-4000-8000-000000000003"
+          },
+          "input": {
+            "channel": "text",
+            "text": "Comi arroz 100 g"
+          },
+          "outcome": {
+            "status": "registered",
+            "record": {
+              "kind": "meal",
+              "registration_id": "10000000-0000-4000-8000-000000000004",
+              "meal_type": "almoco",
+              "local_date": "2026-11-04",
+              "log_ids": [
+                "10000000-0000-4000-8000-000000000005"
+              ],
+              "effect_version": "cmeal1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "feedback": null
+          }
+        }
+      ],
+      "has_more": false,
+      "next_cursor": null
+    },
+    {
+      "schema": "conversation.journal-page.v3",
+      "mode": "historical",
+      "auth_user_id": "10000000-0000-4000-8000-000000000002",
+      "owner_id": "10000000-0000-4000-8000-000000000001",
+      "epoch": "10000000-0000-4000-8000-000000000003",
+      "observed_at": "2026-11-04T12:03:00.000001Z",
+      "items": [
+        {
+          "event_id": "intake/c1450000-0000-4000-8000-000000000016",
+          "at": "2026-11-04T11:59:59.000001Z",
+          "thread_id": "c1450000-0000-4000-8000-000000000016",
+          "kind": "intake",
+          "lineage": {
+            "kind": "intake",
+            "intake_id": "c1450000-0000-4000-8000-000000000016",
+            "command_id": "10000000-0000-4000-8000-000000000002",
+            "parent_command_id": null,
+            "origin_epoch": "10000000-0000-4000-8000-000000000003"
+          },
+          "input": {
+            "channel": "text",
+            "text": "Comi leite"
+          },
+          "outcome": {
+            "status": "not_recorded",
+            "reason": "missing_quantity",
+            "feedback": null
+          }
+        }
+      ],
+      "has_more": false,
+      "next_cursor": null
+    },
+    {
+      "schema": "conversation.journal-page.v3",
+      "mode": "historical",
+      "auth_user_id": "10000000-0000-4000-8000-000000000002",
+      "owner_id": "10000000-0000-4000-8000-000000000001",
+      "epoch": "10000000-0000-4000-8000-000000000003",
+      "observed_at": "2026-11-04T12:03:00.000001Z",
+      "items": [],
+      "has_more": false,
+      "next_cursor": null
+    },
+    {
+      "schema": "conversation.journal-page.v3",
+      "mode": "historical",
+      "auth_user_id": "10000000-0000-4000-8000-000000000002",
+      "owner_id": "10000000-0000-4000-8000-000000000001",
+      "epoch": "10000000-0000-4000-8000-000000000003",
+      "observed_at": "2026-11-04T12:03:00.000001Z",
+      "items": [],
+      "has_more": false,
+      "next_cursor": null
+    }
+  ]
+}

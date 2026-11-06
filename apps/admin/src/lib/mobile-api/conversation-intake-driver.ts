@@ -245,6 +245,11 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
     }
     async function selected(selection: ConversationIntakeSelection, method: 'submit' | 'read') {
       sameBinding(selection.intake, id)
+      // Internal media lineage is not negotiation for the old public envelope.
+      // Fence every persisted-selection path, including GET, cold replay and
+      // uncertain/concurrent recovery, before either typed facade is invoked.
+      if (selection.schema === 'conversation.intake-selection.v2')
+        return pending('media_projection_required', selection.intake, 'held')
       const d = selection.decision,
         c = selection.command
       if (d.kind === 'not_reported' || d.kind === 'clarification_required') {
@@ -285,6 +290,8 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
     async function readOnly(afterUnknown = false) {
       const row = ownedRead(await call(() => store.read(id)))
       if (row?.selection) return selected(row.selection, 'read')
+      if (row?.command.input.source.channel === 'media')
+        return pending('media_projection_required', row.intake, 'held')
       if (row)
         return pending(
           row.claimed ? 'routing_reconciliation_required' : 'intake_pending',
@@ -395,6 +402,8 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
       try {
         const prior = op.ownedRead(await op.call(() => store.read(op.id)))
         if (prior?.selection) return await op.selected(prior.selection, 'submit')
+        if (prior?.command.input.source.channel === 'media')
+          return op.pending('media_projection_required', prior.intake, 'held')
         if (prior?.claimed) return await op.recover(prior)
         let binding = prior?.intake
         if (!binding) {

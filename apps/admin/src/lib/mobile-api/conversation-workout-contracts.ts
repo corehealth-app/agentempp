@@ -4,6 +4,12 @@ import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { getLocalDateString } from '@mpp/agent'
 import { z } from 'zod'
+import {
+  assertConversationIntakeMediaCapture,
+  conversationIntakeMediaOriginSchema,
+  conversationIntakeMediaProjectionSchema,
+  conversationIntakeMediaSourceSchema,
+} from './conversation-intake-media-origin'
 import { detachConversationContinuationReadJson } from './conversation-meal-continuation-read-contracts'
 import { freezeInterpretation } from './conversation-meal-interpretation-contracts'
 import { conversationJournalInstant } from './conversation-meal-journal-store'
@@ -56,7 +62,19 @@ export const conversationWorkoutCommandSchema = z
     ]),
   })
   .strict()
-export type ConversationWorkoutCommand = z.infer<typeof conversationWorkoutCommandSchema>
+export const conversationWorkoutExecutionCommandSchema = z.union([
+  conversationWorkoutCommandSchema,
+  z
+    .object({
+      command_protocol: z.literal('conversation.command.v1'),
+      command_id: workoutUUID,
+      kind: z.literal('workout.report'),
+      source: conversationIntakeMediaSourceSchema,
+      intake_origin: conversationIntakeMediaOriginSchema,
+    })
+    .strict(),
+])
+export type ConversationWorkoutCommand = z.infer<typeof conversationWorkoutExecutionCommandSchema>
 export interface BoundConversationWorkoutCommand {
   readonly ownerId: string
   readonly commandId: string
@@ -84,7 +102,7 @@ export function bindConversationWorkoutCommand(
 ): BoundConversationWorkoutCommand {
   const owner = workoutUUID.parse(ownerId),
     copy = workoutSnapshot(raw),
-    command = conversationWorkoutCommandSchema.parse(copy)
+    command = conversationWorkoutExecutionCommandSchema.parse(copy)
   if (!isDeepStrictEqual(command, copy) || key !== `cmsg1:${command.command_id}`)
     throw new Error('Invalid original workout identity')
   return workoutSnapshot({
@@ -112,7 +130,7 @@ const mediaSchema = z
     processing_result: z.record(z.unknown()),
   })
   .strict()
-const contextSchema = z
+const legacyContextSchema = z
   .object({
     schema: z.literal('conversation.workout-source.v1'),
     owner_id: workoutUUID,
@@ -142,7 +160,21 @@ const contextSchema = z
       .max(2048),
   })
   .strict()
-export type WorkoutSourceUnit = 'command_text' | 'media_caption' | 'media_transcript'
+const contextSchema = z.union([
+  legacyContextSchema,
+  legacyContextSchema
+    .extend({
+      schema: z.literal('conversation.workout-source.v2'),
+      source_input: conversationWorkoutExecutionCommandSchema,
+      intake_projection: conversationIntakeMediaProjectionSchema,
+    })
+    .strict(),
+])
+export type WorkoutSourceUnit =
+  | 'command_text'
+  | 'media_caption'
+  | 'media_context'
+  | 'media_transcript'
 export interface CapturedConversationWorkoutSource {
   readonly command: BoundConversationWorkoutCommand
   readonly sourceHash: string
@@ -186,6 +218,9 @@ export function parseConversationWorkoutSource(
     c.catalogue.some((r) => at(r.updated_at) > at(c.captured_at))
   )
     throw new Error('Workout source identity unavailable')
+  if ('intake_origin' in command.command) assertConversationIntakeMediaCapture(command, c)
+  else if (c.schema !== 'conversation.workout-source.v1')
+    throw new Error('Changed workout source version')
   const sources: { unit: WorkoutSourceUnit; text: string }[] = []
   if (command.command.source.channel === 'text') {
     if (c.media !== null) throw new Error('Unexpected workout media')
@@ -202,11 +237,19 @@ export function parseConversationWorkoutSource(
       Buffer.byteLength(JSON.stringify(m.processing_result), 'utf8') > 1048576
     )
       throw new Error('Workout media unavailable')
-    if (s.caption && m.context_text?.trim() && s.caption !== m.context_text)
+    if (
+      c.schema === 'conversation.workout-source.v1' &&
+      s.caption &&
+      m.context_text?.trim() &&
+      s.caption !== m.context_text
+    )
       throw new Error('Conflicting workout media captions')
-    const caption = s.caption ?? m.context_text
+    const caption =
+      c.schema === 'conversation.workout-source.v2' ? s.caption : (s.caption ?? m.context_text)
     if (caption?.trim())
       sources.push({ unit: 'media_caption', text: workoutText(2000).parse(caption) })
+    if (c.schema === 'conversation.workout-source.v2' && m.context_text?.trim())
+      sources.push({ unit: 'media_context', text: workoutText(2000).parse(m.context_text) })
     if (m.kind === 'audio_note')
       sources.push({
         unit: 'media_transcript',

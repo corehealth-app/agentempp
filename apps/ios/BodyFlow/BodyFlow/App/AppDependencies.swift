@@ -756,7 +756,7 @@ struct AppDependencies: Sendable {
             } else { nil }
 
         let flowConversationSessions: FlowConversationSessionSource?
-        if flowConversationRuntime == .mealCommandV1, configuration.mode != .demo,
+        if (flowConversationRuntime == .mealCommandV1 || flowConversationRuntime == .neutralIntakeV1), configuration.mode != .demo,
            authentication is SupabaseAuthenticationService, currentClinicalRuntime != nil,
            case .candidate = currentClinicalQABinding,
            let transport = apiClient as? MobileAPITransport,
@@ -767,7 +767,8 @@ struct AppDependencies: Sendable {
             let staging = MediaStagingStore()
             flowConversationSessions = FlowConversationSessionSource(
                 transport: transport, lifecycle: releaseLifecycle,
-                media: .init(uploader: StorageUploadTransport(storageOrigin: storageOrigin), staging: staging))
+                media: .init(uploader: StorageUploadTransport(storageOrigin: storageOrigin), staging: staging),
+                neutralIntakeEnabled: flowConversationRuntime == .neutralIntakeV1)
         } else { flowConversationSessions = nil }
 
         return AppDependencies(

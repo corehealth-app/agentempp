@@ -127,6 +127,7 @@ struct MobileAPITransport: Sendable {
             requestID: requestID,
             lease: lease
         )
+        try request.conversation?.validateResponseProtocol(firstResult.response)
         guard firstResult.response.statusCode == 401,
               request.isRetryEligible
         else {
@@ -164,6 +165,7 @@ struct MobileAPITransport: Sendable {
             requestID: requestID,
             lease: refreshedLease
         )
+        try request.conversation?.validateResponseProtocol(secondResult.response)
         return try await validatedDecode(
             Response.self,
             result: secondResult,

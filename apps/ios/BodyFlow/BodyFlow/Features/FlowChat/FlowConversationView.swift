@@ -65,6 +65,9 @@ struct FlowConversationView: View {
     .task { await model.refreshConversation() }
     .onDisappear { model.cancelTransientWork() }
     .onChange(of: model.isWorking) { _, busy in if !busy { Task { await model.loadHistory() } } }
+    .onChange(of: model.neutralIntake?.isWorking) { _, busy in
+      if busy == false { Task { await model.loadHistory() } }
+    }
     .onChange(of: model.mealEditor?.isWorking) { _, busy in
       if busy == false { Task { await model.loadHistory() } }
     }
@@ -238,7 +241,27 @@ struct FlowConversationView: View {
           Button(english ? "Load earlier reports" : "Carregar relatos anteriores") {
             Task { await model.loadHistory(reset: false) }
           }
-          .disabled(model.isLoadingHistory)
+          .disabled(model.isLoadingHistory || model.isLoadingUnifiedHistory)
+        }
+        ForEach(Array(model.unifiedRows.reversed()), id: \.eventID) { entry in
+          FlowConversationJournalV3Content(
+            entry: entry, feedback: model.unifiedHistory.feedback(for: entry), english: english)
+          if let row = model.unifiedOperationalSavedRow(eventID: entry.eventID), model.mealEditor != nil {
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+              if let group = model.currentGroup(commandID: row.id) {
+                FlowConversationMealGroupView(
+                  group: group, editing: model.mealEditActions(commandID: row.id), showsFacts: false)
+              } else {
+                Button(english ? "Update meal controls" : "Atualizar controles da refeição") {
+                  Task { await model.loadCurrentGroup(commandID: row.id) }
+                }
+              }
+            }
+            .accessibilityIdentifier("conversation.journal3.operational")
+            .task(id: model.knownEditRevision(commandID: row.id)) {
+              await model.loadCurrentGroup(commandID: row.id)
+            }
+          }
         }
         ForEach(Array(model.journalRows.reversed()), id: \.eventID) { entry in journalEntry(entry) }
         ForEach(Array(model.threadRows.reversed()), id: \.eventID) { entry in
@@ -267,10 +290,10 @@ struct FlowConversationView: View {
             }
           }
         }
-        if model.isLoadingHistory {
+        if model.isLoadingHistory || model.isLoadingUnifiedHistory {
           ProgressView(english ? "Loading history…" : "Carregando histórico…")
         }
-        if model.historyUnavailable {
+        if model.historyUnavailable || model.unifiedHistoryUnavailable {
           Text(
             english
               ? "History is unavailable right now. Your pending reports are preserved."
@@ -279,6 +302,14 @@ struct FlowConversationView: View {
           .foregroundStyle(BodyFlowColor.secondaryText)
         }
         ForEach(model.savedRows) { row in savedCard(row) }
+        if let neutral = model.neutralIntake {
+          FlowNeutralIntakeTranscriptContent(
+            model: neutral,
+            historicalMealIDs: Set(neutral.savedRows.filter { model.hasJournalChild($0.childID) }.map(\.childID)),
+            historicalSavedIntakeIDs: model.unifiedSavedIntakeIDs,
+            historicalOriginalIntakeIDs: Set(model.unifiedRows.filter { $0.kind == .intake }.compactMap(\.intakeID)),
+            historicalTerminalIntakeIDs: model.unifiedTerminalIntakeIDs)
+        }
         ForEach(model.pendingRows) { row in
           source(row.command.source)
           VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {

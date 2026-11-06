@@ -208,6 +208,14 @@ export async function prepareConversationMealDraft(
       }
     }
   }
+  // Neutral media requires the persisted interpreter and its actual SQL lineage.
+  // This older preview helper cannot supply that authority or rename its action.
+  if ('intake_origin' in command.command)
+    throw new MobileApiError(
+      409,
+      'conversation_intake_projection_requires_persisted_source',
+      'The original persisted intake source is required',
+    )
   const source = command.command.source
   if (source.channel === 'text') {
     const intent = classifyConversationMealIntent({ channel: 'text', text: source.text })

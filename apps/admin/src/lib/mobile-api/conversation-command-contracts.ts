@@ -3,6 +3,10 @@
  * bind (authenticated owner, command ID) and compare this validated input hash. */
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
+import {
+  conversationIntakeMediaOriginSchema,
+  conversationIntakeMediaSourceSchema,
+} from './conversation-intake-media-origin'
 
 const uuid = z
   .string()
@@ -39,7 +43,22 @@ export const conversationMealCommandSchema = z
     ]),
   })
   .strict()
-export type ConversationMealCommand = z.infer<typeof conversationMealCommandSchema>
+/** The public route keeps the literal v1 schema above. Only the SQL-projected
+ * child may carry the internal versioned origin and original neutral action. */
+export const conversationMealExecutionCommandSchema = z.union([
+  conversationMealCommandSchema,
+  z
+    .object({
+      command_protocol: z.literal('conversation.command.v1'),
+      command_id: uuid,
+      kind: z.literal('meal.report'),
+      meal_type: z.enum(['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro']).optional(),
+      source: conversationIntakeMediaSourceSchema,
+      intake_origin: conversationIntakeMediaOriginSchema,
+    })
+    .strict(),
+])
+export type ConversationMealCommand = z.infer<typeof conversationMealExecutionCommandSchema>
 
 function canonical(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value)
@@ -66,10 +85,11 @@ export function bindConversationCommand(
   raw: unknown,
 ): BoundConversationMealCommand {
   const owner = uuid.parse(ownerId)
-  const command = conversationMealCommandSchema.parse(raw)
+  const command = conversationMealExecutionCommandSchema.parse(raw)
   if (idempotencyKey !== `cmsg1:${command.command_id}`)
     throw new Error('Conversation command identity mismatch')
   Object.freeze(command.source)
+  if ('intake_origin' in command) Object.freeze(command.intake_origin)
   Object.freeze(command)
   return Object.freeze({
     ownerId: owner,

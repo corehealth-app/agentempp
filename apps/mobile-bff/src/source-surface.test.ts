@@ -172,6 +172,21 @@ function runtimeExactStringRoutes(value: string): string[] {
 // is sealed below; module11098 is newly certified in full, with the other17
 // compiled bodies still byte-identical. No old raw module body is claimed here.
 function certifyNutritionJournalSplitContent(text: string): void {
+  // T50 adds only reviewed per-invocation diagnostics to module65556. Seal the
+  // unchanged validator source before accepting its complete compiled body;
+  // the other18 module identities, table/count and negative controls stay literal.
+  expect(
+    createHash('sha256')
+      .update(
+        readFileSync(
+          resolve(
+            appRoot,
+            '../admin/src/lib/mobile-api/conversation-meal-interpretation-validation.ts',
+          ),
+        ),
+      )
+      .digest('hex'),
+  ).toBe('061f6264c54991673421c12f97d6a52167d36983d30069f8054ec4ed46dc17ad')
   const source = ts.createSourceFile(
     'nutrition-shared.js',
     text,
@@ -220,7 +235,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
       '52158:129ea4b769605c4e7ddee1f1bc26688f2d09e77a0922726299741a808f4ae420',
       '61104:b0cda866116f43ab0a961ecb885bce7cd7808cef006d23f98d37faa66a9db3dc',
       '63980:f72ee9fa08b0b391b72a08dd315418ae96759089e54bc5ed728d37806082807e',
-      '65556:67cface7bcca0fbc359c687a3a93842798eb2ad00ab0cbe316e78d18d042cf28',
+      '65556:62a7b4739af84fcba30d5cf196021bbbd2b92be92d9a7bd025e412ad36412529',
       '69423:37ddc2d0a8b30f80f4fa3636ccf2f406ebf262172e88117949b472d070fbc7a3',
       '69431:22fe4905a8681297dba0a50a7a0a75352d687ff4ea3da18f93310480e3276753',
       '69837:de43933bd7d89880c4ff178067cc8261700f1b969bdbbfa605c385ba219b1f77',
@@ -350,12 +365,66 @@ const photoManifestRoutesR59 = [
   '/api/mobile/v1/onboarding/body-photos/route',
   '/api/mobile/v1/onboarding/route',
 ]
+/** T51 adds the explicit OpenAI structured-output helper to the interpreter.
+ * This one closed chunk has exactly12 interpreter consumers and no ordinary
+ * media/workout edge. Every physical target remains in the global scans. */
+function certifyStructuredMealHelperT51() {
+  const chunks = semanticChunks(['strict:!0', 'json_schema', 'ZodObject'])
+  expect(chunks).toHaveLength(1)
+  const chunk = chunks[0] ?? ''
+  expect(createHash('sha256').update(readFileSync(chunk)).digest('hex')).toBe(
+    '244d387b273017361f6b2325eee2f4a8df6c59a98813b12a29aceb81cb40c767',
+  )
+  certifyExactSharedTable(chunk, [
+    ['69725', '05baadb1daac3f593c2b929f33b08e833c6de075d41caebcbbae406ed9dd7f0d'],
+  ])
+  const interpreter = readFileSync(
+    resolve(appRoot, '../admin/src/lib/mobile-api/conversation-meal-interpreter.ts'),
+    'utf8',
+  )
+  expect(createHash('sha256').update(interpreter).digest('hex')).toBe(
+    '800ad3b683e060be93f3879b290ce1d0469d2c41082385cc21c42e8ee1cf24e9',
+  )
+  expect(interpreter.split("import { zodResponseFormat } from 'openai/helpers/zod'")).toHaveLength(
+    2,
+  )
+  for (const [name, hash] of [
+    ['helpers/zod.js', '3b5de7cb2ef3225031f111c77d5ccdc81f61c4c711d415affcd55fcff3e7cf6c'],
+    ['helpers/zod.mjs', '2ca84cb18fccda7f081f7e5226c93895fec896328b099f789f7ecb07572b1a89'],
+    ['package.json', 'c9fccdc76efa16a6979dbeae4c991d2c0e3983e2d546aeafc1d37fbb1510b424'],
+  ])
+    expect(
+      createHash('sha256')
+        .update(readFileSync(resolve(appRoot, '../admin/node_modules/openai', name ?? '')))
+        .digest('hex'),
+    ).toBe(hash)
+  const consumers = [
+    '/api/mobile/v1/conversation/commands/[commandId]/replies/[replyId]/route',
+    '/api/mobile/v1/conversation/commands/[commandId]/replies/route',
+    '/api/mobile/v1/conversation/intakes/[intakeId]/route',
+    '/api/mobile/v1/conversation/intakes/route',
+    '/api/mobile/v1/conversation/intakes/session/route',
+    '/api/mobile/v1/conversation/journal/route',
+    '/api/mobile/v1/conversation/meal-commands/[commandId]/edits/[operationId]/reconcile/route',
+    '/api/mobile/v1/conversation/meal-commands/[commandId]/edits/[operationId]/route',
+    '/api/mobile/v1/conversation/meal-commands/[commandId]/meal/route',
+    '/api/mobile/v1/conversation/meal-commands/[commandId]/route',
+    '/api/mobile/v1/conversation/meal-commands/route',
+    '/api/mobile/v1/conversation/session/route',
+  ]
+  expect(chunkConsumers(chunk)).toEqual(consumers)
+  return {
+    chunk,
+    isEdge: (route: string, target: string) => consumers.includes(route) && target === chunk,
+  }
+}
+
 function certifyPhotoPurposeEdgesR62() {
   const chunks = semanticChunks(['analyzeConversationImage', 'conversation.image-result.v1'])
   expect(chunks).toHaveLength(1)
   const chunk = chunks[0] ?? ''
   const bodies = certifyExactSharedTable(chunk, [
-    ['84359', 'd5cd1170f272342d9e151612ecaaa64bee38e42f0f28189555cddae46c764ff8'],
+    ['84359', 'f3c74b65ac87a664ca460702b4dfc99fc11a910983a3a751a240f2239c16b4ed'],
     ['86248', 'bca65f93158ff60efe08f14a45537b8db4e719a9deb863c2b452b37a11862673'],
   ])
   // R62's routing diagnostics import the existing OpenAI error classes directly.
@@ -363,11 +432,31 @@ function certifyPhotoPurposeEdgesR62() {
   // Reverse exactly one link to retain the independent full R59 body pin; no
   // raw code or transitive is removed from the physical/global scans below.
   const gemini = bodies.get('84359') ?? ''
-  const sdkLinkR62 = 'e=c(86603)'
-  expect(gemini.split(sdkLinkR62)).toHaveLength(2)
-  expect(createHash('sha256').update(gemini.replace(sdkLinkR62, 'e=c(15361)')).digest('hex')).toBe(
-    'e4ee0d8f1f9944845cba5265618eea34ea63840f275167b99585d6371bc44574',
+  // T51's explicit OpenAI Zod helper changes only the one SDK loader link.
+  // Reverse it to the preserved full R62 body before the independent R59 proof.
+  const sdkLinkT51 = 'e=c(43296)'
+  expect(gemini.split(sdkLinkT51)).toHaveLength(2)
+  const geminiR62 = gemini.replace(sdkLinkT51, 'e=c(86603)')
+  expect(createHash('sha256').update(geminiR62).digest('hex')).toBe(
+    'd5cd1170f272342d9e151612ecaaa64bee38e42f0f28189555cddae46c764ff8',
   )
+  const sdkLinkR62 = 'e=c(86603)'
+  expect(geminiR62.split(sdkLinkR62)).toHaveLength(2)
+  expect(
+    createHash('sha256').update(geminiR62.replace(sdkLinkR62, 'e=c(15361)')).digest('hex'),
+  ).toBe('e4ee0d8f1f9944845cba5265618eea34ea63840f275167b99585d6371bc44574')
+  for (const [source, hash] of [
+    ['vision/gemini.ts', '111500130aeef167929b5eff7f1f1783d99be104286e20a33ddb0c6f9a6f09aa'],
+    [
+      'vision/conversation-image-result.ts',
+      '017483921854a10bef5184714894b616141512097e1633ee6bad680c168e17bc',
+    ],
+  ])
+    expect(
+      createHash('sha256')
+        .update(readFileSync(resolve(appRoot, '../../packages/providers/src', source ?? '')))
+        .digest('hex'),
+    ).toBe(hash)
   expect(chunkConsumers(chunk)).toEqual(photoPurposeRoutesR59)
   const manifest = realpathSync(resolve(appRoot, '../../packages/providers/package.json'))
   expect(createHash('sha256').update(readFileSync(manifest)).digest('hex')).toBe(
@@ -1918,6 +2007,7 @@ describe('authoritative Mobile API source surface', () => {
           route,
         ).toHaveLength(consumers.some((consumer) => consumer === route) ? 1 : 0)
     }
+    const structuredMealHelper = certifyStructuredMealHelperT51()
     const nutritionJournalSplit = scopeChunk
     const expectedCommandCounts = new Map([
       ...rootRoutes.map((route) => [route, 119] as const),
@@ -1930,6 +2020,7 @@ describe('authoritative Mobile API source surface', () => {
         tracedTargets(route).filter(
           (target) =>
             target !== scopeChunk &&
+            !structuredMealHelper.isEdge(route, target) &&
             !(rootRoutes.includes(route) && target === commonChunk) &&
             !purposeEdge(route, target) &&
             !(route === journalRoute && target === originsPageChunk) &&
@@ -1938,12 +2029,12 @@ describe('authoritative Mobile API source surface', () => {
         route,
       ).toHaveLength(count)
     const currentCounts = new Map([
-      ...rootRoutes.map((route) => [route, 122] as const),
-      [journalRoute, 125],
-      ...editRoutes.map((route) => [route, 124] as const),
-      ...replyRoutes.map((route) => [route, 123] as const),
+      ...rootRoutes.map((route) => [route, 122 + 1] as const),
+      [journalRoute, 125 + 1],
+      ...editRoutes.map((route) => [route, 124 + 1] as const),
+      ...replyRoutes.map((route) => [route, 123 + 1] as const),
       ...workoutRoutes.map((route) => [route, 117] as const),
-      ...intakeRoutes.map((route) => [route, route === originsRoute ? 125 : 124] as const),
+      ...intakeRoutes.map((route) => [route, route === originsRoute ? 125 + 1 : 124 + 1] as const),
     ])
     expect([...currentCounts.keys()].sort()).toEqual(commandRoutes)
     for (const [route, count] of currentCounts)
@@ -1963,6 +2054,7 @@ describe('authoritative Mobile API source surface', () => {
           publicEditChunk,
           intakeChunk,
           originsPageChunk,
+          structuredMealHelper.chunk,
           ...commandRoutes.map((route) =>
             realpathSync(
               resolve(buildRoot, 'server/app', `${route.slice(1)}_client-reference-manifest.js`),
@@ -1980,11 +2072,26 @@ describe('authoritative Mobile API source surface', () => {
     // T48 extracts the three unchanged read-page modules certified above into
     // one new regular file, reached exactly once by each of the two readers.
     // Preserve the complete pre-T48 totals and account only for those two edges.
+    // T51 adds only the closed helper above:12 edges, one regular target.
+    // Historical counts project that exact edge only; all raw scans include it.
     expect(surface.nftReferenceCount).toBe(
-      8202 + 104 - 6 + 3 * 121 + 122 + 3 * 123 + 2 * 122 + 3 * 117 + 3 * 123 + 115 + 28 + 1 + 2,
+      8202 +
+        104 -
+        6 +
+        3 * 121 +
+        122 +
+        3 * 123 +
+        2 * 122 +
+        3 * 117 +
+        3 * 123 +
+        115 +
+        28 +
+        1 +
+        2 +
+        12,
     )
-    expect(surface.nftUniqueTargetCount).toBe(217 + 15 + 7 + 1 + 1 + 1)
-    expect(surface.nftRegularFileTargetCount).toBe(215 + 15 + 7 + 1 + 1 + 1)
+    expect(surface.nftUniqueTargetCount).toBe(217 + 15 + 7 + 1 + 1 + 1 + 1)
+    expect(surface.nftRegularFileTargetCount).toBe(215 + 15 + 7 + 1 + 1 + 1 + 1)
     expect(surface.nftDirectoryTargetCount).toBe(2)
     const additions = new Set(
       currentClinicalRouteAdditions.map((path) => `/api/mobile/v1/${path.replace(/\.ts$/, '')}`),

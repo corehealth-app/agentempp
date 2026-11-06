@@ -5,7 +5,11 @@
  * preparado para passar por proxy Helicone quando habilitado.
  */
 import OpenAI from 'openai'
-import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions'
+import type {
+  ChatCompletionMessageParam,
+  ChatCompletionTool,
+} from 'openai/resources/chat/completions'
+import type { ResponseFormatJSONObject, ResponseFormatJSONSchema } from 'openai/resources/shared'
 
 export interface LLMConfig {
   apiKey: string
@@ -31,7 +35,9 @@ export interface LLMConfig {
  *
  * Funciona só pra modelos Anthropic (Opus/Sonnet/Haiku 4.x). Em outros
  * providers, OpenRouter ignora o campo. */
-export type SystemPromptBlock = string | Array<{ text: string; cache?: 'ephemeral' | 'ephemeral_1h' }>
+export type SystemPromptBlock =
+  | string
+  | Array<{ text: string; cache?: 'ephemeral' | 'ephemeral_1h' }>
 
 export interface LLMCallParams {
   model: string
@@ -47,8 +53,10 @@ export interface LLMCallParams {
   cacheToolsTtl?: 'ephemeral' | 'ephemeral_1h'
   /** Forçar uso de tool específica, ou 'auto' (padrão). */
   toolChoice?: 'auto' | 'none' | { type: 'function'; function: { name: string } }
-  /** JSON mode (structured output). Se Zod schema futuramente, usar response_format. */
-  responseFormat?: { type: 'json_object' }
+  /** Opt-in JSON syntax or a caller-owned strict output schema. */
+  responseFormat?: ResponseFormatJSONObject | ResponseFormatJSONSchema
+  /** Opt-in routing only to endpoints that support the requested parameters. */
+  provider?: { require_parameters: true }
   /** Metadata para tracking (Helicone properties). */
   metadata?: Record<string, string>
   /** User identifier (Helicone-User-Id). */
@@ -165,6 +173,7 @@ export class OpenRouterLLM {
         max_tokens: p.maxTokens ?? 8192,
         ...(toolsToSend ? { tools: toolsToSend, tool_choice: p.toolChoice ?? 'auto' } : {}),
         ...(p.responseFormat ? { response_format: p.responseFormat } : {}),
+        ...(p.provider ? { provider: p.provider } : {}),
       },
       (() => {
         const options = {
@@ -191,16 +200,18 @@ export class OpenRouterLLM {
     // OpenAI-compatible. OpenRouter usa nomes ligeiramente diferentes dos da
     // Anthropic direta — testamos múltiplos. Confirmado live (2026-05-16):
     // OpenRouter retorna `cached_tokens` (read) e `cache_write_tokens` (create).
-    const usageExt = usage as unknown as {
-      cost?: number
-      cache_creation_input_tokens?: number
-      cache_read_input_tokens?: number
-      prompt_tokens_details?: {
-        cached_tokens?: number
-        cache_creation_tokens?: number
-        cache_write_tokens?: number
-      }
-    } | undefined
+    const usageExt = usage as unknown as
+      | {
+          cost?: number
+          cache_creation_input_tokens?: number
+          cache_read_input_tokens?: number
+          prompt_tokens_details?: {
+            cached_tokens?: number
+            cache_creation_tokens?: number
+            cache_write_tokens?: number
+          }
+        }
+      | undefined
     const cacheRead =
       usageExt?.cache_read_input_tokens ?? usageExt?.prompt_tokens_details?.cached_tokens
     const cacheCreate =

@@ -1,5 +1,6 @@
 import { type LLMCallParams, type LLMResult, OpenRouterLLM } from '@mpp/providers'
 import { AuthenticationError } from 'openai'
+import { zodResponseFormat } from 'openai/helpers/zod'
 import { describe, expect, it, vi } from 'vitest'
 import { bindConversationCommand } from './conversation-command-contracts'
 import {
@@ -192,7 +193,8 @@ describe('closed semantic interpreter input and result', () => {
       requestTimeoutMs: 5000,
       maxTokens: 8192,
       temperature: 0,
-      responseFormat: { type: 'json_object' },
+      responseFormat: { type: 'json_schema', json_schema: { strict: true } },
+      provider: { require_parameters: true },
     })
     expect(complete.mock.calls[0]?.[0]).not.toHaveProperty('tools')
     expect(result).toMatchObject({
@@ -209,6 +211,127 @@ describe('closed semantic interpreter input and result', () => {
     expect(result).not.toHaveProperty('semantic_proof')
     expect(JSON.stringify(complete.mock.calls[0]?.[0]?.messages)).not.toContain(owner)
     expect(Object.isFrozen(result.foods)).toBe(true)
+  })
+  it('sends the canonical schema with only the three unsupported wire constraints removed', async () => {
+    const f = textSource('arroz200g'),
+      source = buildConversationMealInterpretationSource(f.command, f.capture),
+      raw = modelFor('arroz200g', [{ name: 'arroz', quantity: '200', unit: 'g' }]),
+      complete = vi.fn<(p: LLMCallParams) => Promise<LLMResult>>(async () => providerResult(raw)),
+      interpreter = createOpenRouterConversationMealInterpreter('synthetic', { complete }),
+      original = zodResponseFormat(interpretationModelSchema, 'conversation_meal_interpretation_v1')
+    await interpreter.interpret(source, { attemptId: epoch, remainingMs: 50000 })
+    const request = at(complete.mock.calls)[0],
+      format = request.responseFormat
+    expect(request.requestTimeoutMs).toBe(45000)
+    expect(format?.type).toBe('json_schema')
+    if (format?.type !== 'json_schema') throw new Error('Expected strict schema request')
+    expect(format.json_schema.name).toBe('conversation_meal_interpretation_v1')
+    expect(format.json_schema.strict).toBe(true)
+    expect(format.json_schema.schema?.required).toEqual([
+      'schema',
+      'decision',
+      'reason',
+      'sources',
+      'foods',
+    ])
+    const removed: Record<string, number> = { minimum: 0, maximum: 0, maxItems: 0 }
+    let objects = 0
+    function compare(expected: unknown, actual: unknown): void {
+      if (Array.isArray(expected)) {
+        expect(Array.isArray(actual)).toBe(true)
+        expect(actual).toHaveLength(expected.length)
+        expected.forEach((value, i) => {
+          compare(value, (actual as unknown[])[i])
+        })
+      } else if (expected !== null && typeof expected === 'object') {
+        expect(actual).not.toBeNull()
+        expect(typeof actual).toBe('object')
+        const before = expected as Record<string, unknown>,
+          after = actual as Record<string, unknown>
+        if (before.type === 'object') {
+          objects++
+          expect(after.additionalProperties).toBe(false)
+        }
+        expect(Object.keys(after).sort()).toEqual(
+          Object.keys(before)
+            .filter((key) => !Object.hasOwn(removed, key))
+            .sort(),
+        )
+        for (const [key, value] of Object.entries(before)) {
+          if (Object.hasOwn(removed, key)) {
+            removed[key] = (removed[key] ?? 0) + 1
+            expect(after).not.toHaveProperty(key)
+          } else compare(value, after[key])
+        }
+      } else expect(actual).toEqual(expected)
+    }
+    compare(JSON.parse(JSON.stringify(original)), format)
+    expect(objects).toBe(11)
+    expect(removed).toEqual({ minimum: 11, maximum: 11, maxItems: 8 })
+    for (const privateValue of [
+      owner,
+      id,
+      epoch,
+      source.input_hash,
+      source.source_hash,
+      'arroz200g',
+    ])
+      expect(JSON.stringify(format)).not.toContain(privateValue)
+    expect(complete).toHaveBeenCalledTimes(1)
+  })
+  it.each([
+    [
+      'negative index',
+      (m: MealInterpretationModelResult) => {
+        at(m.foods).index = -1
+      },
+    ],
+    [
+      'index above 29',
+      (m: MealInterpretationModelResult) => {
+        at(m.foods).index = 30
+      },
+    ],
+    [
+      'unsafe offset',
+      (m: MealInterpretationModelResult) => {
+        at(at(m.sources).spans).end = Number.MAX_SAFE_INTEGER + 1
+      },
+    ],
+    [
+      'too many foods',
+      (m: MealInterpretationModelResult) => {
+        m.foods = Array.from({ length: 31 }, () => at(m.foods))
+      },
+    ],
+    [
+      'too many spans',
+      (m: MealInterpretationModelResult) => {
+        at(m.sources).spans = Array.from({ length: 4097 }, () => at(at(m.sources).spans))
+      },
+    ],
+    [
+      'extra property',
+      (m: MealInterpretationModelResult) => {
+        Object.assign(m, { private_output: 'sentinel' })
+      },
+    ],
+    [
+      'wrong type',
+      (m: MealInterpretationModelResult) => {
+        Object.assign(at(m.foods), { index: '0' })
+      },
+    ],
+  ] as const)('retains the original backend rejection for %s despite the wire projection', (_name, mutate) => {
+    const f = textSource('arroz200g'),
+      source = buildConversationMealInterpretationSource(f.command, f.capture),
+      raw = modelFor('arroz200g', [{ name: 'arroz', quantity: '200', unit: 'g' }]),
+      onFailure = vi.fn()
+    mutate(raw)
+    expect(() => validateConversationMealInterpretationModel(raw, source, onFailure)).toThrow(
+      'Meal interpretation is unavailable',
+    )
+    expect(onFailure.mock.calls).toEqual([['model_schema']])
   })
   it.each([
     'length',

@@ -1,0 +1,305 @@
+{
+  "provenance": "inputs/bindings: actual T39 SQL ROLLBACK golden SHA153f23214c2027e2e050ce4168469d0890f019cdbf965b38cd1e3a5c5839f7f0; outer meal: explicitly counterfactual UNIT neutral binding plus unchanged actual typed projector meal payload, NOT HTTP or persisted intake/effect association; workout outer cases explicitly counterfactual UNIT neutral bindings around unchanged exact public projections of real PG receipt pieces from conversation-workout-pg-golden.json, not persisted neutral/workout associations",
+  "inputs": [
+    {
+      "label": "audio_projection_refused",
+      "input": {
+        "source": {
+          "caption": "Legenda literal enviada",
+          "channel": "media",
+          "user_action": "report_actual_record",
+          "media_asset_id": "1772c35e-63e4-4e8c-8717-44c8a0d94c32"
+        },
+        "intake_id": "8d07bed5-e066-4121-bb1d-56b87f53aa0b",
+        "intake_protocol": "conversation.intake.v1"
+      },
+      "binding": {
+        "epoch": "a0fc7e5b-cca7-4012-b8d7-4029b853e231",
+        "owner_id": "c1390000-0000-4000-8000-000000000090",
+        "intake_id": "8d07bed5-e066-4121-bb1d-56b87f53aa0b",
+        "input_hash": "312f7f9f01f10ad0ffa3bcd77bf1bac950274c19c6729f57b709bc03a119c469",
+        "admitted_at": "2026-11-05T11:23:24.016727Z"
+      }
+    },
+    {
+      "label": "clarification_required",
+      "input": {
+        "source": {
+          "text": "Comi e caminhei.",
+          "channel": "text"
+        },
+        "intake_id": "1e7c81ea-27bf-406b-a7f3-86a20d5f4ff9",
+        "intake_protocol": "conversation.intake.v1"
+      },
+      "binding": {
+        "epoch": "754375b4-1820-47c9-b558-e4bb81127f91",
+        "owner_id": "c1390000-0000-4000-8000-000000000030",
+        "intake_id": "1e7c81ea-27bf-406b-a7f3-86a20d5f4ff9",
+        "input_hash": "b76eaf3484c4f262597e76c49a4a13b0aec7f6bd0e2b097585f2e303eb4463df",
+        "admitted_at": "2026-11-05T11:23:22.563126Z"
+      }
+    },
+    {
+      "label": "meal_text",
+      "input": {
+        "source": {
+          "text": "  Comi arroz.  ",
+          "channel": "text"
+        },
+        "intake_id": "464c511c-aefd-4fcb-bf4b-fe1121641ab5",
+        "meal_type_hint": "almoco",
+        "intake_protocol": "conversation.intake.v1"
+      },
+      "binding": {
+        "epoch": "a91f618f-20e5-4416-83d5-64db25aabae3",
+        "owner_id": "c1390000-0000-4000-8000-000000000020",
+        "intake_id": "464c511c-aefd-4fcb-bf4b-fe1121641ab5",
+        "input_hash": "8cef473db5b9e229ffb1d609fe2651353a4be49760537053440972f9a17615ad",
+        "admitted_at": "2026-11-05T11:23:22.135813Z"
+      }
+    },
+    {
+      "label": "not_reported",
+      "input": {
+        "source": {
+          "text": "Posso caminhar amanhã?",
+          "channel": "text"
+        },
+        "intake_id": "0c35ad85-db7e-4604-a650-5d1114aa7424",
+        "intake_protocol": "conversation.intake.v1"
+      },
+      "binding": {
+        "epoch": "754375b4-1820-47c9-b558-e4bb81127f91",
+        "owner_id": "c1390000-0000-4000-8000-000000000030",
+        "intake_id": "0c35ad85-db7e-4604-a650-5d1114aa7424",
+        "input_hash": "0fe23191c33972486db82c67a213e6f169d72a4d013824aa9ad35d5a67500de1",
+        "admitted_at": "2026-11-05T11:23:22.393912Z"
+      }
+    },
+    {
+      "label": "workout_text",
+      "input": {
+        "source": {
+          "text": "Fiz 30 minutos de caminhada.",
+          "channel": "text"
+        },
+        "intake_id": "c79fe05b-1e3f-48b8-b396-3595100fb5e2",
+        "intake_protocol": "conversation.intake.v1"
+      },
+      "binding": {
+        "epoch": "de2bf3b3-a206-4e41-9a0c-cbe11b8c9f26",
+        "owner_id": "c1390000-0000-4000-8000-000000000010",
+        "intake_id": "c79fe05b-1e3f-48b8-b396-3595100fb5e2",
+        "input_hash": "4c981da95dad4c9ba7f7dde97c1a06397db6bcacb3e2415161bf4f183b53331c",
+        "admitted_at": "2026-11-05T11:23:21.582836Z"
+      }
+    }
+  ],
+  "meal_unit": {
+    "input": {
+      "intake_protocol": "conversation.intake.v1",
+      "intake_id": "60000000-0000-4000-8000-000000000001",
+      "source": {
+        "channel": "text",
+        "text": "leite integral 206 g"
+      },
+      "meal_type_hint": "cafe"
+    },
+    "binding": {
+      "owner_id": "10000000-0000-4000-8000-000000000001",
+      "intake_id": "60000000-0000-4000-8000-000000000001",
+      "input_hash": "01e881f284166210ea205027371ce744aa662064c284c4d6cc2a680cf3eb7e32",
+      "epoch": "50000000-0000-4000-8000-000000000001",
+      "admitted_at": "2026-11-03T09:59:59Z"
+    },
+    "response": {
+      "schema": "conversation.intake-result.v1",
+      "status": "selected",
+      "intake": {
+        "owner_id": "10000000-0000-4000-8000-000000000001",
+        "intake_id": "60000000-0000-4000-8000-000000000001",
+        "input_hash": "01e881f284166210ea205027371ce744aa662064c284c4d6cc2a680cf3eb7e32",
+        "epoch": "50000000-0000-4000-8000-000000000001",
+        "admitted_at": "2026-11-03T09:59:59Z"
+      },
+      "selection": {
+        "kind": "meal.report",
+        "source_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "decision_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "selected_at": "2026-11-03T10:00:00.000001Z",
+        "command": {
+          "owner_id": "10000000-0000-4000-8000-000000000001",
+          "command_id": "10000000-0000-4000-8000-000000000009",
+          "input_hash": "9dcb8a2ecd06710973ab1f515a59ca5f094b66b331f454714acf8a116185a43a",
+          "epoch": "50000000-0000-4000-8000-000000000001",
+          "admitted_at": "2026-11-03T10:00:00Z",
+          "kind": "meal.report"
+        }
+      },
+      "result": {
+        "schema": "conversation.meal-command-result.v1",
+        "status": "saved",
+        "owner_id": "10000000-0000-4000-8000-000000000001",
+        "command_id": "10000000-0000-4000-8000-000000000009",
+        "input_hash": "9dcb8a2ecd06710973ab1f515a59ca5f094b66b331f454714acf8a116185a43a",
+        "epoch": "50000000-0000-4000-8000-000000000001",
+        "admitted_at": "2026-11-03T10:00:00Z",
+        "receipt": {
+          "schema": "conversation.meal-effect.v1",
+          "owner_id": "10000000-0000-4000-8000-000000000001",
+          "command_id": "10000000-0000-4000-8000-000000000009",
+          "input_hash": "9dcb8a2ecd06710973ab1f515a59ca5f094b66b331f454714acf8a116185a43a",
+          "registration_id": "20000000-0000-4000-8000-000000000001",
+          "provider_key": "conversation.meal/10000000-0000-4000-8000-000000000001/10000000-0000-4000-8000-000000000009",
+          "meal_type": "cafe",
+          "local_date": "2026-11-03",
+          "timezone": "UTC",
+          "consumed_at": "2026-11-03T11:00:00Z",
+          "log_ids": [
+            "30000000-0000-4000-8000-000000000001"
+          ],
+          "effect_version": "cmeal1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "feedback": null
+      }
+    }
+  },
+  "workout_known_unit": {
+    "input": {
+      "intake_protocol": "conversation.intake.v1",
+      "intake_id": "60000000-0000-4000-8000-000000000002",
+      "source": {
+        "channel": "text",
+        "text": "Fiz 30 minutos de caminhada."
+      }
+    },
+    "binding": {
+      "owner_id": "139c0000-0000-4000-8000-000000000020",
+      "intake_id": "60000000-0000-4000-8000-000000000002",
+      "input_hash": "1d19ab99e661f96bfd6ce337dee37651a36e9b7ecd3ac868a9aa93594134b221",
+      "epoch": "59334e5e-dc1c-408e-a268-b252eb02abe1",
+      "admitted_at": "2026-11-05T00:35:35Z"
+    },
+    "response": {
+      "schema": "conversation.intake-result.v1",
+      "status": "selected",
+      "intake": {
+        "owner_id": "139c0000-0000-4000-8000-000000000020",
+        "intake_id": "60000000-0000-4000-8000-000000000002",
+        "input_hash": "1d19ab99e661f96bfd6ce337dee37651a36e9b7ecd3ac868a9aa93594134b221",
+        "epoch": "59334e5e-dc1c-408e-a268-b252eb02abe1",
+        "admitted_at": "2026-11-05T00:35:35Z"
+      },
+      "selection": {
+        "kind": "workout.report",
+        "source_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "decision_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "selected_at": "2026-11-05T00:35:37.012961Z",
+        "command": {
+          "owner_id": "139c0000-0000-4000-8000-000000000020",
+          "command_id": "3cc9561c-43c4-4250-a065-be0d5af2a640",
+          "input_hash": "a0b18222d3412d77e255cee02a69eb2c2541aebf4ee2b8714a7d4a7cb46be42a",
+          "epoch": "59334e5e-dc1c-408e-a268-b252eb02abe1",
+          "kind": "workout.report",
+          "admitted_at": "2026-11-05T00:35:36.966052Z"
+        }
+      },
+      "result": {
+        "owner_id": "139c0000-0000-4000-8000-000000000020",
+        "command_id": "3cc9561c-43c4-4250-a065-be0d5af2a640",
+        "input_hash": "a0b18222d3412d77e255cee02a69eb2c2541aebf4ee2b8714a7d4a7cb46be42a",
+        "epoch": "59334e5e-dc1c-408e-a268-b252eb02abe1",
+        "schema": "conversation.workout-command-result.v1",
+        "status": "saved",
+        "registration": {
+          "provenance": "conversation.workout.v1",
+          "registration_id": "3cc9561c-43c4-4250-a065-be0d5af2a640",
+          "workout_id": "a1114546-c985-4893-94f1-fcda52a4030a",
+          "performed_at": "2026-11-05T00:35:36.966052Z",
+          "local_date": "2026-11-05",
+          "time_zone": "UTC",
+          "committed_at": "2026-11-05T00:35:37.012961Z",
+          "effect_version": 1
+        },
+        "activity": {
+          "kind": "workout",
+          "log_id": "a1114546-c985-4893-94f1-fcda52a4030a",
+          "intensity": "moderada",
+          "duration_min": 30,
+          "workout_type": "caminhada",
+          "estimated_kcal": 154
+        },
+        "feedback": null
+      }
+    }
+  },
+  "workout_unknown_unit": {
+    "input": {
+      "intake_protocol": "conversation.intake.v1",
+      "intake_id": "60000000-0000-4000-8000-000000000003",
+      "source": {
+        "channel": "text",
+        "text": "Fiz 30 minutos de caminhada."
+      }
+    },
+    "binding": {
+      "owner_id": "139c0000-0000-4000-8000-000000000001",
+      "intake_id": "60000000-0000-4000-8000-000000000003",
+      "input_hash": "6a3d87450fd4fde5ed14deba805deb37dab5d7458889784f018566c06a4afede",
+      "epoch": "74660fd1-65a0-4f79-9255-96f64063127e",
+      "admitted_at": "2026-11-05T00:35:35Z"
+    },
+    "response": {
+      "schema": "conversation.intake-result.v1",
+      "status": "selected",
+      "intake": {
+        "owner_id": "139c0000-0000-4000-8000-000000000001",
+        "intake_id": "60000000-0000-4000-8000-000000000003",
+        "input_hash": "6a3d87450fd4fde5ed14deba805deb37dab5d7458889784f018566c06a4afede",
+        "epoch": "74660fd1-65a0-4f79-9255-96f64063127e",
+        "admitted_at": "2026-11-05T00:35:35Z"
+      },
+      "selection": {
+        "kind": "workout.report",
+        "source_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "decision_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "selected_at": "2026-11-05T00:35:36.536072Z",
+        "command": {
+          "owner_id": "139c0000-0000-4000-8000-000000000001",
+          "command_id": "139c0000-0000-4000-8000-000000000002",
+          "input_hash": "19cd4f402e1c7d9205f4e6c5d087f0777cd96854d28b43b50b8ef7aea94a70e4",
+          "epoch": "74660fd1-65a0-4f79-9255-96f64063127e",
+          "kind": "workout.report",
+          "admitted_at": "2026-11-05T00:35:36.408754Z"
+        }
+      },
+      "result": {
+        "owner_id": "139c0000-0000-4000-8000-000000000001",
+        "command_id": "139c0000-0000-4000-8000-000000000002",
+        "input_hash": "19cd4f402e1c7d9205f4e6c5d087f0777cd96854d28b43b50b8ef7aea94a70e4",
+        "epoch": "74660fd1-65a0-4f79-9255-96f64063127e",
+        "schema": "conversation.workout-command-result.v1",
+        "status": "saved",
+        "registration": {
+          "provenance": "conversation.workout.v1",
+          "registration_id": "139c0000-0000-4000-8000-000000000002",
+          "workout_id": "6e1dd3b0-8610-4972-b35c-66a2abd53d17",
+          "performed_at": "2026-11-05T00:35:36.408754Z",
+          "local_date": "2026-11-05",
+          "time_zone": "UTC",
+          "committed_at": "2026-11-05T00:35:36.536072Z",
+          "effect_version": 1
+        },
+        "activity": {
+          "kind": "workout",
+          "log_id": "6e1dd3b0-8610-4972-b35c-66a2abd53d17",
+          "intensity": null,
+          "duration_min": 30,
+          "workout_type": "caminhada",
+          "estimated_kcal": null
+        },
+        "feedback": null
+      }
+    }
+  }
+}

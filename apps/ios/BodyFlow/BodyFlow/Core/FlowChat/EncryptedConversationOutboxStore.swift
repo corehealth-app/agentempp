@@ -152,6 +152,46 @@ struct ConversationMealReplyOutboxEntry: Codable, Sendable, CustomStringConverti
     var customMirror: Mirror { Mirror(self, children: [:], displayStyle: .struct) }
 }
 
+/// A neutral intent remains distinct from every legacy meal and typed reply.
+/// Its original owner/epoch and bytes cannot be rebound after a refresh.
+struct ConversationNeutralIntakeOutboxEntry: Codable, Sendable, CustomStringConvertible, CustomReflectable {
+    let input: FlowNeutralIntakeInput
+    let ownerID: UUID
+    let epoch: UUID
+    var state: ConversationOutboxState = .queued
+    var hold: ConversationOutboxHold?
+    init(input: FlowNeutralIntakeInput, ownerID: UUID, epoch: UUID) {
+        self.input = input; self.ownerID = ownerID; self.epoch = epoch
+    }
+    private enum CodingKeys: String, CodingKey { case wireBody, inputHash, ownerID, epoch, state, hold }
+    init(from decoder: any Decoder) throws {
+        try outboxKeys(decoder, required: ["wireBody", "inputHash", "ownerID", "epoch", "state", "hold"])
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let wire = try c.decode(Data.self, forKey: .wireBody)
+        input = try FlowNeutralIntakeInput(wireBody: wire)
+        guard input.wireBody == wire, input.inputHash == (try c.decode(String.self, forKey: .inputHash)) else { throw ConversationOutboxError.integrityFailure }
+        ownerID = try c.decode(UUID.self, forKey: .ownerID); epoch = try c.decode(UUID.self, forKey: .epoch)
+        state = try c.decode(ConversationOutboxState.self, forKey: .state); hold = try c.decodeIfPresent(ConversationOutboxHold.self, forKey: .hold)
+        try validate()
+    }
+    func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(input.wireBody, forKey: .wireBody); try c.encode(input.inputHash, forKey: .inputHash)
+        try c.encode(ownerID, forKey: .ownerID); try c.encode(epoch, forKey: .epoch)
+        try c.encode(state, forKey: .state); try c.encode(hold, forKey: .hold)
+    }
+    func validate() throws {
+        guard hold != .originalEpochUnavailable, hold != .originalOwnerUnavailable else { throw ConversationOutboxError.integrityFailure }
+        switch state {
+        case .queued: guard hold == nil || hold == .reset else { throw ConversationOutboxError.integrityFailure }
+        case .dispatchedUnknown: guard hold == nil else { throw ConversationOutboxError.integrityFailure }
+        case .waitingReconciliation: guard hold != nil else { throw ConversationOutboxError.integrityFailure }
+        }
+    }
+    var description: String { "ConversationNeutralIntakeOutboxEntry(redacted)" }
+    var customMirror: Mirror { Mirror(self, children: [:], displayStyle: .struct) }
+}
+
 /// A synchronous disk transaction is called only inside the lifecycle's
 /// patient-state gate. flock also excludes another store instance/process.
 /// Ciphertext is retained on corruption, missing key, account change or logout.
@@ -162,6 +202,7 @@ struct EncryptedConversationOutboxStore: Sendable {
     private static let maxBytes = capacity * 24_576 + 4_096
     private static let header = Data("PCOBX003".utf8)
     private static let mixedHeader = Data("PCOBX004".utf8)
+    private static let neutralHeader = Data("PCOBX005".utf8)
     private static let previousHeader = Data("PCOBX002".utf8)
     private static let legacyHeader = Data("PCOBX001".utf8)
     private static let directoryCreationLock = NSLock()
@@ -183,6 +224,22 @@ struct EncryptedConversationOutboxStore: Sendable {
 
     func load(owner: ConversationOutboxOwner, key: SymmetricKey) throws -> [ConversationOutboxEntry] {
         try locked { try readState(owner: owner, key: key).entries }
+    }
+
+    func loadIntakes(owner: ConversationOutboxOwner, key: SymmetricKey) throws -> [ConversationNeutralIntakeOutboxEntry] {
+        try locked { try readState(owner: owner, key: key).intakes }
+    }
+    @discardableResult
+    func updateIntakes<Value: Sendable>(owner: ConversationOutboxOwner, key: SymmetricKey, _ mutation: (inout [ConversationNeutralIntakeOutboxEntry]) throws -> Value) throws -> Value {
+        try locked {
+            var state = try readState(owner: owner, key: key)
+            let original = state.intakes
+            let result = try mutation(&state.intakes)
+            try Self.validateIntakeTransitions(from: original, to: state.intakes)
+            state.version = 5
+            try write(state, owner: owner, key: key)
+            return result
+        }
     }
 
     func loadReplies(owner: ConversationOutboxOwner, key: SymmetricKey) throws -> [ConversationMealReplyOutboxEntry] {
@@ -214,7 +271,7 @@ struct EncryptedConversationOutboxStore: Sendable {
             let original = state.replies
             let result = try mutation(&state.replies)
             try Self.validateReplyTransitions(from: original, to: state.replies)
-            state.version = 4
+            state.version = max(state.version, 4)
             try write(state, owner: owner, key: key)
             return result
         }
@@ -224,16 +281,20 @@ struct EncryptedConversationOutboxStore: Sendable {
         var version: Int
         var entries: [ConversationOutboxEntry]
         var replies: [ConversationMealReplyOutboxEntry]
+        var intakes: [ConversationNeutralIntakeOutboxEntry]
     }
     private func write(_ state: State, owner: ConversationOutboxOwner, key: SymmetricKey) throws {
-        guard state.entries.count + state.replies.count <= Self.capacity else { throw ConversationOutboxError.queueFull }
+        guard state.entries.count + state.replies.count + state.intakes.count <= Self.capacity else { throw ConversationOutboxError.queueFull }
         try Self.validate(state.entries)
         try Self.validateReplies(state.replies, reports: state.entries)
+        try Self.validateIntakes(state.intakes, reports: state.entries, replies: state.replies)
         // Old report-only callers retain their qualified format until the first
         // typed reply. Once v4, closing its last reply never downgrades the file.
-        let version = state.version == 4 ? 4 : 3
+        let version = state.version >= 5 ? 5 : (state.version == 4 ? 4 : 3)
         let plain: Data
-        if version == 4 {
+        if version == 5 {
+            plain = try JSONEncoder().encode(NeutralEnvelope(owner: owner.hash, entries: state.entries, replies: state.replies, intakes: state.intakes))
+        } else if version == 4 {
             plain = try JSONEncoder().encode(MixedEnvelope(owner: owner.hash, entries: state.entries, replies: state.replies))
         } else {
             plain = try JSONEncoder().encode(Envelope(version: 3, owner: owner.hash, entries: state.entries))
@@ -241,8 +302,28 @@ struct EncryptedConversationOutboxStore: Sendable {
         guard plain.count <= Self.maxBytes else { throw ConversationOutboxError.queueFull }
         let box = try AES.GCM.seal(plain, using: key, authenticating: aad(owner, version: version))
         guard let combined = box.combined else { throw ConversationOutboxError.storageUnavailable }
-        try atomicReplace((version == 4 ? Self.mixedHeader : Self.header) + combined, at: fileURL(owner: owner))
+        try atomicReplace((version == 5 ? Self.neutralHeader : (version == 4 ? Self.mixedHeader : Self.header)) + combined, at: fileURL(owner: owner))
     }
+    private struct NeutralEnvelope: Codable {
+        let version: Int
+        let owner: String
+        let entries: [ConversationOutboxEntry]
+        let replies: [ConversationMealReplyOutboxEntry]
+        let intakes: [ConversationNeutralIntakeOutboxEntry]
+        private enum CodingKeys: String, CodingKey { case version, owner, entries, replies, intakes }
+        init(owner: String, entries: [ConversationOutboxEntry], replies: [ConversationMealReplyOutboxEntry], intakes: [ConversationNeutralIntakeOutboxEntry]) {
+            version = 5; self.owner = owner; self.entries = entries; self.replies = replies; self.intakes = intakes
+        }
+        init(from decoder: any Decoder) throws {
+            try outboxKeys(decoder, required: ["version", "owner", "entries", "replies", "intakes"])
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            version = try c.decode(Int.self, forKey: .version); owner = try c.decode(String.self, forKey: .owner)
+            entries = try c.decode([ConversationOutboxEntry].self, forKey: .entries)
+            replies = try c.decode([ConversationMealReplyOutboxEntry].self, forKey: .replies)
+            intakes = try c.decode([ConversationNeutralIntakeOutboxEntry].self, forKey: .intakes)
+        }
+    }
+
     private struct MixedEnvelope: Codable {
         let version: Int
         let owner: String
@@ -348,10 +429,11 @@ struct EncryptedConversationOutboxStore: Sendable {
     }
 
     private func readState(owner: ConversationOutboxOwner, key: SymmetricKey) throws -> State {
-        guard let data = try readCiphertext(owner: owner) else { return .init(version: 3, entries: [], replies: []) }
+        guard let data = try readCiphertext(owner: owner) else { return .init(version: 3, entries: [], replies: [], intakes: []) }
         do {
             let version: Int
-            if data.starts(with: Self.mixedHeader) { version = 4 }
+            if data.starts(with: Self.neutralHeader) { version = 5 }
+            else if data.starts(with: Self.mixedHeader) { version = 4 }
             else if data.starts(with: Self.header) { version = 3 }
             else if data.starts(with: Self.previousHeader) { version = 2 }
             else if data.starts(with: Self.legacyHeader) { version = 1 }
@@ -360,6 +442,7 @@ struct EncryptedConversationOutboxStore: Sendable {
             let plain = try AES.GCM.open(box, using: key, authenticating: aad(owner, version: version))
             let entries: [ConversationOutboxEntry]
             var replies: [ConversationMealReplyOutboxEntry] = []
+            var intakes: [ConversationNeutralIntakeOutboxEntry] = []
             if version == 1 {
                 let envelope = try JSONDecoder().decode(LegacyEnvelope.self, from: plain)
                 guard envelope.version == 1, envelope.owner == owner.hash else { throw ConversationOutboxError.integrityFailure }
@@ -372,15 +455,41 @@ struct EncryptedConversationOutboxStore: Sendable {
                 let envelope = try JSONDecoder().decode(Envelope.self, from: plain)
                 guard envelope.version == 3, envelope.owner == owner.hash else { throw ConversationOutboxError.integrityFailure }
                 entries = envelope.entries
-            } else {
+            } else if version == 4 {
                 let envelope = try JSONDecoder().decode(MixedEnvelope.self, from: plain)
                 guard envelope.version == 4, envelope.owner == owner.hash else { throw ConversationOutboxError.integrityFailure }
                 entries = envelope.entries; replies = envelope.replies
+            } else {
+                let envelope = try JSONDecoder().decode(NeutralEnvelope.self, from: plain)
+                guard envelope.version == 5, envelope.owner == owner.hash else { throw ConversationOutboxError.integrityFailure }
+                entries = envelope.entries; replies = envelope.replies; intakes = envelope.intakes
             }
             try Self.validate(entries)
             try Self.validateReplies(replies, reports: entries)
-            return .init(version: version, entries: entries, replies: replies)
+            try Self.validateIntakes(intakes, reports: entries, replies: replies)
+            return .init(version: version, entries: entries, replies: replies, intakes: intakes)
         } catch { throw ConversationOutboxError.integrityFailure }
+    }
+
+    private static func validateIntakes(_ intakes: [ConversationNeutralIntakeOutboxEntry], reports: [ConversationOutboxEntry], replies: [ConversationMealReplyOutboxEntry]) throws {
+        let ids = intakes.map { $0.input.intakeID }
+        guard reports.count + replies.count + intakes.count <= capacity,
+              Set(ids).count == ids.count,
+              Set(ids).isDisjoint(with: Set(reports.map(\.commandID))),
+              Set(ids).isDisjoint(with: Set(replies.map { $0.intent.replyID })) else { throw ConversationOutboxError.integrityFailure }
+        for row in intakes { try row.validate() }
+    }
+    private static func validateIntakeTransitions(from old: [ConversationNeutralIntakeOutboxEntry], to rows: [ConversationNeutralIntakeOutboxEntry]) throws {
+        for previous in old {
+            guard let next = rows.first(where: { $0.input.intakeID == previous.input.intakeID }) else { continue }
+            guard previous.input.wireBody == next.input.wireBody, previous.input.inputHash == next.input.inputHash,
+                  previous.ownerID == next.ownerID, previous.epoch == next.epoch else { throw ConversationOutboxError.integrityFailure }
+            if previous.state != .queued && next.state == .queued { throw ConversationOutboxError.integrityFailure }
+            if previous.state == .waitingReconciliation && next.state != .waitingReconciliation { throw ConversationOutboxError.integrityFailure }
+            if let hold = previous.hold {
+                guard let nextHold = next.hold, nextHold.priority >= hold.priority else { throw ConversationOutboxError.integrityFailure }
+            }
+        }
     }
 
     private static func validateReplies(_ replies: [ConversationMealReplyOutboxEntry], reports: [ConversationOutboxEntry]) throws {

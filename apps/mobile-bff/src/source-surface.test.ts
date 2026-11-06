@@ -153,6 +153,9 @@ function runtimeExactStringRoutes(value: string): string[] {
 // or physical route/NFT consumer was discarded by this packaging translation.
 // These bodies include dormant writer adapters; this certificate never declares
 // them absent and never exempts any physical code from the global scans.
+// T40 exposes three existing pure Auth decoders for the request-owned refusal
+// latch. Only module11098 changes; the other17 bodies and exact consumers stay
+// pinned. Source qualification proves the three extractions are otherwise exact.
 function certifyNutritionJournalSplitContent(text: string): void {
   const source = ts.createSourceFile(
     'nutrition-shared.js',
@@ -189,7 +192,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
     'certified nutrition-shared module contents',
   ).toEqual(
     [
-      '11098:0f937cf4b4455cd62f9a2e23e4a054de6f383f851bb1f4935956fab07bd7408b',
+      '11098:13a5e44e49a46bead1ee67ffeebfe2f352296d52c880d44fcfb08846f39209eb',
       '40747:411b3586832f4b981362200d53a3836cff6395e29cee48554464d97d48fa94a9',
       '93639:ce2fe7a229147bad36167351267198cbd255aa881701566612da47ce193e2e04',
       '49634:3287a6bd255d2b4c020831638d46e96459e466cba56777c0944ce83426355ff4',
@@ -718,7 +721,7 @@ describe('authoritative Mobile API source surface', () => {
     ])
     const scope = parse('conversation-current-scope.ts')
     expect(createHash('sha256').update(scope.text).digest('hex')).toBe(
-      'e00e2c5367834cee2640cf57db5979eadbad3a786732c915e7801d4e454097c1',
+      'f8106d2f19e5085c099719c736a396ed428f10349bc25ed9b7b04959e6697aed',
     )
     const journal = scope.statements.find(
         (node): node is ts.ImportDeclaration =>

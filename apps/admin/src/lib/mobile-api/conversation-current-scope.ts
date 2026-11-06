@@ -65,7 +65,10 @@ export function createConversationReadonlyAuth(db: ServiceClient): ReadonlyAuth 
   })
 }
 async function nonAdmin(auth: ReadonlyAuth, user: string) {
-  const value = await auth.isAdmin(user)
+  assertConversationReadonlyNonAdmin(await auth.isAdmin(user))
+}
+/** Pure shared SDK decoders. They establish no fresh observation by themselves. */
+export function assertConversationReadonlyNonAdmin(value: unknown): void {
   if (value === true) throw failure(403, 'patient_admin_account_conflict')
   if (value !== false) throw failure(503, 'patient_profile_unavailable')
 }
@@ -82,6 +85,9 @@ async function verified(auth: ReadonlyAuth, token: string) {
   } catch {
     throw failure(401, 'invalid_access_token')
   }
+  return parseConversationReadonlyIdentity(raw)
+}
+export function parseConversationReadonlyIdentity(raw: unknown) {
   if (raw === null) throw failure(401, 'invalid_access_token')
   const identity = identitySchema.parse(snapshot(raw))
   if (!identity.email || !identity.emailConfirmedAt) throw failure(403, 'email_not_confirmed')
@@ -94,6 +100,9 @@ async function patient(auth: ReadonlyAuth, user: string): Promise<MobilePatient>
   } catch {
     throw failure(503, 'patient_profile_unavailable')
   }
+  return parseConversationReadonlyPatient(raw, user)
+}
+export function parseConversationReadonlyPatient(raw: unknown, user: string): MobilePatient {
   if (raw === null) throw failure(403, 'patient_profile_unavailable')
   const value = patientSchema.parse(snapshot(raw))
   if (value.authUserId !== user) throw failure(409, 'conversation_patient_changed')

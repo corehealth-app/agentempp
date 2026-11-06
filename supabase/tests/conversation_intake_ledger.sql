@@ -131,7 +131,7 @@ BEGIN
  raw:=public.claim_conversation_intake_routing(u,(first_raw->>'intake_id')::uuid,v#>>'{intake,input_hash}',e,s->>'source_hash');s:=jsonb_build_object('intake',v->'intake','source',s,'claim_id',raw->'claim_id');
  SELECT reserved_child_id INTO child FROM private.conversation_intake_ids WHERE user_id=u AND intake_id=(first_raw->>'intake_id')::uuid;
  PERFORM pg_temp.intake_ok(pg_temp.intake_seal(u,s)='{"action":"rate_limited"}' AND NOT EXISTS(SELECT 1 FROM private.conversation_workout_command_ids WHERE user_id=u AND command_id=child) AND NOT EXISTS(SELECT 1 FROM private.conversation_intake_selections WHERE user_id=u),'selected child independently obeys genuine mixed legacy quota');
- PERFORM pg_temp.intake_ok(pg_temp.intake_seal(u,s,'not_reported')->>'action'='sealed','known quota refusal preserves claim for factual no-child resolution');
+ PERFORM pg_temp.intake_ok(pg_temp.intake_seal(u,s,'not_reported')->>'action'='decision_conflict','quota refusal preserves the immutable original routing result without reclassification');
 END $quota$;
 DO $epoch_collision$
 DECLARE u uuid:='c1390000-0000-4000-8000-000000000060';e uuid:=gen_random_uuid();i uuid:=gen_random_uuid();s jsonb;x jsonb;raw jsonb;child uuid;denied boolean;old_hash text;ne uuid;

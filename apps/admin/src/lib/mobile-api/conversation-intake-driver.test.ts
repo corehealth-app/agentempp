@@ -10,6 +10,7 @@ import {
   type ConversationIntakeDriverPorts,
   createConversationIntakeDriver,
 } from './conversation-intake-driver'
+import { createOpenRouterConversationIntakeRouter } from './conversation-intake-router'
 import { createConversationIntakeStore } from './conversation-intake-store'
 import { projectSavedConversationMealCommandResult } from './conversation-meal-command-result'
 import { bindConversationWorkoutCommand, workoutDigest } from './conversation-workout-contracts'
@@ -513,6 +514,26 @@ describe('durable neutral intake orchestration over genuine typed service bounda
     expect(f.domains.workout.read).not.toHaveBeenCalled()
     expect(f.domains.workout.submit).not.toHaveBeenCalled()
     expect(f.route).not.toHaveBeenCalled()
+  })
+  it('durably returns one non-recording clarification after routing provider failure, without repeating its call', async () => {
+    const f = setup(),
+      complete = vi.fn(async () => {
+        throw new Error('Provider response lost')
+      }),
+      driver = createConversationIntakeDriver({
+        ...f.ports,
+        createRouter: () => createOpenRouterConversationIntakeRouter('synthetic-key', { complete }),
+      })
+    const first = await driver.submit(f.command, f.epoch),
+      replay = await driver.submit(f.command, f.epoch)
+    expect(first).toMatchObject({ status: 'clarification_required', reason: 'routing_unavailable' })
+    expect(replay).toEqual(first)
+    expect(complete).toHaveBeenCalledOnce()
+    expect(f.store.seal).toHaveBeenCalledOnce()
+    for (const domain of [f.domains.meal, f.domains.workout]) {
+      expect(domain.submit).not.toHaveBeenCalled()
+      expect(domain.read).not.toHaveBeenCalled()
+    }
   })
   it('keeps media held before claiming instead of fabricating a typed user action', async () => {
     const f = setup('Caminhei 30 minutos', true)

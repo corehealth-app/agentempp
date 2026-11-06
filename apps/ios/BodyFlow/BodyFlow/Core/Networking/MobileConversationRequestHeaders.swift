@@ -6,6 +6,7 @@ enum MobileAPIUnauthorizedReplay: Sendable, Equatable { case standard, never }
 /// preconditions, not part of the immutable command body or source authority.
 enum MobileConversationRequestHeaders: Sendable {
   case session
+  case intakeQuestionOrigins(epoch: UUID, ownerID: UUID)
   case intakeSession
   case intakeSubmit(FlowNeutralIntakeTicket)
   case intakeReconciliation(FlowNeutralIntakeTicket)
@@ -29,12 +30,24 @@ enum MobileConversationRequestHeaders: Sendable {
     if case .journal = self {
     } else if case .threadJournal = self {
     } else if case .unifiedJournal = self {
+    } else if case .intakeQuestionOrigins = self {
     } else if case .mealParentQuestion = self {
     } else if case .mealReplyReconciliation = self {
     } else {
       guard query.isEmpty else { throw MobileAPIRequestError.invalidConversationHeaders }
     }
     switch self {
+    case .intakeQuestionOrigins(let epoch, let owner):
+      let names = query.map(\.name)
+      let rawLimit = query.first(where: { $0.name == "limit" })?.value ?? "10"
+      guard method == .get, path == "/api/mobile/v1/conversation/intakes", body == nil, key == nil, replay == .never,
+        names.count == Set(names).count, Set(names).isSubset(of: ["limit", "cursor"]),
+        let limit = Int(rawLimit), String(limit) == rawLimit, (1...25).contains(limit)
+      else { throw MobileAPIRequestError.invalidConversationHeaders }
+      if let cursor = query.first(where: { $0.name == "cursor" }) {
+        guard let value = cursor.value, (try? FlowMealQuestionOriginsPageSnapshot.cursorAnchor(value, owner: owner, epoch: epoch)) != nil
+        else { throw MobileAPIRequestError.invalidConversationHeaders }
+      }
     case .intakeSession:
       guard method == .get, path == "/api/mobile/v1/conversation/intakes/session", body == nil, key == nil else { throw MobileAPIRequestError.invalidConversationHeaders }
     case .intakeSubmit(let ticket):
@@ -137,7 +150,7 @@ enum MobileConversationRequestHeaders: Sendable {
   var supportsFeedbackPresentation: Bool {
     switch self {
     case .submit, .reconciliation, .mealReplySubmit, .mealReplyReconciliation, .journal, .threadJournal, .intakeSubmit, .intakeReconciliation: true
-    case .mealParentQuestion, .session, .mealGroup, .mealEdit, .mealEditReconciliation, .intakeSession, .unifiedJournal: false
+    case .intakeQuestionOrigins, .mealParentQuestion, .session, .mealGroup, .mealEdit, .mealEditReconciliation, .intakeSession, .unifiedJournal: false
     }
   }
   /// Only the new family requires its own exact successful protocol echo.
@@ -145,6 +158,11 @@ enum MobileConversationRequestHeaders: Sendable {
   func validateResponseProtocol(_ response: HTTPURLResponse) throws {
     guard (200...299).contains(response.statusCode) else { return }
     switch self {
+    case .intakeQuestionOrigins:
+      guard response.statusCode == 200,
+        response.value(forHTTPHeaderField: "X-Conversation-Protocol") == "intake-question-origins-v1",
+        response.value(forHTTPHeaderField: "Cache-Control") == "no-store"
+      else { throw MobileAPITransportError.invalidResponse }
     case .mealParentQuestion:
       guard response.value(forHTTPHeaderField: "X-Conversation-Protocol") == "meal-question-v1",
         response.value(forHTTPHeaderField: "Cache-Control") == "no-store"
@@ -156,6 +174,7 @@ enum MobileConversationRequestHeaders: Sendable {
   }
   func apply(to request: inout URLRequest) {
     switch self {
+    case .intakeQuestionOrigins: request.setValue("intake-question-origins-v1", forHTTPHeaderField: "X-Conversation-Protocol")
     case .mealParentQuestion: request.setValue("meal-question-v1", forHTTPHeaderField: "X-Conversation-Protocol")
     case .intakeSession, .intakeSubmit, .intakeReconciliation: request.setValue("intake-v1", forHTTPHeaderField: "X-Conversation-Protocol")
     default: request.setValue("meal-command-v1", forHTTPHeaderField: "X-Conversation-Protocol")
@@ -177,7 +196,7 @@ enum MobileConversationRequestHeaders: Sendable {
       request.setValue(
         intent.parentBinding.ownerID.uuidString.lowercased(),
         forHTTPHeaderField: "X-Conversation-Owner")
-    case .submit(let epoch, let owner), .journal(let epoch, let owner),
+    case .intakeQuestionOrigins(let epoch, let owner), .submit(let epoch, let owner), .journal(let epoch, let owner),
       .threadJournal(let epoch, let owner), .unifiedJournal(let epoch, let owner):
       request.setValue(epoch.uuidString.lowercased(), forHTTPHeaderField: "X-Conversation-Epoch")
       request.setValue(owner.uuidString.lowercased(), forHTTPHeaderField: "X-Conversation-Owner")

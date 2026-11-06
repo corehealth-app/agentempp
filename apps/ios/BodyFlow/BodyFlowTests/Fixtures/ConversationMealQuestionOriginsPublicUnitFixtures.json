@@ -1,0 +1,146 @@
+{
+  "qualification": "Synthetic UNIT originals through existing complete private journal parser and real origins service. Matching parent head DTO contract projections from parsed threads, NOT real parent HTTP/SQL reads.",
+  "data": {
+    "schema": "conversation.meal-question-origins.v1",
+    "mode": "lookup_only",
+    "auth_user_id": "10000000-0000-4000-8000-000000000099",
+    "owner_id": "10000000-0000-4000-8000-000000000001",
+    "epoch": "10000000-0000-4000-8000-000000000003",
+    "observed_at": "2026-11-04T12:02:00.000002Z",
+    "items": [
+      {
+        "intake": {
+          "owner_id": "10000000-0000-4000-8000-000000000001",
+          "intake_id": "10000000-0000-4000-8000-000000000091",
+          "input_hash": "fe8d1e7c7b6ce797640219c44820abef14aaa9b2b66aaa6bcce55b70a01265a8",
+          "epoch": "10000000-0000-4000-8000-000000000003",
+          "admitted_at": "2026-11-04T12:00:01.000001Z"
+        },
+        "selection": {
+          "kind": "meal.report",
+          "source_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "decision_hash": "a6ea1ac0b10b93ae1b9bb913cbb4e51e2694d2947f014948c0185a0b742b7181",
+          "selected_at": "2026-11-04T12:00:01.000003Z",
+          "command": {
+            "kind": "meal.report",
+            "owner_id": "10000000-0000-4000-8000-000000000001",
+            "command_id": "10000000-0000-4000-8000-000000000081",
+            "input_hash": "7520d9351ab50947c997c317fc2bd80a437efa4e90aafcd92a839f19a4d54099",
+            "epoch": "10000000-0000-4000-8000-000000000003",
+            "admitted_at": "2026-11-04T12:00:01.000002Z"
+          }
+        },
+        "source": {
+          "channel": "text",
+          "text": "Comi 200 mL de leite"
+        }
+      },
+      {
+        "intake": {
+          "owner_id": "10000000-0000-4000-8000-000000000001",
+          "intake_id": "10000000-0000-4000-8000-000000000090",
+          "input_hash": "f47a35377265d8f4226fdd6e26c5a3f806a09985f7407cd2a3958b8a3f10fff5",
+          "epoch": "10000000-0000-4000-8000-000000000003",
+          "admitted_at": "2026-11-04T12:00:00.000001Z"
+        },
+        "selection": {
+          "kind": "meal.report",
+          "source_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "decision_hash": "a6ea1ac0b10b93ae1b9bb913cbb4e51e2694d2947f014948c0185a0b742b7181",
+          "selected_at": "2026-11-04T12:00:00.000003Z",
+          "command": {
+            "kind": "meal.report",
+            "owner_id": "10000000-0000-4000-8000-000000000001",
+            "command_id": "10000000-0000-4000-8000-000000000080",
+            "input_hash": "14af3994286bb8b7abaf12812d022833935b3701db046ab406efeefe7649f7f4",
+            "epoch": "10000000-0000-4000-8000-000000000003",
+            "admitted_at": "2026-11-04T12:00:00.000002Z"
+          }
+        },
+        "source": {
+          "channel": "text",
+          "text": "Comi leite"
+        }
+      }
+    ],
+    "has_more": false,
+    "next_cursor": null
+  },
+  "parent_heads": {
+    "10000000-0000-4000-8000-000000000091": {
+      "schema": "conversation.meal-question-read.v1",
+      "auth_user_id": "10000000-0000-4000-8000-000000000099",
+      "owner_id": "10000000-0000-4000-8000-000000000001",
+      "epoch": "10000000-0000-4000-8000-000000000003",
+      "parent_command_id": "10000000-0000-4000-8000-000000000081",
+      "parent_input_hash": "7520d9351ab50947c997c317fc2bd80a437efa4e90aafcd92a839f19a4d54099",
+      "parent_decision_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "parent_binding": {
+        "owner_id": "10000000-0000-4000-8000-000000000001",
+        "command_id": "10000000-0000-4000-8000-000000000081",
+        "input_hash": "7520d9351ab50947c997c317fc2bd80a437efa4e90aafcd92a839f19a4d54099",
+        "command_protocol": "conversation.command.v1",
+        "kind": "meal.report",
+        "epoch": "10000000-0000-4000-8000-000000000003",
+        "admitted_at": "2026-11-04T12:00:01.000002Z"
+      },
+      "head_revision": 0,
+      "observed_at": "2026-11-04T12:02:00.000002Z",
+      "status": "needs_reply",
+      "question": {
+        "schema": "conversation.meal-question.v1",
+        "question_key": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "revision": 0,
+        "kind": "meal_type",
+        "food_index": null,
+        "food_name": null,
+        "allowed_units": [],
+        "quantity_reference": null
+      },
+      "reason": null
+    },
+    "10000000-0000-4000-8000-000000000090": {
+      "schema": "conversation.meal-question-read.v1",
+      "auth_user_id": "10000000-0000-4000-8000-000000000099",
+      "owner_id": "10000000-0000-4000-8000-000000000001",
+      "epoch": "10000000-0000-4000-8000-000000000003",
+      "parent_command_id": "10000000-0000-4000-8000-000000000080",
+      "parent_input_hash": "14af3994286bb8b7abaf12812d022833935b3701db046ab406efeefe7649f7f4",
+      "parent_decision_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "parent_binding": {
+        "owner_id": "10000000-0000-4000-8000-000000000001",
+        "command_id": "10000000-0000-4000-8000-000000000080",
+        "input_hash": "14af3994286bb8b7abaf12812d022833935b3701db046ab406efeefe7649f7f4",
+        "command_protocol": "conversation.command.v1",
+        "kind": "meal.report",
+        "epoch": "10000000-0000-4000-8000-000000000003",
+        "admitted_at": "2026-11-04T12:00:00.000002Z"
+      },
+      "head_revision": 0,
+      "observed_at": "2026-11-04T12:02:00.000002Z",
+      "status": "needs_reply",
+      "question": {
+        "schema": "conversation.meal-question.v1",
+        "question_key": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "revision": 0,
+        "kind": "quantity",
+        "food_index": 0,
+        "food_name": "leite",
+        "allowed_units": [
+          "g",
+          "kg",
+          "mL",
+          "L",
+          "caneca"
+        ],
+        "quantity_reference": {
+          "unit": "mL",
+          "grams_per_unit": 1.03,
+          "reference_id": "fao-infoods-v2-whole-milk-tb",
+          "estimated": true
+        }
+      },
+      "reason": null
+    }
+  }
+}

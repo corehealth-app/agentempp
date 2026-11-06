@@ -4,10 +4,11 @@ import { dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const expectedCount = 91
-const expectedHash = '1aee269695cf61901f5ecb802e8509ae9004481024926043353d1f7cf32db9f7'
+const expectedHash = '161783e0c88223e0df8271ed658399734242dcb588e16128a3febd70527379a7'
 const mealQuestionRoute = 'conversation/commands/[commandId]/replies/route.ts'
+const originsRoute = 'conversation/intakes/route.ts'
 const intakeTransports = new Map([
-  ['conversation/intakes/route.ts', ['POST', 'maxDuration', 'runtime']],
+  ['conversation/intakes/route.ts', ['GET', 'POST', 'maxDuration', 'runtime']],
   ['conversation/intakes/[intakeId]/route.ts', ['GET', 'maxDuration', 'runtime']],
   ['conversation/intakes/session/route.ts', ['GET', 'dynamic', 'runtime']],
 ])
@@ -201,6 +202,19 @@ for (const [surface, records] of [
   ['SOURCE', sources],
   ['WRAPPER', wrappers],
 ]) {
+  // T48 adds only the cold-origin GET beside the original intake POST.
+  // Freeze the full T47 stream before applying any older historical boundary.
+  const beforeOrigins = records.map((record) =>
+    record.path === originsRoute
+      ? { ...record, exports: record.exports.filter((name) => name !== 'GET') }
+      : record,
+  )
+  const beforeOriginsHash = hashRecords(beforeOrigins)
+  console.info(`${surface}_PRE_T48_ROUTE_EXPORT_COUNT=${beforeOrigins.length}`)
+  console.info(`${surface}_PRE_T48_ROUTE_EXPORT_STREAM_SHA256=${beforeOriginsHash}`)
+  if (beforeOrigins.length !== 91) fail(`${surface}_PRE_T48_COUNT:${beforeOrigins.length}`)
+  if (beforeOriginsHash !== '1aee269695cf61901f5ecb802e8509ae9004481024926043353d1f7cf32db9f7')
+    fail(`${surface}_PRE_T48_HASH:${beforeOriginsHash}`)
   const question = records.find((record) => record.path === mealQuestionRoute)
   if (
     JSON.stringify(question?.exports) !== JSON.stringify(['GET', 'POST', 'maxDuration', 'runtime'])
@@ -208,7 +222,7 @@ for (const [surface, records] of [
     fail(`${surface}_MEAL_QUESTION_EXPORTS:${JSON.stringify(question?.exports)}`)
   // T47 adds exactly GET to one existing path. Every prior method/configuration
   // remains frozen, including all 91 routes before this one additive method.
-  const prior91 = records.map((record) =>
+  const prior91 = beforeOrigins.map((record) =>
     record.path === mealQuestionRoute
       ? { ...record, exports: record.exports.filter((name) => name !== 'GET') }
       : record,

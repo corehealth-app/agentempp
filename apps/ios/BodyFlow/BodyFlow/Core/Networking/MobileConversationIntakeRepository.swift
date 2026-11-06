@@ -5,6 +5,7 @@ import Foundation
 struct MobileConversationIntakeRepository: Sendable {
   static let responseBodyLimit = 262_144
   private let transport: MobileAPITransport
+  private let lease: SessionLease
   private let feedbackPresentation: ConversationFeedbackPresentationSelection?
   static func scoped(
     transport: MobileAPITransport, lease: SessionLease,
@@ -12,7 +13,35 @@ struct MobileConversationIntakeRepository: Sendable {
   ) async throws -> Self {
     let scoped = transport.withResponseBodyLimit(responseBodyLimit).scoped(to: lease)
     try await scoped.validateOriginalSession(lease)
-    return .init(transport: scoped, feedbackPresentation: feedbackPresentation)
+    return .init(transport: scoped, lease: lease, feedbackPresentation: feedbackPresentation)
+  }
+  /// Bounded lookup only. It never constructs an input/ticket or retries a POST.
+  func questionOrigins(cursor: String? = nil, limit: Int = 10, context: ConversationCommandContext)
+    async throws -> FlowMealQuestionOriginsPageSnapshot
+  {
+    try await validateOrigins(context)
+    guard (1...25).contains(limit) else { throw MobileAPITransportError.invalidResponse }
+    var query = [URLQueryItem(name: "limit", value: String(limit))]
+    if let cursor { query.append(.init(name: "cursor", value: cursor)) }
+    let response = try await transport.executeHTTP(
+      MobileAPIRequest<FlowMealQuestionOriginsPageSnapshot>(method: .get,
+        path: "/api/mobile/v1/conversation/intakes", queryItems: query,
+        conversation: .intakeQuestionOrigins(epoch: context.epoch, ownerID: context.ownerID), unauthorizedReplay: .never))
+    try await validateOrigins(context)
+    guard response.statusCode == 200, response.data.matches(context), response.data.items.count <= limit,
+      let observed = ConversationProtocolInstant(response.data.observedAt),
+      let accepted = ConversationProtocolInstant(context.observedAt), observed >= accepted,
+      response.data.nextCursor != cursor || response.data.nextCursor == nil,
+      try response.data.follows(cursor: cursor)
+    else { throw MobileAPITransportError.invalidResponse }
+    return response.data
+  }
+  private func validateOrigins(_ context: ConversationCommandContext) async throws {
+    guard !context.observation.isEnqueueOnly, context.authUserID == UUID(uuidString: lease.userID), context.sessionGeneration == lease.generation
+    else { throw ConversationOutboxError.invalidServerObservation }
+    try await transport.validateOriginalSession(lease)
+    try Task.checkCancellation()
+    try context.withCurrentAuthority {}
   }
   func session() async throws -> FlowNeutralIntakeSessionSnapshot {
     let r = try await transport.executeHTTP(

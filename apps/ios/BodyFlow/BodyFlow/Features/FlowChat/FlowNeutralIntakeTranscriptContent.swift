@@ -112,7 +112,8 @@ struct FlowNeutralIntakeTranscriptContent: View {
             source(row.input)
             Text(status(row.response)).accessibilityIdentifier("conversation.neutral.closed")
           }
-          if model.mealQuestionChild(intakeID: row.id) != nil, let conversation {
+          if model.mealQuestionChild(intakeID: row.id) != nil, let conversation,
+            !conversation.isMealQuestionClosed(intakeID: row.id) {
             if let question = conversation.neutralMealQuestion(intakeID: row.id) {
               Text(verbatim: FlowConversationThreadEventPresentation.question(question, english: english))
             }

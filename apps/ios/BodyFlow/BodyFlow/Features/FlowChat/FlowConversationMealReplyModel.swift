@@ -376,6 +376,10 @@ private final class FlowMealReplyLifetime: @unchecked Sendable {
       await lifecycle.finishPatientWork(id)
     }
   }
+  /// Only an actual delivered reply or validated current head marks fulfillment.
+  func hasFulfilledParent(_ parentID: UUID) -> Bool {
+    hasScope && fulfilledParents.contains(parentID)
+  }
   func currentQuestion(parentID: UUID, fallback: ConversationThreadPageSnapshot.Question?)
     -> ConversationThreadPageSnapshot.Question?
   {

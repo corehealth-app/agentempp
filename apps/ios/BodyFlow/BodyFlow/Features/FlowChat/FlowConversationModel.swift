@@ -86,6 +86,19 @@ final class FlowConversationModel {
   private(set) var mealEditor: FlowConversationMealEditModel?
   private(set) var mealReplies: FlowConversationMealReplyModel?
   private(set) var neutralIntake: FlowNeutralIntakeModel?
+  private(set) var mealQuestionOrigins: FlowMealQuestionOriginsModel?
+  private var closedMealQuestionIntakes: Set<UUID> = []
+  private struct MealQuestionReference {
+    let child: FlowNeutralIntakeChild
+    let routingHash: String
+    let originPin: Data?
+    func matches(_ other: Self) -> Bool {
+      child.kind == other.child.kind && child.ownerID == other.child.ownerID
+        && child.commandID == other.child.commandID && child.inputHash == other.child.inputHash
+        && child.epoch == other.child.epoch && child.admittedAt == other.child.admittedAt
+        && routingHash == other.routingHash && originPin == other.originPin
+    }
+  }
   private var parentQuestionRepository: MobileConversationMealReplyRepository?
   private var parentQuestionRequests: [UUID: UUID] = [:]
   private var parentQuestionReads: [UUID: ConversationMealParentQuestionSnapshot] = [:]
@@ -252,47 +265,85 @@ final class FlowConversationModel {
         question: question)
     } catch { failure = .changed }
   }
+  var recoveredMealQuestionOrigins: [FlowMealQuestionOriginsPageSnapshot.Origin] {
+    guard hasCurrentScope else { return [] }
+    let recent = Set(neutralIntake?.terminalRows.map(\.id) ?? [])
+    return mealQuestionOrigins?.rows.filter {
+      !recent.contains($0.id) && !closedMealQuestionIntakes.contains($0.id)
+        && mealReplies?.hasFulfilledParent($0.selection.child.commandID) != true
+    } ?? []
+  }
+  func isMealQuestionClosed(intakeID: UUID) -> Bool {
+    guard hasCurrentScope else { return false }
+    if closedMealQuestionIntakes.contains(intakeID) { return true }
+    let child = neutralIntake?.mealQuestionChild(intakeID: intakeID)
+      ?? mealQuestionOrigins?.origin(intakeID)?.selection.child
+    return child.map { mealReplies?.hasFulfilledParent($0.commandID) == true } ?? false
+  }
+  private func mealQuestionReference(intakeID: UUID) -> MealQuestionReference? {
+    guard hasCurrentScope, !closedMealQuestionIntakes.contains(intakeID) else { return nil }
+    if let child = neutralIntake?.mealQuestionChild(intakeID: intakeID),
+      let row = neutralIntake?.terminalRows.first(where: { $0.id == intakeID }), let selection = row.response.selection {
+      guard mealReplies?.hasFulfilledParent(child.commandID) != true else { return nil }
+      return .init(child: child, routingHash: selection.decisionHash, originPin: nil)
+    }
+    guard let context, mealQuestionOrigins?.matches(context) == true,
+      let origin = mealQuestionOrigins?.origin(intakeID),
+      mealReplies?.hasFulfilledParent(origin.selection.child.commandID) != true else { return nil }
+    return .init(child: origin.selection.child, routingHash: origin.selection.decisionHash, originPin: origin.pin)
+  }
   func canReadNeutralMealQuestion(intakeID: UUID) -> Bool {
     hasCurrentScope && mealReplies?.canBegin == true && parentQuestionRepository != nil
-      && neutralIntake?.mealQuestionChild(intakeID: intakeID) != nil
-      && parentQuestionRequests.isEmpty
+      && mealQuestionReference(intakeID: intakeID) != nil && parentQuestionRequests.isEmpty
   }
   func neutralMealQuestion(intakeID: UUID) -> ConversationThreadPageSnapshot.Question? {
-    guard hasCurrentScope, let child = neutralIntake?.mealQuestionChild(intakeID: intakeID),
+    guard let reference = mealQuestionReference(intakeID: intakeID),
       let read = parentQuestionReads[intakeID], let context,
-      read.matches(child: child, context: context)
-    else { return nil }
-    return mealReplies?.currentQuestion(parentID: child.commandID, fallback: read.question)
+      read.matches(child: reference.child, context: context) else { return nil }
+    return mealReplies?.currentQuestion(parentID: reference.child.commandID, fallback: read.question)
   }
-  /// The selected typed child is an owned lookup, never a reconstructed report.
+  func loadMealQuestionOrigins(reset: Bool = true) async {
+    guard !isClosed, let context, let lease, hasCurrentScope, let mealQuestionOrigins else { return }
+    if reset {
+      parentQuestionRequests.removeAll()
+      parentQuestionReads.removeAll()
+      if mealReplies?.canBegin == true { mealReplies?.dismiss() }
+    }
+    await mealQuestionOrigins.load(context: context, lease: lease, limit: historyPageSize, reset: reset) { [weak self] incoming in
+      self?.hasCurrentScope == true && self?.context?.observation.isSameGrant(as: incoming.observation) == true
+    }
+  }
+  private func pruneMealQuestion(intakeID: UUID) {
+    closedMealQuestionIntakes.insert(intakeID)
+    mealQuestionOrigins?.prune(intakeID)
+    parentQuestionReads.removeValue(forKey: intakeID)
+  }
+  /// Both recent selections and cold origins remain lookup observations. Only
+  /// the fresh typed parent read can supply the actual current question.
   func beginNeutralMealReply(intakeID: UUID) async {
     guard canReadNeutralMealQuestion(intakeID: intakeID), let repository = parentQuestionRepository,
-      let child = neutralIntake?.mealQuestionChild(intakeID: intakeID), let context, let lease
-    else { return }
+      let reference = mealQuestionReference(intakeID: intakeID), let context, let lease else { return }
     let requestID = UUID()
-    // Detach the previous observation/form before awaiting another read. A
-    // protected prepared answer cannot enter this path because canBegin is false.
     mealReplies?.dismiss()
     parentQuestionReads.removeAll()
     parentQuestionRequests[intakeID] = requestID
     defer { if parentQuestionRequests[intakeID] == requestID { parentQuestionRequests.removeValue(forKey: intakeID) } }
     do {
-      let read = try await repository.readParent(child: child, context: context)
+      let read = try await repository.readParent(child: reference.child, context: context)
       try await lifecycle.performVisiblePatientStateOperation(lease: lease) {
         try Task.checkCancellation()
         try context.withCurrentAuthority {
           guard self.hasCurrentScope, self.context?.observation.isSameGrant(as: context.observation) == true,
             self.parentQuestionRequests[intakeID] == requestID,
-            let original = self.neutralIntake?.terminalRows.first(where: { $0.id == intakeID }),
-            self.neutralIntake?.mealQuestionChild(intakeID: intakeID)?.inputHash == child.inputHash,
-            read.parentDecisionHash != original.response.selection?.decisionHash
+            self.mealQuestionReference(intakeID: intakeID).map({ $0.matches(reference) }) == true,
+            read.parentDecisionHash != reference.routingHash
           else { throw ConversationOutboxError.staleObservation }
           self.mealReplies?.observeParentHead(read)
-          self.parentQuestionReads[intakeID] = read
           guard read.status == .needsReply, let question = read.question else {
-            self.failure = .changed
+            self.pruneMealQuestion(intakeID: intakeID)
             return
           }
+          self.parentQuestionReads[intakeID] = read
           try self.mealReplies?.begin(parentBinding: read.parentBinding,
             parentDecisionHash: read.parentDecisionHash, question: question)
         }
@@ -630,6 +681,10 @@ final class FlowConversationModel {
         model.neutralIntake = try await FlowNeutralIntakeModel.open(transport: transport, lifecycle: lifecycle, store: store, keyVault: keyVault, expectedLease: lease, parentIdentity: current.identity,
           parentIsCurrent: { [weak model] identity in model?.hasCurrentScope == true && model?.context?.identity == identity },
           onFactualEffect: { [weak model] in guard let model, model.hasCurrentScope else { return }; model.savedEffectRevision &+= 1 })
+        if linkedReplies {
+          let origins = try await MobileConversationIntakeRepository.scoped(transport: transport, lease: lease)
+          model.mealQuestionOrigins = .init(repository: origins, lifecycle: lifecycle)
+        }
       }
       return model
     } catch {
@@ -1162,6 +1217,9 @@ final class FlowConversationModel {
       else { return }
       linkedReadReferences[identity.commandID] = identity.reference
       linkedMealIdentities[identity.commandID] = identity
+      let originIDs = mealQuestionOrigins?.rows.filter { $0.selection.child.commandID == result.parentCommandID }.map(\.id) ?? []
+      let recentIDs = neutralIntake?.terminalRows.filter { $0.response.selection?.child.commandID == result.parentCommandID }.map(\.id) ?? []
+      for id in Set(originIDs + recentIDs) { pruneMealQuestion(intakeID: id) }
       dismissedQuestions.insert(result.parentBinding.commandID)
       if blockedDecisionID == result.parentBinding.commandID {
         blockedDecisionID = nil
@@ -1347,6 +1405,7 @@ final class FlowConversationModel {
       await neutralIntake?.refresh()
       await mealEditor?.restore()
       await mealReplies?.restore()
+      await loadMealQuestionOrigins()
       await loadHistory()
     }
   }
@@ -1524,6 +1583,7 @@ final class FlowConversationModel {
   func cancelTransientWork() {
     parentQuestionRequests.removeAll()
     parentQuestionReads.removeAll()
+    mealQuestionOrigins?.cancel()
     operation?.cancel()
     neutralIntake?.cancelTransientWork()
     unifiedHistory.cancel()
@@ -1534,6 +1594,8 @@ final class FlowConversationModel {
     parentQuestionRequests.removeAll()
     parentQuestionReads.removeAll()
     parentQuestionRepository = nil
+    mealQuestionOrigins?.close()
+    closedMealQuestionIntakes.removeAll()
     lease = nil
     operation?.cancel()
     mealEditor?.invalidateSynchronously()
@@ -1611,6 +1673,7 @@ final class FlowConversationModel {
     case .scopeSuspended:
       parentQuestionRequests.removeAll()
       parentQuestionReads.removeAll()
+      mealQuestionOrigins?.suspend()
       mealEditor?.suspend()
       mealReplies?.suspend()
       resetHistory()
@@ -1630,6 +1693,8 @@ final class FlowConversationModel {
       else { return }
       neutralIntake?.acceptParent(value.identity)
       if let old = lastIdentity, old != value.identity {
+        closedMealQuestionIntakes.removeAll()
+        mealQuestionOrigins?.clear()
         draft = ""
         selectedMealType = nil
         preparingMediaIntent = false
@@ -1663,6 +1728,7 @@ final class FlowConversationModel {
       if let previous = context, !previous.observation.isSameGrant(as: value.observation) {
         parentQuestionRequests.removeAll()
         parentQuestionReads.removeAll()
+        mealQuestionOrigins?.suspend()
         resetHistory()
         currentGroups.removeAll()
         groupRequests.removeAll()

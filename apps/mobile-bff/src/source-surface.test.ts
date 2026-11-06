@@ -272,6 +272,52 @@ function certifyExactSharedTable(
   expect(observed.sort()).toEqual(pins.map(([id, hash]) => `${id}:${hash}`).sort())
   return bodies
 }
+/** T48 imports the existing intake capability predicate into a second route.
+ * Webpack adds only its named export; every preexisting executable byte stays
+ * equal to the independently preserved R63 module, not a normalized body. */
+function certifyT48IntakeCapabilityExport(body: string): void {
+  expect(
+    createHash('sha256')
+      .update(
+        readFileSync(resolve(appRoot, '../admin/src/lib/mobile-api/conversation-intake-routes.ts')),
+      )
+      .digest('hex'),
+  ).toBe('bfca54ddc258bdabf290483ef7a4b9817ca2cdf2bf5ba0bccbbfaae3b076e17c')
+  expect(body.startsWith('(a,b,c)=>{c.d(b,{o:()=>ak,K:()=>an});')).toBe(true)
+  expect(body.split('o:()=>ak,')).toHaveLength(2)
+  expect(createHash('sha256').update(body.replace('o:()=>ak,', '')).digest('hex')).toBe(
+    'bcfdd2d7bb47f1acdc50ebf2f7272d167b2e404523eb98f282dfa2b9239ebfb4',
+  )
+}
+/** New shared read edge, extracted from the previous inline journal entry.
+ * Certify complete current bodies and their unchanged authoritative sources;
+ * keep every physical consumer and global forbidden scan independently checked. */
+function certifyT48OriginPageChunk(chunk: string): void {
+  for (const [name, hash] of [
+    [
+      'conversation-journal-v3-contracts.ts',
+      'b2e87ddb1d6782371c4ec6b09553bd9de58457f53aa9cc5a0cf5e97d63907e12',
+    ],
+    [
+      'conversation-journal-v3-store.ts',
+      '0d8d4c37089a2294c4ce8a5897a47ace7d492c6e5e2bb9b4451b060c29765d42',
+    ],
+    [
+      'conversation-meal-thread-page-store.ts',
+      '49c9d4b0d281f757b4275bbe95f1f83d6426c67e07844dfd44b0ac0c30cdfd40',
+    ],
+  ] as const)
+    expect(
+      createHash('sha256')
+        .update(readFileSync(resolve(appRoot, '../admin/src/lib/mobile-api', name)))
+        .digest('hex'),
+    ).toBe(hash)
+  certifyExactSharedTable(chunk, [
+    ['11127', 'af1048cd20f83493747e07f281dda8c9d5adebf9888864a6460321ab95afc9bf'],
+    ['46469', 'de989ba8a001d564412cfc74ea06cb434909299a19c1dd6cd6af7416e68c1d11'],
+    ['58670', 'c4f78ed80cc83d026c3a0079b132b7951835b782e969029c94fb4129d8c00e1b'],
+  ])
+}
 const photoPurposeRoutesR59 = [
   '/api/mobile/v1/conversation/commands/[commandId]/replies/[replyId]/route',
   '/api/mobile/v1/conversation/commands/[commandId]/replies/route',
@@ -641,6 +687,52 @@ function withSyntheticBuild<T>(
 }
 
 describe('authoritative Mobile API source surface', () => {
+  test('rejects changed or additional modules in the T48 shared read-page extraction', () => {
+    const chunks = semanticChunks([
+      'read_conversation_journal_page_v3',
+      'read_conversation_meal_journal_page_v2',
+    ])
+    expect(chunks).toHaveLength(1)
+    const chunk = chunks[0] ?? '',
+      text = readFileSync(chunk, 'utf8'),
+      root = mkdtempSync(resolve(tmpdir(), 'performe-t48-read-chunk-')),
+      changed = resolve(root, 'chunk.js')
+    try {
+      expect(() => certifyT48OriginPageChunk(chunk)).not.toThrow()
+      for (const mutation of [
+        text.replace('read_conversation_journal_page_v3', 'unapproved_rpc'),
+        text.replace('11127:', '999998:'),
+        text.replace('exports.modules={', 'exports.modules={999999:(a,b,c)=>{},'),
+      ]) {
+        writeFileSync(changed, mutation)
+        expect(() => certifyT48OriginPageChunk(changed)).toThrow()
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+  test('rejects changed exports or executable bytes around the exact T48 intake capability export', () => {
+    const chunks = semanticChunks([
+      'conversation.intake-result.v1',
+      'read_conversation_intake_routing_result',
+      'reconcile_conversation_intake_routing',
+    ])
+    expect(chunks).toHaveLength(1)
+    const bodies = certifyExactSharedTable(chunks[0] ?? '', [
+        ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
+        ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
+        ['50522', 'bced34a3d3a43ba50d1205c55bd2ead6cd4dbc8fc679a8ab5c46e9ed4af692e5'],
+        ['69520', 'fbca2d1d44287900ae260889c29202df5ca7f1128e1122ac5ec8c1c08f633445'],
+      ]),
+      body = bodies.get('69520') ?? ''
+    expect(() => certifyT48IntakeCapabilityExport(body)).not.toThrow()
+    for (const changed of [
+      body.replace('o:()=>ak,', ''),
+      body.replace('o:()=>ak,', 'o:()=>ak,x:()=>ak,'),
+      body.replace('MOBILE_CONVERSATION_INTAKES_ENABLED', 'MOBILE_CONVERSATION_UNREVIEWED'),
+    ])
+      expect(() => certifyT48IntakeCapabilityExport(changed)).toThrow()
+  })
   test('distinguishes an exact legacy RPC from its v3 successor and invalidates changed-file cache', () => {
     const root = mkdtempSync(resolve(tmpdir(), 'performe-exact-rpc-')),
       file = resolve(root, 'rpc.js')
@@ -663,12 +755,20 @@ describe('authoritative Mobile API source surface', () => {
     console.info(`SOURCE_ROUTE_EXPORT_STREAM_SHA256=${hash}`)
 
     expect(records).toHaveLength(91)
-    expect(hash).toBe('1aee269695cf61901f5ecb802e8509ae9004481024926043353d1f7cf32db9f7')
+    expect(hash).toBe('161783e0c88223e0df8271ed658399734242dcb588e16128a3febd70527379a7')
+    const beforeOrigins = records.map((record) =>
+      record.path === 'conversation/intakes/route.ts'
+        ? { ...record, exports: record.exports.filter((name) => name !== 'GET') }
+        : record,
+    )
+    expect(hashRecords(beforeOrigins)).toBe(
+      '1aee269695cf61901f5ecb802e8509ae9004481024926043353d1f7cf32db9f7',
+    )
     expect(
       records.find((record) => record.path === 'conversation/commands/[commandId]/replies/route.ts')
         ?.exports,
     ).toEqual(['GET', 'POST', 'maxDuration', 'runtime'])
-    const prior91 = records.map((record) =>
+    const prior91 = beforeOrigins.map((record) =>
       record.path === 'conversation/commands/[commandId]/replies/route.ts'
         ? { ...record, exports: record.exports.filter((name) => name !== 'GET') }
         : record,
@@ -681,7 +781,7 @@ describe('authoritative Mobile API source surface', () => {
         path: 'conversation/intakes/[intakeId]/route.ts',
         exports: ['GET', 'maxDuration', 'runtime'],
       },
-      { path: 'conversation/intakes/route.ts', exports: ['POST', 'maxDuration', 'runtime'] },
+      { path: 'conversation/intakes/route.ts', exports: ['GET', 'POST', 'maxDuration', 'runtime'] },
       { path: 'conversation/intakes/session/route.ts', exports: ['GET', 'dynamic', 'runtime'] },
     ])
     const prior88 = prior91.filter((record) => !conversationIntakeSourcePaths.has(record.path))
@@ -1712,12 +1812,13 @@ describe('authoritative Mobile API source surface', () => {
         )
         .digest('hex'),
     ).toBe('59468451392c18de6c80d7e4820d1bdb43eee9f5e9043996ecd5e70c8226a044')
-    certifyExactSharedTable(intakeChunk, [
+    const intakeBodies = certifyExactSharedTable(intakeChunk, [
       ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
       ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
       ['50522', 'bced34a3d3a43ba50d1205c55bd2ead6cd4dbc8fc679a8ab5c46e9ed4af692e5'],
-      ['69520', 'bcfdd2d7bb47f1acdc50ebf2f7272d167b2e404523eb98f282dfa2b9239ebfb4'],
+      ['69520', 'fbca2d1d44287900ae260889c29202df5ca7f1128e1122ac5ec8c1c08f633445'],
     ])
+    certifyT48IntakeCapabilityExport(intakeBodies.get('69520') ?? '')
     // Full typed service code remains physically present, including dormant
     // writers. Journal3 invokes only read through its tested closed RPC port.
     certifySharedModule(
@@ -1725,7 +1826,24 @@ describe('authoritative Mobile API source surface', () => {
       'reconcile_conversation_workout',
       '4fccbc5add63f82c43a05756fb7717bfa501b0f19ab0961ccc1e8b002321dd49',
     )
-    expect(runtimeExactStringRoutes('read_conversation_journal_page_v3')).toEqual([journalRoute])
+    // T48's lookup-only GET reuses the same qualified STABLE history reader.
+    // The two new public markers must remain confined to that parent entry;
+    // child intake/session and every unrelated route still lack this RPC.
+    const originsRoute = '/api/mobile/v1/conversation/intakes/route'
+    const originsPageChunk = uniqueChunk([
+      'read_conversation_journal_page_v3',
+      'read_conversation_meal_journal_page_v2',
+    ])
+    certifyT48OriginPageChunk(originsPageChunk)
+    expect(chunkConsumers(originsPageChunk)).toEqual([originsRoute, journalRoute])
+    expect(runtimeExactStringRoutes('read_conversation_journal_page_v3')).toEqual([
+      originsRoute,
+      journalRoute,
+    ])
+    expect(runtimeExactStringRoutes('conversation.meal-question-origins.v1')).toEqual([
+      originsRoute,
+    ])
+    expect(runtimeExactStringRoutes('intake-question-origins-v1')).toEqual([originsRoute])
     expect(
       new Set([
         mealChunk,
@@ -1752,12 +1870,14 @@ describe('authoritative Mobile API source surface', () => {
     for (const [marker, routes] of [
       ['conversation_commands_unavailable', mealCommandConsumers],
       ['read_conversation_meal_journal_page', [...commandRoutes, nutritionWindowAppPath].sort()],
-      ['read_conversation_meal_journal_page_v2', [journalRoute]],
-      ...[
+      ['read_conversation_meal_journal_page_v2', [originsRoute, journalRoute]],
+      [
         'conversation.meal-edit-effect-public.v1',
-        'conversation.meal-group.v1',
-        'conversation.meal-group.v2',
-      ].map((marker) => [marker, [...editRoutes, journalRoute].sort()] as const),
+        [...editRoutes, originsRoute, journalRoute].sort(),
+      ],
+      ...['conversation.meal-group.v1', 'conversation.meal-group.v2'].map(
+        (marker) => [marker, [...editRoutes, journalRoute].sort()] as const,
+      ),
       ...[
         'commit_conversation_meal_item_edit',
         'undo_conversation_meal_item_edit',
@@ -1784,6 +1904,7 @@ describe('authoritative Mobile API source surface', () => {
       expect(runtimeExactStringRoutes(rpc), rpc).toEqual(intakeRoutes)
     for (const route of allBuildRoutes) {
       for (const [chunk, consumers] of [
+        [originsPageChunk, [originsRoute, journalRoute]],
         [mealChunk, mealCommandConsumers],
         [commonChunk, commandRoutes],
         [workoutChunk, [...workoutCommandConsumers, journalRoute].sort()],
@@ -1795,7 +1916,7 @@ describe('authoritative Mobile API source surface', () => {
         expect(
           tracedTargets(route).filter((target) => target === chunk),
           route,
-        ).toHaveLength(consumers.includes(route) ? 1 : 0)
+        ).toHaveLength(consumers.some((consumer) => consumer === route) ? 1 : 0)
     }
     const nutritionJournalSplit = scopeChunk
     const expectedCommandCounts = new Map([
@@ -1811,17 +1932,18 @@ describe('authoritative Mobile API source surface', () => {
             target !== scopeChunk &&
             !(rootRoutes.includes(route) && target === commonChunk) &&
             !purposeEdge(route, target) &&
+            !(route === journalRoute && target === originsPageChunk) &&
             !(route === journalRoute && target === workoutChunk),
         ),
         route,
       ).toHaveLength(count)
     const currentCounts = new Map([
       ...rootRoutes.map((route) => [route, 122] as const),
-      [journalRoute, 124],
+      [journalRoute, 125],
       ...editRoutes.map((route) => [route, 124] as const),
       ...replyRoutes.map((route) => [route, 123] as const),
       ...workoutRoutes.map((route) => [route, 117] as const),
-      ...intakeRoutes.map((route) => [route, 124] as const),
+      ...intakeRoutes.map((route) => [route, route === originsRoute ? 125 : 124] as const),
     ])
     expect([...currentCounts.keys()].sort()).toEqual(commandRoutes)
     for (const [route, count] of currentCounts)
@@ -1840,6 +1962,7 @@ describe('authoritative Mobile API source surface', () => {
           replyChunk,
           publicEditChunk,
           intakeChunk,
+          originsPageChunk,
           ...commandRoutes.map((route) =>
             realpathSync(
               resolve(buildRoot, 'server/app', `${route.slice(1)}_client-reference-manifest.js`),
@@ -1854,11 +1977,14 @@ describe('authoritative Mobile API source surface', () => {
         absorbedReferences(allRoutes),
     ).toBe(8202 + 16 + 104)
     expect(tracedTargets(nutritionWindowAppPath)).toHaveLength(115)
+    // T48 extracts the three unchanged read-page modules certified above into
+    // one new regular file, reached exactly once by each of the two readers.
+    // Preserve the complete pre-T48 totals and account only for those two edges.
     expect(surface.nftReferenceCount).toBe(
-      8202 + 104 - 6 + 3 * 121 + 122 + 3 * 123 + 2 * 122 + 3 * 117 + 3 * 123 + 115 + 28 + 1,
+      8202 + 104 - 6 + 3 * 121 + 122 + 3 * 123 + 2 * 122 + 3 * 117 + 3 * 123 + 115 + 28 + 1 + 2,
     )
-    expect(surface.nftUniqueTargetCount).toBe(217 + 15 + 7 + 1 + 1)
-    expect(surface.nftRegularFileTargetCount).toBe(215 + 15 + 7 + 1 + 1)
+    expect(surface.nftUniqueTargetCount).toBe(217 + 15 + 7 + 1 + 1 + 1)
+    expect(surface.nftRegularFileTargetCount).toBe(215 + 15 + 7 + 1 + 1 + 1)
     expect(surface.nftDirectoryTargetCount).toBe(2)
     const additions = new Set(
       currentClinicalRouteAdditions.map((path) => `/api/mobile/v1/${path.replace(/\.ts$/, '')}`),

@@ -178,6 +178,116 @@ struct FlowNeutralIntakeSelection: Sendable {
   }
 }
 
+/// A bounded lookup observation, never an original intake/ticket or permission
+/// to answer. The genuine current question is fetched separately through T47.
+struct FlowMealQuestionOriginsPageSnapshot: Decodable, Sendable {
+  enum Source: Equatable, Sendable { case text(String), media(caption: String?) }
+  struct Origin: Identifiable, Sendable {
+    let intake: FlowNeutralIntakeBinding
+    let selection: FlowNeutralIntakeSelection
+    let source: Source
+    let pin: Data
+    var id: UUID { intake.intakeID }
+    var eventID: String { "intake/" + id.uuidString.lowercased() }
+    fileprivate init(_ raw: ConversationMealEditJSON, owner: UUID, epoch: UUID, observed: String) throws {
+      let o = try raw.object(["intake", "selection", "source"])
+      intake = try FlowNeutralIntakeBinding(o.required("intake"))
+      selection = try FlowNeutralIntakeSelection(o.required("selection"), binding: intake)
+      try neutralRequire(intake.ownerID == owner && intake.epoch == epoch && selection.child.kind == .meal)
+      for value in [intake.admittedAt, selection.child.admittedAt, selection.selectedAt] {
+        _ = try FlowMealQuestionOriginsPageSnapshot.clock(value)
+        try neutralRequire(neutralInstant(value) <= neutralInstant(observed))
+      }
+      let value = try o.required("source")
+      switch try value.member("channel").string() {
+      case "text":
+        let v = try value.object(["channel", "text"])
+        let text = try v.required("text").string()
+        try neutralRequire(neutralText(text, limit: 2000))
+        source = .text(text)
+      case "media":
+        let v = try value.object(["channel", "caption"])
+        let caption = try v.required("caption").optional { try $0.string() }
+        if let caption { try neutralRequire(neutralText(caption, limit: 1000)) }
+        source = .media(caption: caption)
+      default: throw FlowNeutralIntakeInvalid.value
+      }
+      pin = try raw.data()
+    }
+  }
+  let authUserID: UUID
+  let ownerID: UUID
+  let epoch: UUID
+  let observedAt: String
+  let items: [Origin]
+  let hasMore: Bool
+  let nextCursor: String?
+  init(from decoder: any Decoder) throws {
+    let raw = try ConversationMealEditJSON(from: decoder)
+    try neutralRequire(raw.data().count <= 240_000)
+    let o = try raw.object(["schema", "mode", "auth_user_id", "owner_id", "epoch", "observed_at", "items", "has_more", "next_cursor"])
+    try neutralRequire(o.required("schema").string() == "conversation.meal-question-origins.v1" && o.required("mode").string() == "lookup_only")
+    authUserID = try o.required("auth_user_id").uuid()
+    ownerID = try o.required("owner_id").uuid()
+    epoch = try o.required("epoch").uuid()
+    observedAt = try Self.clock(o.required("observed_at").string())
+    let rows = try o.required("items").array()
+    try neutralRequire(rows.count <= 25)
+    let owner = ownerID, epoch = epoch, observed = observedAt
+    items = try rows.map { try Origin($0, owner: owner, epoch: epoch, observed: observed) }
+    let ids = Set(items.map(\.id)), children = Set(items.map { $0.selection.child.commandID })
+    try neutralRequire(ids.count == items.count && children.count == items.count && ids.isDisjoint(with: children))
+    for (newer, older) in zip(items, items.dropFirst()) {
+      try neutralRequire(Self.precedes(newer.intake.admittedAt, newer.eventID, older.intake.admittedAt, older.eventID))
+    }
+    hasMore = try o.required("has_more").bool()
+    nextCursor = try o.required("next_cursor").optional { try $0.string() }
+    try neutralRequire(hasMore == (nextCursor != nil))
+    if let nextCursor {
+      let anchor = try Self.cursorAnchor(nextCursor, owner: owner, epoch: epoch)
+      try neutralRequire(neutralInstant(anchor.at) <= neutralInstant(observed))
+      for row in items {
+        try neutralRequire((row.intake.admittedAt == anchor.at && row.eventID == anchor.id)
+          || Self.precedes(row.intake.admittedAt, row.eventID, anchor.at, anchor.id))
+      }
+    }
+  }
+  func matches(_ context: ConversationCommandContext) -> Bool {
+    authUserID == context.authUserID && ownerID == context.ownerID && epoch == context.epoch
+  }
+  func follows(cursor: String?) throws -> Bool {
+    guard let cursor else { return true }
+    let anchor = try Self.cursorAnchor(cursor, owner: ownerID, epoch: epoch)
+    if let nextCursor {
+      let next = try Self.cursorAnchor(nextCursor, owner: ownerID, epoch: epoch)
+      guard Self.precedes(anchor.at, anchor.id, next.at, next.id) else { return false }
+    }
+    return items.allSatisfy { Self.precedes(anchor.at, anchor.id, $0.intake.admittedAt, $0.eventID) }
+  }
+  static func precedes(_ a: String, _ aID: String, _ b: String, _ bID: String) -> Bool {
+    guard let first = ConversationProtocolInstant(a), let second = ConversationProtocolInstant(b) else { return false }
+    return first > second || (first == second && bID.utf8.lexicographicallyPrecedes(aID.utf8))
+  }
+  static func cursorAnchor(_ value: String, owner: UUID, epoch: UUID) throws -> (at: String, id: String) {
+    try ConversationJournalV3PageSnapshot.validateCursor(value, ownerID: owner, epoch: epoch)
+    let base = value.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+    guard let bytes = Data(base64Encoded: base + String(repeating: "=", count: (4 - base.count % 4) % 4)) else { throw FlowNeutralIntakeInvalid.value }
+    let o = try JSONDecoder().decode(ConversationMealEditJSON.self, from: bytes).object(["v", "owner_id", "epoch", "at", "id"])
+    let at = try clock(o.required("at").string()), id = try o.required("id").string()
+    let uuid = "[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}"
+    try neutralRequire(id.range(of: "^(?:(?:intake|workout|command)/" + uuid + "|(?:reply|reply-result|fulfillment|edit)/" + uuid + "/" + uuid + ")$", options: .regularExpression) != nil)
+    let canonical = "{\"v\":3,\"owner_id\":\"\(owner.uuidString.lowercased())\",\"epoch\":\"\(epoch.uuidString.lowercased())\",\"at\":\"\(at)\",\"id\":\"\(id)\"}"
+    let encoded = Data(canonical.utf8).base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+    try neutralRequire(encoded == value)
+    return (at, id)
+  }
+  private static func clock(_ value: String) throws -> String {
+    _ = try neutralInstant(value)
+    try neutralRequire(value.range(of: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z$", options: .regularExpression) != nil)
+    return value
+  }
+}
+
 /// A matched factual projection. The caller still needs trusted HTTP status,
 /// original lease/current grant and local CAS before removing or publishing work.
 enum FlowNeutralIntakeFactualAcknowledgement: Sendable {

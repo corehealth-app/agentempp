@@ -85,12 +85,27 @@ describe('current-authority clarification in the fresh mobile server build', () 
       createHash('sha256')
         .update(source.map((record) => `${record.path}\0${record.exports.join(',')}\n`).join(''))
         .digest('hex'),
+    ).toBe('161783e0c88223e0df8271ed658399734242dcb588e16128a3febd70527379a7')
+    expect(
+      source.find((record) => record.path === 'conversation/intakes/route.ts')?.exports,
+    ).toEqual(['GET', 'POST', 'maxDuration', 'runtime'])
+    const beforeOrigins = source.map((record) =>
+      record.path === 'conversation/intakes/route.ts'
+        ? { ...record, exports: record.exports.filter((name) => name !== 'GET') }
+        : record,
+    )
+    expect(
+      createHash('sha256')
+        .update(
+          beforeOrigins.map((record) => `${record.path}\0${record.exports.join(',')}\n`).join(''),
+        )
+        .digest('hex'),
     ).toBe('1aee269695cf61901f5ecb802e8509ae9004481024926043353d1f7cf32db9f7')
     expect(
       source.find((record) => record.path === 'conversation/commands/[commandId]/replies/route.ts')
         ?.exports,
     ).toEqual(['GET', 'POST', 'maxDuration', 'runtime'])
-    const prior91 = source.map((record) =>
+    const prior91 = beforeOrigins.map((record) =>
       record.path === 'conversation/commands/[commandId]/replies/route.ts'
         ? { ...record, exports: record.exports.filter((name) => name !== 'GET') }
         : record,

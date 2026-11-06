@@ -34,13 +34,21 @@ const addedWorkoutRoutes = new Set([
 ])
 const addedIntakeRoutes = new Map([
   ['conversation/intakes/[intakeId]/route.ts', ['GET', 'maxDuration', 'runtime']],
-  ['conversation/intakes/route.ts', ['POST', 'maxDuration', 'runtime']],
+  ['conversation/intakes/route.ts', ['GET', 'POST', 'maxDuration', 'runtime']],
   ['conversation/intakes/session/route.ts', ['GET', 'dynamic', 'runtime']],
 ])
 const nutritionWindowRoute = 'nutrition/window/route.ts'
 const mealQuestionRoute = 'conversation/commands/[commandId]/replies/route.ts'
-function beforeMealQuestionGET(records: RouteRecord[]): RouteRecord[] {
+const originsRoute = 'conversation/intakes/route.ts'
+function beforeOriginsGET(records: RouteRecord[]): RouteRecord[] {
   return records.map((record) =>
+    record.path === originsRoute
+      ? { ...record, exports: record.exports.filter((name) => name !== 'GET') }
+      : record,
+  )
+}
+function beforeMealQuestionGET(records: RouteRecord[]): RouteRecord[] {
+  return beforeOriginsGET(records).map((record) =>
     record.path === mealQuestionRoute
       ? { ...record, exports: record.exports.filter((name) => name !== 'GET') }
       : record,
@@ -191,7 +199,13 @@ function withUnexpectedAuthComposition<T>(
 }
 
 function withNutritionMutation<T>(
-  mutation: 'method' | 'extra-route' | 'question-missing' | 'question-extra',
+  mutation:
+    | 'method'
+    | 'extra-route'
+    | 'question-missing'
+    | 'question-extra'
+    | 'origins-missing'
+    | 'origins-extra',
   inspect: (script: string) => T,
 ): T {
   const root = mkdtempSync(resolve(testDirectory, '../.mobile-bff-nutrition-scope-'))
@@ -211,18 +225,21 @@ function withNutritionMutation<T>(
         mkdirSync(dirname(target), { recursive: true })
         writeFileSync(target, readFileSync(file))
       }
-      if (mutation === 'question-missing' || mutation === 'question-extra') {
-        const target = resolve(to, mealQuestionRoute),
+      if (mutation.startsWith('question-') || mutation.startsWith('origins-')) {
+        const target = resolve(
+            to,
+            mutation.startsWith('origins-') ? originsRoute : mealQuestionRoute,
+          ),
           source = readFileSync(target, 'utf8')
         writeFileSync(
           target,
           from === sourceRoot
-            ? mutation === 'question-missing'
+            ? mutation.endsWith('-missing')
               ? source.replace(/^export const GET =.*\n/gm, '')
               : `${source}\nexport function HEAD() {}\n`
             : source.replace(
                 'GET, POST',
-                mutation === 'question-missing' ? 'POST' : 'GET, HEAD, POST',
+                mutation.endsWith('-missing') ? 'POST' : 'GET, HEAD, POST',
               ),
         )
       } else if (mutation === 'method') {
@@ -247,6 +264,20 @@ function withNutritionMutation<T>(
 
 describe('dedicated Mobile BFF wrapper mirror', () => {
   test.each([
+    'origins-missing',
+    'origins-extra',
+  ] as const)('rejects a changed cold-origin method: %s', (mutation) => {
+    withNutritionMutation(mutation, (script) => {
+      const result = spawnSync(process.execPath, [script], { encoding: 'utf8', timeout: 30_000 })
+      expect(result.status).toBe(1)
+      for (const surface of ['SOURCE', 'WRAPPER'])
+        expect(result.stderr).toContain(
+          `ROUTE_MIRROR_ERROR=${surface}_INTAKE_EXPORTS:${originsRoute}:`,
+        )
+      expect(result.stdout).not.toContain('ROUTE_MIRROR_STATUS=VERIFIED')
+    })
+  })
+  test.each([
     'question-missing',
     'question-extra',
   ] as const)('rejects a changed parent-only question method: %s', (mutation) => {
@@ -262,6 +293,9 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
     for (const records of [sourceRecords(), wrapperRecords()]) {
       expect(records).toHaveLength(91)
       expect(hashRecords(records)).toBe(
+        '161783e0c88223e0df8271ed658399734242dcb588e16128a3febd70527379a7',
+      )
+      expect(hashRecords(beforeOriginsGET(records))).toBe(
         '1aee269695cf61901f5ecb802e8509ae9004481024926043353d1f7cf32db9f7',
       )
       expect(
@@ -435,7 +469,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
       count: 84,
       hash: 'c3635c150461af36b4593ce6c2f7621e59a19a2e45482b50ad82f1f6c022cd2b',
       prior88Hash: '11cb5dc130ca668a61a0c3a8d692c3a82ee66b9090e199ba2313aef3a1e81010',
-      currentHash: '75dec280108bfade9b139aee97ceff237dccfbaf3d63df401dcf9abbef7b0569',
+      currentHash: '7bdf1d9d8197552d45937b3ce0d6ef86a41419adac10710c4280938e2c1c3ab3',
     },
     {
       name: 'Unapproved Auth added alongside clarification',
@@ -443,7 +477,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
       count: 85,
       hash: '18329037e36d0abc3dc1cf713945338caffce15b37fd214fd50567484c3dcc91',
       prior88Hash: 'c31e1667bb9a9056a820f87f669f4c7dca3400ca13c15b8eb904931244080805',
-      currentHash: '32fcca3a4c4a1b963472f09a0c89a7d6a421dffed47aca358e7629fc625d39b9',
+      currentHash: '47057eb1c2abf6439f67dbb56fc82d44d94e0fed97d1d15b877e80675baf5529',
     },
   ])('rejects $name through the closed inventory', ({
     replace,
@@ -491,7 +525,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
     expect(result.stdout).toContain('WRAPPER_ROUTE_EXPORT_COUNT=91')
     for (const surface of ['SOURCE', 'WRAPPER']) {
       expect(result.stdout).toContain(
-        `${surface}_ROUTE_EXPORT_STREAM_SHA256=1aee269695cf61901f5ecb802e8509ae9004481024926043353d1f7cf32db9f7`,
+        `${surface}_ROUTE_EXPORT_STREAM_SHA256=161783e0c88223e0df8271ed658399734242dcb588e16128a3febd70527379a7`,
       )
     }
     for (const surface of ['SOURCE', 'WRAPPER']) {
@@ -525,7 +559,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
 
     const hash = hashRecords(wrappers)
     console.info(`WRAPPER_ROUTE_EXPORT_STREAM_SHA256=${hash}`)
-    expect(hash).toBe('1aee269695cf61901f5ecb802e8509ae9004481024926043353d1f7cf32db9f7')
+    expect(hash).toBe('161783e0c88223e0df8271ed658399734242dcb588e16128a3febd70527379a7')
   })
 
   test.each([...boundedConversationRoutes])('declares bounded timeout locally for %s', (path) => {

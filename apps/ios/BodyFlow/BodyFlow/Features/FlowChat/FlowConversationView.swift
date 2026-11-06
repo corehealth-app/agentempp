@@ -288,6 +288,9 @@ struct FlowConversationView: View {
           )
           .foregroundStyle(BodyFlowColor.secondaryText)
         }
+        if model.mealQuestionOrigins != nil {
+          FlowConversationMealQuestionOriginsContent(model: model)
+        }
         ForEach(model.savedRows) { row in savedCard(row) }
         if let neutral = model.neutralIntake {
           FlowNeutralIntakeTranscriptContent(

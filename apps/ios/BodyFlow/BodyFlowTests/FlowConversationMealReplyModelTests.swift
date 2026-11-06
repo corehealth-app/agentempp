@@ -818,3 +818,515 @@ extension ConversationMealParentQuestionTests {
     await model.close()
   }
 }
+
+@MainActor @Suite("Cold meal question origins remain lookup-only", .serialized)
+struct ConversationMealQuestionOriginsTests {
+  @Test func coldEmptyOutboxAndRAMRecoverCurrentQuantityWithoutAnotherReport() async throws {
+    let f = try ReplyControllerFixture(); defer { f.disk.remove() }
+    await f.http.lifecycle.replace(f.disk.lease)
+    let server = try NeutralParentQuestionUnitServer()
+    let origins = try coldOriginsContractUnitPage()
+    let originHTTP = try coldOriginsContractUnitHTTP(origins)
+    await f.http.stub.respond { request, _ in
+      if request.httpMethod == "GET", request.url?.path == "/api/mobile/v1/conversation/intakes" { return originHTTP }
+      return try await server.reply(request)
+    }
+    let model = try await FlowConversationModel.open(transport: f.http.transport, lifecycle: f.http.lifecycle, store: f.disk.store, keyVault: .init(security: f.keys), linkedReplies: true, historyVersion: .v3, neutralIntakeEnabled: true)
+    await model.refreshConversation()
+    let neutral = try #require(model.neutralIntake)
+    #expect(neutral.pendingRows.isEmpty && neutral.terminalRows.isEmpty && neutral.savedRows.isEmpty)
+    let id = try #require(UUID(uuidString: ((origins["items"] as! [[String: Any]])[0]["intake"] as! [String: Any])["intake_id"] as! String))
+    #expect(model.canReadNeutralMealQuestion(intakeID: id))
+    await model.beginNeutralMealReply(intakeID: id)
+    #expect(model.mealReplies?.question?.kind == "quantity")
+    #expect(model.mealReplies?.pendingIntent == nil && model.savedEffectRevision == 0)
+    #expect(neutral.pendingRows.isEmpty && neutral.terminalRows.isEmpty)
+    #expect(await f.http.stub.requests.allSatisfy { $0.httpMethod == "GET" && $0.httpBody == nil })
+    await model.close()
+  }
+}
+
+/// Synthetic public-contract JSON only. This does not claim private-parser,
+/// PostgreSQL or connected HTTP provenance. Real projected fixtures are separate.
+func coldOriginsContractUnitPage() throws -> [String: Any] {
+  let parent = try frozenParentQuestionUnit("quantity")
+  let packet = try selectedParentPacketUnit(parent)
+  return ["schema": "conversation.meal-question-origins.v1", "mode": "lookup_only", "auth_user_id": parent["auth_user_id"]!, "owner_id": parent["owner_id"]!, "epoch": parent["epoch"]!, "observed_at": parent["observed_at"]!, "items": [["intake": packet["intake"]!, "selection": packet["selection"]!, "source": ["channel": "text", "text": "comi arroz"]]], "has_more": false, "next_cursor": NSNull()]
+}
+func coldOriginsContractUnitHTTP(_ page: [String: Any]) throws -> ConversationHTTPReply {
+  .init(status: 200, body: try neutralData(["data": page, "meta": ["api_version": "v1", "request_id": "synthetic-origins-contract"]]), headers: ["Content-Type": "application/json", "X-Conversation-Protocol": "intake-question-origins-v1", "Cache-Control": "no-store"])
+}
+
+func coldOriginsProjectedUnitRoot() throws -> [String: Any] {
+  #if SWIFT_PACKAGE
+  let url = try #require(Bundle.module.url(forResource: "ConversationMealQuestionOriginsPublicUnitFixtures", withExtension: "json"))
+  #else
+  let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/ConversationMealQuestionOriginsPublicUnitFixtures.json")
+  #endif
+  let bytes = try Data(contentsOf: url)
+  #expect(ConversationMealCommand.digest(bytes) == "60f980ead12835eda94f05f80c5c140fdcd86dd55264bb295299a56f3cfc3d3e")
+  return try JSONSerialization.jsonObject(with: bytes) as! [String: Any]
+}
+func coldOriginsProjectedUnitPage() throws -> [String: Any] { try coldOriginsProjectedUnitRoot()["data"] as! [String: Any] }
+
+@MainActor struct ColdOriginsNativeFixture {
+  let http: ConversationHTTPFixture
+  let disk: OutboxDiskFixture
+  let keys: OutboxKeychainFake
+  let lease: SessionLease
+  let server: ColdOriginsScopedUnitServer
+  func open() async throws -> FlowConversationModel {
+    try await FlowConversationModel.open(transport: http.transport, lifecycle: http.lifecycle, store: disk.store, keyVault: .init(security: keys), linkedReplies: true, historyVersion: .v3, neutralIntakeEnabled: true, expectedLease: lease)
+  }
+}
+@MainActor func coldOriginsNativeFixture() async throws -> ColdOriginsNativeFixture {
+  let root = try coldOriginsProjectedUnitRoot(), page = root["data"] as! [String: Any]
+  let http = try ConversationHTTPFixture(), disk = try OutboxDiskFixture()
+  let lease = SessionLease(userID: page["auth_user_id"] as! String, generation: 7, bearer: "synthetic-cold-origins")
+  await http.lifecycle.replace(lease)
+  let server = try ColdOriginsScopedUnitServer(root: neutralData(root))
+  await http.stub.respond { request, _ in try await server.reply(request) }
+  return .init(http: http, disk: disk, keys: OutboxKeychainFake(), lease: lease, server: server)
+}
+
+/// UNIT HTTP boundary over the unchanged private-parser/service projection.
+/// Synthetic response transitions/ACKs below are contract tests, never actual
+/// PostgreSQL, connected HTTP, provider, six-section or domain-effect evidence.
+actor ColdOriginsScopedUnitServer {
+  let originalPage: Data
+  let heads: [String: Data]
+  private var pages: [String: Data]
+  private var headOverrides: [String: Data] = [:]
+  private var savedReplies: [String: Data] = [:]
+  private var closedParents: Set<String> = []
+  private var originsGate: ConversationControllerBarrier?
+  private var headGate: ConversationControllerBarrier?
+  private var loseReply = false
+  private var includeClosedOrigins = false
+  init(root: Data) throws {
+    let raw = try JSONSerialization.jsonObject(with: root) as! [String: Any]
+    originalPage = try neutralData(raw["data"]!)
+    pages = ["first": originalPage]
+    var heads: [String: Data] = [:]
+    for value in (raw["parent_heads"] as! [String: [String: Any]]).values {
+      heads[value["parent_command_id"] as! String] = try neutralData(value)
+    }
+    self.heads = heads
+  }
+  func setPage(_ bytes: Data, cursor: String? = nil) { pages[cursor ?? "first"] = bytes }
+  func setHead(_ bytes: Data, parentID: UUID) { headOverrides[parentID.uuidString.lowercased()] = bytes }
+  func holdOrigins(_ barrier: ConversationControllerBarrier) { originsGate = barrier }
+  func holdHead(_ barrier: ConversationControllerBarrier) { headGate = barrier }
+  func loseNextReply() { loseReply = true }
+  func exposeStaleClosedOriginLabels() { includeClosedOrigins = true }
+  func reply(_ request: URLRequest) async throws -> ConversationHTTPReply {
+    let url = try #require(request.url), path = url.path
+    let page = try JSONSerialization.jsonObject(with: originalPage) as! [String: Any]
+    if path.hasSuffix("/session") {
+      let intake = path.contains("intakes")
+      var session: [String: Any] = ["schema": intake ? "conversation.intake-session.v1" : "conversation.session.v1", "auth_user_id": page["auth_user_id"]!, "owner_id": page["owner_id"]!, "epoch": page["epoch"]!, "observed_at": page["observed_at"]!]
+      session[intake ? "intake_protocol" : "meal_command_protocol"] = intake ? "conversation.intake.v1" : "conversation.command.v1"
+      var reply = try neutralHTTP(session)
+      reply.headers["X-Conversation-Protocol"] = intake ? "intake-v1" : "meal-command-v1"
+      return reply
+    }
+    if path == "/api/mobile/v1/conversation/intakes", request.httpMethod == "GET" {
+      if let gate = originsGate { originsGate = nil; await gate.enter() }
+      let cursor = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "cursor" }?.value
+      let bytes = try #require(pages[cursor ?? "first"])
+      var projected = try JSONSerialization.jsonObject(with: bytes) as! [String: Any]
+      let rows = projected["items"] as! [[String: Any]]
+      projected["items"] = rows.filter { includeClosedOrigins || !closedParents.contains((($0["selection"] as! [String: Any])["command"] as! [String: Any])["command_id"] as! String) }
+      return try coldOriginsContractUnitHTTP(projected)
+    }
+    if path == "/api/mobile/v1/conversation/journal" { return .init(status: 200, body: try journal(page)) }
+    let components = path.split(separator: "/").map(String.init)
+    guard let commands = components.firstIndex(of: "commands"), components.count > commands + 2 else { throw URLError(.badURL) }
+    let parentID = components[commands + 1]
+    if request.httpMethod == "GET", path.hasSuffix("/replies") {
+      if let gate = headGate { headGate = nil; await gate.enter() }
+      var p = try JSONSerialization.jsonObject(with: #require(headOverrides[parentID] ?? heads[parentID])) as! [String: Any]
+      if closedParents.contains(parentID) { p["status"] = "closed"; p["question"] = NSNull(); p["reason"] = "parent_fulfilled"; p["head_revision"] = (p["head_revision"] as! Int) + 1 }
+      return try parentReadHTTP(p)
+    }
+    if request.httpMethod == "POST", path.hasSuffix("/replies") {
+      let body = try #require(request.httpBody)
+      let input = try JSONSerialization.jsonObject(with: body) as! [String: Any]
+      let head = try JSONSerialization.jsonObject(with: #require(heads[parentID])) as! [String: Any]
+      let id = input["reply_id"] as! String
+      let raw = try JSONDecoder().decode(ConversationMealEditJSON.self, from: neutralData(input["input"]!))
+      let hash = try ConversationMealCommand.digest(Data(ConversationMealEditOperation.canonicalJSON(raw).utf8))
+      let answer = (input["input"] as! [String: Any])["answer"] as! [String: Any]
+      // Only the initial meal-type example is used for this synthetic saved ACK.
+      guard answer["kind"] as? String == "meal_type" else { throw URLError(.badServerResponse) }
+      var receipt = try ReplySessionFixture.payload("saved")["receipt"] as! [String: Any]
+      receipt["owner_id"] = page["owner_id"]; receipt["command_id"] = id; receipt["input_hash"] = hash
+      receipt["epoch"] = page["epoch"]; receipt["parent_command_id"] = parentID
+      receipt["parent_input_hash"] = head["parent_input_hash"]; receipt["parent_decision_hash"] = head["parent_decision_hash"]
+      receipt["provider_key"] = "conversation.clarification/\(page["owner_id"] as! String)/\(parentID)"
+      receipt["meal_type"] = answer["meal_type"]; receipt["consumed_at"] = page["observed_at"]
+      let child: [String: Any] = ["owner_id": page["owner_id"]!, "command_id": id, "input_hash": hash, "command_protocol": "conversation.clarification.v1", "kind": "meal.clarify", "epoch": page["epoch"]!, "admitted_at": page["observed_at"]!]
+      let p: [String: Any] = ["schema": "conversation.meal-reply-result.v1", "auth_user_id": page["auth_user_id"]!, "owner_id": page["owner_id"]!, "epoch": page["epoch"]!, "parent_command_id": parentID, "parent_input_hash": head["parent_input_hash"]!, "parent_decision_hash": head["parent_decision_hash"]!, "parent_binding": head["parent_binding"]!, "reply_id": id, "reply_input_hash": hash, "child_binding": child, "observed_at": page["observed_at"]!, "status": "saved", "receipt": receipt, "question": NSNull(), "reason": NSNull(), "feedback": NSNull()]
+      let bytes = try neutralData(p)
+      savedReplies[id] = bytes; closedParents.insert(parentID)
+      if loseReply { loseReply = false; throw URLError(.networkConnectionLost) }
+      return try replyHTTP(bytes)
+    }
+    if request.httpMethod == "GET", let id = components.last, let saved = savedReplies[id] { return try replyHTTP(saved) }
+    throw URLError(.badURL)
+  }
+  private func replyHTTP(_ payload: Data) throws -> ConversationHTTPReply {
+    .init(status: 200, body: try neutralData(["data": JSONSerialization.jsonObject(with: payload), "meta": ["api_version": "v1", "request_id": "synthetic-cold-linked-ack"]]), headers: ["Content-Type": "application/json", ConversationFeedbackPresentationSelection.header: "2"])
+  }
+  private func journal(_ page: [String: Any]) throws -> Data {
+    var entries: [[String: Any]] = []
+    for bytes in savedReplies.values {
+      let saved = try JSONSerialization.jsonObject(with: bytes) as! [String: Any], receipt = saved["receipt"] as! [String: Any]
+      let parent = saved["parent_command_id"] as! String, child = saved["reply_id"] as! String
+      let origin = (page["items"] as! [[String: Any]]).first { ((($0["selection"] as! [String: Any])["command"] as! [String: Any])["command_id"] as! String) == parent }!
+      let intakeID = (origin["intake"] as! [String: Any])["intake_id"] as! String
+      let record = receipt.filter { ["registration_id", "meal_type", "local_date", "log_ids", "effect_version"].contains($0.key) }.merging(["kind": "meal"]) { _, next in next }
+      entries.append(["event_id": "fulfillment/\(parent)/\(child)", "at": receipt["consumed_at"]!, "thread_id": intakeID, "kind": "fulfillment", "lineage": ["kind": "meal.clarify", "intake_id": intakeID, "command_id": child, "parent_command_id": parent, "origin_epoch": page["epoch"]!], "input": NSNull(), "outcome": ["status": "registered", "feedback": NSNull(), "record": record]])
+    }
+    entries.sort { ($0["event_id"] as! String) > ($1["event_id"] as! String) }
+    return try neutralData(["data": ["schema": "conversation.journal-page.v3", "mode": "historical", "auth_user_id": page["auth_user_id"]!, "owner_id": page["owner_id"]!, "epoch": page["epoch"]!, "observed_at": page["observed_at"]!, "items": entries, "has_more": false, "next_cursor": NSNull()], "meta": ["api_version": "v1", "request_id": "synthetic-cold-journal"]])
+  }
+}
+
+extension ConversationMealQuestionOriginsTests {
+  @Test func projectedDistinctInitialOriginsOpenBothRealFormsAfterReopen() async throws {
+    let f = try await coldOriginsNativeFixture(); defer { f.disk.remove() }
+    let first = try await f.open(); await first.refreshConversation(); await first.close()
+    let model = try await f.open(); await model.refreshConversation()
+    #expect(model.neutralIntake?.pendingRows.isEmpty == true && model.neutralIntake?.terminalRows.isEmpty == true)
+    #expect(model.recoveredMealQuestionOrigins.count == 2)
+    for row in model.recoveredMealQuestionOrigins {
+      await model.beginNeutralMealReply(intakeID: row.id)
+      #expect(model.mealReplies?.question?.kind == (row.id.uuidString.lowercased().hasSuffix("91") ? "meal_type" : "quantity"))
+      #expect(model.mealReplies?.pendingIntent == nil)
+      model.mealReplies?.dismiss()
+    }
+    let reads = await f.http.stub.requests.filter { $0.url?.path.hasSuffix("/replies") == true }
+    #expect(reads.count == 2 && reads.allSatisfy { $0.httpMethod == "GET" })
+    #expect(await f.http.stub.requests.allSatisfy { $0.httpMethod == "GET" && $0.httpBody == nil })
+    #expect(model.savedEffectRevision == 0)
+    await model.close()
+  }
+
+  @Test func closedOriginsDecoderRejectsPrivateAuthorityAndBrokenLineage() throws {
+    let page = try coldOriginsProjectedUnitPage()
+    let good = try JSONDecoder().decode(FlowMealQuestionOriginsPageSnapshot.self, from: neutralData(page))
+    #expect(good.items.count == 2 && good.authUserID != good.ownerID)
+    for patch: [String: Any] in [["mode": "historical"], ["question_key": String(repeating: "a", count: 64)], ["has_more": true], ["observed_at": "2026-11-04T12:02:00Z"]] {
+      let wrong = page.merging(patch) { _, next in next }
+      #expect(throws: (any Error).self) { try JSONDecoder().decode(FlowMealQuestionOriginsPageSnapshot.self, from: neutralData(wrong)) }
+    }
+    for kind in ["duplicate", "out_of_order", "owner", "epoch", "child_id", "child_hash", "kind", "future", "false_media", "question_authority", "descendant"] {
+      var wrong = page, rows = page["items"] as! [[String: Any]]
+      var item = rows[0], intake = item["intake"] as! [String: Any], selection = item["selection"] as! [String: Any], child = selection["command"] as! [String: Any]
+      switch kind {
+      case "duplicate": rows[1] = item
+      case "out_of_order": rows.reverse()
+      case "owner": intake["owner_id"] = UUID().uuidString.lowercased(); item["intake"] = intake; rows[0] = item
+      case "epoch": wrong["epoch"] = UUID().uuidString.lowercased()
+      case "child_id": child["command_id"] = intake["intake_id"]; selection["command"] = child; item["selection"] = selection; rows[0] = item
+      case "child_hash": child["input_hash"] = "not-a-hash"; selection["command"] = child; item["selection"] = selection; rows[0] = item
+      case "kind": child["kind"] = "workout.report"; selection["kind"] = "workout.report"; selection["command"] = child; item["selection"] = selection; rows[0] = item
+      case "future": selection["selected_at"] = "2026-11-05T12:02:00.000001Z"; item["selection"] = selection; rows[0] = item
+      case "false_media": item["source"] = ["channel": "media", "caption": NSNull(), "media_asset_id": UUID().uuidString.lowercased()]; rows[0] = item
+      case "question_authority": item["question"] = ["revision": 0, "question_key": String(repeating: "a", count: 64)]; rows[0] = item
+      default: item["kind"] = "fulfillment"; rows[0] = item
+      }
+      wrong["items"] = rows
+      #expect(throws: (any Error).self) { try JSONDecoder().decode(FlowMealQuestionOriginsPageSnapshot.self, from: neutralData(wrong)) }
+    }
+    var media = page, rows = page["items"] as! [[String: Any]]
+    rows[0]["source"] = ["channel": "media", "caption": NSNull()]; media["items"] = rows
+    let parsed = try JSONDecoder().decode(FlowMealQuestionOriginsPageSnapshot.self, from: neutralData(media))
+    #expect(parsed.items[0].source == .media(caption: nil))
+  }
+
+  @Test func originHeaderContractRejectsDuplicateUnknownForeignAndRetryRequests() throws {
+    let p = try coldOriginsProjectedUnitPage()
+    let owner = UUID(uuidString: p["owner_id"] as! String)!, epoch = UUID(uuidString: p["epoch"] as! String)!
+    func request(_ query: [URLQueryItem], replay: MobileAPIUnauthorizedReplay = .never) throws -> MobileAPIRequest<FlowMealQuestionOriginsPageSnapshot> {
+      try .init(method: .get, path: "/api/mobile/v1/conversation/intakes", queryItems: query, conversation: .intakeQuestionOrigins(epoch: epoch, ownerID: owner), unauthorizedReplay: replay)
+    }
+    _ = try request([])
+    for query in [[URLQueryItem(name: "limit", value: "0")], [.init(name: "limit", value: "01")], [.init(name: "limit", value: "26")], [.init(name: "limit", value: "10"), .init(name: "limit", value: "10")], [.init(name: "version", value: "3")], [.init(name: "cursor", value: "opaque")]] {
+      #expect(throws: (any Error).self) { try request(query) }
+    }
+    #expect(throws: (any Error).self) { try request([], replay: .standard) }
+    let foreign = coldOriginsUnitCursor(owner: UUID(), epoch: epoch)
+    #expect(throws: (any Error).self) { try request([.init(name: "cursor", value: foreign)]) }
+  }
+
+  @Test func emptyOriginPageKeepsExplicitOlderPageActionAndNeverAutoScans() async throws {
+    let f = try await coldOriginsNativeFixture(); defer { f.disk.remove() }
+    let page = try coldOriginsProjectedUnitPage(), owner = UUID(uuidString: page["owner_id"] as! String)!, epoch = UUID(uuidString: page["epoch"] as! String)!
+    let cursor = coldOriginsUnitCursor(owner: owner, epoch: epoch)
+    var empty = page; empty["items"] = [] as [Any]; empty["has_more"] = true; empty["next_cursor"] = cursor
+    await f.server.setPage(try neutralData(empty)); await f.server.setPage(try neutralData(page), cursor: cursor)
+    let model = try await f.open(); await model.refreshConversation()
+    #expect(model.recoveredMealQuestionOrigins.isEmpty && model.mealQuestionOrigins?.hasMore == true)
+    #expect(await f.http.stub.requests.filter { $0.url?.path == "/api/mobile/v1/conversation/intakes" }.count == 1)
+    #if canImport(UIKit)
+    let host = SignUpRenderingProbe.host(FlowConversationMealQuestionOriginsContent(model: model), width: 390, height: 600)
+    #expect(host.nodes().contains { $0.identifier == "conversation.origins.more" && $0.isEnabled })
+    host.detach()
+    #endif
+    await model.loadMealQuestionOrigins(reset: false)
+    #expect(model.recoveredMealQuestionOrigins.count == 2 && model.mealQuestionOrigins?.hasMore == false)
+    let request = try #require(await f.http.stub.requests.last { $0.url?.path == "/api/mobile/v1/conversation/intakes" })
+    let url = try #require(request.url)
+    #expect(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains(.init(name: "cursor", value: cursor)) == true)
+    #expect(await f.http.stub.requests.allSatisfy { $0.httpMethod == "GET" })
+    await model.close()
+  }
+
+  @Test func sameTextDistinctIntakesRemainDistinctAndClosedHeadPrunesOnlyItsOrigin() async throws {
+    let f = try await coldOriginsNativeFixture(); defer { f.disk.remove() }
+    var page = try coldOriginsProjectedUnitPage(), rows = page["items"] as! [[String: Any]]
+    // Contract-only label counterfactual; not a new private-parser/SQL fixture.
+    for i in rows.indices { rows[i]["source"] = ["channel": "text", "text": "Mesmo relato"] }
+    page["items"] = rows; await f.server.setPage(try neutralData(page))
+    let model = try await f.open(); await model.refreshConversation()
+    #expect(model.recoveredMealQuestionOrigins.count == 2)
+    let first = try #require(model.recoveredMealQuestionOrigins.first)
+    let root = try coldOriginsProjectedUnitRoot(), heads = root["parent_heads"] as! [String: [String: Any]]
+    var closed = heads[first.id.uuidString.lowercased()]!
+    closed["status"] = "closed"; closed["question"] = NSNull(); closed["reason"] = "parent_fulfilled"; closed["head_revision"] = 1
+    await f.server.setHead(try neutralData(closed), parentID: first.selection.child.commandID)
+    await model.beginNeutralMealReply(intakeID: first.id)
+    #expect(model.mealReplies?.presentation == nil && model.recoveredMealQuestionOrigins.count == 1)
+    await model.loadMealQuestionOrigins()
+    #expect(model.recoveredMealQuestionOrigins.count == 1 && !model.canReadNeutralMealQuestion(intakeID: first.id))
+    #expect(await f.http.stub.requests.allSatisfy { $0.httpMethod == "GET" })
+    await model.close()
+  }
+
+  @Test func freshHeadCannotSubstituteRoutingHashOrWrongChildHash() async throws {
+    for kind in ["routing", "child_hash"] {
+      let f = try await coldOriginsNativeFixture(); defer { f.disk.remove() }
+      let model = try await f.open(); await model.refreshConversation()
+      let origin = try #require(model.recoveredMealQuestionOrigins.first)
+      let root = try coldOriginsProjectedUnitRoot(), heads = root["parent_heads"] as! [String: [String: Any]]
+      var wrong = heads[origin.id.uuidString.lowercased()]!
+      if kind == "routing" { wrong["parent_decision_hash"] = origin.selection.decisionHash }
+      else {
+        wrong["parent_input_hash"] = String(repeating: "f", count: 64)
+        var binding = wrong["parent_binding"] as! [String: Any]; binding["input_hash"] = wrong["parent_input_hash"]; wrong["parent_binding"] = binding
+      }
+      await f.server.setHead(try neutralData(wrong), parentID: origin.selection.child.commandID)
+      await model.beginNeutralMealReply(intakeID: origin.id)
+      #expect(model.mealReplies?.presentation == nil && model.mealReplies?.pendingIntent == nil)
+      #expect(await f.http.stub.requests.allSatisfy { $0.httpMethod == "GET" })
+      await model.close()
+    }
+  }
+
+  @Test func canceledOriginReadAndAccountReplacementCannotPublishOldLabelsOrForms() async throws {
+    for switchAccount in [false, true] {
+      let f = try await coldOriginsNativeFixture(); defer { f.disk.remove() }
+      let model = try await f.open(), barrier = ConversationControllerBarrier()
+      await f.server.holdOrigins(barrier)
+      let reading = Task { await model.refreshConversation(); await barrier.finish() }
+      #expect(await barrier.waitEnteredOrFinished())
+      if switchAccount {
+        model.invalidateSynchronously()
+        await f.http.lifecycle.replace(.init(userID: UUID().uuidString.lowercased(), generation: 8, bearer: "synthetic-next"))
+      } else { model.cancelTransientWork() }
+      await barrier.release(); await reading.value
+      #expect(model.recoveredMealQuestionOrigins.isEmpty && model.mealReplies?.presentation == nil)
+      #expect(await f.http.stub.requests.allSatisfy { $0.httpMethod == "GET" })
+      await model.close()
+    }
+  }
+
+  @Test func resettingOriginPageWhileHeadWaitsCannotOpenLateForm() async throws {
+    let f = try await coldOriginsNativeFixture(); defer { f.disk.remove() }
+    let model = try await f.open(); await model.refreshConversation()
+    let origin = try #require(model.recoveredMealQuestionOrigins.first), barrier = ConversationControllerBarrier()
+    await f.server.holdHead(barrier)
+    let reading = Task { await model.beginNeutralMealReply(intakeID: origin.id); await barrier.finish() }
+    #expect(await barrier.waitEnteredOrFinished())
+    await model.loadMealQuestionOrigins()
+    await barrier.release(); await reading.value
+    #expect(model.mealReplies?.presentation == nil && model.neutralMealQuestion(intakeID: origin.id) == nil)
+    await model.close()
+  }
+
+  @Test func coldProtectedAnswerWinsOverOriginsAndExactGetPublishesOneEffect() async throws {
+    let f = try await coldOriginsNativeFixture(); defer { f.disk.remove() }
+    let a = try await f.open(); await a.refreshConversation()
+    let origin = try #require(a.recoveredMealQuestionOrigins.first { $0.id.uuidString.lowercased().hasSuffix("91") })
+    await a.beginNeutralMealReply(intakeID: origin.id)
+    let replies = try #require(a.mealReplies); replies.mealType = .almoco
+    await f.server.loseNextReply(); await replies.submit()
+    let original = try #require(replies.pendingIntent), owner = try ConversationOutboxOwner(lease: f.lease)
+    let cipher = try Data(contentsOf: f.disk.store.fileURL(owner: owner))
+    #expect(replies.canCheckStatus && a.savedEffectRevision == 0)
+    await a.close()
+    let b = try await f.open(); await b.refreshConversation()
+    let restored = try #require(b.mealReplies)
+    try restored.presentPending(replyID: original.replyID)
+    #expect(restored.pendingIntent?.wireBody == original.wireBody && restored.pendingIntent?.idempotencyKey == original.idempotencyKey)
+    #expect(try Data(contentsOf: f.disk.store.fileURL(owner: owner)) == cipher)
+    let other = try #require(b.recoveredMealQuestionOrigins.first)
+    #expect(!b.canReadNeutralMealQuestion(intakeID: other.id))
+    await b.beginNeutralMealReply(intakeID: other.id)
+    #expect(restored.pendingIntent?.wireBody == original.wireBody && restored.canCheckStatus)
+    await restored.checkStatus()
+    #expect(restored.lastDelivered?.receipt != nil && b.savedEffectRevision == 1)
+    await b.loadHistory()
+    #expect(!b.hasUnpublishedLinkedDelivery && b.unifiedRows.filter { $0.kind == .fulfillment }.count == 1)
+    await b.refreshConversation()
+    #expect(b.savedEffectRevision == 1)
+    let posts = await f.http.stub.requests.filter { $0.httpMethod == "POST" }
+    #expect(posts.count == 1 && posts[0].url?.path.hasSuffix("/replies") == true && posts[0].httpBody == original.wireBody)
+    #expect(posts[0].value(forHTTPHeaderField: "Idempotency-Key") == original.idempotencyKey)
+    await b.close()
+  }
+}
+
+/// Canonical existing journal3 cursor framing for a controlled unrelated event.
+/// It is a query token in UNIT tests, not server selection/question authority.
+func coldOriginsUnitCursor(owner: UUID, epoch: UUID, at: String = "2026-11-04T12:01:00.000001Z") -> String {
+  let raw = "{\"v\":3,\"owner_id\":\"\(owner.uuidString.lowercased())\",\"epoch\":\"\(epoch.uuidString.lowercased())\",\"at\":\"\(at)\",\"id\":\"workout/10000000-0000-4000-8000-000000000077\"}"
+  return Data(raw.utf8).base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+}
+
+extension ConversationMealQuestionOriginsTests {
+  @Test func knownReconciledParentCannotReappearFromAnOlderOriginObservation() async throws {
+    let f = try await coldOriginsNativeFixture(); defer { f.disk.remove() }
+    let a = try await f.open(); await a.refreshConversation()
+    let first = try #require(a.recoveredMealQuestionOrigins.first)
+    await a.beginNeutralMealReply(intakeID: first.id)
+    let replies = try #require(a.mealReplies); replies.mealType = .almoco
+    await f.server.loseNextReply(); await replies.submit()
+    let original = try #require(replies.pendingIntent)
+    await a.close()
+    let b = try await f.open(); await b.refreshConversation()
+    let restored = try #require(b.mealReplies)
+    try restored.presentPending(replyID: original.replyID); await restored.checkStatus()
+    #expect(restored.lastDelivered?.receipt != nil && b.recoveredMealQuestionOrigins.count == 1)
+    // A controlled older lookup projection may arrive after the genuine ACK.
+    // Its observed source labels must never re-open that fulfilled parent.
+    await f.server.exposeStaleClosedOriginLabels(); await b.loadMealQuestionOrigins()
+    #expect(b.recoveredMealQuestionOrigins.count == 1 && !b.canReadNeutralMealQuestion(intakeID: first.id))
+    #expect(b.savedEffectRevision == 1)
+    await b.close()
+  }
+
+  @Test func originsRepositoryRequiresCurrentScopeClockProtocolAndNoRetry() async throws {
+    for kind in ["valid", "protocol", "cache", "status", "auth", "owner", "epoch", "clock", "unauthorized", "switch"] {
+      let f = try await coldOriginsNativeFixture(); defer { f.disk.remove() }
+      let pair = try coldOriginsUnitGrant(f), repo = try await MobileConversationIntakeRepository.scoped(transport: f.http.transport, lease: f.lease)
+      var page = try coldOriginsProjectedUnitPage()
+      if kind == "auth" { page["auth_user_id"] = UUID().uuidString.lowercased() }
+      if kind == "owner" { page["owner_id"] = UUID().uuidString.lowercased() }
+      if kind == "epoch" { page["epoch"] = UUID().uuidString.lowercased() }
+      if kind == "clock" { page["observed_at"] = "2026-11-04T12:02:00.000001Z" }
+      var http = try coldOriginsContractUnitHTTP(page)
+      if kind == "protocol" { http.headers["X-Conversation-Protocol"] = "intake-v1" }
+      if kind == "cache" { http.headers.removeValue(forKey: "Cache-Control") }
+      if kind == "status" { http = .init(status: 202, body: http.body, headers: http.headers) }
+      if kind == "unauthorized" { http = .failure(401, "invalid_access_token") }
+      let response = http
+      await f.http.stub.respond { _, _ in
+        if kind == "switch" { await f.http.lifecycle.replace(.init(userID: UUID().uuidString.lowercased(), generation: 8, bearer: "synthetic-next")) }
+        return response
+      }
+      if kind == "valid" {
+        let data = try await repo.questionOrigins(context: pair.context)
+        #expect(data.items.count == 2 && data.authUserID != data.ownerID)
+      } else {
+        await #expect(throws: (any Error).self) { try await repo.questionOrigins(context: pair.context) }
+      }
+      let requests = await f.http.stub.requests
+      #expect(requests.count == 1 && requests[0].httpMethod == "GET" && requests[0].httpBody == nil)
+      #expect(requests[0].value(forHTTPHeaderField: "X-Conversation-Protocol") == "intake-question-origins-v1")
+      #expect(requests[0].value(forHTTPHeaderField: "X-Conversation-Owner") == pair.context.ownerID.uuidString.lowercased())
+      #expect(requests[0].value(forHTTPHeaderField: "X-Conversation-Epoch") == pair.context.epoch.uuidString.lowercased())
+      #expect(requests[0].value(forHTTPHeaderField: "Idempotency-Key") == nil && requests[0].value(forHTTPHeaderField: "X-Conversation-Input-Hash") == nil)
+    }
+  }
+
+  @Test func staleGrantAndInvalidPageLimitCannotReadOrPublishAnOrigin() async throws {
+    let f = try await coldOriginsNativeFixture(); defer { f.disk.remove() }
+    let repo = try await MobileConversationIntakeRepository.scoped(transport: f.http.transport, lease: f.lease)
+    let pair = try coldOriginsUnitGrant(f)
+    await #expect(throws: (any Error).self) { try await repo.questionOrigins(limit: 0, context: pair.context) }
+    let foreign = coldOriginsUnitCursor(owner: UUID(), epoch: pair.context.epoch)
+    await #expect(throws: (any Error).self) { try await repo.questionOrigins(cursor: foreign, context: pair.context) }
+    #expect(await f.http.stub.requests.isEmpty)
+    let response = try coldOriginsContractUnitHTTP(coldOriginsProjectedUnitPage())
+    await f.http.stub.respond { _, _ in _ = try pair.authority.beginRefresh(); return response }
+    await #expect(throws: (any Error).self) { try await repo.questionOrigins(context: pair.context) }
+    #expect(await f.http.stub.requests.count == 1)
+  }
+
+  @Test func replayedEmptyCursorStopsWithoutAutomaticPagination() async throws {
+    let f = try await coldOriginsNativeFixture(); defer { f.disk.remove() }
+    var page = try coldOriginsProjectedUnitPage()
+    let cursor = coldOriginsUnitCursor(owner: UUID(uuidString: page["owner_id"] as! String)!, epoch: UUID(uuidString: page["epoch"] as! String)!)
+    page["items"] = [] as [Any]; page["has_more"] = true; page["next_cursor"] = cursor
+    await f.server.setPage(try neutralData(page)); await f.server.setPage(try neutralData(page), cursor: cursor)
+    let model = try await f.open(); await model.refreshConversation(); await model.loadMealQuestionOrigins(reset: false)
+    #expect(model.recoveredMealQuestionOrigins.isEmpty && model.mealQuestionOrigins?.unavailable == true)
+    #expect(await f.http.stub.requests.filter { $0.url?.path == "/api/mobile/v1/conversation/intakes" }.count == 2)
+    #expect(await f.http.stub.requests.allSatisfy { $0.httpMethod == "GET" })
+    await model.close()
+  }
+
+  #if canImport(UIKit)
+  @Test func actualFlowRefreshTaskLoadsOriginsAndNativeRecoveryControlsUseDistinctIds() async throws {
+    let f = try await coldOriginsNativeFixture(); defer { f.disk.remove() }
+    let model = try await f.open()
+    let shell = SignUpRenderingProbe.host(FlowConversationView(model: model), width: 390, height: 1200)
+    defer { shell.detach() }
+    shell.settle()
+    for _ in 0..<100 {
+      if model.recoveredMealQuestionOrigins.count == 2 { break }
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(model.recoveredMealQuestionOrigins.count == 2)
+    #expect(await f.http.stub.requests.contains { $0.url?.path == "/api/mobile/v1/conversation/intakes" && $0.httpMethod == "GET" })
+    // The existing AX probe cannot read a ScrollView's descendants. Inspect
+    // the same real mounted component directly, retaining the shell task proof.
+    let content = SignUpRenderingProbe.host(FlowConversationMealQuestionOriginsContent(model: model), width: 390, height: 1000)
+    defer { content.detach() }
+    let nodes = content.nodes(), buttons = nodes.filter { $0.identifier.hasPrefix("conversation.origins.answer.") }
+    #expect(buttons.count == 2 && Set(buttons.map(\.identifier)).count == 2 && buttons.allSatisfy(\.isEnabled))
+    #expect(nodes.contains { $0.label == "Comi 200 mL de leite" } && nodes.contains { $0.label == "Comi leite" })
+    #expect(await f.http.stub.requests.allSatisfy { $0.httpMethod == "GET" })
+    await model.close()
+  }
+  #endif
+}
+
+/// Explicit controlled test grant, independent of origin-body authority.
+@MainActor func coldOriginsUnitGrant(_ f: ColdOriginsNativeFixture) throws -> (context: ConversationCommandContext, authority: ConversationOutboxObservationAuthority) {
+  let page = try coldOriginsProjectedUnitPage(), authority = ConversationOutboxObservationAuthority()
+  let id = try authority.beginRefresh()
+  let context = ConversationCommandContext(observation: try authority.accept(refreshID: id,
+    authUserID: UUID(uuidString: f.lease.userID)!, ownerID: UUID(uuidString: page["owner_id"] as! String)!, localSessionGeneration: f.lease.generation, epoch: UUID(uuidString: page["epoch"] as! String)!), observedAt: page["observed_at"] as! String)
+  return (context, authority)
+}
+
+extension ConversationMealQuestionOriginsTests {
+  @Test func emptyCandidatePageCannotMoveCursorBackTowardNewerHistory() async throws {
+    let f = try await coldOriginsNativeFixture(); defer { f.disk.remove() }
+    var page = try coldOriginsProjectedUnitPage()
+    let owner = UUID(uuidString: page["owner_id"] as! String)!, epoch = UUID(uuidString: page["epoch"] as! String)!
+    let first = coldOriginsUnitCursor(owner: owner, epoch: epoch)
+    let backwards = coldOriginsUnitCursor(owner: owner, epoch: epoch, at: "2026-11-04T12:01:30.000001Z")
+    page["items"] = [] as [Any]; page["has_more"] = true; page["next_cursor"] = first
+    await f.server.setPage(try neutralData(page))
+    page["next_cursor"] = backwards; await f.server.setPage(try neutralData(page), cursor: first)
+    let model = try await f.open(); await model.refreshConversation(); await model.loadMealQuestionOrigins(reset: false)
+    #expect(model.recoveredMealQuestionOrigins.isEmpty && model.mealQuestionOrigins?.unavailable == true)
+    #expect(await f.http.stub.requests.filter { $0.url?.path == "/api/mobile/v1/conversation/intakes" }.count == 2)
+    await model.close()
+  }
+}

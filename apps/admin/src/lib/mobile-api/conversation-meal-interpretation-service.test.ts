@@ -11,6 +11,7 @@ import {
 import { bindConversationCommand } from './conversation-command-contracts'
 import type { ConversationMealInterpretation } from './conversation-meal-interpretation-contracts'
 import { interpretPersistedConversationMeal } from './conversation-meal-interpretation-service'
+import { createOpenRouterConversationMealInterpreter } from './conversation-meal-interpreter'
 import { MobileApiError } from './http'
 
 const attemptId = '10000000-0000-4000-8000-000000000010'
@@ -236,6 +237,48 @@ describe('actual durable meal interpretation composition', () => {
     )
     expect(d.store.commit).not.toHaveBeenCalled()
     expect(d.interpreter.interpret).toHaveBeenCalledTimes(1)
+  })
+  it('marks a real validation failure unknown once and never pays again on its durable read', async () => {
+    const d = dependencies(),
+      sink = vi.fn(),
+      complete = vi.fn(async () => ({
+        content: JSON.stringify({ private_model_output: 'secret-sentinel' }),
+        toolCalls: [],
+        model: 'anthropic/claude-haiku-4.5',
+        promptTokens: 100,
+        completionTokens: 100,
+        totalTokens: 200,
+        costUsd: null,
+        latencyMs: 100,
+        finishReason: 'stop' as const,
+      })),
+      interpreter = createOpenRouterConversationMealInterpreter('synthetic', { complete }, sink)
+    d.interpreter.interpret.mockImplementation(interpreter.interpret)
+    d.store.read
+      .mockResolvedValueOnce({ action: 'absent' })
+      .mockResolvedValue(record('reconciliation_required', 'unknown'))
+    await expect(run(d)).rejects.toMatchObject({ status: 409 })
+    await expect(run(d)).rejects.toMatchObject({ status: 409 })
+    expect(sink.mock.calls).toEqual([
+      [
+        {
+          event: 'conversation_meal_interpreter_failure',
+          stage: 'validation',
+          error_name: 'MobileApiError',
+          http_status: 503,
+          validation_reason: 'model_schema',
+        },
+      ],
+    ])
+    expect(d.store.markUnknown).toHaveBeenCalledTimes(1)
+    expect(d.store.markUnknown).toHaveBeenCalledWith(
+      candidateCommand(),
+      attemptId,
+      'provider_outcome_unknown',
+    )
+    expect(d.store.commit).not.toHaveBeenCalled()
+    for (const call of [complete, d.store.start, d.sources.capture, d.journal.admit])
+      expect(call).toHaveBeenCalledTimes(1)
   })
   it('does not persist a returned interpretation belonging to another source', async () => {
     const d = dependencies()

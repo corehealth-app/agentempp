@@ -444,6 +444,262 @@ describe('closed semantic interpreter input and result', () => {
     }
     expect(complete).toHaveBeenCalledTimes(1)
   })
+  it.each([
+    {
+      name: 'unknown model field',
+      reason: 'model_schema',
+      mutate: (model: MealInterpretationModelResult) =>
+        Object.assign(model, { private_output: 'secret-sentinel' }),
+    },
+    {
+      name: 'source unit mismatch',
+      reason: 'source_units',
+      mutate: (model: MealInterpretationModelResult) => {
+        at(model.sources).unit = 'media_caption'
+      },
+    },
+    {
+      name: 'visual classification on text',
+      reason: 'source_shape',
+      mutate: (model: MealInterpretationModelResult) => {
+        at(model.sources).classification = 'visual'
+      },
+    },
+    {
+      name: 'partition gap',
+      reason: 'span_partition',
+      mutate: (model: MealInterpretationModelResult) => {
+        at(at(model.sources).spans).start = 1
+      },
+    },
+    {
+      name: 'out of range end',
+      reason: 'span_range',
+      mutate: (model: MealInterpretationModelResult) => {
+        at(at(model.sources).spans).end = 10
+      },
+    },
+    {
+      name: 'non-dense occurrence',
+      reason: 'occurrence_binding',
+      mutate: (model: MealInterpretationModelResult) => {
+        at(model.foods).index = 1
+      },
+    },
+    {
+      name: 'reference without exact span',
+      reason: 'reference_binding',
+      mutate: (model: MealInterpretationModelResult) => {
+        at(model.foods).name = { unit: 'command_text', start: 0, end: 4 }
+      },
+    },
+    {
+      name: 'reference splits a word',
+      reason: 'token_boundary',
+      mutate: (model: MealInterpretationModelResult) => {
+        at(at(model.sources).spans).end = 4
+        at(at(model.sources).spans, 1).start = 4
+        at(model.foods).name = { unit: 'command_text', start: 0, end: 4 }
+        at(model.foods).quantity = { unit: 'command_text', start: 4, end: 8 }
+      },
+    },
+  ])('reports only the static validation reason for $name', async ({ reason, mutate }) => {
+    const f = textSource('arroz200g'),
+      source = buildConversationMealInterpretationSource(f.command, f.capture),
+      model = modelFor('arroz200g', [{ name: 'arroz', quantity: '200', unit: 'g' }]),
+      sink = vi.fn()
+    mutate(model)
+    const complete = vi.fn(async (_params: LLMCallParams) => providerResult(model)),
+      interpreter = createOpenRouterConversationMealInterpreter('synthetic', { complete }, sink)
+    await expect(
+      interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 }),
+    ).rejects.toMatchObject({
+      status: 503,
+      code: 'conversation_meal_interpretation_unavailable',
+      message: 'Meal interpretation is unavailable',
+    })
+    expect(sink.mock.calls).toEqual([
+      [
+        {
+          event: 'conversation_meal_interpreter_failure',
+          stage: 'validation',
+          error_name: 'MobileApiError',
+          http_status: 503,
+          validation_reason: reason,
+        },
+      ],
+    ])
+    expect(complete).toHaveBeenCalledTimes(1)
+    expect(complete.mock.calls[0]?.[0]).toMatchObject({ maxRetries: 0 })
+  })
+  it('reports visual binding failures without exposing the item or index', async () => {
+    const f = mediaSource('meal_photo'),
+      source = buildConversationMealInterpretationSource(f.command, f.capture),
+      model = photoResult(source),
+      sink = vi.fn()
+    at(model.foods).visual_index = 1
+    const interpreter = createOpenRouterConversationMealInterpreter(
+      'synthetic',
+      {
+        complete: async () => providerResult(model),
+      },
+      sink,
+    )
+    await expect(
+      interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 }),
+    ).rejects.toMatchObject({ status: 503 })
+    expect(sink.mock.calls).toEqual([
+      [
+        {
+          event: 'conversation_meal_interpreter_failure',
+          stage: 'validation',
+          error_name: 'MobileApiError',
+          http_status: 503,
+          validation_reason: 'visual_binding',
+        },
+      ],
+    ])
+  })
+  it('classifies direct source and oversized-model failures before later checks', () => {
+    const f = textSource('x'.repeat(2000)),
+      source = buildConversationMealInterpretationSource(f.command, f.capture),
+      model: MealInterpretationModelResult = {
+        schema: 'conversation.meal-interpretation.v1',
+        decision: 'clarification_required',
+        reason: 'ambiguous',
+        sources: [
+          {
+            unit: 'command_text',
+            classification: 'ambiguous',
+            visual_indexes: [],
+            spans: Array.from({ length: 3000 }, (_, start) => ({
+              start,
+              end: start + 1,
+              kind: 'other',
+              food_index: null,
+            })),
+          },
+        ],
+        foods: [],
+      },
+      invalidSource = structuredClone(source),
+      onFailure = vi.fn()
+    at(invalidSource.sources).text = ''
+    expect(() =>
+      validateConversationMealInterpretationModel(model, invalidSource, onFailure),
+    ).toThrow('Meal interpretation is unavailable')
+    expect(interpretationModelSchema.safeParse(model).success).toBe(true)
+    expect(Buffer.byteLength(JSON.stringify(model))).toBeGreaterThan(131072)
+    expect(() => validateConversationMealInterpretationModel(model, source, onFailure)).toThrow(
+      'Meal interpretation is unavailable',
+    )
+    expect(onFailure.mock.calls).toEqual([['source_contract'], ['model_envelope']])
+  })
+  it('isolates a throwing failure callback and classifies unexpected validator exceptions', () => {
+    const f = textSource('arroz200g'),
+      source = buildConversationMealInterpretationSource(f.command, f.capture),
+      model = modelFor('arroz200g', [{ name: 'arroz', quantity: '200', unit: 'g' }]),
+      onFailure = vi.fn(() => {
+        throw new Error('private-callback-sentinel')
+      }),
+      normalize = vi.spyOn(String.prototype, 'normalize').mockImplementation(() => {
+        throw new Error('private-internal-sentinel')
+      })
+    try {
+      expect(() => validateConversationMealInterpretationModel(model, source, onFailure)).toThrow(
+        'Meal interpretation is unavailable',
+      )
+      expect(onFailure.mock.calls).toEqual([['validation_internal']])
+    } finally {
+      normalize.mockRestore()
+    }
+    onFailure.mockClear()
+    expect(() =>
+      validateConversationMealInterpretationModel({ private_output: 'secret' }, source, onFailure),
+    ).toThrow('Meal interpretation is unavailable')
+    expect(onFailure.mock.calls).toEqual([['model_schema']])
+  })
+  it('keeps valid results and semantic downgrades unchanged without a failure callback', () => {
+    for (const text of ['arroz200g', 'Sonhei que comi arroz200g']) {
+      const f = textSource(text),
+        source = buildConversationMealInterpretationSource(f.command, f.capture),
+        model = modelFor(text, [{ name: 'arroz', quantity: '200', unit: 'g' }]),
+        onFailure = vi.fn(),
+        result = validateConversationMealInterpretationModel(model, source, onFailure)
+      expect(result).toEqual(
+        text === 'arroz200g'
+          ? model
+          : {
+              schema: 'conversation.meal-interpretation.v1',
+              decision: 'clarification_required',
+              reason: 'ambiguous',
+              sources: [
+                {
+                  unit: 'command_text',
+                  classification: 'ambiguous',
+                  spans: [{ start: 0, end: 25, kind: 'other', food_index: null }],
+                  visual_indexes: [],
+                },
+              ],
+              foods: [],
+            },
+      )
+      expect(Object.isFrozen(result)).toBe(true)
+      expect(onFailure).not.toHaveBeenCalled()
+    }
+  })
+  it('keeps concurrent failure reasons local and tolerates a throwing diagnostic sink', async () => {
+    const f = textSource('arroz200g'),
+      source = buildConversationMealInterpretationSource(f.command, f.capture),
+      model = modelFor('arroz200g', [{ name: 'arroz', quantity: '200', unit: 'g' }]),
+      resolve: ((result: LLMResult) => void)[] = [],
+      complete = vi.fn(
+        () =>
+          new Promise<LLMResult>((done) => {
+            resolve.push(done)
+          }),
+      ),
+      sink = vi.fn(() => {
+        throw new Error('private-sink-sentinel')
+      }),
+      interpreter = createOpenRouterConversationMealInterpreter('synthetic', { complete }, sink),
+      calls = Promise.allSettled([
+        interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 }),
+        interpreter.interpret(source, { attemptId: id, remainingMs: 1000 }),
+      ])
+    at(model.sources).spans.pop()
+    at(resolve, 1)(providerResult(model))
+    at(resolve)(providerResult({ private_output: 'secret', validation_reason: 'untrusted-secret' }))
+    const outcomes = await calls
+    expect(outcomes).toEqual([
+      expect.objectContaining({
+        status: 'rejected',
+        reason: expect.objectContaining({
+          status: 503,
+          code: 'conversation_meal_interpretation_unavailable',
+        }),
+      }),
+      expect.objectContaining({
+        status: 'rejected',
+        reason: expect.objectContaining({
+          status: 503,
+          code: 'conversation_meal_interpretation_unavailable',
+        }),
+      }),
+    ])
+    expect(sink.mock.calls).toEqual(
+      ['span_partition', 'model_schema'].map((validation_reason) => [
+        {
+          event: 'conversation_meal_interpreter_failure',
+          stage: 'validation',
+          error_name: 'MobileApiError',
+          http_status: 503,
+          validation_reason,
+        },
+      ]),
+    )
+    expect(complete).toHaveBeenCalledTimes(2)
+  })
   it('records only the provider stage, whitelisted SDK name and HTTP status for a secret-bearing 401', async () => {
     const f = textSource('arroz200g'),
       source = buildConversationMealInterpretationSource(f.command, f.capture),
@@ -506,7 +762,15 @@ describe('closed semantic interpreter input and result', () => {
       stage,
     })
     for (const key of Object.keys(sink.mock.calls[0]?.[0]))
-      expect(['error_name', 'event', 'http_status', 'stage']).toContain(key)
+      expect([
+        'error_name',
+        'event',
+        'http_status',
+        'stage',
+        ...(stage === 'validation' ? ['validation_reason'] : []),
+      ]).toContain(key)
+    if (stage === 'validation')
+      expect(sink.mock.calls[0]?.[0].validation_reason).toBe('model_schema')
     for (const value of [
       owner,
       id,

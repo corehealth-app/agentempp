@@ -9,6 +9,25 @@ import {
   validateConversationMealInterpretationSource,
 } from './conversation-meal-interpretation-contracts'
 
+// Closed diagnostic vocabulary only; never derived from source/model values.
+export const mealInterpretationValidationReasons = Object.freeze([
+  'source_contract',
+  'model_schema',
+  'model_envelope',
+  'source_units',
+  'source_shape',
+  'span_partition',
+  'span_range',
+  'occurrence_binding',
+  'reference_binding',
+  'token_boundary',
+  'visual_binding',
+  'validation_internal',
+] as const)
+export type MealInterpretationValidationReason =
+  (typeof mealInterpretationValidationReasons)[number]
+type Reject = (reason: MealInterpretationValidationReason) => never
+
 type Ref = NonNullable<MealInterpretationModelResult['foods'][number]['name']>
 const plain = (s: string) =>
   s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/gu, ' ').trim()
@@ -19,7 +38,7 @@ function boundary(text: string, at: number): boolean {
     right = text.charCodeAt(at)
   return !(left >= 0xd800 && left <= 0xdbff && right >= 0xdc00 && right <= 0xdfff)
 }
-function range(text: string, start: number, end: number) {
+function range(text: string, start: number, end: number, reject: Reject) {
   if (
     start < 0 ||
     end <= start ||
@@ -27,10 +46,10 @@ function range(text: string, start: number, end: number) {
     !boundary(text, start) ||
     !boundary(text, end)
   )
-    return interpretationUnavailable()
+    return reject('span_range')
 }
-function tokenEdges(text: string, ref: Ref) {
-  range(text, ref.start, ref.end)
+function tokenEdges(text: string, ref: Ref, reject: Reject) {
+  range(text, ref.start, ref.end, reject)
   const before = text[ref.start - 1] ?? '',
     first = text[ref.start] ?? '',
     last = text[ref.end - 1] ?? '',
@@ -41,7 +60,7 @@ function tokenEdges(text: string, ref: Ref) {
     (/\d/u.test(before) && /\d/u.test(first)) ||
     (/\d/u.test(last) && /\d/u.test(after))
   )
-    return interpretationUnavailable()
+    return reject('token_boundary')
 }
 const disallowedNominal = new Set(
   'nao nunca jamais nem sem menos mais porem mas ou talvez sera seria sonhei sonhava sonhoque imaginei imaginava penso pensei pretendo planejo vou iria irei comer beber tomar comi comeu comemos comeram comia comem como bebi bebeu tomei tomou consumir consumi ingerir ingeri devorei queria quero gostaria costumo costumava geralmente normalmente sempre ontem amanha anteontem depois antes ele ela eles elas eu voce meu minha nosso nossa filho filha marido esposa disse falou relatou contou que se quando enquanto porque portanto please ignore instructions system assistant user dream dreamed dreamt imagine imagined will would want wanted eat ate eating drink drank usually always never not he she they said told if when tomorrow yesterday'.split(
@@ -149,27 +168,46 @@ function unclear(source: ConversationMealInterpretationSource): MealInterpretati
 export function validateConversationMealInterpretationModel(
   raw: unknown,
   originalSource: ConversationMealInterpretationSource,
+  onFailure?: (reason: MealInterpretationValidationReason) => void,
 ): MealInterpretationModelResult {
+  let failureReason: MealInterpretationValidationReason = 'validation_internal'
+  const reject: Reject = (reason) => {
+    failureReason = reason
+    return interpretationUnavailable()
+  }
   try {
-    const source = validateConversationMealInterpretationSource(originalSource)
-    const copy = structuredClone(raw),
+    let source: ConversationMealInterpretationSource
+    try {
+      source = validateConversationMealInterpretationSource(originalSource)
+    } catch {
+      return reject('source_contract')
+    }
+    let copy: unknown, result: MealInterpretationModelResult
+    try {
+      copy = structuredClone(raw)
       result = interpretationModelSchema.parse(copy)
+    } catch {
+      return reject('model_schema')
+    }
     if (
       !isDeepStrictEqual(copy, result) ||
-      Buffer.byteLength(JSON.stringify(result), 'utf8') > MEAL_INTERPRETATION_MAX_BYTES ||
+      Buffer.byteLength(JSON.stringify(result), 'utf8') > MEAL_INTERPRETATION_MAX_BYTES
+    )
+      return reject('model_envelope')
+    if (
       !isDeepStrictEqual(
         result.sources.map((s) => s.unit),
         source.source_units,
       )
     )
-      return interpretationUnavailable()
+      return reject('source_units')
     const spans = new Map<string, { kind: string; food_index: number | null }>(),
       used = new Set<string>()
     const snippet = new Map(source.sources.map((s) => [s.unit, s]))
     const key = (unit: string, start: number, end: number) => `${unit}:${start}:${end}`
     for (const s of result.sources) {
       const input = snippet.get(s.unit)
-      if (!input) return interpretationUnavailable()
+      if (!input) return reject('source_units')
       if (s.unit === 'vision_items') {
         if (
           input.text !== null ||
@@ -180,7 +218,7 @@ export function validateConversationMealInterpretationModel(
             input.visual_items.map((_, i) => i),
           )
         )
-          return interpretationUnavailable()
+          return reject('source_shape')
         continue
       }
       if (
@@ -190,28 +228,28 @@ export function validateConversationMealInterpretationModel(
         s.classification === 'visual' ||
         s.spans.length > input.text.length
       )
-        return interpretationUnavailable()
+        return reject('source_shape')
       let cursor = 0
       let activeFood: number | null = null
       const closedFoods = new Set<number>()
       for (const span of s.spans) {
-        if (span.start !== cursor) return interpretationUnavailable()
-        range(input.text, span.start, span.end)
+        if (span.start !== cursor) return reject('span_partition')
+        range(input.text, span.start, span.end, reject)
         cursor = span.end
         if (span.food_index !== null && span.food_index >= result.foods.length)
-          return interpretationUnavailable()
+          return reject('occurrence_binding')
         if (!['food', 'quantity', 'unit'].includes(span.kind) && span.food_index !== null)
-          return interpretationUnavailable()
+          return reject('occurrence_binding')
         // A quantity/unit cannot jump across another occurrence and return.
         // This rejects swapped amounts even when all independent refs are valid.
         if (span.food_index !== null && span.food_index !== activeFood) {
-          if (closedFoods.has(span.food_index)) return interpretationUnavailable()
+          if (closedFoods.has(span.food_index)) return reject('occurrence_binding')
           if (activeFood !== null) closedFoods.add(activeFood)
           activeFood = span.food_index
         }
         spans.set(key(s.unit, span.start, span.end), span)
       }
-      if (cursor !== input.text.length) return interpretationUnavailable()
+      if (cursor !== input.text.length) return reject('span_partition')
     }
     const readRef = (ref: Ref, kind: string, index: number) => {
       const input = snippet.get(ref.unit),
@@ -225,8 +263,8 @@ export function validateConversationMealInterpretationModel(
         span.food_index !== index ||
         used.has(k)
       )
-        return interpretationUnavailable()
-      tokenEdges(input.text, ref)
+        return reject('reference_binding')
+      tokenEdges(input.text, ref, reject)
       used.add(k)
       return input.text.slice(ref.start, ref.end)
     }
@@ -239,7 +277,7 @@ export function validateConversationMealInterpretationModel(
         (!food.name && food.visual_index === null) ||
         (food.unit !== null && food.quantity === null)
       )
-        return interpretationUnavailable()
+        return reject('occurrence_binding')
       if (food.name) {
         const name = readRef(food.name, 'food', index)
         if (!nominal(name)) safe = false
@@ -252,15 +290,15 @@ export function validateConversationMealInterpretationModel(
       if (food.quantity && !quantity(readRef(food.quantity, 'quantity', index))) safe = false
       if (food.unit && !units.test(plain(readRef(food.unit, 'unit', index)))) safe = false
       if (food.quantity && food.name && food.quantity.unit !== food.name.unit)
-        return interpretationUnavailable()
+        return reject('occurrence_binding')
       if (food.unit && food.quantity && food.unit.unit !== food.quantity.unit)
-        return interpretationUnavailable()
+        return reject('occurrence_binding')
       if (food.quantity && food.name && !food.unit && food.quantity.start === food.name.end)
         safe = false
       if (food.visual_index !== null) {
         const items = snippet.get('vision_items')?.visual_items
         if (!items || food.visual_index >= items.length || visual.has(food.visual_index))
-          return interpretationUnavailable()
+          return reject('visual_binding')
         visual.add(food.visual_index)
         const item = items[food.visual_index]
         if (
@@ -278,7 +316,7 @@ export function validateConversationMealInterpretationModel(
       }
     }
     for (const [k, span] of spans)
-      if (span.food_index !== null && !used.has(k)) return interpretationUnavailable()
+      if (span.food_index !== null && !used.has(k)) return reject('reference_binding')
     if (result.decision !== 'reported_meal') {
       if (
         positives.has(result.reason) ||
@@ -290,7 +328,7 @@ export function validateConversationMealInterpretationModel(
     if (!result.foods.length || !positives.has(result.reason)) return unclear(source)
     for (const s of result.sources) {
       const input = snippet.get(s.unit)
-      if (!input) return interpretationUnavailable()
+      if (!input) return reject('source_units')
       if (s.unit === 'vision_items') {
         if (visual.size !== input.visual_items.length) safe = false
         continue
@@ -331,6 +369,11 @@ export function validateConversationMealInterpretationModel(
     if (result.reason === 'explicit_media_action' && !source.media_binding) safe = false
     return safe ? freezeInterpretation(result) : unclear(source)
   } catch {
+    try {
+      onFailure?.(failureReason)
+    } catch {
+      // Observation cannot change rejection or authorize another attempt.
+    }
     return interpretationUnavailable()
   }
 }

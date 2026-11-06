@@ -13,7 +13,11 @@ import {
   mealInterpretationSchema,
   validateConversationMealInterpretationSource,
 } from './conversation-meal-interpretation-contracts'
-import { validateConversationMealInterpretationModel } from './conversation-meal-interpretation-validation'
+import {
+  type MealInterpretationValidationReason,
+  mealInterpretationValidationReasons,
+  validateConversationMealInterpretationModel,
+} from './conversation-meal-interpretation-validation'
 import { readJsonBody } from './http'
 import { MEAL_TEXT_EXTRACTION_MODEL } from './meal-text-extractor'
 
@@ -68,6 +72,7 @@ export interface ConversationMealInterpreterDiagnostic {
   readonly stage: 'source' | 'provider' | 'decode' | 'validation' | 'result'
   readonly error_name: (typeof diagnosticErrorNames)[number] | 'UnknownError'
   readonly http_status?: number
+  readonly validation_reason?: MealInterpretationValidationReason
 }
 type DiagnosticSink = (diagnostic: ConversationMealInterpreterDiagnostic) => void
 
@@ -84,6 +89,7 @@ function reportFailure(
   stage: ConversationMealInterpreterDiagnostic['stage'],
   error: unknown,
   sink: DiagnosticSink,
+  validationReason?: MealInterpretationValidationReason,
 ): void {
   // Inspect data descriptors only: no getters, stringification, messages,
   // stacks, codes, headers, bodies, source IDs or provider output can escape.
@@ -100,6 +106,13 @@ function reportFailure(
       event: 'conversation_meal_interpreter_failure',
       stage,
       error_name: diagnosticErrorNames.find((allowed) => allowed === name) ?? 'UnknownError',
+      ...(stage === 'validation'
+        ? {
+            validation_reason:
+              mealInterpretationValidationReasons.find((allowed) => allowed === validationReason) ??
+              'validation_internal',
+          }
+        : {}),
       ...(typeof status === 'number' && Number.isInteger(status) && status >= 100 && status <= 599
         ? { http_status: status }
         : {}),
@@ -166,6 +179,7 @@ export function createOpenRouterConversationMealInterpreter(
       invocation: { attemptId: string; remainingMs: number },
     ): Promise<ConversationMealInterpretation> {
       let stage: ConversationMealInterpreterDiagnostic['stage'] = 'source'
+      let validationReason: MealInterpretationValidationReason | undefined
       try {
         const source = validateConversationMealInterpretationSource(originalSource),
           job = invocationSchema.parse(structuredClone(invocation))
@@ -198,7 +212,9 @@ export function createOpenRouterConversationMealInterpreter(
         const reply = structuredClone(providerReply),
           decoded = await decode(reply)
         stage = 'validation'
-        const model = validateConversationMealInterpretationModel(decoded, source)
+        const model = validateConversationMealInterpretationModel(decoded, source, (reason) => {
+          validationReason = reason
+        })
         stage = 'result'
         const value = mealInterpretationSchema.parse({
           ...model,
@@ -230,7 +246,7 @@ export function createOpenRouterConversationMealInterpreter(
           return interpretationUnavailable()
         return freezeInterpretation(value)
       } catch (error) {
-        reportFailure(stage, error, diagnosticSink)
+        reportFailure(stage, error, diagnosticSink, validationReason)
         return interpretationUnavailable()
       }
     },

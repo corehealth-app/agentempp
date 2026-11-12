@@ -106,6 +106,7 @@ final class FlowConversationModel {
   private(set) var mealEditor: FlowConversationMealEditModel?
   private(set) var mealReplies: FlowConversationMealReplyModel?
   private(set) var neutralIntake: FlowNeutralIntakeModel?
+  private var deferredConversationRefresh = false
   private(set) var mealQuestionOrigins: FlowMealQuestionOriginsModel?
   private var closedMealQuestionIntakes: Set<UUID> = []
   private struct MealQuestionReference {
@@ -218,6 +219,12 @@ final class FlowConversationModel {
   var captureContext: ConversationCommandContext.Identity? {
     if let neutralIntake { return hasCurrentScope ? neutralIntake.captureContext : nil }
     return hasCurrentScope && mediaService != nil ? context?.identity : nil
+  }
+  /// Retained local ownership survives revalidation; captureContext is still
+  /// required for accepting bytes. Terminal invalidation always clears this.
+  var captureSelectionIdentity: ConversationCommandContext.Identity? {
+    guard !isClosed else { return nil }
+    return neutralIntake?.captureSelectionIdentity ?? lastIdentity
   }
   var attachment: FlowConversationAttachment? {
     if let neutralIntake { return hasCurrentScope ? neutralIntake.attachment : nil }
@@ -714,6 +721,10 @@ final class FlowConversationModel {
         model.neutralIntake = try await FlowNeutralIntakeModel.open(transport: transport, lifecycle: lifecycle, store: store, keyVault: keyVault, expectedLease: lease, parentIdentity: current.identity,
           parentIsCurrent: { [weak model] identity in model?.hasCurrentScope == true && model?.context?.identity == identity },
           mediaService: model.mediaService, mediaStaging: media?.staging,
+          onWorkSettled: { [weak model] in
+            guard let model, model.deferredConversationRefresh else { return }
+            await model.refreshConversation()
+          },
           onFactualEffect: { [weak model] in guard let model, model.hasCurrentScope else { return }; model.savedEffectRevision &+= 1 })
         if linkedReplies {
           let origins = try await MobileConversationIntakeRepository.scoped(transport: transport, lease: lease)
@@ -1628,6 +1639,14 @@ final class FlowConversationModel {
     } catch { await showFailure(error, publicationID: id) }
   }
   func refreshConversation() async {
+    guard !isClosed else { return }
+    // Foreground/permission refresh must not revoke an original's active grant
+    // halfway through upload/processing. Auth invalidation remains synchronous.
+    if neutralIntake?.isWorking == true {
+      deferredConversationRefresh = true
+      return
+    }
+    deferredConversationRefresh = false
     neutralIntake?.suspendVisibility()
     await refresh()
     if hasCurrentScope {
@@ -1819,6 +1838,7 @@ final class FlowConversationModel {
     unifiedHistory.cancel()
   }
   func invalidateSynchronously() {
+    deferredConversationRefresh = false
     lifetime.close()
     resetHistoricalOrigins()
     closed = true

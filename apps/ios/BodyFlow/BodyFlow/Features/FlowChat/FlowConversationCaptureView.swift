@@ -30,6 +30,8 @@ struct FlowConversationCaptureView: View {
   @State private var failure = false
   @State private var started = false
   @State private var operation: Task<Void, Never>?
+  @State private var stagedWhileRevalidating: StagedMedia?
+  @State private var cameraPermissionResult: Bool?
   @Environment(\.dismiss) private var dismiss
   @Environment(\.locale) private var locale
   private var english: Bool { BodyFlowPresentationLanguage.resolve(locale) == .englishUnitedStates }
@@ -120,9 +122,19 @@ struct FlowConversationCaptureView: View {
       operation?.cancel()
       operation = nil
       recorder.discard()
+      discardPendingBytes()
     }
-    .onChange(of: model.captureContext) { _, identity in
-      if identity != presentation.context { dismiss() }
+    .onChange(of: model.captureSelectionIdentity) { _, identity in
+      if identity != presentation.context {
+        operation?.cancel()
+        discardPendingBytes()
+        recorder.discard()
+        dismiss()
+      }
+    }
+    .onChange(of: model.captureContext) { _, _ in
+      resumeAfterRevalidation()
+      if !started { operation = Task { await start() } }
     }
   }
   private func start() async {
@@ -131,19 +143,18 @@ struct FlowConversationCaptureView: View {
     switch presentation.choice {
     case .camera:
       let allowed = await capability.camera.requestAccess()
-      guard !Task.isCancelled, model.captureContext == presentation.context else { return }
-      if allowed && capability.camera.isAvailable() {
-        cameraID = .init(id: 1)
-      } else {
-        failure = true
+      guard !Task.isCancelled, model.captureSelectionIdentity == presentation.context else {
+        return
       }
+      cameraPermissionResult = allowed
+      resumeAfterRevalidation()
     case .gallery: gallery = true
     case .audioFile: importer = true
     case .recording: break
     }
   }
   private func stage(_ work: @escaping @Sendable (MealMediaStager) async throws -> StagedMedia) {
-    guard !preparing, model.captureContext == presentation.context else { return }
+    guard !preparing, model.captureSelectionIdentity == presentation.context else { return }
     preparing = true
     failure = false
     let stager =
@@ -154,15 +165,46 @@ struct FlowConversationCaptureView: View {
       do {
         let staged = try await Task.detached(priority: .userInitiated) { try await work(stager) }
           .value
-        guard !Task.isCancelled else {
+        guard !Task.isCancelled, model.captureSelectionIdentity == presentation.context else {
           stager.staging.remove(staged.fileURL)
           return
         }
+        stagedWhileRevalidating = staged
+        resumeAfterRevalidation()
+      } catch is CancellationError {} catch { failure = true }
+      if stagedWhileRevalidating == nil { preparing = false }
+    }
+  }
+  private func resumeAfterRevalidation() {
+    // A retained identity owns only these local bytes. Current authority is
+    // independently required before camera presentation or model acceptance.
+    guard model.captureSelectionIdentity == presentation.context,
+      model.captureContext == presentation.context
+    else { return }
+    if let allowed = cameraPermissionResult {
+      cameraPermissionResult = nil
+      if allowed && capability.camera.isAvailable() {
+        cameraID = .init(id: 1)
+      } else {
+        failure = true
+      }
+    }
+    if let staged = stagedWhileRevalidating {
+      stagedWhileRevalidating = nil
+      preparing = false
+      do {
         try model.attach(staged, expectedContext: presentation.context)
         dismiss()
-      } catch is CancellationError {} catch { failure = true }
-      preparing = false
+      } catch {
+        capability.stager.staging.remove(staged.fileURL)
+        failure = true
+      }
     }
+  }
+  private func discardPendingBytes() {
+    if let staged = stagedWhileRevalidating { capability.stager.staging.remove(staged.fileURL) }
+    stagedWhileRevalidating = nil
+    cameraPermissionResult = nil
   }
   private struct CameraPresentation: Identifiable { let id: Int }
 }

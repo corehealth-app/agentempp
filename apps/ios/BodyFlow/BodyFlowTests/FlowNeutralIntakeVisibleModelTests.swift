@@ -6,6 +6,66 @@ import Testing
 
 @MainActor @Suite("Actual Flow composition sends neutral text without retagging old meals")
 struct FlowNeutralIntakeVisibleModelTests {
+  @Test(arguments: ["upload", "processing"])
+  func foregroundRefreshDuringMediaRestoresOriginalControlsWithoutDuplicateDispatch(_ stage: String)
+    async throws
+  {
+    let f = try await neutralVisibleFixture()
+    defer { f.disk.remove() }
+    let staging = MediaStagingStore(temporaryDirectory: f.disk.directory)
+    let file = try stageConversationSyntheticMedia(
+      staging: staging, data: Data("synthetic-media".utf8), fileExtension: "mp3")
+    let barrier = ConversationControllerBarrier()
+    let server = NeutralCaptureUnitServer(sessions: f.server, kind: "audio_note")
+    if stage == "processing" { await server.watchProcessing { await barrier.enter() } }
+    await f.http.stub.respond { request, _ in try await server.reply(request) }
+    let uploader: any StorageUploading =
+      stage == "upload"
+      ? NeutralCapturePausedUploader(barrier: barrier) : ConversationMediaUploaderProbe()
+    let model = try await FlowConversationModel.open(
+      transport: f.http.transport, lifecycle: f.http.lifecycle, store: f.disk.store,
+      keyVault: f.vault, media: .init(uploader: uploader, staging: staging),
+      neutralIntakeEnabled: true)
+    let neutral = try #require(model.neutralIntake)
+    let identity = try #require(model.captureContext)
+    try model.attach(
+      .init(
+        fileURL: file, kind: .audioNote, mimeType: "audio/mpeg", sizeBytes: 15,
+        duration: 12, channel: .audioRecording), expectedContext: identity)
+    neutral.composer = "Relato original antes de voltar ao app"
+    let submitting = Task {
+      await neutral.submit()
+      await barrier.finish()
+    }
+    #expect(await barrier.waitEnteredOrFinished())
+    // Same lifecycle hook as scenePhase.active; complete the root request
+    // before releasing the actual upload/processing boundary.
+    await model.refreshConversation()
+    await barrier.release()
+    await submitting.value
+    #expect(neutral.isVisible && model.captureContext == identity)
+    #expect(neutral.pendingRows.count == 1 && neutral.offlineQueuedCount == 0)
+    let requests = await f.http.stub.requests
+    let sends = requests.filter {
+      $0.httpMethod == "POST" && $0.url?.path == "/api/mobile/v1/conversation/intakes"
+    }
+    #expect(sends.count == 1)
+    #expect(
+      requests.filter { $0.httpMethod == "POST" && $0.url?.path.hasSuffix("/process") == true }
+        .count == 1)
+    if let send = sends.first, let body = send.httpBody {
+      let input = try FlowNeutralIntakeInput(wireBody: body)
+      #expect(neutral.pendingRows.first?.input.wireBody == body)
+      guard case .media(_, let caption) = input.source else {
+        Issue.record("Original audio became text")
+        await model.close()
+        return
+      }
+      #expect(caption == "Relato original antes de voltar ao app")
+    }
+    #expect(neutral.savedRows.isEmpty && model.savedEffectRevision == 0)
+    await model.close()
+  }
   @Test(arguments: ["conversation_photo", "audio_note"])
   func originalAttachmentUsesNeutralQueueBeforeProcessingWithoutLegacyRegistration(_ kind: String)
     async throws

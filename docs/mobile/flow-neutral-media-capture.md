@@ -18,6 +18,17 @@ Late results are refused after scope invalidation, and only their owned local
 file is removed. Civil-day, closed-day and clinical decisions remain authoritative
 server checks; the client does not infer those decisions from its local clock.
 
+Temporary foreground revalidation is distinct from changing account/session/epoch.
+The capture sheet retains local ownership while authority is suspended. Permission
+results and prepared bytes wait for the original scope to become current before
+camera presentation or attachment acceptance. Terminal invalidation and explicit
+closure still discard owned pending bytes and recordings. The retained identity
+is presentation metadata and cannot authorize upload or registration.
+
+Foreground refresh requests during a neutral operation coalesce until it settles;
+the root then revalidates the same account and restores queue controls. Lifecycle
+invalidation remains immediate, including while an upload is suspended.
+
 ## Original-send lifecycle
 
 1. Freeze the original attachment, caption, optional meal hint and identifiers.

@@ -41,6 +41,7 @@ final class FlowNeutralIntakeModel {
   private let controller: any ConversationNeutralIntakeControlling
   private let parentIsCurrent: @MainActor (ConversationCommandContext.Identity) -> Bool
   private let onFactualEffect: @MainActor () -> Void
+  private let onWorkSettled: @MainActor () async -> Void
   private var parentIdentity: ConversationCommandContext.Identity
   private var context: ConversationCommandContext?
   private var lastIdentity: ConversationCommandContext.Identity?
@@ -72,6 +73,7 @@ final class FlowNeutralIntakeModel {
     parentIdentity: ConversationCommandContext.Identity,
     parentIsCurrent: @escaping @MainActor (ConversationCommandContext.Identity) -> Bool,
     mediaService: ConversationMealMediaService?, mediaStaging: MediaStagingStore?,
+    onWorkSettled: @escaping @MainActor () async -> Void,
     onFactualEffect: @escaping @MainActor () -> Void
   ) {
     self.controller = controller
@@ -80,6 +82,7 @@ final class FlowNeutralIntakeModel {
     self.mediaService = mediaService
     self.mediaStaging = mediaStaging
     self.onFactualEffect = onFactualEffect
+    self.onWorkSettled = onWorkSettled
   }
   static func open(
     transport: MobileAPITransport, lifecycle: any SessionLifecycleProviding,
@@ -87,6 +90,7 @@ final class FlowNeutralIntakeModel {
     expectedLease: SessionLease, parentIdentity: ConversationCommandContext.Identity,
     parentIsCurrent: @escaping @MainActor (ConversationCommandContext.Identity) -> Bool,
     mediaService: ConversationMealMediaService? = nil, mediaStaging: MediaStagingStore? = nil,
+    onWorkSettled: @escaping @MainActor () async -> Void = {},
     onFactualEffect: @escaping @MainActor () -> Void
   ) async throws -> FlowNeutralIntakeModel {
     guard (mediaService == nil) == (mediaStaging == nil) else {
@@ -97,7 +101,8 @@ final class FlowNeutralIntakeModel {
       expectedLease: expectedLease)
     let model = Self(
       controller: controller, parentIdentity: parentIdentity, parentIsCurrent: parentIsCurrent,
-      mediaService: mediaService, mediaStaging: mediaStaging, onFactualEffect: onFactualEffect)
+      mediaService: mediaService, mediaStaging: mediaStaging, onWorkSettled: onWorkSettled,
+      onFactualEffect: onFactualEffect)
     do {
       try await controller.publishSnapshot(model.publisher(model.operationID))
       guard model.isVisible else { throw ConversationOutboxError.invalidServerObservation }
@@ -120,6 +125,10 @@ final class FlowNeutralIntakeModel {
   }
   var captureContext: ConversationCommandContext.Identity? {
     isVisible && mediaService != nil && mediaStaging != nil ? context?.identity : nil
+  }
+  /// Local presentation ownership only; never a grant to attach, upload or send.
+  var captureSelectionIdentity: ConversationCommandContext.Identity? {
+    closed ? nil : parentIdentity
   }
   var attachment: FlowConversationAttachment? { isVisible ? selectedAttachment : nil }
   func attach(_ staged: StagedMedia, expectedContext: ConversationCommandContext.Identity) throws {
@@ -518,6 +527,7 @@ final class FlowNeutralIntakeModel {
       task = nil
       isWorking = false
       mediaPhase = nil
+      if !closed { await onWorkSettled() }
     }
   }
 }

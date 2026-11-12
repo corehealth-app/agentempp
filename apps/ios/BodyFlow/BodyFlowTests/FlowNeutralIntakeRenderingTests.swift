@@ -8,6 +8,99 @@ import Testing
   import UIKit
   @MainActor @Suite("Real neutral composer and factual transcript content")
   struct FlowNeutralIntakeRenderingTests {
+    @Test(.serialized, arguments: [false, true])
+    func actualCaptureSurvivesTemporaryRevalidationButClosesOnSessionInvalidation(_ camera: Bool)
+      async throws
+    {
+      let f = try await neutralVisibleFixture()
+      defer { f.disk.remove() }
+      let staging = MediaStagingStore(temporaryDirectory: f.disk.directory)
+      let model = try await FlowConversationModel.open(
+        transport: f.http.transport, lifecycle: f.http.lifecycle, store: f.disk.store,
+        keyVault: f.vault,
+        media: .init(uploader: ConversationMediaUploaderProbe(), staging: staging),
+        neutralIntakeEnabled: true)
+      let neutral = try #require(model.neutralIntake)
+      let identity = try #require(model.captureContext)
+      let permission = ConversationControllerBarrier()
+      let access = MealCameraAccess(
+        origin: .none, isAvailable: { false }, permission: { .notAsked },
+        requestAccess: {
+          await permission.enter()
+          return false
+        })
+      let scene = try #require(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+      let oldWindow = scene.windows.first(where: \.isKeyWindow)
+      let window = UIWindow(windowScene: scene)
+      let probe = NeutralCaptureSheetPresentationProbe()
+      let root = UIHostingController(
+        rootView:
+          Text("Capture root").sheet(
+            isPresented: Binding(
+              get: { probe.isPresented }, set: { probe.isPresented = $0 })
+          ) {
+            FlowConversationCaptureView(
+              capability: .init(stager: .init(staging: staging), camera: access),
+              presentation: .init(
+                choice: camera ? .camera : .recording, context: identity, neutral: true),
+              model: model
+            ).environment(\.locale, Locale(identifier: "pt_BR"))
+              .environment(\.accessibilityEnabled, true)
+          })
+      window.rootViewController = root
+      window.makeKeyAndVisible()
+      for _ in 0..<40 {
+        if root.presentedViewController != nil { break }
+        try await Task.sleep(for: .milliseconds(15))
+      }
+      let capture = try #require(root.presentedViewController)
+      defer {
+        window.isHidden = true
+        oldWindow?.makeKeyAndVisible()
+      }
+      if camera { #expect(await permission.waitEnteredOrFinished()) }
+      neutral.suspendVisibility()
+      // Allow the actual view's onChange/dismiss and permission callback to run.
+      if camera { await permission.release() }
+      for _ in 0..<12 { try await Task.sleep(for: .milliseconds(15)) }
+      #expect(probe.isPresented && capture.presentingViewController != nil)
+      await model.refreshConversation()
+      for _ in 0..<12 { try await Task.sleep(for: .milliseconds(15)) }
+      #expect(
+        model.captureContext == identity && probe.isPresented
+          && capture.presentingViewController != nil)
+      if camera {
+        // Parameter cases own a real modal window and must not race each
+        // other's presentation. Read only after SwiftUI has rendered the
+        // permission result in that window; no fixed frame-time assumption.
+        capture.view.setNeedsLayout()
+        capture.view.layoutIfNeeded()
+        UIAccessibility.post(notification: .screenChanged, argument: capture.view)
+        for _ in 0..<150 {
+          if SignUpRenderingProbe.nodes(in: capture.view).contains(where: {
+            $0.label.contains("Não foi possível preparar este anexo")
+          }) {
+            break
+          }
+          try await Task.sleep(for: .milliseconds(15))
+        }
+        #expect(
+          SignUpRenderingProbe.nodes(in: capture.view).contains {
+            $0.label.contains("Não foi possível preparar este anexo")
+          }, Comment(rawValue: String(describing: SignUpRenderingProbe.nodes(in: capture.view))))
+      }
+      model.invalidateSynchronously()
+      // The binding is invalidated synchronously; UIKit tears down its modal
+      // asynchronously. Await that observable transition instead of assuming
+      // a fixed animation duration while the full rendering suite is running.
+      for _ in 0..<150 {
+        if !probe.isPresented && capture.presentingViewController == nil { break }
+        try await Task.sleep(for: .milliseconds(15))
+      }
+      #expect(!probe.isPresented && capture.presentingViewController == nil)
+      root.dismiss(animated: false)
+      await model.close()
+    }
     @Test func actualNeutralComposerOffersCaptureWhenItsScopedMediaServiceExists() async throws {
       let f = try await neutralVisibleFixture()
       defer { f.disk.remove() }
@@ -236,5 +329,8 @@ import Testing
       #expect(!host.nodes().contains { $0.label.contains("Atividade registrada") })
       await model.close()
     }
+  }
+  @MainActor @Observable private final class NeutralCaptureSheetPresentationProbe {
+    var isPresented = true
   }
 #endif

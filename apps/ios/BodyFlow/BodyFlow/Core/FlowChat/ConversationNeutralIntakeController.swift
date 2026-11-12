@@ -249,7 +249,22 @@ actor ConversationNeutralIntakeController: ConversationNeutralIntakeControlling 
         ticket: ticket,
         hold: terminal ? .notRecorded : permanent ? .serverChanged : .unknownOutcome,
         server: context.observation)
-      let canContinue = fromRead && !terminal && !permanent && !requiresAnswer
+      var canContinue = false
+      if fromRead && !terminal && !permanent && !requiresAnswer
+        && response.reason != "media_temporarily_unavailable"
+      {
+        // A new read cannot downgrade a stronger hold retained on disk. Probe
+        // the same readonly fence used by explicit continuation before offering it.
+        do {
+          _ = try await outbox.replayTicket(ticket, server: context.observation)
+          // Another reconcile may have accepted a newer grant while the local
+          // read returned. Never overwrite its permission with the old one.
+          try matches(ticket, context)
+          canContinue = true
+        } catch ConversationOutboxError.reconciliationRequired {
+          canContinue = false
+        }
+      }
       if canContinue { permissions[ticket.input.intakeID] = (ticket, context) }
       try await deliver(
         .state(input: ticket.input, response: response, canContinue: canContinue, context: context),

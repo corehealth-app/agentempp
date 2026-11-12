@@ -241,6 +241,15 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
         reason,
       })
     }
+    function mediaHold(intake: Binding) {
+      // An opted-in client's disabled capability is temporary, not proof that
+      // its immutable original changed. Old clients retain the permanent hold.
+      return pending(
+        mediaNegotiation === '1' ? 'media_temporarily_unavailable' : 'media_projection_required',
+        intake,
+        'held',
+      )
+    }
     function ownedRead(value: Awaited<ReturnType<Store['read']>>) {
       if (value.action === 'stale_epoch' || value.action === 'input_conflict')
         throw failure('conversation_intake_changed')
@@ -266,7 +275,7 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
       // Fence every persisted-selection path, including GET, cold replay and
       // uncertain/concurrent recovery, before either typed facade is invoked.
       if (selection.schema === 'conversation.intake-selection.v2' && !activateMedia())
-        return pending('media_projection_required', selection.intake, 'held')
+        return mediaHold(selection.intake)
       const d = selection.decision,
         c = selection.command
       if (d.kind === 'not_reported' || d.kind === 'clarification_required') {
@@ -313,8 +322,8 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
     async function readOnly(afterUnknown = false) {
       const row = ownedRead(await call(() => store.read(id)))
       if (row?.selection) return selected(row.selection, 'read')
-      if (row?.command.input.source.channel === 'media')
-        return pending('media_projection_required', row.intake, 'held')
+      if (row?.command.input.source.channel === 'media' && !activateMedia())
+        return mediaHold(row.intake)
       if (row)
         return pending(
           row.claimed ? 'routing_reconciliation_required' : 'intake_pending',
@@ -383,6 +392,7 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
       current,
       call,
       pending,
+      mediaHold,
       ownedRead,
       selected,
       readOnly,
@@ -430,7 +440,7 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
         const prior = op.ownedRead(await op.call(() => store.read(op.id)))
         if (prior?.selection) return await op.selected(prior.selection, 'submit')
         if (prior?.command.input.source.channel === 'media' && !op.activateMedia())
-          return op.pending('media_projection_required', prior.intake, 'held')
+          return op.mediaHold(prior.intake)
         if (prior?.claimed) return await op.recover(prior)
         let binding = prior?.intake
         if (!binding) {
@@ -448,7 +458,7 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
         // A neutral media action is never fabricated into older typed user
         // actions. SQL must still seal genuine parent/media lineage below.
         if (command.input.source.channel === 'media' && !op.activateMedia())
-          return op.pending('media_projection_required', binding, 'held')
+          return op.mediaHold(binding)
         const router = makeRouter(),
           route = router.route.bind(router)
         const claim = await op.call(() => store.claim(command, epoch, source.sourceHash))

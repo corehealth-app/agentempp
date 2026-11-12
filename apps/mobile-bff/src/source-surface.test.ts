@@ -297,15 +297,16 @@ function certifyExactSharedTable(
   expect(observed.sort()).toEqual(pins.map(([id, hash]) => `${id}:${hash}`).sort())
   return bodies
 }
-/** R99 intentionally adds opt-in media projection and request-owned fencing.
+/** R99 adds opt-in media projection and request-owned fencing. R101 corrects
+ * temporary-capability/unselected-original recovery; GET remains read-only.
  * Certify the complete reviewed sources and current executable body. The other
  * three shared modules retain their prior byte-exact pins; no global scan or
  * physical consumer assertion is exempted by this certificate. */
-function certifyIntakeMediaBridgeR99(body: string): void {
+function certifyIntakeMediaBridgeR101(body: string): void {
   for (const [name, hash] of [
     [
       'conversation-intake-driver.ts',
-      '2f84b5cfde7331b26007d8dccdc99791d4f99d39c19537afc8b0688746306213',
+      '4ccd96a847ab7cff5c0b659239576f3e52d5cc96939c7e6d7610950a0d0ec4f7',
     ],
     [
       'conversation-intake-runtime.ts',
@@ -326,7 +327,7 @@ function certifyIntakeMediaBridgeR99(body: string): void {
         .digest('hex'),
     ).toBe(hash)
   expect(createHash('sha256').update(body).digest('hex')).toBe(
-    '4d5ef9095fe8a714e53e93e795c7ecc705f09931ff860f0737e2c85a3c52eae4',
+    'edc7aa83194ad3c443cef165f0b2ccbf64e35438d7d09f6a19c3ee31d48e0b01',
   )
   expect(body.startsWith('(a,b,c)=>{c.d(b,{o:()=>am,K:()=>ap});')).toBe(true)
   for (const marker of [
@@ -334,6 +335,7 @@ function certifyIntakeMediaBridgeR99(body: string): void {
     'MOBILE_CONVERSATION_MEDIA_PROTOCOL_ENABLED',
     'conversation.intake-result.v2',
     'conversation_intake_media_unavailable',
+    'media_temporarily_unavailable',
   ])
     expect(body).toContain(marker)
 }
@@ -476,14 +478,21 @@ function certifyPhotoPurposeEdgesR62() {
   expect(chunks).toHaveLength(1)
   const chunk = chunks[0] ?? ''
   const bodies = certifyExactSharedTable(chunk, [
-    ['84359', 'f3c74b65ac87a664ca460702b4dfc99fc11a910983a3a751a240f2239c16b4ed'],
-    ['86248', 'bca65f93158ff60efe08f14a45537b8db4e719a9deb863c2b452b37a11862673'],
+    ['84359', '1cca149ffc7a9278307e03f6771ba28c93f3b19eae40409afb60f8e623d203ab'],
+    ['63867', 'bca65f93158ff60efe08f14a45537b8db4e719a9deb863c2b452b37a11862673'],
   ])
   // R62's routing diagnostics import the existing OpenAI error classes directly.
   // Webpack factors that SDK differently: Gemini changes only this loader ID.
   // Reverse exactly one link to retain the independent full R59 body pin; no
   // raw code or transitive is removed from the physical/global scans below.
-  const rawGemini = bodies.get('84359') ?? ''
+  const rawGeminiR101 = bodies.get('84359') ?? ''
+  // R101 restores the exact R98 packaging (parser63867). Normalize its one
+  // loader link to R99, retaining the entire historical proof below.
+  expect(rawGeminiR101.split('d=c(63867)')).toHaveLength(2)
+  const rawGemini = rawGeminiR101.replace('d=c(63867)', 'd=c(86248)')
+  expect(createHash('sha256').update(rawGemini).digest('hex')).toBe(
+    'f3c74b65ac87a664ca460702b4dfc99fc11a910983a3a751a240f2239c16b4ed',
+  )
   // R99 moves the identical image-result body back to86248. Reverse one
   // loader link to the exact R98 body before retaining its prior proof below.
   expect(rawGemini.split('d=c(86248)')).toHaveLength(2)
@@ -878,18 +887,19 @@ describe('authoritative Mobile API source surface', () => {
         ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
         ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
         ['50522', 'bced34a3d3a43ba50d1205c55bd2ead6cd4dbc8fc679a8ab5c46e9ed4af692e5'],
-        ['6535', '4d5ef9095fe8a714e53e93e795c7ecc705f09931ff860f0737e2c85a3c52eae4'],
+        ['6535', 'edc7aa83194ad3c443cef165f0b2ccbf64e35438d7d09f6a19c3ee31d48e0b01'],
       ]),
       body = bodies.get('6535') ?? ''
-    expect(() => certifyIntakeMediaBridgeR99(body)).not.toThrow()
+    expect(() => certifyIntakeMediaBridgeR101(body)).not.toThrow()
     for (const changed of [
       body.replace('o:()=>am,', ''),
       body.replace('o:()=>am,', 'o:()=>am,x:()=>am,'),
       body.replace('MOBILE_CONVERSATION_INTAKES_ENABLED', 'MOBILE_CONVERSATION_UNREVIEWED'),
       body.replace('X-Conversation-Media-Provenance', 'X-Unapproved-Provenance'),
       body.replace('conversation.intake-result.v2', 'conversation.intake-result.v1'),
+      body.replace('media_temporarily_unavailable', 'media_projection_required'),
     ])
-      expect(() => certifyIntakeMediaBridgeR99(changed)).toThrow()
+      expect(() => certifyIntakeMediaBridgeR101(changed)).toThrow()
   })
   test('distinguishes an exact legacy RPC from its v3 successor and invalidates changed-file cache', () => {
     const root = mkdtempSync(resolve(tmpdir(), 'performe-exact-rpc-')),
@@ -1995,9 +2005,9 @@ describe('authoritative Mobile API source surface', () => {
       ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
       ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
       ['50522', 'bced34a3d3a43ba50d1205c55bd2ead6cd4dbc8fc679a8ab5c46e9ed4af692e5'],
-      ['6535', '4d5ef9095fe8a714e53e93e795c7ecc705f09931ff860f0737e2c85a3c52eae4'],
+      ['6535', 'edc7aa83194ad3c443cef165f0b2ccbf64e35438d7d09f6a19c3ee31d48e0b01'],
     ])
-    certifyIntakeMediaBridgeR99(intakeBodies.get('6535') ?? '')
+    certifyIntakeMediaBridgeR101(intakeBodies.get('6535') ?? '')
     // Full typed service code remains physically present, including dormant
     // writers. Journal3 invokes only read through its tested closed RPC port.
     certifySharedModule(

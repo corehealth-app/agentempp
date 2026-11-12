@@ -46,6 +46,14 @@ capture, claim, seal or submit. Unknown POST outcomes use the existing read-only
 reconciliation path rather than submitting again. The same original command is
 preserved across retries; no new registration or reward is inferred from a read.
 
+For a negotiated client, a disabled media capability returns the temporary hold
+`media_temporarily_unavailable`. A fresh GET after re-enablement can expose an
+unselected original as pending (or routing reconciliation required when claimed).
+It still cannot resume processing: only explicit continuation can resend that
+same immutable POST through the existing claim/idempotency fences. Disabled reads
+never grant continuation, and a prior permanent hold on disk cannot be downgraded
+by a later pending response. Legacy clients retain `media_projection_required`.
+
 ## Verification boundary
 
 Tests use captured local PostgreSQL selections for meal photos, activity audio

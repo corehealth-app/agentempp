@@ -11,8 +11,7 @@ import {
 } from './__fixtures__/conversation-meal-writer'
 import { bindConversationCommand } from './conversation-command-contracts'
 import { buildConversationMealInterpretationSource } from './conversation-meal-interpretation-contracts'
-import { validateConversationMealInterpretationModel } from './conversation-meal-interpretation-validation'
-import { materializeConversationMealLiteralPartition } from './conversation-meal-literal-partition'
+import { createOpenRouterConversationMealInterpreter } from './conversation-meal-interpreter'
 import { materializeConversationMealInterpretation } from './conversation-meal-materialization'
 import { registerPersistedConversationMeal } from './conversation-meal-registration-service'
 import { MobileApiError } from './http'
@@ -218,44 +217,50 @@ describe('actual source-to-factual meal registration composition', () => {
         },
       },
       source = buildConversationMealInterpretationSource(command, capture),
-      model = materializeConversationMealLiteralPartition(
-        {
-          schema: 'conversation.meal-literal-partition.v1',
-          decision: 'reported_meal',
-          reason: 'explicit_report',
-          sources: [
-            {
-              unit: 'command_text',
-              classification: 'reported',
-              visual_indexes: [],
-              parts: [
-                { text: 'No café da manhã, consumi ', kind: 'report', food_index: null },
-                { text: '200', kind: 'quantity', food_index: 0 },
-                { text: ' ', kind: 'separator', food_index: null },
-                { text: 'mL', kind: 'unit', food_index: 0 },
-                { text: ' de ', kind: 'separator', food_index: null },
-                { text: 'leite com 1 medida de whey', kind: 'food', food_index: 0 },
-                { text: '.', kind: 'separator', food_index: null },
-              ],
+      wire = {
+        schema: 'conversation.meal-source-labels.v1',
+        decision: 'reported_meal',
+        reason: 'explicit_report',
+        sources: {
+          command_text: {
+            classification: 'reported',
+            labels: {
+              t0: { kind: 'report', food_index: null },
+              t1: { kind: 'report', food_index: null },
+              t2: { kind: 'report', food_index: null },
+              t3: { kind: 'report', food_index: null },
+              t4: { kind: 'report', food_index: null },
+              t5: { kind: 'report', food_index: null },
+              t6: { kind: 'quantity', food_index: 0 },
+              t7: { kind: 'unit', food_index: 0 },
+              t8: { kind: 'separator', food_index: null },
+              t9: { kind: 'food', food_index: 0 },
+              t10: { kind: 'food', food_index: 0 },
+              t11: { kind: 'food', food_index: 0 },
+              t12: { kind: 'food', food_index: 0 },
+              t13: { kind: 'food', food_index: 0 },
+              t14: { kind: 'food', food_index: 0 },
+              t15: { kind: 'separator', food_index: null },
             },
-          ],
-          foods: [
-            {
-              index: 0,
-              name: { unit: 'command_text', part_index: 5 },
-              quantity: { unit: 'command_text', part_index: 1 },
-              unit: { unit: 'command_text', part_index: 3 },
-              visual_index: null,
-            },
-          ],
+          },
         },
-        source,
-      ),
-      semantic = {
-        ...interpretation(),
-        ...validateConversationMealInterpretationModel(model, source),
-        input_hash: command.inputHash,
-      }
+        foods: [{ index: 0, visual_index: null }],
+      },
+      complete = vi.fn(async () => ({
+        content: JSON.stringify(wire),
+        toolCalls: [],
+        model: 'anthropic/claude-haiku-4.5',
+        promptTokens: 100,
+        completionTokens: 100,
+        totalTokens: 200,
+        costUsd: null,
+        latencyMs: 100,
+        finishReason: 'stop' as const,
+      })),
+      semantic = await createOpenRouterConversationMealInterpreter('synthetic', {
+        complete,
+      }).interpret(source, { attemptId: id, remainingMs: 5000 })
+    expect(complete).toHaveBeenCalledTimes(1)
     d.interpret.mockResolvedValue(semantic)
     d.sources.capture.mockResolvedValue(capture)
     d.journal.admit.mockResolvedValue({

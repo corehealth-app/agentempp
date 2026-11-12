@@ -302,8 +302,13 @@ function certifyT48IntakeCapabilityExport(body: string): void {
   expect(body.split('o:()=>ak,')).toHaveLength(2)
   // T52 changes only this compiler loader link. Retain the complete pre-T48
   // executable-body certificate after reversing that single proven change.
-  expect(body.split('c(56304)')).toHaveLength(2)
-  const preservedBody = body.replace('c(56304)', 'c(66320)')
+  expect(body.split('c(76697)')).toHaveLength(2)
+  const beforeLabels = body.replace('c(76697)', 'c(56304)')
+  expect(createHash('sha256').update(beforeLabels).digest('hex')).toBe(
+    'dcaaecf8c587b9413c83a5fa8645a6803b789f71176f3622709150dca34cc0f1',
+  )
+  expect(beforeLabels.split('c(56304)')).toHaveLength(2)
+  const preservedBody = beforeLabels.replace('c(56304)', 'c(66320)')
   expect(createHash('sha256').update(preservedBody.replace('o:()=>ak,', '')).digest('hex')).toBe(
     'bcfdd2d7bb47f1acdc50ebf2f7272d167b2e404523eb98f282dfa2b9239ebfb4',
   )
@@ -387,18 +392,18 @@ function certifyStructuredMealHelperT51() {
     'utf8',
   )
   expect(createHash('sha256').update(interpreter).digest('hex')).toBe(
-    '9d7674707f5bdcb91104935ab82c912b512be6726ab883b8e88a9884986b0fae',
+    'cfe0104d8755b053b4b7f630c9604a5868cf87683d24a9ae23f5875e11838d0c',
   )
-  // T52 adds private literal partitions to the same reviewed interpreter edge.
+  // T53 replaces private literal replay with source-owned token labels on the same edge.
   expect(
     createHash('sha256')
       .update(
         readFileSync(
-          resolve(appRoot, '../admin/src/lib/mobile-api/conversation-meal-literal-partition.ts'),
+          resolve(appRoot, '../admin/src/lib/mobile-api/conversation-meal-source-labels.ts'),
         ),
       )
       .digest('hex'),
-  ).toBe('fd89c355b2dbf1f53d3e9766b13b168c351f73b0f2a7be8835fa3a944c140a4e')
+  ).toBe('b997c78ea98e695e1d1afa58abc65fce27aec3df5f5ef24408e719725aae8d46')
   expect(interpreter.split("import { zodResponseFormat } from 'openai/helpers/zod'")).toHaveLength(
     2,
   )
@@ -825,7 +830,7 @@ describe('authoritative Mobile API source surface', () => {
         ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
         ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
         ['50522', 'bced34a3d3a43ba50d1205c55bd2ead6cd4dbc8fc679a8ab5c46e9ed4af692e5'],
-        ['69520', 'dcaaecf8c587b9413c83a5fa8645a6803b789f71176f3622709150dca34cc0f1'],
+        ['69520', 'f4cd688e76a4fe531bfb190f98c8f2abfebaff9d2422c91eaf5bc99c60c32aa0'],
       ]),
       body = bodies.get('69520') ?? ''
     expect(() => certifyT48IntakeCapabilityExport(body)).not.toThrow()
@@ -1919,12 +1924,17 @@ describe('authoritative Mobile API source surface', () => {
       ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
       ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
       ['50522', 'bced34a3d3a43ba50d1205c55bd2ead6cd4dbc8fc679a8ab5c46e9ed4af692e5'],
-      ['69520', 'dcaaecf8c587b9413c83a5fa8645a6803b789f71176f3622709150dca34cc0f1'],
+      ['69520', 'f4cd688e76a4fe531bfb190f98c8f2abfebaff9d2422c91eaf5bc99c60c32aa0'],
     ])
     const intakeBody = intakeBodies.get('69520') ?? ''
-    expect(intakeBody.split('c(56304)')).toHaveLength(2)
+    expect(intakeBody.split('c(76697)')).toHaveLength(2)
+    const intakeBeforeLabels = intakeBody.replace('c(76697)', 'c(56304)')
+    expect(createHash('sha256').update(intakeBeforeLabels).digest('hex')).toBe(
+      'dcaaecf8c587b9413c83a5fa8645a6803b789f71176f3622709150dca34cc0f1',
+    )
+    expect(intakeBeforeLabels.split('c(56304)')).toHaveLength(2)
     expect(
-      createHash('sha256').update(intakeBody.replace('c(56304)', 'c(66320)')).digest('hex'),
+      createHash('sha256').update(intakeBeforeLabels.replace('c(56304)', 'c(66320)')).digest('hex'),
     ).toBe('fbca2d1d44287900ae260889c29202df5ca7f1128e1122ac5ec8c1c08f633445')
     certifyT48IntakeCapabilityExport(intakeBodies.get('69520') ?? '')
     // Full typed service code remains physically present, including dormant

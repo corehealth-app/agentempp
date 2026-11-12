@@ -240,7 +240,7 @@ describe('actual durable meal interpretation composition', () => {
   })
   it.each([
     'model_schema',
-    'span_partition',
+    'reference_binding',
   ] as const)('marks real %s failure unknown once and never pays again on its durable read', async (reason) => {
     const d = dependencies(),
       sink = vi.fn(),
@@ -249,18 +249,21 @@ describe('actual durable meal interpretation composition', () => {
           reason === 'model_schema'
             ? { private_model_output: 'secret-sentinel' }
             : {
-                schema: 'conversation.meal-literal-partition.v1',
-                decision: 'clarification_required',
-                reason: 'ambiguous',
-                sources: [
-                  {
-                    unit: 'command_text',
-                    classification: 'ambiguous',
-                    visual_indexes: [],
-                    parts: [{ text: 'different literal', kind: 'other', food_index: null }],
+                schema: 'conversation.meal-source-labels.v1',
+                decision: 'reported_meal',
+                reason: 'explicit_report',
+                sources: {
+                  command_text: {
+                    classification: 'reported',
+                    labels: {
+                      t0: { kind: 'report', food_index: null },
+                      t1: { kind: 'food', food_index: 0 },
+                      t2: { kind: 'unit', food_index: 0 },
+                      t3: { kind: 'food', food_index: 0 },
+                    },
                   },
-                ],
-                foods: [],
+                },
+                foods: [{ index: 0, visual_index: null }],
               },
         ),
         toolCalls: [],
@@ -287,7 +290,6 @@ describe('actual durable meal interpretation composition', () => {
           error_name: 'MobileApiError',
           http_status: 503,
           validation_reason: reason,
-          ...(reason === 'span_partition' ? { partition_mismatch: 'content_difference' } : {}),
         },
       ],
     ])

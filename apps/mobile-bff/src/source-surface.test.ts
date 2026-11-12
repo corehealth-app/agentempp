@@ -297,31 +297,45 @@ function certifyExactSharedTable(
   expect(observed.sort()).toEqual(pins.map(([id, hash]) => `${id}:${hash}`).sort())
   return bodies
 }
-/** T48 imports the existing intake capability predicate into a second route.
- * Webpack adds only its named export; every preexisting executable byte stays
- * equal to the independently preserved R63 module, not a normalized body. */
-function certifyT48IntakeCapabilityExport(body: string): void {
-  expect(
-    createHash('sha256')
-      .update(
-        readFileSync(resolve(appRoot, '../admin/src/lib/mobile-api/conversation-intake-routes.ts')),
-      )
-      .digest('hex'),
-  ).toBe('bfca54ddc258bdabf290483ef7a4b9817ca2cdf2bf5ba0bccbbfaae3b076e17c')
-  expect(body.startsWith('(a,b,c)=>{c.d(b,{o:()=>ak,K:()=>an});')).toBe(true)
-  expect(body.split('o:()=>ak,')).toHaveLength(2)
-  // T52 changes only this compiler loader link. Retain the complete pre-T48
-  // executable-body certificate after reversing that single proven change.
-  expect(body.split('c(76697)')).toHaveLength(2)
-  const beforeLabels = body.replace('c(76697)', 'c(56304)')
-  expect(createHash('sha256').update(beforeLabels).digest('hex')).toBe(
-    'dcaaecf8c587b9413c83a5fa8645a6803b789f71176f3622709150dca34cc0f1',
+/** R99 intentionally adds opt-in media projection and request-owned fencing.
+ * Certify the complete reviewed sources and current executable body. The other
+ * three shared modules retain their prior byte-exact pins; no global scan or
+ * physical consumer assertion is exempted by this certificate. */
+function certifyIntakeMediaBridgeR99(body: string): void {
+  for (const [name, hash] of [
+    [
+      'conversation-intake-driver.ts',
+      '2f84b5cfde7331b26007d8dccdc99791d4f99d39c19537afc8b0688746306213',
+    ],
+    [
+      'conversation-intake-runtime.ts',
+      '673be3b703dd77d4ed98f5201e0a003dd55c2b829149554241a46b1cfe88958f',
+    ],
+    [
+      'conversation-intake-routes.ts',
+      '0a51079f077e44a40915e874c6da3321e0773397be1bbb37bff1a5bae86f2e7c',
+    ],
+    [
+      'conversation-intake-media-negotiation.ts',
+      '3011cb873524dbbcea7412621c8cc89fa11be7a372b388317047dd1813dfba41',
+    ],
+  ])
+    expect(
+      createHash('sha256')
+        .update(readFileSync(resolve(appRoot, '../admin/src/lib/mobile-api', name ?? '')))
+        .digest('hex'),
+    ).toBe(hash)
+  expect(createHash('sha256').update(body).digest('hex')).toBe(
+    '4d5ef9095fe8a714e53e93e795c7ecc705f09931ff860f0737e2c85a3c52eae4',
   )
-  expect(beforeLabels.split('c(56304)')).toHaveLength(2)
-  const preservedBody = beforeLabels.replace('c(56304)', 'c(66320)')
-  expect(createHash('sha256').update(preservedBody.replace('o:()=>ak,', '')).digest('hex')).toBe(
-    'bcfdd2d7bb47f1acdc50ebf2f7272d167b2e404523eb98f282dfa2b9239ebfb4',
-  )
+  expect(body.startsWith('(a,b,c)=>{c.d(b,{o:()=>am,K:()=>ap});')).toBe(true)
+  for (const marker of [
+    'X-Conversation-Media-Provenance',
+    'MOBILE_CONVERSATION_MEDIA_PROTOCOL_ENABLED',
+    'conversation.intake-result.v2',
+    'conversation_intake_media_unavailable',
+  ])
+    expect(body).toContain(marker)
 }
 /** New shared read edge, extracted from the previous inline journal entry.
  * Certify complete current bodies and their unchanged authoritative sources;
@@ -462,14 +476,21 @@ function certifyPhotoPurposeEdgesR62() {
   expect(chunks).toHaveLength(1)
   const chunk = chunks[0] ?? ''
   const bodies = certifyExactSharedTable(chunk, [
-    ['84359', '1cca149ffc7a9278307e03f6771ba28c93f3b19eae40409afb60f8e623d203ab'],
-    ['63867', 'bca65f93158ff60efe08f14a45537b8db4e719a9deb863c2b452b37a11862673'],
+    ['84359', 'f3c74b65ac87a664ca460702b4dfc99fc11a910983a3a751a240f2239c16b4ed'],
+    ['86248', 'bca65f93158ff60efe08f14a45537b8db4e719a9deb863c2b452b37a11862673'],
   ])
   // R62's routing diagnostics import the existing OpenAI error classes directly.
   // Webpack factors that SDK differently: Gemini changes only this loader ID.
   // Reverse exactly one link to retain the independent full R59 body pin; no
   // raw code or transitive is removed from the physical/global scans below.
-  const gemini = bodies.get('84359') ?? ''
+  const rawGemini = bodies.get('84359') ?? ''
+  // R99 moves the identical image-result body back to86248. Reverse one
+  // loader link to the exact R98 body before retaining its prior proof below.
+  expect(rawGemini.split('d=c(86248)')).toHaveLength(2)
+  const gemini = rawGemini.replace('d=c(86248)', 'd=c(63867)')
+  expect(createHash('sha256').update(gemini).digest('hex')).toBe(
+    '1cca149ffc7a9278307e03f6771ba28c93f3b19eae40409afb60f8e623d203ab',
+  )
   // R98 reallocates the byte-identical image-result module from86248 to63867.
   // Reverse precisely that one loader link to retain the full prior body proof.
   const imageResultLinkR98 = 'd=c(63867)'
@@ -846,7 +867,7 @@ describe('authoritative Mobile API source surface', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
-  test('rejects changed exports or executable bytes around the exact T48 intake capability export', () => {
+  test('rejects changed exports or executable bytes in the exact negotiated media bridge', () => {
     const chunks = semanticChunks([
       'conversation.intake-result.v1',
       'read_conversation_intake_routing_result',
@@ -857,16 +878,18 @@ describe('authoritative Mobile API source surface', () => {
         ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
         ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
         ['50522', 'bced34a3d3a43ba50d1205c55bd2ead6cd4dbc8fc679a8ab5c46e9ed4af692e5'],
-        ['69520', 'f4cd688e76a4fe531bfb190f98c8f2abfebaff9d2422c91eaf5bc99c60c32aa0'],
+        ['6535', '4d5ef9095fe8a714e53e93e795c7ecc705f09931ff860f0737e2c85a3c52eae4'],
       ]),
-      body = bodies.get('69520') ?? ''
-    expect(() => certifyT48IntakeCapabilityExport(body)).not.toThrow()
+      body = bodies.get('6535') ?? ''
+    expect(() => certifyIntakeMediaBridgeR99(body)).not.toThrow()
     for (const changed of [
-      body.replace('o:()=>ak,', ''),
-      body.replace('o:()=>ak,', 'o:()=>ak,x:()=>ak,'),
+      body.replace('o:()=>am,', ''),
+      body.replace('o:()=>am,', 'o:()=>am,x:()=>am,'),
       body.replace('MOBILE_CONVERSATION_INTAKES_ENABLED', 'MOBILE_CONVERSATION_UNREVIEWED'),
+      body.replace('X-Conversation-Media-Provenance', 'X-Unapproved-Provenance'),
+      body.replace('conversation.intake-result.v2', 'conversation.intake-result.v1'),
     ])
-      expect(() => certifyT48IntakeCapabilityExport(changed)).toThrow()
+      expect(() => certifyIntakeMediaBridgeR99(changed)).toThrow()
   })
   test('distinguishes an exact legacy RPC from its v3 successor and invalidates changed-file cache', () => {
     const root = mkdtempSync(resolve(tmpdir(), 'performe-exact-rpc-')),
@@ -1972,19 +1995,9 @@ describe('authoritative Mobile API source surface', () => {
       ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
       ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
       ['50522', 'bced34a3d3a43ba50d1205c55bd2ead6cd4dbc8fc679a8ab5c46e9ed4af692e5'],
-      ['69520', 'f4cd688e76a4fe531bfb190f98c8f2abfebaff9d2422c91eaf5bc99c60c32aa0'],
+      ['6535', '4d5ef9095fe8a714e53e93e795c7ecc705f09931ff860f0737e2c85a3c52eae4'],
     ])
-    const intakeBody = intakeBodies.get('69520') ?? ''
-    expect(intakeBody.split('c(76697)')).toHaveLength(2)
-    const intakeBeforeLabels = intakeBody.replace('c(76697)', 'c(56304)')
-    expect(createHash('sha256').update(intakeBeforeLabels).digest('hex')).toBe(
-      'dcaaecf8c587b9413c83a5fa8645a6803b789f71176f3622709150dca34cc0f1',
-    )
-    expect(intakeBeforeLabels.split('c(56304)')).toHaveLength(2)
-    expect(
-      createHash('sha256').update(intakeBeforeLabels.replace('c(56304)', 'c(66320)')).digest('hex'),
-    ).toBe('fbca2d1d44287900ae260889c29202df5ca7f1128e1122ac5ec8c1c08f633445')
-    certifyT48IntakeCapabilityExport(intakeBodies.get('69520') ?? '')
+    certifyIntakeMediaBridgeR99(intakeBodies.get('6535') ?? '')
     // Full typed service code remains physically present, including dormant
     // writers. Journal3 invokes only read through its tested closed RPC port.
     certifySharedModule(

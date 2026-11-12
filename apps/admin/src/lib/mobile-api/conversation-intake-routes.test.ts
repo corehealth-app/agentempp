@@ -84,6 +84,34 @@ function request(method = 'POST', body: unknown = bound.input, extra: Record<str
   })
 }
 describe('genuine neutral intake authenticated HTTP routes', () => {
+  it.each([
+    'POST',
+    'GET',
+  ] as const)('negotiates media provenance separately from factual authority on %s', async (method) => {
+    const h = fixture(),
+      req = request(method, bound.input, { 'X-Conversation-Media-Provenance': '1' }),
+      response =
+        method === 'POST'
+          ? await h.routes.POST(req)
+          : await h.routes.GET(req, { params: Promise.resolve({ intakeId: bound.intakeId }) })
+    expect(response.headers.get('X-Conversation-Media-Provenance')).toBe('1')
+    expect(response.headers.get('X-Conversation-Protocol')).toBe('intake-v1')
+    expect(response.headers.get('Vary')).toBe('Authorization, X-Conversation-Media-Provenance')
+    expect(response.headers.get('Cache-Control')).toBe('no-store')
+    if (method === 'POST') expect(h.submit).toHaveBeenCalledWith(bound, 'legacy', '1')
+    else expect(h.read).toHaveBeenCalledWith('legacy', '1')
+  })
+  it.each([
+    '',
+    '2',
+    'true',
+    '1, 1',
+  ])('refuses unsupported media provenance %j before runtime construction', async (value) => {
+    const h = fixture(),
+      req = request('POST', bound.input, { 'X-Conversation-Media-Provenance': value })
+    expect((await h.routes.POST(req)).status).toBe(422)
+    expect(h.service).not.toHaveBeenCalled()
+  })
   it('binds the original neutral body without a meal/workout kind or fabricated typed identity', async () => {
     const h = fixture(),
       response = await h.routes.POST(request())

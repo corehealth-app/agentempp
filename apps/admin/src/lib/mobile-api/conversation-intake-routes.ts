@@ -10,6 +10,11 @@ import {
 } from './conversation-feedback-presentation-negotiation'
 import { bindConversationIntake, conversationIntakeSchema } from './conversation-intake-contracts'
 import type { ConversationIntakeLookup } from './conversation-intake-driver'
+import {
+  type ConversationIntakeMediaNegotiation,
+  conversationIntakeMediaEnabled,
+  negotiateConversationIntakeMedia,
+} from './conversation-intake-media-negotiation'
 import { createOpenRouterConversationIntakeRouter } from './conversation-intake-router'
 import { createConversationIntakeRuntime } from './conversation-intake-runtime'
 import { createConversationIntakeSessionService } from './conversation-intake-session'
@@ -31,6 +36,7 @@ export function conversationIntakesEnabled(
 }
 export interface ConversationIntakeRoutePorts {
   readonly enabled?: () => boolean
+  readonly mediaEnabled?: () => boolean
   readonly service?: (
     db: ServiceClient,
     auth: MobileAuthContext,
@@ -50,14 +56,22 @@ function response(
   result: Reply,
   requestId: string,
   selected: ConversationFeedbackPresentationNegotiation,
+  selectedMedia: ConversationIntakeMediaNegotiation = 'legacy',
 ) {
   const waiting =
     result.status === 'pending' ||
     result.status === 'held' ||
     (result.status === 'selected' && result.result.status === 'pending')
+  const headers = conversationFeedbackPresentationMobileHeaders(selected)
   return mobileSuccess(result, requestId, waiting ? 202 : 200, {
     'X-Conversation-Protocol': 'intake-v1',
-    ...conversationFeedbackPresentationMobileHeaders(selected),
+    ...headers,
+    ...(selectedMedia === '1'
+      ? {
+          'X-Conversation-Media-Provenance': '1',
+          Vary: `${headers.Vary ?? 'Authorization'}, X-Conversation-Media-Provenance`,
+        }
+      : {}),
   })
 }
 function requireOriginalPatient(request: Request, owner: string) {
@@ -74,11 +88,13 @@ export function createConversationIntakeRoutes(
 ) {
   const readonlyRuntime = runtime ?? createConversationMealReadonlyRuntime(),
     enabled = ports.enabled?.bind(ports) ?? conversationIntakesEnabled,
+    mediaEnabled = ports.mediaEnabled?.bind(ports) ?? conversationIntakeMediaEnabled,
     service =
       ports.service?.bind(ports) ??
       ((db, auth, original) =>
         createConversationIntakeRuntime(db, auth, original, {
           enabled,
+          mediaEnabled,
           // Construction is lazy and synchronous. Provider work occurs only after
           // the actual intake driver's durable routing claim, never on GET/session.
           createRouter: () =>
@@ -122,12 +138,20 @@ export function createConversationIntakeRoutes(
           inputHash: bound.inputHash,
           epoch,
         },
-        selected = negotiateConversationFeedbackPresentation(context.request.headers)
+        selected = negotiateConversationFeedbackPresentation(context.request.headers),
+        selectedMedia = negotiateConversationIntakeMedia(context.request.headers)
       available()
       return response(
-        await service(context.supabase, context.auth, original).submit(bound, selected),
+        await (selectedMedia === 'legacy'
+          ? service(context.supabase, context.auth, original).submit(bound, selected)
+          : service(context.supabase, context.auth, original).submit(
+              bound,
+              selected,
+              selectedMedia,
+            )),
         context.requestId,
         selected,
+        selectedMedia,
       )
     }, readonlyRuntime),
     GET: createMobileRouteWithContext<IntakeRouteContext>(async (context, route) => {
@@ -137,12 +161,16 @@ export function createConversationIntakeRoutes(
         inputHash = workoutHash.parse(context.request.headers.get('X-Conversation-Input-Hash')),
         intakeId = workoutUUID.parse((await route.params).intakeId),
         original = { ownerId: context.auth.userId, intakeId, inputHash, epoch },
-        selected = negotiateConversationFeedbackPresentation(context.request.headers)
+        selected = negotiateConversationFeedbackPresentation(context.request.headers),
+        selectedMedia = negotiateConversationIntakeMedia(context.request.headers)
       available()
       return response(
-        await service(context.supabase, context.auth, original).read(selected),
+        await (selectedMedia === 'legacy'
+          ? service(context.supabase, context.auth, original).read(selected)
+          : service(context.supabase, context.auth, original).read(selected, selectedMedia)),
         context.requestId,
         selected,
+        selectedMedia,
       )
     }, readonlyRuntime),
   })

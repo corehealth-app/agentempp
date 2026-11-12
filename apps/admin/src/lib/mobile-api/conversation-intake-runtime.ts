@@ -21,6 +21,7 @@ import {
   type ConversationIntakeLookup,
   createConversationIntakeDriver,
 } from './conversation-intake-driver'
+import type { ConversationIntakeMediaNegotiation } from './conversation-intake-media-negotiation'
 import {
   type ConversationIntakeRecoveryRPCPort,
   createConversationIntakeRecoveryStore,
@@ -45,6 +46,7 @@ export interface ConversationIntakeRuntimePorts extends ConversationCurrentScope
   readonly enabled?: () => boolean
   readonly mealEnabled?: () => boolean
   readonly workoutEnabled?: () => boolean
+  readonly mediaEnabled?: () => boolean
 }
 function unavailable() {
   return new MobileApiError(503, 'conversation_intake_unavailable', 'Intake is unavailable')
@@ -82,13 +84,16 @@ export function createConversationIntakeRuntime(
 ) {
   const enabled = ports.enabled?.bind(ports) ?? (() => false),
     mealEnabled = ports.mealEnabled?.bind(ports) ?? conversationMealCommandsEnabled,
-    workoutEnabled = ports.workoutEnabled?.bind(ports) ?? conversationWorkoutCommandsEnabled
-  let closed: MobileApiError | null = null
+    workoutEnabled = ports.workoutEnabled?.bind(ports) ?? conversationWorkoutCommandsEnabled,
+    trustedMediaEnabled = ports.mediaEnabled?.bind(ports) ?? (() => false)
+  let closed: MobileApiError | null = null,
+    mediaAuthorityRequired = false
   function available() {
     if (closed) throw closed
     try {
       if (enabled() !== true || mealEnabled() !== true || workoutEnabled() !== true)
         throw unavailable()
+      if (mediaAuthorityRequired && trustedMediaEnabled() !== true) throw unavailable()
     } catch {
       closed = unavailable()
       throw closed
@@ -272,6 +277,20 @@ export function createConversationIntakeRuntime(
       recovery,
       scope: { observeCurrentScope: observe },
       createRouter: makeRouter,
+      mediaEnabled: () => {
+        available()
+        try {
+          if (trustedMediaEnabled() !== true) return false
+          // Once used, the same sticky boundary fences every existing typed
+          // child Auth/clinical/RPC observation, including waits inside writers.
+          mediaAuthorityRequired = true
+          available()
+          return true
+        } catch (error) {
+          closed ??= error instanceof MobileApiError ? error : unavailable()
+          throw closed
+        }
+      },
       domains: {
         meal: {
           submit: (child, negotiation) =>
@@ -305,10 +324,15 @@ export function createConversationIntakeRuntime(
     if (value !== 'legacy' && value !== '2') throw changed()
     return value
   }
+  function mediaNegotiation(value: ConversationIntakeMediaNegotiation) {
+    if (value !== 'legacy' && value !== '1') throw changed()
+    return value
+  }
   return Object.freeze({
     async submit(
       original: BoundConversationIntake,
       selected: ConversationFeedbackPresentationNegotiation = 'legacy',
+      selectedMedia: ConversationIntakeMediaNegotiation = 'legacy',
     ) {
       available()
       let command: BoundConversationIntake
@@ -324,11 +348,19 @@ export function createConversationIntakeRuntime(
         closed = changed()
         throw closed
       }
-      return driver.submit(command, id.epoch, negotiation(selected))
+      return driver.submit(
+        command,
+        id.epoch,
+        negotiation(selected),
+        mediaNegotiation(selectedMedia),
+      )
     },
-    async read(selected: ConversationFeedbackPresentationNegotiation = 'legacy') {
+    async read(
+      selected: ConversationFeedbackPresentationNegotiation = 'legacy',
+      selectedMedia: ConversationIntakeMediaNegotiation = 'legacy',
+    ) {
       available()
-      return driver.read(id, negotiation(selected))
+      return driver.read(id, negotiation(selected), mediaNegotiation(selectedMedia))
     },
   })
 }

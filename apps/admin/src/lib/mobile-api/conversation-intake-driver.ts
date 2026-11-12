@@ -1,6 +1,6 @@
 /** Private neutral orchestration. Only the durable SQL selection chooses the
  * genuine typed service; routing output, a selection or a read is not an ACK.
- * No HTTP route, provider default, media projection or capability is installed. */
+ * HTTP negotiation and trusted capability are supplied by the outer runtime. */
 import { isDeepStrictEqual } from 'node:util'
 import type { ConversationFeedbackPresentationNegotiation } from './conversation-feedback-presentation-negotiation'
 import {
@@ -13,6 +13,7 @@ import {
   parseConversationIntakeSource,
   pinConversationIntake,
 } from './conversation-intake-contracts'
+import type { ConversationIntakeMediaNegotiation } from './conversation-intake-media-negotiation'
 import type { createConversationIntakeRecoveryStore } from './conversation-intake-recovery-store'
 import {
   ConversationIntakeScopeRefusal,
@@ -41,6 +42,8 @@ export interface ConversationIntakeLookup {
   readonly epoch: string
 }
 export interface ConversationIntakeDriverPorts {
+  /** Independent trusted capability. Negotiation alone never enables media. */
+  readonly mediaEnabled?: () => boolean
   readonly store: Store
   readonly recovery: ReturnType<typeof createConversationIntakeRecoveryStore>
   readonly scope: {
@@ -165,6 +168,7 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
       reconcile: ports.recovery.reconcile.bind(ports.recovery),
     }),
     makeRouter = ports.createRouter.bind(ports),
+    mediaEnabled = ports.mediaEnabled?.bind(ports) ?? (() => false),
     domains = Object.freeze({
       meal: Object.freeze({
         submit: ports.domains.meal.submit.bind(ports.domains.meal),
@@ -178,20 +182,33 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
   function operation(
     original: ConversationIntakeLookup,
     negotiation: ConversationFeedbackPresentationNegotiation,
+    mediaNegotiation: ConversationIntakeMediaNegotiation,
   ) {
     const id = lookup(original)
     let closed: MobileApiError | null = null,
       previous: bigint | null = null,
-      latest: CurrentClinicalSnapshot | null = null
+      latest: CurrentClinicalSnapshot | null = null,
+      mediaScope = false
+    function activateMedia(): boolean {
+      if (mediaNegotiation !== '1' || mediaEnabled() !== true) return false
+      mediaScope = true
+      return true
+    }
+    function requireMedia() {
+      if (mediaScope && mediaEnabled() !== true)
+        throw failure('conversation_intake_media_unavailable', 503)
+    }
     async function current() {
       if (closed) throw closed
       try {
+        requireMedia()
         const v = readCurrentClinicalState(workoutSnapshot(await observe(id)), id.ownerId),
           at = conversationJournalInstant(v.observed_at)
         if (v.epoch !== id.epoch || (previous !== null && at < previous))
           throw failure('conversation_intake_scope_changed')
         previous = at
         latest = v
+        requireMedia()
         return v
       } catch (error) {
         closed =
@@ -248,7 +265,7 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
       // Internal media lineage is not negotiation for the old public envelope.
       // Fence every persisted-selection path, including GET, cold replay and
       // uncertain/concurrent recovery, before either typed facade is invoked.
-      if (selection.schema === 'conversation.intake-selection.v2')
+      if (selection.schema === 'conversation.intake-selection.v2' && !activateMedia())
         return pending('media_projection_required', selection.intake, 'held')
       const d = selection.decision,
         c = selection.command
@@ -274,7 +291,10 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
       const result = childReply(raw, c, latest),
         { input: _private, ...child } = c
       return workoutSnapshot({
-        schema: 'conversation.intake-result.v1' as const,
+        schema:
+          selection.schema === 'conversation.intake-selection.v2'
+            ? ('conversation.intake-result.v2' as const)
+            : ('conversation.intake-result.v1' as const),
         status: 'selected' as const,
         intake: selection.intake,
         selection: {
@@ -283,6 +303,9 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
           decision_hash: selection.decision_hash,
           selected_at: selection.selected_at,
           command: child,
+          ...(selection.schema === 'conversation.intake-selection.v2'
+            ? { media_projection: selection.media_projection }
+            : {}),
         },
         result,
       })
@@ -364,6 +387,7 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
       selected,
       readOnly,
       recover,
+      activateMedia,
       mandatory(error: unknown) {
         // Auth/identity refusals stay closed. A typed 5xx may follow an effect;
         // only a read can determine its outcome without submitting it again.
@@ -381,13 +405,15 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
     async read(
       raw: ConversationIntakeLookup,
       negotiation: ConversationFeedbackPresentationNegotiation = 'legacy',
+      mediaNegotiation: ConversationIntakeMediaNegotiation = 'legacy',
     ) {
-      return operation(raw, negotiation).readOnly()
+      return operation(raw, negotiation, mediaNegotiation).readOnly()
     },
     async submit(
       original: BoundConversationIntake,
       epoch: string,
       negotiation: ConversationFeedbackPresentationNegotiation = 'legacy',
+      mediaNegotiation: ConversationIntakeMediaNegotiation = 'legacy',
     ) {
       const command = pinConversationIntake(original),
         op = operation(
@@ -398,11 +424,12 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
             epoch,
           },
           negotiation,
+          mediaNegotiation,
         )
       try {
         const prior = op.ownedRead(await op.call(() => store.read(op.id)))
         if (prior?.selection) return await op.selected(prior.selection, 'submit')
-        if (prior?.command.input.source.channel === 'media')
+        if (prior?.command.input.source.channel === 'media' && !op.activateMedia())
           return op.pending('media_projection_required', prior.intake, 'held')
         if (prior?.claimed) return await op.recover(prior)
         let binding = prior?.intake
@@ -418,9 +445,9 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
           source_hash: captured.source_hash,
           context: captured.context,
         })
-        // A neutral media action is never fabricated into the older typed user
-        // actions. Genuine parent/media projection is a required later gate.
-        if (command.input.source.channel === 'media')
+        // A neutral media action is never fabricated into older typed user
+        // actions. SQL must still seal genuine parent/media lineage below.
+        if (command.input.source.channel === 'media' && !op.activateMedia())
           return op.pending('media_projection_required', binding, 'held')
         const router = makeRouter(),
           route = router.route.bind(router)
